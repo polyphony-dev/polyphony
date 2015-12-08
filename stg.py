@@ -761,6 +761,10 @@ class AHDLTranslator:
             typ = 'Branch'
             target_grp = self.host.stg.name + '_' + ir.target.group.name
             sched = self.sched_time
+        elif ir.typ == 'E':
+            typ = 'Forward'
+            target_grp = None
+            self._emit(AHDL_META('STG_EXIT'), self.sched_time)
         else:
             assert 0
         t = Transition(typ, target_grp)

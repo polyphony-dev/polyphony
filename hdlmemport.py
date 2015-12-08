@@ -30,7 +30,7 @@ class HDLMemPortMaker:
         self.name = meminfo.sym.hdl_name()
         self.scope = scope
         self.module_info = module_info
-        self.addr_width = meminfo.length.bit_length()
+        self.addr_width = meminfo.length.bit_length()+1
         assert self.addr_width > 0
 
     def make_port_map(self, callee_scope, callee_instance, port_map):
@@ -77,8 +77,8 @@ class HDLMemPortMaker:
 
 class DirectMemPortMaker(HDLMemPortMaker):
     '''non shared memory connection'''
-    def __init__(self, name, width, length):
-        super().__init__(name, width, length)
+    def __init__(self, meminfo, scope, module_info):
+        super().__init__(meminfo, scope, module_info)
 
     def make_hdl(self):
         self._make_ram_module()
@@ -98,8 +98,9 @@ class DirectMemPortMaker(HDLMemPortMaker):
         #TODO: bit length
         param_map['DATA_WIDTH'] = width
         param_map['ADDR_WIDTH'] = addr_width
+        param_map['RAM_LENGTH'] = self.meminfo.length
 
-        spram_info = HDLModuleInfo('SinglePortRam', '@top'+'.SinglePortRam')
+        spram_info = HDLModuleInfo('BidirectionalSinglePortRam', '@top'+'.BidirectionalSinglePortRam')
         self.module_info.add_sub_module(self.name, spram_info, port_map, param_map)
 
     def _make_access_ports(self):
@@ -117,8 +118,8 @@ class DirectMemPortMaker(HDLMemPortMaker):
 
 
 class RootMemPortMaker(HDLMemPortMaker):
-    def __init__(self, name, width, length):
-        super().__init__(name, width, length)
+    def __init__(self, meminfo, scope, module_info):
+        super().__init__(meminfo, scope, module_info)
 
     def make_hdl(self):
         self._make_ram_module()
@@ -147,8 +148,9 @@ class RootMemPortMaker(HDLMemPortMaker):
         #TODO: bit length
         param_map['DATA_WIDTH'] = width
         param_map['ADDR_WIDTH'] = addr_width
+        param_map['RAM_LENGTH'] = self.meminfo.length
 
-        spram_info = HDLModuleInfo('SinglePortRam', '@top' +'.SinglePortRam')
+        spram_info = HDLModuleInfo('BidirectionalSinglePortRam', '@top' +'.BidirectionalSinglePortRam')
         self.module_info.add_sub_module(self.name, spram_info, port_map, param_map)
 
     def _make_access_ports(self):
@@ -227,8 +229,8 @@ class RootMemPortMaker(HDLMemPortMaker):
 
 
 class BranchMemPortMaker(HDLMemPortMaker):
-    def __init__(self, name, width, length):
-        super().__init__(name, width, length)
+    def __init__(self, meminfo, scope, module_info):
+        super().__init__(meminfo, scope, module_info)
 
     def make_hdl(self):
         self._make_access_ports()
@@ -326,8 +328,8 @@ class BranchMemPortMaker(HDLMemPortMaker):
 
 
 class LeafMemPortMaker(HDLMemPortMaker):
-    def __init__(self, name, width, length):
-        super().__init__(name, width, length)
+    def __init__(self, meminfo, scope, module_info):
+        super().__init__(meminfo, scope, module_info)
 
     def make_hdl(self):
         self._make_access_ports()

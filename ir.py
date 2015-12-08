@@ -70,7 +70,7 @@ class CALL(IRExp):
 
     def clone(self):
         args = [arg.clone() for arg in self.args]
-        return CALL(self.func.clone(), args)
+        return CALL(self.func.clone(), args, self.func_scope)
 
 class SYSCALL(IRExp):
     def __init__(self, name, args):

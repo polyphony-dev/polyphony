@@ -175,9 +175,9 @@ class ConstantFolding(IRVisitor):
             return lv < rv
         elif op == 'LtE':
             return lv <= rv
-        elif op == 'Lg':
+        elif op == 'Gt':
             return lv > rv
-        elif op == 'LgE':
+        elif op == 'GtE':
             return lv >= rv
         elif op == 'Is':
             return lv is rv

@@ -413,10 +413,8 @@ decode (int input)
 
 /* filtez: compute predictor output for zero section */
   dec_szl = filtez (dec_del_bpl, dec_del_dltx);
-
 /* filtep: compute predictor output signal for pole section */
   dec_spl = filtep (dec_rlt1, dec_al1, dec_rlt2, dec_al2);
-
   dec_sl = dec_spl + dec_szl;
 
 /* compute quantized difference signal for adaptive predic */
@@ -424,7 +422,7 @@ decode (int input)
 
 /* compute quantized difference signal for decoder output */
   dl = ((long) dec_detl * qq6_code6_table[il]) >> 15;
-
+  
   rl = dl + dec_sl;
 
 /* logscl: quantizer scale factor adaptation in the lower sub-band */
@@ -508,6 +506,7 @@ decode (int input)
   ad_ptr = accumd;
   xa1 = (long) xd *(*h_ptr++);
   xa2 = (long) xs *(*h_ptr++);
+
 /* main multiply accumulate loop for samples and coefficients */
   for (i = 0; i < 10; i++)
     {
@@ -517,11 +516,11 @@ decode (int input)
 /* final mult/accumulate */
   xa1 += (long) (*ac_ptr) * (*h_ptr++);
   xa2 += (long) (*ad_ptr) * (*h_ptr++);
-
 /* scale by 2^14 */
   xout1 = xa1 >> 14;
   xout2 = xa2 >> 14;
 
+  //printf("xout1 %d\n", xout1);
 /* update delay lines */
   ac_ptr1 = ac_ptr - 1;
   ad_ptr1 = ad_ptr - 1;
@@ -572,6 +571,41 @@ reset ()
       accumc[i] = 0;
       accumd[i] = 0;
     }
+}
+
+void dump() {
+    printf("detl %d\n", detl);
+    printf("dec_detl %d\n", dec_detl);
+    printf("deth %d\n", deth);
+    printf("dec_deth %d\n", dec_deth);
+    printf("nbl %d\n", nbl);
+    printf("al1 %d\n", al1);
+    printf("al2 %d\n", al2);
+    printf("plt1 %d\n", plt1);
+    printf("plt2 %d\n", plt2);
+    printf("rlt1 %d\n", rlt1);
+    printf("rlt2 %d\n", rlt2);
+    printf("nbh %d\n", nbh);
+    printf("ah1 %d\n", ah1);
+    printf("ah2 %d\n", ah2);
+    printf("ph1 %d\n", ph1);
+    printf("ph2 %d\n", ph1);
+    printf("rh1 %d\n", rh1);
+    printf("rh2 %d\n", rh2);
+    printf("dec_nbl %d\n", dec_nbl);
+    printf("dec_al1 %d\n", dec_al1);
+    printf("dec_al2 %d\n", dec_al2);
+    printf("dec_plt1 %d\n", dec_plt1);
+    printf("dec_plt2 %d\n", dec_plt2);
+    printf("dec_rlt1 %d\n", dec_rlt1);
+    printf("dec_rlt2 %d\n", dec_rlt2);
+    printf("dec_nbh %d\n", dec_nbh);
+    printf("dec_ah1 %d\n", dec_ah1);
+    printf("dec_ah2 %d\n", dec_ah2);
+    printf("dec_ph1 %d\n", dec_ph1);
+    printf("dec_ph2 %d\n", dec_ph1);
+    printf("dec_rh1 %d\n", dec_rh1);
+    printf("dec_rh2 %d\n", dec_rh2);
 }
 
 /* filtez - compute predictor output signal (zero section) */
@@ -877,6 +911,7 @@ main ()
 	      main_result += 1;
 	    }
 	}
+	  dump();
       printf ("%d\n", main_result);
       return main_result;
     }

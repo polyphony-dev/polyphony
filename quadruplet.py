@@ -86,7 +86,7 @@ class QuadrupleMaker(IRTransformer):
 
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
-        assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST)
+        assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST) or isinstance(ir.offset, UNOP)
 
         if ir.ctx == 'Load':
             sym = Symbol.newtemp(Symbol.temp_prefix, self.scope)

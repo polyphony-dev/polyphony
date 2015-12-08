@@ -195,7 +195,7 @@ class Visitor(ast.NodeVisitor):
         ret = TEMP(sym, 'Store')
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
-        self.emit(JUMP(self.function_exit), node)
+        self.emit(JUMP(self.function_exit, 'E'), node)
 
         self.current_loop_info.append_return(self.current_block)
         self.current_block.connect(self.function_exit)
@@ -396,6 +396,14 @@ class Visitor(ast.NodeVisitor):
             init_parts = [
                 MOVE(TEMP(var.sym, 'Store'), start)
             ]
+            # negative step value
+            #s_le_e = RELOP('LtE', start, end)
+            #i_lt_e = RELOP('Lt', TEMP(var.sym, 'Load'), end)
+            #s_gt_e = RELOP('Gt', start, end)
+            #i_gt_e = RELOP('Gt', TEMP(var.sym, 'Load'), end)
+            #cond0 = RELOP('And', s_le_e, i_lt_e)
+            #cond1 = RELOP('And', s_gt_e, i_gt_e)
+            #condition = RELOP('Or', cond0, cond1)
             condition = RELOP('Lt', TEMP(var.sym, 'Load'), end)
             continue_parts = [
                 MOVE(TEMP(var.sym, 'Store'), BINOP('Add', TEMP(var.sym, 'Load'), step))

@@ -37,17 +37,21 @@ class STGOptimizer():
     def _process_concat_state(self, state):
         remove_codes = []
         for code in state.codes:
-            if isinstance(code, AHDL_META) and code.metaid == 'STG_JUMP':
-                stg_name = code.args[0]
-                stg = self.module.find_stg(stg_name)
-                target_state = stg.init_state
-                _, ret_state, _ = state.next_states[0]
-                self.stg_return_state[stg_name] = ret_state
+            if isinstance(code, AHDL_META):
+                if code.metaid == 'STG_JUMP':
+                    stg_name = code.args[0]
+                    stg = self.module.find_stg(stg_name)
+                    target_state = stg.init_state
+                    _, ret_state, _ = state.next_states[0]
+                    self.stg_return_state[stg_name] = ret_state
                     
-                state.next_states = []
-                state.set_next((AHDL_CONST(1), target_state, None))
-                remove_codes.append(code)  
-
+                    state.next_states = []
+                    state.set_next((AHDL_CONST(1), target_state, None))
+                    remove_codes.append(code)
+                elif code.metaid == 'STG_EXIT':
+                    top = self.module.stgs[0]
+                    state.next_states = []
+                    state.set_next((AHDL_CONST(1), top.finish_state, None))
         for code in remove_codes:
             state.codes.remove(code)
 

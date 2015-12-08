@@ -243,6 +243,6 @@ def test():
         print(dmem[i])
     for i in range(1, 8):
         main_result += dmem[i-1] > dmem[i]
-    assert main_result != 0
+    assert main_result == 0
 
 test()

@@ -852,6 +852,73 @@ blowfish_main ()
   return check;
 }
 
+void test_BF_cfb64_encrypt()
+{
+	unsigned char indata[10] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+	unsigned char outdata[10] = {0};
+	unsigned char ivec[8];
+
+	int num = 0;
+	int i;
+	BF_cfb64_encrypt(indata, outdata, 10, ivec, &num, 1);
+	for (i = 0; i < 10; i++) {
+		printf("outdata %d\n", outdata[i]);
+	}
+}
+
+void test_BF_encrypt() {
+	local_memcpy(key_P, bf_init_P, BF_ROUNDS + 2);
+	local_memcpy(key_S, bf_init_S, 4 * 256);
+
+	BF_LONG *p = key_P;
+	BF_LONG in[1] = {0};
+	in[0] = 0L;
+	in[1] = 0L;
+	int i;
+	for (i = 0; i < (BF_ROUNDS + 2); i += 2) {
+		BF_encrypt (in, BF_ENCRYPT);
+		//printf("%x %x\n", in[0], in[1]);
+		p[i] = in[0];
+		p[i + 1] = in[1];
+    }
+
+    for (i = 0; i < (BF_ROUNDS + 2); i++) {
+        printf("%x\n", key_P[i]);
+	}
+}
+
+void test_BF_set_key()
+{
+	int i;
+	unsigned char ukey[8];
+	for (i = 0; i < 8; i++)
+		ukey[i] = 0;
+
+	BF_set_key (8, ukey);
+    for (i = 0; i < (BF_ROUNDS + 2); i++) {
+        printf("%x\n", key_P[i]);
+	}
+}
+
+void test_BF_ENC()
+{
+	local_memcpy(key_P, bf_init_P, BF_ROUNDS + 2);
+	local_memcpy(key_S, bf_init_S, 4 * 256);
+
+	register BF_LONG l, r, *p, *s;
+	p = key_P;
+	s = &(key_S[0]);
+	l = 0;
+	r = 0;
+
+	l ^= p[0];
+	printf("%d %d\n", r, l);
+	BF_ENC (r, l, s, p[1]);
+	BF_ENC (l, r, s, p[2]);
+	printf("%d\n", r);
+	printf("%d\n", l);
+}
+
 int
 main ()
 {
