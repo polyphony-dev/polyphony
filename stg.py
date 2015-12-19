@@ -2,7 +2,7 @@
 from collections import OrderedDict, defaultdict
 import functools
 from block import Block
-from ir import RELOP, MREF, ARRAY, MOVE, CJUMP, MCJUMP, JUMP, CALL, SYSCALL, EXPR
+from ir import RELOP, MREF, ARRAY, TEMP, MOVE, CJUMP, MCJUMP, JUMP, CALL, SYSCALL, EXPR
 from symbol import function_name
 from ahdl import AHDL, AHDL_MOVE, AHDL_OP, AHDL_NOP, AHDL_CONST, AHDL_IF, AHDL_VAR, AHDL_STORE, AHDL_LOAD, AHDL_MEM, AHDL_FUNCALL, AHDL_PROCCALL, AHDL_META
 from latency import get_latency
@@ -67,7 +67,6 @@ class State:
         #
         if not self.transitions:
             self.set_next((None, next_state, None))
-            logger.debug('$$$')
             return next_state
         
         for t in self.transitions:
@@ -455,36 +454,34 @@ class STGBuilder:
         return self.stg.new_state(name, codes, transitions)
 
 
-    def emit_call_ret_sequence(self, node):
-        code = self._build_call_ready_off(node)
+    def emit_call_ret_sequence(self, call, node):
+        code = self._build_call_ready_off(call, node)
         self.emit(code, self.cur_sched_time + 1)
 
         latency = get_latency(node.tag)
-        code = self._build_call_ret(node)
+        code = self._build_call_ret(call, node)
         sched_time = self.cur_sched_time + latency - 1
         while not self.try_emit(code, sched_time, 'call_ret'):
             self.cur_sched_time += 1
             sched_time = self.cur_sched_time + latency - 1
 
-        code = self._build_call_accept_off(node)
+        code = self._build_call_accept_off(call, node)
         sched_time += 1
         self.emit(code, sched_time)
 
 
-    def _build_call_ready_off(self, node):
+    def _build_call_ready_off(self, call, node):
         stm = node.tag
         assert (isinstance(stm, MOVE) and isinstance(stm.src, CALL)) or (isinstance(stm, EXPR) and isinstance(stm.exp, CALL))
-        call = stm.src if isinstance(stm, MOVE) else stm.exp
         fname = function_name(call.func.sym)
         instance_name = '{}_{}'.format(fname, node.instance_num)
         ready = self._gen_sym(instance_name, 'READY', 1)
         return AHDL_MOVE(AHDL_VAR(ready), AHDL_CONST(0))
 
 
-    def _build_call_ret(self, node):
+    def _build_call_ret(self, call, node):
         stm = node.tag
         has_dst = True if isinstance(stm, MOVE) else False
-        call = stm.src if has_dst else stm.exp
 
         fname = function_name(call.func.sym)
         instance_name = '{}_{}'.format(fname, node.instance_num)
@@ -503,14 +500,29 @@ class STGBuilder:
         call_accept_sym = self._gen_sym(instance_name, 'ACCEPT', 1)
         t_codes.append(AHDL_MOVE(AHDL_VAR(call_accept_sym), AHDL_CONST(1)))
 
+        for i, arg in enumerate(call.args):
+            if isinstance(arg, TEMP) and arg.sym.is_memory():
+                mem_link_map = self.scope.get_mem_link_map(call.func_scope, instance_name)
+                meminfo = self.scope.meminfos[arg.sym]
+                for callee_inst, callee_meminfo in meminfo.links[call.func_scope]:
+                    if callee_inst != instance_name:
+                        continue
+                    caller_meminfos = mem_link_map[callee_meminfo]
+                    # is memory select needed ?
+                    if len(caller_meminfos) <= 1:
+                        break
+                    if callee_meminfo.ref_index == i:
+                        csstr = '{}_{}_{}'.format(instance_name, callee_meminfo.ref_index, arg.sym.hdl_name())
+                        cs = self._gen_sym(csstr, 'cs', 1)
+                        t_codes.append(AHDL_MOVE(AHDL_VAR(cs), AHDL_CONST(0)))
+
         #conditional jump to the next state with some codes
         return Transition('Forward', None, cond, t_codes)
 
 
-    def _build_call_accept_off(self, node):
+    def _build_call_accept_off(self, call, node):
         stm = node.tag
         assert (isinstance(stm, MOVE) and isinstance(stm.src, CALL)) or (isinstance(stm, EXPR) and isinstance(stm.exp, CALL))
-        call = stm.src if isinstance(stm, MOVE) else stm.exp
         fname = function_name(call.func.sym)
         instance_name = '{}_{}'.format(fname, node.instance_num)
         accept = self._gen_sym(instance_name, 'ACCEPT', 1)
@@ -621,6 +633,7 @@ class AHDLTranslator:
         self.name = name
         self.host = host
         self.scope = scope
+        self.call_mem_cs = {}
 
     def reset(self, sched_time):
         self.sched_time = sched_time
@@ -651,7 +664,19 @@ class AHDLTranslator:
         for i, arg in enumerate(ir.args):
             a = self.visit(arg, node)
             if isinstance(a, AHDL_VAR) and a.sym.is_memory():
-                pass
+                mem_link_map = self.scope.get_mem_link_map(ir.func_scope, instance_name)
+                meminfo = self.scope.meminfos[arg.sym]
+                for callee_inst, callee_meminfo in meminfo.links[ir.func_scope]:
+                    if callee_inst != instance_name:
+                        continue
+                    caller_meminfos = mem_link_map[callee_meminfo]
+                    # is memory select needed ?
+                    if len(caller_meminfos) <= 1:
+                        break
+                    if callee_meminfo.ref_index == i:
+                        csstr = '{}_{}_{}'.format(instance_name, callee_meminfo.ref_index, a.sym.hdl_name())
+                        cs = self.host._gen_sym(csstr, 'cs', 1)
+                        self._emit(AHDL_MOVE(AHDL_VAR(cs), AHDL_CONST(1)), self.sched_time)
             else:
                 argsym = self.scope.gen_sym('{}_IN{}'.format(instance_name, i))
                 self._emit(AHDL_MOVE(AHDL_VAR(argsym), a), self.sched_time)
@@ -663,6 +688,19 @@ class AHDLTranslator:
 
         return None
 
+    def translate_builtin_len(self, syscall):
+        mem = syscall.args[0]
+        assert isinstance(mem, TEMP)
+        meminfo = self.scope.meminfos[mem.sym]
+        lens = []
+        for src_scope, src_meminfos in meminfo.src_mems.items():
+            lens.extend([meminfo.length for meminfo in src_meminfos])
+        if any(lens[0] != len for len in lens):
+            memlensym = self.scope.gen_sym('{}_len'.format(meminfo.sym.name))
+            return AHDL_VAR(memlensym)
+        else:
+            assert False # len() must be constant value
+        
     def visit_SYSCALL(self, ir, node):
         logger.debug(ir.name)
         if ir.name == 'print':
@@ -673,6 +711,8 @@ class AHDLTranslator:
             fname = '!hdl_write_reg'
         elif ir.name == 'assert':
             fname = '!hdl_assert'
+        elif ir.name == 'len':
+            return self.translate_builtin_len(ir)
         else:
             return
         #TODO: pass by name
@@ -714,7 +754,7 @@ class AHDLTranslator:
         if not (isinstance(ir.exp, CALL) or isinstance(ir.exp, SYSCALL)):
             return
         if isinstance(ir.exp, CALL):
-            self.host.emit_call_ret_sequence(node)
+            self.host.emit_call_ret_sequence(ir.exp, node)
 
         exp = self.visit(ir.exp, node)
         if exp:
@@ -782,7 +822,7 @@ class AHDLTranslator:
 
     def visit_MOVE(self, ir, node):
         if isinstance(ir.src, CALL):
-            self.host.emit_call_ret_sequence(node)
+            self.host.emit_call_ret_sequence(ir.src, node)
 
         src = self.visit(ir.src, node)
         dst = self.visit(ir.dst, node)

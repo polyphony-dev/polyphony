@@ -69,6 +69,9 @@ class VerilogCodeGen:
         for name, typ, width in self.module_info.outputs:
             if typ == 'reg' or typ == 'dataout':
                 self.emit('{} <= 0;\n'.format(name))
+        for name, _, _ in self.module_info.internal_regs:
+            if name is not self.main_state_var_sym.name:
+                self.emit('{} <= 0;\n'.format(name))
 
         self.emit('{} <= {};\n'.format(self.main_state_var_sym.name, main_stg.init_state.name))
         self.set_indent(-2)
@@ -149,24 +152,24 @@ class VerilogCodeGen:
             if width == 1:
                 self.emit('reg {};\n'.format(name))
             else:
-                self.emit('reg {} [{}:0] {};\n'.format(sign, width-1, name))
+                self.emit('reg {:<6} [{}:0] {};\n'.format(sign, width-1, name))
         self.emit('\n')
 
         for name, width, size, sign in sorted(self.module_info.internal_reg_arrays, key=lambda v: v[0]):
             if width == 1:
                 self.emit('reg {}[0:{}];\n'.format(name, size-1))
             else:
-                self.emit('reg {} [{}:0] {} [0:{}];\n'.format(sign, width-1, name, size-1))
+                self.emit('reg {:<6} [{}:0] {} [0:{}];\n'.format(sign, width-1, name, size-1))
         self.emit('\n')
 
     def _generate_internal_wires(self):
         if self.module_info.internal_wires:
             self.emit('//internal wires\n')
-        for name, width, sign in self.module_info.internal_wires:
+        for name, width, sign in sorted(self.module_info.internal_wires):
             if width == 1:
                 self.emit('wire {};\n'.format(name))
             else:
-                self.emit('wire {} [{}:0] {};\n'.format(sign, width-1, name))
+                self.emit('wire {:<6} [{}:0] {};\n'.format(sign, width-1, name))
         self.emit('\n')
 
     def _generate_functions(self):
@@ -357,11 +360,14 @@ class VerilogCodeGen:
             #expand condtion expression for the assert message
             exp = args[0]
             if exp.startswith('cond'):
+                remove_assign = []
                 for assign in self.module_info.static_assignments:
                     if assign.dst.sym.hdl_name() == exp:
-                        self.module_info.static_assignments.remove(assign)
+                        remove_assign.append(assign)
                         self.module_info.internal_wires.remove((exp, 1, 'signed'))
                         exp = self.visit(assign.src)
+                for assign in remove_assign:
+                    self.module_info.static_assignments.remove(assign)
             exp = exp.replace('==', '===').replace('!=', '!==')
             code = 'if (!{}) begin\n'.format(exp)
             self.emit(code)
@@ -435,9 +441,9 @@ class VerilogCodeGen:
         last_idx = len(ahdl.inputs) - 1
         for idx, input in enumerate(ahdl.inputs):
             if idx == last_idx:
-                self.emit('input [{}:0] {}\n'.format(input.sym.width-1, input.sym.name))
+                self.emit('input [{}:0] {}\n'.format(input.width-1, input.name))
             else:
-                self.emit('input [{}:0] {},\n'.format(input.sym.width-1, input.sym.name))
+                self.emit('input [{}:0] {},\n'.format(input.width-1, input.name))
             
         self.set_indent(-2)
         self.emit(');\n')
@@ -447,7 +453,7 @@ class VerilogCodeGen:
         self.emit('case (1\'b1)\n')
         self.set_indent(2)
         for i, input in enumerate(ahdl.inputs):
-            self.emit("{}[{}]: {} = {};\n".format(ahdl.selector.sym.name, i, ahdl.name.sym.name, input.sym.name))
+            self.emit("{}[{}]: {} = {};\n".format(ahdl.selector.sym.name, i, ahdl.name.sym.name, input.name))
         self.set_indent(-2)
         self.emit('endcase\n')
         self.set_indent(-2)
@@ -455,12 +461,12 @@ class VerilogCodeGen:
         self.emit('endfunction\n')
 
         params = self.visit(ahdl.selector) + ', '
-        params += ', '.join([input.sym.name for input in ahdl.inputs])
-        self.emit('assign {} = {}({});\n'.format(ahdl.output.sym.name, ahdl.name.sym.name, params))
+        params += ', '.join([input.name for input in ahdl.inputs])
+        self.emit('assign {} = {}({});\n'.format(ahdl.output.name, ahdl.name.sym.name, params))
 
     def visit_AHDL_DEMUX(self, ahdl):
         for i, output in enumerate(ahdl.outputs):
-            self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.sym.name, ahdl.selector.sym.name, i, ahdl.input.sym.name, 32))
+            self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.name, ahdl.selector.sym.name, i, ahdl.input.name, ahdl.width))
 
     def visit(self, ahdl):
         method = 'visit_' + ahdl.__class__.__name__

@@ -1,7 +1,7 @@
 from collections import defaultdict
 from latency import get_latency
 from irvisitor import IRVisitor
-from ir import CONST, TEMP
+from ir import CONST, TEMP, UNOP
 from logging import getLogger, INFO, DEBUG
 logger = getLogger(__name__)
 #logger.setLevel(INFO)
@@ -36,7 +36,7 @@ class Scheduler:
         if prio > node.priority:
             node.priority = prio
             updated = True
-            logger.debug('update priority ... ' + str(node))
+            #logger.debug('update priority ... ' + str(node))
         if updated:
             for succ in dfg.succs_without_back(node):
                 self._set_priority(succ, prio+1, dfg)
@@ -97,7 +97,7 @@ class Scheduler:
                     break
 
             node.instance_num = len(scheduled_funcs)
-            logger.debug("{} is scheduled to {}, instance_num {}".format(node, time, node.instance_num))
+            #logger.debug("{} is scheduled to {}, instance_num {}".format(node, time, node.instance_num))
 
             #fill scheduled_funcs table
             n = latency if latency != 0 else 1
@@ -147,7 +147,7 @@ class ResourceExtractor(IRVisitor):
 
     def visit_MREF(self, ir):
         assert isinstance(ir.mem, TEMP)
-        assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST)
+        assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST) or isinstance(ir.offset, UNOP)
 
     def visit_MSTORE(self, ir):
         assert isinstance(ir.mem, TEMP)

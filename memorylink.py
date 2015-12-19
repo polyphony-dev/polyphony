@@ -1,5 +1,5 @@
 ﻿from ir import TEMP
-from scope import MemInfo, MemLink
+from scope import MemLink
 from env import env
 from symbol import function_name
 from irvisitor import IRVisitor
@@ -20,12 +20,12 @@ class MemoryLinkMaker(IRVisitor):
                 callee = self.scope.find_func_scope(func_name)
                 for callee_meminfo in callee.meminfos.values():
                     if callee_meminfo.ref_index == i:
-                        callee_meminfo.set_src(meminfo)
+                        callee_meminfo.append_src(self.scope, meminfo)
                         linked_meminfo = MemLink(None, callee_meminfo)
                         break
                 else:
                     assert linked_meminfo
-                meminfo.links[callee].add(linked_meminfo)
+                meminfo.links[callee].append(linked_meminfo)
 
 
 class MemoryInstanceLinkMaker:
@@ -67,7 +67,6 @@ class MemoryInstanceLinkMaker:
                 meminfo.shared = True
 
                 callee = self.scope.find_func_scope(func_name)
-                meminfo.links[callee].clear()
 
                 for callee_meminfo in callee.meminfos.values():
                     if callee_meminfo.ref_index == i:
@@ -76,7 +75,8 @@ class MemoryInstanceLinkMaker:
                         break
                 else:
                     assert linked_meminfo
-                meminfo.links[callee].add(linked_meminfo)
+                meminfo.links[callee].remove(MemLink(None, callee_meminfo))
+                meminfo.links[callee].append(linked_meminfo)
         return ir
 
     def visit_SYSCALL(self, ir, node):

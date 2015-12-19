@@ -1,4 +1,4 @@
-﻿from collections import OrderedDict
+﻿from collections import OrderedDict, defaultdict
 from common import get_src_text, INT_WIDTH
 from env import env
 from stg import STG, State
@@ -86,7 +86,7 @@ class HDLGenPreprocessor:
         for stg in self.scope.stgs:
             states_n += len(stg.states())
         state_var = main_stg.state_var_sym.hdl_name()
-        self.module_info.add_internal_reg(state_var, states_n.bit_length(), '/*unsigned*/')
+        self.module_info.add_internal_reg(state_var, states_n.bit_length(), '')
 
      
         for minfo in scope.meminfos.values():
@@ -110,10 +110,10 @@ class HDLGenPreprocessor:
                 logger.debug(info)
                 #input ports
                 for name, typ, width in info.inputs:
+                    if '_IN' not in name or typ != 'datain':
+                        continue
                     for i in range(len(info.inputs)):
-                        if '_IN' not in name:
-                            continue
-                        if typ == 'datain' and name.endswith('_IN' + str(i)):
+                        if name.endswith('_IN' + str(i)):
                             param_name = inst + '_IN' + str(i)
                             port_map[name] = param_name
                             self.module_info.add_internal_reg(param_name, width)
@@ -121,10 +121,10 @@ class HDLGenPreprocessor:
                 
                 #output ports
                 for name, typ, width in info.outputs:
+                    if '_OUT' not in name or typ != 'dataout':
+                        continue
                     for i in range(len(info.outputs)):
-                        if '_OUT' not in name:
-                            continue
-                        if typ == 'dataout' and name.endswith('_OUT' + str(i)):
+                        if name.endswith('_OUT' + str(i)):
                             param_name = inst + '_OUT' + str(i)
                             port_map[name] = param_name
                             self.module_info.add_internal_wire(param_name, width)
@@ -142,8 +142,9 @@ class HDLGenPreprocessor:
                 self.module_info.add_internal_wire(valid_signal, 1)
 
                 #memory ports
-                for memport in self.memportmakers:
-                    memport.make_port_map(callee_scope, inst, port_map)
+                mem_link_map = self.scope.get_mem_link_map(callee_scope, inst)
+                for callee_meminfo, caller_meminfos in mem_link_map.items():
+                    HDLMemPortMaker.make_port_map(self.scope, self.module_info, inst, callee_meminfo, caller_meminfos, port_map)
 
                 self.module_info.add_sub_module(inst, info, port_map)
 
@@ -177,6 +178,7 @@ class HDLGenPreprocessor:
             self.module_info.add_function(rom_func)
 
         return self.module_info
+
 
     def _preprocess_fsm(self, preprocessor, stg):
         assert stg

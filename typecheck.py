@@ -1,6 +1,6 @@
 ﻿from irvisitor import IRVisitor
 from ir import UNOP, BINOP, RELOP, CALL, SYSCALL, CONST, MREF, MSTORE, ARRAY, TEMP, EXPR, CJUMP, JUMP, RET, MOVE
-from env import env
+from scope import Scope
 from type import Type
 
 import logging
@@ -20,7 +20,7 @@ class TypePropagation(IRVisitor):
 
     def propagate_global_function_type(self):
         self.check_error = False
-        scopes = env.serialize_function_tree(contain_global=True)
+        scopes = Scope.get_scopes(contain_global=True)
         for s in scopes:
             s.return_type = Type.none_t
 

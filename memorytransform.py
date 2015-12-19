@@ -96,11 +96,11 @@ class MemoryInfoMaker(IRTransformer):
 
         if isinstance(ir.src, ARRAY):
             assert isinstance(ir.dst, TEMP)
-            sym = Symbol.newtemp(Symbol.mem_prefix+'_'+ir.dst.sym.name+'_', self.scope)
+            sym = self.scope.add_temp(Symbol.mem_prefix+'_'+ir.dst.sym.name+'_')
             sym.set_type(Type.list_int_t)
             mv = MOVE(TEMP(sym, 'Store'), ir.src)
             self.new_stms.append(mv)
-            self.scope.meminfos[sym] = MemInfo(sym, len(ir.src.items))
+            self.scope.meminfos[sym] = MemInfo(sym, len(ir.src.items), self.scope)
             ir.src = TEMP(sym, 'Load')
         self.new_stms.append(ir)
 

@@ -1,10 +1,10 @@
 ﻿import os, sys, traceback, profile
 from optparse import OptionParser
+from driver import Driver
 from env import env
 from common import read_source, src_text
 from irtranslator import IRTranslator
 from typecheck import TypePropagation, TypeChecker
-from callgraph import CallGraphBuilder
 from quadruplet import QuadrupleMaker
 from scope import Scope
 from block import BlockTracer
@@ -30,309 +30,258 @@ from constantfolding import ConstantFolding
 from iftransform import IfTransformer
 from setlineno import LineNumberSetter, SourceDump
 from loopdetector import LoopDetector, SimpleLoopUnroll
+from specfunc import SpecializedFunctionMaker
 import logging
 logger = logging.getLogger()
 
 logging_setting = {'level':logging.DEBUG, 'filename':'debug_log', 'filemode':'w'}
 
+def compile_plan():
+    def phase(phase):
+        def setphase(driver, scope):
+            env.compile_phase = phase
+        return setphase
+    
+    def linenum(driver, scope):
+        lineno = LineNumberSetter()
+        lineno.process(scope)
+        src_dump = SourceDump()
+        src_dump.process(scope)
+        
+    def iftrans(driver, scope):
+        if_transformer = IfTransformer()
+        if_transformer.process(scope)
+
+    def traceblk(driver, scope):
+        bt = BlockTracer()
+        bt.process(scope)
+
+    def quadruple(driver, scope):
+        quadruple = QuadrupleMaker()
+        quadruple.process(scope)
+
+    def usedef(driver, scope):
+        udd = UseDefDetector()
+        udd.process(scope)
+
+    def ssa(driver, scope):
+        ssa = SSAFormTransformer()
+        ssa.process(scope)
+
+    def ssaopt(driver, scope):
+         ssa_opt = SSAOptimizer()
+         ssa_opt.process(scope)
+
+    def phi(driver, scope):
+         phi_cond_resolver = PHICondResolver()
+         phi_cond_resolver.process(scope)
+
+    def meminfo(driver, scope):
+        meminfo_maker = MemoryInfoMaker()
+        meminfo_maker.process(scope)
+
+    def memtrans(driver, scope):
+        mem_transformer = MemoryTransformer()
+        mem_transformer.process(scope)
+
+    def typecheck(driver, scope):
+        typepropagation = TypePropagation()
+        typepropagation.process(scope)
+        typecheck = TypeChecker()
+        typecheck.process(scope)
+
+    def memlink(driver, scope):
+        memory_link_maker = MemoryLinkMaker()
+        memory_link_maker.process(scope)
+
+    def specfunc(driver, scope):
+        spec_func_maker = SpecializedFunctionMaker()
+        new_scopes = spec_func_maker.process(scope)
+        for s in new_scopes:
+            env.append_scope(s)
+            driver.insert_scope(s)
+
+    def constopt(driver, scope):
+        constantfolding = ConstantFolding(scope)
+        constantfolding.process(scope)
+
+    def loop(driver, scope):
+        loop_detector = LoopDetector()
+        loop_detector.process(scope)
+
+    def tbopt(driver, scope):
+        if scope.is_testbench():
+            simple_loop_unroll = SimpleLoopUnroll()
+            simple_loop_unroll.process(scope)
+            usedef(driver, scope)
+            ssa(driver, scope)
+            usedef(driver, scope)
+            ssaopt(driver, scope)
+            usedef(driver, scope)
+            phi(driver, scope)
+            usedef(driver, scope)
+
+    def liveness(driver, scope):
+        liveness = Liveness()
+        liveness.process(scope)
+
+    def jumpdepend(driver, scope):
+        jdd = JumpDependencyDetector()
+        jdd.process(scope)
+
+    def dfg(driver, scope):
+        dfg_builder = DFGBuilder()
+        dfg_builder.process(scope)
+
+    def dfgopt(driver, scope):
+        dfg_opt = DFGOptimizer()
+        dfg_opt.process(scope)
+
+    def schedule(driver, scope):
+        scheduler = Scheduler()
+        scheduler.schedule(scope)
+        
+    def memilink(driver, scope):
+        memory_ilink_maker = MemoryInstanceLinkMaker()
+        memory_ilink_maker.process(scope)
+
+    def stg(driver, scope):
+        stg_builder = STGBuilder()
+        stg_builder.process(scope)
+
+    def stgopt(driver, scope):
+        stg_opt = STGOptimizer()
+        stg_opt.process(scope)
+
+    def genhdl(driver, scope):
+        preprocessor = HDLGenPreprocessor()
+        scope.module_info = preprocessor.phase1(scope)
+        if not scope.is_testbench():
+            vcodegen = VerilogCodeGen(scope)
+        else:
+            vcodegen = VerilogTestGen(scope)
+        vcodegen.generate()
+        driver.set_result(scope, vcodegen.result())
+
+    def dumpscope(driver, scope):
+        driver.logger.debug(str(scope))
+
+    def dumpdfg(driver, scope):
+        for dfg in scope.dfgs():
+            dfg.dump()
+
+    def dumpsched(driver, scope):
+        for dfg in scope.dfgs():
+            driver.logger.debug('--- ' + dfg.name)
+            for n in dfg.get_scheduled_nodes():
+                driver.logger.debug(n)
+
+    def dumpstg(driver, scope):
+        for stg in scope.stgs:
+            driver.logger.debug(str(stg))
+
+    def dumpmodule(driver, scope):
+        logger.debug(str(scope.module_info))
+
+    def dumphdl(driver, scope):
+        logger.debug(driver.result(scope))
+
+
+    plan = [
+        phase(env.PHASE_1),
+        linenum,
+        iftrans,
+        traceblk,
+        quadruple,
+        dumpscope,
+        usedef,
+        ssa,
+        usedef,
+        ssaopt,
+        usedef,
+        phi,
+        usedef,
+        dumpscope,
+        phase(env.PHASE_2),
+        meminfo,
+        usedef,
+        memtrans,
+        typecheck,
+        memlink,
+        #specfunc,
+        dumpscope,
+        phase(env.PHASE_3),
+        constopt,
+        usedef,
+        loop,
+        tbopt,
+        liveness,
+        jumpdepend,
+        usedef,
+        dumpscope,
+        dfg,
+        dfgopt,
+        schedule,
+        dumpsched,
+        memilink,
+        stg,
+        stgopt,
+        dumpstg,
+        phase(env.PHASE_GEN_HDL),
+        genhdl,
+        dumpmodule,
+        dumphdl
+    ]
+    return plan
+
+
 def compile_main(src_file, output_name, output_dir):
     translator = IRTranslator()
     global_scope = translator.translate(read_source(src_file))
+
     global_constantfolding = ConstantFolding(global_scope)
     global_constantfolding.process_global()
-    logger.debug(str(global_scope))
 
     typepropagation = TypePropagation()
     typepropagation.propagate_global_function_type()
 
-    cgbuilder = CallGraphBuilder()
-    env.call_graph = cgbuilder.build(global_scope)
+    scopes = Scope.get_scopes(bottom_up=False)
+    driver = Driver(compile_plan(), scopes)
+    driver.run()
+    output_all(driver, output_name, output_dir)
 
-    scopes = env.serialize_function_tree()
-    compile_funcs = [
-        compile_hdl_phase1,
-        compile_hdl_phase2,
-        compile_hdl_phase3
-    ]
-    for fn in compile_funcs:
-        for scope in scopes:
-            logger.addHandler(env.logfiles[scope])
-            fn(scope)
-            logger.removeHandler(env.logfiles[scope])
 
+def output_all(driver, output_name, output_dir):
     codes = []
     d = output_dir if output_dir else './'
     if d[-1] != '/': d += '/'
 
+    scopes = Scope.get_scopes()
     for scope in scopes:
-        logger.addHandler(env.logfiles[scope])
-        code = gen_hdl(scope)
-        logger.removeHandler(env.logfiles[scope])
         if not scope.is_testbench():
-            codes.append(code)
+            codes.append(driver.result(scope))
         else:
-            f = open(d + scope.orig_name + '.v', 'w')
-            f.write(code)
-            f.close()
+            with open(d + scope.orig_name + '.v', 'w') as f:
+                f.write(driver.result(scope))
 
     mains = []
     for scope in scopes:
         if scope.is_main():
             mains.append(env.scopes[scope.name].module_info)
 
-    f = open(d + output_name + '.v', 'w')
-    for code in codes:
-        f.write(code)
-    if mains:
-        topgen = VerilogTopGen(mains)
-        logger.debug('--------------------------')
-        logger.debug('HDL top module generation ... ')
-        topgen.generate()
-        logger.debug('--------------------------')
-        logger.debug(topgen.result())
-        result = topgen.result()
-        f.write(result)
-    f.close()
+    with open(d + output_name + '.v', 'w') as f:
+        for code in codes:
+            f.write(code)
+        if mains:
+            topgen = VerilogTopGen(mains)
+            logger.debug('--------------------------')
+            logger.debug('HDL top module generation ... ')
+            topgen.generate()
+            logger.debug('--------------------------')
+            logger.debug(topgen.result())
+            result = topgen.result()
+            f.write(result)
 
-def compile_hdl_phase1(scope):
-    '''
-    phase1:
-      - quadruplification
-      - ssa & constant folding
-    '''
-    env.compile_phase = "phase1"
-
-    lineno = LineNumberSetter()
-    lineno.process(scope)
-    src_dump = SourceDump()
-    src_dump.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('If transform ... ')
-    if_transformer = IfTransformer()
-    if_transformer.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    bt = BlockTracer()
-    bt.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('Making quadruples ... ')
-    quadruple = QuadrupleMaker()
-    quadruple.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('use-def detecting before SSA ... ')
-    udd = UseDefDetector()
-    udd.process(scope)
-
-    compile_hdl_ssa(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('use-def detecting ... ')
-    udd = UseDefDetector()
-    udd.process(scope)
-    udd.table.dump()
-
-def compile_hdl_phase2(scope):
-    '''
-    phase2:
-      - some memory analyzes
-    '''
-    env.compile_phase = "phase2"
-
-    logger.debug('--------------------------')
-    logger.debug('Making memory info ...')
-    meminfo_maker = MemoryInfoMaker()
-    meminfo_maker.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('use-def detecting ... ')
-    udd = UseDefDetector()
-    udd.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('memory access tranforming ...')
-    mem_transformer = MemoryTransformer()
-    mem_transformer.process(scope)
-    logger.debug(str(scope))
-
-    typepropagation = TypePropagation()
-    typepropagation.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('Check type semantics... ')
-    logger.debug(str(scope))
-    typecheck = TypeChecker()
-    typecheck.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('Making memory links ...')
-    memory_link_maker = MemoryLinkMaker()
-    memory_link_maker.process(scope)
-    logger.debug(str(scope))
-
-
-def compile_hdl_phase3(scope):
-    '''
-    phase3:
-      - inlining function
-      - second ssa & constant folding
-      - make data flow graph
-      - scheduling
-      - make state transition graph
-    '''
-    env.compile_phase = "phase3"
-
-    logger.debug('--------------------------')
-    logger.debug('2nd constant folding ... ')
-    constantfolding = ConstantFolding(scope)
-    constantfolding.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('use-def detecting ... ')
-    udd = UseDefDetector()
-    udd.process(scope)
-
-    logger.debug('Loop detecting ... ')
-    loop_detector = LoopDetector()
-    loop_detector.process(scope)
-
-    if scope.is_testbench():
-        simple_loop_unroll = SimpleLoopUnroll()
-        simple_loop_unroll.process(scope)
-        logger.debug(str(scope))
-
-        logger.debug('--------------------------')
-        logger.debug('use-def detecting ... ')
-        udd = UseDefDetector()
-        udd.process(scope)
-
-        compile_hdl_ssa(scope)
-
-        logger.debug('--------------------------')
-        logger.debug('use-def detecting ... ')
-        udd = UseDefDetector()
-        udd.process(scope)
-        udd.table.dump()
-
-    logger.debug('--------------------------')
-    logger.debug('liveness detecting ... ')
-    liveness = Liveness()
-    liveness.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('jump dependency detecting ... ')
-    jdd = JumpDependencyDetector()
-    jdd.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('use-def detecting ... ')
-    udd = UseDefDetector()
-    udd.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('Builing DFG ... ')
-    dfg_builder = DFGBuilder()
-    dfg_builder.process(scope)
-
-    for dfg in scope.dfgs():
-        dfg.dump()
-    #    dfg.write_dot(scope.name)
-
-    dfg_opt = DFGOptimizer()
-    dfg_opt.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('Scheduling ... ')
-    scheduler = Scheduler()
-    scheduler.schedule(scope)
-    for dfg in scope.dfgs():
-        logger.debug('--- ' + dfg.name)
-        for n in dfg.get_scheduled_nodes():
-            logger.debug(n)
-
-    logger.debug('--------------------------')
-    logger.debug('Making memory links ...')
-    memory_ilink_maker = MemoryInstanceLinkMaker()
-    memory_ilink_maker.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('Build STG ... ')
-    stg_builder = STGBuilder()
-    stg_builder.process(scope)
-    for stg in scope.stgs:
-        logger.debug(str(stg))
-
-    logger.debug('--------------------------')
-    logger.debug('Optimized STG ... ')
-    stg_opt = STGOptimizer()
-    stg_opt.process(scope)
-    for stg in scope.stgs:
-        logger.debug(str(stg))
-
-
-def compile_hdl_ssa(scope):
-    logger.debug('--------------------------')
-    logger.debug('SSA transform ... ')
-    ssa = SSAFormTransformer()
-    ssa.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('use-def detecting after SSA ... ')
-    udd = UseDefDetector()
-    udd.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('SSA optimization ... ')
-    ssa_opt = SSAOptimizer()
-    ssa_opt.process(scope)
-    logger.debug(str(scope))
-
-    logger.debug('--------------------------')
-    logger.debug('use-def detecting after SSA opt ... ')
-    udd = UseDefDetector()
-    udd.process(scope)
-
-    logger.debug('--------------------------')
-    logger.debug('Resolve PHI conditions ... ')
-    phi_cond_resolver = PHICondResolver()
-    phi_cond_resolver.process(scope)
-    logger.debug(str(scope))
-
-
-def gen_hdl(scope):
-    '''
-    phase4:
-      - HDL generation
-    '''
-    env.compile_phase = "gen_hdl"
-
-    logger.debug('--------------------------')
-    logger.debug('Pre-process HDL generation ... ')
-    preprocessor = HDLGenPreprocessor()
-    scope.module_info = preprocessor.phase1(scope)
-
-    if not scope.is_testbench():
-        vcodegen = VerilogCodeGen(scope)
-    else:
-        vcodegen = VerilogTestGen(scope)
-    logger.debug(str(scope.module_info))
-    logger.debug('--------------------------')
-    logger.debug('HDL generation ... ')
-    vcodegen.generate()
-    logger.debug('--------------------------')
-    logger.debug(vcodegen.result())
-
-    return vcodegen.result()
 
 def main():
     usage = "usage: %prog [Options] [Python source file]"

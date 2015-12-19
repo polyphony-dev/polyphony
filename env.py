@@ -1,6 +1,12 @@
 ﻿import logging
 
 class Env:
+    PHASE_1 = 1
+    PHASE_2 = 2
+    PHASE_3 = 3
+    PHASE_4 = 4
+    PHASE_GEN_HDL = 5
+    
     def __init__(self):
         self.call_graph = None
         self.scopes = {}
@@ -18,20 +24,5 @@ class Env:
         for s in self.scopes:
             logger.debug(str(s))
 
-    def serialize_function_tree(self, contain_global=False):
-        functions = []
-        top = self.scopes['@top']
-        self._serialize_function_tree_rec(top, functions)
-        if not contain_global:
-            functions.remove(top)
-        return functions
-
-    def _serialize_function_tree_rec(self, f, functions):
-        if not f.children:
-            functions.append(f)
-        else:
-            for c in f.children:
-                self._serialize_function_tree_rec(c, functions)
-            functions.append(f)
 
 env = Env()

@@ -101,7 +101,7 @@ class VerilogTestGen(VerilogCodeGen):
         if cond is None or isinstance(cond, AHDL_CONST):
             pass
         else:
-            condsym = Symbol.newtemp('@condtest', self.scope)
+            condsym = self.scope.add_temp('@condtest')
             self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(condsym), cond))
             self.emit('@(posedge {});\n'.format(condsym.hdl_name()))
             for c in codes:

@@ -150,11 +150,11 @@ class Visitor(ast.NodeVisitor):
         skip = len(node.args.args) - len(node.args.defaults)
         for idx, param in enumerate(params[:skip]):
             if param.sym.typ[0] == 'list':
-                mem = Symbol.newtemp(Symbol.mem_prefix+'_'+param.copy.name+'_', self.current_scope)
+                mem = self.current_scope.add_temp(Symbol.mem_prefix+'_'+param.copy.name+'_')
                 mem.typ = Type.list_int_t
                 mv = MOVE(TEMP(mem, 'Store'), TEMP(param.sym, 'Load'))
                 self.emit(mv, node)
-                minfo = MemInfo(mem, -1) #references memory length is not known here
+                minfo = MemInfo(mem, -1, self.current_scope) #references memory length is not known here
                 minfo.ref_index = idx
                 self.current_scope.meminfos[mem] = minfo
                 mv = MOVE(TEMP(param.copy, 'Store'), TEMP(mem, 'Load'))
@@ -412,7 +412,7 @@ class Visitor(ast.NodeVisitor):
         elif isinstance(it, TEMP):
             start = CONST(0)
             end  = SYSCALL('len', [(TEMP(it.sym, 'Load'))])
-            counter = Symbol.newtemp('@counter', self.current_scope)
+            counter = self.current_scope.add_temp('@counter')
             init_parts = [
                 MOVE(TEMP(counter, 'Store'),
                      start),
@@ -622,6 +622,8 @@ class Visitor(ast.NodeVisitor):
                     return SYSCALL(func.sym.name[1:], args)
             print(self._err_info(node))
             raise TypeError('{} is not callable'.format(func.sym.name))
+        else:
+            self.current_scope.add_callee_scope(func_scope)
 
         arg_len = len(node.args)
         param_len = len(func_scope.params)

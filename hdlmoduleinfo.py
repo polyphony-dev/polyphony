@@ -10,9 +10,9 @@ class HDLModuleInfo:
         self.outputs = []
         self.parameters = []
         self.constants = []
-        self.internal_regs = []
+        self.internal_regs = set()
         self.internal_reg_arrays = []
-        self.internal_wires = []
+        self.internal_wires =set()
         self.sub_modules = []
         self.static_assignments = []
         self.functions = []
@@ -67,13 +67,13 @@ class HDLModuleInfo:
         self.constants.append((name, value))
 
     def add_internal_reg(self, name, bit_width, sign='signed'):
-        self.internal_regs.append((name, bit_width, sign))
+        self.internal_regs.add((name, bit_width, sign))
 
     def add_internal_reg_array(self, name, bit_width, size, sign='signed'):
         self.internal_reg_arrays.append((name, bit_width, size, sign))
 
     def add_internal_wire(self, name, bit_width, sign='signed'):
-        self.internal_wires.append((name, bit_width, sign))
+        self.internal_wires.add((name, bit_width, sign))
 
     def add_static_assignment(self, assign):
         self.static_assignments.append(assign)

@@ -37,7 +37,7 @@ class Symbol:
     func_prefix = '!'
     return_prefix = '@function_return'
     condition_prefix = '@cond'
-    mem_prefix = '@mem'
+    mem_prefix = '@m'
     temp_prefix = '@t'
 
     def __init__(self, name, scope, id):
@@ -58,10 +58,23 @@ class Symbol:
   
     def hdl_name(self):
         if self.name[0] == '@' or self.name[0] == '!':
-            return self.name[1:].replace('#', '_')
+            names = self.name.split('_', maxsplit=1)
+            if len(names) > 1:
+                name = names[1]
+            else:
+                name = names[0][1:]
         else:
-            return self.name.replace('#', '_')
-
+            name = self.name[:]
+        names = name.split('#')
+        if len(names) > 1:
+            names2 = names[1].split('_')
+            if len(names2) > 1:
+                return names[0] + names2[1]
+            else:
+                return names[0] + names[1]
+        else:
+            return name
+   
     def is_function(self):
         return self.name[0] == Symbol.func_prefix
 

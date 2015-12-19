@@ -37,7 +37,8 @@ module BidirectionalSinglePortRam #
   input [ADDR_WIDTH-1:0] ADDR,
   input [DATA_WIDTH-1:0] D,
   input WE,
-  output [DATA_WIDTH-1:0] Q
+  output [DATA_WIDTH-1:0] Q,
+  output [ADDR_WIDTH-1:0] LEN
 );
 
   reg [DATA_WIDTH-1:0] mem [0:RAM_DEPTH-1];
@@ -57,6 +58,7 @@ module BidirectionalSinglePortRam #
   wire [ADDR_WIDTH-1:0] a;
   assign a = address(ADDR);
   assign Q = mem[read_addr];
+  assign LEN = RAM_LENGTH;
   always @ (posedge CLK) begin
     if (WE)
       mem[ADDR] <= D;

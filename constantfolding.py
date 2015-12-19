@@ -65,13 +65,17 @@ class ConstantFolding(IRVisitor):
         return ir
 
     def visit_SYSCALL(self, ir):
-        if env.compile_phase > "phase1" and ir.name == 'len':
+        if env.compile_phase > env.PHASE_1 and ir.name == 'len':
             mem = ir.args[0]
             assert isinstance(mem, TEMP)
             meminfo = self.scope.meminfos[mem.sym]
-            self.modified_stms.add(self.current_stm)
-            assert meminfo.length > 0
-            return CONST(meminfo.length)
+            lens = []
+            for src_scope, src_meminfos in meminfo.src_mems.items():
+                lens.extend([meminfo.length for meminfo in src_meminfos])
+            if len(lens) <= 1 or all(lens[0] == len for len in lens):
+                self.modified_stms.add(self.current_stm)
+                assert meminfo.length > 0
+                return CONST(meminfo.length)
         return self.visit_CALL(ir)
 
     def visit_CONST(self, ir):

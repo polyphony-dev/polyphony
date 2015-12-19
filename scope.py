@@ -2,11 +2,16 @@
 from env import env
 from symbol import Symbol
 from logging import getLogger
+from irvisitor import IRVisitor
+from block import Block
+from copy import copy
 logger = getLogger(__name__)
 
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 
 class Scope:
+    ordered_scopes = []
+    
     @classmethod
     def create(cls, parent, name = None, attributes = []):
         if name is None:
@@ -15,6 +20,37 @@ class Scope:
         assert s.name not in env.scopes
         env.append_scope(s)
         return s
+
+    @classmethod
+    def get_scopes(cls, contain_global=False, bottom_up=True):
+        def ret_helper(contain_global, bottom_up):
+            start = 0 if contain_global else 1
+            scopes = cls.ordered_scopes[start:]
+            if bottom_up:
+                scopes.reverse()
+            return scopes
+
+        def set_order(scope, order, ordered):
+            if order > scope.order:
+                scope.order = order
+                ordered.add(scope)
+            elif scope in ordered:
+                return
+            order += 1
+            for s in scope.callee_scopes:
+                set_order(s, order, ordered)
+        
+        if len(env.scopes) == len(cls.ordered_scopes):
+            return ret_helper(contain_global, bottom_up)
+            
+        top = env.scopes['@top']
+        top.order = 0
+        ordered = set()
+        for f in top.children:
+            set_order(f, 1, ordered)
+        cls.ordered_scopes = sorted(env.scopes.values(), key=lambda s: s.order)
+        return ret_helper(contain_global, bottom_up)
+
 
     def __init__(self, parent, name, attributes):
         self.name = name
@@ -39,7 +75,9 @@ class Scope:
         self.blk_grp_instances = []
         self.meminfos = {}
         self.stgs = []
-        self.mem_links = defaultdict(dict)
+        self.order = -1
+        self.callee_scopes = set()
+        self.caller_scopes = set()
 
     def __str__(self):
         s = '\n================================\n'
@@ -72,6 +110,110 @@ class Scope:
         s += '================================\n'    
         return s
 
+    def clone(self, postfix):
+        s = Scope(self.parent, self.orig_name + '_' + postfix, self.attributes)
+        s.funcnames = self.funcnames
+
+        # clone symbols
+        symbol_map = {}
+        for orig_sym in self.symbols.values():
+            new_sym = Symbol.new(orig_sym.name, s)
+            s.symbols[new_sym.name] = new_sym
+            symbol_map[orig_sym] = new_sym
+
+        s.params = list(self.params)
+        s.return_type = self.return_type
+
+        # clone block group
+        s.blk_grp_instances = []
+        group_map = {}
+        for orig_grp in self.blk_grp_instances:
+            new_grp = BlockGroup(orig_grp.name)
+            s.blk_grp_instances.append(new_grp)
+            group_map[orig_grp] = new_grp
+        for orig_grp in self.blk_grp_instances:
+            new_grp = group_map[orig_grp]
+            if orig_grp.parent:
+                new_grp.parent = group_map[orig_grp.parent]
+
+        # clone block
+        s.blocks = []
+        block_map = {}
+        stm_map = {}
+        for orig_b in self.blocks:
+            new_b = Block(orig_b.name)
+            new_stms = []
+            for orig_stm in orig_b.stms:
+                # TODO: replace symbols
+                new_stm = orig_stm.clone()
+                new_stm.block = new_b
+                new_stms.append(new_stm)
+                stm_map[orig_stm] = new_stm
+            new_b.stms = new_stms
+            new_b.order = orig_b.order
+            new_b.group = group_map[orig_b.group]
+            s.blocks.append(new_b)
+            block_map[orig_b] = new_b
+        # remake cfg
+        for orig_b in self.blocks:
+            new_b = block_map[orig_b]
+            for orig_succ in orig_b.succs:
+                new_b.succs.append(block_map[orig_succ])
+            for orig_succ in orig_b.succs_loop:
+                new_b.succs_loop.append(block_map[orig_succ])
+            for orig_pred in orig_b.preds:
+                new_b.preds.append(block_map[orig_pred])
+            for orig_pred in orig_b.preds_loop:
+                new_b.preds_loop.append(block_map[orig_pred])
+
+        # clone loop info
+        for orig_head, orig_li in self.loop_infos.items():
+            new_head = block_map[orig_head]
+            new_li = LoopBlockInfo(new_head, orig_li.name)
+            s.loop_infos[new_head] = new_li
+            for orig_body in orig_li.bodies:
+                new_body = block_map[orig_body]
+                new_li.bodies.add(new_body)
+            for orig_break in orig_li.breaks:
+                new_break = block_map[orig_break]
+                new_li.breaks.append(new_break)
+            for orig_return in orig_li.returns:
+                new_return = block_map[orig_return]
+                new_li.returns.append(new_return)
+
+            if orig_li.exit in block_map:
+                new_li.exit = block_map[orig_li.exit]
+            new_li.defs = None
+            new_li.uses = None
+
+        # clone mem info
+        #meminfo_map = {}
+        for orig_sym, orig_minfo in self.meminfos.items():
+            new_sym = symbol_map[orig_sym]
+            new_minfo = MemInfo(new_sym, orig_minfo.length, s)
+            new_minfo.width = orig_minfo.width
+            if new_minfo.initstm:
+                new_minfo.initstm = stm_map[orig_minfo.initstm]
+            new_minfo.rom = orig_minfo.rom
+            new_minfo.shared = orig_minfo.shared
+            new_minfo.ref_index = orig_minfo.ref_index
+            new_minfo.links = copy(orig_minfo.links)
+            new_minfo.src_mems = copy(orig_minfo.src_mems)
+            s.meminfos[new_sym] = new_minfo
+            #meminfo_map[orig_minfo] = new_minfo
+
+        s.children = list(self.children)
+        s.usedef = None
+        s.calls = copy(self.calls)
+        s.order = self.order
+        s.callee_scopes = list(self.callee_scopes)
+        s.caller_scopes = list(self.caller_scopes)
+
+        sym_replacer = SymbolReplacer(symbol_map)
+        sym_replacer.process(s)
+
+        return s
+
     def add_funcname(self, name):
         self.funcnames.append(name)
 
@@ -97,11 +239,22 @@ class Scope:
         else:
             return None
 
+    def add_callee_scope(self, callee):
+        self.callee_scopes.add(callee)
+        callee.caller_scopes.add(self)
+
     def add_sym(self, name):
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
         sym = Symbol.new(name, self)
         self.symbols[name] = sym
+        return sym
+
+    def add_temp(self, name):
+        if name in self.symbols:
+            raise RuntimeError("symbol '{}' is already registered ".format(name))
+        sym = Symbol.newtemp(name, self)
+        self.symbols[sym.name] = sym
         return sym
 
     def find_sym(self, name):
@@ -217,14 +370,20 @@ class Scope:
                 return stg
         return None
 
-    def add_mem_link(self, mem, callee_func, callee_inst, param_info):
-        callee_scope_name = self.name + '_' + callee_func
-        self.mem_links[mem][callee_inst] = (callee_scope_name, callee_inst, param_info)
-
     def append_loop_counter(self, loop):
         self.loop_counter.append(loop)
 
 
+    def get_mem_link_map(self, callee_scope, callee_instance):
+        mem_link_map = defaultdict(set)
+        rams = [meminfo for meminfo in self.meminfos.values() if not meminfo.rom]
+        for meminfo in rams:
+            for linked_inst, linked_meminfo in meminfo.links[callee_scope]:
+                if callee_instance == linked_inst:
+                    mem_link_map[linked_meminfo].add(meminfo)
+        return mem_link_map
+    
+            
 class BlockGroup:
     def __init__(self, name):
         self.name = name
@@ -268,8 +427,9 @@ MemLink = namedtuple('MemLink', ('inst_name', 'meminfo'))
 
 class MemInfo:
     ''' the infomation that this scope accessing '''
-    def __init__(self, sym, length):
+    def __init__(self, sym, length, scope):
         self.sym = sym
+        self.scope = scope
         self.length = length
         self.width = 32 # TODO
         self.initstm = None
@@ -277,8 +437,8 @@ class MemInfo:
         self.shared = False
         self.ref_index = -1
         self.accessed_index = set()
-        self.links = defaultdict(set)
-        self.src_mem = None
+        self.links = defaultdict(list)
+        self.src_mems = defaultdict(set)
 
     def __str__(self):
         return '{}[{}]:rom={}:shared={}:ref={}:initstm={}'.format(self.sym, self.length, self.rom, self.shared, self.ref_index, self.initstm)
@@ -286,15 +446,27 @@ class MemInfo:
     def __repr__(self):
         return self.__str__()
 
-    def set_src(self, meminfo):
-        assert self.src_mem is None or self.src_mem is meminfo
-        self.src_mem = meminfo
-        self._set_length(meminfo.length)
+    def append_src(self, src_scope, meminfo):
+        self.src_mems[src_scope].add(meminfo)
+        max_length = max([minfo.length for minfo in self.src_mems[src_scope]])
+        self._set_length(max_length)
+        for links in self.links.values():
+            for inst, linked_meminfo in links:
+                linked_meminfo.append_src(src_scope, meminfo)
 
     def _set_length(self, len):
         '''Set a memory length recursively'''
-        assert self.length == -1 or self.length == len
+        assert self.length <= len
         self.length = len
         for links in self.links.values():
             for inst, linked_meminfo in links:
                 linked_meminfo._set_length(len)
+
+class SymbolReplacer(IRVisitor):
+    def __init__(self, sym_map):
+        super().__init__()
+        self.sym_map = sym_map
+
+    def visit_TEMP(self, ir):
+        ir.sym = self.sym_map[ir.sym]
+            

@@ -2,7 +2,6 @@
 from common import funclog
 from symbol import Symbol
 from irvisitor import IRTransformer
-from scope import MemInfo
 from type import Type
 from typecheck import builtin_return_type_table
 
@@ -40,7 +39,7 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress:
             return ir
-        sym = Symbol.newtemp(Symbol.temp_prefix, self.scope)
+        sym = self.scope.add_temp(Symbol.temp_prefix)
         mv = MOVE(TEMP(sym, 'Store'), ir)
         mv.lineno = ir.lineno
         self.new_stms.append(mv)
@@ -49,7 +48,7 @@ class QuadrupleMaker(IRTransformer):
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        sym = Symbol.newtemp(Symbol.condition_prefix, self.scope)
+        sym = self.scope.add_temp(Symbol.condition_prefix)
         mv = MOVE(TEMP(sym, 'Store'), ir)
         mv.lineno = ir.lineno
         self.new_stms.append(mv)
@@ -72,7 +71,7 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress or not self._has_return_type(ir):
             return ir
-        sym = Symbol.newtemp(Symbol.temp_prefix, self.scope)
+        sym = self.scope.add_temp(Symbol.temp_prefix)
         mv = MOVE(TEMP(sym, 'Store'), ir)
         mv.lineno = ir.lineno
         self.new_stms.append(mv)
@@ -89,7 +88,7 @@ class QuadrupleMaker(IRTransformer):
         assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST) or isinstance(ir.offset, UNOP)
 
         if ir.ctx == 'Load':
-            sym = Symbol.newtemp(Symbol.temp_prefix, self.scope)
+            sym = self.scope.add_temp(Symbol.temp_prefix)
             mv = MOVE(TEMP(sym, 'Store'), ir)
             mv.lineno = ir.lineno
             self.new_stms.append(mv)
