@@ -454,16 +454,17 @@ class STGBuilder:
         return self.stg.new_state(name, codes, transitions)
 
 
-    def emit_call_ret_sequence(self, call, node):
+    def emit_call_ret_sequence(self, call, node, sched_time):
         code = self._build_call_ready_off(call, node)
-        self.emit(code, self.cur_sched_time + 1)
+        self.emit(code, sched_time + 1)
 
         latency = get_latency(node.tag)
         code = self._build_call_ret(call, node)
-        sched_time = self.cur_sched_time + latency - 1
+        sched_time = sched_time + latency - 1
         while not self.try_emit(code, sched_time, 'call_ret'):
+            sched_time += 1
+            # This re-scheduling affects any nodes scheduling that after the node
             self.cur_sched_time += 1
-            sched_time = self.cur_sched_time + latency - 1
 
         code = self._build_call_accept_off(call, node)
         sched_time += 1
@@ -529,7 +530,7 @@ class STGBuilder:
         return AHDL_MOVE(AHDL_VAR(accept), AHDL_CONST(0))
 
 
-    def emit_memload_sequence(self, dst, src):
+    def emit_memload_sequence(self, dst, src, sched_time):
         assert isinstance(dst, AHDL_VAR) and isinstance(src, AHDL_MEM)
         mem_name = src.name.hdl_name()
         req = self._gen_sym(mem_name, 'req', -1)
@@ -538,7 +539,6 @@ class STGBuilder:
         q = self._gen_sym(mem_name, 'q', -1)
         
         memload_latency = 2 #TODO
-        sched_time = self.cur_sched_time
         tag_req_on = mem_name + '_req_on'
         tag_req_off = mem_name + '_req_off'
         items = self.scheduled_items.peek(sched_time)
@@ -566,7 +566,7 @@ class STGBuilder:
             self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(0)),  sched_time + memload_latency + 1, tag_req_off)
 
 
-    def emit_memstore_sequence(self, src):
+    def emit_memstore_sequence(self, src, sched_time):
         assert isinstance(src, AHDL_STORE)
         mem_name = src.mem.name.hdl_name()
         req = self._gen_sym(mem_name, 'req', -1)
@@ -575,7 +575,6 @@ class STGBuilder:
         d = self._gen_sym(mem_name, 'd', -1)
         
         memstore_latency = 0 #TODO
-        sched_time = self.cur_sched_time
         tag_req_on = mem_name + '_req_on'
         tag_req_off = mem_name + '_req_off'
         items = self.scheduled_items.peek(sched_time)
@@ -587,19 +586,19 @@ class STGBuilder:
                     items.remove((item, tag))
                     break
         if is_preserve_req:
-            self.emit(AHDL_MOVE(AHDL_VAR(address), src.mem.offset), self.cur_sched_time)
-            self.emit(AHDL_MOVE(AHDL_VAR(we), AHDL_CONST(1)),       self.cur_sched_time)
-            self.emit(AHDL_MOVE(AHDL_VAR(d), src.src),              self.cur_sched_time)
-            self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(0)),      self.cur_sched_time + memstore_latency + 1, tag_req_off)
+            self.emit(AHDL_MOVE(AHDL_VAR(address), src.mem.offset), sched_time)
+            self.emit(AHDL_MOVE(AHDL_VAR(we), AHDL_CONST(1)),       sched_time)
+            self.emit(AHDL_MOVE(AHDL_VAR(d), src.src),              sched_time)
+            self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(0)),      sched_time + memstore_latency + 1, tag_req_off)
         else:
-            self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(1)),      self.cur_sched_time, tag_req_on)
-            self.emit(AHDL_MOVE(AHDL_VAR(address), src.mem.offset), self.cur_sched_time)
-            self.emit(AHDL_MOVE(AHDL_VAR(we), AHDL_CONST(1)),       self.cur_sched_time)
-            self.emit(AHDL_MOVE(AHDL_VAR(d), src.src),              self.cur_sched_time)
-            self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(0)),      self.cur_sched_time + memstore_latency + 1, tag_req_off)
+            self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(1)),      sched_time, tag_req_on)
+            self.emit(AHDL_MOVE(AHDL_VAR(address), src.mem.offset), sched_time)
+            self.emit(AHDL_MOVE(AHDL_VAR(we), AHDL_CONST(1)),       sched_time)
+            self.emit(AHDL_MOVE(AHDL_VAR(d), src.src),              sched_time)
+            self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(0)),      sched_time + memstore_latency + 1, tag_req_off)
 
 
-    def emit_array_init_sequence(self, meminfo):
+    def emit_array_init_sequence(self, meminfo, sched_time):
         if meminfo.rom is True:
             return
         if meminfo.initstm:
@@ -610,8 +609,8 @@ class STGBuilder:
                 if val:
                     mem = AHDL_MEM(meminfo.sym, AHDL_CONST(i))
                     store = AHDL_STORE(mem, val)
-                    self.emit_memstore_sequence(store)
-                    self.cur_sched_time += 1
+                    self.emit_memstore_sequence(store, sched_time)
+                    sched_time += 1
 
     def emit(self, item, sched_time, tag = ''):
         logger.debug('emit '+str(item) + ' at ' + str(sched_time))
@@ -754,7 +753,7 @@ class AHDLTranslator:
         if not (isinstance(ir.exp, CALL) or isinstance(ir.exp, SYSCALL)):
             return
         if isinstance(ir.exp, CALL):
-            self.host.emit_call_ret_sequence(ir.exp, node)
+            self.host.emit_call_ret_sequence(ir.exp, node, self.sched_time)
 
         exp = self.visit(ir.exp, node)
         if exp:
@@ -822,7 +821,7 @@ class AHDLTranslator:
 
     def visit_MOVE(self, ir, node):
         if isinstance(ir.src, CALL):
-            self.host.emit_call_ret_sequence(ir.src, node)
+            self.host.emit_call_ret_sequence(ir.src, node, self.sched_time)
 
         src = self.visit(ir.src, node)
         dst = self.visit(ir.dst, node)
@@ -830,13 +829,13 @@ class AHDLTranslator:
             if isinstance(ir.src, ARRAY):
                 assert isinstance(dst, AHDL_VAR)
                 meminfo = self.scope.meminfos[dst.sym]
-                self.host.emit_array_init_sequence(meminfo)
+                self.host.emit_array_init_sequence(meminfo, self.sched_time)
                 return
             elif isinstance(src, AHDL_STORE):
-                self.host.emit_memstore_sequence(src)
+                self.host.emit_memstore_sequence(src, self.sched_time)
                 return
             elif isinstance(src, AHDL_MEM):
-                self.host.emit_memload_sequence(dst, src)
+                self.host.emit_memload_sequence(dst, src, self.sched_time)
                 return
             self._emit(AHDL_MOVE(dst, src), self.sched_time)
 
