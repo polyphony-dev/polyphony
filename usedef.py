@@ -233,7 +233,6 @@ class UseDefDetector(IRVisitor):
 
     def visit_PHI(self, ir):
         self.visit(ir.var)
-        for arg in ir.args:
-            if arg:
-                self.visit(arg)
+        for arg, blk in ir.args:
+            self.visit(arg)
 

@@ -48,7 +48,7 @@ class SSAFormTransformer:
                         phis[df].append(sym)
                         #insert phi to df
                         var = TEMP(sym, 'Store')
-                        phi = PHI(var, len(df.preds))
+                        phi = PHI(var)
                         phi.block = df
                         df.stms.insert(0, phi)
 			#The phi has the definintion of the variable
@@ -120,7 +120,7 @@ class SSAFormTransformer:
             #collect phi
             phis = self._get_phis(succ)
             for phi in phis:
-                assert len(phi.args) == len(succ.preds)
+                #assert len(phi.args) == len(succ.preds)
 
                 i = stack[phi.var.sym][-1]
                 if i != 0:
@@ -129,9 +129,8 @@ class SSAFormTransformer:
                     logger.debug(str(new_sym) + ' ancestor is ' + str(phi.var.sym))
                     var = TEMP(new_sym, 'Load')
                     var.block = succ
-                    phi.args[j] = var
-                else:
-                    phi.args[j] = None
+                    phi.args.append((var, block))
+
         for c in self.tree.get_children_of(block):
             self._rename_rec(c, count, stack, new_syms)
         for stm in block.stms:

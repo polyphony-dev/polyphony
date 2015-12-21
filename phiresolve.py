@@ -32,10 +32,8 @@ class PHICondResolver:
         usedef = self.scope.usedef
         args = []
         conds = []
-        for i, arg in enumerate(phi.args):
-            if not arg:
-                continue
-            pred = phi.block.preds[i]
+        for i, (arg, blk) in enumerate(phi.args):
+            pred = blk
             mv = MOVE(TEMP(phi.var.sym, 'Store'), arg)
             pred.stms.insert(-1, mv)
             mv.block = pred
@@ -62,11 +60,8 @@ class PHICondResolver:
         usedef = self.scope.usedef
         args = []
         conds = []
-        for i, arg in enumerate(phi.args):
-            if not arg:
-                continue
-
-            pred = phi.block.preds[i]
+        for i, (arg, blk) in enumerate(phi.args):
+            pred = blk
             replaced = False
             if isinstance(arg, TEMP) and not self.is_unopt_sym(arg.sym):
                 for pred_stm in pred.stms:

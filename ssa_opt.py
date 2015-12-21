@@ -2,6 +2,7 @@
 from ir import CONST, BINOP, RELOP, TEMP, MREF, MSTORE, CALL, MOVE, CJUMP, JUMP, PHI
 from varreplacer import VarReplacer
 from constantfolding import ConstantFolding
+from usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -31,11 +32,18 @@ class SSAOptimizer:
                 worklist.extend(const_fold.modified_stms)
             if new_stm is not stm:
                 stm.block.replace_stm(stm, new_stm)
-        return
 
-        #FIXME: Propagation must track the control path
-        for sym in usedef.get_all_syms():
-            if sym.is_return() or sym.is_memory():
+        self.eliminate_moves(scope)
+
+    def eliminate_moves(self, scope):
+        udd = UseDefDetector()
+        udd.process(scope)
+        usedef = scope.usedef
+
+
+        allsyms = list(usedef.get_all_syms())
+        for sym in allsyms:
+            if sym.is_return() or sym.is_memory() or sym.is_condition():
                 continue
             defstms = usedef.get_sym_defs_stm(sym)
             usestms = usedef.get_sym_uses_stm(sym)
@@ -58,35 +66,16 @@ class SSAOptimizer:
             elif len(defstms) == 1 and len(usestms) == 1:
                 defstm = list(defstms)[0]
                 usestm = list(usestms)[0]
-                if isinstance(defstm, MOVE):
+                if isinstance(defstm, MOVE) and isinstance(usestm, MOVE) and isinstance(usestm.src, TEMP):
                     # 'a' def : a = exp
-                    # 'a' use : y = a | y = phi(a,...)
-                    # result  : y = exp | y = phi(exp,...)
-                    
-                    # These cannot eliminate
-                    if not isinstance(defstm.src, CONST) and not isinstance(defstm.src, TEMP):
-                        continue
-                    #To avoid SSA simple ordering problem
-                    if isinstance(defstm.src, TEMP) and self._is_phi_target(defstm.src, usedef) and self._is_phi_src(defstm.dst, usedef):
-                        continue
-                    defstm.block.stms.remove(defstm)
-                    VarReplacer.replace_uses(defstm.dst, defstm.src, usedef)
-                    usedef.remove_var_def(defstm.dst, defstm)
-                    uses = list(usedef.get_stm_uses_var(defstm))
-                    for u in uses:
-                        usedef.remove_var_use(u, defstm)
-
-                elif isinstance(defstm, PHI) and isinstance(usestm, MOVE) and isinstance(usestm.src, TEMP):
-                    # 'a' def : a = phi(...)
                     # 'a' use : y = a
-                    # result  : y = phi(...)
+                    # result  : y = exp
                     usestm.block.stms.remove(usestm)
-                    usedef.remove_var_def(usestm.dst, usestm)
                     usedef.remove_var_use(usestm.src, usestm)
-                    usedef.remove_var_def(defstm.var, defstm)
-                    defstm.var = usestm.dst
-                    usedef.add_var_def(defstm.var, defstm)
-
+                    usedef.remove_var_def(usestm.dst, usestm)
+                    usedef.remove_var_def(defstm.dst, defstm)
+                    defstm.dst = usestm.dst
+                    usedef.add_var_def(defstm.dst, defstm)
 
     def _optimize_phi(self, phi, worklist, usedef):
         # All same sources can be replace by the one of them
@@ -123,13 +112,13 @@ class SSAOptimizer:
             return False
         if mv.dst.sym.is_memory():
             return False
+        if mv.dst.sym.is_return():
+            return False
         #FIXME: Propagation must track the control path
         #constant propargation or copypropagation for move
 
         #To avoid SSA simple ordering problem
         if (isinstance(mv.src, TEMP) and not self._is_phi_target(mv.src, usedef) and not self._is_phi_src(mv.dst, usedef)) or isinstance(mv.src, CONST):
-            if mv.dst.sym.is_return():
-                return False
             mv.block.stms.remove(mv)
             replaces = VarReplacer.replace_uses(mv.dst, mv.src, usedef)
             worklist.extend(replaces)

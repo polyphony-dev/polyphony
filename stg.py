@@ -46,6 +46,8 @@ class State:
             logger.debug(self)
             logger.debug(self.next_states)
             assert 0
+        if isinstance(next_data[0], AHDL_CONST) and next_data[0].value == 0:
+            return
         self.next_states.append(next_data)
         _, nstate, _ = next_data
         nstate.set_prev(self)
@@ -796,10 +798,6 @@ class AHDLTranslator:
             typ = 'GroupHead'
             assert ir.target is ir.target.group.blocks[0]
             target_grp = self.host.stg.name + '_' + ir.target.group.name
-        elif ir.typ == 'S':
-            typ = 'Branch'
-            target_grp = self.host.stg.name + '_' + ir.target.group.name
-            sched = self.sched_time
         elif ir.typ == 'E':
             typ = 'Forward'
             target_grp = None

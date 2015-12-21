@@ -285,16 +285,16 @@ def conds2str(conds):
         return 'None'
 
 class PHI(IRStm):
-    def __init__(self, var, argc):
+    def __init__(self, var):
         super().__init__()
         assert isinstance(var, TEMP)
         self.var = var
-        self.args = [None]*argc
+        self.args = []
         self.conds_list = None
 
     def __str__(self):
         args = []
-        for arg in self.args:
+        for arg, blk in self.args:
             if arg:
                 args.append(str(arg))
             else:
@@ -310,7 +310,7 @@ class PHI(IRStm):
         return s
 
     def argv(self):
-        return [arg for arg in self.args if arg]
+        return [arg for arg, blk in self.args if arg]
 
     def valid_conds(self):
         return [c for c in self.conds_list if c]

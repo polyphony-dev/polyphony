@@ -109,14 +109,7 @@ class ConstantFolding(IRVisitor):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        if isinstance(ir.exp, CONST):
-            assert isinstance(ir.exp.value, int)
-            if (ir.exp.value == 0):
-                return JUMP(ir.false, 'S')
-            else:
-                return JUMP(ir.true, 'S')
-        else:
-            return ir
+        return ir
 
     def visit_MCJUMP(self, ir):
         ir.conds = [self.visit(cond) for cond in ir.conds]

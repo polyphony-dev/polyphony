@@ -11,8 +11,8 @@ class STGOptimizer():
         self.module = module
         self._concat_stgs()
 
-        usedef = STGUseDefDetector()
-        usedef.process(module)
+        #usedef = STGUseDefDetector()
+        #usedef.process(module)
         #usedef.table.dump()
 
         # all_vars = usedef.table.get_all_vars()

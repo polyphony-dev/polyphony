@@ -242,6 +242,9 @@ class TypeChecker(IRVisitor):
                 raise TypeError('assignment type missmatch')
 
     def visit_PHI(self, ir):
-        pass
+        # FIXME
+        assert ir.var.sym.typ is not None
+        assert all([arg is None or arg.sym.typ is not None for arg, blk in ir.args])
+
 
     

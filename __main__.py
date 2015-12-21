@@ -72,6 +72,10 @@ def compile_plan():
          ssa_opt = SSAOptimizer()
          ssa_opt.process(scope)
 
+    def ssaopt2(driver, scope):
+         ssa_opt = SSAOptimizer()
+         ssa_opt.eliminate_moves(scope)
+
     def phi(driver, scope):
          phi_cond_resolver = PHICondResolver()
          phi_cond_resolver.process(scope)
@@ -193,23 +197,25 @@ def compile_plan():
         iftrans,
         traceblk,
         quadruple,
+        meminfo,
+        usedef,
+        memtrans,
         dumpscope,
+        phase(env.PHASE_2),
         usedef,
         ssa,
+        dumpscope,
         usedef,
+        typecheck,
+        memlink,
         ssaopt,
         usedef,
         phi,
         usedef,
-        dumpscope,
-        phase(env.PHASE_2),
-        meminfo,
+        ssaopt2,
         usedef,
-        memtrans,
-        typecheck,
-        memlink,
         #specfunc,
-        dumpscope,
+        #dumpscope,
         phase(env.PHASE_3),
         constopt,
         usedef,
