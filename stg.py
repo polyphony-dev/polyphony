@@ -58,6 +58,11 @@ class State:
             if nstate is old_state:
                 self.next_states[i] = (cond, new_state, codes)
 
+    def clear_next(self):
+        for _, nstate, _ in self.next_states:
+            nstate.prev_states.remove(self)
+        self.next_states = []
+
     def set_prev(self, prev):
         self.prev_states.append(prev)
 
@@ -68,7 +73,7 @@ class State:
             logger.debug('resolve_transition ' + self.name + ' next: None')
         #
         if not self.transitions:
-            self.set_next((None, next_state, None))
+            self.set_next((None, next_state, []))
             return next_state
         
         for t in self.transitions:
@@ -81,12 +86,12 @@ class State:
                 if t.codes:
                     self.set_next((t.cond, next_state, t.codes[:]))
                 else:
-                    self.set_next((t.cond, next_state, None))
+                    self.set_next((t.cond, next_state, []))
             elif t.typ == 'Finish':# break
                 # This stg is a loop section, thus finish_state is the end of the loop section.
-                self.set_next((t.cond, self.stg.finish_state, None))
+                self.set_next((t.cond, self.stg.finish_state, []))
             elif t.typ == 'LoopHead':# loop back
-                self.set_next((t.cond, self.stg.loop_head, None))
+                self.set_next((t.cond, self.stg.loop_head, []))
             elif t.typ == 'GroupHead':# continue
                 assert t.target_group in self.stg.groups
 
@@ -95,7 +100,7 @@ class State:
 
                 # If the target group is a trunk group, then skip the first state(***_INIT).
                 idx = 1 if group.is_trunk else 0
-                self.set_next((t.cond, group.states[idx], None))
+                self.set_next((t.cond, group.states[idx], []))
             elif t.typ == 'Branch':# branch and return
                 assert t.target_group in self.stg.groups
                 group = self.stg.groups[t.target_group]
@@ -107,9 +112,9 @@ class State:
                     assert not last_state.next_states
                     logger.debug('set return state {} to {}'.format(last_state.name, next_state.name))
                     last_state.resolve_transition(next_state)
-                    self.set_next((t.cond, group.states[idx], None))
+                    self.set_next((t.cond, group.states[idx], []))
                 else:
-                    self.set_next((t.cond, next_state, None))
+                    self.set_next((t.cond, next_state, []))
             else:
                 assert 0
         self.transitions = []

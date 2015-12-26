@@ -7,12 +7,12 @@ class STGOptimizer():
     def __init__(self):
         self.stg_return_state = {}
 
-    def process(self, module):
-        self.module = module
+    def process(self, scope):
+        self.scope = scope
         self._concat_stgs()
 
         #usedef = STGUseDefDetector()
-        #usedef.process(module)
+        #usedef.process(scope)
         #usedef.table.dump()
 
         # all_vars = usedef.table.get_all_vars()
@@ -23,14 +23,12 @@ class STGOptimizer():
         #             var.sym = var.sym.ancestor
 
         self._remove_move()
-
-        for stg in module.stgs:
-            logger.debug(str(stg))
-
         self._remove_empty_state()
+        if not scope.is_testbench():
+            self._move_valid()
 
     def _concat_stgs(self):
-        for stg in self.module.stgs:
+        for stg in self.scope.stgs:
             for i, state in enumerate(stg.states()):
                 self._process_concat_state(state)
 
@@ -40,18 +38,19 @@ class STGOptimizer():
             if isinstance(code, AHDL_META):
                 if code.metaid == 'STG_JUMP':
                     stg_name = code.args[0]
-                    stg = self.module.find_stg(stg_name)
+                    stg = self.scope.find_stg(stg_name)
                     target_state = stg.init_state
                     _, ret_state, _ = state.next_states[0]
                     self.stg_return_state[stg_name] = ret_state
                     
-                    state.next_states = []
+                    state.clear_next()
                     state.set_next((AHDL_CONST(1), target_state, None))
                     remove_codes.append(code)
                 elif code.metaid == 'STG_EXIT':
-                    top = self.module.stgs[0]
-                    state.next_states = []
+                    top = self.scope.stgs[0]
+                    state.clear_next()
                     state.set_next((AHDL_CONST(1), top.finish_state, None))
+                    remove_codes.append(code)
         for code in remove_codes:
             state.codes.remove(code)
 
@@ -63,12 +62,12 @@ class STGOptimizer():
             if state is stg.finish_state and stg.name in self.stg_return_state:
                 ret_state = self.stg_return_state[stg.name]
                 #replace return state
-                state.next_states = []
+                state.clear_next()
                 state.set_next((AHDL_CONST(1), ret_state, None))
-                
+
 
     def _remove_move(self):
-        for stg in self.module.stgs:
+        for stg in self.scope.stgs:
             for state in stg.states():
                 self._process_remove_move_state(state)
 
@@ -85,7 +84,7 @@ class STGOptimizer():
 
 
     def _remove_empty_state(self):
-        for stg in self.module.stgs:
+        for stg in self.scope.stgs:
             empty_states = []
             for state in stg.states():
                 if not state.codes:
@@ -103,6 +102,22 @@ class STGOptimizer():
         for prev in state.prev_states:
             prev.replace_next(state, nstate)
             nstate.set_prev(prev)
+
+    def _move_valid(self):
+        for stg in self.scope.stgs:
+            if stg.finish_state.codes:
+                assert len(stg.finish_state.codes) == 1
+                set_valid = stg.finish_state.codes[0]
+                for prev in stg.finish_state.prev_states:
+                    if len(prev.next_states) == 1:
+                        assert prev.next_states[0][1] is stg.finish_state
+                        if set_valid not in prev.codes:
+                            prev.codes.append(set_valid)
+                    else:
+                        for _, nstate, codes in prev.next_states:
+                            if nstate is stg.finish_state and set_valid not in prev.codes:
+                                codes.append(set_valid)
+                stg.finish_state.codes = []
 
 class STGUseDefTable:
     def __init__(self):
@@ -153,8 +168,8 @@ class STGUseDefDetector():
         super().__init__()
         self.table = STGUseDefTable()
 
-    def process(self, module):
-        for stg in module.stgs:
+    def process(self, scope):
+        for stg in scope.stgs:
             for i, state in enumerate(stg.states()):
                 self._process_State(state)
 
