@@ -25,7 +25,7 @@ from jumpdependency import JumpDependencyDetector
 from scheduler import Scheduler
 from phiresolve import PHICondResolver
 from liveness import Liveness
-from memorytransform import MemoryInfoMaker, MemoryTransformer
+from memorytransform import MemoryInfoMaker, MemoryRenamer, RomDetector
 from constantfolding import ConstantFolding
 from iftransform import IfTransformer
 from setlineno import LineNumberSetter, SourceDump
@@ -84,9 +84,9 @@ def compile_plan():
         meminfo_maker = MemoryInfoMaker()
         meminfo_maker.process(scope)
 
-    def memtrans(driver, scope):
-        mem_transformer = MemoryTransformer()
-        mem_transformer.process(scope)
+    def memrename(driver, scope):
+        mem_renamer = MemoryRenamer()
+        mem_renamer.process(scope)
 
     def typecheck(driver, scope):
         typepropagation = TypePropagation()
@@ -97,6 +97,10 @@ def compile_plan():
     def memlink(driver, scope):
         memory_link_maker = MemoryLinkMaker()
         memory_link_maker.process(scope)
+
+    def detectrom(driver, scope):
+        rom_detector = RomDetector()
+        rom_detector.process(scope)
 
     def specfunc(driver, scope):
         spec_func_maker = SpecializedFunctionMaker()
@@ -199,7 +203,7 @@ def compile_plan():
         quadruple,
         meminfo,
         usedef,
-        memtrans,
+        memrename,
         dumpscope,
         phase(env.PHASE_2),
         usedef,
@@ -209,6 +213,7 @@ def compile_plan():
         typecheck,
         memlink,
         ssaopt,
+        detectrom,
         usedef,
         phi,
         usedef,

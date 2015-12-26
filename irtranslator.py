@@ -154,7 +154,7 @@ class Visitor(ast.NodeVisitor):
                 mem.typ = Type.list_int_t
                 mv = MOVE(TEMP(mem, 'Store'), TEMP(param.sym, 'Load'))
                 self.emit(mv, node)
-                minfo = MemInfo(mem, -1, self.current_scope) #references memory length is not known here
+                minfo = MemInfo(mem, None, self.current_scope) #references memory length is not known here
                 minfo.ref_index = idx
                 self.current_scope.meminfos[mem] = minfo
                 mv = MOVE(TEMP(param.copy, 'Store'), TEMP(mem, 'Load'))

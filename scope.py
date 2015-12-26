@@ -5,6 +5,7 @@ from logging import getLogger
 from irvisitor import IRVisitor
 from block import Block
 from copy import copy
+from ir import ARRAY, MOVE
 logger = getLogger(__name__)
 
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
@@ -190,7 +191,11 @@ class Scope:
         #meminfo_map = {}
         for orig_sym, orig_minfo in self.meminfos.items():
             new_sym = symbol_map[orig_sym]
-            new_minfo = MemInfo(new_sym, orig_minfo.length, s)
+            if orig_minfo.initstm in stm_map:
+                initstm = stm_map[orig_minfo.initstm]
+            else:
+                initstm = None
+            new_minfo = MemInfo(new_sym, initstm, s)
             new_minfo.width = orig_minfo.width
             if new_minfo.initstm:
                 new_minfo.initstm = stm_map[orig_minfo.initstm]
@@ -427,13 +432,17 @@ MemLink = namedtuple('MemLink', ('inst_name', 'meminfo'))
 
 class MemInfo:
     ''' the infomation that this scope accessing '''
-    def __init__(self, sym, length, scope):
+    def __init__(self, sym, initstm, scope):
         self.sym = sym
         self.scope = scope
-        self.length = length
+        if initstm:
+            assert isinstance(initstm, MOVE) and isinstance(initstm.src, ARRAY)
+            self.length = len(initstm.src.items)
+        else:
+            self.length = -1
         self.width = 32 # TODO
-        self.initstm = None
-        self.rom = False
+        self.initstm = initstm
+        self.rom = None
         self.shared = False
         self.ref_index = -1
         self.accessed_index = set()
@@ -461,6 +470,14 @@ class MemInfo:
         for links in self.links.values():
             for inst, linked_meminfo in links:
                 linked_meminfo._set_length(len)
+
+    def set_rom(self, rom):
+        self.rom = rom
+        for links in self.links.values():
+            for inst, linked_meminfo in links:
+                linked_meminfo.set_rom(rom)
+                if self.rom:
+                    linked_meminfo.initstm = self.initstm
 
 class SymbolReplacer(IRVisitor):
     def __init__(self, sym_map):

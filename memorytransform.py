@@ -4,7 +4,7 @@ from ir import CONST, TEMP, ARRAY, CALL, EXPR, MREF, MSTORE, MOVE
 from symbol import Symbol
 from scope import MemInfo
 from type import Type
-from irvisitor import IRTransformer
+from irvisitor import IRTransformer, IRVisitor
 from logging import getLogger
 logger = getLogger(__name__)
 import pdb
@@ -100,19 +100,12 @@ class MemoryInfoMaker(IRTransformer):
             sym.set_type(Type.list_int_t)
             mv = MOVE(TEMP(sym, 'Store'), ir.src)
             self.new_stms.append(mv)
-            self.scope.meminfos[sym] = MemInfo(sym, len(ir.src.items), self.scope)
+            self.scope.meminfos[sym] = MemInfo(sym, mv, self.scope)
             ir.src = TEMP(sym, 'Load')
         self.new_stms.append(ir)
 
 
-class MemoryTransformer:
-    def process(self, scope):
-        self.mem_moves = defaultdict(list)
-
-        self._rename_mrefs(scope)
-        self._detect_rom(scope)
-
-
+class MemoryRenamer:
     def _collect_def_mem_stm(self, scope):
         stms = []
         for block in scope.blocks:
@@ -122,27 +115,7 @@ class MemoryTransformer:
                         stms.append(stm)
         return stms
 
-    def _collect_def_mem_and_call_stm(self, scope):
-        stms = []
-        for block in scope.blocks:
-            for stm in block.stms:
-                if isinstance(stm, MOVE):
-                    if stm.dst.sym.is_memory():
-                        stms.append((stm, stm.dst.sym))
-                    if isinstance(stm.src, CALL):
-                        for arg in stm.src.args:
-                            if isinstance(arg, TEMP):
-                                if arg.sym.is_memory():
-                                    stms.append((stm, arg.sym))
-                elif isinstance(stm, EXPR):
-                    if isinstance(stm.exp, CALL):
-                        for arg in stm.exp.args:
-                            if isinstance(arg, TEMP):
-                                if arg.sym.is_memory():
-                                    stms.append((stm, arg.sym))
-        return stms
-
-    def _rename_mrefs(self, scope):
+    def process(self, scope):
         usedef = scope.usedef
         worklist = deque()
         stms = self._collect_def_mem_stm(scope)
@@ -181,35 +154,47 @@ class MemoryTransformer:
             if not isinstance(mv.src, ARRAY):
                 mv.block.stms.remove(mv)
 
-    def _detect_rom(self, scope):
-        shared_mem = set()
-        stms = self._collect_def_mem_and_call_stm(scope)
-        for stm, sym in stms:
-            if isinstance(stm, EXPR):
-                assert sym in scope.meminfos
-                shared_mem.add(sym)
+class MemCollector(IRVisitor):
+    def __init__(self):
+        super().__init__()
+        self.stm_map = defaultdict(list)
 
-        for stm, sym in stms:
-            if isinstance(stm, MOVE):
-                self.mem_moves[sym].append(stm)
+    def visit_TEMP(self, ir):
+        if ir.sym.is_memory():
+            self.stm_map[ir.sym].append(self.current_stm)
 
-        for sym, mvs in self.mem_moves.items():
+class RomDetector:
+    def process(self, scope):
+        def get_callee_meminfo(call):
+            for meminfo in call.func_scope.meminfos.values():
+                if src_meminfo in meminfo.src_mems[scope]:
+                    return meminfo
+            assert False
+
+        collector = MemCollector()
+        collector.process(scope)
+        stm_map = collector.stm_map
+
+        for sym, stms in stm_map.items():
             stored = False
-            constant = True
-            for mv in mvs:
-                if isinstance(mv.src, ARRAY):
-                    for item in mv.src.items:
-                        if not isinstance(item, CONST):
-                            constant = False
-                            break
-                    scope.meminfos[sym].initstm = mv
-                elif isinstance(mv.src, MSTORE):
-                    stored = True
-                    break
-                elif isinstance(mv.src, CALL):
-                    stored = True
-                    break
-            assert sym in scope.meminfos
-            if (not stored) and constant and (sym not in shared_mem):
-                scope.meminfos[sym].rom = True
+            src_meminfo = scope.meminfos[sym]
 
+            for links in src_meminfo.links.values():
+                if not all(linked_meminfo.rom for _, linked_meminfo in links):
+                    stored = True
+                    break
+
+            for stm in stms:
+                if stored:
+                    break
+                if isinstance(stm, MOVE):
+                    if isinstance(stm.src, ARRAY):
+                        stored = not all(isinstance(item, CONST) for item in stm.src.items)
+                    elif isinstance(stm.src, MSTORE):
+                        stored = True
+            if not stored:
+                src_meminfo.set_rom(True)
+                logger.debug(str(sym) + ' is ROM')
+            else:
+                src_meminfo.set_rom(False)
+                logger.debug(str(sym) + ' is RAM')
