@@ -11,7 +11,7 @@ python3 __main__.py -d tmp -o $filename $1
 FILES=`ls tmp/`
 PATHS=`ls -d tmp/*`
 echo $PATHS
-iverilog -I lib -o out/test -s test lib/SinglePortRam.v $PATHS
+iverilog -o out/test -s test $PATHS
 for f in $FILES; do \
 	cp tmp/$f out/
 	rm tmp/$f

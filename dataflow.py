@@ -7,7 +7,6 @@ from symbol import function_name
 from irvisitor import IRVisitor
 from dominator import DominatorTreeBuilder
 from ir import CONST, TEMP, ARRAY, MREF, MSTORE, MOVE, CALL, SYSCALL, PHI, CJUMP, MCJUMP, JUMP, EXPR
-from cdg import CDGBuilder
 from varreplacer import VarReplacer
 from env import env
 from logging import getLogger

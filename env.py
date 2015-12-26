@@ -14,6 +14,7 @@ class Env:
         self.hdl_debug_mode = False
         self.compile_phase = ''
         self.logfiles = {}
+        self.using_libs = set()
 
     def append_scope(self, scope):
         self.scopes[scope.name] = scope
@@ -24,5 +25,7 @@ class Env:
         for s in self.scopes:
             logger.debug(str(s))
 
+    def add_usginb_lib(self, lib):
+        self.using_libs.add(lib)
 
 env = Env()

@@ -287,7 +287,8 @@ def output_all(driver, output_name, output_dir):
             logger.debug(topgen.result())
             result = topgen.result()
             f.write(result)
-
+        for lib in env.using_libs:
+            f.write(lib)
 
 def main():
     usage = "usage: %prog [Options] [Python source file]"

@@ -3,6 +3,7 @@ from hdlmoduleinfo import HDLModuleInfo
 from env import env
 from common import INT_WIDTH
 from ahdl import AHDL_CONST, AHDL_VAR, AHDL_CONCAT, AHDL_OP, AHDL_IF_EXP, AHDL_ASSIGN, AHDL_CONNECT, AHDL_FUNCALL, AHDL_FUNCTION, AHDL_CASE, AHDL_CASE_ITEM, AHDL_MUX, AHDL_DEMUX
+import libs
 from logging import getLogger, DEBUG
 logger = getLogger(__name__)
 
@@ -181,6 +182,7 @@ class DirectMemPortMaker(HDLMemPortMaker):
 
         spram_info = HDLModuleInfo('BidirectionalSinglePortRam', '@top'+'.BidirectionalSinglePortRam')
         self.module_info.add_sub_module(self.name, spram_info, port_map, param_map)
+        env.add_usginb_lib(libs.bidirectional_single_port_ram)
 
     def _make_access_ports(self):
         width = INT_WIDTH
@@ -234,6 +236,7 @@ class RootMemPortMaker(HDLMemPortMaker):
 
         spram_info = HDLModuleInfo('BidirectionalSinglePortRam', '@top' +'.BidirectionalSinglePortRam')
         self.module_info.add_sub_module(self.name, spram_info, port_map, param_map)
+        env.add_usginb_lib(libs.bidirectional_single_port_ram)
 
     def _make_access_ports(self):
         width = INT_WIDTH
