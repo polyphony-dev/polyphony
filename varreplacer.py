@@ -37,17 +37,11 @@ class VarReplacer:
         return ir
 
     def visit_CALL(self, ir):
-        args = []
-        for arg in ir.args:
-            args.append(self.visit(arg))
-        ir.args = args
+        ir.args = [self.visit(arg) for arg in ir.args]
         return ir
 
     def visit_SYSCALL(self, ir):
-        args = []
-        for arg in ir.args:
-            args.append(self.visit(arg))
-        ir.args = args
+        ir.args = [self.visit(arg) for arg in ir.args]
         return ir
 
     def visit_CONST(self, ir):
@@ -82,12 +76,20 @@ class VarReplacer:
         return ir
 
     def visit_EXPR(self, ir):
+        self.replaced = False
         ir.exp = self.visit(ir.exp)
         if self.replaced:
             self.replaces.append(ir)
 
     def visit_CJUMP(self, ir):
+        self.replaced = False
         ir.exp = self.visit(ir.exp)
+        if self.replaced:
+            self.replaces.append(ir)
+
+    def visit_MCJUMP(self, ir):
+        self.replaced = False
+        ir.conds = [self.visit(cond) for cond in ir.conds]
         if self.replaced:
             self.replaces.append(ir)
 
@@ -102,9 +104,7 @@ class VarReplacer:
 
     def visit_PHI(self, ir):
         self.replaced = False
-        args = []
-        for i, (arg, blk) in enumerate(ir.args):
-            ir.args[i] = (self.visit(arg), blk)
+        ir.args = [(self.visit(arg), blk) for arg, blk in ir.args]
         if self.replaced:
             self.replaces.append(ir)
 

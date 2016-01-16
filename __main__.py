@@ -13,7 +13,6 @@ from hdlgen import HDLGenPreprocessor
 from vericodegen import VerilogCodeGen, VerilogTopGen
 from veritestgen import VerilogTestGen
 from treebalancer import TreeBalancer
-from memorylink import MemoryLinkMaker, MemoryInstanceLinkMaker
 from stg import STGBuilder
 from stg_opt import STGOptimizer
 from dataflow import DFGBuilder
@@ -25,7 +24,8 @@ from jumpdependency import JumpDependencyDetector
 from scheduler import Scheduler
 from phiresolve import PHICondResolver
 from liveness import Liveness
-from memorytransform import MemoryInfoMaker, MemoryRenamer, RomDetector
+from memorytransform import MemoryRenamer, RomDetector
+from memref import MemRefGraphBuilder, MemRefEdgeColoring
 from constantfolding import ConstantFolding
 from iftransform import IfTransformer
 from setlineno import LineNumberSetter, SourceDump
@@ -80,27 +80,29 @@ def compile_plan():
          phi_cond_resolver = PHICondResolver()
          phi_cond_resolver.process(scope)
 
-    def meminfo(driver, scope):
-        meminfo_maker = MemoryInfoMaker()
-        meminfo_maker.process(scope)
+    def memrefgraph(driver, scope):
+        mrg_builder = MemRefGraphBuilder()
+        mrg_builder.process(scope)
+
+    def mrgcolor(driver, scope):
+        mrg_coloring = MemRefEdgeColoring()
+        mrg_coloring.process(scope)
 
     def memrename(driver, scope):
         mem_renamer = MemoryRenamer()
         mem_renamer.process(scope)
 
-    def typecheck(driver, scope):
+    def typeprop(driver, scope):
         typepropagation = TypePropagation()
         typepropagation.process(scope)
+
+    def typecheck(driver, scope):
         typecheck = TypeChecker()
         typecheck.process(scope)
 
-    def memlink(driver, scope):
-        memory_link_maker = MemoryLinkMaker()
-        memory_link_maker.process(scope)
-
-    def detectrom(driver, scope):
+    def detectrom(driver):
         rom_detector = RomDetector()
-        rom_detector.process(scope)
+        rom_detector.process()
 
     def specfunc(driver, scope):
         spec_func_maker = SpecializedFunctionMaker()
@@ -124,6 +126,7 @@ def compile_plan():
             usedef(driver, scope)
             ssa(driver, scope)
             usedef(driver, scope)
+            memrename(driver, scope),
             ssaopt(driver, scope)
             usedef(driver, scope)
             phi(driver, scope)
@@ -149,10 +152,6 @@ def compile_plan():
         scheduler = Scheduler()
         scheduler.schedule(scope)
         
-    def memilink(driver, scope):
-        memory_ilink_maker = MemoryInstanceLinkMaker()
-        memory_ilink_maker.process(scope)
-
     def stg(driver, scope):
         stg_builder = STGBuilder()
         stg_builder.process(scope)
@@ -173,6 +172,9 @@ def compile_plan():
 
     def dumpscope(driver, scope):
         driver.logger.debug(str(scope))
+
+    def dumpmrg(driver, scope):
+        driver.logger.debug(str(env.memref_graph))
 
     def dumpdfg(driver, scope):
         for dfg in scope.dfgs():
@@ -201,23 +203,30 @@ def compile_plan():
         iftrans,
         traceblk,
         quadruple,
-        meminfo,
+        dumpscope,
         usedef,
-        memrename,
         dumpscope,
         phase(env.PHASE_2),
         usedef,
         ssa,
         dumpscope,
         usedef,
+        typeprop,
+        memrename,
+        dumpscope,
+        memrefgraph,
+        dumpmrg,
+        dumpscope,
         typecheck,
-        memlink,
+        dumpscope,
         ssaopt,
+        dumpscope,
         detectrom,
+        dumpmrg,
         usedef,
         phi,
         usedef,
-        ssaopt2,
+        dumpscope,
         usedef,
         #specfunc,
         #dumpscope,
@@ -228,14 +237,17 @@ def compile_plan():
         tbopt,
         liveness,
         jumpdepend,
+        phase(env.PHASE_4),
         usedef,
         dumpscope,
         dfg,
         dfgopt,
         schedule,
         dumpsched,
-        memilink,
+        mrgcolor,
+        dumpmrg,
         stg,
+        dumpstg,
         stgopt,
         dumpstg,
         phase(env.PHASE_GEN_HDL),

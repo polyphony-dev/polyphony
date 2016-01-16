@@ -65,9 +65,9 @@ class TypePropagation(IRVisitor):
         mem_t = self.visit(ir.mem)
         self.visit(ir.offset)
         if self.check_error:
-            if mem_t is not Type.list_int_t:
+            if not Type.is_list(mem_t) and not Type.is_phi(mem_t):
                 raise TypeError('expects list')
-        return mem_t[1]
+        return Type.element(mem_t)
 
     def visit_MSTORE(self, ir):
         mem_t = self.visit(ir.mem)
@@ -78,7 +78,7 @@ class TypePropagation(IRVisitor):
     def visit_ARRAY(self, ir):
         for item in ir.items:
             self.visit(item)
-        return Type.list_int_t
+        return Type.list(Type.int_t, None)
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
@@ -100,21 +100,19 @@ class TypePropagation(IRVisitor):
     def _is_valid_list_type_source(self, src):
         return isinstance(src, ARRAY) or isinstance(src, MSTORE) \
         or (isinstance(src, BINOP) and isinstance(src.left, ARRAY) and src.op == 'Mult') \
-        or (isinstance(src, TEMP) and src.sym.name.startswith('@in'))
+        or (isinstance(src, TEMP) and src.sym.is_param())
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
-        if self.check_error:
-            if not self._is_valid_list_type_source(ir.src) and src_typ is Type.list_int_t:
-                raise TypeError('Reassigning a list is not supported')
-
         if isinstance(ir.dst, TEMP):
             ir.dst.sym.set_type(src_typ)
         elif isinstance(ir.dst, MREF):
-            ir.dst.mem.sym.set_type(('list', src_typ))
+            ir.dst.mem.sym.set_type(Type.list(src_typ, None))
         else:
             assert 0
 
+    def visit_PHI(self, ir):
+        pass
 
 class TypeChecker(IRVisitor):
     def __init__(self):
@@ -126,7 +124,7 @@ class TypeChecker(IRVisitor):
     def visit_BINOP(self, ir):
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
-        if ir.op == 'Mult' and l_t is Type.list_int_t and r_t is Type.int_t:
+        if ir.op == 'Mult' and Type.is_list(l_t) and r_t is Type.int_t:
             return ltype
         if l_t != r_t:
             if (l_t is Type.int_t and r_t is Type.bool_t) \
@@ -138,10 +136,7 @@ class TypeChecker(IRVisitor):
     def visit_RELOP(self, ir):
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
-        if l_t != r_t:
-            if (l_t is Type.int_t and r_t is Type.bool_t) \
-               or (l_t is Type.bool_t and r_t is Type.int_t):
-                return Type.bool_t
+        if not Type.is_commutable(l_t, r_t):
             raise TypeError('Unsupported operation {}'.format(ir.op))
         return Type.bool_t
 
@@ -150,7 +145,7 @@ class TypeChecker(IRVisitor):
         assert len(ir.args) == len(ir.func.sym.typ[2])
         for arg, param_t in zip(ir.args, ir.func.sym.typ[2]):
             arg_t = self.visit(arg)
-            if arg_t != param_t:
+            if not Type.is_commutable(arg_t, param_t):
                 raise TypeError('type missmatch')
         return ret_t
 
@@ -159,7 +154,7 @@ class TypeChecker(IRVisitor):
             if len(ir.args) != 1:
                 raise TypeError('len() takes exactly one argument')
             mem = ir.args[0]
-            if not isinstance(mem, TEMP) or mem.sym.typ is not Type.list_int_t:
+            if not isinstance(mem, TEMP) or not Type.is_list(mem.sym.typ):
                 TypeError('len() takes list type argument')
         else:
             for arg in ir.args:
@@ -174,22 +169,22 @@ class TypeChecker(IRVisitor):
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
-        if mem_t[0] != 'list':
+        if not Type.is_list(mem_t) and not Type.is_phi(mem_t):
             raise TypeError('type missmatch')
         offs_t = self.visit(ir.offset)
         if offs_t is not Type.int_t:
             raise TypeError('type missmatch')
-        return mem_t[1]
+        return Type.element(mem_t)
 
     def visit_MSTORE(self, ir):
         mem_t = self.visit(ir.mem)
-        if mem_t[0] != 'list':
+        if not Type.is_list(mem_t) and not Type.is_phi(mem_t):
             raise TypeError('type missmatch')
         offs_t = self.visit(ir.offset)
         if offs_t is not Type.int_t:
             raise TypeError('type missmatch')
         exp_t = self.visit(ir.exp)
-        elem_t = mem_t[1]
+        elem_t = Type.element(mem_t)
         if elem_t != exp_t:
             if (elem_t is Type.int_t and exp_t is Type.bool_t) \
                or (elem_t is Type.bool_t and exp_t is Type.int_t):
@@ -203,7 +198,7 @@ class TypeChecker(IRVisitor):
             item_type = self.visit(item)
             if item_type is not Type.int_t:
                 raise TypeError('list item must be integer')
-        return Type.list_int_t
+        return Type.list(Type.int_t, None)
 
     def visit_EXPR(self, ir):
         typ = self.visit(ir.exp)

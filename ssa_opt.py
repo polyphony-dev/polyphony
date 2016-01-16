@@ -28,6 +28,7 @@ class SSAOptimizer:
 
             const_fold = ConstantFolding(scope)
             new_stm = const_fold.process_stm(stm)
+            assert new_stm
             if const_fold.modified_stms:
                 worklist.extend(const_fold.modified_stms)
             if new_stm is not stm:
@@ -43,7 +44,7 @@ class SSAOptimizer:
 
         allsyms = list(usedef.get_all_syms())
         for sym in allsyms:
-            if sym.is_return() or sym.is_memory() or sym.is_condition():
+            if sym.is_return() or sym.is_condition():
                 continue
             defstms = usedef.get_sym_defs_stm(sym)
             usestms = usedef.get_sym_uses_stm(sym)
@@ -81,8 +82,9 @@ class SSAOptimizer:
         # All same sources can be replace by the one of them
         # before : a = phi(b, b, ..., b)
         # after  : a = b
+        return
         if self._is_same_sources(phi.args):
-            src = phi.args[0]
+            src = phi.args[0][0]
             new_stm = MOVE(phi.var, src)
             self._replace_stm(phi, new_stm)
             usedef.remove_uses(phi.argv(), phi)
@@ -92,25 +94,27 @@ class SSAOptimizer:
             worklist.append(new_stm)
         #FIXME: To generalize (In case of more than 2 args)
         elif len(phi.argv()) == 2:
-            if isinstance(phi.args[0], TEMP) and phi.var.sym is phi.args[0].sym:
+            if isinstance(phi.args[0][0], TEMP) and phi.var.sym is phi.args[0][0].sym:
                 phi.block.stms.remove(phi)
-                replaces = VarReplacer.replace_uses(phi.var, phi.args[1], usedef)
+                replaces = VarReplacer.replace_uses(phi.var, phi.args[1][0], usedef)
                 worklist.extend(replaces)
                 usedef.remove_var_def(phi.var, phi)
                 usedef.remove_use(phi.argv()[1], phi)
 
-            elif isinstance(phi.args[1], TEMP) and phi.var.sym is phi.args[1].sym:
+            elif isinstance(phi.args[1][0], TEMP) and phi.var.sym is phi.args[1][0].sym:
                 phi.block.stms.remove(phi)
-                replaces = VarReplacer.replace_uses(phi.var, phi.args[0], usedef)
+                replaces = VarReplacer.replace_uses(phi.var, phi.args[0][0], usedef)
                 worklist.extend(replaces)
                 usedef.remove_var_def(phi.var, phi)
                 usedef.remove_use(phi.argv()[0], phi)
 
 
     def _optimize_move(self, mv, worklist, usedef):
-        if isinstance(mv.src, TEMP) and mv.src.sym.is_memory():
-            return False
-        if mv.dst.sym.is_memory():
+        #if isinstance(mv.src, TEMP) and mv.src.sym.is_memory():
+        #    return False
+        #if mv.dst.sym.is_memory():
+        #    return False
+        if isinstance(mv.src, TEMP) and mv.src.sym.is_param():
             return False
         if mv.dst.sym.is_return():
             return False
@@ -156,17 +160,17 @@ class SSAOptimizer:
     def _is_same_sources(self, exprs):
         if not exprs:
             return False
-        src = exprs[0]
+        src, blk = exprs[0]
         
         if isinstance(src, CONST):
-            for other in exprs[1:]:
+            for other, _ in exprs[1:]:
                 if not isinstance(other, CONST):
                     return False
                 if src.value != other.value:
                     return False
             return True
         elif isinstance(src, TEMP):
-            for other in exprs[1:]:
+            for other, _ in exprs[1:]:
                 if not isinstance(other, TEMP):
                     return False
                 if src.sym is not other.sym:

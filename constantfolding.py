@@ -9,6 +9,7 @@ class ConstantFolding(IRVisitor):
     def __init__(self, scope):
         super().__init__()
         self.scope = scope
+        self.mrg = env.memref_graph
         self.modified_stms = set()
         self.global_scope = env.scopes['@top']
 
@@ -68,14 +69,14 @@ class ConstantFolding(IRVisitor):
         if env.compile_phase > env.PHASE_1 and ir.name == 'len':
             mem = ir.args[0]
             assert isinstance(mem, TEMP)
-            meminfo = self.scope.meminfos[mem.sym]
+            memnode = self.mrg.node(mem.sym)
             lens = []
-            for src_scope, src_meminfos in meminfo.src_mems.items():
-                lens.extend([meminfo.length for meminfo in src_meminfos])
+            for root in self.mrg.collect_node_roots(memnode):
+                lens.append(root.length)
             if len(lens) <= 1 or all(lens[0] == len for len in lens):
                 self.modified_stms.add(self.current_stm)
-                assert meminfo.length > 0
-                return CONST(meminfo.length)
+                assert lens[0] > 0
+                return CONST(lens[0])
         return self.visit_CALL(ir)
 
     def visit_CONST(self, ir):
@@ -125,6 +126,9 @@ class ConstantFolding(IRVisitor):
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
+        return ir
+
+    def visit_PHI(self, ir):
         return ir
 
     def eval_unop(self, op, v):

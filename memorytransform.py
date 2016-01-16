@@ -1,108 +1,13 @@
 ﻿from collections import deque, defaultdict
 from varreplacer import VarReplacer
-from ir import CONST, TEMP, ARRAY, CALL, EXPR, MREF, MSTORE, MOVE
+from ir import CONST, TEMP, ARRAY, CALL, EXPR, MREF, MSTORE, MOVE, PHI
 from symbol import Symbol
-from scope import MemInfo
 from type import Type
 from irvisitor import IRTransformer, IRVisitor
+from env import env
 from logging import getLogger
 logger = getLogger(__name__)
 import pdb
-
-class MemoryInfoMaker(IRTransformer):
-    def __init__(self):
-        super().__init__()
-
-    def visit_UNOP(self, ir):
-        ir.exp = self.visit(ir.exp)
-        return ir
-
-    def visit_BINOP(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        #transform array
-        if isinstance(ir.left, ARRAY):
-            if isinstance(ir.right, CONST) and ir.op == 'Mult':
-                #array times n
-                array = ir.left
-                time = ir.right.value
-                if not array.items:
-                    raise RuntimeError('unsupported expression')
-                else:
-                    array.items = [item.clone() for item in array.items * time]
-                return array
-            else:
-                raise RuntimeError('unsupported expression')
-        return ir
-
-    def visit_RELOP(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
-
-    def visit_CALL(self, ir):
-        for i in range(len(ir.args)):
-            ir.args[i] = self.visit(ir.args[i])
-        return ir
-
-    def visit_SYSCALL(self, ir):
-        return self.visit_CALL(ir)
-
-    def visit_CONST(self, ir):
-        return ir
-
-    def visit_MREF(self, ir):
-        ir.offset = self.visit(ir.offset)
-        ir.mem = self.visit(ir.mem)
-        return ir
-
-    def visit_MSTORE(self, ir):
-        ir.offset = self.visit(ir.offset)
-        ir.mem = self.visit(ir.mem)
-        ir.exp = self.visit(ir.exp)
-        return ir
-
-    def visit_ARRAY(self, ir):
-        for i in range(len(ir.items)):
-            ir.items[i] = self.visit(ir.items[i])
-        return ir
-
-    def visit_TEMP(self, ir):
-        return ir
-
-    def visit_EXPR(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
-
-    def visit_CJUMP(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
-
-    def visit_MCJUMP(self, ir):
-        for i in range(len(ir.conds)):
-            ir.conds[i] = self.visit(ir.conds[i])
-        self.new_stms.append(ir)
-
-    def visit_JUMP(self, ir):
-        self.new_stms.append(ir)
-
-    def visit_RET(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
-
-    def visit_MOVE(self, ir):
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
-
-        if isinstance(ir.src, ARRAY):
-            assert isinstance(ir.dst, TEMP)
-            sym = self.scope.add_temp(Symbol.mem_prefix+'_'+ir.dst.sym.name+'_')
-            sym.set_type(Type.list_int_t)
-            mv = MOVE(TEMP(sym, 'Store'), ir.src)
-            self.new_stms.append(mv)
-            self.scope.meminfos[sym] = MemInfo(sym, mv, self.scope)
-            ir.src = TEMP(sym, 'Load')
-        self.new_stms.append(ir)
 
 
 class MemoryRenamer:
@@ -111,48 +16,143 @@ class MemoryRenamer:
         for block in scope.blocks:
             for stm in block.stms:
                 if isinstance(stm, MOVE):
-                    if stm.dst.sym.is_memory():
+                    if isinstance(stm.src, ARRAY):
+                        stms.append(stm)
+                    elif isinstance(stm.src, TEMP) and stm.src.sym.is_param() and Type.is_list(stm.src.sym.typ):
                         stms.append(stm)
         return stms
 
+    def _get_phis(self, block):
+        return filter(lambda stm: isinstance(stm, PHI), block.stms)
+
+    def _cleanup_phi(self):
+        for block in self.scope.blocks:
+            remove_phis = []
+            for phi in self._get_phis(block):
+                remove_args = []
+                args = set()
+                for arg, blk in phi.args:
+                    args.add(arg.sym)
+                    if isinstance(arg, TEMP) and arg.sym is phi.var.sym:
+                        remove_args.append((arg, blk))
+                if len(args) == 1:
+                    remove_phis.append(phi)
+                    continue
+                for arg in remove_args:
+                    phi.args.remove(arg)
+            for phi in remove_phis:
+                block.stms.remove(phi)
+
     def process(self, scope):
+        self.scope = scope
         usedef = scope.usedef
         worklist = deque()
         stms = self._collect_def_mem_stm(scope)
-        alias_map = {}
+        mem_var_map = defaultdict(set)
+        memsrcs = tuple([mv.dst.sym for mv in stms])
+
         for mv in stms:
             logger.debug('!!! mem def stm ' + str(mv))
             assert isinstance(mv.src, ARRAY) \
-                or (isinstance(mv.src, TEMP) and mv.src.sym.name.startswith('@in'))
+                or (isinstance(mv.src, TEMP) and mv.src.sym.is_param())
             uses = usedef.get_sym_uses_stm(mv.dst.sym)
             worklist.extend(list(uses))
 
+        def merge_mem_var(src, dst):
+            src_mems = mem_var_map[src.sym]
+            if dst.sym in src_mems:
+                src_mems.remove(dst.sym)
+            dst_mems = mem_var_map[dst.sym]
+            if len(src_mems) > 1:
+                # this src is joined reference
+                mem_var_map[dst.sym] = dst_mems.union(set([src.sym]))
+            else:
+                mem_var_map[dst.sym] = dst_mems.union(src_mems)
+            return len(mem_var_map[dst.sym]) != len(dst_mems)
+
+        dones = set()
+        moves = set()
+        sym2var = defaultdict(set)
         while worklist:
-            mv = worklist.popleft()
-            if isinstance(mv, MOVE):
-                if isinstance(mv.src, TEMP):
-                    # check for list aliasing
-                    if mv.dst.sym not in alias_map:
-                        alias_map[mv.dst.sym] = mv.src.sym
+            stm = worklist.popleft()
+            sym = None
+            if isinstance(stm, MOVE):
+                if isinstance(stm.src, TEMP):
+                    moves.add(stm)
+                    if stm.src.sym in mem_var_map:
+                        updated = merge_mem_var(stm.src, stm.dst)
+                        sym2var[stm.dst.sym].add(stm.dst)
+                        if not updated and stm in dones:
+                            # reach fix point ?
+                            continue
                     else:
-                        pass
-                        #raise TypeError('list aliasing is not allowed')
+                        assert stm.src.sym in memsrcs
+                        mem = stm.src.sym
+                        if stm.dst.sym in mem_var_map and mem in mem_var_map[stm.dst.sym] and stm in dones:
+                            # reach fix point ?
+                            continue
+                        mem_var_map[stm.dst.sym].add(mem)
+                        sym2var[stm.dst.sym].add(stm.dst)
+
+                    sym = stm.dst.sym
+
+                elif isinstance(stm.src, MSTORE):
+                    if stm.src.mem.sym in mem_var_map:
+                        updated = merge_mem_var(stm.src.mem, stm.dst)
+                        sym2var[stm.dst.sym].add(stm.dst)
+                        if not updated:
+                            # reach fix point ?
+                            if stm in dones:
+                                continue
+                    else:
+                        assert stm.src.mem.sym in memsrcs
+                        mem = stm.src.mem.sym
+                        if stm.dst.sym in mem_var_map and mem in mem_var_map[stm.dst.sym] and stm in dones:
+                            # reach fix point ?
+                            continue
+                        mem_var_map[stm.dst.sym].add(mem)
+                        sym2var[stm.dst.sym].add(stm.dst)
+
+                    sym = stm.dst.sym
+
+            elif isinstance(stm, PHI):
+                updated = False
+                for arg, blk in stm.args:
+                    if arg.sym in mem_var_map:
+                        updated = merge_mem_var(arg, stm.var)
+                    elif arg.sym in memsrcs:
+                        mem = arg.sym
+                        if stm.var.sym != mem and (stm.var.sym not in mem_var_map or mem not in mem_var_map[stm.var.sym]):
+                            mem_var_map[stm.var.sym].add(mem)
+                            updated = True
+                # reach fix point ?
+                if not updated and stm in dones:
+                    continue
+                sym = stm.var.sym
+
+            if sym:
+                uses = usedef.get_sym_uses_stm(sym)
+                worklist.extend(list(uses))
+                for u in uses:
+                    for var in usedef.get_stm_uses_var(u):
+                        if var.sym is sym:
+                            sym2var[var.sym].add(var)
+
+            dones.add(stm)
+
+        for sym, mems in mem_var_map.items():
+            logger.debug(str(sym) + '<---' + ','.join([str(m) for m in mems]))
+            if len(mems) == 1:
+                m = mems.pop()
+                for v in sym2var[sym]:
+                    v.sym = m
+
+        for mv in moves:
+            if isinstance(mv.src, TEMP):
+                if mv.dst.sym is mv.src.sym:
                     mv.block.stms.remove(mv)
-                    replaces = VarReplacer.replace_uses(mv.dst, mv.src, usedef)
-                    worklist.extend(replaces)
-                    usedef.remove_var_def(mv.dst, mv)
-                    usedef.remove_use(mv.src, mv)
-                elif isinstance(mv.src, MSTORE):
-                    usedef.remove_var_def(mv.dst, mv)
-                    replaces = VarReplacer.replace_uses(mv.dst, mv.src.mem, usedef)
-                    worklist.extend(replaces)
-                    mv.dst = TEMP(mv.src.mem.sym, 'Store')
-                    usedef.add_var_def(mv.dst, mv)
-            elif isinstance(mv, EXPR):
-                pass
-        for mv in stms:
-            if not isinstance(mv.src, ARRAY):
-                mv.block.stms.remove(mv)
+        self._cleanup_phi()
+
 
 class MemCollector(IRVisitor):
     def __init__(self):
@@ -160,41 +160,29 @@ class MemCollector(IRVisitor):
         self.stm_map = defaultdict(list)
 
     def visit_TEMP(self, ir):
-        if ir.sym.is_memory():
+        if Type.is_list(ir.sym.typ) and not ir.sym.is_param():
             self.stm_map[ir.sym].append(self.current_stm)
 
 class RomDetector:
-    def process(self, scope):
-        def get_callee_meminfo(call):
-            for meminfo in call.func_scope.meminfos.values():
-                if src_meminfo in meminfo.src_mems[scope]:
-                    return meminfo
-            assert False
-
-        collector = MemCollector()
-        collector.process(scope)
-        stm_map = collector.stm_map
-
-        for sym, stms in stm_map.items():
-            stored = False
-            src_meminfo = scope.meminfos[sym]
-
-            for links in src_meminfo.links.values():
-                if not all(linked_meminfo.rom for _, linked_meminfo in links):
-                    stored = True
-                    break
-
-            for stm in stms:
-                if stored:
-                    break
-                if isinstance(stm, MOVE):
-                    if isinstance(stm.src, ARRAY):
-                        stored = not all(isinstance(item, CONST) for item in stm.src.items)
-                    elif isinstance(stm.src, MSTORE):
-                        stored = True
-            if not stored:
-                src_meminfo.set_rom(True)
-                logger.debug(str(sym) + ' is ROM')
+    def process(self):
+        mrg = env.memref_graph
+        worklist = deque()
+        for root in mrg.collect_roots():
+            if root.is_writable():
+                root.propagate_succs(lambda n: n.set_writable())
             else:
-                src_meminfo.set_rom(False)
-                logger.debug(str(sym) + ' is RAM')
+                worklist.append(root)
+
+        checked = set()
+        while worklist:
+            node = worklist.popleft()
+            if node not in checked and node.is_writable():
+                checked.add(node)
+                roots = set([root for root in mrg.collect_node_roots(node)])
+                unchecked_roots = [root for root in roots if root not in checked]
+                for r in unchecked_roots:
+                    r.propagate_succs(lambda n: n.set_writable() or checked.add(n))
+            else:
+                unchecked_succs = filter(lambda n: n not in checked, node.succs)
+                worklist.extend(unchecked_succs)
+

@@ -74,7 +74,6 @@ class Scope:
         self.loop_infos = {}
         self.calls = defaultdict(set)
         self.blk_grp_instances = []
-        self.meminfos = {}
         self.stgs = []
         self.order = -1
         self.callee_scopes = set()
@@ -104,10 +103,6 @@ class Scope:
         for bl in self.blk_grp_instances:
             s += str(bl)+'\n'
 
-        s += '================================\n'
-        s += 'MemoryInfo\n'
-        for meminfo in self.meminfos.values():
-            s += str(meminfo)+'\n'
         s += '================================\n'    
         return s
 
@@ -186,26 +181,6 @@ class Scope:
                 new_li.exit = block_map[orig_li.exit]
             new_li.defs = None
             new_li.uses = None
-
-        # clone mem info
-        #meminfo_map = {}
-        for orig_sym, orig_minfo in self.meminfos.items():
-            new_sym = symbol_map[orig_sym]
-            if orig_minfo.initstm in stm_map:
-                initstm = stm_map[orig_minfo.initstm]
-            else:
-                initstm = None
-            new_minfo = MemInfo(new_sym, initstm, s)
-            new_minfo.width = orig_minfo.width
-            if new_minfo.initstm:
-                new_minfo.initstm = stm_map[orig_minfo.initstm]
-            new_minfo.rom = orig_minfo.rom
-            new_minfo.shared = orig_minfo.shared
-            new_minfo.ref_index = orig_minfo.ref_index
-            new_minfo.links = copy(orig_minfo.links)
-            new_minfo.src_mems = copy(orig_minfo.src_mems)
-            s.meminfos[new_sym] = new_minfo
-            #meminfo_map[orig_minfo] = new_minfo
 
         s.children = list(self.children)
         s.usedef = None
@@ -318,6 +293,13 @@ class Scope:
                 return True
         return False
 
+    def get_param_index(self, sym):
+        name = sym.name.split('#')[0]
+        for i, (p, _, _) in enumerate(self.params):
+            if p.name == name:
+                return i
+        return -1
+
     def append_call(self, func_sym, inst_name):
         self.calls[func_sym].add(inst_name)
 
@@ -379,16 +361,6 @@ class Scope:
         self.loop_counter.append(loop)
 
 
-    def get_mem_link_map(self, callee_scope, callee_instance):
-        mem_link_map = defaultdict(set)
-        rams = [meminfo for meminfo in self.meminfos.values() if not meminfo.rom]
-        for meminfo in rams:
-            for linked_inst, linked_meminfo in meminfo.links[callee_scope]:
-                if callee_instance == linked_inst:
-                    mem_link_map[linked_meminfo].add(meminfo)
-        return mem_link_map
-    
-            
 class BlockGroup:
     def __init__(self, name):
         self.name = name
@@ -428,56 +400,6 @@ class LoopBlockInfo:
         assert isinstance(bodies, set)
         self.bodies = self.bodies.union(bodies)
 
-MemLink = namedtuple('MemLink', ('inst_name', 'meminfo'))
-
-class MemInfo:
-    ''' the infomation that this scope accessing '''
-    def __init__(self, sym, initstm, scope):
-        self.sym = sym
-        self.scope = scope
-        if initstm:
-            assert isinstance(initstm, MOVE) and isinstance(initstm.src, ARRAY)
-            self.length = len(initstm.src.items)
-        else:
-            self.length = -1
-        self.width = 32 # TODO
-        self.initstm = initstm
-        self.rom = None
-        self.shared = False
-        self.ref_index = -1
-        self.accessed_index = set()
-        self.links = defaultdict(list)
-        self.src_mems = defaultdict(set)
-
-    def __str__(self):
-        return '{}[{}]:rom={}:shared={}:ref={}:initstm={}'.format(self.sym, self.length, self.rom, self.shared, self.ref_index, self.initstm)
-
-    def __repr__(self):
-        return self.__str__()
-
-    def append_src(self, src_scope, meminfo):
-        self.src_mems[src_scope].add(meminfo)
-        max_length = max([minfo.length for minfo in self.src_mems[src_scope]])
-        self._set_length(max_length)
-        for links in self.links.values():
-            for inst, linked_meminfo in links:
-                linked_meminfo.append_src(src_scope, meminfo)
-
-    def _set_length(self, len):
-        '''Set a memory length recursively'''
-        assert self.length <= len
-        self.length = len
-        for links in self.links.values():
-            for inst, linked_meminfo in links:
-                linked_meminfo._set_length(len)
-
-    def set_rom(self, rom):
-        self.rom = rom
-        for links in self.links.values():
-            for inst, linked_meminfo in links:
-                linked_meminfo.set_rom(rom)
-                if self.rom:
-                    linked_meminfo.initstm = self.initstm
 
 class SymbolReplacer(IRVisitor):
     def __init__(self, sym_map):

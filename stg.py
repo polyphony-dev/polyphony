@@ -2,11 +2,13 @@
 from collections import OrderedDict, defaultdict
 import functools
 from block import Block
-from ir import RELOP, MREF, ARRAY, TEMP, MOVE, CJUMP, MCJUMP, JUMP, CALL, SYSCALL, EXPR
+from ir import CONST, RELOP, MREF, ARRAY, TEMP, MOVE, CJUMP, MCJUMP, JUMP, CALL, SYSCALL, EXPR
 from symbol import function_name
 from ahdl import AHDL, AHDL_MOVE, AHDL_OP, AHDL_NOP, AHDL_CONST, AHDL_IF, AHDL_VAR, AHDL_STORE, AHDL_LOAD, AHDL_MEM, AHDL_FUNCALL, AHDL_PROCCALL, AHDL_META
 from latency import get_latency
 from common import INT_WIDTH
+from type import Type
+from env import env
 from logging import getLogger
 logger = getLogger(__name__)
 import pdb
@@ -252,6 +254,7 @@ class STGBuilder:
         self.dfg2stg = {}
         self.extra_codes = []
         self.delayed_funcs = None
+        self.mrg = env.memref_graph
 
     def process(self, scope):
         self.scope = scope
@@ -493,6 +496,7 @@ class STGBuilder:
 
         fname = function_name(call.func.sym)
         instance_name = '{}_{}'.format(fname, node.instance_num)
+        func_scope = self.scope.find_func_scope(fname)
 
         call_valid_sym = self._gen_sym(instance_name, 'VALID', 1)
         call_valid_var = AHDL_VAR(call_valid_sym)
@@ -509,20 +513,14 @@ class STGBuilder:
         t_codes.append(AHDL_MOVE(AHDL_VAR(call_accept_sym), AHDL_CONST(1)))
 
         for i, arg in enumerate(call.args):
-            if isinstance(arg, TEMP) and arg.sym.is_memory():
-                mem_link_map = self.scope.get_mem_link_map(call.func_scope, instance_name)
-                meminfo = self.scope.meminfos[arg.sym]
-                for callee_inst, callee_meminfo in meminfo.links[call.func_scope]:
-                    if callee_inst != instance_name:
-                        continue
-                    caller_meminfos = mem_link_map[callee_meminfo]
-                    # is memory select needed ?
-                    if len(caller_meminfos) <= 1:
-                        break
-                    if callee_meminfo.ref_index == i:
-                        csstr = '{}_{}_{}'.format(instance_name, callee_meminfo.ref_index, arg.sym.hdl_name())
-                        cs = self._gen_sym(csstr, 'cs', 1)
-                        t_codes.append(AHDL_MOVE(AHDL_VAR(cs), AHDL_CONST(0)))
+            if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                p, _, _ = func_scope.params[i]
+                assert Type.is_list(p.typ)
+                param_memnode = Type.extra(p.typ)
+                if param_memnode.is_joinable() and param_memnode.is_writable():
+                    csstr = '{}_{}_{}'.format(instance_name, i, arg.sym.hdl_name())
+                    cs = self._gen_sym(csstr, 'cs', 1)
+                    t_codes.append(AHDL_MOVE(AHDL_VAR(cs), AHDL_CONST(0)))
 
         #conditional jump to the next state with some codes
         return Transition('Forward', None, cond, t_codes)
@@ -604,20 +602,32 @@ class STGBuilder:
             self.emit(AHDL_MOVE(AHDL_VAR(d), src.src),              sched_time)
             self.emit(AHDL_MOVE(AHDL_VAR(req), AHDL_CONST(0)),      sched_time + memstore_latency + 1, tag_req_off)
 
+    def emit_memswitch(self, memnode, dst, src, sched_time):
+        assert isinstance(src, AHDL_VAR)
+        assert isinstance(dst, AHDL_VAR)        
+        mem_name = dst.sym.hdl_name()
+        # we have to sort them for stable indexing
+        preds = sorted(memnode.preds)
+        src_node = Type.extra(src.sym.typ)
+        assert src_node
+        assert src_node in preds
+        idx = preds.index(src_node)
+        sel = self._gen_sym(mem_name, 'sel', idx.bit_length())
+        self.emit(AHDL_MOVE(AHDL_VAR(sel), AHDL_CONST(idx)), sched_time)
 
-    def emit_array_init_sequence(self, meminfo, sched_time):
-        if meminfo.rom is True:
+    def emit_array_init_sequence(self, memnode, sched_time):
+        if not memnode.is_writable():
             return
-        if meminfo.initstm:
-            mv = meminfo.initstm
-            assert isinstance(mv.src, ARRAY)
-            for i, item in enumerate(mv.src.items):
-                val = self.translator.visit(item, None) #FIXME
-                if val:
-                    mem = AHDL_MEM(meminfo.sym, AHDL_CONST(i))
-                    store = AHDL_STORE(mem, val)
-                    self.emit_memstore_sequence(store, sched_time)
-                    sched_time += 1
+        assert memnode.initstm
+        mv = memnode.initstm
+        assert isinstance(mv.src, ARRAY)
+        for i, item in enumerate(mv.src.items):
+            val = self.translator.visit(item, None) #FIXME
+            if val:
+                mem = AHDL_MEM(memnode.sym, AHDL_CONST(i))
+                store = AHDL_STORE(mem, val)
+                self.emit_memstore_sequence(store, sched_time)
+                sched_time += 1
 
     def emit(self, item, sched_time, tag = ''):
         logger.debug('emit '+str(item) + ' at ' + str(sched_time))
@@ -640,6 +650,7 @@ class AHDLTranslator:
         self.host = host
         self.scope = scope
         self.call_mem_cs = {}
+        self.mrg = env.memref_graph
 
     def reset(self, sched_time):
         self.sched_time = sched_time
@@ -664,25 +675,20 @@ class AHDLTranslator:
     def visit_CALL(self, ir, node):
         fname = function_name(ir.func.sym)
         instance_name = '{}_{}'.format(fname, node.instance_num)
+        func_scope = self.scope.find_func_scope(fname)
 
         #TODO: pass by name
         #TODO: check arg count
         for i, arg in enumerate(ir.args):
             a = self.visit(arg, node)
-            if isinstance(a, AHDL_VAR) and a.sym.is_memory():
-                mem_link_map = self.scope.get_mem_link_map(ir.func_scope, instance_name)
-                meminfo = self.scope.meminfos[arg.sym]
-                for callee_inst, callee_meminfo in meminfo.links[ir.func_scope]:
-                    if callee_inst != instance_name:
-                        continue
-                    caller_meminfos = mem_link_map[callee_meminfo]
-                    # is memory select needed ?
-                    if len(caller_meminfos) <= 1:
-                        break
-                    if callee_meminfo.ref_index == i:
-                        csstr = '{}_{}_{}'.format(instance_name, callee_meminfo.ref_index, a.sym.hdl_name())
-                        cs = self.host._gen_sym(csstr, 'cs', 1)
-                        self._emit(AHDL_MOVE(AHDL_VAR(cs), AHDL_CONST(1)), self.sched_time)
+            if isinstance(a, AHDL_VAR) and Type.is_list(a.sym.typ):
+                p, _, _ = func_scope.params[i]
+                assert Type.is_list(p.typ)
+                param_memnode = Type.extra(p.typ)
+                if param_memnode.is_joinable() and param_memnode.is_writable():
+                    csstr = '{}_{}_{}'.format(instance_name, i, arg.sym.hdl_name())
+                    cs = self.host._gen_sym(csstr, 'cs', 1)
+                    self._emit(AHDL_MOVE(AHDL_VAR(cs), AHDL_CONST(1)), self.sched_time)
             else:
                 argsym = self.scope.gen_sym('{}_IN{}'.format(instance_name, i))
                 self._emit(AHDL_MOVE(AHDL_VAR(argsym), a), self.sched_time)
@@ -697,12 +703,12 @@ class AHDLTranslator:
     def translate_builtin_len(self, syscall):
         mem = syscall.args[0]
         assert isinstance(mem, TEMP)
-        meminfo = self.scope.meminfos[mem.sym]
+        memnode = self.mrg.node(mem.sym)
         lens = []
-        for src_scope, src_meminfos in meminfo.src_mems.items():
-            lens.extend([meminfo.length for meminfo in src_meminfos])
+        for root in self.mrg.collect_node_roots(memnode):
+            lens.append(root.length)
         if any(lens[0] != len for len in lens):
-            memlensym = self.scope.gen_sym('{}_len'.format(meminfo.sym.name))
+            memlensym = self.scope.gen_sym('{}_len'.format(memnode.sym.hdl_name()))
             return AHDL_VAR(memlensym)
         else:
             assert False # len() must be constant value
@@ -737,16 +743,20 @@ class AHDLTranslator:
 
     def visit_MREF(self, ir, node):
         offset = self.visit(ir.offset, node)
-        minfo = self.scope.meminfos[ir.mem.sym]
-        if minfo.rom:
-            return AHDL_FUNCALL(ir.mem.sym.hdl_name(), [offset])
-        else:
-            return AHDL_MEM(ir.mem.sym, offset)
-
+        if Type.is_list(ir.mem.sym.typ):
+            memnode = self.mrg.node(ir.mem.sym)
+            if not memnode.is_writable():
+                return AHDL_FUNCALL(ir.mem.sym.hdl_name(), [offset])
+            else:
+                return AHDL_MEM(ir.mem.sym, offset)
+        elif Type.is_phi(ir.mem.sym.typ):
+            # TODO
+            return None
+            
     def visit_MSTORE(self, ir, node):
         offset = self.visit(ir.offset, node)
         exp = self.visit(ir.exp, node)
-        assert self.scope.meminfos[ir.mem.sym].rom is False
+        assert self.mrg.node(ir.mem.sym).is_writable()
         mem = AHDL_MEM(ir.mem.sym, offset)
         return AHDL_STORE(mem, exp)
 
@@ -771,7 +781,9 @@ class AHDLTranslator:
 
     def visit_CJUMP(self, ir, node):
         assert ir.true is ir.true.group.blocks[0]
-
+        #if ir.true is not ir.true.group.blocks[0]:
+        #    print(ir.true)
+        #    assert 0
         cond = self.visit(ir.exp, node)
         true_grp = self.host.stg.name + '_' + ir.true.group.name
                     
@@ -816,7 +828,16 @@ class AHDLTranslator:
         for c, target in zip(ir.conds, ir.targets):
             cond = self.visit(c, node)
             target_grp = self.host.stg.name + '_' + target.group.name
-            t = Transition('Branch', target_grp, cond)
+            if isinstance(c, CONST) and c is ir.conds[-1]:
+                # In case of explicit else target
+                if target is target.group.blocks[0]:
+                    t = Transition('Branch', target_grp, cond)
+                # In case of implicit else target (no 'else' if-statement)
+                else:
+                    #through to the next state in the same group
+                    t = Transition()
+            else:
+                t = Transition('Branch', target_grp, cond)
             self._emit(t, self.sched_time)
 
     def visit_RET(self, ir, node):
@@ -828,11 +849,19 @@ class AHDLTranslator:
 
         src = self.visit(ir.src, node)
         dst = self.visit(ir.dst, node)
+        if Type.is_list(dst.sym.typ) and isinstance(ir.src, TEMP):
+            memnode = Type.extra(dst.sym.typ)
+            assert memnode
+            if ir.src.sym.is_param():
+                return
+            if memnode.is_joinable():
+                self.host.emit_memswitch(memnode, dst, src, self.sched_time)
+                return
         if src:
             if isinstance(ir.src, ARRAY):
                 assert isinstance(dst, AHDL_VAR)
-                meminfo = self.scope.meminfos[dst.sym]
-                self.host.emit_array_init_sequence(meminfo, self.sched_time)
+                memnode = self.mrg.node(dst.sym)
+                self.host.emit_array_init_sequence(memnode, self.sched_time)
                 return
             elif isinstance(src, AHDL_STORE):
                 self.host.emit_memstore_sequence(src, self.sched_time)
@@ -841,6 +870,8 @@ class AHDLTranslator:
                 self.host.emit_memload_sequence(dst, src, self.sched_time)
                 return
             self._emit(AHDL_MOVE(dst, src), self.sched_time)
+    def visit_PHI(self, ir, node):
+        pass
 
     def visit(self, ir, node):
         method = 'visit_' + ir.__class__.__name__

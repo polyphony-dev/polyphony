@@ -1,8 +1,11 @@
 ﻿import sys
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, deque
 from dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from symbol import Symbol
-from ir import TEMP, PHI, JUMP
+from ir import TEMP, PHI, JUMP, MSTORE
+from type import Type
+from usedef import UseDefDetector
+from varreplacer import VarReplacer
 from logging import getLogger
 logger = getLogger(__name__)
 import pdb
@@ -20,13 +23,11 @@ class SSAFormTransformer:
         self._compute_dominance_frontier()
         self._insert_phi()
         self._rename()
-
-        #TODO constant predicate opt
-        #self._check_phi()
-
+        self._remove_useless_phi()
+        self._cleanup_phi()
 
     def _is_always_single_assigned(self, sym):
-        return sym.is_condition() or sym.is_temp() or sym.name.startswith('@in') or sym.is_memory() or sym.is_function()
+        return sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_function()
 
 
     def _insert_phi(self):
@@ -72,11 +73,6 @@ class SSAFormTransformer:
         for sym in using_syms:
             count[sym] = 0
             stack[sym] = [0]
-        #for sym in Symbol.all_symbols:
-        #    if sym.scope is not self.scope:
-        #        continue
-        #    count[sym] = 0
-        #    stack[sym] = [0]
 
         new_syms = set()
         self._rename_rec(self.scope.blocks[0], count, stack, new_syms)
@@ -98,6 +94,9 @@ class SSAFormTransformer:
             if not isinstance(stm, PHI):
                 for use in self.usedef.get_stm_uses_var(stm):
                     assert isinstance(use, TEMP)
+                    #for i in reversed(stack[use.sym]):
+                    #    if i != 0:
+                    #        break
                     i = stack[use.sym][-1]
                     new_name = use.sym.name + '#' + str(i)
                     new_sym = self.scope.inherit_sym(use.sym, new_name)
@@ -106,9 +105,23 @@ class SSAFormTransformer:
             #this loop includes PHI
             for d in self.usedef.get_stm_defs_var(stm):
                 assert isinstance(d, TEMP)
+                # A memory store should not be phi's item
+                #if isinstance(stm, MOVE) and isinstance(stm.src, MSTORE):
+                #    stack[d.sym].append(0)
+                #    for i in reversed(stack[d.sym]):
+                #        if i != 0:
+                #            break
+                #elif isinstance(stm, PHI) and Type.is_list(stm.var.sym.typ):
+                #    logger.debug('count up ' + str(stm))
+                #    count[d.sym] += 1
+                #    i = count[d.sym]
+                #    stack[d.sym].append(i)
+                #else:
+                logger.debug('count up ' + str(stm))
                 count[d.sym] += 1
                 i = count[d.sym]
                 stack[d.sym].append(i)
+                
                 new_name = d.sym.name + '#' + str(i)
                 new_sym = self.scope.inherit_sym(d.sym, new_name)
                 logger.debug(str(new_sym) + ' ancestor is ' + str(d.sym))
@@ -116,21 +129,21 @@ class SSAFormTransformer:
                 defs_in_block.add(d)
         #into successors
         for succ in block.succs:
-            j = succ.preds.index(block)
             #collect phi
             phis = self._get_phis(succ)
             for phi in phis:
-                #assert len(phi.args) == len(succ.preds)
-
                 i = stack[phi.var.sym][-1]
-                if i != 0:
+                #for i in reversed(stack[use.sym]):
+                #    if i != 0:
+                #        break
+                if i > 0:
                     new_name = phi.var.sym.name + '#' + str(i)
                     new_sym = self.scope.inherit_sym(phi.var.sym, new_name)
-                    logger.debug(str(new_sym) + ' ancestor is ' + str(phi.var.sym))
+                    #logger.debug(str(new_sym) + ' ancestor is ' + str(phi.var.sym))
                     var = TEMP(new_sym, 'Load')
                     var.block = succ
                     phi.args.append((var, block))
-
+                    
         for c in self.tree.get_children_of(block):
             self._rename_rec(c, count, stack, new_syms)
         for stm in block.stms:
@@ -154,17 +167,47 @@ class SSAFormTransformer:
         df_builder = DominanceFrontierBuilder()
         self.dominance_frontier = df_builder.process(first_block, tree)
 
+    def _remove_useless_phi(self):
+        udd = UseDefDetector()
+        udd.process(self.scope)
+        usedef = self.scope.usedef
 
-    def check_single_assignment(self, scope):
-        #TODO
-        pass
+        def get_sym_if_having_only_1(phi):
+            syms = [arg.sym for arg, blk in phi.args if arg.sym is not phi.var.sym]
+            if syms and all(syms[0] is s for s in syms):
+                return syms[0]
+            else:
+                return None
+        worklist = deque()
+        for blk in self.scope.blocks:
+            worklist.extend(self._get_phis(blk))
+        while worklist:
+            phi = worklist.popleft()
+            if not phi.args:
+                #assert False
+                logger.debug('remove ' + str(phi))
+                phi.block.stms.remove(phi)
+                #pass
+            else:
+                sym = get_sym_if_having_only_1(phi)
+                if sym:
+                    logger.debug('remove ' + str(phi))
+                    if phi in phi.block.stms:
+                        phi.block.stms.remove(phi)
+                    replaces = VarReplacer.replace_uses(phi.var, TEMP(sym, 'Load'), usedef)
+                    for rep in replaces:
+                        if isinstance(rep, PHI):
+                            worklist.append(rep)
 
-    def _check_phi(self):
-        for b in self.scope.blocks:
-            phis = self._get_phis(b)
-            for phi in phis:
-                if None in phi.args:
-                    raise RuntimeError('using ambigious variable ' + str(phi))
+    def _cleanup_phi(self):
+        for blk in self.scope.blocks:
+            for phi in self._get_phis(blk):
+                removes = []
+                for arg, blk in phi.args:
+                    if isinstance(arg, TEMP) and arg.sym is phi.var.sym:
+                        removes.append((arg, blk))
+                for rm in removes:
+                    phi.args.remove(rm)
 
 
 from scope import Scope

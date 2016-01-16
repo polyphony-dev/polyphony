@@ -7,8 +7,10 @@ from symbol import function_name
 from irvisitor import IRVisitor
 from dominator import DominatorTreeBuilder
 from ir import CONST, TEMP, ARRAY, MREF, MSTORE, MOVE, CALL, SYSCALL, PHI, CJUMP, MCJUMP, JUMP, EXPR
+from cdg import CDGBuilder
 from varreplacer import VarReplacer
 from env import env
+from type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -470,7 +472,7 @@ class DFGBuilder:
         
         def has_mem_arg(args):
             for a in args:
-                if isinstance(a, TEMP) and a.sym.is_memory():
+                if isinstance(a, TEMP) and Type.is_list(a.sym.typ):
                     return True
             return False
         call = None

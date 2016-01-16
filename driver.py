@@ -1,3 +1,4 @@
+import inspect
 from collections import defaultdict, namedtuple
 from env import env
 import logging
@@ -24,14 +25,23 @@ class Driver:
         self.logger.debug(str(proc.__name__) + ':' + scope.name)
         proc(self, scope)
         self.logger.removeHandler(env.logfiles[scope])
-        
+
+    def process_whole(self, proc):
+        self.logger.debug('--------------------------')
+        self.logger.debug(str(proc.__name__))
+        proc(self)
+
     def run(self):
         while True:
             for i, p in enumerate(self.procs):
-                scopes = self.unprocessed_scopes[i][::-1]
-                for s in scopes:
-                    self.process_one(p, s)
-                    self.unprocessed_scopes[i].remove(s)
+                args, _, _, _ = inspect.getargspec(p)
+                if 'scope' not in args:
+                    self.process_whole(p)
+                else:
+                    scopes = self.unprocessed_scopes[i][::-1]
+                    for s in scopes:
+                        self.process_one(p, s)
+                        self.unprocessed_scopes[i].remove(s)
                 if self.updated:
                     self.updated = False
                     break

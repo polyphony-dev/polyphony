@@ -1,4 +1,5 @@
-﻿from logging import getLogger
+﻿from type import Type
+from logging import getLogger
 logger = getLogger(__name__)
 
 def function_name(t):
@@ -37,8 +38,8 @@ class Symbol:
     func_prefix = '!'
     return_prefix = '@function_return'
     condition_prefix = '@cond'
-    mem_prefix = '@m'
     temp_prefix = '@t'
+    param_prefix = '@in'
 
     def __init__(self, name, scope, id):
         self.id = id
@@ -48,7 +49,7 @@ class Symbol:
         self.ancestor = None
 
     def __str__(self):
-        return self.name + ':' + str(self.typ) # + "_" + str(self.id)
+        return self.name + ':' + Type.str(self.typ) # + "_" + str(self.id)
 
     def __repr__(self):
         return self.name# + "_" + str(self.id)
@@ -84,11 +85,11 @@ class Symbol:
     def is_condition(self):
         return self.name.startswith(Symbol.condition_prefix)
 
-    def is_memory(self):
-        return self.name.startswith(Symbol.mem_prefix)
-
     def is_temp(self):
         return self.name.startswith(Symbol.temp_prefix)
+
+    def is_param(self):
+        return self.name.startswith(Symbol.param_prefix)
 
     def set_type(self, typ):
         self.typ = typ

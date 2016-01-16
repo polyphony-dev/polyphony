@@ -7,6 +7,9 @@ class IR:
     def is_(self, cls):
         return isinstance(self, cls)
 
+    def __repr__(self):
+        return self.__str__()
+
 class IRExp(IR):
     def __init__(self):
         super().__init__()
@@ -161,7 +164,7 @@ class TEMP(IRExp):
         else:
             ctx = 'L'
 
-        return "'" + str(self.sym) + "'" + ctx
+        return str(self.sym) + ':' + ctx
 
     def clone(self):
         return TEMP(self.sym, self.ctx)

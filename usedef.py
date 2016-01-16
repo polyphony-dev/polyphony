@@ -1,6 +1,8 @@
 from collections import defaultdict
 from irvisitor import IRVisitor
 from ir import TEMP, CONST, IRStm
+from type import Type
+from env import env
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -173,7 +175,12 @@ class UseDefDetector(IRVisitor):
     def visit_CALL(self, ir):
         for arg in ir.args:
             self.visit(arg)
-            if isinstance(arg, TEMP) and arg.sym.is_memory():
+            if env.compile_phase >= env.PHASE_4 and isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                memnode = None
+                if env.memref_graph:
+                    memnode = env.memref_graph.node(arg.sym)
+                if memnode and not memnode.is_writable():
+                    continue
                 self.table.add_var_def(arg, self.current_stm)
 
     def visit_SYSCALL(self, ir):

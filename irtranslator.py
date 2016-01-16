@@ -7,7 +7,7 @@ import copy
 import pdb
 from ir import UNOP, BINOP, RELOP, CALL, SYSCALL, CONST, MREF, ARRAY, TEMP, EXPR, CJUMP, JUMP, RET, MOVE, op2str
 from block import Block
-from scope import Scope, MemInfo, FunctionParam
+from scope import Scope, FunctionParam
 from symbol import Symbol, function_name
 from type import Type
 from env import env
@@ -42,7 +42,7 @@ class FunctionVisitor(ast.NodeVisitor):
         self.current_scope = Scope.create(outer_scope, node.name, attributes)
 
         for arg in node.args.args:
-            param_in = self.current_scope.add_sym('@in_' + arg.arg)
+            param_in = self.current_scope.add_sym(Symbol.param_prefix+'_'+arg.arg)
             param_in.typ = Type.from_annotation(arg.annotation)
             param_copy = self.current_scope.add_sym(arg.arg)
             param_copy.typ = param_in.typ
@@ -149,21 +149,10 @@ class Visitor(ast.NodeVisitor):
         params = self.current_scope.params
         skip = len(node.args.args) - len(node.args.defaults)
         for idx, param in enumerate(params[:skip]):
-            if param.sym.typ[0] == 'list':
-                mem = self.current_scope.add_temp(Symbol.mem_prefix+'_'+param.copy.name+'_')
-                mem.typ = Type.list_int_t
-                mv = MOVE(TEMP(mem, 'Store'), TEMP(param.sym, 'Load'))
-                self.emit(mv, node)
-                minfo = MemInfo(mem, None, self.current_scope) #references memory length is not known here
-                minfo.ref_index = idx
-                self.current_scope.meminfos[mem] = minfo
-                mv = MOVE(TEMP(param.copy, 'Store'), TEMP(mem, 'Load'))
-                self.emit(mv, node)
-            else:
-                self.emit(MOVE(TEMP(param.copy, 'Store'), TEMP(param.sym, 'Load')), node)
+            self.emit(MOVE(TEMP(param.copy, 'Store'), TEMP(param.sym, 'Load')), node)
             
         for idx, (param, defval) in enumerate(zip(params[skip:], node.args.defaults)):
-            if param.sym.typ[0] == 'list':
+            if Type.is_list(param.sym.typ):
                 print(self._err_info(node))
                 raise RuntimeError("cannot set the default value to the list type parameter.")
             d = self.visit(defval)
@@ -173,7 +162,7 @@ class Visitor(ast.NodeVisitor):
         for stm in node.body:
             self.visit(stm)
 
-        self.function_exit.branch_tags = []
+        #self.function_exit.branch_tags = []
         sym = self.current_scope.gen_sym(Symbol.return_prefix)
         self.emit_to(self.function_exit, RET(TEMP(sym, 'Load')), node)
         self.current_scope.append_block(self.function_exit)

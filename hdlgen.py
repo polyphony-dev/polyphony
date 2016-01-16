@@ -8,6 +8,7 @@ from ahdl import AHDL_CONST, AHDL_VAR, AHDL_CONCAT, AHDL_OP, AHDL_IF_EXP, AHDL_A
 #from collections import namedtuple
 from hdlmoduleinfo import HDLModuleInfo
 from hdlmemport import HDLMemPortMaker
+from type import Type
 from logging import getLogger, DEBUG
 logger = getLogger(__name__)
 import pdb
@@ -26,6 +27,7 @@ class HDLGenPreprocessor:
 
     def phase1(self, scope):
         self.scope = scope
+        self.mrg = env.memref_graph
         self.module_info = HDLModuleInfo(scope.orig_name, scope.name)
         self.output_temps = []
         self.local_temps = set()
@@ -46,7 +48,7 @@ class HDLGenPreprocessor:
         mod_name = self.scope.stgs[0].name
         #input port
         for i, (sym, _, _) in enumerate(self.scope.params):
-            if sym.typ[0] == 'list':
+            if Type.is_list(sym.typ):
                 continue
             in_name = '{}_IN{}'.format(mod_name, i)
             sym.name = in_name
@@ -89,10 +91,8 @@ class HDLGenPreprocessor:
         self.module_info.add_internal_reg(state_var, states_n.bit_length(), '')
 
      
-        for minfo in scope.meminfos.values():
-            if minfo.rom:
-                continue
-            self.memportmakers.append(HDLMemPortMaker.create(minfo, self.scope, self.module_info))
+        for memnode in self.mrg.collect_writable(self.scope):
+            self.memportmakers.append(HDLMemPortMaker.create(memnode, self.scope, self.module_info))
 
         #add sub modules
         for func_sym, inst_names in self.scope.calls.items():
@@ -142,9 +142,9 @@ class HDLGenPreprocessor:
                 self.module_info.add_internal_wire(valid_signal, 1)
 
                 #memory ports
-                mem_link_map = self.scope.get_mem_link_map(callee_scope, inst)
-                for callee_meminfo, caller_meminfos in mem_link_map.items():
-                    HDLMemPortMaker.make_port_map(self.scope, self.module_info, inst, callee_meminfo, caller_meminfos, port_map)
+                param_memnodes = [Type.extra(p.typ) for p, _, _ in callee_scope.params if Type.is_list(p.typ)]
+                for node in param_memnodes:
+                    HDLMemPortMaker.make_port_map(self.scope, self.module_info, inst, node, node.preds, port_map)
 
                 self.module_info.add_sub_module(inst, info, port_map)
 
@@ -153,27 +153,37 @@ class HDLGenPreprocessor:
 
 
         # add rom as function
-        for minfo in self.scope.meminfos.values():
-            if not minfo.rom:
-                continue
-            assert isinstance(minfo.initstm, MOVE)
-            assert isinstance(minfo.initstm.src, ARRAY)
-
-            output_sym = self.scope.gen_sym(minfo.sym.hdl_name())
+        for memnode in self.mrg.collect_readonly(self.scope):
+            hdl_name = memnode.sym.hdl_name()
+            output_sym = self.scope.gen_sym(hdl_name)
             output_sym.width = INT_WIDTH #TODO
             fname = AHDL_VAR(output_sym)
-            input_sym = self.scope.gen_sym(minfo.sym.hdl_name()+'_IN')
+            input_sym = self.scope.gen_sym(hdl_name+'_IN')
             input_sym.width = INT_WIDTH #TODO
             input = AHDL_VAR(input_sym)
-            array = minfo.initstm.src
-            array_bits = len(array.items).bit_length()
-            case_items = []
-            for i, item in enumerate(array.items):
-                assert isinstance(item, CONST)
-                connect = AHDL_CONNECT(fname, AHDL_CONST(item.value))
-                case_items.append(AHDL_CASE_ITEM(i, connect))
 
-            case = AHDL_CASE(input, case_items)
+            if not memnode.is_joinable():
+                root = self.mrg.get_single_root(memnode)
+                array = root.initstm.src
+                array_bits = len(array.items).bit_length()
+                case_items = []
+                for i, item in enumerate(array.items):
+                    assert isinstance(item, CONST)
+                    connect = AHDL_CONNECT(fname, AHDL_CONST(item.value))
+                    case_items.append(AHDL_CASE_ITEM(i, connect))
+                case = AHDL_CASE(input, case_items)
+            else:
+                case_items = []
+                for i, pred in enumerate(sorted(memnode.preds)):
+                    rom_func_name = pred.sym.hdl_name()
+                    call = AHDL_FUNCALL(rom_func_name, [input])
+                    connect = AHDL_CONNECT(fname, call)
+                    case_items.append(AHDL_CASE_ITEM(i, connect))
+                rom_sel_sym = self.scope.gen_sym(hdl_name+'_sel')
+                rom_sel_sym.width = len(memnode.preds).bit_length()
+                sel = AHDL_VAR(rom_sel_sym)
+                case = AHDL_CASE(sel, case_items)
+                self.module_info.add_internal_reg(rom_sel_sym.name, rom_sel_sym.width, '')
             rom_func = AHDL_FUNCTION(fname, [input], [case])
             self.module_info.add_function(rom_func)
 
@@ -205,7 +215,7 @@ class Phase1Preprocessor:
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.sym.is_return():
             self.host.output_temps.append(ahdl.sym)
-        elif ahdl.sym.is_memory():
+        elif Type.is_list(ahdl.sym.typ):
             pass
         elif self.host.scope.has_param(ahdl.sym):
             pass

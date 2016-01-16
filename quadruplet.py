@@ -37,6 +37,19 @@ class QuadrupleMaker(IRTransformer):
         assert isinstance(ir.left, TEMP) or isinstance(ir.left, CONST) or isinstance(ir.left, UNOP) or isinstance(ir.left, MREF) or isinstance(ir.left, ARRAY)
         assert isinstance(ir.right, TEMP) or isinstance(ir.right, CONST) or isinstance(ir.right, UNOP) or isinstance(ir.right, MREF)
 
+        if isinstance(ir.left, ARRAY):
+            if isinstance(ir.right, CONST) and ir.op == 'Mult':
+                #array times n
+                array = ir.left
+                time = ir.right.value
+                if not array.items:
+                    raise RuntimeError('unsupported expression')
+                else:
+                    array.items = [item.clone() for item in array.items * time]
+                return array
+            else:
+                raise RuntimeError('unsupported expression')
+
         if suppress:
             return ir
         sym = self.scope.add_temp(Symbol.temp_prefix)
@@ -84,10 +97,14 @@ class QuadrupleMaker(IRTransformer):
         return ir
 
     def visit_MREF(self, ir):
+        #suppress converting
+        suppress = self.suppress_converting
+        self.suppress_converting = False
+
         ir.offset = self.visit(ir.offset)
         assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST) or isinstance(ir.offset, UNOP)
 
-        if ir.ctx == 'Load':
+        if not suppress and ir.ctx == 'Load':
             sym = self.scope.add_temp(Symbol.temp_prefix)
             mv = MOVE(TEMP(sym, 'Store'), ir)
             mv.lineno = ir.lineno
@@ -130,7 +147,7 @@ class QuadrupleMaker(IRTransformer):
 
     def visit_MOVE(self, ir):
         #We don't convert outermost BINOP or CALL
-        if isinstance(ir.src, BINOP) or isinstance(ir.src, CALL) or isinstance(ir.src, SYSCALL):
+        if isinstance(ir.src, BINOP) or isinstance(ir.src, CALL) or isinstance(ir.src, SYSCALL) or isinstance(ir.src, MREF):
             self.suppress_converting = True
 
         ir.src = self.visit(ir.src)
