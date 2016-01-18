@@ -7,7 +7,6 @@ from symbol import function_name
 from irvisitor import IRVisitor
 from dominator import DominatorTreeBuilder
 from ir import CONST, TEMP, ARRAY, MREF, MSTORE, MOVE, CALL, SYSCALL, PHI, CJUMP, MCJUMP, JUMP, EXPR
-from cdg import CDGBuilder
 from varreplacer import VarReplacer
 from env import env
 from type import Type
@@ -324,10 +323,6 @@ class DFGBuilder:
         self.loop_infos = scope.loop_infos
         dtree_builder = DominatorTreeBuilder(scope)
         self.dtree = dtree_builder.process()
-
-        #logger.debug('Building control dependence graph ... ')
-        #cdg_builder = CDGBuilder()
-        #cdg_builder.process(self.scope)
 
         root = scope.blocks[0]
         self._process(root)
