@@ -80,9 +80,9 @@ def compile_plan():
          phi_cond_resolver = PHICondResolver()
          phi_cond_resolver.process(scope)
 
-    def memrefgraph(driver, scope):
+    def memrefgraph(driver):
         mrg_builder = MemRefGraphBuilder()
-        mrg_builder.process(scope)
+        mrg_builder.process_all()
 
     def mrgcolor(driver, scope):
         mrg_coloring = MemRefEdgeColoring()
@@ -102,13 +102,13 @@ def compile_plan():
 
     def detectrom(driver):
         rom_detector = RomDetector()
-        rom_detector.process()
+        rom_detector.process_all()
 
-    def specfunc(driver, scope):
+    def specfunc(driver):
         spec_func_maker = SpecializedFunctionMaker()
-        new_scopes = spec_func_maker.process(scope)
+        new_scopes = spec_func_maker.process_all()
         for s in new_scopes:
-            env.append_scope(s)
+            assert s.name in env.scopes
             driver.insert_scope(s)
 
     def constopt(driver, scope):
@@ -228,8 +228,8 @@ def compile_plan():
         usedef,
         dumpscope,
         usedef,
-        #specfunc,
-        #dumpscope,
+        specfunc,
+        dumpscope,
         phase(env.PHASE_3),
         constopt,
         usedef,
@@ -259,6 +259,7 @@ def compile_plan():
 
 
 def compile_main(src_file, output_name, output_dir):
+    env.__init__()
     translator = IRTranslator()
     global_scope = translator.translate(read_source(src_file))
 
@@ -285,7 +286,8 @@ def output_all(driver, output_name, output_dir):
             codes.append(driver.result(scope))
         else:
             with open(d + scope.orig_name + '.v', 'w') as f:
-                f.write(driver.result(scope))
+                if driver.result(scope):
+                    f.write(driver.result(scope))
 
     mains = []
     for scope in scopes:
@@ -294,7 +296,8 @@ def output_all(driver, output_name, output_dir):
 
     with open(d + output_name + '.v', 'w') as f:
         for code in codes:
-            f.write(code)
+            if code:
+                f.write(code)
         if mains:
             topgen = VerilogTopGen(mains)
             logger.debug('--------------------------')

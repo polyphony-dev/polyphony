@@ -112,6 +112,9 @@ class QuadrupleMaker(IRTransformer):
             return TEMP(sym, 'Load')
         return ir
 
+    def visit_MSTORE(self, ir):
+        return ir
+
     def visit_ARRAY(self, ir):
         for i in range(len(ir.items)):
             ir.items[i] = self.visit(ir.items[i])
@@ -149,10 +152,9 @@ class QuadrupleMaker(IRTransformer):
         #We don't convert outermost BINOP or CALL
         if isinstance(ir.src, BINOP) or isinstance(ir.src, CALL) or isinstance(ir.src, SYSCALL) or isinstance(ir.src, MREF):
             self.suppress_converting = True
-
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
-        assert isinstance(ir.src, TEMP) or isinstance(ir.src, CONST) or isinstance(ir.src, UNOP) or isinstance(ir.src, BINOP) or isinstance(ir.src, MREF) or isinstance(ir.src, CALL) or isinstance(ir.src, SYSCALL) or isinstance(ir.src, ARRAY)
+        assert isinstance(ir.src, TEMP) or isinstance(ir.src, CONST) or isinstance(ir.src, UNOP) or isinstance(ir.src, BINOP) or isinstance(ir.src, MREF) or isinstance(ir.src, MSTORE) or isinstance(ir.src, CALL) or isinstance(ir.src, SYSCALL) or isinstance(ir.src, ARRAY)
         assert isinstance(ir.dst, TEMP) or isinstance(ir.dst, MREF)
 
         if isinstance(ir.dst, MREF):

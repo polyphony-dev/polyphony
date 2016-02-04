@@ -496,7 +496,6 @@ class STGBuilder:
 
         fname = function_name(call.func.sym)
         instance_name = '{}_{}'.format(fname, node.instance_num)
-        func_scope = self.scope.find_func_scope(fname)
 
         call_valid_sym = self._gen_sym(instance_name, 'VALID', 1)
         call_valid_var = AHDL_VAR(call_valid_sym)
@@ -514,7 +513,7 @@ class STGBuilder:
 
         for i, arg in enumerate(call.args):
             if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
-                p, _, _ = func_scope.params[i]
+                p, _, _ = call.func_scope.params[i]
                 assert Type.is_list(p.typ)
                 param_memnode = Type.extra(p.typ)
                 if param_memnode.is_joinable() and param_memnode.is_writable():
@@ -675,14 +674,11 @@ class AHDLTranslator:
     def visit_CALL(self, ir, node):
         fname = function_name(ir.func.sym)
         instance_name = '{}_{}'.format(fname, node.instance_num)
-        func_scope = self.scope.find_func_scope(fname)
 
-        #TODO: pass by name
-        #TODO: check arg count
         for i, arg in enumerate(ir.args):
             a = self.visit(arg, node)
             if isinstance(a, AHDL_VAR) and Type.is_list(a.sym.typ):
-                p, _, _ = func_scope.params[i]
+                p, _, _ = ir.func_scope.params[i]
                 assert Type.is_list(p.typ)
                 param_memnode = Type.extra(p.typ)
                 if param_memnode.is_joinable() and param_memnode.is_writable():
@@ -696,7 +692,7 @@ class AHDLTranslator:
         self._emit(AHDL_MOVE(AHDL_VAR(ready), AHDL_CONST(1)), self.sched_time)
 
         #TODO: should call on the resource allocator
-        self.scope.append_call(ir.func.sym, instance_name)
+        self.scope.append_call(ir.func_scope, instance_name)
 
         return None
 
@@ -727,8 +723,6 @@ class AHDLTranslator:
             return self.translate_builtin_len(ir)
         else:
             return
-        #TODO: pass by name
-        #TODO: check arg count
         args = []
         for i, arg in enumerate(ir.args):
             a = self.visit(arg, node)
@@ -749,7 +743,7 @@ class AHDLTranslator:
                 return AHDL_FUNCALL(ir.mem.sym.hdl_name(), [offset])
             else:
                 return AHDL_MEM(ir.mem.sym, offset)
-        elif Type.is_phi(ir.mem.sym.typ):
+        else:
             # TODO
             return None
             

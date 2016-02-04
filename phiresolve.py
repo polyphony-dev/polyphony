@@ -37,6 +37,8 @@ class PHICondResolver:
         for i, (arg, blk) in enumerate(phi.args):
             pred = blk
             mv = MOVE(TEMP(phi.var.sym, 'Store'), arg)
+            #TODO: track the lineno
+            mv.lineno = 1
             pred.stms.insert(-1, mv)
             mv.block = pred
             logger.debug('PHI divide into ' + str(mv))

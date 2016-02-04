@@ -95,14 +95,12 @@ class HDLGenPreprocessor:
             self.memportmakers.append(HDLMemPortMaker.create(memnode, self.scope, self.module_info))
 
         #add sub modules
-        for func_sym, inst_names in self.scope.calls.items():
-            func_name = function_name(func_sym)
+        for callee_scope, inst_names in self.scope.calls.items():
+            func_name = callee_scope.orig_name
             # TODO: add primitive function hook here
             if func_name == 'print':
                 continue
 
-            calee_scope_name = func_sym.scope.name + '.' + func_name
-            callee_scope = env.scopes[calee_scope_name]
             info = callee_scope.module_info
 
             for inst in inst_names:

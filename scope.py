@@ -41,9 +41,6 @@ class Scope:
             for s in scope.callee_scopes:
                 set_order(s, order, ordered)
         
-        if len(env.scopes) == len(cls.ordered_scopes):
-            return ret_helper(contain_global, bottom_up)
-            
         top = env.scopes['@top']
         top.order = 0
         ordered = set()
@@ -106,6 +103,12 @@ class Scope:
         s += '================================\n'    
         return s
 
+    def __repr__(self):
+        return self.name
+
+    def __lt__(self, other):
+        return self.order < other.order
+
     def clone(self, postfix):
         s = Scope(self.parent, self.orig_name + '_' + postfix, self.attributes)
         s.funcnames = self.funcnames
@@ -114,10 +117,11 @@ class Scope:
         symbol_map = {}
         for orig_sym in self.symbols.values():
             new_sym = Symbol.new(orig_sym.name, s)
+            new_sym.typ = orig_sym.typ
             s.symbols[new_sym.name] = new_sym
             symbol_map[orig_sym] = new_sym
 
-        s.params = list(self.params)
+        s.params = [FunctionParam(symbol_map[p], symbol_map[copy], defval.clone() if defval else None) for p, copy, defval in self.params]
         s.return_type = self.return_type
 
         # clone block group
@@ -148,6 +152,7 @@ class Scope:
             new_b.stms = new_stms
             new_b.order = orig_b.order
             new_b.group = group_map[orig_b.group]
+            new_b.set_scope(s)
             s.blocks.append(new_b)
             block_map[orig_b] = new_b
         # remake cfg
@@ -184,7 +189,12 @@ class Scope:
 
         s.children = list(self.children)
         s.usedef = None
-        s.calls = copy(self.calls)
+
+        new_calls = defaultdict(set)
+        for func_sym, inst_names in self.calls.items():
+            new_func_sym = symbol_map[func_sym]
+            new_calls[new_func_sym] = copy(inst_names)
+        s.calls = new_calls
         s.order = self.order
         s.callee_scopes = list(self.callee_scopes)
         s.caller_scopes = list(self.caller_scopes)
@@ -192,6 +202,8 @@ class Scope:
         sym_replacer = SymbolReplacer(symbol_map)
         sym_replacer.process(s)
 
+        s.parent.append_child(s)
+        env.append_scope(s)
         return s
 
     def add_funcname(self, name):
@@ -281,7 +293,8 @@ class Scope:
         self.blk_grp_stack[-1].append(blk)
 
     def append_child(self, child_scope):
-        self.children.append(child_scope)
+        if child_scope not in self.children:
+            self.children.append(child_scope)
 
     def add_param(self, sym, copy, defval):
         self.params.append(FunctionParam(sym, copy, defval))
@@ -408,4 +421,5 @@ class SymbolReplacer(IRVisitor):
 
     def visit_TEMP(self, ir):
         ir.sym = self.sym_map[ir.sym]
-            
+
+

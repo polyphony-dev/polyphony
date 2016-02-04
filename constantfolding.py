@@ -4,6 +4,7 @@ from ir import CONST, TEMP, JUMP, MOVE
 from env import env
 from usedef import UseDefDetector
 from varreplacer import VarReplacer
+from type import Type
 
 class ConstantFolding(IRVisitor):
     def __init__(self, scope):
@@ -84,11 +85,17 @@ class ConstantFolding(IRVisitor):
 
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
+        memnode = Type.extra(ir.mem.sym.typ)
+        if isinstance(ir.offset, CONST) and not memnode.is_writable():
+            root = self.mrg.get_single_root(memnode)
+            if root:
+                assert root.initstm
+                self.modified_stms.add(self.current_stm)
+                return root.initstm.src.items[ir.offset.value]
         return ir
 
     def visit_MSTORE(self, ir):
         ir.offset = self.visit(ir.offset)
-        ir.exp = self.visit(ir.exp)
         return ir
 
     def visit_ARRAY(self, ir):

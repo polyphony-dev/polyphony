@@ -2,6 +2,7 @@ import inspect
 from collections import defaultdict, namedtuple
 from env import env
 import logging
+import pdb
 
 class Driver:
     def __init__(self, procs, scopes):
@@ -18,7 +19,12 @@ class Driver:
             self.unprocessed_scopes[i].append(scope)
             self.unprocessed_scopes[i].sort(key=lambda s: s.order)
         self.updated = True
-        
+
+    def remove_scope(self, scope):
+        for i, scopes in enumerate(self.unprocessed_scopes):
+            if self.stage < i:
+                scopes.remove(scope)
+
     def process_one(self, proc, scope):
         self.logger.addHandler(env.logfiles[scope])
         self.logger.debug('--------------------------')
@@ -26,7 +32,7 @@ class Driver:
         proc(self, scope)
         self.logger.removeHandler(env.logfiles[scope])
 
-    def process_whole(self, proc):
+    def process_all(self, proc):
         self.logger.debug('--------------------------')
         self.logger.debug(str(proc.__name__))
         proc(self)
@@ -34,9 +40,10 @@ class Driver:
     def run(self):
         while True:
             for i, p in enumerate(self.procs):
+                self.stage = i
                 args, _, _, _ = inspect.getargspec(p)
                 if 'scope' not in args:
-                    self.process_whole(p)
+                    self.process_all(p)
                 else:
                     scopes = self.unprocessed_scopes[i][::-1]
                     for s in scopes:
@@ -52,7 +59,9 @@ class Driver:
         self.codes[scope] = code
 
     def result(self, scope):
-        return self.codes[scope]
+        if scope in self.codes:
+            return self.codes[scope]
+        return None
 
 class TestScope:
     def __init__(self, name, order):

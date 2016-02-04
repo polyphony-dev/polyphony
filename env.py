@@ -6,7 +6,7 @@ class Env:
     PHASE_3 = 3
     PHASE_4 = 4
     PHASE_GEN_HDL = 5
-    
+
     def __init__(self):
         self.call_graph = None
         self.scopes = {}
@@ -22,11 +22,15 @@ class Env:
         logfile = logging.FileHandler('debug_log.' + scope.name.replace('@',''), 'w')
         self.logfiles[scope] = logfile
 
+    def remove_scope(self, scope):
+        del self.scopes[scope.name]
+
     def dump(self):
         for s in self.scopes:
             logger.debug(str(s))
 
     def add_using_lib(self, lib):
         self.using_libs.add(lib)
+
 
 env = Env()

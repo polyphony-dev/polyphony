@@ -39,6 +39,7 @@
         self.visit(ir.right)
 
     def visit_CALL(self, ir):
+        self.visit(ir.func)
         for arg in ir.args:
             self.visit(arg)
 

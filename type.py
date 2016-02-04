@@ -46,6 +46,10 @@ class Type:
         return cls.is_list(t) or cls.is_tuple(t)
 
     @classmethod
+    def is_scalar(cls, t):
+        return t is cls.int_t or t is cls.bool_t
+
+    @classmethod
     def is_commutable(cls, t0, t1):
         if t0 is t1:
             return True

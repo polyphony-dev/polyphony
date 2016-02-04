@@ -155,7 +155,7 @@ class SSAOptimizer:
         idx = block.stms.index(old)
         block.stms[idx] = new
         new.block = block
-
+        new.lineno = old.lineno
 
     def _is_same_sources(self, exprs):
         if not exprs:

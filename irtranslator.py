@@ -142,6 +142,7 @@ class Visitor(ast.NodeVisitor):
         new_block = Block.create()
         self.current_scope.append_block(new_block)
         self.current_block = new_block
+        prev_loop_info = self.current_loop_info
         self.current_loop_info = self.current_scope.create_loop_info(self.current_block)
         outer_function_exit = self.function_exit
         self.function_exit = Block.create('exit')
@@ -170,8 +171,9 @@ class Visitor(ast.NodeVisitor):
         self.current_scope = outer_scope
         self.current_block = last_block
         self.function_exit = outer_function_exit
-            
-    
+        self.current_loop_info = prev_loop_info
+
+
     def visit_ClassDef(self, node):
         logger.debug(node.name)
         print(self._err_info(node))
@@ -600,10 +602,9 @@ class Visitor(ast.NodeVisitor):
 
     
     def visit_Call(self, node):
-        #ToDo: return value detection
         #      pass by name
         func = self.visit(node.func)
-        func_scope = self.current_scope.find_func_scope(func.sym.name[1:])
+        func_scope = self.current_scope.find_func_scope(function_name(func.sym))
         if not func_scope:
             for f in BUILTINS:
                 if func.sym.name == '!' + f:
@@ -637,7 +638,6 @@ class Visitor(ast.NodeVisitor):
     
     def visit_Num(self, node):
         return CONST(node.n)
-
     
     def visit_Str(self, node):
         return CONST(node.s)
@@ -684,7 +684,7 @@ class Visitor(ast.NodeVisitor):
         
         scope = self.current_scope.find_scope_having_funcname(node.id)
         if scope:
-            fsym = scope.gen_sym('!' + node.id)
+            fsym = self.current_scope.gen_sym('!' + node.id)
             return TEMP(fsym, self._nodectx2ctxstr(node))
 
         sym = self.current_scope.find_sym(node.id)

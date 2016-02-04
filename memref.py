@@ -5,6 +5,7 @@ from symbol import Symbol, function_name
 from type import Type
 from irvisitor import IRTransformer, IRVisitor
 from env import env
+from scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -182,7 +183,12 @@ class MemRefGraphBuilder(IRTransformer):
         if env.memref_graph is None:
             env.memref_graph = MemRefGraph()
         self.mrg = env.memref_graph
-        
+
+    def process_all(self):
+        scopes = Scope.get_scopes(bottom_up=True)
+        for s in scopes:
+            self.process(s)
+
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         return ir
@@ -203,10 +209,8 @@ class MemRefGraphBuilder(IRTransformer):
 
         for i, arg in enumerate(ir.args):
             if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
-                func_name = function_name(ir.func.sym)
                 memnode = self.mrg.node(arg.sym)
-                callee = self.scope.find_func_scope(func_name)
-                param_node = self.mrg.find_param_node(callee, i)
+                param_node = self.mrg.find_param_node(ir.func_scope, i)
                 self.mrg.add_edge(memnode, param_node)
 
         return ir
@@ -324,17 +328,14 @@ class MemRefEdgeColoring:
         return ir
 
     def visit_CALL(self, ir, node):
-        #TODO: pass by name
-        #TODO: check arg count
         func_name = function_name(ir.func.sym)
         inst_name = '{}_{}'.format(func_name, node.instance_num)
-        func_scope = self.scope.find_func_scope(func_name)
         
         for i, arg in enumerate(ir.args):
             a = self.visit(arg, node)
             ir.args[i] = a
             if isinstance(a, TEMP) and Type.is_list(arg.sym.typ):
-                p, _, _ = func_scope.params[i]
+                p, _, _ = ir.func_scope.params[i]
                 assert Type.is_list(p.typ)
                 param_memnode = Type.extra(p.typ)
                 memnode = self.mrg.node(a.sym)                

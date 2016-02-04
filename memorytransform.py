@@ -164,8 +164,9 @@ class MemCollector(IRVisitor):
             self.stm_map[ir.sym].append(self.current_stm)
 
 class RomDetector:
-    def process(self):
+    def process_all(self):
         mrg = env.memref_graph
+        assert mrg
         worklist = deque()
         for root in mrg.collect_roots():
             if root.is_writable():
