@@ -26,11 +26,13 @@ class Driver:
                 scopes.remove(scope)
 
     def process_one(self, proc, scope):
-        self.logger.addHandler(env.logfiles[scope])
+        if env.dev_debug_mode:
+            self.logger.addHandler(env.logfiles[scope])
         self.logger.debug('--------------------------')
         self.logger.debug(str(proc.__name__) + ':' + scope.name)
         proc(self, scope)
-        self.logger.removeHandler(env.logfiles[scope])
+        if env.dev_debug_mode:
+            self.logger.removeHandler(env.logfiles[scope])
 
     def process_all(self, proc):
         self.logger.debug('--------------------------')

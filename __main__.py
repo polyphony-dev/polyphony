@@ -336,12 +336,14 @@ def main():
     compile_main(src_file, options.output_name, options.output_dir)
 
 if __name__ == '__main__':
-    logging.basicConfig(**logging_setting)
+    if env.dev_debug_mode:
+        logging.basicConfig(**logging_setting)
     try:
         #profile.run("main()")
         main()
     except Exception as e:
-        traceback.print_exc()
-        logger.exception(e)
+        if env.dev_debug_mode:
+            traceback.print_exc()
+            logger.exception(e)
         sys.exit(e)
     
