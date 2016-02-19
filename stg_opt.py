@@ -1,4 +1,4 @@
-﻿from collections import defaultdict
+﻿from collections import defaultdict, deque
 from ahdl import AHDL_CONST, AHDL_VAR, AHDL_MOVE, AHDL_IF, AHDL_META
 from logging import getLogger
 logger = getLogger(__name__)
@@ -10,6 +10,7 @@ class STGOptimizer():
     def process(self, scope):
         self.scope = scope
         self._concat_stgs()
+        self._remove_unused_state()
 
         #usedef = STGUseDefDetector()
         #usedef.process(scope)
@@ -56,7 +57,8 @@ class STGOptimizer():
 
         #add the state transition to a state in the other stg
         stg = state.stg
-        assert state.next_states
+        if not state.next_states:
+            return
         cond1, nstate1, _ = state.next_states[0]
         if cond1 is None or isinstance(cond1, AHDL_CONST):
             if state is stg.finish_state and stg.name in self.stg_return_state:
@@ -64,6 +66,32 @@ class STGOptimizer():
                 #replace return state
                 state.clear_next()
                 state.set_next((AHDL_CONST(1), ret_state, None))
+
+    def _remove_unused_state(self):
+        for stg in self.scope.stgs:
+            self._remove_unused(stg)
+
+    def _remove_unused(self, stg):
+        worklist = deque()
+        worklist.append(stg.init_state.group)
+        used_groups = set()
+        while worklist:
+            grp = worklist.pop()
+            if grp in used_groups:
+                continue
+            used_groups.add(grp)
+            for state in grp.states:
+                for cond, s, _ in state.next_states:
+                    if isinstance(cond, AHDL_CONST) and cond.value == 1:
+                        worklist.append(s.group)
+                        # skip others
+                        break
+                    else:
+                        worklist.append(s.group)
+
+        for unused in set(stg.groups.values()).difference(used_groups):
+            print('remove '  + unused.name)
+            del stg.groups[unused.name]
 
 
     def _remove_move(self):

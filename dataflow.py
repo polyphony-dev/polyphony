@@ -500,7 +500,12 @@ class DFGBuilder:
             if isinstance(stm.exp, CALL) or isinstance(stm.exp, SYSCALL):
                 call = stm.exp
                 return all(isinstance(a, CONST) for a in call.args)
-
+        elif isinstance(stm, CJUMP):
+            if isinstance(stm.exp, CONST):
+                return True
+        elif isinstance(stm, MCJUMP):
+            if any([isinstance(c, CONST) for c in stm.conds[:-1]]):
+                return True
         return False
         
     def _is_outer_stm(self, head, stm):

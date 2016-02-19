@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, deque
 from symbol import function_name
 from scope import Scope
 from irvisitor import IRVisitor
@@ -27,12 +27,14 @@ class SpecializedFunctionMaker:
             collector.process(s)
 
         new_scopes = []
-
-        for (caller, callee), calls in sorted(calls.items()):
+        worklist = deque()
+        worklist.extend(sorted(calls.items()))
+        while worklist:
+            (caller, callee), calls = worklist.pop()
+            # We do not specialization the callee functions of a testbench
             if caller.is_testbench():
                 using_scopes.add(callee)
                 continue
-            using_scopes.add(caller)
 
             for call in calls:
                 binding = []
@@ -58,6 +60,10 @@ class SpecializedFunctionMaker:
                             new_scope.params.pop(i)
                         new_scopes.append(new_scope)
                         logger.debug('SPECIALIZE ' + new_scope.name)
+                        calls = defaultdict(set)
+                        collector = CallCollector(calls)
+                        collector.process(new_scope)
+                        worklist.extend(calls.items())
                     #update CALL target to specialized new_scope
                     fsym = caller.gen_sym('!' + new_scope.orig_name)
                     call.func = TEMP(fsym, call.func.ctx)
@@ -70,20 +76,19 @@ class SpecializedFunctionMaker:
                     using_scopes.add(new_scope)
                 else:
                     using_scopes.add(callee)
-        #remove unused scopes
-        for unused in set(scopes).difference(using_scopes):
-            logger.debug('REMOVE ' + unused.name)
-            env.remove_scope(unused)
 
-        return new_scopes
+        unused_scopes = [unused for unused in set(scopes).difference(using_scopes)]
+        return new_scopes, unused_scopes
 
     @staticmethod
     def clone_param_desc(scope, i, a):
         p, _, _ = scope.params[i]
         if isinstance(a, MemRefNode):
             astr = a.sym.hdl_name()
+        elif isinstance(a, int):
+            astr = str(a) if a >= 0 else 'n' + str(-a)
         else:
-            astr = str(a)
+            assert False
         return '{}{}'.format(p.hdl_name(), astr)
 
 

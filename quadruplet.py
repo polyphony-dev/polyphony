@@ -132,7 +132,7 @@ class QuadrupleMaker(IRTransformer):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        assert isinstance(ir.exp, TEMP) and ir.exp.sym.is_condition()
+        assert isinstance(ir.exp, TEMP) and ir.exp.sym.is_condition() or isinstance(ir.exp, CONST)
         self.new_stms.append(ir)
 
     def visit_MCJUMP(self, ir):

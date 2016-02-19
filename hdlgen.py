@@ -54,8 +54,7 @@ class HDLGenPreprocessor:
             sym.name = in_name
             self.module_info.add_input(in_name, 'datain', INT_WIDTH)#TODO
         #output port
-        #FIXME:
-        if len(self.output_temps) > 0:
+        if Type.is_scalar(self.scope.return_type):
             out = self.output_temps[-1]
             outputs = filter(lambda tt: tt is not out, set(self.output_temps))
             for o in outputs:
@@ -64,6 +63,8 @@ class HDLGenPreprocessor:
             out.name = out_name
             out_width = INT_WIDTH
             self.module_info.add_output(out_name, 'dataout', out_width)
+        elif Type.is_seq(self.scope.return_type):
+            raise NotImplementedError('return of a suquence type is not implemented')
 
         main_stg = self.scope.get_main_stg()
 
@@ -143,7 +144,6 @@ class HDLGenPreprocessor:
                 param_memnodes = [Type.extra(p.typ) for p, _, _ in callee_scope.params if Type.is_list(p.typ)]
                 for node in param_memnodes:
                     HDLMemPortMaker.make_port_map(self.scope, self.module_info, inst, node, node.preds, port_map)
-
                 self.module_info.add_sub_module(inst, info, port_map)
 
         for memport in self.memportmakers:

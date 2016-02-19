@@ -41,7 +41,9 @@ class SSAFormTransformer:
             #logger.debug(', '.join([b.name for b in def_blocks]))
             while def_blocks:
                 def_block = def_blocks.pop()
-                #logger.debug(def_block.name)
+                logger.debug(def_block.name)
+                if def_block not in self.dominance_frontier:
+                    continue
                 for df in self.dominance_frontier[def_block]:
                     logger.log(0, 'DF of ' + def_block.name + ' = ' + df.name)
                     if sym not in phis[df]:

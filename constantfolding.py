@@ -86,7 +86,7 @@ class ConstantFolding(IRVisitor):
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
         memnode = Type.extra(ir.mem.sym.typ)
-        if isinstance(ir.offset, CONST) and not memnode.is_writable():
+        if env.compile_phase >= env.PHASE_3 and isinstance(ir.offset, CONST) and not memnode.is_writable():
             root = self.mrg.get_single_root(memnode)
             if root:
                 assert root.initstm
@@ -191,6 +191,10 @@ class ConstantFolding(IRVisitor):
             return lv is rv
         elif op == 'IsNot':
             return lv is not rv
+        elif op == 'And':
+            return lv and rv
+        elif op == 'Or':
+            return lv or rv
         else:
             raise RuntimeError('operator is not supported yet ' + op)
 

@@ -21,9 +21,8 @@ class Driver:
         self.updated = True
 
     def remove_scope(self, scope):
-        for i, scopes in enumerate(self.unprocessed_scopes):
-            if self.stage < i:
-                scopes.remove(scope)
+        for scopes in self.unprocessed_scopes:
+            if scope in scopes: scopes.remove(scope)
 
     def process_one(self, proc, scope):
         if env.dev_debug_mode:

@@ -66,15 +66,8 @@ class Symbol:
                 name = names[0][1:]
         else:
             name = self.name[:]
-        names = name.split('#')
-        if len(names) > 1:
-            names2 = names[1].split('_')
-            if len(names2) > 1:
-                return names[0] + names2[1]
-            else:
-                return names[0] + names[1]
-        else:
-            return name
+        name = name.replace('#', '')
+        return name
    
     def is_function(self):
         return self.name[0] == Symbol.func_prefix

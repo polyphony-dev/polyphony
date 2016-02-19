@@ -106,10 +106,13 @@ def compile_plan():
 
     def specfunc(driver):
         spec_func_maker = SpecializedFunctionMaker()
-        new_scopes = spec_func_maker.process_all()
+        new_scopes, unused_scopes = spec_func_maker.process_all()
         for s in new_scopes:
             assert s.name in env.scopes
             driver.insert_scope(s)
+        for s in unused_scopes:
+            driver.remove_scope(s)
+            env.remove_scope(s)
 
     def constopt(driver, scope):
         constantfolding = ConstantFolding(scope)
@@ -198,6 +201,7 @@ def compile_plan():
 
 
     plan = [
+        dumpscope,
         phase(env.PHASE_1),
         linenum,
         iftrans,
@@ -229,6 +233,7 @@ def compile_plan():
         dumpscope,
         usedef,
         specfunc,
+        traceblk,
         dumpscope,
         phase(env.PHASE_3),
         constopt,

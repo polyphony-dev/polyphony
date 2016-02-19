@@ -1,4 +1,5 @@
-﻿
+﻿from copy import copy
+
 class IR:
     def __init__(self):
         self.lineno = -1
@@ -255,7 +256,9 @@ class MCJUMP(IRStm):
         return '(MCJUMP {} [{}])'.format(', '.join([item for item in items]), uses)
 
     def clone(self):
-        ir = MCJUMP(copy(self.conds), copy(self.targets))
+        ir = MCJUMP()
+        ir.conds = [cond.clone() for cond in self.conds]
+        ir.targets = copy(self.targets)
         ir.lineno = self.lineno
         return ir
 

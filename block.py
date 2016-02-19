@@ -79,6 +79,9 @@ class Block:
         s += '\n'
         return s
 
+    def __repr__(self):
+        return self.name
+
     def __lt__(self, other):
         return int(self.num) < int(other.num)
 
@@ -147,7 +150,7 @@ class BlockTracer:
                 for succ in block.succs:
                     succ.preds.remove(block)
                 scope.remove_block(block)
-
+                logger.debug('remove block ' + block.name)
     #Block references:
     # block.succs
     # block.succs_loop
@@ -211,6 +214,7 @@ class BlockTracer:
                 target.preds.remove(block)
                 self._replace_jump_target(block, target)
                 scope.remove_block(block)
+                logger.debug('remove empty block ' + block.name)
 
     def _replace_jump_target(self, old_blk, new_blk):
         for pred in old_blk.preds:

@@ -180,9 +180,7 @@ class MemRefGraph:
 class MemRefGraphBuilder(IRTransformer):
     def __init__(self):
         super().__init__()
-        if env.memref_graph is None:
-            env.memref_graph = MemRefGraph()
-        self.mrg = env.memref_graph
+        self.mrg = env.memref_graph = MemRefGraph()
 
     def process_all(self):
         scopes = Scope.get_scopes(bottom_up=True)
@@ -338,7 +336,7 @@ class MemRefEdgeColoring:
                 p, _, _ = ir.func_scope.params[i]
                 assert Type.is_list(p.typ)
                 param_memnode = Type.extra(p.typ)
-                memnode = self.mrg.node(a.sym)                
+                memnode = self.mrg.node(a.sym)
                 assert param_memnode in memnode.succs
 
                 self.mrg.add_instance_edge(memnode, param_memnode, inst_name)

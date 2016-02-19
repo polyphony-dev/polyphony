@@ -1,5 +1,5 @@
 ﻿import sys
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, deque
 import functools
 from block import Block
 from ir import CONST, RELOP, MREF, ARRAY, TEMP, MOVE, CJUMP, MCJUMP, JUMP, CALL, SYSCALL, EXPR
@@ -83,7 +83,6 @@ class State:
             state_var = AHDL_VAR(self.stg.state_var_sym)
             if t.typ == 'Forward': # forward
                 if not next_state:
-                    assert 0
                     break
                 if t.codes:
                     self.set_next((t.cond, next_state, t.codes[:]))
@@ -91,6 +90,7 @@ class State:
                     self.set_next((t.cond, next_state, []))
             elif t.typ == 'Finish':# break
                 # This stg is a loop section, thus finish_state is the end of the loop section.
+                assert not self.stg.is_main()
                 self.set_next((t.cond, self.stg.finish_state, []))
             elif t.typ == 'LoopHead':# loop back
                 self.set_next((t.cond, self.stg.loop_head, []))
@@ -135,6 +135,9 @@ class StateGroup:
         for state in self.states:
             s += str(state)
         return s
+
+    def __repr__(self):
+        return self.name
 
     def __getitem__(self, key):
         return self.states[key]
@@ -315,15 +318,6 @@ class STGBuilder:
 
         for group in self.stg.groups.values():
             self._resolve_transitions(group, is_main)
-
-        # check never transitioned state group
-        unused_groups = []
-        for group in self.stg.groups.values():
-            if not group[-1].next_states:
-                unused_groups.append(group.name)
-
-        for unused in unused_groups:
-            del self.stg.groups[unused]
 
         return self.stg
 
@@ -783,6 +777,8 @@ class AHDLTranslator:
                     
         t = Transition('Branch', true_grp, cond)
         self._emit(t, self.sched_time)
+        if isinstance(cond, AHDL_CONST) and cond.value == 1:
+            return
 
         cond = AHDL_CONST(1)
         # In case of explicit else target
@@ -819,6 +815,14 @@ class AHDLTranslator:
         self._emit(t, sched)
 
     def visit_MCJUMP(self, ir, node):
+        for c, tgt in zip(ir.conds[:-1], ir.targets[:-1]):
+            if isinstance(c, CONST) and c.value == 1:
+                cond = self.visit(c, node)
+                target_grp = self.host.stg.name + '_' + tgt.group.name
+                t = Transition('Branch', target_grp, cond)
+                self._emit(t, self.sched_time)
+                return
+
         for c, target in zip(ir.conds, ir.targets):
             cond = self.visit(c, node)
             target_grp = self.host.stg.name + '_' + target.group.name

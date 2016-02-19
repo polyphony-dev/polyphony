@@ -465,8 +465,11 @@ class VerilogCodeGen:
         self.emit('assign {} = {}({});\n'.format(ahdl.output.name, ahdl.name.sym.name, params))
 
     def visit_AHDL_DEMUX(self, ahdl):
-        for i, output in enumerate(ahdl.outputs):
-            self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.name, ahdl.selector.sym.name, i, ahdl.input.name, ahdl.width))
+        if len(ahdl.outputs) > 1:
+            for i, output in enumerate(ahdl.outputs):
+                self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.name, ahdl.selector.sym.name, i, ahdl.input.name, ahdl.width))
+        else:
+            self.emit('assign {} = {};\n'.format(ahdl.outputs[0].name, ahdl.input.name))
 
     def visit(self, ahdl):
         method = 'visit_' + ahdl.__class__.__name__

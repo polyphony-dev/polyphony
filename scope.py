@@ -5,7 +5,7 @@ from logging import getLogger
 from irvisitor import IRVisitor
 from block import Block
 from copy import copy
-from ir import ARRAY, MOVE
+from ir import ARRAY, MOVE, JUMP, CJUMP, MCJUMP, PHI
 logger = getLogger(__name__)
 
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
@@ -137,10 +137,7 @@ class Scope:
                 new_grp.parent = group_map[orig_grp.parent]
 
         # clone block
-        s.blocks = []
-        block_map = {}
-        stm_map = {}
-        for orig_b in self.blocks:
+        def clone_block(orig_b):
             new_b = Block(orig_b.name)
             new_stms = []
             for orig_stm in orig_b.stms:
@@ -153,8 +150,31 @@ class Scope:
             new_b.order = orig_b.order
             new_b.group = group_map[orig_b.group]
             new_b.set_scope(s)
+            return new_b
+
+        s.blocks = []
+        block_map = {}
+        stm_map = {}
+        for orig_b in self.blocks:
+            new_b = clone_block(orig_b)
             s.blocks.append(new_b)
             block_map[orig_b] = new_b
+        for orig_grp in self.blk_grp_instances:
+            new_grp = group_map[orig_grp]
+            new_grp.blocks = [block_map[blk] for blk in orig_grp.blocks]
+
+        # jump target
+        for stm in stm_map.values():
+            if isinstance(stm, JUMP):
+                stm.target = block_map[stm.target]
+            elif isinstance(stm, CJUMP):
+                stm.true = block_map[stm.true]
+                stm.false = block_map[stm.false]
+            elif isinstance(stm, MCJUMP):
+                stm.targets = [block_map[t] for t in stm.targets]
+            elif isinstance(stm, PHI):
+                stm.args = [(arg, block_map[blk]) for arg, blk in stm.args]
+                self.blk_grp_instances
         # remake cfg
         for orig_b in self.blocks:
             new_b = block_map[orig_b]
@@ -166,7 +186,6 @@ class Scope:
                 new_b.preds.append(block_map[orig_pred])
             for orig_pred in orig_b.preds_loop:
                 new_b.preds_loop.append(block_map[orig_pred])
-
         # clone loop info
         for orig_head, orig_li in self.loop_infos.items():
             new_head = block_map[orig_head]
@@ -286,6 +305,28 @@ class Scope:
         blk.group.remove(blk)
         if not blk.group.blocks:
             self.blk_grp_instances.remove(blk.group)
+
+        for pred in blk.preds:
+            if blk in pred.succs:
+                pred.succs.remove(blk)
+            if blk in pred.succs_loop:
+                pred.succs_loop.remove(blk)
+        for succ in blk.succs:
+            if blk in succ.preds:
+                succ.preds.remove(blk)
+            if blk in succ.preds_loop:
+                succ.preds_loop.remove(blk)
+                if not succ.preds_loop:
+                    self._remove_loop_info(succ)
+
+    def _remove_loop_info(self, head):
+        info = self.loop_infos[head]
+        for b in info.breaks:
+            assert isinstance(b.stms[-1], JUMP)
+            jmp = b.stms[-1]
+            jmp.typ = ''
+
+        del self.loop_infos[head]
 
     def append_block(self, blk):
         blk.set_scope(self)
