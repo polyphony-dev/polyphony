@@ -26,8 +26,8 @@ class SSAOptimizer:
                 if self._optimize_move(stm, worklist, usedef):
                     continue
 
-            const_fold = ConstantFolding(scope)
-            new_stm = const_fold.process_stm(stm)
+            const_fold = ConstantFolding()
+            new_stm = const_fold.process_stm(scope, stm)
             assert new_stm
             if const_fold.modified_stms:
                 worklist.extend(const_fold.modified_stms)

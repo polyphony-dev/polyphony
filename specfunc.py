@@ -43,7 +43,7 @@ class SpecializedFunctionMaker:
                         binding.append((self.bind_val, i, arg.value))
                     elif isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
                         memnode = Type.extra(arg.sym.typ)
-                        if not memnode.is_writable():
+                        if not memnode.is_writable() and not memnode.is_joinable():
                             binding.append((self.bind_rom, i, memnode))
                 if binding:
                     descs = '_'.join([self.clone_param_desc(callee, i, a) for _, i, a in binding])
@@ -77,19 +77,20 @@ class SpecializedFunctionMaker:
                 else:
                     using_scopes.add(callee)
 
-        unused_scopes = [unused for unused in set(scopes).difference(using_scopes)]
+        unused_scopes = set(scopes).difference(using_scopes)
         return new_scopes, unused_scopes
 
     @staticmethod
     def clone_param_desc(scope, i, a):
         p, _, _ = scope.params[i]
         if isinstance(a, MemRefNode):
-            astr = a.sym.hdl_name()
+            # We need unique name
+            astr = a.sym.hdl_name() + '_' + str(a.sym.id)
         elif isinstance(a, int):
             astr = str(a) if a >= 0 else 'n' + str(-a)
         else:
             assert False
-        return '{}{}'.format(p.hdl_name(), astr)
+        return '{}_{}'.format(p.hdl_name(), astr)
 
 
     def bind_val(self, scope, i, value):
@@ -98,7 +99,7 @@ class SpecializedFunctionMaker:
 
     def bind_rom(self, scope, i, memnode):
         root = env.memref_graph.get_single_root(memnode)
-        assert root.initstm and isinstance(root.initstm, MOVE) and isinstance(root.initstm.src, ARRAY)
+        assert root and root.initstm and isinstance(root.initstm, MOVE) and isinstance(root.initstm.src, ARRAY)
         replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], 'Load'), root.initstm.src.clone(), scope.usedef)
 
 

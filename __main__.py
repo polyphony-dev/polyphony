@@ -115,7 +115,7 @@ def compile_plan():
             env.remove_scope(s)
 
     def constopt(driver, scope):
-        constantfolding = ConstantFolding(scope)
+        constantfolding = ConstantFolding()
         constantfolding.process(scope)
 
     def loop(driver, scope):
@@ -268,7 +268,7 @@ def compile_main(src_file, output_name, output_dir):
     translator = IRTranslator()
     global_scope = translator.translate(read_source(src_file))
 
-    global_constantfolding = ConstantFolding(global_scope)
+    global_constantfolding = ConstantFolding()
     global_constantfolding.process_global()
 
     typepropagation = TypePropagation()

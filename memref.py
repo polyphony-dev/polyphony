@@ -13,9 +13,8 @@ logger = getLogger(__name__)
 class MemRefNode:
     SRC  = 0x00000001
     WR   = 0x00000002
-    JOIN = 0x00000004
-    FORK = 0x00000008
-    
+
+    id = 0
     def __init__(self, sym, scope):
         self.sym = sym
         self.scope = scope
@@ -75,17 +74,11 @@ class MemRefNode:
     def is_writable(self):
         return self.flags & MemRefNode.WR
 
-    def set_joinable(self):
-        self.flags |= MemRefNode.JOIN
-
     def is_joinable(self):
-        return self.flags & MemRefNode.JOIN
-
-    def set_forkable(self):
-        self.flags |= MemRefNode.FORK
+        return len(self.preds) > 1
 
     def is_forkable(self):
-        return self.flags & MemRefNode.FORK
+        return len(self.succs) > 1
 
     def set_param_index(self, index):
         self.param_index = index
@@ -119,15 +112,19 @@ class MemRefGraph:
         
     def add_edge(self, src, dst):
         src.add_succ(dst)
-        if len(src.succs) > 1:
-            src.set_forkable()
         dst.add_pred(src)
-        if len(dst.preds) > 1:
-            dst.set_joinable()
         self.edges[(src.sym, dst.sym)] = (src, dst)
 
     def add_instance_edge(self, src, dst, inst_name):
         self.instance_edges[(src.sym, dst.sym)] = inst_name
+
+    def remove_node(self, node):
+        logger.debug('remove_node ' + str(node))
+        for pred in node.preds:
+            pred.succs.remove(node)
+        for succ in node.succs:
+            succ.preds.remove(node)
+        del self.nodes[node.sym]
 
     def collect_roots(self):
         for node in self.nodes.values():
@@ -176,6 +173,18 @@ class MemRefGraph:
             return root.length
         else:
             return -1
+
+    def is_path_exist(self, frm, to):
+        for succ in frm.succs:
+            if succ is to:
+                return True
+            if self.is_path_exist(succ, to):
+                return True
+        return False
+
+    def is_live_node(self, node):
+        return node.sym in self.nodes
+
 
 class MemRefGraphBuilder(IRTransformer):
     def __init__(self):
@@ -337,9 +346,10 @@ class MemRefEdgeColoring:
                 assert Type.is_list(p.typ)
                 param_memnode = Type.extra(p.typ)
                 memnode = self.mrg.node(a.sym)
-                assert param_memnode in memnode.succs
-
-                self.mrg.add_instance_edge(memnode, param_memnode, inst_name)
+                # param memnode might be removed in the rom elimination of ConstantFolding
+                if self.mrg.is_live_node(param_memnode):
+                    assert param_memnode in memnode.succs
+                    self.mrg.add_instance_edge(memnode, param_memnode, inst_name)
         return ir
 
     def visit_SYSCALL(self, ir, node):

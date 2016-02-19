@@ -1,26 +1,38 @@
 ﻿from collections import deque
 from irvisitor import IRVisitor
-from ir import CONST, TEMP, JUMP, MOVE
+from ir import CONST, TEMP, ARRAY, JUMP, MOVE
 from env import env
 from usedef import UseDefDetector
 from varreplacer import VarReplacer
 from type import Type
 
 class ConstantFolding(IRVisitor):
-    def __init__(self, scope):
+    def __init__(self):
         super().__init__()
-        self.scope = scope
         self.mrg = env.memref_graph
         self.modified_stms = set()
         self.global_scope = env.scopes['@top']
+        self.used_memnodes = set()
+        self.array_inits = {}
 
-    def process_stm(self, stm):
+    def process(self, scope):
+        if scope.is_testbench():
+            return
+        super().process(scope)
+        if env.compile_phase >= env.PHASE_3:
+            self._remove_unused_readonly_memnode()
+
+    # used only SSAOptimizer
+    def process_stm(self, scope, stm):
+        self.scope = scope
         self.current_stm = stm
         return self.visit(stm)
 
+    # used only compile_main()
     def process_global(self):
         '''for global scope'''
-        assert self.global_scope
+        assert self.global_scope        
+        self.scope = self.global_scope
         udd = UseDefDetector()
         udd.process(self.global_scope)
 
@@ -85,17 +97,22 @@ class ConstantFolding(IRVisitor):
 
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
-        memnode = Type.extra(ir.mem.sym.typ)
-        if env.compile_phase >= env.PHASE_3 and isinstance(ir.offset, CONST) and not memnode.is_writable():
-            root = self.mrg.get_single_root(memnode)
-            if root:
-                assert root.initstm
-                self.modified_stms.add(self.current_stm)
-                return root.initstm.src.items[ir.offset.value]
+        if env.compile_phase >= env.PHASE_3:
+            memnode = Type.extra(ir.mem.sym.typ)
+            if isinstance(ir.offset, CONST) and not memnode.is_writable():
+                root = self.mrg.get_single_root(memnode)
+                if root:
+                    assert root.initstm
+                    self.modified_stms.add(self.current_stm)
+                    return root.initstm.src.items[ir.offset.value]
+            self.used_memnodes.add(memnode)
         return ir
 
     def visit_MSTORE(self, ir):
         ir.offset = self.visit(ir.offset)
+        if env.compile_phase >= env.PHASE_3:
+            memnode = Type.extra(ir.mem.sym.typ)
+            self.used_memnodes.add(memnode)
         return ir
 
     def visit_ARRAY(self, ir):
@@ -133,6 +150,10 @@ class ConstantFolding(IRVisitor):
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
+        if isinstance(ir.src, ARRAY):
+            assert isinstance(ir.dst, TEMP)
+            memnode = self.mrg.node(ir.dst.sym)
+            self.array_inits[memnode] = ir
         return ir
 
     def visit_PHI(self, ir):
@@ -211,3 +232,14 @@ class ConstantFolding(IRVisitor):
             return None
         return defstm.src
 
+    def _remove_unused_readonly_memnode(self):
+        self_readonly_memnodes = set([n for n in self.mrg.nodes.values() if n.scope is self.scope and not n.is_writable()])
+        for unused in self_readonly_memnodes.difference(self.used_memnodes):
+            for used in self.used_memnodes:
+                if self.mrg.is_path_exist(unused, used):
+                    break
+            else:
+                self.mrg.remove_node(unused)
+                if unused in self.array_inits:
+                    stm = self.array_inits[unused]
+                    stm.block.stms.remove(stm)
