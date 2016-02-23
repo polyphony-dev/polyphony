@@ -7,7 +7,7 @@ echo "basename: $basename"
 filename=${basename%.*}
 echo "filename: $filename"
 
-python3 __main__.py -d tmp -o $filename $1
+python3 -m polyphony.compiler -d tmp -o $filename $1
 FILES=`ls tmp/`
 PATHS=`ls -d tmp/*`
 echo $PATHS

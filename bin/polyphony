@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from polyphony.compiler.__main__ import main
+
+main()
