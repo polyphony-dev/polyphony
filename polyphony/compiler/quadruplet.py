@@ -55,6 +55,7 @@ class QuadrupleMaker(IRTransformer):
         sym = self.scope.add_temp(Symbol.temp_prefix)
         mv = MOVE(TEMP(sym, 'Store'), ir)
         mv.lineno = ir.lineno
+        assert mv.lineno >= 0
         self.new_stms.append(mv)
         return TEMP(sym, 'Load')
 
@@ -64,6 +65,7 @@ class QuadrupleMaker(IRTransformer):
         sym = self.scope.add_temp(Symbol.condition_prefix)
         mv = MOVE(TEMP(sym, 'Store'), ir)
         mv.lineno = ir.lineno
+        assert mv.lineno >= 0
         self.new_stms.append(mv)
         return TEMP(sym, 'Load')
 
@@ -87,6 +89,7 @@ class QuadrupleMaker(IRTransformer):
         sym = self.scope.add_temp(Symbol.temp_prefix)
         mv = MOVE(TEMP(sym, 'Store'), ir)
         mv.lineno = ir.lineno
+        assert mv.lineno >= 0
         self.new_stms.append(mv)
         return TEMP(sym, 'Load')
 
@@ -108,6 +111,7 @@ class QuadrupleMaker(IRTransformer):
             sym = self.scope.add_temp(Symbol.temp_prefix)
             mv = MOVE(TEMP(sym, 'Store'), ir)
             mv.lineno = ir.lineno
+            assert mv.lineno >= 0
             self.new_stms.append(mv)
             return TEMP(sym, 'Load')
         return ir
@@ -167,5 +171,7 @@ class QuadrupleMaker(IRTransformer):
             mref.mem.ctx = 'Load'
             ir.src = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
             ir.dst = TEMP(mref.mem.sym, 'Store')
+            ir.src.lineno = ir.lineno
+            ir.dst.lineno = ir.lineno
         self.new_stms.append(ir)
 

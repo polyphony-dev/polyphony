@@ -76,7 +76,7 @@ class LineNumberSetter(IRVisitor):
     def visit_MOVE(self, ir):
         assert ir.lineno >= 0
         self.visit(ir.src)
-        self.visit(ir.src)
+        self.visit(ir.dst)
 
     def visit_PHI(self, ir):
         pass
