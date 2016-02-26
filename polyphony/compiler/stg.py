@@ -113,17 +113,20 @@ class State:
                     idx = 1 if group.is_trunk else 0
                     # my original next_state pass to the last state
                     # of the target group for return from jump
-                    last_state = group.states[-1]
+                    jump_group_last_state = group.states[-1]
                     
-                    #WORKAROUND:
+                    # check same jump target
+                    last_state = self.group.states[-1]
+                    if last_state.next_states:
+                        _, nstate, _ = last_state.next_states[0]
+                        if nstate.group is group:
+                            continue
+
                     #assert not last_state.next_states
-                    if not last_state.next_states:
-                        logger.debug('set return state {} to {}'.format(last_state.name, next_state.name))
-                        last_state.resolve_transition(next_state, nest+1)
-                        self.set_next((t.cond, group.states[idx], []))
-                    else:
-                        #FIXME: illigal case
-                        self.set_next((t.cond, next_state, []))
+                    if not jump_group_last_state.next_states:
+                        logger.debug('set return state {} to {}'.format(jump_group_last_state.name, next_state.name))
+                        jump_group_last_state.resolve_transition(next_state, nest+1)
+                    self.set_next((t.cond, group.states[idx], []))
                 else:
                     self.set_next((t.cond, next_state, []))
             else:
