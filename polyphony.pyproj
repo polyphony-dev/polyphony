@@ -1,0 +1,146 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{5fa897ea-98c7-466a-9927-9e1c328b4ee6}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>bin/polyphony</StartupFile>
+    <SearchPath>.</SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId>{2af0f10d-7135-4994-9156-5d01c9c11b7e}</InterpreterId>
+    <InterpreterVersion>3.4</InterpreterVersion>
+    <IsWindowsApplication>False</IsWindowsApplication>
+    <InterpreterArguments>
+    </InterpreterArguments>
+    <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
+    <CommandLineArguments>tests/test2.py</CommandLineArguments>
+    <Environment>
+    </Environment>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+    <PtvsTargetsFile>$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets</PtvsTargetsFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="polyphony\compiler\ahdl.py" />
+    <Compile Include="polyphony\compiler\ahdl_usedef.py" />
+    <Compile Include="polyphony\compiler\block.py" />
+    <Compile Include="polyphony\compiler\common.py" />
+    <Compile Include="polyphony\compiler\constantfolding.py" />
+    <Compile Include="polyphony\compiler\dataflow.py" />
+    <Compile Include="polyphony\compiler\dfg_opt.py" />
+    <Compile Include="polyphony\compiler\dominator.py" />
+    <Compile Include="polyphony\compiler\driver.py" />
+    <Compile Include="polyphony\compiler\env.py" />
+    <Compile Include="polyphony\compiler\hdlgen.py" />
+    <Compile Include="polyphony\compiler\hdlmemport.py" />
+    <Compile Include="polyphony\compiler\hdlmoduleinfo.py" />
+    <Compile Include="polyphony\compiler\iftransform.py" />
+    <Compile Include="polyphony\compiler\ir.py" />
+    <Compile Include="polyphony\compiler\irtranslator.py" />
+    <Compile Include="polyphony\compiler\irvisitor.py" />
+    <Compile Include="polyphony\compiler\jumpdependency.py" />
+    <Compile Include="polyphony\compiler\latency.py" />
+    <Compile Include="polyphony\compiler\libs.py" />
+    <Compile Include="polyphony\compiler\liveness.py" />
+    <Compile Include="polyphony\compiler\loopdetector.py" />
+    <Compile Include="polyphony\compiler\memorytransform.py" />
+    <Compile Include="polyphony\compiler\memref.py" />
+    <Compile Include="polyphony\compiler\phiresolve.py" />
+    <Compile Include="polyphony\compiler\quadruplet.py" />
+    <Compile Include="polyphony\compiler\scheduler.py" />
+    <Compile Include="polyphony\compiler\scope.py" />
+    <Compile Include="polyphony\compiler\setlineno.py" />
+    <Compile Include="polyphony\compiler\specfunc.py" />
+    <Compile Include="polyphony\compiler\ssa.py" />
+    <Compile Include="polyphony\compiler\ssa_opt.py" />
+    <Compile Include="polyphony\compiler\stg.py" />
+    <Compile Include="polyphony\compiler\stg_opt.py" />
+    <Compile Include="polyphony\compiler\symbol.py" />
+    <Compile Include="polyphony\compiler\treebalancer.py" />
+    <Compile Include="polyphony\compiler\type.py" />
+    <Compile Include="polyphony\compiler\typecheck.py" />
+    <Compile Include="polyphony\compiler\usedef.py" />
+    <Compile Include="polyphony\compiler\varreplacer.py" />
+    <Compile Include="polyphony\compiler\vericodegen.py" />
+    <Compile Include="polyphony\compiler\verilog_common.py" />
+    <Compile Include="polyphony\compiler\veritestgen.py" />
+    <Compile Include="polyphony\compiler\__init__.py" />
+    <Compile Include="polyphony\compiler\__main__.py" />
+    <Compile Include="polyphony\__init__.py" />
+    <Compile Include="tests\apps\minivm.py" />
+    <Compile Include="tests\apps\mips.py" />
+    <Compile Include="tests\apps\odd_even_sort.py" />
+    <Compile Include="tests\expr\expr01.py" />
+    <Compile Include="tests\expr\expr02.py" />
+    <Compile Include="tests\expr\expr03.py" />
+    <Compile Include="tests\expr\expr04.py" />
+    <Compile Include="tests\expr\expr05.py" />
+    <Compile Include="tests\expr\expr06.py" />
+    <Compile Include="tests\expr\expr07.py" />
+    <Compile Include="tests\expr\expr08.py" />
+    <Compile Include="tests\func\func01.py" />
+    <Compile Include="tests\func\func02.py" />
+    <Compile Include="tests\func\func03.py" />
+    <Compile Include="tests\func\func04.py" />
+    <Compile Include="tests\func\func05.py" />
+    <Compile Include="tests\func\sysfunc01.py" />
+    <Compile Include="tests\func\sysfunc02.py" />
+    <Compile Include="tests\if\if01.py" />
+    <Compile Include="tests\if\if02.py" />
+    <Compile Include="tests\if\if03.py" />
+    <Compile Include="tests\if\if04.py" />
+    <Compile Include="tests\if\if05.py" />
+    <Compile Include="tests\list\list01.py" />
+    <Compile Include="tests\list\list02.py" />
+    <Compile Include="tests\list\list03.py" />
+    <Compile Include="tests\list\list04.py" />
+    <Compile Include="tests\list\list05.py" />
+    <Compile Include="tests\list\rom01.py" />
+    <Compile Include="tests\loop\for01.py" />
+    <Compile Include="tests\loop\for02.py" />
+    <Compile Include="tests\loop\for03.py" />
+    <Compile Include="tests\loop\for04.py" />
+    <Compile Include="tests\loop\for05.py" />
+    <Compile Include="tests\loop\for06.py" />
+    <Compile Include="tests\loop\for07.py" />
+    <Compile Include="tests\loop\for08.py" />
+    <Compile Include="tests\loop\for09.py" />
+    <Compile Include="tests\loop\for10.py" />
+    <Compile Include="tests\loop\while01.py" />
+    <Compile Include="tests\loop\while02.py" />
+    <Compile Include="tests\loop\while03.py" />
+    <Compile Include="tests\loop\while04.py" />
+    <Compile Include="tests\loop\while05.py" />
+    <Compile Include="tests\parallel\parallel_loop01.py" />
+    <Compile Include="tests\parallel\parallel_loop02.py" />
+    <Compile Include="tests\return\return01.py" />
+    <Compile Include="tests\return\return02.py" />
+    <Compile Include="tests\return\return03.py" />
+    <Compile Include="tests\return\return04.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="polyphony\" />
+    <Folder Include="polyphony\compiler\" />
+    <Folder Include="tests\" />
+    <Folder Include="tests\apps" />
+    <Folder Include="tests\expr" />
+    <Folder Include="tests\func" />
+    <Folder Include="tests\if" />
+    <Folder Include="tests\list" />
+    <Folder Include="tests\loop" />
+    <Folder Include="tests\parallel" />
+    <Folder Include="tests\return" />
+  </ItemGroup>
+  <ItemGroup>
+    <InterpreterReference Include="{2af0f10d-7135-4994-9156-5d01c9c11b7e}\3.4" />
+  </ItemGroup>
+  <Import Project="$(PtvsTargetsFile)" Condition="Exists($(PtvsTargetsFile))" />
+  <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="!Exists($(PtvsTargetsFile))" />
+</Project>

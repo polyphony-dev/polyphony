@@ -14,9 +14,10 @@ logger = getLogger(__name__)
 import pdb
 
 class State:
-    def __init__(self, name, codes, transitions, stg):
+    def __init__(self, name, step, codes, transitions, stg):
         assert isinstance(name, str)
         self.name = name
+        self.step = step
         self.codes = codes
         self.next_states = []
         self.prev_states = []
@@ -28,7 +29,7 @@ class State:
         def _strcodes(codes):
             if codes: return ', '.join([str(c) for c in codes])
             else:     return ''
-        s = '{}:'.format(self.name)
+        s = '{}:{}'.format(self.name, self.step)
         if self.codes or self.next_states:
             s += '\n'
             s += "\n".join(['  {}'.format(code) for code in self.codes])
@@ -54,7 +55,8 @@ class State:
         _, nstate, _ = next_data
         nstate.set_prev(self)
         logger.debug('set_next ' + self.name + ' next:' + nstate.name)
-
+        if nstate.step == sys.maxsize:
+            nstate.step = self.step + 1
     def replace_next(self, old_state, new_state):
         for i, (cond, nstate, codes) in enumerate(self.next_states):
             if nstate is old_state:
@@ -68,11 +70,11 @@ class State:
     def set_prev(self, prev):
         self.prev_states.append(prev)
 
-    def resolve_transition(self, next_state):
+    def resolve_transition(self, next_state, nest=0):
         if next_state:
-            logger.debug('resolve_transition ' + self.name + ' next:' + next_state.name)
+            logger.debug('\n### resolve_transition {} next: {} nest{}'.format(self.name, next_state.name, nest))
         else:
-            logger.debug('resolve_transition ' + self.name + ' next: None')
+            logger.debug('\n### resolve_transition {} next: None nest{}'.format(self.name, nest))
         #
         if not self.transitions:
             self.set_next((None, next_state, []))
@@ -106,15 +108,22 @@ class State:
             elif t.typ == 'Branch':# branch and return
                 assert t.target_group in self.stg.groups
                 group = self.stg.groups[t.target_group]
+
                 if self not in group.states:
                     idx = 1 if group.is_trunk else 0
                     # my original next_state pass to the last state
                     # of the target group for return from jump
                     last_state = group.states[-1]
-                    assert not last_state.next_states
-                    logger.debug('set return state {} to {}'.format(last_state.name, next_state.name))
-                    last_state.resolve_transition(next_state)
-                    self.set_next((t.cond, group.states[idx], []))
+                    
+                    #WORKAROUND:
+                    #assert not last_state.next_states
+                    if not last_state.next_states:
+                        logger.debug('set return state {} to {}'.format(last_state.name, next_state.name))
+                        last_state.resolve_transition(next_state, nest+1)
+                        self.set_next((t.cond, group.states[idx], []))
+                    else:
+                        #FIXME: illigal case
+                        self.set_next((t.cond, next_state, []))
                 else:
                     self.set_next((t.cond, next_state, []))
             else:
@@ -202,8 +211,8 @@ class STG:
 
         return s
 
-    def new_state(self, name, codes, transitions):
-        return State(name, codes, transitions, self)
+    def new_state(self, name, step, codes, transitions):
+        return State(name, step, codes, transitions, self)
 
     def add_child(self, stg):
         self.children.append(stg)
@@ -393,7 +402,7 @@ class STGBuilder:
                 last_items = (codes, transitions)
                 break
             name = '{}_S{}'.format(state_prefix, step)
-            state = self._new_state(name, codes, transitions)
+            state = self._new_state(name, step+1, codes, transitions)
             group.append(state)
 
         if is_trunk:
@@ -407,7 +416,7 @@ class STGBuilder:
                 self.stg.finish_state = group.finish_state
         elif not is_trunk:
             name = '{}_BRANCH'.format(state_prefix)
-            state = self._new_state(name, last_items[0], last_items[1])
+            state = self._new_state(name, sys.maxsize, last_items[0], last_items[1])
             group.append(state)
             
         return group
@@ -418,20 +427,20 @@ class STGBuilder:
         t_codes = [AHDL_MOVE(AHDL_VAR(self.stg.valid_sym), AHDL_CONST(0))]
         #conditional jump to the next state
         t = Transition('Forward', None, cond, t_codes)
-        return self._new_state(name, [], [t])
+        return self._new_state(name, 0, [], [t])
 
     def _build_main_finish_state(self, name):
         cond = AHDL_OP('Eq', AHDL_VAR(self.stg.accept_sym), AHDL_CONST(1))
         t = Transition('Forward', None, cond)
 
         codes = [AHDL_MOVE(AHDL_VAR(self.stg.valid_sym), AHDL_CONST(1))]
-        return self._new_state(name, codes, [t])
+        return self._new_state(name, sys.maxsize, codes, [t])
 
     def _build_loop_init_state(self, name):
-        return self._new_state(name, [], [Transition()])
+        return self._new_state(name, 0, [], [Transition()])
 
     def _build_loop_finish_state(self, name):
-        return self._new_state(name, [], [Transition()])
+        return self._new_state(name, sys.maxsize, [], [Transition()])
 
 
     def _resolve_transitions(self, group, is_main):
@@ -454,8 +463,8 @@ class STGBuilder:
         return sym
 
 
-    def _new_state(self, name, codes, transitions):
-        return self.stg.new_state(name, codes, transitions)
+    def _new_state(self, name, step, codes, transitions):
+        return self.stg.new_state(name, step, codes, transitions)
 
 
     def emit_call_ret_sequence(self, call, node, sched_time):

@@ -10,6 +10,9 @@ class IR:
     def __repr__(self):
         return self.__str__()
 
+    def is_jump(self):
+        return False
+
 class IRExp(IR):
     def __init__(self):
         super().__init__()
@@ -230,12 +233,15 @@ class CJUMP(IRStm):
         uses = ''
         if self.uses:
             uses = ', '.join([str(u) for u in self.uses])
-        return '(CJUMP {}, {}, {} [{}])'.format(self.exp, self.true.name, self.false.name, uses)
+        return '(CJUMP {}, {}::{}, {}::{} [{}])'.format(self.exp, self.true.name, self.true.group.name, self.false.name, self.false.group.name, uses)
 
     def clone(self):
         ir = CJUMP(self.exp.clone(), self.true, self.false)
         ir.lineno = self.lineno
         return ir
+
+    def is_jump(self):
+        return True
 
 class MCJUMP(IRStm):
     def __init__(self):
@@ -248,12 +254,12 @@ class MCJUMP(IRStm):
         assert len(self.conds) == len(self.targets)
         items = []
         for cond, target in zip(self.conds, self.targets):
-            items.append('({}) => {}'.format(cond, target.name))
+            items.append('({}) => {}::{}'.format(cond, target.name, target.group.name))
             
         uses = ''
         if self.uses:
             uses = ', '.join([str(u) for u in self.uses])
-        return '(MCJUMP {} [{}])'.format(', '.join([item for item in items]), uses)
+        return '(MCJUMP \n        {}\n        [{}])'.format(', \n        '.join([item for item in items]), uses)
 
     def clone(self):
         ir = MCJUMP()
@@ -261,6 +267,9 @@ class MCJUMP(IRStm):
         ir.targets = copy(self.targets)
         ir.lineno = self.lineno
         return ir
+
+    def is_jump(self):
+        return True
 
 class JUMP(IRStm):
     def __init__(self, target, typ = ''):
@@ -275,7 +284,7 @@ class JUMP(IRStm):
         if self.uses:
             uses = ', '.join([str(u) for u in self.uses])
         conds = conds2str(self.conds)
-        return "(JUMP {} '{}' [{}] {})".format(self.target.name, self.typ, uses, conds)
+        return "(JUMP {}::{} '{}' [{}] {})".format(self.target.name, self.target.group.name, self.typ, uses, conds)
 
     def clone(self):
         jp = JUMP(self.target, self.typ)
@@ -283,6 +292,9 @@ class JUMP(IRStm):
         jp.conds = list(self.conds) if self.conds else None
         jp.lineno = self.lineno
         return jp
+
+    def is_jump(self):
+        return True
 
 class RET(IRStm):
     def __init__(self, exp):
