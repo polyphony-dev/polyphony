@@ -6,11 +6,20 @@ else
 TEST_DIRS="expr if loop return list scope func parallel testbench"
 fi
 
+if [ ! -d out ]; then
+    mkdir out
+fi
+
+if [ ! -d tmp ]; then
+    mkdir tmp
+fi
+
+
 for d in $TEST_DIRS; do \
 	FILES=`ls tests/$d/*.py`
 	for f in $FILES; do \
 		echo $f
-		./simu.sh $f | grep '^ASSERTION'
+		./simu.sh $f 2> /dev/stdout | grep '^ASSERTION\|Error'
 	done
 done
 
