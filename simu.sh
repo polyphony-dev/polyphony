@@ -26,16 +26,29 @@ fi
 
 FILES=`ls tmp/`
 PATHS=`ls -d tmp/*`
-echo $PATHS
-iverilog -o out/test -s test $PATHS
 
+iverilog -o out/test -s test $PATHS
+VERILOG_ERROR=0
 if [ $? -ne 0 ]; then
-    echo Something Error has occured.
-    exit 1
+	let VERILOG_ERROR=1
 fi
 
+echo $PATHS
 for f in $FILES; do \
 	cp tmp/$f out/
 	rm tmp/$f
 done
+
+if [ $VERILOG_ERROR -eq 1 ]; then
+    echo Something Error has occured.
+    exit 1
+fi
+
 ./out/test
+if [ $? -ne 0 ]; then
+	let VERILOG_ERROR=1
+fi
+if [ $VERILOG_ERROR -eq 1 ]; then
+    echo Something Error has occured.
+    exit 1
+fi

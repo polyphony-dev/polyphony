@@ -19,7 +19,7 @@ for d in $TEST_DIRS; do \
 	FILES=`ls tests/$d/*.py`
 	for f in $FILES; do \
 		echo $f
-		./simu.sh $f 2> /dev/stdout | grep '^ASSERTION\|Error'
+		./simu.sh $f 2> /dev/stdout | grep '^ASSERTION\|Error\|error'
 	done
 done
 

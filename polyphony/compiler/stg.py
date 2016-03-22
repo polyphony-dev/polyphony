@@ -617,8 +617,9 @@ class STGBuilder:
         assert src_node
         assert src_node in preds
         idx = preds.index(src_node)
-        sel = self._gen_sym(mem_name, 'sel', idx.bit_length())
-        self.emit(AHDL_MOVE(AHDL_VAR(sel), AHDL_CONST(idx)), sched_time)
+        sel = self._gen_sym(mem_name, 'bridge_sel', idx.bit_length())
+        one_hot_mask = bin(1 << idx)[2:]
+        self.emit(AHDL_MOVE(AHDL_VAR(sel), AHDL_CONST('\'b'+one_hot_mask)), sched_time)
 
     def emit_array_init_sequence(self, memnode, sched_time):
         if not memnode.is_writable():

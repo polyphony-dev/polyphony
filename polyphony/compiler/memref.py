@@ -71,6 +71,9 @@ class MemRefNode:
     def set_writable(self):
         self.flags |= MemRefNode.WR
 
+    def is_source(self):
+        return self.flags & MemRefNode.SRC
+
     def is_writable(self):
         return self.flags & MemRefNode.WR
 
@@ -153,6 +156,11 @@ class MemRefGraph:
             if src is node.sym:
                 yield inst_name, self.node(dst)
 
+    def collect_inst_preds(self, node):
+        for (src, dst), inst_name in self.instance_edges.items():
+            if dst is node.sym:
+                yield inst_name, self.node(src)
+
     def find_param_node(self, scope, param_index):
         assert len(scope.params) > param_index
         p, _, _ = scope.params[param_index]
@@ -190,12 +198,16 @@ class MemRefGraphBuilder(IRTransformer):
     def __init__(self):
         super().__init__()
         self.mrg = env.memref_graph = MemRefGraph()
+        self.edges = []
 
     def process_all(self):
         scopes = Scope.get_scopes(bottom_up=True)
         for s in scopes:
             self.process(s)
-
+        for sym, dst in self.edges:
+            src = self.mrg.node(sym)
+            self.mrg.add_edge(src, dst)
+                
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         return ir
@@ -216,9 +228,8 @@ class MemRefGraphBuilder(IRTransformer):
 
         for i, arg in enumerate(ir.args):
             if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
-                memnode = self.mrg.node(arg.sym)
                 param_node = self.mrg.find_param_node(ir.func_scope, i)
-                self.mrg.add_edge(memnode, param_node)
+                self.edges.append((arg.sym, param_node))
 
         return ir
 
@@ -303,8 +314,7 @@ class MemRefGraphBuilder(IRTransformer):
             memnode = MemRefNode(ir.var.sym, self.scope)
             self.mrg.add_node(memnode)
             for arg, blk in ir.args:
-                pred = self.mrg.node(arg.sym)
-                self.mrg.add_edge(pred, memnode)
+                self.edges.append((arg.sym, memnode))
             ir.var.sym.set_type(Type.list(Type.int_t, memnode))
         self.new_stms.append(ir)
 
