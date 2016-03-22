@@ -5,13 +5,13 @@ import sys
 import re
 import copy
 import pdb
-from .ir import UNOP, BINOP, RELOP, CALL, SYSCALL, CONST, MREF, ARRAY, TEMP, EXPR, CJUMP, JUMP, RET, MOVE, op2str
+from .ir import IR, UNOP, BINOP, RELOP, CALL, SYSCALL, CONST, MREF, ARRAY, TEMP, EXPR, CJUMP, JUMP, RET, MOVE, op2str
 from .block import Block
 from .scope import Scope, FunctionParam
 from .symbol import Symbol, function_name
 from .type import Type
 from .env import env
-from .common import current_file_name, get_src_text
+from .common import error_info
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -106,11 +106,11 @@ class Visitor(ast.NodeVisitor):
         block.append_stm(stm)
         stm.lineno = ast_node.lineno
 
-    def _nodectx2ctxstr(self, node):
+    def _nodectx2irctx(self, node):
         if isinstance(node.ctx, ast.Store) or isinstance(node.ctx, ast.AugStore):
-            return 'Store'
+            return IR.STORE
         else:
-            return 'Load'
+            return IR.LOAD
 
     def _needJUMP(self, block):
         if not block.stms:
@@ -150,7 +150,7 @@ class Visitor(ast.NodeVisitor):
         params = self.current_scope.params
         skip = len(node.args.args) - len(node.args.defaults)
         for idx, param in enumerate(params[:skip]):
-            self.emit(MOVE(TEMP(param.copy, 'Store'), TEMP(param.sym, 'Load')), node)
+            self.emit(MOVE(TEMP(param.copy, IR.STORE), TEMP(param.sym, IR.LOAD)), node)
             
         for idx, (param, defval) in enumerate(zip(params[skip:], node.args.defaults)):
             if Type.is_list(param.sym.typ):
@@ -158,14 +158,14 @@ class Visitor(ast.NodeVisitor):
                 raise RuntimeError("cannot set the default value to the list type parameter.")
             d = self.visit(defval)
             params[skip+idx] = FunctionParam(param.sym, param.copy, d)
-            self.emit(MOVE(TEMP(param.copy, 'Store'), TEMP(param.sym, 'Load')), node)
+            self.emit(MOVE(TEMP(param.copy, IR.STORE), TEMP(param.sym, IR.LOAD)), node)
 
         for stm in node.body:
             self.visit(stm)
 
         #self.function_exit.branch_tags = []
         sym = self.current_scope.gen_sym(Symbol.return_prefix)
-        self.emit_to(self.function_exit, RET(TEMP(sym, 'Load')), node)
+        self.emit_to(self.function_exit, RET(TEMP(sym, IR.LOAD)), node)
         self.current_scope.append_block(self.function_exit)
         self.current_scope.end_block_group()
         self.current_scope = outer_scope
@@ -183,7 +183,7 @@ class Visitor(ast.NodeVisitor):
     def visit_Return(self, node):
         #TODO multiple return value
         sym = self.current_scope.gen_sym(Symbol.return_prefix)
-        ret = TEMP(sym, 'Store')
+        ret = TEMP(sym, IR.STORE)
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
         self.emit(JUMP(self.function_exit, 'E'), node)
@@ -385,37 +385,37 @@ class Visitor(ast.NodeVisitor):
                 step = it.args[2]
 
             init_parts = [
-                MOVE(TEMP(var.sym, 'Store'), start)
+                MOVE(TEMP(var.sym, IR.STORE), start)
             ]
             # negative step value
             #s_le_e = RELOP('LtE', start, end)
-            #i_lt_e = RELOP('Lt', TEMP(var.sym, 'Load'), end)
+            #i_lt_e = RELOP('Lt', TEMP(var.sym, IR.LOAD), end)
             #s_gt_e = RELOP('Gt', start, end)
-            #i_gt_e = RELOP('Gt', TEMP(var.sym, 'Load'), end)
+            #i_gt_e = RELOP('Gt', TEMP(var.sym, IR.LOAD), end)
             #cond0 = RELOP('And', s_le_e, i_lt_e)
             #cond1 = RELOP('And', s_gt_e, i_gt_e)
             #condition = RELOP('Or', cond0, cond1)
-            condition = RELOP('Lt', TEMP(var.sym, 'Load'), end)
+            condition = RELOP('Lt', TEMP(var.sym, IR.LOAD), end)
             continue_parts = [
-                MOVE(TEMP(var.sym, 'Store'), BINOP('Add', TEMP(var.sym, 'Load'), step))
+                MOVE(TEMP(var.sym, IR.STORE), BINOP('Add', TEMP(var.sym, IR.LOAD), step))
             ]
             self._build_for_loop_blocks(init_parts, condition, continue_parts, node)
         elif isinstance(it, TEMP):
             start = CONST(0)
-            end  = SYSCALL('len', [(TEMP(it.sym, 'Load'))])
+            end  = SYSCALL('len', [(TEMP(it.sym, IR.LOAD))])
             counter = self.current_scope.add_temp('@counter')
             init_parts = [
-                MOVE(TEMP(counter, 'Store'),
+                MOVE(TEMP(counter, IR.STORE),
                      start),
-                MOVE(TEMP(var.sym, 'Store'),
-                     MREF(TEMP(it.sym, 'Load'), TEMP(counter, 'Load'), 'Load'))
+                MOVE(TEMP(var.sym, IR.STORE),
+                     MREF(TEMP(it.sym, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
             ]
-            condition = RELOP('Lt', TEMP(counter, 'Load'), end)
+            condition = RELOP('Lt', TEMP(counter, IR.LOAD), end)
             continue_parts = [
-                MOVE(TEMP(counter, 'Store'),
-                     BINOP('Add', TEMP(counter, 'Load'), CONST(1))),
-                MOVE(TEMP(var.sym, 'Store'),
-                     MREF(TEMP(it.sym, 'Load'), TEMP(counter, 'Load'), 'Load'))
+                MOVE(TEMP(counter, IR.STORE),
+                     BINOP('Add', TEMP(counter, IR.LOAD), CONST(1))),
+                MOVE(TEMP(var.sym, IR.STORE),
+                     MREF(TEMP(it.sym, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
             ]
             self._build_for_loop_blocks(init_parts, condition, continue_parts, node)
         else:
@@ -660,7 +660,7 @@ class Visitor(ast.NodeVisitor):
     
     def visit_Subscript(self, node):
         v = self.visit(node.value)
-        ctx = self._nodectx2ctxstr(node)
+        ctx = self._nodectx2irctx(node)
         v.ctx = ctx
         s = self.visit(node.slice)
         return MREF(v, s, ctx)
@@ -685,7 +685,7 @@ class Visitor(ast.NodeVisitor):
         scope = self.current_scope.find_scope_having_funcname(node.id)
         if scope:
             fsym = self.current_scope.gen_sym('!' + node.id)
-            return TEMP(fsym, self._nodectx2ctxstr(node))
+            return TEMP(fsym, self._nodectx2irctx(node))
 
         sym = self.current_scope.find_sym(node.id)
         if isinstance(node.ctx, ast.Load) or isinstance(node.ctx, ast.AugLoad):
@@ -697,7 +697,7 @@ class Visitor(ast.NodeVisitor):
                 sym = self.current_scope.add_sym(node.id)
 
         assert sym is not None
-        return TEMP(sym, self._nodectx2ctxstr(node))
+        return TEMP(sym, self._nodectx2irctx(node))
 
     #     | List(expr* elts, expr_context ctx) 
     
@@ -740,7 +740,7 @@ class Visitor(ast.NodeVisitor):
         raise NotImplementedError('print statement is not supported')
 
     def _err_info(self, node):
-        return '{}\n{}:{}'.format(current_file_name(), node.lineno, get_src_text(node.lineno))
+        return common.error_info(node.lineno)
 
 class IRTranslator(object):
     def __init__(self):

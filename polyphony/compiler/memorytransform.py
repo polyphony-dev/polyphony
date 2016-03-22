@@ -1,10 +1,11 @@
 ﻿from collections import deque, defaultdict
 from .varreplacer import VarReplacer
-from .ir import CONST, TEMP, ARRAY, CALL, EXPR, MREF, MSTORE, MOVE, PHI
+from .ir import IR, CONST, TEMP, ARRAY, CALL, EXPR, MREF, MSTORE, MOVE, PHI
 from .symbol import Symbol
 from .type import Type
 from .irvisitor import IRTransformer, IRVisitor
 from .env import env
+from .scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
 import pdb
@@ -163,8 +164,20 @@ class MemCollector(IRVisitor):
         if Type.is_list(ir.sym.typ) and not ir.sym.is_param():
             self.stm_map[ir.sym].append(self.current_stm)
 
+class ContextModifier(IRVisitor):
+    def __init__(self):
+        super().__init__()
+
+    def visit_CALL(self, ir):
+        for arg in ir.args:
+            if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                memnode = Type.extra(arg.sym.typ)
+                # FIXME: check the memnode is locally writable or not
+                if memnode.is_writable():
+                    arg.ctx = IR.LOAD | IR.STORE
+
 class RomDetector:
-    def process_all(self):
+    def _propagate_writable_flag(self):
         mrg = env.memref_graph
         assert mrg
         worklist = deque()
@@ -180,10 +193,18 @@ class RomDetector:
             if node not in checked and node.is_writable():
                 checked.add(node)
                 roots = set([root for root in mrg.collect_node_roots(node)])
-                unchecked_roots = [root for root in roots if root not in checked]
+                unchecked_roots = roots.difference(checked)
                 for r in unchecked_roots:
                     r.propagate_succs(lambda n: n.set_writable() or checked.add(n))
             else:
-                unchecked_succs = filter(lambda n: n not in checked, node.succs)
+                unchecked_succs = set(node.succs).difference(checked)
                 worklist.extend(unchecked_succs)
 
+
+    def process_all(self):
+        self._propagate_writable_flag()
+
+        scopes = Scope.get_scopes(bottom_up=False)
+        for s in scopes:
+            cm = ContextModifier()
+            cm.process(s)

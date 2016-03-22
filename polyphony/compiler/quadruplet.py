@@ -1,4 +1,4 @@
-﻿from .ir import UNOP, BINOP, RELOP, CALL, SYSCALL, CONST, MREF, MSTORE, ARRAY, TEMP, EXPR, CJUMP, MCJUMP, JUMP, MOVE
+﻿from .ir import IR, UNOP, BINOP, RELOP, CALL, SYSCALL, CONST, MREF, MSTORE, ARRAY, TEMP, EXPR, CJUMP, MCJUMP, JUMP, MOVE
 from .common import funclog
 from .symbol import Symbol
 from .irvisitor import IRTransformer
@@ -53,21 +53,21 @@ class QuadrupleMaker(IRTransformer):
         if suppress:
             return ir
         sym = self.scope.add_temp(Symbol.temp_prefix)
-        mv = MOVE(TEMP(sym, 'Store'), ir)
+        mv = MOVE(TEMP(sym, IR.STORE), ir)
         mv.lineno = ir.lineno
         assert mv.lineno >= 0
         self.new_stms.append(mv)
-        return TEMP(sym, 'Load')
+        return TEMP(sym, IR.LOAD)
 
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         sym = self.scope.add_temp(Symbol.condition_prefix)
-        mv = MOVE(TEMP(sym, 'Store'), ir)
+        mv = MOVE(TEMP(sym, IR.STORE), ir)
         mv.lineno = ir.lineno
         assert mv.lineno >= 0
         self.new_stms.append(mv)
-        return TEMP(sym, 'Load')
+        return TEMP(sym, IR.LOAD)
 
     def _has_return_type(self, ir):
         if isinstance(ir, CALL):
@@ -87,11 +87,11 @@ class QuadrupleMaker(IRTransformer):
         if suppress or not self._has_return_type(ir):
             return ir
         sym = self.scope.add_temp(Symbol.temp_prefix)
-        mv = MOVE(TEMP(sym, 'Store'), ir)
+        mv = MOVE(TEMP(sym, IR.STORE), ir)
         mv.lineno = ir.lineno
         assert mv.lineno >= 0
         self.new_stms.append(mv)
-        return TEMP(sym, 'Load')
+        return TEMP(sym, IR.LOAD)
 
     def visit_SYSCALL(self, ir):
         return self.visit_CALL(ir)
@@ -107,13 +107,13 @@ class QuadrupleMaker(IRTransformer):
         ir.offset = self.visit(ir.offset)
         assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST) or isinstance(ir.offset, UNOP)
 
-        if not suppress and ir.ctx == 'Load':
+        if not suppress and ir.ctx & IR.LOAD:
             sym = self.scope.add_temp(Symbol.temp_prefix)
-            mv = MOVE(TEMP(sym, 'Store'), ir)
+            mv = MOVE(TEMP(sym, IR.STORE), ir)
             mv.lineno = ir.lineno
             assert mv.lineno >= 0
             self.new_stms.append(mv)
-            return TEMP(sym, 'Load')
+            return TEMP(sym, IR.LOAD)
         return ir
 
     def visit_MSTORE(self, ir):
@@ -168,9 +168,9 @@ class QuadrupleMaker(IRTransformer):
             # instead of
             # mref(@mem, index) = value
             mref = ir.dst
-            mref.mem.ctx = 'Load'
+            mref.mem.ctx = IR.LOAD
             ir.src = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
-            ir.dst = TEMP(mref.mem.sym, 'Store')
+            ir.dst = TEMP(mref.mem.sym, IR.STORE)
             ir.src.lineno = ir.lineno
             ir.dst.lineno = ir.lineno
         self.new_stms.append(ir)

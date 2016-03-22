@@ -1,4 +1,4 @@
-from .ir import TEMP, JUMP, CJUMP, MCJUMP
+from .ir import IR, TEMP, JUMP, CJUMP, MCJUMP
 
 class JumpDependencyDetector:
     def process(self, scope):
@@ -22,7 +22,7 @@ class JumpDependencyDetector:
                     ins = self.liveins[block]
                     outs = self.liveouts[block]
                     syms = ins.union(outs)
-                    stm.uses = [TEMP(s, 'Load') for s, hasloop in syms if not hasloop]
+                    stm.uses = [TEMP(s, IR.LOAD) for s, hasloop in syms if not hasloop]
                 if block.succs[0] not in block.succs_loop:
                     self._detect(block.succs[0])
                 return
@@ -30,7 +30,7 @@ class JumpDependencyDetector:
                 ins = self.liveins[block]
                 outs = self.liveouts[block]
                 syms = ins.union(outs)
-                stm.uses = [TEMP(s, 'Load') for s, hasloop in syms if not hasloop]
+                stm.uses = [TEMP(s, IR.LOAD) for s, hasloop in syms if not hasloop]
                 if block.succs[0] not in block.succs_loop:
                     self._detect(block.succs[0])
                 if block.succs[1] not in block.succs_loop:

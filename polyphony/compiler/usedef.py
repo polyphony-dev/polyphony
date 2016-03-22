@@ -1,6 +1,6 @@
 from collections import defaultdict
 from .irvisitor import IRVisitor
-from .ir import TEMP, CONST, IRStm
+from .ir import IR, TEMP, CONST, IRStm
 from .type import Type
 from .env import env
 from logging import getLogger
@@ -204,9 +204,9 @@ class UseDefDetector(IRVisitor):
             self.visit(item)
 
     def visit_TEMP(self, ir):
-        if ir.ctx == 'Load':
+        if ir.ctx & IR.LOAD:
             self.table.add_var_use(ir, self.current_stm)
-        elif ir.ctx == 'Store':
+        if ir.ctx & IR.STORE:
             self.table.add_var_def(ir, self.current_stm)
 
     def visit_EXPR(self, ir):

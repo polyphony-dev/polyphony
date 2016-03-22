@@ -57,3 +57,7 @@ def push_file_name(filename):
 def pop_file_name():
     global filenames
     filenames.pop()
+
+def error_info(lineno):
+    return '{}\n{}:{}'.format(current_file_name(), lineno, get_src_text(lineno))
+

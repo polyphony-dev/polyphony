@@ -1,6 +1,8 @@
 ﻿from copy import copy
 
 class IR:
+    LOAD=1
+    STORE=2
     def __init__(self):
         self.lineno = -1
 
@@ -178,12 +180,14 @@ class TEMP(IRExp):
         super().__init__()
         self.sym = sym
         self.ctx = ctx
+        assert isinstance(ctx, int)
 
     def __str__(self):
-        if self.ctx == 'Store':
-            ctx = 'S'
-        else:
-            ctx = 'L'
+        ctx = ''
+        if self.ctx & IR.LOAD:
+            ctx += 'L'
+        if self.ctx & IR.STORE:
+            ctx += 'S'
 
         return str(self.sym) + ':' + ctx
 

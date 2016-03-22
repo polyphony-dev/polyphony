@@ -2,11 +2,12 @@
 #import pygraphviz as pgv
 from collections import deque, defaultdict
 from functools import reduce
+from .common import error_info
 from .block import Block
 from .symbol import function_name
 from .irvisitor import IRVisitor
 from .dominator import DominatorTreeBuilder
-from .ir import CONST, TEMP, ARRAY, MREF, MSTORE, MOVE, CALL, SYSCALL, PHI, CJUMP, MCJUMP, JUMP, EXPR
+from .ir import IR, CONST, TEMP, ARRAY, MREF, MSTORE, MOVE, CALL, SYSCALL, PHI, CJUMP, MCJUMP, JUMP, EXPR
 from .varreplacer import VarReplacer
 from .env import env
 from .type import Type
@@ -95,12 +96,14 @@ class DataFlowGraph:
 
     def add_seq_edge(self, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
+        assert n1 is not n2
         edge = (n1, n2, 'Seq', False)
         if edge not in self.edges:
             self.edges.add(edge)
 
     def add_edge(self, typ, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
+        assert n1 is not n2
         back = self._is_back_edge(n1, n2)
         edge = (n1, n2, typ, back)
         if edge not in self.edges:
@@ -611,17 +614,31 @@ class DFGBuilder:
     def _add_mem_edges(self, dfg):
         node_groups = defaultdict(list)
         for node in dfg.nodes:
-            if not node.is_stm() or not isinstance(node.tag, MOVE):
+            if not node.is_stm():
                 continue
-            mv = node.tag
-            if isinstance(mv.src, MREF) or isinstance(mv.src, MSTORE):
-                group = node.tag.block.group
-                mem_group = group.name + '_' + mv.src.mem.sym.name
-                node_groups[mem_group].append(node)
-
-        for group, nodes in node_groups.items():
+            if isinstance(node.tag, MOVE):
+                mv = node.tag
+                if isinstance(mv.src, MREF) or isinstance(mv.src, MSTORE):
+                    mem_group = mv.src.mem.sym.name
+                    node_groups[mem_group].append(node)
+                elif isinstance(mv.src, CALL):
+                    for arg in mv.src.args:
+                        if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                            mem_group = arg.sym.name
+                            node_groups[mem_group].append(node)
+            elif isinstance(node.tag, EXPR):
+                expr = node.tag
+                if isinstance(expr.exp, CALL):
+                    for arg in expr.exp.args:
+                        if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                            mem_group = arg.sym.name
+                            node_groups[mem_group].append(node)
+        for nodes in node_groups.values():
             sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
-            reduce(lambda n1, n2: dfg.add_seq_edge(n1, n2) or n2, sorted_nodes)
+            for i in range(len(sorted_nodes)-1):
+                n1 = sorted_nodes[i]
+                n2 = sorted_nodes[i+1]
+                dfg.add_seq_edge(n1, n2)
 
 
     def _add_edges_between_calls(self, head, blocks, dfg):

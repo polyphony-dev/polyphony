@@ -5,7 +5,7 @@ from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
 from .memref import MemRefNode
 from .env import env
-from .ir import CONST, TEMP, ARRAY, MOVE
+from .ir import IR, CONST, TEMP, ARRAY, MOVE
 from .usedef import UseDefDetector
 from .type import Type
 import pdb
@@ -94,13 +94,13 @@ class SpecializedFunctionMaker:
 
 
     def bind_val(self, scope, i, value):
-        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], 'Load'), CONST(value), scope.usedef)
+        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], IR.LOAD), CONST(value), scope.usedef)
 
 
     def bind_rom(self, scope, i, memnode):
         root = env.memref_graph.get_single_root(memnode)
         assert root and root.initstm and isinstance(root.initstm, MOVE) and isinstance(root.initstm.src, ARRAY)
-        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], 'Load'), root.initstm.src.clone(), scope.usedef)
+        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], IR.LOAD), root.initstm.src.clone(), scope.usedef)
 
 
 class CallCollector(IRVisitor):

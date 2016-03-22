@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict
-from .ir import RELOP, CONST, TEMP, CJUMP, MOVE, PHI
+from .ir import IR, RELOP, CONST, TEMP, CJUMP, MOVE, PHI
 from .symbol import Symbol
 from .dominator import DominatorTreeBuilder
 from .varreplacer import VarReplacer
@@ -35,7 +35,7 @@ class PHICondResolver:
         conds = []
         for i, (arg, blk) in enumerate(phi.args):
             pred = blk
-            mv = MOVE(TEMP(phi.var.sym, 'Store'), arg)
+            mv = MOVE(TEMP(phi.var.sym, IR.STORE), arg)
             #TODO: track the lineno
             mv.lineno = 1
             pred.stms.insert(-1, mv)
