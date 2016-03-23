@@ -740,7 +740,7 @@ class Visitor(ast.NodeVisitor):
         raise NotImplementedError('print statement is not supported')
 
     def _err_info(self, node):
-        return common.error_info(node.lineno)
+        return error_info(node.lineno)
 
 class IRTranslator(object):
     def __init__(self):

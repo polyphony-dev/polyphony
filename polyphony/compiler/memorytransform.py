@@ -180,6 +180,9 @@ class RomDetector:
     def _propagate_writable_flag(self):
         mrg = env.memref_graph
         assert mrg
+
+        for node in mrg.collect_top_module_nodes():
+            node.set_writable()
         worklist = deque()
         for root in mrg.collect_roots():
             if root.is_writable():

@@ -1,4 +1,4 @@
-﻿from collections import OrderedDict, defaultdict
+﻿from collections import OrderedDict, defaultdict, deque
 from .common import get_src_text, INT_WIDTH
 from .env import env
 from .stg import STG, State
@@ -151,7 +151,10 @@ class HDLGenPreprocessor:
 
 
         # add rom as function
-        for memnode in self.mrg.collect_readonly(self.scope):
+        roms = deque()
+        roms.extend(self.mrg.collect_readonly(self.scope))
+        while roms:
+            memnode = roms.pop()
             hdl_name = memnode.sym.hdl_name()
             output_sym = self.scope.gen_sym(hdl_name)
             output_sym.width = INT_WIDTH #TODO
@@ -160,8 +163,8 @@ class HDLGenPreprocessor:
             input_sym.width = INT_WIDTH #TODO
             input = AHDL_VAR(input_sym)
 
-            if not memnode.is_joinable():
-                root = self.mrg.get_single_root(memnode)
+            root = self.mrg.get_single_root(memnode)
+            if root:
                 array = root.initstm.src
                 array_bits = len(array.items).bit_length()
                 case_items = []
@@ -173,6 +176,8 @@ class HDLGenPreprocessor:
             else:
                 case_items = []
                 for i, pred in enumerate(sorted(memnode.preds)):
+                    if pred.scope is not self.scope:
+                        roms.append(pred)
                     rom_func_name = pred.sym.hdl_name()
                     call = AHDL_FUNCALL(rom_func_name, [input])
                     connect = AHDL_CONNECT(fname, call)

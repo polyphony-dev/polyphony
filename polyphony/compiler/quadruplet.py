@@ -82,8 +82,15 @@ class QuadrupleMaker(IRTransformer):
 
         for i in range(len(ir.args)):
             ir.args[i] = self.visit(ir.args[i])
-            assert isinstance(ir.args[i], TEMP) or isinstance(ir.args[i], CONST) or isinstance(ir.args[i], UNOP)
-
+            assert isinstance(ir.args[i], TEMP) or isinstance(ir.args[i], CONST) or isinstance(ir.args[i], UNOP) or isinstance(ir.args[i], ARRAY)
+            if isinstance(ir.args[i], ARRAY):
+                sym = self.scope.add_temp(Symbol.temp_prefix)
+                #sym.set_type(Type.list(Type.int_t, None))
+                mv = MOVE(TEMP(sym, IR.STORE), ir.args[i])
+                mv.lineno = ir.lineno
+                assert mv.lineno >= 0
+                self.new_stms.append(mv)
+                ir.args[i] = TEMP(sym, IR.LOAD)
         if suppress or not self._has_return_type(ir):
             return ir
         sym = self.scope.add_temp(Symbol.temp_prefix)

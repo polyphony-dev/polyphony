@@ -76,6 +76,10 @@ class ConstantFolding(IRVisitor):
 
     def visit_CALL(self, ir):
         ir.args = [self.visit(arg) for arg in ir.args]
+        for arg in ir.args:
+            if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                memnode = self.mrg.node(arg.sym)
+                self.used_memnodes.add(memnode)
         return ir
 
     def visit_SYSCALL(self, ir):

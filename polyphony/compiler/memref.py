@@ -161,6 +161,12 @@ class MemRefGraph:
             if dst is node.sym:
                 yield inst_name, self.node(src)
 
+    def collect_top_module_nodes(self):
+        for node in self.nodes.values():
+            if node.scope.is_testbench():
+                for succ in node.succs:
+                    yield succ
+
     def find_param_node(self, scope, param_index):
         assert len(scope.params) > param_index
         p, _, _ = scope.params[param_index]
@@ -230,7 +236,6 @@ class MemRefGraphBuilder(IRTransformer):
             if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
                 param_node = self.mrg.find_param_node(ir.func_scope, i)
                 self.edges.append((arg.sym, param_node))
-
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -285,25 +290,24 @@ class MemRefGraphBuilder(IRTransformer):
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
-
         if isinstance(ir.src, ARRAY):
             memsym = ir.dst.sym
             assert Type.is_list(memsym.typ)
-           
-            memnode = MemRefNode(memsym, self.scope)
+
+            self.mrg.add_node(MemRefNode(memsym, self.scope))
+            memnode = self.mrg.node(memsym)
             memnode.set_initstm(ir)
             if not all(isinstance(item, CONST) for item in ir.src.items):
                 memnode.set_writable()
-            self.mrg.add_node(memnode)
             memsym.set_type(Type.list(Type.int_t, memnode))
 
         elif isinstance(ir.src, TEMP) and ir.src.sym.is_param() and Type.is_list(ir.src.sym.typ):
             param = ir.src.sym
             memsym = ir.dst.sym
-            
-            memnode = MemRefNode(memsym, self.scope)
+
+            self.mrg.add_node(MemRefNode(memsym, self.scope))
+            memnode = self.mrg.node(memsym)
             memnode.set_param_index(self.scope.get_param_index(param))
-            self.mrg.add_node(memnode)
             param.set_type(Type.list(Type.int_t, memnode))
             memsym.set_type(Type.list(Type.int_t, memnode))
 
@@ -311,8 +315,8 @@ class MemRefGraphBuilder(IRTransformer):
 
     def visit_PHI(self, ir):
         if Type.is_list(ir.var.sym.typ):
-            memnode = MemRefNode(ir.var.sym, self.scope)
-            self.mrg.add_node(memnode)
+            self.mrg.add_node(MemRefNode(ir.var.sym, self.scope))
+            memnode = self.mrg.node(ir.var.sym)
             for arg, blk in ir.args:
                 self.edges.append((arg.sym, memnode))
             ir.var.sym.set_type(Type.list(Type.int_t, memnode))
