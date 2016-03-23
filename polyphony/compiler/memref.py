@@ -207,7 +207,7 @@ class MemRefGraphBuilder(IRTransformer):
         self.edges = []
 
     def process_all(self):
-        scopes = Scope.get_scopes(bottom_up=True)
+        scopes = Scope.get_scopes(bottom_up=True, contain_global=True)
         for s in scopes:
             self.process(s)
         for sym, dst in self.edges:
@@ -249,6 +249,11 @@ class MemRefGraphBuilder(IRTransformer):
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
         ir.mem = self.visit(ir.mem)
+        if isinstance(ir.mem, TEMP) and Type.is_list(ir.mem.sym.typ) and ir.mem.sym.scope is Scope.global_scope():
+            self.mrg.add_node(MemRefNode(ir.mem.sym, self.scope))
+            memnode = self.mrg.node(ir.mem.sym)
+            self.edges.append((ir.mem.sym.ancestor, memnode))
+            ir.mem.sym.set_type(Type.list(Type.int_t, memnode))
         return ir
 
     def visit_MSTORE(self, ir):

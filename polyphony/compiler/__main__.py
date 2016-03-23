@@ -38,7 +38,7 @@ logging_setting = {'level':logging.DEBUG, 'filename':'debug_log', 'filemode':'w'
 
 def compile_plan():
     def phase(phase):
-        def setphase(driver, scope):
+        def setphase(driver):
             env.compile_phase = phase
         return setphase
     

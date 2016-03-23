@@ -12,7 +12,7 @@ class Env:
         self.scopes = {}
         self.dev_debug_mode = False
         self.hdl_debug_mode = False
-        self.compile_phase = ''
+        self.compile_phase = 0
         self.logfiles = {}
         self.using_libs = set()
         self.memref_graph = None

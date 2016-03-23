@@ -154,10 +154,11 @@ class ConstantFolding(IRVisitor):
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
-        if isinstance(ir.src, ARRAY):
-            assert isinstance(ir.dst, TEMP)
-            memnode = self.mrg.node(ir.dst.sym)
-            self.array_inits[memnode] = ir
+        if env.compile_phase > env.PHASE_1:
+            if isinstance(ir.src, ARRAY):
+                assert isinstance(ir.dst, TEMP)
+                memnode = self.mrg.node(ir.dst.sym)
+                self.array_inits[memnode] = ir
         return ir
 
     def visit_PHI(self, ir):

@@ -100,7 +100,6 @@ class SSAFormTransformer:
         return False
 
     def _rename_rec(self, block, count, stack, new_syms):
-        defs_in_block = set()
         for stm in block.stms:
             if not isinstance(stm, PHI):
                 for use in self.usedef.get_stm_uses_var(stm):
@@ -122,7 +121,6 @@ class SSAFormTransformer:
                 new_sym = self.scope.inherit_sym(d.sym, new_name)
                 logger.debug(str(new_sym) + ' ancestor is ' + str(d.sym))
                 new_syms.add((d, new_sym))
-                defs_in_block.add(d)
         #into successors
         for succ in block.succs:
             #collect phi

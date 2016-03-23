@@ -49,6 +49,9 @@ class Scope:
         cls.ordered_scopes = sorted(env.scopes.values(), key=lambda s: s.order)
         return ret_helper(contain_global, bottom_up)
 
+    @classmethod
+    def global_scope(cls):
+        return cls.ordered_scopes[0]
 
     def __init__(self, parent, name, attributes):
         self.name = name
