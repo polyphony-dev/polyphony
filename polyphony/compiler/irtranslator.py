@@ -418,9 +418,30 @@ class Visitor(ast.NodeVisitor):
                      MREF(TEMP(it.sym, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
             ]
             self._build_for_loop_blocks(init_parts, condition, continue_parts, node)
+        elif isinstance(it, ARRAY):
+            unnamed_array = self.current_scope.add_temp('@unnamed')
+            start = CONST(0)
+            end  = SYSCALL('len', [(TEMP(unnamed_array, IR.LOAD))])
+            counter = self.current_scope.add_temp('@counter')
+            init_parts = [
+                MOVE(TEMP(unnamed_array, IR.STORE),
+                     it),
+                MOVE(TEMP(counter, IR.STORE),
+                     start),
+                MOVE(TEMP(var.sym, IR.STORE),
+                     MREF(TEMP(unnamed_array, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
+            ]
+            condition = RELOP('Lt', TEMP(counter, IR.LOAD), end)
+            continue_parts = [
+                MOVE(TEMP(counter, IR.STORE),
+                     BINOP('Add', TEMP(counter, IR.LOAD), CONST(1))),
+                MOVE(TEMP(var.sym, IR.STORE),
+                     MREF(TEMP(unnamed_array, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
+            ]
+            self._build_for_loop_blocks(init_parts, condition, continue_parts, node)
         else:
             print(self._err_info(node))
-            raise RuntimeError("for loop supports only range loop")
+            raise RuntimeError("unsupported for-loop")
 
     def _build_for_loop_blocks(self, init_parts, condition, continue_parts, node):
         loop_check_block = Block.create('fortest')
