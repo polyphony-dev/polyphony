@@ -1,8 +1,20 @@
-﻿from copy import copy
+﻿import copy
+from .symbol import Symbol
 
-class IR:
+class Ctx:
     LOAD=1
     STORE=2
+
+    @classmethod
+    def str(cls, ctx):
+        sctx = ''
+        if ctx & Ctx.LOAD:
+            sctx += 'L'
+        if ctx & Ctx.STORE:
+            sctx += 'S'
+        return sctx
+
+class IR:
     def __init__(self):
         self.lineno = -1
 
@@ -14,6 +26,15 @@ class IR:
 
     def is_jump(self):
         return False
+
+    def is_a(self, cls):
+        if isinstance(cls, list) or isinstance(cls, tuple):
+            for c in cls:
+                if isinstance(self, c):
+                    return True
+            return False
+        else:
+            return isinstance(self, cls)
 
 class IRExp(IR):
     def __init__(self):
@@ -29,7 +50,7 @@ class UNOP(IRExp):
         return '(UNOP {}, {})'.format(self.op, self.exp)
 
     def kids(self):
-        return [self.exp]
+        return self.exp.kids()
 
     def clone(self):
         ir = UNOP(self.op, self.exp.clone())
@@ -47,7 +68,7 @@ class BINOP(IRExp):
         return '(BINOP {}, {}, {})'.format(self.op, self.left, self.right)
 
     def kids(self):
-        return [self.left, self.right]
+        return self.left.kids() + self.right.kids()
 
     def clone(self):
         ir = BINOP(self.op, self.left.clone(), self.right.clone())
@@ -69,12 +90,15 @@ class RELOP(IRExp):
         ir.lineno = self.lineno
         return ir
 
+    def kids(self):
+        return self.left.kids() + self.right.kids()
+
 class CALL(IRExp):
-    def __init__(self, func, args, scope):
+    def __init__(self, func, args):
         super().__init__()
         self.func = func
         self.args = args
-        self.func_scope = scope
+        self.func_scope = None
 
     def __str__(self):
         s = '(CALL {}, '.format(self.func)
@@ -84,9 +108,16 @@ class CALL(IRExp):
 
     def clone(self):
         args = [arg.clone() for arg in self.args]
-        ir = CALL(self.func.clone(), args, self.func_scope)
+        ir = CALL(self.func.clone(), args)
         ir.lineno = self.lineno
         return ir
+
+    def kids(self):
+        kids = []
+        kids += self.func.kids()
+        for arg in self.args:
+            kids += arg.kids()
+        return kids
 
 class SYSCALL(IRExp):
     def __init__(self, name, args):
@@ -107,6 +138,36 @@ class SYSCALL(IRExp):
         ir.lineno = self.lineno
         return ir
 
+    def kids(self):
+        kids = []
+        for arg in self.args:
+            kids += arg.kids()
+        return kids
+
+class CTOR(IRExp):
+    def __init__(self, scope, args):
+        super().__init__()
+        self.func_scope = scope
+        self.args = args
+
+    def __str__(self):
+        s = '(CTOR {}, '.format(self.func_scope.orig_name)
+        s += ', '.join(map(str, self.args))
+        s += ")"
+        return s
+
+    def clone(self):
+        args = [arg.clone() for arg in self.args]
+        ir = CTOR(self.func_scope, args)
+        ir.lineno = self.lineno
+        return ir
+
+    def kids(self):
+        kids = []
+        for arg in self.args:
+            kids += arg.kids()
+        return kids
+
 class CONST(IRExp):
     def __init__(self, value):
         super().__init__()
@@ -125,6 +186,9 @@ class CONST(IRExp):
         ir.lineno = self.lineno
         return ir
 
+    def kids(self):
+        return [self]
+
 class MREF(IRExp):
     def __init__(self, mem, offset, ctx):
         super().__init__()
@@ -140,6 +204,9 @@ class MREF(IRExp):
         ir.lineno = self.lineno
         return ir
 
+    def kids(self):
+        return self.mem.kids() + self.offset.kids()
+
 class MSTORE(IRExp):
     def __init__(self, mem, offset, exp):
         super().__init__()
@@ -154,6 +221,9 @@ class MSTORE(IRExp):
         ir = MSTORE(self.mem.clone(), self.offset.clone(), self.exp.clone())
         ir.lineno = self.lineno
         return ir
+
+    def kids(self):
+        return self.mem.kids() + self.offset.kids() + self.exp.kids()
 
 class ARRAY(IRExp):
     def __init__(self, items):
@@ -175,6 +245,12 @@ class ARRAY(IRExp):
         ir.lineno = self.lineno
         return ir
 
+    def kids(self):
+        kids = []
+        for item in self.items:
+            kids += item.kids()
+        return kids
+
 class TEMP(IRExp):
     def __init__(self, sym, ctx):
         super().__init__()
@@ -183,18 +259,46 @@ class TEMP(IRExp):
         assert isinstance(ctx, int)
 
     def __str__(self):
-        ctx = ''
-        if self.ctx & IR.LOAD:
-            ctx += 'L'
-        if self.ctx & IR.STORE:
-            ctx += 'S'
-
-        return str(self.sym) + ':' + ctx
+        return str(self.sym) + ':' + Ctx.str(self.ctx)
 
     def clone(self):
         ir = TEMP(self.sym, self.ctx)
         ir.lineno = self.lineno
         return ir
+
+    def kids(self):
+        return [self]
+
+class ATTR(IRExp):
+    def __init__(self, exp, attr, ctx):
+        super().__init__()
+        self.exp = exp
+        self.attr = attr
+        self.ctx = ctx
+        self.exp.ctx = ctx
+        self.scope = None
+
+    def __str__(self):
+        return '{}.{}:'.format(self.exp, self.attr, Ctx.str(self.ctx))
+
+    def clone(self):
+        ir = ATTR(self.exp.clone(), self.attr, self.ctx)
+        ir.lineno = self.lineno
+        return ir
+
+    def kids(self):
+        return [self]
+
+    def head(self):
+        if self.exp.is_a(ATTR):
+            return self.exp.head()
+        return self.exp.sym
+
+    def tail(self):
+        if self.exp.is_a(ATTR):
+            assert isinstance(self.exp.attr, Symbol)
+            return self.exp.attr
+        return self.exp.sym
 
 class IRStm(IR):
     def __init__(self):
@@ -212,6 +316,9 @@ class IRStm(IR):
     def program_order(self):
         return (self.block.order, self.block.stms.index(self))
 
+    def kids(self):
+        return []
+
 class EXPR(IRStm):
     def __init__(self, exp):
         super().__init__()
@@ -224,6 +331,9 @@ class EXPR(IRStm):
         ir = EXPR(self.exp.clone())
         ir.lineno = self.lineno
         return ir
+
+    def kids(self):
+        return self.exp.kids()
 
 class CJUMP(IRStm):
     def __init__(self, exp, true, false):
@@ -268,7 +378,7 @@ class MCJUMP(IRStm):
     def clone(self):
         ir = MCJUMP()
         ir.conds = [cond.clone() for cond in self.conds]
-        ir.targets = copy(self.targets)
+        ir.targets = copy.copy(self.targets)
         ir.lineno = self.lineno
         return ir
 
@@ -313,6 +423,9 @@ class RET(IRStm):
         ir.lineno = self.lineno
         return ir
 
+    def kids(self):
+        return self.exp.kids()
+
 class MOVE(IRStm):
     def __init__(self, dst, src):
         super().__init__()
@@ -326,6 +439,9 @@ class MOVE(IRStm):
         ir = MOVE(self.dst.clone(), self.src.clone())
         ir.lineno = self.lineno
         return ir
+
+    def kids(self):
+        return self.dst.kids() + self.src.kids()
 
 def conds2str(conds):
     if conds:
@@ -368,9 +484,18 @@ class PHI(IRStm):
         return [c for c in self.conds_list if c]
 
     def clone(self):
-        ir = PHI(self.var.clone(), [(arg.clone(), blk) for arg, blk in self.args], list(self.conds_list))
+        #ir = PHI(self.var.clone(), [(arg.clone(), blk) for arg, blk in self.args], list(self.conds_list))
+        ir = PHI(self.var.clone())
+        for arg, blk in self.args:
+            ir.args.append((arg.clone(), blk))
         ir.lineno = self.lineno
         return ir
+
+    def kids(self):
+        kids = []
+        for arg in self.args:
+            kids += arg.kids()
+        return self.var.kids() + kids
 
 def op2str(op):
     return op.__class__.__name__

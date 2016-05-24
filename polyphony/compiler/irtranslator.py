@@ -3,25 +3,24 @@ import ast
 import inspect
 import sys
 import re
-import copy
+import codeop
 import pdb
-from .ir import IR, UNOP, BINOP, RELOP, CALL, SYSCALL, CONST, MREF, ARRAY, TEMP, EXPR, CJUMP, JUMP, RET, MOVE, op2str
+from .ir import *
 from .block import Block
 from .scope import Scope, FunctionParam
 from .symbol import Symbol, function_name
 from .type import Type
 from .env import env
 from .common import error_info
+from .builtin import builtin_names
 from logging import getLogger
 logger = getLogger(__name__)
 
-BUILTINS = ['print', 'range', 'len', 'read_reg', 'write_reg']
+attr_map = {}
 
 class FunctionVisitor(ast.NodeVisitor):
     def __init__(self):
         self.current_scope = Scope.create(None, '@top', [])
-        for f in BUILTINS:
-            self.current_scope.add_funcname(f)
 
     def visit_FunctionDef(self, node):
         #arguments = (arg* args, identifier? vararg, expr? varargannotation,
@@ -31,14 +30,15 @@ class FunctionVisitor(ast.NodeVisitor):
         #arg = (identifier arg, expr? annotation)
 
         outer_scope = self.current_scope
-        outer_scope.add_funcname(node.name)
 
         attributes = []
         for deco in node.decorator_list:
-            if deco.id == "testbench" or deco.id == "top":
+            if deco.id in ['testbench', 'top', 'classmethod']:
                 attributes = []
                 attributes.append(deco.id)
                 break
+        if outer_scope.is_class() and 'classmethod' not in attributes:
+            attributes.append('method')
         self.current_scope = Scope.create(outer_scope, node.name, attributes)
 
         for arg in node.args.args:
@@ -47,11 +47,24 @@ class FunctionVisitor(ast.NodeVisitor):
             param_copy = self.current_scope.add_sym(arg.arg)
             param_copy.typ = param_in.typ
             self.current_scope.add_param(param_in, param_copy, None)
+        if self.current_scope.is_method():
+            if not self.current_scope.params or self.current_scope.params[0].sym.name != Symbol.param_prefix+'_'+'self':
+                print(error_info(node.lineno))
+                raise RuntimeError("Class method must have a 'self' parameter.")
+            first_param = self.current_scope.params[0]
+            first_param.copy.typ = first_param.sym.typ = Type.object(None, outer_scope)
 
         for stm in node.body:
             self.visit(stm)
         self.current_scope = outer_scope
 
+    def visit_ClassDef(self, node):
+        outer_scope = self.current_scope
+        self.current_scope = Scope.create(outer_scope, node.name, ['class'])
+        for stm in node.body:
+            self.visit(stm)
+
+        self.current_scope = outer_scope
 
 class CompareTransformer(ast.NodeTransformer):
     '''Transform 'v0 op v1 op v2' to 'v0 op v1 and v1 op v2' '''
@@ -77,6 +90,10 @@ class AugAssignTransformer(ast.NodeTransformer):
         assign = ast.Assign(targets = [node.target], value = binop)
         return ast.copy_location(assign, node)
 
+class AttributeVisitor(ast.NodeVisitor):
+    def visit_Attribute(self, node):
+        attr = attr_map[node]
+
 class Visitor(ast.NodeVisitor):
     def __init__(self):
         self.import_list = {}
@@ -94,32 +111,33 @@ class Visitor(ast.NodeVisitor):
 
         self.current_loop_info = self.current_scope.create_loop_info(self.current_block)
         self.nested_if = False
-       
+        self.last_node = None
+
     def result(self):
         return self.global_scope
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
         stm.lineno = ast_node.lineno
+        self.last_node = ast_node
 
     def emit_to(self, block, stm, ast_node):
         block.append_stm(stm)
         stm.lineno = ast_node.lineno
+        self.last_node = ast_node
 
     def _nodectx2irctx(self, node):
         if isinstance(node.ctx, ast.Store) or isinstance(node.ctx, ast.AugStore):
-            return IR.STORE
+            return Ctx.STORE
         else:
-            return IR.LOAD
+            return Ctx.LOAD
 
     def _needJUMP(self, block):
         if not block.stms:
             return True
         last = block.stms[-1]
-        return not isinstance(last, JUMP) and \
-            not (isinstance(last, MOVE) and \
-                 isinstance(last.dst, TEMP) and \
-                 last.dst.sym.is_return())
+        return not last.is_a(JUMP) and \
+            not (last.is_a(MOVE) and last.dst.is_a(TEMP) and last.dst.sym.is_return())
         
     #-------------------------------------------------------------------------
     
@@ -132,10 +150,10 @@ class Visitor(ast.NodeVisitor):
 
 
     #-------------------------------------------------------------------------
-    
-    def visit_FunctionDef(self, node):
+
+    def _enter_scope(self, name):
         outer_scope = self.current_scope
-        self.current_scope = env.scopes[outer_scope.name + '.' + node.name]
+        self.current_scope = env.scopes[outer_scope.name + '.' + name]
         self.current_scope.begin_block_group('top')
 
         last_block = self.current_block
@@ -144,46 +162,60 @@ class Visitor(ast.NodeVisitor):
         self.current_block = new_block
         prev_loop_info = self.current_loop_info
         self.current_loop_info = self.current_scope.create_loop_info(self.current_block)
+
+        outer_scope.add_sym(name)
+
+        return (outer_scope, last_block, prev_loop_info)
+
+    def _leave_scope(self, outer_scope, last_block, prev_loop_info):
+        self.current_scope.end_block_group()
+        self.current_scope = outer_scope
+        self.current_block = last_block
+        self.current_loop_info = prev_loop_info
+
+    def visit_FunctionDef(self, node):
+        context = self._enter_scope(node.name)
+
         outer_function_exit = self.function_exit
         self.function_exit = Block.create('exit')
 
         params = self.current_scope.params
         skip = len(node.args.args) - len(node.args.defaults)
         for idx, param in enumerate(params[:skip]):
-            self.emit(MOVE(TEMP(param.copy, IR.STORE), TEMP(param.sym, IR.LOAD)), node)
-            
+            self.emit(MOVE(TEMP(param.copy, Ctx.STORE), TEMP(param.sym, Ctx.LOAD)), node)
+
         for idx, (param, defval) in enumerate(zip(params[skip:], node.args.defaults)):
             if Type.is_list(param.sym.typ):
                 print(self._err_info(node))
                 raise RuntimeError("cannot set the default value to the list type parameter.")
             d = self.visit(defval)
             params[skip+idx] = FunctionParam(param.sym, param.copy, d)
-            self.emit(MOVE(TEMP(param.copy, IR.STORE), TEMP(param.sym, IR.LOAD)), node)
+            self.emit(MOVE(TEMP(param.copy, Ctx.STORE), TEMP(param.sym, Ctx.LOAD)), node)
 
         for stm in node.body:
             self.visit(stm)
 
         #self.function_exit.branch_tags = []
         sym = self.current_scope.gen_sym(Symbol.return_prefix)
-        self.emit_to(self.function_exit, RET(TEMP(sym, IR.LOAD)), node)
+        self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
         self.current_scope.append_block(self.function_exit)
-        self.current_scope.end_block_group()
-        self.current_scope = outer_scope
-        self.current_block = last_block
         self.function_exit = outer_function_exit
-        self.current_loop_info = prev_loop_info
+
+        self._leave_scope(*context)
 
 
     def visit_ClassDef(self, node):
+        context = self._enter_scope(node.name)
+        for body in node.body:
+            self.visit(body)
         logger.debug(node.name)
-        print(self._err_info(node))
-        raise RuntimeError("class definition is not supported.")
 
-    
+        self._leave_scope(*context)
+
     def visit_Return(self, node):
         #TODO multiple return value
         sym = self.current_scope.gen_sym(Symbol.return_prefix)
-        ret = TEMP(sym, IR.STORE)
+        ret = TEMP(sym, Ctx.STORE)
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
         self.emit(JUMP(self.function_exit, 'E'), node)
@@ -224,7 +256,7 @@ class Visitor(ast.NodeVisitor):
         if_exit = Block.create()
 
         condition = self.visit(node.test)
-        if not isinstance(condition, RELOP):
+        if not condition.is_a(RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
 
         self.emit_to(if_head, CJUMP(condition, if_then, if_else), node)
@@ -301,7 +333,7 @@ class Visitor(ast.NodeVisitor):
         self.current_scope.append_block(while_block)
         self.current_block = while_block
         condition = self.visit(node.test)
-        if not isinstance(condition, RELOP):
+        if not condition.is_a(RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
         cjump = CJUMP(condition, body_block, else_block)
         cjump.loop_branch = True
@@ -370,7 +402,7 @@ class Visitor(ast.NodeVisitor):
         it = self.visit(node.iter)
 
         #In case of range() loop
-        if isinstance(it, SYSCALL) and it.name == 'range':
+        if it.is_a(SYSCALL) and it.name == 'range':
             if len(it.args) == 1:
                 start = CONST(0)
                 end = it.args[0]
@@ -385,65 +417,65 @@ class Visitor(ast.NodeVisitor):
                 step = it.args[2]
 
             init_parts = [
-                MOVE(TEMP(var.sym, IR.STORE), start)
+                MOVE(TEMP(var.sym, Ctx.STORE), start)
             ]
             # negative step value
             #s_le_e = RELOP('LtE', start, end)
-            #i_lt_e = RELOP('Lt', TEMP(var.sym, IR.LOAD), end)
+            #i_lt_e = RELOP('Lt', TEMP(var.sym, Ctx.LOAD), end)
             #s_gt_e = RELOP('Gt', start, end)
-            #i_gt_e = RELOP('Gt', TEMP(var.sym, IR.LOAD), end)
+            #i_gt_e = RELOP('Gt', TEMP(var.sym, Ctx.LOAD), end)
             #cond0 = RELOP('And', s_le_e, i_lt_e)
             #cond1 = RELOP('And', s_gt_e, i_gt_e)
             #condition = RELOP('Or', cond0, cond1)
-            condition = RELOP('Lt', TEMP(var.sym, IR.LOAD), end)
+            condition = RELOP('Lt', TEMP(var.sym, Ctx.LOAD), end)
             continue_parts = [
-                MOVE(TEMP(var.sym, IR.STORE), BINOP('Add', TEMP(var.sym, IR.LOAD), step))
+                MOVE(TEMP(var.sym, Ctx.STORE), BINOP('Add', TEMP(var.sym, Ctx.LOAD), step))
             ]
-            self._build_for_loop_blocks(init_parts, condition, continue_parts, node)
-        elif isinstance(it, TEMP):
+            self._build_for_loop_blocks(init_parts, condition, [], continue_parts, node)
+        elif it.is_a(TEMP):
             start = CONST(0)
-            end  = SYSCALL('len', [(TEMP(it.sym, IR.LOAD))])
+            end  = SYSCALL('len', [(TEMP(it.sym, Ctx.LOAD))])
             counter = self.current_scope.add_temp('@counter')
             init_parts = [
-                MOVE(TEMP(counter, IR.STORE),
-                     start),
-                MOVE(TEMP(var.sym, IR.STORE),
-                     MREF(TEMP(it.sym, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
+                MOVE(TEMP(counter, Ctx.STORE),
+                     start)
             ]
-            condition = RELOP('Lt', TEMP(counter, IR.LOAD), end)
+            condition = RELOP('Lt', TEMP(counter, Ctx.LOAD), end)
+            body_parts = [
+                MOVE(TEMP(var.sym, Ctx.STORE),
+                     MREF(TEMP(it.sym, Ctx.LOAD), TEMP(counter, Ctx.LOAD), Ctx.LOAD))
+            ]
             continue_parts = [
-                MOVE(TEMP(counter, IR.STORE),
-                     BINOP('Add', TEMP(counter, IR.LOAD), CONST(1))),
-                MOVE(TEMP(var.sym, IR.STORE),
-                     MREF(TEMP(it.sym, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
+                MOVE(TEMP(counter, Ctx.STORE),
+                     BINOP('Add', TEMP(counter, Ctx.LOAD), CONST(1)))
             ]
-            self._build_for_loop_blocks(init_parts, condition, continue_parts, node)
-        elif isinstance(it, ARRAY):
+            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, node)
+        elif it.is_a(ARRAY):
             unnamed_array = self.current_scope.add_temp('@unnamed')
             start = CONST(0)
-            end  = SYSCALL('len', [(TEMP(unnamed_array, IR.LOAD))])
+            end  = SYSCALL('len', [(TEMP(unnamed_array, Ctx.LOAD))])
             counter = self.current_scope.add_temp('@counter')
             init_parts = [
-                MOVE(TEMP(unnamed_array, IR.STORE),
+                MOVE(TEMP(unnamed_array, Ctx.STORE),
                      it),
-                MOVE(TEMP(counter, IR.STORE),
-                     start),
-                MOVE(TEMP(var.sym, IR.STORE),
-                     MREF(TEMP(unnamed_array, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
+                MOVE(TEMP(counter, Ctx.STORE),
+                     start)
             ]
-            condition = RELOP('Lt', TEMP(counter, IR.LOAD), end)
+            condition = RELOP('Lt', TEMP(counter, Ctx.LOAD), end)
+            body_parts = [
+                MOVE(TEMP(var.sym, Ctx.STORE),
+                     MREF(TEMP(unnamed_array, Ctx.LOAD), TEMP(counter, Ctx.LOAD), Ctx.LOAD))
+            ]
             continue_parts = [
-                MOVE(TEMP(counter, IR.STORE),
-                     BINOP('Add', TEMP(counter, IR.LOAD), CONST(1))),
-                MOVE(TEMP(var.sym, IR.STORE),
-                     MREF(TEMP(unnamed_array, IR.LOAD), TEMP(counter, IR.LOAD), IR.LOAD))
+                MOVE(TEMP(counter, Ctx.STORE),
+                     BINOP('Add', TEMP(counter, Ctx.LOAD), CONST(1)))
             ]
-            self._build_for_loop_blocks(init_parts, condition, continue_parts, node)
+            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, node)
         else:
             print(self._err_info(node))
             raise RuntimeError("unsupported for-loop")
 
-    def _build_for_loop_blocks(self, init_parts, condition, continue_parts, node):
+    def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, node):
         loop_check_block = Block.create('fortest')
         body_block = Block.create('forbody')
         else_block = Block.create('forelse')
@@ -474,6 +506,8 @@ class Visitor(ast.NodeVisitor):
         self.current_block = body_block
         self.loop_bridge_blocks.append(continue_block) #for 'continue'
         self.loop_end_blocks.append(exit_block) #for 'break'
+        for code in body_parts:
+            self.emit(code, node)
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
@@ -621,40 +655,23 @@ class Visitor(ast.NodeVisitor):
         right = self.visit(node.comparators[0])
         return RELOP(op2str(op), left, right)
 
-    
     def visit_Call(self, node):
         #      pass by name
         func = self.visit(node.func)
-        func_scope = self.current_scope.find_func_scope(function_name(func.sym))
-        if not func_scope:
-            for f in BUILTINS:
-                if func.sym.name == '!' + f:
-                    args = list(map(self.visit, node.args))
-                    return SYSCALL(func.sym.name[1:], args)
-            print(self._err_info(node))
-            raise TypeError('{} is not callable'.format(func.sym.name))
-        else:
-            self.current_scope.add_callee_scope(func_scope)
-
-        arg_len = len(node.args)
-        param_len = len(func_scope.params)
-        if arg_len == param_len:
-            args = list(map(self.visit, node.args))
-        elif arg_len < param_len:
-            args = []
-            for i, param in enumerate(func_scope.params):
-                if i >= arg_len:
-                    if param.defval:
-                        args.append(param.defval)
-                    else:
-                        print(self._err_info(node))
-                        raise TypeError("{}() missing required argument: '{}'".format(func_scope.orig_name, param.sym.name))
-                else:
-                    args.append(self.visit(node.args[i]))
-        else:
-            print(self._err_info(node))
-            raise TypeError('{}() takes {} positional arguments but {} were given'.format(func_scope.orig_name, param_len, arg_len))
-        return CALL(func, args, func_scope)
+        args = list(map(self.visit, node.args))
+        if func.is_a(TEMP):
+            func_name = function_name(func.sym)
+            func_scope = self.current_scope.find_scope(func_name)
+            if not func_scope:
+                for f in builtin_names:
+                    if func.sym.name == '!' + f:
+                        args = list(map(self.visit, node.args))
+                        return SYSCALL(func.sym.name[1:], args)
+                print(self._err_info(node))
+                raise TypeError('{} is not callable'.format(func.sym.name))
+            elif func_scope.is_class():
+                return CTOR(func_scope, args)
+        return CALL(func, args)
 
     
     def visit_Num(self, node):
@@ -672,10 +689,18 @@ class Visitor(ast.NodeVisitor):
         raise NotImplementedError('ellipsis is not supported')
 
     #     | Attribute(expr value, identifier attr, expr_context ctx)
-    
     def visit_Attribute(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('attribute is not supported')
+        value = self.visit(node.value)
+        attr = node.attr
+        ctx = self._nodectx2irctx(node)
+        irattr = ATTR(value, attr, ctx)
+
+        if irattr.head().name == 'self':
+            scope = Type.extra(irattr.head().typ)
+            if ctx & Ctx.STORE:
+                scope.gen_sym(attr)
+        attr_map[node] = irattr
+        return irattr
 
     #     | Subscript(expr value, slice slice, expr_context ctx)
     
@@ -702,10 +727,13 @@ class Visitor(ast.NodeVisitor):
             return CONST(0)
         elif node.id == 'None':
             return CONST(None)
-        
-        scope = self.current_scope.find_scope_having_funcname(node.id)
-        if scope:
+
+        parent_scope = self.current_scope.find_scope_having_name(node.id)
+        if parent_scope:
             fsym = self.current_scope.gen_sym('!' + node.id)
+            scope = self.current_scope.find_scope(node.id)
+            if scope and scope.is_class():
+                fsym.set_type(Type.klass(None, scope))
             return TEMP(fsym, self._nodectx2irctx(node))
 
         sym = self.current_scope.find_sym(node.id)
@@ -781,6 +809,10 @@ class IRTranslator(object):
         visitor = Visitor()
         visitor.visit(tree)
         global_scope = visitor.result()
+
+        attrvisitor = AttributeVisitor()
+        attrvisitor.visit(tree)
+
         return global_scope
 
 def main():

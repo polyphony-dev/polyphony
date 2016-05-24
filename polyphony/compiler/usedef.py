@@ -1,6 +1,6 @@
-from collections import defaultdict
+﻿from collections import defaultdict
 from .irvisitor import IRVisitor
-from .ir import IR, TEMP, CONST, IRStm
+from .ir import Ctx, TEMP, CONST, IRStm
 from .type import Type
 from .env import env
 from logging import getLogger
@@ -21,7 +21,7 @@ class UseDefTable:
         self._stm_uses_const = defaultdict(set)
 
     def add_var_def(self, var, stm):
-        assert isinstance(var, TEMP) and isinstance(stm, IRStm)
+        assert var.is_a(TEMP) and stm.is_a(IRStm)
         self._sym_defs_stm[var.sym].add(stm)
         self._var_defs_stm[var].add(stm)
         self._sym_defs_blk[var.sym].add(stm.block)
@@ -29,7 +29,7 @@ class UseDefTable:
         self._blk_defs_var[stm.block].add(var)
 
     def remove_var_def(self, var, stm):
-        assert isinstance(var, TEMP) and isinstance(stm, IRStm)
+        assert var.is_a(TEMP) and stm.is_a(IRStm)
         self._sym_defs_stm[var.sym].discard(stm)
         self._var_defs_stm[var].discard(stm)
         self._sym_defs_blk[var.sym].discard(stm.block)
@@ -37,7 +37,7 @@ class UseDefTable:
         self._blk_defs_var[stm.block].discard(var)
 
     def add_var_use(self, var, stm):
-        assert isinstance(var, TEMP) and isinstance(stm, IRStm)
+        assert var.is_a(TEMP) and stm.is_a(IRStm)
         self._sym_uses_stm[var.sym].add(stm)
         self._var_uses_stm[var].add(stm)
         self._sym_uses_blk[var.sym].add(stm.block)
@@ -45,7 +45,7 @@ class UseDefTable:
         self._blk_uses_var[stm.block].add(var)
 
     def remove_var_use(self, var, stm):
-        assert isinstance(var, TEMP) and isinstance(stm, IRStm)
+        assert var.is_a(TEMP) and stm.is_a(IRStm)
         self._sym_uses_stm[var.sym].discard(stm)
         self._var_uses_stm[var].discard(stm)
         self._sym_uses_blk[var.sym].discard(stm.block)
@@ -53,25 +53,25 @@ class UseDefTable:
         self._blk_uses_var[stm.block].discard(var)
 
     def add_const_use(self, c, stm):
-        assert isinstance(c, CONST) and isinstance(stm, IRStm)
+        assert c.is_a(CONST) and stm.is_a(IRStm)
         self._stm_uses_const[stm].add(c)
 
     def remove_const_use(self, c, stm):
-        assert isinstance(c, CONST) and isinstance(stm, IRStm)
+        assert c.is_a(CONST) and stm.is_a(IRStm)
         self._stm_uses_const[stm].discard(c)
 
     def add_use(self, v, stm):
-        if isinstance(v, TEMP):
+        if v.is_a(TEMP):
             self.add_var_use(v, stm)
-        elif isinstance(v, CONST):
+        elif v.is_a(CONST):
             self.add_const_use(v, stm)
         else:
             assert False
 
     def remove_use(self, v, stm):
-        if isinstance(v, TEMP):
+        if v.is_a(TEMP):
             self.remove_var_use(v, stm)
-        elif isinstance(v, CONST):
+        elif v.is_a(CONST):
             self.remove_const_use(v, stm)
         else:
             assert False
@@ -80,43 +80,43 @@ class UseDefTable:
         for v in vs:
             self.remove_use(v, stm)
 
-    def get_sym_defs_stm(self, sym):
+    def get_def_stms_by_sym(self, sym):
         return self._sym_defs_stm[sym]
 
-    def get_sym_uses_stm(self, sym):
+    def get_use_stms_by_sym(self, sym):
         return self._sym_uses_stm[sym]
 
-    def get_var_defs_stm(self, var):
+    def get_def_stms_by_var(self, var):
         return self._var_defs_stm[var]
 
-    def get_var_uses_stm(self, var):
+    def get_use_stms_by_var(self, var):
         return self._var_uses_stm[var]
 
-    def get_sym_defs_blk(self, sym):
+    def get_def_blks_by_sym(self, sym):
         return self._sym_defs_blk[sym]
 
-    def get_sym_uses_blk(self, sym):
+    def get_use_blks_by_sym(self, sym):
         return self._sym_uses_blk[sym]
 
-    def get_stm_defs_var(self, stm):
+    def get_def_vars_by_stm(self, stm):
         return self._stm_defs_var[stm]
 
-    def get_stm_uses_var(self, stm):
+    def get_use_vars_by_stm(self, stm):
         return self._stm_uses_var[stm]
 
-    def get_stm_uses_const(self, stm):
+    def get_use_consts_by_stm(self, stm):
         return self._stm_uses_const[stm]
 
-    def get_blk_defs_sym(self, blk):
+    def get_def_syms_by_blk(self, blk):
         return set([v.sym for v in self._blk_defs_var[blk]])
 
-    def get_blk_uses_sym(self, blk):
+    def get_use_syms_by_blk(self, blk):
         return set([v.sym for v in self._blk_uses_var[blk]])
 
-    def get_blk_defs_var(self, blk):
+    def get_def_vars_by_blk(self, blk):
         return self._blk_defs_var[blk]
 
-    def get_blk_uses_var(self, blk):
+    def get_use_vars_by_blk(self, blk):
         return self._blk_uses_var[blk]
 
     def get_all_syms(self):
@@ -172,10 +172,10 @@ class UseDefDetector(IRVisitor):
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_CALL(self, ir):
+    def _visit_args(self, ir):
         for arg in ir.args:
             self.visit(arg)
-            if env.compile_phase >= env.PHASE_4 and isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+            if env.compile_phase >= env.PHASE_4 and arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
                 memnode = None
                 if env.memref_graph:
                     memnode = env.memref_graph.node(arg.sym)
@@ -183,9 +183,15 @@ class UseDefDetector(IRVisitor):
                     continue
                 self.table.add_var_def(arg, self.current_stm)
 
+    def visit_CALL(self, ir):
+        self.visit(ir.func)
+        self._visit_args(ir)
+
     def visit_SYSCALL(self, ir):
-        for arg in ir.args:
-            self.visit(arg)
+        self._visit_args(ir)
+
+    def visit_CTOR(self, ir):
+        self._visit_args(ir)
 
     def visit_CONST(self, ir):
         self.table.add_const_use(ir, self.current_stm)
@@ -204,10 +210,13 @@ class UseDefDetector(IRVisitor):
             self.visit(item)
 
     def visit_TEMP(self, ir):
-        if ir.ctx & IR.LOAD:
+        if ir.ctx & Ctx.LOAD:
             self.table.add_var_use(ir, self.current_stm)
-        if ir.ctx & IR.STORE:
+        if ir.ctx & Ctx.STORE:
             self.table.add_var_def(ir, self.current_stm)
+
+    def visit_ATTR(self, ir):
+        self.visit(ir.exp)
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)

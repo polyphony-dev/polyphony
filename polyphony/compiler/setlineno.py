@@ -31,10 +31,18 @@ class LineNumberSetter(IRVisitor):
         for arg in ir.args:
             self.visit(arg)
 
+    def visit_CTOR(self, ir):
+        ir.lineno = self.current_stm.lineno
+        for arg in ir.args:
+            self.visit(arg)
+
     def visit_CONST(self, ir):
         ir.lineno = self.current_stm.lineno
 
     def visit_TEMP(self, ir):
+        ir.lineno = self.current_stm.lineno
+
+    def visit_ATTR(self, ir):
         ir.lineno = self.current_stm.lineno
 
     def visit_MREF(self, ir):

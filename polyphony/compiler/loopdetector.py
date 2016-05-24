@@ -173,16 +173,16 @@ class LoopDetector:
         uses = set()
         for lb in loop_blocks:
             logger.log(0, 'loop block of ' + loop_head.name + ' is ' + lb.name)
-            inner_def_syms = usedef.get_blk_defs_sym(lb)
+            inner_def_syms = usedef.get_def_syms_by_blk(lb)
             for sym in inner_def_syms:
-                useblks = usedef.get_sym_uses_blk(sym)
+                useblks = usedef.get_use_blks_by_sym(sym)
                 #Is this symbol used in the out of the loop?
                 if other_blocks.intersection(useblks):
                     defs.add(sym)
 
-            inner_use_syms = usedef.get_blk_uses_sym(lb)
+            inner_use_syms = usedef.get_use_syms_by_blk(lb)
             for sym in inner_use_syms:
-                defblks = usedef.get_sym_defs_blk(sym)
+                defblks = usedef.get_def_blks_by_sym(sym)
                 #Is this symbol defined in the out of the loop?
                 if other_blocks.intersection(defblks):
                     uses.add(sym)
@@ -224,9 +224,9 @@ class SimpleLoopUnroll:
             logger.debug(str(loop_init))
             logger.debug(str(loop_limit))
             logger.debug(str(loop_step))
-            assert isinstance(loop_init, CONST)
-            assert isinstance(loop_limit, CONST)
-            assert isinstance(loop_step, CONST)
+            assert loop_init.is_a(CONST)
+            assert loop_limit.is_a(CONST)
+            assert loop_step.is_a(CONST)
             # should success unrolling if loop is exsisting in a testbench
             if not inductions:
                 return False
@@ -241,7 +241,7 @@ class SimpleLoopUnroll:
             if head is root:
                 continue
             cjump = head.stms[-1]
-            assert isinstance(cjump, CJUMP)
+            assert cjump.is_a(CJUMP)
             # head jumps to true block always
             next_block = cjump.true
             jump = JUMP(next_block)
@@ -292,30 +292,30 @@ class SimpleLoopUnroll:
         tails = [p for p in head.preds if p in blocks]
         # find induction & limit
         for stm in head.stms:
-            if isinstance(stm, CJUMP):
-                assert isinstance(stm.exp, TEMP) and stm.exp.sym.is_condition()
-                defstms = usedef.get_sym_defs_stm(stm.exp.sym)
+            if stm.is_a(CJUMP):
+                assert stm.exp.is_a(TEMP) and stm.exp.sym.is_condition()
+                defstms = usedef.get_def_stms_by_sym(stm.exp.sym)
                 assert len(defstms) == 1
                 mv = defstms.pop()
-                assert isinstance(mv, MOVE)
+                assert mv.is_a(MOVE)
                 rel = mv.src
-                assert isinstance(rel, RELOP) and rel.op == 'Lt'
+                assert rel.is_a(RELOP) and rel.op == 'Lt'
                 induction = rel.left
                 loop_limit = rel.right
                 break
         # find init value
         if induction:
-            defstms = usedef.get_sym_defs_stm(induction.sym)
+            defstms = usedef.get_def_stms_by_sym(induction.sym)
             for stm in defstms:
                 if stm.block in head.preds and stm.block not in head.preds_loop:
-                    assert isinstance(stm, MOVE)
+                    assert stm.is_a(MOVE)
                     loop_init = stm.src
                     break
         # find step value
         for tail in tails:
-            defstms = usedef.get_sym_defs_stm(induction.sym)
+            defstms = usedef.get_def_stms_by_sym(induction.sym)
             for stm in defstms:
-                if stm.block is tail and isinstance(stm, MOVE) and isinstance(stm.src, BINOP):
+                if stm.block is tail and stm.is_a(MOVE) and stm.src.is_a(BINOP):
                     binop = stm.src
                     assert binop.op == 'Add'
                     assert binop.left.sym is induction.sym
@@ -328,7 +328,7 @@ class SimpleLoopUnroll:
 
     def _get_single_assignment_vars(self, block):
         usedef = self.scope.usedef
-        usevars = usedef.get_blk_uses_var(block)
+        usevars = usedef.get_use_vars_by_blk(block)
         use_result = []
         for var in usevars:
             if var.sym.is_temp() or var.sym.is_condition():
@@ -340,7 +340,7 @@ class SimpleLoopUnroll:
         new_stms = []
         for i in range(start, count, step):
             for stm in block.stms:
-                if isinstance(stm, JUMP):
+                if stm.is_a(JUMP):
                     continue
                 copystm = stm.clone()
                 # make ssa form by hand for @t and @cond
@@ -350,7 +350,7 @@ class SimpleLoopUnroll:
                     replacer = VarReplacer(var, TEMP(new_sym, var.ctx), self.scope.usedef)
                     replacer.current_stm = copystm
                     replacer.visit(copystm)
-                if isinstance(copystm, MOVE):
+                if copystm.is_a(MOVE):
                     if copystm.dst.sym.is_temp() or copystm.dst.sym.is_condition():
                         new_name = copystm.dst.sym.name + '#' + str(i)
                         new_sym = self.scope.inherit_sym(copystm.dst.sym, new_name)
@@ -385,7 +385,7 @@ class LoopAnalyzer:
         usedef = self.scope.usedef
         for blk in blocks:
             for stm in blk.stms:
-                if isinstance(stm, MOVE):
-                    assert isinstance(stm.dst, TEMP)
+                if stm.is_a(MOVE):
+                    assert stm.dst.is_a(TEMP)
 
             

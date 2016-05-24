@@ -5,9 +5,10 @@ logger = getLogger(__name__)
 class VarReplacer:
     @classmethod
     def replace_uses(cls, dst, src, usedef):
+        assert dst.is_a(TEMP)
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(dst, src, usedef)
-        uses = list(usedef.get_sym_uses_stm(dst.sym))
+        uses = list(usedef.get_use_stms_by_sym(dst.sym))
         for use in uses: 
             replacer.current_stm = use
             replacer.visit(use)
@@ -41,8 +42,10 @@ class VarReplacer:
         return ir
 
     def visit_SYSCALL(self, ir):
-        ir.args = [self.visit(arg) for arg in ir.args]
-        return ir
+        return self.visit_CALL(ir)
+
+    def visit_CTOR(self, ir):
+        return self.visit_CALL(ir)
 
     def visit_CONST(self, ir):
         return ir
@@ -70,9 +73,12 @@ class VarReplacer:
             self.replaced = True
             rep = self.replace_src.clone()
             self.usedef.remove_var_use(ir, self.current_stm)
-            if isinstance(rep, TEMP):
+            if rep.is_a(TEMP):
                 self.usedef.add_var_use(rep, self.current_stm)
             return rep
+        return ir
+
+    def visit_ATTR(self, ir):
         return ir
 
     def visit_EXPR(self, ir):
@@ -94,6 +100,9 @@ class VarReplacer:
             self.replaces.append(ir)
 
     def visit_JUMP(self, ir):
+        pass
+
+    def visit_RET(self, ir):
         pass
 
     def visit_MOVE(self, ir):

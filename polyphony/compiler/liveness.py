@@ -12,8 +12,8 @@ class Liveness:
         syms = usedef.get_all_syms()
         for sym in syms:
             logger.log(0, sym.name + ' paths')
-            defblks = usedef.get_sym_defs_blk(sym)
-            useblks = usedef.get_sym_uses_blk(sym)
+            defblks = usedef.get_def_blks_by_sym(sym)
+            useblks = usedef.get_use_blks_by_sym(sym)
             for defblk in defblks:
                 for useblk in useblks:
                     results = []

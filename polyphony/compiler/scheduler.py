@@ -1,7 +1,7 @@
-from collections import defaultdict
+﻿from collections import defaultdict
 from .latency import get_latency
 from .irvisitor import IRVisitor
-from .ir import CONST, TEMP, UNOP
+from .ir import *
 from logging import getLogger, INFO, DEBUG
 logger = getLogger(__name__)
 #logger.setLevel(INFO)
@@ -15,6 +15,10 @@ class Scheduler:
 
     def schedule(self, scope):
         self.scope = scope
+        if scope.is_testbench():
+            self._node_sched = self._node_sched_testbench
+        else:
+            self._node_sched = self._node_sched_default
         for dfg in self.scope.dfgs(bottom_up=True):
             self._schedule(scope, dfg)
 
@@ -42,18 +46,39 @@ class Scheduler:
                 self._set_priority(succ, prio+1, dfg)
 
 
+    def _node_sched_default(self, dfg, node):
+        preds = dfg.preds_without_back(node)
+        if preds:
+            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
+            if defuse_preds:
+                latest_node = max(preds, key=lambda p: p.end)
+                scheduled_time = latest_node.end
+            else:
+                latest_node = max(preds, key=lambda p: p.begin)
+                scheduled_time = latest_node.begin
+            if scheduled_time < 0:
+                scheduled_time = 0
+        else:
+            # source node
+            scheduled_time = 0
+        return scheduled_time
+
+    def _node_sched_testbench(self, dfg, node):
+        preds = dfg.preds_without_back(node)
+        if preds:
+            latest_node = max(preds, key=lambda p: p.end)
+            scheduled_time = latest_node.end
+            if scheduled_time < 0:
+                scheduled_time = 0
+        else:
+            # source node
+            scheduled_time = 0
+        return scheduled_time
+
     def _list_schedule(self, dfg, nodes):
         next_candidates = set()
         for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
-            preds = dfg.preds_without_back(n)
-            if preds:
-                latest_node = max(preds, key=lambda p: p.end)
-                scheduled_time = latest_node.end
-                if scheduled_time < 0:
-                    scheduled_time = 0
-            else:
-                scheduled_time = 0
-
+            scheduled_time = self._node_sched(dfg, n)
             latency = get_latency(n.tag)
             #detect resource conflict
             scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
@@ -134,7 +159,12 @@ class ResourceExtractor(IRVisitor):
         self.results.append(ir.op)
 
     def visit_CALL(self, ir):
-        self.results.append(ir.func.sym.name)
+        if ir.func.is_a(TEMP):
+            func_sym = ir.func.sym
+        elif ir.func.is_a(ATTR):
+            func_sym = ir.func.attr
+
+        self.results.append(func_sym.name)
         for arg in ir.args:
             self.visit(arg)
 
@@ -146,17 +176,17 @@ class ResourceExtractor(IRVisitor):
         pass
 
     def visit_MREF(self, ir):
-        assert isinstance(ir.mem, TEMP)
-        assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST) or isinstance(ir.offset, UNOP)
+        assert ir.mem.is_a(TEMP) or ir.mem.is_a(ATTR)
+        assert ir.offset.is_a([TEMP, CONST, UNOP])
 
     def visit_MSTORE(self, ir):
-        assert isinstance(ir.mem, TEMP)
-        assert isinstance(ir.offset, TEMP) or isinstance(ir.offset, CONST)
-        assert isinstance(ir.exp, TEMP) or isinstance(ir.exp, CONST)
+        assert ir.mem.is_a(TEMP) or ir.mem.is_a(ATTR)
+        assert ir.offset.is_a([TEMP, CONST])
+        assert ir.exp.is_a([TEMP, CONST])
 
     def visit_ARRAY(self, ir):
         for item in ir.items:
-            assert isinstance(item, TEMP) or isinstance(item, CONST)
+            assert item.is_a([TEMP, CONST])
 
     def visit_TEMP(self, ir):
         pass

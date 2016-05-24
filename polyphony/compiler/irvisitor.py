@@ -47,11 +47,18 @@
         for arg in ir.args:
             self.visit(arg)
 
+    def visit_CTOR(self, ir):
+        for arg in ir.args:
+            self.visit(arg)
+
     def visit_CONST(self, ir):
         pass
 
     def visit_TEMP(self, ir):
         pass
+
+    def visit_ATTR(self, ir):
+        self.visit(ir.exp)
 
     def visit_MREF(self, ir):
         self.visit(ir.mem)
@@ -65,9 +72,6 @@
     def visit_ARRAY(self, ir):
         for item in ir.items:
             self.visit(item)
-
-    def visit_TEMP(self, ir):
-        pass
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)

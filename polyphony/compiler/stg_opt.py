@@ -8,6 +8,8 @@ class STGOptimizer():
         self.stg_return_state = {}
 
     def process(self, scope):
+        if scope.is_class():
+            return
         self.scope = scope
         self._concat_stgs()
         self._remove_unused_state()
@@ -60,7 +62,7 @@ class STGOptimizer():
         if not state.next_states:
             return
         cond1, nstate1, _ = state.next_states[0]
-        if cond1 is None or isinstance(cond1, AHDL_CONST):
+        if cond1 is None or cond1.is_a(AHDL_CONST):
             if state is stg.finish_state and stg.name in self.stg_return_state:
                 ret_state = self.stg_return_state[stg.name]
                 #replace return state
@@ -82,7 +84,7 @@ class STGOptimizer():
             used_groups.add(grp)
             for state in grp.states:
                 for cond, s, _ in state.next_states:
-                    if isinstance(cond, AHDL_CONST) and cond.value == 1:
+                    if cond and cond.is_a(AHDL_CONST) and cond.value == 1:
                         worklist.append(s.group)
                         # skip others
                         break
@@ -102,10 +104,10 @@ class STGOptimizer():
     def _process_remove_move_state(self, state):
         remove_mv = []
         for code in state.codes:
-            if isinstance(code, AHDL_MOVE):
+            if code.is_a(AHDL_MOVE):
                 mv = code
-                if isinstance(mv.src, AHDL_VAR) and isinstance(mv.dst, AHDL_VAR):
-                    if mv.src.sym is mv.dst.sym:
+                if mv.src.is_a(AHDL_VAR) and mv.dst.is_a(AHDL_VAR):
+                    if mv.src.sig is mv.dst.sig:
                         remove_mv.append(mv)
         for mv in remove_mv:
             state.codes.remove(mv)
@@ -117,7 +119,7 @@ class STGOptimizer():
             for state in stg.states():
                 if not state.codes:
                     cond, _, codes = state.next_states[0]
-                    if cond is None or isinstance(cond, AHDL_CONST):
+                    if cond is None or cond.is_a(AHDL_CONST):
                         self.disconnect_state(state)
                         empty_states.append(state)
             for s in empty_states:
@@ -149,25 +151,25 @@ class STGOptimizer():
 
 class STGUseDefTable:
     def __init__(self):
-        self._sym_defs_stm = defaultdict(set)
-        self._sym_uses_stm = defaultdict(set)
+        self._sig_defs_stm = defaultdict(set)
+        self._sig_uses_stm = defaultdict(set)
         self._var_defs_stm = defaultdict(set)
         self._var_uses_stm = defaultdict(set)
 
     def add_var_def(self, var, stm):
-        self._sym_defs_stm[var.sym].add(stm)
+        self._sig_defs_stm[var.sig].add(stm)
         self._var_defs_stm[var].add(stm)
 
     def remove_var_def(self, var, stm):
-        self._sym_defs_stm[var.sym].discard(stm)
+        self._sig_defs_stm[var.sig].discard(stm)
         self._var_defs_stm[var].discard(stm)
 
     def add_var_use(self, var, stm):
-        self._sym_uses_stm[var.sym].add(stm)
+        self._sig_uses_stm[var.sig].add(stm)
         self._var_uses_stm[var].add(stm)
 
     def remove_var_use(self, var, stm):
-        self._sym_uses_stm[var.sym].discard(stm)
+        self._sig_uses_stm[var.sig].discard(stm)
         self._var_uses_stm[var].discard(stm)
 
     def get_all_vars(self):
@@ -179,14 +181,14 @@ class STGUseDefTable:
 
     def dump(self):
         logger.debug('statements that has symbol defs')
-        for sym, stms in self._sym_defs_stm.items():
-            logger.debug(sym)
+        for sig, stms in self._sig_defs_stm.items():
+            logger.debug(sig)
             for stm in stms:
                 logger.debug('    ' + str(stm))
 
         logger.debug('statements that has symbol uses')
-        for sym, stms in self._sym_uses_stm.items():
-            logger.debug(sym)
+        for sig, stms in self._sig_uses_stm.items():
+            logger.debug(sig)
             for stm in stms:
                 logger.debug('    ' + str(stm))
 
@@ -219,13 +221,13 @@ class STGUseDefDetector():
         pass
 
     def visit_AHDL_OP(self, ahdl):
-        if isinstance(ahdl.left, AHDL_VAR):
+        if ahdl.left.is_a(AHDL_VAR):
             self.table.add_var_use(ahdl.left, self.current_stm)
         else:
             self.visit(ahdl.left)
 
         if ahdl.right:
-            if isinstance(ahdl.right, AHDL_VAR):
+            if ahdl.right.is_a(AHDL_VAR):
                 self.table.add_var_use(ahdl.right, self.current_stm)
             else:
                 self.visit(ahdl.right)
@@ -237,24 +239,24 @@ class STGUseDefDetector():
         pass
 
     def visit_AHDL_MOVE(self, ahdl):
-        if isinstance(ahdl.src, AHDL_VAR):
+        if ahdl.src.is_a(AHDL_VAR):
             self.table.add_var_use(ahdl.src, self.current_stm)
         else:
             self.visit(ahdl.src)
 
-        if isinstance(ahdl.dst, AHDL_VAR):
+        if ahdl.dst.is_a(AHDL_VAR):
             self.table.add_var_def(ahdl.dst, self.current_stm)
         else:
             self.visit(ahdl.dst)
 
     def visit_AHDL_STORE(self, ahdl):
-        if isinstance(ahdl.src, AHDL_VAR):
+        if ahdl.src.is_a(AHDL_VAR):
             self.table.add_var_use(ahdl.src, self.current_stm)
         else:
             self.visit(ahdl.src)
 
     def visit_AHDL_LOAD(self, ahdl):
-        if isinstance(ahdl.dst, AHDL_VAR):
+        if ahdl.dst.is_a(AHDL_VAR):
             self.table.add_var_def(ahdl.dst, self.current_stm)
         else:
             self.visit(ahdl.dst)
@@ -263,7 +265,7 @@ class STGUseDefDetector():
         
         for cond, codes in zip(ahdl.conds, ahdl.codes_list):
             self.current_stm = ahdl
-            if isinstance(cond, AHDL_VAR):
+            if cond.is_a(AHDL_VAR):
                 self.table.add_var_use(cond, ahdl)
             else:
                 self.visit(cond)
@@ -274,7 +276,7 @@ class STGUseDefDetector():
 
     def visit_AHDL_FUNCALL(self, ahdl):
         for arg in ahdl.args:
-            if isinstance(arg, AHDL_VAR):
+            if arg.is_a(AHDL_VAR):
                 self.table.add_var_use(arg, self.current_stm)
             else:
                 self.visit(arg)
@@ -282,7 +284,7 @@ class STGUseDefDetector():
 
     def visit_AHDL_PROCCALL(self, ahdl):
         for arg in ahdl.args:
-            if isinstance(arg, AHDL_VAR):
+            if arg.is_a(AHDL_VAR):
                 self.table.add_var_use(arg, self.current_stm)
             else:
                 self.visit(arg)

@@ -2,36 +2,37 @@
 from .hdlmoduleinfo import HDLModuleInfo
 from .env import env
 from .common import INT_WIDTH
-from .ahdl import AHDL_CONST, AHDL_VAR, AHDL_CONCAT, AHDL_OP, AHDL_IF_EXP, AHDL_ASSIGN, AHDL_CONNECT, AHDL_FUNCALL, AHDL_FUNCTION, AHDL_CASE, AHDL_CASE_ITEM, AHDL_MUX, AHDL_DEMUX
+from .ir import Ctx
+from .ahdl import *
 from . import libs
 from logging import getLogger, DEBUG
 logger = getLogger(__name__)
-
-
-Port = namedtuple('Port', ('postfix', 'typ', 'width', 'sign'))
-Signal = namedtuple('Signal', ('postfix', 'width'))
+import pdb
 
 
 class HDLMemPortMaker:
     @classmethod
     def create(cls, memnode, scope, module_info):
-        if memnode.param_index < 0:
-            if memnode.is_source():
+        if memnode.is_source():
+            if memnode.succs:
+                return RootMemPortMaker(memnode, scope, module_info)
+            else:
+                return DirectMemPortMaker(memnode, scope, module_info)
+        else:
+            if all([memnode.scope is not pred.scope for pred in memnode.preds]):
                 if memnode.succs:
-                    return RootMemPortMaker(memnode, scope, module_info)
+                    return BranchMemPortMaker(memnode, scope, module_info)
                 else:
-                    return DirectMemPortMaker(memnode, scope, module_info)
+                    return LeafMemPortMaker(memnode, scope, module_info)
             else:
                 return JunctionMaker(memnode, scope, module_info)
-        else:
-            if memnode.succs:
-                return BranchMemPortMaker(memnode, scope, module_info)
-            else:
-                return LeafMemPortMaker(memnode, scope, module_info)
 
     def __init__(self, memnode, scope, module_info):
         self.memnode = memnode
-        self.name = memnode.sym.hdl_name()
+        if memnode.object_sym:
+            self.name = '{}_{}'.format(memnode.object_sym.hdl_name(), memnode.sym.ancestor.hdl_name())
+        else:
+            self.name = memnode.sym.hdl_name()
         self.scope = scope
         self.mrg = env.memref_graph
         self.module_info = module_info
@@ -52,22 +53,22 @@ class HDLMemPortMaker:
         dst_name = callee_memnode.sym.hdl_name()
         if callee_memnode.succs:
             #is branch memport
-            postfix = '_br'
+            br_postfix = '_br'
         else:
-            postfix = ''
+            br_postfix = ''
         _, port_data_width, port_addr_width = cls.get_safe_sizes(env.memref_graph, callee_memnode)
         ports = [
-            Port('q',    'wire', port_data_width, 'signed'),
-            Port('len',  'wire', port_addr_width, ''),
-            Port('d',    'wire', port_data_width, 'signed'),
-            Port('addr', 'wire', port_addr_width, ''),
-            Port('we',   'wire', 1, 'signed'),
-            Port('req',  'wire', 1, 'signed')
+            ('q',    port_data_width, ['wire', 'int']),
+            ('len',  port_addr_width, ['wire']),
+            ('d',    port_data_width, ['wire', 'int']),
+            ('addr', port_addr_width, ['wire']),
+            ('we',   1,               ['wire']),
+            ('req',  1,               ['wire'])
         ]
-        for port in ports:
-            port_map[dst_name + '_' + port.postfix + postfix] =  src_name + '_' + port.postfix
+        for postfix, _, _ in ports:
+            port_map[dst_name + '_' + postfix + br_postfix] =  src_name + '_' + postfix
 
-        cls._add_internals(module_info, src_name, ports)
+        cls._add_internals(module_info, scope, src_name, ports)
         if len(caller_memnodes) <= 1:
             return
 
@@ -75,68 +76,61 @@ class HDLMemPortMaker:
         for memnode in caller_memnodes:
             each_caller_name = '{}_{}_{}'.format(callee_instance, callee_memnode.param_index, memnode.sym.hdl_name())
             branch_names.append(each_caller_name)
-            cls._add_internals(module_info,
+            cls._add_internals(module_info, scope, 
                                each_caller_name,
                                ports)
             csname = each_caller_name + '_cs'
-            module_info.add_internal_reg(csname, 1, '')
+            cssig = scope.gen_sig(csname, 1)
+            module_info.add_internal_reg(cssig)
 
         signals = [
-            Signal('addr', port_addr_width),
-            Signal('d', port_data_width),
-            Signal('q', port_data_width),
-            Signal('len', port_addr_width),
-            Signal('we', 1),
-            Signal('req', 1),
-            Signal('cs', 1)
+            ('addr', port_addr_width),
+            ('d',    port_data_width),
+            ('q',    port_data_width),
+            ('len',  port_addr_width),
+            ('we',   1),
+            ('req',  1),
+            ('cs',   1)
         ]
 
         trunk = {}
-        for s in signals:
-            sym = scope.gen_sym(src_name + '_' + s.postfix)
-            sym.width = s.width
-            trunk[s.postfix] = sym
+        for postfix, width in signals:
+            sig = scope.gen_sig(src_name + '_' + postfix, width)
+            trunk[postfix] = sig
 
         branches = defaultdict(list)
         for branch in branch_names:
-            for s in signals:
-                sym = scope.gen_sym(branch + '_' + s.postfix)
-                sym.width = s.width
-                if sym not in branches[s.postfix]:
-                    branches[s.postfix].append(sym)
+            for postfix, width in signals:
+                sig = scope.gen_sig(branch + '_' + postfix, width)
+                if sig not in branches[postfix]:
+                    branches[postfix].append(sig)
             
         #assign selector = {req0, req1, ...}
-        sel = scope.gen_sym(src_name + '_select_sig')
-        sel.width = len(branches['cs'])
-        selector_var = AHDL_VAR(sel)
-        chipselect_bits = AHDL_CONCAT(reversed([AHDL_VAR(cs) for cs in branches['cs']]))
+        sel = scope.gen_sig(src_name + '_select_sig', len(branches['cs']))
+        selector_var = AHDL_VAR(sel, Ctx.STORE)
+        chipselect_bits = AHDL_CONCAT(reversed([AHDL_VAR(cs, Ctx.LOAD) for cs in branches['cs']]))
         module_info.add_static_assignment(AHDL_ASSIGN(selector_var, chipselect_bits))
-        module_info.add_internal_wire(sel.name, sel.width, '')
+        module_info.add_internal_wire(sel)
 
+        selector_var = AHDL_VAR(sel, Ctx.LOAD)
         # make demux for input ports
-        addr_selector = AHDL_VAR(scope.gen_sym(src_name + '_addr_selector'))
-        demux = AHDL_DEMUX(addr_selector, selector_var, trunk['addr'], branches['addr'], port_addr_width)
+        demux = AHDL_DEMUX(src_name + '_addr_selector', selector_var, trunk['addr'], branches['addr'])
         module_info.add_demux(demux)
 
-        d_selector = AHDL_VAR(scope.gen_sym(src_name + '_d_selector'))
-        demux = AHDL_DEMUX(d_selector, selector_var, trunk['d'], branches['d'], port_data_width)
+        demux = AHDL_DEMUX(src_name + '_d_selector', selector_var, trunk['d'], branches['d'])
         module_info.add_demux(demux)
 
-        we_selector = AHDL_VAR(scope.gen_sym(src_name + '_we_selector'))
-        demux = AHDL_DEMUX(we_selector, selector_var, trunk['we'], branches['we'], 1)
+        demux = AHDL_DEMUX(src_name + '_we_selector', selector_var, trunk['we'], branches['we'])
         module_info.add_demux(demux)
 
-        req_selector = AHDL_VAR(scope.gen_sym(src_name + '_req_selector'))
-        demux = AHDL_DEMUX(req_selector, selector_var, trunk['req'], branches['req'], 1)
+        demux = AHDL_DEMUX(src_name + '_req_selector', selector_var, trunk['req'], branches['req'])
         module_info.add_demux(demux)
 
         # make mux for output port
-        q_selector = AHDL_VAR(scope.gen_sym(src_name + '_q_selector'))
-        mux = AHDL_MUX(q_selector, selector_var, branches['q'], trunk['q'], port_data_width)
+        mux = AHDL_MUX(src_name + '_q_selector', selector_var, branches['q'], trunk['q'])
         module_info.add_mux(mux)
 
-        len_selector = AHDL_VAR(scope.gen_sym(src_name + '_len_selector'))
-        mux = AHDL_MUX(len_selector, selector_var, branches['len'], trunk['len'], port_addr_width)
+        mux = AHDL_MUX(src_name + '_len_selector', selector_var, branches['len'], trunk['len'])
         module_info.add_mux(mux)
 
     @classmethod
@@ -148,14 +142,22 @@ class HDLMemPortMaker:
             return -1, 32, 13
 
     @classmethod
-    def _add_internals(cls, module_info, prefix, ports):
-        for port in ports:
-            name = prefix + '_' + port.postfix
-            if port.typ == 'wire':
-                module_info.add_internal_wire(name, port.width, port.sign)
+    def _add_internals(cls, module_info, scope, prefix, ports):
+        for postfix, width, attr in ports:
+            name = prefix + '_' + postfix
+            sig = scope.gen_sig(name, width, attr)
+            if sig.is_wire():
+                module_info.add_internal_wire(sig)
             else:
-                module_info.add_internal_reg(name, port.width, port.sign)
+                module_info.add_internal_reg(sig)
 
+    def _add_mem_ports(self, mem_ports):
+        for postfix, width, attr in mem_ports:
+            sig = self.scope.gen_sig(self.name + '_' + postfix, width, attr)
+            if sig.is_input():
+                self.module_info.add_mem_input(sig)
+            else:
+                self.module_info.add_mem_output(sig)
 
 
 
@@ -194,14 +196,14 @@ class DirectMemPortMaker(HDLMemPortMaker):
         addr_width = self.addr_width
         #internal ports
         ports = [
-            Port('q',    'wire', width, 'signed'),
-            Port('len',  'wire', addr_width, ''),
-            Port('d',    'reg', width, 'signed'),
-            Port('addr', 'reg', addr_width, ''),
-            Port('we',   'reg', 1, 'signed'),
-            Port('req',  'reg', 1, 'signed')
+            ('q',    width,      ['wire', 'int']),
+            ('len',  addr_width, ['wire']),
+            ('d',    width,      ['reg', 'int']),
+            ('addr', addr_width, ['reg']),
+            ('we',   1,          ['reg']),
+            ('req',  1,          ['reg'])
         ]
-        self._add_internals(self.module_info, self.name, ports)
+        self._add_internals(self.module_info, self.scope, self.name, ports)
 
 
 class RootMemPortMaker(HDLMemPortMaker):
@@ -218,13 +220,13 @@ class RootMemPortMaker(HDLMemPortMaker):
         addr_width = self.addr_width
         #internal ports
         ports = [
-            Port('q_ram',    'wire', width, 'signed'),
-            Port('len_ram',  'wire', addr_width, ''),
-            Port('d_ram',    'wire', width, 'signed'),
-            Port('addr_ram', 'wire', addr_width, ''),
-            Port('we_ram',   'wire', 1, 'signed')
+            ('q_ram',    width,      ['wire', 'int']),
+            ('len_ram',  addr_width, ['wire']),
+            ('d_ram',    width,      ['wire', 'int']),
+            ('addr_ram', addr_width, ['wire']),
+            ('we_ram',   1,          ['wire'])
         ]
-        self._add_internals(self.module_info, self.name, ports)
+        self._add_internals(self.module_info, self.scope, self.name, ports)
 
         port_map = OrderedDict()
         port_map['D'] = self.name + '_d_ram'
@@ -248,14 +250,14 @@ class RootMemPortMaker(HDLMemPortMaker):
         addr_width = self.addr_width
         #internal ports
         ports = [
-            Port('q',    'wire', width, 'signed'),
-            Port('len',  'wire', addr_width, ''),
-            Port('d',    'reg', width, 'signed'),
-            Port('addr', 'reg', addr_width, ''),
-            Port('we',   'reg', 1, 'signed'),
-            Port('req',  'reg', 1, 'signed')
+            ('q',    width,      ['wire', 'int']),
+            ('len',  addr_width, ['wire']),
+            ('d',    width,      ['reg', 'int']),
+            ('addr', addr_width, ['reg']),
+            ('we',   1,          ['reg']),
+            ('req',  1,          ['reg'])
         ]
-        self._add_internals(self.module_info, self.name, ports)
+        self._add_internals(self.module_info, self.scope, self.name, ports)
 
     def _make_connection(self):
         addr_width = self.addr_width
@@ -264,73 +266,64 @@ class RootMemPortMaker(HDLMemPortMaker):
         src_prefix = self.name
 
         signals = [
-            Signal('addr', addr_width),
-            Signal('d', data_width),
-            Signal('q', data_width),
-            Signal('len', addr_width),
-            Signal('we', 1),
-            Signal('req', 1)
+            ('addr', addr_width),
+            ('d', data_width),
+            ('q', data_width),
+            ('len', addr_width),
+            ('we', 1),
+            ('req', 1)
         ]
 
         trunk = {}
-        for s in signals:
-            sym = self.scope.gen_sym(src_prefix + '_' + s.postfix + '_ram')
-            sym.width = s.width
-            trunk[s.postfix] = sym
+        for postfix, width in signals:
+            trunk[postfix] = self.scope.gen_sig(src_prefix + '_' + postfix + '_ram', width)
 
         branches = defaultdict(list)
-        for s in signals:
-            sym = self.scope.gen_sym(src_prefix + '_' + s.postfix)
-            sym.width = s.width
-            assert sym not in branches[s.postfix]
-            branches[s.postfix].append(sym)
+        for postfix, width in signals:
+            sig = self.scope.gen_sig(src_prefix + '_' + postfix, width)
+            assert sig not in branches[postfix]
+            branches[postfix].append(sig)
 
         for inst, succ in self.mrg.collect_inst_succs(self.memnode):
             dst_prefix = '{}_{}_{}'.format(inst, succ.param_index, self.name)
-            for s in signals:
-                sym = self.scope.gen_sym(dst_prefix + '_' + s.postfix)
-                sym.width = s.width
-                assert sym not in branches[s.postfix]
-                branches[s.postfix].append(sym)
+            for postfix, width in signals:
+                sig = self.scope.gen_sig(dst_prefix + '_' + postfix, width)
+                assert sig not in branches[postfix]
+                branches[postfix].append(sig)
 
         # add reference nodes in this scope
         for succ in sorted(self.memnode.succs):
             if succ.scope is self.memnode.scope:
                 dst_prefix = '{}_{}'.format(self.name, succ.sym.hdl_name())
-                for s in signals:
-                    sym = self.scope.gen_sym(dst_prefix + '_' + s.postfix)
-                    sym.width = s.width
-                    assert sym not in branches[s.postfix]
-                    branches[s.postfix].append(sym)
+                for postfix, width in signals:
+                    sig = self.scope.gen_sig(dst_prefix + '_' + postfix, width)
+                    assert sig not in branches[postfix]
+                    branches[postfix].append(sig)
 
         #assign selector = {req0, req1, ...}                
-        sel = self.scope.gen_sym(src_prefix + '_select_sig_ram')
-        sel.width = len(branches['req'])
-        selector_var = AHDL_VAR(sel)
-        request_bits = AHDL_CONCAT(reversed([AHDL_VAR(req) for req in branches['req']]))
+        sel = self.scope.gen_sig(src_prefix + '_select_sig_ram', len(branches['req']))
+        selector_var = AHDL_VAR(sel, Ctx.STORE)
+        request_bits = AHDL_CONCAT(reversed([AHDL_VAR(req, Ctx.LOAD) for req in branches['req']]))
         self.module_info.add_static_assignment(AHDL_ASSIGN(selector_var, request_bits))
-        self.module_info.add_internal_wire(sel.name, sel.width, '')
+        self.module_info.add_internal_wire(sel)
 
+        selector_var = AHDL_VAR(sel, Ctx.LOAD)
         # make mux for input ports
-        addr_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_addr_selector_ram'))
-        mux = AHDL_MUX(addr_selector, selector_var, branches['addr'], trunk['addr'], addr_width)
+        mux = AHDL_MUX(src_prefix + '_addr_selector_ram', selector_var, branches['addr'], trunk['addr'])
         self.module_info.add_mux(mux)
 
-        d_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_d_selector_ram'))
-        mux = AHDL_MUX(d_selector, selector_var, branches['d'], trunk['d'], INT_WIDTH)
+        mux = AHDL_MUX(src_prefix + '_d_selector_ram', selector_var, branches['d'], trunk['d'])
         self.module_info.add_mux(mux)
         
-        we_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_we_selector_ram'))
-        mux = AHDL_MUX(we_selector, selector_var, branches['we'], trunk['we'], 1)
+        mux = AHDL_MUX(src_prefix + '_we_selector_ram', selector_var, branches['we'], trunk['we'])
         self.module_info.add_mux(mux)
 
         # make demux for output port
-        q_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_q_selector_ram'))
-        demux = AHDL_DEMUX(q_selector, selector_var, trunk['q'], branches['q'], INT_WIDTH)
+        demux = AHDL_DEMUX(src_prefix + '_q_selector_ram', selector_var, trunk['q'], branches['q'])
         self.module_info.add_demux(demux)
 
         for branch_len in branches['len']:
-            self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(branch_len), AHDL_VAR(trunk['len'])))
+            self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(branch_len, Ctx.STORE), AHDL_VAR(trunk['len'], Ctx.LOAD)))
 
 
 class BranchMemPortMaker(HDLMemPortMaker):
@@ -344,25 +337,26 @@ class BranchMemPortMaker(HDLMemPortMaker):
     def _make_access_ports(self):
         width = INT_WIDTH
         addr_width = self.addr_width
-        #input port
-        self.module_info.add_input(self.name + '_q_br', 'wire', width)
-        self.module_info.add_input(self.name + '_len_br', 'wire', addr_width)
-        #output port
-        self.module_info.add_output(self.name + '_req_br', 'wire', 1)
-        self.module_info.add_output(self.name + '_d_br', 'wire', width)
-        self.module_info.add_output(self.name + '_addr_br', 'wire', addr_width)
-        self.module_info.add_output(self.name + '_we_br', 'wire', 1)
+        mem_ports = [
+            ('q_br',    width,      ['in', 'wire']),
+            ('len_br',  addr_width, ['in', 'wire']),
+            ('req_br',  1,          ['out', 'wire']),
+            ('d_br',    width,      ['out', 'wire']),
+            ('addr_br', addr_width, ['out', 'wire']),
+            ('we_br',   1,          ['out', 'wire'])
+        ]
+        self._add_mem_ports(mem_ports)
 
         #internal ports
         ports = [
-            Port('q',    'wire', width, 'signed'),
-            Port('len',  'wire', addr_width-1, ''),
-            Port('d',    'reg', width, 'signed'),
-            Port('addr', 'reg', addr_width, ''),
-            Port('we',   'reg', 1, 'signed'),
-            Port('req',  'reg', 1, 'signed')
+            ('q',    width,        ['wire', 'int']),
+            ('len',  addr_width-1, ['wire']),
+            ('d',    width,        ['reg', 'int']),
+            ('addr', addr_width,   ['reg']),
+            ('we',   1,            ['reg']),
+            ('req',  1,            ['reg'])
         ]
-        self._add_internals(self.module_info, self.name, ports)
+        self._add_internals(self.module_info, self.scope, self.name, ports)
 
     def _make_connection(self):
         addr_width = self.addr_width
@@ -371,81 +365,72 @@ class BranchMemPortMaker(HDLMemPortMaker):
         src_prefix = self.name
 
         signals = [
-            Signal('addr', addr_width),
-            Signal('d', data_width),
-            Signal('q', data_width),
-            Signal('len', addr_width),
-            Signal('we', 1),
-            Signal('req', 1)
+            ('addr', addr_width),
+            ('d', data_width),
+            ('q', data_width),
+            ('len', addr_width),
+            ('we', 1),
+            ('req', 1)
         ]
 
         trunk = {}
-        for s in signals:
-            sym = self.scope.gen_sym(src_prefix + '_' + s.postfix + '_br')
-            sym.width = s.width
-            trunk[s.postfix] = sym
+        for postfix, width in signals:
+            trunk[postfix] = self.scope.gen_sig(src_prefix + '_' + postfix + '_br', width)
 
         branches = defaultdict(list)
-        for s in signals:
-            sym = self.scope.gen_sym(src_prefix + '_' + s.postfix)
-            sym.width = s.width
-            assert sym not in branches[s.postfix]
-            branches[s.postfix].append(sym)
+        for postfix, width in signals:
+            sig = self.scope.gen_sig(src_prefix + '_' + postfix, width)
+            assert sig not in branches[postfix]
+            branches[postfix].append(sig)
 
         for inst, succ in self.mrg.collect_inst_succs(self.memnode):
             dst_prefix = '{}_{}_{}'.format(inst, succ.param_index, self.name)
-            for s in signals:
-                sym = self.scope.gen_sym(dst_prefix + '_' + s.postfix)
-                sym.width = s.width
-                assert sym not in branches[s.postfix]
-                branches[s.postfix].append(sym)
+            for postfix, width in signals:
+                sig = self.scope.gen_sig(dst_prefix + '_' + postfix, width)
+                assert sig not in branches[postfix]
+                branches[postfix].append(sig)
 
         # add reference nodes in this scope
         for succ in sorted(self.memnode.succs):
             if succ.scope is self.memnode.scope:
                 dst_prefix = '{}_{}'.format(self.name, succ.sym.hdl_name())
-                for s in signals:
-                    sym = self.scope.gen_sym(dst_prefix + '_' + s.postfix)
-                    sym.width = s.width
-                    assert sym not in branches[s.postfix]
-                    branches[s.postfix].append(sym)
+                for postfix, width in signals:
+                    sig = self.scope.gen_sig(dst_prefix + '_' + postfix, width)
+                    assert sig not in branches[postfix]
+                    branches[postfix].append(sig)
 
         #assign selector = {req0, req1, ...}                
-        sel = self.scope.gen_sym(src_prefix + '_select_sig_br')
-        sel.width = len(branches['req'])
-        selector_var = AHDL_VAR(sel)
-        request_bits = AHDL_CONCAT(reversed([AHDL_VAR(req) for req in branches['req']]))
+        sel = self.scope.gen_sig(src_prefix + '_select_sig_br', len(branches['req']))
+        selector_var = AHDL_VAR(sel, Ctx.STORE)
+        request_bits = AHDL_CONCAT(reversed([AHDL_VAR(req, Ctx.LOAD) for req in branches['req']]))
         self.module_info.add_static_assignment(AHDL_ASSIGN(selector_var, request_bits))
-        self.module_info.add_internal_wire(sel.name, sel.width, '')
+        self.module_info.add_internal_wire(sel)
 
-        req_out = self.scope.gen_sym(self.name + '_req_br')
-        req_out_var = AHDL_VAR(req_out)
+        req_out = self.scope.gen_sig(self.name + '_req_br', len(branches['req']))
+        req_out_var = AHDL_VAR(req_out, Ctx.STORE)
         
-        req_ors = AHDL_VAR(branches['req'][0])
+        req_ors = AHDL_VAR(branches['req'][0], Ctx.LOAD)
         for req in branches['req'][1:]:
-            req_ors = AHDL_OP('Or', req_ors, AHDL_VAR(req))
+            req_ors = AHDL_OP('Or', req_ors, AHDL_VAR(req, Ctx.LOAD))
         self.module_info.add_static_assignment(AHDL_ASSIGN(req_out_var, req_ors))
 
+        selector_var = AHDL_VAR(sel, Ctx.LOAD)
         # make mux for input ports
-        addr_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_addr_selector_br'))
-        mux = AHDL_MUX(addr_selector, selector_var, branches['addr'], trunk['addr'], addr_width)
+        mux = AHDL_MUX(src_prefix + '_addr_selector_br', selector_var, branches['addr'], trunk['addr'])
         self.module_info.add_mux(mux)
 
-        d_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_d_selector_br'))
-        mux = AHDL_MUX(d_selector, selector_var, branches['d'], trunk['d'], INT_WIDTH)
+        mux = AHDL_MUX(src_prefix + '_d_selector_br', selector_var, branches['d'], trunk['d'])
         self.module_info.add_mux(mux)
         
-        we_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_we_selector_br'))
-        mux = AHDL_MUX(we_selector, selector_var, branches['we'], trunk['we'], 1)
+        mux = AHDL_MUX(src_prefix + '_we_selector_br', selector_var, branches['we'], trunk['we'])
         self.module_info.add_mux(mux)
 
         # make demux for output port
-        q_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_q_selector_br'))
-        demux = AHDL_DEMUX(q_selector, selector_var, trunk['q'], branches['q'], INT_WIDTH)
+        demux = AHDL_DEMUX(src_prefix + '_q_selector_br', selector_var, trunk['q'], branches['q'])
         self.module_info.add_demux(demux)
 
         for branch_len in branches['len']:
-            self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(branch_len), AHDL_VAR(trunk['len'])))
+            self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(branch_len, Ctx.STORE), AHDL_VAR(trunk['len'], Ctx.LOAD)))
 
 class LeafMemPortMaker(HDLMemPortMaker):
     def __init__(self, memnode, scope, module_info):
@@ -455,14 +440,27 @@ class LeafMemPortMaker(HDLMemPortMaker):
         self._make_access_ports()
 
     def _make_access_ports(self):
-        #input port
-        self.module_info.add_input(self.name + '_q', 'wire', self.width)
-        self.module_info.add_input(self.name + '_len', 'wire', self.addr_width)
-        #output port
-        self.module_info.add_output(self.name + '_req', 'reg', 1)
-        self.module_info.add_output(self.name + '_d', 'reg', self.width)
-        self.module_info.add_output(self.name + '_addr', 'reg', self.addr_width)
-        self.module_info.add_output(self.name + '_we', 'reg', 1)
+        if self.memnode.object_sym:
+            ports = [
+                ('q',    self.width,      ['wire', 'int']),
+                ('len',  self.addr_width, ['wire']),
+                ('req',  1,               ['reg']),
+                ('d',    self.width,      ['reg', 'int']),
+                ('addr', self.addr_width, ['reg']),
+                ('we',   1,               ['reg'])
+            ]
+            self._add_internals(self.module_info, self.scope, self.name, ports)
+        else:
+            mem_ports = [
+                ('q',    self.width,      ['in', 'wire']),
+                ('len',  self.addr_width, ['in', 'wire']),
+                ('req',  1,               ['out', 'reg']),
+                ('d',    self.width,      ['out', 'reg']),
+                ('addr', self.addr_width, ['out', 'reg']),
+                ('we',   1,               ['out', 'reg'])
+            ]
+            self._add_mem_ports(mem_ports)
+
 
 class JunctionMaker(HDLMemPortMaker):
     def __init__(self, memnode, scope, module_info):
@@ -479,58 +477,56 @@ class JunctionMaker(HDLMemPortMaker):
         #internal ports
         # for direct access
         ports = [
-            Port('q',    'wire', width, 'signed'),
-            Port('len',  'wire', addr_width-1, ''),
-            Port('d',    'reg', width, 'signed'),
-            Port('addr', 'reg', addr_width, ''),
-            Port('we',   'reg', 1, 'signed'),
-            Port('req',  'reg', 1, 'signed')
+            ('q',    width,        ['wire', 'int']),
+            ('len',  addr_width-1, ['wire']),
+            ('d',    width,        ['reg', 'int']),
+            ('addr', addr_width,   ['reg']),
+            ('we',   1,            ['reg']),
+            ('req',  1,            ['reg'])
         ]
-        self._add_internals(self.module_info, self.name, ports)
+        self._add_internals(self.module_info, self.scope, self.name, ports)
 
         # for indirect access to predesessor nodes
         for pred in self.memnode.preds:
             prefix = '{}_{}'.format(pred.sym.hdl_name(), self.name)
             ports = [
-                Port('q',    'wire', width, 'signed'),
-                Port('len',  'wire', addr_width-1, ''),
-                Port('d',    'wire', width, 'signed'),
-                Port('addr', 'wire', addr_width, ''),
-                Port('we',   'wire', 1, 'signed'),
-                Port('req',  'wire', 1, 'signed')
+                ('q',    width,        ['wire', 'int']),
+                ('len',  addr_width-1, ['wire']),
+                ('d',    width,        ['wire', 'int']),
+                ('addr', addr_width,   ['wire']),
+                ('we',   1,            ['wire']),
+                ('req',  1,            ['wire'])
             ]
-            self._add_internals(self.module_info, prefix, ports)
+            self._add_internals(self.module_info, self.scope, prefix, ports)
 
         # bridge
         ports = [
-            Port('bridge_q',    'wire', width, 'signed'),
-            Port('bridge_len',  'wire', addr_width-1, ''),
-            Port('bridge_d',    'wire', width, 'signed'),
-            Port('bridge_addr', 'wire', addr_width, ''),
-            Port('bridge_we',   'wire', 1, 'signed'),
-            Port('bridge_req',  'wire', 1, 'signed')
+            ('bridge_q',    width,        ['wire', 'int']),
+            ('bridge_len',  addr_width-1, ['wire']),
+            ('bridge_d',    width,        ['wire', 'int']),
+            ('bridge_addr', addr_width,   ['wire']),
+            ('bridge_we',   1,            ['wire']),
+            ('bridge_req',  1,            ['wire'])
         ]
-        self._add_internals(self.module_info, self.name, ports)
+        self._add_internals(self.module_info, self.scope, self.name, ports)
 
     def _make_connection(self):
         addr_width = self.addr_width
         data_width = INT_WIDTH #TODO
 
         signals = [
-            Signal('addr', addr_width),
-            Signal('d', data_width),
-            Signal('q', data_width),
-            Signal('len', addr_width),
-            Signal('we', 1),
-            Signal('req', 1)
+            ('addr', addr_width),
+            ('d', data_width),
+            ('q', data_width),
+            ('len', addr_width),
+            ('we', 1),
+            ('req', 1)
         ]
 
         this = {}
         src_prefix = self.name + '_bridge'
-        for s in signals:
-            sym = self.scope.gen_sym(src_prefix + '_' + s.postfix)
-            sym.width = s.width
-            this[s.postfix] = sym
+        for postfix, width in signals:
+            this[postfix] = self.scope.gen_sig(src_prefix + '_' + postfix, width)
 
         # for accessee
         accessees = defaultdict(list)
@@ -540,41 +536,34 @@ class JunctionMaker(HDLMemPortMaker):
             if pred.scope is not self.memnode.scope:
                 continue
             dst_prefix = '{}_{}'.format(pred.sym.hdl_name(), self.name)
-            for s in signals:
-                sym = self.scope.gen_sym(dst_prefix + '_' + s.postfix)
-                sym.width = s.width
-                accessees[s.postfix].append(sym)
+            for postfix, width in signals:
+                sig = self.scope.gen_sig(dst_prefix + '_' + postfix, width)
+                accessees[postfix].append(sig)
 
         #assign selector = {req0, req1, ...}                
-        sel = self.scope.gen_sym(src_prefix + '_sel')
-        sel.width = len(accessees['req'])
-        selector_var = AHDL_VAR(sel)
-        self.module_info.add_internal_reg(sel.name, sel.width, '')
+        sel = self.scope.gen_sig(src_prefix + '_sel', len(accessees['req']))
+        self.module_info.add_internal_reg(sel)
 
+        selector_var = AHDL_VAR(sel, Ctx.LOAD)
         # make demux
-        addr_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_addr_selector'))
-        demux = AHDL_DEMUX(addr_selector, selector_var, this['addr'], accessees['addr'], addr_width)
+        demux = AHDL_DEMUX(src_prefix + '_addr_selector', selector_var, this['addr'], accessees['addr'])
         self.module_info.add_demux(demux)
 
-        d_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_d_selector'))
-        demux = AHDL_DEMUX(d_selector, selector_var, this['d'], accessees['d'], INT_WIDTH)
+        demux = AHDL_DEMUX(src_prefix + '_d_selector', selector_var, this['d'], accessees['d'])
         self.module_info.add_demux(demux)
         
-        we_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_we_selector'))
-        demux = AHDL_DEMUX(we_selector, selector_var, this['we'], accessees['we'], 1)
+        demux = AHDL_DEMUX(src_prefix + '_we_selector', selector_var, this['we'], accessees['we'])
         self.module_info.add_demux(demux)
 
-        req_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_req_selector'))
-        demux = AHDL_DEMUX(req_selector, selector_var, 1, accessees['req'], 1)
+        one = self.scope.gen_sig('1', 1)
+        demux = AHDL_DEMUX(src_prefix + '_req_selector', selector_var, one, accessees['req'])
         self.module_info.add_demux(demux)
         
         # make mux
-        q_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_q_selector'))
-        mux = AHDL_MUX(q_selector, selector_var, accessees['q'], this['q'], INT_WIDTH)
+        mux = AHDL_MUX(src_prefix + '_q_selector', selector_var, accessees['q'], this['q'])
         self.module_info.add_mux(mux)
 
-        len_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_len_selector'))
-        mux = AHDL_MUX(len_selector, selector_var, accessees['len'], this['len'], INT_WIDTH)
+        mux = AHDL_MUX(src_prefix + '_len_selector', selector_var, accessees['len'], this['len'])
         self.module_info.add_mux(mux)
 
         # for accessor
@@ -583,56 +572,49 @@ class JunctionMaker(HDLMemPortMaker):
         # for indirect access from sub-module nodes
         for inst, succ in self.mrg.collect_inst_succs(self.memnode):
             dst_prefix = '{}_{}_{}'.format(inst, succ.param_index, self.name)
-            for s in signals:
-                sym = self.scope.gen_sym(dst_prefix + '_' + s.postfix)
-                sym.width = s.width
-                assert sym not in accessors[s.postfix]
-                accessors[s.postfix].append(sym)
+            for postfix, width in signals:
+                sig = self.scope.gen_sig(dst_prefix + '_' + postfix, width)
+                assert sig not in accessors[postfix]
+                accessors[postfix].append(sig)
 
         # for indirect access from successor nodes
         for succ in sorted(self.memnode.succs):
             if succ.scope is not self.memnode.scope:
                 continue
             dst_prefix = '{}_{}'.format(self.name, succ.sym.hdl_name())
-            for s in signals:
-                sym = self.scope.gen_sym(dst_prefix + '_' + s.postfix)
-                sym.width = s.width
-                assert sym not in accessors[s.postfix]
-                accessors[s.postfix].append(sym)
+            for postfix, width in signals:
+                sig = self.scope.gen_sig(dst_prefix + '_' + postfix, width)
+                assert sig not in accessors[postfix]
+                accessors[postfix].append(sig)
         # for direct access
-        for s in signals:
-            sym = self.scope.gen_sym(self.name+'_'+s.postfix)
-            sym.width = s.width
-            assert sym not in accessors[s.postfix]
-            accessors[s.postfix].append(sym)
+        for postfix, width in signals:
+            sig = self.scope.gen_sig(self.name+'_' + postfix, width)
+            assert sig not in accessors[postfix]
+            accessors[postfix].append(sig)
 
         if accessors:
             #assign selector = {req0, req1, ...}
-            sel = self.scope.gen_sym(src_prefix + '_select_sig')
-            sel.width = len(accessors['req'])
-            selector_var = AHDL_VAR(sel)
-            request_bits = AHDL_CONCAT(reversed([AHDL_VAR(req) for req in accessors['req']]))
+            sel = self.scope.gen_sig(src_prefix + '_select_sig', len(accessors['req']))
+            selector_var = AHDL_VAR(sel, Ctx.STORE)
+            request_bits = AHDL_CONCAT(reversed([AHDL_VAR(req, Ctx.LOAD) for req in accessors['req']]))
             self.module_info.add_static_assignment(AHDL_ASSIGN(selector_var, request_bits))
-            self.module_info.add_internal_wire(sel.name, sel.width, '')
+            self.module_info.add_internal_wire(sel)
 
+            selector_var = AHDL_VAR(sel, Ctx.LOAD)
             # make mux for input ports
-            addr_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_addr_selector'))
-            mux = AHDL_MUX(addr_selector, selector_var, accessors['addr'], this['addr'], addr_width)
+            mux = AHDL_MUX(src_prefix + '_addr_selector', selector_var, accessors['addr'], this['addr'])
             self.module_info.add_mux(mux)
 
-            d_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_d_selector'))
-            mux = AHDL_MUX(d_selector, selector_var, accessors['d'], this['d'], INT_WIDTH)
+            mux = AHDL_MUX(src_prefix + '_d_selector', selector_var, accessors['d'], this['d'])
             self.module_info.add_mux(mux)
 
-            we_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_we_selector'))
-            mux = AHDL_MUX(we_selector, selector_var, accessors['we'], this['we'], 1)
+            mux = AHDL_MUX(src_prefix + '_we_selector', selector_var, accessors['we'], this['we'])
             self.module_info.add_mux(mux)
 
             # make demux for output port
-            q_selector = AHDL_VAR(self.scope.gen_sym(src_prefix + '_q_selector'))
-            demux = AHDL_DEMUX(q_selector, selector_var, this['q'], accessors['q'], INT_WIDTH)
+            demux = AHDL_DEMUX(src_prefix + '_q_selector', selector_var, this['q'], accessors['q'])
             self.module_info.add_demux(demux)
 
             for branch_len in accessors['len']:
-                self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(branch_len), AHDL_VAR(this['len'])))
+                self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(branch_len, Ctx.STORE), AHDL_VAR(this['len'], Ctx.LOAD)))
 

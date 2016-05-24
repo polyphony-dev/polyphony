@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict
-from .ir import IR, RELOP, CONST, TEMP, CJUMP, MOVE, PHI
+from .ir import Ctx, RELOP, CONST, TEMP, CJUMP, MOVE, PHI
 from .symbol import Symbol
 from .dominator import DominatorTreeBuilder
 from .varreplacer import VarReplacer
@@ -24,7 +24,7 @@ class PHICondResolver:
         self.phis = []
         for b in self.scope.blocks:
             for stm in b.stms:
-                if isinstance(stm, PHI):
+                if stm.is_a(PHI):
                     #if stm.var.sym.is_memory():
                     #    continue
                     self.phis.append(stm)
@@ -35,17 +35,17 @@ class PHICondResolver:
         conds = []
         for i, (arg, blk) in enumerate(phi.args):
             pred = blk
-            mv = MOVE(TEMP(phi.var.sym, IR.STORE), arg)
+            mv = MOVE(TEMP(phi.var.sym, Ctx.STORE), arg)
             #TODO: track the lineno
             mv.lineno = 1
             pred.stms.insert(-1, mv)
             mv.block = pred
             logger.debug('PHI divide into ' + str(mv))
             #update usedef table
-            if isinstance(arg, TEMP):
+            if arg.is_a(TEMP):
                 usedef.remove_var_use(arg, phi)
                 usedef.add_var_use(mv.src, mv)
-            elif isinstance(arg, CONST):
+            elif arg.is_a(CONST):
                 usedef.remove_const_use(arg, phi)
                 usedef.add_const_use(mv.src, mv)
 
@@ -55,4 +55,4 @@ class PHICondResolver:
         phi.block.stms.remove(phi)
         self.phis.remove(phi)
 
-        #assert len(usedef.get_sym_defs_stm(phi.var.sym)) == len(phi.argv())
+        #assert len(usedef.get_def_stms_by_sym(phi.var.sym)) == len(phi.argv())

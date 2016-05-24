@@ -1,4 +1,4 @@
-from .ir import TEMP, MOVE, MSTORE
+﻿from .ir import TEMP, MOVE, MSTORE
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -14,19 +14,19 @@ class DFGOptimizer:
         for n in dfg.nodes:
             if not n.is_stm():
                 continue
-            if not isinstance(n.tag, MOVE):
+            if not n.tag.is_a(MOVE):
                 continue
-            if not isinstance(n.tag.src, TEMP):
+            if not n.tag.src.is_a(TEMP):
                 continue
             preds = dfg.preds_typ(n, 'DefUse')
             if len(preds) == 1:
                 defstm = preds[0].tag
                 copystm = n.tag
-                if isinstance(defstm, MOVE) and isinstance(defstm.src, MSTORE):
+                if defstm.is_a(MOVE) and defstm.src.is_a(MSTORE):
                     continue
 
                 eliminated = copystm.src
-                using_stms = scope.usedef.get_sym_uses_stm(eliminated.sym)
+                using_stms = scope.usedef.get_use_stms_by_sym(eliminated.sym)
                 if len(using_stms) != 1:
                     continue
                 if copystm.dst.sym.is_return():

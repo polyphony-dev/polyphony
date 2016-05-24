@@ -1,6 +1,6 @@
-﻿from .common import funclog
-from .irvisitor import IRVisitor
-from .symbol import function_name, Symbol
+﻿from .signal import Signal
+from .ir import Ctx
+from .memref import MemRefNode
 
 PYTHON_OP_2_HDL_OP_MAP = {
     'And':'&&',
@@ -32,6 +32,18 @@ class AHDL:
     def __init__(self):
         pass
 
+    def is_a(self, cls):
+        if isinstance(cls, list) or isinstance(cls, tuple):
+            for c in cls:
+                if isinstance(self, c):
+                    return True
+            return False
+        else:
+            return isinstance(self, cls)
+
+    def __repr__(self):
+        return self.__str__()
+
 class AHDL_CONST(AHDL):
     def __init__(self, value):
         super().__init__()
@@ -54,13 +66,33 @@ class AHDL_OP(AHDL):
             return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.left)
 
 class AHDL_VAR(AHDL):
-    def __init__(self, sym):
-        assert sym
+    def __init__(self, sig, ctx):
+        assert sig and isinstance(sig, Signal)
         super().__init__()
-        self.sym = sym
+        self.sig = sig
+        self.ctx = ctx
 
     def __str__(self):
-        return '{}'.format(self.sym)
+         return '{}'.format(self.sig)
+
+class AHDL_MEMVAR(AHDL):
+    def __init__(self, memnode, ctx):
+        assert memnode and isinstance(memnode, MemRefNode)
+        super().__init__()
+        self.memnode = memnode
+        self.ctx = ctx
+
+    def __str__(self):
+        return '{}'.format(self.memnode.sym.name)
+
+class AHDL_SYMBOL(AHDL):
+    def __init__(self, name):
+        assert name and isinstance(name, str)
+        super().__init__()
+        self.name = name
+
+    def __str__(self):
+         return '{}'.format(self.name)
 
 class AHDL_CONCAT(AHDL):
     def __init__(self, varlist):
@@ -80,9 +112,12 @@ class AHDL_NOP(AHDL):
 
 class AHDL_MOVE(AHDL):
     def __init__(self, dst, src):
-        assert dst and src
-        assert isinstance(dst, AHDL)
-        assert isinstance(src, AHDL)
+        assert dst.is_a(AHDL)
+        assert src.is_a(AHDL)
+        if src.is_a(AHDL_VAR):
+            assert src.ctx == Ctx.LOAD
+        if dst.is_a(AHDL_VAR):
+            assert dst.ctx == Ctx.STORE
         super().__init__()
         self.dst = dst
         self.src = src
@@ -92,6 +127,8 @@ class AHDL_MOVE(AHDL):
 
 class AHDL_ASSIGN(AHDL):
     def __init__(self, dst, src):
+        assert dst.is_a(AHDL)
+        assert src.is_a(AHDL)
         super().__init__()
         self.dst = dst
         self.src = src
@@ -101,6 +138,8 @@ class AHDL_ASSIGN(AHDL):
 
 class AHDL_CONNECT(AHDL):
     def __init__(self, dst, src):
+        assert dst.is_a(AHDL)
+        assert src.is_a(AHDL)
         super().__init__()
         self.dst = dst
         self.src = src
@@ -175,6 +214,7 @@ class AHDL_IF_EXP(AHDL):
 
 class AHDL_FUNCALL(AHDL):
     def __init__(self, name, args):
+        assert isinstance(name, str)
         super().__init__()
         self.name = name
         self.args = args
@@ -184,6 +224,7 @@ class AHDL_FUNCALL(AHDL):
 
 class AHDL_PROCCALL(AHDL):
     def __init__(self, name, args):
+        assert isinstance(name, str)
         super().__init__()
         self.name = name
         self.args = args
@@ -212,26 +253,28 @@ class AHDL_FUNCTION(AHDL):
 
 
 class AHDL_MUX(AHDL):
-    def __init__(self, name, selector, inputs, output, width):
+    def __init__(self, name, selector, inputs, output):
         super().__init__()
+        assert isinstance(name, str)
+        assert isinstance(output, Signal)
         self.name = name
         self.selector = selector
         self.inputs = inputs
         self.output = output
-        self.width = width
 
     def __str__(self):
         return 'MUX {}'.format(self.name)
 
 
 class AHDL_DEMUX(AHDL):
-    def __init__(self, name, selector, input, outputs, width):
+    def __init__(self, name, selector, input, outputs):
         super().__init__()
+        assert isinstance(name, str)
+        assert isinstance(input, Signal)
         self.name = name
         self.selector = selector
         self.input = input
         self.outputs = outputs
-        self.width = width
 
     def __str__(self):
         return 'DEMUX {}'.format(self.name)
@@ -240,6 +283,7 @@ class AHDL_DEMUX(AHDL):
 class AHDL_COMB(AHDL):
     def __init__(self, name, stms):
         super().__init__()
+        assert isinstance(name, str)
         self.name = name
         self.stms = stms
 

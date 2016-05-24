@@ -40,12 +40,14 @@ class Symbol:
     condition_prefix = '@cond'
     temp_prefix = '@t'
     param_prefix = '@in'
+    field_prefix = '@f'
+    port_prefix = '@p'
 
     def __init__(self, name, scope, id):
         self.id = id
         self.name = name
         self.scope = scope
-        self.typ = None # var|tmp|reg|wire|ignore|
+        self.typ = Type.none_t # var|tmp|reg|wire|ignore|
         self.ancestor = None
 
     def __str__(self):
@@ -83,6 +85,12 @@ class Symbol:
 
     def is_param(self):
         return self.name.startswith(Symbol.param_prefix)
+
+    def is_field(self):
+        return self.name.startswith(Symbol.field_prefix)
+
+    def is_port(self):
+        return self.name.startswith(Symbol.port_prefix)
 
     def set_type(self, typ):
         self.typ = typ

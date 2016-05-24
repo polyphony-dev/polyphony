@@ -1,5 +1,6 @@
-import inspect
+﻿import inspect
 from collections import defaultdict, namedtuple
+from .scope import Scope
 from .env import env
 import logging
 import pdb
@@ -13,45 +14,55 @@ class Driver:
         self.updated = False
         self.logger = logging.getLogger() #root logger
         self.codes = {}
+        self.insert_reserved_scopes = []
 
     def insert_scope(self, scope):
-        for i in range(len(self.procs)):
-            self.unprocessed_scopes[i].append(scope)
-            self.unprocessed_scopes[i].sort(key=lambda s: s.order)
+        self.insert_reserved_scopes.append(scope)
         self.updated = True
 
     def remove_scope(self, scope):
         for scopes in self.unprocessed_scopes:
             if scope in scopes: scopes.remove(scope)
 
-    def process_one(self, proc, scope):
+    def start_logging(self, proc, scope):
         if env.dev_debug_mode:
             self.logger.addHandler(env.logfiles[scope])
         self.logger.debug('--------------------------')
         self.logger.debug(str(proc.__name__) + ':' + scope.name)
-        proc(self, scope)
+    def end_logging(self, proc, scope):
         if env.dev_debug_mode:
             self.logger.removeHandler(env.logfiles[scope])
 
-    def process_all(self, proc):
-        self.logger.debug('--------------------------')
-        self.logger.debug(str(proc.__name__))
-        proc(self)
-
     def run(self):
         while True:
-            for i, p in enumerate(self.procs):
+            for i, proc in enumerate(self.procs):
                 self.stage = i
-                args, _, _, _ = inspect.getargspec(p)
+                args, _, _, _ = inspect.getargspec(proc)
+                Scope.reorder_scopes()
+                self.unprocessed_scopes[i].sort(key=lambda s: s.order)
+                scopes = self.unprocessed_scopes[i][:]
+
                 if 'scope' not in args:
-                    self.process_all(p)
-                else:
-                    scopes = self.unprocessed_scopes[i][::-1]
                     for s in scopes:
-                        self.process_one(p, s)
-                        self.unprocessed_scopes[i].remove(s)
+                        self.start_logging(proc, s)
+                    proc(self)
+                    for s in scopes:
+                        self.end_logging(proc, s)
+                        if s in self.unprocessed_scopes[i]:
+                            self.unprocessed_scopes[i].remove(s)
+                else:
+                    for s in reversed(scopes):
+                        self.start_logging(proc, s)
+                        proc(self, s)
+                        self.end_logging(proc, s)
+                        if s in self.unprocessed_scopes[i]:
+                            self.unprocessed_scopes[i].remove(s)
                 if self.updated:
+                    for s in self.insert_reserved_scopes:
+                        for i in range(len(self.procs)):
+                          self.unprocessed_scopes[i].append(s)
                     self.updated = False
+                    self.insert_reserved_scopes = []
                     break
             else:
                 break

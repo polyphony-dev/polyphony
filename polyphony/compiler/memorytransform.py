@@ -1,6 +1,6 @@
 ﻿from collections import deque, defaultdict
 from .varreplacer import VarReplacer
-from .ir import IR, CONST, TEMP, ARRAY, CALL, EXPR, MREF, MSTORE, MOVE, PHI
+from .ir import *
 from .symbol import Symbol
 from .type import Type
 from .irvisitor import IRTransformer, IRVisitor
@@ -16,15 +16,15 @@ class MemoryRenamer:
         stms = []
         for block in scope.blocks:
             for stm in block.stms:
-                if isinstance(stm, MOVE):
-                    if isinstance(stm.src, ARRAY):
+                if stm.is_a(MOVE):
+                    if stm.src.is_a(ARRAY):
                         stms.append(stm)
-                    elif isinstance(stm.src, TEMP) and stm.src.sym.is_param() and Type.is_list(stm.src.sym.typ):
+                    elif stm.src.is_a(TEMP) and stm.src.sym.is_param() and Type.is_list(stm.src.sym.typ):
                         stms.append(stm)
         return stms
 
     def _get_phis(self, block):
-        return filter(lambda stm: isinstance(stm, PHI), block.stms)
+        return filter(lambda stm: stm.is_a(PHI), block.stms)
 
     def _cleanup_phi(self):
         for block in self.scope.blocks:
@@ -34,7 +34,7 @@ class MemoryRenamer:
                 args = set()
                 for arg, blk in phi.args:
                     args.add(arg.sym)
-                    if isinstance(arg, TEMP) and arg.sym is phi.var.sym:
+                    if arg.is_a(TEMP) and arg.sym is phi.var.sym:
                         remove_args.append((arg, blk))
                 if len(args) == 1:
                     remove_phis.append(phi)
@@ -50,13 +50,19 @@ class MemoryRenamer:
         worklist = deque()
         stms = self._collect_def_mem_stm(scope)
         mem_var_map = defaultdict(set)
-        memsrcs = tuple([mv.dst.sym for mv in stms])
+        memsrcs = []#tuple([mv.dst.sym for mv in stms])
 
         for mv in stms:
             logger.debug('!!! mem def stm ' + str(mv))
-            assert isinstance(mv.src, ARRAY) \
-                or (isinstance(mv.src, TEMP) and mv.src.sym.is_param())
-            uses = usedef.get_sym_uses_stm(mv.dst.sym)
+            assert mv.src.is_a(ARRAY) \
+                or (mv.src.is_a(TEMP) and mv.src.sym.is_param())
+
+            if mv.dst.is_a(TEMP):
+                memsym = mv.dst.sym
+            elif mv.dst.is_a(ATTR):
+                memsym = mv.dst.attr
+            memsrcs.append(memsym)
+            uses = usedef.get_use_stms_by_sym(memsym)
             worklist.extend(list(uses))
 
         def merge_mem_var(src, dst):
@@ -77,8 +83,8 @@ class MemoryRenamer:
         while worklist:
             stm = worklist.popleft()
             sym = None
-            if isinstance(stm, MOVE):
-                if isinstance(stm.src, TEMP):
+            if stm.is_a(MOVE):
+                if stm.src.is_a(TEMP):
                     moves.add(stm)
                     if stm.src.sym in mem_var_map:
                         updated = merge_mem_var(stm.src, stm.dst)
@@ -97,7 +103,7 @@ class MemoryRenamer:
 
                     sym = stm.dst.sym
 
-                elif isinstance(stm.src, MSTORE):
+                elif stm.src.is_a(MSTORE):
                     if stm.src.mem.sym in mem_var_map:
                         updated = merge_mem_var(stm.src.mem, stm.dst)
                         sym2var[stm.dst.sym].add(stm.dst)
@@ -116,7 +122,7 @@ class MemoryRenamer:
 
                     sym = stm.dst.sym
 
-            elif isinstance(stm, PHI):
+            elif stm.is_a(PHI):
                 updated = False
                 for arg, blk in stm.args:
                     if arg.sym in mem_var_map:
@@ -132,10 +138,10 @@ class MemoryRenamer:
                 sym = stm.var.sym
 
             if sym:
-                uses = usedef.get_sym_uses_stm(sym)
+                uses = usedef.get_use_stms_by_sym(sym)
                 worklist.extend(list(uses))
                 for u in uses:
-                    for var in usedef.get_stm_uses_var(u):
+                    for var in usedef.get_use_vars_by_stm(u):
                         if var.sym is sym:
                             sym2var[var.sym].add(var)
 
@@ -149,7 +155,7 @@ class MemoryRenamer:
                     v.sym = m
 
         for mv in moves:
-            if isinstance(mv.src, TEMP):
+            if mv.src.is_a(TEMP):
                 if mv.dst.sym is mv.src.sym:
                     mv.block.stms.remove(mv)
         self._cleanup_phi()
@@ -170,11 +176,11 @@ class ContextModifier(IRVisitor):
 
     def visit_CALL(self, ir):
         for arg in ir.args:
-            if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+            if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
                 memnode = Type.extra(arg.sym.typ)
                 # FIXME: check the memnode is locally writable or not
                 if memnode.is_writable():
-                    arg.ctx = IR.LOAD | IR.STORE
+                    arg.ctx = Ctx.LOAD | Ctx.STORE
 
 class RomDetector:
     def _propagate_writable_flag(self):

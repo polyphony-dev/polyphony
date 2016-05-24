@@ -7,7 +7,7 @@ from .block import Block
 from .symbol import function_name
 from .irvisitor import IRVisitor
 from .dominator import DominatorTreeBuilder
-from .ir import IR, CONST, TEMP, ARRAY, MREF, MSTORE, MOVE, CALL, SYSCALL, PHI, CJUMP, MCJUMP, JUMP, EXPR
+from .ir import *
 from .varreplacer import VarReplacer
 from .env import env
 from .type import Type
@@ -38,6 +38,9 @@ class DFNode:
         else:
             assert False
         return s
+
+    def __repr__(self):
+        return str(self)
 
     def __lt__(self, other):
         #if self.priority != -1 and other.priority != -1:
@@ -194,6 +197,13 @@ class DataFlowGraph:
                 preds.append(n1)
         return preds
 
+    def preds_typ_without_back(self, node, typ):
+        preds = []
+        for n1, n2, t, back in self.edges:
+            if (typ == t) and (n2 is node) and (not back):
+                preds.append(n1)
+        return preds
+
     def create_edge_cache(self):
         self.succs_without_back_cache = {}
         self.preds_without_back_cache = {}
@@ -288,7 +298,7 @@ class DataFlowGraph:
         jumps = []
         for n in filter(lambda n: n.typ == 'Stm', self.nodes):
             stm = n.tag
-            if not isinstance(stm, JUMP) and not isinstance(stm, CJUMP) and not isinstance(stm, MCJUMP):
+            if not stm.is_a([JUMP, CJUMP, MCJUMP]):
                 continue
             jumps.append(n)
         return jumps
@@ -339,6 +349,7 @@ class DFGBuilder:
         dfg = self._make_graph(loop_info)
         self._add_branch_edges(dfg)
         self._add_mem_edges(dfg)
+        self._add_object_edges(dfg)
         loop_info.dfg = dfg
 
         if env.dev_debug_mode:
@@ -379,7 +390,7 @@ class DFGBuilder:
                 dfg.add_seq_edge(child_loop_node, lnode)
 
         for d in child_loop_info.defs:
-            usestms = usedef.get_sym_uses_stm(d)
+            usestms = usedef.get_use_stms_by_sym(d)
             for usestm in usestms:
                 if (usestm.block in blocks) and\
                     not self.scope.loop_nest_tree.is_child(head, usestm.block):
@@ -387,7 +398,7 @@ class DFGBuilder:
                     dfg.add_defuse_edge(child_loop_node, usenode)
 
         for u in child_loop_info.uses:
-            defstms = usedef.get_sym_defs_stm(u)
+            defstms = usedef.get_def_stms_by_sym(u)
             for defstm in defstms:
                 if (defstm.block in blocks) and \
                     not self.scope.loop_nest_tree.is_child(head, defstm.block):
@@ -417,8 +428,8 @@ class DFGBuilder:
                 self._add_source_node(usenode, dfg, usedef, head, blocks)
 
                 # add edges
-                for v in usedef.get_stm_uses_var(stm):
-                    defstms = usedef.get_sym_defs_stm(v.sym)
+                for v in usedef.get_use_vars_by_stm(stm):
+                    defstms = usedef.get_def_stms_by_sym(v.sym)
                     logger.log(0, v.sym.name + ' defstms ')
                     for defstm in defstms:
                         logger.log(0, str(defstm))
@@ -448,37 +459,43 @@ class DFGBuilder:
 
     def _add_source_node(self, node, dfg, usedef, head, blocks):
         stm = node.tag
-        for v in usedef.get_stm_uses_var(stm):
-            defstms = usedef.get_sym_defs_stm(v.sym)
+        usevars = usedef.get_use_vars_by_stm(stm)
+        if not usevars and stm.is_a(MOVE):
+            dfg.src_nodes.add(node)
+            return
+        for v in usevars:
+            defstms = usedef.get_def_stms_by_sym(v.sym)
             #maybe function params...
             if not defstms:
                 logger.log(0, 'add src: defstm none' + str(node))
                 dfg.src_nodes.add(node)
-                continue
+                return
 
             for defstm in defstms:
                 # this definition stm is in the out of the section
                 if defstm.block is not head and defstm.block not in blocks:
                     logger.log(0, 'add src: def is outer ' + str(node))
                     dfg.src_nodes.add(node)
+                    return
 
-        uses = usedef.get_stm_uses_const(stm)
+        uses = usedef.get_use_consts_by_stm(stm)
         if uses:
             if self._is_constant_stm(stm):
                 logger.log(0, 'add src: $use const ' + str(stm))
                 dfg.src_nodes.add(node)
-        
+                return
+
         def has_mem_arg(args):
             for a in args:
-                if isinstance(a, TEMP) and Type.is_list(a.sym.typ):
+                if a.is_a(TEMP) and Type.is_list(a.sym.typ):
                     return True
             return False
         call = None
-        if isinstance(stm, EXPR):
-            if isinstance(stm.exp, CALL) or isinstance(stm.exp, SYSCALL):
+        if stm.is_a(EXPR):
+            if stm.exp.is_a(CALL) or stm.exp.is_a(SYSCALL):
                 call = stm.exp
-        elif isinstance(stm, MOVE):
-            if isinstance(stm.src, CALL) or isinstance(stm.src, SYSCALL):
+        elif stm.is_a(MOVE):
+            if stm.src.is_a(CALL) or stm.src.is_a(SYSCALL):
                 call = stm.src
         if call:
             if len(call.args) == 0 or has_mem_arg(call.args):
@@ -486,28 +503,27 @@ class DFGBuilder:
 
 
     def _is_constant_stm(self, stm):
-        if isinstance(stm, PHI):
+        if stm.is_a(PHI):
             return True
-        elif isinstance(stm, MOVE):
-            if isinstance(stm.src, CONST) or isinstance(stm.src, ARRAY) or isinstance(stm.src, CALL):
+        elif stm.is_a(MOVE):
+            if stm.src.is_a([CONST, ARRAY, CALL]):
                 return True
-            elif isinstance(stm.src, MSTORE) and isinstance(stm.src.offset, CONST) and isinstance(stm.src.exp, CONST):
+            elif stm.src.is_a(MSTORE) and stm.src.offset.is_a(CONST) and stm.src.exp.is_a(CONST):
                 return True
-            elif isinstance(stm.src, MREF) and isinstance(stm.src.offset, CONST):
+            elif stm.src.is_a(MREF) and stm.src.offset.is_a(CONST):
                 return True
-            elif isinstance(stm.src, SYSCALL):
+            elif stm.src.is_a(SYSCALL):
                 syscall = stm.src
                 if syscall.name == 'read_reg':
                     return True
-        elif isinstance(stm, EXPR):
-            if isinstance(stm.exp, CALL) or isinstance(stm.exp, SYSCALL):
+        elif stm.is_a(EXPR):
+            if stm.exp.is_a([CALL, SYSCALL]):
                 call = stm.exp
-                return all(isinstance(a, CONST) for a in call.args)
-        elif isinstance(stm, CJUMP):
-            if isinstance(stm.exp, CONST):
-                return True
-        elif isinstance(stm, MCJUMP):
-            if any([isinstance(c, CONST) for c in stm.conds[:-1]]):
+                return all(a.is_a(CONST) for a in call.args)
+        elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
+            return True
+        elif stm.is_a(MCJUMP):
+            if any(c.is_a(CONST) for c in stm.conds[:-1]):
                 return True
         return False
         
@@ -527,18 +543,19 @@ class DFGBuilder:
 
     def _add_branch_edges(self, dfg):
         for n in dfg.nodes:
+            if not n.is_stm():
+                continue
             if self._is_normal_jump(n.tag):
                 continue
-            if n.is_stm():
-                for blk in n.tag.block.preds:
-                    cj = blk.stms[-1]
-                    if isinstance(cj, CJUMP) or isinstance(cj, MCJUMP):
-                        cjnode = dfg.find_node(cj)
-                        if cjnode:
-                            dfg.add_branch_edge(cjnode, n)
+            for blk in n.tag.block.preds:
+                cj = blk.stms[-1]
+                if cj.is_a([CJUMP, MCJUMP]):
+                    cjnode = dfg.find_node(cj)
+                    if cjnode:
+                        dfg.add_branch_edge(cjnode, n)
 
     def _is_normal_jump(self, stm):
-        return isinstance(stm, JUMP) and stm.typ == ''
+        return stm.is_a(JUMP) and stm.typ == ''
 
     def _all_stms(self, head, blocks):
         all_stms_in_section = []
@@ -553,7 +570,7 @@ class DFGBuilder:
         all_stms_in_section = self._all_stms(head, blocks)
         all_jumps = []
         for stm in all_stms_in_section:
-            if not isinstance(stm, JUMP):
+            if not stm.is_a(JUMP):
                 continue
             if self._is_normal_jump(stm):
                 continue
@@ -575,7 +592,7 @@ class DFGBuilder:
         for jumpnode in all_jumps:
             jump = jumpnode.tag
             for u in jump.uses:
-                defs = usedef.get_sym_defs_stm(u.sym)
+                defs = usedef.get_def_stms_by_sym(u.sym)
                 for d in defs:
                     #the jump must not depend subsequential stm
                     if len(defs) > 1 and (jump.block is not d.block) and (jump.block.order <= d.block.order):
@@ -616,21 +633,24 @@ class DFGBuilder:
         for node in dfg.nodes:
             if not node.is_stm():
                 continue
-            if isinstance(node.tag, MOVE):
+            if node.tag.is_a(MOVE):
                 mv = node.tag
-                if isinstance(mv.src, MREF) or isinstance(mv.src, MSTORE):
-                    mem_group = mv.src.mem.sym.name
+                if mv.src.is_a([MREF, MSTORE]):
+                    if mv.src.mem.is_a(TEMP):
+                        mem_group = mv.src.mem.sym.name
+                    elif mv.src.mem.is_a(ATTR):
+                        mem_group = mv.src.mem.attr.name
                     node_groups[mem_group].append(node)
-                elif isinstance(mv.src, CALL):
+                elif mv.src.is_a(CALL):
                     for arg in mv.src.args:
-                        if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                        if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
                             mem_group = arg.sym.name
                             node_groups[mem_group].append(node)
-            elif isinstance(node.tag, EXPR):
+            elif node.tag.is_a(EXPR):
                 expr = node.tag
-                if isinstance(expr.exp, CALL):
+                if expr.exp.is_a(CALL):
                     for arg in expr.exp.args:
-                        if isinstance(arg, TEMP) and Type.is_list(arg.sym.typ):
+                        if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
                             mem_group = arg.sym.name
                             node_groups[mem_group].append(node)
         for nodes in node_groups.values():
@@ -646,9 +666,9 @@ class DFGBuilder:
         all_stms_in_section = self._all_stms(head, blocks)
         all_calls = []
         for stm in all_stms_in_section:
-            if isinstance(stm, MOVE) and isinstance(stm.src, CALL):
+            if stm.is_a(MOVE) and stm.src.is_a(CALL):
                 all_calls.append(stm)
-            elif isinstance(stm, EXPR) and isinstance(stm.exp, CALL):
+            elif stm.is_a(EXPR) and stm.exp.is_a(CALL):
                 all_calls.append(stm)
         for stm in all_calls:
             callnode = dfg.add_stm_node(stm)
@@ -662,4 +682,27 @@ class DFGBuilder:
                     othernode = dfg.add_stm_node(stm2)
                     dfg.add_seq_edge(callnode, othernode)
 
+    def _add_object_edges(self, dfg):
+        def add_node_group_if_needed(ir, node, node_groups):
+            if ir.is_a(ATTR):
+                node_groups[ir.attr].add(node)
+                add_node_group_if_needed(ir.exp, node, node_groups)
+            elif ir.is_a(TEMP) and Type.is_object(ir.sym.typ):
+                node_groups[ir.sym].add(node)
+
+        node_groups = defaultdict(set)
+        for node in dfg.nodes:
+            if not node.is_stm():
+                continue
+            if node.tag.is_a(MOVE) or node.tag.is_a(EXPR):
+                stm = node.tag
+                for kid in stm.kids():
+                    add_node_group_if_needed(kid, node, node_groups)
+
+        for nodes in node_groups.values():
+            sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
+            for i in range(len(sorted_nodes)-1):
+                n1 = sorted_nodes[i]
+                n2 = sorted_nodes[i+1]
+                dfg.add_seq_edge(n1, n2)
 

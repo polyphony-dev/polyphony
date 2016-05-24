@@ -18,7 +18,6 @@ from .stg_opt import STGOptimizer
 from .dataflow import DFGBuilder
 from .dfg_opt import DFGOptimizer
 from .ssa import SSAFormTransformer
-from .ssa_opt import SSAOptimizer
 from .usedef import UseDefDetector
 from .jumpdependency import JumpDependencyDetector
 from .scheduler import Scheduler
@@ -26,7 +25,7 @@ from .phiresolve import PHICondResolver
 from .liveness import Liveness
 from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemRefEdgeColoring
-from .constantfolding import ConstantFolding
+from .constantfolding import ConstantOptPreDetectROM, ConstantOpt, GlobalConstantOpt
 from .iftransform import IfTransformer
 from .setlineno import LineNumberSetter, SourceDump
 from .loopdetector import LoopDetector, SimpleLoopUnroll
@@ -41,7 +40,19 @@ def compile_plan():
         def setphase(driver):
             env.compile_phase = phase
         return setphase
-    
+
+    def preprocess_global(driver):
+        scopes = Scope.get_scopes(contain_global=True, contain_class=True)
+        for s in (s for s in scopes if s.is_global() or s.is_class()):
+            lineno = LineNumberSetter()
+            lineno.process(s)
+
+            constopt = GlobalConstantOpt()
+            constopt.process(s)
+
+        typepropagation = TypePropagation()
+        typepropagation.propagate_global_function_type()
+
     def linenum(driver, scope):
         lineno = LineNumberSetter()
         lineno.process(scope)
@@ -67,14 +78,6 @@ def compile_plan():
     def ssa(driver, scope):
         ssa = SSAFormTransformer()
         ssa.process(scope)
-
-    def ssaopt(driver, scope):
-         ssa_opt = SSAOptimizer()
-         ssa_opt.process(scope)
-
-    def ssaopt2(driver, scope):
-         ssa_opt = SSAOptimizer()
-         ssa_opt.eliminate_moves(scope)
 
     def phi(driver, scope):
          phi_cond_resolver = PHICondResolver()
@@ -114,9 +117,13 @@ def compile_plan():
             driver.remove_scope(s)
             env.remove_scope(s)
 
+    def constopt_pre_detectrom(driver, scope):
+        constopt = ConstantOptPreDetectROM()
+        constopt.process(scope)
+
     def constopt(driver, scope):
-        constantfolding = ConstantFolding()
-        constantfolding.process(scope)
+        constopt = ConstantOpt()
+        constopt.process(scope)
 
     def loop(driver, scope):
         loop_detector = LoopDetector()
@@ -130,7 +137,8 @@ def compile_plan():
             ssa(driver, scope)
             usedef(driver, scope)
             memrename(driver, scope),
-            ssaopt(driver, scope)
+            constopt = ConstantOpt()
+            constopt.process(scope)
             usedef(driver, scope)
             phi(driver, scope)
             usedef(driver, scope)
@@ -164,8 +172,15 @@ def compile_plan():
         stg_opt.process(scope)
 
     def genhdl(driver, scope):
+        if scope.is_method():
+            return
         preprocessor = HDLGenPreprocessor()
-        scope.module_info = preprocessor.phase1(scope)
+        if scope.is_class():
+            if not scope.children:
+                return
+            scope.module_info = preprocessor.process_class(scope)
+        else:
+            scope.module_info = preprocessor.process_func(scope)
         if not scope.is_testbench():
             vcodegen = VerilogCodeGen(scope)
         else:
@@ -194,13 +209,15 @@ def compile_plan():
             driver.logger.debug(str(stg))
 
     def dumpmodule(driver, scope):
-        logger.debug(str(scope.module_info))
+        if scope.module_info:
+            logger.debug(str(scope.module_info))
 
     def dumphdl(driver, scope):
         logger.debug(driver.result(scope))
 
 
     plan = [
+        preprocess_global,
         dumpscope,
         phase(env.PHASE_1),
         linenum,
@@ -223,20 +240,20 @@ def compile_plan():
         dumpscope,
         typecheck,
         dumpscope,
-        ssaopt,
-        dumpscope,
+        constopt_pre_detectrom,
         detectrom,
         dumpmrg,
         usedef,
+        constopt,
+        usedef,
         phi,
         usedef,
+        specfunc,
         dumpscope,
         usedef,
-        specfunc,
         traceblk,
         dumpscope,
         phase(env.PHASE_3),
-        constopt,
         usedef,
         loop,
         tbopt,
@@ -266,15 +283,9 @@ def compile_plan():
 def compile_main(src_file, output_name, output_dir):
     env.__init__()
     translator = IRTranslator()
-    global_scope = translator.translate(read_source(src_file))
+    translator.translate(read_source(src_file))
 
-    global_constantfolding = ConstantFolding()
-    global_constantfolding.process_global()
-
-    typepropagation = TypePropagation()
-    typepropagation.propagate_global_function_type()
-
-    scopes = Scope.get_scopes(bottom_up=False)
+    scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
     driver = Driver(compile_plan(), scopes)
     driver.run()
     output_all(driver, output_name, output_dir)
@@ -285,7 +296,7 @@ def output_all(driver, output_name, output_dir):
     d = output_dir if output_dir else './'
     if d[-1] != '/': d += '/'
 
-    scopes = Scope.get_scopes()
+    scopes = Scope.get_scopes(contain_class=True)
     for scope in scopes:
         if not scope.is_testbench():
             codes.append(driver.result(scope))

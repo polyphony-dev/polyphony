@@ -4,7 +4,9 @@ from .env import env
 from .symbol import Symbol
 from .irvisitor import IRVisitor
 from .block import Block
+from .builtin import builtin_names
 from .ir import ARRAY, MOVE, JUMP, CJUMP, MCJUMP, PHI
+from .signal import Signal
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -23,14 +25,23 @@ class Scope:
         return s
 
     @classmethod
-    def get_scopes(cls, contain_global=False, bottom_up=True):
+    def get_scopes(cls, bottom_up=True, contain_global=False, contain_class=False):
         def ret_helper(contain_global, bottom_up):
             start = 0 if contain_global else 1
             scopes = cls.ordered_scopes[start:]
+            if not contain_class:
+                scopes = [s for s in scopes if not s.is_class()]
             if bottom_up:
                 scopes.reverse()
             return scopes
 
+        cls.reorder_scopes()
+        cls.ordered_scopes = sorted(env.scopes.values(), key=lambda s: s.order)
+
+        return ret_helper(contain_global, bottom_up)
+
+    @classmethod
+    def reorder_scopes(cls):
         def set_order(scope, order, ordered):
             if order > scope.order:
                 scope.order = order
@@ -38,20 +49,23 @@ class Scope:
             elif scope in ordered:
                 return
             order += 1
+            for s in scope.children:
+                set_order(s, order, ordered)
             for s in scope.callee_scopes:
                 set_order(s, order, ordered)
-        
         top = env.scopes['@top']
         top.order = 0
         ordered = set()
         for f in top.children:
             set_order(f, 1, ordered)
-        cls.ordered_scopes = sorted(env.scopes.values(), key=lambda s: s.order)
-        return ret_helper(contain_global, bottom_up)
+
+    @classmethod
+    def get_class_scopes(cls, bottom_up=True):
+        return [s for s in cls.get_scopes(bottom_up=bottom_up, contain_class=True) if s.is_class()]
 
     @classmethod
     def global_scope(cls):
-        return cls.ordered_scopes[0]
+        return env.scopes['@top']
 
     def __init__(self, parent, name, attributes):
         self.name = name
@@ -61,7 +75,6 @@ class Scope:
             self.name = parent.name + "." + name
             parent.append_child(self)
 
-        self.funcnames = []
         self.attributes = attributes
         self.symbols = {}
         self.params = []
@@ -78,6 +91,9 @@ class Scope:
         self.order = -1
         self.callee_scopes = set()
         self.caller_scopes = set()
+        self.module_info = None
+        #self.field_access = defaultdict(set)
+        self.signals = {}
 
     def __str__(self):
         s = '\n================================\n'
@@ -114,7 +130,6 @@ class Scope:
 
     def clone(self, postfix):
         s = Scope(self.parent, self.orig_name + '_' + postfix, self.attributes)
-        s.funcnames = self.funcnames
 
         # clone symbols
         symbol_map = {}
@@ -168,14 +183,14 @@ class Scope:
 
         # jump target
         for stm in stm_map.values():
-            if isinstance(stm, JUMP):
+            if stm.is_a(JUMP):
                 stm.target = block_map[stm.target]
-            elif isinstance(stm, CJUMP):
+            elif stm.is_a(CJUMP):
                 stm.true = block_map[stm.true]
                 stm.false = block_map[stm.false]
-            elif isinstance(stm, MCJUMP):
+            elif stm.is_a(MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
-            elif isinstance(stm, PHI):
+            elif stm.is_a(PHI):
                 stm.args = [(arg, block_map[blk]) for arg, blk in stm.args]
                 self.blk_grp_instances
         # remake cfg
@@ -210,6 +225,8 @@ class Scope:
             new_li.uses = None
 
         s.children = list(self.children)
+        for child in s.children:
+            child.parent = s
         s.usedef = None
 
         new_calls = defaultdict(set)
@@ -218,8 +235,8 @@ class Scope:
             new_calls[new_func_sym] = copy(inst_names)
         s.calls = new_calls
         s.order = self.order
-        s.callee_scopes = list(self.callee_scopes)
-        s.caller_scopes = list(self.caller_scopes)
+        s.callee_scopes = set(self.callee_scopes)
+        s.caller_scopes = set(self.caller_scopes)
 
         sym_replacer = SymbolReplacer(symbol_map)
         sym_replacer.process(s)
@@ -228,33 +245,36 @@ class Scope:
         env.append_scope(s)
         return s
 
-    def add_funcname(self, name):
-        self.funcnames.append(name)
+    def find_child(self, name):
+        for child in self.children:
+            if child.orig_name == name:
+                return child
+        return None
 
-    def is_funcname(self, name):
-        return name in self.funcnames
-
-    def find_scope_having_funcname(self, name):
-        if name in self.funcnames:
+    def find_scope_having_name(self, name):
+        if self.find_child(name):
+            return self
+        elif name in builtin_names:
             return self
         elif self.parent:
-            return self.parent.find_scope_having_funcname(name)
+            return self.parent.find_scope_having_name(name)
         else:
             return None
 
-    def find_func_scope(self, func_name):
-        if self.orig_name == func_name:
+    def find_scope(self, name):
+        if self.orig_name == name:
             return self
-        for child in self.children:
-            if child.orig_name == func_name:
-                return child
+        child = self.find_child(name)
+        if child:
+            return child
         if self.parent:
-            return self.parent.find_func_scope(func_name)
-        else:
-            return None
+            return self.parent.find_scope(name)
+        return None
 
     def add_callee_scope(self, callee):
         self.callee_scopes.add(callee)
+        if callee is None:
+            assert False
         callee.caller_scopes.add(self)
 
     def add_sym(self, name):
@@ -293,7 +313,10 @@ class Scope:
     def inherit_sym(self, orig_sym, new_name):
         new_sym = orig_sym.scope.gen_sym(new_name)
         new_sym.typ = orig_sym.typ
-        new_sym.ancestor = orig_sym
+        if orig_sym.ancestor:
+            new_sym.ancestor = orig_sym.ancestor
+        else:
+            new_sym.ancestor = orig_sym
         return new_sym
 
     def qualified_name(self):
@@ -325,7 +348,7 @@ class Scope:
     def _remove_loop_info(self, head):
         info = self.loop_infos[head]
         for b in info.breaks:
-            assert isinstance(b.stms[-1], JUMP)
+            assert b.stms[-1].is_a(JUMP)
             jmp = b.stms[-1]
             jmp.typ = ''
 
@@ -394,11 +417,33 @@ class Scope:
                     return head
         return None
 
+    def find_ctor(self):
+        assert self.is_class()
+        for child in self.children:
+            if child.orig_name == '__init__':
+                return child
+        return None
+
     def is_testbench(self):
         return 'testbench' in self.attributes
 
     def is_main(self):
         return 'top' in self.attributes
+
+    def is_class(self):
+        return 'class' in self.attributes
+
+    def is_method(self):
+        return 'method' in self.attributes
+
+    def is_mutable(self):
+        return 'mutable' in self.attributes
+
+    def is_global(self):
+        return self is Scope.global_scope()
+
+    def is_ctor(self):
+        return self.is_method() and self.orig_name == '__init__'
 
     def find_stg(self, name):
         assert self.stgs
@@ -417,6 +462,28 @@ class Scope:
     def append_loop_counter(self, loop):
         self.loop_counter.append(loop)
 
+#    def add_field_access(self, scope, attr, ctx):
+#        assert self.is_class()
+#        self.field_access[attr].add((scope, ctx))
+
+    def gen_sig(self, name, width, attr = None):
+        if name in self.signals:
+            sig = self.signals[name]
+            sig.width = width
+            if attr:
+                sig.add_attribute(attr)
+            return sig
+        sig = Signal(name, width, attr)
+        self.signals[name] = sig
+        return sig
+
+    def rename_sig(self, old, new):
+        assert old in self.signals
+        sig = self.signals[old]
+        del self.signals[old]
+        sig.name = new
+        self.signals[new] = sig
+        return sig
 
 class BlockGroup:
     def __init__(self, name):

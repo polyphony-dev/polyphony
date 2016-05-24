@@ -165,7 +165,7 @@ class BlockTracer:
             #check unidirectional
             if len(block.preds) == 1 and len(block.preds[0].succs) == 1 and block.preds[0].stms[-1].typ == '':
                 pred = block.preds[0]
-                assert isinstance(pred.stms[-1], JUMP)
+                assert pred.stms[-1].is_a(JUMP)
                 assert block not in self.scope.loop_infos.keys()
                 assert pred.succs[0] is block
                 
@@ -209,7 +209,7 @@ class BlockTracer:
     def _remove_empty_block(self, scope):
         bs = scope.blocks[:]
         for block in bs:
-            if len(block.stms) == 1 and isinstance(block.stms[0], JUMP) and block.stms[0].typ == '':
+            if len(block.stms) == 1 and block.stms[0].is_a(JUMP) and block.stms[0].typ == '':
                 target = block.stms[0].target
                 target.preds.remove(block)
                 self._replace_jump_target(block, target)
@@ -219,16 +219,16 @@ class BlockTracer:
     def _replace_jump_target(self, old_blk, new_blk):
         for pred in old_blk.preds:
             jmp = pred.stms[-1]
-            if isinstance(jmp, JUMP):
+            if jmp.is_a(JUMP):
                 jmp.target = new_blk
-            elif isinstance(jmp, CJUMP):
+            elif jmp.is_a(CJUMP):
                 if jmp.true is old_blk:
                     jmp.true = new_blk
                 elif jmp.false is old_blk:
                     jmp.false = new_blk
                 else:
                     assert False
-            elif isinstance(jmp, MCJUMP):
+            elif jmp.is_a(MCJUMP):
                 for i, t in enumerate(jmp.targets):
                     if t is old_blk:
                        jmp.targets[i] = new_blk 

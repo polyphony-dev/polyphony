@@ -1,4 +1,4 @@
-from .ir import CONST, CJUMP, MCJUMP
+﻿from .ir import CONST, CJUMP, MCJUMP
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -8,7 +8,7 @@ class IfTransformer:
 
     def _merge_else_cj(self, cj, mj):
         #has false block elif?
-        if len(cj.false.stms) == 1 and isinstance(cj.false.stms[0], CJUMP):
+        if len(cj.false.stms) == 1 and cj.false.stms[0].is_a(CJUMP):
             else_cj = cj.false.stms[0]
             cj.false.succs = []
             cj.false.preds = []
@@ -23,7 +23,7 @@ class IfTransformer:
         return False
 
     def _process(self, block):
-        if block.stms and isinstance(block.stms[-1], CJUMP):
+        if block.stms and block.stms[-1].is_a(CJUMP):
             cj = block.stms[-1]
             mj = MCJUMP()
             mj.conds.append(cj.exp)

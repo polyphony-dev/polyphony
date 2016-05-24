@@ -3,7 +3,7 @@
 if [ $# -gt 0 ]; then
 TEST_DIRS=$1
 else
-TEST_DIRS="expr if loop return list scope func parallel testbench"
+TEST_DIRS="expr if loop return list scope func parallel testbench class"
 fi
 
 if [ ! -d out ]; then

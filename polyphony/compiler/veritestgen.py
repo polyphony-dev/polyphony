@@ -1,11 +1,7 @@
 ﻿from collections import defaultdict, OrderedDict
+from .ir import Ctx
 from .ahdl import AHDL_CONST, AHDL_VAR, AHDL_MOVE, AHDL_IF, AHDL_ASSIGN
-from .hdlmoduleinfo import HDLModuleInfo
-from .hdlmemport import HDLMemPortMaker
-from .verilog_common import pyop2verilogop
-from .symbol import function_name, Symbol
 from .env import env
-from .common import INT_WIDTH
 from .vericodegen import VerilogCodeGen
 from logging import getLogger
 logger = getLogger(__name__)
@@ -16,8 +12,10 @@ class VerilogTestGen(VerilogCodeGen):
         self.indent = 0
         self.scope = scope
         self.module_info = self.scope.module_info
-        self.module_info.add_internal_reg('CLK', 1)
-        self.module_info.add_internal_reg('RST', 1)
+        clk = self.scope.gen_sig('CLK', 1)
+        rst = self.scope.gen_sig('RST', 1)
+        self.module_info.add_internal_reg(clk)
+        self.module_info.add_internal_reg(rst)
 
     def generate(self):
         """
@@ -76,7 +74,7 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('\n')
 
         for stg in self.scope.stgs:
-            for i, state in enumerate(stg.states()[1:-1]):# remove init and finish state
+            for i, state in enumerate(stg.states()):
                 self.emit('#CLK_PERIOD\n')
                 self._process_State(state)
         self.emit('\n')
@@ -98,12 +96,13 @@ class VerilogTestGen(VerilogCodeGen):
         #add state transition code
         assert state.next_states
         cond, nstate, codes = state.next_states[0]
-        if cond is None or isinstance(cond, AHDL_CONST):
+        if cond is None or cond.is_a(AHDL_CONST):
             pass
         else:
             condsym = self.scope.add_temp('@condtest')
-            self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(condsym), cond))
-            self.emit('@(posedge {});\n'.format(condsym.hdl_name()))
+            condsig = self.scope.gen_sig(condsym.hdl_name(), 1)
+            self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(condsig, Ctx.STORE), cond))
+            self.emit('@(posedge {});\n'.format(condsig.name))
             for c in codes:
                 self.visit(c)
 
@@ -115,17 +114,15 @@ class VerilogTestGen(VerilogCodeGen):
 
         formats = []
         args = ['$time']
-        def is_io_signal(typ):
-            return typ == 'datain' or typ == 'dataout'
 
-        for _, info, port_map, _ in self.module_info.sub_modules:
+        for _, info, port_map, _ in self.module_info.sub_modules.values():
             for param, signal in port_map.items():
-                ports = list(info.inputs)
-                ports.extend(info.outputs)
-                for name, typ, width in ports:
-                    if name == param and is_io_signal(typ):
-                        args.append(signal)
-                        if width == 1:
+                ports = list(info.data_inputs.values())
+                ports.extend(info.data_outputs.values())
+                for iosig in ports:
+                    if iosig.name == param: # TODO: filtering for data I/O port
+                        args.append(signal.name)
+                        if iosig.width == 1:
                             formats.append('{}=%b'.format(signal))
                         else:
                             formats.append('{}=%4d'.format(signal))

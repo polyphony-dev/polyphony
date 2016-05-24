@@ -2,7 +2,7 @@
 from collections import OrderedDict, defaultdict, deque
 from .dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from .symbol import Symbol
-from .ir import IR, TEMP, PHI, JUMP, MSTORE
+from .ir import Ctx, TEMP, PHI, JUMP, MSTORE
 from .type import Type
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
@@ -15,6 +15,8 @@ class SSAFormTransformer:
         pass
 
     def process(self, scope):
+        if scope.is_class():
+            return
         self.scope = scope
         self.dominance_frontier = {}
         self.usedef = scope.usedef
@@ -27,7 +29,7 @@ class SSAFormTransformer:
         self._cleanup_phi()
 
     def _is_always_single_assigned(self, sym):
-        return sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_function()
+        return sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_function() or sym.is_return() or Type.is_object(sym.typ)
 
 
     def _insert_phi(self):
@@ -50,13 +52,13 @@ class SSAFormTransformer:
                         #logger.debug('phis[{}] append {}'.format(df.name, sym.name))
                         phis[df].append(sym)
                         #insert phi to df
-                        var = TEMP(sym, IR.STORE)
+                        var = TEMP(sym, Ctx.STORE)
                         phi = PHI(var)
                         phi.block = df
                         df.stms.insert(0, phi)
 			#The phi has the definintion of the variable
 			#so we must add the phi to the df_blocks if needed
-                        if sym not in self.usedef.get_blk_defs_sym(df):
+                        if sym not in self.usedef.get_def_syms_by_blk(df):
                             def_blocks.add(df)
                         #this must call after the above checking
                         self.usedef.add_var_def(var, phi)
@@ -68,9 +70,9 @@ class SSAFormTransformer:
         stack = {}
         using_syms = set()
         for blk in self.scope.blocks:
-            for sym in self.usedef.get_blk_defs_sym(blk):
+            for sym in self.usedef.get_def_syms_by_blk(blk):
                 using_syms.add(sym)
-            for sym in self.usedef.get_blk_uses_sym(blk):
+            for sym in self.usedef.get_use_syms_by_blk(blk):
                 using_syms.add(sym)
         for sym in using_syms:
             count[sym] = 0
@@ -80,38 +82,38 @@ class SSAFormTransformer:
         self._rename_rec(self.scope.blocks[0], count, stack, new_syms)
 
         for var, sym in new_syms:
-            assert isinstance(var, TEMP)
+            assert var.is_a(TEMP)
             if self._is_always_single_assigned(sym):
                 continue
             var.sym = sym
 
 
     def _get_phis(self, block):
-        return filter(lambda stm: isinstance(stm, PHI), block.stms)
+        return filter(lambda stm: stm.is_a(PHI), block.stms)
 
     def _need_rename(self, defvar, stm):
         if not Type.is_list(defvar.sym.typ):
             return True
-        elif isinstance(stm, MOVE):
+        elif stm.is_a(MOVE):
             if stm.dst is defvar:
                 return True
-        elif isinstance(stm, PHI):
+        elif stm.is_a(PHI):
                 return True
         return False
 
     def _rename_rec(self, block, count, stack, new_syms):
         for stm in block.stms:
-            if not isinstance(stm, PHI):
-                for use in self.usedef.get_stm_uses_var(stm):
-                    assert isinstance(use, TEMP)
+            if not stm.is_a(PHI):
+                for use in self.usedef.get_use_vars_by_stm(stm):
+                    assert use.is_a(TEMP)
                     i = stack[use.sym][-1]
                     new_name = use.sym.name + '#' + str(i)
                     new_sym = self.scope.inherit_sym(use.sym, new_name)
                     logger.debug(str(new_sym) + ' ancestor is ' + str(use.sym))
                     new_syms.add((use, new_sym))
             #this loop includes PHI
-            for d in self.usedef.get_stm_defs_var(stm):
-                assert isinstance(d, TEMP)
+            for d in self.usedef.get_def_vars_by_stm(stm):
+                assert d.is_a(TEMP)
                 if self._need_rename(d, stm):
                     logger.debug('count up ' + str(stm))
                     count[d.sym] += 1
@@ -131,14 +133,14 @@ class SSAFormTransformer:
                     new_name = phi.var.sym.name + '#' + str(i)
                     new_sym = self.scope.inherit_sym(phi.var.sym, new_name)
                     #logger.debug(str(new_sym) + ' ancestor is ' + str(phi.var.sym))
-                    var = TEMP(new_sym, IR.LOAD)
+                    var = TEMP(new_sym, Ctx.LOAD)
                     var.block = succ
                     phi.args.append((var, block))
                     
         for c in self.tree.get_children_of(block):
             self._rename_rec(c, count, stack, new_syms)
         for stm in block.stms:
-            for d in self.usedef.get_stm_defs_var(stm):
+            for d in self.usedef.get_def_vars_by_stm(stm):
                 stack[d.sym].pop()
 
 
@@ -185,9 +187,9 @@ class SSAFormTransformer:
                     logger.debug('remove ' + str(phi))
                     if phi in phi.block.stms:
                         phi.block.stms.remove(phi)
-                    replaces = VarReplacer.replace_uses(phi.var, TEMP(sym, IR.LOAD), usedef)
+                    replaces = VarReplacer.replace_uses(phi.var, TEMP(sym, Ctx.LOAD), usedef)
                     for rep in replaces:
-                        if isinstance(rep, PHI):
+                        if rep.is_a(PHI):
                             worklist.append(rep)
 
     def _cleanup_phi(self):
@@ -195,7 +197,7 @@ class SSAFormTransformer:
             for phi in self._get_phis(blk):
                 removes = []
                 for arg, blk in phi.args:
-                    if isinstance(arg, TEMP) and arg.sym is phi.var.sym:
+                    if arg.is_a(TEMP) and arg.sym is phi.var.sym:
                         removes.append((arg, blk))
                 for rm in removes:
                     phi.args.remove(rm)
@@ -229,16 +231,16 @@ def main():
     j = Symbol.new('j', scope)
     k = Symbol.new('k', scope)
     ret = Symbol.new(Symbol.return_prefix, scope)
-    b1.append_stm(MOVE(TEMP(i,IR.STORE), CONST(1)))
-    b1.append_stm(MOVE(TEMP(j,IR.STORE), CONST(1)))
-    b1.append_stm(MOVE(TEMP(k,IR.STORE), CONST(0)))
-    b2.append_stm(CJUMP(RELOP('Lt', TEMP(k, IR.LOAD), CONST(100)), b3, b4))
-    b3.append_stm(CJUMP(RELOP('Lt', TEMP(j, IR.LOAD), CONST(20)), b5, b6))
-    b4.append_stm(MOVE(TEMP(ret,IR.STORE), TEMP(j, IR.LOAD)))
-    b5.append_stm(MOVE(TEMP(j,IR.STORE), TEMP(i,IR.LOAD)))
-    b5.append_stm(MOVE(TEMP(k,IR.STORE), BINOP('Add', TEMP(k,IR.LOAD), CONST(1))))
-    b6.append_stm(MOVE(TEMP(j,IR.STORE), TEMP(k,IR.LOAD)))
-    b6.append_stm(MOVE(TEMP(k,IR.STORE), BINOP('Add', TEMP(k,IR.LOAD), CONST(2))))
+    b1.append_stm(MOVE(TEMP(i,Ctx.STORE), CONST(1)))
+    b1.append_stm(MOVE(TEMP(j,Ctx.STORE), CONST(1)))
+    b1.append_stm(MOVE(TEMP(k,Ctx.STORE), CONST(0)))
+    b2.append_stm(CJUMP(RELOP('Lt', TEMP(k, Ctx.LOAD), CONST(100)), b3, b4))
+    b3.append_stm(CJUMP(RELOP('Lt', TEMP(j, Ctx.LOAD), CONST(20)), b5, b6))
+    b4.append_stm(MOVE(TEMP(ret,Ctx.STORE), TEMP(j, Ctx.LOAD)))
+    b5.append_stm(MOVE(TEMP(j,Ctx.STORE), TEMP(i,Ctx.LOAD)))
+    b5.append_stm(MOVE(TEMP(k,Ctx.STORE), BINOP('Add', TEMP(k,Ctx.LOAD), CONST(1))))
+    b6.append_stm(MOVE(TEMP(j,Ctx.STORE), TEMP(k,Ctx.LOAD)))
+    b6.append_stm(MOVE(TEMP(k,Ctx.STORE), BINOP('Add', TEMP(k,Ctx.LOAD), CONST(2))))
 
     Scope.dump()
 

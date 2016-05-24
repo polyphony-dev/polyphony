@@ -1,9 +1,9 @@
 ﻿import math
 from collections import OrderedDict
-from .symbol import function_name, Symbol
 from .verilog_common import pyop2verilogop
-from .ir import CONST, ARRAY, MOVE
-from .ahdl import AHDL_CONST, AHDL_VAR, AHDL_MOVE, AHDL_IF, AHDL_ASSIGN
+from .ir import Ctx
+from .signal import Signal
+from .ahdl import AHDL_CONST, AHDL_VAR, AHDL_SYMBOL, AHDL_MOVE, AHDL_IF, AHDL_ASSIGN
 from .env import env
 from logging import getLogger
 logger = getLogger(__name__)
@@ -14,13 +14,11 @@ class VerilogCodeGen:
         self.indent = 0
         self.scope = scope
         self.module_info = self.scope.module_info
-        #self.stg_return_state = {}
         name = self.module_info.name
-        self.module_info.add_input('CLK', 'wire', 1)
-        self.module_info.add_input('RST', 'wire', 1)
-        self.module_info.add_input('{}_READY'.format(name), 'wire', 1)
-        self.module_info.add_input('{}_ACCEPT'.format(name), 'wire', 1)
-        self.module_info.add_output('{}_VALID'.format(name), 'reg', 1)
+        clk_in = self.scope.gen_sig('CLK', 1, ['wire'])
+        rst_in = self.scope.gen_sig('RST', 1, ['wire'])
+        self.module_info.add_ctrl_input(clk_in)
+        self.module_info.add_ctrl_input(rst_in)
 
     def result(self):
         return ''.join(self.codes)
@@ -47,7 +45,8 @@ class VerilogCodeGen:
         """
 
         self.set_indent(2)
-        self._generate_main()
+        for fsm in self.module_info.fsms.values():
+            self._generate_process(fsm)
         self.set_indent(-2)
         main_code = self.result()
         self.codes = []
@@ -57,32 +56,38 @@ class VerilogCodeGen:
         self.emit(main_code)
         self.emit('endmodule\n\n')
 
-    def _generate_main(self):
+    def _generate_process(self, fsm):
         self.emit('always @(posedge CLK) begin\n')
         self.set_indent(2)
         self.emit('if (RST) begin\n')
         self.set_indent(2)
 
-        main_stg = self.scope.get_main_stg()
-        self.main_state_var_sym = main_stg.state_var_sym
-        assert self.main_state_var_sym
-        for name, typ, width in self.module_info.outputs:
-            if typ == 'reg' or typ == 'dataout':
-                self.emit('{} <= 0;\n'.format(name))
-        for name, _, _ in self.module_info.internal_regs:
-            if name is not self.main_state_var_sym.name:
-                self.emit('{} <= 0;\n'.format(name))
+        for stg in fsm.stgs:
+            if stg.is_main():
+                main_stg = stg
+        assert main_stg
 
-        self.emit('{} <= {};\n'.format(self.main_state_var_sym.name, main_stg.init_state.name))
+        #outputs = list(self.module_info.data_outputs.values())
+        #outputs.extend(self.module_info.ctrl_outputs.values())
+        #outputs.extend(self.module_info.mem_outputs.values())
+        for sig in fsm.outputs:
+            if sig.is_reg():
+                self.emit('{} <= 0;\n'.format(sig.name))
+        #for sig in self.module_info.internal_regs:
+        #    if not sig.is_statevar():
+        #        self.emit('{} <= 0;\n'.format(sig.name))
+
+        main_state_var = fsm.state_var #self.module_info.fsms[self.scope.name].state_var
+        self.emit('{} <= {};\n'.format(main_state_var.name, main_stg.init_state.name))
         self.set_indent(-2)
         self.emit('end else begin //if (RST)\n')
         self.set_indent(2)
 
-        self.emit('case({})\n'.format(self.main_state_var_sym.name))
+        self.emit('case({})\n'.format(main_state_var.name))
 
-        for stg in self.scope.stgs:
+        for stg in fsm.stgs:
             for i, state in enumerate(stg.states()):
-                self._process_State(state)
+                self._process_State(state, main_state_var)
 
         self.emit('endcase\n')
         self.set_indent(-2)
@@ -106,6 +111,8 @@ class VerilogCodeGen:
         self._generate_demuxes()        
         self._generate_sub_module_instances()
         self._generate_static_assignment()
+        self._generate_sync_assignment()
+        self._generate_field_access()
         self.set_indent(-2)
 
     def _generate_module_header(self):
@@ -115,29 +122,38 @@ class VerilogCodeGen:
         self.set_indent(2)
         self.emit('(\n')
         self.set_indent(2)
-        for name, typ, width in self.module_info.inputs:
-            if typ == 'datain':
-                typ = 'wire'
-            if width == 1:
-                self.emit('input {} {},\n'.format(typ, name))
+        inputs = list(self.module_info.data_inputs.values())
+        inputs.extend(self.module_info.ctrl_inputs.values())
+        inputs.extend(self.module_info.mem_inputs.values())
+        for sig in inputs:
+            typ = 'reg' if sig.is_reg() else 'wire'
+            if sig.width == 1:
+                self.emit('input {} {},\n'.format(typ, sig.name))
             else:
-                self.emit('input {} signed [{}:0] {},\n'.format(typ, width-1, name))
-        for i, (name, typ, width) in enumerate(self.module_info.outputs):
-            if typ == 'dataout':
-                typ = 'reg'
-            if i < len(self.module_info.outputs)-1:
+                self.emit('input {} signed [{}:0] {},\n'.format(typ, sig.width-1, sig.name))
+
+        outputs = list(self.module_info.data_outputs.values())
+        outputs.extend(self.module_info.ctrl_outputs.values())
+        outputs.extend(self.module_info.mem_outputs.values())
+        for i, sig in enumerate(outputs):
+            typ = 'reg' if sig.is_reg() else 'wire'
+            if i < len(outputs)-1:
                 delim = ',\n'
             else:
                 delim = ''
-            if width == 1:
-                self.emit('output {} {}{}'.format(typ, name, delim))
+            if sig.width == 1:
+                self.emit('output {} {}{}'.format(typ, sig.name, delim))
             else:
-                self.emit('output {} signed [{}:0] {}{}'.format(typ, width-1, name, delim))
+                self.emit('output {} signed [{}:0] {}{}'.format(typ, sig.width-1, sig.name, delim))
 
         self.set_indent(-2)
         self.emit(');\n')
         self.set_indent(-2)
         self.emit('\n')
+
+    def _generate_signal(self, sig):
+        sign = 'signed' if sig.is_int() else ''
+        return '{:<6} [{}:0] {}'.format(sign, sig.width-1, sig.name)
 
     def _generate_localparams(self):
         self.emit('//localparams\n')
@@ -148,28 +164,30 @@ class VerilogCodeGen:
     def _generate_internal_regs(self):
         if self.module_info.internal_regs:
             self.emit('//internal regs\n')
-        for name, width, sign in sorted(self.module_info.internal_regs, key=lambda v: v[0]):
-            if width == 1:
-                self.emit('reg {};\n'.format(name))
+        for sig in sorted(self.module_info.internal_regs, key=lambda sig: sig.name):
+            if sig.width == 1:
+                self.emit('reg {};\n'.format(sig.name))
             else:
-                self.emit('reg {:<6} [{}:0] {};\n'.format(sign, width-1, name))
+                self.emit('reg {};\n'.format(self._generate_signal(sig)))
         self.emit('\n')
 
-        for name, width, size, sign in sorted(self.module_info.internal_reg_arrays, key=lambda v: v[0]):
-            if width == 1:
-                self.emit('reg {}[0:{}];\n'.format(name, size-1))
+        for sig, size in sorted(self.module_info.internal_reg_arrays, key=lambda v: v[0].name):
+            if sig.width == 1:
+                self.emit('reg {}[0:{}];\n'.format(sig.name, size-1))
             else:
-                self.emit('reg {:<6} [{}:0] {} [0:{}];\n'.format(sign, width-1, name, size-1))
+                sign = 'signed' if sig.is_int() else ''
+                self.emit('reg {:<6} [{}:0] {} [0:{}];\n'.format(sign, sig.width-1, sig.name, size-1))
         self.emit('\n')
+
 
     def _generate_internal_wires(self):
         if self.module_info.internal_wires:
             self.emit('//internal wires\n')
-        for name, width, sign in sorted(self.module_info.internal_wires):
-            if width == 1:
-                self.emit('wire {};\n'.format(name))
+        for sig in sorted(self.module_info.internal_wires, key=lambda sig: sig.name):
+            if sig.width == 1:
+                self.emit('wire {};\n'.format(sig.name))
             else:
-                self.emit('wire {:<6} [{}:0] {};\n'.format(sign, width-1, name))
+                self.emit('wire {};\n'.format(self._generate_signal(sig)))
         self.emit('\n')
 
     def _generate_functions(self):
@@ -192,7 +210,7 @@ class VerilogCodeGen:
 
     def _generate_sub_module_instances(self):
         self.emit('//sub module instances\n')
-        for name, info, port_map, param_map in self.module_info.sub_modules:
+        for name, info, port_map, param_map in self.module_info.sub_modules.values():
             ports = []
             ports.append('.CLK(CLK)')
             ports.append('.RST(RST)')
@@ -216,36 +234,48 @@ class VerilogCodeGen:
 
         self.emit('\n')
 
-    def _process_State(self, state):
+    def _generate_sync_assignment(self):
+        self.emit('//assigns\n')
+        for assign in self.module_info.sync_assignments:
+            self.emit('always @(posedge CLK) begin\n')
+            self.set_indent(2)
+            self.visit(assign)
+            self.set_indent(-2)
+            self.emit('end\n')
+            self.emit('\n')
+
+    def _generate_field_access(self):
+        for field, access in self.module_info.field_accesses.items():
+            self.emit('always @(posedge CLK) begin: {}_access\n'.format(field.name))
+            self.set_indent(2)
+            self.visit(access)
+            self.set_indent(-2)
+            self.emit('end\n')
+            self.emit('\n')
+
+    def _process_State(self, state, state_sig):
         self.current_state = state
         code = '{0}: begin\n'.format(state.name)
         self.emit(code)
         self.set_indent(2)
         if env.hdl_debug_mode:
-            self.emit('$display("state: {}::{}");\n'.format(self.scope.name, state.name))
+            self.emit('$display("state: {}::{}::{}");\n'.format(self.scope.name, state_sig, state.name))
 
         for code in state.codes:
             self.visit(code)
 
         #add state transition code
         stg = state.stg
-        state_var = AHDL_VAR(self.main_state_var_sym)#AHDL_VAR(stg.state_var_sym)
-        assert state_var
+        state_var = AHDL_VAR(state_sig, Ctx.STORE)
         assert state.next_states
         cond1, nstate1, _ = state.next_states[0]
-        if cond1 is None or isinstance(cond1, AHDL_CONST):
-            #if state is stg.finish_state:
-            #    ret_state = self.stg_return_state[stg.name]
-            #    mv = AHDL_MOVE(state_var, AHDL_VAR(ret_state.name))
-            #    self.visit(mv)
-            #    logger.debug(mv)
-            #else:
-            self.visit(AHDL_MOVE(state_var, AHDL_VAR(nstate1.name)))
+        if cond1 is None or cond1.is_a(AHDL_CONST):
+            self.visit(AHDL_MOVE(state_var, AHDL_SYMBOL(nstate1.name)))
         else:
             cond_list = []
             codes_list = []
             for cond, nstate, codes in state.next_states:
-                mv = AHDL_MOVE(state_var, AHDL_VAR(nstate.name))
+                mv = AHDL_MOVE(state_var, AHDL_SYMBOL(nstate.name))
                 cond_list.append(cond)
                 if codes:
                     codes_list.append(codes + [mv])
@@ -264,10 +294,13 @@ class VerilogCodeGen:
         return str(ahdl.value)
 
     def visit_AHDL_VAR(self, ahdl):
-        if isinstance(ahdl.sym, Symbol):
-            return ahdl.sym.hdl_name()
-        else:
-            return ahdl.sym
+        return ahdl.sig.name
+
+    def visit_AHDL_MEMVAR(self, ahdl):
+        assert 0
+
+    def visit_AHDL_SYMBOL(self, ahdl):
+        return ahdl.name
 
     def visit_AHDL_CONCAT(self, ahdl):
         code = '{'
@@ -288,7 +321,7 @@ class VerilogCodeGen:
         return self.emit('/*' + str(ahdl.info) + '*/\n')
 
     def visit_AHDL_MOVE(self, ahdl):
-        if ahdl.dst.sym.is_condition():
+        if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_condition():
             self.module_info.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
         else:
             src = self.visit(ahdl.src)
@@ -362,9 +395,10 @@ class VerilogCodeGen:
             if exp.startswith('cond'):
                 remove_assign = []
                 for assign in self.module_info.static_assignments:
-                    if assign.dst.sym.hdl_name() == exp:
+                    if assign.dst.sig.name == exp:
                         remove_assign.append(assign)
-                        self.module_info.internal_wires.remove((exp, 1, 'signed'))
+                        expsig = self.scope.gen_sig(exp, 1)
+                        self.module_info.internal_wires.remove(expsig)
                         exp = self.visit(assign.src)
                 for assign in remove_assign:
                     self.module_info.static_assignments.remove(assign)
@@ -401,14 +435,14 @@ class VerilogCodeGen:
         #    self.current_state.set_next((AHDL_CONST(1), target_state, None))
     
     def visit_AHDL_FUNCTION(self, ahdl):
-        self.emit('function [{}:0] {} (\n'.format(ahdl.output.sym.width-1, ahdl.output.sym.name))
+        self.emit('function [{}:0] {} (\n'.format(ahdl.output.sig.width-1, ahdl.output.sig.name))
         self.set_indent(2)
         last_idx = len(ahdl.inputs) - 1
         for idx, input in enumerate(ahdl.inputs):
             if idx == last_idx:
-                self.emit('input [{}:0] {}\n'.format(input.sym.width-1, input.sym.name))
+                self.emit('input [{}:0] {}\n'.format(input.sig.width-1, input.sig.name))
             else:
-                self.emit('input [{}:0] {},\n'.format(input.sym.width-1, input.sym.name))
+                self.emit('input [{}:0] {},\n'.format(input.sig.width-1, input.sig.name))
         #self.emit(',\n'.join([str(i) for i in ahdl.inputs]))
         self.set_indent(-2)
         self.emit(');\n')
@@ -433,10 +467,10 @@ class VerilogCodeGen:
         self.visit(ahdl.stm)
 
     def visit_AHDL_MUX(self, ahdl):
-        self.emit('function [{}:0] {} (\n'.format(ahdl.width-1, ahdl.name.sym.name))
+        self.emit('function [{}:0] {} (\n'.format(ahdl.output.width-1, ahdl.name))
         self.set_indent(2)
         
-        self.emit('input [{}:0] {},\n'.format(ahdl.selector.sym.width-1, ahdl.selector.sym.name))
+        self.emit('input [{}:0] {},\n'.format(ahdl.selector.sig.width-1, ahdl.selector.sig.name))
         
         last_idx = len(ahdl.inputs) - 1
         for idx, input in enumerate(ahdl.inputs):
@@ -453,7 +487,7 @@ class VerilogCodeGen:
         self.emit('case (1\'b1)\n')
         self.set_indent(2)
         for i, input in enumerate(ahdl.inputs):
-            self.emit("{}[{}]: {} = {};\n".format(ahdl.selector.sym.name, i, ahdl.name.sym.name, input.name))
+            self.emit("{}[{}]: {} = {};\n".format(ahdl.selector.sig.name, i, ahdl.name, input.name))
         self.set_indent(-2)
         self.emit('endcase\n')
         self.set_indent(-2)
@@ -462,15 +496,15 @@ class VerilogCodeGen:
 
         params = self.visit(ahdl.selector) + ', '
         params += ', '.join([input.name for input in ahdl.inputs])
-        self.emit('assign {} = {}({});\n'.format(ahdl.output.name, ahdl.name.sym.name, params))
+        self.emit('assign {} = {}({});\n'.format(ahdl.output.name, ahdl.name, params))
 
     def visit_AHDL_DEMUX(self, ahdl):
         if len(ahdl.outputs) > 1:
             for i, output in enumerate(ahdl.outputs):
-                if isinstance(ahdl.input, Symbol):
-                    self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.name, ahdl.selector.sym.name, i, ahdl.input.name, ahdl.width))
+                if isinstance(ahdl.input, Signal):
+                    self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.name, ahdl.selector.sig.name, i, ahdl.input.name, ahdl.input.width))
                 elif isinstance(ahdl.input, int):
-                    self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.name, ahdl.selector.sym.name, i, ahdl.input, ahdl.width))
+                    self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;\n'.format(output.name, ahdl.selector.sig.name, i, ahdl.input, ahdl.width))
         else:
             self.emit('assign {} = {};\n'.format(ahdl.outputs[0].name, ahdl.input.name))
 
