@@ -1,6 +1,8 @@
-﻿from .signal import Signal
+﻿from collections import defaultdict
+from .signal import Signal
 from .ir import Ctx
-from .memref import MemRefNode
+from .memref import MemRefNode, MemParamNode
+from .utils import is_a
 
 PYTHON_OP_2_HDL_OP_MAP = {
     'And':'&&',
@@ -33,18 +35,15 @@ class AHDL:
         pass
 
     def is_a(self, cls):
-        if isinstance(cls, list) or isinstance(cls, tuple):
-            for c in cls:
-                if isinstance(self, c):
-                    return True
-            return False
-        else:
-            return isinstance(self, cls)
+        return is_a(self, cls)
 
     def __repr__(self):
         return self.__str__()
 
-class AHDL_CONST(AHDL):
+class AHDL_EXP(AHDL):
+    pass
+
+class AHDL_CONST(AHDL_EXP):
     def __init__(self, value):
         super().__init__()
         self.value = value
@@ -52,7 +51,7 @@ class AHDL_CONST(AHDL):
     def __str__(self):
         return '{}'.format(self.value)
 
-class AHDL_OP(AHDL):
+class AHDL_OP(AHDL_EXP):
     def __init__(self, op, left, right):
         super().__init__()
         self.op = op
@@ -65,7 +64,7 @@ class AHDL_OP(AHDL):
         else:
             return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.left)
 
-class AHDL_VAR(AHDL):
+class AHDL_VAR(AHDL_EXP):
     def __init__(self, sig, ctx):
         assert sig and isinstance(sig, Signal)
         super().__init__()
@@ -75,17 +74,23 @@ class AHDL_VAR(AHDL):
     def __str__(self):
          return '{}'.format(self.sig)
 
-class AHDL_MEMVAR(AHDL):
-    def __init__(self, memnode, ctx):
-        assert memnode and isinstance(memnode, MemRefNode)
+class AHDL_MEMVAR(AHDL_EXP):
+    def __init__(self, sig, memnode, ctx):
+        assert sig and isinstance(sig, Signal)
+        assert memnode
+        assert (isinstance(memnode, MemRefNode) or isinstance(memnode, MemParamNode))
         super().__init__()
+        self.sig = sig
         self.memnode = memnode
         self.ctx = ctx
 
     def __str__(self):
-        return '{}'.format(self.memnode.sym.name)
+        return '{}[]'.format(self.sig)
 
-class AHDL_SYMBOL(AHDL):
+    def name(self):
+        return self.sig.name
+
+class AHDL_SYMBOL(AHDL_EXP):
     def __init__(self, name):
         assert name and isinstance(name, str)
         super().__init__()
@@ -94,15 +99,21 @@ class AHDL_SYMBOL(AHDL):
     def __str__(self):
          return '{}'.format(self.name)
 
-class AHDL_CONCAT(AHDL):
-    def __init__(self, varlist):
+class AHDL_CONCAT(AHDL_EXP):
+    def __init__(self, varlist, op=None):
         super().__init__()
+        assert isinstance(varlist, list)
         self.varlist = varlist
+        self.op = op
 
     def __str__(self):
-        return '{{{0}}}'.format(', '.join([str(v) for v in self.varlist]))
+        if self.op:
+            return '{{{0}}}'.format(PYTHON_OP_2_HDL_OP_MAP[self.op].join([str(v) for v in self.varlist]))
+        else:
+            return '{{{0}}}'.format(', '.join([str(v) for v in self.varlist]))
+        
     
-class AHDL_NOP(AHDL):
+class AHDL_NOP(AHDL_EXP):
     def __init__(self, info):
         super().__init__()
         self.info = info
@@ -110,7 +121,10 @@ class AHDL_NOP(AHDL):
     def __str__(self):
         return 'nop for {}'.format(self.info)
 
-class AHDL_MOVE(AHDL):
+class AHDL_STM(AHDL):
+    pass
+
+class AHDL_MOVE(AHDL_STM):
     def __init__(self, dst, src):
         assert dst.is_a(AHDL)
         assert src.is_a(AHDL)
@@ -125,7 +139,35 @@ class AHDL_MOVE(AHDL):
     def __str__(self):
         return '{} <= {}'.format(self.dst, self.src)
 
-class AHDL_ASSIGN(AHDL):
+class AHDL_DECL(AHDL):
+    pass
+
+class AHDL_SIGNAL_DECL(AHDL_DECL):
+    pass
+
+class AHDL_REG_DECL(AHDL_SIGNAL_DECL):
+    def __init__(self, sig):
+        self.sig = sig
+
+    def __str__(self):
+        return 'reg {}'.format(self.sig)
+
+class AHDL_REG_ARRAY_DECL(AHDL_SIGNAL_DECL):
+    def __init__(self, sig, size):
+        self.sig = sig
+        self.size = size
+
+    def __str__(self):
+        return 'reg {}[{}]'.format(self.sig, self.size)
+
+class AHDL_NET_DECL(AHDL_SIGNAL_DECL):
+    def __init__(self, sig):
+        self.sig = sig
+
+    def __str__(self):
+        return 'net {}'.format(self.sig)
+
+class AHDL_ASSIGN(AHDL_DECL):
     def __init__(self, dst, src):
         assert dst.is_a(AHDL)
         assert src.is_a(AHDL)
@@ -136,7 +178,7 @@ class AHDL_ASSIGN(AHDL):
     def __str__(self):
         return '{} := {}'.format(self.dst, self.src)
 
-class AHDL_CONNECT(AHDL):
+class AHDL_CONNECT(AHDL_STM):
     def __init__(self, dst, src):
         assert dst.is_a(AHDL)
         assert src.is_a(AHDL)
@@ -147,39 +189,70 @@ class AHDL_CONNECT(AHDL):
     def __str__(self):
         return '{} = {}'.format(self.dst, self.src)
 
-class AHDL_MEM(AHDL):
-    def __init__(self, name, offset):
-        super().__init__()
-        self.name = name
-        self.offset = offset
-
-    def __str__(self):
-        return '{}[{}]'.format(self.name, self.offset)
-
-class AHDL_STORE(AHDL):
-    def __init__(self, mem, src):
+class AHDL_STORE(AHDL_STM):
+    def __init__(self, mem, src, offset):
+        assert isinstance(mem, AHDL_MEMVAR)
+        assert mem.memnode.is_sink()
         super().__init__()
         self.mem = mem
         self.src = src
+        self.offset = offset
 
     def __str__(self):
-        return '{} <= {}'.format(self.mem, self.src)
+        return '{}[{}] <= {}'.format(self.mem, self.offset, self.src)
 
-class AHDL_LOAD(AHDL):
-    def __init__(self, dst, mem):
+class AHDL_LOAD(AHDL_STM):
+    def __init__(self, mem, dst, offset):
+        assert isinstance(mem, AHDL_MEMVAR)
+        assert mem.memnode.is_sink()
         super().__init__()
-        self.dst = dst
         self.mem = mem
+        self.dst = dst
+        self.offset = offset
 
     def __str__(self):
-        return '{} <= {}'.format(self.dst, self.mem)
+        return '{} <= {}[{}]'.format(self.dst, self.mem, self.offset)
+
+class AHDL_FIELD_MOVE(AHDL_MOVE):
+    def __init__(self, inst_name, attr_name, dst, src, is_ext):
+        super().__init__(dst, src)
+        self.inst_name = inst_name
+        self.attr_name = attr_name
+        self.is_ext = is_ext
+
+    def __str__(self):
+        return '{}.{} <= {}'.format(self.inst_name, self.dst, self.src)
+
+class AHDL_FIELD_STORE(AHDL_STORE):
+    def __init__(self, inst_name, mem, src, offset):
+        super().__init__(mem, src, offset)
+        self.inst_name = inst_name
+
+    def __str__(self):
+        return '{}[{}] <= {}'.format(self.mem, self.offset, self.src)
+
+class AHDL_FIELD_LOAD(AHDL_LOAD):
+    def __init__(self, inst_name, mem, dst, offset):
+        super().__init__(mem, dst, offset)
+        self.inst_name = inst_name
+
+    def __str__(self):
+        return '{} <= {}[{}]'.format(self.dst, self.mem, self.offset)
+
+class AHDL_POST_PROCESS(AHDL_STM):
+    def __init__(self, factor):
+        super().__init__()
+        self.factor = factor
+
+    def __str__(self):
+        return 'Post-process of : {}'.format(self.factor)
 
    
 
 # ([cond], [code]) => if (cond) code
 # ([cond, None], [code1, code2]) => if (cond) code1 else code2
 
-class AHDL_IF(AHDL):
+class AHDL_IF(AHDL_STM):
     def __init__(self, conds, codes_list):
         super().__init__()
         self.conds = conds
@@ -202,7 +275,7 @@ class AHDL_IF(AHDL):
                     s += '    {}'.format(code)
         return s
 
-class AHDL_IF_EXP(AHDL):
+class AHDL_IF_EXP(AHDL_EXP):
     def __init__(self, cond, lexp, rexp):
         super().__init__()
         self.cond = cond
@@ -212,7 +285,20 @@ class AHDL_IF_EXP(AHDL):
     def __str__(self):
         return '{} ? {} : {}\n'.format(self.cond, self.lexp, self.rexp)
 
-class AHDL_FUNCALL(AHDL):
+class AHDL_MODULECALL(AHDL_STM):
+    def __init__(self, scope, args, instance_name, prefix):
+        assert isinstance(instance_name, str)
+        assert isinstance(prefix, str)
+        super().__init__()
+        self.scope = scope
+        self.args = args
+        self.instance_name = instance_name
+        self.prefix = prefix
+
+    def __str__(self):
+        return '{}({})'.format(self.instance_name, ', '.join([str(arg) for arg in self.args]))
+
+class AHDL_FUNCALL(AHDL_EXP):
     def __init__(self, name, args):
         assert isinstance(name, str)
         super().__init__()
@@ -222,7 +308,7 @@ class AHDL_FUNCALL(AHDL):
     def __str__(self):
         return '{}({})'.format(self.name, ', '.join([str(arg) for arg in self.args]))
 
-class AHDL_PROCCALL(AHDL):
+class AHDL_PROCCALL(AHDL_EXP):
     def __init__(self, name, args):
         assert isinstance(name, str)
         super().__init__()
@@ -232,7 +318,7 @@ class AHDL_PROCCALL(AHDL):
     def __str__(self):
         return '{}({})'.format(self.name, ', '.join([str(arg) for arg in self.args]))
 
-class AHDL_META(AHDL):
+class AHDL_META(AHDL_STM):
     def __init__(self, *args):
         super().__init__()
         self.metaid = args[0]
@@ -241,7 +327,17 @@ class AHDL_META(AHDL):
     def __str__(self):
         return '{}({})'.format(self.metaid, ', '.join([str(arg) for arg in self.args]))
 
-class AHDL_FUNCTION(AHDL):
+class AHDL_META_WAIT(AHDL_STM):
+    def __init__(self, *args):
+        super().__init__()
+        self.metaid = args[0]
+        self.args = args[1:]
+        self.transition = None
+
+    def __str__(self):
+        return '{}({})'.format(self.metaid, ', '.join([str(arg) for arg in self.args]))
+
+class AHDL_FUNCTION(AHDL_DECL):
     def __init__(self, output, inputs, stms):
         super().__init__()
         self.inputs = inputs
@@ -252,7 +348,7 @@ class AHDL_FUNCTION(AHDL):
         return 'function {}'.format(self.name)
 
 
-class AHDL_MUX(AHDL):
+class AHDL_MUX(AHDL_DECL):
     def __init__(self, name, selector, inputs, output):
         super().__init__()
         assert isinstance(name, str)
@@ -266,7 +362,7 @@ class AHDL_MUX(AHDL):
         return 'MUX {}'.format(self.name)
 
 
-class AHDL_DEMUX(AHDL):
+class AHDL_DEMUX(AHDL_DECL):
     def __init__(self, name, selector, input, outputs):
         super().__init__()
         assert isinstance(name, str)
@@ -280,7 +376,7 @@ class AHDL_DEMUX(AHDL):
         return 'DEMUX {}'.format(self.name)
 
 
-class AHDL_COMB(AHDL):
+class AHDL_COMB(AHDL_DECL):
     def __init__(self, name, stms):
         super().__init__()
         assert isinstance(name, str)
@@ -291,7 +387,7 @@ class AHDL_COMB(AHDL):
         return 'COMB {}'.format(self.name)
 
 
-class AHDL_CASE(AHDL):
+class AHDL_CASE(AHDL_STM):
     def __init__(self, sel, items):
         super().__init__()
         self.sel = sel
@@ -301,7 +397,7 @@ class AHDL_CASE(AHDL):
         return 'case' + ', '.join([str(item) for item in self.items])
 
 
-class AHDL_CASE_ITEM(AHDL):
+class AHDL_CASE_ITEM(AHDL_STM):
     def __init__(self, val, stm):
         super().__init__()
         self.val = val
@@ -309,3 +405,15 @@ class AHDL_CASE_ITEM(AHDL):
 
     def __str__(self):
         return '{}:{}'.format(self.val, str(self.stm))
+
+
+class AHDL_TRANSITION(AHDL_STM):
+    def __init__(self, target):
+        self.target = target
+
+    def __str__(self):
+        return '(next state: {})'.format(self.target.name)
+
+class AHDL_TRANSITION_IF(AHDL_IF):
+    def __init__(self, conds, codes_list):
+        super().__init__(conds, codes_list)

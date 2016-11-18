@@ -42,12 +42,13 @@ class Symbol:
     param_prefix = '@in'
     field_prefix = '@f'
     port_prefix = '@p'
+    ref_prefix = '@r'
 
     def __init__(self, name, scope, id):
         self.id = id
         self.name = name
         self.scope = scope
-        self.typ = Type.none_t # var|tmp|reg|wire|ignore|
+        self.typ = Type.none_t
         self.ancestor = None
 
     def __str__(self):
@@ -61,11 +62,7 @@ class Symbol:
   
     def hdl_name(self):
         if self.name[0] == '@' or self.name[0] == '!':
-            names = self.name.split('_', maxsplit=1)
-            if len(names) > 1:
-                name = names[1]
-            else:
-                name = names[0][1:]
+            name = self.name[1:]
         else:
             name = self.name[:]
         name = name.replace('#', '')
@@ -91,6 +88,9 @@ class Symbol:
 
     def is_port(self):
         return self.name.startswith(Symbol.port_prefix)
+
+    def is_ref(self):
+        return self.name.startswith(Symbol.ref_prefix)
 
     def set_type(self, typ):
         self.typ = typ

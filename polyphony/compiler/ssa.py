@@ -2,7 +2,7 @@
 from collections import OrderedDict, defaultdict, deque
 from .dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from .symbol import Symbol
-from .ir import Ctx, TEMP, PHI, JUMP, MSTORE
+from .ir import *
 from .type import Type
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
@@ -31,7 +31,6 @@ class SSAFormTransformer:
     def _is_always_single_assigned(self, sym):
         return sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_function() or sym.is_return() or Type.is_object(sym.typ)
 
-
     def _insert_phi(self):
         phis = defaultdict(list)
 
@@ -43,7 +42,7 @@ class SSAFormTransformer:
             #logger.debug(', '.join([b.name for b in def_blocks]))
             while def_blocks:
                 def_block = def_blocks.pop()
-                logger.debug(def_block.name)
+                #logger.debug(def_block.name)
                 if def_block not in self.dominance_frontier:
                     continue
                 for df in self.dominance_frontier[def_block]:
@@ -64,12 +63,15 @@ class SSAFormTransformer:
                         self.usedef.add_var_def(var, phi)
                         self.phis.append(phi)
 
+    def _add_new_sym(self, var, version):
+        assert var.is_a(TEMP)
+        self.new_syms.add((var, version))
 
     def _rename(self):
         count = {}
         stack = {}
         using_syms = set()
-        for blk in self.scope.blocks:
+        for blk in self.scope.traverse_blocks():
             for sym in self.usedef.get_def_syms_by_blk(blk):
                 using_syms.add(sym)
             for sym in self.usedef.get_use_syms_by_blk(blk):
@@ -78,14 +80,17 @@ class SSAFormTransformer:
             count[sym] = 0
             stack[sym] = [0]
 
-        new_syms = set()
-        self._rename_rec(self.scope.blocks[0], count, stack, new_syms)
+        self.new_syms = set()
+        self._rename_rec(self.scope.root_block, count, stack)
 
-        for var, sym in new_syms:
+        for var, version in self.new_syms:
             assert var.is_a(TEMP)
-            if self._is_always_single_assigned(sym):
+            if self._is_always_single_assigned(var.sym):
                 continue
-            var.sym = sym
+            new_name = var.sym.name + '#' + str(version)
+            new_sym = self.scope.inherit_sym(var.sym, new_name)
+            logger.debug(str(new_sym) + ' ancestor is ' + str(var.sym))
+            var.sym = new_sym
 
 
     def _get_phis(self, block):
@@ -101,16 +106,15 @@ class SSAFormTransformer:
                 return True
         return False
 
-    def _rename_rec(self, block, count, stack, new_syms):
+    def _rename_rec(self, block, count, stack):
         for stm in block.stms:
             if not stm.is_a(PHI):
                 for use in self.usedef.get_use_vars_by_stm(stm):
                     assert use.is_a(TEMP)
+                    #if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func is use:
+                    #    continue
                     i = stack[use.sym][-1]
-                    new_name = use.sym.name + '#' + str(i)
-                    new_sym = self.scope.inherit_sym(use.sym, new_name)
-                    logger.debug(str(new_sym) + ' ancestor is ' + str(use.sym))
-                    new_syms.add((use, new_sym))
+                    self._add_new_sym(use, i)
             #this loop includes PHI
             for d in self.usedef.get_def_vars_by_stm(stm):
                 assert d.is_a(TEMP)
@@ -119,10 +123,7 @@ class SSAFormTransformer:
                     count[d.sym] += 1
                 i = count[d.sym]
                 stack[d.sym].append(i)
-                new_name = d.sym.name + '#' + str(i)
-                new_sym = self.scope.inherit_sym(d.sym, new_name)
-                logger.debug(str(new_sym) + ' ancestor is ' + str(d.sym))
-                new_syms.add((d, new_sym))
+                self._add_new_sym(d, i)
         #into successors
         for succ in block.succs:
             #collect phi
@@ -138,7 +139,7 @@ class SSAFormTransformer:
                     phi.args.append((var, block))
                     
         for c in self.tree.get_children_of(block):
-            self._rename_rec(c, count, stack, new_syms)
+            self._rename_rec(c, count, stack)
         for stm in block.stms:
             for d in self.usedef.get_def_vars_by_stm(stm):
                 stack[d.sym].pop()
@@ -156,7 +157,7 @@ class SSAFormTransformer:
         tree.dump()
         self.tree = tree
 
-        first_block = self.scope.blocks[0]
+        first_block = self.scope.root_block
         df_builder = DominanceFrontierBuilder()
         self.dominance_frontier = df_builder.process(first_block, tree)
 
@@ -172,7 +173,7 @@ class SSAFormTransformer:
             else:
                 return None
         worklist = deque()
-        for blk in self.scope.blocks:
+        for blk in self.scope.traverse_blocks():
             worklist.extend(self._get_phis(blk))
         while worklist:
             phi = worklist.popleft()
@@ -193,7 +194,7 @@ class SSAFormTransformer:
                             worklist.append(rep)
 
     def _cleanup_phi(self):
-        for blk in self.scope.blocks:
+        for blk in self.scope.traverse_blocks():
             for phi in self._get_phis(blk):
                 removes = []
                 for arg, blk in phi.args:
@@ -210,23 +211,22 @@ from .usedef import UseDefDetector
 
 def main():
     scope = Scope.create(None, 's')
-    b1 = Block.create(scope)
-    b2 = Block.create(scope)
+    b1 = Block(scope)
+    b2 = Block(scope)
     b1.connect(b2)
-    b3 = Block.create(scope)
-    b4 = Block.create(scope)
-    b2.connect_branch(b3, True)
-    b2.connect_branch(b4, False)
-    b5 = Block.create(scope)
-    b6 = Block.create(scope)
-    b3.connect_branch(b5, True)
-    b3.connect_branch(b6, False)
-    b7 = Block.create(scope)
+    b3 = Block(scope)
+    b4 = Block(scope)
+    b2.connect(b3)
+    b2.connect(b4)
+    b5 = Block(scope)
+    b6 = Block(scope)
+    b3.connect(b5)
+    b3.connect(b6)
+    b7 = Block(scope)
     b5.connect(b7)
     b6.connect(b7)
     b7.connect_loop(b2)
-    b7.merge_branch(b3)
-
+    
     i = Symbol.new('i', scope)
     j = Symbol.new('j', scope)
     k = Symbol.new('k', scope)

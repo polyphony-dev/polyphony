@@ -4,9 +4,11 @@ from .ir import *
 from .env import env
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
+from .dominator import DominatorTreeBuilder
 from .type import Type
 from .scope import Scope
 from .common import error_info
+from .utils import *
 import pdb
 
 
@@ -127,7 +129,7 @@ class ConstantOptBase(IRVisitor):
     def visit_SYSCALL(self, ir):
         return self.visit_CALL(ir)
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         return self.visit_CALL(ir)
 
     def visit_CONST(self, ir):
@@ -181,14 +183,24 @@ class ConstantOpt(ConstantOptBase):
         if scope.is_class():
             return
         self.scope = scope
+        self.dtree = DominatorTreeBuilder(self.scope).process()
+
         dead_stms = []
         worklist = deque()
-        for blk in scope.blocks:
+        for blk in scope.traverse_blocks():
             worklist.extend(blk.stms)
         while worklist:
             stm = worklist.popleft()
             self.current_stm = stm
             self.visit(stm)
+            if stm.is_a(PHI) and len(stm.args)==1:
+                arg, blk = stm.args[0]
+                mv = MOVE(stm.var, arg)
+                blk.append_stm(mv)
+                worklist.append(mv)
+                dead_stms.append(stm)
+                if stm in worklist:
+                    worklist.remove(stm)
             if stm.is_a(MOVE) and stm.src.is_a(CONST) and stm.dst.is_a(TEMP) and not stm.dst.sym.is_return():
                 #sanity check
                 defstms = scope.usedef.get_def_stms_by_sym(stm.dst.sym)
@@ -200,9 +212,41 @@ class ConstantOpt(ConstantOptBase):
                 dead_stms.append(stm)
                 if stm in worklist:
                     worklist.remove(stm)
+            elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
+                self._process_uncoditional_cjump(stm, worklist)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
+
+    #def _propagate_const(self, dst, const):
+
+    def _process_uncoditional_cjump(self, cjump, worklist):
+        def remove_dominated_branch(blk):
+            blk.preds = [] # mark as garbage block
+            remove_from_list(worklist, blk.stms)
+            for succ in blk.succs:
+                succ.preds.remove(blk)
+            for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
+                if self.dtree.is_child(blk, succ):
+                    remove_dominated_branch(succ)
+
+        blk = cjump.block
+        if cjump.exp.value:
+            true_blk = blk.succs[0]
+            false_blk = blk.succs[1]
+        else:
+            true_blk = blk.succs[1]
+            false_blk = blk.succs[0]
+        jump = JUMP(true_blk)
+
+        false_blk.preds.remove(blk)
+        blk.succs.remove(false_blk)
+        if not false_blk.preds and self.dtree.is_child(blk, false_blk):
+            remove_dominated_branch(false_blk)
+
+        blk.replace_stm(cjump, jump)
+        if cjump in worklist:
+            worklist.remove(cjump)
 
     def visit_SYSCALL(self, ir):
         if ir.name == 'len':
@@ -215,8 +259,8 @@ class ConstantOpt(ConstantOptBase):
             memnode = self.mrg.node(memsym)
             lens = []
             assert memnode
-            for root in self.mrg.collect_node_roots(memnode):
-                lens.append(root.length)
+            for source in memnode.sources():
+                lens.append(source.length)
             if len(lens) <= 1 or all(lens[0] == len for len in lens):
                 assert lens[0] > 0
                 return CONST(lens[0])
@@ -231,10 +275,10 @@ class ConstantOpt(ConstantOptBase):
             memnode = Type.extra(ir.mem.attr.typ)
 
         if ir.offset.is_a(CONST) and not memnode.is_writable():
-            root = self.mrg.get_single_root(memnode)
-            if root:
-                assert root.initstm
-                return root.initstm.src.items[ir.offset.value]
+            source = memnode.single_source()
+            if source:
+                assert source.initstm
+                return source.initstm.src.items[ir.offset.value]
         return ir
 
     def visit_TEMP(self, ir):
@@ -257,6 +301,32 @@ class ConstantOpt(ConstantOptBase):
                 raise RuntimeError('class variable is must assigned to constant value')
         return ir
 
+    def visit_PHI(self, ir):
+        if len(ir.block.preds) != len(ir.args):
+            removes = []
+            for arg, blk in ir.args:
+                if blk is not self.scope.root_block and not blk.preds:
+                    removes.append((arg, blk))
+            for r in removes:
+                ir.args.remove(r)
+
+class EarlyConstantOptNonSSA(ConstantOptBase):
+    def __init__(self):
+        super().__init__()
+
+    def visit_TEMP(self, ir):
+        if ir.sym.scope is not self.scope:
+            c = try_get_constant(ir.sym, ir.sym.scope)
+            if c:
+                return c
+        return ir
+
+    def visit_ATTR(self, ir):
+        if Type.is_class(ir.head().typ):
+            c = try_get_constant(ir.attr, ir.scope)
+            if c:
+                return c
+        return ir
 
 class ConstantOptPreDetectROM(ConstantOpt):
     def __init__(self):
@@ -283,6 +353,10 @@ class ConstantOptPreDetectROM(ConstantOpt):
                 return c
         return ir
 
+    def visit_PHI(self, ir):
+        for i, (arg, blk) in enumerate(ir.args):
+            ir.args[i] = (self.visit(arg), blk)
+
 class GlobalConstantOpt(ConstantOptBase):
     def __init__(self):
         super().__init__()
@@ -291,7 +365,7 @@ class GlobalConstantOpt(ConstantOptBase):
     def process(self, scope):
         assert scope.is_global() or scope.is_class()
         self.scope = scope
-        if len(scope.blocks) > 1:
+        if scope.block_count > 1:
             raise RuntimeError('A control statement in the global scope is not allowed')
         super().process(scope)
         self._remove_dead_code()

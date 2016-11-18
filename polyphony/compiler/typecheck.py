@@ -5,6 +5,7 @@ from .type import Type
 from .builtin import builtin_return_type_table
 from .symbol import function_name
 from .common import error_info
+from .env import env
 import logging
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,6 @@ class TypePropagation(IRVisitor):
                 s.return_type = Type.object(None, s)
             else:
                 s.return_type = Type.none_t
-
         for s in scopes:
             self.process(s)
         #process all again for CALL.func.sym.type stabilizationi
@@ -68,7 +68,7 @@ class TypePropagation(IRVisitor):
             funct = Type.function(ret_t, tuple([param.sym.typ for param in ir.func_scope.params]))
 
         func_sym.set_type(funct)
-        for arg in ir.args:
+        for i, arg in enumerate(ir.args):
             self.visit(arg)
         return ret_t
 
@@ -77,7 +77,7 @@ class TypePropagation(IRVisitor):
             self.visit(arg)
         return builtin_return_type_table[ir.name]
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         self.scope.add_callee_scope(ir.func_scope)
         ret_t = ir.func_scope.return_type
         ctor = ir.func_scope.find_ctor()
@@ -104,6 +104,7 @@ class TypePropagation(IRVisitor):
                 if not ir.scope.has_sym(ir.attr):
                     type_error(ir, 'unknown attribute name {}'.format(ir.attr))
                 ir.attr = ir.scope.find_sym(ir.attr)
+
             if ir.scope.is_class() and self.scope.parent is not ir.scope:
                 self.scope.add_callee_scope(ir.scope)
             return ir.attr.typ
@@ -154,16 +155,14 @@ class TypePropagation(IRVisitor):
         src_typ = self.visit(ir.src)
         dst_typ = self.visit(ir.dst)
         if Type.is_none(dst_typ):
-            if ir.dst.is_a(TEMP):
-                ir.dst.sym.set_type(src_typ)
-            elif ir.dst.is_a(ATTR):
-                ir.dst.attr.set_type(src_typ)
+            if ir.dst.is_a([TEMP, ATTR]):
+                ir.dst.symbol().set_type(src_typ)
             elif ir.dst.is_a(MREF):
-                ir.dst.mem.sym.set_type(Type.list(src_typ, None))
+                ir.dst.mem.symbol().set_type(Type.list(src_typ, None))
             else:
                 assert 0
         # check mutable method
-        if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == 'self':
+        if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == env.self_name:
             self.scope.attributes.append('mutable')
 
     def visit_PHI(self, ir):
@@ -172,6 +171,31 @@ class TypePropagation(IRVisitor):
             if not Type.is_none(arg_t):
                 ir.var.sym.set_type(arg_t)
                 break
+
+class ClassFieldChecker(IRVisitor):
+    def __init__(self):
+        super().__init__()
+
+       
+    def process_all(self):
+        scopes = Scope.get_scopes(contain_global=False, contain_class=False)
+        for s in scopes:
+            if not s.is_ctor():
+                continue
+            self.process(s)
+
+    def visit_MOVE(self, ir):
+        if not ir.dst.is_a(ATTR):
+            return
+        irattr = ir.dst
+        if not irattr.exp.is_a(TEMP):
+            return
+        if not irattr.exp.sym.name == env.self_name:
+            return
+        class_scope = self.scope.parent
+        assert class_scope.is_class()
+        class_scope.add_class_field(irattr.attr, ir)
+
 
 class TypeChecker(IRVisitor):
     def __init__(self):
@@ -237,7 +261,7 @@ class TypeChecker(IRVisitor):
                 self.visit(arg)
         return builtin_return_type_table[ir.name]
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         arg_len = len(ir.args)
 
         ctor = ir.func_scope.find_ctor()

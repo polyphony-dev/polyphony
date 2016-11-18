@@ -93,9 +93,6 @@ class Scheduler:
 
 
     def _get_earliest_res_free_time(self, node, time, latency):
-        if not node.is_stm():
-            return time
-
         resources = self._get_needed_resources(node.tag)
         #TODO operator chaining?
         #logger.debug(node)

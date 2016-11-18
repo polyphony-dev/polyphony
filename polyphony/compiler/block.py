@@ -1,55 +1,33 @@
 ﻿from .ir import JUMP, CJUMP, MCJUMP
+from .utils import replace_item
 from logging import getLogger
 logger = getLogger(__name__)
 
 class Block:
-    blocks = []
-
     @classmethod
-    def create(cls, nametag = 'b'):
-        b = Block(nametag)
-        cls.blocks.append(b)
-        return b
+    def set_order(cls, block, order):
+        if order > block.order:
+            logger.debug(block.name + ' order ' + str(order))
+            block.order = order
+        order += 1
+        for succ in [succ for succ in block.succs if succ not in block.succs_loop]:
+            cls.set_order(succ, order)
 
-    @classmethod
-    def dump(cls):
-        for blk in cls.blocks:
-            logger.debug(str(blk))
-
-    @classmethod
-    def dump_schedule(cls):
-        for blk in cls.blocks:
-            logger.debug(blk.dump_schedule())
-
-    @classmethod
-    def make_branch_name(self, tags):
-        if not tags:
-            return '0'
-        names = []
-        for blk, boolean in tags:
-            names.append(blk.num + str(boolean)[0])
-        names.sort()
-        return '_'.join(names)
-        
-    def __init__(self, name):
-        self.orig_name = name
+    def __init__(self, scope, nametag = 'b'):
+        self.nametag = nametag
         self.stms = []
         self.succs = []
         self.preds = []
         self.succs_loop = []
         self.preds_loop = []
         self.order = -1
-        self.branch_tags = []
-        self.group = None # reference to BlockGroup
-
-    def set_scope(self, scope):
         self.scope = scope
-        self.num = str(len(scope.blocks)+1)
-        self.name = '{}_{}{}'.format(scope.name, self.orig_name, self.num)
+        scope.block_count += 1
+        self.num = scope.block_count
+        self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
 
-    def __str__(self):
-        s = 'Block: (' + str(self.order) + ') ' + str(self.name) + '\n'
-
+    def _str_connection(self):
+        s = ''
         bs = []
         s += ' # preds: {'
         for blk in self.preds:
@@ -69,33 +47,25 @@ class Block:
                 bs.append(blk.name)
         s += ', '.join([b for b in bs])
         s += '}\n'
+        return s
 
-        #s += ' # branch_tags: {'
-        #s += ', '.join([blk.name+':'+str(boolean) for blk, boolean in self.branch_tags])
-        #s += '}\n'
-
+    def __str__(self):
+        s = 'Block: (' + str(self.order) + ') ' + str(self.name) + '\n'
+        s += self._str_connection()
         s += ' # code\n'
-        s += '\n'.join(['  {0}'.format(stm) for stm in self.stms])
-        s += '\n'
+        s += '\n'.join(['  '+str(stm) for stm in self.stms])
+        s += '\n\n'
         return s
 
     def __repr__(self):
         return self.name
 
     def __lt__(self, other):
-        return int(self.num) < int(other.num)
+        return int(self.order) < int(other.order)
 
     def connect(self, next_block):
         self.succs.append(next_block)
         next_block.preds.append(self)
-        #inherit pred's branch_tag
-        for tag in self.branch_tags:
-            if tag not in next_block.branch_tags:
-                next_block.branch_tags.append(tag)
-
-    def connect_branch(self, branch_block, boolean):
-        self.connect(branch_block)
-        branch_block.branch_tags.append((self, boolean))
 
     def connect_loop(self, next_block):
         self.succs.append(next_block)
@@ -104,25 +74,12 @@ class Block:
         self.succs_loop.append(next_block)
         next_block.preds_loop.append(self)
 
-    def connect_break(self, next_block):
-        self.succs.append(next_block)
-        next_block.preds.append(self)
-
-    def connect_continue(self, next_block):
-        self.succs.append(next_block)
-        next_block.preds.append(self)
-
-    def merge_branch(self, trunk_block):
-        self.branch_tags = [(blk, boolean) for blk, boolean in self.branch_tags if blk is not trunk_block]
-
     def append_stm(self, stm):
         stm.block = self
         self.stms.append(stm)
 
     def replace_stm(self, old_stm, new_stm):
-        idx = self.stms.index(old_stm)
-        self.stms.remove(old_stm)
-        self.stms.insert(idx, new_stm)
+        replace_item(self.stms, old_stm, new_stm)
         new_stm.block = self
 
     def stm(self, idx):
@@ -131,109 +88,231 @@ class Block:
         else:
             return None
 
-    def is_branch(self):
-        return self.branch_tags
+    def replace_succ(self, old, new):
+        replace_item(self.succs, old, new)
+        if isinstance(new, CompositBlock):
+            return
+        if self.stms:
+            jmp = self.stms[-1]
+            if jmp.is_a(JUMP):
+                jmp.target = new
+            elif jmp.is_a(CJUMP):
+                if jmp.true is old:
+                    jmp.true = new
+                else:
+                    jmp.false = new
+            elif jmp.is_a(MCJUMP):
+                for i, t in enumerate(jmp.targets):
+                    if t is old:
+                       jmp.targets[i] = new
+ 
+    def replace_succ_loop(self, old, new):
+        replace_item(self.succs_loop, old, new)
+
+    def replace_pred(self, old, new):
+        replace_item(self.preds, old, new)
+
+    def replace_pred_loop(self, old, new):
+        replace_item(self.preds_loop, old, new)
+
+    def collect_basic_blocks(self, blocks):
+        blocks.add(self)
+        for succ in [succ for succ in self.succs if succ not in self.succs_loop]:
+            succ.collect_basic_blocks(blocks)
+
+    def traverse(self, visited, full=False, longitude=False):
+        if self not in visited:
+            visited.add(self)
+            yield self
+        for succ in [succ for succ in self.succs if succ not in self.succs_loop]:
+            yield from succ.traverse(visited, full, longitude)
+
+    def clone(self, scope, stm_map):
+        b = Block(scope, self.nametag)
+        for stm in self.stms:
+            new_stm = stm.clone()
+            new_stm.block = b
+            b.stms.append(new_stm)
+            stm_map[stm] = new_stm
+        b.order = self.order
+        b.succs      = list(self.succs)
+        b.succs_loop = list(self.succs_loop)
+        b.preds      = list(self.preds)
+        b.preds_loop = list(self.preds_loop)
+        return b
+
+    def reconnect(self, blk_map):
+        for i, succ in enumerate(self.succs):
+            self.succs[i] = blk_map[succ]
+        for i, succ in enumerate(self.succs_loop):
+            self.succs_loop[i] = blk_map[succ]
+        for i, pred in enumerate(self.preds):
+            self.preds[i] = blk_map[pred]
+        for i, pred in enumerate(self.preds_loop):
+            self.preds_loop[i] = blk_map[pred]
+
+class CompositBlock(Block):
+    def __init__(self, scope, head, bodies, region):
+        super().__init__(scope, 'composit')
+        assert all([head.order < b.order for b in bodies])
+        assert head.preds_loop
+        self.head = head
+        self.bodies = bodies
+        self.region = region
+        self.preds = [p for p in head.preds if p not in head.preds_loop]
+        self.succs = self._find_succs([head] + bodies)
+        self.order = head.order
+        self.num = head.num
+        self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
+        self.outer_defs = None
+        self.outer_uses = None
+        self.inner_defs = None
+        self.inner_uses = None
+
+    def __str__(self):
+        s = 'CompositBlock: (' + str(self.order) + ') ' + str(self.name) + '\n'
+        s += self._str_connection()
+
+        s += ' # head: ' + self.head.name + '\n'
+        s += ' # bodies: {'
+        s += ', '.join([blk.name for blk in self.bodies])
+        s += '}\n'
+        if self.outer_defs:
+            s += ' # outer_defs: {'
+            s += ', '.join([str(d) for d in self.outer_defs])
+            s += '}\n'
+        if self.outer_uses:
+            s += ' # outer_uses: {'
+            s += ', '.join([str(u) for u in self.outer_uses])
+            s += '}\n'
+        if self.inner_defs:
+            s += ' # inner_defs: {'
+            s += ', '.join([str(d) for d in self.inner_defs])
+            s += '}\n'
+        if self.inner_uses:
+            s += ' # inner_uses: {'
+            s += ', '.join([str(u) for u in self.inner_uses])
+            s += '}\n'
+        bs = str(self.head)
+        bs += ''.join([str(b) for b in self.bodies])
+        bs = '    ' + bs.replace('\n', '\n    ')
+        bs = bs[:-4] # remove last indent
+        return s + bs
+
+    def _find_succs(self, region):
+        succs = []
+        for b in region:
+            for succ in b.succs:
+                if succ not in region:
+                    succs.append(succ)
+        return succs
+
+    def collect_basic_blocks(self, blocks):
+        for blk in self.region:
+            blocks.add(blk)
+        for succ in self.succs:
+            succ.collect_basic_blocks(blocks)
+
+    def traverse(self, visited, full=False, longitude=False):
+        if longitude:
+            yield from super().traverse(visited, full, longitude)
+        else:
+            if full:
+                if self not in visited:
+                    visited.add(self)
+                    yield self
+            yield from self.head.traverse(visited, longitude)
+
+    def collect_basic_head_bodies(self):
+        blocks = [self.head]
+        for b in self.bodies:
+            if not isinstance(b, CompositBlock):
+                blocks.append(b)
+        return blocks
+
+    def clone(self, scope, stm_map):
+        b = CompositBlock(scope, self.nametag)
+        b.order = self.order
+        b.succs = list(self.succs)
+        b.preds = list(self.succs)
+        b.head = self.head
+        b.bodies = list(self.bodies)
+        b.region = list(self.region)
+        return b
+
+    def reconnect(self, blk_map):
+        self.head = blk_map[self.head]
+        for i, b in enumerate(self.bodies):
+            self.bodies[i] = blk_map[b]
+        for i, b in enumerate(self.region):
+            self.region[i] = blk_map[b]
+        for i, succ in enumerate(self.succs):
+            self.succs[i] = blk_map[succ]
+        for i, pred in enumerate(self.preds):
+            self.preds[i] = blk_map[pred]
 
 class BlockTracer:
     def process(self, scope):
-        self.scope = scope
-        self._remove_unreachable_block(scope)
-        #self._merge_unidirectional_block(scope.blocks)
+        if scope.is_class():
+            return
+        self._merge_unidirectional_block(scope)
         self._remove_empty_block(scope)
-        self._set_order(scope.blocks[0], 0)
+        Block.set_order(scope.root_block, 0)
 
-
-    def _remove_unreachable_block(self, scope):
-        bs = scope.blocks[1:]
-        for block in bs:
-            if not block.preds:
-                for succ in block.succs:
-                    succ.preds.remove(block)
-                scope.remove_block(block)
-                logger.debug('remove block ' + block.name)
-    #Block references:
-    # block.succs
-    # block.succs_loop
-    # block.preds
-    # block.preds_loop
-    # stm.block
-    # scope.blocks
-    # scope.loop_info
-    def _merge_unidirectional_block(self, blocks):
-        garbage_blocks = []
-        for block in blocks:
+    def _merge_unidirectional_block(self, scope):
+        for block in scope.traverse_blocks():
             #check unidirectional
-            if len(block.preds) == 1 and len(block.preds[0].succs) == 1 and block.preds[0].stms[-1].typ == '':
+            # TODO: any jump.typ
+            if len(block.preds) == 1 and len(block.preds[0].succs) == 1 and not block.preds[0].stms[-1].typ == 'C':
                 pred = block.preds[0]
                 assert pred.stms[-1].is_a(JUMP)
-                assert block not in self.scope.loop_infos.keys()
                 assert pred.succs[0] is block
-                
-                #merge stms
-                pred.stms.pop()
-                pred.stms.extend(block.stms)
+                assert not pred.succs_loop
+
+                pred.stms.pop() # remove useless jump
+                # merge stms
+                for stm in block.stms:
+                    pred.append_stm(stm)
 
                 #deal with block links
                 for succ in block.succs:
-                    idx = succ.preds.index(block)
-                    succ.preds[idx] = pred
-                    if block in succ.preds_loop:
-                        idx = succ.preds_loop.index(block)
-                        succ.preds_loop[idx] = pred
+                    succ.replace_pred(block, pred)
+                    succ.replace_pred_loop(block, pred)
                 pred.succs = block.succs
                 pred.succs_loop = block.succs_loop
-
-                #deal with block branch tags
-                pred.branch_tags = block.branch_tags
-
-                #set the pointer to the block to each stm
-                for stm in block.stms:
-                    stm.block = pred
-
-                garbage_blocks.append(block)
-
-        for block in garbage_blocks:
-            logger.debug('remove block ' + block.name)
-            blocks.remove(block)
-
-
-    def _set_order(self, block, order):
-        if order > block.order:
-            logger.debug(block.name + ' order ' + str(order))
-            block.order = order
-        order += 1
-        for succ in [succ for succ in block.succs if succ not in block.succs_loop]:
-            self._set_order(succ, order)
-
+                if block is scope.leaf_block:
+                    scope.leaf_block = pred
 
     def _remove_empty_block(self, scope):
-        bs = scope.blocks[:]
-        for block in bs:
-            if len(block.stms) == 1 and block.stms[0].is_a(JUMP) and block.stms[0].typ == '':
-                target = block.stms[0].target
-                target.preds.remove(block)
-                self._replace_jump_target(block, target)
-                scope.remove_block(block)
+        for block in scope.traverse_blocks():
+            if len(block.stms) > 1:
+                continue
+            if not block.stms:
+                assert not block.succs
+                for pred in block.preds:
+                    if block in pred.succs:
+                        pred.succs.remove(block)
                 logger.debug('remove empty block ' + block.name)
 
-    def _replace_jump_target(self, old_blk, new_blk):
-        for pred in old_blk.preds:
-            jmp = pred.stms[-1]
-            if jmp.is_a(JUMP):
-                jmp.target = new_blk
-            elif jmp.is_a(CJUMP):
-                if jmp.true is old_blk:
-                    jmp.true = new_blk
-                elif jmp.false is old_blk:
-                    jmp.false = new_blk
+            elif block.stms[0].is_a(JUMP):
+                succ = block.succs[0]
+                if succ in block.succs_loop:
+                    # do not remove a loopback block
+                    continue
+                    #succ.preds.remove(block)
+                    #succ.preds_loop.remove(block)
+                    #for pred in block.preds:
+                    #    pred.replace_succ(block, succ)
+                    #    pred.succs_loop.append(succ)
+                    #    succ.preds.append(pred)
+                    #    succ.preds_loop.append(pred)
+                    #pass
                 else:
-                    assert False
-            elif jmp.is_a(MCJUMP):
-                for i, t in enumerate(jmp.targets):
-                    if t is old_blk:
-                       jmp.targets[i] = new_blk 
-            pred.succs.remove(old_blk)
-            pred.succs.append(new_blk)
-            new_blk.preds.append(pred)
-        
+                    succ.preds.remove(block)
+                    for pred in block.preds:
+                        pred.replace_succ(block, succ)
+                        succ.preds.append(pred)
 
+                logger.debug('remove empty block ' + block.name)
+                if block is scope.root_block:
+                    scope.root_block = succ

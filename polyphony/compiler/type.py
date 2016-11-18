@@ -110,3 +110,12 @@ class Type:
             return t[2]
         return None
 
+    @classmethod
+    def width(cls, t):
+        assert cls.is_scalar(t)
+        if cls.is_int(t):
+            # TODO
+            return 32
+        elif t is cls.bool_t:
+            return 1
+

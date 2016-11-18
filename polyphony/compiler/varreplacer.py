@@ -44,7 +44,7 @@ class VarReplacer:
     def visit_SYSCALL(self, ir):
         return self.visit_CALL(ir)
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         return self.visit_CALL(ir)
 
     def visit_CONST(self, ir):

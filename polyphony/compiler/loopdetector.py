@@ -3,7 +3,7 @@ from .dominator import DominatorTreeBuilder
 from .ir import CONST, BINOP, RELOP, TEMP, MOVE, JUMP, CJUMP
 from .varreplacer import VarReplacer
 from .usedef import UseDefDetector
-from .block import BlockTracer
+from .block import Block, CompositBlock, BlockTracer
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -11,6 +11,10 @@ class LoopNestTree:
     def __init__(self):
         self.nodes = []
         self.edges = []
+        self.root = None
+
+    def set_root(self, n):
+        self.root = n
 
     def add_node(self, n):
         if n not in self.nodes:
@@ -46,156 +50,188 @@ class LoopNestTree:
         for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
             logger.debug(n1.name + ' --> ' + n2.name)
 
+    def __str__(self):
+        s = ''
+        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
+            s += n1.name + ' --> ' + n2.name + '\n'
+        return s
+
+    def traverse(self):
+        stack = []
+        self._traverse_rec(self.root, stack)
+        return stack
+
+    def _traverse_rec(self, node, stack):
+        children = self.get_children_of(node)
+        for child in children:
+            self._traverse_rec(child, stack)
+        stack.append(node)
+
+
 class LoopDetector:
     def __init__(self):
         pass
 
     def process(self, scope):
         self.scope = scope
-        self.loop_infos = scope.loop_infos
-        for head, loop_info in scope.loop_infos.items():
-            if head is scope.blocks[0]:
-                continue
-            self._detect(loop_info)
+        scope.loop_nest_tree = LoopNestTree()
 
-        self._build_loop_nest_tree(scope)
-        self._eliminate_bodies(scope)
-        self._process_loop_blocks(scope)
+        ordered_blks = []
+        visited = []
+        head = scope.root_block
+        self._process_walk(head, ordered_blks, visited)
+        assert head is ordered_blks[-1]
 
-        for head, loop_info in scope.loop_infos.items():
-            logger.debug('Loop')
-            logger.debug('head ' + loop_info.head.name)
-            logger.debug('bodies ' + ', '.join([b.name for b in loop_info.bodies]))
+        lblks, blks = self._make_loop_block_bodies(ordered_blks)
 
+        self._add_loop_tree_entry(head, lblks)
+        self.scope.loop_nest_tree.set_root(head)
 
-    def _detect(self, loop_info):
-        assert len(loop_info.head.preds_loop) == 1
-        loop_end = loop_info.head.preds_loop[0]
-        self._collect_tail_to_head_paths([loop_end, loop_info.exit], loop_info)
-        self._collect_tail_to_head_paths(loop_info.breaks, loop_info)
-        self._collect_tail_to_head_paths(loop_info.returns, loop_info)
+        ldd = LoopDependencyDetector()
+        ldd.processs(scope)
 
-    def _collect_tail_to_head_paths(self, tails, loop_info):
-        for tail in tails:
-            if tail not in self.scope.blocks:
-                continue
-            results = []
-            self._trace_path(tail, loop_info.head, [], results)
-            for path in results:
-                loop_info.append_bodies(set(path))
-                logger.log(0, 'path of tail to head = ' + ', '.join([p.name for p in path]))
-
-    def _trace_path(self, frm, head, path, results):
-        rewind_pos = len(path)
-        path.append(frm)
-        if frm is head:
-            path.pop()
-            return True
-        for pred in frm.preds:
-            if pred in frm.preds_loop:
-                continue
-            if self._trace_path(pred, head, path, results):
-                results.append(list(path))
-
-        path.pop()
-        return False
+        #lbd = LoopBlockDestructor()
+        #lbd.process(scope)
 
 
-    def _build_loop_nest_tree(self, scope):
-        root = scope.blocks[0]
-        bs = set(scope.blocks[1:])
-        for head, loop_info in self.loop_infos.items():
-            logger.debug(head.name)
-            bs = bs.difference(loop_info.bodies)
-        loop_info_root = scope.loop_infos[root]
-        loop_info_root.append_bodies(bs)
+    def _make_loop_block(self, head, loop_region):
+        lblks, blks = self._make_loop_block_bodies(loop_region)
+        bodies = sorted(lblks+blks, key=lambda b: b.order)
+        lb = CompositBlock(self.scope, head, bodies, [head]+loop_region)
 
-        loop_nest_tree = LoopNestTree()
-        scope.loop_nest_tree = loop_nest_tree
-        loop_nest_tree.add_node(root)
+        self._add_loop_tree_entry(lb, lblks)
 
-        for h1 in self.loop_infos.keys():
-            for h2 in self.loop_infos.keys():
-                if h1 is h2:
-                    continue
-                if h1 in self.loop_infos[h2].bodies:
-                    parent = loop_nest_tree.add_node(h2)
-                    child = loop_nest_tree.add_node(h1)
-                    loop_nest_tree.add_edge(parent, child)
-                    continue
+        return lb
 
-        #loop_nest_tree.dump()
+    def _make_loop_block_bodies(self, blks):
+        sccs = self._extract_sccs(blks)
+        lblks = []
+        for scc in sccs:
+            head = scc.pop()
+            loop_region = scc
 
-    def _eliminate_bodies(self, scope):
-        self._eliminate(scope.blocks[0])
+            # shrink blocks
+            blks = [b for b in blks if b is not head and b not in loop_region]
+            assert blks
 
-    def _eliminate(self, head):
-        children = self.scope.loop_nest_tree.get_children_of(head)
-        if not children:
-            return
-        for c in children:
-            self._eliminate(c)
-            parent_loop_info = self.scope.loop_infos[head]
-            child_loop_info = self.scope.loop_infos[c]
-            for b in child_loop_info.bodies:
-                logger.debug('eliminate ' + b.name + ' FROM ' + head.name)
-                if b in parent_loop_info.bodies:
-                    parent_loop_info.bodies.remove(b)
+            lb = self._make_loop_block(head, loop_region)
+            lblks.append(lb)
 
-    def _process_loop_blocks(self, scope):
-        all_blocks = set(scope.blocks)
-        for loop_head, loop_info in self.loop_infos.items():
-            if loop_head is scope.blocks[0]:
-                continue
-            loop_blocks = set([loop_head])
-            loop_blocks = loop_blocks.union(loop_info.bodies)
-            other_blocks = all_blocks.difference(loop_blocks)
-            defs, uses = self._get_loop_dependency(scope.usedef, loop_head, loop_blocks, other_blocks)
-            loop_info.defs = defs
-            loop_info.uses = uses
+            # re-connect
+            for p in lb.preds:
+                p.replace_succ(lb.head, lb)
+            for s in lb.succs:
+                s.replace_pred([lb.head] + lb.bodies, lb)
 
-        #merge child defs & uses
-        for loop_head, loop_info in self.loop_infos.items():
-            if loop_head is scope.blocks[0]:
-                continue
-            children = scope.loop_nest_tree.get_children_of(loop_head)
-            if children:
-                for c in children:
-                    child_loop_info = scope.loop_infos[c]
-                    assert child_loop_info
-                    loop_info.defs = loop_info.defs.union(child_loop_info.defs)
-                    loop_info.uses = loop_info.uses.union(child_loop_info.uses)
+        return lblks, blks
 
-                    
+    def _extract_sccs(self, ordered_blks):
+        sccs = []
+        for scc in self._find_scc(ordered_blks[:]):
+            if len(scc) > 1:
+                # we have to keep the depth-first-search order
+                blks = [b for b in ordered_blks if b in scc]
+                sccs.append(blks)
+        return sccs
 
-    def _get_loop_dependency(self, usedef, loop_head, loop_blocks, other_blocks):
-        defs = set()
-        uses = set()
-        for lb in loop_blocks:
-            logger.log(0, 'loop block of ' + loop_head.name + ' is ' + lb.name)
-            inner_def_syms = usedef.get_def_syms_by_blk(lb)
-            for sym in inner_def_syms:
-                useblks = usedef.get_use_blks_by_sym(sym)
-                #Is this symbol used in the out of the loop?
-                if other_blocks.intersection(useblks):
-                    defs.add(sym)
+    # 'scc' is 'strongly connected components'
+    def _find_scc(self, blks):
+        sccs = []
+        visited = []
+        while blks:
+            blk = blks[-1]
+            scc = []
+            self._process_back_walk(blk, blks, visited, scc)
+            sccs.append(scc)
+        return sccs
 
-            inner_use_syms = usedef.get_use_syms_by_blk(lb)
-            for sym in inner_use_syms:
+    def _process_walk(self, blk, blks, visited):
+        visited.append(blk)
+        if blk.succs:
+            for succ in blk.succs:
+                if succ not in visited:
+                    self._process_walk(succ, blks, visited)
+        blks.append(blk)
+
+    def _process_back_walk(self, blk, blks, visited, scc):
+        scc.append(blk)
+        visited.append(blk)
+        blks.remove(blk)
+        for pred in blk.preds:
+            if pred not in visited and pred in blks:
+                self._process_back_walk(pred, blks, visited, scc)
+
+    def _add_loop_tree_entry(self, parent, children):
+        self.scope.loop_nest_tree.add_node(parent)
+        for child in children:
+            self.scope.loop_nest_tree.add_edge(parent, child)
+
+# hierarchize
+class LoopDependencyDetector:
+    def processs(self, scope):
+        all_blks = set()
+        scope.root_block.collect_basic_blocks(all_blks)
+        for lb in scope.loop_nest_tree.traverse():
+            if lb is scope.loop_nest_tree.root:
+                break
+            outer_region = all_blks.difference(set(lb.region))
+            inner_region = set(lb.region).difference(set([lb.head])).difference(set(lb.bodies))
+            od, ou, id, iu = self._get_loop_block_dependency(scope.usedef, lb, outer_region, inner_region)
+            lb.outer_defs = od
+            lb.outer_uses = ou
+            lb.inner_defs = id
+            lb.inner_uses = iu
+
+    def _get_loop_block_dependency(self, usedef, lb, outer_region, inner_region):
+        outer_defs = set()
+        outer_uses = set()
+        inner_defs = set()
+        inner_uses = set()
+        blocks = [lb.head] + lb.bodies
+        for blk in blocks:
+            usesyms = usedef.get_use_syms_by_blk(blk)
+            for sym in usesyms:
                 defblks = usedef.get_def_blks_by_sym(sym)
-                #Is this symbol defined in the out of the loop?
-                if other_blocks.intersection(defblks):
-                    uses.add(sym)
+                # Is this symbol used in the out of the loop?
+                intersect = outer_region.intersection(defblks)
+                if intersect:
+                    outer_defs.add(sym)
+                intersect = inner_region.intersection(defblks)
+                if intersect:
+                    inner_defs.add(sym)
 
-        for lb in other_blocks:
-            logger.log(0, 'none loop block of ' + loop_head.name + ' is ' + lb.name)
+            defsyms = usedef.get_def_syms_by_blk(blk)
+            for sym in defsyms:
+                useblks = usedef.get_use_blks_by_sym(sym)
+                # Is this symbol used in the out of the loop?
+                intersect = outer_region.intersection(useblks)
+                if intersect:
+                    outer_uses.add(sym)
+                intersect = inner_region.intersection(useblks)
+                if intersect:
+                    inner_uses.add(sym)
 
-        logger.debug('loop dependency ' + loop_head.name)
-        logger.debug('defs')
-        logger.debug(', '.join([str(d) for d in defs]))
-        logger.debug('uses')
-        logger.debug(', '.join([str(u) for u in uses]))
-        return (defs, uses)
+        return (outer_defs, outer_uses, inner_defs, inner_uses)
+
+class LoopBlockDestructor:
+    def __init__(self):
+        pass
+
+    def process(self, scope):
+        for lb in scope.loop_nest_tree.traverse():
+            if lb is scope.loop_nest_tree.root:
+                break
+            lb.preds
+            # re-connect
+            for p in lb.preds:
+                p.replace_succ(lb, lb.head)
+            for s in lb.succs:
+                for body in [lb.head]+lb.bodies:
+                    if s in body.succs:
+                        s.replace_pred(lb, body)
+                        break
+        scope.loop_nest_tree = None
+        Block.set_order(scope.root_block, 0)
 
 
 class SimpleLoopUnroll:
@@ -205,9 +241,8 @@ class SimpleLoopUnroll:
 
     def process(self, scope):
         self.scope = scope
-        self.loop_infos = scope.loop_infos
 
-        root = scope.blocks[0]
+        root = scope.root_block
         # reset ssa form
         for var in scope.usedef.get_all_vars():
             if var.sym.ancestor:
@@ -215,70 +250,54 @@ class SimpleLoopUnroll:
         udd = UseDefDetector()
         udd.process(scope)
 
-        for head, loop_info in self.loop_infos.items():
-            if head is root:
-                continue
-            blocks = [head]
-            blocks.extend(sorted(loop_info.bodies, key=lambda b:b.order))
-            inductions, (loop_init, loop_limit, loop_step) = self._find_induction_and_loop_range(blocks)
-            logger.debug(str(loop_init))
-            logger.debug(str(loop_limit))
-            logger.debug(str(loop_step))
-            assert loop_init.is_a(CONST)
-            assert loop_limit.is_a(CONST)
-            assert loop_step.is_a(CONST)
-            # should success unrolling if loop is exsisting in a testbench
-            if not inductions:
-                return False
+        for c in self.scope.loop_nest_tree.get_children_of(root):
+            self._process(c)
 
-            unroll_blocks = blocks[1:-1]
-            if len(unroll_blocks) > 1:
-                return False
-            unroll_block = unroll_blocks[0]
-            self._unroll(inductions, loop_init.value, loop_limit.value, loop_step.value, unroll_block)
+        Block.set_order(root, 0)
 
-        for head, loop_info in self.loop_infos.items():
-            if head is root:
-                continue
-            cjump = head.stms[-1]
-            assert cjump.is_a(CJUMP)
-            # head jumps to true block always
-            next_block = cjump.true
-            jump = JUMP(next_block)
-            jump.block = head
-            head.stms[-1] = jump
-            head.succs = [next_block]
-            cjump.false.preds.remove(head)
+    def _process(self, blk):
+        assert isinstance(blk, CompositBlock)
+        blocks = blk.collect_basic_head_bodies()
 
-            loop_tails = [p for p in head.preds if p in loop_info.bodies]
-            for tail in loop_tails:
-                head.preds.remove(tail)
-                cjump.false.preds = [tail]
-                tail.succs = [cjump.false]
-                jump = JUMP(cjump.false)
-                jump.block = tail
-                tail.stms = [jump]
-            # grouping
-            head.group = root.group
-            for b in loop_info.bodies:
-                b.group = root.group
+        inductions, (loop_init, loop_limit, loop_step) = self._find_induction_and_loop_range(blocks)
+        logger.debug(str(loop_init))
+        logger.debug(str(loop_limit))
+        logger.debug(str(loop_step))
+        assert loop_init.is_a(CONST)
+        assert loop_limit.is_a(CONST)
+        assert loop_step.is_a(CONST)
+        # should success unrolling if loop is exsisting in a testbench
+        if not inductions:
+            return False
+
+        unroll_blocks = blocks[1:-1]
+        if len(unroll_blocks) > 1:
+            return False
+        unroll_block = unroll_blocks[0]
+        self._unroll(inductions, loop_init.value, loop_limit.value, loop_step.value, unroll_block)
+
+        cjump = blk.head.stms[-1]
+        assert cjump.is_a(CJUMP)
+        # head jumps to true block always
+        next_block = cjump.true
+        jump = JUMP(next_block)
+        jump.block = blk.head
+        blk.head.stms[-1] = jump
+        blk.head.succs = [next_block]
+        if blk.head in cjump.false.preds:
+            cjump.false.preds.remove(blk.head)
+
+        loop_tails = [p for p in blk.head.preds if p in blk.bodies]
+        for tail in loop_tails:
+            blk.head.preds.remove(tail)
+            cjump.false.preds = [tail]
+            tail.succs = [cjump.false]
+            tail.succs_loop = []
+            jump = JUMP(cjump.false)
+            jump.block = tail
+            tail.stms = [jump]
+
         #re-order blocks
-        BlockTracer()._set_order(root, 0)
-
-        # merge loop_info
-        bodies = set()
-        for head, loop_info in self.loop_infos.items():
-            if loop_info.name == 'L0':
-                continue
-            bodies = bodies.union(loop_info.bodies)
-        top_loop_info = self.scope.loop_infos[root]
-        top_loop_info.bodies = bodies.union(top_loop_info.bodies)
-        self.scope.loop_infos.clear()
-        self.scope.loop_infos[top_loop_info.head] = top_loop_info
-        loop_nest_tree = LoopNestTree()
-        self.scope.loop_nest_tree = loop_nest_tree
-        loop_nest_tree.add_node(root)
-
         return True
 
     def _find_induction_and_loop_range(self, blocks):
@@ -366,26 +385,3 @@ class SimpleLoopUnroll:
         block.stms = new_stms
         block.append_stm(JUMP(block.succs[0]))
 
-class LoopAnalyzer:
-    def __init__(self):
-        pass
-
-    def process(self, scope):
-        self.scope = scope
-        self.loop_infos = scope.loop_infos
-
-        for head, loop_info in self.loop_infos.items():
-            if head.name == 'L0':
-                continue
-            blocks = [head]
-            blocks.extend(sorted(loop_info.bodies, key=lambda b:b.order))
-            self._find_induction_variables(blocks)
-
-    def _find_induction_variables(self, blocks):
-        usedef = self.scope.usedef
-        for blk in blocks:
-            for stm in blk.stms:
-                if stm.is_a(MOVE):
-                    assert stm.dst.is_a(TEMP)
-
-            

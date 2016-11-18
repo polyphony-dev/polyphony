@@ -12,8 +12,6 @@ class DFGOptimizer:
         return
 
         for n in dfg.nodes:
-            if not n.is_stm():
-                continue
             if not n.tag.is_a(MOVE):
                 continue
             if not n.tag.src.is_a(TEMP):

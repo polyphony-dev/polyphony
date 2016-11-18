@@ -119,8 +119,11 @@ class UseDefTable:
     def get_use_vars_by_blk(self, blk):
         return self._blk_uses_var[blk]
 
-    def get_all_syms(self):
+    def get_all_def_syms(self):
         return self._sym_defs_stm.keys()
+
+    def get_all_use_syms(self):
+        return self._sym_uses_stm.keys()
 
     def get_all_vars(self):
         vs = list(self._var_defs_stm.keys())
@@ -190,7 +193,7 @@ class UseDefDetector(IRVisitor):
     def visit_SYSCALL(self, ir):
         self._visit_args(ir)
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         self._visit_args(ir)
 
     def visit_CONST(self, ir):
@@ -216,6 +219,12 @@ class UseDefDetector(IRVisitor):
             self.table.add_var_def(ir, self.current_stm)
 
     def visit_ATTR(self, ir):
+        if ir.ctx & Ctx.LOAD:
+            self.table._sym_uses_stm[ir.attr].add(self.current_stm)
+            self.table._sym_uses_blk[ir.attr].add(self.current_stm.block)
+        if ir.ctx & Ctx.STORE:
+            self.table._sym_defs_stm[ir.attr].add(self.current_stm)
+            self.table._sym_defs_blk[ir.attr].add(self.current_stm.block)
         self.visit(ir.exp)
 
     def visit_EXPR(self, ir):
@@ -223,22 +232,13 @@ class UseDefDetector(IRVisitor):
 
     def visit_CJUMP(self, ir):
         self.visit(ir.exp)
-        if ir.uses:
-            for use in ir.uses:
-                self.visit(use)
 
     def visit_MCJUMP(self, ir):
         for cond in ir.conds:
             self.visit(cond)
-        if ir.uses:
-            for use in ir.uses:
-                self.visit(use)
 
     def visit_JUMP(self, ir):
-        if ir.uses:
-            for use in ir.uses:
-                self.visit(use)
-        #pass
+        pass
 
     def visit_RET(self, ir):
         self.visit(ir.exp)

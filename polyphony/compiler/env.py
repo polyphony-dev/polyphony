@@ -10,17 +10,19 @@ class Env:
     def __init__(self):
         self.call_graph = None
         self.scopes = {}
-        self.dev_debug_mode = False
+        self.dev_debug_mode = True
         self.hdl_debug_mode = False
         self.compile_phase = 0
         self.logfiles = {}
         self.using_libs = set()
         self.memref_graph = None
+        self.ctor_name = '__init__'
+        self.self_name = 'self'
 
     def append_scope(self, scope):
         self.scopes[scope.name] = scope
         if self.dev_debug_mode:
-            logfile = logging.FileHandler('debug_log.' + scope.name.replace('@',''), 'w')
+            logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@',''), 'w')
             self.logfiles[scope] = logfile
 
     def remove_scope(self, scope):

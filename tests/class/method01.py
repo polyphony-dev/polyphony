@@ -1,24 +1,20 @@
 from polyphony import testbench
 
 class C:
-    def __init__(self, x, y):
+    def __init__(self, x):
         self.x = x
-        self.y = y
 
     def get_x(self):
         return self.x
 
-    def get_y(self):
-        return self.y
-
-def method01(x, y):
-    c = C(x, y)
-    return c.get_x() + c.get_y()
+def method01(x):
+    c = C(x)
+    return c.get_x() + c.get_x()
 
 @testbench
 def test():
-    assert 3 == method01(1, 2)
-    assert 5 == method01(2, 3)
-    assert 7 == method01(3, 4)
+    assert 2 == method01(1)
+    assert 4 == method01(2)
+    assert 6 == method01(3)
 
 test()

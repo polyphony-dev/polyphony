@@ -22,7 +22,7 @@ class PHICondResolver:
 
     def _collect_phi(self):
         self.phis = []
-        for b in self.scope.blocks:
+        for b in self.scope.traverse_blocks():
             for stm in b.stms:
                 if stm.is_a(PHI):
                     #if stm.var.sym.is_memory():

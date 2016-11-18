@@ -14,7 +14,7 @@ import pdb
 class MemoryRenamer:
     def _collect_def_mem_stm(self, scope):
         stms = []
-        for block in scope.blocks:
+        for block in scope.traverse_blocks():
             for stm in block.stms:
                 if stm.is_a(MOVE):
                     if stm.src.is_a(ARRAY):
@@ -24,10 +24,10 @@ class MemoryRenamer:
         return stms
 
     def _get_phis(self, block):
-        return filter(lambda stm: stm.is_a(PHI), block.stms)
+        return filter(lambda stm: stm.is_a(PHI) and Type.is_list(stm.var.sym.typ), block.stms)
 
     def _cleanup_phi(self):
-        for block in self.scope.blocks:
+        for block in self.scope.traverse_blocks():
             remove_phis = []
             for phi in self._get_phis(block):
                 remove_args = []
@@ -190,23 +190,23 @@ class RomDetector:
         for node in mrg.collect_top_module_nodes():
             node.set_writable()
         worklist = deque()
-        for root in mrg.collect_roots():
-            if root.is_writable():
-                root.propagate_succs(lambda n: n.set_writable())
+        for source in mrg.collect_sources():
+            if source.is_writable():
+                source.propagate_succs(lambda n: n.set_writable())
             else:
-                worklist.append(root)
+                worklist.append(source)
 
         checked = set()
         while worklist:
             node = worklist.popleft()
             if node not in checked and node.is_writable():
                 checked.add(node)
-                roots = set([root for root in mrg.collect_node_roots(node)])
-                unchecked_roots = roots.difference(checked)
-                for r in unchecked_roots:
-                    r.propagate_succs(lambda n: n.set_writable() or checked.add(n))
+                sources = set([source for source in node.sources()])
+                unchecked_sources = sources.difference(checked)
+                for s in unchecked_sources:
+                    s.propagate_succs(lambda n: n.set_writable() or checked.add(n))
             else:
-                unchecked_succs = set(node.succs).difference(checked)
+                unchecked_succs = set(node.succ_ref_nodes()).difference(checked)
                 worklist.extend(unchecked_succs)
 
 
