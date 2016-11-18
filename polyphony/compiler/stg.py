@@ -6,7 +6,7 @@ from .ir import *
 from .symbol import function_name
 from .ahdl import *
 from .latency import get_latency
-from .common import INT_WIDTH
+from .common import INT_WIDTH, error_info
 from .type import Type
 from .symbol import Symbol
 from .env import env
@@ -546,6 +546,12 @@ class AHDLTranslator:
             return AHDL_STORE(memvar, exp, offset)
 
     def visit_ARRAY(self, ir, node):
+        # array expansion
+        if not ir.repeat.is_a(CONST):
+            print(error_info(ir.lineno))
+            raise RuntimeError('multiplier for the list must be a constant')
+        ir.items = [item.clone() for item in ir.items * ir.repeat.value]
+
         assert isinstance(node.tag, MOVE)
         ahdl_memvar = self.visit(node.tag.dst, node)
         memnode = ahdl_memvar.memnode

@@ -39,18 +39,22 @@ class QuadrupleMaker(IRTransformer):
         assert ir.right.is_a([TEMP, ATTR, CONST, UNOP, MREF])
 
         if ir.left.is_a(ARRAY):
-            if ir.right.is_a(CONST) and ir.op == 'Mult':
-                #array times n
+            if ir.op == 'Mult':
                 array = ir.left
-                time = ir.right.value
-                if not array.items:
-                    raise RuntimeError('unsupported expression')
-                else:
-                    array.items = [item.clone() for item in array.items * time]
+                array.repeat = ir.right
                 return array
+            #if ir.right.is_a(CONST) and ir.op == 'Mult':
+            ##    #array times n
+             #   array = ir.left
+             #   time = ir.right.value
+            #    if not array.items:
+            #        raise RuntimeError('unsupported expression')
+            #    else:
+            #        array.items = [item.clone() for item in array.items * time]
+            #    return array
             else:
                 print(error_info(ir.lineno))
-                raise RuntimeError('multiplier for the list must be a constant')
+                raise RuntimeError('unsupported expression')
 
         if suppress:
             return ir

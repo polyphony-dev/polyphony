@@ -3,6 +3,7 @@ import sys
 import os
 import traceback
 import logging
+import profile
 from subprocess import call, check_call, check_output
 
 ROOT_DIR = './'
@@ -56,4 +57,5 @@ if __name__ == '__main__':
     if env.dev_debug_mode:
         logging.basicConfig(**logging_setting)
     if len(sys.argv) > 1:
+        #profile.run("exec_test(sys.argv[1])")
         exec_test(sys.argv[1])

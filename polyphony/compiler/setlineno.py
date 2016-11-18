@@ -60,6 +60,7 @@ class LineNumberSetter(IRVisitor):
 
     def visit_ARRAY(self, ir):
         ir.lineno = self.current_stm.lineno
+        self.visit(ir.repeat)
         for item in ir.items:
             self.visit(item)
 

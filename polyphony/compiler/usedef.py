@@ -209,6 +209,7 @@ class UseDefDetector(IRVisitor):
         self.visit(ir.exp)
 
     def visit_ARRAY(self, ir):
+        self.visit(ir.repeat)
         for item in ir.items:
             self.visit(item)
 

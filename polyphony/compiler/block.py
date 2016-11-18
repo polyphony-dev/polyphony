@@ -78,6 +78,10 @@ class Block:
         stm.block = self
         self.stms.append(stm)
 
+    def insert_stm(self, idx, stm):
+        stm.block = self
+        self.stms.insert(idx, stm)
+
     def replace_stm(self, old_stm, new_stm):
         replace_item(self.stms, old_stm, new_stm)
         new_stm.block = self

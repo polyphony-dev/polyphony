@@ -48,7 +48,7 @@ class Graph:
         return [n for n in self.nodes if not self.succs(n)]
 
     # bfs(breadth-first-search)
-    def bfs_orderd_nodes(self):
+    def bfs_ordered_nodes(self):
         def set_order(n, order):
             if order > order_map[n]:
                 order_map[n] = order

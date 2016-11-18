@@ -32,6 +32,7 @@
     <Compile Include="polyphony\compiler\ahdl_usedef.py" />
     <Compile Include="polyphony\compiler\block.py" />
     <Compile Include="polyphony\compiler\builtin.py" />
+    <Compile Include="polyphony\compiler\callgraph.py" />
     <Compile Include="polyphony\compiler\common.py" />
     <Compile Include="polyphony\compiler\constantfolding.py" />
     <Compile Include="polyphony\compiler\copyopt.py">

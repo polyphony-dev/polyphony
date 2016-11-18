@@ -184,13 +184,10 @@ class ContextModifier(IRVisitor):
 
 class RomDetector:
     def _propagate_writable_flag(self):
-        mrg = env.memref_graph
-        assert mrg
-
-        for node in mrg.collect_top_module_nodes():
+        for node in self.mrg.collect_top_module_nodes():
             node.set_writable()
         worklist = deque()
-        for source in mrg.collect_sources():
+        for source in self.mrg.collect_sources():
             if source.is_writable():
                 source.propagate_succs(lambda n: n.set_writable())
             else:
@@ -209,8 +206,13 @@ class RomDetector:
                 unchecked_succs = set(node.succ_ref_nodes()).difference(checked)
                 worklist.extend(unchecked_succs)
 
+    def _propagate_info(self):
+        for source in self.mrg.collect_sources():
+            source.propagate_succs(lambda n: n.update())
 
     def process_all(self):
+        self.mrg = env.memref_graph
+        self._propagate_info()
         self._propagate_writable_flag()
 
         scopes = Scope.get_scopes(bottom_up=False)

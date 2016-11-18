@@ -144,6 +144,7 @@ class ConstantOptBase(IRVisitor):
         return ir
 
     def visit_ARRAY(self, ir):
+        ir.repeat = self.visit(ir.repeat)
         ir.items = [self.visit(item) for item in ir.items]
         return ir
 
@@ -196,7 +197,7 @@ class ConstantOpt(ConstantOptBase):
             if stm.is_a(PHI) and len(stm.args)==1:
                 arg, blk = stm.args[0]
                 mv = MOVE(stm.var, arg)
-                blk.append_stm(mv)
+                blk.insert_stm(-1, mv)
                 worklist.append(mv)
                 dead_stms.append(stm)
                 if stm in worklist:

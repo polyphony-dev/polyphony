@@ -254,7 +254,6 @@ class MemRefNode(RefNode, MemTrait):
     def set_initstm(self, initstm):
         assert initstm
         assert initstm.is_a(MOVE) and initstm.src.is_a(ARRAY)
-        self.length = len(initstm.src.items)
         self.initstm = initstm
 
     def is_source(self):
@@ -289,6 +288,10 @@ class MemRefNode(RefNode, MemTrait):
             return []
 
     def update(self):
+        if self.initstm:
+            assert self.initstm.is_a(MOVE) and self.initstm.src.is_a(ARRAY)
+            self.length = self.initstm.src.getlen()
+
         if self.length == -1:
             #assert self.preds
             if self.preds:
@@ -475,7 +478,6 @@ class MemRefGraph:
     def verify_nodes(self):
         for node in self.nodes.values():
             assert node.scopes
-            assert node.length != -1
 
     def is_path_exist(self, frm, to):
         for succ in frm.succs:

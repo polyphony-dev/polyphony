@@ -1,4 +1,4 @@
-﻿import os, sys, traceback, profile
+﻿import os, sys
 from optparse import OptionParser
 from .driver import Driver
 from .env import env
@@ -388,17 +388,3 @@ def main():
         logging.basicConfig(level=logging.INFO)
     compile_main(src_file, options.output_name, options.output_dir)
 
-if __name__ == '__main__':
-    if env.dev_debug_mode:
-        logging.basicConfig(**logging_setting)
-        if not os.path.exists('.tmp'):
-            os.mkdir('.tmp')
-    try:
-        #profile.run("main()")
-        main()
-    except Exception as e:
-        if env.dev_debug_mode or isinstance(e, AssertionError):
-            traceback.print_exc()
-            logger.exception(e)
-        sys.exit(e)
-    

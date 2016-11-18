@@ -235,14 +235,18 @@ class ARRAY(IRExp):
         super().__init__()
         self.items = items
         self.sym = None
+        self.repeat = CONST(1)
 
     def __str__(self):
-        s = "(ARRAY "
+        s = "(ARRAY ["
         if len(self.items) > 8:
             s += ', '.join(map(str, self.items[:10]))
             s += '...'
         else:
             s += ', '.join(map(str, self.items))
+        s += ']'
+        if not (self.repeat.is_a(CONST) and self.repeat.value == 1):
+            s += ' * ' + str(self.repeat)
         s += ")"
         return s
 
@@ -251,6 +255,12 @@ class ARRAY(IRExp):
         for item in self.items:
             kids += item.kids()
         return kids
+
+    def getlen(self):
+        if self.repeat.is_a(CONST):
+            return len(self.items) * self.repeat.value
+        else:
+            return -1
 
 class TEMP(IRExp):
     def __init__(self, sym, ctx):

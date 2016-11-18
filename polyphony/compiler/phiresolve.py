@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict
-from .ir import Ctx, RELOP, CONST, TEMP, CJUMP, MOVE, PHI
+from .ir import *
 from .symbol import Symbol
 from .dominator import DominatorTreeBuilder
 from .varreplacer import VarReplacer
@@ -36,10 +36,8 @@ class PHICondResolver:
         for i, (arg, blk) in enumerate(phi.args):
             pred = blk
             mv = MOVE(TEMP(phi.var.sym, Ctx.STORE), arg)
-            #TODO: track the lineno
-            mv.lineno = 1
-            pred.stms.insert(-1, mv)
-            mv.block = pred
+            mv.lineno = arg.lineno
+            pred.insert_stm(-1, mv)
             logger.debug('PHI divide into ' + str(mv))
             #update usedef table
             if arg.is_a(TEMP):

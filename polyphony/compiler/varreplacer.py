@@ -62,6 +62,7 @@ class VarReplacer:
         return ir
 
     def visit_ARRAY(self, ir):
+        ir.repeat = self.visit(ir.repeat)
         items = []
         for item in ir.items:
             items.append(self.visit(item))
