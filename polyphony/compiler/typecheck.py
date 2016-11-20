@@ -224,11 +224,7 @@ class TypeChecker(IRVisitor):
         return Type.bool_t
 
     def visit_CALL(self, ir):
-        if ir.func.is_a(TEMP):
-            func_sym = ir.func.sym
-        elif ir.func.is_a(ATTR):
-            func_sym = ir.func.attr
-
+        func_sym = ir.func.symbol()
         arg_len = len(ir.args)
         if not ir.func_scope:
             type_error(ir, '{} is not callable'.format(ir.func.sym.name))

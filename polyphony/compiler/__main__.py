@@ -188,9 +188,11 @@ def genhdl(driver, scope):
         return
     preprocessor = HDLGenPreprocessor()
     if scope.is_class():
-        if not scope.children:
-            return
-        scope.module_info = preprocessor.process_class(scope)
+        # workaround for inline version
+        return
+        #if not scope.children:
+        #    return
+        #scope.module_info = preprocessor.process_class(scope)
     else:
         scope.module_info = preprocessor.process_func(scope)
 

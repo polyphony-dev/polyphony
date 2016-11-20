@@ -269,11 +269,7 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
-
-        if ir.mem.is_a(TEMP):
-            memnode = Type.extra(ir.mem.sym.typ)
-        elif ir.mem.is_a(ATTR):
-            memnode = Type.extra(ir.mem.attr.typ)
+        memnode = Type.extra(ir.mem.symbol().typ)
 
         if ir.offset.is_a(CONST) and not memnode.is_writable():
             source = memnode.single_source()
@@ -395,7 +391,7 @@ class GlobalConstantOpt(ConstantOptBase):
                 return array.items[ir.offset.value]
             else:
                 print(error_info(ir.lineno))
-                raise RuntimeError('{} must be a sequence object'.format(ir.mem.sym.name))
+                raise RuntimeError('{} must be a sequence object'.format(ir.mem.symbol()))
         return ir
 
     def visit_TEMP(self, ir):

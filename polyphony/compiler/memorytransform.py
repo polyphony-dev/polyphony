@@ -57,10 +57,7 @@ class MemoryRenamer:
             assert mv.src.is_a(ARRAY) \
                 or (mv.src.is_a(TEMP) and mv.src.sym.is_param())
 
-            if mv.dst.is_a(TEMP):
-                memsym = mv.dst.sym
-            elif mv.dst.is_a(ATTR):
-                memsym = mv.dst.attr
+            memsym = mv.dst.symbol()
             memsrcs.append(memsym)
             uses = usedef.get_use_stms_by_sym(memsym)
             worklist.extend(list(uses))

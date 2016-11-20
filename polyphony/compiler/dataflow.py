@@ -462,10 +462,7 @@ class DFGBuilder:
             if node.tag.is_a(MOVE):
                 mv = node.tag
                 if mv.src.is_a([MREF, MSTORE]):
-                    if mv.src.mem.is_a(TEMP):
-                        mem_group = mv.src.mem.sym.name
-                    elif mv.src.mem.is_a(ATTR):
-                        mem_group = mv.src.mem.attr.name
+                    mem_group = mv.src.mem.symbol().name
                     node_groups[mem_group].append(node)
                 elif mv.src.is_a(CALL):
                     for arg in mv.src.args:

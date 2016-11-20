@@ -95,16 +95,21 @@ class HDLGenPreprocessor:
                 self.module_info.add_sub_module(inst_name, info, accessors)
     def _add_roms(self, scope):
         roms = deque()
+
         roms.extend(self.mrg.collect_readonly_sink(scope))
         while roms:
             memnode = roms.pop()
             hdl_name = memnode.sym.hdl_name()
+            source = memnode.single_source()
+            if source:
+                source_scope = list(source.scopes)[0]
+                if source_scope.is_class(): # class field rom
+                    hdl_name = source_scope.orig_name + '_field_' + hdl_name
             output_sig = scope.gen_sig(hdl_name, INT_WIDTH) #TODO
             fname = AHDL_VAR(output_sig, Ctx.STORE)
             input_sig = scope.gen_sig(hdl_name+'_in', INT_WIDTH) #TODO
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
-            source = memnode.single_source()
             if source:
                 array = source.initstm.src
                 array_bits = len(array.items).bit_length()

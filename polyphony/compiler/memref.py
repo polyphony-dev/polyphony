@@ -512,9 +512,7 @@ class MemRefGraphBuilder(IRVisitor):
             for stm in block.stms:
                 # phi is always
                 if stm.is_a(MOVE):
-                    if stm.dst.is_a(TEMP) and Type.is_list(stm.dst.sym.typ) and stm not in stms:
-                        stms.append(stm)
-                    elif stm.dst.is_a(ATTR) and Type.is_list(stm.dst.attr.typ) and stm not in stms:
+                    if stm.dst.is_a([TEMP, ATTR]) and Type.is_list(stm.dst.symbol().typ) and stm not in stms:
                         stms.append(stm)
                 elif stm.is_a(PHI):
                     if stm.var.is_a(TEMP) and Type.is_list(stm.var.sym.typ):
@@ -538,10 +536,7 @@ class MemRefGraphBuilder(IRVisitor):
             for stm in stms:
                 logger.debug('!!! mem def stm ' + str(stm))
                 if stm.is_a(MOVE):
-                    if stm.dst.is_a(TEMP):
-                        memsym = stm.dst.sym
-                    elif stm.dst.is_a(ATTR):
-                        memsym = stm.dst.attr
+                    memsym = stm.dst.symbol()
                 elif stm.is_a(PHI):
                     memsym = stm.var.sym
                 
@@ -550,7 +545,7 @@ class MemRefGraphBuilder(IRVisitor):
                 worklist.extend(list(uses))
             # collect the access to a global list variable
             for sym in usedef.get_all_use_syms():
-                if sym.scope.is_global() and Type.is_list(sym.typ):
+                if (sym.scope.is_global() or sym.scope.is_class()) and Type.is_list(sym.typ):
                     uses = usedef.get_use_stms_by_sym(sym)
                     worklist.extend(list(uses))
 
@@ -660,7 +655,7 @@ class MemRefGraphBuilder(IRVisitor):
             self.mrg.add_node(MemParamNode(memsym, self.scope))
             memnode = self.mrg.node(memsym)
             memsym.set_type(Type.list(Type.int_t, memnode))
-        
+       
     def visit_ARRAY(self, ir):
         ir.sym = self.scope.add_temp('array')
         self.mrg.add_node(MemRefNode(ir.sym, self.scope))
@@ -671,13 +666,9 @@ class MemRefGraphBuilder(IRVisitor):
         ir.sym.set_type(Type.list(Type.int_t, memnode))
 
     def visit_MREF(self, ir):
-        if ir.mem.is_a(TEMP):
-            memsym = ir.mem.sym
-        elif ir.mem.is_a(ATTR):
-            memsym = ir.mem.attr
-
+        memsym = ir.mem.symbol()
         if Type.is_list(memsym.typ):
-            if memsym.scope.is_global():# or memsym.scope.is_class():
+            if memsym.scope.is_global() or memsym.scope.is_class():
                 # we have to create a new list symbol for adding the memnode
                 # because the list symbol in the global or a class (memsym) is
                 # used for the source memnode
@@ -685,12 +676,7 @@ class MemRefGraphBuilder(IRVisitor):
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
                 memsym.typ = Type.list(Type.int_t, self.mrg.node(memsym))
-        
-                if ir.mem.is_a(TEMP):
-                    ir.mem.sym = memsym
-                elif ir.mem.is_a(ATTR):
-                    ir.mem.attr = memsym
-                    memnode.object_sym = ir.mem.tail()
+                ir.mem.set_symbol(memsym)
         
         memnode = self.mrg.node(memsym)
         if not memnode and memsym.is_ref():
@@ -699,11 +685,7 @@ class MemRefGraphBuilder(IRVisitor):
             memsym.typ = Type.list(Type.int_t, self.mrg.node(memsym))
 
     def visit_MSTORE(self, ir):
-        if ir.mem.is_a(TEMP):
-            memsym = ir.mem.sym
-        elif ir.mem.is_a(ATTR):
-            memsym = ir.mem.attr
-
+        memsym = ir.mem.symbol()
         memnode = self.mrg.node(memsym)
         if memnode:
             memnode.set_writable()
@@ -724,11 +706,7 @@ class MemRefGraphBuilder(IRVisitor):
         self.visit(ir.src)
         self.visit(ir.dst)
 
-        if ir.dst.is_a(TEMP):
-            memsym = ir.dst.sym
-        elif ir.dst.is_a(ATTR):
-            memsym = ir.dst.attr
-
+        memsym = ir.dst.symbol()
         if ir.src.is_a(ARRAY):
             self.mrg.add_node(MemRefNode(memsym, self.scope))
             memnode = self.mrg.node(memsym)
@@ -828,10 +806,7 @@ class NodeEliminator(IRVisitor):
                 self.used_memnodes.add(memnode)
 
     def visit_MREF(self, ir):
-        if ir.mem.is_a(TEMP):
-            memnode = Type.extra(ir.mem.sym.typ)
-        elif ir.mem.is_a(ATTR):
-            memnode = Type.extra(ir.mem.attr.typ)
+        memnode = Type.extra(ir.mem.symbol().typ)
         self.used_memnodes.add(memnode)
 
     def visit_MSTORE(self, ir):

@@ -278,6 +278,9 @@ class TEMP(IRExp):
     def symbol(self):
         return self.sym
 
+    def set_symbol(self, sym):
+        self.sym = sym
+
 class ATTR(IRExp):
     def __init__(self, exp, attr, ctx):
         super().__init__()
@@ -310,6 +313,9 @@ class ATTR(IRExp):
 
     def symbol(self):
         return self.attr
+
+    def set_symbol(self, sym):
+        self.attr = sym
 
 class IRStm(IR):
     def __init__(self):

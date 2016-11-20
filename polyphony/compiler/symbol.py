@@ -62,7 +62,10 @@ class Symbol:
   
     def hdl_name(self):
         if self.name[0] == '@' or self.name[0] == '!':
-            name = self.name[1:]
+            if self.name.startswith(Symbol.param_prefix):
+                name = self.name[4:] # trim '@in_'
+            else:
+                name = self.name[1:]
         else:
             name = self.name[:]
         name = name.replace('#', '')

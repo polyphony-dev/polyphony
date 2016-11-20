@@ -407,7 +407,7 @@ class STGBuilder:
                     else:
                         return self.scope.orig_name
                 else:
-                    return ir.exp.sym.name
+                    return ir.exp.sym.hdl_name()
             else:
                 instance_name = '{}_{}'.format(make_instance_name_rec(ir.exp), ir.exp.attr.name)
             return instance_name

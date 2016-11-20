@@ -29,7 +29,7 @@ class InlineOpt:
         using_scopes = set()
         scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
         for s in scopes:
-            if s.is_testbench():
+            if s.is_testbench() or s.is_global() or s.is_class():
                 using_scopes.add(s)
             collector.process(s)
 

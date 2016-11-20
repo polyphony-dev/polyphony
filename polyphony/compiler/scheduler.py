@@ -156,11 +156,7 @@ class ResourceExtractor(IRVisitor):
         self.results.append(ir.op)
 
     def visit_CALL(self, ir):
-        if ir.func.is_a(TEMP):
-            func_sym = ir.func.sym
-        elif ir.func.is_a(ATTR):
-            func_sym = ir.func.attr
-
+        func_sym = ir.func.symbol()
         self.results.append(func_sym.name)
         for arg in ir.args:
             self.visit(arg)
