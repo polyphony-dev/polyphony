@@ -32,7 +32,7 @@ module BidirectionalSinglePortRam #
   parameter DATA_WIDTH = 8,
   parameter ADDR_WIDTH = 4,
   parameter RAM_LENGTH = 16,
-  parameter RAM_DEPTH = 1 << ADDR_WIDTH
+  parameter RAM_DEPTH = 1 << (ADDR_WIDTH-1)
 )
 (
   input clk,

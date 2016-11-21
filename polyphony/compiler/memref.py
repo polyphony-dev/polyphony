@@ -236,7 +236,7 @@ class MemTrait:
         return self.flags & MemTrait.WR
 
     def addr_width(self):
-        return self.length.bit_length()+1
+        return (self.length-1).bit_length()+1 # +1 means sign bit
 
 class MemRefNode(RefNode, MemTrait):
     def __init__(self, sym, scope):
