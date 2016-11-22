@@ -46,12 +46,11 @@ def preprocess_global(driver):
     scopes = Scope.get_scopes(contain_global=True, contain_class=True)
     lineno = LineNumberSetter()
     src_dump = SourceDump()
-    callgraph_builder = CallGraphBuilder()
+    
 
     for s in scopes:
         lineno.process(s)
         src_dump.process(s)
-        #callgraph_builder.process(s)
 
     for s in (s for s in scopes if s.is_global() or s.is_class()):
         constopt = GlobalConstantOpt()
@@ -59,6 +58,10 @@ def preprocess_global(driver):
 
     typepropagation = TypePropagation()
     typepropagation.propagate_global_function_type()
+
+def callgraph(driver, scope):
+    callgraph_builder = CallGraphBuilder()
+    callgraph_builder.process(scope)
 
 def iftrans(driver, scope):
     if_transformer = IfTransformer()
@@ -237,6 +240,7 @@ def dumphdl(driver, scope):
 def compile_plan():
     plan = [
         preprocess_global,
+        callgraph,
         dumpscope,
         phase(env.PHASE_1),
         iftrans,
@@ -244,21 +248,23 @@ def compile_plan():
         dumpscope,
         earlyconstopt_nonssa,
         quadruple,
+        typeprop,
+        dumpscope,
         inlineopt,
         dumpscope,
         traceblk,
-        dumpscope,
-        usedef,
         dumpscope,
         phase(env.PHASE_2),
         usedef,
         ssa,
         dumpscope,
         usedef,
+        typeprop,
+        dumpscope,
+        usedef,
         copyopt,
         dumpscope,
         usedef,
-        typeprop,
         memrename,
         dumpscope,
         #classcheck,
@@ -353,7 +359,9 @@ def output_individual(driver, output_name, output_dir):
     d = output_dir if output_dir else './'
     if d[-1] != '/': d += '/'
 
-    scopes = Scope.get_scopes(contain_class=True)
+    # workaround for inline version
+    scopes = Scope.get_scopes(contain_class=False)
+    #scopes = Scope.get_scopes(contain_class=True)
     with open(d + output_name + '.v', 'w') as f:
         for scope in scopes:
             file_name = '{}_{}.v'.format(output_name, scope.orig_name)

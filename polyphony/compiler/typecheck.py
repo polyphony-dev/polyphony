@@ -21,17 +21,20 @@ class TypePropagation(IRVisitor):
 
     def propagate_global_function_type(self):
         self.check_error = False
-        scopes = Scope.get_scopes(contain_global=True, contain_class=True)
+        scopes = Scope.get_scopes(bottom_up=True, contain_global=True, contain_class=True)
         for s in scopes:
             if s.is_class():
                 s.return_type = Type.object(None, s)
             else:
                 s.return_type = Type.none_t
-        for s in scopes:
-            self.process(s)
-        #process all again for CALL.func.sym.type stabilizationi
-        for s in scopes:
-            self.process(s)
+
+        while True:
+            for s in scopes:
+                self.process(s)
+            untyped = [s for s in scopes if s.is_returnable() and s.return_type is Type.none_t]
+            if untyped:
+                continue
+            break
 
     def visit_UNOP(self, ir):
         return self.visit(ir.exp)
@@ -54,22 +57,28 @@ class TypePropagation(IRVisitor):
             func_name = function_name(func_sym)
             ir.func_scope = self.scope.find_scope(func_name)
         elif ir.func.is_a(ATTR):
+            if not ir.func.class_scope:
+                return Type.none_t
             func_sym = ir.func.attr
-            ir.func_scope = ir.func.scope.find_child(ir.func.attr.name)
+            ir.func_scope = ir.func.class_scope.find_child(ir.func.attr.name)
             assert ir.func_scope.is_method()
             if ir.func_scope.is_mutable():
                 ir.func.exp.ctx |= Ctx.STORE
         self.scope.add_callee_scope(ir.func_scope)
 
+        arg_types = [self.visit(arg) for arg in ir.args]
+
         ret_t = ir.func_scope.return_type
         if ir.func_scope.is_class():
             assert False
         else:
+            for i, param in enumerate(ir.func_scope.params):
+                if len(arg_types) > i:
+                    param.sym.typ = arg_types[i]
             funct = Type.function(ret_t, tuple([param.sym.typ for param in ir.func_scope.params]))
 
         func_sym.set_type(funct)
-        for i, arg in enumerate(ir.args):
-            self.visit(arg)
+
         return ret_t
 
     def visit_SYSCALL(self, ir):
@@ -95,20 +104,21 @@ class TypePropagation(IRVisitor):
     def visit_ATTR(self, ir):
         exptyp = self.visit(ir.exp)
         if Type.is_object(exptyp) or Type.is_class(exptyp):
-            scope = Type.extra(exptyp)
-            assert isinstance(scope, Scope)
-            ir.scope = scope
+            class_scope = Type.extra(exptyp)
+            ir.class_scope = class_scope
 
-        if ir.scope:
+        if ir.class_scope:
+            assert ir.class_scope.is_class()
             if isinstance(ir.attr, str):
-                if not ir.scope.has_sym(ir.attr):
+                if not ir.class_scope.has_sym(ir.attr):
                     type_error(ir, 'unknown attribute name {}'.format(ir.attr))
-                ir.attr = ir.scope.find_sym(ir.attr)
+                ir.attr = ir.class_scope.find_sym(ir.attr)
 
-            if ir.scope.is_class() and self.scope.parent is not ir.scope:
-                self.scope.add_callee_scope(ir.scope)
+            if self.scope.parent is not ir.class_scope:
+                self.scope.add_callee_scope(ir.class_scope)
             return ir.attr.typ
-        type_error(ir, 'unsupported attribute')
+
+        return Type.none_t
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
@@ -154,13 +164,13 @@ class TypePropagation(IRVisitor):
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
         dst_typ = self.visit(ir.dst)
-        if Type.is_none(dst_typ):
-            if ir.dst.is_a([TEMP, ATTR]):
-                ir.dst.symbol().set_type(src_typ)
-            elif ir.dst.is_a(MREF):
-                ir.dst.mem.symbol().set_type(Type.list(src_typ, None))
-            else:
-                assert 0
+
+        if ir.dst.is_a([TEMP, ATTR]):
+            ir.dst.symbol().set_type(src_typ)
+        elif ir.dst.is_a(MREF):
+            ir.dst.mem.symbol().set_type(Type.list(src_typ, None))
+        else:
+            assert 0
         # check mutable method
         if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == env.self_name:
             self.scope.attributes.append('mutable')

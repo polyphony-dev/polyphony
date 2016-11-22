@@ -238,6 +238,7 @@ class MemTrait:
     def addr_width(self):
         return (self.length-1).bit_length()+1 # +1 means sign bit
 
+
 class MemRefNode(RefNode, MemTrait):
     def __init__(self, sym, scope):
         RefNode.__init__(self, sym, scope)
@@ -292,11 +293,9 @@ class MemRefNode(RefNode, MemTrait):
             assert self.initstm.is_a(MOVE) and self.initstm.src.is_a(ARRAY)
             self.length = self.initstm.src.getlen()
 
-        if self.length == -1:
-            #assert self.preds
-            if self.preds:
-                self.length = self.preds[0].length
-            #assert self.length != -1
+        if self.preds and self.length < self.preds[0].length:
+            self.length = self.preds[0].length
+
 
 class MemParamNode(RefNode, MemTrait):
     def __init__(self, sym, scope):
@@ -340,11 +339,9 @@ class MemParamNode(RefNode, MemTrait):
             return []
 
     def update(self):
-        if self.length == -1:
-            #assert self.preds
-            if self.preds:
-                self.length = self.preds[0].length
-            #assert self.length != -1
+        if self.preds and self.length < self.preds[0].length:
+            self.length = self.preds[0].length
+
 
 class N2OneMemNode(N2OneNode, MemTrait):
     def __init__(self, succ):
@@ -357,8 +354,7 @@ class N2OneMemNode(N2OneNode, MemTrait):
         return s
 
     def update(self):
-        if self.length == -1:
-            self.length = max([p.length for p in self.preds])
+        self.length = max([p.length for p in self.preds])
         for p in self.preds:
             self.scopes = p.scopes.union(self.scopes)
 
@@ -373,7 +369,7 @@ class One2NMemNode(One2NNode, MemTrait):
         return s
 
     def update(self):
-        if self.length == -1:
+        if self.preds and self.length < self.preds[0].length:
             self.length = self.preds[0].length
         self.scopes = self.preds[0].scopes.union(self.scopes)
 
@@ -668,7 +664,7 @@ class MemRefGraphBuilder(IRVisitor):
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
         if Type.is_list(memsym.typ):
-            if memsym.scope.is_global() or memsym.scope.is_class():
+            if memsym.scope.is_global() or (ir.mem.is_a(ATTR) and Type.is_class(ir.mem.head().typ)):
                 # we have to create a new list symbol for adding the memnode
                 # because the list symbol in the global or a class (memsym) is
                 # used for the source memnode

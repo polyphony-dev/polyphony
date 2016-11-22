@@ -112,7 +112,6 @@ class HDLGenPreprocessor:
 
             if source:
                 array = source.initstm.src
-                array_bits = len(array.items).bit_length()
                 case_items = []
                 for i, item in enumerate(array.items):
                     assert item.is_a(CONST)

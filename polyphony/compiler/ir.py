@@ -270,7 +270,7 @@ class TEMP(IRExp):
         assert isinstance(ctx, int)
 
     def __str__(self):
-        return str(self.sym) + ':' + Ctx.str(self.ctx)
+        return str(self.sym) + ':[{}]'.format(self.lineno)  # + Ctx.str(self.ctx)
 
     def kids(self):
         return [self]
@@ -288,7 +288,7 @@ class ATTR(IRExp):
         self.attr = attr
         self.ctx = ctx
         self.exp.ctx = ctx
-        self.scope = None
+        self.class_scope = None
 
     def __str__(self):
         return '{}.{}:'.format(self.exp, self.attr, Ctx.str(self.ctx))

@@ -37,13 +37,13 @@ class FunctionVisitor(ast.NodeVisitor):
         self.current_scope = Scope.create(outer_scope, node.name, attributes)
 
         for arg in node.args.args:
-            param_in = self.current_scope.add_sym('{}_in_{}'.format(Symbol.param_prefix, arg.arg))
+            param_in = self.current_scope.add_sym('{}_{}'.format(Symbol.param_prefix, arg.arg))
             param_in.typ = Type.from_annotation(arg.annotation)
             param_copy = self.current_scope.add_sym(arg.arg)
             param_copy.typ = param_in.typ
             self.current_scope.add_param(param_in, param_copy, None)
         if self.current_scope.is_method():
-            if not self.current_scope.params or self.current_scope.params[0].sym.name != Symbol.param_prefix+'_in_self':
+            if not self.current_scope.params or self.current_scope.params[0].sym.name != Symbol.param_prefix+'_self':
                 print(error_info(node.lineno))
                 raise RuntimeError("Class method must have a {} parameter.".format(env.self_name))
             first_param = self.current_scope.params[0]
@@ -220,6 +220,7 @@ class Visitor(ast.NodeVisitor):
         ret = TEMP(sym, Ctx.STORE)
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
+            self.current_scope.attributes.append('returnable')
         self.emit(JUMP(self.function_exit, 'E'), node)
 
         self.current_block.connect(self.function_exit)

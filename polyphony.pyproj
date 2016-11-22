@@ -43,6 +43,9 @@
     <Compile Include="polyphony\compiler\dominator.py" />
     <Compile Include="polyphony\compiler\driver.py" />
     <Compile Include="polyphony\compiler\env.py" />
+    <Compile Include="polyphony\compiler\graph.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="polyphony\compiler\hdlgen.py" />
     <Compile Include="polyphony\compiler\hdlinterface.py" />
     <Compile Include="polyphony\compiler\hdlmemport.py" />

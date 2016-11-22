@@ -55,17 +55,14 @@ class Symbol:
         return self.name + ':' + Type.str(self.typ) # + "_" + str(self.id)
 
     def __repr__(self):
-        return self.name# + "_" + str(self.id)
+        return '{}({})'.format(self.name, hex(self.__hash__()))
 
     def __lt__(self, other):
         return self.name < other.name
   
     def hdl_name(self):
         if self.name[0] == '@' or self.name[0] == '!':
-            if self.name.startswith(Symbol.param_prefix):
-                name = self.name[4:] # trim '@in_'
-            else:
-                name = self.name[1:]
+            name = self.name[1:]
         else:
             name = self.name[:]
         name = name.replace('#', '')

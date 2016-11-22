@@ -5,7 +5,7 @@ from .symbol import Symbol
 from .irvisitor import IRVisitor
 from .block import Block
 from .builtin import builtin_names
-from .ir import ARRAY, MOVE, JUMP, CJUMP, MCJUMP, PHI
+from .ir import *
 from .signal import Signal
 from logging import getLogger
 logger = getLogger(__name__)
@@ -358,6 +358,9 @@ class Scope:
 
     def is_mutable(self):
         return 'mutable' in self.attributes
+
+    def is_returnable(self):
+        return 'returnable' in self.attributes
 
     def is_global(self):
         return self is Scope.global_scope()

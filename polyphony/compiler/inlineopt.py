@@ -4,6 +4,7 @@ from .block import Block
 from .irvisitor import IRVisitor
 from .ir import *
 from .env import env
+from .type import Type
 import logging
 logger = logging.getLogger()
 
@@ -12,20 +13,23 @@ class InlineOpt:
         pass
 
     def process_all(self):
-        funcalls = defaultdict(set)
-        methodcalls = defaultdict(set)
-        collector = CallCollector(funcalls, methodcalls)
-        for s in Scope.get_scopes(bottom_up=False):
-            collector.process(s)
-        self._process_func(funcalls)
-        self._process_method(methodcalls)
+        self.dones = set()
+        self.inline_counts = defaultdict(int)
+        for scope in env.call_graph.bfs_ordered_nodes():
+            if scope not in self.dones:
+                self._process_scope(scope)
 
-        return self.collect_unused_scopes()
+        using_scopes = self.collect_using_scopes()
+        for s in using_scopes:
+            flatten = FlattenFieldAccess()
+            flatten.process(s)
 
-    def collect_unused_scopes(self):
-        funcalls = defaultdict(set)
-        methodcalls = defaultdict(set)
-        collector = CallCollector(funcalls, methodcalls)
+        scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
+        return set(scopes).difference(using_scopes)
+
+    def collect_using_scopes(self):
+        calls = defaultdict(list)
+        collector = CallCollector(calls)
         using_scopes = set()
         scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
         for s in scopes:
@@ -33,67 +37,87 @@ class InlineOpt:
                 using_scopes.add(s)
             collector.process(s)
 
-        for (_, callee), _ in funcalls.items():
+        for callee, _ in calls.items():
             using_scopes.add(callee)
-        for (_, callee), _ in methodcalls.items():
-            using_scopes.add(callee)
+        return using_scopes
 
-        return set(scopes).difference(using_scopes)
+    def _process_scope(self, scope):
+        calls = defaultdict(list)
+        collector = CallCollector(calls)
+        collector.process(scope)
+        for callee, calls in calls.items():
+            self._process_scope(callee)
+            if callee.is_method():
+                self._process_method(callee, scope, calls)
+            else:
+                self._process_func(callee, scope, calls)
+        self.dones.add(scope)
+        if calls:
+            self._reduce_useless_move(scope)
 
-    def _process_func(self, funcalls):
-        new_scopes = []
-        inline_count = 0
-        items = [(caller, callee, calls) for (caller, callee), calls in reversed(sorted(funcalls.items()))]
-        for caller, callee, calls in items:
-            # We do not inlining the callee functions of a testbench
-            if caller.is_testbench():
-                continue
-            for call, call_stm in calls:
-                inline_count += 1
-                assert callee is call.func_scope
+    def _process_func(self, callee, caller, calls):
+        if caller.is_testbench() or caller.is_global():
+            return
+        for call, call_stm in calls:
+            self.inline_counts[caller] += 1
+            assert callee is call.func_scope
 
-                symbol_map = self._make_replace_symbol_map(call, caller, callee, str(inline_count))
-                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-                result_sym.name = callee.orig_name + '_result' + str(inline_count)
+            symbol_map = self._make_replace_symbol_map(call, caller, callee, str(self.inline_counts[caller]))
+            result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
+            result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
 
-                block_map = callee.clone_blocks(caller)
-                callee_root_blk = block_map[callee.root_block]
-                callee_leaf_blk = block_map[callee.leaf_block]
-                assert len(callee_leaf_blk.succs) <= 1
+            block_map = callee.clone_blocks(caller)
+            callee_root_blk = block_map[callee.root_block]
+            callee_leaf_blk = block_map[callee.leaf_block]
+            assert len(callee_leaf_blk.succs) <= 1
 
+            result = TEMP(result_sym, Ctx.LOAD)
+            result.lineno = call_stm.lineno
+            if call_stm.is_a(MOVE):
+                assert call_stm.src is call
+                call_stm.src = result
+            elif call_stm.is_a(EXPR):
+                assert call_stm.exp is call
+                call_stm.exp = result
+
+            sym_replacer = SymbolReplacer(symbol_map)
+            sym_replacer.process(caller, callee_root_blk)
+
+            self._merge_blocks(call_stm, callee_root_blk, callee_leaf_blk)
+
+    def _process_method(self, callee, caller, calls):
+        if caller.is_testbench() or caller.is_global():
+            return
+        for call, call_stm in calls:
+            self.inline_counts[caller] += 1
+
+            symbol_map = self._make_replace_symbol_map(call, caller, callee, str(self.inline_counts[caller]))
+            result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
+            result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+
+            block_map = callee.clone_blocks(caller)
+            callee_root_blk = block_map[callee.root_block]
+            callee_leaf_blk = block_map[callee.leaf_block]
+            assert len(callee_leaf_blk.succs) <= 1
+
+            if not callee.is_ctor():
+                result = TEMP(result_sym, Ctx.LOAD)
+                result.lineno = call_stm.lineno
                 if call_stm.is_a(MOVE):
                     assert call_stm.src is call
-                    call_stm.src = TEMP(result_sym, Ctx.LOAD)
+                    call_stm.src = result
                 elif call_stm.is_a(EXPR):
                     assert call_stm.exp is call
-                    call_stm.exp = TEMP(result_sym, Ctx.LOAD)
+                    call_stm.exp = result
 
-                sym_replacer = SymbolReplacer(symbol_map)
-                sym_replacer.process(caller, callee_root_blk)
-
-                self._merge_blocks(call_stm, callee_root_blk, callee_leaf_blk)
-
-
-    def _process_method(self, methodcalls):
-        new_scopes = []
-        inline_count = 0
-        items = [(caller, callee, calls) for (caller, callee), calls in reversed(sorted(methodcalls.items()))]
-        for caller, callee, calls in items:
-            # We do not inlining the callee functions of a testbench
-            if caller.is_testbench():
-                continue
-            for call, call_stm in calls:
-                inline_count += 1
-                
-                symbol_map = self._make_replace_symbol_map(call, caller, callee, str(inline_count))
-                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-                result_sym.name = callee.orig_name + '_result' + str(inline_count)
-
-                block_map = callee.clone_blocks(caller)
-                callee_root_blk = block_map[callee.root_block]
-                callee_leaf_blk = block_map[callee.leaf_block]
-                assert len(callee_leaf_blk.succs) <= 1
-                
+            attr_map = {}
+            if caller.is_method() and caller.parent is not callee.parent:
+                if callee.is_ctor():
+                    if call_stm.is_a(MOVE):
+                        attr_map[callee.symbols[env.self_name]] = call_stm.dst
+                else:
+                    assert False
+            else:
                 if callee.is_ctor():
                     if call_stm.is_a(MOVE):
                         assert call_stm.src is call
@@ -101,25 +125,18 @@ class InlineOpt:
                     else:
                         assert False
                 elif callee.is_method():
-                    if call_stm.is_a(MOVE):
-                        assert call_stm.src is call
-                        call_stm.src = TEMP(result_sym, Ctx.LOAD)
-                    elif call_stm.is_a(EXPR):
-                        assert call_stm.exp is call
-                        call_stm.exp = TEMP(result_sym, Ctx.LOAD)
                     object_sym = call.func.head()
+                symbol_map[callee.symbols[env.self_name]] = object_sym
 
-                sym_replacer = SymbolReplacer(symbol_map, inst_name = object_sym.name)
-                sym_replacer.process(caller, callee_root_blk)
+            sym_replacer = SymbolReplacer(symbol_map, attr_map)
+            sym_replacer.process(caller, callee_root_blk)
 
-                self._merge_blocks(call_stm, callee_root_blk, callee_leaf_blk)
-                
-                flatten = FlattenFieldAccess()
-                flatten.process(caller)
+            self._merge_blocks(call_stm, callee_root_blk, callee_leaf_blk)
 
-                if callee.is_ctor():
-                    assert call_stm.src is call
-                    call_stm.block.stms.remove(call_stm)
+            if callee.is_ctor():
+                assert call_stm.src is call
+                call_stm.block.stms.remove(call_stm)
+
 
     def _make_replace_symbol_map(self, call, caller, callee, inline_id):
         symbol_map = callee.clone_symbols(caller, postfix='_inl' + inline_id)
@@ -134,6 +151,7 @@ class InlineOpt:
                 arg = defval
             if arg.is_a(TEMP):
                 symbol_map[p] = arg.sym
+                symbol_map[copy] = arg.sym
             elif arg.is_a(CONST):
                 symbol_map[p] = arg
             elif arg.is_a(ATTR):
@@ -177,29 +195,36 @@ class InlineOpt:
         if caller_scope.leaf_block is early_call_blk:
             caller_scope.leaf_block = late_call_blk
 
+    def _reduce_useless_move(self, scope):
+        for block in scope.traverse_blocks():
+            removes = []
+            for stm in block.stms:
+                if stm.is_a(MOVE) and stm.dst.is_a(TEMP) and stm.src.is_a(TEMP) and stm.dst.sym is stm.src.sym:
+                    removes.append(stm)
+            for rm in removes:
+                block.stms.remove(rm)
+
 
 class CallCollector(IRVisitor):
-    def __init__(self, funcalls, methodcalls):
+    def __init__(self, calls):
         super().__init__()
-        self.funcalls = funcalls
-        self.methodcalls = methodcalls
+        self.calls = calls
 
     def visit_CALL(self, ir):
-        if ir.func_scope.is_method():
-            self.methodcalls[(self.scope, ir.func_scope)].add((ir, self.current_stm))
-        else:
-            self.funcalls[(self.scope, ir.func_scope)].add((ir, self.current_stm))
+        self.calls[ir.func_scope].append((ir, self.current_stm))
 
     def visit_NEW(self, ir):
         assert ir.func_scope.is_class()
         ctor = ir.func_scope.find_ctor()
         assert ctor
-        self.methodcalls[(self.scope, ctor)].add((ir, self.current_stm))
+        self.calls[ctor].append((ir, self.current_stm))
+
 
 class SymbolReplacer(IRVisitor):
-    def __init__(self, sym_map, inst_name = None):
+    def __init__(self, sym_map, attr_map = None, inst_name = None):
         super().__init__()
         self.sym_map = sym_map
+        self.attr_map = attr_map
         self.inst_name = inst_name
 
     def traverse_blocks(self, root_block, full=False, longitude=False):
@@ -213,19 +238,25 @@ class SymbolReplacer(IRVisitor):
             self._process_block(blk)
 
     def visit_TEMP(self, ir):
+        if self.attr_map and ir.sym in self.attr_map:
+            attr = self.attr_map[ir.sym].clone()
+            return attr
         if ir.sym in self.sym_map:
             rep = self.sym_map[ir.sym]
             if isinstance(rep, Symbol):
                 ir.sym = rep
+                return ir
             else:
                 self.current_stm.replace(ir, rep)
+                return rep
 
     def visit_ATTR(self, ir):
-        if self.inst_name and ir.head().name == env.self_name:
-            ir.attr = Symbol.new('{}_{}'.format(self.inst_name, ir.attr.name), self.scope)
-        #self.visit(ir.exp)
-        #if ir.attr in self.sym_map:
-        #    ir.attr = self.sym_map[ir.attr]
+        exp = self.visit(ir.exp)
+        if exp:
+            ir.exp = exp
+
+        if ir.attr in self.sym_map:
+            ir.attr = self.sym_map[ir.attr]
 
 class FlattenFieldAccess(IRVisitor):
     def make_flatname(self, ir):
@@ -251,15 +282,20 @@ class FlattenFieldAccess(IRVisitor):
             return ir.attr.name
 
     def visit_ATTR(self, ir):
+        # don't flatten use of the other instance in the class
         if self.scope.is_method():
             return
+        # don't flatten use of the static class field
+        if Type.is_class(ir.head().typ):
+            return
         flatname = self.make_flatname(ir)
-        flatsym = self.scope.gen_sym(flatname)
+        flatsym = ir.attr.scope.inherit_sym(ir.attr, flatname)
+        flatsym.typ = ir.attr.typ
         newtemp = TEMP(flatsym, ir.ctx)
+        newtemp.lineno = ir.lineno
         self.current_stm.replace(ir, newtemp)
 
     def visit_CALL(self, ir):
         # we don't flatten a method call
         return
 
-            

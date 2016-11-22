@@ -290,7 +290,7 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_ATTR(self, ir):
         if Type.is_class(ir.head().typ):
-            c = try_get_constant(ir.attr, ir.scope)
+            c = try_get_constant(ir.attr, ir.class_scope)
             if c:
                 return c
             else:
@@ -320,7 +320,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
 
     def visit_ATTR(self, ir):
         if Type.is_class(ir.head().typ):
-            c = try_get_constant(ir.attr, ir.scope)
+            c = try_get_constant(ir.attr, ir.class_scope)
             if c:
                 return c
         return ir
@@ -345,7 +345,7 @@ class ConstantOptPreDetectROM(ConstantOpt):
 
     def visit_ATTR(self, ir):
         if Type.is_class(ir.head().typ):
-            c = try_get_constant(ir.attr, ir.scope)
+            c = try_get_constant(ir.attr, ir.class_scope)
             if c:
                 return c
         return ir
