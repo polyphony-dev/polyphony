@@ -498,6 +498,10 @@ class AHDLTranslator:
         logger.debug(ir.name)
         if ir.name == 'print':
             fname = '!hdl_print'
+        elif ir.name == 'display':
+            fname = '!hdl_verilog_display'
+        elif ir.name == 'write':
+            fname = '!hdl_verilog_write'
         elif ir.name == 'read_reg':
             fname = '!hdl_read_reg'
         elif ir.name == 'write_reg':

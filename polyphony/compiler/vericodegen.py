@@ -394,6 +394,8 @@ class VerilogCodeGen:
             return "'bx";
         elif isinstance(ahdl.value, bool):
             return str(int(ahdl.value))
+        elif isinstance(ahdl.value, str):
+            return '"' + ahdl.value +'"'
         return str(ahdl.value)
 
     def visit_AHDL_VAR(self, ahdl):
@@ -637,6 +639,10 @@ class VerilogCodeGen:
 
         if ahdl.name == '!hdl_print':
             self.emit('$display("%1d", {});'.format(', '.join(args)))
+        elif ahdl.name == '!hdl_verilog_display':
+            self.emit('$display({});'.format(', '.join(args)))
+        elif ahdl.name == '!hdl_verilog_write':
+            self.emit('$write({});'.format(', '.join(args)))
         elif ahdl.name == '!hdl_assert':
             #expand condtion expression for the assert message
             exp = args[0]
