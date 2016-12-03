@@ -52,7 +52,8 @@ class Symbol:
         self.ancestor = None
 
     def __str__(self):
-        return self.name + ':' + Type.str(self.typ) # + "_" + str(self.id)
+        #return '{}:{}({}:{})'.format(self.name, Type.str(self.typ), self.id, self.scope.orig_name)
+        return '{}:{}({})'.format(self.name, Type.str(self.typ), self.id)
 
     def __repr__(self):
         return '{}({})'.format(self.name, hex(self.__hash__()))

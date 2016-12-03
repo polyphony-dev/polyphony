@@ -1,6 +1,6 @@
 ﻿from collections import defaultdict
 from .irvisitor import IRVisitor
-from .ir import Ctx, TEMP, CONST, IRStm
+from .ir import *
 from .type import Type
 from .env import env
 from logging import getLogger
@@ -19,36 +19,48 @@ class UseDefTable:
         self._blk_defs_var = defaultdict(set)
         self._blk_uses_var = defaultdict(set)
         self._stm_uses_const = defaultdict(set)
+        self._qsym_defs_stm = defaultdict(set)
+        self._qsym_uses_stm = defaultdict(set)
+        self._qsym_defs_blk = defaultdict(set)
+        self._qsym_uses_blk = defaultdict(set)
 
     def add_var_def(self, var, stm):
-        assert var.is_a(TEMP) and stm.is_a(IRStm)
-        self._sym_defs_stm[var.sym].add(stm)
+        assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
+        self._sym_defs_stm[var.symbol()].add(stm)
+        self._qsym_defs_stm[var.qualified_symbol()].add(stm)
         self._var_defs_stm[var].add(stm)
-        self._sym_defs_blk[var.sym].add(stm.block)
+        self._sym_defs_blk[var.symbol()].add(stm.block)
+        self._qsym_defs_blk[var.qualified_symbol()].add(stm.block)
         self._stm_defs_var[stm].add(var)
         self._blk_defs_var[stm.block].add(var)
 
     def remove_var_def(self, var, stm):
-        assert var.is_a(TEMP) and stm.is_a(IRStm)
-        self._sym_defs_stm[var.sym].discard(stm)
+        assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
+        self._sym_defs_stm[var.symbol()].discard(stm)
+        self._qsym_defs_stm[var.qualified_symbol()].discard(stm)
         self._var_defs_stm[var].discard(stm)
-        self._sym_defs_blk[var.sym].discard(stm.block)
+        self._sym_defs_blk[var.symbol()].discard(stm.block)
+        self._qsym_defs_blk[var.qualified_symbol()].discard(stm.block)
         self._stm_defs_var[stm].discard(var)
         self._blk_defs_var[stm.block].discard(var)
 
     def add_var_use(self, var, stm):
-        assert var.is_a(TEMP) and stm.is_a(IRStm)
-        self._sym_uses_stm[var.sym].add(stm)
+        assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
+        self._sym_uses_stm[var.symbol()].add(stm)
+        self._qsym_uses_stm[var.qualified_symbol()].add(stm)
         self._var_uses_stm[var].add(stm)
-        self._sym_uses_blk[var.sym].add(stm.block)
+        self._sym_uses_blk[var.symbol()].add(stm.block)
+        self._qsym_uses_blk[var.qualified_symbol()].add(stm.block)
         self._stm_uses_var[stm].add(var)
         self._blk_uses_var[stm.block].add(var)
 
     def remove_var_use(self, var, stm):
-        assert var.is_a(TEMP) and stm.is_a(IRStm)
-        self._sym_uses_stm[var.sym].discard(stm)
+        assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
+        self._sym_uses_stm[var.symbol()].discard(stm)
+        self._qsym_uses_stm[var.qualified_symbol()].discard(stm)
         self._var_uses_stm[var].discard(stm)
-        self._sym_uses_blk[var.sym].discard(stm.block)
+        self._sym_uses_blk[var.symbol()].discard(stm.block)
+        self._qsym_uses_blk[var.qualified_symbol()].discard(stm.block)
         self._stm_uses_var[stm].discard(var)
         self._blk_uses_var[stm.block].discard(var)
 
@@ -61,7 +73,7 @@ class UseDefTable:
         self._stm_uses_const[stm].discard(c)
 
     def add_use(self, v, stm):
-        if v.is_a(TEMP):
+        if v.is_a([TEMP, ATTR]):
             self.add_var_use(v, stm)
         elif v.is_a(CONST):
             self.add_const_use(v, stm)
@@ -69,7 +81,7 @@ class UseDefTable:
             assert False
 
     def remove_use(self, v, stm):
-        if v.is_a(TEMP):
+        if v.is_a([TEMP, ATTR]):
             self.remove_var_use(v, stm)
         elif v.is_a(CONST):
             self.remove_const_use(v, stm)
@@ -85,6 +97,12 @@ class UseDefTable:
 
     def get_use_stms_by_sym(self, sym):
         return self._sym_uses_stm[sym]
+
+    def get_def_stms_by_qsym(self, qsym):
+        return self._qsym_defs_stm[qsym]
+
+    def get_use_stms_by_qsym(self, qsym):
+        return self._qsym_uses_stm[qsym]
 
     def get_def_stms_by_var(self, var):
         return self._var_defs_stm[var]
@@ -108,10 +126,13 @@ class UseDefTable:
         return self._stm_uses_const[stm]
 
     def get_def_syms_by_blk(self, blk):
-        return set([v.sym for v in self._blk_defs_var[blk]])
+        return set([v.symbol() for v in self._blk_defs_var[blk]])
 
     def get_use_syms_by_blk(self, blk):
-        return set([v.sym for v in self._blk_uses_var[blk]])
+        return set([v.symbol() for v in self._blk_uses_var[blk]])
+
+    def get_def_qsyms_by_blk(self, blk):
+        return set([v.qualified_symbol() for v in self._blk_defs_var[blk]])
 
     def get_def_vars_by_blk(self, blk):
         return self._blk_defs_var[blk]
@@ -178,10 +199,10 @@ class UseDefDetector(IRVisitor):
     def _visit_args(self, ir):
         for arg in ir.args:
             self.visit(arg)
-            if env.compile_phase >= env.PHASE_4 and arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
+            if env.compile_phase >= env.PHASE_4 and arg.is_a([TEMP, ATTR]) and Type.is_list(arg.symbol().typ):
                 memnode = None
                 if env.memref_graph:
-                    memnode = env.memref_graph.node(arg.sym)
+                    memnode = env.memref_graph.node(arg.symbol())
                 if memnode and not memnode.is_writable():
                     continue
                 self.table.add_var_def(arg, self.current_stm)
@@ -221,11 +242,9 @@ class UseDefDetector(IRVisitor):
 
     def visit_ATTR(self, ir):
         if ir.ctx & Ctx.LOAD:
-            self.table._sym_uses_stm[ir.attr].add(self.current_stm)
-            self.table._sym_uses_blk[ir.attr].add(self.current_stm.block)
+            self.table.add_var_use(ir, self.current_stm)
         if ir.ctx & Ctx.STORE:
-            self.table._sym_defs_stm[ir.attr].add(self.current_stm)
-            self.table._sym_defs_blk[ir.attr].add(self.current_stm.block)
+            self.table.add_var_def(ir, self.current_stm)
         self.visit(ir.exp)
 
     def visit_EXPR(self, ir):

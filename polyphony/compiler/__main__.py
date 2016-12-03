@@ -15,7 +15,7 @@ from .veritestgen import VerilogTestGen
 from .treebalancer import TreeBalancer
 from .stg import STGBuilder
 from .dataflow import DFGBuilder
-from .ssa import SSAFormTransformer
+from .ssa import ScalarSSATransformer, ObjectSSATransformer
 from .usedef import UseDefDetector
 from .scheduler import Scheduler
 from .phiresolve import PHICondResolver
@@ -28,7 +28,7 @@ from .setlineno import LineNumberSetter, SourceDump
 from .loopdetector import LoopDetector, SimpleLoopUnroll, LoopBlockDestructor
 from .specfunc import SpecializedFunctionMaker
 from .selectorbuilder import SelectorBuilder
-from .inlineopt import InlineOpt
+from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer
 from .copyopt import CopyOpt
 from .callgraph import CallGraphBuilder
 
@@ -79,8 +79,12 @@ def usedef(driver, scope):
     udd = UseDefDetector()
     udd.process(scope)
 
-def ssa(driver, scope):
-    ssa = SSAFormTransformer()
+def objssa(driver, scope):
+    ssa = ObjectSSATransformer()
+    ssa.process(scope)
+
+def scalarssa(driver, scope):
+    ssa = ScalarSSATransformer()
     ssa.process(scope)
 
 def phi(driver, scope):
@@ -131,6 +135,14 @@ def inlineopt(driver):
         driver.remove_scope(s)
         env.remove_scope(s)
 
+def aliasreplace(driver, scope):
+    replacer = AliasReplacer()
+    replacer.process(scope)
+
+def flatten_field(driver, scope):
+    flatten = FlattenFieldAccess()
+    flatten.process(scope)
+
 def earlyconstopt_nonssa(driver, scope):
     constopt = EarlyConstantOptNonSSA()
     constopt.process(scope)
@@ -158,7 +170,7 @@ def tbopt(driver, scope):
         loopdestructor = LoopBlockDestructor()
         loopdestructor.process(scope)
         usedef(driver, scope)
-        ssa(driver, scope)
+        scalarssa(driver, scope)
         usedef(driver, scope)
         memrename(driver, scope),
         constopt = ConstantOpt()
@@ -190,7 +202,7 @@ def genhdl(driver, scope):
     if scope.is_method():
         return
     preprocessor = HDLGenPreprocessor()
-    if scope.is_class():
+    if scope.is_class() or scope.is_method():
         # workaround for inline version
         return
         #if not scope.children:
@@ -250,13 +262,21 @@ def compile_plan():
         quadruple,
         typeprop,
         dumpscope,
+        classcheck,
         inlineopt,
         dumpscope,
         traceblk,
         dumpscope,
         phase(env.PHASE_2),
         usedef,
-        ssa,
+        objssa,
+        dumpscope,
+        usedef,
+        aliasreplace,
+        dumpscope,
+        scalarssa,
+        usedef,
+        flatten_field,
         dumpscope,
         usedef,
         typeprop,
@@ -267,7 +287,6 @@ def compile_plan():
         usedef,
         memrename,
         dumpscope,
-        #classcheck,
         usedef,
         memrefgraph,
         dumpmrg,

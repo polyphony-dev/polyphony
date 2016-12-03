@@ -90,9 +90,12 @@ class TypePropagation(IRVisitor):
         self.scope.add_callee_scope(ir.func_scope)
         ret_t = ir.func_scope.return_type
         ctor = ir.func_scope.find_ctor()
-        funct = Type.function(ret_t, tuple([param.sym.typ for param in ctor.params]))
-        for arg in ir.args:
-            self.visit(arg)
+        arg_types = [self.visit(arg) for arg in ir.args]
+        for i, param in enumerate(ctor.params[1:]):
+            if len(arg_types) > i:
+                param.sym.typ = arg_types[i]
+        funct = Type.function(ret_t, tuple([param.sym.typ for param in ctor.params[1:]]))
+
         return ret_t
 
     def visit_CONST(self, ir):
@@ -167,6 +170,9 @@ class TypePropagation(IRVisitor):
 
         if ir.dst.is_a([TEMP, ATTR]):
             ir.dst.symbol().set_type(src_typ)
+            if self.scope.is_method() and ir.dst.is_a(ATTR):
+                sym = self.scope.parent.find_sym(ir.dst.symbol().name)
+                sym.set_type(src_typ)
         elif ir.dst.is_a(MREF):
             ir.dst.mem.symbol().set_type(Type.list(src_typ, None))
         else:
@@ -179,8 +185,9 @@ class TypePropagation(IRVisitor):
         arg_types = [self.visit(arg) for arg, blk in ir.args]
         for arg_t in arg_types:
             if not Type.is_none(arg_t):
-                ir.var.sym.set_type(arg_t)
+                ir.var.symbol().set_type(arg_t)
                 break
+
 
 class ClassFieldChecker(IRVisitor):
     def __init__(self):
@@ -361,8 +368,8 @@ class TypeChecker(IRVisitor):
 
     def visit_PHI(self, ir):
         # FIXME
-        assert ir.var.sym.typ is not None
-        assert all([arg is None or arg.sym.typ is not None for arg, blk in ir.args])
+        assert ir.var.symbol().typ is not None
+        assert all([arg is None or arg.symbol().typ is not None for arg, blk in ir.args])
 
 
     def _check_param_number(self, arg_len, param_len, ir):

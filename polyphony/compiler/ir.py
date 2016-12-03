@@ -270,7 +270,7 @@ class TEMP(IRExp):
         assert isinstance(ctx, int)
 
     def __str__(self):
-        return str(self.sym) + ':[{}]'.format(self.lineno)  # + Ctx.str(self.ctx)
+        return str(self.sym)# + '('+str(hex(self.__hash__())) + ')'#  + ':[{}]'.format(self.lineno)  + Ctx.str(self.ctx)
 
     def kids(self):
         return [self]
@@ -281,17 +281,21 @@ class TEMP(IRExp):
     def set_symbol(self, sym):
         self.sym = sym
 
+    def qualified_symbol(self):
+        return (self.sym, )
+
+
 class ATTR(IRExp):
     def __init__(self, exp, attr, ctx):
         super().__init__()
         self.exp = exp
         self.attr = attr
         self.ctx = ctx
-        self.exp.ctx = ctx
+        self.exp.ctx = Ctx.LOAD
         self.class_scope = None
 
     def __str__(self):
-        return '{}.{}:'.format(self.exp, self.attr, Ctx.str(self.ctx))
+        return '{}.{}'.format(self.exp, self.attr, Ctx.str(self.ctx))
 
     def kids(self):
         return [self]
@@ -316,6 +320,10 @@ class ATTR(IRExp):
 
     def set_symbol(self, sym):
         self.attr = sym
+
+    def qualified_symbol(self):
+        return self.exp.qualified_symbol() + (self.attr,)
+
 
 class IRStm(IR):
     def __init__(self):
@@ -430,7 +438,7 @@ def conds2str(conds):
 class PHI(IRStm):
     def __init__(self, var):
         super().__init__()
-        assert isinstance(var, TEMP)
+        assert var.is_a([TEMP, ATTR])
         self.var = var
         self.args = []
         self.conds_list = None
@@ -439,7 +447,7 @@ class PHI(IRStm):
         args = []
         for arg, blk in self.args:
             if arg:
-                args.append(str(arg))
+                args.append(str(arg)+':'+blk.name)
             else:
                 args.append('_')
         s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(args))

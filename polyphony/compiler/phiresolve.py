@@ -35,7 +35,7 @@ class PHICondResolver:
         conds = []
         for i, (arg, blk) in enumerate(phi.args):
             pred = blk
-            mv = MOVE(TEMP(phi.var.sym, Ctx.STORE), arg)
+            mv = MOVE(TEMP(phi.var.symbol(), Ctx.STORE), arg)
             mv.lineno = arg.lineno
             pred.insert_stm(-1, mv)
             logger.debug('PHI divide into ' + str(mv))

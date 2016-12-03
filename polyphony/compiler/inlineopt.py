@@ -1,10 +1,11 @@
-﻿from collections import defaultdict
+﻿from collections import defaultdict, deque
 from .scope import Scope
 from .block import Block
 from .irvisitor import IRVisitor
 from .ir import *
 from .env import env
 from .type import Type
+from .varreplacer import VarReplacer
 import logging
 logger = logging.getLogger()
 
@@ -20,9 +21,6 @@ class InlineOpt:
                 self._process_scope(scope)
 
         using_scopes = self.collect_using_scopes()
-        for s in using_scopes:
-            flatten = FlattenFieldAccess()
-            flatten.process(s)
 
         scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
         return set(scopes).difference(using_scopes)
@@ -258,6 +256,36 @@ class SymbolReplacer(IRVisitor):
         if ir.attr in self.sym_map:
             ir.attr = self.sym_map[ir.attr]
 
+class AliasReplacer(IRVisitor):
+    def __init__(self):
+        super().__init__()
+        self.replace_map = {}
+
+    def process(self, scope):
+        self.scope = scope
+        assert len(scope.root_block.preds) == 0
+
+        for blk in self.scope.traverse_blocks():
+            self._process_block(blk)
+
+        for dst, src in self.replace_map.items():
+            VarReplacer.replace_uses(dst, src, self.scope.usedef)
+
+    def visit_MOVE(self, ir):
+        if not ir.src.is_a([TEMP, ATTR]):
+            return
+        if not Type.is_object(ir.src.symbol().typ):
+            return
+        if not ir.dst.is_a([TEMP, ATTR]):
+            return
+        if not Type.is_object(ir.dst.symbol().typ):
+            return
+        if ir.dst not in self.replace_map:
+            self.replace_map[ir.dst] = ir.src
+        else:
+            assert False
+
+
 class FlattenFieldAccess(IRVisitor):
     def make_flatname(self, ir):
         assert ir.is_a(ATTR)
@@ -289,8 +317,9 @@ class FlattenFieldAccess(IRVisitor):
         if Type.is_class(ir.head().typ):
             return
         flatname = self.make_flatname(ir)
-        flatsym = ir.attr.scope.inherit_sym(ir.attr, flatname)
+        flatsym = self.scope.gen_sym(flatname)
         flatsym.typ = ir.attr.typ
+        flatsym.ancestor = ir.attr
         newtemp = TEMP(flatsym, ir.ctx)
         newtemp.lineno = ir.lineno
         self.current_stm.replace(ir, newtemp)
@@ -299,3 +328,41 @@ class FlattenFieldAccess(IRVisitor):
         # we don't flatten a method call
         return
 
+import pdb
+
+class ObjectDeepCopier:
+    def __init__(self):
+        pass
+
+    def _is_object(self, ir):
+        return ir.is_a([TEMP, ATTR]) and Type.is_object(ir.symbol().typ)
+
+    def _is_object_copy(self, mov):
+        return self._is_object(mov.src) and self._is_object(mov.dst)
+
+    def _collect_object_copy(self, scope):
+        copies = []
+        for block in scope.traverse_blocks():
+            moves = [stm for stm in block.stms if stm.is_a(MOVE)]
+            copies.extend([stm for stm in moves if self._is_object_copy(stm)])
+        return copies
+
+    def process(self, scope):
+        copies = self._collect_object_copy(scope)
+        worklist = deque()
+        worklist.extend(copies)
+        while worklist:
+            cp = worklist.popleft()
+            class_scope = Type.extra(cp.src.symbol().typ)
+            assert class_scope is Type.extra(cp.dst.symbol().typ)
+            for sym in class_scope.class_fields.keys():
+                new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
+                new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
+                new_cp = MOVE(new_dst, new_src)
+                new_dst.lineno = cp.lineno
+                new_src.lineno = cp.lineno
+                new_cp.lineno = cp.lineno
+                cp_idx = cp.block.stms.index(cp)
+                cp.block.insert_stm(cp_idx+1, new_cp)
+                if Type.is_object(sym.typ):
+                    worklist.append(new_cp)

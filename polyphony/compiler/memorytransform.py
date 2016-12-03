@@ -24,7 +24,7 @@ class MemoryRenamer:
         return stms
 
     def _get_phis(self, block):
-        return filter(lambda stm: stm.is_a(PHI) and Type.is_list(stm.var.sym.typ), block.stms)
+        return filter(lambda stm: stm.is_a(PHI) and Type.is_list(stm.var.symbol().typ), block.stms)
 
     def _cleanup_phi(self):
         for block in self.scope.traverse_blocks():

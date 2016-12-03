@@ -609,9 +609,9 @@ class AHDLTranslator:
         else:
             sig_attr = ['field', 'int']
         attr = ir.attr.hdl_name()
-        if self.scope.is_method() and self.scope.parent is ir.scope:
+        if self.scope.is_method() and self.scope.parent is ir.class_scope:
             # internal access to the field
-            sig = self.host.gen_sig(ir.scope.orig_name + '_field', attr, INT_WIDTH, sig_attr)
+            sig = self.host.gen_sig(ir.class_scope.orig_name + '_field', attr, INT_WIDTH, sig_attr)
         else:
             # external access to the field
             io = '' if ir.ctx == Ctx.LOAD else '_in'

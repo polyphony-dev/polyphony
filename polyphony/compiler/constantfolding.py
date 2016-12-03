@@ -204,7 +204,7 @@ class ConstantOpt(ConstantOptBase):
                     worklist.remove(stm)
             if stm.is_a(MOVE) and stm.src.is_a(CONST) and stm.dst.is_a(TEMP) and not stm.dst.sym.is_return():
                 #sanity check
-                defstms = scope.usedef.get_def_stms_by_sym(stm.dst.sym)
+                defstms = scope.usedef.get_def_stms_by_sym(stm.dst.symbol())
                 assert len(defstms) <= 1
 
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
@@ -252,11 +252,10 @@ class ConstantOpt(ConstantOptBase):
     def visit_SYSCALL(self, ir):
         if ir.name == 'len':
             mem = ir.args[0]
-            assert mem.is_a(TEMP)
-            if mem.sym.scope is Scope.global_scope():
-                memsym = mem.sym.ancestor
+            if mem.symbol().scope is Scope.global_scope():
+                memsym = mem.symbol().ancestor
             else:
-                memsym = mem.sym
+                memsym = mem.symbol()
             memnode = self.mrg.node(memsym)
             lens = []
             assert memnode
@@ -420,7 +419,7 @@ class GlobalConstantOpt(ConstantOptBase):
 
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
-        self.assign_table[ir.dst.sym] = ir.src
+        self.assign_table[ir.dst.symbol()] = ir.src
 
     def visit_PHI(self, ir):
         assert False

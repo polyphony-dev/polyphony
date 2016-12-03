@@ -359,8 +359,8 @@ class DFGBuilder:
 
                 # add edges
                 for v in usedef.get_use_vars_by_stm(stm):
-                    defstms = usedef.get_def_stms_by_sym(v.sym)
-                    logger.log(0, v.sym.name + ' defstms ')
+                    defstms = usedef.get_def_stms_by_sym(v.symbol())
+                    logger.log(0, v.symbol().name + ' defstms ')
                     for defstm in defstms:
                         logger.log(0, str(defstm))
 
@@ -386,10 +386,10 @@ class DFGBuilder:
             dfg.src_nodes.add(node)
             return
         for v in usevars:
-            if v.sym.is_param():
+            if v.symbol().is_param():
                 dfg.src_nodes.add(node)
                 return
-            defstms = usedef.get_def_stms_by_sym(v.sym)
+            defstms = usedef.get_def_stms_by_sym(v.symbol())
             for defstm in defstms:
                 # this definition stm is in the out of the section
                 if defstm.block not in blocks:
@@ -405,7 +405,7 @@ class DFGBuilder:
 
         def has_mem_arg(args):
             for a in args:
-                if a.is_a(TEMP) and Type.is_list(a.sym.typ):
+                if a.is_a(TEMP) and Type.is_list(a.symbol().typ):
                     return True
             return False
         call = None
@@ -466,15 +466,15 @@ class DFGBuilder:
                     node_groups[mem_group].append(node)
                 elif mv.src.is_a(CALL):
                     for arg in mv.src.args:
-                        if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                            mem_group = arg.sym.name
+                        if arg.is_a(TEMP) and Type.is_list(arg.symbol().typ):
+                            mem_group = arg.symbol().name
                             node_groups[mem_group].append(node)
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
                     for arg in expr.exp.args:
-                        if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                            mem_group = arg.sym.name
+                        if arg.is_a(TEMP) and Type.is_list(arg.symbol().typ):
+                            mem_group = arg.symbol().name
                             node_groups[mem_group].append(node)
         for nodes in node_groups.values():
             sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
@@ -508,10 +508,10 @@ class DFGBuilder:
     def _add_object_edges(self, dfg):
         def add_node_group_if_needed(ir, node, node_groups):
             if ir.is_a(ATTR):
-                node_groups[ir.attr].add(node)
+                node_groups[ir.symbol()].add(node)
                 add_node_group_if_needed(ir.exp, node, node_groups)
-            elif ir.is_a(TEMP) and Type.is_object(ir.sym.typ):
-                node_groups[ir.sym].add(node)
+            elif ir.is_a(TEMP) and Type.is_object(ir.symbol().typ):
+                node_groups[ir.symbol()].add(node)
 
         node_groups = defaultdict(set)
         for node in dfg.nodes:

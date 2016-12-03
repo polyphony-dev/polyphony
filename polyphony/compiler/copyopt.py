@@ -1,4 +1,4 @@
-from .ir import *
+﻿from .ir import *
 from .irvisitor import IRVisitor
 from .type import Type
 from logging import getLogger
@@ -10,7 +10,6 @@ class CopyOpt(IRVisitor):
         copies = []
         collector = CopyCollector(copies)
         collector.process(scope)
-
         for cp in copies:
             #logger.debug(str(scope))
             assert cp.dst.is_a(TEMP)
@@ -36,16 +35,18 @@ class CopyOpt(IRVisitor):
     def _get_original(self, sym) -> IR:
         defs = list(self.scope.usedef.get_def_stms_by_sym(sym))
         if not defs:
-            return
+            return None
         assert len(defs) == 1
         d = defs[0]
         if d.is_a(MOVE):
             if d.src.is_a(TEMP):
+                if d.src.symbol().is_param():
+                    return None
                 orig = self._get_original(d.src.sym)
                 if orig:
                     return orig
                 else:
-                    d.src
+                    return d.src
             elif d.src.is_a(ATTR):
                 return d.src
         return None
@@ -60,7 +61,7 @@ class CopyCollector(IRVisitor):
         if ir.dst.sym.is_return():
             return
         if ir.src.is_a(TEMP):
-            if ir.src.sym.is_param() and Type.is_list(ir.src.sym.typ):
+            if ir.src.sym.is_param():# and Type.is_list(ir.src.sym.typ):
                 return
             self.copies.append(ir)
 

@@ -5,7 +5,8 @@ from .irvisitor import IRVisitor
 class CallGraphBuilder(IRVisitor):
     def __init__(self):
         super().__init__()
-        env.call_graph = Graph()
+        if not env.call_graph:
+            env.call_graph = Graph()
         self.call_graph = env.call_graph
 
     def visit_CALL(self, ir):
