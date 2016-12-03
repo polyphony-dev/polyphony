@@ -37,8 +37,10 @@ def eval_binop(ir):
         return lv - rv
     elif op == 'Mult':
         return lv * rv
-    elif op == 'Div':
-        return lv / rv
+    elif op == 'FloorDiv':
+        return lv // rv
+    elif op == 'Mod':
+        return lv % rv
     elif op == 'Mod':
         return lv % rv
     elif op == 'LShift':
