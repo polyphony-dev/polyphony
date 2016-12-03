@@ -453,7 +453,7 @@ class VerilogCodeGen:
         else:
             cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
         one_hot_mask = bin(1 << idx)[2:]
-        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE), AHDL_CONST('\'b'+one_hot_mask)))
+        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE), AHDL_SYMBOL('\'b'+one_hot_mask)))
 
 
     def visit_AHDL_MOVE(self, ahdl):

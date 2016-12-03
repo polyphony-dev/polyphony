@@ -131,7 +131,7 @@ class HDLGenPreprocessor:
                     case_val = '{}_cs[{}]'.format(hdl_name, i)
                     case_items.append(AHDL_CASE_ITEM(case_val, connect))
                 rom_sel_sig = scope.gen_sig(hdl_name+'_cs', len(memnode.pred_ref_nodes()))
-                case = AHDL_CASE(AHDL_CONST('1\'b1'), case_items)
+                case = AHDL_CASE(AHDL_SYMBOL('1\'b1'), case_items)
                 self.module_info.add_internal_reg(rom_sel_sig)
             rom_func = AHDL_FUNCTION(fname, [input], [case])
             self.module_info.add_function(rom_func)
