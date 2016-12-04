@@ -18,7 +18,7 @@ def exec_test(test, output=True, compile_only=False):
     casefile = os.path.basename(test)
     casename, _ = os.path.splitext(casefile)
     try:
-        compile_main(test, casename, TMP_DIR)
+        compile_main(test, casename, TMP_DIR, debug_mode=output)
     except Exception as e:
         print('[COMPILE PYTHON] FAILED:'+test)
         if env.dev_debug_mode:
@@ -54,8 +54,6 @@ def exec_test(test, output=True, compile_only=False):
 if __name__ == '__main__':
     if not os.path.exists(TMP_DIR):
         os.mkdir(TMP_DIR)
-    if env.dev_debug_mode:
-        logging.basicConfig(**logging_setting)
     if len(sys.argv) > 1:
         #profile.run("exec_test(sys.argv[1])")
         exec_test(sys.argv[1])

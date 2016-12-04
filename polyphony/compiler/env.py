@@ -10,7 +10,7 @@ class Env:
     def __init__(self):
         self.call_graph = None
         self.scopes = {}
-        self.dev_debug_mode = True
+        self.dev_debug_mode = False
         self.hdl_debug_mode = False
         self.compile_phase = 0
         self.logfiles = {}

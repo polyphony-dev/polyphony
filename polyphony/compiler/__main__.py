@@ -46,7 +46,6 @@ def preprocess_global(driver):
     scopes = Scope.get_scopes(contain_global=True, contain_class=True)
     lineno = LineNumberSetter()
     src_dump = SourceDump()
-    
 
     for s in scopes:
         lineno.process(s)
@@ -250,85 +249,92 @@ def dumphdl(driver, scope):
 
 
 def compile_plan():
+    def dbg(proc):
+        return proc if env.dev_debug_mode else None
+
     plan = [
         preprocess_global,
         callgraph,
-        dumpscope,
+        dbg(dumpscope),
         phase(env.PHASE_1),
         iftrans,
         traceblk,
-        dumpscope,
+        dbg(dumpscope),
         earlyconstopt_nonssa,
         quadruple,
         typeprop,
-        dumpscope,
+        dbg(dumpscope),
         classcheck,
         inlineopt,
-        dumpscope,
         traceblk,
-        dumpscope,
+        dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
         objssa,
-        dumpscope,
+        dbg(dumpscope),
         usedef,
         aliasreplace,
-        dumpscope,
+        dbg(dumpscope),
         scalarssa,
         usedef,
         flatten_field,
-        dumpscope,
+        dbg(dumpscope),
         usedef,
         typeprop,
-        dumpscope,
+        dbg(dumpscope),
         usedef,
         copyopt,
-        dumpscope,
+        dbg(dumpscope),
         usedef,
         memrename,
-        dumpscope,
+        dbg(dumpscope),
         usedef,
         memrefgraph,
-        dumpmrg,
-        dumpscope,
+        dbg(dumpmrg),
+        dbg(dumpscope),
         typecheck,
-        dumpscope,
+        dbg(dumpscope),
         constopt_pre_detectrom,
         detectrom,
-        dumpmrg,
+        dbg(dumpmrg),
         usedef,
         constopt,
         usedef,
         phi,
         usedef,
         specfunc,
-        dumpscope,
+        dbg(dumpscope),
         usedef,
         traceblk,
-        dumpscope,
+        dbg(dumpscope),
         phase(env.PHASE_3),
         usedef,
         loop,
         tbopt,
         phase(env.PHASE_4),
-        dumpscope,
+        dbg(dumpscope),
         dfg,
         schedule,
-        dumpsched,
+        dbg(dumpsched),
         meminstgraph,
-        dumpmrg,
+        dbg(dumpmrg),
         stg,
-        dumpstg,
+        dbg(dumpstg),
         phase(env.PHASE_GEN_HDL),
         genhdl,
-        dumpmodule,
-        dumphdl
+        dbg(dumpmodule),
+        dbg(dumphdl),
     ]
+    plan = [p for p in plan if p is not None]
     return plan
 
 
-def compile_main(src_file, output_name, output_dir):
+def compile_main(src_file, output_name, output_dir, debug_mode=False):
     env.__init__()
+    env.dev_debug_mode = debug_mode
+    if debug_mode:
+        logging.basicConfig(**logging_setting)
+
     translator = IRTranslator()
     translator.translate(read_source(src_file))
 
@@ -391,7 +397,6 @@ def output_individual(driver, output_name, output_dir):
                 f.write('`include "./{}"\n'.format(file_name))
         for lib in env.using_libs:
             f.write(lib)
-
 def main():
     usage = "usage: %prog [Options] [Python source file]"
     parser = OptionParser(usage)
@@ -402,6 +407,8 @@ def main():
                       help="output directory", metavar="DIR")
     parser.add_option("-v", dest="verbose", action="store_true", 
                       help="verbose output")
+    parser.add_option("-D", "--debug", dest="debug_mode", action="store_true", 
+                      help="enable debug mode")
 
     options, args = parser.parse_args()
     if len(sys.argv) <= 1:
@@ -412,8 +419,8 @@ def main():
         print(src_file + ' is not valid file name')
         parser.print_help()
         sys.exit(0)
-
     if options.verbose:
         logging.basicConfig(level=logging.INFO)
-    compile_main(src_file, options.output_name, options.output_dir)
+
+    compile_main(src_file, options.output_name, options.output_dir, options.debug_mode)
 
