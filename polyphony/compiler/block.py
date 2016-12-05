@@ -255,7 +255,7 @@ class CompositBlock(Block):
         for i, pred in enumerate(self.preds):
             self.preds[i] = blk_map[pred]
 
-class BlockTracer:
+class BlockReducer:
     def process(self, scope):
         if scope.is_class():
             return
@@ -303,14 +303,6 @@ class BlockTracer:
                 if succ in block.succs_loop:
                     # do not remove a loopback block
                     continue
-                    #succ.preds.remove(block)
-                    #succ.preds_loop.remove(block)
-                    #for pred in block.preds:
-                    #    pred.replace_succ(block, succ)
-                    #    pred.succs_loop.append(succ)
-                    #    succ.preds.append(pred)
-                    #    succ.preds_loop.append(pred)
-                    #pass
                 else:
                     succ.preds.remove(block)
                     for pred in block.preds:

@@ -4,7 +4,7 @@ from .driver import Driver
 from .env import env
 from .common import read_source, src_text
 from .scope import Scope
-from .block import BlockTracer
+from .block import BlockReducer
 from .symbol import Symbol
 from .irtranslator import IRTranslator
 from .typecheck import TypePropagation, TypeChecker, ClassFieldChecker
@@ -66,8 +66,8 @@ def iftrans(driver, scope):
     if_transformer = IfTransformer()
     if_transformer.process(scope)
 
-def traceblk(driver, scope):
-    bt = BlockTracer()
+def reduceblk(driver, scope):
+    bt = BlockReducer()
     bt.process(scope)
 
 def quadruple(driver, scope):
@@ -174,7 +174,7 @@ def tbopt(driver, scope):
         memrename(driver, scope),
         constopt = ConstantOpt()
         constopt.process(scope)
-        traceblk(driver, scope)
+        reduceblk(driver, scope)
         usedef(driver, scope)
         phi(driver, scope)
         usedef(driver, scope)
@@ -258,7 +258,7 @@ def compile_plan():
         dbg(dumpscope),
         phase(env.PHASE_1),
         iftrans,
-        traceblk,
+        reduceblk,
         dbg(dumpscope),
         earlyconstopt_nonssa,
         quadruple,
@@ -266,7 +266,7 @@ def compile_plan():
         dbg(dumpscope),
         classcheck,
         inlineopt,
-        traceblk,
+        reduceblk,
         dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
@@ -305,7 +305,7 @@ def compile_plan():
         specfunc,
         dbg(dumpscope),
         usedef,
-        traceblk,
+        reduceblk,
         dbg(dumpscope),
         phase(env.PHASE_3),
         usedef,

@@ -3,7 +3,7 @@ from .dominator import DominatorTreeBuilder
 from .ir import CONST, BINOP, RELOP, TEMP, MOVE, JUMP, CJUMP
 from .varreplacer import VarReplacer
 from .usedef import UseDefDetector
-from .block import Block, CompositBlock, BlockTracer
+from .block import Block, CompositBlock
 from logging import getLogger
 logger = getLogger(__name__)
 
