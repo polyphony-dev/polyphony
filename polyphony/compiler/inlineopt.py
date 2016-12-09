@@ -115,7 +115,11 @@ class InlineOpt:
                     if call_stm.is_a(MOVE):
                         attr_map[callee.symbols[env.self_name]] = call_stm.dst
                 else:
-                    assert False
+                    if call_stm.is_a(MOVE):
+                        object_sym = call.func.exp.qualified_symbol()
+                    elif call_stm.is_a(EXPR):
+                        object_sym = call.func.exp.qualified_symbol()
+                    symbol_map[callee.symbols[env.self_name]] = object_sym
             else:
                 if callee.is_ctor():
                     if call_stm.is_a(MOVE):
@@ -123,7 +127,7 @@ class InlineOpt:
                         object_sym = call_stm.dst.qualified_symbol()
                     else:
                         assert False
-                elif callee.is_method():
+                else:
                     object_sym = call.func.exp.qualified_symbol()
                 symbol_map[callee.symbols[env.self_name]] = object_sym
 

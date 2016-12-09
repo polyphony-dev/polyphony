@@ -9,7 +9,6 @@ from .env import env
 import logging
 logger = logging.getLogger(__name__)
 
-
 def type_error(ir, msg):
     print(error_info(ir.lineno))
     raise TypeError(msg)
@@ -72,7 +71,11 @@ class TypePropagation(IRVisitor):
         if ir.func_scope.is_class():
             assert False
         else:
-            for i, param in enumerate(ir.func_scope.params):
+            if ir.func_scope.is_method():
+                params = ir.func_scope.params[1:]
+            else:
+                params = ir.func_scope.params[:]
+            for i, param in enumerate(params):
                 if len(arg_types) > i:
                     param.sym.typ = arg_types[i]
             funct = Type.function(ret_t, tuple([param.sym.typ for param in ir.func_scope.params]))
@@ -90,6 +93,9 @@ class TypePropagation(IRVisitor):
         self.scope.add_callee_scope(ir.func_scope)
         ret_t = ir.func_scope.return_type
         ctor = ir.func_scope.find_ctor()
+        if not ctor and not ir.args:
+            # TODO: we should create ctor scope implicitly when it is not defined
+            return ret_t
         arg_types = [self.visit(arg) for arg in ir.args]
         for i, param in enumerate(ctor.params[1:]):
             if len(arg_types) > i:
@@ -180,7 +186,7 @@ class TypePropagation(IRVisitor):
         else:
             assert 0
         # check mutable method
-        if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == env.self_name:
+        if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == env.self_name and 'mutable' not in self.scope.attributes:
             self.scope.attributes.append('mutable')
 
     def visit_PHI(self, ir):
