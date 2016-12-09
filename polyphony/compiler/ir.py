@@ -1,6 +1,7 @@
 ﻿import copy
 from .symbol import Symbol
 from .utils import is_a
+from .env import env
 
 class Ctx:
     LOAD=1
@@ -42,43 +43,43 @@ class IR:
         return clone
 
     def replace(self, old, new):
-        for k, v in self.__dict__.items():
-            if v is old:
-                self.__dict__[k] = new
-                return True
-            elif isinstance(v, IR):
-                if v.replace(old, new):
-                    return True
-            elif isinstance(v, list):
-                for i, elm in enumerate(v):
+        def replace_rec(ir, old, new):
+            if isinstance(ir, IR):
+                for k, v in ir.__dict__.items():
+                    if v is old:
+                        ir.__dict__[k] = new
+                        return True
+                    elif replace_rec(v, old, new):
+                        return True
+            elif isinstance(ir, list):
+                for i, elm in enumerate(ir):
                     if elm is old:
-                        v[i] = new
+                        ir[i] = new
                         return True
-                    elif elm.replace(old, new):
+                    elif replace_rec(elm, old, new):
                         return True
-        return False
+            return False
+        return replace_rec(self, old, new)
 
-    def find_vars(self, sym):
+    def find_vars(self, qsym):
         vars = []
-        def find_vars_rec(ir, sym, vars):
-            for k, v in ir.__dict__.items():
-                if isinstance(v, TEMP) and v.sym is sym:
-                    vars.append(v)
-                elif isinstance(v, ATTR) and v.attr is sym:
-                    vars.append(v)
-                elif isinstance(v, IR):
-                    find_vars_rec(v, sym, vars)
-                elif isinstance(v, list):
-                    for elm in v:
-                        if isinstance(elm, TEMP) and elm.sym is sym:
-                            vars.append(elm)
-                        elif isinstance(elm, ATTR) and elm.attr is sym:
-                            vars.append(elm)
-                        if isinstance(elm, IR):
-                            find_vars_rec(elm, sym, vars)
-                        else:
-                            assert False
-        find_vars_rec(self, sym, vars)
+        def find_vars_rec(ir, qsym, vars):
+            if isinstance(ir, IR):
+                if ir.is_a(TEMP):
+                   if ir.qualified_symbol() == qsym:
+                        vars.append(ir)
+                elif ir.is_a(ATTR):
+                    if ir.qualified_symbol() == qsym:
+                        vars.append(ir)
+                    else:
+                        find_vars_rec(ir.exp, qsym, vars)
+                else:
+                    for k, v in ir.__dict__.items():
+                        find_vars_rec(v, qsym, vars)
+            elif isinstance(ir, list) or isinstance(ir, tuple):
+                for elm in ir:
+                    find_vars_rec(elm, qsym, vars)
+        find_vars_rec(self, qsym, vars)
         return vars
 
 class IRExp(IR):
@@ -97,7 +98,6 @@ class UNOP(IRExp):
     def kids(self):
         return self.exp.kids()
 
-
 class BINOP(IRExp):
     def __init__(self, op, left, right):
         super().__init__()
@@ -111,7 +111,6 @@ class BINOP(IRExp):
     def kids(self):
         return self.left.kids() + self.right.kids()
 
-
 class RELOP(IRExp):
     def __init__(self, op, left, right):
         super().__init__()
@@ -124,7 +123,6 @@ class RELOP(IRExp):
 
     def kids(self):
         return self.left.kids() + self.right.kids()
-
 
 class CALL(IRExp):
     def __init__(self, func, args):
@@ -270,7 +268,7 @@ class TEMP(IRExp):
         assert isinstance(ctx, int)
 
     def __str__(self):
-        return str(self.sym)# + '('+str(hex(self.__hash__())) + ')'#  + ':[{}]'.format(self.lineno)  + Ctx.str(self.ctx)
+        return str(self.sym)
 
     def kids(self):
         return [self]
@@ -284,7 +282,6 @@ class TEMP(IRExp):
     def qualified_symbol(self):
         return (self.sym, )
 
-
 class ATTR(IRExp):
     def __init__(self, exp, attr, ctx):
         super().__init__()
@@ -295,7 +292,7 @@ class ATTR(IRExp):
         self.class_scope = None
 
     def __str__(self):
-        return '{}.{}'.format(self.exp, self.attr, Ctx.str(self.ctx))
+        return '{}.{}'.format(self.exp, self.attr)
 
     def kids(self):
         return [self]
@@ -435,36 +432,34 @@ def conds2str(conds):
     else:
         return 'None'
 
-class PHI(IRStm):
+
+
+class PHIBase(IRStm):
     def __init__(self, var):
         super().__init__()
         assert var.is_a([TEMP, ATTR])
         self.var = var
+        self.var.ctx = Ctx.STORE
         self.args = []
-        self.conds_list = None
+        self.defblks = []
+        self.ps = []
 
-    def __str__(self):
-        args = []
-        for arg, blk in self.args:
-            if arg:
-                args.append(str(arg)+':'+blk.name)
-            else:
-                args.append('_')
-        s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(args))
-        if self.conds_list:
-            assert len(self.conds_list) == len(self.args)
-            c = ''
-            for conds in self.conds_list:
-                c += '    ' + conds2str(conds) + '\n'
-            c = c[:-1] #remove last LF
-            s += '\n'+c
-        return s
-
-    def argv(self):
-        return [arg for arg, blk in self.args if arg]
-
-    def valid_conds(self):
-        return [c for c in self.conds_list if c]
+    def _str_args(self):
+        str_args = []
+        if self.ps:
+            assert len(self.ps) == len(self.args)
+            for arg, p in zip(self.args, self.ps):
+                if arg:
+                    str_args.append('{}?{}'.format(p, arg))
+                else:
+                    str_args.append('_')
+        else:
+            for arg in self.args:
+                if arg:
+                    str_args.append('{}'.format(arg))
+                else:
+                    str_args.append('_')
+        return str_args
 
     def kids(self):
         kids = []
@@ -472,24 +467,30 @@ class PHI(IRStm):
             kids += arg.kids()
         return self.var.kids() + kids
 
-    def replace(self, old, new):
-        if self.var is old:
-            self.var = new
-            return True
-        for i, (arg, blk) in enumerate(self.args):
-            if arg is old:
-                self.args[i] = (new, blk)
-                return True
-        return False
-        
-    def find_vars(self, sym):
-        vars = []
-        if self.var.sym is sym:
-            vars.append(self.var)
-        for arg, blk in self.args:
-            if arg.is_a(TEMP) and arg.sym is sym:
-                vars.append(arg)
-        return vars
+    def remove_arg(self, arg):
+        idx = self.args.index(arg)
+        if self.ps:
+            assert len(self.args) == len(self.ps)
+            self.ps.pop(idx)
+        self.args.pop(idx)
+        self.defblks.pop(idx)
+
+
+class PHI(PHIBase):
+    def __init__(self, var):
+        super().__init__(var)
+
+    def __str__(self):
+        s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        return s
+
+class UPHI(PHIBase):
+    def __init__(self, var):
+        super().__init__(var)
+
+    def __str__(self):
+        s = "(UPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        return s
 
 def op2str(op):
     return op.__class__.__name__

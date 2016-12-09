@@ -6,6 +6,7 @@ from .ir import *
 from .env import env
 from .type import Type
 from .varreplacer import VarReplacer
+from .copyopt import CopyOpt
 import logging
 logger = logging.getLogger()
 
@@ -256,35 +257,55 @@ class SymbolReplacer(IRVisitor):
         if ir.attr in self.sym_map:
             ir.attr = self.sym_map[ir.attr]
 
-class AliasReplacer(IRVisitor):
+
+class AliasReplacer(CopyOpt):
+    def _new_collector(self, copies):
+        return AliasDefCollector(copies)
+
     def __init__(self):
         super().__init__()
-        self.replace_map = {}
 
-    def process(self, scope):
-        self.scope = scope
-        assert len(scope.root_block.preds) == 0
+    def _find_old_use(self, ir, qsym):
+        vars = []
+        def find_vars_rec(ir, qsym, vars):
+            if isinstance(ir, IR):
+                if ir.is_a(ATTR):
+                    if Type.is_object(ir.attr.typ):
+                        if ir.qualified_symbol() == qsym:
+                            vars.append(ir)
+                    elif ir.exp.qualified_symbol() == qsym:
+                        vars.append(ir.exp)
+                else:
+                    for k, v in ir.__dict__.items():
+                        find_vars_rec(v, qsym, vars)
+            elif isinstance(ir, list) or isinstance(ir, tuple):
+                for elm in ir:
+                    find_vars_rec(elm, qsym, vars)
+        find_vars_rec(ir, qsym, vars)
+        return vars
 
-        for blk in self.scope.traverse_blocks():
-            self._process_block(blk)
 
-        for dst, src in self.replace_map.items():
-            VarReplacer.replace_uses(dst, src, self.scope.usedef)
+class AliasDefCollector(IRVisitor):
+    def __init__(self, copies):
+        self.copies = copies
+
+    def _is_alias_def(self, mov):
+        if not mov.is_a(MOVE):
+            return False
+        if not mov.src.is_a([TEMP, ATTR]):
+            return False
+        if not Type.is_object(mov.src.symbol().typ):
+            return False
+        if not mov.dst.is_a([TEMP, ATTR]):
+            return False
+        if not Type.is_object(mov.dst.symbol().typ):
+            return False
+        return True
 
     def visit_MOVE(self, ir):
-        if not ir.src.is_a([TEMP, ATTR]):
+        if not self._is_alias_def(ir):
             return
-        if not Type.is_object(ir.src.symbol().typ):
-            return
-        if not ir.dst.is_a([TEMP, ATTR]):
-            return
-        if not Type.is_object(ir.dst.symbol().typ):
-            return
-        if ir.dst not in self.replace_map:
-            self.replace_map[ir.dst] = ir.src
-        else:
-            assert False
-
+        self.copies.append(ir)
 
 class FlattenFieldAccess(IRVisitor):
     def make_flatname(self, ir):
@@ -330,7 +351,7 @@ class FlattenFieldAccess(IRVisitor):
 
 import pdb
 
-class ObjectDeepCopier:
+class ObjectHierarchyCopier:
     def __init__(self):
         pass
 
@@ -356,6 +377,8 @@ class ObjectDeepCopier:
             class_scope = Type.extra(cp.src.symbol().typ)
             assert class_scope is Type.extra(cp.dst.symbol().typ)
             for sym in class_scope.class_fields.keys():
+                if not Type.is_object(sym.typ):
+                    continue
                 new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
                 new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
                 new_cp = MOVE(new_dst, new_src)

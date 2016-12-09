@@ -726,6 +726,19 @@ class AHDLTranslator:
     def visit_PHI(self, ir, node):
         pass
 
+    def visit_UPHI(self, ir, node):
+        assert ir.ps and len(ir.args) == len(ir.ps)
+        conds = []
+        codes_list = []
+
+        ahdl_dst = self.visit(ir.var, node)
+        for arg, p in zip(ir.args, ir.ps):
+            conds.append(self.visit(p, node))
+            ahdl_src = self.visit(arg, node)
+            codes_list.append([AHDL_MOVE(ahdl_dst, ahdl_src)])
+
+        self._emit(AHDL_IF(conds, codes_list), self.sched_time)
+
     def visit(self, ir, node):
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)

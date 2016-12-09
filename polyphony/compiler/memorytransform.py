@@ -32,15 +32,15 @@ class MemoryRenamer:
             for phi in self._get_phis(block):
                 remove_args = []
                 args = set()
-                for arg, blk in phi.args:
+                for arg in phi.args:
                     args.add(arg.sym)
-                    if arg.is_a(TEMP) and arg.sym is phi.var.sym:
-                        remove_args.append((arg, blk))
+                    if arg.is_a(TEMP) and arg.symbol() is phi.var.symbol():
+                        remove_args.append(arg)
                 if len(args) == 1:
                     remove_phis.append(phi)
                     continue
                 for arg in remove_args:
-                    phi.args.remove(arg)
+                    phi.remove_arg(arg)
             for phi in remove_phis:
                 block.stms.remove(phi)
 
@@ -121,18 +121,18 @@ class MemoryRenamer:
 
             elif stm.is_a(PHI):
                 updated = False
-                for arg, blk in stm.args:
-                    if arg.sym in mem_var_map:
+                for arg in stm.args:
+                    if arg.symbol() in mem_var_map:
                         updated = merge_mem_var(arg, stm.var)
-                    elif arg.sym in memsrcs:
-                        mem = arg.sym
-                        if stm.var.sym != mem and (stm.var.sym not in mem_var_map or mem not in mem_var_map[stm.var.sym]):
-                            mem_var_map[stm.var.sym].add(mem)
+                    elif arg.symbol() in memsrcs:
+                        mem = arg.symbol()
+                        if stm.var.symbol() != mem and (stm.var.symbol() not in mem_var_map or mem not in mem_var_map[stm.var.symbol()]):
+                            mem_var_map[stm.var.symbol()].add(mem)
                             updated = True
                 # reach fix point ?
                 if not updated and stm in dones:
                     continue
-                sym = stm.var.sym
+                sym = stm.var.symbol()
 
             if sym:
                 uses = usedef.get_use_stms_by_sym(sym)
@@ -212,7 +212,3 @@ class RomDetector:
         self._propagate_info()
         self._propagate_writable_flag()
 
-        scopes = Scope.get_scopes(bottom_up=False)
-        for s in scopes:
-            cm = ContextModifier()
-            cm.process(s)

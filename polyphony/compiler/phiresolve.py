@@ -33,7 +33,9 @@ class PHICondResolver:
         usedef = self.scope.usedef
         args = []
         conds = []
-        for i, (arg, blk) in enumerate(phi.args):
+        for i, (arg, blk) in enumerate(zip(phi.args, phi.defblks)):
+            if not blk:
+                continue
             pred = blk
             mv = MOVE(TEMP(phi.var.symbol(), Ctx.STORE), arg)
             mv.lineno = arg.lineno

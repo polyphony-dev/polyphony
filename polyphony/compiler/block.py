@@ -6,12 +6,14 @@ logger = getLogger(__name__)
 class Block:
     @classmethod
     def set_order(cls, block, order):
+        order += 1
         if order > block.order:
             logger.debug(block.name + ' order ' + str(order))
             block.order = order
-        order += 1
-        for succ in [succ for succ in block.succs if succ not in block.succs_loop]:
-            cls.set_order(succ, order)
+
+            succs = [succ for succ in block.succs if succ not in block.succs_loop]
+            for succ in succs:
+                cls.set_order(succ, order)
 
     def __init__(self, scope, nametag = 'b'):
         self.nametag = nametag
@@ -125,6 +127,8 @@ class Block:
             succ.collect_basic_blocks(blocks)
 
     def traverse(self, visited, full=False, longitude=False):
+        if self in visited:
+            return
         if self not in visited:
             visited.add(self)
             yield self
@@ -154,6 +158,9 @@ class Block:
             self.preds[i] = blk_map[pred]
         for i, pred in enumerate(self.preds_loop):
             self.preds_loop[i] = blk_map[pred]
+
+    def collect_stms(self, typs):
+         return [stm for stm in self.stms if stm.is_a(typs)]
 
 class CompositBlock(Block):
     def __init__(self, scope, head, bodies, region):
@@ -261,6 +268,8 @@ class BlockReducer:
             return
         self._merge_unidirectional_block(scope)
         self._remove_empty_block(scope)
+        for blk in scope.traverse_blocks():
+            blk.order = -1
         Block.set_order(scope.root_block, 0)
 
     def _merge_unidirectional_block(self, scope):
@@ -312,3 +321,23 @@ class BlockReducer:
                 logger.debug('remove empty block ' + block.name)
                 if block is scope.root_block:
                     scope.root_block = succ
+
+class PathTracer:
+    def trace_path(self, blk, end, stack, paths):
+        # FIXME: this algorithm is very naive
+        stack.append(blk)
+
+        if blk is end:
+            paths.append(stack[:])
+            stack.pop()
+            return
+
+        for succ in [succ for succ in blk.succs if succ not in blk.succs_loop]:
+            self.trace_path(succ, end, stack, paths)
+        stack.pop()
+
+    def trace(self, scope, start, end):
+        stack = []
+        paths = []
+        self.trace_path(start, end, stack, paths)
+        return paths

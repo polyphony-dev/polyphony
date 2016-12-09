@@ -57,10 +57,7 @@ def eval_binop(ir):
         print(error_info(ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
 
-def eval_relop(ir):
-    op = ir.op
-    lv = ir.left.value
-    rv = ir.right.value
+def eval_relop(op, lv, rv):
     if op == 'Eq':
         return lv == rv
     elif op == 'NotEq':
@@ -121,7 +118,10 @@ class ConstantOptBase(IRVisitor):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            return CONST(eval_relop(ir))
+            return CONST(eval_relop(ir.op, ir.left.value, ir.right.value))
+        if ir.left.is_a([TEMP, ATTR]) and ir.right.is_a([TEMP, ATTR]) and ir.left.qualified_symbol() == ir.right.qualified_symbol():
+            c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id))
+            return c
         return ir
 
     def visit_CALL(self, ir):
@@ -197,7 +197,8 @@ class ConstantOpt(ConstantOptBase):
             self.current_stm = stm
             self.visit(stm)
             if stm.is_a(PHI) and len(stm.args)==1:
-                arg, blk = stm.args[0]
+                arg = stm.args[0]
+                blk = stm.defblks[0]
                 mv = MOVE(stm.var, arg)
                 blk.insert_stm(-1, mv)
                 worklist.append(mv)
@@ -301,12 +302,12 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_PHI(self, ir):
         if len(ir.block.preds) != len(ir.args):
-            removes = []
-            for arg, blk in ir.args:
-                if blk is not self.scope.root_block and not blk.preds:
-                    removes.append((arg, blk))
-            for r in removes:
-                ir.args.remove(r)
+            remove_args = []
+            for arg, blk in zip(ir.args, ir.defblks):
+                if blk and blk is not self.scope.root_block and not blk.preds:
+                    remove_args.append(arg)
+            for arg in remove_args:
+                ir.remove_arg(arg)
 
 class EarlyConstantOptNonSSA(ConstantOptBase):
     def __init__(self):
@@ -352,8 +353,8 @@ class ConstantOptPreDetectROM(ConstantOpt):
         return ir
 
     def visit_PHI(self, ir):
-        for i, (arg, blk) in enumerate(ir.args):
-            ir.args[i] = (self.visit(arg), blk)
+        for i, arg in enumerate(ir.args):
+            ir.args[i] = self.visit(arg)
 
 class GlobalConstantOpt(ConstantOptBase):
     def __init__(self):

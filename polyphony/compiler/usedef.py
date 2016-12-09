@@ -7,6 +7,7 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 class UseDefTable:
+
     def __init__(self):
         self._sym_defs_stm = defaultdict(set)
         self._sym_uses_stm = defaultdict(set)
@@ -269,6 +270,18 @@ class UseDefDetector(IRVisitor):
 
     def visit_PHI(self, ir):
         self.visit(ir.var)
-        for arg, blk in ir.args:
-            self.visit(arg)
+        for arg in ir.args:
+            if arg:
+                self.visit(arg)
+        if ir.ps:
+            for p in ir.ps:
+                if p: self.visit(p)
 
+    def visit_UPHI(self, ir):
+        self.visit(ir.var)
+        for arg in ir.args:
+            if arg:
+                self.visit(arg)
+        if ir.ps:
+            for p in ir.ps:
+                if p: self.visit(p)

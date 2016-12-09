@@ -53,10 +53,12 @@ class Symbol:
 
     def __str__(self):
         #return '{}:{}({}:{})'.format(self.name, Type.str(self.typ), self.id, self.scope.orig_name)
-        return '{}:{}({})'.format(self.name, Type.str(self.typ), self.id)
+        #return '{}:{}({})'.format(self.name, Type.str(self.typ), self.id)
+        return self.name
 
     def __repr__(self):
-        return '{}({})'.format(self.name, hex(self.__hash__()))
+        #return '{}({})'.format(self.name, hex(self.__hash__()))
+        return self.name
 
     def __lt__(self, other):
         return self.name < other.name

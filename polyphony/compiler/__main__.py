@@ -28,7 +28,7 @@ from .setlineno import LineNumberSetter, SourceDump
 from .loopdetector import LoopDetector, SimpleLoopUnroll, LoopBlockDestructor
 from .specfunc import SpecializedFunctionMaker
 from .selectorbuilder import SelectorBuilder
-from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer
+from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
 from .copyopt import CopyOpt
 from .callgraph import CallGraphBuilder
 
@@ -77,10 +77,6 @@ def quadruple(driver, scope):
 def usedef(driver, scope):
     udd = UseDefDetector()
     udd.process(scope)
-
-def objssa(driver, scope):
-    ssa = ObjectSSATransformer()
-    ssa.process(scope)
 
 def scalarssa(driver, scope):
     ssa = ScalarSSATransformer()
@@ -134,13 +130,13 @@ def inlineopt(driver):
         driver.remove_scope(s)
         env.remove_scope(s)
 
-def aliasreplace(driver, scope):
-    replacer = AliasReplacer()
-    replacer.process(scope)
-
-def flatten_field(driver, scope):
-    flatten = FlattenFieldAccess()
-    flatten.process(scope)
+def scalarize(driver, scope):
+    ObjectHierarchyCopier().process(scope)
+    usedef(driver, scope)
+    ObjectSSATransformer().process(scope)
+    usedef(driver, scope)
+    AliasReplacer().process(scope)
+    FlattenFieldAccess().process(scope)
 
 def earlyconstopt_nonssa(driver, scope):
     constopt = EarlyConstantOptNonSSA()
@@ -164,22 +160,20 @@ def loop(driver, scope):
 
 def tbopt(driver, scope):
     if scope.is_testbench():
-        simple_loop_unroll = SimpleLoopUnroll()
-        simple_loop_unroll.process(scope)
-        loopdestructor = LoopBlockDestructor()
-        loopdestructor.process(scope)
+        SimpleLoopUnroll().process(scope)
+        LoopBlockDestructor().process(scope)
         usedef(driver, scope)
         scalarssa(driver, scope)
+        dumpscope(driver, scope)
         usedef(driver, scope)
-        memrename(driver, scope),
-        constopt = ConstantOpt()
-        constopt.process(scope)
+        memrename(driver, scope)
+        dumpscope(driver, scope)
+        ConstantOpt().process(scope)
         reduceblk(driver, scope)
         usedef(driver, scope)
         phi(driver, scope)
         usedef(driver, scope)
-        loop_detector = LoopDetector()
-        loop_detector.process(scope)
+        LoopDetector().process(scope)
 
 def liveness(driver, scope):
     liveness = Liveness()
@@ -270,14 +264,11 @@ def compile_plan():
         dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
-        objssa,
+        scalarize,
         dbg(dumpscope),
         usedef,
-        aliasreplace,
-        dbg(dumpscope),
         scalarssa,
         usedef,
-        flatten_field,
         dbg(dumpscope),
         usedef,
         typeprop,

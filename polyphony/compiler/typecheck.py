@@ -166,6 +166,8 @@ class TypePropagation(IRVisitor):
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
+        if src_typ is Type.none_t:
+            return
         dst_typ = self.visit(ir.dst)
 
         if ir.dst.is_a([TEMP, ATTR]):
@@ -182,12 +184,14 @@ class TypePropagation(IRVisitor):
             self.scope.attributes.append('mutable')
 
     def visit_PHI(self, ir):
-        arg_types = [self.visit(arg) for arg, blk in ir.args]
+        arg_types = [self.visit(arg) for arg in ir.args]
         for arg_t in arg_types:
             if not Type.is_none(arg_t):
                 ir.var.symbol().set_type(arg_t)
                 break
 
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
 
 class ClassFieldChecker(IRVisitor):
     def __init__(self):
@@ -368,9 +372,9 @@ class TypeChecker(IRVisitor):
 
     def visit_PHI(self, ir):
         # FIXME
-        assert ir.var.symbol().typ is not None
-        assert all([arg is None or arg.symbol().typ is not None for arg, blk in ir.args])
-
+        #assert ir.var.symbol().typ is not None
+        #assert all([arg is None or arg.symbol().typ is not None for arg, blk in ir.args])
+        pass
 
     def _check_param_number(self, arg_len, param_len, ir):
         if arg_len == param_len:

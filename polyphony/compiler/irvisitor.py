@@ -91,8 +91,15 @@
         self.visit(ir.dst)
 
     def visit_PHI(self, ir):
-        pass
+        self.visit(ir.var)
+        for arg in ir.args:
+            self.visit(arg)
+        if ir.ps:
+            for p in ir.ps:
+                if p : self.visit(p)
 
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
 
 class IRTransformer(IRVisitor):
     def __init__(self):

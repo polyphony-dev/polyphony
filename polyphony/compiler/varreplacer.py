@@ -119,9 +119,12 @@ class VarReplacer:
     def visit_PHI(self, ir):
         self.replaced = False
         args = ir.args[:]
-        ir.args = [(self.visit(arg), blk) for arg, blk in ir.args]
+        ir.args = [self.visit(arg) for arg in ir.args]
         if self.replaced:
             self.replaces.append(ir)
+
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
 
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__

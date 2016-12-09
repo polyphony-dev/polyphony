@@ -720,7 +720,7 @@ class MemRefGraphBuilder(IRVisitor):
     def visit_PHI(self, ir):
         if Type.is_list(ir.var.sym.typ):
             self.mrg.add_node(MemRefNode(ir.var.sym, self.scope))
-            for arg, blk in ir.args:
+            for arg in ir.args:
                 self._append_edge(arg.sym, ir.var.sym)
             memnode = self.mrg.node(ir.var.sym)
             ir.var.sym.set_type(Type.list(Type.int_t, memnode))

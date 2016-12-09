@@ -231,6 +231,8 @@ class LoopBlockDestructor:
                         s.replace_pred(lb, body)
                         break
         scope.loop_nest_tree = None
+        for blk in scope.traverse_blocks():
+            blk.order = -1
         Block.set_order(scope.root_block, 0)
 
 
@@ -252,7 +254,8 @@ class SimpleLoopUnroll:
 
         for c in self.scope.loop_nest_tree.get_children_of(root):
             self._process(c)
-
+        for blk in scope.traverse_blocks():
+            blk.order = -1
         Block.set_order(root, 0)
 
     def _process(self, blk):
