@@ -270,7 +270,7 @@ class BlockReducer:
         self._remove_empty_block(scope)
         for blk in scope.traverse_blocks():
             blk.order = -1
-        Block.set_order(scope.root_block, 0)
+        Block.set_order(scope.entry_block, 0)
 
     def _merge_unidirectional_block(self, scope):
         for block in scope.traverse_blocks():
@@ -293,8 +293,8 @@ class BlockReducer:
                     succ.replace_pred_loop(block, pred)
                 pred.succs = block.succs
                 pred.succs_loop = block.succs_loop
-                if block is scope.leaf_block:
-                    scope.leaf_block = pred
+                if block is scope.exit_block:
+                    scope.exit_block = pred
 
     def _remove_empty_block(self, scope):
         for block in scope.traverse_blocks():
@@ -319,8 +319,8 @@ class BlockReducer:
                         succ.preds.append(pred)
 
                 logger.debug('remove empty block ' + block.name)
-                if block is scope.root_block:
-                    scope.root_block = succ
+                if block is scope.entry_block:
+                    scope.entry_block = succ
 
 class PathTracer:
     def trace_path(self, blk, end, stack, paths):

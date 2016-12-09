@@ -108,7 +108,7 @@ class SSATransformerBase:
             qstack[key] = [0]
 
         self.new_syms = set()
-        self._rename_rec(self.scope.root_block, qcount, qstack)
+        self._rename_rec(self.scope.entry_block, qcount, qstack)
 
         for var, version in self.new_syms:
             assert var.is_a([TEMP, ATTR])
@@ -215,7 +215,7 @@ class SSATransformerBase:
         tree.dump()
         self.tree = tree
 
-        first_block = self.scope.root_block
+        first_block = self.scope.entry_block
         df_builder = DominanceFrontierBuilder()
         self.dominance_frontier = df_builder.process(first_block, tree)
 
@@ -285,7 +285,7 @@ class SSATransformerBase:
                 self._idom_path(pred, idoms)
 
                 tracer = PathTracer()
-                paths = tracer.trace(self.scope, self.scope.root_block, pred)
+                paths = tracer.trace(self.scope, self.scope.entry_block, pred)
                 assert paths
                 path = paths[0] + [blk]
                 exps = []

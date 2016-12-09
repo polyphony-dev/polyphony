@@ -4,7 +4,7 @@
 
     def process(self, scope):
         self.scope = scope
-        assert len(scope.root_block.preds) == 0
+        assert len(scope.entry_block.preds) == 0
 
         for blk in self.scope.traverse_blocks():
             self._process_block(blk)

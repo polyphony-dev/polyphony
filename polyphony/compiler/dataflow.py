@@ -288,14 +288,14 @@ class DFGBuilder:
 
     def process(self, scope):
         self.scope = scope
-        self.scope.top_dfg = self._process(scope.root_block)
+        self.scope.top_dfg = self._process(scope.entry_block)
 
     def _root_blocks(self):
         inner_loop_region = set()
-        for c in self.scope.loop_nest_tree.get_children_of(self.scope.root_block):
+        for c in self.scope.loop_nest_tree.get_children_of(self.scope.entry_block):
             inner_loop_region = inner_loop_region.union(set(c.region))
         all_blks = set()
-        self.scope.root_block.collect_basic_blocks(all_blks)
+        self.scope.entry_block.collect_basic_blocks(all_blks)
         return all_blks.difference(inner_loop_region)
 
     def _process(self, blk):

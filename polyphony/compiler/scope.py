@@ -79,8 +79,8 @@ class Scope:
         self.symbols = {}
         self.params = []
         self.return_type = None
-        self.root_block = None
-        self.leaf_block = None
+        self.entry_block = None
+        self.exit_block = None
         self.children = []
         self.usedef = None
         self.loop_nest_tree = None
@@ -168,8 +168,8 @@ class Scope:
         s.return_type = self.return_type
 
         block_map = self.clone_blocks(s)
-        s.root_block = block_map[self.root_block]
-        s.leaf_block = block_map[self.leaf_block]
+        s.entry_block = block_map[self.entry_block]
+        s.exit_block = block_map[self.exit_block]
 
         s.children = list(self.children)
         for child in s.children:
@@ -291,18 +291,18 @@ class Scope:
         n += self.name
         return n
 
-    def set_root_block(self, root):
-        assert self.root_block is None
-        self.root_block = root
+    def set_entry_block(self, blk):
+        assert self.entry_block is None
+        self.entry_block = blk
 
-    def set_leaf_block(self, leaf):
-        assert self.leaf_block is None
-        self.leaf_block = leaf
+    def set_exit_block(self, blk):
+        assert self.exit_block is None
+        self.exit_block = blk
 
     def traverse_blocks(self, full=False, longitude=False):
-        assert len(self.root_block.preds) == 0
+        assert len(self.entry_block.preds) == 0
         visited = set()
-        yield from self.root_block.traverse(visited, full, longitude)
+        yield from self.entry_block.traverse(visited, full, longitude)
 
     def append_child(self, child_scope):
         if child_scope not in self.children:

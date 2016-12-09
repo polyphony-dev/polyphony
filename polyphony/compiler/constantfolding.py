@@ -304,7 +304,7 @@ class ConstantOpt(ConstantOptBase):
         if len(ir.block.preds) != len(ir.args):
             remove_args = []
             for arg, blk in zip(ir.args, ir.defblks):
-                if blk and blk is not self.scope.root_block and not blk.preds:
+                if blk and blk is not self.scope.entry_block and not blk.preds:
                     remove_args.append(arg)
             for arg in remove_args:
                 ir.remove_arg(arg)

@@ -61,7 +61,7 @@ class DominatorTreeBuilder:
         self.dominators = {}
 
     def process(self):
-        first_block = self.scope.root_block
+        first_block = self.scope.entry_block
         self._fwd_blks = self._succs
         self._fwd_loop_blks = self._succs_loop
         self._back_blks = self._preds

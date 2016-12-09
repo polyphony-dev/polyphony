@@ -66,9 +66,9 @@ class InlineOpt:
             result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
 
             block_map = callee.clone_blocks(caller)
-            callee_root_blk = block_map[callee.root_block]
-            callee_leaf_blk = block_map[callee.leaf_block]
-            assert len(callee_leaf_blk.succs) <= 1
+            callee_entry_blk = block_map[callee.entry_block]
+            callee_exit_blk = block_map[callee.exit_block]
+            assert len(callee_exit_blk.succs) <= 1
 
             result = TEMP(result_sym, Ctx.LOAD)
             result.lineno = call_stm.lineno
@@ -80,9 +80,9 @@ class InlineOpt:
                 call_stm.exp = result
 
             sym_replacer = SymbolReplacer(symbol_map)
-            sym_replacer.process(caller, callee_root_blk)
+            sym_replacer.process(caller, callee_entry_blk)
 
-            self._merge_blocks(call_stm, callee_root_blk, callee_leaf_blk)
+            self._merge_blocks(call_stm, callee_entry_blk, callee_exit_blk)
 
     def _process_method(self, callee, caller, calls):
         if caller.is_testbench() or caller.is_global():
@@ -95,9 +95,9 @@ class InlineOpt:
             result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
 
             block_map = callee.clone_blocks(caller)
-            callee_root_blk = block_map[callee.root_block]
-            callee_leaf_blk = block_map[callee.leaf_block]
-            assert len(callee_leaf_blk.succs) <= 1
+            callee_entry_blk = block_map[callee.entry_block]
+            callee_exit_blk = block_map[callee.exit_block]
+            assert len(callee_exit_blk.succs) <= 1
 
             if not callee.is_ctor():
                 result = TEMP(result_sym, Ctx.LOAD)
@@ -132,9 +132,9 @@ class InlineOpt:
                 symbol_map[callee.symbols[env.self_name]] = object_sym
 
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
-            sym_replacer.process(caller, callee_root_blk)
+            sym_replacer.process(caller, callee_entry_blk)
 
-            self._merge_blocks(call_stm, callee_root_blk, callee_leaf_blk)
+            self._merge_blocks(call_stm, callee_entry_blk, callee_exit_blk)
 
             if callee.is_ctor():
                 assert call_stm.src is call
@@ -164,7 +164,7 @@ class InlineOpt:
         return symbol_map
 
 
-    def _merge_blocks(self, call_stm, callee_root_blk, callee_leaf_blk):
+    def _merge_blocks(self, call_stm, callee_entry_blk, callee_exit_blk):
         caller_scope = call_stm.block.scope
         early_call_blk = call_stm.block
         late_call_blk  = Block(caller_scope)
@@ -178,25 +178,25 @@ class InlineOpt:
             s.block = late_call_blk
         early_call_blk.stms = early_call_blk.stms[:idx]
         if early_call_blk.stms:
-            early_call_blk.append_stm(JUMP(callee_root_blk))
-            early_call_blk.succs = [callee_root_blk]
-            callee_root_blk.preds = [early_call_blk]
+            early_call_blk.append_stm(JUMP(callee_entry_blk))
+            early_call_blk.succs = [callee_entry_blk]
+            callee_entry_blk.preds = [early_call_blk]
         else:
-            if caller_scope.root_block is early_call_blk:
-                caller_scope.root_block = callee_root_blk
+            if caller_scope.entry_block is early_call_blk:
+                caller_scope.entry_block = callee_entry_blk
             else:
                 for pred in early_call_blk.preds:
-                    pred.replace_succ(early_call_blk, callee_root_blk)
-            callee_root_blk.preds = early_call_blk.preds
+                    pred.replace_succ(early_call_blk, callee_entry_blk)
+            callee_entry_blk.preds = early_call_blk.preds
 
-        if callee_leaf_blk.stms and callee_leaf_blk.stms[-1].is_a(RET):
-            callee_leaf_blk.stms.pop()
-        callee_leaf_blk.append_stm(JUMP(late_call_blk))
-        callee_leaf_blk.succs = [late_call_blk]
-        late_call_blk.preds = [callee_leaf_blk]
+        if callee_exit_blk.stms and callee_exit_blk.stms[-1].is_a(RET):
+            callee_exit_blk.stms.pop()
+        callee_exit_blk.append_stm(JUMP(late_call_blk))
+        callee_exit_blk.succs = [late_call_blk]
+        late_call_blk.preds = [callee_exit_blk]
 
-        if caller_scope.leaf_block is early_call_blk:
-            caller_scope.leaf_block = late_call_blk
+        if caller_scope.exit_block is early_call_blk:
+            caller_scope.exit_block = late_call_blk
 
     def _reduce_useless_move(self, scope):
         for block in scope.traverse_blocks():
@@ -230,14 +230,14 @@ class SymbolReplacer(IRVisitor):
         self.attr_map = attr_map
         self.inst_name = inst_name
 
-    def traverse_blocks(self, root_block, full=False, longitude=False):
-        assert len(root_block.preds) == 0
+    def traverse_blocks(self, entry_block, full=False, longitude=False):
+        assert len(entry_block.preds) == 0
         visited = set()
-        yield from root_block.traverse(visited, full=False, longitude=False)
+        yield from entry_block.traverse(visited, full=False, longitude=False)
 
-    def process(self, scope, root_block):
+    def process(self, scope, entry_block):
         self.scope = scope
-        for blk in self.traverse_blocks(root_block):
+        for blk in self.traverse_blocks(entry_block):
             self._process_block(blk)
 
     def _qsym_to_var(self, qsym, ctx):

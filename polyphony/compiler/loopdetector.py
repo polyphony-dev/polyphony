@@ -78,7 +78,7 @@ class LoopDetector:
 
         ordered_blks = []
         visited = []
-        head = scope.root_block
+        head = scope.entry_block
         self._process_walk(head, ordered_blks, visited)
         assert head is ordered_blks[-1]
 
@@ -170,7 +170,7 @@ class LoopDetector:
 class LoopDependencyDetector:
     def processs(self, scope):
         all_blks = set()
-        scope.root_block.collect_basic_blocks(all_blks)
+        scope.entry_block.collect_basic_blocks(all_blks)
         for lb in scope.loop_nest_tree.traverse():
             if lb is scope.loop_nest_tree.root:
                 break
@@ -233,7 +233,7 @@ class LoopBlockDestructor:
         scope.loop_nest_tree = None
         for blk in scope.traverse_blocks():
             blk.order = -1
-        Block.set_order(scope.root_block, 0)
+        Block.set_order(scope.entry_block, 0)
 
 
 class SimpleLoopUnroll:
@@ -244,7 +244,7 @@ class SimpleLoopUnroll:
     def process(self, scope):
         self.scope = scope
 
-        root = scope.root_block
+        entry = scope.entry_block
         # reset ssa form
         for var in scope.usedef.get_all_vars():
             if var.sym.ancestor:
@@ -252,11 +252,11 @@ class SimpleLoopUnroll:
         udd = UseDefDetector()
         udd.process(scope)
 
-        for c in self.scope.loop_nest_tree.get_children_of(root):
+        for c in self.scope.loop_nest_tree.get_children_of(entry):
             self._process(c)
         for blk in scope.traverse_blocks():
             blk.order = -1
-        Block.set_order(root, 0)
+        Block.set_order(entry, 0)
 
     def _process(self, blk):
         assert isinstance(blk, CompositBlock)

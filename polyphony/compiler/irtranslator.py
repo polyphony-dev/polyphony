@@ -97,7 +97,7 @@ class Visitor(ast.NodeVisitor):
         self.current_scope = self.global_scope
 
         self.current_block = Block(self.current_scope)
-        self.current_scope.set_root_block(self.current_block)
+        self.current_scope.set_entry_block(self.current_block)
         self.function_exit = None
 
         self.loop_bridge_blocks = []
@@ -152,7 +152,7 @@ class Visitor(ast.NodeVisitor):
 
         last_block = self.current_block
         new_block = Block(self.current_scope)
-        self.current_scope.set_root_block(new_block)
+        self.current_scope.set_entry_block(new_block)
         self.current_block = new_block
 
         outer_scope.add_sym(name)
@@ -196,10 +196,9 @@ class Visitor(ast.NodeVisitor):
         self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
 
         if self.function_exit.preds:
-            self.current_scope.set_leaf_block(self.function_exit)
+            self.current_scope.set_exit_block(self.function_exit)
         else:
-            self.current_scope.set_leaf_block(self.current_block)
-        #print('LEAF', self.current_scope.leaf_block)
+            self.current_scope.set_exit_block(self.current_block)
 
         self.function_exit = outer_function_exit
 
