@@ -120,11 +120,11 @@ class InlineOpt:
                 if callee.is_ctor():
                     if call_stm.is_a(MOVE):
                         assert call_stm.src is call
-                        object_sym = call_stm.dst.symbol()
+                        object_sym = call_stm.dst.qualified_symbol()
                     else:
                         assert False
                 elif callee.is_method():
-                    object_sym = call.func.head()
+                    object_sym = call.func.exp.qualified_symbol()
                 symbol_map[callee.symbols[env.self_name]] = object_sym
 
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
@@ -236,6 +236,13 @@ class SymbolReplacer(IRVisitor):
         for blk in self.traverse_blocks(root_block):
             self._process_block(blk)
 
+    def _qsym_to_var(self, qsym, ctx):
+        if len(qsym) == 1:
+            return TEMP(qsym[0], ctx)
+        else:
+            exp = self._qsym_to_var(qsym[:-1], Ctx.LOAD)
+            return ATTR(exp, qsym[-1], ctx)
+
     def visit_TEMP(self, ir):
         if self.attr_map and ir.sym in self.attr_map:
             attr = self.attr_map[ir.sym].clone()
@@ -245,6 +252,10 @@ class SymbolReplacer(IRVisitor):
             if isinstance(rep, Symbol):
                 ir.sym = rep
                 return ir
+            elif isinstance(rep, tuple): # qualified_symbol
+                var = self._qsym_to_var(rep, ir.ctx)
+                var.lineno = ir.lineno
+                return var
             else:
                 self.current_stm.replace(ir, rep)
                 return rep
