@@ -3,6 +3,33 @@ from .symbol import Symbol
 from .utils import is_a
 from .env import env
 
+op2sym_map = {
+    'And':'and',
+    'Or':'or',
+    'Add':'+',
+    'Sub':'-',
+    'Mult':'*',
+    'FloorDiv':'//',
+    'Mod':'%',
+    'LShift':'<<',
+    'RShift':'>>',
+    'BitOr':'|',
+    'BitXor':'^',
+    'BitAnd':'&',
+    'Eq':'==',
+    'NotEq':'!=',
+    'Lt':'<',
+    'LtE':'<=',
+    'Gt':'>',
+    'GtE':'>=',
+    'IsNot':'!=',
+    'USub':'-',
+    'UAdd':'+',
+    'Not':'!',
+    'Invert':'~'
+    }
+
+
 class Ctx:
     LOAD=1
     STORE=2
@@ -93,7 +120,7 @@ class UNOP(IRExp):
         self.exp = exp
 
     def __str__(self):
-        return '(UNOP {}, {})'.format(self.op, self.exp)
+        return '{}{}'.format(op2sym_map[self.op], self.exp)
 
     def kids(self):
         return self.exp.kids()
@@ -106,7 +133,7 @@ class BINOP(IRExp):
         self.right = right
 
     def __str__(self):
-        return '(BINOP {}, {}, {})'.format(self.op, self.left, self.right)
+        return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
 
     def kids(self):
         return self.left.kids() + self.right.kids()
@@ -119,7 +146,7 @@ class RELOP(IRExp):
         self.right = right
 
     def __str__(self):
-        return '(RELOP {}, {}, {})'.format(self.op, self.left, self.right)
+        return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
 
     def kids(self):
         return self.left.kids() + self.right.kids()

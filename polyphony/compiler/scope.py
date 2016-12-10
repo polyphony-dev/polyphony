@@ -94,6 +94,7 @@ class Scope:
         self.signals = {}
         self.block_count = 0
         self.class_fields = {}
+        self.paths = []
 
     def __str__(self):
         s = '\n================================\n'

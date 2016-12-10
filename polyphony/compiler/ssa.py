@@ -275,6 +275,9 @@ class SSATransformerBase:
 
     def _insert_predicate(self):
         usedef = self.scope.usedef
+        paths = self.scope.paths
+        assert paths
+
         for blk in self.scope.traverse_blocks():
             phis = blk.collect_stms([PHI, UPHI])
             if not phis:
@@ -283,12 +286,15 @@ class SSATransformerBase:
             for pred_i, pred in enumerate(blk.preds):
                 idoms = []
                 self._idom_path(pred, idoms)
-
-                tracer = PathTracer()
-                paths = tracer.trace(self.scope, self.scope.entry_block, pred)
-                assert paths
-                path = paths[0] + [blk]
+                for p in paths:
+                    if pred in p:
+                        idx = p.index(pred)
+                        if p[idx + 1] is blk:
+                            path = p
+                            break
+                assert path
                 exps = []
+
                 for idom in idoms:
                     jump = idom.stms[-1]
                     if jump.is_a(CJUMP):

@@ -4,7 +4,7 @@ from .driver import Driver
 from .env import env
 from .common import read_source, src_text
 from .scope import Scope
-from .block import BlockReducer
+from .block import BlockReducer, PathTracer
 from .symbol import Symbol
 from .irtranslator import IRTranslator
 from .typecheck import TypePropagation, TypeChecker, ClassFieldChecker
@@ -52,71 +52,59 @@ def preprocess_global(driver):
         src_dump.process(s)
 
     for s in (s for s in scopes if s.is_global() or s.is_class()):
-        constopt = GlobalConstantOpt()
-        constopt.process(s)
+        GlobalConstantOpt().process(s)
 
-    typepropagation = TypePropagation()
-    typepropagation.propagate_global_function_type()
+    TypePropagation().propagate_global_function_type()
 
 def callgraph(driver, scope):
-    callgraph_builder = CallGraphBuilder()
-    callgraph_builder.process(scope)
+    CallGraphBuilder().process(scope)
+
+def tracepath(driver, scope):
+    PathTracer().process(scope)
 
 def iftrans(driver, scope):
-    if_transformer = IfTransformer()
-    if_transformer.process(scope)
+    IfTransformer().process(scope)
 
 def reduceblk(driver, scope):
-    bt = BlockReducer()
-    bt.process(scope)
+    BlockReducer().process(scope)
+    # workaround
+    PathTracer().process(scope)
 
 def quadruple(driver, scope):
-    quadruple = QuadrupleMaker()
-    quadruple.process(scope)
+    QuadrupleMaker().process(scope)
 
 def usedef(driver, scope):
-    udd = UseDefDetector()
-    udd.process(scope)
+    UseDefDetector().process(scope)
 
 def scalarssa(driver, scope):
-    ssa = ScalarSSATransformer()
-    ssa.process(scope)
+    ScalarSSATransformer().process(scope)
 
 def phi(driver, scope):
-    phi_cond_resolver = PHICondResolver()
-    phi_cond_resolver.process(scope)
+    PHICondResolver().process(scope)
 
 def memrefgraph(driver):
-    mrg_builder = MemRefGraphBuilder()
-    mrg_builder.process_all()
+    MemRefGraphBuilder().process_all()
 
 def meminstgraph(driver, scope):
-    mrg_builder = MemInstanceGraphBuilder()
-    mrg_builder.process(scope)
+    MemInstanceGraphBuilder().process(scope)
 
 def memrename(driver, scope):
-    mem_renamer = MemoryRenamer()
-    mem_renamer.process(scope)
+    MemoryRenamer().process(scope)
 
 def typeprop(driver, scope):
-    typepropagation = TypePropagation()
-    typepropagation.process(scope)
+    TypePropagation().process(scope)
 
 def typecheck(driver, scope):
-    typecheck = TypeChecker()
-    typecheck.process(scope)
+    TypeChecker().process(scope)
 
 def classcheck(driver):
-    classchecker = ClassFieldChecker()
-    classchecker.process_all()
+    ClassFieldChecker().process_all()
 
 def detectrom(driver):
-    rom_detector = RomDetector()
-    rom_detector.process_all()
+    RomDetector().process_all()
 
 def specfunc(driver):
-    spec_func_maker = SpecializedFunctionMaker()
-    new_scopes, unused_scopes = spec_func_maker.process_all()
+    new_scopes, unused_scopes = SpecializedFunctionMaker().process_all()
     for s in new_scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
@@ -139,24 +127,19 @@ def scalarize(driver, scope):
     FlattenFieldAccess().process(scope)
 
 def earlyconstopt_nonssa(driver, scope):
-    constopt = EarlyConstantOptNonSSA()
-    constopt.process(scope)
+    EarlyConstantOptNonSSA().process(scope)
 
 def constopt_pre_detectrom(driver, scope):
-    constopt = ConstantOptPreDetectROM()
-    constopt.process(scope)
+    ConstantOptPreDetectROM().process(scope)
 
 def constopt(driver, scope):
-    constopt = ConstantOpt()
-    constopt.process(scope)
+    ConstantOpt().process(scope)
 
 def copyopt(driver, scope):
-    copyopt = CopyOpt()
-    copyopt.process(scope)
+    CopyOpt().process(scope)
 
 def loop(driver, scope):
-    loop_detector = LoopDetector()
-    loop_detector.process(scope)
+    LoopDetector().process(scope)
 
 def tbopt(driver, scope):
     if scope.is_testbench():
@@ -176,20 +159,16 @@ def tbopt(driver, scope):
         LoopDetector().process(scope)
 
 def liveness(driver, scope):
-    liveness = Liveness()
-    liveness.process(scope)
+    Liveness().process(scope)
 
 def dfg(driver, scope):
-    dfg_builder = DFGBuilder()
-    dfg_builder.process(scope)
+    DFGBuilder().process(scope)
 
 def schedule(driver, scope):
-    scheduler = Scheduler()
-    scheduler.schedule(scope)
+    Scheduler().schedule(scope)
 
 def stg(driver, scope):
-    stg_builder = STGBuilder()
-    stg_builder.process(scope)
+    STGBuilder().process(scope)
 
 def genhdl(driver, scope):
     if scope.is_method():
@@ -204,8 +183,7 @@ def genhdl(driver, scope):
     else:
         scope.module_info = preprocessor.process_func(scope)
 
-    selector_builder = SelectorBuilder()
-    selector_builder.process(scope)
+    SelectorBuilder().process(scope)
 
     if not scope.is_testbench():
         vcodegen = VerilogCodeGen(scope)
@@ -249,6 +227,7 @@ def compile_plan():
     plan = [
         preprocess_global,
         callgraph,
+        #tracepath,
         dbg(dumpscope),
         phase(env.PHASE_1),
         iftrans,
@@ -326,8 +305,7 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     if debug_mode:
         logging.basicConfig(**logging_setting)
 
-    translator = IRTranslator()
-    translator.translate(read_source(src_file))
+    IRTranslator().translate(read_source(src_file))
 
     scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
     driver = Driver(compile_plan(), scopes)

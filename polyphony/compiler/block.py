@@ -266,11 +266,19 @@ class BlockReducer:
     def process(self, scope):
         if scope.is_class():
             return
+        self.removed_blks = []
         self._merge_unidirectional_block(scope)
         self._remove_empty_block(scope)
         for blk in scope.traverse_blocks():
             blk.order = -1
         Block.set_order(scope.entry_block, 0)
+
+        # update scope's paths
+        if self.removed_blks:
+            for r in self.removed_blks:
+                for p in scope.paths:
+                    if r in p:
+                        p.remove(r)
 
     def _merge_unidirectional_block(self, scope):
         for block in scope.traverse_blocks():
@@ -295,6 +303,8 @@ class BlockReducer:
                 pred.succs_loop = block.succs_loop
                 if block is scope.exit_block:
                     scope.exit_block = pred
+
+                self.removed_blks.append(block)
 
     def _remove_empty_block(self, scope):
         for block in scope.traverse_blocks():
@@ -321,10 +331,19 @@ class BlockReducer:
                 logger.debug('remove empty block ' + block.name)
                 if block is scope.entry_block:
                     scope.entry_block = succ
+                self.removed_blks.append(block)
 
 class PathTracer:
+    def process(self, scope):
+        stack = []
+        paths = []
+        self.trace_path(scope.entry_block, scope.exit_block, stack, paths)
+        scope.paths = paths
+
     def trace_path(self, blk, end, stack, paths):
         # FIXME: this algorithm is very naive
+        if not blk.preds_loop and blk in stack:
+            return
         stack.append(blk)
 
         if blk is end:
@@ -332,12 +351,7 @@ class PathTracer:
             stack.pop()
             return
 
-        for succ in [succ for succ in blk.succs if succ not in blk.succs_loop]:
+        for succ in blk.succs:
             self.trace_path(succ, end, stack, paths)
         stack.pop()
 
-    def trace(self, scope, start, end):
-        stack = []
-        paths = []
-        self.trace_path(start, end, stack, paths)
-        return paths
