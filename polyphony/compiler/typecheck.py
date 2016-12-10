@@ -27,11 +27,16 @@ class TypePropagation(IRVisitor):
             else:
                 s.return_type = Type.none_t
 
+        prev_untyped = []
         while True:
             for s in scopes:
                 self.process(s)
             untyped = [s for s in scopes if s.is_returnable() and s.return_type is Type.none_t]
             if untyped:
+                if len(prev_untyped) == len(untyped):
+                    str_untypes = ', '.join([s.name[len('@top.'):] for s in untyped])
+                    raise TypeError('BUG: can not complete the type inference process for ' + str_untypes)
+                prev_untyped = untyped[:]
                 continue
             break
 
