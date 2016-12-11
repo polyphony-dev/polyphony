@@ -122,8 +122,10 @@ class Block:
         replace_item(self.preds_loop, old, new)
 
     def collect_basic_blocks(self, blocks):
+        if self in blocks:
+            return
         blocks.add(self)
-        for succ in [succ for succ in self.succs if succ not in self.succs_loop]:
+        for succ in [succ for succ in self.succs]:
             succ.collect_basic_blocks(blocks)
 
     def traverse(self, visited, full=False, longitude=False):

@@ -177,17 +177,9 @@ class InlineOpt:
         for s in late_call_blk.stms:
             s.block = late_call_blk
         early_call_blk.stms = early_call_blk.stms[:idx]
-        if early_call_blk.stms:
-            early_call_blk.append_stm(JUMP(callee_entry_blk))
-            early_call_blk.succs = [callee_entry_blk]
-            callee_entry_blk.preds = [early_call_blk]
-        else:
-            if caller_scope.entry_block is early_call_blk:
-                caller_scope.entry_block = callee_entry_blk
-            else:
-                for pred in early_call_blk.preds:
-                    pred.replace_succ(early_call_blk, callee_entry_blk)
-            callee_entry_blk.preds = early_call_blk.preds
+        early_call_blk.append_stm(JUMP(callee_entry_blk))
+        early_call_blk.succs = [callee_entry_blk]
+        callee_entry_blk.preds = [early_call_blk]
 
         if callee_exit_blk.stms and callee_exit_blk.stms[-1].is_a(RET):
             callee_exit_blk.stms.pop()

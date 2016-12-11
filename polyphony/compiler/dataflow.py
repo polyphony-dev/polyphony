@@ -317,8 +317,7 @@ class DFGBuilder:
         self._add_special_seq_edges(dfg)
         for child in children:
             dfg.set_child(child)
-        self._dump_dfg(dfg)
-
+        #self._dump_dfg(dfg)
         return dfg
 
     def _dump_dfg(self, dfg):
