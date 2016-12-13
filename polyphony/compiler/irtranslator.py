@@ -210,6 +210,20 @@ class Visitor(ast.NodeVisitor):
         for body in node.body:
             self.visit(body)
         logger.debug(node.name)
+        if not any([method.is_ctor() for method in self.current_scope.children]):
+            ctor = Scope.create(self.current_scope, env.ctor_name, 'method')
+            # add 'self' parameter
+            param_in = ctor.add_sym('{}_{}'.format(Symbol.param_prefix, env.self_name))
+            param_in.typ = Type.object(None, self.current_scope)
+            param_copy = ctor.add_sym(env.self_name)
+            param_copy.typ = param_in.typ
+            ctor.add_param(param_in, param_copy, None)
+            # add empty block
+            blk = Block(ctor)
+            ctor.set_entry_block(blk)
+            ctor.set_exit_block(blk)
+            # add necessary symbol
+            ctor.add_sym(Symbol.return_prefix)
 
         self._leave_scope(*context)
 
@@ -653,7 +667,7 @@ class Visitor(ast.NodeVisitor):
         ctx = self._nodectx2irctx(node)
         irattr = ATTR(value, attr, ctx)
 
-        if irattr.head().name == env.self_name:
+        if irattr.head() and irattr.head().name == env.self_name:
             scope = Type.extra(irattr.head().typ)
             if ctx & Ctx.STORE:
                 scope.gen_sym(attr)
