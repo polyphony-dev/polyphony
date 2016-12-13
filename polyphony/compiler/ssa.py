@@ -6,7 +6,6 @@ from .ir import *
 from .type import Type
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
-from .block import PathTracer
 from logging import getLogger
 logger = getLogger(__name__)
 import pdb
@@ -275,44 +274,12 @@ class SSATransformerBase:
 
     def _insert_predicate(self):
         usedef = self.scope.usedef
-        paths = self.scope.paths
-        assert paths
 
         for blk in self.scope.traverse_blocks():
             phis = blk.collect_stms([PHI, UPHI])
             if not phis:
                 continue
-            phi_predicates = [None] * len(blk.preds)
-            for pred_i, pred in enumerate(blk.preds):
-                idoms = []
-                self._idom_path(pred, idoms)
-                for p in paths:
-                    if pred in p:
-                        idx = p.index(pred)
-                        if p[idx + 1] is blk:
-                            path = p
-                            break
-                assert path
-                exps = []
-
-                for idom in idoms:
-                    jump = idom.stms[-1]
-                    if jump.is_a(CJUMP):
-                        if jump.true in path:
-                            e = jump.exp.clone()
-                        elif jump.false in path:
-                            e = UNOP('Not', jump.exp.clone())
-                            e.lineno = jump.lineno
-                        else:
-                            assert False
-                        exps.append(e)
-                    elif jump.is_a(MCJUMP):
-                        for i, t in enumerate(jump.targets):
-                            if t in path:
-                                e = jump.conds[i].clone()
-                                exps.append(e)
-                                break
-                phi_predicates[pred_i] = self._concat_predicates(exps, 'And')
+            phi_predicates = [pred.path_exp if pred.path_exp else CONST(1) for pred in blk.preds]
             for phi in phis:
                 phi.ps = phi_predicates[:]
                 assert len(phi.ps) == len(phi.args)

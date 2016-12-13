@@ -23,11 +23,7 @@ class DominatorTree:
         return None
 
     def get_children_of(self, n):
-        children = []
-        for n1, n2 in self.edges:
-            if n1 is n:
-                children.append(n2)
-        return children
+        return [n2 for n1, n2 in self.edges if n1 is n]
 
     #is v dominator of n?
     def is_dominator(self, n, v):

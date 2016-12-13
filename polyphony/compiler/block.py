@@ -1,4 +1,5 @@
-﻿from .ir import JUMP, CJUMP, MCJUMP
+﻿from .ir import *
+from .dominator import DominatorTreeBuilder
 from .utils import replace_item
 from logging import getLogger
 logger = getLogger(__name__)
@@ -27,6 +28,7 @@ class Block:
         scope.block_count += 1
         self.num = scope.block_count
         self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
+        self.path_exp = None
 
     def _str_connection(self):
         s = ''
@@ -54,6 +56,9 @@ class Block:
     def __str__(self):
         s = 'Block: (' + str(self.order) + ') ' + str(self.name) + '\n'
         s += self._str_connection()
+        if self.path_exp:
+            s += ' # path exp: '
+            s += str(self.path_exp) + '\n'
         s += ' # code\n'
         s += '\n'.join(['  '+str(stm) for stm in self.stms])
         s += '\n\n'
@@ -335,25 +340,46 @@ class BlockReducer:
                     scope.entry_block = succ
                 self.removed_blks.append(block)
 
-class PathTracer:
+class PathExpTracer:
     def process(self, scope):
-        stack = []
-        paths = []
-        self.trace_path(scope.entry_block, scope.exit_block, stack, paths)
-        scope.paths = paths
+        tree = DominatorTreeBuilder(scope).process()
+        tree.dump()
+        self.tree = tree
+        self.traverse_dtree(scope.entry_block)
 
-    def trace_path(self, blk, end, stack, paths):
-        # FIXME: this algorithm is very naive
-        if not blk.preds_loop and blk in stack:
+    def traverse_dtree(self, blk):
+        if not blk.stms:
             return
-        stack.append(blk)
+        children = self.tree.get_children_of(blk)
+        jump = blk.stms[-1]
+        if jump.is_a(JUMP):
+            if blk.path_exp:
+                for c in children:
+                    c.path_exp = blk.path_exp.clone()
+        elif jump.is_a(CJUMP):
+            if blk.path_exp:
+                for c in children:
+                    if c is jump.true:
+                        c.path_exp = BINOP('And', blk.path_exp.clone(), jump.exp.clone())
+                    elif c is jump.false:
+                        c.path_exp = BINOP('And', blk.path_exp.clone(), UNOP('Not', jump.exp.clone()))
+                    else:
+                        c.path_exp = blk.path_exp.clone()
+            else:
+                jump.true.path_exp = jump.exp.clone()
+                jump.false.path_exp = UNOP('Not', jump.exp.clone())
+        elif jump.is_a(MCJUMP):
+            if blk.path_exp:
+                for c in children:
+                    if c in jump.targets:
+                        idx = jump.targets.index(c)
+                        c.path_exp = BINOP('And', blk.path_exp.clone(), jump.conds[idx].clone())
+                    else:
+                        c.path_exp = blk.path_exp.clone()
+            else:
+                for t, cond in zip(jump.targets, jump.conds):
+                    t.path_exp = cond.clone()
+        for child in children:
+            self.traverse_dtree(child)
 
-        if blk is end:
-            paths.append(stack[:])
-            stack.pop()
-            return
-
-        for succ in blk.succs:
-            self.trace_path(succ, end, stack, paths)
-        stack.pop()
 

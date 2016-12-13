@@ -4,7 +4,7 @@ from .driver import Driver
 from .env import env
 from .common import read_source, src_text
 from .scope import Scope
-from .block import BlockReducer, PathTracer
+from .block import BlockReducer, PathExpTracer
 from .symbol import Symbol
 from .irtranslator import IRTranslator
 from .typecheck import TypePropagation, TypeChecker, ClassFieldChecker
@@ -67,8 +67,7 @@ def iftrans(driver, scope):
 
 def reduceblk(driver, scope):
     BlockReducer().process(scope)
-    # workaround
-    PathTracer().process(scope)
+    PathExpTracer().process(scope)
 
 def quadruple(driver, scope):
     QuadrupleMaker().process(scope)
@@ -227,7 +226,6 @@ def compile_plan():
     plan = [
         preprocess_global,
         callgraph,
-        #tracepath,
         dbg(dumpscope),
         phase(env.PHASE_1),
         iftrans,
@@ -269,6 +267,7 @@ def compile_plan():
         dbg(dumpmrg),
         usedef,
         constopt,
+        dbg(dumpscope),
         usedef,
         phi,
         usedef,
