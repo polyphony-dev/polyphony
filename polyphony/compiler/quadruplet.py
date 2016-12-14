@@ -22,6 +22,14 @@ class QuadrupleMaker(IRTransformer):
         super().__init__()
         self.suppress_converting = False
 
+    def _new_temp_move(self, ir, prefix):
+        tmpsym = self.scope.add_temp(prefix)
+        mv = MOVE(TEMP(tmpsym, Ctx.STORE), ir)
+        mv.lineno = ir.lineno
+        assert mv.lineno >= 0
+        self.new_stms.append(mv)
+        return TEMP(tmpsym, Ctx.LOAD)
+
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         assert ir.exp.is_a([TEMP, ATTR, CONST, MREF])
@@ -58,22 +66,12 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress:
             return ir
-        sym = self.scope.add_temp(Symbol.temp_prefix)
-        mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-        mv.lineno = ir.lineno
-        assert mv.lineno >= 0
-        self.new_stms.append(mv)
-        return TEMP(sym, Ctx.LOAD)
+        return self._new_temp_move(ir, Symbol.temp_prefix)
 
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        sym = self.scope.add_temp(Symbol.condition_prefix)
-        mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-        mv.lineno = ir.lineno
-        assert mv.lineno >= 0
-        self.new_stms.append(mv)
-        return TEMP(sym, Ctx.LOAD)
+        return self._new_temp_move(ir, Symbol.condition_prefix)
 
     def _has_return_type(self, ir):
         if ir.is_a(CALL):
@@ -86,15 +84,21 @@ class QuadrupleMaker(IRTransformer):
             ir.args[i] = self.visit(ir.args[i])
             assert ir.args[i].is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
             if ir.args[i].is_a(ARRAY):
-                sym = self.scope.add_temp(Symbol.temp_prefix)
-                #sym.set_type(Type.list(Type.int_t, None))
-                mv = MOVE(TEMP(sym, Ctx.STORE), ir.args[i])
-                mv.lineno = ir.lineno
-                assert mv.lineno >= 0
-                self.new_stms.append(mv)
-                ir.args[i] = TEMP(sym, Ctx.LOAD)
+                ir.args[i] = self._new_temp_move(ir.args[i], Symbol.temp_prefix)
 
     def visit_CALL(self, ir):
+        #suppress converting
+        suppress = self.suppress_converting
+        self.suppress_converting = False
+
+        ir.func = self.visit(ir.func)
+        self._visit_args(ir)
+
+        if suppress or not self._has_return_type(ir):
+            return ir
+        return self._new_temp_move(ir, Symbol.temp_prefix)
+
+    def visit_SYSCALL(self, ir):
         #suppress converting
         suppress = self.suppress_converting
         self.suppress_converting = False
@@ -103,18 +107,18 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress or not self._has_return_type(ir):
             return ir
-        sym = self.scope.add_temp(Symbol.temp_prefix)
-        mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-        mv.lineno = ir.lineno
-        assert mv.lineno >= 0
-        self.new_stms.append(mv)
-        return TEMP(sym, Ctx.LOAD)
-
-    def visit_SYSCALL(self, ir):
-        return self.visit_CALL(ir)
+        return self._new_temp_move(ir, Symbol.temp_prefix)
 
     def visit_NEW(self, ir):
-        return self.visit_CALL(ir)
+        #suppress converting
+        suppress = self.suppress_converting
+        self.suppress_converting = False
+
+        self._visit_args(ir)
+
+        if suppress:
+            return ir
+        return self._new_temp_move(ir, Symbol.temp_prefix)
 
     def visit_CONST(self, ir):
         return ir
@@ -128,12 +132,7 @@ class QuadrupleMaker(IRTransformer):
         assert ir.offset.is_a([TEMP, ATTR, CONST, UNOP])
 
         if not suppress and ir.ctx & Ctx.LOAD:
-            sym = self.scope.add_temp(Symbol.temp_prefix)
-            mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-            mv.lineno = ir.lineno
-            assert mv.lineno >= 0
-            self.new_stms.append(mv)
-            return TEMP(sym, Ctx.LOAD)
+            return self._new_temp_move(ir, Symbol.temp_prefix)
         return ir
 
     def visit_MSTORE(self, ir):
@@ -148,6 +147,7 @@ class QuadrupleMaker(IRTransformer):
         return ir
 
     def visit_ATTR(self, ir):
+        ir.exp = self.visit(ir.exp)
         return ir
 
     def visit_EXPR(self, ir):

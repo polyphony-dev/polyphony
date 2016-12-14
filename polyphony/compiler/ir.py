@@ -331,7 +331,10 @@ class ATTR(IRExp):
     def head(self):
         if self.exp.is_a(ATTR):
             return self.exp.head()
-        return self.exp.sym
+        elif self.exp.is_a(TEMP):
+            return self.exp.sym
+        else:
+            return None
     
     def tail(self):
         if self.exp.is_a(ATTR):
