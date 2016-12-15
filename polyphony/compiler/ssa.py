@@ -289,7 +289,7 @@ class ScalarSSATransformer(SSATransformerBase):
         super().__init__()
 
     def _need_rename(self, sym):
-        return not (sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_function() or sym.is_return() or Type.is_object(sym.typ))# or Type.is_list(sym.typ))
+        return not (sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_return() or Type.is_class(sym.typ) or Type.is_object(sym.typ))# or Type.is_list(sym.typ))
 
 class ObjectSSATransformer(SSATransformerBase):
     def __init__(self):

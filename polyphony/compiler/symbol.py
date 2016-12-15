@@ -2,10 +2,6 @@
 from logging import getLogger
 logger = getLogger(__name__)
 
-def function_name(t):
-    assert t.name[0] == '!'
-    return t.name[1:].split('#')[0]
-
 class Symbol:
     all_symbols = []
 
@@ -35,7 +31,6 @@ class Symbol:
                 s += '    ' + str(u) + '\n'
             logger.debug(s)
 
-    func_prefix = '!'
     return_prefix = '@function_return'
     condition_prefix = '@cond'
     temp_prefix = '@t'
@@ -63,6 +58,12 @@ class Symbol:
     def __lt__(self, other):
         return self.name < other.name
   
+    def orig_name(self):
+        if self.ancestor:
+            return self.ancestor.orig_name()
+        else:
+            return self.name
+
     def hdl_name(self):
         if self.name[0] == '@' or self.name[0] == '!':
             name = self.name[1:]
@@ -71,9 +72,6 @@ class Symbol:
         name = name.replace('#', '')
         return name
    
-    def is_function(self):
-        return self.name[0] == Symbol.func_prefix
-
     def is_return(self):
         return self.name.startswith(Symbol.return_prefix)
 

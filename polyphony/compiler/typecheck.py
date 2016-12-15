@@ -3,7 +3,6 @@ from .ir import *
 from .scope import Scope
 from .type import Type
 from .builtin import builtin_return_type_table
-from .symbol import function_name
 from .common import error_info
 from .env import env
 import logging
@@ -57,14 +56,13 @@ class TypePropagation(IRVisitor):
         self.visit(ir.func)
 
         if ir.func.is_a(TEMP):
-            func_sym = ir.func.sym
-            func_name = function_name(func_sym)
+            func_name = ir.func.symbol().orig_name()
             ir.func_scope = self.scope.find_scope(func_name)
         elif ir.func.is_a(ATTR):
             if not ir.func.class_scope:
                 return Type.none_t
-            func_sym = ir.func.attr
-            ir.func_scope = ir.func.class_scope.find_child(ir.func.attr.name)
+            func_name = ir.func.symbol().orig_name()
+            ir.func_scope = ir.func.class_scope.find_child(func_name)
             assert ir.func_scope.is_method()
             if ir.func_scope.is_mutable():
                 ir.func.exp.ctx |= Ctx.STORE
@@ -85,7 +83,7 @@ class TypePropagation(IRVisitor):
                     param.sym.typ = arg_types[i]
             funct = Type.function(ret_t, tuple([param.sym.typ for param in ir.func_scope.params]))
 
-        func_sym.set_type(funct)
+        ir.func.symbol().set_type(funct)
 
         return ret_t
 

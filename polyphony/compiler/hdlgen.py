@@ -2,7 +2,7 @@
 from .common import get_src_text, INT_WIDTH
 from .env import env
 from .stg import STG, State
-from .symbol import function_name, Symbol
+from .symbol import Symbol
 from .ir import Ctx, CONST, ARRAY, MOVE
 from .ahdl import *
 #from collections import namedtuple

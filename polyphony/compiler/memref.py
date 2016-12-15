@@ -1,7 +1,7 @@
 ﻿from collections import deque, defaultdict
 from .varreplacer import VarReplacer
 from .ir import *
-from .symbol import Symbol, function_name
+from .symbol import Symbol
 from .type import Type
 from .irvisitor import IRTransformer, IRVisitor
 from .env import env
@@ -668,7 +668,7 @@ class MemRefGraphBuilder(IRVisitor):
                 # we have to create a new list symbol for adding the memnode
                 # because the list symbol in the global or a class (memsym) is
                 # used for the source memnode
-                memsym = self.scope.inherit_sym(memsym, memsym.name + '#0')
+                memsym = self.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
                 memsym.typ = Type.list(Type.int_t, self.mrg.node(memsym))
@@ -737,10 +737,7 @@ class MemInstanceGraphBuilder:
                 self.visit(node.tag, node)
 
     def visit_CALL(self, ir, node):
-        if ir.func.is_a(TEMP):
-            func_name = function_name(ir.func.sym)
-        elif ir.func.is_a(ATTR):
-            func_name = ir.func.attr.name
+        func_name = ir.func.symbol().orig_name()
         inst_name = '{}_{}'.format(func_name, node.instance_num)
         
         for i, arg in enumerate(ir.args):

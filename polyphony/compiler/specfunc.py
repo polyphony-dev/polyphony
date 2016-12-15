@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict, deque
-from .symbol import Symbol, function_name
+from .symbol import Symbol
 from .scope import Scope
 from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
@@ -65,7 +65,7 @@ class SpecializedFunctionMaker:
                         collector.process(new_scope)
                         worklist.extend(calls.items())
                     #update CALL target to specialized new_scope
-                    fsym = caller.gen_sym(Symbol.func_prefix + new_scope.orig_name)
+                    fsym = caller.gen_sym(new_scope.orig_name)
                     #fsym = caller.gen_sym(new_scope.orig_name)
                     call.func = TEMP(fsym, call.func.ctx)
                     call.func_scope = new_scope

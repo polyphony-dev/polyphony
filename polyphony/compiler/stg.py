@@ -3,7 +3,6 @@ from collections import OrderedDict, defaultdict, deque
 import functools
 from .block import Block
 from .ir import *
-from .symbol import function_name
 from .ahdl import *
 from .latency import get_latency
 from .common import INT_WIDTH, error_info

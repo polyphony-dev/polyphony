@@ -3,7 +3,7 @@ import sys
 from .ir import *
 from .block import Block
 from .scope import Scope, FunctionParam
-from .symbol import Symbol, function_name
+from .symbol import Symbol
 from .type import Type
 from .env import env
 from .common import error_info
@@ -146,7 +146,7 @@ class Visitor(ast.NodeVisitor):
 
     #-------------------------------------------------------------------------
 
-    def _enter_scope(self, name):
+    def _enter_scope(self, name, typ):
         outer_scope = self.current_scope
         self.current_scope = env.scopes[outer_scope.name + '.' + name]
 
@@ -155,7 +155,8 @@ class Visitor(ast.NodeVisitor):
         self.current_scope.set_entry_block(new_block)
         self.current_block = new_block
 
-        outer_scope.add_sym(name)
+        scopesym = outer_scope.add_sym(name)
+        scopesym.set_type(typ)
 
         return (outer_scope, last_block)
 
@@ -164,7 +165,7 @@ class Visitor(ast.NodeVisitor):
         self.current_block = last_block
 
     def visit_FunctionDef(self, node):
-        context = self._enter_scope(node.name)
+        context = self._enter_scope(node.name, Type.funcdef())
 
         outer_function_exit = self.function_exit
         self.function_exit = Block(self.current_scope, 'exit')
@@ -206,7 +207,7 @@ class Visitor(ast.NodeVisitor):
 
 
     def visit_ClassDef(self, node):
-        context = self._enter_scope(node.name)
+        context = self._enter_scope(node.name, Type.classdef())
         for body in node.body:
             self.visit(body)
         logger.debug(node.name)
@@ -631,14 +632,12 @@ class Visitor(ast.NodeVisitor):
         args = list(map(self.visit, node.args))
         
         if func.is_a(TEMP):
-            func_name = function_name(func.symbol())
+            func_name = func.symbol().orig_name()
             func_scope = self.current_scope.find_scope(func_name)
             if not func_scope:
                 for f in builtin_names:
-                    if func.symbol().name == Symbol.func_prefix + f:
-                        args = list(map(self.visit, node.args))
-                        return SYSCALL(func.symbol().name[1:], args)
-                        #return SYSCALL(func.symbol().name, args)
+                    if func.symbol().name == f:
+                        return SYSCALL(f, args)
                 print(self._err_info(node))
                 raise TypeError('{} is not callable'.format(func.symbol().name))
             elif func_scope.is_class():
@@ -700,14 +699,28 @@ class Visitor(ast.NodeVisitor):
         elif node.id == 'None':
             return CONST(None)
 
-        parent_scope = self.current_scope.find_scope_having_name(node.id)
-        if parent_scope:
-            fsym = self.current_scope.gen_sym(Symbol.func_prefix + node.id)
-            scope = self.current_scope.find_scope(node.id)
-            if scope and scope.is_class():
-                fsym.set_type(Type.klass(None, scope))
-            return TEMP(fsym, self._nodectx2irctx(node))
-
+        outer_scope = self.current_scope.find_scope_having_name(node.id)
+        if outer_scope:
+            outer_sym = outer_scope.find_sym(node.id)
+            if node.id in builtin_names or Type.is_funcdef(outer_sym.typ):
+                if self.current_scope.has_sym(node.id):
+                    sym = self.current_scope.find_sym(node.id)
+                else:
+                    sym = self.current_scope.add_sym(node.id)
+                    sym.set_type(Type.function(None, None))
+                return TEMP(sym, self._nodectx2irctx(node))
+            elif Type.is_classdef(outer_sym.typ):
+                if self.current_scope.has_sym(node.id):
+                    sym = self.current_scope.find_sym(node.id)
+                else:
+                    sym = self.current_scope.add_sym(node.id)
+                    scope = outer_scope.find_scope(node.id)
+                    assert scope.is_class()
+                    sym.set_type(Type.klass(None, scope))
+                return TEMP(sym, self._nodectx2irctx(node))
+            else:
+                print(self._err_info(node))
+                raise RuntimeError(node.id + ' is unknown scope type')
         sym = self.current_scope.find_sym(node.id)
         if isinstance(node.ctx, ast.Load) or isinstance(node.ctx, ast.AugLoad):
             if sym is None:
