@@ -7,7 +7,7 @@ PYTHON_OP_2_VERILOG_OP_MAP = {
     'FloorDiv':'/',
     'Mod':'%',
     'LShift':'<<',
-    'RShift':'>>',
+    'RShift':'>>>',
     'BitOr':'|',
     'BitXor':'^',
     'BitAnd':'&',
