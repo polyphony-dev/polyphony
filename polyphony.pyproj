@@ -76,6 +76,9 @@
     <Compile Include="polyphony\compiler\stg.py" />
     <Compile Include="polyphony\compiler\symbol.py" />
     <Compile Include="polyphony\compiler\treebalancer.py" />
+    <Compile Include="polyphony\compiler\tuple.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="polyphony\compiler\type.py" />
     <Compile Include="polyphony\compiler\typecheck.py" />
     <Compile Include="polyphony\compiler\usedef.py" />

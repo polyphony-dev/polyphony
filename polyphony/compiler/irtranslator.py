@@ -631,6 +631,14 @@ class Visitor(ast.NodeVisitor):
         func = self.visit(node.func)
         args = list(map(self.visit, node.args))
         
+        if node.keywords:
+            print(self._err_info(node))
+            raise NotImplementedError('keyword args is not supported')
+        if node.starargs:
+            print(self._err_info(node))
+            raise NotImplementedError('star args is not supported')
+        #stararg = self.visit(node.starargs)
+
         if func.is_a(TEMP):
             func_name = func.symbol().orig_name()
             func_scope = self.current_scope.find_scope(func_name)
@@ -745,9 +753,12 @@ class Visitor(ast.NodeVisitor):
     #     | Tuple(expr* elts, expr_context ctx)
     
     def visit_Tuple(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('tuple is not supported')
-    
+        items = []
+        for elt in node.elts:
+            item = self.visit(elt)
+            items.append(item)
+        return ARRAY(items, is_mutable=False)
+
     def visit_NameConstant(self, node):
         # for Python 3.4
         if node.value is True:

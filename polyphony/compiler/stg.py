@@ -528,6 +528,8 @@ class AHDLTranslator:
         memvar = self.visit(ir.mem, node)
         if not memvar.memnode.is_writable():
             return AHDL_FUNCALL(memvar.name(), [offset])
+        elif memvar.memnode.is_immutable():
+            return AHDL_SUBSCRIPT(memvar, offset)
         else:
             assert isinstance(node.tag, MOVE)
             dst = self.visit(node.tag.dst, node)
@@ -548,18 +550,35 @@ class AHDLTranslator:
         else:
             return AHDL_STORE(memvar, exp, offset)
 
+    def _build_mem_initialize_seq(self, array, memvar, node):
+        if array.is_mutable:
+            sched_time = self.sched_time
+            for i, item in enumerate(array.items):
+                if not(isinstance(item, CONST) and item.value is None):
+                    store = MSTORE(node.tag.dst, CONST(i), item)
+                    ahdl = self.visit(store, node)
+                    self.host.emit_memstore_sequence(ahdl, sched_time)
+                    sched_time += 1
+        else:
+            sig = self.scope.gen_sig(array.sym.hdl_name(), 1)
+            for i, item in enumerate(array.items):
+                idx = AHDL_CONST(i)
+                memvar = AHDL_MEMVAR(sig, Type.extra(array.sym.typ), Ctx.STORE)
+                ahdl_item = self.visit(item, node)
+                ahdl_move = AHDL_MOVE(AHDL_SUBSCRIPT(memvar, idx), ahdl_item)
+                self._emit(ahdl_move, self.sched_time)
+
     def visit_ARRAY(self, ir, node):
         # array expansion
         if not ir.repeat.is_a(CONST):
             print(error_info(ir.lineno))
-            raise RuntimeError('multiplier for the list must be a constant')
+            raise RuntimeError('multiplier for the sequence must be a constant')
         ir.items = [item.clone() for item in ir.items * ir.repeat.value]
 
         assert isinstance(node.tag, MOVE)
         ahdl_memvar = self.visit(node.tag.dst, node)
         memnode = ahdl_memvar.memnode
 
-        sched_time = self.sched_time
         if not memnode.is_writable():
             return
         arraynode = memnode.single_source()
@@ -567,12 +586,7 @@ class AHDLTranslator:
         mv = arraynode.initstm
         assert mv.src.is_a(ARRAY)
         
-        for i, item in enumerate(mv.src.items):
-            if not(isinstance(item, CONST) and item.value is None):
-                store = MSTORE(node.tag.dst, CONST(i), item)
-                ahdl = self.visit(store, node)
-                self.host.emit_memstore_sequence(ahdl, sched_time)
-                sched_time += 1
+        self._build_mem_initialize_seq(ir, ahdl_memvar, node)
 
     def visit_TEMP(self, ir, node):
         attr = []
@@ -601,7 +615,7 @@ class AHDLTranslator:
         else:
             sig = self.scope.gen_sig(ir.sym.hdl_name(), width, attr)
 
-        if Type.is_list(ir.sym.typ):
+        if Type.is_seq(ir.sym.typ):
             return AHDL_MEMVAR(sig, Type.extra(ir.sym.typ), ir.ctx)
         else:
             return AHDL_VAR(sig, ir.ctx)

@@ -74,6 +74,10 @@ class HDLModuleInfo:
         assert not sig.is_reg()
         self.add_decl(tag, AHDL_NET_DECL(sig))
 
+    def add_internal_net_array(self, sig, size, tag=''):
+        assert not sig.is_reg()
+        self.add_decl(tag, AHDL_NET_ARRAY_DECL(sig, size))
+
     def remove_internal_net(self, sig):
         assert isinstance(sig, Signal)
         removes = []

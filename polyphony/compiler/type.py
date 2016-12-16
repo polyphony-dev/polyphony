@@ -23,6 +23,8 @@ class Type:
         elif t is cls.none_t: return 'n'
         elif cls.is_list(t):
             return 'l'
+        elif cls.is_tuple(t):
+            return 't'
         elif cls.is_object(t):
             return 'o'
         elif cls.is_class(t):
@@ -109,20 +111,20 @@ class Type:
             return True
         if t0 is cls.bool_t and t1 is cls.int_t or t0 is cls.int_t and t1 is cls.bool_t:
             return True
-        if cls.is_list(t0) and cls.is_list(t1):
+        if cls.is_seq(t0) and cls.is_seq(t1):
             return True
         return False
 
     @classmethod
     def element(cls, t):
-        if cls.is_list(t):
+        if cls.is_seq(t):
             return t[1]
         else:
             return t
 
     @classmethod
     def extra(cls, t):
-        if cls.is_list(t) or cls.is_class(t) or cls.is_object(t):
+        if cls.is_seq(t) or cls.is_class(t) or cls.is_object(t):
             return t[2]
         return None
 

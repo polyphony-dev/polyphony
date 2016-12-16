@@ -233,8 +233,6 @@ class Scope:
         return sym
 
     def add_temp(self, name):
-        if name in self.symbols:
-            raise RuntimeError("symbol '{}' is already registered ".format(name))
         sym = Symbol.newtemp(name, self)
         self.symbols[sym.name] = sym
         return sym

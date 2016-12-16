@@ -404,6 +404,9 @@ class VerilogCodeGen:
     def visit_AHDL_MEMVAR(self, ahdl):
         assert 0
 
+    def visit_AHDL_SUBSCRIPT(self, ahdl):
+        return '{}[{}]'.format(ahdl.memvar.memnode.name(), self.visit(ahdl.offset))
+
     def visit_AHDL_SYMBOL(self, ahdl):
         return ahdl.name
 
@@ -462,7 +465,7 @@ class VerilogCodeGen:
         elif ahdl.dst.is_a(AHDL_MEMVAR) and ahdl.src.is_a(AHDL_MEMVAR):
             memnode = ahdl.dst.memnode
             assert memnode
-            if memnode.is_joinable():
+            if memnode.is_joinable() and not memnode.is_immutable():
                 self._memswitch('', ahdl.dst.memnode, ahdl.src.memnode)
         else:
             src = self.visit(ahdl.src)
@@ -649,7 +652,7 @@ class VerilogCodeGen:
             if exp.startswith('cond'):
                 remove_assign = []
                 for tag, assign in self.module_info.get_static_assignment():
-                    if assign.dst.sig.name == exp:
+                    if assign.dst.is_a(AHDL_VAR) and assign.dst.sig.name == exp:
                         remove_assign.append((tag, assign))
                         expsig = self.scope.gen_sig(exp, 1)
                         self.module_info.remove_internal_net(expsig)
@@ -673,16 +676,23 @@ class VerilogCodeGen:
 
     def visit_AHDL_REG_ARRAY_DECL(self, ahdl):
         if ahdl.sig.width == 1:
-            self.emit('reg {}[0:{}];'.format(ahdl.sig.name, size-1))
+            self.emit('reg {}[0:{}];'.format(ahdl.sig.name, ahdl.size-1))
         else:
             sign = 'signed' if ahdl.sig.is_int() else ''
-            self.emit('reg {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, size-1))
+            self.emit('reg {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
 
     def visit_AHDL_NET_DECL(self, ahdl):
         if ahdl.sig.width == 1:
             self.emit('wire {};'.format(ahdl.sig.name))
         else:
             self.emit('wire {};'.format(self._generate_signal(ahdl.sig)))
+
+    def visit_AHDL_NET_ARRAY_DECL(self, ahdl):
+        if ahdl.sig.width == 1:
+            self.emit('wire {}[0:{}];'.format(ahdl.sig.name, ahdl.size-1))
+        else:
+            sign = 'signed' if ahdl.sig.is_int() else ''
+            self.emit('wire {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
 
     def visit_AHDL_ASSIGN(self, ahdl):
         src = self.visit(ahdl.src)

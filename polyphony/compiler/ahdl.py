@@ -91,6 +91,17 @@ class AHDL_MEMVAR(AHDL_EXP):
     def name(self):
         return self.sig.name
 
+class AHDL_SUBSCRIPT(AHDL_EXP):
+    def __init__(self, memvar, offset):
+        assert memvar.is_a(AHDL_MEMVAR)
+        assert offset.is_a(AHDL_EXP)
+        super().__init__()
+        self.memvar = memvar
+        self.offset = offset
+
+    def __str__(self):
+        return '{}[{}]'.format(self.memvar.name(), self.offset)
+
 class AHDL_SYMBOL(AHDL_EXP):
     def __init__(self, name):
         assert name and isinstance(name, str)
@@ -113,7 +124,6 @@ class AHDL_CONCAT(AHDL_EXP):
         else:
             return '{{{0}}}'.format(', '.join([str(v) for v in self.varlist]))
         
-    
 class AHDL_NOP(AHDL_EXP):
     def __init__(self, info):
         super().__init__()
@@ -167,6 +177,14 @@ class AHDL_NET_DECL(AHDL_SIGNAL_DECL):
 
     def __str__(self):
         return 'net {}'.format(self.sig)
+
+class AHDL_NET_ARRAY_DECL(AHDL_SIGNAL_DECL):
+    def __init__(self, sig, size):
+        self.sig = sig
+        self.size = size
+
+    def __str__(self):
+        return 'net {}[{}]'.format(self.sig, self.size)
 
 class AHDL_ASSIGN(AHDL_DECL):
     def __init__(self, dst, src):

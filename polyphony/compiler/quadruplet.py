@@ -182,7 +182,7 @@ class QuadrupleMaker(IRTransformer):
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
         assert ir.src.is_a([TEMP, ATTR, CONST, UNOP, BINOP, MREF, MSTORE, CALL, NEW, SYSCALL, ARRAY])
-        assert ir.dst.is_a([TEMP, ATTR, MREF])
+        assert ir.dst.is_a([TEMP, ATTR, MREF, ARRAY])
 
         if ir.dst.is_a(MREF):
             # For the sake of the memory analysis,

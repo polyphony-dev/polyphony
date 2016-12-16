@@ -15,7 +15,7 @@ from .veritestgen import VerilogTestGen
 from .treebalancer import TreeBalancer
 from .stg import STGBuilder
 from .dataflow import DFGBuilder
-from .ssa import ScalarSSATransformer, ObjectSSATransformer
+from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .usedef import UseDefDetector
 from .scheduler import Scheduler
 from .phiresolve import PHICondResolver
@@ -31,6 +31,7 @@ from .selectorbuilder import SelectorBuilder
 from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
 from .copyopt import CopyOpt
 from .callgraph import CallGraphBuilder
+from .tuple import TupleTransformer
 
 import logging
 logger = logging.getLogger()
@@ -118,6 +119,7 @@ def inlineopt(driver):
         env.remove_scope(s)
 
 def scalarize(driver, scope):
+    TupleSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
     usedef(driver, scope)
     ObjectSSATransformer().process(scope)
@@ -225,6 +227,8 @@ def compile_plan():
 
     plan = [
         preprocess_global,
+        typecheck,
+        dbg(dumpscope),
         callgraph,
         dbg(dumpscope),
         phase(env.PHASE_1),
@@ -259,8 +263,6 @@ def compile_plan():
         usedef,
         memrefgraph,
         dbg(dumpmrg),
-        dbg(dumpscope),
-        typecheck,
         dbg(dumpscope),
         constopt_pre_detectrom,
         detectrom,

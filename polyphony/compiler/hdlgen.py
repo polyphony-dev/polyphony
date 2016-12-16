@@ -161,9 +161,28 @@ class HDLGenPreprocessor:
 
         self._add_internal_ports(module_name, locals)
 
-        for memnode in self.mrg.collect_writable(scope):
+        for memnode in self.mrg.collect_ram(scope):
             memportmaker = HDLMemPortMaker(memnode, scope, self.module_info)
             memportmaker.make_port()
+
+        for memnode in self.mrg.collect_immutable(scope):
+            if not memnode.is_writable():
+                continue
+            if memnode.is_source():
+                sig = self.scope.gen_sig(memnode.name(), INT_WIDTH)
+                self.module_info.add_internal_reg_array(sig, memnode.length)
+            elif memnode.is_sink():
+                src = memnode.single_source()
+                if not src:
+                    continue
+                src_sig = self.scope.gen_sig(src.name(), INT_WIDTH)
+                ref_sig = self.scope.gen_sig(memnode.name(), INT_WIDTH)
+                self.module_info.add_internal_net_array(ref_sig, memnode.length)
+                src_mem = AHDL_MEMVAR(src_sig, src, Ctx.LOAD)
+                ref_mem = AHDL_MEMVAR(ref_sig, memnode, Ctx.LOAD)
+                for i in range(memnode.length):
+                    ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)), AHDL_SUBSCRIPT(src_mem, AHDL_CONST(i)))
+                    self.module_info.add_static_assignment(ahdl_assign)
 
         self._add_submodules(scope)
 
@@ -218,8 +237,7 @@ class HDLGenPreprocessor:
             self._add_internal_ports(s.orig_name, locals)
             self._add_state_register(s.orig_name, s)
             self._add_submodules(s)
-            for memnode in self.mrg.collect_writable(s):
-                memnode
+            for memnode in self.mrg.collect_ram(s):
                 memportmaker = HDLMemPortMaker(memnode, s, self.module_info)
                 memportmaker.make_port()
             self._add_roms(s)
@@ -290,6 +308,9 @@ class Phase1Preprocessor:
         #    raise RuntimeError('free variable is not supported yet.\n' + text)
 
     def visit_AHDL_MEMVAR(self, ahdl):
+        pass
+
+    def visit_AHDL_SUBSCRIPT(self, ahdl):
         pass
 
     def visit_AHDL_OP(self, ahdl):
