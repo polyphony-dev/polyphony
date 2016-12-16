@@ -19,7 +19,7 @@ class TypePropagation(IRVisitor):
 
     def propagate_global_function_type(self):
         self.check_error = False
-        scopes = Scope.get_scopes(bottom_up=True, contain_global=True, contain_class=True)
+        scopes = Scope.get_scopes(bottom_up=False, contain_global=True, contain_class=True)
         for s in scopes:
             if s.is_class():
                 s.return_type = Type.object(None, s)
@@ -40,6 +40,7 @@ class TypePropagation(IRVisitor):
             break
         for s in scopes:
             self.process(s)
+
     def visit_UNOP(self, ir):
         return self.visit(ir.exp)
 
@@ -184,6 +185,9 @@ class TypePropagation(IRVisitor):
         dst_typ = self.visit(ir.dst)
 
         if ir.dst.is_a([TEMP, ATTR]):
+            if not isinstance(ir.dst.symbol(), Symbol):
+                # the type of object has not inferenced yet
+                return
             ir.dst.symbol().set_type(src_typ)
             if self.scope.is_method() and ir.dst.is_a(ATTR):
                 sym = self.scope.parent.find_sym(ir.dst.symbol().name)
@@ -291,7 +295,7 @@ class TypeChecker(IRVisitor):
             if len(ir.args) != 1:
                 type_error(ir, 'len() takes exactly one argument')
             mem = ir.args[0]
-            if not mem.is_a(TEMP) or not Type.is_seq(mem.sym.typ):
+            if not mem.is_a([TEMP, ATTR]) or not Type.is_seq(mem.symbol().typ):
                 type_error(ir, 'len() takes sequence type argument')
         else:
             for arg in ir.args:
