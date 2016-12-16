@@ -1,11 +1,11 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{5fa897ea-98c7-466a-9927-9e1c328b4ee6}</ProjectGuid>
     <ProjectHome />
-    <StartupFile>bin/polyphony</StartupFile>
+    <StartupFile>suite.py</StartupFile>
     <SearchPath>.</SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
     <OutputPath>.</OutputPath>
@@ -17,7 +17,7 @@
     <InterpreterArguments>
     </InterpreterArguments>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
-    <CommandLineArguments>tests/test2.py</CommandLineArguments>
+    <CommandLineArguments>c debug</CommandLineArguments>
     <Environment>
     </Environment>
   </PropertyGroup>
@@ -31,21 +31,32 @@
     <Compile Include="polyphony\compiler\ahdl.py" />
     <Compile Include="polyphony\compiler\ahdl_usedef.py" />
     <Compile Include="polyphony\compiler\block.py" />
+    <Compile Include="polyphony\compiler\builtin.py" />
+    <Compile Include="polyphony\compiler\callgraph.py" />
     <Compile Include="polyphony\compiler\common.py" />
     <Compile Include="polyphony\compiler\constantfolding.py" />
+    <Compile Include="polyphony\compiler\copyopt.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="polyphony\compiler\dataflow.py" />
     <Compile Include="polyphony\compiler\dfg_opt.py" />
     <Compile Include="polyphony\compiler\dominator.py" />
     <Compile Include="polyphony\compiler\driver.py" />
     <Compile Include="polyphony\compiler\env.py" />
+    <Compile Include="polyphony\compiler\graph.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="polyphony\compiler\hdlgen.py" />
+    <Compile Include="polyphony\compiler\hdlinterface.py" />
     <Compile Include="polyphony\compiler\hdlmemport.py" />
     <Compile Include="polyphony\compiler\hdlmoduleinfo.py" />
     <Compile Include="polyphony\compiler\iftransform.py" />
+    <Compile Include="polyphony\compiler\inlineopt.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="polyphony\compiler\ir.py" />
     <Compile Include="polyphony\compiler\irtranslator.py" />
     <Compile Include="polyphony\compiler\irvisitor.py" />
-    <Compile Include="polyphony\compiler\jumpdependency.py" />
     <Compile Include="polyphony\compiler\latency.py" />
     <Compile Include="polyphony\compiler\libs.py" />
     <Compile Include="polyphony\compiler\liveness.py" />
@@ -56,27 +67,32 @@
     <Compile Include="polyphony\compiler\quadruplet.py" />
     <Compile Include="polyphony\compiler\scheduler.py" />
     <Compile Include="polyphony\compiler\scope.py" />
+    <Compile Include="polyphony\compiler\selectorbuilder.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="polyphony\compiler\setlineno.py" />
     <Compile Include="polyphony\compiler\specfunc.py" />
     <Compile Include="polyphony\compiler\ssa.py" />
-    <Compile Include="polyphony\compiler\ssa_opt.py" />
     <Compile Include="polyphony\compiler\stg.py" />
-    <Compile Include="polyphony\compiler\stg_opt.py" />
     <Compile Include="polyphony\compiler\symbol.py" />
     <Compile Include="polyphony\compiler\treebalancer.py" />
     <Compile Include="polyphony\compiler\type.py" />
     <Compile Include="polyphony\compiler\typecheck.py" />
     <Compile Include="polyphony\compiler\usedef.py" />
+    <Compile Include="polyphony\compiler\utils.py" />
     <Compile Include="polyphony\compiler\varreplacer.py" />
     <Compile Include="polyphony\compiler\vericodegen.py" />
     <Compile Include="polyphony\compiler\verilog_common.py" />
     <Compile Include="polyphony\compiler\veritestgen.py" />
     <Compile Include="polyphony\compiler\__init__.py" />
     <Compile Include="polyphony\compiler\__main__.py" />
+    <Compile Include="polyphony\compiler\signal.py" />
     <Compile Include="polyphony\__init__.py" />
     <Compile Include="tests\apps\minivm.py" />
     <Compile Include="tests\apps\mips.py" />
     <Compile Include="tests\apps\odd_even_sort.py" />
+    <Compile Include="tests\class\class01.py" />
+    <Compile Include="tests\class\class02.py" />
     <Compile Include="tests\expr\expr01.py" />
     <Compile Include="tests\expr\expr02.py" />
     <Compile Include="tests\expr\expr03.py" />
@@ -130,6 +146,7 @@
     <Folder Include="polyphony\compiler\" />
     <Folder Include="tests\" />
     <Folder Include="tests\apps" />
+    <Folder Include="tests\class\" />
     <Folder Include="tests\expr" />
     <Folder Include="tests\func" />
     <Folder Include="tests\if" />

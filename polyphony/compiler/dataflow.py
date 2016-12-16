@@ -3,12 +3,8 @@
 from collections import deque, defaultdict
 from functools import reduce
 from .common import error_info
-from .block import Block
-from .symbol import function_name
-from .irvisitor import IRVisitor
-from .dominator import DominatorTreeBuilder
+from .block import Block, CompositBlock
 from .ir import *
-from .varreplacer import VarReplacer
 from .env import env
 from .type import Type
 from logging import getLogger
@@ -30,7 +26,7 @@ class DFNode:
 
     def __str__(self):
         if self.typ == 'Stm':
-            s = 'Node {} {} {}:{} {} {}'.format(hex(self.__hash__())[-4:], self.priority, self.begin, self.end, self.tag, self.tag.block.group.name)
+            s = 'Node {} {} {}:{} {} {}'.format(hex(self.__hash__())[-4:], self.priority, self.begin, self.end, self.tag, self.tag.block.name)
         elif self.typ == 'Loop':
             s = 'Node {} {} {}:{} Loop {}'.format(hex(self.__hash__())[-4:], self.priority, self.begin, self.end, self.tag.name)
         elif self.typ == 'Block':
@@ -43,46 +39,33 @@ class DFNode:
         return str(self)
 
     def __lt__(self, other):
-        #if self.priority != -1 and other.priority != -1:
         return self.priority < other.priority
-        #else:
-        #    return self.order() < other.order()
-
-    def order(self):
-        return self.tag.block.order if self.is_stm() else sys.maxsize
-
-    def is_stm(self):
-        return self.typ == 'Stm'
-
-    def is_loop(self):
-        return self.typ == 'Loop'
 
 
 class DataFlowGraph:
-    def __init__(self, loop_info):
-        self.name = loop_info.name
-        self.loop_info = loop_info
+    def __init__(self, name, blocks):
+        self.name = name
+        self.blocks = blocks
         self.nodes = []
         self.edges = set()
         self.src_nodes = set()
         self.succs_without_back_cache = {}
         self.preds_without_back_cache = {}
+        self.parent = None
+        self.children = []
 
     def __str__(self):
         return self.name
 
-    def add_stm_node(self, stm):
-        assert (stm.block is self.loop_info.head) or (stm.block in self.loop_info.bodies)
+    def set_child(self, child):
+        self.children.append(child)
+        child.parent = self
 
+    def add_stm_node(self, stm):
         n = self.find_node(stm)
         if not n:
             n = DFNode('Stm', stm)
             self.nodes.append(n)
-        return n
-
-    def add_loop_node(self, dfg):
-        n = DFNode('Loop', dfg)
-        self.nodes.append(n)
         return n
 
     def remove_node(self, n):
@@ -93,9 +76,6 @@ class DataFlowGraph:
 
     def add_usedef_edge(self, n1, n2):
         self.add_edge('UseDef', n1, n2)
-
-    def add_branch_edge(self, n1, n2):
-        self.add_edge('Branch', n1, n2)
 
     def add_seq_edge(self, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
@@ -121,25 +101,11 @@ class DataFlowGraph:
             self.edges.remove(rem)
 
     def _is_back_edge(self, n1, n2):
-        assert self.dtree
-        stm1 = self._get_stm(n1)
-        stm2 = self._get_stm(n2)
-        return self._stm_order_gt(stm1, stm2)
+        return self._stm_order_gt(n1.tag, n2.tag)
 
 
     def _get_stm(self, node):
-        if node.typ == 'Stm':
-            return node.tag
-        elif node.typ == 'Loop':
-            srcs = node.tag.find_src()
-            assert srcs
-            earliest_stm = None
-            for src in srcs:
-                if earliest_stm and src.tag.block.order > earliest_stm.block.order:
-                    pass
-                else:
-                    earliest_stm = src.tag
-            return earliest_stm
+        return node.tag
 
 
     def _stm_order_gt(self, stm1, stm2):
@@ -294,15 +260,6 @@ class DataFlowGraph:
     def get_loop_nodes(self):
         return filter(lambda n: n.typ == 'Loop', self.nodes)
 
-    def get_jump_stm_nodes(self):
-        jumps = []
-        for n in filter(lambda n: n.typ == 'Stm', self.nodes):
-            stm = n.tag
-            if not stm.is_a([JUMP, CJUMP, MCJUMP]):
-                continue
-            jumps.append(n)
-        return jumps
-
     def write_dot(self, name):
         G = pgv.AGraph(directed=True, strict=False, landscape='false')
         def get_node_tag_text(node):
@@ -329,152 +286,112 @@ class DFGBuilder:
     def __init__(self):
         pass
 
-
     def process(self, scope):
         self.scope = scope
+        self.scope.top_dfg = self._process(scope.entry_block)
 
-        self.loop_infos = scope.loop_infos
-        dtree_builder = DominatorTreeBuilder(scope)
-        self.dtree = dtree_builder.process()
+    def _root_blocks(self):
+        inner_loop_region = set()
+        for c in self.scope.loop_nest_tree.get_children_of(self.scope.entry_block):
+            inner_loop_region = inner_loop_region.union(set(c.region))
+        all_blks = set()
+        self.scope.entry_block.collect_basic_blocks(all_blks)
+        return all_blks.difference(inner_loop_region)
 
-        root = scope.blocks[0]
-        self._process(root)
-      
+    def _process(self, blk):
+        children = []
+        for c in self.scope.loop_nest_tree.get_children_of(blk):
+            children.append(self._process(c))
 
-    def _process(self, head):
-        for c in self.scope.loop_nest_tree.get_children_of(head):
-            self._process(c)
-
-        loop_info = self.loop_infos[head]
-        dfg = self._make_graph(loop_info)
-        self._add_branch_edges(dfg)
+        if blk is self.scope.loop_nest_tree.root:
+            blocks = sorted(list(self._root_blocks()), key=lambda b: b.order)
+            dfg = self._make_graph(blk.name, blocks)
+        else:
+            blocks = [blk.head]
+            for b in blk.bodies:
+                if not isinstance(b, CompositBlock):
+                    blocks.append(b)
+            dfg = self._make_graph(blk.name, blocks)
         self._add_mem_edges(dfg)
         self._add_object_edges(dfg)
-        loop_info.dfg = dfg
+        self._add_special_seq_edges(dfg)
+        for child in children:
+            dfg.set_child(child)
+        #self._dump_dfg(dfg)
+        return dfg
 
-        if env.dev_debug_mode:
-            for n in dfg.nodes:
-                logger.debug('---------------------------')
-                logger.debug(n)
-                logger.debug('DefUse preds')
-                preds = dfg.preds_typ(n, 'DefUse')
-                for pred in preds:
-                    logger.debug(pred)
-                logger.debug('DefUse succs')
-                succs = dfg.succs_typ(n, 'DefUse')
-                for succ in succs:
-                    logger.debug(succ)
+    def _dump_dfg(self, dfg):
+        for n in dfg.nodes:
+            logger.debug('---------------------------')
+            logger.debug(n)
+            logger.debug('DefUse preds')
+            preds = dfg.preds_typ(n, 'DefUse')
+            for pred in preds:
+                logger.debug(pred)
+            logger.debug('DefUse succs')
+            succs = dfg.succs_typ(n, 'DefUse')
+            for succ in succs:
+                logger.debug(succ)
 
-                logger.debug('Seq preds')
-                preds = dfg.preds_typ(n, 'Seq')
-                for pred in preds:
-                    logger.debug(pred)
-                logger.debug('Seq succs')
-                succs = dfg.succs_typ(n, 'Seq')
-                for succ in succs:
-                    logger.debug(succ)
+            logger.debug('Seq preds')
+            preds = dfg.preds_typ(n, 'Seq')
+            for pred in preds:
+                logger.debug(pred)
+            logger.debug('Seq succs')
+            succs = dfg.succs_typ(n, 'Seq')
+            for succ in succs:
+                logger.debug(succ)
 
 
-    def _make_child_loop_node(self, child_loop_head, head, blocks, dfg, usedef):
-        child_loop_info = self.loop_infos[child_loop_head]
-        logger.debug('child loop ' + child_loop_info.name)
-        assert child_loop_info.dfg
-
-        # FIXME: loop to loop edge
-        loopnodes = dfg.get_loop_nodes()
-        child_loop_node = dfg.add_loop_node(child_loop_info.dfg)
-        for lnode in loopnodes:
-            if dfg._is_back_edge(child_loop_node, lnode):
-                dfg.add_seq_edge(lnode, child_loop_node)
-            elif child_loop_node is not lnode:
-                dfg.add_seq_edge(child_loop_node, lnode)
-
-        for d in child_loop_info.defs:
-            usestms = usedef.get_use_stms_by_sym(d)
-            for usestm in usestms:
-                if (usestm.block in blocks) and\
-                    not self.scope.loop_nest_tree.is_child(head, usestm.block):
-                    usenode = dfg.add_stm_node(usestm)
-                    dfg.add_defuse_edge(child_loop_node, usenode)
-
-        for u in child_loop_info.uses:
-            defstms = usedef.get_def_stms_by_sym(u)
-            for defstm in defstms:
-                if (defstm.block in blocks) and \
-                    not self.scope.loop_nest_tree.is_child(head, defstm.block):
-                    defnode = dfg.add_stm_node(defstm)
-                    dfg.add_defuse_edge(defnode, child_loop_node)
-
-    def _make_graph(self, loop_info):
-        logger.debug('make graph ' + loop_info.name)
-        dfg = DataFlowGraph(loop_info)
-        dfg.dtree = self.dtree
+    def _make_graph(self, name, blocks):
+        logger.debug('make graph ' + name)
+        dfg = DataFlowGraph(name, blocks)
         usedef = self.scope.usedef
 
-        head = loop_info.head
-        blocks = [head]
-        blocks.extend(loop_info.bodies)
         for b in blocks:
-            #child loop node
-            if self.scope.loop_nest_tree.is_child(head, b):
-                self._make_child_loop_node(b, head, blocks, dfg, usedef)
-                continue
-
             for stm in b.stms:
-                logger.log(0, 'loop head ' + head.name + ' :: ' + str(stm))
+                logger.log(0, 'loop head ' + name + ' :: ' + str(stm))
                 usenode = dfg.add_stm_node(stm)
                 
                 # collect source nodes
-                self._add_source_node(usenode, dfg, usedef, head, blocks)
+                self._add_source_node(usenode, dfg, usedef, blocks)
 
                 # add edges
                 for v in usedef.get_use_vars_by_stm(stm):
-                    defstms = usedef.get_def_stms_by_sym(v.sym)
-                    logger.log(0, v.sym.name + ' defstms ')
+                    defstms = usedef.get_def_stms_by_sym(v.symbol())
+                    logger.log(0, v.symbol().name + ' defstms ')
                     for defstm in defstms:
                         logger.log(0, str(defstm))
 
                         if stm is defstm:
                             continue
-                        
-                        #the stm must not depend subsequential stm
                         if len(defstms) > 1 and (stm.program_order() <= defstm.program_order()):
                             continue
                         # this definition stm is in the out of the section
-                        if defstm.block is not head and defstm.block not in blocks:
-                            continue
-                        if self.scope.loop_nest_tree.is_child(head, defstm.block):
+                        if defstm.block not in blocks:
                             continue
                         defnode = dfg.add_stm_node(defstm)
                         dfg.add_defuse_edge(defnode, usenode)
 
-
-        self._add_edges_between_jumps(head, blocks, dfg)
-        self._add_edges_jump_use(head, blocks, dfg)
-        self._add_edges_between_jump_and_loop(head, blocks, dfg)
         if self.scope.is_testbench():
-            self._add_edges_between_calls(head, blocks, dfg)
+            self._add_edges_between_calls(blocks, dfg)
         return dfg
 
 
-    def _add_source_node(self, node, dfg, usedef, head, blocks):
+    def _add_source_node(self, node, dfg, usedef, blocks):
         stm = node.tag
         usevars = usedef.get_use_vars_by_stm(stm)
         if not usevars and stm.is_a(MOVE):
             dfg.src_nodes.add(node)
             return
         for v in usevars:
-            defstms = usedef.get_def_stms_by_sym(v.sym)
-            #maybe function params...
-            if not defstms:
-                logger.log(0, 'add src: defstm none' + str(node))
+            if v.symbol().is_param():
                 dfg.src_nodes.add(node)
                 return
-
+            defstms = usedef.get_def_stms_by_sym(v.symbol())
             for defstm in defstms:
                 # this definition stm is in the out of the section
-                if defstm.block is not head and defstm.block not in blocks:
-                    logger.log(0, 'add src: def is outer ' + str(node))
+                if defstm.block not in blocks:
                     dfg.src_nodes.add(node)
                     return
 
@@ -487,7 +404,7 @@ class DFGBuilder:
 
         def has_mem_arg(args):
             for a in args:
-                if a.is_a(TEMP) and Type.is_list(a.sym.typ):
+                if a.is_a(TEMP) and Type.is_list(a.symbol().typ):
                     return True
             return False
         call = None
@@ -527,102 +444,12 @@ class DFGBuilder:
                 return True
         return False
         
-    def _is_outer_stm(self, head, stm):
-        parent = self.scope.loop_nest_tree.get_parent_of(head)
-        if parent:
-            if stm in parent.stms:
-                return True
-            for b in self.scope.loop_infos[parent].bodies:
-                if head is b:
-                    continue
-                if stm in b.stms:
-                    return True
-            return self._is_outer_stm(parent, stm)
-        else:
-            return False
 
-    def _add_branch_edges(self, dfg):
-        for n in dfg.nodes:
-            if not n.is_stm():
-                continue
-            if self._is_normal_jump(n.tag):
-                continue
-            for blk in n.tag.block.preds:
-                cj = blk.stms[-1]
-                if cj.is_a([CJUMP, MCJUMP]):
-                    cjnode = dfg.find_node(cj)
-                    if cjnode:
-                        dfg.add_branch_edge(cjnode, n)
-
-    def _is_normal_jump(self, stm):
-        return stm.is_a(JUMP) and stm.typ == ''
-
-    def _all_stms(self, head, blocks):
+    def _all_stms(self, blocks):
         all_stms_in_section = []
         for b in blocks:
-            #ignore child loop node
-            if self.scope.loop_nest_tree.is_child(head, b):
-                continue
             all_stms_in_section.extend(b.stms)
         return all_stms_in_section
-
-    def _add_edges_between_jumps(self, head, blocks, dfg):
-        all_stms_in_section = self._all_stms(head, blocks)
-        all_jumps = []
-        for stm in all_stms_in_section:
-            if not stm.is_a(JUMP):
-                continue
-            if self._is_normal_jump(stm):
-                continue
-            all_jumps.append(stm)
-
-        for jump in all_jumps:
-            jumpnode = dfg.add_stm_node(jump)
-            for jump2 in all_jumps:
-                if jump is jump2:
-                    continue
-                if (jump.block is not jump2.block) and (jump.block.order < jump2.block.order):
-                    othernode = dfg.add_stm_node(jump2)
-                    dfg.add_seq_edge(jumpnode, othernode)
-
-
-    def _add_edges_jump_use(self, head, blocks, dfg):
-        usedef = self.scope.usedef
-        all_jumps = filter(lambda n: n.tag.uses, dfg.get_jump_stm_nodes())
-        for jumpnode in all_jumps:
-            jump = jumpnode.tag
-            for u in jump.uses:
-                defs = usedef.get_def_stms_by_sym(u.sym)
-                for d in defs:
-                    #the jump must not depend subsequential stm
-                    if len(defs) > 1 and (jump.block is not d.block) and (jump.block.order <= d.block.order):
-                        continue
-
-                    # this definition stm is in the out of the section
-                    if d.block is not head and d.block not in blocks:
-                        continue
-                    if self.scope.loop_nest_tree.is_child(head, d.block):
-                        continue
-
-                    defnode = dfg.add_stm_node(d)
-                    dfg.add_seq_edge(defnode, jumpnode)
-
-
-    def _add_edges_between_jump_and_loop(self, head, blocks, dfg):
-        all_jumps = dfg.get_jump_stm_nodes()
-        all_loops = dfg.get_loop_nodes()
-
-        for loopnode in all_loops:
-            loop_stm = dfg._get_stm(loopnode)
-            for jumpnode in all_jumps:
-                jump = jumpnode.tag
-                if self._is_normal_jump(jump):
-                    continue
-
-                if loop_stm.block.order <= jump.block.order:
-                    dfg.add_seq_edge(loopnode, jumpnode)
-                else:
-                    dfg.add_seq_edge(jumpnode, loopnode)
 
 
     def _node_order_by_ctrl(self, node):
@@ -631,27 +458,22 @@ class DFGBuilder:
     def _add_mem_edges(self, dfg):
         node_groups = defaultdict(list)
         for node in dfg.nodes:
-            if not node.is_stm():
-                continue
             if node.tag.is_a(MOVE):
                 mv = node.tag
                 if mv.src.is_a([MREF, MSTORE]):
-                    if mv.src.mem.is_a(TEMP):
-                        mem_group = mv.src.mem.sym.name
-                    elif mv.src.mem.is_a(ATTR):
-                        mem_group = mv.src.mem.attr.name
+                    mem_group = mv.src.mem.symbol().name
                     node_groups[mem_group].append(node)
                 elif mv.src.is_a(CALL):
                     for arg in mv.src.args:
-                        if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                            mem_group = arg.sym.name
+                        if arg.is_a(TEMP) and Type.is_list(arg.symbol().typ):
+                            mem_group = arg.symbol().name
                             node_groups[mem_group].append(node)
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
                     for arg in expr.exp.args:
-                        if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                            mem_group = arg.sym.name
+                        if arg.is_a(TEMP) and Type.is_list(arg.symbol().typ):
+                            mem_group = arg.symbol().name
                             node_groups[mem_group].append(node)
         for nodes in node_groups.values():
             sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
@@ -661,9 +483,9 @@ class DFGBuilder:
                 dfg.add_seq_edge(n1, n2)
 
 
-    def _add_edges_between_calls(self, head, blocks, dfg):
+    def _add_edges_between_calls(self, blocks, dfg):
         """this function is used for testbench only"""
-        all_stms_in_section = self._all_stms(head, blocks)
+        all_stms_in_section = self._all_stms(blocks)
         all_calls = []
         for stm in all_stms_in_section:
             if stm.is_a(MOVE) and stm.src.is_a(CALL):
@@ -685,15 +507,13 @@ class DFGBuilder:
     def _add_object_edges(self, dfg):
         def add_node_group_if_needed(ir, node, node_groups):
             if ir.is_a(ATTR):
-                node_groups[ir.attr].add(node)
+                node_groups[ir.symbol()].add(node)
                 add_node_group_if_needed(ir.exp, node, node_groups)
-            elif ir.is_a(TEMP) and Type.is_object(ir.sym.typ):
-                node_groups[ir.sym].add(node)
+            elif ir.is_a(TEMP) and Type.is_object(ir.symbol().typ):
+                node_groups[ir.symbol()].add(node)
 
         node_groups = defaultdict(set)
         for node in dfg.nodes:
-            if not node.is_stm():
-                continue
             if node.tag.is_a(MOVE) or node.tag.is_a(EXPR):
                 stm = node.tag
                 for kid in stm.kids():
@@ -706,3 +526,14 @@ class DFGBuilder:
                 n2 = sorted_nodes[i+1]
                 dfg.add_seq_edge(n1, n2)
 
+    # workaround
+    def _add_special_seq_edges(self, dfg):
+        for node in dfg.nodes:
+            if node.tag.is_a([JUMP, CJUMP, MCJUMP]):
+                stm = node.tag
+                assert len(stm.block.stms) > 1
+                assert stm.block.stms[-1] is stm
+                idx = stm.block.stms.index(stm)
+                for prev_stm in stm.block.stms[:-1]:
+                    prev_node = dfg.find_node(prev_stm)
+                    dfg.add_seq_edge(prev_node, node)

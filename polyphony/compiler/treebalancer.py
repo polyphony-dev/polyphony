@@ -44,7 +44,7 @@ class TreeBalancer:
         self.p2b = PLURALOP2BINOP()
 
     def process(self, scope):
-        for block in scope.blocks:
+        for block in scope.traverse_blocks():
             self._process_Block(block)
 
         for s in scope.children:

@@ -14,7 +14,7 @@ import pdb
 class MemoryRenamer:
     def _collect_def_mem_stm(self, scope):
         stms = []
-        for block in scope.blocks:
+        for block in scope.traverse_blocks():
             for stm in block.stms:
                 if stm.is_a(MOVE):
                     if stm.src.is_a(ARRAY):
@@ -24,23 +24,23 @@ class MemoryRenamer:
         return stms
 
     def _get_phis(self, block):
-        return filter(lambda stm: stm.is_a(PHI), block.stms)
+        return filter(lambda stm: stm.is_a(PHI) and Type.is_list(stm.var.symbol().typ), block.stms)
 
     def _cleanup_phi(self):
-        for block in self.scope.blocks:
+        for block in self.scope.traverse_blocks():
             remove_phis = []
             for phi in self._get_phis(block):
                 remove_args = []
                 args = set()
-                for arg, blk in phi.args:
+                for arg in phi.args:
                     args.add(arg.sym)
-                    if arg.is_a(TEMP) and arg.sym is phi.var.sym:
-                        remove_args.append((arg, blk))
+                    if arg.is_a(TEMP) and arg.symbol() is phi.var.symbol():
+                        remove_args.append(arg)
                 if len(args) == 1:
                     remove_phis.append(phi)
                     continue
                 for arg in remove_args:
-                    phi.args.remove(arg)
+                    phi.remove_arg(arg)
             for phi in remove_phis:
                 block.stms.remove(phi)
 
@@ -57,10 +57,7 @@ class MemoryRenamer:
             assert mv.src.is_a(ARRAY) \
                 or (mv.src.is_a(TEMP) and mv.src.sym.is_param())
 
-            if mv.dst.is_a(TEMP):
-                memsym = mv.dst.sym
-            elif mv.dst.is_a(ATTR):
-                memsym = mv.dst.attr
+            memsym = mv.dst.symbol()
             memsrcs.append(memsym)
             uses = usedef.get_use_stms_by_sym(memsym)
             worklist.extend(list(uses))
@@ -124,18 +121,18 @@ class MemoryRenamer:
 
             elif stm.is_a(PHI):
                 updated = False
-                for arg, blk in stm.args:
-                    if arg.sym in mem_var_map:
+                for arg in stm.args:
+                    if arg.symbol() in mem_var_map:
                         updated = merge_mem_var(arg, stm.var)
-                    elif arg.sym in memsrcs:
-                        mem = arg.sym
-                        if stm.var.sym != mem and (stm.var.sym not in mem_var_map or mem not in mem_var_map[stm.var.sym]):
-                            mem_var_map[stm.var.sym].add(mem)
+                    elif arg.symbol() in memsrcs:
+                        mem = arg.symbol()
+                        if stm.var.symbol() != mem and (stm.var.symbol() not in mem_var_map or mem not in mem_var_map[stm.var.symbol()]):
+                            mem_var_map[stm.var.symbol()].add(mem)
                             updated = True
                 # reach fix point ?
                 if not updated and stm in dones:
                     continue
-                sym = stm.var.sym
+                sym = stm.var.symbol()
 
             if sym:
                 uses = usedef.get_use_stms_by_sym(sym)
@@ -184,36 +181,34 @@ class ContextModifier(IRVisitor):
 
 class RomDetector:
     def _propagate_writable_flag(self):
-        mrg = env.memref_graph
-        assert mrg
-
-        for node in mrg.collect_top_module_nodes():
+        for node in self.mrg.collect_top_module_nodes():
             node.set_writable()
         worklist = deque()
-        for root in mrg.collect_roots():
-            if root.is_writable():
-                root.propagate_succs(lambda n: n.set_writable())
+        for source in self.mrg.collect_sources():
+            if source.is_writable():
+                source.propagate_succs(lambda n: n.set_writable())
             else:
-                worklist.append(root)
+                worklist.append(source)
 
         checked = set()
         while worklist:
             node = worklist.popleft()
             if node not in checked and node.is_writable():
                 checked.add(node)
-                roots = set([root for root in mrg.collect_node_roots(node)])
-                unchecked_roots = roots.difference(checked)
-                for r in unchecked_roots:
-                    r.propagate_succs(lambda n: n.set_writable() or checked.add(n))
+                sources = set([source for source in node.sources()])
+                unchecked_sources = sources.difference(checked)
+                for s in unchecked_sources:
+                    s.propagate_succs(lambda n: n.set_writable() or checked.add(n))
             else:
-                unchecked_succs = set(node.succs).difference(checked)
+                unchecked_succs = set(node.succ_ref_nodes()).difference(checked)
                 worklist.extend(unchecked_succs)
 
+    def _propagate_info(self):
+        for source in self.mrg.collect_sources():
+            source.propagate_succs(lambda n: n.update())
 
     def process_all(self):
+        self.mrg = env.memref_graph
+        self._propagate_info()
         self._propagate_writable_flag()
 
-        scopes = Scope.get_scopes(bottom_up=False)
-        for s in scopes:
-            cm = ContextModifier()
-            cm.process(s)

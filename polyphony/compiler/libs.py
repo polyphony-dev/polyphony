@@ -6,22 +6,22 @@ module SinglePortRam #
   parameter RAM_DEPTH = 1 << ADDR_WIDTH
 )
 (
-  input CLK,
-  input RST,
-  input [ADDR_WIDTH-1:0] ADDR,
-  input [DATA_WIDTH-1:0] D,
-  input WE,
-  output [DATA_WIDTH-1:0] Q
+  input clk,
+  input rst,
+  input [ADDR_WIDTH-1:0] ram_addr,
+  input [DATA_WIDTH-1:0] ram_d,
+  input ram_we,
+  output [DATA_WIDTH-1:0] ram_q
 );
 
   reg [DATA_WIDTH-1:0] mem [0:RAM_DEPTH-1];
   reg [ADDR_WIDTH-1:0] read_addr;
 
-  assign Q = mem[read_addr];
-  always @ (posedge CLK) begin
-    if (WE)
-      mem[ADDR] <= D;
-	read_addr <= ADDR;
+  assign ram_q = mem[read_addr];
+  always @ (posedge clk) begin
+    if (ram_we)
+      mem[ram_addr] <= ram_d;
+	read_addr <= ram_addr;
   end
 endmodule
 """
@@ -32,16 +32,16 @@ module BidirectionalSinglePortRam #
   parameter DATA_WIDTH = 8,
   parameter ADDR_WIDTH = 4,
   parameter RAM_LENGTH = 16,
-  parameter RAM_DEPTH = 1 << ADDR_WIDTH
+  parameter RAM_DEPTH = 1 << (ADDR_WIDTH-1)
 )
 (
-  input CLK,
-  input RST,
-  input [ADDR_WIDTH-1:0] ADDR,
-  input [DATA_WIDTH-1:0] D,
-  input WE,
-  output [DATA_WIDTH-1:0] Q,
-  output [ADDR_WIDTH-1:0] LEN
+  input clk,
+  input rst,
+  input [ADDR_WIDTH-1:0] ram_addr,
+  input [DATA_WIDTH-1:0] ram_d,
+  input ram_we,
+  output [DATA_WIDTH-1:0] ram_q,
+  output [ADDR_WIDTH-1:0] ram_len
 );
 
   reg [DATA_WIDTH-1:0] mem [0:RAM_DEPTH-1];
@@ -59,12 +59,12 @@ module BidirectionalSinglePortRam #
   end
   endfunction // address
   wire [ADDR_WIDTH-1:0] a;
-  assign a = address(ADDR);
-  assign Q = mem[read_addr];
-  assign LEN = RAM_LENGTH;
-  always @ (posedge CLK) begin
-    if (WE)
-      mem[ADDR] <= D;
+  assign a = address(ram_addr);
+  assign ram_q = mem[read_addr];
+  assign ram_len = RAM_LENGTH;
+  always @ (posedge clk) begin
+    if (ram_we)
+      mem[ram_addr] <= ram_d;
 	read_addr <= a;
   end
 endmodule

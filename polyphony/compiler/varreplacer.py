@@ -1,14 +1,15 @@
-﻿from .ir import CONST, TEMP, BINOP
+﻿from .ir import *
 from logging import getLogger
 logger = getLogger(__name__)
 
 class VarReplacer:
     @classmethod
     def replace_uses(cls, dst, src, usedef):
-        assert dst.is_a(TEMP)
+        assert dst.is_a([TEMP, ATTR])
+        assert src.is_a([IRExp])
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(dst, src, usedef)
-        uses = list(usedef.get_use_stms_by_sym(dst.sym))
+        uses = list(usedef.get_use_stms_by_qsym(dst.qualified_symbol()))
         for use in uses: 
             replacer.current_stm = use
             replacer.visit(use)
@@ -44,7 +45,7 @@ class VarReplacer:
     def visit_SYSCALL(self, ir):
         return self.visit_CALL(ir)
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         return self.visit_CALL(ir)
 
     def visit_CONST(self, ir):
@@ -62,6 +63,7 @@ class VarReplacer:
         return ir
 
     def visit_ARRAY(self, ir):
+        ir.repeat = self.visit(ir.repeat)
         items = []
         for item in ir.items:
             items.append(self.visit(item))
@@ -69,16 +71,19 @@ class VarReplacer:
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym is self.replace_dst.sym:
+        if ir.sym is self.replace_dst.symbol():
             self.replaced = True
             rep = self.replace_src.clone()
-            self.usedef.remove_var_use(ir, self.current_stm)
-            if rep.is_a(TEMP):
-                self.usedef.add_var_use(rep, self.current_stm)
             return rep
         return ir
 
     def visit_ATTR(self, ir):
+        if ir.qualified_symbol() == self.replace_dst.qualified_symbol():
+            self.replaced = True
+            rep = self.replace_src.clone()
+            return rep
+        else:
+            ir.exp = self.visit(ir.exp)
         return ir
 
     def visit_EXPR(self, ir):
@@ -113,9 +118,13 @@ class VarReplacer:
 
     def visit_PHI(self, ir):
         self.replaced = False
-        ir.args = [(self.visit(arg), blk) for arg, blk in ir.args]
+        args = ir.args[:]
+        ir.args = [self.visit(arg) for arg in ir.args]
         if self.replaced:
             self.replaces.append(ir)
+
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
 
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__

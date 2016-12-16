@@ -2,10 +2,6 @@
 from logging import getLogger
 logger = getLogger(__name__)
 
-def function_name(t):
-    assert t.name[0] == '!'
-    return t.name[1:].split('#')[0]
-
 class Symbol:
     all_symbols = []
 
@@ -35,45 +31,47 @@ class Symbol:
                 s += '    ' + str(u) + '\n'
             logger.debug(s)
 
-    func_prefix = '!'
     return_prefix = '@function_return'
     condition_prefix = '@cond'
     temp_prefix = '@t'
     param_prefix = '@in'
     field_prefix = '@f'
     port_prefix = '@p'
+    ref_prefix = '@r'
 
     def __init__(self, name, scope, id):
         self.id = id
         self.name = name
         self.scope = scope
-        self.typ = Type.none_t # var|tmp|reg|wire|ignore|
+        self.typ = Type.none_t
         self.ancestor = None
 
     def __str__(self):
-        return self.name + ':' + Type.str(self.typ) # + "_" + str(self.id)
+        #return '{}:{}({}:{})'.format(self.name, Type.str(self.typ), self.id, self.scope.orig_name)
+        #return '{}:{}({})'.format(self.name, Type.str(self.typ), self.id)
+        return self.name
 
     def __repr__(self):
-        return self.name# + "_" + str(self.id)
+        #return '{}({})'.format(self.name, hex(self.__hash__()))
+        return self.name
 
     def __lt__(self, other):
         return self.name < other.name
   
+    def orig_name(self):
+        if self.ancestor:
+            return self.ancestor.orig_name()
+        else:
+            return self.name
+
     def hdl_name(self):
         if self.name[0] == '@' or self.name[0] == '!':
-            names = self.name.split('_', maxsplit=1)
-            if len(names) > 1:
-                name = names[1]
-            else:
-                name = names[0][1:]
+            name = self.name[1:]
         else:
             name = self.name[:]
         name = name.replace('#', '')
         return name
    
-    def is_function(self):
-        return self.name[0] == Symbol.func_prefix
-
     def is_return(self):
         return self.name.startswith(Symbol.return_prefix)
 
@@ -91,6 +89,9 @@ class Symbol:
 
     def is_port(self):
         return self.name.startswith(Symbol.port_prefix)
+
+    def is_ref(self):
+        return self.name.startswith(Symbol.ref_prefix)
 
     def set_type(self, typ):
         self.typ = typ

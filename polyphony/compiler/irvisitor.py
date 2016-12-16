@@ -1,26 +1,22 @@
 ﻿class IRVisitor:
     def __init__(self):
-        self.done_blocks = []
+        pass
 
     def process(self, scope):
         self.scope = scope
-        assert len(scope.blocks[0].preds) == 0
-        self._process_Block(scope.blocks[0])
+        assert len(scope.entry_block.preds) == 0
+
+        for blk in self.scope.traverse_blocks():
+            self._process_block(blk)
         self._process_scope_done(scope)
 
     def _process_scope_done(self, scope):
         pass
 
-    def _process_Block(self, block):
-        if block not in self.done_blocks:
-            self.block = block
-            for stm in block.stms:
-                self.current_stm = stm
-                self.visit(stm)
-
-            self.done_blocks.append(block)
-            for succ in block.succs:
-                self._process_Block(succ)
+    def _process_block(self, block):
+        for stm in block.stms:
+            self.current_stm = stm
+            self.visit(stm)
 
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__
@@ -47,7 +43,7 @@
         for arg in ir.args:
             self.visit(arg)
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         for arg in ir.args:
             self.visit(arg)
 
@@ -70,6 +66,7 @@
         self.visit(ir.exp)
 
     def visit_ARRAY(self, ir):
+        self.visit(ir.repeat)
         for item in ir.items:
             self.visit(item)
 
@@ -94,32 +91,29 @@
         self.visit(ir.dst)
 
     def visit_PHI(self, ir):
-        pass
+        self.visit(ir.var)
+        for arg in ir.args:
+            self.visit(arg)
+        if ir.ps:
+            for p in ir.ps:
+                if p : self.visit(p)
 
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
 
 class IRTransformer(IRVisitor):
     def __init__(self):
-        self.done_blocks = []
+        pass
 
-    def _process_Block(self, block):
-        if block not in self.done_blocks:
-            self.block = block
-            self.new_stms = []
-            for stm in block.stms:
-                self.current_stm = stm
-                self.visit(stm)
-            block.stms = self.new_stms
-            #set the pointer to the block to each stm
-            for stm in block.stms:
-                stm.block = block
+    def _process_block(self, block):
+        self.new_stms = []
+        for stm in block.stms:
+            self.current_stm = stm
+            self.visit(stm)
+        block.stms = self.new_stms
+        #set the pointer to the block to each stm
+        for stm in block.stms:
+            stm.block = block
 
-            self.done_blocks.append(block)
-            for succ in block.succs:
-                self._process_Block(succ)
-
-    def visit(self, ir):
-        method = 'visit_' + ir.__class__.__name__
-        visitor = getattr(self, method, None)
-        return visitor(ir)
 
 

@@ -52,6 +52,14 @@ class Type:
         return ('class', src_typ, scope)
 
     @classmethod
+    def funcdef(cls):
+        return ('funcdef',)
+
+    @classmethod
+    def classdef(cls):
+        return ('classdef',)
+
+    @classmethod
     def is_none(cls, t):
         return t is cls.none_t
 
@@ -88,6 +96,14 @@ class Type:
         return isinstance(t, tuple) and t[0] == 'class'
 
     @classmethod
+    def is_funcdef(cls, t):
+        return isinstance(t, tuple) and t[0] == 'funcdef'
+
+    @classmethod
+    def is_classdef(cls, t):
+        return isinstance(t, tuple) and t[0] == 'classdef'
+
+    @classmethod
     def is_commutable(cls, t0, t1):
         if t0 is t1:
             return True
@@ -109,4 +125,13 @@ class Type:
         if cls.is_list(t) or cls.is_class(t) or cls.is_object(t):
             return t[2]
         return None
+
+    @classmethod
+    def width(cls, t):
+        assert cls.is_scalar(t)
+        if cls.is_int(t):
+            # TODO
+            return 32
+        elif t is cls.bool_t:
+            return 1
 

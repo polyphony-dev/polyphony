@@ -1,5 +1,10 @@
 ﻿from collections import defaultdict
 from logging import getLogger, DEBUG
+from .hdlinterface import *
+from . import libs
+from .env import env
+from .ahdl import *
+
 logger = getLogger(__name__)
 
 class FSM:
@@ -11,128 +16,133 @@ class FSM:
 
 class HDLModuleInfo:
     #Port = namedtuple('Port', ['name', 'width'])
-    def __init__(self, name, qualified_name):
+    def __init__(self, scope, name, qualified_name):
+        self.scope = scope
         self.name = name
         self.qualified_name = qualified_name[len('@top')+1:].replace('.', '_')
-        self.data_inputs = {}
-        self.data_outputs = {}
-        self.ctrl_inputs = {}
-        self.ctrl_outputs = {}
-        self.mem_inputs = {}
-        self.mem_outputs = {}
+        self.interfaces = []
+        self.interconnects = []
         self.parameters = []
         self.constants = []
-        self.internal_regs = set()
-        self.internal_reg_arrays = []
-        self.internal_wires =set()
+        self.state_constants = []
         self.sub_modules = {}
-        self.static_assignments = []
-        self.sync_assignments = []
         self.functions = []
         self.muxes = []
         self.demuxes = []
+        self.decls = defaultdict(list)
         self.class_fields = set()
-        self.field_accesses = {}
+        self.internal_field_accesses = {}
         self.fsms = defaultdict(FSM)
+        self.node2if = {}
 
     def __str__(self):
         s = 'ModuleInfo {}\n'.format(self.name)
         s += '  -- num of signals --\n'
-        s += '  - num of data inputs ' + str(len(self.data_inputs))
-        s += '\n'
-        s += '  - num of data outputs ' + str(len(self.data_outputs))
-        s += '\n'
-        s += '  - num of constants ' + str(len(self.constants))
-        s += '\n'
-        s += '  - num of internal_regs ' + str(len(self.internal_regs))
-        s += '\n'
-        s += '  - num of internal_reg_arrays ' + str(len(self.internal_reg_arrays))
-        s += '\n'
-        s += '  - num of internal_wires ' + str(len(self.internal_wires))
-        s += '\n'
-        s += '  - num of sub modules ' + str(len(self.sub_modules))
-        s += '\n'
-        s += '  - inputs\n    ' + ', '.join(['{} [{}:0]'.format(sig.name, sig.width-1) for sig in self.data_inputs.values()])
-        s += '\n'
-        s += '  - outputs\n    ' + ', '.join(['{} [{}:0]'.format(sig.name, sig.width-1) for sig in self.data_outputs.values()])
-        s += '\n'
-        s += '  - constants\n    ' + ', '.join(['{}={}'.format(name, value) for name, value in self.constants])
-        s += '\n'
-        s += '  - internal_regs\n    ' + ', '.join(['{}[{}:0]'.format(sig.name, sig.width-1) for sig in self.internal_regs])
-        s += '\n'
-        s += '  - internal_reg_arrays\n    ' + ', '.join(['{}[{}:0][0:{}]'.format(sig.name, sig.width-1, size-1) for sig, size in self.internal_reg_arrays])
-        s += '\n'
-        s += '  - internal_wires\n    ' + ', '.join(['{}[{}:0]'.format(sig.name, sig.width-1) for sig in self.internal_wires])
-        s += '\n'
-
-        s += '  - sub modules\n    ' + ', '.join([name for name, info, port_map, param_map in self.sub_modules.values()])
+        s += '  - sub modules\n    ' + ', '.join([name for name, _, _, _, _ in self.sub_modules.values()])
         s += '\n'
         s += '  - functions\n    ' + ', '.join([str(f.output.sig.name) for f in self.functions])
         s += '\n'
 
         return s
 
-    def add_data_input(self, sig):
-        self.data_inputs[sig.name] = sig
+    def __repr__(self):
+        return self.name
 
-    def add_data_output(self, sig):
-        self.data_outputs[sig.name] = sig
+    def add_interface(self, interface):
+        self.interfaces.append(interface)
 
-    def add_ctrl_input(self, sig):
-        self.ctrl_inputs[sig.name] = sig
-
-    def add_ctrl_output(self, sig):
-        self.ctrl_outputs[sig.name] = sig
-
-    def add_mem_input(self, sig):
-        self.mem_inputs[sig.name] = sig
-
-    def add_mem_output(self, sig):
-        self.mem_outputs[sig.name] = sig
+    def add_interconnect(self, interconnect):
+        self.interconnects.append(interconnect)
 
     def add_constant(self, name, value):
         assert isinstance(name, str)
         self.constants.append((name, value))
 
-    def add_internal_reg(self, sig):
-        assert not sig.is_wire()
-        self.internal_regs.add(sig)
-
-    def add_internal_reg_array(self, sig, size):
-        assert not sig.is_wire()
-        self.internal_reg_arrays.append((sig, size))
-
-    def add_internal_wire(self, sig):
-        assert not sig.is_reg()
-        self.internal_wires.add(sig)
-
-    def add_static_assignment(self, assign):
-        self.static_assignments.append(assign)
-
-    def add_sync_assignment(self, assign):
-        self.sync_assignments.append(assign)
-
-    def add_sub_module(self, name, module_info, port_map, param_map=None):
+    def add_state_constant(self, name, value):
         assert isinstance(name, str)
-        assert name not in self.sub_modules
-        self.sub_modules[name] = (name, module_info, port_map, param_map)
+        self.state_constants.append((name, value))
 
-    def add_function(self, func):
-        self.functions.append(func)
+    def add_internal_reg(self, sig, tag=''):
+        assert not sig.is_net()
+        self.add_decl(tag, AHDL_REG_DECL(sig))
 
-    def add_mux(self, mux):
-        self.muxes.append(mux)
+    def add_internal_reg_array(self, sig, size, tag=''):
+        assert not sig.is_net()
+        self.add_decl(tag, AHDL_REG_ARRAY_DECL(sig, size))
 
-    def add_demux(self, demux):
-        self.demuxes.append(demux)
+    def add_internal_net(self, sig, tag=''):
+        assert not sig.is_reg()
+        self.add_decl(tag, AHDL_NET_DECL(sig))
+
+    def remove_internal_net(self, sig):
+        assert isinstance(sig, Signal)
+        removes = []
+        for tag, decls in self.decls.items():
+            for decl in decls:
+                if isinstance(decl, AHDL_NET_DECL):
+                    if decl.sig == sig:
+                        removes.append((tag, decl))
+        for tag, decl in removes:
+            self.remove_decl(tag, decl)
+
+
+    def add_static_assignment(self, assign, tag=''):
+        assert isinstance(assign, AHDL_ASSIGN)
+        self.add_decl(tag, assign)
+
+    def get_static_assignment(self):
+        assigns = []
+        for tag, decls in self.decls.items():
+            assigns.extend([(tag, decl) for decl in decls if isinstance(decl, AHDL_ASSIGN)])
+        return assigns
+
+    def add_decl(self, tag, decl):
+        assert isinstance(decl, AHDL_DECL)
+        self.decls[tag].append(decl)
+
+    def remove_decl(self, tag, decl):
+        assert isinstance(decl, AHDL_DECL)
+        self.decls[tag].remove(decl)
+
+    def add_sub_module(self, name, module_info, accessors, param_map=None):
+        assert isinstance(name, str)
+        is_public = self.scope.is_class()
+        sub_infs = defaultdict(list)
+        for inf in accessors:
+            if not inf.is_public:
+                continue
+            if module_info.scope and module_info.scope.is_class():
+                fieldif = InstanceInterface(inf, name, module_info.scope, is_public=is_public)
+                self.add_interface(fieldif)
+                sub_infs[inf.name].append(fieldif)
+            else:
+                fieldif = inf.clone()
+                if fieldif.name:
+                    fieldif.name = name + '_' + fieldif.name
+                else:
+                    fieldif.name = name
+                fieldif.is_public = False
+                sub_infs[inf.name].append(fieldif)
+        self.sub_modules[name] = (name, module_info, accessors, sub_infs, param_map)
+
+    def add_function(self, func, tag=''):
+        self.add_decl(tag, func)
+
+    def add_mux(self, mux, tag=''):
+        assert isinstance(mux, AHDL_MUX)
+        self.add_decl(tag, mux)
+
+    def add_demux(self, demux, tag=''):
+        assert isinstance(demux, AHDL_DEMUX)
+        self.add_decl(tag, demux)
 
     def add_class_field(self, field):
         assert field.is_field()
         self.class_fields.add(field)
 
-    def add_field_access(self, field, access):
-        assert field.is_field()
-        self.field_accesses[field] = access
+    def add_internal_field_access(self, field_name, access):
+        assert isinstance(field_name, str)
+        self.internal_field_accesses[field_name] = access
 
     def add_fsm_state_var(self, fsm_name, var):
         self.fsms[fsm_name].name = fsm_name
@@ -143,3 +153,11 @@ class HDLModuleInfo:
 
     def add_fsm_output(self, fsm_name, output_sig):
         self.fsms[fsm_name].outputs.add(output_sig)
+
+
+class RAMModuleInfo(HDLModuleInfo):
+    def __init__(self, name, data_width, addr_width):
+        super().__init__(None, 'ram', '@top'+'.BidirectionalSinglePortRam')
+        self.ramif = RAMInterface('', data_width, addr_width, is_public=True)
+        self.add_interface(self.ramif)
+        env.add_using_lib(libs.bidirectional_single_port_ram)

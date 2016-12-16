@@ -13,7 +13,7 @@ def get_latency(tag):
     if tag.is_a(MOVE):
         if tag.src.is_a(CALL):
             return CALL_MINIMUM_STEP
-        elif tag.src.is_a(CTOR):
+        elif tag.src.is_a(NEW):
             return CALL_MINIMUM_STEP
         elif tag.dst.is_a(TEMP) and tag.dst.sym.is_condition():
             return 0

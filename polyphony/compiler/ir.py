@@ -1,5 +1,34 @@
 ﻿import copy
 from .symbol import Symbol
+from .utils import is_a
+from .env import env
+
+op2sym_map = {
+    'And':'and',
+    'Or':'or',
+    'Add':'+',
+    'Sub':'-',
+    'Mult':'*',
+    'FloorDiv':'//',
+    'Mod':'%',
+    'LShift':'<<',
+    'RShift':'>>',
+    'BitOr':'|',
+    'BitXor':'^',
+    'BitAnd':'&',
+    'Eq':'==',
+    'NotEq':'!=',
+    'Lt':'<',
+    'LtE':'<=',
+    'Gt':'>',
+    'GtE':'>=',
+    'IsNot':'!=',
+    'USub':'-',
+    'UAdd':'+',
+    'Not':'!',
+    'Invert':'~'
+    }
+
 
 class Ctx:
     LOAD=1
@@ -18,23 +47,67 @@ class IR:
     def __init__(self):
         self.lineno = -1
 
-    def is_(self, cls):
-        return isinstance(self, cls)
-
     def __repr__(self):
         return self.__str__()
 
-    def is_jump(self):
-        return False
-
     def is_a(self, cls):
-        if isinstance(cls, list) or isinstance(cls, tuple):
-            for c in cls:
-                if isinstance(self, c):
-                    return True
+        return is_a(self, cls)
+
+    def clone(self):
+        clone = self.__new__(self.__class__)
+        clone.__dict__ = self.__dict__.copy()
+        for k, v in clone.__dict__.items():
+            if isinstance(v, IR):
+                clone.__dict__[k] = v.clone()
+            elif isinstance(v, list):
+                li = []
+                for elm in v:
+                    if isinstance(elm, IR):
+                        li.append(elm.clone())
+                    else:
+                        li.append(elm)
+                clone.__dict__[k] = li
+        return clone
+
+    def replace(self, old, new):
+        def replace_rec(ir, old, new):
+            if isinstance(ir, IR):
+                for k, v in ir.__dict__.items():
+                    if v is old:
+                        ir.__dict__[k] = new
+                        return True
+                    elif replace_rec(v, old, new):
+                        return True
+            elif isinstance(ir, list):
+                for i, elm in enumerate(ir):
+                    if elm is old:
+                        ir[i] = new
+                        return True
+                    elif replace_rec(elm, old, new):
+                        return True
             return False
-        else:
-            return isinstance(self, cls)
+        return replace_rec(self, old, new)
+
+    def find_vars(self, qsym):
+        vars = []
+        def find_vars_rec(ir, qsym, vars):
+            if isinstance(ir, IR):
+                if ir.is_a(TEMP):
+                   if ir.qualified_symbol() == qsym:
+                        vars.append(ir)
+                elif ir.is_a(ATTR):
+                    if ir.qualified_symbol() == qsym:
+                        vars.append(ir)
+                    else:
+                        find_vars_rec(ir.exp, qsym, vars)
+                else:
+                    for k, v in ir.__dict__.items():
+                        find_vars_rec(v, qsym, vars)
+            elif isinstance(ir, list) or isinstance(ir, tuple):
+                for elm in ir:
+                    find_vars_rec(elm, qsym, vars)
+        find_vars_rec(self, qsym, vars)
+        return vars
 
 class IRExp(IR):
     def __init__(self):
@@ -47,15 +120,10 @@ class UNOP(IRExp):
         self.exp = exp
 
     def __str__(self):
-        return '(UNOP {}, {})'.format(self.op, self.exp)
+        return '{}{}'.format(op2sym_map[self.op], self.exp)
 
     def kids(self):
         return self.exp.kids()
-
-    def clone(self):
-        ir = UNOP(self.op, self.exp.clone())
-        ir.lineno = self.lineno
-        return ir
 
 class BINOP(IRExp):
     def __init__(self, op, left, right):
@@ -65,15 +133,10 @@ class BINOP(IRExp):
         self.right = right
 
     def __str__(self):
-        return '(BINOP {}, {}, {})'.format(self.op, self.left, self.right)
+        return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
 
     def kids(self):
         return self.left.kids() + self.right.kids()
-
-    def clone(self):
-        ir = BINOP(self.op, self.left.clone(), self.right.clone())
-        ir.lineno = self.lineno
-        return ir
 
 class RELOP(IRExp):
     def __init__(self, op, left, right):
@@ -83,12 +146,7 @@ class RELOP(IRExp):
         self.right = right
 
     def __str__(self):
-        return '(RELOP {}, {}, {})'.format(self.op, self.left, self.right)
-
-    def clone(self):
-        ir = RELOP(self.op, self.left.clone(), self.right.clone())
-        ir.lineno = self.lineno
-        return ir
+        return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
 
     def kids(self):
         return self.left.kids() + self.right.kids()
@@ -106,18 +164,13 @@ class CALL(IRExp):
         s += ")"
         return s
 
-    def clone(self):
-        args = [arg.clone() for arg in self.args]
-        ir = CALL(self.func.clone(), args)
-        ir.lineno = self.lineno
-        return ir
-
     def kids(self):
         kids = []
         kids += self.func.kids()
         for arg in self.args:
             kids += arg.kids()
         return kids
+
 
 class SYSCALL(IRExp):
     def __init__(self, name, args):
@@ -132,41 +185,31 @@ class SYSCALL(IRExp):
         s += ")"
         return s
 
-    def clone(self):
-        args = [arg.clone() for arg in self.args]
-        ir = SYSCALL(self.name, args)
-        ir.lineno = self.lineno
-        return ir
-
     def kids(self):
         kids = []
         for arg in self.args:
             kids += arg.kids()
         return kids
 
-class CTOR(IRExp):
+    
+class NEW(IRExp):
     def __init__(self, scope, args):
         super().__init__()
         self.func_scope = scope
         self.args = args
 
     def __str__(self):
-        s = '(CTOR {}, '.format(self.func_scope.orig_name)
+        s = '(NEW {}, '.format(self.func_scope.orig_name)
         s += ', '.join(map(str, self.args))
         s += ")"
         return s
-
-    def clone(self):
-        args = [arg.clone() for arg in self.args]
-        ir = CTOR(self.func_scope, args)
-        ir.lineno = self.lineno
-        return ir
 
     def kids(self):
         kids = []
         for arg in self.args:
             kids += arg.kids()
         return kids
+
 
 class CONST(IRExp):
     def __init__(self, value):
@@ -181,28 +224,19 @@ class CONST(IRExp):
         else:
             return str(self.value)
 
-    def clone(self):
-        ir = CONST(self.value)
-        ir.lineno = self.lineno
-        return ir
-
     def kids(self):
         return [self]
 
 class MREF(IRExp):
     def __init__(self, mem, offset, ctx):
         super().__init__()
+        assert mem.is_a([TEMP, ATTR])
         self.mem = mem
         self.offset = offset
         self.ctx = ctx
 
     def __str__(self):
         return '(MREF {}, {})'.format(self.mem, self.offset)
-
-    def clone(self):
-        ir = MREF(self.mem.clone(), self.offset.clone(), self.ctx)
-        ir.lineno = self.lineno
-        return ir
 
     def kids(self):
         return self.mem.kids() + self.offset.kids()
@@ -217,39 +251,41 @@ class MSTORE(IRExp):
     def __str__(self):
         return '(MSTORE {}, {}, {})'.format(self.mem, self.offset, self.exp)
 
-    def clone(self):
-        ir = MSTORE(self.mem.clone(), self.offset.clone(), self.exp.clone())
-        ir.lineno = self.lineno
-        return ir
-
     def kids(self):
         return self.mem.kids() + self.offset.kids() + self.exp.kids()
+
 
 class ARRAY(IRExp):
     def __init__(self, items):
         super().__init__()
         self.items = items
+        self.sym = None
+        self.repeat = CONST(1)
 
     def __str__(self):
-        s = "(ARRAY "
+        s = "(ARRAY ["
         if len(self.items) > 8:
             s += ', '.join(map(str, self.items[:10]))
             s += '...'
         else:
             s += ', '.join(map(str, self.items))
+        s += ']'
+        if not (self.repeat.is_a(CONST) and self.repeat.value == 1):
+            s += ' * ' + str(self.repeat)
         s += ")"
         return s
-
-    def clone(self):
-        ir = ARRAY([item.clone() for item in self.items])
-        ir.lineno = self.lineno
-        return ir
 
     def kids(self):
         kids = []
         for item in self.items:
             kids += item.kids()
         return kids
+
+    def getlen(self):
+        if self.repeat.is_a(CONST):
+            return len(self.items) * self.repeat.value
+        else:
+            return -1
 
 class TEMP(IRExp):
     def __init__(self, sym, ctx):
@@ -259,15 +295,19 @@ class TEMP(IRExp):
         assert isinstance(ctx, int)
 
     def __str__(self):
-        return str(self.sym) + ':' + Ctx.str(self.ctx)
-
-    def clone(self):
-        ir = TEMP(self.sym, self.ctx)
-        ir.lineno = self.lineno
-        return ir
+        return str(self.sym)
 
     def kids(self):
         return [self]
+
+    def symbol(self):
+        return self.sym
+
+    def set_symbol(self, sym):
+        self.sym = sym
+
+    def qualified_symbol(self):
+        return (self.sym, )
 
 class ATTR(IRExp):
     def __init__(self, exp, attr, ctx):
@@ -275,30 +315,42 @@ class ATTR(IRExp):
         self.exp = exp
         self.attr = attr
         self.ctx = ctx
-        self.exp.ctx = ctx
-        self.scope = None
+        self.exp.ctx = Ctx.LOAD
+        self.class_scope = None
 
     def __str__(self):
-        return '{}.{}:'.format(self.exp, self.attr, Ctx.str(self.ctx))
-
-    def clone(self):
-        ir = ATTR(self.exp.clone(), self.attr, self.ctx)
-        ir.lineno = self.lineno
-        return ir
+        return '{}.{}'.format(self.exp, self.attr)
 
     def kids(self):
         return [self]
 
+    # a.b.c.d = (((a.b).c).d)
+    #              |    |
+    #             head  |
+    #                  tail
     def head(self):
         if self.exp.is_a(ATTR):
             return self.exp.head()
-        return self.exp.sym
-
+        elif self.exp.is_a(TEMP):
+            return self.exp.sym
+        else:
+            return None
+    
     def tail(self):
         if self.exp.is_a(ATTR):
             assert isinstance(self.exp.attr, Symbol)
             return self.exp.attr
         return self.exp.sym
+
+    def symbol(self):
+        return self.attr
+
+    def set_symbol(self, sym):
+        self.attr = sym
+
+    def qualified_symbol(self):
+        return self.exp.qualified_symbol() + (self.attr,)
+
 
 class IRStm(IR):
     def __init__(self):
@@ -319,6 +371,7 @@ class IRStm(IR):
     def kids(self):
         return []
 
+
 class EXPR(IRStm):
     def __init__(self, exp):
         super().__init__()
@@ -327,13 +380,9 @@ class EXPR(IRStm):
     def __str__(self):
         return '(EXPR {})'.format(self.exp)
 
-    def clone(self):
-        ir = EXPR(self.exp.clone())
-        ir.lineno = self.lineno
-        return ir
-
     def kids(self):
         return self.exp.kids()
+
 
 class CJUMP(IRStm):
     def __init__(self, exp, true, false):
@@ -347,15 +396,8 @@ class CJUMP(IRStm):
         uses = ''
         if self.uses:
             uses = ', '.join([str(u) for u in self.uses])
-        return '(CJUMP {}, {}::{}, {}::{} [{}])'.format(self.exp, self.true.name, self.true.group.name, self.false.name, self.false.group.name, uses)
+        return '(CJUMP {}, {}, {})'.format(self.exp, self.true.name, self.false.name)
 
-    def clone(self):
-        ir = CJUMP(self.exp.clone(), self.true, self.false)
-        ir.lineno = self.lineno
-        return ir
-
-    def is_jump(self):
-        return True
 
 class MCJUMP(IRStm):
     def __init__(self):
@@ -368,47 +410,23 @@ class MCJUMP(IRStm):
         assert len(self.conds) == len(self.targets)
         items = []
         for cond, target in zip(self.conds, self.targets):
-            items.append('({}) => {}::{}'.format(cond, target.name, target.group.name))
+            items.append('({}) => {}'.format(cond, target.name))
             
         uses = ''
         if self.uses:
             uses = ', '.join([str(u) for u in self.uses])
-        return '(MCJUMP \n        {}\n        [{}])'.format(', \n        '.join([item for item in items]), uses)
+        return '(MCJUMP \n        {})'.format(', \n        '.join([item for item in items]))
 
-    def clone(self):
-        ir = MCJUMP()
-        ir.conds = [cond.clone() for cond in self.conds]
-        ir.targets = copy.copy(self.targets)
-        ir.lineno = self.lineno
-        return ir
-
-    def is_jump(self):
-        return True
 
 class JUMP(IRStm):
     def __init__(self, target, typ = ''):
         super().__init__()
         self.target = target
         self.typ = typ # 'B': break, 'C': continue, 'L': loop-back, 'S': specific
-        self.uses = None
-        self.conds = None
 
     def __str__(self):
-        uses = ''
-        if self.uses:
-            uses = ', '.join([str(u) for u in self.uses])
-        conds = conds2str(self.conds)
-        return "(JUMP {}::{} '{}' [{}] {})".format(self.target.name, self.target.group.name, self.typ, uses, conds)
+        return "(JUMP {} '{}')".format(self.target.name, self.typ)
 
-    def clone(self):
-        jp = JUMP(self.target, self.typ)
-        jp.uses = list(self.uses) if self.uses else None
-        jp.conds = list(self.conds) if self.conds else None
-        jp.lineno = self.lineno
-        return jp
-
-    def is_jump(self):
-        return True
 
 class RET(IRStm):
     def __init__(self, exp):
@@ -418,13 +436,9 @@ class RET(IRStm):
     def __str__(self):
         return "(RET {})".format(self.exp)
 
-    def clone(self):
-        ir = RET(self.exp.clone())
-        ir.lineno = self.lineno
-        return ir
-
     def kids(self):
         return self.exp.kids()
+
 
 class MOVE(IRStm):
     def __init__(self, dst, src):
@@ -435,13 +449,9 @@ class MOVE(IRStm):
     def __str__(self):
         return '(MOVE {}, {})'.format(self.dst, self.src)
 
-    def clone(self):
-        ir = MOVE(self.dst.clone(), self.src.clone())
-        ir.lineno = self.lineno
-        return ir
-
     def kids(self):
         return self.dst.kids() + self.src.kids()
+
 
 def conds2str(conds):
     if conds:
@@ -452,44 +462,34 @@ def conds2str(conds):
     else:
         return 'None'
 
-class PHI(IRStm):
+
+
+class PHIBase(IRStm):
     def __init__(self, var):
         super().__init__()
-        assert isinstance(var, TEMP)
+        assert var.is_a([TEMP, ATTR])
         self.var = var
+        self.var.ctx = Ctx.STORE
         self.args = []
-        self.conds_list = None
+        self.defblks = []
+        self.ps = []
 
-    def __str__(self):
-        args = []
-        for arg, blk in self.args:
-            if arg:
-                args.append(str(arg))
-            else:
-                args.append('_')
-        s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(args))
-        if self.conds_list:
-            assert len(self.conds_list) == len(self.args)
-            c = ''
-            for conds in self.conds_list:
-                c += '    ' + conds2str(conds) + '\n'
-            c = c[:-1] #remove last LF
-            s += '\n'+c
-        return s
-
-    def argv(self):
-        return [arg for arg, blk in self.args if arg]
-
-    def valid_conds(self):
-        return [c for c in self.conds_list if c]
-
-    def clone(self):
-        #ir = PHI(self.var.clone(), [(arg.clone(), blk) for arg, blk in self.args], list(self.conds_list))
-        ir = PHI(self.var.clone())
-        for arg, blk in self.args:
-            ir.args.append((arg.clone(), blk))
-        ir.lineno = self.lineno
-        return ir
+    def _str_args(self):
+        str_args = []
+        if self.ps:
+            assert len(self.ps) == len(self.args)
+            for arg, p in zip(self.args, self.ps):
+                if arg:
+                    str_args.append('{}?{}'.format(p, arg))
+                else:
+                    str_args.append('_')
+        else:
+            for arg in self.args:
+                if arg:
+                    str_args.append('{}'.format(arg))
+                else:
+                    str_args.append('_')
+        return str_args
 
     def kids(self):
         kids = []
@@ -497,6 +497,33 @@ class PHI(IRStm):
             kids += arg.kids()
         return self.var.kids() + kids
 
+    def remove_arg(self, arg):
+        idx = self.args.index(arg)
+        if self.ps:
+            assert len(self.args) == len(self.ps)
+            self.ps.pop(idx)
+        self.args.pop(idx)
+        self.defblks.pop(idx)
+
+
+class PHI(PHIBase):
+    def __init__(self, var):
+        super().__init__(var)
+
+    def __str__(self):
+        s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        return s
+
+class UPHI(PHIBase):
+    def __init__(self, var):
+        super().__init__(var)
+
+    def __str__(self):
+        s = "(UPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        return s
+
 def op2str(op):
     return op.__class__.__name__
+
+
 

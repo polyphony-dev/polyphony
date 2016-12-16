@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict, deque
-from .symbol import function_name
+from .symbol import Symbol
 from .scope import Scope
 from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
@@ -43,7 +43,7 @@ class SpecializedFunctionMaker:
                         binding.append((self.bind_val, i, arg.value))
                     elif arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
                         memnode = Type.extra(arg.sym.typ)
-                        if not memnode.is_writable() and not memnode.is_joinable():
+                        if not memnode.is_writable() and not memnode.pred_branch():
                             binding.append((self.bind_rom, i, memnode))
                 if binding:
                     descs = '_'.join([self.clone_param_desc(callee, i, a) for _, i, a in binding])
@@ -51,7 +51,7 @@ class SpecializedFunctionMaker:
                     if new_scope_name in env.scopes:
                         new_scope = env.scopes[new_scope_name]
                     else:
-                        new_scope = callee.clone(descs)
+                        new_scope = callee.clone('', descs)
                         udd = UseDefDetector()
                         udd.process(new_scope)
                         for f, i, a in binding:
@@ -65,7 +65,8 @@ class SpecializedFunctionMaker:
                         collector.process(new_scope)
                         worklist.extend(calls.items())
                     #update CALL target to specialized new_scope
-                    fsym = caller.gen_sym('!' + new_scope.orig_name)
+                    fsym = caller.gen_sym(new_scope.orig_name)
+                    #fsym = caller.gen_sym(new_scope.orig_name)
                     call.func = TEMP(fsym, call.func.ctx)
                     call.func_scope = new_scope
                     ret_t = call.func_scope.return_type
@@ -98,9 +99,9 @@ class SpecializedFunctionMaker:
 
 
     def bind_rom(self, scope, i, memnode):
-        root = env.memref_graph.get_single_root(memnode)
-        assert root and root.initstm and root.initstm.is_a(MOVE) and root.initstm.src.is_a(ARRAY)
-        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], Ctx.LOAD), root.initstm.src.clone(), scope.usedef)
+        source = memnode.single_source()
+        assert source and source.initstm and source.initstm.is_a(MOVE) and source.initstm.src.is_a(ARRAY)
+        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], Ctx.LOAD), source.initstm.src.clone(), scope.usedef)
 
 
 class CallCollector(IRVisitor):

@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict
-from .ir import Ctx, RELOP, CONST, TEMP, CJUMP, MOVE, PHI
+from .ir import *
 from .symbol import Symbol
 from .dominator import DominatorTreeBuilder
 from .varreplacer import VarReplacer
@@ -22,7 +22,7 @@ class PHICondResolver:
 
     def _collect_phi(self):
         self.phis = []
-        for b in self.scope.blocks:
+        for b in self.scope.traverse_blocks():
             for stm in b.stms:
                 if stm.is_a(PHI):
                     #if stm.var.sym.is_memory():
@@ -33,13 +33,13 @@ class PHICondResolver:
         usedef = self.scope.usedef
         args = []
         conds = []
-        for i, (arg, blk) in enumerate(phi.args):
+        for i, (arg, blk) in enumerate(zip(phi.args, phi.defblks)):
+            if not blk:
+                continue
             pred = blk
-            mv = MOVE(TEMP(phi.var.sym, Ctx.STORE), arg)
-            #TODO: track the lineno
-            mv.lineno = 1
-            pred.stms.insert(-1, mv)
-            mv.block = pred
+            mv = MOVE(TEMP(phi.var.symbol(), Ctx.STORE), arg)
+            mv.lineno = arg.lineno
+            pred.insert_stm(-1, mv)
             logger.debug('PHI divide into ' + str(mv))
             #update usedef table
             if arg.is_a(TEMP):

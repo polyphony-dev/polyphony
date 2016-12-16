@@ -23,11 +23,7 @@ class DominatorTree:
         return None
 
     def get_children_of(self, n):
-        children = []
-        for n1, n2 in self.edges:
-            if n1 is n:
-                children.append(n2)
-        return children
+        return [n2 for n1, n2 in self.edges if n1 is n]
 
     #is v dominator of n?
     def is_dominator(self, n, v):
@@ -38,11 +34,21 @@ class DominatorTree:
                 return True
         return False
 
+    def is_child(self, n1, n2):
+        for _n1, _n2 in self.edges:
+            if _n1 is n1 and _n2 is n2:
+                return True
+        return False
+ 
     def dump(self):
         logger.debug('dominator tree')
-        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
-            logger.debug(n1.name + ' --> ' + n2.name)
+        logger.debug(str(self))
 
+    def __str__(self):
+        s = ''
+        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
+            s += '{} --> {}\n'.format(n1.name, n2.name)
+        return s
 
 class DominatorTreeBuilder:
     def __init__(self, scope):
@@ -50,20 +56,14 @@ class DominatorTreeBuilder:
         self.done_block_links = []
         self.dominators = {}
 
-    def process(self, post = False):
-        if not post:
-            first_block = self.scope.blocks[0]
-            self._fwd_blks = self._succs
-            self._fwd_loop_blks = self._succs_loop
-            self._back_blks = self._preds
-            self._back_loop_blks = self._preds_loop
-        else:
-            first_block = self.scope.blocks[-1]
-            self._fwd_blks = self._preds
-            self._fwd_loop_blks = self._preds_loop
-            self._back_blks = self._succs
-            self._back_loop_blks = self._succs_loop
+    def process(self):
+        first_block = self.scope.entry_block
+        self._fwd_blks = self._succs
+        self._fwd_loop_blks = self._succs_loop
+        self._back_blks = self._preds
+        self._back_loop_blks = self._preds_loop
 
+        self.all_blocks = [blk for blk in self.scope.traverse_blocks()]
         #collect dominators for each block
         self._walk_block(first_block, self._visit_Block_find_dominator)
 
@@ -71,6 +71,7 @@ class DominatorTreeBuilder:
         tree = DominatorTree()
         for b, doms in self.dominators.items():
             domlist = sorted(list(doms))
+            assert b is domlist[-1]
             if len(domlist) >= 2:
                 d1 = domlist[-2] #immediate dominator
                 d2 = domlist[-1] #block itself
@@ -119,7 +120,7 @@ class DominatorTreeBuilder:
 
         preds = self._back_blks(block)
         if preds:
-            doms = set(self.scope.blocks)
+            doms = set(self.all_blocks)
             for p in preds:
                 if p in self._back_loop_blks(block):
                     continue

@@ -5,7 +5,7 @@ from .symbol import Symbol
 from .irvisitor import IRVisitor
 from .block import Block
 from .builtin import builtin_names
-from .ir import ARRAY, MOVE, JUMP, CJUMP, MCJUMP, PHI
+from .ir import *
 from .signal import Signal
 from logging import getLogger
 logger = getLogger(__name__)
@@ -79,14 +79,12 @@ class Scope:
         self.symbols = {}
         self.params = []
         self.return_type = None
-        self.blocks = []
-        self.blk_grp_stack = []
+        self.entry_block = None
+        self.exit_block = None
         self.children = []
         self.usedef = None
         self.loop_nest_tree = None
-        self.loop_infos = {}
-        self.calls = defaultdict(set)
-        self.blk_grp_instances = []
+        self.callee_instances = defaultdict(set)
         self.stgs = []
         self.order = -1
         self.callee_scopes = set()
@@ -94,6 +92,9 @@ class Scope:
         self.module_info = None
         #self.field_access = defaultdict(set)
         self.signals = {}
+        self.block_count = 0
+        self.class_fields = {}
+        self.paths = []
 
     def __str__(self):
         s = '\n================================\n'
@@ -111,14 +112,8 @@ class Scope:
             s += '{} = {}\n'.format(p, val)
         s += "\n"
         s += '================================\n'
-        for blk in self.blocks:
+        for blk in self.traverse_blocks(longitude=True):
             s += str(blk)
-
-        s += '================================\n'
-        s += 'Block Group\n'
-        for bl in self.blk_grp_instances:
-            s += str(bl)+'\n'
-
         s += '================================\n'    
         return s
 
@@ -128,58 +123,24 @@ class Scope:
     def __lt__(self, other):
         return self.order < other.order
 
-    def clone(self, postfix):
-        s = Scope(self.parent, self.orig_name + '_' + postfix, self.attributes)
-
-        # clone symbols
+    def clone_symbols(self, scope, postfix = ''):
         symbol_map = {}
         for orig_sym in self.symbols.values():
-            new_sym = Symbol.new(orig_sym.name, s)
+            new_sym = Symbol.new(orig_sym.name + postfix, scope)
             new_sym.typ = orig_sym.typ
-            s.symbols[new_sym.name] = new_sym
+            assert new_sym.name not in scope.symbols
+            scope.symbols[new_sym.name] = new_sym
             symbol_map[orig_sym] = new_sym
+        return symbol_map
 
-        s.params = [FunctionParam(symbol_map[p], symbol_map[copy], defval.clone() if defval else None) for p, copy, defval in self.params]
-        s.return_type = self.return_type
-
-        # clone block group
-        s.blk_grp_instances = []
-        group_map = {}
-        for orig_grp in self.blk_grp_instances:
-            new_grp = BlockGroup(orig_grp.name)
-            s.blk_grp_instances.append(new_grp)
-            group_map[orig_grp] = new_grp
-        for orig_grp in self.blk_grp_instances:
-            new_grp = group_map[orig_grp]
-            if orig_grp.parent:
-                new_grp.parent = group_map[orig_grp.parent]
-
-        # clone block
-        def clone_block(orig_b):
-            new_b = Block(orig_b.name)
-            new_stms = []
-            for orig_stm in orig_b.stms:
-                # TODO: replace symbols
-                new_stm = orig_stm.clone()
-                new_stm.block = new_b
-                new_stms.append(new_stm)
-                stm_map[orig_stm] = new_stm
-            new_b.stms = new_stms
-            new_b.order = orig_b.order
-            new_b.group = group_map[orig_b.group]
-            new_b.set_scope(s)
-            return new_b
-
-        s.blocks = []
+    def clone_blocks(self, scope):
         block_map = {}
         stm_map = {}
-        for orig_b in self.blocks:
-            new_b = clone_block(orig_b)
-            s.blocks.append(new_b)
-            block_map[orig_b] = new_b
-        for orig_grp in self.blk_grp_instances:
-            new_grp = group_map[orig_grp]
-            new_grp.blocks = [block_map[blk] for blk in orig_grp.blocks]
+        for b in self.traverse_blocks(full=True):
+            block_map[b] = b.clone(scope, stm_map)
+        for b in self.traverse_blocks(full=True):
+            b_clone = block_map[b]
+            b_clone.reconnect(block_map)
 
         # jump target
         for stm in stm_map.values():
@@ -192,48 +153,35 @@ class Scope:
                 stm.targets = [block_map[t] for t in stm.targets]
             elif stm.is_a(PHI):
                 stm.args = [(arg, block_map[blk]) for arg, blk in stm.args]
-                self.blk_grp_instances
-        # remake cfg
-        for orig_b in self.blocks:
-            new_b = block_map[orig_b]
-            for orig_succ in orig_b.succs:
-                new_b.succs.append(block_map[orig_succ])
-            for orig_succ in orig_b.succs_loop:
-                new_b.succs_loop.append(block_map[orig_succ])
-            for orig_pred in orig_b.preds:
-                new_b.preds.append(block_map[orig_pred])
-            for orig_pred in orig_b.preds_loop:
-                new_b.preds_loop.append(block_map[orig_pred])
-        # clone loop info
-        for orig_head, orig_li in self.loop_infos.items():
-            new_head = block_map[orig_head]
-            new_li = LoopBlockInfo(new_head, orig_li.name)
-            s.loop_infos[new_head] = new_li
-            for orig_body in orig_li.bodies:
-                new_body = block_map[orig_body]
-                new_li.bodies.add(new_body)
-            for orig_break in orig_li.breaks:
-                new_break = block_map[orig_break]
-                new_li.breaks.append(new_break)
-            for orig_return in orig_li.returns:
-                new_return = block_map[orig_return]
-                new_li.returns.append(new_return)
+        return block_map
 
-            if orig_li.exit in block_map:
-                new_li.exit = block_map[orig_li.exit]
-            new_li.defs = None
-            new_li.uses = None
+    def clone(self, prefix, postfix):
+        assert not self.is_class()
+
+        name = prefix + '_' if prefix else ''
+        name += self.orig_name
+        name = name + '_' + postfix if postfix else name
+        s = Scope(self.parent, name, self.attributes)
+
+        symbol_map = self.clone_symbols(s)
+
+        s.params = [FunctionParam(symbol_map[p], symbol_map[copy], defval.clone() if defval else None) for p, copy, defval in self.params]
+        s.return_type = self.return_type
+
+        block_map = self.clone_blocks(s)
+        s.entry_block = block_map[self.entry_block]
+        s.exit_block = block_map[self.exit_block]
 
         s.children = list(self.children)
         for child in s.children:
             child.parent = s
         s.usedef = None
 
-        new_calls = defaultdict(set)
-        for func_sym, inst_names in self.calls.items():
+        new_callee_instances = defaultdict(set)
+        for func_sym, inst_names in self.callee_instances.items():
             new_func_sym = symbol_map[func_sym]
-            new_calls[new_func_sym] = copy(inst_names)
-        s.calls = new_calls
+            new_callee_instances[new_func_sym] = copy(inst_names)
+        s.callee_instances = new_callee_instances
         s.order = self.order
         s.callee_scopes = set(self.callee_scopes)
         s.caller_scopes = set(self.caller_scopes)
@@ -310,8 +258,26 @@ class Scope:
             sym = self.add_sym(name)
         return sym
 
+    def rename_sym(self, old, new):
+        assert old in self.symbols
+        sym = self.symbols[old]
+        del self.symbols[old]
+        sym.name = new
+        self.symbols[new] = sym
+        return sym
+
     def inherit_sym(self, orig_sym, new_name):
         new_sym = orig_sym.scope.gen_sym(new_name)
+        new_sym.typ = orig_sym.typ
+        if orig_sym.ancestor:
+            new_sym.ancestor = orig_sym.ancestor
+        else:
+            new_sym.ancestor = orig_sym
+        return new_sym
+
+    def gen_refsym(self, orig_sym):
+        new_name =  Symbol.ref_prefix + '_' + orig_sym.name
+        new_sym = self.gen_sym(new_name)
         new_sym.typ = orig_sym.typ
         if orig_sym.ancestor:
             new_sym.ancestor = orig_sym.ancestor
@@ -326,38 +292,18 @@ class Scope:
         n += self.name
         return n
 
-    def remove_block(self, blk):
-        self.blocks.remove(blk)
-        blk.group.remove(blk)
-        if not blk.group.blocks:
-            self.blk_grp_instances.remove(blk.group)
+    def set_entry_block(self, blk):
+        assert self.entry_block is None
+        self.entry_block = blk
 
-        for pred in blk.preds:
-            if blk in pred.succs:
-                pred.succs.remove(blk)
-            if blk in pred.succs_loop:
-                pred.succs_loop.remove(blk)
-        for succ in blk.succs:
-            if blk in succ.preds:
-                succ.preds.remove(blk)
-            if blk in succ.preds_loop:
-                succ.preds_loop.remove(blk)
-                if not succ.preds_loop:
-                    self._remove_loop_info(succ)
+    def set_exit_block(self, blk):
+        assert self.exit_block is None
+        self.exit_block = blk
 
-    def _remove_loop_info(self, head):
-        info = self.loop_infos[head]
-        for b in info.breaks:
-            assert b.stms[-1].is_a(JUMP)
-            jmp = b.stms[-1]
-            jmp.typ = ''
-
-        del self.loop_infos[head]
-
-    def append_block(self, blk):
-        blk.set_scope(self)
-        self.blocks.append(blk)
-        self.blk_grp_stack[-1].append(blk)
+    def traverse_blocks(self, full=False, longitude=False):
+        assert len(self.entry_block.preds) == 0
+        visited = set()
+        yield from self.entry_block.traverse(visited, full, longitude)
 
     def append_child(self, child_scope):
         if child_scope not in self.children:
@@ -380,47 +326,22 @@ class Scope:
                 return i
         return -1
 
-    def append_call(self, func_sym, inst_name):
-        self.calls[func_sym].add(inst_name)
+    def append_callee_instance(self, callee_scope, inst_name):
+        self.callee_instances[callee_scope].add(inst_name)
 
     def dfgs(self, bottom_up=False):
-        infos = sorted(self.loop_infos.values(), key=lambda l:l.name, reverse=bottom_up)
-        return [info.dfg for info in infos]
-
-    def begin_block_group(self, tag):
-        grp = self._create_block_group(tag)
-        #if self.blk_grp_stack:
-        #    grp.parent = self.blk_grp_stack[-1]
-        self.blk_grp_stack.append(grp)
-
-    def end_block_group(self):
-        self.blk_grp_stack.pop()
-
-    def _create_block_group(self, tag):
-        name = 'grp_' + tag + str(len(self.blk_grp_instances))
-        bl = BlockGroup(name)
-        self.blk_grp_instances.append(bl)
-        return bl
-
-    def create_loop_info(self, head):
-        name = 'L' + str(len(self.loop_infos))
-        li = LoopBlockInfo(head, name)
-        self.loop_infos[head] = li
-        return li
-
-    def find_loop_head(self, block):
-        for head, bodies in self.loop_infos.items():
-            if head is block:
-                return head
-            for b in bodies:
-                if block is b:
-                    return head
-        return None
+        def collect_dfg(dfg, ds):
+            ds.append(dfg)
+            for c in dfg.children:
+                collect_dfg(c, ds)
+        ds = []
+        collect_dfg(self.top_dfg, ds)
+        return ds
 
     def find_ctor(self):
         assert self.is_class()
         for child in self.children:
-            if child.orig_name == '__init__':
+            if child.orig_name == env.ctor_name:
                 return child
         return None
 
@@ -439,11 +360,14 @@ class Scope:
     def is_mutable(self):
         return 'mutable' in self.attributes
 
+    def is_returnable(self):
+        return 'returnable' in self.attributes
+
     def is_global(self):
         return self is Scope.global_scope()
 
     def is_ctor(self):
-        return self.is_method() and self.orig_name == '__init__'
+        return self.is_method() and self.orig_name == env.ctor_name
 
     def find_stg(self, name):
         assert self.stgs
@@ -459,13 +383,6 @@ class Scope:
                 return stg
         return None
 
-    def append_loop_counter(self, loop):
-        self.loop_counter.append(loop)
-
-#    def add_field_access(self, scope, attr, ctx):
-#        assert self.is_class()
-#        self.field_access[attr].add((scope, ctx))
-
     def gen_sig(self, name, width, attr = None):
         if name in self.signals:
             sig = self.signals[name]
@@ -477,6 +394,11 @@ class Scope:
         self.signals[name] = sig
         return sig
 
+    def signal(self, name):
+        if name in self.signals:
+            return self.signals[name]
+        return None
+
     def rename_sig(self, old, new):
         assert old in self.signals
         sig = self.signals[old]
@@ -485,45 +407,9 @@ class Scope:
         self.signals[new] = sig
         return sig
 
-class BlockGroup:
-    def __init__(self, name):
-        self.name = name
-        self.blocks = []
-        self.parent = None
-
-    def __str__(self):
-        if self.parent:
-            return '{} ({}) parent:{}'.format(self.name, ', '.join([blk.name for blk in self.blocks]), self.parent.name)
-        else:
-            return '{} ({})'.format(self.name, ', '.join([blk.name for blk in self.blocks]))
-    def append(self, blk):
-        self.blocks.append(blk)
-        blk.group = self
-
-    def remove(self, blk):
-        self.blocks.remove(blk)
-
-class LoopBlockInfo:
-    def __init__(self, head, name):
-        self.head = head
-        self.bodies = set()
-        self.breaks = []
-        self.returns = []
-        self.exit = None
-        self.name = name
-        self.defs = None
-        self.uses = None
-
-    def append_break(self, brk):
-        self.breaks.append(brk)
-
-    def append_return(self, blk):
-        self.returns.append(blk)
-
-    def append_bodies(self, bodies):
-        assert isinstance(bodies, set)
-        self.bodies = self.bodies.union(bodies)
-
+    def add_class_field(self, f, init_stm):
+        assert self.is_class()
+        self.class_fields[f] = init_stm
 
 class SymbolReplacer(IRVisitor):
     def __init__(self, sym_map):
@@ -532,5 +418,8 @@ class SymbolReplacer(IRVisitor):
 
     def visit_TEMP(self, ir):
         ir.sym = self.sym_map[ir.sym]
+
+    def visit_ATTR(self, ir):
+        ir.attr = self.sym_map[ir.attr]
 
 

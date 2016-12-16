@@ -9,7 +9,7 @@ class Liveness:
 
     def process(self, scope):
         usedef = scope.usedef
-        syms = usedef.get_all_syms()
+        syms = usedef.get_all_def_syms()
         for sym in syms:
             logger.log(0, sym.name + ' paths')
             defblks = usedef.get_def_blks_by_sym(sym)

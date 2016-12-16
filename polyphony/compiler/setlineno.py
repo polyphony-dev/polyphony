@@ -1,4 +1,4 @@
-from .irvisitor import IRVisitor
+﻿from .irvisitor import IRVisitor
 from .common import get_src_text
 import logging
 logger = logging.getLogger()
@@ -23,6 +23,7 @@ class LineNumberSetter(IRVisitor):
 
     def visit_CALL(self, ir):
         ir.lineno = self.current_stm.lineno
+        self.visit(ir.func)
         for arg in ir.args:
             self.visit(arg)
 
@@ -31,7 +32,7 @@ class LineNumberSetter(IRVisitor):
         for arg in ir.args:
             self.visit(arg)
 
-    def visit_CTOR(self, ir):
+    def visit_NEW(self, ir):
         ir.lineno = self.current_stm.lineno
         for arg in ir.args:
             self.visit(arg)
@@ -44,6 +45,7 @@ class LineNumberSetter(IRVisitor):
 
     def visit_ATTR(self, ir):
         ir.lineno = self.current_stm.lineno
+        self.visit(ir.exp)
 
     def visit_MREF(self, ir):
         ir.lineno = self.current_stm.lineno
@@ -58,6 +60,7 @@ class LineNumberSetter(IRVisitor):
 
     def visit_ARRAY(self, ir):
         ir.lineno = self.current_stm.lineno
+        self.visit(ir.repeat)
         for item in ir.items:
             self.visit(item)
 

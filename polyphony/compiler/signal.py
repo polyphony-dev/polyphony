@@ -33,8 +33,8 @@ class Signal:
     def is_output(self):
         return 'out' in self.attributes
 
-    def is_wire(self):
-        return 'wire' in self.attributes
+    def is_net(self):
+        return 'net' in self.attributes
 
     def is_reg(self):
         return 'reg' in self.attributes
@@ -47,6 +47,9 @@ class Signal:
 
     def is_statevar(self):
         return 'statevar' in self.attributes
+
+    def is_onehot(self):
+        return 'onehot' in self.attributes
 
     def __str__(self):
         return self.name

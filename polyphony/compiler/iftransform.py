@@ -4,7 +4,8 @@ logger = getLogger(__name__)
 
 class IfTransformer:
     def process(self, scope):
-        self._process(scope.blocks[0])
+        for blk in scope.traverse_blocks():
+            self._process_block(blk)
 
     def _merge_else_cj(self, cj, mj):
         #has false block elif?
@@ -22,7 +23,7 @@ class IfTransformer:
             return True
         return False
 
-    def _process(self, block):
+    def _process_block(self, block):
         if block.stms and block.stms[-1].is_a(CJUMP):
             cj = block.stms[-1]
             mj = MCJUMP()
@@ -38,8 +39,3 @@ class IfTransformer:
                     block.succs.append(target)
                     logger.debug('target.block ' + target.name)
             logger.debug(mj)
-
-        for succ in block.succs:
-            if succ in block.succs_loop:
-                continue
-            self._process(succ)

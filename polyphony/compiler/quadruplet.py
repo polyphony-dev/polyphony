@@ -22,6 +22,14 @@ class QuadrupleMaker(IRTransformer):
         super().__init__()
         self.suppress_converting = False
 
+    def _new_temp_move(self, ir, prefix):
+        tmpsym = self.scope.add_temp(prefix)
+        mv = MOVE(TEMP(tmpsym, Ctx.STORE), ir)
+        mv.lineno = ir.lineno
+        assert mv.lineno >= 0
+        self.new_stms.append(mv)
+        return TEMP(tmpsym, Ctx.LOAD)
+
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         assert ir.exp.is_a([TEMP, ATTR, CONST, MREF])
@@ -39,37 +47,31 @@ class QuadrupleMaker(IRTransformer):
         assert ir.right.is_a([TEMP, ATTR, CONST, UNOP, MREF])
 
         if ir.left.is_a(ARRAY):
-            if ir.right.is_a(CONST) and ir.op == 'Mult':
-                #array times n
+            if ir.op == 'Mult':
                 array = ir.left
-                time = ir.right.value
-                if not array.items:
-                    raise RuntimeError('unsupported expression')
-                else:
-                    array.items = [item.clone() for item in array.items * time]
+                array.repeat = ir.right
                 return array
+            #if ir.right.is_a(CONST) and ir.op == 'Mult':
+            ##    #array times n
+             #   array = ir.left
+             #   time = ir.right.value
+            #    if not array.items:
+            #        raise RuntimeError('unsupported expression')
+            #    else:
+            #        array.items = [item.clone() for item in array.items * time]
+            #    return array
             else:
                 print(error_info(ir.lineno))
-                raise RuntimeError('multiplier for the list must be a constant')
+                raise RuntimeError('unsupported expression')
 
         if suppress:
             return ir
-        sym = self.scope.add_temp(Symbol.temp_prefix)
-        mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-        mv.lineno = ir.lineno
-        assert mv.lineno >= 0
-        self.new_stms.append(mv)
-        return TEMP(sym, Ctx.LOAD)
+        return self._new_temp_move(ir, Symbol.temp_prefix)
 
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        sym = self.scope.add_temp(Symbol.condition_prefix)
-        mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-        mv.lineno = ir.lineno
-        assert mv.lineno >= 0
-        self.new_stms.append(mv)
-        return TEMP(sym, Ctx.LOAD)
+        return self._new_temp_move(ir, Symbol.condition_prefix)
 
     def _has_return_type(self, ir):
         if ir.is_a(CALL):
@@ -80,17 +82,23 @@ class QuadrupleMaker(IRTransformer):
     def _visit_args(self, ir):
         for i in range(len(ir.args)):
             ir.args[i] = self.visit(ir.args[i])
-            assert ir.args[i].is_a([TEMP, CONST, UNOP, ARRAY])
+            assert ir.args[i].is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
             if ir.args[i].is_a(ARRAY):
-                sym = self.scope.add_temp(Symbol.temp_prefix)
-                #sym.set_type(Type.list(Type.int_t, None))
-                mv = MOVE(TEMP(sym, Ctx.STORE), ir.args[i])
-                mv.lineno = ir.lineno
-                assert mv.lineno >= 0
-                self.new_stms.append(mv)
-                ir.args[i] = TEMP(sym, Ctx.LOAD)
+                ir.args[i] = self._new_temp_move(ir.args[i], Symbol.temp_prefix)
 
     def visit_CALL(self, ir):
+        #suppress converting
+        suppress = self.suppress_converting
+        self.suppress_converting = False
+
+        ir.func = self.visit(ir.func)
+        self._visit_args(ir)
+
+        if suppress or not self._has_return_type(ir):
+            return ir
+        return self._new_temp_move(ir, Symbol.temp_prefix)
+
+    def visit_SYSCALL(self, ir):
         #suppress converting
         suppress = self.suppress_converting
         self.suppress_converting = False
@@ -99,18 +107,18 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress or not self._has_return_type(ir):
             return ir
-        sym = self.scope.add_temp(Symbol.temp_prefix)
-        mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-        mv.lineno = ir.lineno
-        assert mv.lineno >= 0
-        self.new_stms.append(mv)
-        return TEMP(sym, Ctx.LOAD)
+        return self._new_temp_move(ir, Symbol.temp_prefix)
 
-    def visit_SYSCALL(self, ir):
-        return self.visit_CALL(ir)
+    def visit_NEW(self, ir):
+        #suppress converting
+        suppress = self.suppress_converting
+        self.suppress_converting = False
 
-    def visit_CTOR(self, ir):
-        return self.visit_CALL(ir)
+        self._visit_args(ir)
+
+        if suppress:
+            return ir
+        return self._new_temp_move(ir, Symbol.temp_prefix)
 
     def visit_CONST(self, ir):
         return ir
@@ -124,12 +132,7 @@ class QuadrupleMaker(IRTransformer):
         assert ir.offset.is_a([TEMP, ATTR, CONST, UNOP])
 
         if not suppress and ir.ctx & Ctx.LOAD:
-            sym = self.scope.add_temp(Symbol.temp_prefix)
-            mv = MOVE(TEMP(sym, Ctx.STORE), ir)
-            mv.lineno = ir.lineno
-            assert mv.lineno >= 0
-            self.new_stms.append(mv)
-            return TEMP(sym, Ctx.LOAD)
+            return self._new_temp_move(ir, Symbol.temp_prefix)
         return ir
 
     def visit_MSTORE(self, ir):
@@ -144,6 +147,7 @@ class QuadrupleMaker(IRTransformer):
         return ir
 
     def visit_ATTR(self, ir):
+        ir.exp = self.visit(ir.exp)
         return ir
 
     def visit_EXPR(self, ir):
@@ -173,11 +177,11 @@ class QuadrupleMaker(IRTransformer):
 
     def visit_MOVE(self, ir):
         #We don't convert outermost BINOP or CALL
-        if ir.src.is_a([BINOP, CALL, SYSCALL, CTOR, MREF]):
+        if ir.src.is_a([BINOP, CALL, SYSCALL, NEW, MREF]):
             self.suppress_converting = True
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
-        assert ir.src.is_a([TEMP, ATTR, CONST, UNOP, BINOP, MREF, MSTORE, CALL, CTOR, SYSCALL, ARRAY])
+        assert ir.src.is_a([TEMP, ATTR, CONST, UNOP, BINOP, MREF, MSTORE, CALL, NEW, SYSCALL, ARRAY])
         assert ir.dst.is_a([TEMP, ATTR, MREF])
 
         if ir.dst.is_a(MREF):
@@ -189,7 +193,9 @@ class QuadrupleMaker(IRTransformer):
             mref = ir.dst
             mref.mem.ctx = Ctx.LOAD
             ir.src = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
-            ir.dst = TEMP(mref.mem.sym, Ctx.STORE)
+            ir.dst = mref.mem.clone()
+            ir.dst.ctx = Ctx.STORE
+
             ir.src.lineno = ir.lineno
             ir.dst.lineno = ir.lineno
         self.new_stms.append(ir)
