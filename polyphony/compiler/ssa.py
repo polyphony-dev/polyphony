@@ -82,6 +82,8 @@ class SSATransformerBase:
         phi.block = df
         phi.args = [CONST(0)] * len(df.preds)
         phi.defblks = [None] * len(df.preds)
+        phi.lineno = 1
+        var.lineno = 1
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
@@ -104,7 +106,7 @@ class SSATransformerBase:
         for var in using_vars:
             key = var.qualified_symbol()
             qcount[key] = 0
-            qstack[key] = [0]
+            qstack[key] = [(0, None)]
 
         self.new_syms = set()
         self._rename_rec(self.scope.entry_block, qcount, qstack)
@@ -123,17 +125,19 @@ class SSATransformerBase:
                 for use in self.usedef.get_use_vars_by_stm(stm):
                     assert use.is_a([TEMP, ATTR])
                     key = use.qualified_symbol()
-                    i = stack[key][-1]
+                    i, _ = stack[key][-1]
                     self._add_new_sym(use, i)
             #this loop includes PHI
             for d in self.usedef.get_def_vars_by_stm(stm):
+                #print(stm, d)
+                assert d.lineno > 0
                 assert d.is_a([TEMP, ATTR])
                 key = d.qualified_symbol()
                 if self._need_rename(d.symbol()):
                     logger.debug('count up ' + str(d) + ' ' + str(stm))
                     count[key] += 1
                 i = count[key]
-                stack[key].append(i)
+                stack[key].append((i, d))
                 self._add_new_sym(d, i)
                 if stm.is_a(PHI) and d.is_a(ATTR):
                     self._add_new_sym_rest(d.exp, stack)
@@ -154,11 +158,12 @@ class SSATransformerBase:
 
     def _add_new_phi_arg(self, phi, var, stack, block, is_tail_attr = True):
         key = var.qualified_symbol()
-        i = stack[key][-1]
+        i, v = stack[key][-1]
         if is_tail_attr:
             if i > 0:
                 var = var.clone()
                 var.ctx = Ctx.LOAD
+                var.lineno = v.lineno
                 idx = phi.block.preds.index(block)
                 phi.args[idx] = var
                 phi.defblks[idx] = block
@@ -181,7 +186,7 @@ class SSATransformerBase:
     def _add_new_sym_rest(self, var, stack):
         assert var.is_a([TEMP, ATTR])
         key = var.qualified_symbol()
-        i = stack[key][-1]
+        i, _ = stack[key][-1]
         self.new_syms.add((var, i))
         if var.is_a(ATTR):
             self._add_new_sym_rest(var.exp, stack)
@@ -364,9 +369,7 @@ class ObjectSSATransformer(SSATransformerBase):
 
     def _insert_use_phi(self, phi, use_stm):
         insert_idx = use_stm.block.stms.index(use_stm)
-        use_attrs1 = [ir for ir in use_stm.find_irs(ATTR)]
         use_attrs = [ir for ir in use_stm.kids() if ir.is_a(ATTR)]
-        #assert use_attrs1 == use_attrs2
         qsym = phi.var.qualified_symbol()
         def replace_attr(attr, qsym, newattr):
             if attr.is_a(ATTR):

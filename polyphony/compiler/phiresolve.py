@@ -39,6 +39,8 @@ class PHICondResolver:
             pred = blk
             mv = MOVE(TEMP(phi.var.symbol(), Ctx.STORE), arg)
             mv.lineno = arg.lineno
+            mv.dst.lineno = arg.lineno
+            assert mv.lineno > 0
             pred.insert_stm(-1, mv)
             logger.debug('PHI divide into ' + str(mv))
             #update usedef table

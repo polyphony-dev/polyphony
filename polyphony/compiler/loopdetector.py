@@ -285,6 +285,7 @@ class SimpleLoopUnroll:
         next_block = cjump.true
         jump = JUMP(next_block)
         jump.block = blk.head
+        jump.lineno = cjump.lineno
         blk.head.stms[-1] = jump
         blk.head.succs = [next_block]
         if blk.head in cjump.false.preds:
@@ -298,6 +299,7 @@ class SimpleLoopUnroll:
             tail.succs_loop = []
             jump = JUMP(cjump.false)
             jump.block = tail
+            jump.lineno = cjump.lineno
             tail.stms = [jump]
 
         #re-order blocks
@@ -386,5 +388,7 @@ class SimpleLoopUnroll:
                 new_stms.append(copystm)
                 copystm.block = block
         block.stms = new_stms
-        block.append_stm(JUMP(block.succs[0]))
+        jump = JUMP(block.succs[0])
+        jump.lineno = 1
+        block.append_stm(jump)
 
