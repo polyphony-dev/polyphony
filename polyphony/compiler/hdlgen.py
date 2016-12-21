@@ -1,5 +1,5 @@
 ﻿from collections import OrderedDict, defaultdict, deque
-from .common import get_src_text, INT_WIDTH
+from .common import get_src_text
 from .env import env
 from .stg import STG, State
 from .symbol import Symbol
@@ -7,7 +7,7 @@ from .ir import Ctx, CONST, ARRAY, MOVE
 from .ahdl import *
 #from collections import namedtuple
 from .hdlmoduleinfo import HDLModuleInfo
-from .hdlmemport import HDLMemPortMaker
+from .hdlmemport import HDLMemPortMaker, HDLRegArrayPortMaker
 from .type import Type
 from .hdlinterface import *
 from .memref import *
@@ -105,9 +105,9 @@ class HDLGenPreprocessor:
                 source_scope = list(source.scopes)[0]
                 if source_scope.is_class(): # class field rom
                     hdl_name = source_scope.orig_name + '_field_' + hdl_name
-            output_sig = scope.gen_sig(hdl_name, INT_WIDTH) #TODO
+            output_sig = scope.gen_sig(hdl_name, memnode.width) #TODO
             fname = AHDL_VAR(output_sig, Ctx.STORE)
-            input_sig = scope.gen_sig(hdl_name+'_in', INT_WIDTH) #TODO
+            input_sig = scope.gen_sig(hdl_name+'_in', memnode.width) #TODO
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             if source:
@@ -162,27 +162,12 @@ class HDLGenPreprocessor:
         self._add_internal_ports(module_name, locals)
 
         for memnode in self.mrg.collect_ram(scope):
-            memportmaker = HDLMemPortMaker(memnode, scope, self.module_info)
-            memportmaker.make_port()
+            HDLMemPortMaker(memnode, scope, self.module_info).make_port()
 
         for memnode in self.mrg.collect_immutable(scope):
             if not memnode.is_writable():
                 continue
-            if memnode.is_source():
-                sig = self.scope.gen_sig(memnode.name(), INT_WIDTH)
-                self.module_info.add_internal_reg_array(sig, memnode.length)
-            elif memnode.is_sink():
-                src = memnode.single_source()
-                if not src:
-                    continue
-                src_sig = self.scope.gen_sig(src.name(), INT_WIDTH)
-                ref_sig = self.scope.gen_sig(memnode.name(), INT_WIDTH)
-                self.module_info.add_internal_net_array(ref_sig, memnode.length)
-                src_mem = AHDL_MEMVAR(src_sig, src, Ctx.LOAD)
-                ref_mem = AHDL_MEMVAR(ref_sig, memnode, Ctx.LOAD)
-                for i in range(memnode.length):
-                    ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)), AHDL_SUBSCRIPT(src_mem, AHDL_CONST(i)))
-                    self.module_info.add_static_assignment(ahdl_assign)
+            HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
 
         self._add_submodules(scope)
 
@@ -238,8 +223,8 @@ class HDLGenPreprocessor:
             self._add_state_register(s.orig_name, s)
             self._add_submodules(s)
             for memnode in self.mrg.collect_ram(s):
-                memportmaker = HDLMemPortMaker(memnode, s, self.module_info)
-                memportmaker.make_port()
+                memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
+
             self._add_roms(s)
         # I/O port for class fields
         

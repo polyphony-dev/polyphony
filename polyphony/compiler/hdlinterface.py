@@ -25,6 +25,9 @@ class Interface:
     def __repr__(self):
         return self.__class__.__name__ + ':' + self.name
 
+    def __lt__(self, other):
+        return self.name < other.name
+
     def _flip_direction(self):
         def flip(d):
             return 'in' if d == 'out' else 'out'
@@ -105,6 +108,20 @@ class RAMAccessInterface(RAMInterface):
         if flip:
             self._flip_direction()
         
+class RegArrayInterface(Interface):
+    def __init__(self, name, data_width, length):
+        super().__init__('', thru=True, is_public=True)
+        self.data_width = data_width
+        self.length = length
+        for i in range(length):
+            pname = '{}{}'.format(name, i)
+            self.ports.append(Port(pname, data_width, 'in'))
+
+    def clone(self):
+        inf = RegArrayInterface(self.name, self.data_width, self.length)
+        inf.ports = list(self.ports)
+        return inf
+
 class RegFieldInterface(Interface):
     def __init__(self, field_name, width):
         super().__init__('field_' + field_name, thru=False, is_public=True)

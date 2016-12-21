@@ -109,7 +109,7 @@ class Scope:
         s += '================================\n'
         s += 'Parameters\n'
         for p, copy, val in self.params:
-            s += '{} = {}\n'.format(p, val)
+            s += '{}:{} = {}\n'.format(p, p.typ[0], val)
         s += "\n"
         s += '================================\n'
         for blk in self.traverse_blocks(longitude=True):

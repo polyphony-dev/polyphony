@@ -2,7 +2,7 @@
 from optparse import OptionParser
 from .driver import Driver
 from .env import env
-from .common import read_source, src_text
+from .common import read_source, src_text, get_src_text
 from .scope import Scope
 from .block import BlockReducer, PathExpTracer
 from .symbol import Symbol
@@ -147,6 +147,7 @@ def tbopt(driver, scope):
         SimpleLoopUnroll().process(scope)
         LoopBlockDestructor().process(scope)
         usedef(driver, scope)
+        TupleSSATransformer().process(scope)
         scalarssa(driver, scope)
         dumpscope(driver, scope)
         usedef(driver, scope)
@@ -220,7 +221,6 @@ def dumpmodule(driver, scope):
 def dumphdl(driver, scope):
     logger.debug(driver.result(scope))
 
-
 def compile_plan():
     def dbg(proc):
         return proc if env.dev_debug_mode else None
@@ -249,7 +249,6 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         scalarssa,
-        usedef,
         dbg(dumpscope),
         usedef,
         typeprop,

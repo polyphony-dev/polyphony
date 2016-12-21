@@ -154,7 +154,7 @@ class TypePropagation(IRVisitor):
         if ir.is_mutable:
             return Type.list(Type.int_t, None)
         else:
-            return Type.tuple(Type.int_t, None)
+            return Type.tuple(Type.int_t, None, len(ir.items))
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
@@ -359,7 +359,7 @@ class TypeChecker(IRVisitor):
         if ir.is_mutable:
             return Type.list(Type.int_t, None)
         else:
-            return Type.tuple(Type.int_t, None)
+            return Type.tuple(Type.int_t, None, len(ir.items))
 
     def visit_EXPR(self, ir):
         typ = self.visit(ir.exp)

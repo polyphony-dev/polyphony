@@ -180,9 +180,9 @@ class Visitor(ast.NodeVisitor):
                 self.emit(MOVE(TEMP(param.copy, Ctx.STORE), TEMP(param.sym, Ctx.LOAD)), node)
 
         for idx, (param, defval) in enumerate(zip(params[skip:], node.args.defaults)):
-            if Type.is_list(param.sym.typ):
+            if Type.is_seq(param.sym.typ):
                 print(self._err_info(node))
-                raise RuntimeError("cannot set the default value to the list type parameter.")
+                raise RuntimeError("cannot set the default value to the sequence type parameter.")
             d = self.visit(defval)
             params[skip+idx] = FunctionParam(param.sym, param.copy, d)
             self.emit(MOVE(TEMP(param.copy, Ctx.STORE), TEMP(param.sym, Ctx.LOAD)), node)

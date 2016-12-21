@@ -468,9 +468,9 @@ class AHDLTranslator:
         #assert node.tag.dst.is_a(TEMP)
         mv = node.tag
         if node.tag.dst.is_a(ATTR):
-            instance_name = node.tag.dst.attr.name
+            instance_name = node.tag.dst.attr.hdl_name()
         else:
-            instance_name = mv.dst.sym.name
+            instance_name = mv.dst.sym.hdl_name()
         signal_prefix = '{}_{}'.format(instance_name, env.ctor_name)
 
         callargs = self._visit_args(ir, node)

@@ -79,5 +79,9 @@ class TupleTransformer(IRTransformer):
                     mv.lineno = ir.lineno
                     self.new_stms.append(mv)
                 return
+        else:
+            ir.src = self.visit(ir.src)
+            ir.dst = self.visit(ir.dst)
         self.new_stms.append(ir)
+
 
