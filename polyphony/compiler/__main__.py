@@ -55,8 +55,6 @@ def preprocess_global(driver):
     for s in (s for s in scopes if s.is_global() or s.is_class()):
         GlobalConstantOpt().process(s)
 
-    TypePropagation().propagate_global_function_type()
-
 def callgraph(driver, scope):
     CallGraphBuilder().process(scope)
 
@@ -90,6 +88,9 @@ def meminstgraph(driver, scope):
 
 def memrename(driver, scope):
     MemoryRenamer().process(scope)
+
+def earlytypeprop(driver):
+    TypePropagation().propagate_global_function_type()
 
 def typeprop(driver, scope):
     TypePropagation().process(scope)
@@ -227,17 +228,17 @@ def compile_plan():
 
     plan = [
         preprocess_global,
+        iftrans,
+        reduceblk,
+        quadruple,
+        earlytypeprop,
         typecheck,
         dbg(dumpscope),
         callgraph,
         dbg(dumpscope),
         phase(env.PHASE_1),
-        iftrans,
-        reduceblk,
         dbg(dumpscope),
         earlyconstopt_nonssa,
-        quadruple,
-        typeprop,
         dbg(dumpscope),
         classcheck,
         inlineopt,

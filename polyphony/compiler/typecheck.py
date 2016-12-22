@@ -59,7 +59,13 @@ class TypePropagation(IRVisitor):
 
         if ir.func.is_a(TEMP):
             func_name = ir.func.symbol().orig_name()
-            ir.func_scope = self.scope.find_scope(func_name)
+            if Type.is_object(ir.func.symbol().typ):
+                clazz = Type.extra(ir.func.symbol().typ)
+                if clazz:
+                    ir.func_scope = clazz.find_scope(env.callop_name)
+                    ir.func = ATTR(ir.func, clazz.symbols[env.callop_name], Ctx.LOAD)
+            else:
+                ir.func_scope = self.scope.find_scope(func_name)
         elif ir.func.is_a(ATTR):
             if not ir.func.class_scope:
                 return Type.none_t
@@ -68,6 +74,13 @@ class TypePropagation(IRVisitor):
             assert ir.func_scope.is_method()
             if ir.func_scope.is_mutable():
                 ir.func.exp.ctx |= Ctx.STORE
+        else:
+            assert False
+
+        if not ir.func_scope:
+            # we cannot specify the callee because it has not been evaluated yet.
+            return Type.none_t
+
         self.scope.add_callee_scope(ir.func_scope)
 
         arg_types = [self.visit(arg) for arg in ir.args]

@@ -18,6 +18,7 @@ class Env:
         self.memref_graph = None
         self.ctor_name = '__init__'
         self.self_name = 'self'
+        self.callop_name = '__call__'
 
     def append_scope(self, scope):
         self.scopes[scope.name] = scope
