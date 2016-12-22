@@ -15,7 +15,7 @@ attr_map = {}
 
 class FunctionVisitor(ast.NodeVisitor):
     def __init__(self):
-        self.current_scope = Scope.create(None, '@top', [])
+        self.current_scope = Scope.create(None, '@top', [], lineno=1)
 
     def visit_FunctionDef(self, node):
         #arguments = (arg* args, identifier? vararg, expr? varargannotation,
@@ -29,12 +29,11 @@ class FunctionVisitor(ast.NodeVisitor):
         attributes = []
         for deco in node.decorator_list:
             if deco.id in ['testbench', 'top', 'classmethod']:
-                attributes = []
-                attributes.append(deco.id)
+                attributes = [deco.id]
                 break
         if outer_scope.is_class() and 'classmethod' not in attributes:
             attributes.append('method')
-        self.current_scope = Scope.create(outer_scope, node.name, attributes)
+        self.current_scope = Scope.create(outer_scope, node.name, attributes, node.lineno)
 
         for arg in node.args.args:
             param_in = self.current_scope.add_sym('{}_{}'.format(Symbol.param_prefix, arg.arg))
@@ -54,8 +53,14 @@ class FunctionVisitor(ast.NodeVisitor):
         self.current_scope = outer_scope
 
     def visit_ClassDef(self, node):
+        attributes = []
+        for deco in node.decorator_list:
+            if deco.id in ['top']:
+                attributes = [deco.id]
+                break
+
         outer_scope = self.current_scope
-        self.current_scope = Scope.create(outer_scope, node.name, ['class'])
+        self.current_scope = Scope.create(outer_scope, node.name, ['class'] + attributes, node.lineno)
         for stm in node.body:
             self.visit(stm)
 
@@ -212,7 +217,7 @@ class Visitor(ast.NodeVisitor):
             self.visit(body)
         logger.debug(node.name)
         if not any([method.is_ctor() for method in self.current_scope.children]):
-            ctor = Scope.create(self.current_scope, env.ctor_name, 'method')
+            ctor = Scope.create(self.current_scope, env.ctor_name, 'method', node.lineno)
             # add 'self' parameter
             param_in = ctor.add_sym('{}_{}'.format(Symbol.param_prefix, env.self_name))
             param_in.typ = Type.object(None, self.current_scope)
@@ -646,8 +651,8 @@ class Visitor(ast.NodeVisitor):
                 for f in builtin_names:
                     if func.symbol().name == f:
                         return SYSCALL(f, args)
-                print(self._err_info(node))
-                raise TypeError('{} is not callable'.format(func.symbol().name))
+                #print(self._err_info(node))
+                #raise TypeError('{} is not callable'.format(func.symbol().name))
             elif func_scope.is_class():
                 return NEW(func_scope, args)
         return CALL(func, args)

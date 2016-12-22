@@ -247,8 +247,8 @@ class SimpleLoopUnroll:
         entry = scope.entry_block
         # reset ssa form
         for var in scope.usedef.get_all_vars():
-            if var.sym.ancestor:
-                var.sym = var.sym.ancestor
+            if var.symbol().ancestor:
+                var.set_symbol(var.symbol().ancestor)
         udd = UseDefDetector()
         udd.process(scope)
 
@@ -355,7 +355,7 @@ class SimpleLoopUnroll:
         usevars = usedef.get_use_vars_by_blk(block)
         use_result = []
         for var in usevars:
-            if var.sym.is_temp() or var.sym.is_condition():
+            if var.symbol().is_temp() or var.symbol().is_condition():
                 use_result.append(var)
         return use_result
 
