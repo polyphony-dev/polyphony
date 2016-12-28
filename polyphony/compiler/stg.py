@@ -223,9 +223,12 @@ class STGBuilder:
 
     def _process_dfg(self, index, dfg):
         is_main = index == 0
-        stg_name = self.scope.orig_name if is_main else 'L{}'.format(index)
-        if self.scope.is_method():
-            stg_name = self.scope.parent.orig_name + '_' + stg_name
+        if self.scope.parent.is_top() and self.scope.orig_name == env.callop_name:
+            stg_name = self.scope.parent.orig_name if is_main else 'L{}'.format(index)
+        else:
+            stg_name = self.scope.orig_name if is_main else 'L{}'.format(index)
+            if self.scope.is_method():
+                stg_name = self.scope.parent.orig_name + '_' + stg_name
         self.translator = AHDLTranslator(stg_name, self, self.scope)
 
         parent_stg = self._get_parent_stg(dfg) if not is_main else None
@@ -306,7 +309,23 @@ class STGBuilder:
             trans.target = jump.target
 
         # deal with the first/last state
-        if is_main:
+        if not is_main:
+            return states
+
+        if self.scope.parent.is_top():
+            if is_first:
+                name = '{}_INIT'.format(state_prefix)
+                init_state = states[0]
+                init_state.name = name
+                assert init_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
+                self.stg.init_state = init_state
+            if is_last:
+                name = '{}_FINISH'.format(state_prefix)
+                finish_state = states[-1]
+                finish_state.name = name
+                assert finish_state.codes[-1].is_a(AHDL_TRANSITION)
+                self.stg.finish_state = finish_state
+        else:
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
                 init_state = states[0]
@@ -450,6 +469,9 @@ class AHDLTranslator:
 
     def visit_CALL(self, ir, node):
         if ir.func_scope.is_method():
+            if ir.func_scope.parent.is_top():
+               if ir.func.symbol().name == env.ctor_name or ir.func.symbol().name == env.callop_name:
+                return AHDL_NOP('wait for top module')
             instance_name = self.host.make_instance_name(ir.func)
         else:
             instance_name = '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)
@@ -609,7 +631,7 @@ class AHDLTranslator:
             attr.append('cond')
             width = 1
 
-        if self.scope.is_method() and not ir.sym.is_param():
+        if self.scope.is_method() and not self.scope.parent.is_top() and not ir.sym.is_param():
             # a local variable's name in the method is localized
             sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()), width, attr)
         else:
@@ -647,7 +669,7 @@ class AHDLTranslator:
         exp = self.visit(ir.exp, node)
         if exp:
             self._emit(exp, self.sched_time)
-        if ir.exp.is_a(CALL):
+        if ir.exp.is_a(CALL) and exp.is_a([AHDL_PROCCALL, AHDL_MODULECALL]):
             latency = get_latency(node.tag)
             self.host.emit_call_ret_sequence(exp, None, latency, self.sched_time)
 

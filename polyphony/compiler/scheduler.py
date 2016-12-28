@@ -1,7 +1,8 @@
-﻿from collections import defaultdict
+﻿from collections import defaultdict, deque
 from .latency import get_latency
 from .irvisitor import IRVisitor
 from .ir import *
+from .utils import unique
 from logging import getLogger, INFO, DEBUG
 logger = getLogger(__name__)
 #logger.setLevel(INFO)
@@ -28,23 +29,27 @@ class Scheduler:
         sources = dfg.find_src()
         for src in sources:
             src.priority = -1
-        for src in sources:
-            self._set_priority(src, 0, dfg)
 
+        worklist = deque()
+        worklist.append((sources, 0))
+
+        while worklist:
+            nodes, prio = worklist.popleft()
+            for n in nodes:
+                succs, nextprio = self._set_priority(n, prio, dfg)
+                if succs:
+                    succs = unique(succs)
+                    worklist.append((succs, nextprio))
         nodes = dfg.get_highest_priority_nodes()
         self._list_schedule(dfg, nodes)
 
 
     def _set_priority(self, node, prio, dfg):
-        updated = False
         if prio > node.priority:
             node.priority = prio
-            updated = True
-            #logger.debug('update priority ... ' + str(node))
-        if updated:
-            for succ in dfg.succs_without_back(node):
-                self._set_priority(succ, prio+1, dfg)
-
+            logger.debug('update priority ... ' + str(node))
+            return (dfg.succs_without_back(node), prio+1)
+        return (None, None)
 
     def _node_sched_default(self, dfg, node):
         preds = dfg.preds_without_back(node)

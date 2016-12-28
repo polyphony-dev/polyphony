@@ -9,7 +9,7 @@ from .symbol import Symbol
 from .irtranslator import IRTranslator
 from .typecheck import TypePropagation, TypeChecker, ClassFieldChecker
 from .quadruplet import QuadrupleMaker
-from .hdlgen import HDLGenPreprocessor
+from .hdlgen import HDLModuleBuilder
 from .vericodegen import VerilogCodeGen, VerilogTopGen
 from .veritestgen import VerilogTestGen
 from .treebalancer import TreeBalancer
@@ -55,8 +55,11 @@ def preprocess_global(driver):
     for s in (s for s in scopes if s.is_global() or s.is_class()):
         GlobalConstantOpt().process(s)
 
-def callgraph(driver, scope):
-    CallGraphBuilder().process(scope)
+def callgraph(driver):
+    unused_scopes = CallGraphBuilder().process_all()
+    for s in unused_scopes:
+        driver.remove_scope(s)
+        env.remove_scope(s)
 
 def tracepath(driver, scope):
     PathTracer().process(scope)
@@ -173,21 +176,15 @@ def schedule(driver, scope):
 def stg(driver, scope):
     STGBuilder().process(scope)
 
+def buildmodule(driver, scope):
+    modulebuilder = HDLModuleBuilder.create(scope)
+    if modulebuilder:
+        modulebuilder.process(scope)
+        SelectorBuilder().process(scope)
+
 def genhdl(driver, scope):
-    if scope.is_method():
+    if not scope.module_info:
         return
-    preprocessor = HDLGenPreprocessor()
-    if scope.is_class() or scope.is_method():
-        # workaround for inline version
-        return
-        #if not scope.children:
-        #    return
-        #scope.module_info = preprocessor.process_class(scope)
-    else:
-        scope.module_info = preprocessor.process_func(scope)
-
-    SelectorBuilder().process(scope)
-
     if not scope.is_testbench():
         vcodegen = VerilogCodeGen(scope)
     else:
@@ -203,7 +200,7 @@ def dumpmrg(driver, scope):
 
 def dumpdfg(driver, scope):
     for dfg in scope.dfgs():
-        dfg.dump()
+        driver.logger.debug(str(dfg))
 
 def dumpsched(driver, scope):
     for dfg in scope.dfgs():
@@ -232,9 +229,8 @@ def compile_plan():
         reduceblk,
         quadruple,
         earlytypeprop,
-        typecheck,
-        dbg(dumpscope),
         callgraph,
+        typecheck,
         dbg(dumpscope),
         phase(env.PHASE_1),
         dbg(dumpscope),
@@ -285,6 +281,7 @@ def compile_plan():
         phase(env.PHASE_4),
         dbg(dumpscope),
         dfg,
+        dbg(dumpdfg),
         schedule,
         dbg(dumpsched),
         meminstgraph,
@@ -292,8 +289,9 @@ def compile_plan():
         stg,
         dbg(dumpstg),
         phase(env.PHASE_GEN_HDL),
-        genhdl,
+        buildmodule,
         dbg(dumpmodule),
+        genhdl,
         dbg(dumphdl),
     ]
     plan = [p for p in plan if p is not None]
@@ -354,9 +352,7 @@ def output_individual(driver, output_name, output_dir):
     d = output_dir if output_dir else './'
     if d[-1] != '/': d += '/'
 
-    # workaround for inline version
-    scopes = Scope.get_scopes(contain_class=False)
-    #scopes = Scope.get_scopes(contain_class=True)
+    scopes = Scope.get_scopes(contain_class=True)
     with open(d + output_name + '.v', 'w') as f:
         for scope in scopes:
             file_name = '{}_{}.v'.format(output_name, scope.orig_name)

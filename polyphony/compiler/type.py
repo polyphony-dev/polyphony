@@ -8,6 +8,8 @@ class Type:
                 return Type.int_t
             elif ann.id == 'list':
                 return cls.list(cls.int_t, None)
+            elif ann.id == 'tuple':
+                return cls.tuple(cls.int_t, None, 0)
             elif ann.id == 'object':
                 return cls.object(None, None)
         return Type.int_t

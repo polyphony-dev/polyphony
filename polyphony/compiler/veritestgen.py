@@ -108,6 +108,8 @@ class VerilogTestGen(VerilogCodeGen):
         for name, info, _, _, _ in self.module_info.sub_modules.values():
             if isinstance(info, RAMModuleInfo):
                 continue
+            if not info.interfaces:
+                continue
             for p in info.interfaces[0].ports[3:]: # skip controls
                 if isinstance(p, tuple):
                     accessor_name = info.interfaces[0].port_name(name, p)

@@ -208,8 +208,11 @@ class TypePropagation(IRVisitor):
         elif ir.dst.is_a(MREF):
             ir.dst.mem.symbol().set_type(Type.list(src_typ, None))
         elif ir.dst.is_a(ARRAY):
+            if Type.is_none(src_typ):
+                # the type of object has not inferenced yet
+                return
             if not Type.is_tuple(src_typ) or not Type.is_tuple(dst_typ):
-                assert False
+                return
             elem_t = Type.element(src_typ)
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR])

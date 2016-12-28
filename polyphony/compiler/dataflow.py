@@ -1,7 +1,4 @@
-﻿import sys
-#import pygraphviz as pgv
-from collections import deque, defaultdict
-from functools import reduce
+﻿from collections import defaultdict
 from .common import error_info
 from .block import Block, CompositBlock
 from .ir import *
@@ -9,7 +6,6 @@ from .env import env
 from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)
-
 
 class DFNode:
     def __init__(self, typ, tag):
@@ -55,7 +51,30 @@ class DataFlowGraph:
         self.children = []
 
     def __str__(self):
-        return self.name
+        s = 'DFG all nodes ==============\n'
+        sources = self.find_src()
+        for n in self.traverse_nodes(sources, []):
+            s += '  ' + str(n)
+            s += '\n'
+        s += 'DFG all edges ==============\n'
+        for n1, n2, typ, back in self.edges:
+            back_edge = "(back) " if back else ''
+            if typ == 'DefUse':
+                prefix1 = 'def '
+                prefix2 = 'use -> '
+            elif typ == 'UseDef':
+                prefix1 = 'use '
+                prefix2 = 'def -> '
+            elif typ == 'Branch':
+                prefix1 = 'pred blk '
+                prefix2 = 'succ blk -> '
+            elif typ == 'Seq':
+                prefix1 = 'pred '
+                prefix2 = 'succ -> '
+            s += '{}{} {}\n'.format(back_edge, prefix1, n1)
+            s += '{}{} {}\n'.format(back_edge, prefix2, n2)
+        return s
+
 
     def set_child(self, child):
         self.children.append(child)
@@ -220,31 +239,6 @@ class DataFlowGraph:
             for succ in self.traverse_nodes_without_back(succs):
                 yield succ
 
-    def dump(self):
-        logger.debug('================================')
-        logger.debug('DFG all nodes ==============')
-        sources = self.find_src()
-        for n in self.traverse_nodes(sources, []):
-            logger.debug('  ' + str(n))
-        logger.debug('DFG all edges ==============')
-        for n1, n2, typ, back in self.edges:
-            back_edge = "(back) " if back else ''
-            if typ == 'DefUse':
-                prefix1 = 'def '
-                prefix2 = 'use -> '
-            elif typ == 'UseDef':
-                prefix1 = 'use '
-                prefix2 = 'def -> '
-            elif typ == 'Branch':
-                prefix1 = 'pred blk '
-                prefix2 = 'succ blk -> '
-            elif typ == 'Seq':
-                prefix1 = 'pred '
-                prefix2 = 'succ -> '
-            logger.debug(back_edge + prefix1 + ' ' + str(n1))
-            logger.debug(back_edge + prefix2 + ' ' + str(n2))
-        logger.debug('')
-
     def get_priority_ordered_nodes(self):
         return sorted(self.nodes, key=lambda n: n.priority)
 
@@ -260,7 +254,47 @@ class DataFlowGraph:
     def get_loop_nodes(self):
         return filter(lambda n: n.typ == 'Loop', self.nodes)
 
+    
     def write_dot(self, name):
+        try:
+            import pydot
+        except ImportError:
+            return
+        g = pydot.Dot(name, graph_type='digraph')
+        def get_node_tag_text(node):
+            s = hex(node.__hash__())[-5:-1] + '_' + str(node.tag)
+            if len(s) > 50:
+                return s[0:50]
+            else:
+                return s
+
+        node_map = {n:pydot.Node(get_node_tag_text(n), shape='box') for n in self.nodes}
+        for n in node_map.values():
+            g.add_node(n)
+
+        for n1, n2, typ, back in self.edges:
+            dotn1 = node_map[n1]
+            dotn2 = node_map[n2]
+            if typ == "DefUse":
+                if back:
+                    g.add_edge(pydot.Edge(dotn1, dotn2, color='red'))
+                else:
+                    g.add_edge(pydot.Edge(dotn1, dotn2))
+            elif typ == "Seq":
+                if back:
+                    g.add_edge(pydot.Edge(dotn1, dotn2, style='dashed', color='red'))
+                else:
+                    g.add_edge(pydot.Edge(dotn1, dotn2, style='dashed', color='blue'))
+        if self.edges:
+            g.write_png('.tmp/' + name+'.png')
+            #g.write_svg(name+'.svg')
+            #g.write(name+'.dot')
+
+    def write_dot_pygraphviz(self, name):
+        try:
+            import pygraphviz
+        except ImportError:
+            return
         G = pgv.AGraph(directed=True, strict=False, landscape='false')
         def get_node_tag_text(node):
             s = str(node.tag)
@@ -317,7 +351,6 @@ class DFGBuilder:
         self._add_special_seq_edges(dfg)
         for child in children:
             dfg.set_child(child)
-        #self._dump_dfg(dfg)
         return dfg
 
     def _dump_dfg(self, dfg):
@@ -386,6 +419,9 @@ class DFGBuilder:
             return
         for v in usevars:
             if v.symbol().is_param():
+                dfg.src_nodes.add(node)
+                return
+            if v.is_a(ATTR) and v.head().name == env.self_name:
                 dfg.src_nodes.add(node)
                 return
             defstms = usedef.get_def_stms_by_sym(v.symbol())
@@ -488,43 +524,19 @@ class DFGBuilder:
         all_stms_in_section = self._all_stms(blocks)
         all_calls = []
         for stm in all_stms_in_section:
-            if stm.is_a(MOVE) and stm.src.is_a(CALL):
-                all_calls.append(stm)
-            elif stm.is_a(EXPR) and stm.exp.is_a(CALL):
-                all_calls.append(stm)
-        for stm in all_calls:
-            callnode = dfg.add_stm_node(stm)
-            for stm2 in all_calls:
-                if stm is stm2:
-                    continue
-                blk = stm.block
-                blk2 = stm2.block
-                if ((blk is not blk2) and (blk.order < blk2.order)) or \
-                ((blk is blk2) and (blk.stms.index(stm) < blk2.stms.index(stm2))):
-                    othernode = dfg.add_stm_node(stm2)
-                    dfg.add_seq_edge(callnode, othernode)
+            if (stm.is_a(MOVE) and stm.src.is_a(CALL)) or (stm.is_a(EXPR) and stm.exp.is_a(CALL)):
+                all_calls.append(dfg.add_stm_node(stm))
+        if not all_calls:
+            return
+        all_calls = sorted(all_calls, key = self._node_order_by_ctrl)
+        prev = all_calls[0]
+        for next in all_calls[1:]:
+            dfg.add_seq_edge(prev, next)
+            prev = next
 
     def _add_object_edges(self, dfg):
-        def add_node_group_if_needed(ir, node, node_groups):
-            if ir.is_a(ATTR):
-                node_groups[ir.symbol()].add(node)
-                add_node_group_if_needed(ir.exp, node, node_groups)
-            elif ir.is_a(TEMP) and Type.is_object(ir.symbol().typ):
-                node_groups[ir.symbol()].add(node)
-
-        node_groups = defaultdict(set)
-        for node in dfg.nodes:
-            if node.tag.is_a(MOVE) or node.tag.is_a(EXPR):
-                stm = node.tag
-                for kid in stm.kids():
-                    add_node_group_if_needed(kid, node, node_groups)
-
-        for nodes in node_groups.values():
-            sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
-            for i in range(len(sorted_nodes)-1):
-                n1 = sorted_nodes[i]
-                n2 = sorted_nodes[i+1]
-                dfg.add_seq_edge(n1, n2)
+        # TODO
+        return
 
     # workaround
     def _add_special_seq_edges(self, dfg):

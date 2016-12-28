@@ -294,7 +294,7 @@ class ScalarSSATransformer(SSATransformerBase):
         super().__init__()
 
     def _need_rename(self, sym):
-        return not (sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_return() or Type.is_class(sym.typ) or Type.is_object(sym.typ) or Type.is_tuple(sym.typ))
+        return not (sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_return() or Type.is_function(sym.typ) or Type.is_class(sym.typ) or Type.is_object(sym.typ) or Type.is_tuple(sym.typ))
 
 from .tuple import TupleTransformer
 class TupleSSATransformer(SSATransformerBase):
@@ -393,5 +393,5 @@ class ObjectSSATransformer(SSATransformerBase):
                 use_stm.block.insert_stm(insert_idx, uphi)
                     
     def _need_rename(self, sym):
-        return Type.is_object(sym.typ)
+        return Type.is_object(sym.typ) and sym.name != env.self_name
 

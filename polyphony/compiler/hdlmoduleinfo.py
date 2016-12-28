@@ -42,7 +42,7 @@ class HDLModuleInfo:
         s += '\n'
         s += '  - functions\n    ' + ', '.join([str(f.output.sig.name) for f in self.functions])
         s += '\n'
-
+        s += '\n'.join([str(inf) for inf in self.interfaces])
         return s
 
     def __repr__(self):

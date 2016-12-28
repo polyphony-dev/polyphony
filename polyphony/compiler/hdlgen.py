@@ -1,11 +1,11 @@
-﻿from collections import OrderedDict, defaultdict, deque
+﻿from collections import defaultdict, deque
 from .common import get_src_text
 from .env import env
 from .stg import STG, State
 from .symbol import Symbol
 from .ir import Ctx, CONST, ARRAY, MOVE
 from .ahdl import *
-#from collections import namedtuple
+from .ahdlvisitor import AHDLVisitor
 from .hdlmoduleinfo import HDLModuleInfo
 from .hdlmemport import HDLMemPortMaker, HDLRegArrayPortMaker
 from .type import Type
@@ -17,16 +17,26 @@ logger = getLogger(__name__)
 import pdb
 
 
-class HDLGenPreprocessor:
-    """ 
-    HDLGenPreprocessor does following tasks
-      - detect input/output port name
-      - detect internal port name
-      - rename input/output variable name to 'IN*' or 'OUT*'
-      - collect each State's name (to define as a constant params in the hdl source)
-    """
-    def __init__(self):
-        pass
+class HDLModuleBuilder:
+    @classmethod
+    def create(cls, scope):
+        if scope.is_top():
+            return HDLTopModuleBuilder()
+        elif scope.is_class():
+            # workaround for inline version
+            return None
+            #if not scope.children:
+            #    return None
+            #return HDLClassModuleBuilder()
+        elif scope.is_method():
+            return None
+        else:
+            return HDLFunctionModuleBuilder()
+
+    def process(self, scope):
+        self.module_info = HDLModuleInfo(scope, scope.orig_name, scope.name)
+        self._build_module(scope)
+        scope.module_info = self.module_info
 
     def _add_state_constants(self, scope):
         i = 0
@@ -52,9 +62,9 @@ class HDLGenPreprocessor:
         elif Type.is_seq(scope.return_type):
             raise NotImplementedError('return of a suquence type is not implemented')
 
-    def _add_internal_ports(self, module_name, locals):
+    def _add_internal_ports(self, scope, module_name, locals):
         for sig in locals:
-            sig = self.scope.gen_sig(sig.name, sig.width, sig.attributes)
+            sig = scope.gen_sig(sig.name, sig.width, sig.attributes)
             if sig.is_field():
                 pass
             elif sig.is_condition():
@@ -72,12 +82,12 @@ class HDLGenPreprocessor:
 
     def _add_state_register(self, module_name, scope):
         #main_stg = scope.get_main_stg()
-        states_n = 0
-        for stg in scope.stgs:
-            states_n += len(stg.states)
+        states_n = sum([len(stg.states) for stg in scope.stgs])
+        #for stg in scope.stgs:
+        #    states_n += len(stg.states)
         #FIXME
 
-        state_var = self.scope.gen_sig(module_name+'_state', states_n.bit_length(), ['statevar'])
+        state_var = scope.gen_sig(module_name+'_state', states_n.bit_length(), ['statevar'])
         self.module_info.add_fsm_state_var(scope.name, state_var)
         self.module_info.add_internal_reg(state_var)
 
@@ -93,10 +103,12 @@ class HDLGenPreprocessor:
             accessors = info.interfaces[:]
             for inst_name in inst_names:
                 self.module_info.add_sub_module(inst_name, info, accessors)
+
     def _add_roms(self, scope):
+        mrg = env.memref_graph
         roms = deque()
 
-        roms.extend(self.mrg.collect_readonly_sink(scope))
+        roms.extend(mrg.collect_readonly_sink(scope))
         while roms:
             memnode = roms.pop()
             hdl_name = memnode.sym.hdl_name()
@@ -136,51 +148,6 @@ class HDLGenPreprocessor:
             rom_func = AHDL_FUNCTION(fname, [input], [case])
             self.module_info.add_function(rom_func)
 
-    def process_func(self, scope):
-        self.scope = scope
-        self.mrg = env.memref_graph
-        self.module_info = HDLModuleInfo(scope, scope.orig_name, scope.name)
-        self.static_assigns = []
-
-        if not scope.is_testbench():
-            self._add_state_constants(scope)
-
-        outputs = set()
-        locals = set()
-        field_accesses = defaultdict(list)
-        for stg in scope.stgs:
-            self._preprocess_fsm(Phase1Preprocessor(self.module_info, scope, locals, outputs, field_accesses), stg)
-
-        module_name = scope.stgs[0].name
-        if not scope.is_testbench():
-            self._add_state_register(module_name, scope)
-            funcif = FunctionInterface('')
-            self._add_input_ports(funcif, scope)
-            self._add_output_ports(funcif, scope)
-            self.module_info.add_interface(funcif)
-
-        self._add_internal_ports(module_name, locals)
-
-        for memnode in self.mrg.collect_ram(scope):
-            HDLMemPortMaker(memnode, scope, self.module_info).make_port()
-
-        for memnode in self.mrg.collect_immutable(scope):
-            if not memnode.is_writable():
-                continue
-            HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
-
-        self._add_submodules(scope)
-
-        for field_name, accesses in field_accesses.items():
-            self.module_info.add_internal_field_access(field_name, accesses)
-
-        self._add_roms(scope)
-
-        self.module_info.add_fsm_stg(self.scope.name, self.scope.stgs)
-
-        self._rename_signal(self.scope)
-        return self.module_info
-
     def _rename_signal(self, scope):
         for input_sig in [sig for sig in scope.signals.values() if sig.is_input()]:
             if scope.is_method():
@@ -195,23 +162,65 @@ class HDLGenPreprocessor:
             else:
                 out_name = '{}_out_0'.format(scope.orig_name)
             scope.rename_sig(output_sig.name, out_name)
- 
-    def process_class(self, scope):
+
+
+    def _collect_vars(self, scope):
+        outputs = set()
+        locals = set()
+        collector = AHDLVarCollector(self.module_info, locals, outputs)
+        for stg in scope.stgs:
+            for state in stg.states:
+                for code in state.codes:
+                    collector.visit(code)
+        return locals, outputs
+
+
+class HDLFunctionModuleBuilder(HDLModuleBuilder):
+    def _build_module(self, scope):
+        mrg = env.memref_graph
+
+        if not scope.is_testbench():
+            self._add_state_constants(scope)
+
+        locals, outputs = self._collect_vars(scope)
+
+        module_name = scope.stgs[0].name
+        if not scope.is_testbench():
+            self._add_state_register(module_name, scope)
+            funcif = FunctionInterface('')
+            self._add_input_ports(funcif, scope)
+            self._add_output_ports(funcif, scope)
+            self.module_info.add_interface(funcif)
+
+        self._add_internal_ports(scope, module_name, locals)
+
+        for memnode in mrg.collect_ram(scope):
+            HDLMemPortMaker(memnode, scope, self.module_info).make_port()
+
+        for memnode in mrg.collect_immutable(scope):
+            if not memnode.is_writable():
+                continue
+            HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
+
+        self._add_submodules(scope)
+        self._add_roms(scope)
+        self.module_info.add_fsm_stg(scope.name, scope.stgs)
+        self._rename_signal(scope)
+
+
+class HDLClassModuleBuilder(HDLModuleBuilder):
+    def _build_module(self, scope):
         assert scope.is_class()
-        self.scope = scope
-        self.mrg = env.memref_graph
-        self.module_info = HDLModuleInfo(scope, scope.orig_name, scope.name)
-        self.static_assigns = []
+        mrg = env.memref_graph
 
         for s in scope.children:
             self._add_state_constants(s)
 
         field_accesses = defaultdict(list)
         for s in scope.children:
-            outputs = set()
-            locals = set()
-            for stg in s.stgs:
-                self._preprocess_fsm(Phase1Preprocessor(self.module_info, s, locals, outputs, field_accesses), stg)
+            locals, outputs = self._collect_vars(s)
+            self._collect_field_access(s, field_accesses)
+
             funcif = FunctionInterface(s.orig_name, is_method=True)
             self._add_input_ports(funcif, s)
             self._add_output_ports(funcif, s)
@@ -219,16 +228,16 @@ class HDLGenPreprocessor:
             for p in funcif.outports():
                 pname = funcif.port_name(self.module_info.name, p)
                 self.module_info.add_fsm_output(s.name, s.gen_sig(pname, p.width, ['reg']))
-            self._add_internal_ports(s.orig_name, locals)
+            self._add_internal_ports(scope, s.orig_name, locals)
             self._add_state_register(s.orig_name, s)
             self._add_submodules(s)
-            for memnode in self.mrg.collect_ram(s):
+            for memnode in mrg.collect_ram(s):
                 memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
 
             self._add_roms(s)
         # I/O port for class fields
         
-        for sym in self.scope.symbols.values():
+        for sym in scope.symbols.values():
             if Type.is_scalar(sym.typ): # skip a method
                 fieldif = RegFieldInterface(sym.hdl_name(), Type.width(sym.typ))
                 self.module_info.add_interface(fieldif)
@@ -243,40 +252,66 @@ class HDLGenPreprocessor:
         for field_name, accesses in field_accesses.items():
             self.module_info.add_internal_field_access(field_name, accesses)
 
-        
-
         #FIXME
-        if self.scope.stgs:
-            self.module_info.add_fsm_stg(self.scope.name, self.scope.stgs)
+        if scope.stgs:
+            self.module_info.add_fsm_stg(scope.name, scope.stgs)
         for s in scope.children:
             self.module_info.add_fsm_stg(s.name, s.stgs)
             self._rename_signal(s)
 
-        return self.module_info
 
-    def _preprocess_fsm(self, preprocessor, stg):
-        assert stg
-        for state in stg.states:
-            preprocessor.current_state = state
-            remove_codes = []
-            for code in state.codes:
-                preprocessor.visit(code)
-                if getattr(code, 'removed', None):
-                    remove_codes.append((code, AHDL_NOP(code)))
-            for code, nop in remove_codes:
-                replace_item(state.codes, code, nop)
-                
+    def _collect_field_access(self, scope, field_accesses):
+        collector = AHDLFieldAccessCollector(self.module_info, scope, field_accesses)
+        for stg in scope.stgs:
+            for state in stg.states:
+                collector.current_state = state
+                remove_codes = []
+                for code in state.codes:
+                    collector.visit(code)
+                    if getattr(code, 'removed', None):
+                        remove_codes.append((code, AHDL_NOP(code)))
+                for code, nop in remove_codes:
+                    replace_item(state.codes, code, nop)
 
-class Phase1Preprocessor:
+
+class HDLTopModuleBuilder(HDLModuleBuilder):
+    def _build_module(self, scope):
+        assert scope.is_top()
+        assert scope.is_class()
+        mrg = env.memref_graph
+
+        for s in scope.children:
+            self._add_state_constants(s)
+
+        for s in scope.children:
+            if s.is_ctor():
+                # TODO parse for reset signal
+                continue
+            locals, outputs = self._collect_vars(s)
+            self._add_internal_ports(scope, s.orig_name, locals)
+            self._add_state_register(s.orig_name, s)
+            self._add_submodules(s)
+            for memnode in mrg.collect_ram(s):
+                memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
+
+            self._add_roms(s)
+
+        if scope.stgs:
+            self.module_info.add_fsm_stg(scope.name, scope.stgs)
+        for s in scope.children:
+            if s.is_ctor():
+                # TODO parse for reset signal
+                continue
+            self.module_info.add_fsm_stg(s.name, s.stgs)
+            #self._rename_signal(s)
+
+
+class AHDLVarCollector(AHDLVisitor):
     ''' this class corrects inputs and outputs and locals'''
-    def __init__(self, module_info, scope, local_temps, output_temps, field_accesses):
-        self.module_info = module_info
-        self.scope = scope
+    def __init__(self, module_info, local_temps, output_temps):
         self.local_temps = local_temps
         self.output_temps = output_temps
-        self.field_accesses = field_accesses
-        self.module_constants = [c for c, _ in self.module_info.state_constants]
-        self.current_state = None
+        self.module_constants = [c for c, _ in module_info.state_constants]
 
     def visit_AHDL_CONST(self, ahdl):
         pass
@@ -292,37 +327,17 @@ class Phase1Preprocessor:
         #    text = ahdl.sym.name #get_src_text(ir)
         #    raise RuntimeError('free variable is not supported yet.\n' + text)
 
-    def visit_AHDL_MEMVAR(self, ahdl):
-        pass
 
-    def visit_AHDL_SUBSCRIPT(self, ahdl):
-        pass
-
-    def visit_AHDL_OP(self, ahdl):
-        self.visit(ahdl.left)
-        if ahdl.right:
-            self.visit(ahdl.right)
-
-    def visit_AHDL_NOP(self, ahdl):
-        pass
-
-    def visit_AHDL_MOVE(self, ahdl):
-        self.visit(ahdl.src)
-        self.visit(ahdl.dst)
-
-    def visit_AHDL_STORE(self, ahdl):
-        self.visit(ahdl.src)
-        self.visit(ahdl.mem)
-        self.visit(ahdl.offset)
-
-    def visit_AHDL_LOAD(self, ahdl):
-        self.visit(ahdl.mem)
-        self.visit(ahdl.dst)
-        self.visit(ahdl.offset)
+class AHDLFieldAccessCollector(AHDLVisitor):
+    def __init__(self, module_info, scope, field_accesses):
+        self.module_info = module_info
+        self.scope = scope
+        self.field_accesses = field_accesses
+        self.module_constants = [c for c, _ in self.module_info.state_constants]
+        self.current_state = None
 
     def visit_AHDL_FIELD_MOVE(self, ahdl):
-        self.visit(ahdl.src)
-        self.visit(ahdl.dst)
+        #self.visit_AHDL_MOVE(ahdl)
 
         assert self.field_accesses is not None
         field = '{}_field_{}'.format(ahdl.inst_name, ahdl.attr_name)
@@ -330,14 +345,14 @@ class Phase1Preprocessor:
         ahdl.removed = True
 
     def visit_AHDL_FIELD_STORE(self, ahdl):
-        self.visit(ahdl.src)
+        #self.visit(ahdl.src)
 
         assert self.field_accesses is not None
         self.field_accesses[ahdl.mem.sig.name].append((self.scope, self.current_state, ahdl))
         ahdl.removed = True
 
     def visit_AHDL_FIELD_LOAD(self, ahdl):
-        self.visit(ahdl.dst)
+        #self.visit(ahdl.dst)
 
         assert self.field_accesses is not None
         self.field_accesses[ahdl.mem.sig.name].append((self.scope, self.current_state, ahdl))
@@ -355,14 +370,6 @@ class Phase1Preprocessor:
             self.field_accesses[ahdl.factor.mem.sig.name].append((self.scope, self.current_state, ahdl))
             ahdl.removed = True
 
-    def visit_AHDL_IF(self, ahdl):
-        for cond in ahdl.conds:
-            if cond:
-                self.visit(cond)
-        for codes in ahdl.codes_list:
-            for code in codes:
-                self.visit(code)
-
     def visit_AHDL_MODULECALL(self, ahdl):
         for arg in ahdl.args:
             self.visit(arg)
@@ -370,14 +377,6 @@ class Phase1Preprocessor:
             assert self.field_accesses is not None
             self.field_accesses[ahdl.prefix].append((self.scope, self.current_state, ahdl))
             ahdl.removed = True
-
-    def visit_AHDL_FUNCALL(self, ahdl):
-        for arg in ahdl.args:
-            self.visit(arg)
-
-    def visit_AHDL_PROCCALL(self, ahdl):
-        for arg in ahdl.args:
-            self.visit(arg)
 
     def visit_SET_READY(self, ahdl):
         modulecall = ahdl.args[0]
@@ -410,30 +409,4 @@ class Phase1Preprocessor:
         visitor = getattr(self, method, None)
         return visitor(ahdl)
 
-    def visit_WAIT_INPUT_READY(self, ahdl):
-        if ahdl.codes:
-            for code in ahdl.codes:
-                self.visit(code)
-
-    def visit_WAIT_OUTPUT_ACCEPT(self, ahdl):
-        pass
-
-    def visit_WAIT_RET_AND_GATE(self, ahdl):
-        pass
-
-    def visit_AHDL_META_WAIT(self, ahdl):
-        method = 'visit_' + ahdl.metaid
-        visitor = getattr(self, method, None)
-        return visitor(ahdl)
-
-    def visit_AHDL_TRANSITION(self, ahdl):
-        pass
-
-    def visit_AHDL_TRANSITION_IF(self, ahdl):
-        self.visit_AHDL_IF(ahdl)
-
-    def visit(self, ahdl):
-        method = 'visit_' + ahdl.__class__.__name__
-        visitor = getattr(self, method, None)
-        return visitor(ahdl)
 
