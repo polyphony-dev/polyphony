@@ -80,16 +80,11 @@ class HDLModuleBuilder:
                 else:
                     self.module_info.add_internal_reg(sig)
 
-    def _add_state_register(self, module_name, scope):
-        #main_stg = scope.get_main_stg()
-        states_n = sum([len(stg.states) for stg in scope.stgs])
-        #for stg in scope.stgs:
-        #    states_n += len(stg.states)
-        #FIXME
-
-        state_var = scope.gen_sig(module_name+'_state', states_n.bit_length(), ['statevar'])
-        self.module_info.add_fsm_state_var(scope.name, state_var)
-        self.module_info.add_internal_reg(state_var)
+    def _add_state_register(self, module_name, scope, stgs):
+        states_n = sum([len(stg.states) for stg in stgs])
+        state_sig = scope.gen_sig(module_name+'_state', states_n.bit_length(), ['statevar'])
+        self.module_info.add_fsm_state_var(scope.name, state_sig)
+        self.module_info.add_internal_reg(state_sig)
 
 
     def _add_submodules(self, scope):
@@ -174,6 +169,13 @@ class HDLModuleBuilder:
                     collector.visit(code)
         return locals, outputs
 
+    def _collect_moves(self, scope):
+        moves = []
+        for stg in scope.stgs:
+            for state in stg.states:
+                moves.extend([code for code in state.codes if code.is_a(AHDL_MOVE)])
+        return moves
+
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
     def _build_module(self, scope):
@@ -186,7 +188,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
 
         module_name = scope.stgs[0].name
         if not scope.is_testbench():
-            self._add_state_register(module_name, scope)
+            self._add_state_register(module_name, scope, scope.stgs)
             funcif = FunctionInterface('')
             self._add_input_ports(funcif, scope)
             self._add_output_ports(funcif, scope)
@@ -213,11 +215,9 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
         assert scope.is_class()
         mrg = env.memref_graph
 
-        for s in scope.children:
-            self._add_state_constants(s)
-
         field_accesses = defaultdict(list)
         for s in scope.children:
+            self._add_state_constants(s)
             locals, outputs = self._collect_vars(s)
             self._collect_field_access(s, field_accesses)
 
@@ -229,7 +229,7 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
                 pname = funcif.port_name(self.module_info.name, p)
                 self.module_info.add_fsm_output(s.name, s.gen_sig(pname, p.width, ['reg']))
             self._add_internal_ports(scope, s.orig_name, locals)
-            self._add_state_register(s.orig_name, s)
+            self._add_state_register(s.orig_name, s, s.stgs)
             self._add_submodules(s)
             for memnode in mrg.collect_ram(s):
                 memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
@@ -281,30 +281,34 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         mrg = env.memref_graph
 
         for s in scope.children:
-            self._add_state_constants(s)
-
-        for s in scope.children:
             if s.is_ctor():
                 # TODO parse for reset signal
-                continue
-            locals, outputs = self._collect_vars(s)
-            self._add_internal_ports(scope, s.orig_name, locals)
-            self._add_state_register(s.orig_name, s)
-            self._add_submodules(s)
-            for memnode in mrg.collect_ram(s):
-                memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
+                for d in self._collect_field_defs(s):
+                    self.module_info.add_fsm_reset_stm(scope.name, d)
+                break
 
-            self._add_roms(s)
-
-        if scope.stgs:
-            self.module_info.add_fsm_stg(scope.name, scope.stgs)
         for s in scope.children:
-            if s.is_ctor():
-                # TODO parse for reset signal
-                continue
-            self.module_info.add_fsm_stg(s.name, s.stgs)
-            #self._rename_signal(s)
+            if s.orig_name == env.callop_name:
+                self._add_state_constants(s)
+                locals, outputs = self._collect_vars(s)
+                for var in locals:
+                    if var.is_field():
+                        self.module_info.add_internal_reg(var)
+                self._add_internal_ports(scope, scope.orig_name, locals)
+                self._add_state_register(self.module_info.name, scope, s.stgs)
+                self._add_submodules(s)
+                for memnode in mrg.collect_ram(s):
+                    memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
 
+                self._add_roms(s)
+
+                self.module_info.add_fsm_stg(scope.name, s.stgs)
+                break
+
+
+    def _collect_field_defs(self, scope):
+        moves = self._collect_moves(scope)
+        return [mv for mv in moves if mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_field()]
 
 class AHDLVarCollector(AHDLVisitor):
     ''' this class corrects inputs and outputs and locals'''

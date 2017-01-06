@@ -325,6 +325,8 @@ class STGBuilder:
                 finish_state.name = name
                 assert finish_state.codes[-1].is_a(AHDL_TRANSITION)
                 self.stg.finish_state = finish_state
+        elif self.scope.is_testbench():
+            pass
         else:
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
@@ -631,7 +633,10 @@ class AHDLTranslator:
             attr.append('cond')
             width = 1
 
-        if self.scope.is_method() and not self.scope.parent.is_top() and not ir.sym.is_param():
+        if self.scope.parent.is_top():
+            signame = ir.sym.ancestor.hdl_name() if ir.sym.ancestor else ir.sym.hdl_name()
+            sig = self.scope.gen_sig(signame, width, attr)
+        elif self.scope.is_method() and not ir.sym.is_param():
             # a local variable's name in the method is localized
             sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()), width, attr)
         else:
@@ -648,7 +653,12 @@ class AHDLTranslator:
         else:
             sig_attr = ['field', 'int']
         attr = ir.attr.hdl_name()
-        if self.scope.is_method() and self.scope.parent is ir.class_scope:
+        if self.scope.parent.is_top():
+            signame = ir.symbol().ancestor.hdl_name() if ir.symbol().ancestor else ir.symbol().hdl_name()
+            instance_name = self.host.make_instance_name(ir)
+
+            sig = self.scope.gen_sig(signame, INT_WIDTH, sig_attr)
+        elif self.scope.is_method() and self.scope.parent is ir.class_scope:
             # internal access to the field
             sig = self.host.gen_sig(ir.class_scope.orig_name + '_field', attr, INT_WIDTH, sig_attr)
         else:
@@ -688,6 +698,7 @@ class AHDLTranslator:
 
     def visit_MCJUMP(self, ir, node):
         for c, target in zip(ir.conds[:-1], ir.targets[:-1]):
+        
             if c.is_a(CONST) and c.value == 1:
                 cond = self.visit(c, node)
                 self._emit(AHDL_TRANSITION(target), self.sched_time)
@@ -705,11 +716,15 @@ class AHDLTranslator:
         pass
 
     def _call_proc(self, ir, node):
+        
         src = self.visit(ir.src, node)
         if ir.src.is_a(CALL):
             dst = self.visit(ir.dst, node)
         else:
             dst = None
+        # we must skip the call-ret sequence after visiting
+        if ir.src.is_a([NEW, CALL]) and ir.src.func_scope.is_top():
+            return
         latency = get_latency(node.tag)
         self._emit(src, self.sched_time)
         self.host.emit_call_ret_sequence(src, dst, latency, self.sched_time)
@@ -720,10 +735,12 @@ class AHDLTranslator:
             return
         elif ir.src.is_a(TEMP) and ir.src.sym.is_param() and ir.src.sym.name.endswith(env.self_name):
             return
-
+        
         src = self.visit(ir.src, node)
         dst = self.visit(ir.dst, node)
         if not src:
+            return
+        elif src.is_a(AHDL_VAR) and dst.is_a(AHDL_VAR) and src.sig == dst.sig:
             return
         elif src.is_a(AHDL_STORE):
             self.host.emit_memstore_sequence(src, self.sched_time)
@@ -737,7 +754,7 @@ class AHDLTranslator:
             assert memnode
             if ir.src.sym.is_param():
                 return
-        elif dst.sig.is_field():
+        elif dst.sig.is_field() and not self.scope.parent.is_top():
             assert ir.dst.is_a(ATTR)
             if dst.is_a(AHDL_VAR):
                 if self.scope.is_method():

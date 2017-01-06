@@ -74,9 +74,8 @@ class VerilogCodeGen:
                 main_stg = stg
         assert main_stg
 
-        for sig in fsm.outputs:
-            if sig.is_reg():
-                self.emit('{} <= 0;'.format(sig.name))
+        for stm in fsm.reset_stms:
+            self.visit(stm)
 
         self.current_state_sig = fsm.state_var
         self.emit('{} <= {};'.format(self.current_state_sig.name, main_stg.init_state.name))

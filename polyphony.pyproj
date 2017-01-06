@@ -29,7 +29,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="polyphony\compiler\ahdl.py" />
-    <Compile Include="polyphony\compiler\ahdl_usedef.py" />
+    <Compile Include="polyphony\compiler\ahdlvisitor.py" />
     <Compile Include="polyphony\compiler\block.py" />
     <Compile Include="polyphony\compiler\builtin.py" />
     <Compile Include="polyphony\compiler\callgraph.py" />
@@ -73,6 +73,7 @@
     <Compile Include="polyphony\compiler\setlineno.py" />
     <Compile Include="polyphony\compiler\specfunc.py" />
     <Compile Include="polyphony\compiler\ssa.py" />
+    <Compile Include="polyphony\compiler\statereducer.py" />
     <Compile Include="polyphony\compiler\stg.py" />
     <Compile Include="polyphony\compiler\symbol.py" />
     <Compile Include="polyphony\compiler\treebalancer.py" />

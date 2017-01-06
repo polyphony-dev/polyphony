@@ -89,12 +89,13 @@ class AHDLVisitor:
         if ahdl.codes:
             for code in ahdl.codes:
                 self.visit(code)
+        self.visit(ahdl.transition)
 
     def visit_WAIT_OUTPUT_ACCEPT(self, ahdl):
-        pass
+        self.visit(ahdl.transition)
 
     def visit_WAIT_RET_AND_GATE(self, ahdl):
-        pass
+        self.visit(ahdl.transition)
 
     def visit_AHDL_META_WAIT(self, ahdl):
         method = 'visit_' + ahdl.metaid

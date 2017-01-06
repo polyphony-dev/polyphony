@@ -32,7 +32,7 @@ from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHiera
 from .copyopt import CopyOpt
 from .callgraph import CallGraphBuilder
 from .tuple import TupleTransformer
-
+from .statereducer import StateReducer
 import logging
 logger = logging.getLogger()
 
@@ -176,6 +176,9 @@ def schedule(driver, scope):
 def stg(driver, scope):
     STGBuilder().process(scope)
 
+def reducestate(driver, scope):
+    StateReducer().process(scope)
+
 def buildmodule(driver, scope):
     modulebuilder = HDLModuleBuilder.create(scope)
     if modulebuilder:
@@ -287,6 +290,8 @@ def compile_plan():
         meminstgraph,
         dbg(dumpmrg),
         stg,
+        dbg(dumpstg),
+        reducestate,
         dbg(dumpstg),
         phase(env.PHASE_GEN_HDL),
         buildmodule,

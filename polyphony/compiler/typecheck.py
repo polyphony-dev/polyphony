@@ -330,6 +330,10 @@ class TypeChecker(IRVisitor):
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         self._check_param_type(param_typs, ir)
 
+        # TODO
+        if self.scope.is_testbench() and ir.func_scope.is_class() and not ir.func_scope.is_top():
+            type_error(ir, 'It is not supported yet to use anything other than the class decorated with @top in a testbench')
+
         return ir.func_scope.return_type
 
     def visit_CONST(self, ir):

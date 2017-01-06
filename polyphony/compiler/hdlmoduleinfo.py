@@ -13,6 +13,7 @@ class FSM:
         self.state_var = None
         self.stgs = None
         self.outputs = set()
+        self.reset_stms = []
 
 class HDLModuleInfo:
     #Port = namedtuple('Port', ['name', 'width'])
@@ -158,6 +159,8 @@ class HDLModuleInfo:
     def add_fsm_output(self, fsm_name, output_sig):
         self.fsms[fsm_name].outputs.add(output_sig)
 
+    def add_fsm_reset_stm(self, fsm_name, ahdl_stm):
+        self.fsms[fsm_name].reset_stms.append(ahdl_stm)
 
 class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):
