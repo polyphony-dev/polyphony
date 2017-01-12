@@ -80,10 +80,10 @@ class HDLModuleBuilder:
                 else:
                     self.module_info.add_internal_reg(sig)
 
-    def _add_state_register(self, module_name, scope, stgs):
+    def _add_state_register(self, fsm_name, scope, stgs):
         states_n = sum([len(stg.states) for stg in stgs])
-        state_sig = scope.gen_sig(module_name+'_state', states_n.bit_length(), ['statevar'])
-        self.module_info.add_fsm_state_var(scope.name, state_sig)
+        state_sig = scope.gen_sig(fsm_name+'_state', states_n.bit_length(), ['statevar'])
+        self.module_info.add_fsm_state_var(fsm_name, state_sig)
         self.module_info.add_internal_reg(state_sig)
 
 
@@ -161,13 +161,14 @@ class HDLModuleBuilder:
 
     def _collect_vars(self, scope):
         outputs = set()
-        locals = set()
-        collector = AHDLVarCollector(self.module_info, locals, outputs)
+        defs = set()
+        uses = set()
+        collector = AHDLVarCollector(self.module_info, defs, uses, outputs)
         for stg in scope.stgs:
             for state in stg.states:
                 for code in state.codes:
                     collector.visit(code)
-        return locals, outputs
+        return defs, uses, outputs
 
     def _collect_moves(self, scope):
         moves = []
@@ -184,7 +185,8 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         if not scope.is_testbench():
             self._add_state_constants(scope)
 
-        locals, outputs = self._collect_vars(scope)
+        defs, uses, outputs = self._collect_vars(scope)
+        locals = defs.union(uses)
 
         module_name = scope.stgs[0].name
         if not scope.is_testbench():
@@ -206,7 +208,11 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
 
         self._add_submodules(scope)
         self._add_roms(scope)
-        self.module_info.add_fsm_stg(scope.name, scope.stgs)
+        self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
+        for d in defs:
+            if d.is_reg():
+                clear_var = AHDL_MOVE(AHDL_VAR(d, Ctx.STORE), AHDL_CONST(0))
+                self.module_info.add_fsm_reset_stm(scope.orig_name, clear_var)
         self._rename_signal(scope)
 
 
@@ -218,7 +224,8 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
         field_accesses = defaultdict(list)
         for s in scope.children:
             self._add_state_constants(s)
-            locals, outputs = self._collect_vars(s)
+            defs, uses, outputs = self._collect_vars(s)
+            locals = defs.union(uses)
             self._collect_field_access(s, field_accesses)
 
             funcif = FunctionInterface(s.orig_name, is_method=True)
@@ -227,7 +234,7 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
             self.module_info.add_interface(funcif)
             for p in funcif.outports():
                 pname = funcif.port_name(self.module_info.name, p)
-                self.module_info.add_fsm_output(s.name, s.gen_sig(pname, p.width, ['reg']))
+                self.module_info.add_fsm_output(s.orig_name, s.gen_sig(pname, p.width, ['reg']))
             self._add_internal_ports(scope, s.orig_name, locals)
             self._add_state_register(s.orig_name, s, s.stgs)
             self._add_submodules(s)
@@ -254,9 +261,9 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
 
         #FIXME
         if scope.stgs:
-            self.module_info.add_fsm_stg(scope.name, scope.stgs)
+            self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
         for s in scope.children:
-            self.module_info.add_fsm_stg(s.name, s.stgs)
+            self.module_info.add_fsm_stg(s.orig_name, s.stgs)
             self._rename_signal(s)
 
 
@@ -280,30 +287,34 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         assert scope.is_class()
         mrg = env.memref_graph
 
+        reset_stms = set()
         for s in scope.children:
             if s.is_ctor():
                 # TODO parse for reset signal
-                for d in self._collect_field_defs(s):
-                    self.module_info.add_fsm_reset_stm(scope.name, d)
+                reset_stms = self._collect_field_defs(s)
                 break
 
         for s in scope.children:
-            if s.orig_name == env.callop_name:
+            if s.is_thread():
                 self._add_state_constants(s)
-                locals, outputs = self._collect_vars(s)
+                defs, uses, outputs = self._collect_vars(s)
+                locals = defs.union(uses)
                 for var in locals:
                     if var.is_field():
                         self.module_info.add_internal_reg(var)
                 self._add_internal_ports(scope, scope.orig_name, locals)
-                self._add_state_register(self.module_info.name, scope, s.stgs)
+                self._add_state_register(s.orig_name, scope, s.stgs)
+
                 self._add_submodules(s)
                 for memnode in mrg.collect_ram(s):
                     memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
 
                 self._add_roms(s)
 
-                self.module_info.add_fsm_stg(scope.name, s.stgs)
-                break
+                self.module_info.add_fsm_stg(s.orig_name, s.stgs)
+                for stm in reset_stms:
+                    if stm.dst.sig in defs:
+                        self.module_info.add_fsm_reset_stm(s.orig_name, stm)
 
 
     def _collect_field_defs(self, scope):
@@ -312,8 +323,9 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
 class AHDLVarCollector(AHDLVisitor):
     ''' this class corrects inputs and outputs and locals'''
-    def __init__(self, module_info, local_temps, output_temps):
-        self.local_temps = local_temps
+    def __init__(self, module_info, local_defs, local_uses, output_temps):
+        self.local_defs = local_defs
+        self.local_uses = local_uses
         self.output_temps = output_temps
         self.module_constants = [c for c, _ in module_info.state_constants]
 
@@ -326,7 +338,10 @@ class AHDLVarCollector(AHDLVisitor):
         elif ahdl.sig.is_output():
             self.output_temps.add(ahdl.sig)
         else:
-            self.local_temps.add(ahdl.sig)
+            if ahdl.ctx & Ctx.STORE:
+                self.local_defs.add(ahdl.sig)
+            else:
+                self.local_uses.add(ahdl.sig)
         #else:
         #    text = ahdl.sym.name #get_src_text(ir)
         #    raise RuntimeError('free variable is not supported yet.\n' + text)

@@ -71,6 +71,10 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('initial begin')
         self.set_indent(2)
         self.emit('rst <= 1;')
+        for fsm in self.module_info.fsms.values():
+            for stm in fsm.reset_stms:
+                self.visit(stm)
+
         self.emit('')
         self.emit('#INITIAL_RESET_SPAN')
         self.emit('rst <= 0;')

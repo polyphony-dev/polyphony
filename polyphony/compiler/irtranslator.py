@@ -11,7 +11,11 @@ from .builtin import builtin_names
 from logging import getLogger
 logger = getLogger(__name__)
 
-attr_map = {}
+SUPPORTED_DECORATORS=[
+    'testbench',
+    'top',
+    'thread'
+]
 
 class FunctionVisitor(ast.NodeVisitor):
     def __init__(self):
@@ -28,11 +32,18 @@ class FunctionVisitor(ast.NodeVisitor):
 
         attributes = []
         for deco in node.decorator_list:
-            if deco.id in ['testbench', 'top', 'classmethod']:
+            if deco.id in SUPPORTED_DECORATORS:
                 attributes = [deco.id]
                 break
+            else:
+                print(error_info(node.lineno))
+                raise RuntimeError("Unsupported decorator \'@{}\' is specified.".format(deco.id))
         if outer_scope.is_class() and 'classmethod' not in attributes:
             attributes.append('method')
+            if node.name == '__init__':
+                attributes.append('ctor')
+            elif node.name == '__call__':
+                attributes.append('callop')
         self.current_scope = Scope.create(outer_scope, node.name, attributes, node.lineno)
 
         for arg in node.args.args:
@@ -89,10 +100,6 @@ class AugAssignTransformer(ast.NodeTransformer):
         binop = ast.BinOp(op = node.op, left = lhs, right = node.value)
         assign = ast.Assign(targets = [node.target], value = binop)
         return ast.copy_location(assign, node)
-
-class AttributeVisitor(ast.NodeVisitor):
-    def visit_Attribute(self, node):
-        attr = attr_map[node]
 
 class Visitor(ast.NodeVisitor):
     def __init__(self):
@@ -217,7 +224,7 @@ class Visitor(ast.NodeVisitor):
             self.visit(body)
         logger.debug(node.name)
         if not any([method.is_ctor() for method in self.current_scope.children]):
-            ctor = Scope.create(self.current_scope, env.ctor_name, 'method', node.lineno)
+            ctor = Scope.create(self.current_scope, '__init__', ['method', 'ctor'], node.lineno)
             # add 'self' parameter
             param_in = ctor.add_sym('{}_{}'.format(Symbol.param_prefix, env.self_name))
             param_in.typ = Type.object(None, self.current_scope)
@@ -683,7 +690,6 @@ class Visitor(ast.NodeVisitor):
             scope = Type.extra(irattr.head().typ)
             if ctx & Ctx.STORE:
                 scope.gen_sym(attr)
-        attr_map[node] = irattr
         return irattr
 
     #     | Subscript(expr value, slice slice, expr_context ctx)
@@ -810,9 +816,6 @@ class IRTranslator(object):
         visitor = Visitor()
         visitor.visit(tree)
         global_scope = visitor.result()
-
-        attrvisitor = AttributeVisitor()
-        attrvisitor.visit(tree)
 
         return global_scope
 

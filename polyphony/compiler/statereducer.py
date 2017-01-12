@@ -21,7 +21,7 @@ class StateReducer(AHDLVisitor):
                     self.visit(code)
         for stg in scope.stgs:
             for state in stg.states[:]:
-                if state not in self.using_state:# and state is not self.main_stg.finish_state and state is not self.main_stg.init_state:
+                if state not in self.using_state:
                     stg.states.remove(state)
 
     def _next_state(self):
@@ -38,7 +38,6 @@ class StateReducer(AHDLVisitor):
                 if next_state is self.main_stg.finish_state:
                     continue
                 ahdl.codes_list[idx] = next_state.codes[:]
-                #next_state.codes = []
         for codes in ahdl.codes_list:
             for c in codes:
                 self.visit(c)

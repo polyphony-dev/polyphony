@@ -37,7 +37,7 @@ class HDLMemPortMaker:
             sig = self.scope.gen_sig(ramif.name+'_'+p.basename, p.width)
             if p.dir == 'in':
                 self.module_info.add_internal_reg(sig, ramif.name)
-                self.module_info.add_fsm_output(self.scope.name, sig)
+                self.module_info.add_fsm_output(self.scope.orig_name, sig)
             else:
                 self.module_info.add_internal_net(sig, ramif.name)
 

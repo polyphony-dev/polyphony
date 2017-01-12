@@ -44,26 +44,6 @@ class State:
     def __repr__(self):
         return self.name
 
-    def append_next(self, next_state):
-        self.next_states.append(next_state)
-        next_state.append_prev(self)
-        logger.debug('set_next ' + self.name + ' next:' + next_state.name)
-        if next_state.step == sys.maxsize:
-            next_state.step = self.step + 1
-
-    def append_prev(self, prev):
-        self.prev_states.append(prev)
-
-    def replace_next(self, old_state, new_state):
-        for i, nstate in enumerate(self.next_states):
-            if nstate is old_state:
-                self.next_states[i] = new_state
-
-    def clear_next(self):
-        for nstate in self.next_states:
-            nstate.prev_states.remove(self)
-        self.next_states = []
-
     def resolve_transition(self, next_state):
         code = self.codes[-1]
         if code.is_a(AHDL_TRANSITION):
@@ -72,7 +52,6 @@ class State:
             else:
                 assert isinstance(code.target, Block)
                 code.target = self.stg.scope.blk2state[code.target][0]
-            self.append_next(code.target)
             transition = code
         elif code.is_a(AHDL_TRANSITION_IF):
             for codes in code.codes_list:
@@ -80,10 +59,8 @@ class State:
                 assert c.is_a(AHDL_TRANSITION)
                 assert isinstance(c.target, Block)
                 c.target = self.stg.scope.blk2state[c.target][0]
-                self.append_next(c.target)
             transition = code
         else:
-            self.append_next(next_state)
             transition = None
 
         move_transition = False
@@ -223,7 +200,7 @@ class STGBuilder:
 
     def _process_dfg(self, index, dfg):
         is_main = index == 0
-        if self.scope.parent.is_top() and self.scope.orig_name == env.callop_name:
+        if self.scope.parent.is_top() and self.scope.is_callable():
             stg_name = self.scope.parent.orig_name if is_main else 'L{}'.format(index)
         else:
             stg_name = self.scope.orig_name if is_main else 'L{}'.format(index)
@@ -472,8 +449,11 @@ class AHDLTranslator:
     def visit_CALL(self, ir, node):
         if ir.func_scope.is_method():
             if ir.func_scope.parent.is_top():
-               if ir.func.symbol().name == env.ctor_name or ir.func.symbol().name == env.callop_name:
-                return AHDL_NOP('wait for top module')
+                if ir.func_scope.is_ctor() or ir.func_scope.is_thread():
+                    return AHDL_NOP('wait for top module')
+                else:
+                    print(error_info(ir.lineno))
+                    raise RuntimeError("It is only supported calling a method decorated '@thread'")
             instance_name = self.host.make_instance_name(ir.func)
         else:
             instance_name = '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)

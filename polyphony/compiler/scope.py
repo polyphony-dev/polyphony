@@ -340,7 +340,7 @@ class Scope:
     def find_ctor(self):
         assert self.is_class()
         for child in self.children:
-            if child.orig_name == env.ctor_name:
+            if child.is_ctor():
                 return child
         return None
 
@@ -366,7 +366,13 @@ class Scope:
         return self is Scope.global_scope()
 
     def is_ctor(self):
-        return self.is_method() and self.orig_name == env.ctor_name
+        return 'ctor' in self.attributes
+
+    def is_callable(self):
+        return 'callop' in self.attributes
+
+    def is_thread(self):
+        return 'thread' in self.attributes
 
     def find_stg(self, name):
         assert self.stgs

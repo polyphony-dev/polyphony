@@ -38,9 +38,6 @@ class AHDL:
     def is_a(self, cls):
         return is_a(self, cls)
 
-    def __repr__(self):
-        return self.__str__()
-
 class AHDL_EXP(AHDL):
     pass
 
@@ -154,18 +151,25 @@ class AHDL_DECL(AHDL):
     pass
 
 class AHDL_SIGNAL_DECL(AHDL_DECL):
-    pass
+    def __init__(self, sig):
+        self.sig = sig
+
+    def __eq__(self, other):
+        return other.is_a(AHDL_SIGNAL_DECL) and self.sig == other.sig
+
+    def __hash_(self, other):
+        return hash(self.sig)
 
 class AHDL_REG_DECL(AHDL_SIGNAL_DECL):
     def __init__(self, sig):
-        self.sig = sig
+        super().__init__(sig)
 
     def __str__(self):
         return 'reg {}'.format(self.sig)
 
 class AHDL_REG_ARRAY_DECL(AHDL_SIGNAL_DECL):
     def __init__(self, sig, size):
-        self.sig = sig
+        super().__init__(sig)
         self.size = size
 
     def __str__(self):
@@ -173,14 +177,14 @@ class AHDL_REG_ARRAY_DECL(AHDL_SIGNAL_DECL):
 
 class AHDL_NET_DECL(AHDL_SIGNAL_DECL):
     def __init__(self, sig):
-        self.sig = sig
+        super().__init__(sig)
 
     def __str__(self):
         return 'net {}'.format(self.sig)
 
 class AHDL_NET_ARRAY_DECL(AHDL_SIGNAL_DECL):
     def __init__(self, sig, size):
-        self.sig = sig
+        super().__init__(sig)
         self.size = size
 
     def __str__(self):

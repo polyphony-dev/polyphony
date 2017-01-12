@@ -391,6 +391,8 @@ class DFGBuilder:
 
                 # add edges
                 for v in usedef.get_use_vars_by_stm(stm):
+                    if self.scope.is_testbench() and Type.is_object(v.symbol().typ) and Type.extra(v.symbol().typ).is_top():
+                        continue
                     defstms = usedef.get_def_stms_by_sym(v.symbol())
                     logger.log(0, v.symbol().name + ' defstms ')
                     for defstm in defstms:
@@ -522,17 +524,30 @@ class DFGBuilder:
     def _add_edges_between_calls(self, blocks, dfg):
         """this function is used for testbench only"""
         all_stms_in_section = self._all_stms(blocks)
-        all_calls = []
+        call_nodes = []
+        calls = {}
         for stm in all_stms_in_section:
-            if (stm.is_a(MOVE) and stm.src.is_a(CALL)) or (stm.is_a(EXPR) and stm.exp.is_a(CALL)):
-                all_calls.append(dfg.add_stm_node(stm))
-        if not all_calls:
+            if stm.is_a(MOVE) and stm.src.is_a(CALL):
+                node = dfg.add_stm_node(stm)
+                call_nodes.append(node)
+                calls[node] = stm.src
+            elif stm.is_a(EXPR) and stm.exp.is_a(CALL):
+                node = dfg.add_stm_node(stm)
+                call_nodes.append(node)
+                calls[node] = stm.exp
+        if not call_nodes:
             return
-        all_calls = sorted(all_calls, key = self._node_order_by_ctrl)
-        prev = all_calls[0]
-        for next in all_calls[1:]:
-            dfg.add_seq_edge(prev, next)
-            prev = next
+        call_nodes = sorted(call_nodes, key = self._node_order_by_ctrl)
+        for prev_idx in range(len(call_nodes)-1):
+            prev = call_nodes[prev_idx]
+            prev_call = calls[prev]
+            for next in call_nodes[prev_idx+1:]:
+                next_call = calls[next]
+                if prev_call.func_scope.is_thread() and next_call.func_scope.is_thread():
+                    if prev_call.func.qualified_symbol() == next_call.func.qualified_symbol():
+                        dfg.add_seq_edge(prev, next)
+                else:
+                    dfg.add_seq_edge(prev, next)
 
     def _add_object_edges(self, dfg):
         # TODO

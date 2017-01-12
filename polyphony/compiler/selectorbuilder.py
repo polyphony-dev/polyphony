@@ -167,6 +167,8 @@ class SelectorBuilder:
                     branches[p.basename].append(sig)
                     if p.dir=='in' and not inf.thru:
                         self.module_info.add_internal_reg(sig, tag)
+                        reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
+                        self.module_info.add_fsm_reset_stm(self.scope.orig_name, reset_stm)
                     else:
                         self.module_info.add_internal_net(sig, tag)
 
