@@ -1,7 +1,8 @@
 from polyphony import testbench
 
 def sysfunc02(x):
-    print(x*2)
+    s = 'string' + ' ' + 'is' + ' printable'
+    print(s, x*2)
     return x
 
 @testbench

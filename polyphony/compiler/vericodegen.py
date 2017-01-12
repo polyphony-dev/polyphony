@@ -638,7 +638,8 @@ class VerilogCodeGen:
             args.append(a)
 
         if ahdl.name == '!hdl_print':
-            self.emit('$display("%1d", {});'.format(', '.join(args)))
+            fmts = ['%s' if a[0]=='"' else '%1d' for a in args]
+            self.emit('$display("{}", {});'.format(' '.join(fmts), ', '.join(args)))
         elif ahdl.name == '!hdl_verilog_display':
             self.emit('$display({});'.format(', '.join(args)))
         elif ahdl.name == '!hdl_verilog_write':
