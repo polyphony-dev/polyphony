@@ -139,7 +139,7 @@ class VerilogTestGen(VerilogCodeGen):
         for i, arg in enumerate(modulecall.args):
             if arg.is_a(AHDL_MEMVAR):
                 p, _, _ = modulecall.scope.params[i]
-                assert Type.is_list(p.typ)
+                assert Type.is_seq(p.typ)
                 param_memnode = Type.extra(p.typ)
                 if param_memnode.is_joinable() and param_memnode.is_writable():
                     csstr = '{}_{}_{}_cs'.format(modulecall.instance_name, i, arg.memnode.sym.hdl_name())

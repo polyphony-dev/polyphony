@@ -247,8 +247,8 @@ class SimpleLoopUnroll:
         entry = scope.entry_block
         # reset ssa form
         for var in scope.usedef.get_all_vars():
-            if var.sym.ancestor:
-                var.sym = var.sym.ancestor
+            if var.symbol().ancestor:
+                var.set_symbol(var.symbol().ancestor)
         udd = UseDefDetector()
         udd.process(scope)
 
@@ -285,6 +285,7 @@ class SimpleLoopUnroll:
         next_block = cjump.true
         jump = JUMP(next_block)
         jump.block = blk.head
+        jump.lineno = cjump.lineno
         blk.head.stms[-1] = jump
         blk.head.succs = [next_block]
         if blk.head in cjump.false.preds:
@@ -298,6 +299,7 @@ class SimpleLoopUnroll:
             tail.succs_loop = []
             jump = JUMP(cjump.false)
             jump.block = tail
+            jump.lineno = cjump.lineno
             tail.stms = [jump]
 
         #re-order blocks
@@ -353,7 +355,7 @@ class SimpleLoopUnroll:
         usevars = usedef.get_use_vars_by_blk(block)
         use_result = []
         for var in usevars:
-            if var.sym.is_temp() or var.sym.is_condition():
+            if var.symbol().is_temp() or var.symbol().is_condition():
                 use_result.append(var)
         return use_result
 
@@ -386,5 +388,7 @@ class SimpleLoopUnroll:
                 new_stms.append(copystm)
                 copystm.block = block
         block.stms = new_stms
-        block.append_stm(JUMP(block.succs[0]))
+        jump = JUMP(block.succs[0])
+        jump.lineno = 1
+        block.append_stm(jump)
 

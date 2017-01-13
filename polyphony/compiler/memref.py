@@ -221,7 +221,8 @@ class One2NNode(JointNode):
 
 class MemTrait:
     WR    = 0x00010000
-    
+    IM    = 0x00020000
+
     def __init__(self):
         self.width = 32 # TODO
         self.length = -1
@@ -229,11 +230,17 @@ class MemTrait:
     def set_writable(self):
         self.flags |= MemTrait.WR
 
+    def set_immutable(self):
+        self.flags |= MemTrait.IM
+
     def set_length(self, length):
         self.length = length
 
     def is_writable(self):
         return self.flags & MemTrait.WR
+
+    def is_immutable(self):
+        return self.flags & MemTrait.IM
 
     def addr_width(self):
         return (self.length-1).bit_length()+1 # +1 means sign bit
@@ -296,6 +303,8 @@ class MemRefNode(RefNode, MemTrait):
         if self.preds and self.length < self.preds[0].length:
             self.length = self.preds[0].length
 
+        if self.preds and self.preds[0].is_immutable():
+            self.set_immutable()
 
 class MemParamNode(RefNode, MemTrait):
     def __init__(self, sym, scope):
@@ -342,6 +351,8 @@ class MemParamNode(RefNode, MemTrait):
         if self.preds and self.length < self.preds[0].length:
             self.length = self.preds[0].length
 
+        if self.preds[0].is_immutable():
+            self.set_immutable()
 
 class N2OneMemNode(N2OneNode, MemTrait):
     def __init__(self, succ):
@@ -358,6 +369,9 @@ class N2OneMemNode(N2OneNode, MemTrait):
         for p in self.preds:
             self.scopes = p.scopes.union(self.scopes)
 
+        if self.preds[0].is_immutable():
+            self.set_immutable()
+
 class One2NMemNode(One2NNode, MemTrait):
     def __init__(self, pred):
         One2NNode.__init__(self, pred)
@@ -372,6 +386,9 @@ class One2NMemNode(One2NNode, MemTrait):
         if self.preds and self.length < self.preds[0].length:
             self.length = self.preds[0].length
         self.scopes = self.preds[0].scopes.union(self.scopes)
+
+        if self.preds[0].is_immutable():
+            self.set_immutable()
 
 class MemRefGraph:
     def __init__(self):
@@ -449,9 +466,14 @@ class MemRefGraph:
     def scope_nodes(self, scope):
         return filter(lambda n: n.is_in_scope(scope), self.nodes.values())
 
-    def collect_writable(self, scope):
+    def collect_ram(self, scope):
         for node in self.scope_nodes(scope):
-            if node.is_writable():
+            if node.is_writable() and not node.is_immutable():
+                yield node
+
+    def collect_immutable(self, scope):
+        for node in self.scope_nodes(scope):
+            if node.is_immutable():
                 yield node
 
     def collect_readonly_sink(self, scope):
@@ -501,17 +523,17 @@ class MemRefGraphBuilder(IRVisitor):
                 if stm.is_a(MOVE):
                     if stm.src.is_a(ARRAY):
                         stms.append(stm)
-                    elif stm.src.is_a(TEMP) and stm.src.sym.is_param() and Type.is_list(stm.src.sym.typ):
+                    elif stm.src.is_a(TEMP) and stm.src.sym.is_param() and Type.is_seq(stm.src.sym.typ):
                         stms.append(stm)
 
         for block in scope.traverse_blocks():
             for stm in block.stms:
                 # phi is always
                 if stm.is_a(MOVE):
-                    if stm.dst.is_a([TEMP, ATTR]) and Type.is_list(stm.dst.symbol().typ) and stm not in stms:
+                    if stm.dst.is_a([TEMP, ATTR]) and Type.is_seq(stm.dst.symbol().typ) and stm not in stms:
                         stms.append(stm)
                 elif stm.is_a(PHI):
-                    if stm.var.is_a(TEMP) and Type.is_list(stm.var.sym.typ):
+                    if stm.var.is_a(TEMP) and Type.is_seq(stm.var.sym.typ):
                         stms.append(stm)
         return stms
 
@@ -521,7 +543,7 @@ class MemRefGraphBuilder(IRVisitor):
         #usedefs = [s.usedef for s in scopes]
         for s in scopes:
             if s.is_ctor():
-                listtypes = [f for f, init_stm in s.parent.class_fields.items() if Type.is_list(f.typ)]
+                listtypes = [f for f, init_stm in s.parent.class_fields.items() if Type.is_seq(f.typ)]
                 if listtypes:
                     pass
 
@@ -541,7 +563,7 @@ class MemRefGraphBuilder(IRVisitor):
                 worklist.extend(list(uses))
             # collect the access to a global list variable
             for sym in usedef.get_all_use_syms():
-                if (sym.scope.is_global() or sym.scope.is_class()) and Type.is_list(sym.typ):
+                if (sym.scope.is_global() or sym.scope.is_class()) and Type.is_seq(sym.typ):
                     uses = usedef.get_use_stms_by_sym(sym)
                     worklist.extend(list(uses))
 
@@ -641,29 +663,39 @@ class MemRefGraphBuilder(IRVisitor):
 
     def visit_CALL(self, ir):
         for i, arg in enumerate(ir.args):
-            if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
+            if arg.is_a(TEMP) and Type.is_seq(arg.sym.typ):
                 p, _, _ = ir.func_scope.params[i]
                 self._append_edge(arg.sym, p)
 
     def visit_TEMP(self, ir):
-        if ir.sym.is_param() and Type.is_list(ir.sym.typ):
-            memsym = ir.sym
-            self.mrg.add_node(MemParamNode(memsym, self.scope))
-            memnode = self.mrg.node(memsym)
-            memsym.set_type(Type.list(Type.int_t, memnode))
+        if ir.sym.is_param():
+            if Type.is_seq(ir.sym.typ):
+                memsym = ir.sym
+                self.mrg.add_node(MemParamNode(memsym, self.scope))
+                memnode = self.mrg.node(memsym)
+                if Type.is_list(ir.sym.typ):
+                    memsym.set_type(Type.list(Type.int_t, memnode))
+                else:
+                    memsym.set_type(Type.tuple(Type.int_t, memnode, Type.length(ir.sym.typ)))
        
     def visit_ARRAY(self, ir):
         ir.sym = self.scope.add_temp('array')
         self.mrg.add_node(MemRefNode(ir.sym, self.scope))
         memnode = self.mrg.node(ir.sym)
         memnode.set_initstm(self.current_stm)
+
         if not all(item.is_a(CONST) for item in ir.items):
             memnode.set_writable()
-        ir.sym.set_type(Type.list(Type.int_t, memnode))
+        # TODO: element type
+        if ir.is_mutable:
+            ir.sym.set_type(Type.list(Type.int_t, memnode))
+        else:
+            memnode.set_immutable()
+            ir.sym.set_type(Type.tuple(Type.int_t, memnode, len(ir.items)))
 
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
-        if Type.is_list(memsym.typ):
+        if Type.is_seq(memsym.typ):
             if memsym.scope.is_global() or (ir.mem.is_a(ATTR) and Type.is_class(ir.mem.head().typ)):
                 # we have to create a new list symbol for adding the memnode
                 # because the list symbol in the global or a class (memsym) is
@@ -706,25 +738,36 @@ class MemRefGraphBuilder(IRVisitor):
         if ir.src.is_a(ARRAY):
             self.mrg.add_node(MemRefNode(memsym, self.scope))
             memnode = self.mrg.node(memsym)
-            memsym.set_type(Type.list(Type.int_t, memnode))
+            elem_t = Type.element(memsym.typ)
+            if Type.is_list(memsym.typ):
+                memsym.set_type(Type.list(elem_t, memnode))
+            else:
+                memsym.set_type(Type.tuple(elem_t, memnode, Type.length(memsym.typ)))
             self._append_edge(ir.src.sym, memsym)
-        elif ir.src.is_a(TEMP) and ir.src.sym.is_param() and Type.is_list(ir.src.sym.typ):
+        elif ir.src.is_a(TEMP) and ir.src.sym.is_param() and Type.is_seq(ir.src.sym.typ):
             self.mrg.add_node(MemRefNode(memsym, self.scope))
             memnode = self.mrg.node(memsym)
-            memsym.set_type(Type.list(Type.int_t, memnode))
+            elem_t = Type.element(memsym.typ)
+            if Type.is_list(memsym.typ):
+                memsym.set_type(Type.list(elem_t, memnode))
+            else:
+                memsym.set_type(Type.tuple(elem_t, memnode, Type.length(memsym.typ)))
             self._append_edge(ir.src.sym, memsym)
-        elif ir.src.is_a(ATTR) and Type.is_list(ir.src.attr.typ):
+        elif ir.src.is_a(ATTR) and Type.is_seq(ir.src.attr.typ):
             assert 0
 
 
     def visit_PHI(self, ir):
-        if Type.is_list(ir.var.sym.typ):
+        if Type.is_seq(ir.var.sym.typ):
             self.mrg.add_node(MemRefNode(ir.var.sym, self.scope))
             for arg in ir.args:
                 self._append_edge(arg.sym, ir.var.sym)
             memnode = self.mrg.node(ir.var.sym)
-            ir.var.sym.set_type(Type.list(Type.int_t, memnode))
-
+            elem_t = Type.element(ir.var.sym.typ)
+            if Type.is_list(ir.var.sym.typ):
+                ir.var.sym.set_type(Type.list(elem_t, memnode))
+            else:
+                ir.var.sym.set_type(Type.tuple(elem_t, memnode, Type.length(ir.var.sym.typ)))
 
 class MemInstanceGraphBuilder:
     def __init__(self):
@@ -742,9 +785,9 @@ class MemInstanceGraphBuilder:
         
         for i, arg in enumerate(ir.args):
             assert arg.is_a([TEMP, CONST, UNOP, ARRAY])
-            if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
+            if arg.is_a(TEMP) and Type.is_seq(arg.sym.typ):
                 p, _, _ = ir.func_scope.params[i]
-                assert Type.is_list(p.typ)
+                assert Type.is_seq(p.typ)
                 param_node = Type.extra(p.typ)
                 # param memnode might be removed in the rom elimination of ConstantFolding
                 if self.mrg.is_live_node(param_node):

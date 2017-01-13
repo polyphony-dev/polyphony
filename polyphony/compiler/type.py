@@ -23,6 +23,8 @@ class Type:
         elif t is cls.none_t: return 'n'
         elif cls.is_list(t):
             return 'l'
+        elif cls.is_tuple(t):
+            return 't'
         elif cls.is_object(t):
             return 'o'
         elif cls.is_class(t):
@@ -35,9 +37,9 @@ class Type:
         return ('list', src_typ, memnode)
 
     @classmethod
-    def tuple(cls, src_typ, memnode):
+    def tuple(cls, src_typ, memnode, length):
         assert src_typ is cls.int_t or src_typ is cls.bool_t
-        return ('tuple', src_typ, memnode)
+        return ('tuple', src_typ, memnode, length)
 
     @classmethod
     def function(cls, ret_typ, param_types):
@@ -111,18 +113,22 @@ class Type:
             return True
         if cls.is_list(t0) and cls.is_list(t1):
             return True
+        if cls.is_tuple(t0) and cls.is_tuple(t1):
+            return True
+        if t0 == t1:
+            return True
         return False
 
     @classmethod
     def element(cls, t):
-        if cls.is_list(t):
+        if cls.is_seq(t):
             return t[1]
         else:
             return t
 
     @classmethod
     def extra(cls, t):
-        if cls.is_list(t) or cls.is_class(t) or cls.is_object(t):
+        if cls.is_seq(t) or cls.is_class(t) or cls.is_object(t):
             return t[2]
         return None
 
@@ -134,4 +140,9 @@ class Type:
             return 32
         elif t is cls.bool_t:
             return 1
+
+    @classmethod
+    def length(cls, t):
+        assert cls.is_tuple(t)
+        return t[3]
 

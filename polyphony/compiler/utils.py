@@ -1,4 +1,4 @@
-def is_a(inst, cls):
+﻿def is_a(inst, cls):
     if isinstance(cls, list) or isinstance(cls, tuple):
         for c in cls:
             if isinstance(inst, c):
@@ -21,5 +21,8 @@ def remove_from_list(lst, removes):
     for r in removes:
         if r in lst:
             lst.remove(r)
+
+def unique(lst):
+    return sorted(list(set(lst)))
 
 

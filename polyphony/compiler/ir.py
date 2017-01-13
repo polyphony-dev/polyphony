@@ -109,6 +109,20 @@ class IR:
         find_vars_rec(self, qsym, vars)
         return vars
 
+    def find_irs(self, typ):
+        irs = []
+        def find_irs_rec(ir, typ, irs):
+            if isinstance(ir, IR):
+                if ir.is_a(typ):
+                    irs.append(ir)
+                for k, v in ir.__dict__.items():
+                    find_irs_rec(v, typ, irs)
+            elif isinstance(ir, list) or isinstance(ir, tuple):
+                for elm in ir:
+                    find_irs_rec(elm, typ, irs)
+        find_irs_rec(self, typ, irs)
+        return irs
+
 class IRExp(IR):
     def __init__(self):
         super().__init__()
@@ -256,20 +270,22 @@ class MSTORE(IRExp):
 
 
 class ARRAY(IRExp):
-    def __init__(self, items):
+    def __init__(self, items, is_mutable=True):
         super().__init__()
         self.items = items
         self.sym = None
         self.repeat = CONST(1)
+        self.is_mutable = is_mutable
 
     def __str__(self):
-        s = "(ARRAY ["
+        s = "(ARRAY "
+        s += '[' if self.is_mutable else '('
         if len(self.items) > 8:
             s += ', '.join(map(str, self.items[:10]))
             s += '...'
         else:
             s += ', '.join(map(str, self.items))
-        s += ']'
+        s += ']' if self.is_mutable else ')'
         if not (self.repeat.is_a(CONST) and self.repeat.value == 1):
             s += ' * ' + str(self.repeat)
         s += ")"
@@ -477,7 +493,7 @@ class PHIBase(IRStm):
     def _str_args(self):
         str_args = []
         if self.ps:
-            assert len(self.ps) == len(self.args)
+            #assert len(self.ps) == len(self.args)
             for arg, p in zip(self.args, self.ps):
                 if arg:
                     str_args.append('{}?{}'.format(p, arg))

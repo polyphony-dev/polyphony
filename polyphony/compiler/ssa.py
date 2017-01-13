@@ -82,6 +82,8 @@ class SSATransformerBase:
         phi.block = df
         phi.args = [CONST(0)] * len(df.preds)
         phi.defblks = [None] * len(df.preds)
+        phi.lineno = 1
+        var.lineno = 1
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
@@ -104,7 +106,7 @@ class SSATransformerBase:
         for var in using_vars:
             key = var.qualified_symbol()
             qcount[key] = 0
-            qstack[key] = [0]
+            qstack[key] = [(0, None)]
 
         self.new_syms = set()
         self._rename_rec(self.scope.entry_block, qcount, qstack)
@@ -123,17 +125,19 @@ class SSATransformerBase:
                 for use in self.usedef.get_use_vars_by_stm(stm):
                     assert use.is_a([TEMP, ATTR])
                     key = use.qualified_symbol()
-                    i = stack[key][-1]
+                    i, _ = stack[key][-1]
                     self._add_new_sym(use, i)
             #this loop includes PHI
             for d in self.usedef.get_def_vars_by_stm(stm):
+                #print(stm, d)
+                assert d.lineno > 0
                 assert d.is_a([TEMP, ATTR])
                 key = d.qualified_symbol()
                 if self._need_rename(d.symbol()):
                     logger.debug('count up ' + str(d) + ' ' + str(stm))
                     count[key] += 1
                 i = count[key]
-                stack[key].append(i)
+                stack[key].append((i, d))
                 self._add_new_sym(d, i)
                 if stm.is_a(PHI) and d.is_a(ATTR):
                     self._add_new_sym_rest(d.exp, stack)
@@ -154,11 +158,12 @@ class SSATransformerBase:
 
     def _add_new_phi_arg(self, phi, var, stack, block, is_tail_attr = True):
         key = var.qualified_symbol()
-        i = stack[key][-1]
+        i, v = stack[key][-1]
         if is_tail_attr:
             if i > 0:
                 var = var.clone()
                 var.ctx = Ctx.LOAD
+                var.lineno = v.lineno
                 idx = phi.block.preds.index(block)
                 phi.args[idx] = var
                 phi.defblks[idx] = block
@@ -181,7 +186,7 @@ class SSATransformerBase:
     def _add_new_sym_rest(self, var, stack):
         assert var.is_a([TEMP, ATTR])
         key = var.qualified_symbol()
-        i = stack[key][-1]
+        i, _ = stack[key][-1]
         self.new_syms.add((var, i))
         if var.is_a(ATTR):
             self._add_new_sym_rest(var.exp, stack)
@@ -276,7 +281,7 @@ class SSATransformerBase:
         usedef = self.scope.usedef
 
         for blk in self.scope.traverse_blocks():
-            phis = blk.collect_stms([PHI, UPHI])
+            phis = blk.collect_stms(PHI)
             if not phis:
                 continue
             phi_predicates = [pred.path_exp if pred.path_exp else CONST(1) for pred in blk.preds]
@@ -289,7 +294,60 @@ class ScalarSSATransformer(SSATransformerBase):
         super().__init__()
 
     def _need_rename(self, sym):
-        return not (sym.is_condition() or sym.is_temp() or sym.is_param() or sym.is_return() or Type.is_class(sym.typ) or Type.is_object(sym.typ))# or Type.is_list(sym.typ))
+        return not (sym.is_condition() or sym.is_param() or sym.is_return() or Type.is_class(sym.typ) or Type.is_object(sym.typ) or Type.is_tuple(sym.typ))
+
+from .tuple import TupleTransformer
+class TupleSSATransformer(SSATransformerBase):
+    def __init__(self):
+        super().__init__()
+
+    def process(self, scope):
+        if scope.is_class():
+            return
+        super().process(scope)
+        UseDefDetector().process(scope)
+        TupleTransformer().process(scope)
+        UseDefDetector().process(scope)
+        self._process_use_phi()
+
+    def _process_use_phi(self):
+        usedef = self.scope.usedef
+        for blk in self.scope.traverse_blocks():
+            phis = blk.collect_stms(PHI)
+            for phi in phis:
+                uses = usedef.get_use_stms_by_qsym(phi.var.qualified_symbol())
+                for use in uses:
+                    self._insert_use_phi(phi, use)
+
+    def _insert_use_phi(self, phi, use_stm):
+        insert_idx = use_stm.block.stms.index(use_stm)
+        use_mrefs = [ir for ir in use_stm.find_irs(MREF) if Type.is_tuple(ir.mem.symbol().typ)]
+        qsym = phi.var.qualified_symbol()
+        def replace_attr(mref, qsym, newmem):
+            if mref.mem.qualified_symbol() == qsym:
+                mref.mem = newmem
+                
+        for mref in use_mrefs:
+            if mref.mem.qualified_symbol() == qsym:
+                tmp = self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix, mref.mem.symbol().orig_name()))
+                var = TEMP(tmp, Ctx.STORE)
+                var.lineno = use_stm.lineno
+                uphi = UPHI(var)
+                uphi.lineno = use_stm.lineno
+                uphi.ps = phi.ps[:]
+                for arg in phi.args:
+                    argmref = mref.clone()
+                    argmref.lineno = use_stm.lineno
+                    argmref.mem = arg.clone()
+                    uphi.args.append(argmref)
+                use_stm.block.insert_stm(insert_idx, uphi)
+            var = var.clone()
+            var.ctx = Ctx.LOAD
+            use_stm.replace(mref, var)
+        pass
+
+    def _need_rename(self, sym):
+        return Type.is_tuple(sym.typ) and not sym.is_param()
 
 class ObjectSSATransformer(SSATransformerBase):
     def __init__(self):
@@ -323,7 +381,6 @@ class ObjectSSATransformer(SSATransformerBase):
         for use_attr in use_attrs:
             if Type.is_object(use_attr.attr.typ):
                 continue
-            #matched_part = extract_attr(use_attr, qsym)
             if use_attr.exp.qualified_symbol() == qsym:
                 uphi = UPHI(use_attr.clone())
                 uphi.lineno = use_stm.lineno

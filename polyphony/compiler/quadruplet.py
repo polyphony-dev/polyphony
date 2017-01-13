@@ -24,11 +24,15 @@ class QuadrupleMaker(IRTransformer):
 
     def _new_temp_move(self, ir, prefix):
         tmpsym = self.scope.add_temp(prefix)
-        mv = MOVE(TEMP(tmpsym, Ctx.STORE), ir)
+        t = TEMP(tmpsym, Ctx.STORE)
+        t.lineno = ir.lineno
+        mv = MOVE(t, ir)
         mv.lineno = ir.lineno
         assert mv.lineno >= 0
         self.new_stms.append(mv)
-        return TEMP(tmpsym, Ctx.LOAD)
+        t = TEMP(tmpsym, Ctx.LOAD)
+        t.lineno = ir.lineno
+        return t
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
@@ -182,7 +186,7 @@ class QuadrupleMaker(IRTransformer):
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
         assert ir.src.is_a([TEMP, ATTR, CONST, UNOP, BINOP, MREF, MSTORE, CALL, NEW, SYSCALL, ARRAY])
-        assert ir.dst.is_a([TEMP, ATTR, MREF])
+        assert ir.dst.is_a([TEMP, ATTR, MREF, ARRAY])
 
         if ir.dst.is_a(MREF):
             # For the sake of the memory analysis,

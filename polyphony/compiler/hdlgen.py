@@ -1,5 +1,5 @@
 ﻿from collections import OrderedDict, defaultdict, deque
-from .common import get_src_text, INT_WIDTH
+from .common import get_src_text
 from .env import env
 from .stg import STG, State
 from .symbol import Symbol
@@ -7,7 +7,7 @@ from .ir import Ctx, CONST, ARRAY, MOVE
 from .ahdl import *
 #from collections import namedtuple
 from .hdlmoduleinfo import HDLModuleInfo
-from .hdlmemport import HDLMemPortMaker
+from .hdlmemport import HDLMemPortMaker, HDLRegArrayPortMaker
 from .type import Type
 from .hdlinterface import *
 from .memref import *
@@ -105,9 +105,9 @@ class HDLGenPreprocessor:
                 source_scope = list(source.scopes)[0]
                 if source_scope.is_class(): # class field rom
                     hdl_name = source_scope.orig_name + '_field_' + hdl_name
-            output_sig = scope.gen_sig(hdl_name, INT_WIDTH) #TODO
+            output_sig = scope.gen_sig(hdl_name, memnode.width) #TODO
             fname = AHDL_VAR(output_sig, Ctx.STORE)
-            input_sig = scope.gen_sig(hdl_name+'_in', INT_WIDTH) #TODO
+            input_sig = scope.gen_sig(hdl_name+'_in', memnode.width) #TODO
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             if source:
@@ -161,9 +161,13 @@ class HDLGenPreprocessor:
 
         self._add_internal_ports(module_name, locals)
 
-        for memnode in self.mrg.collect_writable(scope):
-            memportmaker = HDLMemPortMaker(memnode, scope, self.module_info)
-            memportmaker.make_port()
+        for memnode in self.mrg.collect_ram(scope):
+            HDLMemPortMaker(memnode, scope, self.module_info).make_port()
+
+        for memnode in self.mrg.collect_immutable(scope):
+            if not memnode.is_writable():
+                continue
+            HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
 
         self._add_submodules(scope)
 
@@ -218,10 +222,9 @@ class HDLGenPreprocessor:
             self._add_internal_ports(s.orig_name, locals)
             self._add_state_register(s.orig_name, s)
             self._add_submodules(s)
-            for memnode in self.mrg.collect_writable(s):
-                memnode
-                memportmaker = HDLMemPortMaker(memnode, s, self.module_info)
-                memportmaker.make_port()
+            for memnode in self.mrg.collect_ram(s):
+                memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
+
             self._add_roms(s)
         # I/O port for class fields
         
@@ -290,6 +293,9 @@ class Phase1Preprocessor:
         #    raise RuntimeError('free variable is not supported yet.\n' + text)
 
     def visit_AHDL_MEMVAR(self, ahdl):
+        pass
+
+    def visit_AHDL_SUBSCRIPT(self, ahdl):
         pass
 
     def visit_AHDL_OP(self, ahdl):

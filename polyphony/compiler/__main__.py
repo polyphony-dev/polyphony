@@ -2,7 +2,7 @@
 from optparse import OptionParser
 from .driver import Driver
 from .env import env
-from .common import read_source, src_text
+from .common import read_source, src_text, get_src_text
 from .scope import Scope
 from .block import BlockReducer, PathExpTracer
 from .symbol import Symbol
@@ -15,7 +15,7 @@ from .veritestgen import VerilogTestGen
 from .treebalancer import TreeBalancer
 from .stg import STGBuilder
 from .dataflow import DFGBuilder
-from .ssa import ScalarSSATransformer, ObjectSSATransformer
+from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .usedef import UseDefDetector
 from .scheduler import Scheduler
 from .phiresolve import PHICondResolver
@@ -31,6 +31,7 @@ from .selectorbuilder import SelectorBuilder
 from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
 from .copyopt import CopyOpt
 from .callgraph import CallGraphBuilder
+from .tuple import TupleTransformer
 
 import logging
 logger = logging.getLogger()
@@ -53,8 +54,6 @@ def preprocess_global(driver):
 
     for s in (s for s in scopes if s.is_global() or s.is_class()):
         GlobalConstantOpt().process(s)
-
-    TypePropagation().propagate_global_function_type()
 
 def callgraph(driver, scope):
     CallGraphBuilder().process(scope)
@@ -90,6 +89,9 @@ def meminstgraph(driver, scope):
 def memrename(driver, scope):
     MemoryRenamer().process(scope)
 
+def earlytypeprop(driver):
+    TypePropagation().propagate_global_function_type()
+
 def typeprop(driver, scope):
     TypePropagation().process(scope)
 
@@ -118,6 +120,7 @@ def inlineopt(driver):
         env.remove_scope(s)
 
 def scalarize(driver, scope):
+    TupleSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
     usedef(driver, scope)
     ObjectSSATransformer().process(scope)
@@ -145,6 +148,7 @@ def tbopt(driver, scope):
         SimpleLoopUnroll().process(scope)
         LoopBlockDestructor().process(scope)
         usedef(driver, scope)
+        TupleSSATransformer().process(scope)
         scalarssa(driver, scope)
         dumpscope(driver, scope)
         usedef(driver, scope)
@@ -218,22 +222,23 @@ def dumpmodule(driver, scope):
 def dumphdl(driver, scope):
     logger.debug(driver.result(scope))
 
-
 def compile_plan():
     def dbg(proc):
         return proc if env.dev_debug_mode else None
 
     plan = [
         preprocess_global,
+        iftrans,
+        reduceblk,
+        quadruple,
+        earlytypeprop,
+        typecheck,
+        dbg(dumpscope),
         callgraph,
         dbg(dumpscope),
         phase(env.PHASE_1),
-        iftrans,
-        reduceblk,
         dbg(dumpscope),
         earlyconstopt_nonssa,
-        quadruple,
-        typeprop,
         dbg(dumpscope),
         classcheck,
         inlineopt,
@@ -245,7 +250,6 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         scalarssa,
-        usedef,
         dbg(dumpscope),
         usedef,
         typeprop,
@@ -259,8 +263,6 @@ def compile_plan():
         usedef,
         memrefgraph,
         dbg(dumpmrg),
-        dbg(dumpscope),
-        typecheck,
         dbg(dumpscope),
         constopt_pre_detectrom,
         detectrom,

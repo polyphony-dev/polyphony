@@ -1,13 +1,4 @@
-import profile
 from polyphony import testbench
-
-#
-#+--------------------------------------------------------------------------+
-#| * Test Vectors (added for CHStone)                                       |
-#|     A : input data                                                       |
-#|     outData : expected output data                                       |
-#+--------------------------------------------------------------------------+
-#
 
 R = 0
 ADDU = 33
@@ -48,6 +39,9 @@ def mips_main(imem:list, dmem:list):
     def DADDR(x):
         return (((x)&0x000000ff)>>2)
 
+    #hilo = 0
+    #Hi = 0
+    #Lo = 0
     n_inst = 0
 
     reg = [0]*32
@@ -59,7 +53,7 @@ def mips_main(imem:list, dmem:list):
         iaddr = IADDR(pc)
         ins = imem[iaddr]
         pc = pc + 4
-        op = ins >> 26
+        op = (ins >> 26) & 0x3f
         if op == R:
             funct = ins & 0x3f
             shamt = (ins >> 6) & 0x1f
@@ -178,7 +172,7 @@ def mips_main(imem:list, dmem:list):
                 pc = 0; # error
 
         reg[0] = 0
-        n_inst += 1
+        n_inst = n_inst + 1
         if pc == 0:
             break
 
@@ -186,6 +180,12 @@ def mips_main(imem:list, dmem:list):
 
 @testbench
 def test():
+    #+--------------------------------------------------------------------------+
+    #| * Test Vectors (added for CHStone)                                       |
+    #|     A : input data                                                       |
+    #|     outData : expected output data                                       |
+    #+--------------------------------------------------------------------------+
+ 
     imem = [
         0x8fa40000,	# [0x00400000]  lw $4, 0($29)       ; 175: lw $a0 0($sp)    # argc
         0x27a50004,	# [0x00400004]  addiu $5, $29, 4    ; 176: addiu $a1 $sp 4  # argv
@@ -234,15 +234,20 @@ def test():
     ]
 
     inputs = [ 22, 5, -9, 3, -17, 38, 0, 11 ]
-    dmem = [0] * 64
+    outData = [-17, -9, 0, 3, 5, 11, 22, 38 ]
+
+    dmem = [None]*64
     for i in range(8):
         dmem[i] = inputs[i]
 
     main_result = 611 != mips_main(imem, dmem)
-    for i in range(0, 8):
-        print(dmem[i])
+
+    for j in range(8):
+        print(dmem[j])
+        main_result += (dmem[j] != outData[j])
     for i in range(1, 8):
         main_result += dmem[i-1] > dmem[i]
-    assert main_result == 0
+
+    assert 0 == main_result
 
 test()

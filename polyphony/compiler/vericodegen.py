@@ -133,8 +133,7 @@ class VerilogCodeGen:
             if not i.is_public:
                 continue
             for p in i.ports:
-                if isinstance(p, tuple):
-                    ports.append(self._to_io_name(self.module_info.name, i, p))
+                ports.append(self._to_io_name(self.module_info.name, i, p))
         self.emit((',\n'+self.tab()).join(ports))
         self.emit('')
                 
@@ -186,28 +185,27 @@ class VerilogCodeGen:
         io = 'input' if port.dir=='in' else 'output'
         typ = 'wire' if port.dir=='in' or interface.thru or isinstance(interface, InstanceInterface) else 'reg'
         port_name = interface.port_name(module_name, port)
+
         if port.width == 1:
-            return '{} {} {}'.format(io, typ, port_name)
+            ioname = '{} {} {}'.format(io, typ, port_name)
         else:
-            return '{} {} signed [{}:0] {}'.format(io, typ, port.width-1, port_name)
-        
+            ioname = '{} {} signed [{}:0] {}'.format(io, typ, port.width-1, port_name)
+        return ioname
+
     def _to_signal_name(self, instance_name, interface, port):
-        if isinstance(port, tuple):
-            accessor_name = interface.port_name(instance_name, port)
-            typ = 'reg' if port.dir=='in' and not interface.thru else 'wire'                
-            if port.width == 1:
-                return '{} {};\n'.format(typ, accessor_name)
-            else:
-                return '{} signed [{}:0] {};\n'.format(typ, port.width-1, accessor_name)
+        accessor_name = interface.port_name(instance_name, port)
+        typ = 'reg' if port.dir=='in' and not interface.thru else 'wire'
+        if port.width == 1:
+            signame = '{} {};\n'.format(typ, accessor_name)
+        else:
+            signame = '{} signed [{}:0] {};\n'.format(typ, port.width-1, accessor_name)
+        return signame
 
     def _to_sub_module_connect(self, module_name, instance_name, interface, port):
-        if isinstance(port, tuple):
-            port_name = interface.port_name(module_name, port)
-            accessor_name = interface.port_name("sub_"+instance_name, port)# self._accessor_name(instance_name, interface, port)
-            return '.{}({})'.format(port_name, accessor_name)
-
-
-
+        port_name = interface.port_name(module_name, port)
+        accessor_name = interface.port_name("sub_"+instance_name, port)# self._accessor_name(instance_name, interface, port)
+        connection = '.{}({})'.format(port_name, accessor_name)
+        return connection
                 
     def _generate_sub_module_instances(self):
         if not self.module_info.sub_modules:
@@ -404,6 +402,9 @@ class VerilogCodeGen:
     def visit_AHDL_MEMVAR(self, ahdl):
         assert 0
 
+    def visit_AHDL_SUBSCRIPT(self, ahdl):
+        return '{}[{}]'.format(ahdl.memvar.sig.name, self.visit(ahdl.offset))
+
     def visit_AHDL_SYMBOL(self, ahdl):
         return ahdl.name
 
@@ -462,7 +463,7 @@ class VerilogCodeGen:
         elif ahdl.dst.is_a(AHDL_MEMVAR) and ahdl.src.is_a(AHDL_MEMVAR):
             memnode = ahdl.dst.memnode
             assert memnode
-            if memnode.is_joinable():
+            if memnode.is_joinable() and not memnode.is_immutable():
                 self._memswitch('', ahdl.dst.memnode, ahdl.src.memnode)
         else:
             src = self.visit(ahdl.src)
@@ -614,7 +615,7 @@ class VerilogCodeGen:
         for arg, param in zip(ahdl.args, params):
             p, _, _ = param            
             if arg.is_a(AHDL_MEMVAR):
-                assert Type.is_list(p.typ)
+                assert Type.is_seq(p.typ)
                 param_memnode = Type.extra(p.typ)
                 # find joint node in outer scope
                 assert len(param_memnode.preds) == 1
@@ -649,7 +650,7 @@ class VerilogCodeGen:
             if exp.startswith('cond'):
                 remove_assign = []
                 for tag, assign in self.module_info.get_static_assignment():
-                    if assign.dst.sig.name == exp:
+                    if assign.dst.is_a(AHDL_VAR) and assign.dst.sig.name == exp:
                         remove_assign.append((tag, assign))
                         expsig = self.scope.gen_sig(exp, 1)
                         self.module_info.remove_internal_net(expsig)
@@ -673,16 +674,23 @@ class VerilogCodeGen:
 
     def visit_AHDL_REG_ARRAY_DECL(self, ahdl):
         if ahdl.sig.width == 1:
-            self.emit('reg {}[0:{}];'.format(ahdl.sig.name, size-1))
+            self.emit('reg {}[0:{}];'.format(ahdl.sig.name, ahdl.size-1))
         else:
             sign = 'signed' if ahdl.sig.is_int() else ''
-            self.emit('reg {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, size-1))
+            self.emit('reg {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
 
     def visit_AHDL_NET_DECL(self, ahdl):
         if ahdl.sig.width == 1:
             self.emit('wire {};'.format(ahdl.sig.name))
         else:
             self.emit('wire {};'.format(self._generate_signal(ahdl.sig)))
+
+    def visit_AHDL_NET_ARRAY_DECL(self, ahdl):
+        if ahdl.sig.width == 1:
+            self.emit('wire {}[0:{}];'.format(ahdl.sig.name, ahdl.size-1))
+        else:
+            sign = 'signed' if ahdl.sig.is_int() else ''
+            self.emit('wire {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
 
     def visit_AHDL_ASSIGN(self, ahdl):
         src = self.visit(ahdl.src)

@@ -74,6 +74,7 @@ class VarReplacer:
         if ir.sym is self.replace_dst.symbol():
             self.replaced = True
             rep = self.replace_src.clone()
+            rep.lineno = ir.lineno
             return rep
         return ir
 
@@ -81,6 +82,7 @@ class VarReplacer:
         if ir.qualified_symbol() == self.replace_dst.qualified_symbol():
             self.replaced = True
             rep = self.replace_src.clone()
+            rep.lineno = ir.lineno
             return rep
         else:
             ir.exp = self.visit(ir.exp)

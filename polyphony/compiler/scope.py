@@ -16,10 +16,10 @@ class Scope:
     ordered_scopes = []
     
     @classmethod
-    def create(cls, parent, name = None, attributes = []):
+    def create(cls, parent, name = None, attributes = [], lineno = 0):
         if name is None:
             name = "unnamed_scope" + str(len(env.scopes))
-        s = Scope(parent, name, attributes)
+        s = Scope(parent, name, attributes, lineno)
         assert s.name not in env.scopes
         env.append_scope(s)
         return s
@@ -36,7 +36,7 @@ class Scope:
             return scopes
 
         cls.reorder_scopes()
-        cls.ordered_scopes = sorted(env.scopes.values(), key=lambda s: s.order)
+        cls.ordered_scopes = sorted(env.scopes.values())
 
         return ret_helper(contain_global, bottom_up)
 
@@ -67,7 +67,7 @@ class Scope:
     def global_scope(cls):
         return env.scopes['@top']
 
-    def __init__(self, parent, name, attributes):
+    def __init__(self, parent, name, attributes, lineno):
         self.name = name
         self.orig_name = name
         self.parent = parent
@@ -76,6 +76,7 @@ class Scope:
             parent.append_child(self)
 
         self.attributes = attributes
+        self.lineno = lineno
         self.symbols = {}
         self.params = []
         self.return_type = None
@@ -109,7 +110,7 @@ class Scope:
         s += '================================\n'
         s += 'Parameters\n'
         for p, copy, val in self.params:
-            s += '{} = {}\n'.format(p, val)
+            s += '{}:{} = {}\n'.format(p, p.typ[0], val)
         s += "\n"
         s += '================================\n'
         for blk in self.traverse_blocks(longitude=True):
@@ -121,7 +122,7 @@ class Scope:
         return self.name
 
     def __lt__(self, other):
-        return self.order < other.order
+        return (self.order, self.lineno) < (other.order, other.lineno)
 
     def clone_symbols(self, scope, postfix = ''):
         symbol_map = {}
@@ -161,7 +162,7 @@ class Scope:
         name = prefix + '_' if prefix else ''
         name += self.orig_name
         name = name + '_' + postfix if postfix else name
-        s = Scope(self.parent, name, self.attributes)
+        s = Scope(self.parent, name, self.attributes, self.lineno)
 
         symbol_map = self.clone_symbols(s)
 
@@ -233,8 +234,6 @@ class Scope:
         return sym
 
     def add_temp(self, name):
-        if name in self.symbols:
-            raise RuntimeError("symbol '{}' is already registered ".format(name))
         sym = Symbol.newtemp(name, self)
         self.symbols[sym.name] = sym
         return sym
@@ -348,7 +347,7 @@ class Scope:
     def is_testbench(self):
         return 'testbench' in self.attributes
 
-    def is_main(self):
+    def is_top(self):
         return 'top' in self.attributes
 
     def is_class(self):

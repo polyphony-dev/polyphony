@@ -281,13 +281,13 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope is not self.scope:
+        if ir.sym.scope is not self.scope and ir.sym.scope.is_global():
             c = try_get_constant(ir.sym, ir.sym.scope)
             if c:
                 return c
             else:
                 print(error_info(ir.lineno))
-                raise RuntimeError('global variable is must assigned to constant value')
+                raise RuntimeError('global variable must be a constant value')
         return ir
 
     def visit_ATTR(self, ir):
@@ -297,7 +297,7 @@ class ConstantOpt(ConstantOptBase):
                 return c
             else:
                 print(error_info(ir.lineno))
-                raise RuntimeError('class variable is must assigned to constant value')
+                raise RuntimeError('class variable must be a constant value')
         return ir
 
     def visit_PHI(self, ir):

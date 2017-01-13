@@ -16,6 +16,7 @@ DIRS = (
     'loop',
     'return',
     'list',
+    'tuple',
     'scope',
     'func',
     'parallel',
