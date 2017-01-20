@@ -1,111 +1,122 @@
 ﻿import ast
+from collections import namedtuple
 
 class Type:
-    @classmethod
-    def from_annotation(cls, ann):
-        if isinstance(ann, ast.Name):
-            if ann.id == 'int':
-                return Type.int_t
-            elif ann.id == 'list':
-                return cls.list(cls.int_t, None)
-            elif ann.id == 'tuple':
-                return cls.tuple(cls.int_t, None, 0)
-            elif ann.id == 'object':
-                return cls.object(None, None)
-        return Type.int_t
+    def __init__(self, name, **attrs):
+        self.name = name
+        self.attrs = attrs
 
-    int_t = ('int',)
-    bool_t = ('bool',)
-    none_t = ('none',)
-
-    @classmethod
-    def str(cls, t):
-        if t is cls.int_t: return 'i'
-        elif t is cls.bool_t: return 'b'
-        elif t is cls.none_t: return 'n'
-        elif cls.is_list(t):
-            return 'l'
-        elif cls.is_tuple(t):
-            return 't'
-        elif cls.is_object(t):
-            return 'o'
-        elif cls.is_class(t):
-            return 'c'
+    def __getattr__(self, name):
+        if name.startswith('is_'):
+            typename = name[3:]
+            return lambda : self.name == typename
+        elif name.startswith('get_'):
+            attrname = name[4:]
+            if attrname not in self.attrs:
+                raise AttributeError(name)
+            return lambda : self.attrs[attrname]
+        elif name.startswith('set_'):
+            attrname = name[4:]
+            return lambda v: self.attrs.update({attrname:v})
+        elif name.startswith('has_'):
+            attrname = name[4:]
+            return lambda : attrname in self.attrs
         else:
-            return 'n'
-    @classmethod
-    def list(cls, src_typ, memnode):
-        assert src_typ is cls.int_t or src_typ is cls.bool_t
-        return ('list', src_typ, memnode)
+            raise AttributeError(name)
 
     @classmethod
-    def tuple(cls, src_typ, memnode, length):
-        assert src_typ is cls.int_t or src_typ is cls.bool_t
-        return ('tuple', src_typ, memnode, length)
+    def from_annotation(cls, ann, scope):
+        if isinstance(ann, str):
+            if ann == 'int':
+                return Type.int_t
+            elif ann == 'bool':
+                return Type.bool_t
+            elif ann == 'list':
+                return Type.list(cls.int_t, None)
+            elif ann == 'tuple':
+                return Type.tuple(cls.int_t, None, 0)
+            elif ann == 'object':
+                return Type.object(None)
+        elif isinstance(ann, tuple):
+            qnames = ann[0].split('.')
+            args = ann[1]
+            target = scope
+            for qname in qnames:
+                sym = target.find_sym(qname)
+                if not sym or (not sym.typ.is_namespace() and not sym.typ.is_class()):
+                    return None
+                target = sym.typ.get_scope()
+                if not target:
+                    return None
+            if target.is_port():
+                ctor = target.find_ctor()
+                attrs = {}
+                for i, (_, copy, defval) in enumerate(ctor.params[1:]):
+                    if i >= len(args):
+                        attrs[copy.name] = defval.value
+                    else:
+                        attrs[copy.name] = args[i]
+                p = Type.port(target, attrs)
+                return p
+        return None
+
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return 'Type({}, {})'.format(repr(self.name), repr(self.attrs))
 
     @classmethod
-    def function(cls, ret_typ, param_types):
-        return ('func', ret_typ, param_types)
+    def list(cls, elm_t, memnode):
+        assert elm_t is cls.int_t or elm_t is cls.bool_t
+        return Type('list', element=elm_t, memnode=memnode)
 
     @classmethod
-    def object(cls, src_typ, scope):
-        return ('object', src_typ, scope)
+    def tuple(cls, elm_t, memnode, length):
+        assert elm_t is cls.int_t or elm_t is cls.bool_t
+        return Type('tuple', element=elm_t, memnode=memnode, length=length)
 
     @classmethod
-    def klass(cls, src_typ, scope):
-        return ('class', src_typ, scope)
+    def function(cls, scope, ret_t, param_ts):
+        return Type('function', scope=scope, retutn_type=ret_t, param_types=param_ts)
 
     @classmethod
-    def funcdef(cls):
-        return ('funcdef',)
+    def object(cls, scope):
+        return Type('object', scope=scope)
 
     @classmethod
-    def classdef(cls):
-        return ('classdef',)
+    def klass(cls, scope):
+        return Type('class', scope=scope)
+
+    #@classmethod
+    #def funcdef(cls):
+    #    return Type('funcdef')
+
+    #@classmethod
+    #def classdef(cls):
+    #    return Type('classdef')
 
     @classmethod
-    def is_none(cls, t):
-        return t is cls.none_t
+    def port(cls, portcls, attrs):
+        assert isinstance(attrs, dict)
+        d =  {'scope':portcls}
+        d.update(attrs)
+        return Type('port', **d)
 
     @classmethod
-    def is_int(cls, t):
-        return t is cls.int_t
+    def namespace(cls, scope):
+        return Type('namespace', scope=scope)
+
+    def is_seq(self):
+        return self.name == 'list' or self.name == 'tuple'
+
+    def is_scalar(self):
+        return self.name == 'int' or self.name == 'bool'
 
     @classmethod
-    def is_list(cls, t):
-        return isinstance(t, tuple) and t[0] == 'list'
-
-    @classmethod
-    def is_tuple(cls, t):
-        return isinstance(t, tuple) and t[0] == 'tuple'
-
-    @classmethod
-    def is_seq(cls, t):
-        return cls.is_list(t) or cls.is_tuple(t)
-
-    @classmethod
-    def is_scalar(cls, t):
-        return t is cls.int_t or t is cls.bool_t
-
-    @classmethod
-    def is_function(cls, t):
-        return isinstance(t, tuple) and t[0] == 'func'
-
-    @classmethod
-    def is_object(cls, t):
-        return isinstance(t, tuple) and t[0] == 'object'
-
-    @classmethod
-    def is_class(cls, t):
-        return isinstance(t, tuple) and t[0] == 'class'
-
-    @classmethod
-    def is_funcdef(cls, t):
-        return isinstance(t, tuple) and t[0] == 'funcdef'
-
-    @classmethod
-    def is_classdef(cls, t):
-        return isinstance(t, tuple) and t[0] == 'classdef'
+    def is_same(cls, t0, t1):
+        return t0.name == t1.name
 
     @classmethod
     def is_commutable(cls, t0, t1):
@@ -113,38 +124,27 @@ class Type:
             return True
         if t0 is cls.bool_t and t1 is cls.int_t or t0 is cls.int_t and t1 is cls.bool_t:
             return True
-        if cls.is_list(t0) and cls.is_list(t1):
+        if t0.is_list() and t1.is_list():
             return True
-        if cls.is_tuple(t0) and cls.is_tuple(t1):
+        if t0.is_tuple() and t1.is_tuple():
+            return True
+        if t0.is_object() and t1.is_object() and t0.get_scope() is t1.get_scope():
+            return True
+        if t0.is_object() and t1.is_port() and t0.get_scope() is t1.get_scope():
+            return True
+        if t1.is_object() and t0.is_port() and t0.get_scope() is t1.get_scope():
             return True
         if t0 == t1:
             return True
         return False
 
-    @classmethod
-    def element(cls, t):
-        if cls.is_seq(t):
-            return t[1]
-        else:
-            return t
+    def freeze(self):
+        self.attrs['freezed'] = True
 
-    @classmethod
-    def extra(cls, t):
-        if cls.is_seq(t) or cls.is_class(t) or cls.is_object(t):
-            return t[2]
-        return None
+    def is_freezed(self):
+        return 'freezed' in self.attrs and self.attrs['freezed'] is True
 
-    @classmethod
-    def width(cls, t):
-        assert cls.is_scalar(t)
-        if cls.is_int(t):
-            # TODO
-            return 32
-        elif t is cls.bool_t:
-            return 1
-
-    @classmethod
-    def length(cls, t):
-        assert cls.is_tuple(t)
-        return t[3]
+Type.int_t = Type('int', width=32)
+Type.bool_t = Type('bool', width=1)
+Type.none_t = Type('none')
 

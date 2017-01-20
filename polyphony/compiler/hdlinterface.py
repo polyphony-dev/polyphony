@@ -22,9 +22,6 @@ class Interface:
         ports = '{' + ', '.join(['<{}:{}:{}>'.format(p.basename, p.width, p.dir) for p in self.ports]) + '}'
         return self.name
 
-    def __repr__(self):
-        return self.__class__.__name__ + ':' + self.name
-
     def __lt__(self, other):
         return self.name < other.name
 
@@ -34,7 +31,7 @@ class Interface:
         self.ports = [Port(p.basename, p.width, flip(p.dir)) for p in self.ports]
 
     def clone(self):
-        pass
+        assert False
 
     def inports(self):
         for p in self.ports:
@@ -56,6 +53,15 @@ class Interface:
         else:
             assert port.basename
             return pfx + port.basename
+
+class TopInterface(Interface):
+    def port_name(self, prefix, port):
+        return port.basename
+
+    def clone(self):
+        inf = TopInterface(self.name, self.thru, self.is_public)
+        inf.ports = list(self.ports)
+        return inf
 
 class FunctionInterface(Interface):
     def __init__(self, name, thru = False, is_method = False):
@@ -110,17 +116,28 @@ class RAMAccessInterface(RAMInterface):
         
 class RegArrayInterface(Interface):
     def __init__(self, name, data_width, length):
-        super().__init__('', thru=True, is_public=True)
+        super().__init__(name, thru=True, is_public=True)
         self.data_width = data_width
         self.length = length
         for i in range(length):
-            pname = '{}{}'.format(name, i)
+            pname = '{}'.format(i)
             self.ports.append(Port(pname, data_width, 'in'))
 
     def clone(self):
         inf = RegArrayInterface(self.name, self.data_width, self.length)
         inf.ports = list(self.ports)
         return inf
+
+    def port_name(self, prefix, port):
+        pfx = prefix+'_' if prefix else ''
+        if self.name:
+            if port.basename:
+                return pfx + '{}{}'.format(self.name, port.basename)
+            else:
+                return pfx + self.name
+        else:
+            assert port.basename
+            return pfx + port.basename
 
 class RegFieldInterface(Interface):
     def __init__(self, field_name, width):
@@ -145,7 +162,7 @@ class InstanceInterface(Interface):
         self.ports = list(inf.ports)
 
     def __str__(self):
-        return self.sym.name + '_' + self.inf.name
+        return self.name + '_' + self.inf.name
 
 
 class Interconnect:

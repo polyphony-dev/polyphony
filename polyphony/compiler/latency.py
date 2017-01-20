@@ -26,6 +26,9 @@ def get_latency(tag):
         elif tag.src.is_a(MSTORE):
             return MINIMUM_STEP * 1
     elif tag.is_a(EXPR):
-        if tag.exp.is_a( CALL):
+        if tag.exp.is_a(CALL):
             return CALL_MINIMUM_STEP
+        elif tag.exp.is_a(SYSCALL):
+            if tag.exp.name == '$toprun':
+                return tag.exp.args[1].value
     return MINIMUM_STEP

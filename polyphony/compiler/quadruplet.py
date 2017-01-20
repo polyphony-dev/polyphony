@@ -65,7 +65,7 @@ class QuadrupleMaker(IRTransformer):
             #        array.items = [item.clone() for item in array.items * time]
             #    return array
             else:
-                print(error_info(ir.lineno))
+                print(error_info(self.scope, ir.lineno))
                 raise RuntimeError('unsupported expression')
 
         if suppress:
@@ -97,6 +97,8 @@ class QuadrupleMaker(IRTransformer):
 
         ir.func = self.visit(ir.func)
         self._visit_args(ir)
+        if ir.func.is_a(ATTR) and ir.func.attr_scope.is_top() and ir.func.symbol().name == 'run':
+            return SYSCALL('$toprun', [ir.func.exp] + ir.args)
 
         if suppress or not self._has_return_type(ir):
             return ir

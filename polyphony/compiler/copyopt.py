@@ -72,7 +72,7 @@ class CopyCollector(IRVisitor):
         if ir.dst.sym.is_return():
             return
         if ir.src.is_a(TEMP):
-            if ir.src.sym.is_param():# or Type.is_list(ir.src.sym.typ):
+            if ir.src.sym.is_param():# or ir.src.sym.typ.is_list():
                 return
             self.copies.append(ir)
 

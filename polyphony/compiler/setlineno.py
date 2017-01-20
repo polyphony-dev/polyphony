@@ -129,27 +129,27 @@ class SourceDump(IRVisitor):
 
     def visit_EXPR(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_CJUMP(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_MCJUMP(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_JUMP(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_RET(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_MOVE(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_PHI(self, ir):
         pass

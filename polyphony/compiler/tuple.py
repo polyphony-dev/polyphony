@@ -73,7 +73,7 @@ class TupleTransformer(IRTransformer):
                     mv.src.lineno = ir.lineno
                     self.new_stms.append(mv)
                 return
-            elif ir.src.is_a([TEMP, ATTR]) and Type.is_tuple(ir.src.symbol().typ):
+            elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol().typ.is_tuple():
                 mvs = self._unpack(ir.dst.items, self._make_mrefs(ir.src, len(ir.dst.items)))
                 for mv in mvs:
                     mv.lineno = ir.lineno

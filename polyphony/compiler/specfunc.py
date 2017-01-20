@@ -35,14 +35,17 @@ class SpecializedFunctionMaker:
             if caller.is_testbench():
                 using_scopes.add(callee)
                 continue
+            if callee.is_builtin():
+                using_scopes.add(callee)
+                continue
 
             for call in calls:
                 binding = []
                 for i, arg in enumerate(call.args):
                     if arg.is_a(CONST):
                         binding.append((self.bind_val, i, arg.value))
-                    elif arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                        memnode = Type.extra(arg.sym.typ)
+                    elif arg.is_a(TEMP) and arg.sym.typ.is_list():
+                        memnode = arg.sym.typ.get_memnode()
                         if not memnode.is_writable() and not memnode.pred_branch():
                             binding.append((self.bind_rom, i, memnode))
                 if binding:

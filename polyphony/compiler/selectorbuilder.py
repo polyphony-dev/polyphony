@@ -141,11 +141,13 @@ class SelectorBuilder:
 
     def _build_sub_module_selectors(self):
         for name, info, accessors, sub_infs, param_map in self.module_info.sub_modules.values():
+            if info.scope and info.scope.is_top():
+                continue
             infs = []
             for a in accessors:
                 if not a.is_public:
                     continue
-                infs.extend(sub_infs[a.name])
+                infs.append(sub_infs[a.name])
             infs = unique(infs)
             for inf in infs:
                 trunk = {}

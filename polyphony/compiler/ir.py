@@ -326,13 +326,13 @@ class TEMP(IRExp):
         return (self.sym, )
 
 class ATTR(IRExp):
-    def __init__(self, exp, attr, ctx):
+    def __init__(self, exp, attr, ctx, attr_scope = None):
         super().__init__()
         self.exp = exp
         self.attr = attr
         self.ctx = ctx
+        self.attr_scope = attr_scope
         self.exp.ctx = Ctx.LOAD
-        self.class_scope = None
 
     def __str__(self):
         return '{}.{}'.format(self.exp, self.attr)
@@ -354,7 +354,7 @@ class ATTR(IRExp):
     
     def tail(self):
         if self.exp.is_a(ATTR):
-            assert isinstance(self.exp.attr, Symbol)
+            #assert isinstance(self.exp.attr, Symbol)
             return self.exp.attr
         return self.exp.sym
 

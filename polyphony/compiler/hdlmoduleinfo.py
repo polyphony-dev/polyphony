@@ -113,22 +113,17 @@ class HDLModuleInfo:
     def add_sub_module(self, name, module_info, accessors, param_map=None):
         assert isinstance(name, str)
         is_public = self.scope.is_class()
-        sub_infs = defaultdict(list)
+        sub_infs = {}
         for inf in accessors:
             if not inf.is_public:
                 continue
-            if module_info.scope and module_info.scope.is_class():
-                fieldif = InstanceInterface(inf, name, module_info.scope, is_public=is_public)
-                self.add_interface(fieldif)
-                sub_infs[inf.name].append(fieldif)
+            fieldif = inf.clone()
+            if fieldif.name:
+                fieldif.name = name + '_' + fieldif.name
             else:
-                fieldif = inf.clone()
-                if fieldif.name:
-                    fieldif.name = name + '_' + fieldif.name
-                else:
-                    fieldif.name = name
-                fieldif.is_public = False
-                sub_infs[inf.name].append(fieldif)
+                fieldif.name = name
+            fieldif.is_public = False
+            sub_infs[inf.name] = fieldif
         self.sub_modules[name] = (name, module_info, accessors, sub_infs, param_map)
 
     def add_function(self, func, tag=''):

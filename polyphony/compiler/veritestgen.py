@@ -6,6 +6,7 @@ from .vericodegen import VerilogCodeGen
 from .common import INT_WIDTH
 from .type import Type
 from .hdlmoduleinfo import RAMModuleInfo
+from .hdlinterface import *
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -114,7 +115,13 @@ class VerilogTestGen(VerilogCodeGen):
                 continue
             if not info.interfaces:
                 continue
-            for p in info.interfaces[0].ports[3:]: # skip controls
+            if isinstance(info.interfaces[0], FunctionInterface):
+                ports = info.interfaces[0].ports[3:] # skip controls
+            elif isinstance(info.interfaces[0], TopInterface):
+                ports = info.interfaces[0].ports[:]
+            else:
+                continue
+            for p in ports:
                 if isinstance(p, tuple):
                     accessor_name = info.interfaces[0].port_name(name, p)
                     args.append(accessor_name)
@@ -145,8 +152,8 @@ class VerilogTestGen(VerilogCodeGen):
         for i, arg in enumerate(modulecall.args):
             if arg.is_a(AHDL_MEMVAR):
                 p, _, _ = modulecall.scope.params[i]
-                assert Type.is_seq(p.typ)
-                param_memnode = Type.extra(p.typ)
+                assert p.typ.is_seq()
+                param_memnode = p.typ.get_memnode()
                 if param_memnode.is_joinable() and param_memnode.is_writable():
                     csstr = '{}_{}_{}_cs'.format(modulecall.instance_name, i, arg.memnode.sym.hdl_name())
                     cs = self.scope.gen_sig(csstr, 1, ['memif'])

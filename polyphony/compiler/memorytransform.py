@@ -19,12 +19,12 @@ class MemoryRenamer:
                 if stm.is_a(MOVE):
                     if stm.src.is_a(ARRAY):
                         stms.append(stm)
-                    elif stm.src.is_a(TEMP) and stm.src.sym.is_param() and Type.is_list(stm.src.sym.typ):
+                    elif stm.src.is_a(TEMP) and stm.src.sym.is_param() and stm.src.sym.typ.is_list():
                         stms.append(stm)
         return stms
 
     def _get_phis(self, block):
-        return filter(lambda stm: stm.is_a(PHI) and Type.is_list(stm.var.symbol().typ), block.stms)
+        return filter(lambda stm: stm.is_a(PHI) and stm.var.symbol().typ.is_list(), block.stms)
 
     def _cleanup_phi(self):
         for block in self.scope.traverse_blocks():
@@ -164,7 +164,7 @@ class MemCollector(IRVisitor):
         self.stm_map = defaultdict(list)
 
     def visit_TEMP(self, ir):
-        if Type.is_list(ir.sym.typ) and not ir.sym.is_param():
+        if ir.sym.typ.is_list() and not ir.sym.is_param():
             self.stm_map[ir.sym].append(self.current_stm)
 
 class ContextModifier(IRVisitor):
@@ -173,8 +173,8 @@ class ContextModifier(IRVisitor):
 
     def visit_CALL(self, ir):
         for arg in ir.args:
-            if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                memnode = Type.extra(arg.sym.typ)
+            if arg.is_a(TEMP) and arg.sym.typ.is_list():
+                memnode = arg.sym.typ.get_memnode()
                 # FIXME: check the memnode is locally writable or not
                 if memnode.is_writable():
                     arg.ctx = Ctx.LOAD | Ctx.STORE

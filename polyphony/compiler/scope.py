@@ -4,7 +4,6 @@ from .env import env
 from .symbol import Symbol
 from .irvisitor import IRVisitor
 from .block import Block
-from .builtin import builtin_names
 from .ir import *
 from .signal import Signal
 from logging import getLogger
@@ -14,7 +13,13 @@ FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 
 class Scope:
     ordered_scopes = []
-    
+    ATTRIBUTES = [
+        'global', 'class', 'method', 'ctor',
+        'callable', 'returnable', 'mutable',
+        'testbench', 'top', 'thread',
+        'port', 'builtin', 'namespace',
+    ]
+
     @classmethod
     def create(cls, parent, name = None, attributes = [], lineno = 0):
         if name is None:
@@ -25,12 +30,15 @@ class Scope:
         return s
 
     @classmethod
-    def get_scopes(cls, bottom_up=True, contain_global=False, contain_class=False):
-        def ret_helper(contain_global, bottom_up):
-            start = 0 if contain_global else 1
-            scopes = cls.ordered_scopes[start:]
-            if not contain_class:
+    def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_builtin=False):
+        def ret_helper():
+            scopes = cls.ordered_scopes[:]
+            if not with_global:
+                scopes.remove(Scope.global_scope())
+            if not with_class:
                 scopes = [s for s in scopes if not s.is_class()]
+            if not with_builtin:
+                scopes = [s for s in scopes if not s.is_builtin()]
             if bottom_up:
                 scopes.reverse()
             return scopes
@@ -38,7 +46,7 @@ class Scope:
         cls.reorder_scopes()
         cls.ordered_scopes = sorted(env.scopes.values())
 
-        return ret_helper(contain_global, bottom_up)
+        return ret_helper()
 
     @classmethod
     def reorder_scopes(cls):
@@ -53,7 +61,7 @@ class Scope:
                 set_order(s, order, ordered)
             for s in scope.callee_scopes:
                 set_order(s, order, ordered)
-        top = env.scopes['@top']
+        top = cls.global_scope()
         top.order = 0
         ordered = set()
         for f in top.children:
@@ -61,11 +69,15 @@ class Scope:
 
     @classmethod
     def get_class_scopes(cls, bottom_up=True):
-        return [s for s in cls.get_scopes(bottom_up=bottom_up, contain_class=True) if s.is_class()]
+        return [s for s in cls.get_scopes(bottom_up=bottom_up, with_class=True) if s.is_class()]
 
     @classmethod
     def global_scope(cls):
         return env.scopes['@top']
+
+    @classmethod
+    def is_unremoveable(cls, s):
+        return s.is_global() or s.is_class() or s.is_testbench() or (s.is_method() and s.parent.is_top())
 
     def __init__(self, parent, name, attributes, lineno):
         self.name = name
@@ -110,7 +122,7 @@ class Scope:
         s += '================================\n'
         s += 'Parameters\n'
         for p, copy, val in self.params:
-            s += '{}:{} = {}\n'.format(p, p.typ[0], val)
+            s += '{}:{} = {}\n'.format(p, p.typ, val)
         s += "\n"
         s += '================================\n'
         for blk in self.traverse_blocks(longitude=True):
@@ -200,13 +212,11 @@ class Scope:
                 return child
         return None
 
-    def find_scope_having_name(self, name):
+    def find_parent_scope(self, name):
         if self.find_child(name):
             return self
-        elif name in builtin_names:
-            return self
         elif self.parent:
-            return self.parent.find_scope_having_name(name)
+            return self.parent.find_parent_scope(name)
         else:
             return None
 
@@ -344,35 +354,17 @@ class Scope:
                 return child
         return None
 
-    def is_testbench(self):
-        return 'testbench' in self.attributes
-
-    def is_top(self):
-        return 'top' in self.attributes
-
-    def is_class(self):
-        return 'class' in self.attributes
-
-    def is_method(self):
-        return 'method' in self.attributes
-
-    def is_mutable(self):
-        return 'mutable' in self.attributes
-
-    def is_returnable(self):
-        return 'returnable' in self.attributes
+    def __getattr__(self, name):
+        if name.startswith('is_'):
+            attr = name[3:]
+            if attr not in Scope.ATTRIBUTES:
+                raise AttributeError()
+            return lambda : attr in self.attributes
+        else:
+            return super().__getattr__(name)
 
     def is_global(self):
         return self is Scope.global_scope()
-
-    def is_ctor(self):
-        return 'ctor' in self.attributes
-
-    def is_callable(self):
-        return 'callop' in self.attributes
-
-    def is_thread(self):
-        return 'thread' in self.attributes
 
     def find_stg(self, name):
         assert self.stgs

@@ -1,5 +1,6 @@
 ﻿import traceback
 import logging
+from .env import env
 logger = logging.getLogger()
 
 INT_WIDTH = 32
@@ -24,40 +25,25 @@ def funclog(func):
     return inner
 
 
-src_text = []
+src_texts = {}
 def read_source(filename):
     assert filename
-    push_file_name(filename)
+    env.set_current_filename(filename)
     f = open(filename, 'r')
     source_lines = f.readlines()
     f.close()
-    set_src_text(source_lines)
+    src_texts[filename] = source_lines
     source = ''.join(source_lines)
     return source
 
-def set_src_text(srcs):
-    global src_text
-    src_text = srcs
-    logger.debug(src_text)
-
-def get_src_text(lineno):
+def get_src_text(scope, lineno):
+    assert scope in env.scope_file_map
+    filename = env.scope_file_map[scope]
     assert lineno > 0
-    return src_text[lineno-1]
+    return src_texts[filename][lineno-1]
 
-filenames = []
-def current_file_name():
-    global filenames
-    assert filenames
-    return filenames[-1]
-
-def push_file_name(filename):
-    global filenames
-    filenames.append(filename)
-
-def pop_file_name():
-    global filenames
-    filenames.pop()
-
-def error_info(lineno):
-    return '{}\n{}:{}'.format(current_file_name(), lineno, get_src_text(lineno))
+def error_info(scope, lineno):
+    assert scope in env.scope_file_map
+    filename = env.scope_file_map[scope]
+    return '{}\n{}:{}'.format(filename, lineno, get_src_text(scope, lineno))
 

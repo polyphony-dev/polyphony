@@ -19,8 +19,14 @@ class Env:
         self.ctor_name = '__init__'
         self.self_name = 'self'
         self.callop_name = '__call__'
+        self.scope_file_map = {}
+        self.current_filename = None
+
+    def set_current_filename(self, filename):
+        self.current_filename = filename
 
     def append_scope(self, scope):
+        self.scope_file_map[scope] = self.current_filename
         self.scopes[scope.name] = scope
         if self.dev_debug_mode:
             logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@',''), 'w')

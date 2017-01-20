@@ -18,6 +18,12 @@ class Graph:
     def add_node(self, node):
         self.nodes.add(node)
 
+    def del_node(self, node):
+        self.nodes.remove(node)
+        for edge in set(self.edges):
+            if edge.src is node or edge.dst is node:
+                self.edges.remove(edge)
+
     def add_edge(self, src_node, dst_node, flags = 0):
         self.add_node(src_node)
         self.add_node(dst_node)
@@ -88,3 +94,4 @@ class Graph:
     def replace_pred(self, node, old_pred, new_ored):
         self.del_edge(old_pred, node)
         self.add_edge(new_pred, node)
+

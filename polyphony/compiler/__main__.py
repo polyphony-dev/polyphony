@@ -1,8 +1,9 @@
 ﻿import os, sys
 from optparse import OptionParser
+from .builtin import builtin_names
 from .driver import Driver
 from .env import env
-from .common import read_source, src_text, get_src_text
+from .common import read_source
 from .scope import Scope
 from .block import BlockReducer, PathExpTracer
 from .symbol import Symbol
@@ -33,6 +34,7 @@ from .copyopt import CopyOpt
 from .callgraph import CallGraphBuilder
 from .tuple import TupleTransformer
 from .statereducer import StateReducer
+from .portconverter import PortConverter
 import logging
 logger = logging.getLogger()
 
@@ -44,7 +46,7 @@ def phase(phase):
     return setphase
 
 def preprocess_global(driver):
-    scopes = Scope.get_scopes(contain_global=True, contain_class=True)
+    scopes = Scope.get_scopes(with_global=True, with_class=True)
     lineno = LineNumberSetter()
     src_dump = SourceDump()
 
@@ -58,6 +60,8 @@ def preprocess_global(driver):
 def callgraph(driver):
     unused_scopes = CallGraphBuilder().process_all()
     for s in unused_scopes:
+        if Scope.is_unremoveable(s):
+            continue
         driver.remove_scope(s)
         env.remove_scope(s)
 
@@ -70,6 +74,9 @@ def iftrans(driver, scope):
 def reduceblk(driver, scope):
     BlockReducer().process(scope)
     PathExpTracer().process(scope)
+
+def convport(driver):
+    PortConverter().process_all()
 
 def quadruple(driver, scope):
     QuadrupleMaker().process(scope)
@@ -113,12 +120,16 @@ def specfunc(driver):
         assert s.name in env.scopes
         driver.insert_scope(s)
     for s in unused_scopes:
+        if Scope.is_unremoveable(s):
+            continue
         driver.remove_scope(s)
         env.remove_scope(s)
 
 def inlineopt(driver):
     unused_scopes = InlineOpt().process_all()
     for s in unused_scopes:
+        if Scope.is_unremoveable(s):
+            continue
         driver.remove_scope(s)
         env.remove_scope(s)
 
@@ -230,8 +241,11 @@ def compile_plan():
         preprocess_global,
         iftrans,
         reduceblk,
-        quadruple,
+        dbg(dumpscope),
         earlytypeprop,
+        quadruple,
+        typeprop,
+        dbg(dumpscope),
         callgraph,
         typecheck,
         dbg(dumpscope),
@@ -268,6 +282,8 @@ def compile_plan():
         dbg(dumpmrg),
         usedef,
         constopt,
+        dbg(dumpscope),
+        convport,
         dbg(dumpscope),
         usedef,
         phi,
@@ -309,9 +325,17 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     if debug_mode:
         logging.basicConfig(**logging_setting)
 
-    IRTranslator().translate(read_source(src_file))
+    env.set_current_filename(src_file)
+    g = Scope.create(None, '@top', ['global'], lineno=1)
+    for builtin in builtin_names:
+        g.add_sym(builtin)
 
-    scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
+    translator = IRTranslator()
+    from .. import io
+    translator.translate(read_source(io.__file__), os.path.basename(io.__file__).split('.')[0])
+    translator.translate(read_source(src_file), '')
+
+    scopes = Scope.get_scopes(bottom_up=False, with_class=True)
     driver = Driver(compile_plan(), scopes)
     driver.run()
     #output_all(driver, output_name, output_dir)
@@ -322,7 +346,7 @@ def output_all(driver, output_name, output_dir):
     d = output_dir if output_dir else './'
     if d[-1] != '/': d += '/'
 
-    scopes = Scope.get_scopes(contain_class=True)
+    scopes = Scope.get_scopes(with_class=True)
     for scope in scopes:
         if not scope.is_testbench():
             codes.append(driver.result(scope))
@@ -357,7 +381,7 @@ def output_individual(driver, output_name, output_dir):
     d = output_dir if output_dir else './'
     if d[-1] != '/': d += '/'
 
-    scopes = Scope.get_scopes(contain_class=True)
+    scopes = Scope.get_scopes(with_class=True)
     with open(d + output_name + '.v', 'w') as f:
         for scope in scopes:
             file_name = '{}_{}.v'.format(output_name, scope.orig_name)

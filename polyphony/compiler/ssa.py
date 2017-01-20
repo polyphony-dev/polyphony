@@ -10,6 +10,7 @@ from logging import getLogger
 logger = getLogger(__name__)
 import pdb
 
+
 class SSATransformerBase:
     def __init__(self):
         pass
@@ -60,8 +61,8 @@ class SSATransformerBase:
                     #insert phi to df
                     var = self._qsym_to_var(qsym, Ctx.STORE)
                     if var.is_a(ATTR):
-                        assert Type.is_object(qsym[0].typ)
-                        var.class_scope = Type.extra(qsym[0].typ)
+                        assert qsym[0].typ.is_object()
+                        var.attr_scope = qsym[0].typ.get_scope()
                     phi = self._new_phi(var, df)
                     df.insert_stm(0, phi)
                     #The phi has the definintion of the variable
@@ -80,7 +81,7 @@ class SSATransformerBase:
     def _new_phi(self, var, df):
         phi = PHI(var)
         phi.block = df
-        phi.args = [CONST(0)] * len(df.preds)
+        phi.args = [var] * len(df.preds)
         phi.defblks = [None] * len(df.preds)
         phi.lineno = 1
         var.lineno = 1
@@ -199,7 +200,7 @@ class SSATransformerBase:
             return ATTR(exp, qsym[-1], ctx)
 
     def _need_name_version(self, defvar, stm):
-        if not Type.is_list(defvar.symbol().typ):
+        if not defvar.symbol().typ.is_list():
             return True
         elif stm.is_a(MOVE):
             if stm.dst is defvar:
@@ -250,7 +251,10 @@ class SSATransformerBase:
                     logger.debug('remove ' + str(phi))
                     if phi in phi.block.stms:
                         phi.block.stms.remove(phi)
-                    replaces = VarReplacer.replace_uses(phi.var, TEMP(sym, Ctx.LOAD), usedef)
+                    replace_var = phi.var.clone()
+                    replace_var.set_symbol(sym)
+                    replace_var.ctx = Ctx.LOAD
+                    replaces = VarReplacer.replace_uses(phi.var, replace_var, usedef)
                     for rep in replaces:
                         if rep.is_a(PHI):
                             worklist.append(rep)
@@ -294,7 +298,7 @@ class ScalarSSATransformer(SSATransformerBase):
         super().__init__()
 
     def _need_rename(self, sym):
-        return not (sym.is_condition() or sym.is_param() or sym.is_return() or Type.is_function(sym.typ) or Type.is_class(sym.typ) or Type.is_object(sym.typ) or Type.is_tuple(sym.typ))
+        return not (sym.is_condition() or sym.is_param() or sym.is_return() or sym.typ.name in ['function', 'class', 'object', 'tuple', 'port'])
 
 from .tuple import TupleTransformer
 class TupleSSATransformer(SSATransformerBase):
@@ -321,7 +325,7 @@ class TupleSSATransformer(SSATransformerBase):
 
     def _insert_use_phi(self, phi, use_stm):
         insert_idx = use_stm.block.stms.index(use_stm)
-        use_mrefs = [ir for ir in use_stm.find_irs(MREF) if Type.is_tuple(ir.mem.symbol().typ)]
+        use_mrefs = [ir for ir in use_stm.find_irs(MREF) if ir.mem.symbol().typ.is_tuple()]
         qsym = phi.var.qualified_symbol()
         def replace_attr(mref, qsym, newmem):
             if mref.mem.qualified_symbol() == qsym:
@@ -347,7 +351,7 @@ class TupleSSATransformer(SSATransformerBase):
         pass
 
     def _need_rename(self, sym):
-        return Type.is_tuple(sym.typ) and not sym.is_param()
+        return sym.typ.is_tuple() and not sym.is_param()
 
 class ObjectSSATransformer(SSATransformerBase):
     def __init__(self):
@@ -379,7 +383,7 @@ class ObjectSSATransformer(SSATransformerBase):
                     return
                 return replace_attr(attr.exp, qsym, newattr)
         for use_attr in use_attrs:
-            if Type.is_object(use_attr.attr.typ):
+            if use_attr.attr.typ.is_object():
                 continue
             if use_attr.exp.qualified_symbol() == qsym:
                 uphi = UPHI(use_attr.clone())
@@ -393,5 +397,7 @@ class ObjectSSATransformer(SSATransformerBase):
                 use_stm.block.insert_stm(insert_idx, uphi)
                     
     def _need_rename(self, sym):
-        return Type.is_object(sym.typ) and sym.name != env.self_name
+        if self.scope.is_method() and self.scope.parent.is_top():
+            return False
+        return sym.typ.is_object() and sym.name != env.self_name
 

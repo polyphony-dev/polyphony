@@ -24,7 +24,7 @@ def eval_unop(ir):
     elif op == 'USub':
         return -v
     else:
-        print(error_info(ir.lineno))
+        print(error_info(ir.block.scope, ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
 
 def eval_binop(ir):
@@ -54,7 +54,7 @@ def eval_binop(ir):
     elif op == 'BitAnd':
         return lv & rv
     else:
-        print(error_info(ir.lineno))
+        print(error_info(ir.block.scope, ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
 
 def eval_relop(op, lv, rv):
@@ -79,7 +79,7 @@ def eval_relop(op, lv, rv):
     elif op == 'Or':
         return lv or rv
     else:
-        print(error_info(ir.lineno))
+        print(error_info(ir.block.scope, ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
 
 def try_get_constant(sym, scope):
@@ -271,7 +271,7 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
-        memnode = Type.extra(ir.mem.symbol().typ)
+        memnode = ir.mem.symbol().typ.get_memnode()
 
         if ir.offset.is_a(CONST) and not memnode.is_writable():
             source = memnode.single_source()
@@ -286,17 +286,17 @@ class ConstantOpt(ConstantOptBase):
             if c:
                 return c
             else:
-                print(error_info(ir.lineno))
+                print(error_info(self.scope, ir.lineno))
                 raise RuntimeError('global variable must be a constant value')
         return ir
 
     def visit_ATTR(self, ir):
-        if Type.is_class(ir.head().typ):
-            c = try_get_constant(ir.attr, ir.class_scope)
+        if ir.head().typ.is_class():
+            c = try_get_constant(ir.attr, ir.attr_scope)
             if c:
                 return c
             else:
-                print(error_info(ir.lineno))
+                print(error_info(self.scope, ir.lineno))
                 raise RuntimeError('class variable must be a constant value')
         return ir
 
@@ -321,8 +321,8 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         return ir
 
     def visit_ATTR(self, ir):
-        if Type.is_class(ir.head().typ):
-            c = try_get_constant(ir.attr, ir.class_scope)
+        if ir.head().typ.is_class():
+            c = try_get_constant(ir.attr, ir.attr_scope)
             if c:
                 return c
         return ir
@@ -346,8 +346,8 @@ class ConstantOptPreDetectROM(ConstantOpt):
         return ir
 
     def visit_ATTR(self, ir):
-        if Type.is_class(ir.head().typ):
-            c = try_get_constant(ir.attr, ir.class_scope)
+        if ir.head().typ.is_class():
+            c = try_get_constant(ir.attr, ir.attr_scope)
             if c:
                 return c
         return ir
@@ -392,7 +392,7 @@ class GlobalConstantOpt(ConstantOptBase):
             if array.is_a(ARRAY):
                 return array.items[ir.offset.value]
             else:
-                print(error_info(ir.lineno))
+                print(error_info(self.scope, ir.lineno))
                 raise RuntimeError('{} must be a sequence object'.format(ir.mem.symbol()))
         return ir
 
@@ -405,19 +405,19 @@ class GlobalConstantOpt(ConstantOptBase):
         pass
 
     def visit_CJUMP(self, ir):
-        print(error_info(ir.lineno))
+        print(error_info(self.scope, ir.lineno))
         raise RuntimeError('A control statement in the global scope is not allowed')
 
     def visit_MCJUMP(self, ir):
-        print(error_info(ir.lineno))
+        print(error_info(self.scope, ir.lineno))
         raise RuntimeError('A control statement in the global scope is not allowed')
 
     def visit_JUMP(self, ir):
-        print(error_info(ir.lineno))
+        print(error_info(self.scope, ir.lineno))
         raise RuntimeError('A control statement in the global scope is not allowed')
 
     def visit_RET(self, ir):
-        print(error_info(ir.lineno))
+        print(error_info(self.scope, ir.lineno))
         raise RuntimeError('A return statement in the global scope is not allowed')
 
     def visit_MOVE(self, ir):

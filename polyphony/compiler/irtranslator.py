@@ -1,5 +1,7 @@
 ﻿import ast
 import sys
+import builtins as python_builtins
+import pdb
 from .ir import *
 from .block import Block
 from .scope import Scope, FunctionParam
@@ -7,75 +9,178 @@ from .symbol import Symbol
 from .type import Type
 from .env import env
 from .common import error_info
-from .builtin import builtin_names
+from .builtin import builtin_names, builtin_port_type_names
 from logging import getLogger
 logger = getLogger(__name__)
 
-SUPPORTED_DECORATORS=[
+FUNCTION_DECORATORS=[
     'testbench',
-    'top',
-    'thread'
+    'top.thread',
 ]
 
+CLASS_DECORATORS=[
+    'top',
+ ]
+
+SYNTHESIZABLE_LIBS=[
+    'io',
+]
+UNSYNTHESIZABLE_LIBS=[
+    'verilog',
+]
+
+class ImportVisitor(ast.NodeVisitor):
+    def visit_Import(self, node):
+        pass
+
+    def visit_ImportFrom(self, node):
+        if not node.module.startswith('polyphony'):
+            return
+
+        g = Scope.global_scope()
+
+        def import_to_global(qualified_name, asname = None):
+            if qualified_name not in env.scopes:
+                print(error_info(g, node.lineno))
+                raise RuntimeError('Unknown module name is specified')
+            scope = env.scopes[qualified_name]
+            if asname:
+                sym = g.gen_sym(asname)
+            else:
+                name = qualified_name.split('.')[-1]
+                sym = g.gen_sym(name)
+            if scope.is_namespace():
+                sym.set_type(Type.namespace(scope))
+            elif scope.is_class():
+                sym.set_type(Type.klass(scope))
+
+        ms = node.module.split('.')
+        if len(ms) == 1:
+            for nm in node.names:
+                if nm.name == '*':
+                    for lib_name in SYNTHESIZABLE_LIBS:
+                        import_to_global(lib_name)
+                    break
+                elif nm.name in SYNTHESIZABLE_LIBS:
+                    import_to_global(nm.name, nm.asname)
+        elif len(ms) == 2:
+            lib_name = ms[1]
+            if lib_name not in SYNTHESIZABLE_LIBS+UNSYNTHESIZABLE_LIBS:
+                print(error_info(g, node.lineno))
+                raise RuntimeError('Unknown module name is specified')
+            if lib_name not in SYNTHESIZABLE_LIBS:
+                return
+            lib_scope = env.scopes[lib_name]
+            for nm in node.names:
+                if nm.name == '*':
+                    for imp_name in mod_scope.all_imports:
+                        import_to_global(imp_name)
+                    break
+                else:
+                    qname = lib_name+'.'+nm.name
+                    import_to_global(qname, nm.asname)
+        else:
+            print(error_info(g, node.lineno))
+            raise RuntimeError('Unknown module name is specified')
+
+
 class FunctionVisitor(ast.NodeVisitor):
-    def __init__(self):
-        self.current_scope = Scope.create(None, '@top', [], lineno=1)
+    def __init__(self, top_scope):
+        self.current_scope = top_scope
+        self.annotation_visitor = AnnotationVisitor(self)
+
+    def visit_Name(self, node):
+        return node.id
+
+    def visit_Attribute(self, node):
+        a = '{}.{}'.format(self.visit(node.value), node.attr)
+        return a
+
+    def _leve_scope(self, outer_scope):
+        scopesym = outer_scope.add_sym(self.current_scope.orig_name)
+        if self.current_scope.is_class():
+            t = Type.klass(self.current_scope)
+        else:
+            t = Type.function(self.current_scope, None, None)
+        scopesym.set_type(t)
+        self.current_scope = outer_scope
 
     def visit_FunctionDef(self, node):
-        #arguments = (arg* args, identifier? vararg, expr? varargannotation,
-        #            arg* kwonlyargs, identifier? kwarg,
-        #             expr? kwargannotation, expr* defaults,
-        #             expr* kw_defaults)
-        #arg = (identifier arg, expr? annotation)
-
         outer_scope = self.current_scope
 
         attributes = []
         for deco in node.decorator_list:
-            if deco.id in SUPPORTED_DECORATORS:
-                attributes = [deco.id]
-                break
+            deco_name = self.visit(deco)
+            if deco_name in FUNCTION_DECORATORS:
+                attributes.append(deco_name.split('.')[-1])
             else:
-                print(error_info(node.lineno))
-                raise RuntimeError("Unsupported decorator \'@{}\' is specified.".format(deco.id))
+                print(error_info(outer_scope, node.lineno))
+                raise RuntimeError("Unsupported decorator \'@{}\' is specified.".format(deco_name))
         if outer_scope.is_class() and 'classmethod' not in attributes:
             attributes.append('method')
             if node.name == '__init__':
                 attributes.append('ctor')
             elif node.name == '__call__':
-                attributes.append('callop')
+                attributes.append('callable')
+        if outer_scope.is_builtin():
+            attributes.append('builtin')
+
         self.current_scope = Scope.create(outer_scope, node.name, attributes, node.lineno)
 
         for arg in node.args.args:
             param_in = self.current_scope.add_sym('{}_{}'.format(Symbol.param_prefix, arg.arg))
-            param_in.typ = Type.from_annotation(arg.annotation)
             param_copy = self.current_scope.add_sym(arg.arg)
-            param_copy.typ = param_in.typ
+            if arg.annotation:
+                ann = self.annotation_visitor.visit(arg.annotation)
+                t = Type.from_annotation(ann, self.current_scope.parent)
+                if t:
+                    param_in.typ = param_copy.typ = t
+                else:
+                    print(error_info(self.current_scope, node.lineno))
+                    raise TypeError("Unknown type is specified.")
+            else:
+                param_in.typ = param_copy.typ = Type.int_t
             self.current_scope.add_param(param_in, param_copy, None)
+        if node.returns:
+            ann = self.annotation_visitor.visit(node.returns)
+            t = Type.from_annotation(ann, self.current_scope.parent)
+            if t:
+                self.current_scope.return_type = t
+            else:
+                print(error_info(self.current_scope, node.lineno))
+                raise TypeError("Unknown type is specified.")
+
         if self.current_scope.is_method():
             if not self.current_scope.params or self.current_scope.params[0].sym.name != Symbol.param_prefix+'_self':
-                print(error_info(node.lineno))
+                print(error_info(self.current_scope, node.lineno))
                 raise RuntimeError("Class method must have a {} parameter.".format(env.self_name))
             first_param = self.current_scope.params[0]
-            first_param.copy.typ = first_param.sym.typ = Type.object(None, outer_scope)
+            first_param.copy.typ = first_param.sym.typ = Type.object(outer_scope)
 
         for stm in node.body:
             self.visit(stm)
-        self.current_scope = outer_scope
+        self._leve_scope(outer_scope)
 
     def visit_ClassDef(self, node):
+        outer_scope = self.current_scope
+
         attributes = []
         for deco in node.decorator_list:
-            if deco.id in ['top']:
-                attributes = [deco.id]
-                break
+            deco_name = self.visit(deco)
+            if deco_name in CLASS_DECORATORS:
+                attributes.append(deco_name)
 
-        outer_scope = self.current_scope
         self.current_scope = Scope.create(outer_scope, node.name, ['class'] + attributes, node.lineno)
+        if self.current_scope.name in builtin_port_type_names:
+            self.current_scope.attributes.extend(['port', 'builtin'])
+        if self.current_scope.is_top():
+            #run_method_scope = Scope.create(self.current_scope, 'run', ['method'], node.lineno)
+            self.current_scope.add_sym('run')
         for stm in node.body:
             self.visit(stm)
 
-        self.current_scope = outer_scope
+        self._leve_scope(outer_scope)
+        
 
 class CompareTransformer(ast.NodeTransformer):
     '''Transform 'v0 op v1 op v2' to 'v0 op v1 and v1 op v2' '''
@@ -101,12 +206,11 @@ class AugAssignTransformer(ast.NodeTransformer):
         assign = ast.Assign(targets = [node.target], value = binop)
         return ast.copy_location(assign, node)
 
-class Visitor(ast.NodeVisitor):
-    def __init__(self):
+class CodeVisitor(ast.NodeVisitor):
+    def __init__(self, top_scope):
         self.import_list = {}
         self.importfrom_list = {}
-        self.global_scope = env.scopes['@top']
-        self.current_scope = self.global_scope
+        self.current_scope = top_scope
 
         self.current_block = Block(self.current_scope)
         self.current_scope.set_entry_block(self.current_block)
@@ -118,8 +222,7 @@ class Visitor(ast.NodeVisitor):
         self.nested_if = False
         self.last_node = None
 
-    def result(self):
-        return self.global_scope
+        self.annotation_visitor = AnnotationVisitor(self)
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -147,18 +250,8 @@ class Visitor(ast.NodeVisitor):
             not (last.is_a(MOVE) and last.dst.is_a(TEMP) and last.dst.sym.is_return())
         
     #-------------------------------------------------------------------------
-    
-    def visit_Import(self, node):
-        pass
 
-    
-    def visit_ImportFrom(self, node):
-        pass
-
-
-    #-------------------------------------------------------------------------
-
-    def _enter_scope(self, name, typ):
+    def _enter_scope(self, name):
         outer_scope = self.current_scope
         self.current_scope = env.scopes[outer_scope.name + '.' + name]
 
@@ -167,9 +260,6 @@ class Visitor(ast.NodeVisitor):
         self.current_scope.set_entry_block(new_block)
         self.current_block = new_block
 
-        scopesym = outer_scope.add_sym(name)
-        scopesym.set_type(typ)
-
         return (outer_scope, last_block)
 
     def _leave_scope(self, outer_scope, last_block):
@@ -177,7 +267,7 @@ class Visitor(ast.NodeVisitor):
         self.current_block = last_block
 
     def visit_FunctionDef(self, node):
-        context = self._enter_scope(node.name, Type.funcdef())
+        context = self._enter_scope(node.name)
 
         outer_function_exit = self.function_exit
         self.function_exit = Block(self.current_scope, 'exit')
@@ -192,7 +282,7 @@ class Visitor(ast.NodeVisitor):
                 self.emit(MOVE(TEMP(param.copy, Ctx.STORE), TEMP(param.sym, Ctx.LOAD)), node)
 
         for idx, (param, defval) in enumerate(zip(params[skip:], node.args.defaults)):
-            if Type.is_seq(param.sym.typ):
+            if param.sym.typ.is_seq():
                 print(self._err_info(node))
                 raise RuntimeError("cannot set the default value to the sequence type parameter.")
             d = self.visit(defval)
@@ -218,8 +308,12 @@ class Visitor(ast.NodeVisitor):
         self._leave_scope(*context)
 
 
+    def visit_AsyncFunctionDef(self, node):
+        print(self._err_info(node))
+        raise NotImplementedError('async def statement is not supported')
+
     def visit_ClassDef(self, node):
-        context = self._enter_scope(node.name, Type.classdef())
+        context = self._enter_scope(node.name)
         for body in node.body:
             self.visit(body)
         logger.debug(node.name)
@@ -227,7 +321,7 @@ class Visitor(ast.NodeVisitor):
             ctor = Scope.create(self.current_scope, '__init__', ['method', 'ctor'], node.lineno)
             # add 'self' parameter
             param_in = ctor.add_sym('{}_{}'.format(Symbol.param_prefix, env.self_name))
-            param_in.typ = Type.object(None, self.current_scope)
+            param_in.typ = Type.object(self.current_scope)
             param_copy = ctor.add_sym(env.self_name)
             param_copy.typ = param_in.typ
             ctor.add_param(param_in, param_copy, None)
@@ -260,13 +354,55 @@ class Visitor(ast.NodeVisitor):
     def visit_Assign(self, node):
         right = self.visit(node.value)
         for target in node.targets:
-            self.emit(MOVE(self.visit(target), right), node)
+            left = self.visit(target)
+            if left.is_a(TEMP) and left.symbol().name == '__all__':
+                if right.is_a(ARRAY):
+                    self.current_scope.all_imports = []
+                    for item in right.items:
+                        if not (item.is_a(CONST) and isinstance(item.value, str)):
+                            print(self._err_info(node))
+                            raise RuntimeError('string value is expected')
+                        self.current_scope.all_imports.append(self.current_scope.name+'.'+item.value)
+                else:
+                    print(self._err_info(node))
+                    raise RuntimeError('The list literal is expected')
+            self.emit(MOVE(left, right), node)
 
     
     def visit_AugAssign(self, node):
         assert 0
 
-     
+
+    def visit_AnnAssign(self, node):
+        ann = self.annotation_visitor.visit(node.annotation)
+        src = None
+        if node.value:
+            src = self.visit(node.value)
+        dst = self.visit(node.target)
+        typ = Type.from_annotation(ann, self.current_scope.parent)
+        if not typ:
+            print(error_info(self.current_scope, node.lineno))
+            raise TypeError("Unknown type is specified.")
+        if dst.is_a(TEMP):
+            if self.current_scope.is_interface():
+                dst.symbol().set_type(Type.port(typ))
+            else:
+                dst.symbol().set_type(typ)
+        elif dst.is_a(ATTR):
+            if dst.exp.is_a(TEMP) and dst.head().name == env.self_name and self.current_scope.is_method():
+                attr_sym = self.current_scope.parent.find_sym(dst.attr)
+                if self.current_scope.parent.is_interface():
+                    attr_sym.set_type(Type.port(typ))
+                else:
+                    attr_sym.set_type(typ)
+                dst.attr = attr_sym
+            else:
+                print(self._err_info(node))
+                raise RuntimeError("An annotation for other than \'self.*\' is not supported.")
+        if src:
+            self.emit(MOVE(dst, src), node)
+
+
     def visit_If(self, node):
         #
         #  if condition goto true_block else goto false_block
@@ -532,13 +668,35 @@ class Visitor(ast.NodeVisitor):
 
         self.current_block = exit_block
 
+    def visit_AyncFor(self, node):
+        print(self._err_info(node))
+        raise NotImplementedError('async for statement is not supported')
+
+    def visit_With(self, node):
+        print(self._err_info(node))
+        raise NotImplementedError('with statement is not supported')
+
+    def visit_AsyncWith(self, node):
+        print(self._err_info(node))
+        raise NotImplementedError('async with statement is not supported')
+
+    def visit_Raise(self, node):
+        print(self._err_info(node))
+        raise NotImplementedError('raise statement is not supported')
+
+    def visit_Try(self, node):
+        print(self._err_info(node))
+        raise NotImplementedError('try statement is not supported')
+
+    def visit_ExceptHandler(self, node):
+        print(self._err_info(node))
+        raise NotImplementedError('except statement is not supported')
 
     def visit_Assert(self, node):
         testexp = self.visit(node.test)
         self.emit(EXPR(SYSCALL('assert', [testexp])), node)
 
-    #--------------------------------------------------------------------------
-    
+   
     def visit_Global(self, node):
         print(self._err_info(node))
         raise NotImplementedError('global statement is not supported')
@@ -640,6 +798,9 @@ class Visitor(ast.NodeVisitor):
 
     def visit_Call(self, node):
         #      pass by name
+        #if isinstance(node.func, ast.Name):
+        #    if node.func.id in builtin_type_names:
+        #        pass
         func = self.visit(node.func)
         args = list(map(self.visit, node.args))
         
@@ -652,16 +813,29 @@ class Visitor(ast.NodeVisitor):
         #stararg = self.visit(node.starargs)
 
         if func.is_a(TEMP):
+            if func.symbol().typ.is_class():
+                return NEW(func.symbol().typ.get_scope(), args)
+
             func_name = func.symbol().orig_name()
             func_scope = self.current_scope.find_scope(func_name)
             if not func_scope:
-                for f in builtin_names:
-                    if func.symbol().name == f:
-                        return SYSCALL(f, args)
+                if func.symbol().name in builtin_names:
+                    return SYSCALL(func.symbol().name, args)
+
+                if func.symbol().name in dir(python_builtins):
+                    raise NameError("The name \'{}\' is reserved as the name of the built-in function.".format(node.id))
+
                 #print(self._err_info(node))
                 #raise TypeError('{} is not callable'.format(func.symbol().name))
-            elif func_scope.is_class():
-                return NEW(func_scope, args)
+        elif func.is_a(ATTR):
+            if func.exp.is_a([TEMP, ATTR]):
+                scope_sym = func.tail()
+                if isinstance(scope_sym, Symbol):
+                    if scope_sym.typ.is_namespace() or scope_sym.typ.is_class():
+                         receiver = scope_sym.typ.get_scope()
+                         attr_sym = receiver.find_sym(func.attr)
+                         attr_scope = attr_sym.typ.get_scope()
+                         return NEW(attr_scope, args)
         return CALL(func, args)
 
     
@@ -687,7 +861,7 @@ class Visitor(ast.NodeVisitor):
         irattr = ATTR(value, attr, ctx)
 
         if irattr.head() and irattr.head().name == env.self_name:
-            scope = Type.extra(irattr.head().typ)
+            scope = irattr.head().typ.get_scope()
             if ctx & Ctx.STORE:
                 scope.gen_sym(attr)
         return irattr
@@ -718,29 +892,13 @@ class Visitor(ast.NodeVisitor):
         elif node.id == 'None':
             return CONST(None)
 
-        outer_scope = self.current_scope.find_scope_having_name(node.id)
-        if outer_scope:
-            outer_sym = outer_scope.find_sym(node.id)
-            if node.id in builtin_names or Type.is_funcdef(outer_sym.typ):
-                if self.current_scope.has_sym(node.id):
-                    sym = self.current_scope.find_sym(node.id)
-                else:
-                    sym = self.current_scope.add_sym(node.id)
-                    sym.set_type(Type.function(None, None))
-                return TEMP(sym, self._nodectx2irctx(node))
-            elif Type.is_classdef(outer_sym.typ):
-                if self.current_scope.has_sym(node.id):
-                    sym = self.current_scope.find_sym(node.id)
-                else:
-                    sym = self.current_scope.add_sym(node.id)
-                    scope = outer_scope.find_scope(node.id)
-                    assert scope.is_class()
-                    sym.set_type(Type.klass(None, scope))
-                return TEMP(sym, self._nodectx2irctx(node))
-            else:
-                print(self._err_info(node))
-                raise RuntimeError(node.id + ' is unknown scope type')
         sym = self.current_scope.find_sym(node.id)
+        if not sym:
+            parent_scope = self.current_scope.find_parent_scope(node.id)
+            if parent_scope:
+                scope_sym = parent_scope.find_sym(node.id)
+                return TEMP(scope_sym, self._nodectx2irctx(node))
+        
         if isinstance(node.ctx, ast.Load) or isinstance(node.ctx, ast.AugLoad):
             if sym is None:
                 print(self._err_info(node))
@@ -750,6 +908,8 @@ class Visitor(ast.NodeVisitor):
                 sym = self.current_scope.add_sym(node.id)
 
         assert sym is not None
+
+
         return TEMP(sym, self._nodectx2irctx(node))
 
     #     | List(expr* elts, expr_context ctx) 
@@ -796,34 +956,65 @@ class Visitor(ast.NodeVisitor):
         raise NotImplementedError('print statement is not supported')
 
     def _err_info(self, node):
-        return error_info(node.lineno)
+        return error_info(self.current_scope, node.lineno)
+
+
+class AnnotationVisitor(ast.NodeVisitor):
+    def __init__(self, parent_visitor):
+        self.parent_visitor = parent_visitor
+
+    def visit_Subscript(self, node):
+        v = self.visit(node.value)
+        s = self.visit(node.slice)
+        return (v, s)
+
+    def visit_Index(self, node):
+        return self.visit(node.value)
+
+    def visit_Name(self, node):
+        return node.id
+
+    def visit_Attribute(self, node):
+        value = self.visit(node.value)
+        attr = node.attr
+        return '{}.{}'.format(value, attr)
+
+    def visit_Call(self, node):
+        func = self.visit(node.func)
+        args = list(map(self.visit, node.args))
+        return (func, args)
+
+    def visit_Tuple(self, node):
+        items = []
+        for elt in node.elts:
+            item = self.visit(elt)
+            items.append(item)
+        return tuple(items)
+
+    def visit_Num(self, node):
+        return node.n
+
+    def visit_Str(self, node):
+        return node.s
+
 
 class IRTranslator(object):
     def __init__(self):
-        self.status = {}
+        pass
 
-    def translate(self, source):
+    def translate(self, source, lib_name):
         tree = ast.parse(source)
 
-        fnvisitor = FunctionVisitor()
-        fnvisitor.visit(tree)
+        global_scope = Scope.global_scope()
+        if lib_name:
+            top_scope = Scope.create(None, lib_name, ['namespace'], lineno=1)
+        else:
+            top_scope = global_scope
+            ImportVisitor().visit(tree)
 
-        comptransformer = CompareTransformer()
-        comptransformer.visit(tree)
-        augassigntransformer = AugAssignTransformer()
-        augassigntransformer.visit(tree)
+        FunctionVisitor(top_scope).visit(tree)
+        CompareTransformer().visit(tree)
+        AugAssignTransformer().visit(tree)
+        CodeVisitor(top_scope).visit(tree)
 
-        visitor = Visitor()
-        visitor.visit(tree)
-        global_scope = visitor.result()
 
-        return global_scope
-
-def main():
-    translator = IRTranslator()
-    global_scope = translator.translate(sys.argv[1])
-    Scope.dump()
-
-if __name__ == '__main__':
-    main()
-        

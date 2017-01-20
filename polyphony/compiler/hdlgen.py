@@ -8,7 +8,6 @@ from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .hdlmoduleinfo import HDLModuleInfo
 from .hdlmemport import HDLMemPortMaker, HDLRegArrayPortMaker
-from .type import Type
 from .hdlinterface import *
 from .memref import *
 from .utils import replace_item
@@ -51,34 +50,36 @@ class HDLModuleBuilder:
         else:
             params = scope.params
         for i, (sym, _, _) in enumerate(params):
-            if Type.is_int(sym.typ):
-                funcif.add_data_in(sym.hdl_name(), Type.width(sym.typ))
-            elif Type.is_list(sym.typ):
+            if sym.typ.is_int():
+                funcif.add_data_in(sym.hdl_name(), sym.typ.get_width())
+            elif sym.typ.is_list():
                 continue
  
     def _add_output_ports(self, funcif, scope):
-        if Type.is_scalar(scope.return_type):
-            funcif.add_data_out('out_0', Type.width(scope.return_type))
-        elif Type.is_seq(scope.return_type):
+        if scope.return_type.is_scalar():
+            funcif.add_data_out('out_0', scope.return_type.get_width())
+        elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')
 
     def _add_internal_ports(self, scope, module_name, locals):
+        regs = []
+        nets = []
         for sig in locals:
             sig = scope.gen_sig(sig.name, sig.width, sig.attributes)
-            if sig.is_field():
-                pass
+            if sig.is_field() or sig.is_memif() or sig.is_ctrl():
+                continue
             elif sig.is_condition():
                 self.module_info.add_internal_net(sig)
-            elif sig.is_memif():
-                pass
-            elif sig.is_ctrl():
-                pass
+                nets.append(sig)
             else:
                 assert (sig.is_net() and not sig.is_reg()) or (not sig.is_net() and sig.is_reg()) or (not sig.is_net() and not sig.is_reg())
                 if sig.is_net():
                     self.module_info.add_internal_net(sig)
+                    nets.append(sig)
                 else:
                     self.module_info.add_internal_reg(sig)
+                    regs.append(sig)
+        return regs, nets
 
     def _add_state_register(self, fsm_name, scope, stgs):
         states_n = sum([len(stg.states) for stg in stgs])
@@ -90,6 +91,8 @@ class HDLModuleBuilder:
     def _add_submodules(self, scope):
         
         for callee_scope, inst_names in scope.callee_instances.items():
+            if callee_scope.is_port():
+                continue
             inst_scope_name = callee_scope.orig_name
             # TODO: add primitive function hook here
             if inst_scope_name == 'print':
@@ -213,6 +216,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             if d.is_reg():
                 clear_var = AHDL_MOVE(AHDL_VAR(d, Ctx.STORE), AHDL_CONST(0))
                 self.module_info.add_fsm_reset_stm(scope.orig_name, clear_var)
+
         self._rename_signal(scope)
 
 
@@ -245,14 +249,14 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
         # I/O port for class fields
         
         for sym in scope.symbols.values():
-            if Type.is_scalar(sym.typ): # skip a method
-                fieldif = RegFieldInterface(sym.hdl_name(), Type.width(sym.typ))
+            if sym.typ.is_scalar(): # skip a method
+                fieldif = RegFieldInterface(sym.hdl_name(), sym.typ.get_width())
                 self.module_info.add_interface(fieldif)
-            elif Type.is_list(sym.typ):
-                memnode = Type.extra(sym.typ)
+            elif sym.typ.is_list():
+                memnode = sym.typ.get_memnode()
                 fieldif = RAMFieldInterface(memnode.name(), memnode.width, memnode.addr_width(), True)
                 self.module_info.add_interface(fieldif)
-            elif Type.is_object(sym.typ):
+            elif sym.typ.is_object():
                 # add interface at add_submodule()
                 pass
 
@@ -282,10 +286,51 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
 
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
+
+    def _process_ctor(self, top, ctor):
+        inf = TopInterface(top.orig_name, False, True)
+        self.module_info.add_interface(inf)
+
+        for p in ctor.params[1:]:
+            if not p.sym.typ.is_port():
+                assert False
+            p_scope = p.sym.typ.get_scope()
+            if not p_scope.is_port():
+                assert False
+            port_t = p.sym.typ
+            width = port_t.get_width()
+            dir = port_t.get_direction()
+            inf.ports.append(Port(p.copy.name, width, dir))
+
+    def _process_thread(self, top, thread, reset_stms):
+        mrg = env.memref_graph
+
+        self._add_state_constants(thread)
+        defs, uses, outputs = self._collect_vars(thread)
+        locals = defs.union(uses)
+        for var in locals:
+            if var.is_field():
+                self.module_info.add_internal_reg(var)
+        regs, nets = self._add_internal_ports(top, top.orig_name, locals)
+        self._add_state_register(thread.orig_name, top, thread.stgs)
+
+        self._add_submodules(thread)
+        for memnode in mrg.collect_ram(thread):
+            memportmaker = HDLMemPortMaker(memnode, thread, self.module_info).make_port()
+
+        self._add_roms(thread)
+
+        self.module_info.add_fsm_stg(thread.orig_name, thread.stgs)
+        for stm in reset_stms:
+            if stm.dst.sig in defs:
+                self.module_info.add_fsm_reset_stm(thread.orig_name, stm)
+        for reg in regs:
+            clear_var = AHDL_MOVE(AHDL_VAR(reg, Ctx.STORE), AHDL_CONST(0))
+            self.module_info.add_fsm_reset_stm(thread.orig_name, clear_var)
+
     def _build_module(self, scope):
         assert scope.is_top()
         assert scope.is_class()
-        mrg = env.memref_graph
 
         reset_stms = set()
         for s in scope.children:
@@ -295,27 +340,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 break
 
         for s in scope.children:
-            if s.is_thread():
-                self._add_state_constants(s)
-                defs, uses, outputs = self._collect_vars(s)
-                locals = defs.union(uses)
-                for var in locals:
-                    if var.is_field():
-                        self.module_info.add_internal_reg(var)
-                self._add_internal_ports(scope, scope.orig_name, locals)
-                self._add_state_register(s.orig_name, scope, s.stgs)
-
-                self._add_submodules(s)
-                for memnode in mrg.collect_ram(s):
-                    memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
-
-                self._add_roms(s)
-
-                self.module_info.add_fsm_stg(s.orig_name, s.stgs)
-                for stm in reset_stms:
-                    if stm.dst.sig in defs:
-                        self.module_info.add_fsm_reset_stm(s.orig_name, stm)
-
+            if s.is_ctor():
+                self._process_ctor(scope, s)
+            elif s.is_thread():
+                self._process_thread(scope, s, reset_stms)
 
     def _collect_field_defs(self, scope):
         moves = self._collect_moves(scope)

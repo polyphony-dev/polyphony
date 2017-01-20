@@ -23,14 +23,14 @@ class InlineOpt:
 
         using_scopes = self.collect_using_scopes()
 
-        scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
+        scopes = Scope.get_scopes(bottom_up=False, with_class=True)
         return set(scopes).difference(using_scopes)
 
     def collect_using_scopes(self):
         calls = defaultdict(list)
         collector = CallCollector(calls)
         using_scopes = set()
-        scopes = Scope.get_scopes(bottom_up=False, contain_class=True)
+        scopes = Scope.get_scopes(bottom_up=False, with_class=True)
         for s in scopes:
             if s.is_testbench() or s.is_global() or s.is_class():
                 using_scopes.add(s)
@@ -46,7 +46,9 @@ class InlineOpt:
         collector.process(scope)
         for callee, calls in calls.items():
             self._process_scope(callee)
-            if callee.is_method():
+            if callee.is_builtin():
+                continue
+            elif callee.is_method():
                 self._process_method(callee, scope, calls)
             else:
                 self._process_func(callee, scope, calls)
@@ -158,7 +160,7 @@ class InlineOpt:
             elif arg.is_a(CONST):
                 symbol_map[p] = arg
             elif arg.is_a(ATTR):
-                assert False # TODO
+                symbol_map[p] = arg
             else:
                 assert False
         return symbol_map
@@ -277,7 +279,7 @@ class AliasReplacer(CopyOpt):
         def find_vars_rec(ir, qsym, vars):
             if isinstance(ir, IR):
                 if ir.is_a(ATTR):
-                    if Type.is_object(ir.attr.typ):
+                    if ir.attr.typ.is_object():
                         if ir.qualified_symbol() == qsym:
                             vars.append(ir)
                     elif ir.exp.qualified_symbol() == qsym:
@@ -301,16 +303,20 @@ class AliasDefCollector(IRVisitor):
             return False
         if not mov.src.is_a([TEMP, ATTR]):
             return False
-        if not Type.is_object(mov.src.symbol().typ):
+        if not mov.src.symbol().typ.is_object():
             return False
         if not mov.dst.is_a([TEMP, ATTR]):
             return False
-        if not Type.is_object(mov.dst.symbol().typ):
+        if not mov.dst.symbol().typ.is_object():
+            return False
+        if mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and mov.dst.tail().typ.get_scope().is_top():
             return False
         return True
 
     def visit_MOVE(self, ir):
         if not self._is_alias_def(ir):
+            return
+        if ir.src.symbol().is_param():
             return
         self.copies.append(ir)
 
@@ -342,7 +348,7 @@ class FlattenFieldAccess(IRVisitor):
         if self.scope.is_method():
             return
         # don't flatten use of the static class field
-        if Type.is_class(ir.head().typ):
+        if ir.head().typ.is_class():
             return
         flatname = self.make_flatname(ir)
         flatsym = self.scope.gen_sym(flatname)
@@ -363,7 +369,7 @@ class ObjectHierarchyCopier:
         pass
 
     def _is_object(self, ir):
-        return ir.is_a([TEMP, ATTR]) and Type.is_object(ir.symbol().typ)
+        return ir.is_a([TEMP, ATTR]) and ir.symbol().typ.is_object()
 
     def _is_object_copy(self, mov):
         return self._is_object(mov.src) and self._is_object(mov.dst)
@@ -381,10 +387,10 @@ class ObjectHierarchyCopier:
         worklist.extend(copies)
         while worklist:
             cp = worklist.popleft()
-            class_scope = Type.extra(cp.src.symbol().typ)
-            assert class_scope is Type.extra(cp.dst.symbol().typ)
+            class_scope = cp.src.symbol().typ.get_scope()
+            assert class_scope is cp.dst.symbol().typ.get_scope()
             for sym in class_scope.class_fields.keys():
-                if not Type.is_object(sym.typ):
+                if not sym.typ.is_object():
                     continue
                 new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
                 new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
@@ -394,5 +400,5 @@ class ObjectHierarchyCopier:
                 new_cp.lineno = cp.lineno
                 cp_idx = cp.block.stms.index(cp)
                 cp.block.insert_stm(cp_idx+1, new_cp)
-                if Type.is_object(sym.typ):
+                if sym.typ.is_object():
                     worklist.append(new_cp)

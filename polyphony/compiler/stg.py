@@ -6,7 +6,6 @@ from .ir import *
 from .ahdl import *
 from .latency import get_latency
 from .common import INT_WIDTH, error_info
-from .type import Type
 from .symbol import Symbol
 from .env import env
 from .memref import *
@@ -201,9 +200,9 @@ class STGBuilder:
     def _process_dfg(self, index, dfg):
         is_main = index == 0
         if self.scope.parent.is_top() and self.scope.is_callable():
-            stg_name = self.scope.parent.orig_name if is_main else 'L{}'.format(index)
+            stg_name = self.scope.parent.orig_name if is_main else '{}_L{}'.format(self.scope.parent.orig_name, index)
         else:
-            stg_name = self.scope.orig_name if is_main else 'L{}'.format(index)
+            stg_name = self.scope.orig_name if is_main else '{}_L{}'.format(self.scope.orig_name, index)
             if self.scope.is_method():
                 stg_name = self.scope.parent.orig_name + '_' + stg_name
         self.translator = AHDLTranslator(stg_name, self, self.scope)
@@ -286,10 +285,12 @@ class STGBuilder:
             trans.target = jump.target
 
         # deal with the first/last state
-        if not is_main:
-            return states
-
-        if self.scope.parent.is_top():
+        if not is_main or self.scope.is_testbench():
+            if is_first:
+                self.stg.init_state = states[0]
+            if is_last:
+                self.stg.finish_state = states[0]
+        elif self.scope.parent.is_top():
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
                 init_state = states[0]
@@ -302,8 +303,6 @@ class STGBuilder:
                 finish_state.name = name
                 assert finish_state.codes[-1].is_a(AHDL_TRANSITION)
                 self.stg.finish_state = finish_state
-        elif self.scope.is_testbench():
-            pass
         else:
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
@@ -337,7 +336,7 @@ class STGBuilder:
         # We must emit 'WAIT_RET_AND_GATE' before '*_IF_VALID' for test-bench sequence
         self.emit(AHDL_META_WAIT('WAIT_RET_AND_GATE', [ahdl_call]), sched_time)
         self.emit(AHDL_META('ACCEPT_IF_VALID', ahdl_call), sched_time)
-        if dst and Type.is_scalar(ahdl_call.scope.return_type):
+        if dst and ahdl_call.scope.return_type.is_scalar():
             self.emit(AHDL_META('GET_RET_IF_VALID', ahdl_call, dst), sched_time)
 
         sched_time += 1
@@ -449,11 +448,8 @@ class AHDLTranslator:
     def visit_CALL(self, ir, node):
         if ir.func_scope.is_method():
             if ir.func_scope.parent.is_top():
-                if ir.func_scope.is_ctor() or ir.func_scope.is_thread():
-                    return AHDL_NOP('wait for top module')
-                else:
-                    print(error_info(ir.lineno))
-                    raise RuntimeError("It is only supported calling a method decorated '@thread'")
+                print(error_info(self.scope, ir.lineno))
+                raise RuntimeError("It is only supported calling run() of @top decorated class")
             instance_name = self.host.make_instance_name(ir.func)
         else:
             instance_name = '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)
@@ -513,6 +509,12 @@ class AHDLTranslator:
             fname = '!hdl_assert'
         elif ir.name == 'len':
             return self.translate_builtin_len(ir)
+        elif ir.name == '$toprun':
+            assert ir.args[0].is_a(TEMP) and ir.args[0].symbol().typ.is_object() and ir.args[0].symbol().typ.get_scope().is_top()
+            assert ir.args[1].is_a(CONST)
+            for i in range(ir.args[1].value):
+                self.host.emit(AHDL_NOP('wait a cycle'), self.sched_time+i)
+            return
         else:
             return
         args = []
@@ -567,7 +569,7 @@ class AHDLTranslator:
             sig = self.scope.gen_sig(array.sym.hdl_name(), 1)
             for i, item in enumerate(array.items):
                 idx = AHDL_CONST(i)
-                memvar = AHDL_MEMVAR(sig, Type.extra(array.sym.typ), Ctx.STORE)
+                memvar = AHDL_MEMVAR(sig, array.sym.typ.get_memnode(), Ctx.STORE)
                 ahdl_item = self.visit(item, node)
                 ahdl_move = AHDL_MOVE(AHDL_SUBSCRIPT(memvar, idx), ahdl_item)
                 self._emit(ahdl_move, self.sched_time)
@@ -575,7 +577,7 @@ class AHDLTranslator:
     def visit_ARRAY(self, ir, node):
         # array expansion
         if not ir.repeat.is_a(CONST):
-            print(error_info(ir.lineno))
+            print(error_info(self.scope, ir.lineno))
             raise RuntimeError('multiplier for the sequence must be a constant')
         ir.items = [item.clone() for item in ir.items * ir.repeat.value]
 
@@ -595,13 +597,15 @@ class AHDLTranslator:
     def visit_TEMP(self, ir, node):
         attr = []
         width = -1
-        if Type.is_list(ir.sym.typ):
+        if ir.sym.typ.is_list():
             attr.append('memif')
-        elif Type.is_int(ir.sym.typ):
+        elif ir.sym.typ.is_int():
             attr.append('int')
             if ir.ctx & Ctx.STORE:
                 attr.append('reg')
-            width = INT_WIDTH
+            width = ir.sym.typ.get_width()
+        elif ir.sym.typ.is_port():
+            width = ir.sym.typ.get_width()
 
         if ir.sym.is_param():
             attr.append('in')
@@ -613,22 +617,23 @@ class AHDLTranslator:
             attr.append('cond')
             width = 1
 
-        if self.scope.parent.is_top():
+        if self.scope.is_thread():
             signame = ir.sym.ancestor.hdl_name() if ir.sym.ancestor else ir.sym.hdl_name()
-            sig = self.scope.gen_sig(signame, width, attr)
+            # a local variable's name is localized
+            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, signame), width, attr)
         elif self.scope.is_method() and not ir.sym.is_param():
             # a local variable's name in the method is localized
             sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()), width, attr)
         else:
             sig = self.scope.gen_sig(ir.sym.hdl_name(), width, attr)
 
-        if Type.is_seq(ir.sym.typ):
-            return AHDL_MEMVAR(sig, Type.extra(ir.sym.typ), ir.ctx)
+        if ir.sym.typ.is_seq():
+            return AHDL_MEMVAR(sig, ir.sym.typ.get_memnode(), ir.ctx)
         else:
             return AHDL_VAR(sig, ir.ctx)
 
     def visit_ATTR(self, ir, node):
-        if Type.is_list(ir.attr.typ):
+        if ir.attr.typ.is_list():
             sig_attr = ['field', 'memif']
         else:
             sig_attr = ['field', 'int']
@@ -638,15 +643,15 @@ class AHDLTranslator:
             instance_name = self.host.make_instance_name(ir)
 
             sig = self.scope.gen_sig(signame, INT_WIDTH, sig_attr)
-        elif self.scope.is_method() and self.scope.parent is ir.class_scope:
+        elif self.scope.is_method() and self.scope.parent is ir.attr_scope:
             # internal access to the field
-            sig = self.host.gen_sig(ir.class_scope.orig_name + '_field', attr, INT_WIDTH, sig_attr)
+            sig = self.host.gen_sig(ir.attr_scope.orig_name + '_field', attr, INT_WIDTH, sig_attr)
         else:
             # external access to the field
             io = '' if ir.ctx == Ctx.LOAD else '_in'
             instance_name = self.host.make_instance_name(ir)
             sig = self.host.gen_sig(instance_name + '_field', attr+io, INT_WIDTH, sig_attr)
-        if Type.is_list(ir.attr.typ):
+        if ir.attr.typ.is_list():
             memnode = self.mrg.node(ir.attr)
             return AHDL_MEMVAR(sig, memnode, ir.ctx)
         else:
@@ -655,6 +660,9 @@ class AHDLTranslator:
     def visit_EXPR(self, ir, node):
         if not (ir.exp.is_a([CALL, SYSCALL])):
             return
+
+        if self._is_port_method(ir.exp):
+            return self._make_port_access(ir.exp, None, node)
 
         exp = self.visit(ir.exp, node)
         if exp:
@@ -711,6 +719,10 @@ class AHDLTranslator:
 
     def visit_MOVE(self, ir, node):
         if ir.src.is_a([CALL, NEW]):
+            if self._is_port_method(ir.src):
+                return self._make_port_access(ir.src, ir.dst, node)
+            elif self._is_port_ctor(ir.src):
+                return
             self._call_proc(ir, node)
             return
         elif ir.src.is_a(TEMP) and ir.src.sym.is_param() and ir.src.sym.name.endswith(env.self_name):
@@ -775,3 +787,40 @@ class AHDLTranslator:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
         return visitor(ir, node)
+
+    def _is_port_method(self, ir):
+        return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_port()
+
+    def _is_port_ctor(self, ir):
+        return ir.is_a(NEW) and ir.func_scope.is_port()
+
+    def _make_port_access(self, call, target, node):
+        assert call.func.is_a(ATTR)
+        port_sym = call.func.tail()
+        assert port_sym.typ.is_port()
+        width = port_sym.typ.get_width()
+        port_scope = port_sym.typ.get_scope()
+        attrs = set()
+        if port_scope.orig_name == 'Int':
+            attrs.add('int')
+        direction = port_sym.typ.get_direction()
+        if port_sym.scope.is_top():
+            attrs.add(direction)
+        else:
+            if direction == 'in':
+                attrs.add('reg')
+            elif direction == 'out':
+                attrs.add('net')
+            else:
+                assert False
+        port_sig = self.scope.gen_sig(port_sym.hdl_name(), width, attrs)
+        if call.args:
+            assert call.func_scope.name == 'io.Int.wr'
+            src = self.visit(call.args[0], node)
+            self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), src), self.sched_time)
+        else:
+            assert call.func_scope.name == 'io.Int.rd'
+            assert target
+            dst = self.visit(target, node)
+            self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), self.sched_time)
+

@@ -200,7 +200,7 @@ class UseDefDetector(IRVisitor):
     def _visit_args(self, ir):
         for arg in ir.args:
             self.visit(arg)
-            if env.compile_phase >= env.PHASE_4 and arg.is_a([TEMP, ATTR]) and Type.is_list(arg.symbol().typ):
+            if env.compile_phase >= env.PHASE_4 and arg.is_a([TEMP, ATTR]) and arg.symbol().typ.is_list():
                 memnode = None
                 if env.memref_graph:
                     memnode = env.memref_graph.node(arg.symbol())

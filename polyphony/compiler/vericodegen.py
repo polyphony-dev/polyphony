@@ -200,9 +200,9 @@ class VerilogCodeGen:
             signame = '{} signed [{}:0] {};\n'.format(typ, port.width-1, accessor_name)
         return signame
 
-    def _to_sub_module_connect(self, module_name, instance_name, interface, port):
-        port_name = interface.port_name(module_name, port)
-        accessor_name = interface.port_name("sub_"+instance_name, port)# self._accessor_name(instance_name, interface, port)
+    def _to_sub_module_connect(self, module_name, instance_name, inf, access_inf, port):
+        port_name = inf.port_name(module_name, port)
+        accessor_name = access_inf.port_name("sub", port)
         connection = '.{}({})'.format(port_name, accessor_name)
         return connection
                 
@@ -217,8 +217,9 @@ class VerilogCodeGen:
             for i in info.interfaces:
                 if not i.is_public:
                     continue
+                sub_inf = sub_infs[i.name]
                 for p in i.ports:
-                    ports.append(self._to_sub_module_connect(info.name, name, i, p))
+                    ports.append(self._to_sub_module_connect(info.name, name, i, sub_inf, p))
 
             self.emit('//{} instance'.format(name))
             #for port, signal in port_map.items():
@@ -614,8 +615,8 @@ class VerilogCodeGen:
         for arg, param in zip(ahdl.args, params):
             p, _, _ = param            
             if arg.is_a(AHDL_MEMVAR):
-                assert Type.is_seq(p.typ)
-                param_memnode = Type.extra(p.typ)
+                assert p.typ.is_seq()
+                param_memnode = p.typ.get_memnode()
                 # find joint node in outer scope
                 assert len(param_memnode.preds) == 1
                 is_joinable_param = isinstance(param_memnode.preds[0], N2OneMemNode)
