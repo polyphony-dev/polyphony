@@ -815,11 +815,11 @@ class AHDLTranslator:
                 assert False
         port_sig = self.scope.gen_sig(port_sym.hdl_name(), width, attrs)
         if call.args:
-            assert call.func_scope.name == 'io.Int.wr'
+            assert call.func_scope.name.endswith('.wr')
             src = self.visit(call.args[0], node)
             self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), src), self.sched_time)
         else:
-            assert call.func_scope.name == 'io.Int.rd'
+            assert call.func_scope.name.endswith('.rd')
             assert target
             dst = self.visit(target, node)
             self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), self.sched_time)

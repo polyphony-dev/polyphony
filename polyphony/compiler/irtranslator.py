@@ -73,7 +73,7 @@ class ImportVisitor(ast.NodeVisitor):
             lib_scope = env.scopes[lib_name]
             for nm in node.names:
                 if nm.name == '*':
-                    for imp_name in mod_scope.all_imports:
+                    for imp_name in lib_scope.all_imports:
                         import_to_global(imp_name)
                     break
                 else:

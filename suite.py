@@ -31,7 +31,7 @@ def suite(compile_only, *cases):
     else:
         ds = DIRS
     for d in ds:
-        for t in glob.glob('{}/{}/*.py'.format(TEST_DIR, d)):
+        for t in sorted(glob.glob('{}/{}/*.py'.format(TEST_DIR, d))):
             print(t)
             simu.exec_test(t, output=False, compile_only=compile_only)
 

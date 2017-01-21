@@ -4,7 +4,7 @@ __all__ = [
 ]
 
 class Bit:
-    def __init__(self, init_v:int=0) -> object:
+    def __init__(self, width:int=1, init_v:int=0, protocol:int='none') -> object:
         self.__v = init_v
 
     def rd(self) -> int:
@@ -14,10 +14,10 @@ class Bit:
         self.__v = v
 
     def __call__(self, v=None) -> int:
-        if v:
-            self.wr(v)
-        else:
+        if v is None:
             return self.rd()
+        else:
+            self.wr(v)
 
 class Int:
     def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
@@ -39,8 +39,9 @@ class Int:
             self.valid = True
 
     def __call__(self, v=None) -> int:
-        if v:
-            self.wr(v)
-        else:
+        if v is None:
             return self.rd()
+        else:
+            self.wr(v)
+
         
