@@ -1,37 +1,100 @@
+import time, types
+import threading
+import inspect
+from collections import defaultdict
+from . import io
+
 __all__ = [
     'testbench',
-    'top',
+    'module',
+    'is_worker_running',
 ]
 
 def testbench(func):
-    return func
+    def _testbench_decorator(module_instance=None):
+        if module_instance:
+            if module_instance.__class__.__name__ not in module.module_instances:
+                print(inspect.getsourcelines(func)[0][1])
+                raise RuntimeError('The argument of testbench must be an instance of the module class')
+            module_instance._start()
+            func(module_instance)
+            module_instance._stop()
+        else:
+            func()
+    return _testbench_decorator
 
+_polyphony_is_worker_running = False
+def is_worker_running() -> bool:
+    return _polyphony_is_worker_running
 
-class TopDecorator:
+def _polyphony_module_start(self):
+    global _polyphony_is_worker_running
+    if _polyphony_is_worker_running:
+        return
+    _polyphony_is_worker_running = True
+    io._polyphony_enable()
+    for w in self.__workers:
+        w.start()
+
+def _polyphony_module_stop(self):
+    global _polyphony_is_worker_running
+    if not _polyphony_is_worker_running:
+        return
+    _polyphony_is_worker_running = False
+    for w in self.__workers:
+        w.prejoin()
+    io._polyphony_disable()
+    for w in self.__workers:
+        w.join()
+
+def _polyphony_module_append_worker(self, fn, args=None):
+    if not hasattr(self, '__workers'):
+        self.__workers = []
+    self.__workers.append(_polyphony_Worker(fn, args))
+
+class _polyphony_ModuleDecorator:
     def __init__(self):
-        self.top_instance = None
-        self.handlers = set()
+        self.module_instances = defaultdict(list)
 
     def __call__(self, cls):
-        def _top_decorator(*args, **kwargs):
-            self.top_instance = cls(*args, **kwargs)
-            self.top_instance.run = self._top_run
-            return self.top_instance
-        _top_decorator.__dict__ = cls.__dict__.copy()
-        return _top_decorator
+        def _module_decorator(*args, **kwargs):
+            instance = object.__new__(cls)
+            instance._start = types.MethodType(_polyphony_module_start, instance)
+            instance._stop = types.MethodType(_polyphony_module_stop, instance)
+            instance.append_worker = types.MethodType(_polyphony_module_append_worker, instance)
+            instance.__init__(*args, **kwargs)
+            self.module_instances[cls.__name__].append(instance)
+            return instance
+        _module_decorator.__dict__ = cls.__dict__.copy()
+        return _module_decorator
 
-    def _top_run(self, cycle):
-        for i in range(cycle):
-            for th in self.handlers:
-                method = getattr(self.top_instance, th.__name__, None)
-                assert method
-                method()
+    def abort(self):
+        for instances in self.module_instances.values():
+            for inst in instances:
+                inst._stop()
 
-    def thread(self, func):
-        qualname = func.__qualname__.split('.')
-        if len(qualname) > 2:
-            raise RuntimeError("\'@top.thread\' can only specify to a method of the global \'@top\' class")
-        self.handlers.add(func)
-        return func
+module = _polyphony_ModuleDecorator()
 
-top = TopDecorator()
+
+class _polyphony_Worker(threading.Thread):
+    def __init__(self, func, args):
+        super().__init__()
+        self.func = func
+        self.args = args
+        self.daemon = True
+
+    def run(self):
+        try:
+            if self.args:
+                self.func(*self.args)
+            else:
+                self.func()
+        except io._polyphony_IOException as e:
+            module.abort()
+        except Exception as e:
+            module.abort()
+            raise e
+
+    def prejoin(self):
+        super().join(0.01)
+

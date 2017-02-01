@@ -9,7 +9,6 @@ from .type import Type
 from .scope import Scope
 from .common import error_info
 from .utils import *
-import pdb
 
 
 def eval_unop(ir):
@@ -126,6 +125,8 @@ class ConstantOptBase(IRVisitor):
 
     def visit_CALL(self, ir):
         ir.args = [self.visit(arg) for arg in ir.args]
+        if ir.is_a(CALL) and ir.func.symbol().typ.is_function() and ir.func.symbol().typ.get_scope().is_lib() and ir.func.symbol().name == 'is_worker_running':
+            return CONST(True)
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -281,7 +282,7 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope is not self.scope and ir.sym.scope.is_global():
+        if ir.sym.scope is not self.scope and ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.sym, ir.sym.scope)
             if c:
                 return c

@@ -8,7 +8,6 @@ from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
 from logging import getLogger
 logger = getLogger(__name__)
-import pdb
 
 
 class SSATransformerBase:
@@ -397,7 +396,14 @@ class ObjectSSATransformer(SSATransformerBase):
                 use_stm.block.insert_stm(insert_idx, uphi)
                     
     def _need_rename(self, sym):
-        if self.scope.is_method() and self.scope.parent.is_top():
+        if self.scope.is_method() and self.scope.parent.is_module():
             return False
-        return sym.typ.is_object() and sym.name != env.self_name
+        if not sym.typ.is_object():
+            return False
+        if sym.name == env.self_name:
+            return False
+        scope = sym.typ.get_scope()
+        if scope.is_port() or scope.is_module():
+            return False
+        return True
 

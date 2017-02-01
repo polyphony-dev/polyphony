@@ -9,7 +9,6 @@ from .scope import Scope
 from .utils import replace_item
 from logging import getLogger
 logger = getLogger(__name__)
-import pdb
 
 class RefNode:
     PARAM = 0x00000001

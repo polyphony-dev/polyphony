@@ -97,8 +97,6 @@ class QuadrupleMaker(IRTransformer):
 
         ir.func = self.visit(ir.func)
         self._visit_args(ir)
-        if ir.func.is_a(ATTR) and ir.func.attr_scope.is_top() and ir.func.symbol().name == 'run':
-            return SYSCALL('$toprun', [ir.func.exp] + ir.args)
 
         if suppress or not self._has_return_type(ir):
             return ir

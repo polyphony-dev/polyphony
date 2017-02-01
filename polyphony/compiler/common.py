@@ -47,3 +47,29 @@ def error_info(scope, lineno):
     filename = env.scope_file_map[scope]
     return '{}\n{}:{}'.format(filename, lineno, get_src_text(scope, lineno))
 
+class Tagged:
+    def __init__(self, tags, valid_tags):
+        if isinstance(tags, list):
+            self.tags = set(tags)
+        else:
+            assert isinstance(tags, set)
+            self.tags = tags
+        self.valid_tags = valid_tags
+        if not self.tags.issubset(valid_tags):
+            raise RuntimeError()
+    def __getattr__(self, name):
+        if name.startswith('is_'):
+            tag = name[3:]
+            if tag not in self.valid_tags:
+                raise AttributeError(name)
+            return lambda : tag in self.tags
+        else:
+            raise AttributeError(name)
+
+    def add_tag(self, tag):
+        if isinstance(tag, set):
+            self.tags = self.tags.union(tag)
+        elif isinstance(tag, list):
+            self.tags = self.tags.union(set(tag))
+        else:
+            self.tags.add(tag)

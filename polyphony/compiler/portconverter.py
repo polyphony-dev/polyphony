@@ -8,19 +8,9 @@ from .typecheck import TypePropagation
 
 class PortTypeProp(TypePropagation):
     def visit_NEW(self, ir):
-        if not ir.func_scope.is_top() and not ir.func_scope.is_builtin():
+        if not ir.func_scope.is_module() and not ir.func_scope.is_lib():
             return ir.func_scope.return_type
-        
-        if ir.func_scope.is_top():
-            ctor = ir.func_scope.find_ctor()
-            for i, (sym, copy, _) in enumerate(ctor.params[1:]):
-                if copy.typ.is_object() or copy.typ.is_port():
-                    p_scope = copy.typ.get_scope()
-                    assert p_scope.is_port()
-                    sym.set_type(ir.args[i].symbol().typ)
-                    copy.set_type(ir.args[i].symbol().typ)
-
-        elif ir.func_scope.is_port():
+        if ir.func_scope.is_port():
             attrs = {}
             ctor = ir.func_scope.find_ctor()
             for a, p in zip(ir.args, ctor.params[1:]):
@@ -44,7 +34,7 @@ class PortConverter(IRTransformer):
         scopes = Scope.get_class_scopes()
         top = None
         for s in scopes:
-            if s.is_top():
+            if s.is_module():
                 top = s
                 break
         if not top:
@@ -67,22 +57,21 @@ class PortConverter(IRTransformer):
             self.process(method)
 
     def visit_CALL(self, ir):
-        if not ir.func_scope.is_builtin():
+        if not ir.func_scope.is_lib():
             return ir
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_builtin():
-            if ir.func_scope.parent.is_port():
-                sym = ir.func.tail()
-                assert sym.typ.is_port()
-                if ir.func_scope.orig_name == 'rd':
-                    direction = 'in'
-                else:
-                    direction = 'out'
-                if not sym.typ.has_direction():
-                    sym.typ.set_direction('?')
-                dir = sym.typ.get_direction()
-                if dir == '?':
-                    sym.typ.set_direction(direction)
-                    sym.typ.freeze()
-                elif dir != direction:
-                    raise RuntimeError('Port direction is conflicted')
+        if ir.func_scope.is_method() and ir.func_scope.parent.is_port():
+            sym = ir.func.tail()
+            assert sym.typ.is_port()
+            if ir.func_scope.orig_name == 'wr':
+                direction = 'output'
+            else:
+                direction = 'input'
+            if not sym.typ.has_direction():
+                sym.typ.set_direction('?')
+            dir = sym.typ.get_direction()
+            if dir == '?':
+                sym.typ.set_direction(direction)
+                sym.typ.freeze()
+            elif dir != direction:
+                raise RuntimeError('Port direction is conflicted')
         return ir

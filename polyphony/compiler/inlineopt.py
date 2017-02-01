@@ -46,7 +46,7 @@ class InlineOpt:
         collector.process(scope)
         for callee, calls in calls.items():
             self._process_scope(callee)
-            if callee.is_builtin():
+            if callee.is_lib():
                 continue
             elif callee.is_method():
                 self._process_method(callee, scope, calls)
@@ -309,7 +309,7 @@ class AliasDefCollector(IRVisitor):
             return False
         if not mov.dst.symbol().typ.is_object():
             return False
-        if mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and mov.dst.tail().typ.get_scope().is_top():
+        if mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and mov.dst.tail().typ.get_scope().is_module():
             return False
         return True
 
@@ -362,17 +362,16 @@ class FlattenFieldAccess(IRVisitor):
         # we don't flatten a method call
         return
 
-import pdb
 
 class ObjectHierarchyCopier:
     def __init__(self):
         pass
 
-    def _is_object(self, ir):
-        return ir.is_a([TEMP, ATTR]) and ir.symbol().typ.is_object()
+    def _is_inlining_object(self, ir):
+        return ir.is_a([TEMP, ATTR]) and ir.symbol().typ.is_object() and not ir.symbol().typ.get_scope().is_module()
 
     def _is_object_copy(self, mov):
-        return self._is_object(mov.src) and self._is_object(mov.dst)
+        return self._is_inlining_object(mov.src) and self._is_inlining_object(mov.dst)
 
     def _collect_object_copy(self, scope):
         copies = []

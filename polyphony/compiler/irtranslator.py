@@ -1,7 +1,6 @@
 ﻿import ast
 import sys
 import builtins as python_builtins
-import pdb
 from .ir import *
 from .block import Block
 from .scope import Scope, FunctionParam
@@ -9,79 +8,95 @@ from .symbol import Symbol
 from .type import Type
 from .env import env
 from .common import error_info
-from .builtin import builtin_names, builtin_port_type_names
+from .builtin import builtin_names, lib_port_type_names, lib_class_names
 from logging import getLogger
 logger = getLogger(__name__)
 
 FUNCTION_DECORATORS=[
     'testbench',
-    'top.thread',
 ]
 
 CLASS_DECORATORS=[
-    'top',
- ]
-
-SYNTHESIZABLE_LIBS=[
-    'io',
-]
-UNSYNTHESIZABLE_LIBS=[
-    'verilog',
+    'module',
 ]
 
+IGNORE_PREFIX='_polyphony_'
+
+BUILTIN_PACKAGES = (
+    'polyphony',
+    'polyphony.io',
+    'polyphony.timing',
+)
+
+ignore_packages = []
 class ImportVisitor(ast.NodeVisitor):
     def visit_Import(self, node):
-        pass
+        # TODO: import to any scope
+        target_scope = Scope.global_scope()
+        for nm in node.names:
+            if nm.name not in BUILTIN_PACKAGES:
+                if nm.asname:
+                    ignore_packages.append(nm.asname)
+                else:
+                    ignore_packages.append(nm.name)
+                continue
+
+            target_namespace = env.scopes[nm.name]
+            if nm.asname:
+                sym = target_scope.gen_sym(nm.asname)
+            else:
+                nms = nm.name.split('.')
+                parent = target_scope
+                for n in nms[:-1]:
+                    if not parent.has_sym(n):
+                        sym = parent.gen_sym(n)
+                        scope = Scope.create(parent, n, {'namespace'}, lineno=1)
+                        sym.set_type(Type.namespace(scope))
+                        parent = scope
+                    else:
+                        sym = parent.find_sym(n)
+                        parent = sym.typ.get_scope()
+                name = nms[-1]
+                sym = parent.gen_sym(name)
+            sym.set_type(Type.namespace(target_namespace))
+
 
     def visit_ImportFrom(self, node):
-        if not node.module.startswith('polyphony'):
+        # TODO: import to any scope
+        target_scope = Scope.global_scope()
+        def import_to_global(imp_sym, asname = None):
+            if imp_sym.typ.has_scope():
+                #scope = env.scopes[qualified_name]
+                scope = imp_sym.typ.get_scope()
+            if asname:
+                sym = target_scope.gen_sym(asname)
+            else:
+                sym = target_scope.gen_sym(imp_sym.name)
+            sym.set_type(imp_sym.typ)
+
+        if node.module not in BUILTIN_PACKAGES:
+            print("WARNING: Unsupported module '{}'".format(node.module))
+            for nm in node.names:
+                if nm.asname:
+                    ignore_packages.append(nm.asname)
+                else:
+                    ignore_packages.append(nm.name)
             return
 
-        g = Scope.global_scope()
-
-        def import_to_global(qualified_name, asname = None):
-            if qualified_name not in env.scopes:
-                print(error_info(g, node.lineno))
-                raise RuntimeError('Unknown module name is specified')
-            scope = env.scopes[qualified_name]
-            if asname:
-                sym = g.gen_sym(asname)
+        from_scope = env.scopes[node.module]
+        for nm in node.names:
+            if nm.name == '*':
+                for imp_name in from_scope.all_imports:
+                    imp_sym = from_scope.find_sym(nm.name)
+                    import_to_global(imp_sym)
+                break
             else:
-                name = qualified_name.split('.')[-1]
-                sym = g.gen_sym(name)
-            if scope.is_namespace():
-                sym.set_type(Type.namespace(scope))
-            elif scope.is_class():
-                sym.set_type(Type.klass(scope))
-
-        ms = node.module.split('.')
-        if len(ms) == 1:
-            for nm in node.names:
-                if nm.name == '*':
-                    for lib_name in SYNTHESIZABLE_LIBS:
-                        import_to_global(lib_name)
-                    break
-                elif nm.name in SYNTHESIZABLE_LIBS:
-                    import_to_global(nm.name, nm.asname)
-        elif len(ms) == 2:
-            lib_name = ms[1]
-            if lib_name not in SYNTHESIZABLE_LIBS+UNSYNTHESIZABLE_LIBS:
-                print(error_info(g, node.lineno))
-                raise RuntimeError('Unknown module name is specified')
-            if lib_name not in SYNTHESIZABLE_LIBS:
-                return
-            lib_scope = env.scopes[lib_name]
-            for nm in node.names:
-                if nm.name == '*':
-                    for imp_name in lib_scope.all_imports:
-                        import_to_global(imp_name)
-                    break
-                else:
-                    qname = lib_name+'.'+nm.name
-                    import_to_global(qname, nm.asname)
-        else:
-            print(error_info(g, node.lineno))
-            raise RuntimeError('Unknown module name is specified')
+                qname = node.module+'.'+nm.name
+                imp_sym = from_scope.find_sym(nm.name)
+                if not imp_sym:
+                    print(error_info(target_scope, node.lineno))
+                    raise ImportError("cannot import name '{}'".format(nm.name))
+                import_to_global(imp_sym, nm.asname)
 
 
 class FunctionVisitor(ast.NodeVisitor):
@@ -106,26 +121,33 @@ class FunctionVisitor(ast.NodeVisitor):
         self.current_scope = outer_scope
 
     def visit_FunctionDef(self, node):
+        if node.name.startswith(IGNORE_PREFIX):
+            return
+
         outer_scope = self.current_scope
 
-        attributes = []
+        tags = set()
         for deco in node.decorator_list:
             deco_name = self.visit(deco)
-            if deco_name in FUNCTION_DECORATORS:
-                attributes.append(deco_name.split('.')[-1])
+            if deco_name.startswith(IGNORE_PREFIX):
+                continue
             else:
-                print(error_info(outer_scope, node.lineno))
-                raise RuntimeError("Unsupported decorator \'@{}\' is specified.".format(deco_name))
-        if outer_scope.is_class() and 'classmethod' not in attributes:
-            attributes.append('method')
+                sym = self.current_scope.find_sym(deco_name)
+                if sym and sym.name in FUNCTION_DECORATORS:
+                    tags.add(sym.name)
+                else:
+                    print(error_info(outer_scope, node.lineno))
+                    raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
+        if outer_scope.is_class() and 'classmethod' not in tags:
+            tags.add('method')
             if node.name == '__init__':
-                attributes.append('ctor')
+                tags.add('ctor')
             elif node.name == '__call__':
-                attributes.append('callable')
-        if outer_scope.is_builtin():
-            attributes.append('builtin')
+                tags.add('callable')
+        if outer_scope.is_lib():
+            tags.add('lib')
 
-        self.current_scope = Scope.create(outer_scope, node.name, attributes, node.lineno)
+        self.current_scope = Scope.create(outer_scope, node.name, tags, node.lineno)
 
         for arg in node.args.args:
             param_in = self.current_scope.add_sym('{}_{}'.format(Symbol.param_prefix, arg.arg))
@@ -146,6 +168,8 @@ class FunctionVisitor(ast.NodeVisitor):
             t = Type.from_annotation(ann, self.current_scope.parent)
             if t:
                 self.current_scope.return_type = t
+                if t is not Type.none_t:
+                    self.current_scope.add_tag('returnable')
             else:
                 print(error_info(self.current_scope, node.lineno))
                 raise TypeError("Unknown type is specified.")
@@ -157,25 +181,40 @@ class FunctionVisitor(ast.NodeVisitor):
             first_param = self.current_scope.params[0]
             first_param.copy.typ = first_param.sym.typ = Type.object(outer_scope)
 
-        for stm in node.body:
-            self.visit(stm)
+        if self.current_scope.is_lib():
+            pass
+        else:
+            for stm in node.body:
+                self.visit(stm)
         self._leve_scope(outer_scope)
 
     def visit_ClassDef(self, node):
+        if node.name.startswith(IGNORE_PREFIX):
+            return
         outer_scope = self.current_scope
 
-        attributes = []
+        tags = set()
         for deco in node.decorator_list:
             deco_name = self.visit(deco)
-            if deco_name in CLASS_DECORATORS:
-                attributes.append(deco_name)
+            sym = self.current_scope.find_sym(deco_name)
+            if sym and sym.name in CLASS_DECORATORS:
+                tags.add(sym.name)
+            else:
+                print(error_info(outer_scope, node.lineno))
+                raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
 
-        self.current_scope = Scope.create(outer_scope, node.name, ['class'] + attributes, node.lineno)
-        if self.current_scope.name in builtin_port_type_names:
-            self.current_scope.attributes.extend(['port', 'builtin'])
-        if self.current_scope.is_top():
-            #run_method_scope = Scope.create(self.current_scope, 'run', ['method'], node.lineno)
-            self.current_scope.add_sym('run')
+        self.current_scope = Scope.create(outer_scope, node.name, tags.union({'class'}), node.lineno)
+        if self.current_scope.name in lib_port_type_names:
+            self.current_scope.add_tag({'port', 'lib'})
+        if self.current_scope.is_module():
+            for m in ['append_worker']:
+                sym = self.current_scope.add_sym(m)
+                scope = Scope.create(self.current_scope, m, ['method', 'lib'], node.lineno)
+                sym.set_type(Type.function(scope, None, None))
+                blk = Block(scope)
+                scope.set_entry_block(blk)
+                scope.set_exit_block(blk)
+
         for stm in node.body:
             self.visit(stm)
 
@@ -267,6 +306,9 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_block = last_block
 
     def visit_FunctionDef(self, node):
+        if node.name.startswith(IGNORE_PREFIX):
+            return
+
         context = self._enter_scope(node.name)
 
         outer_function_exit = self.function_exit
@@ -288,6 +330,10 @@ class CodeVisitor(ast.NodeVisitor):
             d = self.visit(defval)
             params[skip+idx] = FunctionParam(param.sym, param.copy, d)
             self.emit(MOVE(TEMP(param.copy, Ctx.STORE), TEMP(param.sym, Ctx.LOAD)), node)
+
+        if self.current_scope.is_lib():
+            self._leave_scope(*context)
+            return
 
         for stm in node.body:
             self.visit(stm)
@@ -313,6 +359,9 @@ class CodeVisitor(ast.NodeVisitor):
         raise NotImplementedError('async def statement is not supported')
 
     def visit_ClassDef(self, node):
+        if node.name.startswith(IGNORE_PREFIX):
+            return
+
         context = self._enter_scope(node.name)
         for body in node.body:
             self.visit(body)
@@ -340,7 +389,7 @@ class CodeVisitor(ast.NodeVisitor):
         ret = TEMP(sym, Ctx.STORE)
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
-            self.current_scope.attributes.append('returnable')
+            self.current_scope.add_tag('returnable')
         self.emit(JUMP(self.function_exit, 'E'), node)
 
         self.current_block.connect(self.function_exit)
@@ -352,6 +401,8 @@ class CodeVisitor(ast.NodeVisitor):
 
     
     def visit_Assign(self, node):
+        if isinstance(node.targets[0], ast.Name) and node.targets[0].id.startswith(IGNORE_PREFIX):
+            return
         right = self.visit(node.value)
         for target in node.targets:
             left = self.visit(target)
@@ -500,7 +551,7 @@ class CodeVisitor(ast.NodeVisitor):
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(loop_bridge_block, 'C'), node)
+            self.emit(JUMP(loop_bridge_block), node)
             self.current_block.connect(loop_bridge_block)
 
         # need loop bridge for branch merging
@@ -754,8 +805,30 @@ class CodeVisitor(ast.NodeVisitor):
         raise NotImplementedError('lambda is not supported')
 
     def visit_IfExp(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('if exp is not supported')
+        tmpsym = self.current_scope.add_temp(Symbol.temp_prefix)
+        else_exp = self.visit(node.orelse)
+        self.emit(MOVE(TEMP(tmpsym, Ctx.STORE), else_exp), node)
+
+        if_head = self.current_block
+        if_then = Block(self.current_scope, 'ifthen')
+        if_exit = Block(self.current_scope)
+        if_head.connect(if_then)
+        if_head.connect(if_exit)
+
+        condition = self.visit(node.test)
+        if not condition.is_a(RELOP):
+            condition = RELOP('NotEq', condition, CONST(0))
+
+        self.emit(CJUMP(condition, if_then, if_exit), node)
+
+        self.current_block = if_then
+        then_exp = self.visit(node.body)
+        self.emit(MOVE(TEMP(tmpsym, Ctx.STORE), then_exp), node)
+        self.emit(JUMP(if_exit), node)
+        self.current_block.connect(if_exit)
+
+        self.current_block = if_exit
+        return TEMP(tmpsym, Ctx.LOAD)
 
     def visit_Dict(self, node):
         print(self._err_info(node))
@@ -801,6 +874,8 @@ class CodeVisitor(ast.NodeVisitor):
         #if isinstance(node.func, ast.Name):
         #    if node.func.id in builtin_type_names:
         #        pass
+        if isinstance(node.func, ast.Name) and node.func.id.startswith(IGNORE_PREFIX):
+            return CONST(0)
         func = self.visit(node.func)
         args = list(map(self.visit, node.args))
         
@@ -831,11 +906,12 @@ class CodeVisitor(ast.NodeVisitor):
             if func.exp.is_a([TEMP, ATTR]):
                 scope_sym = func.tail()
                 if isinstance(scope_sym, Symbol):
-                    if scope_sym.typ.is_namespace() or scope_sym.typ.is_class():
+                    if scope_sym.typ.is_containable():
                          receiver = scope_sym.typ.get_scope()
                          attr_sym = receiver.find_sym(func.attr)
-                         attr_scope = attr_sym.typ.get_scope()
-                         return NEW(attr_scope, args)
+                         if attr_sym.typ.is_class():
+                             attr_scope = attr_sym.typ.get_scope()
+                             return NEW(attr_scope, args)
         return CALL(func, args)
 
     
@@ -998,6 +1074,15 @@ class AnnotationVisitor(ast.NodeVisitor):
         return node.s
 
 
+def scope_tree_str(scp, name, typ_name, indent):
+    s = '{}{} : {}\n'.format(indent, name, typ_name)
+    for sym in sorted(scp.symbols.values()):
+        if sym.typ.is_containable():
+            s += scope_tree_str(sym.typ.get_scope(), sym.name, sym.typ.name, indent+'  ')
+        else:
+            s += '{}{} : {}\n'.format(indent+'  ', sym.name, sym.typ)
+    return s
+
 class IRTranslator(object):
     def __init__(self):
         pass
@@ -1007,10 +1092,16 @@ class IRTranslator(object):
 
         global_scope = Scope.global_scope()
         if lib_name:
-            top_scope = Scope.create(None, lib_name, ['namespace'], lineno=1)
+            if lib_name != 'polyphony':
+                lib_root = env.scopes['polyphony']
+            else:
+                lib_root = None
+            top_scope = Scope.create(lib_root, lib_name, {'namespace', 'lib'}, lineno=1)
         else:
             top_scope = global_scope
             ImportVisitor().visit(tree)
+            #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
+            #print(ignore_packages)
 
         FunctionVisitor(top_scope).visit(tree)
         CompareTransformer().visit(tree)

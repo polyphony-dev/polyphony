@@ -114,6 +114,9 @@ class Type:
     def is_scalar(self):
         return self.name == 'int' or self.name == 'bool'
 
+    def is_containable(self):
+        return self.name == 'namespace' or self.name == 'class'
+
     @classmethod
     def is_same(cls, t0, t1):
         return t0.name == t1.name

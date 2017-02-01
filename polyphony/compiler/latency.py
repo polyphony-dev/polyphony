@@ -29,6 +29,6 @@ def get_latency(tag):
         if tag.exp.is_a(CALL):
             return CALL_MINIMUM_STEP
         elif tag.exp.is_a(SYSCALL):
-            if tag.exp.name == '$toprun':
-                return tag.exp.args[1].value
+            if tag.exp.name == 'clksleep':
+                return tag.exp.args[0].value
     return MINIMUM_STEP

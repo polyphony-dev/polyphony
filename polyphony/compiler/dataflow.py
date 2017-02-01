@@ -345,7 +345,6 @@ class DFGBuilder:
                     blocks.append(b)
             dfg = self._make_graph(blk.name, blocks)
         self._add_mem_edges(dfg)
-        self._add_object_edges(dfg)
         self._add_special_seq_edges(dfg)
         for child in children:
             dfg.set_child(child)
@@ -406,6 +405,7 @@ class DFGBuilder:
 
         if self.scope.is_testbench():
             self._add_edges_between_calls(blocks, dfg)
+        self._add_edges_between_objects(blocks, dfg)
         return dfg
 
 
@@ -540,18 +540,43 @@ class DFGBuilder:
             prev = next
         return
 
-    def _add_object_edges(self, dfg):
-        # TODO
-        return
+    def _get_object_symbol(self, stm):
+        if stm.is_a(MOVE):
+            call = stm.src
+        elif stm.is_a(EXPR):
+            call = stm.exp
+        else:
+            return None
+        if not call.is_a(CALL):
+            return None
+        if not call.func.is_a(ATTR):
+            return None
+        receiver = call.func.tail()
+        if receiver.typ.is_object() or receiver.typ.is_port():
+            return receiver
+        return None
+
+    def _add_edges_between_objects(self, blocks, dfg):
+        all_stms_in_section = self._all_stms(blocks)
+        prevs = {}
+        for stm in all_stms_in_section:
+            sym = self._get_object_symbol(stm)
+            if sym:
+                node = dfg.add_stm_node(stm)
+                if sym in prevs:
+                    prev = prevs[sym]
+                    dfg.add_seq_edge(prev, node)
+                prevs[sym] = node
 
     # workaround
     def _add_special_seq_edges(self, dfg):
         for node in dfg.nodes:
             if node.tag.is_a([JUMP, CJUMP, MCJUMP]):
                 stm = node.tag
-                assert len(stm.block.stms) > 1
+                #assert len(stm.block.stms) > 1
                 assert stm.block.stms[-1] is stm
                 idx = stm.block.stms.index(stm)
                 for prev_stm in stm.block.stms[:-1]:
                     prev_node = dfg.find_node(prev_stm)
                     dfg.add_seq_edge(prev_node, node)
+

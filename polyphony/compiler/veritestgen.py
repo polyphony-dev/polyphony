@@ -110,20 +110,22 @@ class VerilogTestGen(VerilogCodeGen):
         formats = []
         args = ['$time']
 
-        for name, info, _, _, _ in self.module_info.sub_modules.values():
+        for name, info, connections, _, in self.module_info.sub_modules.values():
             if isinstance(info, RAMModuleInfo):
                 continue
             if not info.interfaces:
                 continue
             if isinstance(info.interfaces[0], FunctionInterface):
-                ports = info.interfaces[0].ports[3:] # skip controls
-            elif isinstance(info.interfaces[0], TopInterface):
-                ports = info.interfaces[0].ports[:]
+                accessor = connections[0][1]
+                ports = accessor.ports[3:] # skip controls
+            elif isinstance(info.interfaces[0], PlainInterface):
+                accessor = connections[0][1]
+                ports = accessor.ports[:]
             else:
                 continue
             for p in ports:
                 if isinstance(p, tuple):
-                    accessor_name = info.interfaces[0].port_name(name, p)
+                    accessor_name = accessor.port_name('', p)
                     args.append(accessor_name)
                     if p.width == 1:
                         formats.append('{}=%1d'.format(accessor_name))

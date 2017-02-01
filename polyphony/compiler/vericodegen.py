@@ -200,9 +200,9 @@ class VerilogCodeGen:
             signame = '{} signed [{}:0] {};\n'.format(typ, port.width-1, accessor_name)
         return signame
 
-    def _to_sub_module_connect(self, module_name, instance_name, inf, access_inf, port):
+    def _to_sub_module_connect(self, module_name, instance_name, inf, acc, port):
         port_name = inf.port_name(module_name, port)
-        accessor_name = access_inf.port_name("sub", port)
+        accessor_name = acc.port_name("sub", port)
         connection = '.{}({})'.format(port_name, accessor_name)
         return connection
                 
@@ -210,16 +210,15 @@ class VerilogCodeGen:
         if not self.module_info.sub_modules:
             return
         self.emit('//sub modules')
-        for name, info, accessors, sub_infs, param_map in self.module_info.sub_modules.values():
+        for name, info, connections, param_map in self.module_info.sub_modules.values():
             ports = []
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
-            for i in info.interfaces:
-                if not i.is_public:
+            for inf, acc in connections:
+                if not inf.is_public:
                     continue
-                sub_inf = sub_infs[i.name]
-                for p in i.ports:
-                    ports.append(self._to_sub_module_connect(info.name, name, i, sub_inf, p))
+                for p in inf.ports:
+                    ports.append(self._to_sub_module_connect(info.name, name, inf, acc, p))
 
             self.emit('//{} instance'.format(name))
             #for port, signal in port_map.items():

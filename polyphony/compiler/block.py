@@ -317,6 +317,8 @@ class BlockReducer:
         for block in scope.traverse_blocks():
             if len(block.stms) > 1:
                 continue
+            if block is scope.entry_block:
+                continue
             if not block.stms:
                 assert not block.succs
                 for pred in block.preds:

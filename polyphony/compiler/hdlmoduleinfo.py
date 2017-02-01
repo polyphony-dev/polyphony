@@ -39,7 +39,7 @@ class HDLModuleInfo:
     def __str__(self):
         s = 'ModuleInfo {}\n'.format(self.name)
         s += '  -- num of signals --\n'
-        s += '  - sub modules\n    ' + ', '.join([name for name, _, _, _, _ in self.sub_modules.values()])
+        s += '  - sub modules\n    ' + ', '.join([name for name, _, _, _ in self.sub_modules.values()])
         s += '\n'
         s += '  - functions\n    ' + ', '.join([str(f.output.sig.name) for f in self.functions])
         s += '\n'
@@ -110,21 +110,12 @@ class HDLModuleInfo:
         assert isinstance(decl, AHDL_DECL)
         self.decls[tag].remove(decl)
 
-    def add_sub_module(self, name, module_info, accessors, param_map=None):
+    def add_sub_module(self, name, module_info, connections, param_map=None):
         assert isinstance(name, str)
-        is_public = self.scope.is_class()
         sub_infs = {}
-        for inf in accessors:
-            if not inf.is_public:
-                continue
-            fieldif = inf.clone()
-            if fieldif.name:
-                fieldif.name = name + '_' + fieldif.name
-            else:
-                fieldif.name = name
-            fieldif.is_public = False
-            sub_infs[inf.name] = fieldif
-        self.sub_modules[name] = (name, module_info, accessors, sub_infs, param_map)
+        for interface, accessor in connections:
+            sub_infs[interface.name] = accessor
+        self.sub_modules[name] = (name, module_info, connections, param_map)
 
     def add_function(self, func, tag=''):
         self.add_decl(tag, func)

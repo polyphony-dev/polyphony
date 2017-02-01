@@ -8,7 +8,6 @@ from .env import env
 from .scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
-import pdb
 
 
 class MemoryRenamer:

@@ -139,42 +139,48 @@ class SelectorBuilder:
                 selector = AHDL_MUX('{}_{}_selector'.format(name, port_name), switch_var, branches[port_name], trunk[port_name])
                 self.module_info.add_mux(selector, tag)
 
+    def _build_sub_module(self, inf, acc):
+        tag = acc.name
+        for p in inf.ports:
+            int_name = acc.port_name('', p)
+            sig = self.scope.gen_sig(int_name, p.width)
+            if p.dir=='in' and not acc.thru:
+                self.module_info.add_internal_reg(sig, tag)
+                reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
+                self.module_info.add_fsm_reset_stm(self.scope.orig_name, reset_stm)
+            else:
+                self.module_info.add_internal_net(sig, tag)
+
     def _build_sub_module_selectors(self):
-        for name, info, accessors, sub_infs, param_map in self.module_info.sub_modules.values():
-            if info.scope and info.scope.is_top():
+        for name, info, connections, param_map in self.module_info.sub_modules.values():
+            if info.scope and info.scope.is_module():
+                self._build_sub_module(*connections[0])
                 continue
             infs = []
-            for a in accessors:
-                if not a.is_public:
+            # TODO
+            for inf, acc in connections:
+                if not inf.is_public:
                     continue
-                infs.append(sub_infs[a.name])
-            infs = unique(infs)
-            for inf in infs:
+            
                 trunk = {}
                 branches = defaultdict(list)
-                tag = inf.name
+                tag = acc.name
 
                 for p in inf.ports:
-                    sig = self.scope.gen_sig(inf.port_name('sub', p), p.width)
+                    sig = self.scope.gen_sig(acc.port_name('sub', p), p.width)
                     trunk[p.basename] = sig
                     self.module_info.add_internal_net(sig, tag)
 
-                    if inf.is_public:
-                        ext_name = inf.port_name(self.module_info.name, p)
-                        sig = self.scope.gen_sig(ext_name, p.width)
-                        branches[p.basename].append(sig)
-
-                    int_name = inf.port_name('', p)
+                    int_name = acc.port_name('', p)
                     sig = self.scope.gen_sig(int_name, p.width)
                     branches[p.basename].append(sig)
-                    if p.dir=='in' and not inf.thru:
+                    if p.dir=='in' and not acc.thru:
                         self.module_info.add_internal_reg(sig, tag)
                         reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
                         self.module_info.add_fsm_reset_stm(self.scope.orig_name, reset_stm)
                     else:
                         self.module_info.add_internal_net(sig, tag)
 
-                switch_width = 2 if inf.is_public else 1 # TODO
                 # make interconnect
                 for p in inf.ports:
                     port_name = p.basename
@@ -186,23 +192,8 @@ class SelectorBuilder:
                             assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), concat)
                             self.module_info.add_static_assignment(assign, tag)
                         else:
-                            if switch_width > 1:
-                                switch = self.scope.gen_sig('sub_' + inf.name + '_switch', switch_width, ['onehot'])
-                                switch_var = AHDL_VAR(switch, Ctx.STORE)
-                                self.module_info.add_internal_net(switch, tag)
-
-                                bits = [AHDL_SYMBOL(sig.name) for sig in branches['ready']]
-                                bits.reverse()
-                                ready_bits = AHDL_CONCAT(bits)
-                                assign = AHDL_ASSIGN(switch_var, ready_bits)
-                                self.module_info.add_static_assignment(assign, tag)
-
-                                switch_var = AHDL_VAR(switch, Ctx.LOAD)
-                                selector = AHDL_MUX('{}_{}_selector'.format(inf.name, port_name), switch_var, branches[port_name], trunk[port_name])
-                                self.module_info.add_mux(selector, tag)
-                            else:
-                                assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), AHDL_VAR(branches[port_name][0], Ctx.LOAD))
-                                self.module_info.add_static_assignment(assign, tag)
+                            assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), AHDL_VAR(branches[port_name][0], Ctx.LOAD))
+                            self.module_info.add_static_assignment(assign, tag)
                     else:
                         for sig in branches[port_name]:
                             assign = AHDL_ASSIGN(AHDL_VAR(sig, Ctx.STORE), AHDL_VAR(trunk[port_name], Ctx.LOAD))

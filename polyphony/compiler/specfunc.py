@@ -8,7 +8,6 @@ from .env import env
 from .ir import Ctx, CONST, TEMP, ARRAY, MOVE
 from .usedef import UseDefDetector
 from .type import Type
-import pdb
 import logging
 logger = logging.getLogger()
 
@@ -35,7 +34,7 @@ class SpecializedFunctionMaker:
             if caller.is_testbench():
                 using_scopes.add(callee)
                 continue
-            if callee.is_builtin():
+            if callee.is_lib():
                 using_scopes.add(callee)
                 continue
 

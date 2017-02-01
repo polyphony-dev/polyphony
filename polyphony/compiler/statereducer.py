@@ -14,7 +14,7 @@ class StateReducer(AHDLVisitor):
         self.using_state = set()
         for stg in scope.stgs:
             self.current_stg = stg
-            
+            self.using_state.add(stg.init_state)
             for state in stg.states:
                 self.current_state = state
                 for code in state.codes:

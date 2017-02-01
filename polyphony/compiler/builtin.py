@@ -7,14 +7,16 @@ builtin_return_type_table = {
     'write':Type.none_t,
     'display':Type.none_t,
     'assert':Type.none_t,
-    'wait':Type.none_t,
     '$toprun':Type.none_t,
 }
 builtin_names = builtin_return_type_table.keys()
 
-builtin_port_type_names = [
-    'io.Bit',
-    'io.Int',
-    'io.Uint',
-    'io.Fifo',
-]
+
+lib_port_type_names = (
+    'polyphony.io.Bit',
+    'polyphony.io.Int',
+    'polyphony.io.Uint',
+    'polyphony.io.Queue',
+)
+
+lib_class_names = lib_port_type_names

@@ -8,9 +8,13 @@ from .env import env
 import logging
 logger = logging.getLogger(__name__)
 
+
 def type_error(ir, msg):
     print(error_info(ir.block.scope, ir.lineno))
     raise TypeError(msg)
+
+class RejectPropagation(Exception):
+    pass
 
 class TypePropagation(IRVisitor):
     def __init__(self):
@@ -19,15 +23,20 @@ class TypePropagation(IRVisitor):
 
     def propagate_global_function_type(self):
         self.check_error = False
-        scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True, with_builtin=True)
+        scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True, with_lib=True)
         for s in scopes:
-            s.return_type = Type.none_t
-
+            if s.return_type is None:
+                s.return_type = Type.none_t
         prev_untyped = []
         while True:
+            untyped = []
             for s in scopes:
-                self.process(s)
-            untyped = [s for s in scopes if s.is_returnable() and s.return_type is Type.none_t]
+                try:
+                    self.process(s)
+                except RejectPropagation as r:
+                    #print(r)
+                    untyped.append(s)
+                    continue
             if untyped:
                 if len(prev_untyped) == len(untyped):
                     str_untypes = ', '.join([s.name[len('@top.'):] for s in untyped])
@@ -70,20 +79,25 @@ class TypePropagation(IRVisitor):
             t = ir.func.symbol().typ
             if t.is_object() or t.is_port():
                 self._convert_call(ir)
+            elif t.is_function():
+                sym = self.scope.find_sym(func_name)
+                assert sym.typ.has_scope()
+                scope = sym.typ.get_scope()
+                ir.func_scope = scope
             else:
-                ir.func_scope = self.scope.find_scope(func_name)
+                raise RejectPropagation(str(ir))
         elif ir.func.is_a(ATTR):
             if not ir.func.attr_scope:
-                return Type.none_t
+                raise RejectPropagation(str(ir))
             func_name = ir.func.symbol().orig_name()
             t = ir.func.symbol().typ
             if t.is_object() or t.is_port():
                 self._convert_call(ir)
             else:
-                if ir.func.attr_scope.is_top() and func_name == 'run':
-                    return Type.none_t
                 ir.func_scope = ir.func.attr_scope.find_child(func_name)
-            assert ir.func_scope.is_method()
+            if not ir.func_scope:
+                raise RejectPropagation(str(ir))
+            #assert ir.func_scope.is_method()
             if ir.func_scope.is_mutable():
                 pass #ir.func.exp.ctx |= Ctx.STORE
         else:
@@ -91,7 +105,7 @@ class TypePropagation(IRVisitor):
 
         if not ir.func_scope:
             # we cannot specify the callee because it has not been evaluated yet.
-            return Type.none_t
+            raise RejectPropagation(str(ir))
 
         self.scope.add_callee_scope(ir.func_scope)
 
@@ -99,7 +113,7 @@ class TypePropagation(IRVisitor):
             params = ir.func_scope.params[1:]
         else:
             params = ir.func_scope.params[:]
-        self._fill_args_if_needed(params, ir)
+        self._fill_args_if_needed(ir.func_scope.orig_name, params, ir.args)
         arg_types = [self.visit(arg) for arg in ir.args]
 
         ret_t = ir.func_scope.return_type
@@ -123,8 +137,9 @@ class TypePropagation(IRVisitor):
     def visit_NEW(self, ir):
         self.scope.add_callee_scope(ir.func_scope)
         ret_t = Type.object(ir.func_scope)
+        ir.func_scope.return_type = ret_t
         ctor = ir.func_scope.find_ctor()
-        self._fill_args_if_needed(ctor.params[1:], ir)
+        self._fill_args_if_needed(ir.func_scope.orig_name, ctor.params[1:], ir.args)
         arg_types = [self.visit(arg) for arg in ir.args]
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
@@ -146,24 +161,24 @@ class TypePropagation(IRVisitor):
             ir.attr_scope = attr_scope
 
         if ir.attr_scope:
-            assert ir.attr_scope.is_class() or ir.attr_scope.is_namespace()
+            assert ir.attr_scope.is_containable()
             if isinstance(ir.attr, str):
                 if not ir.attr_scope.has_sym(ir.attr):
-                    type_error(ir, 'unknown attribute name {}'.format(ir.attr))
+                    type_error(self.current_stm, 'unknown attribute name {}'.format(ir.attr))
                 ir.attr = ir.attr_scope.find_sym(ir.attr)
 
             if self.scope.parent is not ir.attr_scope:
                 self.scope.add_callee_scope(ir.attr_scope)
             return ir.attr.typ
 
-        return Type.none_t
+        raise RejectPropagation(str(ir))
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
         self.visit(ir.offset)
         if self.check_error:
             if not mem_t.is_seq():
-                type_error(ir, 'expects list')
+                type_error(self.current_stm, 'expects list')
         else:
             if not mem_t.is_seq():
                 return Type.none_t
@@ -183,8 +198,44 @@ class TypePropagation(IRVisitor):
         else:
             return Type.tuple(Type.int_t, None, len(ir.items))
 
+    def _propagate_worker_arg_types(self, call):
+        if len(call.args) == 0:
+            type_error(self.current_stm, "{}() missing required argument".format(call.func_scope.orig_name))
+        func = call.args[0]
+        if not func.symbol().typ.is_function():
+            type_error(self.current_stm, "!!!")
+        worker_scope = func.symbol().typ.get_scope()
+
+        if worker_scope.is_method():
+            params = worker_scope.params[1:]
+        else:
+            params = worker_scope.params[:]
+
+        if len(call.args) > 1:
+            arg = call.args[1]
+            if arg.is_a(ARRAY):
+                args = arg.items[:]
+            else:
+                args = call.args[1:]
+        else:
+            args = []
+        self._fill_args_if_needed(worker_scope.orig_name, params, args)
+        arg_types = [self.visit(arg) for arg in args]
+        for i, param in enumerate(params):
+            param.copy.typ = param.sym.typ = arg_types[i]
+        funct = Type.function(worker_scope, Type.none_t, tuple([param.sym.typ for param in worker_scope.params]))
+        func.symbol().set_type(funct)
+        mod_sym = call.func.tail()
+        assert mod_sym.typ.is_object()
+        mod_scope = mod_sym.typ.get_scope()
+        mod_scope.append_worker(call, worker_scope, args)
+        
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
+
+        if ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and ir.exp.func_scope.parent.is_module():
+            if ir.exp.func_scope.orig_name == 'append_worker':
+                self._propagate_worker_arg_types(ir.exp)
 
     def visit_CJUMP(self, ir):
         self.visit(ir.exp)
@@ -209,13 +260,13 @@ class TypePropagation(IRVisitor):
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
         if src_typ is Type.none_t:
-            return
+            raise RejectPropagation(str(ir))
         dst_typ = self.visit(ir.dst)
 
         if ir.dst.is_a([TEMP, ATTR]):
             if not isinstance(ir.dst.symbol(), Symbol):
                 # the type of object has not inferenced yet
-                return
+                raise RejectPropagation(str(ir))
             ir.dst.symbol().set_type(src_typ)
             if self.scope.is_method() and ir.dst.is_a(ATTR):
                 sym = self.scope.parent.find_sym(ir.dst.symbol().name)
@@ -225,9 +276,9 @@ class TypePropagation(IRVisitor):
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_none():
                 # the type of object has not inferenced yet
-                return
+                raise RejectPropagation(str(ir))
             if not src_typ.is_tuple() or not dst_typ.is_tuple():
-                return
+                raise RejectPropagation(str(ir))
             elem_t = src_typ.get_element()
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR])
@@ -235,8 +286,8 @@ class TypePropagation(IRVisitor):
         else:
             assert False
         # check mutable method
-        if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == env.self_name and 'mutable' not in self.scope.attributes:
-            self.scope.attributes.append('mutable')
+        if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == env.self_name and not self.scope.is_mutable():
+            self.scope.add_tag('mutable')
 
     def visit_PHI(self, ir):
         arg_types = [self.visit(arg) for arg in ir.args]
@@ -248,14 +299,14 @@ class TypePropagation(IRVisitor):
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
 
-    def _fill_args_if_needed(self, params, ir):
-        if len(ir.args) < len(params):
+    def _fill_args_if_needed(self, func_name, params, args):
+        if len(args) < len(params):
             for i, param in enumerate(params):
-                if i >= len(ir.args):
+                if i >= len(args):
                     if param.defval:
-                        ir.args.append(param.defval)
+                        args.append(param.defval)
                     else:
-                        type_error(ir, "{}() missing required argument: '{}'".format(ir.func_scope.orig_name, param.sym.name))
+                        type_error(self.current_stm, "{}() missing required argument: '{}'".format(func_name, param.copy.name))
 
 class ClassFieldChecker(IRVisitor):
     def __init__(self):
@@ -309,6 +360,8 @@ class TypeChecker(IRVisitor):
     def visit_CALL(self, ir):
         func_sym = ir.func.symbol()
         arg_len = len(ir.args)
+        if ir.func_scope.is_lib():
+            return ir.func_scope.return_type
         if not ir.func_scope:
             type_error(self.current_stm, '{} is not callable'.format(ir.func.sym.name))
         elif ir.func_scope.is_method():
@@ -352,7 +405,7 @@ class TypeChecker(IRVisitor):
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         self._check_param_type(param_typs, ir)
 
-        if ir.func_scope.is_top() and not ir.func_scope.parent.is_global():
+        if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
             type_error(self.current_stm, '@top decorated class must be in the global scope')
 
         return Type.object(ir.func_scope)
@@ -408,9 +461,12 @@ class TypeChecker(IRVisitor):
             if ir.exp.func_scope.return_type is Type.none_t:
                 #TODO: warning
                 pass
-        elif ir.exp.is_a(SYSCALL):
-            #TODO
-            pass
+            if ir.exp.func_scope.is_method() and ir.exp.func_scope.parent.is_module():
+                if ir.exp.func_scope.orig_name == 'append_worker':
+                    arg_types = [self.visit(arg) for arg in ir.exp.args[1:]]
+                    if len(arg_types):
+                        # TODO
+                        pass
 
     def visit_CJUMP(self, ir):
         self.visit(ir.exp)
@@ -444,13 +500,13 @@ class TypeChecker(IRVisitor):
         if arg_len == param_len:
             pass
         elif arg_len < param_len:
-            type_error(ir, "{}() missing required argument: '{}'".format(ir.func_scope.orig_name, param.sym.name))
+            type_error(self.current_stm, "{}() missing required argument: '{}'".format(ir.func_scope.orig_name, param.sym.name))
         else:
-            type_error(ir, '{}() takes {} positional arguments but {} were given'.format(ir.func_scope.orig_name, param_len, arg_len))
+            type_error(self.current_stm, '{}() takes {} positional arguments but {} were given'.format(ir.func_scope.orig_name, param_len, arg_len))
 
     def _check_param_type(self, param_typs, ir):
         assert len(ir.args) == len(param_typs)
         for arg, param_t in zip(ir.args, param_typs):
             arg_t = self.visit(arg)
             if not Type.is_commutable(arg_t, param_t):
-                type_error(ir, 'type missmatch "{}" "{}"'.format(arg_t[0], param_t[0]))
+                type_error(self.current_stm, 'type missmatch "{}" "{}"'.format(arg_t[0], param_t[0]))

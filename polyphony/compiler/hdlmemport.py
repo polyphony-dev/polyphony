@@ -7,7 +7,6 @@ from .hdlinterface import *
 from .memref import *
 from logging import getLogger, DEBUG
 logger = getLogger(__name__)
-import pdb
 
 
 class HDLMemPortMaker:
@@ -53,15 +52,13 @@ class HDLMemPortMaker:
         param_map['ADDR_WIDTH'] = self.addr_width
         param_map['RAM_LENGTH'] = self.length
 
-        shared = True if self.memnode.succ_ref_nodes() else False
+        shared = True if len(self.memnode.succ_ref_nodes()) > 1 else False
         spram_info = RAMModuleInfo(self.name, self.width, self.addr_width)
         if shared:
-            ram_accessor = self._make_ram_if('', thru=True, is_public=True) 
-            accessors = [ram_accessor]
-            self.module_info.add_sub_module(self.name, spram_info, accessors, param_map=param_map)
+            connections = [(spram_info.ramif, spram_info.ramif.shared_accessor(self.name))]
         else:
-            accessors = [spram_info.ramif]
-            self.module_info.add_sub_module(self.name, spram_info, accessors, param_map=param_map)
+            connections = [(spram_info.ramif, spram_info.ramif.accessor(self.name))]
+        self.module_info.add_sub_module(self.name, spram_info, connections, param_map=param_map)
         self.module_info.node2if[self.memnode] = spram_info.ramif
 
     def _add_interconnect(self, name, pred_ifs, succ_ifs, cs_name=''):

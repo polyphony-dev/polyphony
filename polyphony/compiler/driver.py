@@ -3,7 +3,6 @@ from collections import defaultdict, namedtuple
 from .scope import Scope
 from .env import env
 import logging
-import pdb
 
 class Driver:
     def __init__(self, procs, scopes):

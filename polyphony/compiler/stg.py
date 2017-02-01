@@ -11,7 +11,6 @@ from .env import env
 from .memref import *
 from logging import getLogger
 logger = getLogger(__name__)
-import pdb
 
 
 class State:
@@ -199,7 +198,7 @@ class STGBuilder:
 
     def _process_dfg(self, index, dfg):
         is_main = index == 0
-        if self.scope.parent.is_top() and self.scope.is_callable():
+        if self.scope.parent.is_module() and self.scope.is_callable():
             stg_name = self.scope.parent.orig_name if is_main else '{}_L{}'.format(self.scope.parent.orig_name, index)
         else:
             stg_name = self.scope.orig_name if is_main else '{}_L{}'.format(self.scope.orig_name, index)
@@ -290,7 +289,7 @@ class STGBuilder:
                 self.stg.init_state = states[0]
             if is_last:
                 self.stg.finish_state = states[0]
-        elif self.scope.parent.is_top():
+        elif self.scope.parent.is_module():
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
                 init_state = states[0]
@@ -322,8 +321,8 @@ class STGBuilder:
                 self.stg.finish_state = finish_state
         return states
 
-    def gen_sig(self, prefix, postfix, width, attr = None):
-        sig = self.scope.gen_sig('{}_{}'.format(prefix, postfix), width, attr)
+    def gen_sig(self, prefix, postfix, width, tag = None):
+        sig = self.scope.gen_sig('{}_{}'.format(prefix, postfix), width, tag)
         return sig
 
     def _new_state(self, name, step, codes):
@@ -447,7 +446,7 @@ class AHDLTranslator:
 
     def visit_CALL(self, ir, node):
         if ir.func_scope.is_method():
-            if ir.func_scope.parent.is_top():
+            if ir.func_scope.parent.is_module():
                 print(error_info(self.scope, ir.lineno))
                 raise RuntimeError("It is only supported calling run() of @top decorated class")
             instance_name = self.host.make_instance_name(ir.func)
@@ -510,7 +509,7 @@ class AHDLTranslator:
         elif ir.name == 'len':
             return self.translate_builtin_len(ir)
         elif ir.name == '$toprun':
-            assert ir.args[0].is_a(TEMP) and ir.args[0].symbol().typ.is_object() and ir.args[0].symbol().typ.get_scope().is_top()
+            assert ir.args[0].is_a(TEMP) and ir.args[0].symbol().typ.is_object() and ir.args[0].symbol().typ.get_scope().is_module()
             assert ir.args[1].is_a(CONST)
             for i in range(ir.args[1].value):
                 self.host.emit(AHDL_NOP('wait a cycle'), self.sched_time+i)
@@ -595,37 +594,38 @@ class AHDLTranslator:
         self._build_mem_initialize_seq(ir, ahdl_memvar, node)
 
     def visit_TEMP(self, ir, node):
-        attr = []
+        tags = set()
         width = -1
         if ir.sym.typ.is_list():
-            attr.append('memif')
+            tags.add('memif')
         elif ir.sym.typ.is_int():
-            attr.append('int')
+            tags.add('int')
             if ir.ctx & Ctx.STORE:
-                attr.append('reg')
+                tags.add('reg')
             width = ir.sym.typ.get_width()
         elif ir.sym.typ.is_port():
             width = ir.sym.typ.get_width()
+            tags.add(ir.sym.typ.get_direction())
 
         if ir.sym.is_param():
-            attr.append('in')
+            tags.add('input')
             width = INT_WIDTH
         elif ir.sym.is_return():
-            attr.append('out')
+            tags.add('output')
             width = INT_WIDTH
         elif ir.sym.is_condition():
-            attr.append('cond')
+            tags.add('condition')
             width = 1
 
-        if self.scope.is_thread():
+        if self.scope.is_worker():
             signame = ir.sym.ancestor.hdl_name() if ir.sym.ancestor else ir.sym.hdl_name()
             # a local variable's name is localized
-            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, signame), width, attr)
+            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, signame), width, tags)
         elif self.scope.is_method() and not ir.sym.is_param():
             # a local variable's name in the method is localized
-            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()), width, attr)
+            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()), width, tags)
         else:
-            sig = self.scope.gen_sig(ir.sym.hdl_name(), width, attr)
+            sig = self.scope.gen_sig(ir.sym.hdl_name(), width, tags)
 
         if ir.sym.typ.is_seq():
             return AHDL_MEMVAR(sig, ir.sym.typ.get_memnode(), ir.ctx)
@@ -634,23 +634,23 @@ class AHDLTranslator:
 
     def visit_ATTR(self, ir, node):
         if ir.attr.typ.is_list():
-            sig_attr = ['field', 'memif']
+            sig_tags = {'field', 'memif'}
         else:
-            sig_attr = ['field', 'int']
+            sig_tags = {'field', 'int'}
         attr = ir.attr.hdl_name()
-        if self.scope.parent.is_top():
+        if self.scope.parent.is_module():
             signame = ir.symbol().ancestor.hdl_name() if ir.symbol().ancestor else ir.symbol().hdl_name()
             instance_name = self.host.make_instance_name(ir)
 
-            sig = self.scope.gen_sig(signame, INT_WIDTH, sig_attr)
+            sig = self.scope.gen_sig(signame, INT_WIDTH, sig_tags)
         elif self.scope.is_method() and self.scope.parent is ir.attr_scope:
             # internal access to the field
-            sig = self.host.gen_sig(ir.attr_scope.orig_name + '_field', attr, INT_WIDTH, sig_attr)
+            sig = self.host.gen_sig(ir.attr_scope.orig_name + '_field', attr, INT_WIDTH, sig_tags)
         else:
             # external access to the field
             io = '' if ir.ctx == Ctx.LOAD else '_in'
             instance_name = self.host.make_instance_name(ir)
-            sig = self.host.gen_sig(instance_name + '_field', attr+io, INT_WIDTH, sig_attr)
+            sig = self.host.gen_sig(instance_name + '_field', attr+io, INT_WIDTH, sig_tags)
         if ir.attr.typ.is_list():
             memnode = self.mrg.node(ir.attr)
             return AHDL_MEMVAR(sig, memnode, ir.ctx)
@@ -663,6 +663,8 @@ class AHDLTranslator:
 
         if self._is_port_method(ir.exp):
             return self._make_port_access(ir.exp, None, node)
+        elif self._is_module_method(ir.exp):
+            return
 
         exp = self.visit(ir.exp, node)
         if exp:
@@ -711,7 +713,7 @@ class AHDLTranslator:
         else:
             dst = None
         # we must skip the call-ret sequence after visiting
-        if ir.src.is_a([NEW, CALL]) and ir.src.func_scope.is_top():
+        if ir.src.is_a([NEW, CALL]) and ir.src.func_scope.is_module():
             return
         latency = get_latency(node.tag)
         self._emit(src, self.sched_time)
@@ -721,12 +723,15 @@ class AHDLTranslator:
         if ir.src.is_a([CALL, NEW]):
             if self._is_port_method(ir.src):
                 return self._make_port_access(ir.src, ir.dst, node)
-            elif self._is_port_ctor(ir.src):
+            elif self._is_port_ctor(ir.src) or self._is_module_method(ir.src):
                 return
             self._call_proc(ir, node)
             return
-        elif ir.src.is_a(TEMP) and ir.src.sym.is_param() and ir.src.sym.name.endswith(env.self_name):
-            return
+        elif ir.src.is_a(TEMP) and ir.src.sym.is_param():
+            if ir.src.sym.name.endswith(env.self_name):
+                return
+            elif ir.src.sym.typ.is_object() and ir.src.sym.typ.get_scope().is_module():
+                return
         
         src = self.visit(ir.src, node)
         dst = self.visit(ir.dst, node)
@@ -746,7 +751,7 @@ class AHDLTranslator:
             assert memnode
             if ir.src.sym.is_param():
                 return
-        elif dst.sig.is_field() and not self.scope.parent.is_top():
+        elif dst.sig.is_field() and not self.scope.parent.is_module():
             assert ir.dst.is_a(ATTR)
             if dst.is_a(AHDL_VAR):
                 if self.scope.is_method():
@@ -797,30 +802,44 @@ class AHDLTranslator:
     def _make_port_access(self, call, target, node):
         assert call.func.is_a(ATTR)
         port_sym = call.func.tail()
+        owner = port_sym.scope
         assert port_sym.typ.is_port()
         width = port_sym.typ.get_width()
         port_scope = port_sym.typ.get_scope()
-        attrs = set()
+        tags = set()
         if port_scope.orig_name == 'Int':
-            attrs.add('int')
+            tags.add('int')
         direction = port_sym.typ.get_direction()
-        if port_sym.scope.is_top():
-            attrs.add(direction)
+        
+        if self.scope.parent is port_sym.scope and port_sym.scope.is_module():
+            tags.add(direction)
+            prefix = ''
         else:
-            if direction == 'in':
-                attrs.add('reg')
-            elif direction == 'out':
-                attrs.add('net')
+            # TODO
+            tags.add('extport')
+            if direction == 'input':
+                tags.add('reg')
+            elif direction == 'output':
+                tags.add('net')
             else:
                 assert False
-        port_sig = self.scope.gen_sig(port_sym.hdl_name(), width, attrs)
-        if call.args:
-            assert call.func_scope.name.endswith('.wr')
+            prefix = call.func.head().name + '_'
+        port_sig = self.scope.gen_sig(prefix+port_sym.hdl_name(), width, tags)
+        if call.func_scope.orig_name == 'wr':
+            assert call.args
             src = self.visit(call.args[0], node)
             self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), src), self.sched_time)
-        else:
-            assert call.func_scope.name.endswith('.rd')
+        elif call.func_scope.orig_name == 'rd':
             assert target
             dst = self.visit(target, node)
             self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), self.sched_time)
+        elif call.func_scope.name.endswith('.wait_rising'):
+            pass
+        elif call.func_scope.name.endswith('.wait_falling'):
+            pass
+        else:
+            assert False
+
+    def _is_module_method(self, ir):
+        return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_module()
 

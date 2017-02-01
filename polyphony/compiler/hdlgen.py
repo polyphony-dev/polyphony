@@ -13,13 +13,12 @@ from .memref import *
 from .utils import replace_item
 from logging import getLogger, DEBUG
 logger = getLogger(__name__)
-import pdb
 
 
 class HDLModuleBuilder:
     @classmethod
     def create(cls, scope):
-        if scope.is_top():
+        if scope.is_module():
             return HDLTopModuleBuilder()
         elif scope.is_class():
             # workaround for inline version
@@ -29,6 +28,8 @@ class HDLModuleBuilder:
             #return HDLClassModuleBuilder()
         elif scope.is_method():
             return None
+        elif scope.is_testbench():
+            return HDLTestbenchBuilder()
         else:
             return HDLFunctionModuleBuilder()
 
@@ -65,8 +66,8 @@ class HDLModuleBuilder:
         regs = []
         nets = []
         for sig in locals:
-            sig = scope.gen_sig(sig.name, sig.width, sig.attributes)
-            if sig.is_field() or sig.is_memif() or sig.is_ctrl():
+            sig = scope.gen_sig(sig.name, sig.width, sig.tags)
+            if sig.is_field() or sig.is_memif() or sig.is_ctrl() or sig.is_extport():
                 continue
             elif sig.is_condition():
                 self.module_info.add_internal_net(sig)
@@ -93,14 +94,22 @@ class HDLModuleBuilder:
         for callee_scope, inst_names in scope.callee_instances.items():
             if callee_scope.is_port():
                 continue
+            if callee_scope.is_lib():
+                continue
             inst_scope_name = callee_scope.orig_name
             # TODO: add primitive function hook here
             if inst_scope_name == 'print':
                 continue
             info = callee_scope.module_info
-            accessors = info.interfaces[:]
             for inst_name in inst_names:
-                self.module_info.add_sub_module(inst_name, info, accessors)
+                connections = []
+                for inf in info.interfaces:
+                    if not inf.name:
+                        acc_name = inst_name
+                    else:
+                        acc_name = inst_name + '_' + inf.name
+                    connections.append((inf, inf.accessor(acc_name)))
+                self.module_info.add_sub_module(inst_name, info, connections)
 
     def _add_roms(self, scope):
         mrg = env.memref_graph
@@ -220,6 +229,52 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._rename_signal(scope)
 
 
+class HDLTestbenchBuilder(HDLModuleBuilder):
+    def _build_module(self, scope):
+        mrg = env.memref_graph
+
+        if not scope.is_testbench():
+            self._add_state_constants(scope)
+
+        defs, uses, outputs = self._collect_vars(scope)
+        locals = defs.union(uses)
+
+        module_name = scope.stgs[0].name
+        if not scope.is_testbench():
+            self._add_state_register(module_name, scope, scope.stgs)
+            funcif = FunctionInterface('')
+            self._add_input_ports(funcif, scope)
+            self._add_output_ports(funcif, scope)
+            self.module_info.add_interface(funcif)
+
+        self._add_internal_ports(scope, module_name, locals)
+
+        for memnode in mrg.collect_ram(scope):
+            HDLMemPortMaker(memnode, scope, self.module_info).make_port()
+
+        for memnode in mrg.collect_immutable(scope):
+            if not memnode.is_writable():
+                continue
+            HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
+
+        self._add_submodules(scope)
+        for sym, cp, _ in scope.params:
+            if sym.typ.is_object() and sym.typ.get_scope().is_module():
+                mod_scope = sym.typ.get_scope()
+                info = mod_scope.module_info
+                accessor = info.interfaces[0].accessor(cp.name)
+                connection = (info.interfaces[0], accessor)
+                self.module_info.add_sub_module(cp.name, info, [connection])
+
+        self._add_roms(scope)
+        self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
+        for d in defs:
+            if d.is_reg():
+                clear_var = AHDL_MOVE(AHDL_VAR(d, Ctx.STORE), AHDL_CONST(0))
+                self.module_info.add_fsm_reset_stm(scope.orig_name, clear_var)
+
+        self._rename_signal(scope)
+
 class HDLClassModuleBuilder(HDLModuleBuilder):
     def _build_module(self, scope):
         assert scope.is_class()
@@ -287,20 +342,19 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
 
-    def _process_ctor(self, top, ctor):
-        inf = TopInterface(top.orig_name, False, True)
+    def _process_io(self, top):
+        inf = PlainInterface(top.orig_name, False, True)
         self.module_info.add_interface(inf)
-
-        for p in ctor.params[1:]:
-            if not p.sym.typ.is_port():
-                assert False
-            p_scope = p.sym.typ.get_scope()
-            if not p_scope.is_port():
-                assert False
-            port_t = p.sym.typ
-            width = port_t.get_width()
-            dir = port_t.get_direction()
-            inf.ports.append(Port(p.copy.name, width, dir))
+        for name, mv in top.class_fields.items():
+            field = mv.dst.symbol()
+            if field.typ.is_port():
+                p_scope = field.typ.get_scope()
+                if not p_scope.is_port():
+                    assert False
+                port_t = field.typ
+                width = port_t.get_width()
+                dir = 'in' if port_t.get_direction() == 'input' else 'out'
+                inf.ports.append(Port(field.name, width, dir))
 
     def _process_thread(self, top, thread, reset_stms):
         mrg = env.memref_graph
@@ -329,7 +383,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             self.module_info.add_fsm_reset_stm(thread.orig_name, clear_var)
 
     def _build_module(self, scope):
-        assert scope.is_top()
+        assert scope.is_module()
         assert scope.is_class()
 
         reset_stms = set()
@@ -339,11 +393,9 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 reset_stms = self._collect_field_defs(s)
                 break
 
-        for s in scope.children:
-            if s.is_ctor():
-                self._process_ctor(scope, s)
-            elif s.is_thread():
-                self._process_thread(scope, s, reset_stms)
+        self._process_io(scope)
+        for worker in scope.workers.values():
+            self._process_thread(scope, worker.scope, reset_stms)
 
     def _collect_field_defs(self, scope):
         moves = self._collect_moves(scope)

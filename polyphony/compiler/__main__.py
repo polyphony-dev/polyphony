@@ -326,13 +326,17 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
         logging.basicConfig(**logging_setting)
 
     env.set_current_filename(src_file)
-    g = Scope.create(None, '@top', ['global'], lineno=1)
+    g = Scope.create(None, '@top', ['global', 'namespace'], lineno=1)
     for builtin in builtin_names:
         g.add_sym(builtin)
 
     translator = IRTranslator()
-    from .. import io
-    translator.translate(read_source(io.__file__), os.path.basename(io.__file__).split('.')[0])
+    package_root_dir = os.path.dirname(__file__) + os.path.sep + os.path.pardir + os.path.sep
+    package_file = os.path.abspath(package_root_dir+'__init__.py')
+    translator.translate(read_source(package_file), 'polyphony')
+    for name in ('io', 'timing'):
+        package_file = os.path.abspath(package_root_dir+name+'.py')
+        translator.translate(read_source(package_file), os.path.basename(package_file).split('.')[0])
     translator.translate(read_source(src_file), '')
 
     scopes = Scope.get_scopes(bottom_up=False, with_class=True)

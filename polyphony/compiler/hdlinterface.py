@@ -54,14 +54,25 @@ class Interface:
             assert port.basename
             return pfx + port.basename
 
-class TopInterface(Interface):
+class PlainInterface(Interface):
     def port_name(self, prefix, port):
         return port.basename
 
-    def clone(self):
-        inf = TopInterface(self.name, self.thru, self.is_public)
-        inf.ports = list(self.ports)
-        return inf
+    def accessor(self, name):
+        acc = PlainAccessor(name, False, False)
+        acc.ports = self.ports[:]
+        return acc
+
+class PlainAccessor(Interface):
+    def port_name(self, prefix, port):
+        if self.name:
+            if port.basename:
+                return '{}_{}'.format(self.name, port.basename)
+            else:
+                return self.name
+        else:
+            assert port.basename
+            return port.basename
 
 class FunctionInterface(Interface):
     def __init__(self, name, thru = False, is_method = False):
@@ -85,15 +96,15 @@ class FunctionInterface(Interface):
         #TODO
         pass
 
-    def clone(self):
-        inf = FunctionInterface(self.name, self.thru, self.is_method)
+    def accessor(self, name):
+        inf = FunctionInterface(name, self.thru, self.is_method)
+        inf.is_public = False
         inf.ports = list(self.ports)
         return inf
 
 class RAMInterface(Interface):
     def __init__(self, name, data_width, addr_width, thru=False, is_public=False):
         super().__init__(name, thru=thru, is_public=is_public)
-        self.thru = thru
         self.data_width = data_width
         self.addr_width = addr_width
         self.ports.append(Port('addr', addr_width, 'in'))
@@ -102,10 +113,11 @@ class RAMInterface(Interface):
         self.ports.append(Port('q',    data_width, 'out'))
         self.ports.append(Port('len',  addr_width, 'out'))
 
-    def clone(self):
-        inf = RAMInterface(self.name, self.data_width, self.addr_width, self.thru, self.is_public)
-        inf.ports = list(self.ports)
-        return inf
+    def accessor(self, name):
+        return RAMInterface(name, self.data_width, self.addr_width, thru=True, is_public=False)
+
+    def shared_accessor(self, name):
+        return RAMInterface(name, self.data_width, self.addr_width, thru=True, is_public=True)
 
 class RAMAccessInterface(RAMInterface):
     def __init__(self, name, data_width, addr_width, flip=False, thru=False):
@@ -123,10 +135,8 @@ class RegArrayInterface(Interface):
             pname = '{}'.format(i)
             self.ports.append(Port(pname, data_width, 'in'))
 
-    def clone(self):
-        inf = RegArrayInterface(self.name, self.data_width, self.length)
-        inf.ports = list(self.ports)
-        return inf
+    def accessor(self, name):
+        return RegArrayInterface(name, self.data_width, self.length)
 
     def port_name(self, prefix, port):
         pfx = prefix+'_' if prefix else ''
