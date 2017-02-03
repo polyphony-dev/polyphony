@@ -25,4 +25,4 @@ class Signal(Tagged):
         return hash(self.name)
 
     def __repr__(self):
-        return "Signal(\'{}\', {}, {})".format(self.name, self.width, self.tagss)
+        return "Signal(\'{}\', {}, {})".format(self.name, self.width, self.tags)

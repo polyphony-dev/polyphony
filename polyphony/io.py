@@ -1,5 +1,6 @@
-import queue, time, sys
+import queue, time, sys, pdb
 import threading
+from ._common import mutable
 
 __all__ = [
     'Bit',
@@ -24,6 +25,9 @@ def _polyphony_create_cond():
     cv = threading.Condition()
     _polyphony_conds.append(cv)
     return cv
+
+def _polyphony_remove_cond(cv):
+    _polyphony_conds.remove(cv)
 
 def _polyphony_enable():
     global _polyphony_io_enabled
@@ -51,22 +55,30 @@ def _polyphony_portmethod(func):
         return func(*args, **kwargs)
     return _portmethod_decorator
 
-class Bit:
+class _DataPort:
     def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
         self.__v = init_v
         self.__oldv = 0
-        self.__cv = _polyphony_create_cond()
+        self.__cv = []
+        self.__cv_lock = threading.Lock()
 
     @_polyphony_portmethod
     def rd(self) -> int:
         return self.__v
 
+    @mutable
     @_polyphony_portmethod
     def wr(self, v):
-        with self.__cv:
+        if not self.__cv:
             self.__oldv = self.__v
             self.__v = v
-            self.__cv.notify_all()
+        else:
+            with self.__cv_lock:
+                self.__oldv = self.__v
+                self.__v = v
+                for cv in self.__cv:
+                    with cv:
+                        cv.notify_all()
         time.sleep(0.005)
 
     def __call__(self, v=None) -> int:
@@ -75,64 +87,30 @@ class Bit:
         else:
             self.wr(v)
 
-    @_polyphony_portmethod
-    def wait_rising(self) -> bool:
-        with self.__cv:
-            while _polyphony_io_enabled:
-                self.__cv.wait()
-                if self.__oldv == 0 and self.__v == 1:
-                    return
+    def _polyphony_add_cv(self, cv):
+        with self.__cv_lock:
+            self.__cv.append(cv)
 
-    @_polyphony_portmethod
-    def wait_falling(self) -> bool:
-        with self.__cv:
-            while _polyphony_io_enabled:
-                self.__cv.wait()
-                if self.__oldv == 1 and self.__v == 0:
-                    return
+    def _polyphony_del_cv(self, cv):
+        with self.__cv_lock:
+            self.__cv.remove(cv)
 
-class Int:
+    def _polyphony_rd_old(self):
+        return self.__oldv
+
+
+class Bit(_DataPort):
+    def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
+        super().__init__(init_v, width, protocol)
+
+class Int(_DataPort):
     def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
-        self.__width = width
-        self.__v = init_v
-        self.__protocol = protocol
+        super().__init__(init_v, width, protocol)
 
-    @_polyphony_portmethod
-    def rd(self) -> int:
-        return self.__v
-
-    @_polyphony_portmethod
-    def wr(self, v):
-        self.__v = v
-
-    def __call__(self, v=None) -> int:
-        if v is None:
-            return self.rd()
-        else:
-            self.wr(v)
-
-
-class Uint:
+class Uint(_DataPort):
     def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
-        self.__width = width
-        self.__v = init_v
-        self.__protocol = protocol
+        super().__init__(init_v, width, protocol)
 
-    @_polyphony_portmethod
-    def rd(self) -> int:
-        return self.__v
-
-    @_polyphony_portmethod
-    def wr(self, v):
-        self.__v = v
-
-    def __call__(self, v=None) -> int:
-        if v is None:
-            return self.rd()
-        else:
-            self.wr(v)
-
-        
 class Queue:
     def __init__(self, width:int=32, max_size:int=0, name='') -> object:
         self.__width = width

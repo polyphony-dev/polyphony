@@ -81,9 +81,8 @@ class SelectorBuilder:
         for p in inif.ports:
             port_name = p.basename
             if port_name == 'req':
-                req_ors = AHDL_VAR(branches['req'][0], Ctx.LOAD)
-                for req in branches['req'][1:]:
-                    req_ors = AHDL_OP('Or', req_ors, AHDL_VAR(req, Ctx.LOAD))
+                reqs = [AHDL_VAR(req, Ctx.LOAD) for req in branches['req']]
+                req_ors = AHDL_OP('Or', *reqs)
                 assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), req_ors)
                 self.module_info.add_static_assignment(assign, tag)
 

@@ -221,16 +221,11 @@ class STGUseDefDetector():
         pass
 
     def visit_AHDL_OP(self, ahdl):
-        if ahdl.left.is_a(AHDL_VAR):
-            self.table.add_var_use(ahdl.left, self.current_stm)
-        else:
-            self.visit(ahdl.left)
-
-        if ahdl.right:
-            if ahdl.right.is_a(AHDL_VAR):
-                self.table.add_var_use(ahdl.right, self.current_stm)
+        for a in ahdl.args:
+            if a.is_a(AHDL_VAR):
+                self.table.add_var_use(a, self.current_stm)
             else:
-                self.visit(ahdl.right)
+                self.visit(a)
             
     def visit_AHDL_MEM(self, ahdl):
         pass

@@ -86,6 +86,9 @@ class InlineOpt:
 
             self._merge_blocks(call_stm, callee_entry_blk, callee_exit_blk)
 
+            if call_stm.is_a(EXPR):
+                call_stm.block.stms.remove(call_stm)
+
     def _process_method(self, callee, caller, calls):
         if caller.is_testbench() or caller.is_global():
             return
@@ -141,7 +144,8 @@ class InlineOpt:
             if callee.is_ctor():
                 assert call_stm.src is call
                 call_stm.block.stms.remove(call_stm)
-
+            elif call_stm.is_a(EXPR):
+                call_stm.block.stms.remove(call_stm)
 
     def _make_replace_symbol_map(self, call, caller, callee, inline_id):
         symbol_map = callee.clone_symbols(caller, postfix='_inl' + inline_id)
@@ -171,8 +175,10 @@ class InlineOpt:
         early_call_blk = call_stm.block
         late_call_blk  = Block(caller_scope)
         late_call_blk.succs = early_call_blk.succs
+        late_call_blk.succs_loop = early_call_blk.succs_loop
         for succ in late_call_blk.succs:
             succ.replace_pred(early_call_blk, late_call_blk)
+            succ.replace_pred_loop(early_call_blk, late_call_blk)
 
         idx = early_call_blk.stms.index(call_stm)
         late_call_blk.stms = early_call_blk.stms[idx:]
@@ -181,6 +187,7 @@ class InlineOpt:
         early_call_blk.stms = early_call_blk.stms[:idx]
         early_call_blk.append_stm(JUMP(callee_entry_blk))
         early_call_blk.succs = [callee_entry_blk]
+        early_call_blk.succs_loop = []
         callee_entry_blk.preds = [early_call_blk]
 
         if callee_exit_blk.stms and callee_exit_blk.stms[-1].is_a(RET):
@@ -348,7 +355,10 @@ class FlattenFieldAccess(IRVisitor):
         if self.scope.is_method():
             return
         # don't flatten use of the static class field
-        if ir.head().typ.is_class():
+        if ir.tail().typ.is_class():
+            return
+        # don't flatten use of the module class field
+        if ir.tail().typ.is_object() and ir.tail().typ.get_scope().is_module():
             return
         flatname = self.make_flatname(ir)
         flatsym = self.scope.gen_sym(flatname)
@@ -360,7 +370,9 @@ class FlattenFieldAccess(IRVisitor):
 
     def visit_CALL(self, ir):
         # we don't flatten a method call
-        return
+        if ir.func_scope.is_method():
+            return
+        super().visit_CALL(ir)
 
 
 class ObjectHierarchyCopier:

@@ -15,7 +15,10 @@ logger = getLogger(__name__)
 FUNCTION_DECORATORS=[
     'testbench',
 ]
-
+INTERNAL_FUNCTION_DECORATORS=[
+    'mutable',
+    'inlinelib',
+]
 CLASS_DECORATORS=[
     'module',
 ]
@@ -112,6 +115,8 @@ class FunctionVisitor(ast.NodeVisitor):
         return a
 
     def _leve_scope(self, outer_scope):
+        # override it if already exists
+        outer_scope.del_sym(self.current_scope.orig_name)
         scopesym = outer_scope.add_sym(self.current_scope.orig_name)
         if self.current_scope.is_class():
             t = Type.klass(self.current_scope)
@@ -135,6 +140,8 @@ class FunctionVisitor(ast.NodeVisitor):
                 sym = self.current_scope.find_sym(deco_name)
                 if sym and sym.name in FUNCTION_DECORATORS:
                     tags.add(sym.name)
+                elif deco_name in INTERNAL_FUNCTION_DECORATORS:
+                    tags.add(deco_name)
                 else:
                     print(error_info(outer_scope, node.lineno))
                     raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
@@ -144,7 +151,9 @@ class FunctionVisitor(ast.NodeVisitor):
                 tags.add('ctor')
             elif node.name == '__call__':
                 tags.add('callable')
-        if outer_scope.is_lib():
+        else:
+            tags.add('function')
+        if outer_scope.is_lib() and 'inlinelib' not in tags:
             tags.add('lib')
 
         self.current_scope = Scope.create(outer_scope, node.name, tags, node.lineno)
@@ -181,7 +190,7 @@ class FunctionVisitor(ast.NodeVisitor):
             first_param = self.current_scope.params[0]
             first_param.copy.typ = first_param.sym.typ = Type.object(outer_scope)
 
-        if self.current_scope.is_lib():
+        if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
         else:
             for stm in node.body:
@@ -204,6 +213,16 @@ class FunctionVisitor(ast.NodeVisitor):
                 raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
 
         self.current_scope = Scope.create(outer_scope, node.name, tags.union({'class'}), node.lineno)
+
+        for base in node.bases:
+            base_name = self.visit(base)
+            base_sym = outer_scope.find_sym(base_name)
+            assert base_sym.typ.is_class()
+            base_scope = base_sym.typ.get_scope()
+            for sym in base_scope.symbols.values():
+                self.current_scope.import_sym(sym)
+            self.current_scope.bases.append(base_scope)
+
         if self.current_scope.name in lib_port_type_names:
             self.current_scope.add_tag({'port', 'lib'})
         if self.current_scope.is_module():
@@ -331,7 +350,7 @@ class CodeVisitor(ast.NodeVisitor):
             params[skip+idx] = FunctionParam(param.sym, param.copy, d)
             self.emit(MOVE(TEMP(param.copy, Ctx.STORE), TEMP(param.sym, Ctx.LOAD)), node)
 
-        if self.current_scope.is_lib():
+        if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             self._leave_scope(*context)
             return
 
@@ -892,26 +911,34 @@ class CodeVisitor(ast.NodeVisitor):
                 return NEW(func.symbol().typ.get_scope(), args)
 
             func_name = func.symbol().orig_name()
-            func_scope = self.current_scope.find_scope(func_name)
+            sym = self.current_scope.find_sym(func_name)
+            func_scope = sym.typ.get_scope() if sym.typ.has_scope() else None
             if not func_scope:
                 if func.symbol().name in builtin_names:
                     return SYSCALL(func.symbol().name, args)
 
                 if func.symbol().name in dir(python_builtins):
                     raise NameError("The name \'{}\' is reserved as the name of the built-in function.".format(node.id))
-
+            else:
+                if func_scope.name in builtin_names:
+                    return SYSCALL(func_scope.name, args)
                 #print(self._err_info(node))
                 #raise TypeError('{} is not callable'.format(func.symbol().name))
-        elif func.is_a(ATTR):
-            if func.exp.is_a([TEMP, ATTR]):
+        elif func.is_a(ATTR) and func.exp.is_a([TEMP, ATTR]):
+            if isinstance(func.attr, Symbol):
+                if func.attr.typ.is_function() and func.attr.typ.get_scope().name in builtin_names:
+                    return SYSCALL(func.attr.typ.get_scope().name, args)
+                elif func.attr.typ.is_class() and func.attr.typ.get_scope().name in lib_class_names:
+                    return NEW(func.attr.typ.get_scope(), args)
+            else:
                 scope_sym = func.tail()
                 if isinstance(scope_sym, Symbol):
                     if scope_sym.typ.is_containable():
-                         receiver = scope_sym.typ.get_scope()
-                         attr_sym = receiver.find_sym(func.attr)
-                         if attr_sym.typ.is_class():
-                             attr_scope = attr_sym.typ.get_scope()
-                             return NEW(attr_scope, args)
+                        receiver = scope_sym.typ.get_scope()
+                        attr_sym = receiver.find_sym(func.attr)
+                        if attr_sym.typ.is_class():
+                            attr_scope = attr_sym.typ.get_scope()
+                            return NEW(attr_scope, args)
         return CALL(func, args)
 
     
@@ -932,11 +959,19 @@ class CodeVisitor(ast.NodeVisitor):
     #     | Attribute(expr value, identifier attr, expr_context ctx)
     def visit_Attribute(self, node):
         value = self.visit(node.value)
-        attr = node.attr
+        if value.is_a([TEMP, ATTR]) and isinstance(value.symbol(), Symbol) and value.symbol().typ.has_scope():
+            scope = value.symbol().typ.get_scope()
+            attr = None
+            if scope:
+                attr = scope.find_sym(node.attr)
+            if not attr:
+                attr = node.attr
+        else:
+            attr = node.attr
         ctx = self._nodectx2irctx(node)
         irattr = ATTR(value, attr, ctx)
 
-        if irattr.head() and irattr.head().name == env.self_name:
+        if irattr.head() and irattr.head().name == env.self_name and isinstance(attr, str):
             scope = irattr.head().typ.get_scope()
             if ctx & Ctx.STORE:
                 scope.gen_sym(attr)
@@ -1094,9 +1129,11 @@ class IRTranslator(object):
         if lib_name:
             if lib_name != 'polyphony':
                 lib_root = env.scopes['polyphony']
+                top_scope = Scope.create(lib_root, lib_name, {'namespace', 'lib'}, lineno=1)
+                sym = lib_root.add_sym(lib_name)
+                sym.set_type(Type.namespace(top_scope))
             else:
-                lib_root = None
-            top_scope = Scope.create(lib_root, lib_name, {'namespace', 'lib'}, lineno=1)
+                top_scope = Scope.create(None, lib_name, {'namespace', 'lib'}, lineno=1)
         else:
             top_scope = global_scope
             ImportVisitor().visit(tree)

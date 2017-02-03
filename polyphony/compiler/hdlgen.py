@@ -170,7 +170,6 @@ class HDLModuleBuilder:
                 out_name = '{}_out_0'.format(scope.orig_name)
             scope.rename_sig(output_sig.name, out_name)
 
-
     def _collect_vars(self, scope):
         outputs = set()
         defs = set()
@@ -181,6 +180,15 @@ class HDLModuleBuilder:
                 for code in state.codes:
                     collector.visit(code)
         return defs, uses, outputs
+
+    def _collect_special_decls(self, scope):
+        edge_detectors = set()
+        collector = AHDLSpecialDeclCollector(edge_detectors)
+        for stg in scope.stgs:
+            for state in stg.states:
+                for code in state.codes:
+                    collector.visit(code)
+        return edge_detectors
 
     def _collect_moves(self, scope):
         moves = []
@@ -273,6 +281,10 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                 clear_var = AHDL_MOVE(AHDL_VAR(d, Ctx.STORE), AHDL_CONST(0))
                 self.module_info.add_fsm_reset_stm(scope.orig_name, clear_var)
 
+        edge_detectors = self._collect_special_decls(scope)
+        for sig, old, new in edge_detectors:
+            self.module_info.add_edge_detector(sig, old, new)
+
         self._rename_signal(scope)
 
 class HDLClassModuleBuilder(HDLModuleBuilder):
@@ -342,10 +354,10 @@ class HDLClassModuleBuilder(HDLModuleBuilder):
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
 
-    def _process_io(self, top):
-        inf = PlainInterface(top.orig_name, False, True)
+    def _process_io(self, module_scope):
+        inf = PlainInterface(module_scope.orig_name, False, True)
         self.module_info.add_interface(inf)
-        for name, mv in top.class_fields.items():
+        for name, mv in module_scope.class_fields.items():
             field = mv.dst.symbol()
             if field.typ.is_port():
                 p_scope = field.typ.get_scope()
@@ -353,34 +365,38 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                     assert False
                 port_t = field.typ
                 width = port_t.get_width()
-                dir = 'in' if port_t.get_direction() == 'input' else 'out'
-                inf.ports.append(Port(field.name, width, dir))
+                di = 'in' if port_t.get_direction() == 'input' else 'out'
+                inf.ports.append(Port(field.name, width, di))
 
-    def _process_thread(self, top, thread, reset_stms):
+    def _process_worker(self, module_scope, worker, reset_stms):
         mrg = env.memref_graph
 
-        self._add_state_constants(thread)
-        defs, uses, outputs = self._collect_vars(thread)
+        self._add_state_constants(worker)
+        defs, uses, outputs = self._collect_vars(worker)
         locals = defs.union(uses)
         for var in locals:
             if var.is_field():
                 self.module_info.add_internal_reg(var)
-        regs, nets = self._add_internal_ports(top, top.orig_name, locals)
-        self._add_state_register(thread.orig_name, top, thread.stgs)
+        regs, nets = self._add_internal_ports(module_scope, module_scope.orig_name, locals)
+        self._add_state_register(worker.orig_name, module_scope, worker.stgs)
 
-        self._add_submodules(thread)
-        for memnode in mrg.collect_ram(thread):
-            memportmaker = HDLMemPortMaker(memnode, thread, self.module_info).make_port()
+        self._add_submodules(worker)
+        for memnode in mrg.collect_ram(worker):
+            memportmaker = HDLMemPortMaker(memnode, worker, self.module_info).make_port()
 
-        self._add_roms(thread)
+        self._add_roms(worker)
 
-        self.module_info.add_fsm_stg(thread.orig_name, thread.stgs)
+        self.module_info.add_fsm_stg(worker.orig_name, worker.stgs)
         for stm in reset_stms:
-            if stm.dst.sig in defs:
-                self.module_info.add_fsm_reset_stm(thread.orig_name, stm)
+            if stm.dst.sig in defs or stm.dst.sig in outputs:
+                self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
         for reg in regs:
             clear_var = AHDL_MOVE(AHDL_VAR(reg, Ctx.STORE), AHDL_CONST(0))
-            self.module_info.add_fsm_reset_stm(thread.orig_name, clear_var)
+            self.module_info.add_fsm_reset_stm(worker.orig_name, clear_var)
+
+        edge_detectors = self._collect_special_decls(worker)
+        for sig, old, new in edge_detectors:
+            self.module_info.add_edge_detector(sig, old, new)
 
     def _build_module(self, scope):
         assert scope.is_module()
@@ -395,14 +411,21 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
         self._process_io(scope)
         for worker in scope.workers.values():
-            self._process_thread(scope, worker.scope, reset_stms)
+            self._process_worker(scope, worker.scope, reset_stms)
 
     def _collect_field_defs(self, scope):
         moves = self._collect_moves(scope)
-        return [mv for mv in moves if mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_field()]
+        defs = []
+        for mv in moves:
+            if mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_field():
+                defs.append(mv)
+            elif mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_output():
+                defs.append(mv)
+        return defs
+
 
 class AHDLVarCollector(AHDLVisitor):
-    ''' this class corrects inputs and outputs and locals'''
+    ''' this class collects inputs and outputs and locals'''
     def __init__(self, module_info, local_defs, local_uses, output_temps):
         self.local_defs = local_defs
         self.local_uses = local_uses
@@ -426,6 +449,17 @@ class AHDLVarCollector(AHDLVisitor):
         #    text = ahdl.sym.name #get_src_text(ir)
         #    raise RuntimeError('free variable is not supported yet.\n' + text)
 
+class AHDLSpecialDeclCollector(AHDLVisitor):
+    def __init__(self, edge_detectors):
+        self.edge_detectors = edge_detectors
+
+    def visit_WAIT_EDGE(self, ahdl):
+        old, new = ahdl.args[1], ahdl.args[2]
+        for var in ahdl.args[0]:
+            self.edge_detectors.add((var.sig, old, new))
+            if ahdl.codes:
+                for code in ahdl.codes:
+                    self.visit(code)
 
 class AHDLFieldAccessCollector(AHDLVisitor):
     def __init__(self, module_info, scope, field_accesses):

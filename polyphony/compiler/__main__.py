@@ -334,7 +334,7 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     package_root_dir = os.path.dirname(__file__) + os.path.sep + os.path.pardir + os.path.sep
     package_file = os.path.abspath(package_root_dir+'__init__.py')
     translator.translate(read_source(package_file), 'polyphony')
-    for name in ('io', 'timing'):
+    for name in ('_common', 'io', 'timing'):
         package_file = os.path.abspath(package_root_dir+name+'.py')
         translator.translate(read_source(package_file), os.path.basename(package_file).split('.')[0])
     translator.translate(read_source(src_file), '')

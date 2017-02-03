@@ -19,8 +19,6 @@ class State:
         self.name = name
         self.step = step
         self.codes = codes
-        self.next_states = []
-        self.prev_states = []
         self.stg = stg
 
     def __str__(self):
@@ -29,13 +27,6 @@ class State:
             else:     return ''
         s = '---------------------------------\n'
         s += '{}:{}'.format(self.name, self.step)
-        if self.codes or self.next_states:
-            s += '\n'
-            if self.codes:
-                s += '\n'.join(['  {}'.format(code) for code in self.codes])
-            s += '\n'
-        else:
-            pass
         s += '\n'
         return s
 
@@ -101,7 +92,25 @@ class State:
             wait_input_ready.codes = removes[:]
             for code in removes:
                 self.codes.remove(code)
-        
+
+    def merge_wait_edge(self):
+        wait_edge = None
+        removes = []
+        for code in self.codes:
+            if code.is_a(AHDL_META_WAIT) and code.metaid == 'WAIT_EDGE':
+                assert len(self.codes) == 1
+                wait_edge = code
+        if not wait_edge:
+            return
+        next_state_codes = wait_edge.transition.target.codes
+        if len(next_state_codes) == 1 and next_state_codes[0].is_a(AHDL_META_WAIT) and next_state_codes[0].metaid == 'WAIT_EDGE':
+            return
+        wait_edge.codes = wait_edge.transition.target.codes
+        wait_edge.transition.target.codes = []
+        wait_edge.transition = None
+        #for code in removes:
+        #    self.codes.remove(code)
+
 class STG:
     "State Transition Graph"
     def __init__(self, name, parent, states, scope):
@@ -165,7 +174,6 @@ class STGBuilder:
             return
         self.scope = scope
         self.scope.blk2state = {}
-
         stgs = []
         dfgs = scope.dfgs(bottom_up=False)
         for i, dfg in enumerate(dfgs):
@@ -181,6 +189,7 @@ class STGBuilder:
         for stg in stgs:
             for state in stg.states:
                 state.merge_wait_ret()
+                state.merge_wait_edge()
 
         scope.stgs = stgs
 
@@ -289,7 +298,7 @@ class STGBuilder:
                 self.stg.init_state = states[0]
             if is_last:
                 self.stg.finish_state = states[0]
-        elif self.scope.parent.is_module():
+        elif self.scope.is_worker():
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
                 init_state = states[0]
@@ -425,7 +434,7 @@ class AHDLTranslator:
 
     def visit_UNOP(self, ir, node):
         exp = self.visit(ir.exp, node)
-        return AHDL_OP(ir.op, exp, None)
+        return AHDL_OP(ir.op, exp)
 
     def visit_BINOP(self, ir, node):
         left = self.visit(ir.left, node)
@@ -496,23 +505,34 @@ class AHDLTranslator:
         logger.debug(ir.name)
         if ir.name == 'print':
             fname = '!hdl_print'
-        elif ir.name == 'display':
-            fname = '!hdl_verilog_display'
-        elif ir.name == 'write':
-            fname = '!hdl_verilog_write'
-        elif ir.name == 'read_reg':
-            fname = '!hdl_read_reg'
-        elif ir.name == 'write_reg':
-            fname = '!hdl_write_reg'
         elif ir.name == 'assert':
             fname = '!hdl_assert'
+        elif ir.name == 'polyphony.verilog.display':
+            fname = '!hdl_verilog_display'
+        elif ir.name == 'polyphony.verilog.write':
+            fname = '!hdl_verilog_write'
         elif ir.name == 'len':
             return self.translate_builtin_len(ir)
-        elif ir.name == '$toprun':
-            assert ir.args[0].is_a(TEMP) and ir.args[0].symbol().typ.is_object() and ir.args[0].symbol().typ.get_scope().is_module()
-            assert ir.args[1].is_a(CONST)
-            for i in range(ir.args[1].value):
+        elif ir.name == 'polyphony.timing.clksleep':
+            assert ir.args[0].is_a(CONST)
+            for i in range(ir.args[0].value):
                 self.host.emit(AHDL_NOP('wait a cycle'), self.sched_time+i)
+            return
+        elif ir.name == 'polyphony.timing.wait_rising':
+            ports = []
+            for a in ir.args:
+                assert a.is_a([TEMP, ATTR])
+                port_sig = self._port_sig(a.qualified_symbol())
+                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', ports, 0, 1), self.sched_time)
+            return
+        elif ir.name == 'polyphony.timing.wait_falling':
+            ports = []
+            for a in ir.args:
+                assert a.is_a([TEMP, ATTR])
+                port_sig = self._port_sig(a.qualified_symbol())
+                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', ports, 1, 0), self.sched_time)
             return
         else:
             return
@@ -723,7 +743,9 @@ class AHDLTranslator:
         if ir.src.is_a([CALL, NEW]):
             if self._is_port_method(ir.src):
                 return self._make_port_access(ir.src, ir.dst, node)
-            elif self._is_port_ctor(ir.src) or self._is_module_method(ir.src):
+            elif self._is_port_ctor(ir.src):
+                return self._make_port_init(ir.src, ir.dst, node)
+            elif self._is_module_method(ir.src):
                 return
             self._call_proc(ir, node)
             return
@@ -732,7 +754,8 @@ class AHDLTranslator:
                 return
             elif ir.src.sym.typ.is_object() and ir.src.sym.typ.get_scope().is_module():
                 return
-        
+            elif ir.src.sym.typ.is_port():
+                return
         src = self.visit(ir.src, node)
         dst = self.visit(ir.dst, node)
         if not src:
@@ -799,21 +822,29 @@ class AHDLTranslator:
     def _is_port_ctor(self, ir):
         return ir.is_a(NEW) and ir.func_scope.is_port()
 
-    def _make_port_access(self, call, target, node):
-        assert call.func.is_a(ATTR)
-        port_sym = call.func.tail()
+    def _port_sig(self, port_qsym):
+        if port_qsym[-1].typ.is_port():
+            port_sym = port_qsym[-1]
+            port_prefixes = port_qsym
+        elif port_qsym[-2].typ.is_port():
+            port_sym = port_qsym[-2]
+            port_prefixes = port_qsym[:-1]
+        else:
+            assert False
+        if port_prefixes[0].name == env.self_name:
+            port_prefixes = port_prefixes[1:]
+        port_name = '_'.join([pfx.name for pfx in port_prefixes])
         owner = port_sym.scope
-        assert port_sym.typ.is_port()
         width = port_sym.typ.get_width()
         port_scope = port_sym.typ.get_scope()
         tags = set()
         if port_scope.orig_name == 'Int':
             tags.add('int')
         direction = port_sym.typ.get_direction()
-        
+        prefix = ''
+
         if self.scope.parent is port_sym.scope and port_sym.scope.is_module():
             tags.add(direction)
-            prefix = ''
         else:
             # TODO
             tags.add('extport')
@@ -823,8 +854,14 @@ class AHDLTranslator:
                 tags.add('net')
             else:
                 assert False
-            prefix = call.func.head().name + '_'
-        port_sig = self.scope.gen_sig(prefix+port_sym.hdl_name(), width, tags)
+        port_sig = self.scope.gen_sig(prefix+port_name, width, tags)
+        return port_sig
+        
+    def _make_port_access(self, call, target, node):
+        assert call.func.is_a(ATTR)
+        #port_sym = call.func.tail()
+        port_sig = self._port_sig(call.func.qualified_symbol())
+        
         if call.func_scope.orig_name == 'wr':
             assert call.args
             src = self.visit(call.args[0], node)
@@ -833,12 +870,18 @@ class AHDLTranslator:
             assert target
             dst = self.visit(target, node)
             self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), self.sched_time)
-        elif call.func_scope.name.endswith('.wait_rising'):
-            pass
-        elif call.func_scope.name.endswith('.wait_falling'):
-            pass
         else:
             assert False
+
+    def _make_port_init(self, new, target, node):
+        assert new.func_scope.is_port()
+        assert target.is_a(ATTR)
+        port = target.symbol().typ
+        assert port.is_port()
+        port_sig = self._port_sig(target.qualified_symbol())
+        if port_sig.is_output():
+            init_v = AHDL_CONST(port.get_init_v())
+            self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), init_v), self.sched_time)
 
     def _is_module_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_module()

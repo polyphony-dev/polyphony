@@ -16,9 +16,8 @@ class AHDLVisitor:
         self.visit(ahdl.offset)
 
     def visit_AHDL_OP(self, ahdl):
-        self.visit(ahdl.left)
-        if ahdl.right:
-            self.visit(ahdl.right)
+        for a in ahdl.args:
+            self.visit(a)
 
     def visit_AHDL_SYMBOL(self, ahdl):
         pass
@@ -96,6 +95,15 @@ class AHDLVisitor:
 
     def visit_WAIT_RET_AND_GATE(self, ahdl):
         self.visit(ahdl.transition)
+
+    def visit_WAIT_EDGE(self, ahdl):
+        for var in ahdl.args[0]:
+            self.visit(var)
+        if ahdl.codes:
+            for code in ahdl.codes:
+                self.visit(code)
+        if ahdl.transition:
+            self.visit(ahdl.transition)
 
     def visit_AHDL_META_WAIT(self, ahdl):
         method = 'visit_' + ahdl.metaid

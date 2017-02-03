@@ -107,6 +107,7 @@ class VerilogCodeGen:
         self._generate_decls()
         self._generate_sub_module_instances()        
         self._generate_field_access()
+        self._generate_edge_detector()
         self._generate_net_monitor()
         self.set_indent(-2)
 
@@ -245,6 +246,26 @@ class VerilogCodeGen:
                 self.set_indent(-2)
                 self.emit(');')
         self.emit('')
+
+    def _generate_edge_detector(self):
+        regs = set()
+        for sig, old, new in self.module_info.edge_detectors:
+            delayed_name = '{}_d'.format(sig.name)
+            if delayed_name not in regs:
+                self.emit('reg {};'.format(delayed_name))
+            regs.add(delayed_name)
+            detect_var_name = 'is_{}_change_{}_to_{}'.format(sig.name, old, new)
+            self.emit('wire {};'.format(detect_var_name))
+            self.emit('assign {} = ({}=={} && {}=={});'.format(detect_var_name, delayed_name, old, sig.name, new))
+
+            self.emit('/* edge detector for {} */'.format(sig.name))
+            self.emit('always @(posedge clk) begin')
+            self.set_indent(2)
+            self.emit('{} <= {};'.format(delayed_name, sig.name))
+            self.set_indent(-2)
+            self.emit('end /* always */')
+            self.emit('')
+
 
     def _generate_reg_field_access(self, fieldif):
         conds = []
@@ -417,12 +438,11 @@ class VerilogCodeGen:
         return code
 
     def visit_AHDL_OP(self, ahdl):
-        if ahdl.right:
-            left = self.visit(ahdl.left)
-            right = self.visit(ahdl.right)
-            return '({} {} {})'.format(left, pyop2verilogop(ahdl.op), right)
+        if len(ahdl.args) > 1:
+            op = ' ' + pyop2verilogop(ahdl.op) + ' '
+            return '({})'.format(op.join([self.visit(a) for a in ahdl.args]))
         else:
-            exp = self.visit(ahdl.left)
+            exp = self.visit(ahdl.args[0])
             return '{}{}'.format(pyop2verilogop(ahdl.op), exp)
             
     def visit_AHDL_NOP(self, ahdl):
@@ -777,6 +797,25 @@ class VerilogCodeGen:
         for cond in conds[1:]:
             op = AHDL_OP('And', op, cond)
         ahdl_if = AHDL_IF([op], [[ahdl.transition]])
+        self.visit(ahdl_if)
+
+    def visit_WAIT_EDGE(self, ahdl):
+        old, new = ahdl.args[1], ahdl.args[2]
+        detect_vars = []
+        for var in ahdl.args[0]:
+            detect_var_name = 'is_{}_change_{}_to_{}'.format(var.sig.name, old, new)
+            detect_vars.append(AHDL_SYMBOL(detect_var_name))
+        if len(detect_vars) > 1:
+            conds = [AHDL_OP('And', *detect_vars)]
+        else:
+            conds = [detect_vars[0]]
+        if ahdl.codes:
+            codes = ahdl.codes[:]
+        else:
+            codes = []
+        if ahdl.transition:
+            codes.append(ahdl.transition)
+        ahdl_if = AHDL_IF(conds, [codes])
         self.visit(ahdl_if)
 
     def visit_AHDL_META_WAIT(self, ahdl):

@@ -35,6 +35,7 @@ def _polyphony_module_start(self):
     io._polyphony_enable()
     for w in self.__workers:
         w.start()
+    time.sleep(0.001)
 
 def _polyphony_module_stop(self):
     global _polyphony_is_worker_running
@@ -47,10 +48,10 @@ def _polyphony_module_stop(self):
     for w in self.__workers:
         w.join()
 
-def _polyphony_module_append_worker(self, fn, args=None):
+def _polyphony_module_append_worker(self, fn, *args):
     if not hasattr(self, '__workers'):
         self.__workers = []
-    self.__workers.append(_polyphony_Worker(fn, args))
+    self.__workers.append(_polyphony_Worker(fn, *args))
 
 class _polyphony_ModuleDecorator:
     def __init__(self):
@@ -77,7 +78,7 @@ module = _polyphony_ModuleDecorator()
 
 
 class _polyphony_Worker(threading.Thread):
-    def __init__(self, func, args):
+    def __init__(self, func, *args):
         super().__init__()
         self.func = func
         self.args = args

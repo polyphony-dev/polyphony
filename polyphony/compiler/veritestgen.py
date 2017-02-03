@@ -148,6 +148,26 @@ class VerilogTestGen(VerilogCodeGen):
     def visit_WAIT_OUTPUT_ACCEPT(self, ahdl):
         pass
 
+    def visit_WAIT_EDGE(self, ahdl):
+        #old, new = ahdl.args[1], ahdl.args[2]
+        old, new = ahdl.args[1], ahdl.args[2]
+        detect_vars = []
+        for var in ahdl.args[0]:
+            detect_var_name = 'is_{}_change_{}_to_{}'.format(var.sig.name, old, new)
+            detect_vars.append(AHDL_SYMBOL(detect_var_name))
+        if len(detect_vars) > 1:
+            cond = AHDL_OP('And', *detect_vars)
+        else:
+            cond = detect_vars[0]
+        cond = AHDL_OP('Not', cond)
+        self.emit('while ({}) begin'.format(self.visit(cond)))
+        self.set_indent(2)
+        self.emit('#CLK_PERIOD;')
+        self.set_indent(-2)
+        self.emit('end')
+        for code in ahdl.codes:
+            self.visit(code)
+    
     def visit_ACCEPT_IF_VALID(self, ahdl):
         modulecall = ahdl.args[0]
 
@@ -167,12 +187,12 @@ class VerilogTestGen(VerilogCodeGen):
     def visit_GET_RET_IF_VALID(self, ahdl):
         modulecall = ahdl.args[0]
         dst = ahdl.args[1]
-        sub_out = self.scope.gen_sig(modulecall.prefix+'_out_0', INT_WIDTH, ['wire', 'int'])
+        sub_out = self.scope.gen_sig(modulecall.prefix+'_out_0', INT_WIDTH, ['net', 'int'])
         self.visit(AHDL_MOVE(dst, AHDL_VAR(sub_out, Ctx.LOAD)))
 
     def visit_WAIT_RET_AND_GATE(self, ahdl):
         for modulecall in ahdl.args[0]:
-            valid = self.scope.gen_sig(modulecall.prefix+'_valid', 1, ['wire'])
+            valid = self.scope.gen_sig(modulecall.prefix+'_valid', 1, ['net'])
             cond = AHDL_OP('Eq', AHDL_VAR(valid, Ctx.LOAD), AHDL_CONST(1))
 
             if len(modulecall.scope.module_info.state_constants) > 1:

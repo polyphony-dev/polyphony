@@ -67,7 +67,9 @@ class TypePropagation(IRVisitor):
                 fun_name = 'wr' if ir.args else 'rd'
             else:
                 fun_name = env.callop_name
-            ir.func_scope = clazz.find_scope(fun_name)
+            func_sym = clazz.find_sym(fun_name)
+            assert func_sym.typ.is_function()
+            ir.func_scope = func_sym.typ.get_scope()
             ir.func = ATTR(ir.func, clazz.symbols[fun_name], Ctx.LOAD)
             ir.func.attr_scope = clazz
 
@@ -94,7 +96,9 @@ class TypePropagation(IRVisitor):
             if t.is_object() or t.is_port():
                 self._convert_call(ir)
             else:
-                ir.func_scope = ir.func.attr_scope.find_child(func_name)
+                func_sym = ir.func.attr_scope.find_sym(func_name)
+                if func_sym.typ.is_function():
+                    ir.func_scope = func_sym.typ.get_scope()
             if not ir.func_scope:
                 raise RejectPropagation(str(ir))
             #assert ir.func_scope.is_method()
@@ -126,6 +130,9 @@ class TypePropagation(IRVisitor):
             funct = Type.function(ir.func_scope, ret_t, tuple([param.sym.typ for param in ir.func_scope.params]))
 
         ir.func.symbol().set_type(funct)
+
+        if self.scope.is_testbench() and ir.func_scope.is_function():
+            ir.func_scope.add_tag('function_module')
 
         return ret_t
 
@@ -488,7 +495,7 @@ class TypeChecker(IRVisitor):
         dst_t = self.visit(ir.dst)
 
         if not Type.is_commutable(dst_t, src_t):
-            type_error(ir, 'assignment type missmatch')
+            type_error(ir, 'assignment type missmatch {} {}'.format(src_t, dst_t))
 
     def visit_PHI(self, ir):
         # FIXME

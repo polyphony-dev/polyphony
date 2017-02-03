@@ -21,11 +21,13 @@ class Worker:
 class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
-        'global', 'class', 'method', 'ctor',
+        'global', 'function', 'class', 'method', 'ctor',
         'callable', 'returnable', 'mutable',
         'testbench',
         'module', 'worker',
         'port', 'lib', 'namespace',
+        'function_module',
+        'inlinelib',
     }
 
     @classmethod
@@ -103,6 +105,7 @@ class Scope(Tagged):
         self.entry_block = None
         self.exit_block = None
         self.children = []
+        self.bases = []
         self.usedef = None
         self.loop_nest_tree = None
         self.callee_instances = defaultdict(set)
@@ -117,6 +120,7 @@ class Scope(Tagged):
         self.class_fields = {}
         self.paths = []
         self.workers = {}
+        self.asap_latency = -1
 
     def __str__(self):
         s = '\n================================\n'
@@ -197,6 +201,7 @@ class Scope(Tagged):
         s.children = list(self.children)
         for child in s.children:
             child.parent = s
+        s.bases = list(self.bases)
         s.usedef = None
 
         new_callee_instances = defaultdict(set)
@@ -251,6 +256,10 @@ class Scope(Tagged):
         sym = Symbol.new(name, self)
         self.symbols[name] = sym
         return sym
+
+    def del_sym(self, name):
+        if name in self.symbols:
+            del self.symbols[name]
 
     def import_sym(self, sym):
         if sym.name in self.symbols and sym is not self.symbols[sym.name]:

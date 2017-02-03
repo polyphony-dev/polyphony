@@ -3,6 +3,7 @@ from .latency import get_latency
 from .irvisitor import IRVisitor
 from .ir import *
 from .utils import unique
+from .scope import Scope
 from logging import getLogger, INFO, DEBUG
 logger = getLogger(__name__)
 #logger.setLevel(INFO)
@@ -41,8 +42,8 @@ class Scheduler:
                     succs = unique(succs)
                     worklist.append((succs, nextprio))
         nodes = dfg.get_highest_priority_nodes()
-        self._list_schedule(dfg, nodes)
-
+        latency = self._list_schedule(dfg, nodes)
+        scope.asap_latency = latency
 
     def _set_priority(self, node, prio, dfg):
         if prio > node.priority:
@@ -83,6 +84,7 @@ class Scheduler:
 
     def _list_schedule(self, dfg, nodes):
         next_candidates = set()
+        last_latency = 0
         for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
             scheduled_time = self._node_sched(dfg, n)
             latency = get_latency(n.tag)
@@ -93,10 +95,25 @@ class Scheduler:
             #logger.debug('## SCHEDULED ## ' + str(n))
             succs = dfg.succs_without_back(n)
             next_candidates = next_candidates.union(succs)
-
+            last_latency = n.end
         if next_candidates:
-            self._list_schedule(dfg, next_candidates)
+            return self._list_schedule(dfg, next_candidates)
+        else:
+            return last_latency
 
+    def _is_resource_full(self, res, scheduled_resources):
+        # TODO:
+        if isinstance(res, str):
+            return len(scheduled_resources) >= MAX_FUNC_UNIT
+        elif isinstance(res, Scope):
+            return len(scheduled_resources) >= MAX_FUNC_UNIT
+        return 0
+
+    def _str_res(self, res):
+        if isinstance(res, str):
+            return res
+        elif isinstance(res, Scope):
+            return res.name
 
     def _get_earliest_res_free_time(self, node, time, latency):
         resources = self._get_needed_resources(node.tag)
@@ -112,26 +129,24 @@ class Scheduler:
             else:
                 table = self.res_tables[res]
 
-            scheduled_funcs = table[time]
-            if node in scheduled_funcs:
+            scheduled_resources = table[time]
+            if node in scheduled_resources:
                 #already scheduled
                 return time
 
-            while len(scheduled_funcs) >= MAX_FUNC_UNIT:
-                logger.debug("!!! resource {}'s slot '{}' is full !!!".format(res, time))
+            while self._is_resource_full(res, scheduled_resources):
+                logger.debug("!!! resource {}'s slot '{}' is full !!!".format(self._str_res(res), time))
                 time += 1
-                scheduled_funcs = table[time]
-                if len(scheduled_funcs) < MAX_FUNC_UNIT:
-                    break
+                scheduled_resources = table[time]
 
-            node.instance_num = len(scheduled_funcs)
+            node.instance_num = len(scheduled_resources)
             #logger.debug("{} is scheduled to {}, instance_num {}".format(node, time, node.instance_num))
 
-            #fill scheduled_funcs table
+            #fill scheduled_resources table
             n = latency if latency != 0 else 1
             for i in range(n):
-                scheduled_funcs = table[time+i]
-                scheduled_funcs.append(node)
+                scheduled_resources = table[time+i]
+                scheduled_resources.append(node)
 
         return time
 
@@ -162,8 +177,7 @@ class ResourceExtractor(IRVisitor):
         self.results.append(ir.op)
 
     def visit_CALL(self, ir):
-        func_sym = ir.func.symbol()
-        self.results.append(func_sym.name)
+        self.results.append(ir.func_scope)
         for arg in ir.args:
             self.visit(arg)
 

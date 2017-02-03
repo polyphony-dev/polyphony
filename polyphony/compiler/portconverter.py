@@ -31,30 +31,30 @@ class PortConverter(IRTransformer):
         super().__init__()
 
     def process_all(self):
-        scopes = Scope.get_class_scopes()
-        top = None
-        for s in scopes:
-            if s.is_module():
-                top = s
-                break
-        if not top:
+        scopes = Scope.get_scopes(with_class=True)
+        modules = [s for s in scopes if s.is_module()]
+        if not modules:
             return
         typeprop = PortTypeProp()
-        for caller in top.caller_scopes:
-            typeprop.process(caller)
+        for m in modules:
+            for caller in m.caller_scopes:
+                typeprop.process(caller)
         
-        ctor = top.find_ctor()
-        typeprop.process(ctor)
-        self.process(ctor)
+            ctor = m.find_ctor()
+            typeprop.process(ctor)
+            self.process(ctor)
 
-        for method in top.children:
-            if method.is_ctor():
-                continue
-            typeprop.process(method)
-        for method in top.children:
-            if method.is_ctor():
-                continue
-            self.process(method)
+            for w in m.workers.values():
+                typeprop.process(w.scope)
+
+            for w in m.workers.values():
+                self.process(w.scope)
+
+            for name, mv in m.class_fields.items():
+                field = mv.dst.symbol()
+                if field.typ.is_port() and field.typ.get_direction() == '?':
+                    print(error_info(m, mv.lineno))
+                    raise RuntimeError("The port '{}' is not used at all".format(mv.dst))
 
     def visit_CALL(self, ir):
         if not ir.func_scope.is_lib():
@@ -68,10 +68,25 @@ class PortConverter(IRTransformer):
                 direction = 'input'
             if not sym.typ.has_direction():
                 sym.typ.set_direction('?')
-            dir = sym.typ.get_direction()
-            if dir == '?':
+            di = sym.typ.get_direction()
+            if di == '?':
                 sym.typ.set_direction(direction)
                 sym.typ.freeze()
-            elif dir != direction:
+            elif di != direction:
+                print(error_info(self.scope, ir.lineno))
                 raise RuntimeError('Port direction is conflicted')
+        return ir
+
+    def visit_SYSCALL(self, ir):
+        if ir.name == 'polyphony.timing.wait_rising' or ir.name == 'polyphony.timing.wait_falling':
+            for a in ir.args:
+                port = a.symbol().typ
+                assert port.is_port()
+                di = port.get_direction()
+                if di == 'output':
+                    print(error_info(self.scope, ir.lineno))
+                    raise RuntimeError('Cannot wait for output port')
+                elif di == '?':
+                    port.set_direction('input')
+                    port.freeze()
         return ir

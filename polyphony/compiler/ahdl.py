@@ -50,17 +50,18 @@ class AHDL_CONST(AHDL_EXP):
         return '{}'.format(self.value)
 
 class AHDL_OP(AHDL_EXP):
-    def __init__(self, op, left, right):
+    def __init__(self, op, *args):
         super().__init__()
         self.op = op
-        self.left = left
-        self.right = right
+        self.args = args
 
     def __str__(self):
-        if self.right:
-            return '({} {} {})'.format(self.left, PYTHON_OP_2_HDL_OP_MAP[self.op], self.right)
+        if len(self.args) > 1:
+            op = ' ' + PYTHON_OP_2_HDL_OP_MAP[self.op] + ' '
+            str_args = [str(a) for a in self.args]
+            return '({})'.format(op.join(str_args))
         else:
-            return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.left)
+            return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.args[0])
 
 class AHDL_VAR(AHDL_EXP):
     def __init__(self, sig, ctx):
@@ -355,6 +356,7 @@ class AHDL_META_WAIT(AHDL_STM):
         super().__init__()
         self.metaid = args[0]
         self.args = args[1:]
+        self.codes = None
         self.transition = None
 
     def __str__(self):

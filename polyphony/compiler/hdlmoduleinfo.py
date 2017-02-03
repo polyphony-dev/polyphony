@@ -35,6 +35,7 @@ class HDLModuleInfo:
         self.internal_field_accesses = {}
         self.fsms = defaultdict(FSM)
         self.node2if = {}
+        self.edge_detectors = set()
 
     def __str__(self):
         s = 'ModuleInfo {}\n'.format(self.name)
@@ -148,6 +149,9 @@ class HDLModuleInfo:
 
     def add_fsm_reset_stm(self, fsm_name, ahdl_stm):
         self.fsms[fsm_name].reset_stms.append(ahdl_stm)
+
+    def add_edge_detector(self, sig, old, new):
+        self.edge_detectors.add((sig, old, new))
 
 class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):

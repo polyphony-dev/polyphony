@@ -55,8 +55,8 @@ class Tagged:
             assert isinstance(tags, set)
             self.tags = tags
         self.valid_tags = valid_tags
-        if not self.tags.issubset(valid_tags):
-            raise RuntimeError()
+        assert self.tags.issubset(valid_tags)
+
     def __getattr__(self, name):
         if name.startswith('is_'):
             tag = name[3:]

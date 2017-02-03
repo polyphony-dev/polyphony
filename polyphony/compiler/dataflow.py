@@ -69,6 +69,9 @@ class DataFlowGraph:
             elif typ == 'Seq':
                 prefix1 = 'pred '
                 prefix2 = 'succ -> '
+            else:
+                prefix1 = 'sync '
+                prefix2 = '<- -> '
             s += '{}{} {}\n'.format(back_edge, prefix1, n1)
             s += '{}{} {}\n'.format(back_edge, prefix2, n2)
         return s
@@ -98,6 +101,13 @@ class DataFlowGraph:
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
         edge = (n1, n2, 'Seq', False)
+        if edge not in self.edges:
+            self.edges.add(edge)
+
+    def add_sync_edge(self, n1, n2):
+        assert n1 and n2 and n1.tag and n2.tag
+        assert n1 is not n2
+        edge = (n1, n2, 'Sync', False)
         if edge not in self.edges:
             self.edges.add(edge)
 
@@ -404,8 +414,9 @@ class DFGBuilder:
                         dfg.add_defuse_edge(defnode, usenode)
 
         if self.scope.is_testbench():
-            self._add_edges_between_calls(blocks, dfg)
+            self._add_edges_between_func_modules(blocks, dfg)
         self._add_edges_between_objects(blocks, dfg)
+        self._add_timinglib_seq_edges(blocks, dfg)
         return dfg
 
 
@@ -463,10 +474,8 @@ class DFGBuilder:
                 return True
             elif stm.src.is_a(MREF) and stm.src.offset.is_a(CONST):
                 return True
-            elif stm.src.is_a(SYSCALL):
-                syscall = stm.src
-                if syscall.name == 'read_reg':
-                    return True
+            elif stm.src.is_a(NEW):
+                return True
         elif stm.is_a(EXPR):
             if stm.exp.is_a([CALL, SYSCALL]):
                 call = stm.exp
@@ -517,30 +526,22 @@ class DFGBuilder:
                 dfg.add_seq_edge(n1, n2)
 
 
-    def _add_edges_between_calls(self, blocks, dfg):
+    def _add_edges_between_func_modules(self, blocks, dfg):
         """this function is used for testbench only"""
         all_stms_in_section = self._all_stms(blocks)
-        call_nodes = []
-        calls = {}
+        prev_node = None
         for stm in all_stms_in_section:
-            if stm.is_a(MOVE) and stm.src.is_a([CALL, SYSCALL]):
+            node = None
+            if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func_scope.is_function_module():
                 node = dfg.add_stm_node(stm)
-                call_nodes.append(node)
-                calls[node] = stm.src
-            elif stm.is_a(EXPR) and stm.exp.is_a([CALL, SYSCALL]):
+            elif stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func_scope.is_function_module():
                 node = dfg.add_stm_node(stm)
-                call_nodes.append(node)
-                calls[node] = stm.exp
-        if not call_nodes:
-            return
-        call_nodes = sorted(call_nodes, key = self._node_order_by_ctrl)
-        prev = call_nodes[0]
-        for next in call_nodes[1:]:
-            dfg.add_seq_edge(prev, next)
-            prev = next
-        return
+            if node:
+                if prev_node:
+                    dfg.add_seq_edge(prev_node, node)
+                prev_node = node
 
-    def _get_object_symbol(self, stm):
+    def _get_mutable_object_symbol(self, stm):
         if stm.is_a(MOVE):
             call = stm.src
         elif stm.is_a(EXPR):
@@ -553,14 +554,15 @@ class DFGBuilder:
             return None
         receiver = call.func.tail()
         if receiver.typ.is_object() or receiver.typ.is_port():
-            return receiver
+            if call.func_scope.is_mutable():
+                return receiver
         return None
 
     def _add_edges_between_objects(self, blocks, dfg):
         all_stms_in_section = self._all_stms(blocks)
         prevs = {}
         for stm in all_stms_in_section:
-            sym = self._get_object_symbol(stm)
+            sym = self._get_mutable_object_symbol(stm)
             if sym:
                 node = dfg.add_stm_node(stm)
                 if sym in prevs:
@@ -580,3 +582,44 @@ class DFGBuilder:
                     prev_node = dfg.find_node(prev_stm)
                     dfg.add_seq_edge(prev_node, node)
 
+    
+    def _has_timing_function(self, stm):
+        if stm.is_a(MOVE):
+            call = stm.src
+        elif stm.is_a(EXPR):
+            call = stm.exp
+        else:
+            return False
+        if call.is_a(SYSCALL):
+            wait_funcs = [
+                'polyphony.timing.clksleep',
+                'polyphony.timing.wait_rising',
+                'polyphony.timing.wait_falling',
+                'polyphony.timing.wait_value',
+                'polyphony.timing.wait_edge',
+            ]
+            return call.name in wait_funcs
+        elif call.is_a(CALL):
+            return False
+
+    def _add_timinglib_seq_edges(self, blocks, dfg):
+        all_stms_in_section = self._all_stms(blocks)
+        timing_func_node = None
+        for stm in all_stms_in_section:
+            node = dfg.find_node(stm)
+            if timing_func_node:
+                dfg.add_seq_edge(timing_func_node, node)
+            if self._has_timing_function(stm):
+                timing_func_node = node
+
+        timing_func_node = None
+        for stm in reversed(all_stms_in_section):
+            node = dfg.find_node(stm)
+            if timing_func_node:
+                dfg.add_seq_edge(node, timing_func_node)
+            if self._has_timing_function(stm):
+                timing_func_node = node
+
+            #    if prev_node:
+            #        dfg.add_seq_edge(prev_node, timing_func_node)
+            #prev_node = node
