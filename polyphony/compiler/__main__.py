@@ -331,12 +331,14 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
         g.add_sym(builtin)
 
     translator = IRTranslator()
-    package_root_dir = os.path.dirname(__file__) + os.path.sep + os.path.pardir + os.path.sep
-    package_file = os.path.abspath(package_root_dir+'__init__.py')
+    internal_root_dir = '{0}{1}{2}{1}_internal{1}'.format(os.path.dirname(__file__), os.path.sep, os.path.pardir)
+    package_file = os.path.abspath(internal_root_dir+'_polyphony.py')
     translator.translate(read_source(package_file), 'polyphony')
-    for name in ('_common', 'io', 'timing'):
-        package_file = os.path.abspath(package_root_dir+name+'.py')
-        translator.translate(read_source(package_file), os.path.basename(package_file).split('.')[0])
+    for name in ('_io', '_timing'):
+        package_file = os.path.abspath(internal_root_dir+name+'.py')
+        package_name = os.path.basename(package_file).split('.')[0]
+        package_name = package_name[1:]
+        translator.translate(read_source(package_file), package_name)
     translator.translate(read_source(src_file), '')
 
     scopes = Scope.get_scopes(bottom_up=False, with_class=True)

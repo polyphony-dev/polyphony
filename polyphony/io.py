@@ -1,6 +1,5 @@
 import queue, time, sys, pdb
 import threading
-from ._common import mutable
 
 __all__ = [
     'Bit',
@@ -8,50 +7,50 @@ __all__ = [
     'Uint'
 ]
 
-def _polyphony_init_io():
+def _init_io():
     if sys.getswitchinterval() > 0.005:
         sys.setswitchinterval(0.005) # 5ms
 
-_polyphony_events = []
-_polyphony_conds = []
-_polyphony_io_enabled = False
+_events = []
+_conds = []
+_io_enabled = False
 
-def _polyphony_create_event():
+def _create_event():
     ev = threading.Event()
-    _polyphony_events.append(ev)
+    _events.append(ev)
     return ev
 
-def _polyphony_create_cond():
+def _create_cond():
     cv = threading.Condition()
-    _polyphony_conds.append(cv)
+    _conds.append(cv)
     return cv
 
-def _polyphony_remove_cond(cv):
-    _polyphony_conds.remove(cv)
+def _remove_cond(cv):
+    _conds.remove(cv)
 
-def _polyphony_enable():
-    global _polyphony_io_enabled
-    _polyphony_io_enabled = True
+def _enable():
+    global _io_enabled
+    _io_enabled = True
 
-def _polyphony_disable():
-    global _polyphony_io_enabled
-    _polyphony_io_enabled = False
-    for ev in _polyphony_events:
+def _disable():
+    global _io_enabled
+    _io_enabled = False
+    for ev in _events:
         ev.set()
-    for cv in _polyphony_conds:
+    for cv in _conds:
         with cv:
             cv.notify_all()
 
-class _polyphony_Exception(Exception):
+class PolyphonyException(Exception):
     pass
 
-class _polyphony_IOException(_polyphony_Exception):
+class PolyphonyIOException(PolyphonyException):
     pass
 
-def _polyphony_portmethod(func):
+def _portmethod(func):
     def _portmethod_decorator(*args, **kwargs):
-        if not _polyphony_io_enabled:
-            raise _polyphony_IOException()
+        if not _io_enabled:
+            raise PolyphonyIOException()
         return func(*args, **kwargs)
     return _portmethod_decorator
 
@@ -62,12 +61,11 @@ class _DataPort:
         self.__cv = []
         self.__cv_lock = threading.Lock()
 
-    @_polyphony_portmethod
+    @_portmethod
     def rd(self) -> int:
         return self.__v
 
-    @mutable
-    @_polyphony_portmethod
+    @_portmethod
     def wr(self, v):
         if not self.__cv:
             self.__oldv = self.__v
@@ -87,15 +85,15 @@ class _DataPort:
         else:
             self.wr(v)
 
-    def _polyphony_add_cv(self, cv):
+    def _add_cv(self, cv):
         with self.__cv_lock:
             self.__cv.append(cv)
 
-    def _polyphony_del_cv(self, cv):
+    def _del_cv(self, cv):
         with self.__cv_lock:
             self.__cv.remove(cv)
 
-    def _polyphony_rd_old(self):
+    def _rd_old(self):
         return self.__oldv
 
 
@@ -115,15 +113,15 @@ class Queue:
     def __init__(self, width:int=32, max_size:int=0, name='') -> object:
         self.__width = width
         self.__q = queue.Queue(max_size)
-        self.__ev_put = _polyphony_create_event()
-        self.__ev_get = _polyphony_create_event()
+        self.__ev_put = _create_event()
+        self.__ev_get = _create_event()
         self.__name = name
 
-    @_polyphony_portmethod
+    @_portmethod
     def rd(self) -> int:
         while self.__q.empty():
             self.__ev_put.wait()
-            if _polyphony_io_enabled:
+            if _io_enabled:
                 self.__ev_put.clear()
             else:
                 return 0
@@ -132,11 +130,11 @@ class Queue:
         self.__ev_get.set()
         return d
 
-    @_polyphony_portmethod
+    @_portmethod
     def wr(self, v):
         while self.__q.full():
             self.__ev_get.wait()
-            if _polyphony_io_enabled:
+            if _io_enabled:
                 self.__ev_get.clear()
             else:
                 return
@@ -150,12 +148,12 @@ class Queue:
         else:
             self.wr(v)
 
-    @_polyphony_portmethod
+    @_portmethod
     def empty(self):
         return self.__q.empty()
 
-    @_polyphony_portmethod
+    @_portmethod
     def full(self):
         return self.__q.full()
 
-_polyphony_init_io()
+_init_io()

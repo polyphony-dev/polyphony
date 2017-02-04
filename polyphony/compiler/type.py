@@ -58,6 +58,8 @@ class Type:
                         attrs[copy.name] = args[i]
                 p = Type.port(target, attrs)
                 return p
+        elif ann is None:
+            return Type.none_t
         return None
 
 

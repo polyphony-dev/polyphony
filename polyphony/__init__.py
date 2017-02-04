@@ -10,6 +10,7 @@ __all__ = [
     'is_worker_running',
 ]
 
+# @testbench decorator
 def testbench(func):
     def _testbench_decorator(module_instance=None):
         if module_instance:
@@ -23,46 +24,47 @@ def testbench(func):
             func()
     return _testbench_decorator
 
-_polyphony_is_worker_running = False
-def is_worker_running() -> bool:
-    return _polyphony_is_worker_running
 
-def _polyphony_module_start(self):
-    global _polyphony_is_worker_running
-    if _polyphony_is_worker_running:
+_is_worker_running = False
+def is_worker_running() -> bool:
+    return _is_worker_running
+
+def _module_start(self):
+    global _is_worker_running
+    if _is_worker_running:
         return
-    _polyphony_is_worker_running = True
-    io._polyphony_enable()
+    _is_worker_running = True
+    io._enable()
     for w in self.__workers:
         w.start()
     time.sleep(0.001)
 
-def _polyphony_module_stop(self):
-    global _polyphony_is_worker_running
-    if not _polyphony_is_worker_running:
+def _module_stop(self):
+    global _is_worker_running
+    if not _is_worker_running:
         return
-    _polyphony_is_worker_running = False
+    _is_worker_running = False
     for w in self.__workers:
         w.prejoin()
-    io._polyphony_disable()
+    io._disable()
     for w in self.__workers:
         w.join()
 
-def _polyphony_module_append_worker(self, fn, *args):
+def _module_append_worker(self, fn, *args):
     if not hasattr(self, '__workers'):
         self.__workers = []
-    self.__workers.append(_polyphony_Worker(fn, *args))
+    self.__workers.append(_Worker(fn, *args))
 
-class _polyphony_ModuleDecorator:
+class _ModuleDecorator:
     def __init__(self):
         self.module_instances = defaultdict(list)
 
     def __call__(self, cls):
         def _module_decorator(*args, **kwargs):
             instance = object.__new__(cls)
-            instance._start = types.MethodType(_polyphony_module_start, instance)
-            instance._stop = types.MethodType(_polyphony_module_stop, instance)
-            instance.append_worker = types.MethodType(_polyphony_module_append_worker, instance)
+            instance._start = types.MethodType(_module_start, instance)
+            instance._stop = types.MethodType(_module_stop, instance)
+            instance.append_worker = types.MethodType(_module_append_worker, instance)
             instance.__init__(*args, **kwargs)
             self.module_instances[cls.__name__].append(instance)
             return instance
@@ -74,10 +76,11 @@ class _polyphony_ModuleDecorator:
             for inst in instances:
                 inst._stop()
 
-module = _polyphony_ModuleDecorator()
+# @module decorator
+module = _ModuleDecorator()
 
 
-class _polyphony_Worker(threading.Thread):
+class _Worker(threading.Thread):
     def __init__(self, func, *args):
         super().__init__()
         self.func = func
@@ -90,7 +93,7 @@ class _polyphony_Worker(threading.Thread):
                 self.func(*self.args)
             else:
                 self.func()
-        except io._polyphony_IOException as e:
+        except io.PolyphonyIOException as e:
             module.abort()
         except Exception as e:
             module.abort()
