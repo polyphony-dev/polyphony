@@ -93,23 +93,22 @@ class State:
             for code in removes:
                 self.codes.remove(code)
 
-    def merge_wait_edge(self):
+    def merge_wait_function(self, id):
         wait_edge = None
         removes = []
         for code in self.codes:
-            if code.is_a(AHDL_META_WAIT) and code.metaid == 'WAIT_EDGE':
+            if code.is_a(AHDL_META_WAIT) and code.metaid == id:
                 assert len(self.codes) == 1
                 wait_edge = code
         if not wait_edge:
             return
         next_state_codes = wait_edge.transition.target.codes
-        if len(next_state_codes) == 1 and next_state_codes[0].is_a(AHDL_META_WAIT) and next_state_codes[0].metaid == 'WAIT_EDGE':
+        if len(next_state_codes) == 1 and next_state_codes[0].is_a(AHDL_META_WAIT):
             return
         wait_edge.codes = wait_edge.transition.target.codes
         wait_edge.transition.target.codes = []
         wait_edge.transition = None
-        #for code in removes:
-        #    self.codes.remove(code)
+
 
 class STG:
     "State Transition Graph"
@@ -189,7 +188,8 @@ class STGBuilder:
         for stg in stgs:
             for state in stg.states:
                 state.merge_wait_ret()
-                state.merge_wait_edge()
+                state.merge_wait_function('WAIT_EDGE')
+                state.merge_wait_function('WAIT_VALUE')
 
         scope.stgs = stgs
 
@@ -524,7 +524,7 @@ class AHDLTranslator:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', ports, 0, 1), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', 0, 1, *ports), self.sched_time)
             return
         elif ir.name == 'polyphony.timing.wait_falling':
             ports = []
@@ -532,7 +532,28 @@ class AHDLTranslator:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', ports, 1, 0), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', 1, 0, *ports), self.sched_time)
+            return
+        elif ir.name == 'polyphony.timing.wait_edge':
+            ports = []
+            assert ir.args[0].is_a(CONST) and ir.args[1].is_a(CONST)
+            old = ir.args[0].value
+            new = ir.args[1].value
+            for a in ir.args[2:]:
+                assert a.is_a([TEMP, ATTR])
+                port_sig = self._port_sig(a.qualified_symbol())
+                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', old, new, *ports), self.sched_time)
+            return
+        elif ir.name == 'polyphony.timing.wait_value':
+            ports = []
+            assert ir.args[0].is_a(CONST)
+            value = ir.args[0].value
+            for a in ir.args[1:]:
+                assert a.is_a([TEMP, ATTR])
+                port_sig = self._port_sig(a.qualified_symbol())
+                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
+            self._emit(AHDL_META_WAIT('WAIT_VALUE', value, *ports), self.sched_time)
             return
         else:
             return

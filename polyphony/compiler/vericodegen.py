@@ -800,15 +800,31 @@ class VerilogCodeGen:
         self.visit(ahdl_if)
 
     def visit_WAIT_EDGE(self, ahdl):
-        old, new = ahdl.args[1], ahdl.args[2]
+        old, new = ahdl.args[0], ahdl.args[1]
         detect_vars = []
-        for var in ahdl.args[0]:
+        for var in ahdl.args[2:]:
             detect_var_name = 'is_{}_change_{}_to_{}'.format(var.sig.name, old, new)
             detect_vars.append(AHDL_SYMBOL(detect_var_name))
         if len(detect_vars) > 1:
             conds = [AHDL_OP('And', *detect_vars)]
         else:
             conds = [detect_vars[0]]
+        if ahdl.codes:
+            codes = ahdl.codes[:]
+        else:
+            codes = []
+        if ahdl.transition:
+            codes.append(ahdl.transition)
+        ahdl_if = AHDL_IF(conds, [codes])
+        self.visit(ahdl_if)
+
+    def visit_WAIT_VALUE(self, ahdl):
+        value = ahdl.args[0]
+        detect_exps = [AHDL_OP('Eq', var, AHDL_CONST(value)) for var in ahdl.args[1:]]
+        if len(detect_exps) > 1:
+            conds = [AHDL_OP('And', *detect_exps)]
+        else:
+            conds = [detect_exps[0]]
         if ahdl.codes:
             codes = ahdl.codes[:]
         else:

@@ -97,7 +97,16 @@ class AHDLVisitor:
         self.visit(ahdl.transition)
 
     def visit_WAIT_EDGE(self, ahdl):
-        for var in ahdl.args[0]:
+        for var in ahdl.args[2:]:
+            self.visit(var)
+        if ahdl.codes:
+            for code in ahdl.codes:
+                self.visit(code)
+        if ahdl.transition:
+            self.visit(ahdl.transition)
+
+    def visit_WAIT_VALUE(self, ahdl):
+        for var in ahdl.args[1:]:
             self.visit(var)
         if ahdl.codes:
             for code in ahdl.codes:

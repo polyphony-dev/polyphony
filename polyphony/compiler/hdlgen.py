@@ -454,8 +454,8 @@ class AHDLSpecialDeclCollector(AHDLVisitor):
         self.edge_detectors = edge_detectors
 
     def visit_WAIT_EDGE(self, ahdl):
-        old, new = ahdl.args[1], ahdl.args[2]
-        for var in ahdl.args[0]:
+        old, new = ahdl.args[0], ahdl.args[1]
+        for var in ahdl.args[2:]:
             self.edge_detectors.add((var.sig, old, new))
             if ahdl.codes:
                 for code in ahdl.codes:

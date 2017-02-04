@@ -79,8 +79,14 @@ class PortConverter(IRTransformer):
 
     def visit_SYSCALL(self, ir):
         if ir.name.startswith('polyphony.timing.wait_'):
-            for a in ir.args:
-                port = a.symbol().typ
+            if ir.name == 'polyphony.timing.wait_rising' or ir.name == 'polyphony.timing.wait_falling':
+                ports = ir.args
+            elif ir.name == 'polyphony.timing.wait_edge':
+                ports = ir.args[2:]
+            elif ir.name == 'polyphony.timing.wait_value':
+                ports = ir.args[1:]
+            for p in ports:
+                port = p.symbol().typ
                 assert port.is_port()
                 di = port.get_direction()
                 if di == 'output':
