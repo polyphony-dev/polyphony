@@ -2,6 +2,7 @@
 from collections import namedtuple
 
 class Type:
+    DEFAULT_INT_WIDTH=32
     def __init__(self, name, **attrs):
         self.name = name
         self.attrs = attrs
@@ -28,13 +29,13 @@ class Type:
     def from_annotation(cls, ann, scope):
         if isinstance(ann, str):
             if ann == 'int':
-                return Type.int_t
+                return Type.int()
             elif ann == 'bool':
                 return Type.bool_t
             elif ann == 'list':
-                return Type.list(cls.int_t, None)
+                return Type.list(Type.int(), None)
             elif ann == 'tuple':
-                return Type.tuple(cls.int_t, None, 0)
+                return Type.tuple(Type.int(), None, 0)
             elif ann == 'object':
                 return Type.object(None)
         elif isinstance(ann, tuple):
@@ -70,13 +71,24 @@ class Type:
         return 'Type({}, {})'.format(repr(self.name), repr(self.attrs))
 
     @classmethod
+    def int(cls, width=DEFAULT_INT_WIDTH):
+        return Type('int', width=width)
+
+    @classmethod
+    def wider_int(clk, t0, t1):
+        if t0.is_int() and t1.is_int():
+            return t0 if t0.get_width() >= t1.get_width() else t1
+        else:
+            return t0
+
+    @classmethod
     def list(cls, elm_t, memnode):
-        assert elm_t is cls.int_t or elm_t is cls.bool_t
+        assert elm_t.is_scalar()
         return Type('list', element=elm_t, memnode=memnode)
 
     @classmethod
     def tuple(cls, elm_t, memnode, length):
-        assert elm_t is cls.int_t or elm_t is cls.bool_t
+        assert elm_t.is_scalar()
         return Type('tuple', element=elm_t, memnode=memnode, length=length)
 
     @classmethod
@@ -90,14 +102,6 @@ class Type:
     @classmethod
     def klass(cls, scope):
         return Type('class', scope=scope)
-
-    #@classmethod
-    #def funcdef(cls):
-    #    return Type('funcdef')
-
-    #@classmethod
-    #def classdef(cls):
-    #    return Type('classdef')
 
     @classmethod
     def port(cls, portcls, attrs):
@@ -114,7 +118,7 @@ class Type:
         return self.name == 'list' or self.name == 'tuple'
 
     def is_scalar(self):
-        return self.name == 'int' or self.name == 'bool'
+        return self.name == 'int' or self.name == 'bool' or self.name == 'str'
 
     def is_containable(self):
         return self.name == 'namespace' or self.name == 'class'
@@ -127,7 +131,9 @@ class Type:
     def is_commutable(cls, t0, t1):
         if t0 is t1:
             return True
-        if t0 is cls.bool_t and t1 is cls.int_t or t0 is cls.int_t and t1 is cls.bool_t:
+        if t0.is_int() and t1.is_int():
+            return True
+        if t0.is_bool() and t1.is_int() or t0.is_int() and t1.is_bool():
             return True
         if t0.is_list() and t1.is_list():
             return True
@@ -149,7 +155,7 @@ class Type:
     def is_freezed(self):
         return 'freezed' in self.attrs and self.attrs['freezed'] is True
 
-Type.int_t = Type('int', width=32)
 Type.bool_t = Type('bool', width=1)
+Type.str_t = Type('str')
 Type.none_t = Type('none')
 

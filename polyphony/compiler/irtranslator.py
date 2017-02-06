@@ -170,7 +170,7 @@ class FunctionVisitor(ast.NodeVisitor):
                     print(error_info(self.current_scope, node.lineno))
                     raise TypeError("Unknown type is specified.")
             else:
-                param_in.typ = param_copy.typ = Type.int_t
+                param_in.typ = param_copy.typ = Type.int()
             self.current_scope.add_param(param_in, param_copy, None)
         if node.returns:
             ann = self.annotation_visitor.visit(node.returns)

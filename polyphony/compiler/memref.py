@@ -673,9 +673,9 @@ class MemRefGraphBuilder(IRVisitor):
                 self.mrg.add_node(MemParamNode(memsym, self.scope))
                 memnode = self.mrg.node(memsym)
                 if ir.sym.typ.is_list():
-                    memsym.set_type(Type.list(Type.int_t, memnode))
+                    memsym.set_type(Type.list(Type.int(), memnode))
                 else:
-                    memsym.set_type(Type.tuple(Type.int_t, memnode, ir.sym.typ.get_length()))
+                    memsym.set_type(Type.tuple(Type.int(), memnode, ir.sym.typ.get_length()))
        
     def visit_ARRAY(self, ir):
         ir.sym = self.scope.add_temp('array')
@@ -687,10 +687,10 @@ class MemRefGraphBuilder(IRVisitor):
             memnode.set_writable()
         # TODO: element type
         if ir.is_mutable:
-            ir.sym.set_type(Type.list(Type.int_t, memnode))
+            ir.sym.set_type(Type.list(Type.int(), memnode))
         else:
             memnode.set_immutable()
-            ir.sym.set_type(Type.tuple(Type.int_t, memnode, len(ir.items)))
+            ir.sym.set_type(Type.tuple(Type.int(), memnode, len(ir.items)))
 
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
@@ -702,14 +702,14 @@ class MemRefGraphBuilder(IRVisitor):
                 memsym = self.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
-                memsym.typ = Type.list(Type.int_t, self.mrg.node(memsym))
+                memsym.typ = Type.list(Type.int(), self.mrg.node(memsym))
                 ir.mem.set_symbol(memsym)
         
         memnode = self.mrg.node(memsym)
         if not memnode and memsym.is_ref():
             self.mrg.add_node(MemRefNode(memsym, self.scope))
             self._append_edge(memsym.ancestor, memsym)
-            memsym.typ = Type.list(Type.int_t, self.mrg.node(memsym))
+            memsym.typ = Type.list(Type.int(), self.mrg.node(memsym))
 
     def visit_MSTORE(self, ir):
         memsym = ir.mem.symbol()
@@ -719,7 +719,7 @@ class MemRefGraphBuilder(IRVisitor):
         elif memsym.is_ref():
             self.mrg.add_node(MemRefNode(memsym, self.scope))
             self._append_edge(memsym.ancestor, memsym)
-            memsym.typ = Type.list(Type.int_t, self.mrg.node(memsym))
+            memsym.typ = Type.list(Type.int(), self.mrg.node(memsym))
         else:
             assert False
 

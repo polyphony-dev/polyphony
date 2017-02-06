@@ -156,7 +156,14 @@ class TypePropagation(IRVisitor):
         return ret_t
 
     def visit_CONST(self, ir):
-        return Type.int_t
+        if isinstance(ir.value, int):
+            return Type.int()
+        elif isinstance(ir.value, str):
+            return Type.str_t
+        elif ir.value is None:
+            return Type.int()
+        else:
+            type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ir)))
 
     def visit_TEMP(self, ir):
         return ir.sym.typ
@@ -201,9 +208,9 @@ class TypePropagation(IRVisitor):
         for item in ir.items:
             self.visit(item)
         if ir.is_mutable:
-            return Type.list(Type.int_t, None)
+            return Type.list(Type.int(), None)
         else:
-            return Type.tuple(Type.int_t, None, len(ir.items))
+            return Type.tuple(Type.int(), None, len(ir.items))
 
     def _propagate_worker_arg_types(self, call):
         if len(call.args) == 0:
@@ -418,7 +425,14 @@ class TypeChecker(IRVisitor):
         return Type.object(ir.func_scope)
 
     def visit_CONST(self, ir):
-        return Type.int_t
+        if isinstance(ir.value, int):
+            return Type.int()
+        elif isinstance(ir.value, str):
+            return Type.str_t
+        elif ir.value is None:
+            return Type.int()
+        else:
+            type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ir)))
 
     def visit_TEMP(self, ir):
         return ir.sym.typ
@@ -431,7 +445,7 @@ class TypeChecker(IRVisitor):
         if not mem_t.is_seq():
             type_error(self.current_stm, 'type missmatch')
         offs_t = self.visit(ir.offset)
-        if offs_t is not Type.int_t:
+        if not offs_t.is_int():
             type_error(self.current_stm, 'type missmatch')
         return mem_t.get_element()
 
@@ -440,27 +454,23 @@ class TypeChecker(IRVisitor):
         if not mem_t.is_seq():
             type_error(self.current_stm, 'type missmatch')
         offs_t = self.visit(ir.offset)
-        if offs_t is not Type.int_t:
+        if not offs_t.is_int():
             type_error(self.current_stm, 'type missmatch')
         exp_t = self.visit(ir.exp)
         elem_t = mem_t.get_element()
-        if elem_t != exp_t:
-            if (elem_t.is_int() and exp_t.is_bool()) \
-               or (elem_t.is_bool() and exp_t.is_int()):
-                pass
-            else:
-                type_error(self.current_stm, 'assignment type missmatch')
+        if not Type.is_commutable(exp_t, elem_t):
+            type_error(ir, 'assignment type missmatch {} {}'.format(exp_t, elem_t))
         return mem_t
 
     def visit_ARRAY(self, ir):
         for item in ir.items:
             item_type = self.visit(item)
-            if item_type is not Type.int_t:
+            if not item_type.is_int():
                 type_error(self.current_stm, 'sequence item must be integer {}'.format(item_type[0]))
         if ir.is_mutable:
-            return Type.list(Type.int_t, None)
+            return Type.list(Type.int(), None)
         else:
-            return Type.tuple(Type.int_t, None, len(ir.items))
+            return Type.tuple(Type.int(), None, len(ir.items))
 
     def visit_EXPR(self, ir):
         typ = self.visit(ir.exp)
