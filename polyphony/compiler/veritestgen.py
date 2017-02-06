@@ -164,8 +164,9 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('#CLK_PERIOD;')
         self.set_indent(-2)
         self.emit('end')
-        for code in ahdl.codes:
-            self.visit(code)
+        if ahdl.codes:
+            for code in ahdl.codes:
+                self.visit(code)
 
     def visit_WAIT_VALUE(self, ahdl):
         value = ahdl.args[0]
@@ -180,8 +181,9 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('#CLK_PERIOD;')
         self.set_indent(-2)
         self.emit('end')
-        for code in ahdl.codes:
-            self.visit(code)
+        if ahdl.codes:
+            for code in ahdl.codes:
+                self.visit(code)
     
     def visit_ACCEPT_IF_VALID(self, ahdl):
         modulecall = ahdl.args[0]

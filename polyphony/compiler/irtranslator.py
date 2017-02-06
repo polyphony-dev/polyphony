@@ -1009,7 +1009,7 @@ class CodeVisitor(ast.NodeVisitor):
             if parent_scope:
                 scope_sym = parent_scope.find_sym(node.id)
                 return TEMP(scope_sym, self._nodectx2irctx(node))
-        
+
         if isinstance(node.ctx, ast.Load) or isinstance(node.ctx, ast.AugLoad):
             if sym is None:
                 print(self._err_info(node))
@@ -1127,13 +1127,15 @@ class IRTranslator(object):
 
         global_scope = Scope.global_scope()
         if lib_name:
-            if lib_name != 'polyphony':
+            if lib_name == 'polyphony':
+                top_scope = Scope.create(None, lib_name, {'namespace', 'lib'}, lineno=1)
+                for builtin in builtin_names:
+                    top_scope.add_sym(builtin)
+            else:
                 lib_root = env.scopes['polyphony']
                 top_scope = Scope.create(lib_root, lib_name, {'namespace', 'lib'}, lineno=1)
                 sym = lib_root.add_sym(lib_name)
                 sym.set_type(Type.namespace(top_scope))
-            else:
-                top_scope = Scope.create(None, lib_name, {'namespace', 'lib'}, lineno=1)
         else:
             top_scope = global_scope
             ImportVisitor().visit(tree)

@@ -180,7 +180,13 @@ class STGBuilder:
             stgs.append(stg)
             self.dfg2stg[dfg] = stg
 
-        for stg in stgs:
+        main_stg = stgs[0]
+        functools.reduce(lambda s1, s2: s1.resolve_transition(s2), main_stg.states)
+        if scope.is_worker():
+            main_stg.states[-1].resolve_transition(main_stg.states[-1])
+        else:
+            main_stg.states[-1].resolve_transition(main_stg.states[0])
+        for stg in stgs[1:]:
             functools.reduce(lambda s1, s2: s1.resolve_transition(s2), stg.states)
             stg.states[-1].resolve_transition(stg.states[0])
 

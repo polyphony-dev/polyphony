@@ -354,8 +354,6 @@ class DFGBuilder:
                 if not isinstance(b, CompositBlock):
                     blocks.append(b)
             dfg = self._make_graph(blk.name, blocks)
-        self._add_mem_edges(dfg)
-        self._add_special_seq_edges(dfg)
         for child in children:
             dfg.set_child(child)
         return dfg
@@ -417,6 +415,8 @@ class DFGBuilder:
             self._add_edges_between_func_modules(blocks, dfg)
         self._add_edges_between_objects(blocks, dfg)
         self._add_timinglib_seq_edges(blocks, dfg)
+        self._add_mem_edges(dfg)
+        self._add_special_seq_edges(dfg)
         return dfg
 
 
@@ -541,6 +541,9 @@ class DFGBuilder:
                     dfg.add_seq_edge(prev_node, node)
                 prev_node = node
 
+    def _is_same_block_node(self, n0, n1):
+        return n0.tag.block is n1.tag.block
+
     def _get_mutable_object_symbol(self, stm):
         if stm.is_a(MOVE):
             call = stm.src
@@ -559,15 +562,17 @@ class DFGBuilder:
         return None
 
     def _add_edges_between_objects(self, blocks, dfg):
-        all_stms_in_section = self._all_stms(blocks)
-        prevs = {}
-        for stm in all_stms_in_section:
-            sym = self._get_mutable_object_symbol(stm)
-            if sym:
+        for block in blocks:
+            prevs = {}
+            for stm in block.stms:
+                sym = self._get_mutable_object_symbol(stm)
+                if not sym:
+                    continue
                 node = dfg.add_stm_node(stm)
                 if sym in prevs:
                     prev = prevs[sym]
-                    dfg.add_seq_edge(prev, node)
+                    if self._is_same_block_node(prev, node):
+                        dfg.add_seq_edge(prev, node)
                 prevs[sym] = node
 
     # workaround
@@ -603,23 +608,20 @@ class DFGBuilder:
             return False
 
     def _add_timinglib_seq_edges(self, blocks, dfg):
-        all_stms_in_section = self._all_stms(blocks)
-        timing_func_node = None
-        for stm in all_stms_in_section:
-            node = dfg.find_node(stm)
-            if timing_func_node:
-                dfg.add_seq_edge(timing_func_node, node)
-            if self._has_timing_function(stm):
-                timing_func_node = node
+        '''This algorithm is simple but might generates redundant sequence edges'''
+        for block in blocks:
+            timing_func_node = None
+            for stm in block.stms:
+                node = dfg.find_node(stm)
+                if timing_func_node and self._is_same_block_node(timing_func_node, node):
+                    dfg.add_seq_edge(timing_func_node, node)
+                if self._has_timing_function(stm):
+                    timing_func_node = node
 
-        timing_func_node = None
-        for stm in reversed(all_stms_in_section):
-            node = dfg.find_node(stm)
-            if timing_func_node:
-                dfg.add_seq_edge(node, timing_func_node)
-            if self._has_timing_function(stm):
-                timing_func_node = node
-
-            #    if prev_node:
-            #        dfg.add_seq_edge(prev_node, timing_func_node)
-            #prev_node = node
+            timing_func_node = None
+            for stm in reversed(block.stms):
+                node = dfg.find_node(stm)
+                if timing_func_node and self._is_same_block_node(timing_func_node, node):
+                    dfg.add_seq_edge(node, timing_func_node)
+                if self._has_timing_function(stm):
+                    timing_func_node = node
