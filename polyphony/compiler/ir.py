@@ -165,6 +165,16 @@ class RELOP(IRExp):
     def kids(self):
         return self.left.kids() + self.right.kids()
 
+class CONDOP(IRExp):
+    def __init__(self, cond, left, right):
+        super().__init__()
+        self.cond = cond
+        self.left = left
+        self.right = right
+
+    def __str__(self):
+        return '({} ? {} : {})'.format(self.cond, self.left, self.right)
+
 class CALL(IRExp):
     def __init__(self, func, args):
         super().__init__()
@@ -236,7 +246,7 @@ class CONST(IRExp):
         elif isinstance(self.value, int):
             return hex(self.value)
         else:
-            return str(self.value)
+            return repr(self.value)
 
     def kids(self):
         return [self]

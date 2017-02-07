@@ -60,6 +60,12 @@ class TypePropagation(IRVisitor):
         self.visit(ir.right)
         return Type.bool_t
 
+    def visit_CONDOP(self, ir):
+        self.visit(ir.cond)
+        ltype = self.visit(ir.left)
+        self.visit(ir.right)
+        return ltype
+
     def _convert_call(self, ir):
         clazz = ir.func.symbol().typ.get_scope()
         if clazz:
@@ -370,6 +376,14 @@ class TypeChecker(IRVisitor):
         if not l_t.is_scalar() or not r_t.is_scalar():
             type_error(self.current_stm, 'unsupported operand type(s) for {}: \'{}\' and \'{}\''.format(op2sym_map[ir.op], l_t, r_t))
         return Type.bool_t
+
+    def visit_CONDOP(self, ir):
+        c_t = self.visit(ir.cond)
+        l_t = self.visit(ir.left)
+        r_t = self.visit(ir.right)
+        if not Type.is_commutable(l_t, r_t):
+            type_error(ir, 'conditional expression type missmatch {} {}'.format(l_t, r_t))
+        return l_t
 
     def visit_CALL(self, ir):
         func_sym = ir.func.symbol()

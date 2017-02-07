@@ -1,29 +1,27 @@
 __all__ = [
     'clksleep',
-    'fence',
+    'clkfence',
     'wait_edge',
     'wait_rising',
     'wait_falling',
     'wait_value',
 ]
 
-
 def clksleep(clk_cycles) -> None:
     pass
 
 @inlinelib
-def fence():
+def clkfence():
     clksleep(0)
-
     
-def wait_edge(old, new, *ports):
+def wait_edge(old, new, *ports) -> None:
     pass
 
-def wait_rising(*ports):
+def wait_rising(*ports) -> None:
     pass
 
-def wait_falling(*ports):
+def wait_falling(*ports) -> None:
     pass
 
-def wait_value(value, *ports):
+def wait_value(value, *ports) -> None:
     pass

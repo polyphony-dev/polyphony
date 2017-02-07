@@ -1,6 +1,7 @@
 ﻿from collections import defaultdict, namedtuple
+from .signal import Signal
 
-Port = namedtuple('Port', ('basename', 'width', 'dir'))
+Port = namedtuple('Port', ('basename', 'width', 'dir', 'signed'))
 
 '''
 module I/O port
@@ -28,7 +29,7 @@ class Interface:
     def _flip_direction(self):
         def flip(d):
             return 'in' if d == 'out' else 'out'
-        self.ports = [Port(p.basename, p.width, flip(p.dir)) for p in self.ports]
+        self.ports = [Port(p.basename, p.width, flip(p.dir), p.signed) for p in self.ports]
 
     def clone(self):
         assert False
@@ -78,15 +79,15 @@ class FunctionInterface(Interface):
     def __init__(self, name, thru = False, is_method = False):
         super().__init__(name, thru, is_public=True)
         self.is_method = is_method
-        self.ports.append(Port('ready',  1, 'in'))
-        self.ports.append(Port('accept', 1, 'in'))
-        self.ports.append(Port('valid',  1, 'out'))
+        self.ports.append(Port('ready',  1, 'in', False))
+        self.ports.append(Port('accept', 1, 'in', False))
+        self.ports.append(Port('valid',  1, 'out', False))
 
-    def add_data_in(self, din_name, width):
-        self.ports.append(Port(din_name, width, 'in'))
+    def add_data_in(self, din_name, width, signed):
+        self.ports.append(Port(din_name, width, 'in', signed))
 
-    def add_data_out(self, dout_name, width):
-        self.ports.append(Port(dout_name, width, 'out'))
+    def add_data_out(self, dout_name, width, signed):
+        self.ports.append(Port(dout_name, width, 'out', signed))
 
     def add_ram_in(self, ramif):
         #TODO
@@ -107,11 +108,11 @@ class RAMInterface(Interface):
         super().__init__(name, thru=thru, is_public=is_public)
         self.data_width = data_width
         self.addr_width = addr_width
-        self.ports.append(Port('addr', addr_width, 'in'))
-        self.ports.append(Port('d',    data_width, 'in'))
-        self.ports.append(Port('we',   1,          'in'))
-        self.ports.append(Port('q',    data_width, 'out'))
-        self.ports.append(Port('len',  addr_width, 'out'))
+        self.ports.append(Port('addr', addr_width, 'in', True))
+        self.ports.append(Port('d',    data_width, 'in', True))
+        self.ports.append(Port('we',   1,          'in', False))
+        self.ports.append(Port('q',    data_width, 'out', True))
+        self.ports.append(Port('len',  addr_width, 'out', False))
 
     def accessor(self, name):
         return RAMInterface(name, self.data_width, self.addr_width, thru=True, is_public=False)
@@ -122,7 +123,7 @@ class RAMInterface(Interface):
 class RAMAccessInterface(RAMInterface):
     def __init__(self, name, data_width, addr_width, flip=False, thru=False):
         super().__init__(name, data_width, addr_width, thru, is_public=True)
-        self.ports.append(Port('req', 1, 'in'))
+        self.ports.append(Port('req', 1, 'in', False))
         if flip:
             self._flip_direction()
         
@@ -133,7 +134,7 @@ class RegArrayInterface(Interface):
         self.length = length
         for i in range(length):
             pname = '{}'.format(i)
-            self.ports.append(Port(pname, data_width, 'in'))
+            self.ports.append(Port(pname, data_width, 'in', True))
 
     def accessor(self, name):
         return RegArrayInterface(name, self.data_width, self.length)
@@ -154,9 +155,9 @@ class RegFieldInterface(Interface):
         super().__init__('field_' + field_name, thru=False, is_public=True)
         self.field_name = field_name
         self.width = width
-        self.ports.append(Port('in',    width, 'in'))
-        self.ports.append(Port('ready',     1, 'in'))
-        self.ports.append(Port('',      width, 'out'))
+        self.ports.append(Port('in',    width, 'in', True))
+        self.ports.append(Port('ready',     1, 'in', False))
+        self.ports.append(Port('',      width, 'out', True))
        
 class RAMFieldInterface(RAMInterface):
     def __init__(self, field_name, data_width, addr_width, thru=False):

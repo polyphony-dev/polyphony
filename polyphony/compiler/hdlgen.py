@@ -52,13 +52,13 @@ class HDLModuleBuilder:
             params = scope.params
         for i, (sym, _, _) in enumerate(params):
             if sym.typ.is_int():
-                funcif.add_data_in(sym.hdl_name(), sym.typ.get_width())
+                funcif.add_data_in(sym.hdl_name(), sym.typ.get_width(), True)
             elif sym.typ.is_list():
                 continue
  
     def _add_output_ports(self, funcif, scope):
         if scope.return_type.is_scalar():
-            funcif.add_data_out('out_0', scope.return_type.get_width())
+            funcif.add_data_out('out_0', scope.return_type.get_width(), True)
         elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')
 
@@ -357,16 +357,24 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
     def _process_io(self, module_scope):
         inf = PlainInterface(module_scope.orig_name, False, True)
         self.module_info.add_interface(inf)
-        for name, mv in module_scope.class_fields.items():
+        iports = []
+        oports = []
+        for name, mv in sorted(module_scope.class_fields.items()):
             field = mv.dst.symbol()
             if field.typ.is_port():
                 p_scope = field.typ.get_scope()
-                if not p_scope.is_port():
-                    assert False
+                assert p_scope.is_port()
+                signed = True if p_scope.name == 'polyphony.io.Int' else False
                 port_t = field.typ
                 width = port_t.get_width()
-                di = 'in' if port_t.get_direction() == 'input' else 'out'
-                inf.ports.append(Port(field.name, width, di))
+                if port_t.get_direction() == 'input':
+                    iports.append(Port(field.name, width, 'in', signed))
+                elif port_t.get_direction() == 'output':
+                    oports.append(Port(field.name, width, 'out', signed))
+                else:
+                    assert False
+        inf.ports.extend(iports)
+        inf.ports.extend(oports)
 
     def _process_worker(self, module_scope, worker, reset_stms):
         mrg = env.memref_graph

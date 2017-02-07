@@ -34,6 +34,11 @@ class IRVisitor:
         self.visit(ir.left)
         self.visit(ir.right)
 
+    def visit_CONDOP(self, ir):
+        self.visit(ir.cond)
+        self.visit(ir.left)
+        self.visit(ir.right)
+
     def visit_CALL(self, ir):
         self.visit(ir.func)
         for arg in ir.args:
@@ -127,6 +132,12 @@ class IRTransformer(IRVisitor):
         return ir
 
     def visit_RELOP(self, ir):
+        ir.left = self.visit(ir.left)
+        ir.right = self.visit(ir.right)
+        return ir
+
+    def visit_CONDOP(self, ir):
+        ir.cond = self.visit(ir.cond)
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         return ir

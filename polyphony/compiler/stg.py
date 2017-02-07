@@ -452,6 +452,12 @@ class AHDLTranslator:
         right = self.visit(ir.right, node)
         return AHDL_OP(ir.op, left, right)
 
+    def visit_CONDOP(self, ir, node):
+        cond = self.visit(ir.cond, node)
+        left = self.visit(ir.left, node)
+        right = self.visit(ir.right, node)
+        return AHDL_IF_EXP(cond, left, right)
+
     def _visit_args(self, ir, node):
         callargs = []
         for i, arg in enumerate(ir.args):
@@ -645,6 +651,7 @@ class AHDLTranslator:
         width = -1
         if ir.sym.typ.is_list():
             tags.add('memif')
+            width = ir.sym.typ.get_element().get_width()
         elif ir.sym.typ.is_int():
             tags.add('int')
             if ir.ctx & Ctx.STORE:
@@ -656,10 +663,15 @@ class AHDLTranslator:
 
         if ir.sym.is_param():
             tags.add('input')
-            width = INT_WIDTH
+            if ir.sym.typ.is_int():
+                width = ir.sym.typ.get_width()
+            elif ir.sym.typ.is_list():
+                width = ir.sym.typ.get_element().get_width()
+            else:
+                width = INT_WIDTH
         elif ir.sym.is_return():
             tags.add('output')
-            width = INT_WIDTH
+            width = ir.sym.typ.get_width()
         elif ir.sym.is_condition():
             tags.add('condition')
             width = 1

@@ -824,30 +824,10 @@ class CodeVisitor(ast.NodeVisitor):
         raise NotImplementedError('lambda is not supported')
 
     def visit_IfExp(self, node):
-        tmpsym = self.current_scope.add_temp(Symbol.temp_prefix)
-        else_exp = self.visit(node.orelse)
-        self.emit(MOVE(TEMP(tmpsym, Ctx.STORE), else_exp), node)
-
-        if_head = self.current_block
-        if_then = Block(self.current_scope, 'ifthen')
-        if_exit = Block(self.current_scope)
-        if_head.connect(if_then)
-        if_head.connect(if_exit)
-
         condition = self.visit(node.test)
-        if not condition.is_a(RELOP):
-            condition = RELOP('NotEq', condition, CONST(0))
-
-        self.emit(CJUMP(condition, if_then, if_exit), node)
-
-        self.current_block = if_then
         then_exp = self.visit(node.body)
-        self.emit(MOVE(TEMP(tmpsym, Ctx.STORE), then_exp), node)
-        self.emit(JUMP(if_exit), node)
-        self.current_block.connect(if_exit)
-
-        self.current_block = if_exit
-        return TEMP(tmpsym, Ctx.LOAD)
+        else_exp = self.visit(node.orelse)
+        return CONDOP(condition, then_exp, else_exp)
 
     def visit_Dict(self, node):
         print(self._err_info(node))

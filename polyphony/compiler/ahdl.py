@@ -63,6 +63,9 @@ class AHDL_OP(AHDL_EXP):
         else:
             return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.args[0])
 
+    def is_relop(self):
+        return self.op in ('And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE')
+
 class AHDL_VAR(AHDL_EXP):
     def __init__(self, sig, ctx):
         assert sig and isinstance(sig, Signal)
@@ -158,7 +161,7 @@ class AHDL_SIGNAL_DECL(AHDL_DECL):
     def __eq__(self, other):
         return other.is_a(AHDL_SIGNAL_DECL) and self.sig == other.sig
 
-    def __hash_(self, other):
+    def __hash__(self, other):
         return hash(self.sig)
 
 class AHDL_REG_DECL(AHDL_SIGNAL_DECL):
@@ -370,7 +373,7 @@ class AHDL_FUNCTION(AHDL_DECL):
         self.stms = stms
 
     def __str__(self):
-        return 'function {}'.format(self.name)
+        return 'function {}'.format(self.output)
 
 
 class AHDL_MUX(AHDL_DECL):

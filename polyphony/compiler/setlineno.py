@@ -21,6 +21,12 @@ class LineNumberSetter(IRVisitor):
         self.visit(ir.left)
         self.visit(ir.right)
 
+    def visit_CONDOP(self, ir):
+        ir.lineno = self.current_stm.lineno
+        self.visit(ir.cond)
+        self.visit(ir.left)
+        self.visit(ir.right)
+
     def visit_CALL(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.func)
@@ -104,6 +110,9 @@ class SourceDump(IRVisitor):
         pass
 
     def visit_RELOP(self, ir):
+        pass
+
+    def visit_CONDOP(self, ir):
         pass
 
     def visit_CALL(self, ir):

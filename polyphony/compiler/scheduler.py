@@ -176,6 +176,11 @@ class ResourceExtractor(IRVisitor):
         self.visit(ir.right)
         self.results.append(ir.op)
 
+    def visit_CONDOP(self, ir):
+        self.visit(ir.cond)
+        self.visit(ir.left)
+        self.visit(ir.right)
+
     def visit_CALL(self, ir):
         self.results.append(ir.func_scope)
         for arg in ir.args:

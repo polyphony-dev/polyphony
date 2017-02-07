@@ -123,6 +123,17 @@ class ConstantOptBase(IRVisitor):
             return c
         return ir
 
+    def visit_CONDOP(self, ir):
+        ir.cond = self.visit(ir.cond)
+        ir.left = self.visit(ir.left)
+        ir.right = self.visit(ir.right)
+        if ir.cond.is_a(CONST):
+            if ir.cond.value:
+                return ir.left
+            else:
+                return ir.right
+        return ir
+
     def visit_CALL(self, ir):
         ir.args = [self.visit(arg) for arg in ir.args]
         if ir.is_a(CALL) and ir.func.symbol().typ.is_function() and ir.func.symbol().typ.get_scope().is_lib() and ir.func.symbol().name == 'is_worker_running':

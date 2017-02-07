@@ -77,6 +77,12 @@ class QuadrupleMaker(IRTransformer):
         ir.right = self.visit(ir.right)
         return self._new_temp_move(ir, Symbol.condition_prefix)
 
+    def visit_CONDOP(self, ir):
+        ir.cond = self.visit(ir.cond)
+        ir.left = self.visit(ir.left)
+        ir.right = self.visit(ir.right)
+        return self._new_temp_move(ir, Symbol.temp_prefix)
+
     def _has_return_type(self, ir):
         if ir.is_a(CALL):
             return True# ir.func_scope.return_type != Type.none_t

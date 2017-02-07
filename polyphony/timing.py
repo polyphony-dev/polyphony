@@ -1,11 +1,20 @@
 import time, signal
 from . import io
 
+__all__ = [
+    'clksleep',
+    'clkfence',
+    'wait_edge',
+    'wait_rising',
+    'wait_falling',
+    'wait_value',
+]
+
 def clksleep(clk_cycles):
     assert clk_cycles >= 0
     time.sleep(0.001 * clk_cycles)
 
-def fence():
+def clkfence():
     clksleep(0)
     
 def wait_edge(old, new, *ports):

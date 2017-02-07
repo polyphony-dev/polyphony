@@ -74,7 +74,7 @@ class VerilogCodeGen:
                 main_stg = stg
         assert main_stg
 
-        for stm in fsm.reset_stms:
+        for stm in sorted(fsm.reset_stms, key=lambda s: str(s)):
             self.visit(stm)
 
         self.current_state_sig = fsm.state_var
@@ -168,17 +168,17 @@ class VerilogCodeGen:
         self.emit('')
 
     def _generate_decls(self):
-        for tag, decls in sorted(self.module_info.decls.items()):
+        for tag, decls in sorted(self.module_info.decls.items(), key=lambda t: str(t)):
             decls = [decl for decl in decls if isinstance(decl, AHDL_SIGNAL_DECL)]
             if decls:
                 self.emit('//signals: {}'.format(tag))
-                for decl in decls:
+                for decl in sorted(decls, key=lambda d: str(d)):
                     self.visit(decl)
         for tag, decls in sorted(self.module_info.decls.items()):
             decls = [decl for decl in decls if not isinstance(decl, AHDL_SIGNAL_DECL)]
             if decls:
                 self.emit('//combinations: {}'.format(tag))
-                for decl in decls:
+                for decl in sorted(decls, key=lambda d: str(d)):
                     self.visit(decl)
 
     def _to_io_name(self, module_name, interface, port):
@@ -189,7 +189,10 @@ class VerilogCodeGen:
         if port.width == 1:
             ioname = '{} {} {}'.format(io, typ, port_name)
         else:
-            ioname = '{} {} signed [{}:0] {}'.format(io, typ, port.width-1, port_name)
+            if port.signed:
+                ioname = '{} {} signed [{}:0] {}'.format(io, typ, port.width-1, port_name)
+            else:
+                ioname = '{} {} [{}:0] {}'.format(io, typ, port.width-1, port_name)
         return ioname
 
     def _to_signal_name(self, instance_name, interface, port):
@@ -211,11 +214,11 @@ class VerilogCodeGen:
         if not self.module_info.sub_modules:
             return
         self.emit('//sub modules')
-        for name, info, connections, param_map in self.module_info.sub_modules.values():
+        for name, info, connections, param_map in sorted(self.module_info.sub_modules.values(), key=lambda n: str(n)):
             ports = []
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
-            for inf, acc in connections:
+            for inf, acc in sorted(connections, key=lambda c: str(c)):
                 if not inf.is_public:
                     continue
                 for p in inf.ports:

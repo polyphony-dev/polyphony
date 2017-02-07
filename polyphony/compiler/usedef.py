@@ -197,6 +197,11 @@ class UseDefDetector(IRVisitor):
         self.visit(ir.left)
         self.visit(ir.right)
 
+    def visit_CONDOP(self, ir):
+        self.visit(ir.cond)
+        self.visit(ir.left)
+        self.visit(ir.right)
+
     def _visit_args(self, ir):
         for arg in ir.args:
             self.visit(arg)

@@ -38,6 +38,12 @@ class VarReplacer:
         ir.right = self.visit(ir.right)
         return ir
 
+    def visit_CONDOP(self, ir):
+        ir.cond = self.visit(ir.cond)
+        ir.left = self.visit(ir.left)
+        ir.right = self.visit(ir.right)
+        return ir
+
     def visit_CALL(self, ir):
         ir.args = [self.visit(arg) for arg in ir.args]
         return ir

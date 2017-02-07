@@ -66,6 +66,11 @@ class AHDLVisitor:
             for code in codes:
                 self.visit(code)
 
+    def visit_AHDL_IF_EXP(self, ahdl):
+        self.visit(ahdl.cond)
+        self.visit(ahdl.lexp)
+        self.visit(ahdl.rexp)
+
     def visit_AHDL_MODULECALL(self, ahdl):
         for arg in ahdl.args:
             self.visit(arg)
