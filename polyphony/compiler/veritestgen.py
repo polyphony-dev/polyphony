@@ -74,7 +74,8 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('rst <= 1;')
         for fsm in self.module_info.fsms.values():
             for stm in fsm.reset_stms:
-                self.visit(stm)
+                if not stm.dst.sig.is_net():
+                    self.visit(stm)
 
         self.emit('')
         self.emit('#INITIAL_RESET_SPAN')

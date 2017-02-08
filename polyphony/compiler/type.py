@@ -30,6 +30,8 @@ class Type:
         if isinstance(ann, str):
             if ann == 'int':
                 return Type.int()
+            elif ann == 'uint':
+                return Type.int(signed=False)
             elif ann == 'bool':
                 return Type.bool_t
             elif ann == 'list':
@@ -71,8 +73,8 @@ class Type:
         return 'Type({}, {})'.format(repr(self.name), repr(self.attrs))
 
     @classmethod
-    def int(cls, width=DEFAULT_INT_WIDTH):
-        return Type('int', width=width)
+    def int(cls, width=DEFAULT_INT_WIDTH, signed=True):
+        return Type('int', width=width, signed=signed)
 
     @classmethod
     def wider_int(clk, t0, t1):

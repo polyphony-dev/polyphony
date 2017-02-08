@@ -29,7 +29,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="polyphony\compiler\ahdl.py" />
+    <Compile Include="polyphony\compiler\ahdlusedef.py" />
     <Compile Include="polyphony\compiler\ahdlvisitor.py" />
+    <Compile Include="polyphony\compiler\bitwidth.py" />
     <Compile Include="polyphony\compiler\block.py" />
     <Compile Include="polyphony\compiler\builtin.py" />
     <Compile Include="polyphony\compiler\callgraph.py" />
@@ -66,6 +68,7 @@
     <Compile Include="polyphony\compiler\phiresolve.py" />
     <Compile Include="polyphony\compiler\portconverter.py" />
     <Compile Include="polyphony\compiler\quadruplet.py" />
+    <Compile Include="polyphony\compiler\regreducer.py" />
     <Compile Include="polyphony\compiler\scheduler.py" />
     <Compile Include="polyphony\compiler\scope.py" />
     <Compile Include="polyphony\compiler\selectorbuilder.py">

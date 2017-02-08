@@ -1,3 +1,5 @@
+from .ahdl import AHDL_STM
+
 class AHDLVisitor:
     def __init__(self):
         pass
@@ -134,4 +136,6 @@ class AHDLVisitor:
     def visit(self, ahdl):
         method = 'visit_' + ahdl.__class__.__name__
         visitor = getattr(self, method, None)
+        if ahdl.is_a(AHDL_STM):
+            self.current_stm = ahdl
         return visitor(ahdl)

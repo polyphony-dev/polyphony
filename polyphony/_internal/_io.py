@@ -12,7 +12,7 @@ class _DataPort:
         pass
 
     @mutable
-    def wr(self, v) -> None:
+    def wr(self, v:int) -> None:
         pass
 
     def __call__(self, v=None) -> int:
@@ -27,7 +27,14 @@ class Int(_DataPort):
         pass
 
 class Uint(_DataPort):
-    def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
+    def __init__(self, width:uint=32, init_v:int=0, protocol:int='none') -> object:
+        pass
+
+    def rd(self) -> uint:
+        pass
+
+    @mutable
+    def wr(self, v:uint) -> None:
         pass
 
 class Queue:

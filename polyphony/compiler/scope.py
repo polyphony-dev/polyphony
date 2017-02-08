@@ -120,6 +120,7 @@ class Scope(Tagged):
         self.class_fields = {}
         self.paths = []
         self.workers = {}
+        self.worker_owner = None
         self.asap_latency = -1
 
     def __str__(self):
@@ -440,6 +441,7 @@ class Scope(Tagged):
         self.workers[key] = Worker(worker_scope, worker_args)
         if not worker_scope.is_worker():
             worker_scope.add_tag('worker')
+            worker_scope.worker_owner = self
 
 class SymbolReplacer(IRVisitor):
     def __init__(self, sym_map):

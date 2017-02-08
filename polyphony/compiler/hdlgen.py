@@ -200,6 +200,8 @@ class HDLModuleBuilder:
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
     def _build_module(self, scope):
+        if scope.is_worker():
+            return
         mrg = env.memref_graph
 
         if not scope.is_testbench():

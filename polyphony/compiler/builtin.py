@@ -3,7 +3,7 @@
 builtin_return_type_table = {
     'print':Type.none_t,
     'range':Type.none_t,
-    'len':Type.int(),
+    'len':Type.int(signed=False),
     'assert':Type.none_t,
     'polyphony.verilog.write':Type.none_t,
     'polyphony.verilog.display':Type.none_t,

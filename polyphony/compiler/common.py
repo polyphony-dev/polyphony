@@ -68,8 +68,16 @@ class Tagged:
 
     def add_tag(self, tag):
         if isinstance(tag, set):
-            self.tags = self.tags.union(tag)
+            self.tags = self.tags | tag
         elif isinstance(tag, list):
-            self.tags = self.tags.union(set(tag))
+            self.tags = self.tags | set(tag)
         else:
             self.tags.add(tag)
+
+    def del_tag(self, tag):
+        if isinstance(tag, set):
+            self.tags = self.tags - tag
+        elif isinstance(tag, list):
+            self.tags = self.tags - set(tag)
+        else:
+            self.tags.discard(tag)

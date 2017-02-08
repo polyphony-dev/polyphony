@@ -35,6 +35,9 @@ from .callgraph import CallGraphBuilder
 from .tuple import TupleTransformer
 from .statereducer import StateReducer
 from .portconverter import PortConverter
+from .ahdlusedef import AHDLUseDefDetector
+from .regreducer import RegReducer
+from .bitwidth import BitwidthReducer
 import logging
 logger = logging.getLogger()
 
@@ -190,11 +193,22 @@ def stg(driver, scope):
 def reducestate(driver, scope):
     StateReducer().process(scope)
 
+def reducereg(driver, scope):
+    RegReducer().process(scope)
+
+def reducebits(driver, scope):
+    BitwidthReducer().process(scope)
+
 def buildmodule(driver, scope):
     modulebuilder = HDLModuleBuilder.create(scope)
     if modulebuilder:
         modulebuilder.process(scope)
         SelectorBuilder().process(scope)
+
+def ahdlusedef(driver, scope):
+    if not scope.module_info:
+        return
+    AHDLUseDefDetector().process(scope)
 
 def genhdl(driver, scope):
     if not scope.module_info:
@@ -236,6 +250,9 @@ def dumphdl(driver, scope):
 def compile_plan():
     def dbg(proc):
         return proc if env.dev_debug_mode else None
+
+    def ahdlopt(proc):
+        return proc if env.enable_ahdl_opt else None
 
     plan = [
         preprocess_global,
@@ -307,10 +324,12 @@ def compile_plan():
         dbg(dumpmrg),
         stg,
         dbg(dumpstg),
-        reducestate,
-        dbg(dumpstg),
         phase(env.PHASE_GEN_HDL),
         buildmodule,
+        ahdlopt(ahdlusedef),
+        ahdlopt(reducebits),
+        ahdlopt(reducereg),
+        reducestate,
         dbg(dumpmodule),
         genhdl,
         dbg(dumphdl),

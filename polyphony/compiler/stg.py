@@ -22,11 +22,15 @@ class State:
         self.stg = stg
 
     def __str__(self):
-        def _strcodes(codes):
-            if codes: return ', '.join([str(c) for c in codes])
-            else:     return ''
         s = '---------------------------------\n'
-        s += '{}:{}'.format(self.name, self.step)
+        s += '{}:{}\n'.format(self.name, self.step)
+        if self.codes:
+            if self.codes:
+                strcodes = ''.join(['{}\n'.format(code) for code in self.codes])
+                lines = strcodes.split('\n')
+                s += '\n'.join(['  {}'.format(line) for line in lines])
+        else:
+            pass
         s += '\n'
         return s
 
@@ -653,7 +657,10 @@ class AHDLTranslator:
             tags.add('memif')
             width = ir.sym.typ.get_element().get_width()
         elif ir.sym.typ.is_int():
-            tags.add('int')
+            if ir.sym.typ.get_signed():
+                tags.add('int')
+            else:
+                pass
             if ir.ctx & Ctx.STORE:
                 tags.add('reg')
             width = ir.sym.typ.get_width()
@@ -679,7 +686,7 @@ class AHDLTranslator:
         if self.scope.is_worker():
             signame = ir.sym.ancestor.hdl_name() if ir.sym.ancestor else ir.sym.hdl_name()
             # a local variable's name is localized
-            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, signame), width, tags)
+            sig = self.scope.worker_owner.gen_sig('{}_{}'.format(self.scope.orig_name, signame), width, tags)
         elif self.scope.is_method() and not ir.sym.is_param():
             # a local variable's name in the method is localized
             sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()), width, tags)
@@ -838,17 +845,23 @@ class AHDLTranslator:
         pass
 
     def visit_UPHI(self, ir, node):
-        assert ir.ps and len(ir.args) == len(ir.ps)
-        conds = []
-        codes_list = []
-
+        assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
         ahdl_dst = self.visit(ir.var, node)
-        for arg, p in zip(ir.args, ir.ps):
-            conds.append(self.visit(p, node))
-            ahdl_src = self.visit(arg, node)
-            codes_list.append([AHDL_MOVE(ahdl_dst, ahdl_src)])
-
-        self._emit(AHDL_IF(conds, codes_list), self.sched_time)
+        ahdl_src = None
+        arg_p = list(zip(ir.args, ir.ps))
+        rexp, cond = arg_p[-1]
+        cond = self.visit(cond, node)
+        if cond.is_a(CONST) and cond.value == True:
+            rexp = self.visit(rexp, node)
+        else:
+            lexp = self.visit(rexp, node)
+            rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
+        for arg, p in arg_p[-2::-1]:
+            lexp = self.visit(arg, node)
+            cond = self.visit(p, node)
+            if_exp = AHDL_IF_EXP(cond, lexp, rexp)
+            rexp = if_exp
+        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
 
     def visit(self, ir, node):
         method = 'visit_' + ir.__class__.__name__
@@ -880,9 +893,10 @@ class AHDLTranslator:
         if port_scope.orig_name == 'Int':
             tags.add('int')
         direction = port_sym.typ.get_direction()
-        prefix = ''
 
         if self.scope.parent is port_sym.scope and port_sym.scope.is_module():
+            tags.add(direction)
+        elif self.scope.is_worker():
             tags.add(direction)
         else:
             # TODO
@@ -893,7 +907,7 @@ class AHDLTranslator:
                 tags.add('net')
             else:
                 assert False
-        port_sig = self.scope.gen_sig(prefix+port_name, width, tags)
+        port_sig = port_sym.scope.gen_sig(port_name, width, tags)
         return port_sig
         
     def _make_port_access(self, call, target, node):

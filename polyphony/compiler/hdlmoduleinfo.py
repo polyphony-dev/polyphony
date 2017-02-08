@@ -38,11 +38,21 @@ class HDLModuleInfo:
         self.edge_detectors = set()
 
     def __str__(self):
-        s = 'ModuleInfo {}\n'.format(self.name)
-        s += '  -- num of signals --\n'
-        s += '  - sub modules\n    ' + ', '.join([name for name, _, _, _ in self.sub_modules.values()])
+        s = '---------------------------------\n'
+        s += 'ModuleInfo {}\n'.format(self.name)
+        s += '  -- declarations --\n'
+        for tag, decls in self.decls.items():
+            s += 'tag : {}\n'.format(tag)
+            for decl in decls:
+                s += '  {}\n'.format(decl)
         s += '\n'
-        s += '  - functions\n    ' + ', '.join([str(f.output.sig.name) for f in self.functions])
+        s += '  -- fsm --\n'
+        for name, fsm in self.fsms.items():
+            s += '---------------------------------\n'
+            s += 'fsm : {}\n'.format(name)
+            for stg in fsm.stgs:
+                for state in stg.states:
+                    s += str(state)
         s += '\n'
         s += '\n'.join([str(inf) for inf in self.interfaces])
         return s
@@ -66,31 +76,53 @@ class HDLModuleInfo:
 
     def add_internal_reg(self, sig, tag=''):
         assert not sig.is_net()
-        self.add_decl(tag, AHDL_REG_DECL(sig))
+        sig.add_tag('reg')
+        self.add_decl(tag, AHDL_SIGNAL_DECL(sig))
 
     def add_internal_reg_array(self, sig, size, tag=''):
         assert not sig.is_net()
-        self.add_decl(tag, AHDL_REG_ARRAY_DECL(sig, size))
+        sig.add_tag('reg')
+        self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def add_internal_net(self, sig, tag=''):
         assert not sig.is_reg()
-        self.add_decl(tag, AHDL_NET_DECL(sig))
+        sig.add_tag('net')
+        self.add_decl(tag, AHDL_SIGNAL_DECL(sig))
 
     def add_internal_net_array(self, sig, size, tag=''):
         assert not sig.is_reg()
-        self.add_decl(tag, AHDL_NET_ARRAY_DECL(sig, size))
+        sig.add_tag('net')
+        self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def remove_internal_net(self, sig):
         assert isinstance(sig, Signal)
         removes = []
         for tag, decls in self.decls.items():
             for decl in decls:
-                if isinstance(decl, AHDL_NET_DECL):
-                    if decl.sig == sig:
-                        removes.append((tag, decl))
+                if isinstance(decl, AHDL_SIGNAL_DECL) and decl.sig == sig and sig.is_net():
+                    removes.append((tag, decl))
         for tag, decl in removes:
             self.remove_decl(tag, decl)
 
+    def get_reg_decls(self, with_array=True):
+        results = []
+        for tag, decls in self.decls.items():
+            sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
+            if not with_array:
+                sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
+            regdecls = [decl for decl in sigdecls if not decl.sig.is_reg()]
+            results.append((tag, regdecls))
+        return results
+
+    def get_net_decls(self, with_array=True):
+        results = []
+        for tag, decls in self.decls.items():
+            sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
+            if not with_array:
+                sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
+            netdecls = [decl for decl in sigdecls if not decl.sig.is_net()]
+            results.append((tag, netdecls))
+        return results
 
     def add_static_assignment(self, assign, tag=''):
         assert isinstance(assign, AHDL_ASSIGN)

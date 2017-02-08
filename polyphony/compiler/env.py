@@ -21,6 +21,7 @@ class Env:
         self.callop_name = '__call__'
         self.scope_file_map = {}
         self.current_filename = None
+        self.enable_ahdl_opt = False
 
     def set_current_filename(self, filename):
         self.current_filename = filename

@@ -75,7 +75,8 @@ class VerilogCodeGen:
         assert main_stg
 
         for stm in sorted(fsm.reset_stms, key=lambda s: str(s)):
-            self.visit(stm)
+            if not stm.dst.sig.is_net():
+                self.visit(stm)
 
         self.current_state_sig = fsm.state_var
         self.emit('{} <= {};'.format(self.current_state_sig.name, main_stg.init_state.name))
@@ -154,8 +155,7 @@ class VerilogCodeGen:
         if env.hdl_debug_mode and not self.scope.is_testbench():
             self.emit('always @(posedge clk) begin')
             self.emit('if (rst==0 && {}!={}) begin'.format(self.current_state_sig.name, 0))
-            for tag, decls in self.module_info.decls.items():
-                nets = [decl for decl in decls if isinstance(decl, AHDL_NET_DECL)]
+            for tag, nets in self.module_info.get_net_decls(with_array=False):
                 for net in nets:
                     if net.sig.is_onehot():
                         self.emit('$display("%8d:WIRE  :{}      {} = 0b%b", $time, {});'.format(self.scope.orig_name, net.sig, net.sig))
@@ -251,24 +251,23 @@ class VerilogCodeGen:
         self.emit('')
 
     def _generate_edge_detector(self):
-        regs = set()
+        regs = set([sig for sig, _, _ in self.module_info.edge_detectors])
+        self.emit('//edge detectors')
+        for sig in regs:
+            delayed_name = '{}_d'.format(sig.name)
+            self.emit('reg {};'.format(delayed_name))
+            self.emit('always @(posedge clk) {} <= {};'.format(delayed_name, sig.name))
+            #self.set_indent(2)
+            #self.emit()
+            #self.set_indent(-2)
+            #self.emit('end')
+            #self.emit('')
+
         for sig, old, new in self.module_info.edge_detectors:
             delayed_name = '{}_d'.format(sig.name)
-            if delayed_name not in regs:
-                self.emit('reg {};'.format(delayed_name))
-            regs.add(delayed_name)
             detect_var_name = 'is_{}_change_{}_to_{}'.format(sig.name, old, new)
             self.emit('wire {};'.format(detect_var_name))
             self.emit('assign {} = ({}=={} && {}=={});'.format(detect_var_name, delayed_name, old, sig.name, new))
-
-            self.emit('/* edge detector for {} */'.format(sig.name))
-            self.emit('always @(posedge clk) begin')
-            self.set_indent(2)
-            self.emit('{} <= {};'.format(delayed_name, sig.name))
-            self.set_indent(-2)
-            self.emit('end /* always */')
-            self.emit('')
-
 
     def _generate_reg_field_access(self, fieldif):
         conds = []
@@ -480,8 +479,9 @@ class VerilogCodeGen:
 
 
     def visit_AHDL_MOVE(self, ahdl):
-        if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_condition():
+        if ahdl.dst.is_a(AHDL_VAR) and (ahdl.dst.sig.is_condition() or ahdl.dst.sig.is_net()):
             self.module_info.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
+            self.emit('/* {} <= {}; */'.format(self.visit(ahdl.dst), self.visit(ahdl.src)))
         elif ahdl.dst.is_a(AHDL_MEMVAR) and ahdl.src.is_a(AHDL_MEMVAR):
             memnode = ahdl.dst.memnode
             assert memnode
@@ -689,31 +689,20 @@ class VerilogCodeGen:
         else:
             self.emit('{}({});'.format(ahdl.name, ', '.join(args)))
 
-    def visit_AHDL_REG_DECL(self, ahdl):
+    def visit_AHDL_SIGNAL_DECL(self, ahdl):
+        nettype = 'reg' if ahdl.sig.is_reg() else 'wire'
         if ahdl.sig.width == 1:
-            self.emit('reg {};'.format(ahdl.sig.name))
+            self.emit('{} {};'.format(nettype, ahdl.sig.name))
         else:
-            self.emit('reg {};'.format(self._generate_signal(ahdl.sig)))
+            self.emit('{} {};'.format(nettype, self._generate_signal(ahdl.sig)))
 
-    def visit_AHDL_REG_ARRAY_DECL(self, ahdl):
+    def visit_AHDL_SIGNAL_ARRAY_DECL(self, ahdl):
+        nettype = 'reg' if ahdl.sig.is_reg() else 'wire'
         if ahdl.sig.width == 1:
-            self.emit('reg {}[0:{}];'.format(ahdl.sig.name, ahdl.size-1))
+            self.emit('{} {}[0:{}];'.format(nettype, ahdl.sig.name, ahdl.size-1))
         else:
             sign = 'signed' if ahdl.sig.is_int() else ''
-            self.emit('reg {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
-
-    def visit_AHDL_NET_DECL(self, ahdl):
-        if ahdl.sig.width == 1:
-            self.emit('wire {};'.format(ahdl.sig.name))
-        else:
-            self.emit('wire {};'.format(self._generate_signal(ahdl.sig)))
-
-    def visit_AHDL_NET_ARRAY_DECL(self, ahdl):
-        if ahdl.sig.width == 1:
-            self.emit('wire {}[0:{}];'.format(ahdl.sig.name, ahdl.size-1))
-        else:
-            sign = 'signed' if ahdl.sig.is_int() else ''
-            self.emit('wire {:<6} [{}:0] {} [0:{}];'.format(sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
+            self.emit('{} {:<6} [{}:0] {} [0:{}];'.format(nettype, sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
 
     def visit_AHDL_ASSIGN(self, ahdl):
         src = self.visit(ahdl.src)
