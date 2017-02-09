@@ -45,15 +45,6 @@ class AHDLVisitor:
         self.visit(ahdl.dst)
         self.visit(ahdl.offset)
 
-    def visit_AHDL_FIELD_MOVE(self, ahdl):
-        self.visit_AHDL_MOVE(ahdl)
-
-    def visit_AHDL_FIELD_STORE(self, ahdl):
-        self.visit_AHDL_STORE(ahdl)
-
-    def visit_AHDL_FIELD_LOAD(self, ahdl):
-        self.visit_AHDL_LOAD(ahdl)
-
     def visit_AHDL_POST_PROCESS(self, ahdl):
         method = 'visit_POST_' + ahdl.__class__.__name__
         visitor = getattr(self, method, None)

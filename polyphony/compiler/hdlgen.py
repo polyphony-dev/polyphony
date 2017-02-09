@@ -20,13 +20,7 @@ class HDLModuleBuilder:
     def create(cls, scope):
         if scope.is_module():
             return HDLTopModuleBuilder()
-        elif scope.is_class():
-            # workaround for inline version
-            return None
-            #if not scope.children:
-            #    return None
-            #return HDLClassModuleBuilder()
-        elif scope.is_method():
+        elif scope.is_class() or scope.is_method():
             return None
         elif scope.is_testbench():
             return HDLTestbenchBuilder()
@@ -67,7 +61,7 @@ class HDLModuleBuilder:
         nets = []
         for sig in locals:
             sig = scope.gen_sig(sig.name, sig.width, sig.tags)
-            if sig.is_field() or sig.is_memif() or sig.is_ctrl() or sig.is_extport():
+            if sig.is_memif() or sig.is_ctrl() or sig.is_extport():
                 continue
             elif sig.is_condition():
                 self.module_info.add_internal_net(sig)
@@ -211,12 +205,11 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         locals = defs.union(uses)
 
         module_name = scope.stgs[0].name
-        if not scope.is_testbench():
-            self._add_state_register(module_name, scope, scope.stgs)
-            funcif = FunctionInterface('')
-            self._add_input_ports(funcif, scope)
-            self._add_output_ports(funcif, scope)
-            self.module_info.add_interface(funcif)
+        self._add_state_register(module_name, scope, scope.stgs)
+        funcif = FunctionInterface('')
+        self._add_input_ports(funcif, scope)
+        self._add_output_ports(funcif, scope)
+        self.module_info.add_interface(funcif)
 
         self._add_internal_ports(scope, module_name, locals)
 
@@ -250,13 +243,6 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         locals = defs.union(uses)
 
         module_name = scope.stgs[0].name
-        if not scope.is_testbench():
-            self._add_state_register(module_name, scope, scope.stgs)
-            funcif = FunctionInterface('')
-            self._add_input_ports(funcif, scope)
-            self._add_output_ports(funcif, scope)
-            self.module_info.add_interface(funcif)
-
         self._add_internal_ports(scope, module_name, locals)
 
         for memnode in mrg.collect_ram(scope):
@@ -289,70 +275,6 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
 
         self._rename_signal(scope)
 
-class HDLClassModuleBuilder(HDLModuleBuilder):
-    def _build_module(self, scope):
-        assert scope.is_class()
-        mrg = env.memref_graph
-
-        field_accesses = defaultdict(list)
-        for s in scope.children:
-            self._add_state_constants(s)
-            defs, uses, outputs = self._collect_vars(s)
-            locals = defs.union(uses)
-            self._collect_field_access(s, field_accesses)
-
-            funcif = FunctionInterface(s.orig_name, is_method=True)
-            self._add_input_ports(funcif, s)
-            self._add_output_ports(funcif, s)
-            self.module_info.add_interface(funcif)
-            for p in funcif.outports():
-                pname = funcif.port_name(self.module_info.name, p)
-                self.module_info.add_fsm_output(s.orig_name, s.gen_sig(pname, p.width, ['reg']))
-            self._add_internal_ports(scope, s.orig_name, locals)
-            self._add_state_register(s.orig_name, s, s.stgs)
-            self._add_submodules(s)
-            for memnode in mrg.collect_ram(s):
-                memportmaker = HDLMemPortMaker(memnode, s, self.module_info).make_port()
-
-            self._add_roms(s)
-        # I/O port for class fields
-        
-        for sym in scope.symbols.values():
-            if sym.typ.is_scalar(): # skip a method
-                fieldif = RegFieldInterface(sym.hdl_name(), sym.typ.get_width())
-                self.module_info.add_interface(fieldif)
-            elif sym.typ.is_list():
-                memnode = sym.typ.get_memnode()
-                fieldif = RAMFieldInterface(memnode.name(), memnode.width, memnode.addr_width(), True)
-                self.module_info.add_interface(fieldif)
-            elif sym.typ.is_object():
-                # add interface at add_submodule()
-                pass
-
-        for field_name, accesses in field_accesses.items():
-            self.module_info.add_internal_field_access(field_name, accesses)
-
-        #FIXME
-        if scope.stgs:
-            self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
-        for s in scope.children:
-            self.module_info.add_fsm_stg(s.orig_name, s.stgs)
-            self._rename_signal(s)
-
-
-    def _collect_field_access(self, scope, field_accesses):
-        collector = AHDLFieldAccessCollector(self.module_info, scope, field_accesses)
-        for stg in scope.stgs:
-            for state in stg.states:
-                collector.current_state = state
-                remove_codes = []
-                for code in state.codes:
-                    collector.visit(code)
-                    if getattr(code, 'removed', None):
-                        remove_codes.append((code, AHDL_NOP(code)))
-                for code, nop in remove_codes:
-                    replace_item(state.codes, code, nop)
-
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
 
@@ -384,9 +306,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         self._add_state_constants(worker)
         defs, uses, outputs = self._collect_vars(worker)
         locals = defs.union(uses)
-        for var in locals:
-            if var.is_field():
-                self.module_info.add_internal_reg(var)
         regs, nets = self._add_internal_ports(module_scope, module_scope.orig_name, locals)
         self._add_state_register(worker.orig_name, module_scope, worker.stgs)
 
@@ -427,9 +346,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         moves = self._collect_moves(scope)
         defs = []
         for mv in moves:
-            if mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_field():
-                defs.append(mv)
-            elif mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_output():
+            if mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_output():
                 defs.append(mv)
         return defs
 
@@ -470,86 +387,4 @@ class AHDLSpecialDeclCollector(AHDLVisitor):
             if ahdl.codes:
                 for code in ahdl.codes:
                     self.visit(code)
-
-class AHDLFieldAccessCollector(AHDLVisitor):
-    def __init__(self, module_info, scope, field_accesses):
-        self.module_info = module_info
-        self.scope = scope
-        self.field_accesses = field_accesses
-        self.module_constants = [c for c, _ in self.module_info.state_constants]
-        self.current_state = None
-
-    def visit_AHDL_FIELD_MOVE(self, ahdl):
-        #self.visit_AHDL_MOVE(ahdl)
-
-        assert self.field_accesses is not None
-        field = '{}_field_{}'.format(ahdl.inst_name, ahdl.attr_name)
-        self.field_accesses[field].append((self.scope, self.current_state, ahdl))
-        ahdl.removed = True
-
-    def visit_AHDL_FIELD_STORE(self, ahdl):
-        #self.visit(ahdl.src)
-
-        assert self.field_accesses is not None
-        self.field_accesses[ahdl.mem.sig.name].append((self.scope, self.current_state, ahdl))
-        ahdl.removed = True
-
-    def visit_AHDL_FIELD_LOAD(self, ahdl):
-        #self.visit(ahdl.dst)
-
-        assert self.field_accesses is not None
-        self.field_accesses[ahdl.mem.sig.name].append((self.scope, self.current_state, ahdl))
-        ahdl.removed = True
-
-    def visit_AHDL_POST_PROCESS(self, ahdl):
-        if isinstance(ahdl.factor, AHDL_FIELD_MOVE):
-            field = '{}_field_{}'.format(ahdl.factor.inst_name, ahdl.factor.attr_name)
-            self.field_accesses[field].append((self.scope, self.current_state, ahdl))
-            ahdl.removed = True
-        elif isinstance(ahdl.factor, AHDL_FIELD_STORE):
-            self.field_accesses[ahdl.factor.mem.sig.name].append((self.scope, self.current_state, ahdl))
-            ahdl.removed = True
-        elif isinstance(ahdl.factor, AHDL_FIELD_LOAD):
-            self.field_accesses[ahdl.factor.mem.sig.name].append((self.scope, self.current_state, ahdl))
-            ahdl.removed = True
-
-    def visit_AHDL_MODULECALL(self, ahdl):
-        for arg in ahdl.args:
-            self.visit(arg)
-        if ahdl.scope.is_class() or ahdl.scope.is_method():
-            assert self.field_accesses is not None
-            self.field_accesses[ahdl.prefix].append((self.scope, self.current_state, ahdl))
-            ahdl.removed = True
-
-    def visit_SET_READY(self, ahdl):
-        modulecall = ahdl.args[0]
-        if modulecall.scope.is_class() or modulecall.scope.is_method():
-            assert self.field_accesses is not None
-            self.field_accesses[modulecall.prefix].append((self.scope, self.current_state, ahdl))
-            ahdl.removed = True
-
-    def visit_ACCEPT_IF_VALID(self, ahdl):
-        modulecall = ahdl.args[0]
-        if modulecall.scope.is_class() or modulecall.scope.is_method():
-            assert self.field_accesses is not None
-            self.field_accesses[modulecall.prefix].append((self.scope, self.current_state, ahdl))
-            ahdl.removed = True
-
-    def visit_GET_RET_IF_VALID(self, ahdl):
-        modulecall = ahdl.args[0]
-        dst = ahdl.args[1]
-        self.visit(dst)
-        
-    def visit_SET_ACCEPT(self, ahdl):
-        modulecall = ahdl.args[0]
-        if modulecall.scope.is_class() or modulecall.scope.is_method():
-            assert self.field_accesses is not None
-            self.field_accesses[modulecall.prefix].append((self.scope, self.current_state, ahdl))
-            ahdl.removed = True
-
-    def visit_AHDL_META(self, ahdl):
-        method = 'visit_' + ahdl.metaid
-        visitor = getattr(self, method, None)
-        return visitor(ahdl)
-
 

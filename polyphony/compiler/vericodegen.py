@@ -107,7 +107,6 @@ class VerilogCodeGen:
         self._generate_localparams()
         self._generate_decls()
         self._generate_sub_module_instances()        
-        self._generate_field_access()
         self._generate_edge_detector()
         self._generate_net_monitor()
         self.set_indent(-2)
@@ -183,7 +182,7 @@ class VerilogCodeGen:
 
     def _to_io_name(self, module_name, interface, port):
         io = 'input' if port.dir=='in' else 'output'
-        typ = 'wire' if port.dir=='in' or interface.thru or isinstance(interface, InstanceInterface) else 'reg'
+        typ = 'wire' if port.dir=='in' or interface.thru else 'reg'
         port_name = interface.port_name(module_name, port)
 
         if port.width == 1:
@@ -194,15 +193,6 @@ class VerilogCodeGen:
             else:
                 ioname = '{} {} [{}:0] {}'.format(io, typ, port.width-1, port_name)
         return ioname
-
-    def _to_signal_name(self, instance_name, interface, port):
-        accessor_name = interface.port_name(instance_name, port)
-        typ = 'reg' if port.dir=='in' and not interface.thru else 'wire'
-        if port.width == 1:
-            signame = '{} {};\n'.format(typ, accessor_name)
-        else:
-            signame = '{} signed [{}:0] {};\n'.format(typ, port.width-1, accessor_name)
-        return signame
 
     def _to_sub_module_connect(self, module_name, instance_name, inf, acc, port):
         port_name = inf.port_name(module_name, port)
@@ -268,132 +258,6 @@ class VerilogCodeGen:
             detect_var_name = 'is_{}_change_{}_to_{}'.format(sig.name, old, new)
             self.emit('wire {};'.format(detect_var_name))
             self.emit('assign {} = ({}=={} && {}=={});'.format(detect_var_name, delayed_name, old, sig.name, new))
-
-    def _generate_reg_field_access(self, fieldif):
-        conds = []
-        codes_list = []
-        field_name = self.module_info.name + '_' + fieldif.name
-        if field_name in self.module_info.internal_field_accesses:
-            for method_scope, state, ahdl in self.module_info.internal_field_accesses[field_name]:
-                state_var = self.module_info.fsms[method_scope.name].state_var
-                cond = AHDL_OP('Eq', AHDL_VAR(state_var, Ctx.LOAD), AHDL_SYMBOL(state.name))
-                conds.append(cond)
-                codes_list.append([ahdl])
-            
-        field       = field_name
-        field_in    = field + '_in'
-        field_ready = field + '_ready'
-        cond = AHDL_OP('Eq', AHDL_SYMBOL(field_ready), AHDL_CONST(1))
-        conds.append(cond)
-        mv = AHDL_MOVE(AHDL_SYMBOL(field), AHDL_SYMBOL(field_in))
-        codes_list.append([mv])
-           
-        conds.append(AHDL_CONST(1))
-        mv = AHDL_MOVE(AHDL_SYMBOL(field), AHDL_SYMBOL(field))
-        codes_list.append([mv])
-
-        ifexp = AHDL_IF(conds, codes_list)
-        
-        self.emit('/* field access for {}.{}*/'.format(self.module_info.name, fieldif.field_name))    
-        self.emit('always @(posedge clk) begin: {}_access'.format(field_name))
-        self.set_indent(2)
-        self.emit('if (rst) begin')
-        self.set_indent(2)
-        self.emit('{} <= 0;'.format(field))
-        self.set_indent(-2)
-        self.emit('end else begin')
-        self.set_indent(2)
-        self.visit(ifexp)
-        self.set_indent(-2)
-        self.emit('end /* if (rst) */')
-        self.set_indent(-2)
-        self.emit('end /* always */')
-        self.emit('')
-
-    def _generate_ram_field_access(self, fieldif):
-        conds = []
-        codes_list = []
-        field_name = self.module_info.name + '_' + fieldif.name
-        if field_name in self.module_info.internal_field_accesses:
-            for method_scope, state, ahdl in self.module_info.internal_field_accesses[field_name]:
-                state_var = self.module_info.fsms[method_scope.name].state_var
-                cond = AHDL_OP('Eq', AHDL_VAR(state_var, Ctx.LOAD), AHDL_SYMBOL(state.name))
-                conds.append(cond)
-                codes_list.append([ahdl])
-        
-        field       = field_name
-        #field_in    = field + '_in'
-        #field_ready = field + '_ready'
-        #cond = AHDL_OP('Eq', AHDL_SYMBOL(field_ready), AHDL_CONST(1))
-        #conds.append(cond)
-        #mv = AHDL_MOVE(AHDL_SYMBOL(field), AHDL_SYMBOL(field_in))
-        #codes_list.append([mv])
-           
-        #conds.append(AHDL_CONST(1))
-        #mv = AHDL_MOVE(AHDL_SYMBOL(field), AHDL_SYMBOL(field))
-        #codes_list.append([mv])
-
-        ifexp = AHDL_IF(conds, codes_list)
-        
-        self.emit('/* field access for {}.{}*/'.format(self.module_info.name, fieldif.field_name))    
-        self.emit('always @(posedge clk) begin: {}_access'.format(field_name))
-        self.set_indent(2)
-        self.emit('if (rst) begin')
-        self.set_indent(2)
-        #self.emit('{} <= 0;'.format(field))
-        self.set_indent(-2)
-        self.emit('end else begin')
-        self.set_indent(2)
-        self.visit(ifexp)
-        self.set_indent(-2)
-        self.emit('end /* if (rst) */')
-        self.set_indent(-2)
-        self.emit('end /* always */')
-        self.emit('')
-
-    def _generate_instance_field_access(self, fieldif):
-        conds = []
-        codes_list = []
-        if False:#self.scope.is_class():
-            field_name = self.module_info.name + '_' + fieldif.name
-        else:
-            field_name = fieldif.name
-        if field_name in self.module_info.internal_field_accesses:
-            for caller_scope, state, ahdl in self.module_info.internal_field_accesses[field_name]:
-                state_var = self.module_info.fsms[caller_scope.name].state_var
-                cond = AHDL_OP('Eq', AHDL_VAR(state_var, Ctx.LOAD), AHDL_SYMBOL(state.name))
-                conds.append(cond)
-                codes_list.append([ahdl])
-        else:
-            return
-        ifexp = AHDL_IF(conds, codes_list)
-        
-        self.emit('/* field access for {}.{}*/'.format(fieldif.inst_name, fieldif.inf.name))
-        self.emit('always @(posedge clk) begin: {}_access'.format(field_name))
-        self.set_indent(2)
-        self.emit('if (rst) begin')
-        self.set_indent(2)
-        for p in fieldif.inports():
-            name = fieldif.port_name('', p)
-            self.emit('{} <= 0;'.format(name))
-        self.set_indent(-2)
-        self.emit('end else begin /* if (rst) */')
-        self.set_indent(2)
-        self.visit(ifexp)
-        self.set_indent(-2)
-        self.emit('end /* if (rst) */')
-        self.set_indent(-2)
-        self.emit('end /* always */')
-        self.emit('')
-
-    def _generate_field_access(self):
-        for inf in self.module_info.interfaces:
-            if isinstance(inf, RegFieldInterface):
-                self._generate_reg_field_access(inf)
-            elif isinstance(inf, RAMFieldInterface):
-                self._generate_ram_field_access(inf)
-            elif isinstance(inf, InstanceInterface):
-                self._generate_instance_field_access(inf)
 
     def _process_State(self, state):
         self.current_state = state
@@ -536,48 +400,6 @@ class VerilogCodeGen:
         self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(1)))
 
     def visit_POST_AHDL_LOAD(self, ahdl):
-        req, _, _, _, q, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(ahdl.dst, AHDL_SYMBOL(q)))
-        if self._is_sequential_access_to_mem(ahdl):
-            return
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(0)))
-
-
-    def visit_AHDL_FIELD_MOVE(self, ahdl):
-        src = self.visit(ahdl.src)
-        dst = self.visit(ahdl.dst)
-        if env.hdl_debug_mode:
-            self.emit('$display("%8d:REG  :{}      {} <= 0x%2h (%1d)", $time, {}, {});'.format(self.scope.orig_name, dst, src, src))
-        self.emit('{} <= {};'.format(dst, src))
-
-        if ahdl.is_ext:
-            field_ready = '{}_field_{}_ready'.format(ahdl.inst_name, ahdl.attr_name)
-            self.visit(AHDL_MOVE(AHDL_SYMBOL(field_ready), AHDL_CONST(1)))
-
-    def visit_POST_AHDL_FIELD_MOVE(self, ahdl):
-        field_ready = '{}_field_{}_ready'.format(ahdl.inst_name, ahdl.attr_name)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(field_ready), AHDL_CONST(0)))
-
-    def visit_AHDL_FIELD_STORE(self, ahdl):
-        req, addr, we, d, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr), ahdl.offset))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(we), AHDL_CONST(1)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(1)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(d), ahdl.src))
-
-    def visit_POST_AHDL_FIELD_STORE(self, ahdl):
-        if self._is_sequential_access_to_mem(ahdl):
-            return
-        req, _, _, _, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(0)))
-
-    def visit_AHDL_FIELD_LOAD(self, ahdl):
-        req, addr, we, _, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr), ahdl.offset))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(we), AHDL_CONST(0)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(1)))
-
-    def visit_POST_AHDL_FIELD_LOAD(self, ahdl):
         req, _, _, _, q, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
         self.visit(AHDL_MOVE(ahdl.dst, AHDL_SYMBOL(q)))
         if self._is_sequential_access_to_mem(ahdl):
@@ -917,93 +739,4 @@ class VerilogCodeGen:
         method = 'visit_' + ahdl.__class__.__name__
         visitor = getattr(self, method, None)
         return visitor(ahdl)
-
-
-
-
-class VerilogTopGen:
-
-    def __init__(self, mains):
-        assert mains
-        self.mains = mains
-        logger.debug(mains)
-        self.name = mains[0].name + '_top'
-        self.codes = []
-        self.indent = 0
-
-    def result(self):
-        return ''.join(self.codes)
-
-    def emit(self, code):
-        self.codes.append((' '*self.indent) + code)
-
-    def set_indent(self, val):
-        self.indent += val
-
-    def generate(self):
-        self.emit(AXI_MODULE_HEADER.format(self.name))
-        self._generate_posi_reset()
-        self._generate_top_module_instances()
-
-        self.emit('endmodule')
-
-    def _generate_posi_reset(self):
-        self.set_indent(2)
-        self.emit('wire reset;')
-        self.emit('assign reset = !S_AXI_ARESETN;')
-        self.emit('')
-        self.set_indent(-2)
-
-    def _generate_top_module_instances(self):
-        self.set_indent(2)
-        self.emit('//main module instances')
-        for module_info in self.mains:
-            ports = []
-            ports.append('.clk(S_AXI_ACLK)')
-            ports.append('.rst(reset)')
-            #for port, (signal, _, _, _) in port_map.items():
-            #    ports.append('.{}({})'.format(port, signal))
-            code = '{} {}_inst({});'.format(module_info.name, module_info.name, ', '.join(ports))
-            self.emit(code)
-        self.set_indent(-2)
-        self.emit('')
-
-
-   
-AXI_MODULE_HEADER="""
-module {} #
-(
-  parameter integer C_DATA_WIDTH = 32,
-  parameter integer C_ADDR_WIDTH = 4
-)
-(
-  // Ports of Axi Slave Bus Interface S_AXI
-  input wire                          S_AXI_ACLK,
-  input wire                          S_AXI_ARESETN,
-  //Write address channel
-  input wire [C_ADDR_WIDTH-1 : 0]     S_AXI_AWADDR,
-  input wire [2 : 0]                  S_AXI_AWPROT,
-  input wire                          S_AXI_AWVALID,
-  output wire                         S_AXI_AWREADY,
-  //Write data channel
-  input wire [C_DATA_WIDTH-1 : 0]     S_AXI_WDATA,
-  input wire [(C_DATA_WIDTH/8)-1 : 0] S_AXI_WSTRB,
-  input wire                          S_AXI_WVALID,
-  output wire                         S_AXI_WREADY,
-  //Write response channel
-  output wire [1 : 0]                 S_AXI_BRESP,
-  output wire                         S_AXI_BVALID,
-  input wire                          S_AXI_BREADY,
-  //Read address channel
-  input wire [C_ADDR_WIDTH-1 : 0]     S_AXI_ARADDR,
-  input wire [2 : 0]                  S_AXI_ARPROT,
-  input wire                          S_AXI_ARVALID,
-  output wire                         S_AXI_ARREADY,
-  //Read data channel
-  output wire [C_DATA_WIDTH-1 : 0]    S_AXI_RDATA,
-  output wire [1 : 0]                 S_AXI_RRESP,
-  output wire                         S_AXI_RVALID,
-  input wire                          S_AXI_RREADY
-);
-"""
 

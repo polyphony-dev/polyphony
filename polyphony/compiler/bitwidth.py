@@ -113,15 +113,6 @@ class BitwidthReducer(AHDLVisitor):
         if dst_sig.width > srcw:
             dst_sig.width = srcw
 
-    def visit_AHDL_FIELD_MOVE(self, ahdl):
-        pass
-
-    def visit_AHDL_FIELD_STORE(self, ahdl):
-        pass
-
-    def visit_AHDL_FIELD_LOAD(self, ahdl):
-        pass
-
     def visit_AHDL_MODULECALL(self, ahdl):
         pass
 

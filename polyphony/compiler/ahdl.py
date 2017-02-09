@@ -269,32 +269,6 @@ class AHDL_LOAD(AHDL_STM):
     def __repr__(self):
         return 'AHDL_LOAD({}, {}, {})'.format(repr(self.mem), repr(self.dst), repr(self.offset))
 
-class AHDL_FIELD_MOVE(AHDL_MOVE):
-    def __init__(self, inst_name, attr_name, dst, src, is_ext):
-        super().__init__(dst, src)
-        self.inst_name = inst_name
-        self.attr_name = attr_name
-        self.is_ext = is_ext
-
-    def __str__(self):
-        return '{}.{} <= {}'.format(self.inst_name, self.dst, self.src)
-
-class AHDL_FIELD_STORE(AHDL_STORE):
-    def __init__(self, inst_name, mem, src, offset):
-        super().__init__(mem, src, offset)
-        self.inst_name = inst_name
-
-    def __str__(self):
-        return '{}[{}] <= {}'.format(self.mem, self.offset, self.src)
-
-class AHDL_FIELD_LOAD(AHDL_LOAD):
-    def __init__(self, inst_name, mem, dst, offset):
-        super().__init__(mem, dst, offset)
-        self.inst_name = inst_name
-
-    def __str__(self):
-        return '{} <= {}[{}]'.format(self.dst, self.mem, self.offset)
-
 class AHDL_POST_PROCESS(AHDL_STM):
     def __init__(self, factor):
         super().__init__()

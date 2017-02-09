@@ -161,14 +161,6 @@ class HDLModuleInfo:
         assert isinstance(demux, AHDL_DEMUX)
         self.add_decl(tag, demux)
 
-    def add_class_field(self, field):
-        assert field.is_field()
-        self.class_fields.add(field)
-
-    def add_internal_field_access(self, field_name, access):
-        assert isinstance(field_name, str)
-        self.internal_field_accesses[field_name] = access
-
     def add_fsm_state_var(self, fsm_name, var):
         self.fsms[fsm_name].name = fsm_name
         self.fsms[fsm_name].state_var = var

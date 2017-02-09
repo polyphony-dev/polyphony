@@ -596,22 +596,14 @@ class AHDLTranslator:
         else:
             assert isinstance(node.tag, MOVE)
             dst = self.visit(node.tag.dst, node)
-            if ir.mem.is_a(ATTR):
-                instance_name = self.host.make_instance_name(ir.mem)
-                return AHDL_FIELD_LOAD(instance_name, memvar, dst, offset)
-            else:
-                return AHDL_LOAD(memvar, dst, offset)
+            return AHDL_LOAD(memvar, dst, offset)
 
     def visit_MSTORE(self, ir, node):
         offset = self.visit(ir.offset, node)
         exp = self.visit(ir.exp, node)
         memvar = self.visit(ir.mem, node)
         assert memvar.memnode.is_writable()
-        if ir.mem.is_a(ATTR):
-            instance_name = self.host.make_instance_name(ir.mem)
-            return AHDL_FIELD_STORE(instance_name, memvar, exp, offset)
-        else:
-            return AHDL_STORE(memvar, exp, offset)
+        return AHDL_STORE(memvar, exp, offset)
 
     def _build_mem_initialize_seq(self, array, memvar, node):
         if array.is_mutable:
@@ -821,23 +813,6 @@ class AHDLTranslator:
             assert memnode
             if ir.src.sym.is_param():
                 return
-        elif dst.sig.is_field() and not self.scope.parent.is_module():
-            assert ir.dst.is_a(ATTR)
-            if dst.is_a(AHDL_VAR):
-                if self.scope.is_method():
-                    class_name = self.scope.parent.orig_name
-                    attr = ir.dst.attr.hdl_name()
-                    field_mv = AHDL_FIELD_MOVE(class_name, attr, dst, src, is_ext=False)
-                    self.host.emit(field_mv, self.sched_time)
-                else:
-                    cls = ir.dst.scope.orig_name
-                    instance_name = self.host.make_instance_name(ir.dst)
-                    attr = ir.dst.attr.hdl_name()
-                    field_mv = AHDL_FIELD_MOVE(instance_name, attr, dst, src, is_ext=True)
-                    self.host.emit(field_mv, self.sched_time)
-                    self.host.emit(AHDL_POST_PROCESS(field_mv), self.sched_time+1)
-            return
-        
         
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
 

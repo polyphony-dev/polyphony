@@ -150,31 +150,6 @@ class RegArrayInterface(Interface):
             assert port.basename
             return pfx + port.basename
 
-class RegFieldInterface(Interface):
-    def __init__(self, field_name, width):
-        super().__init__('field_' + field_name, thru=False, is_public=True)
-        self.field_name = field_name
-        self.width = width
-        self.ports.append(Port('in',    width, 'in', True))
-        self.ports.append(Port('ready',     1, 'in', False))
-        self.ports.append(Port('',      width, 'out', True))
-       
-class RAMFieldInterface(RAMInterface):
-    def __init__(self, field_name, data_width, addr_width, thru=False):
-        super().__init__('field_' + field_name, data_width, addr_width, thru=thru, is_public=True)
-        self.field_name = field_name
-        
-class InstanceInterface(Interface):
-    def __init__(self, inf, inst_name, scope, is_public):
-        super().__init__(inst_name + '_' + inf.name, thru=inf.thru, is_public=is_public)
-        self.inf = inf
-        self.inst_name = inst_name
-        self.scope = scope
-        self.ports = list(inf.ports)
-
-    def __str__(self):
-        return self.name + '_' + self.inf.name
-
 
 class Interconnect:
     def __init__(self, name, ins, outs, cs_name=''):
