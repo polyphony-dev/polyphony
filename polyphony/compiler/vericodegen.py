@@ -604,7 +604,7 @@ class VerilogCodeGen:
             self.visit(code)
         self.set_indent(-2)
         for cond, codes in zip(ahdl.conds[1:], ahdl.codes_list[1:]):
-            if cond:
+            if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1):
                 cond = self.visit(cond)
                 if cond[0] != '(':
                     cond = '('+cond+')'

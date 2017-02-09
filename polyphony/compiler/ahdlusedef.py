@@ -50,31 +50,31 @@ class UseDefTable:
         self._use_var2stm[var].discard(stm)
         self._use_stm2var[stm].discard(var)
 
-    def get_stm_defining(self, key):
+    def get_stms_defining(self, key):
         if isinstance(key, Signal):
             return self._def_sig2stm[key]
         elif isinstance(key, AHDL_VAR):
             return self._def_var2stm[key]
 
-    def get_sig_defined_at(self, stm):
+    def get_sigs_defined_at(self, stm):
         if isinstance(stm, AHDL_STM):
             return self._def_stm2sig[stm]
 
-    def get_var_defined_at(self, stm):
+    def get_vars_defined_at(self, stm):
         if isinstance(stm, AHDL_STM):
             return self._def_stm2var[stm]
         
-    def get_stm_using(self, key):
+    def get_stms_using(self, key):
         if isinstance(key, Signal):
             return self._use_sig2stm[key]
         elif isinstance(key, AHDL_VAR):
             return self._use_var2stm[key]
 
-    def get_sig_used_at(self, stm):
+    def get_sigs_used_at(self, stm):
         if isinstance(stm, AHDL_STM):
             return self._use_stm2sig[stm]
 
-    def get_var_used_at(self, stm):
+    def get_vars_used_at(self, stm):
         if isinstance(stm, AHDL_STM):
             return self._use_stm2var[stm]
 

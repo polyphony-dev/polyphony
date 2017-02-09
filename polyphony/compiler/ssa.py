@@ -44,7 +44,7 @@ class SSATransformerBase:
     def _insert_phi(self):
         phi_symbols = defaultdict(list)
         dfs = set()
-        for qsym, def_blocks in self.usedef._qsym_defs_blk.items():
+        for qsym, def_blocks in self.usedef._def_qsym2blk.items():
             assert isinstance(qsym, tuple)
             if not self._need_rename(qsym[-1]):
                 continue
@@ -66,7 +66,7 @@ class SSATransformerBase:
                     df.insert_stm(0, phi)
                     #The phi has the definintion of the variable
                     #so we must add the phi to the df_blocks if needed
-                    if qsym not in self.usedef.get_def_qsyms_by_blk(df):
+                    if qsym not in self.usedef.get_qsyms_defined_at(df):
                         def_blocks.add(df)
                     #this must call after the above checking
                     self._add_phi_var_to_usedef(var, phi)
@@ -99,9 +99,9 @@ class SSATransformerBase:
         qstack = {}
         using_vars = set()
         for blk in self.scope.traverse_blocks():
-            for var in self.usedef.get_def_vars_by_blk(blk):
+            for var in self.usedef.get_vars_defined_at(blk):
                 using_vars.add(var)
-            for var in self.usedef.get_use_vars_by_blk(blk):
+            for var in self.usedef.get_vars_used_at(blk):
                 using_vars.add(var)
         for var in using_vars:
             key = var.qualified_symbol()
@@ -122,13 +122,13 @@ class SSATransformerBase:
     def _rename_rec(self, block, count, stack):
         for stm in block.stms:
             if not stm.is_a(PHI):
-                for use in self.usedef.get_use_vars_by_stm(stm):
+                for use in self.usedef.get_vars_used_at(stm):
                     assert use.is_a([TEMP, ATTR])
                     key = use.qualified_symbol()
                     i, _ = stack[key][-1]
                     self._add_new_sym(use, i)
             #this loop includes PHI
-            for d in self.usedef.get_def_vars_by_stm(stm):
+            for d in self.usedef.get_vars_defined_at(stm):
                 #print(stm, d)
                 assert d.lineno > 0
                 assert d.is_a([TEMP, ATTR])
@@ -151,7 +151,7 @@ class SSATransformerBase:
         for c in self.tree.get_children_of(block):
             self._rename_rec(c, count, stack)
         for stm in block.stms:
-            for d in self.usedef.get_def_vars_by_stm(stm):
+            for d in self.usedef.get_vars_defined_at(stm):
                 key = d.qualified_symbol()
                 if key in stack and stack[key]:
                     stack[key].pop()
@@ -318,7 +318,7 @@ class TupleSSATransformer(SSATransformerBase):
         for blk in self.scope.traverse_blocks():
             phis = blk.collect_stms(PHI)
             for phi in phis:
-                uses = usedef.get_use_stms_by_qsym(phi.var.qualified_symbol())
+                uses = usedef.get_stms_using(phi.var.qualified_symbol())
                 for use in uses:
                     self._insert_use_phi(phi, use)
 
@@ -367,7 +367,7 @@ class ObjectSSATransformer(SSATransformerBase):
         for blk in self.scope.traverse_blocks():
             phis = blk.collect_stms(PHI)
             for phi in phis:
-                uses = usedef.get_use_stms_by_qsym(phi.var.qualified_symbol())
+                uses = usedef.get_stms_using(phi.var.qualified_symbol())
                 for use in uses:
                     self._insert_use_phi(phi, use)
 

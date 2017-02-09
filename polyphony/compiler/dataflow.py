@@ -395,8 +395,8 @@ class DFGBuilder:
                 self._add_source_node(usenode, dfg, usedef, blocks)
 
                 # add edges
-                for v in usedef.get_use_vars_by_stm(stm):
-                    defstms = usedef.get_def_stms_by_sym(v.symbol())
+                for v in usedef.get_vars_used_at(stm):
+                    defstms = usedef.get_stms_defining(v.symbol())
                     logger.log(0, v.symbol().name + ' defstms ')
                     for defstm in defstms:
                         logger.log(0, str(defstm))
@@ -422,7 +422,7 @@ class DFGBuilder:
 
     def _add_source_node(self, node, dfg, usedef, blocks):
         stm = node.tag
-        usevars = usedef.get_use_vars_by_stm(stm)
+        usevars = usedef.get_vars_used_at(stm)
         if not usevars and stm.is_a(MOVE):
             dfg.src_nodes.add(node)
             return
@@ -433,14 +433,14 @@ class DFGBuilder:
             if v.is_a(ATTR) and v.head().name == env.self_name:
                 dfg.src_nodes.add(node)
                 return
-            defstms = usedef.get_def_stms_by_sym(v.symbol())
+            defstms = usedef.get_stms_defining(v.symbol())
             for defstm in defstms:
                 # this definition stm is in the out of the section
                 if defstm.block not in blocks:
                     dfg.src_nodes.add(node)
                     return
 
-        uses = usedef.get_use_consts_by_stm(stm)
+        uses = usedef.get_consts_used_at(stm)
         if uses:
             if self._is_constant_stm(stm):
                 logger.log(0, 'add src: $use const ' + str(stm))

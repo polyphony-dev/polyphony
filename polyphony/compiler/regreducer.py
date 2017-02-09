@@ -40,7 +40,7 @@ class RegReducer(AHDLVisitor):
                 return
         if ahdl.src.is_a(AHDL_MEMVAR):
             return
-        stms = self.usedef.get_stm_defining(dst_sig)
+        stms = self.usedef.get_stms_defining(dst_sig)
         if len(stms) > 1:
             return
         if self._has_depend_cycle(ahdl, dst_sig):
@@ -67,14 +67,14 @@ class RegReducer(AHDLVisitor):
         return self._has_depend_cycle_r(start_stm, sig, visited)
         
     def _has_depend_cycle_r(self, start_stm, sig, visited):
-        stms = self.usedef.get_stm_using(sig)
+        stms = self.usedef.get_stms_using(sig)
         if start_stm in stms:
             return True
         for stm in stms:
             if stm in visited:
                 continue
             visited.add(stm)
-            defsigs = self.usedef.get_sig_defined_at(stm)
+            defsigs = self.usedef.get_sigs_defined_at(stm)
             for defsig in defsigs:
                 if self._has_depend_cycle_r(start_stm, defsig, visited):
                     return True

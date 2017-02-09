@@ -1,47 +1,48 @@
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
+from .graph import Graph
 
 
-class StateReducer(AHDLVisitor):
-    def __init__(self):
-        pass
-
+class StateReducer:
     def process(self, scope):
+        if not scope.stgs:
+            return
+        graph = StateGraphBuilder().process(scope)
+        self._remove_unreached_state(scope, graph)
+
+    def _remove_unreached_state(self, scope, graph):
         for stg in scope.stgs:
-            if stg.is_main():
-                self.main_stg = stg
-                break
-        self.using_state = set()
-        for stg in scope.stgs:
-            self.current_stg = stg
-            self.using_state.add(stg.init_state)
-            for state in stg.states:
-                self.current_state = state
-                for code in state.codes:
-                    self.visit(code)
-        for stg in scope.stgs:
+            if len(stg.states) == 1:
+                continue
             for state in stg.states[:]:
-                if state not in self.using_state:
+                if not graph.has_node(state):
                     stg.states.remove(state)
 
-    def _next_state(self):
-        next_idx = self.current_stg.states.index(self.current_state) + 1
-        if next_idx < len(self.current_stg.states):
-            return self.current_stg.states[next_idx]
-        else:
-            return None
 
-    def visit_AHDL_IF(self, ahdl):
-        for idx, codes in enumerate(ahdl.codes_list):
-            if len(codes) == 1 and codes[0].is_a(AHDL_TRANSITION):
-                next_state = codes[0].target
-                if next_state is self.main_stg.finish_state:
-                    continue
-                ahdl.codes_list[idx] = next_state.codes[:]
-        for codes in ahdl.codes_list:
-            for c in codes:
-                self.visit(c)
+class StateGraph(Graph):
+    pass
+
+class StateGraphBuilder(AHDLVisitor):
+    def _walk_state(self, init_state, state, visited):
+        if state in visited:
+            return
+        visited.add(state)
+        self.next_states = []
+        for code in state.codes:
+            self.visit(code)
+        for next in self.next_states:
+            if next is init_state:
+                pass
+            else:
+                self.graph.add_edge(state, next)
+                self._walk_state(init_state, next, visited)
+
+    def process(self, scope):
+        self.graph = StateGraph()
+        visited = set()
+        init_state = scope.stgs[0].init_state
+        self._walk_state(init_state, init_state, visited)
+        return self.graph
 
     def visit_AHDL_TRANSITION(self, ahdl):
-        self.using_state.add(ahdl.target)
-
+        self.next_states.append(ahdl.target)

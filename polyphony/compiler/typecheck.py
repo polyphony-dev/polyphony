@@ -287,7 +287,8 @@ class TypePropagation(IRVisitor):
             if not isinstance(ir.dst.symbol(), Symbol):
                 # the type of object has not inferenced yet
                 raise RejectPropagation(str(ir))
-            ir.dst.symbol().set_type(src_typ)
+            if not ir.dst.symbol().typ.is_freezed():
+                ir.dst.symbol().set_type(src_typ)
             if self.scope.is_method() and ir.dst.is_a(ATTR):
                 sym = self.scope.parent.find_sym(ir.dst.symbol().name)
                 sym.set_type(src_typ)
@@ -312,7 +313,7 @@ class TypePropagation(IRVisitor):
     def visit_PHI(self, ir):
         arg_types = [self.visit(arg) for arg in ir.args]
         for arg_t in arg_types:
-            if not arg_t.is_none():
+            if not arg_t.is_none() and not ir.var.symbol().typ.is_freezed():
                 ir.var.symbol().set_type(arg_t)
                 break
 

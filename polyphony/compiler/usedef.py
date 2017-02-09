@@ -2,6 +2,7 @@
 from .irvisitor import IRVisitor
 from .ir import *
 from .type import Type
+from .block import Block
 from .env import env
 from logging import getLogger
 logger = getLogger(__name__)
@@ -9,69 +10,69 @@ logger = getLogger(__name__)
 class UseDefTable:
 
     def __init__(self):
-        self._sym_defs_stm = defaultdict(set)
-        self._sym_uses_stm = defaultdict(set)
-        self._var_defs_stm = defaultdict(set)
-        self._var_uses_stm = defaultdict(set)
-        self._sym_defs_blk = defaultdict(set)
-        self._sym_uses_blk = defaultdict(set)
-        self._stm_defs_var = defaultdict(set)
-        self._stm_uses_var = defaultdict(set)
-        self._blk_defs_var = defaultdict(set)
-        self._blk_uses_var = defaultdict(set)
-        self._stm_uses_const = defaultdict(set)
-        self._qsym_defs_stm = defaultdict(set)
-        self._qsym_uses_stm = defaultdict(set)
-        self._qsym_defs_blk = defaultdict(set)
-        self._qsym_uses_blk = defaultdict(set)
+        self._def_sym2stm = defaultdict(set)
+        self._use_sym2stm = defaultdict(set)
+        self._def_var2stm = defaultdict(set)
+        self._use_var2stm = defaultdict(set)
+        self._def_sym2blk = defaultdict(set)
+        self._use_sym2blk = defaultdict(set)
+        self._def_stm2var = defaultdict(set)
+        self._use_stm2var = defaultdict(set)
+        self._def_blk2var = defaultdict(set)
+        self._use_blk2var = defaultdict(set)
+        self._use_stm2const = defaultdict(set)
+        self._def_qsym2stm = defaultdict(set)
+        self._use_qsym2stm = defaultdict(set)
+        self._def_qsym2blk = defaultdict(set)
+        self._use_qsym2blk = defaultdict(set)
 
     def add_var_def(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._sym_defs_stm[var.symbol()].add(stm)
-        self._qsym_defs_stm[var.qualified_symbol()].add(stm)
-        self._var_defs_stm[var].add(stm)
-        self._sym_defs_blk[var.symbol()].add(stm.block)
-        self._qsym_defs_blk[var.qualified_symbol()].add(stm.block)
-        self._stm_defs_var[stm].add(var)
-        self._blk_defs_var[stm.block].add(var)
+        self._def_sym2stm[var.symbol()].add(stm)
+        self._def_qsym2stm[var.qualified_symbol()].add(stm)
+        self._def_var2stm[var].add(stm)
+        self._def_sym2blk[var.symbol()].add(stm.block)
+        self._def_qsym2blk[var.qualified_symbol()].add(stm.block)
+        self._def_stm2var[stm].add(var)
+        self._def_blk2var[stm.block].add(var)
 
     def remove_var_def(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._sym_defs_stm[var.symbol()].discard(stm)
-        self._qsym_defs_stm[var.qualified_symbol()].discard(stm)
-        self._var_defs_stm[var].discard(stm)
-        self._sym_defs_blk[var.symbol()].discard(stm.block)
-        self._qsym_defs_blk[var.qualified_symbol()].discard(stm.block)
-        self._stm_defs_var[stm].discard(var)
-        self._blk_defs_var[stm.block].discard(var)
+        self._def_sym2stm[var.symbol()].discard(stm)
+        self._def_qsym2stm[var.qualified_symbol()].discard(stm)
+        self._def_var2stm[var].discard(stm)
+        self._def_sym2blk[var.symbol()].discard(stm.block)
+        self._def_qsym2blk[var.qualified_symbol()].discard(stm.block)
+        self._def_stm2var[stm].discard(var)
+        self._def_blk2var[stm.block].discard(var)
 
     def add_var_use(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._sym_uses_stm[var.symbol()].add(stm)
-        self._qsym_uses_stm[var.qualified_symbol()].add(stm)
-        self._var_uses_stm[var].add(stm)
-        self._sym_uses_blk[var.symbol()].add(stm.block)
-        self._qsym_uses_blk[var.qualified_symbol()].add(stm.block)
-        self._stm_uses_var[stm].add(var)
-        self._blk_uses_var[stm.block].add(var)
+        self._use_sym2stm[var.symbol()].add(stm)
+        self._use_qsym2stm[var.qualified_symbol()].add(stm)
+        self._use_var2stm[var].add(stm)
+        self._use_sym2blk[var.symbol()].add(stm.block)
+        self._use_qsym2blk[var.qualified_symbol()].add(stm.block)
+        self._use_stm2var[stm].add(var)
+        self._use_blk2var[stm.block].add(var)
 
     def remove_var_use(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._sym_uses_stm[var.symbol()].discard(stm)
-        self._qsym_uses_stm[var.qualified_symbol()].discard(stm)
-        self._var_uses_stm[var].discard(stm)
-        self._sym_uses_blk[var.symbol()].discard(stm.block)
-        self._qsym_uses_blk[var.qualified_symbol()].discard(stm.block)
-        self._stm_uses_var[stm].discard(var)
-        self._blk_uses_var[stm.block].discard(var)
+        self._use_sym2stm[var.symbol()].discard(stm)
+        self._use_qsym2stm[var.qualified_symbol()].discard(stm)
+        self._use_var2stm[var].discard(stm)
+        self._use_sym2blk[var.symbol()].discard(stm.block)
+        self._use_qsym2blk[var.qualified_symbol()].discard(stm.block)
+        self._use_stm2var[stm].discard(var)
+        self._use_blk2var[stm.block].discard(var)
 
     def add_const_use(self, c, stm):
         assert c.is_a(CONST) and stm.is_a(IRStm)
-        self._stm_uses_const[stm].add(c)
+        self._use_stm2const[stm].add(c)
 
     def remove_const_use(self, c, stm):
         assert c.is_a(CONST) and stm.is_a(IRStm)
-        self._stm_uses_const[stm].discard(c)
+        self._use_stm2const[stm].discard(c)
 
     def add_use(self, v, stm):
         if v.is_a([TEMP, ATTR]):
@@ -93,86 +94,84 @@ class UseDefTable:
         for v in vs:
             self.remove_use(v, stm)
 
-    def get_def_stms_by_sym(self, sym):
-        return self._sym_defs_stm[sym]
+    def get_stms_defining(self, key):
+        if isinstance(key, Symbol):
+            return self._def_sym2stm[key]
+        elif isinstance(key, IR) and key.is_a([TEMP, ATTR]):
+            return self._def_var2stm[key]
+        elif isinstance(key, tuple):
+            return self._def_qsym2stm[key]
 
-    def get_use_stms_by_sym(self, sym):
-        return self._sym_uses_stm[sym]
+    def get_stms_using(self, key):
+        if isinstance(key, Symbol):
+            return self._use_sym2stm[key]
+        elif isinstance(key, IR) and key.is_a([TEMP, ATTR]):
+            return self._use_var2stm[key]
+        elif isinstance(key, tuple):
+            return self._use_qsym2stm[key]
 
-    def get_def_stms_by_qsym(self, qsym):
-        return self._qsym_defs_stm[qsym]
+    def get_blks_defining(self, sym):
+        return self._def_sym2blk[sym]
 
-    def get_use_stms_by_qsym(self, qsym):
-        return self._qsym_uses_stm[qsym]
+    def get_blks_using(self, sym):
+        return self._use_sym2blk[sym]
 
-    def get_def_stms_by_var(self, var):
-        return self._var_defs_stm[var]
+    def get_vars_defined_at(self, key):
+        if isinstance(key, IRStm):
+            return self._def_stm2var[key]
+        elif isinstance(key, Block):
+            return self._def_blk2var[key]
 
-    def get_use_stms_by_var(self, var):
-        return self._var_uses_stm[var]
+    def get_vars_used_at(self, key):
+        if isinstance(key, IRStm):
+            return self._use_stm2var[key]
+        elif isinstance(key, Block):
+            return self._use_blk2var[key]
 
-    def get_def_blks_by_sym(self, sym):
-        return self._sym_defs_blk[sym]
+    def get_consts_used_at(self, stm):
+        return self._use_stm2const[stm]
 
-    def get_use_blks_by_sym(self, sym):
-        return self._sym_uses_blk[sym]
+    def get_syms_defined_at(self, blk):
+        return set([v.symbol() for v in self._def_blk2var[blk]])
 
-    def get_def_vars_by_stm(self, stm):
-        return self._stm_defs_var[stm]
+    def get_syms_used_at(self, blk):
+        return set([v.symbol() for v in self._use_blk2var[blk]])
 
-    def get_use_vars_by_stm(self, stm):
-        return self._stm_uses_var[stm]
-
-    def get_use_consts_by_stm(self, stm):
-        return self._stm_uses_const[stm]
-
-    def get_def_syms_by_blk(self, blk):
-        return set([v.symbol() for v in self._blk_defs_var[blk]])
-
-    def get_use_syms_by_blk(self, blk):
-        return set([v.symbol() for v in self._blk_uses_var[blk]])
-
-    def get_def_qsyms_by_blk(self, blk):
-        return set([v.qualified_symbol() for v in self._blk_defs_var[blk]])
-
-    def get_def_vars_by_blk(self, blk):
-        return self._blk_defs_var[blk]
-
-    def get_use_vars_by_blk(self, blk):
-        return self._blk_uses_var[blk]
+    def get_qsyms_defined_at(self, blk):
+        return set([v.qualified_symbol() for v in self._def_blk2var[blk]])
 
     def get_all_def_syms(self):
-        return self._sym_defs_stm.keys()
+        return self._def_sym2stm.keys()
 
     def get_all_use_syms(self):
-        return self._sym_uses_stm.keys()
+        return self._use_sym2stm.keys()
 
     def get_all_vars(self):
-        vs = list(self._var_defs_stm.keys())
-        vs.extend(self._var_uses_stm.keys())
+        vs = list(self._def_var2stm.keys())
+        vs.extend(self._use_var2stm.keys())
         return vs
 
     def dump(self):
         logger.debug('statements that has symbol defs')
-        for sym, stms in self._sym_defs_stm.items():
+        for sym, stms in self._def_sym2stm.items():
             logger.debug(sym)
             for stm in stms:
                 logger.debug('    ' + str(stm))
 
         logger.debug('blocks that has symbol defs')
-        for sym, blks in self._sym_defs_blk.items():
+        for sym, blks in self._def_sym2blk.items():
             logger.debug(sym)
             for blk in blks:
                 logger.debug('    ' + blk.name)
 
         logger.debug('statements that has symbol uses')
-        for sym, stms in self._sym_uses_stm.items():
+        for sym, stms in self._use_sym2stm.items():
             logger.debug(sym)
             for stm in stms:
                 logger.debug('    ' + str(stm))
 
         logger.debug('blocks that has symbol uses')
-        for sym, blks in self._sym_uses_blk.items():
+        for sym, blks in self._use_sym2blk.items():
             logger.debug(sym)
             for blk in blks:
                 logger.debug('    ' + blk.name)

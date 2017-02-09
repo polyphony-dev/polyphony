@@ -9,7 +9,7 @@ class VarReplacer:
         assert src.is_a([IRExp])
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(dst, src, usedef)
-        uses = list(usedef.get_use_stms_by_qsym(dst.qualified_symbol()))
+        uses = list(usedef.get_stms_using(dst.qualified_symbol()))
         for use in uses: 
             replacer.current_stm = use
             replacer.visit(use)

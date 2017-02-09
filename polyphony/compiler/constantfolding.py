@@ -85,7 +85,7 @@ def try_get_constant(sym, scope):
     assert scope.usedef
     if sym.ancestor:
         sym = sym.ancestor
-    defstms = scope.usedef.get_def_stms_by_sym(sym)
+    defstms = scope.usedef.get_stms_defining(sym)
     if not defstms:
         return None
     defstm = sorted(defstms, key=lambda s: s.program_order())[-1]
@@ -219,7 +219,7 @@ class ConstantOpt(ConstantOptBase):
                     worklist.remove(stm)
             if stm.is_a(MOVE) and stm.src.is_a(CONST) and stm.dst.is_a(TEMP) and not stm.dst.sym.is_return():
                 #sanity check
-                defstms = scope.usedef.get_def_stms_by_sym(stm.dst.symbol())
+                defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 assert len(defstms) <= 1
 
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
@@ -387,7 +387,7 @@ class GlobalConstantOpt(ConstantOptBase):
         udd.process(self.scope)
 
         for sym in self.scope.symbols.values():
-            defstms = self.scope.usedef.get_def_stms_by_sym(sym)
+            defstms = self.scope.usedef.get_stms_defining(sym)
             if len(defstms) > 1:
                 defstms = sorted(defstms, key=lambda s: s.program_order())
                 for i in range(len(defstms)-1):

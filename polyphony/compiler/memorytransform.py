@@ -58,7 +58,7 @@ class MemoryRenamer:
 
             memsym = mv.dst.symbol()
             memsrcs.append(memsym)
-            uses = usedef.get_use_stms_by_sym(memsym)
+            uses = usedef.get_stms_using(memsym)
             worklist.extend(list(uses))
 
         def merge_mem_var(src, dst):
@@ -134,10 +134,10 @@ class MemoryRenamer:
                 sym = stm.var.symbol()
 
             if sym:
-                uses = usedef.get_use_stms_by_sym(sym)
+                uses = usedef.get_stms_using(sym)
                 worklist.extend(list(uses))
                 for u in uses:
-                    for var in usedef.get_use_vars_by_stm(u):
+                    for var in usedef.get_vars_used_at(u):
                         if var.sym is sym:
                             sym2var[var.sym].add(var)
 

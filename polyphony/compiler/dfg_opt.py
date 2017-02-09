@@ -24,7 +24,7 @@ class DFGOptimizer:
                     continue
 
                 eliminated = copystm.src
-                using_stms = scope.usedef.get_use_stms_by_sym(eliminated.sym)
+                using_stms = scope.usedef.get_stms_using(eliminated.sym)
                 if len(using_stms) != 1:
                     continue
                 if copystm.dst.sym.is_return():

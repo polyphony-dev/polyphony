@@ -70,7 +70,7 @@ c7d16 = 100
  * defined (and storage allocated) before this routine is called.
  */
 '''
-def ChenIDct(x, y):
+def ChenIDct(x:list, y:list):
 
     def LS(r,s):
         return r << s

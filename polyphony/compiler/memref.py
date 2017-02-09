@@ -557,13 +557,13 @@ class MemRefGraphBuilder(IRVisitor):
                 elif stm.is_a(PHI):
                     memsym = stm.var.sym
                 
-                uses = usedef.get_use_stms_by_sym(memsym)
+                uses = usedef.get_stms_using(memsym)
                 uses = uses.difference(set(worklist))
                 worklist.extend(list(uses))
             # collect the access to a global list variable
             for sym in usedef.get_all_use_syms():
                 if (sym.scope.is_global() or sym.scope.is_class()) and sym.typ.is_seq():
-                    uses = usedef.get_use_stms_by_sym(sym)
+                    uses = usedef.get_stms_using(sym)
                     worklist.extend(list(uses))
 
         while worklist:

@@ -8,6 +8,7 @@ class Graph:
         self.pred_nodes = defaultdict(set)
         self.edges = set()
         self.nodes = set()
+        self.order_map_cache = None
 
     def __str__(self):
         s = ''
@@ -24,12 +25,16 @@ class Graph:
             if edge.src is node or edge.dst is node:
                 self.edges.remove(edge)
 
+    def has_node(self, node):
+        return node in self.nodes
+
     def add_edge(self, src_node, dst_node, flags = 0):
         self.add_node(src_node)
         self.add_node(dst_node)
         self.succ_nodes[src_node].add(dst_node)
         self.pred_nodes[dst_node].add(src_node)
         self.edges.add(Edge(src_node, dst_node, flags))
+        self.order_map_cache = None
 
     def del_edge(self, src_node, dst_node):
         self.succ_nodes[src_node].remove(dst_node)
@@ -41,6 +46,7 @@ class Graph:
             self.nodes.remove(src_node)
         if not self.succs(dst_node) and not self.preds(dst_node):
             self.nodes.remove(dst_node)
+        self.order_map_cache = None
 
     def find_edge(self, src_node, dst_node):
         for edge in self.edges:
@@ -61,18 +67,25 @@ class Graph:
         return [n for n in self.nodes if not self.succs(n)]
 
     def node_order_map(self):
-        def set_order(n, order):
+        def set_order(pred, n, order, visited_edges):
+            if (pred, n) in visited_edges:
+                return
+            visited_edges.add((pred, n))
             if order > order_map[n]:
                 order_map[n] = order
             order += 1
             for succ in [succ for succ in self.succs(n)]:
-                set_order(succ, order)
+                set_order(n, succ, order, visited_edges)
 
+        if self.order_map_cache:
+            return self.order_map_cache
         order_map = {}
         for n in self.nodes:
             order_map[n] = -1
+        visited_edges = set()
         for source in self.collect_sources():
-            set_order(source, 0)
+            set_order(None, source, 0, visited_edges)
+        self.order_map_cache = order_map
         return order_map
 
     # bfs(breadth-first-search)
@@ -95,3 +108,17 @@ class Graph:
         self.del_edge(old_pred, node)
         self.add_edge(new_pred, node)
 
+    def find_succ_node_if(self, node, predicate):
+        order_map = self.node_order_map()
+        def find_succ_node_if_r(start_node, node, predicate, order_map):
+            if order_map[node] < order_map[start_node]:
+                return
+            for succ in self.succs(node):
+                if preficate(succ):
+                    return succ
+                else:
+                    found = find_succ_node_if_r(start_node, succ, predicate, order_map)
+                    if found:
+                        return found
+            return None
+        return find_succ_node_if_r(node, node, predicate, order_map)

@@ -189,9 +189,9 @@ class LoopDependencyDetector:
         inner_uses = set()
         blocks = [lb.head] + lb.bodies
         for blk in blocks:
-            usesyms = usedef.get_use_syms_by_blk(blk)
+            usesyms = usedef.get_syms_used_at(blk)
             for sym in usesyms:
-                defblks = usedef.get_def_blks_by_sym(sym)
+                defblks = usedef.get_blks_defining(sym)
                 # Is this symbol used in the out of the loop?
                 intersect = outer_region.intersection(defblks)
                 if intersect:
@@ -200,9 +200,9 @@ class LoopDependencyDetector:
                 if intersect:
                     inner_defs.add(sym)
 
-            defsyms = usedef.get_def_syms_by_blk(blk)
+            defsyms = usedef.get_syms_defined_at(blk)
             for sym in defsyms:
-                useblks = usedef.get_use_blks_by_sym(sym)
+                useblks = usedef.get_blks_using(sym)
                 # Is this symbol used in the out of the loop?
                 intersect = outer_region.intersection(useblks)
                 if intersect:
@@ -318,7 +318,7 @@ class SimpleLoopUnroll:
         for stm in head.stms:
             if stm.is_a(CJUMP):
                 assert stm.exp.is_a(TEMP) and stm.exp.sym.is_condition()
-                defstms = usedef.get_def_stms_by_sym(stm.exp.sym)
+                defstms = usedef.get_stms_defining(stm.exp.sym)
                 assert len(defstms) == 1
                 mv = defstms.pop()
                 assert mv.is_a(MOVE)
@@ -329,7 +329,7 @@ class SimpleLoopUnroll:
                 break
         # find init value
         if induction:
-            defstms = usedef.get_def_stms_by_sym(induction.sym)
+            defstms = usedef.get_stms_defining(induction.sym)
             for stm in defstms:
                 if stm.block in head.preds and stm.block not in head.preds_loop:
                     assert stm.is_a(MOVE)
@@ -337,7 +337,7 @@ class SimpleLoopUnroll:
                     break
         # find step value
         for tail in tails:
-            defstms = usedef.get_def_stms_by_sym(induction.sym)
+            defstms = usedef.get_stms_defining(induction.sym)
             for stm in defstms:
                 if stm.block is tail and stm.is_a(MOVE) and stm.src.is_a(BINOP):
                     binop = stm.src
@@ -352,7 +352,7 @@ class SimpleLoopUnroll:
 
     def _get_single_assignment_vars(self, block):
         usedef = self.scope.usedef
-        usevars = usedef.get_use_vars_by_blk(block)
+        usevars = usedef.get_vars_used_at(block)
         use_result = []
         for var in usevars:
             if var.symbol().is_temp() or var.symbol().is_condition():
