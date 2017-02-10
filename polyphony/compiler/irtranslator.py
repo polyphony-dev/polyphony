@@ -639,7 +639,7 @@ class Visitor(ast.NodeVisitor):
         if node.keywords:
             print(self._err_info(node))
             raise NotImplementedError('keyword args is not supported')
-        if node.starargs:
+        if getattr(node, 'starargs', None) and node.starargs:
             print(self._err_info(node))
             raise NotImplementedError('star args is not supported')
         #stararg = self.visit(node.starargs)
