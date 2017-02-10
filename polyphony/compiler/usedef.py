@@ -131,14 +131,23 @@ class UseDefTable(object):
     def get_consts_used_at(self, stm):
         return self._use_stm2const[stm]
 
-    def get_syms_defined_at(self, blk):
-        return set([v.symbol() for v in self._def_blk2var[blk]])
+    def get_syms_defined_at(self, key):
+        if isinstance(key, IRStm):
+            return set([v.symbol() for v in self._def_stm2var[key]])
+        elif isinstance(key, Block):
+            return set([v.symbol() for v in self._def_blk2var[key]])
 
-    def get_syms_used_at(self, blk):
-        return set([v.symbol() for v in self._use_blk2var[blk]])
+    def get_syms_used_at(self, key):
+        if isinstance(key, IRStm):
+            return set([v.symbol() for v in self._use_stm2var[key]])
+        elif isinstance(key, Block):
+            return set([v.symbol() for v in self._use_blk2var[key]])
 
-    def get_qsyms_defined_at(self, blk):
-        return set([v.qualified_symbol() for v in self._def_blk2var[blk]])
+    def get_qsyms_defined_at(self, key):
+        if isinstance(key, IRStm):
+            return set([v.qualified_symbol() for v in self._use_stm2var[key]])
+        elif isinstance(key, Block):
+            return set([v.qualified_symbol() for v in self._use_blk2var[key]])
 
     def get_all_def_syms(self):
         return self._def_sym2stm.keys()
