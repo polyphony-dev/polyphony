@@ -1,4 +1,5 @@
-﻿from .ir import CONST, BINOP, RELOP, TEMP, MOVE, JUMP, CJUMP
+﻿from .ir import CONST, BINOP, RELOP, TEMP, ATTR, MOVE, JUMP, CJUMP
+from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
 from .usedef import UseDefDetector
 from .block import Block, CompositBlock
@@ -86,9 +87,8 @@ class LoopDetector(object):
         self._add_loop_tree_entry(head, lblks)
         self.scope.loop_nest_tree.set_root(head)
 
-        ldd = LoopDependencyDetector()
-        ldd.processs(scope)
-
+        LoopDependencyDetector().process(scope)
+        LoopVariableDetector().process(scope)
         #lbd = LoopBlockDestructor()
         #lbd.process(scope)
 
@@ -163,9 +163,48 @@ class LoopDetector(object):
             self.scope.loop_nest_tree.add_edge(parent, child)
 
 
+class LoopVariableDetector(IRVisitor):
+    def process(self, scope):
+        self.usedef = scope.usedef
+        super().process(scope)
+
+    def visit_MOVE(self, ir):
+        assert ir.dst.is_a([TEMP, ATTR])
+        sym = ir.dst.symbol()
+        if sym.is_temp() or sym.is_return() or sym.typ.is_port():
+            return
+        if ir.src.is_a([TEMP, ATTR]):
+            src_sym = ir.src.symbol()
+            if src_sym.is_param() or src_sym.typ.is_port():
+                return
+
+        stms = self.usedef.get_stms_defining(sym)
+        if len(stms) > 1:
+            return
+        if self._has_depend_cycle(ir, sym):
+            sym.add_tag('induction')
+
+    def _has_depend_cycle(self, start_stm, sym):
+        def _has_depend_cycle_r(start_stm, sym, visited):
+            stms = self.usedef.get_stms_using(sym)
+            if start_stm in stms:
+                return True
+            for stm in stms:
+                if stm in visited:
+                    continue
+                visited.add(stm)
+                defsyms = self.usedef.get_syms_defined_at(stm)
+                for defsym in defsyms:
+                    if _has_depend_cycle_r(start_stm, defsym, visited):
+                        return True
+            return False
+        visited = set()
+        return _has_depend_cycle_r(start_stm, sym, visited)
+
+
 # hierarchize
 class LoopDependencyDetector(object):
-    def processs(self, scope):
+    def process(self, scope):
         all_blks = set()
         scope.entry_block.collect_basic_blocks(all_blks)
         for lb in scope.loop_nest_tree.traverse():
