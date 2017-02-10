@@ -36,12 +36,11 @@
     <Compile Include="polyphony\compiler\builtin.py" />
     <Compile Include="polyphony\compiler\callgraph.py" />
     <Compile Include="polyphony\compiler\common.py" />
-    <Compile Include="polyphony\compiler\constantfolding.py" />
+    <Compile Include="polyphony\compiler\constopt.py" />
     <Compile Include="polyphony\compiler\copyopt.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="polyphony\compiler\dataflow.py" />
-    <Compile Include="polyphony\compiler\dfg_opt.py" />
     <Compile Include="polyphony\compiler\dominator.py" />
     <Compile Include="polyphony\compiler\driver.py" />
     <Compile Include="polyphony\compiler\env.py" />

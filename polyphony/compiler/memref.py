@@ -193,7 +193,7 @@ class JointNode(RefNode):
 
 class N2OneNode(JointNode):
     def __init__(self, succ):
-        super().__init__(Symbol.new('n2o_' + succ.sym.hdl_name(), Scope.global_scope()), None)
+        super().__init__(Symbol('n2o_' + succ.sym.hdl_name(), Scope.global_scope(), ['temp']), None)
         self.succs = [succ]
         self.orig_succs = [succ]
 
@@ -208,7 +208,7 @@ class N2OneNode(JointNode):
 
 class One2NNode(JointNode):
     def __init__(self, pred):
-        super().__init__(Symbol.new('o2n_' + pred.sym.hdl_name(), Scope.global_scope()), None)
+        super().__init__(Symbol('o2n_' + pred.sym.hdl_name(), Scope.global_scope(), ['temp']), None)
         self.preds = [pred]
         self.orig_preds = [pred]
 
@@ -691,7 +691,7 @@ class MemRefGraphBuilder(IRVisitor):
                     memsym.set_type(Type.tuple(Type.int(), memnode, ir.sym.typ.get_length()))
 
     def visit_ARRAY(self, ir):
-        ir.sym = self.scope.add_temp('array')
+        ir.sym = self.scope.add_temp('@array')
         self.mrg.add_node(MemRefNode(ir.sym, self.scope))
         memnode = self.mrg.node(ir.sym)
         memnode.set_initstm(self.current_stm)
@@ -712,7 +712,7 @@ class MemRefGraphBuilder(IRVisitor):
                 # we have to create a new list symbol for adding the memnode
                 # because the list symbol in the global or a class (memsym) is
                 # used for the source memnode
-                memsym = self.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
+                memsym = memsym.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
                 memsym.typ = Type.list(Type.int(), self.mrg.node(memsym))

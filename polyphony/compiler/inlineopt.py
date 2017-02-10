@@ -69,6 +69,8 @@ class InlineOpt(object):
                                                        str(self.inline_counts[caller]))
             result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
             result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+            assert result_sym.is_return()
+            result_sym.del_tag('return')
 
             block_map = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
@@ -104,6 +106,8 @@ class InlineOpt(object):
                                                        str(self.inline_counts[caller]))
             result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
             result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+            assert result_sym.is_return()
+            result_sym.del_tag('return')
 
             block_map = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
@@ -371,7 +375,10 @@ class FlattenFieldAccess(IRVisitor):
         if ir.tail().typ.is_object() and ir.tail().typ.get_scope().is_module():
             return
         flatname = self.make_flatname(ir)
-        flatsym = self.scope.gen_sym(flatname)
+        if self.scope.has_sym(flatname):
+            flatsym = self.scope.find_sym(flatname)
+        else:
+            flatsym = self.scope.add_sym(flatname, ir.attr.tags)
         flatsym.typ = ir.attr.typ
         flatsym.ancestor = ir.attr
         newtemp = TEMP(flatsym, ir.ctx)

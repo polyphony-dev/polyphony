@@ -161,7 +161,7 @@ class FunctionVisitor(ast.NodeVisitor):
         self.current_scope = Scope.create(outer_scope, node.name, tags, node.lineno)
 
         for arg in node.args.args:
-            param_in = self.current_scope.add_sym('{}_{}'.format(Symbol.param_prefix, arg.arg))
+            param_in = self.current_scope.add_param_sym(arg.arg)
             param_copy = self.current_scope.add_sym(arg.arg)
             if arg.annotation:
                 ann = self.annotation_visitor.visit(arg.annotation)
@@ -186,8 +186,8 @@ class FunctionVisitor(ast.NodeVisitor):
                 raise TypeError("Unknown type is specified.")
 
         if self.current_scope.is_method():
-            if (not self.current_scope.params or
-                    self.current_scope.params[0].sym.name != Symbol.param_prefix + '_self'):
+            if (not self.current_scope.params
+                    or not self.current_scope.params[0].sym.is_param()):
                 print(error_info(self.current_scope, node.lineno))
                 raise RuntimeError("Class method must have a {} parameter.".format(env.self_name))
             first_param = self.current_scope.params[0]
@@ -369,7 +369,10 @@ class CodeVisitor(ast.NodeVisitor):
             self.emit(JUMP(self.function_exit), node)
             self.current_block.connect(self.function_exit)
 
-        sym = self.current_scope.gen_sym(Symbol.return_prefix)
+        if self.current_scope.has_sym(Symbol.return_prefix):
+            sym = self.current_scope.find_sym(Symbol.return_prefix)
+        else:
+            sym = self.current_scope.add_return_sym()
         self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
 
         if self.function_exit.preds:
@@ -396,7 +399,7 @@ class CodeVisitor(ast.NodeVisitor):
         if not any([method.is_ctor() for method in self.current_scope.children]):
             ctor = Scope.create(self.current_scope, '__init__', ['method', 'ctor'], node.lineno)
             # add 'self' parameter
-            param_in = ctor.add_sym('{}_{}'.format(Symbol.param_prefix, env.self_name))
+            param_in = ctor.add_param_sym(env.self_name)
             param_in.typ = Type.object(self.current_scope)
             param_copy = ctor.add_sym(env.self_name)
             param_copy.typ = param_in.typ
@@ -406,13 +409,16 @@ class CodeVisitor(ast.NodeVisitor):
             ctor.set_entry_block(blk)
             ctor.set_exit_block(blk)
             # add necessary symbol
-            ctor.add_sym(Symbol.return_prefix)
+            ctor.add_return_sym()
 
         self._leave_scope(*context)
 
     def visit_Return(self, node):
         #TODO multiple return value
-        sym = self.current_scope.gen_sym(Symbol.return_prefix)
+        if self.current_scope.has_sym(Symbol.return_prefix):
+            sym = self.current_scope.find_sym(Symbol.return_prefix)
+        else:
+            sym = self.current_scope.add_return_sym()
         ret = TEMP(sym, Ctx.STORE)
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
@@ -626,6 +632,7 @@ class CodeVisitor(ast.NodeVisitor):
                 end = it.args[1]
                 step = it.args[2]
 
+            var.sym.add_tag('induction')
             init_parts = [
                 MOVE(TEMP(var.sym, Ctx.STORE), start)
             ]
@@ -648,7 +655,8 @@ class CodeVisitor(ast.NodeVisitor):
         elif it.is_a(TEMP):
             start = CONST(0)
             end  = SYSCALL('len', [(TEMP(it.sym, Ctx.LOAD))])
-            counter = self.current_scope.add_temp('@counter')
+            counter_name = Symbol.unique_name('@counter')
+            counter = self.current_scope.add_sym(counter_name, {'induction'})
             init_parts = [
                 MOVE(TEMP(counter, Ctx.STORE),
                      start)
@@ -671,7 +679,8 @@ class CodeVisitor(ast.NodeVisitor):
             unnamed_array = self.current_scope.add_temp('@unnamed')
             start = CONST(0)
             end  = SYSCALL('len', [(TEMP(unnamed_array, Ctx.LOAD))])
-            counter = self.current_scope.add_temp('@counter')
+            counter_name = Symbol.unique_name('@counter')
+            counter = self.current_scope.add_sym(counter_name, {'induction'})
             init_parts = [
                 MOVE(TEMP(unnamed_array, Ctx.STORE),
                      it),

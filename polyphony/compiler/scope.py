@@ -91,7 +91,7 @@ class Scope(Tagged):
                 s.is_worker() or (s.is_method() and s.parent.is_module()))
 
     def __init__(self, parent, name, tags, lineno):
-        super().__init__(tags, Scope.TAGS)
+        super().__init__(tags)
         self.name = name
         self.orig_name = name
         self.parent = parent
@@ -154,8 +154,10 @@ class Scope(Tagged):
     def clone_symbols(self, scope, postfix=''):
         symbol_map = {}
         for orig_sym in self.symbols.values():
-            new_sym = Symbol.new(orig_sym.name + postfix, scope)
-            new_sym.typ = orig_sym.typ
+            new_sym = Symbol(orig_sym.name + postfix,
+                             scope,
+                             set(orig_sym.tags),
+                             orig_sym.typ)
             assert new_sym.name not in scope.symbols
             scope.symbols[new_sym.name] = new_sym
             symbol_map[orig_sym] = new_sym
@@ -256,12 +258,30 @@ class Scope(Tagged):
             assert False
         callee.caller_scopes.add(self)
 
-    def add_sym(self, name):
+    def add_sym(self, name, tags=None):
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
-        sym = Symbol.new(name, self)
+        sym = Symbol(name, self, tags)
         self.symbols[name] = sym
         return sym
+
+    def add_temp(self, temp_name=None, tags=None):
+        name = Symbol.unique_name(temp_name)
+        if tags:
+            tags.add('temp')
+        else:
+            tags = {'temp'}
+        return self.add_sym(name, tags)
+
+    def add_condition_sym(self):
+        return self.add_temp(Symbol.condition_prefix, {'condition'})
+
+    def add_param_sym(self, param_name):
+        name = '{}_{}'.format(Symbol.param_prefix, param_name)
+        return self.add_sym(name, ['param'])
+
+    def add_return_sym(self):
+        return self.add_sym(Symbol.return_prefix, ['return'])
 
     def del_sym(self, name):
         if name in self.symbols:
@@ -271,11 +291,6 @@ class Scope(Tagged):
         if sym.name in self.symbols and sym is not self.symbols[sym.name]:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
         self.symbols[sym.name] = sym
-
-    def add_temp(self, name):
-        sym = Symbol.newtemp(name, self)
-        self.symbols[sym.name] = sym
-        return sym
 
     def find_sym(self, name):
         names = name.split('.')
@@ -302,8 +317,9 @@ class Scope(Tagged):
         return name in self.symbols
 
     def gen_sym(self, name):
-        sym = self.find_sym(name)
-        if not sym:
+        if self.has_sym(name):
+            sym = self.symbols[name]
+        else:
             sym = self.add_sym(name)
         return sym
 
@@ -316,22 +332,16 @@ class Scope(Tagged):
         return sym
 
     def inherit_sym(self, orig_sym, new_name):
-        new_sym = orig_sym.scope.gen_sym(new_name)
-        new_sym.typ = orig_sym.typ
-        if orig_sym.ancestor:
-            new_sym.ancestor = orig_sym.ancestor
+        assert orig_sym.scope is self
+        if self.has_sym(new_name):
+            new_sym = self.symbols[new_name]
         else:
-            new_sym.ancestor = orig_sym
-        return new_sym
-
-    def gen_refsym(self, orig_sym):
-        new_name = Symbol.ref_prefix + '_' + orig_sym.name
-        new_sym = self.gen_sym(new_name)
-        new_sym.typ = orig_sym.typ
-        if orig_sym.ancestor:
-            new_sym.ancestor = orig_sym.ancestor
-        else:
-            new_sym.ancestor = orig_sym
+            new_sym = self.add_sym(new_name, orig_sym.tags)
+            new_sym.typ = orig_sym.typ
+            if orig_sym.ancestor:
+                new_sym.ancestor = orig_sym.ancestor
+            else:
+                new_sym.ancestor = orig_sym
         return new_sym
 
     def qualified_name(self):

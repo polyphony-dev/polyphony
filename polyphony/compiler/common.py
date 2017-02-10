@@ -54,19 +54,19 @@ def error_info(scope, lineno):
 
 
 class Tagged(object):
-    def __init__(self, tags, valid_tags):
+    def __init__(self, tags):
         if isinstance(tags, list):
-            self.tags = set(tags)
-        else:
-            assert isinstance(tags, set)
-            self.tags = tags
-        self.valid_tags = valid_tags
-        assert self.tags.issubset(valid_tags)
+            tags = set(tags)
+        elif tags is None:
+            tags = set()
+        assert isinstance(tags, set)
+        self.tags = tags
+        assert self.tags.issubset(self.TAGS)
 
     def __getattr__(self, name):
         if name.startswith('is_'):
             tag = name[3:]
-            if tag not in self.valid_tags:
+            if tag not in self.TAGS:
                 raise AttributeError(name)
             return lambda: tag in self.tags
         else:

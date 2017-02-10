@@ -115,7 +115,8 @@ class SSATransformerBase(object):
             assert var.is_a([TEMP, ATTR])
             if self._need_rename(var.symbol()):
                 new_name = var.symbol().name + '#' + str(version)
-                new_sym = self.scope.inherit_sym(var.symbol(), new_name)
+                var_sym = var.symbol()
+                new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
                 logger.debug(str(new_sym) + ' ancestor is ' + str(var.symbol()))
                 var.set_symbol(new_sym)
 

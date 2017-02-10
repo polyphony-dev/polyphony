@@ -11,9 +11,7 @@ class Signal(Tagged):
     }
 
     def __init__(self, name, width, tags):
-        if tags is None:
-            tags = set()
-        super().__init__(tags, Signal.TAGS)
+        super().__init__(tags)
         self.name = name
         self.width = width
 

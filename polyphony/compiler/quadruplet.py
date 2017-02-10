@@ -22,8 +22,7 @@ class QuadrupleMaker(IRTransformer):
         super().__init__()
         self.suppress_converting = False
 
-    def _new_temp_move(self, ir, prefix):
-        tmpsym = self.scope.add_temp(prefix)
+    def _new_temp_move(self, ir, tmpsym):
         t = TEMP(tmpsym, Ctx.STORE)
         t.lineno = ir.lineno
         mv = MOVE(t, ir)
@@ -70,18 +69,18 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress:
             return ir
-        return self._new_temp_move(ir, Symbol.temp_prefix)
+        return self._new_temp_move(ir, self.scope.add_temp())
 
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        return self._new_temp_move(ir, Symbol.condition_prefix)
+        return self._new_temp_move(ir, self.scope.add_condition_sym())
 
     def visit_CONDOP(self, ir):
         ir.cond = self.visit(ir.cond)
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        return self._new_temp_move(ir, Symbol.temp_prefix)
+        return self._new_temp_move(ir, self.scope.add_temp())
 
     def _has_return_type(self, ir):
         if ir.is_a(CALL):
@@ -94,7 +93,7 @@ class QuadrupleMaker(IRTransformer):
             ir.args[i] = self.visit(ir.args[i])
             assert ir.args[i].is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
             if ir.args[i].is_a(ARRAY):
-                ir.args[i] = self._new_temp_move(ir.args[i], Symbol.temp_prefix)
+                ir.args[i] = self._new_temp_move(ir.args[i], self.scope.add_temp())
 
     def visit_CALL(self, ir):
         #suppress converting
@@ -106,7 +105,7 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress or not self._has_return_type(ir):
             return ir
-        return self._new_temp_move(ir, Symbol.temp_prefix)
+        return self._new_temp_move(ir, self.scope.add_temp())
 
     def visit_SYSCALL(self, ir):
         #suppress converting
@@ -117,7 +116,7 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress or not self._has_return_type(ir):
             return ir
-        return self._new_temp_move(ir, Symbol.temp_prefix)
+        return self._new_temp_move(ir, self.scope.add_temp())
 
     def visit_NEW(self, ir):
         #suppress converting
@@ -128,7 +127,7 @@ class QuadrupleMaker(IRTransformer):
 
         if suppress:
             return ir
-        return self._new_temp_move(ir, Symbol.temp_prefix)
+        return self._new_temp_move(ir, self.scope.add_temp())
 
     def visit_CONST(self, ir):
         return ir
@@ -142,7 +141,7 @@ class QuadrupleMaker(IRTransformer):
         assert ir.offset.is_a([TEMP, ATTR, CONST, UNOP])
 
         if not suppress and ir.ctx & Ctx.LOAD:
-            return self._new_temp_move(ir, Symbol.temp_prefix)
+            return self._new_temp_move(ir, self.scope.add_temp())
         return ir
 
     def visit_MSTORE(self, ir):
