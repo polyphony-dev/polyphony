@@ -1,5 +1,4 @@
 ﻿from .ir import *
-from .common import funclog
 from .symbol import Symbol
 from .irvisitor import IRTransformer
 from .type import Type
@@ -16,6 +15,7 @@ from .common import error_info
 # -  mem[offset] <= tmp
 # -  if condition then bb1 else bb2
 # -  goto bb
+
 
 class QuadrupleMaker(IRTransformer):
     def __init__(self):
@@ -57,8 +57,8 @@ class QuadrupleMaker(IRTransformer):
                 return array
             #if ir.right.is_a(CONST) and ir.op == 'Mult':
             ##    #array times n
-             #   array = ir.left
-             #   time = ir.right.value
+            #   array = ir.left
+            #   time = ir.right.value
             #    if not array.items:
             #        raise RuntimeError('unsupported expression')
             #    else:
@@ -85,7 +85,7 @@ class QuadrupleMaker(IRTransformer):
 
     def _has_return_type(self, ir):
         if ir.is_a(CALL):
-            return True# ir.func_scope.return_type != Type.none_t
+            return True  # ir.func_scope.return_type != Type.none_t
         elif ir.is_a(SYSCALL):
             return builtin_return_type_table[ir.name] != Type.none_t
 
@@ -191,7 +191,9 @@ class QuadrupleMaker(IRTransformer):
             self.suppress_converting = True
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
-        assert ir.src.is_a([TEMP, ATTR, CONST, UNOP, BINOP, MREF, MSTORE, CALL, NEW, SYSCALL, ARRAY])
+        assert ir.src.is_a([TEMP, ATTR, CONST, UNOP,
+                            BINOP, MREF, MSTORE, CALL,
+                            NEW, SYSCALL, ARRAY])
         assert ir.dst.is_a([TEMP, ATTR, MREF, ARRAY])
 
         if ir.dst.is_a(MREF):
@@ -209,4 +211,3 @@ class QuadrupleMaker(IRTransformer):
             ir.src.lineno = ir.lineno
             ir.dst.lineno = ir.lineno
         self.new_stms.append(ir)
-

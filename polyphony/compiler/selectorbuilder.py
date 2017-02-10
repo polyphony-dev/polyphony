@@ -1,18 +1,12 @@
-from collections import OrderedDict
-from .verilog_common import pyop2verilogop
+from collections import defaultdict
 from .ir import Ctx
-from .signal import Signal
 from .ahdl import *
-from .env import env
-from .type import Type
 from .hdlinterface import *
-from .memref import One2NMemNode, N2OneMemNode
-from .utils import unique
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class SelectorBuilder:
+class SelectorBuilder(object):
     def __init__(self):
         pass
 
@@ -94,13 +88,18 @@ class SelectorBuilder:
 
             else:
                 if p.dir == 'in':
-                    selector = AHDL_MUX('{}_{}_selector'.format(name, port_name), switch_var, branches[port_name], trunk[port_name])
+                    selector = AHDL_MUX('{}_{}_selector'.format(name, port_name),
+                                        switch_var,
+                                        branches[port_name],
+                                        trunk[port_name])
                     self.module_info.add_mux(selector, tag)
 
                 else:
-                    selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name), switch_var, trunk[port_name], branches[port_name])
+                    selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name),
+                                          switch_var,
+                                          trunk[port_name],
+                                          branches[port_name])
                     self.module_info.add_demux(selector, tag)
-
 
     def _to_n2one_interconnect(self, name, inifs, outif, cs_name):
         tag = name
@@ -132,10 +131,16 @@ class SelectorBuilder:
         for p in outif.ports:
             port_name = p.basename
             if p.dir == 'in':
-                selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name), switch_var, trunk[port_name], branches[port_name])
+                selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name),
+                                      switch_var,
+                                      trunk[port_name],
+                                      branches[port_name])
                 self.module_info.add_demux(selector, tag)
             else:
-                selector = AHDL_MUX('{}_{}_selector'.format(name, port_name), switch_var, branches[port_name], trunk[port_name])
+                selector = AHDL_MUX('{}_{}_selector'.format(name, port_name),
+                                    switch_var,
+                                    branches[port_name],
+                                    trunk[port_name])
                 self.module_info.add_mux(selector, tag)
 
     def _build_sub_module(self, inf, acc):
@@ -143,7 +148,7 @@ class SelectorBuilder:
         for p in inf.ports:
             int_name = acc.port_name('', p)
             sig = self.scope.gen_sig(int_name, p.width)
-            if p.dir=='in' and not acc.thru:
+            if p.dir == 'in' and not acc.thru:
                 self.module_info.add_internal_reg(sig, tag)
                 reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
                 self.module_info.add_fsm_reset_stm(self.scope.orig_name, reset_stm)
@@ -155,12 +160,10 @@ class SelectorBuilder:
             if info.scope and info.scope.is_module():
                 self._build_sub_module(*connections[0])
                 continue
-            infs = []
             # TODO
             for inf, acc in connections:
                 if not inf.is_public:
                     continue
-            
                 trunk = {}
                 branches = defaultdict(list)
                 tag = acc.name
@@ -173,7 +176,7 @@ class SelectorBuilder:
                     int_name = acc.port_name('', p)
                     sig = self.scope.gen_sig(int_name, p.width)
                     branches[p.basename].append(sig)
-                    if p.dir=='in' and not acc.thru:
+                    if p.dir == 'in' and not acc.thru:
                         self.module_info.add_internal_reg(sig, tag)
                         reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
                         self.module_info.add_fsm_reset_stm(self.scope.orig_name, reset_stm)
@@ -191,19 +194,20 @@ class SelectorBuilder:
                             assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), concat)
                             self.module_info.add_static_assignment(assign, tag)
                         else:
-                            assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), AHDL_VAR(branches[port_name][0], Ctx.LOAD))
+                            assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE),
+                                                 AHDL_VAR(branches[port_name][0], Ctx.LOAD))
                             self.module_info.add_static_assignment(assign, tag)
                     else:
                         for sig in branches[port_name]:
-                            assign = AHDL_ASSIGN(AHDL_VAR(sig, Ctx.STORE), AHDL_VAR(trunk[port_name], Ctx.LOAD))
+                            assign = AHDL_ASSIGN(AHDL_VAR(sig, Ctx.STORE),
+                                                 AHDL_VAR(trunk[port_name], Ctx.LOAD))
                             self.module_info.add_static_assignment(assign, tag)
-                                
-            if False: #env.hdl_debug_mode and not self.scope.is_testbench():
+            if False:  # env.hdl_debug_mode and not self.scope.is_testbench():
                 self.emit('always @(posedge clk) begin')
                 self.emit('if (rst==0 && {}!={}) begin'.format(self.current_state_sig.name, 0))
                 for a in accessors:
                     for p in a.ports:
-                        #aname = self._accessor_name(name, a, p)
+                        # aname = self._accessor_name(name, a, p)
                         aname = a.port_name(name, p)
                         self.emit('$display("%8d:ACCESSOR :{}      {} = 0x%2h (%1d)", $time, {}, {});'.format(self.scope.orig_name, aname, aname, aname))
                 self.emit('end')

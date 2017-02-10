@@ -1,10 +1,10 @@
 from .common import error_info
 from .scope import Scope
-from .symbol import Symbol
 from .ir import *
 from .irvisitor import IRTransformer
 from .type import Type
 from .typecheck import TypePropagation
+
 
 class PortTypeProp(TypePropagation):
     def visit_NEW(self, ir):
@@ -39,7 +39,7 @@ class PortConverter(IRTransformer):
         for m in modules:
             for caller in m.caller_scopes:
                 typeprop.process(caller)
-        
+
             ctor = m.find_ctor()
             typeprop.process(ctor)
             self.process(ctor)
@@ -79,7 +79,8 @@ class PortConverter(IRTransformer):
 
     def visit_SYSCALL(self, ir):
         if ir.name.startswith('polyphony.timing.wait_'):
-            if ir.name == 'polyphony.timing.wait_rising' or ir.name == 'polyphony.timing.wait_falling':
+            if (ir.name == 'polyphony.timing.wait_rising' or
+                    ir.name == 'polyphony.timing.wait_falling'):
                 ports = ir.args
             elif ir.name == 'polyphony.timing.wait_edge':
                 ports = ir.args[2:]

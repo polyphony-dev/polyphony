@@ -3,7 +3,7 @@ from .ahdlvisitor import AHDLVisitor
 from .graph import Graph
 
 
-class StateReducer:
+class StateReducer(object):
     def process(self, scope):
         if not scope.stgs:
             return
@@ -22,11 +22,13 @@ class StateReducer:
 class StateGraph(Graph):
     pass
 
+
 class StateGraphBuilder(AHDLVisitor):
     def _walk_state(self, init_state, state, visited):
         if state in visited:
             return
         visited.add(state)
+
         self.next_states = []
         for code in state.codes:
             self.visit(code)

@@ -1,15 +1,16 @@
 ﻿from collections import defaultdict
-from .block import Block, CompositBlock
+from .block import CompositBlock
 from .ir import *
 from .env import env
 from logging import getLogger
 logger = getLogger(__name__)
 
-class DFNode:
+
+class DFNode(object):
     def __init__(self, typ, tag):
-        self.typ = typ #'Stm', 'Loop', 'Block'
+        self.typ = typ  # 'Stm', 'Loop', 'Block'
         self.tag = tag
-        self.priority = -1 # 0 is highest priority
+        self.priority = -1  # 0 is highest priority
         self.begin = -1
         self.end = -1
         if typ == 'Stm':
@@ -20,11 +21,29 @@ class DFNode:
 
     def __str__(self):
         if self.typ == 'Stm':
-            s = 'Node {} {} {}:{} {} {}'.format(hex(self.__hash__())[-4:], self.priority, self.begin, self.end, self.tag, self.tag.block.name)
+            s = 'Node {} {} {}:{} {} {}'.format(
+                hex(self.__hash__())[-4:],
+                self.priority,
+                self.begin,
+                self.end,
+                self.tag,
+                self.tag.block.name
+            )
         elif self.typ == 'Loop':
-            s = 'Node {} {} {}:{} Loop {}'.format(hex(self.__hash__())[-4:], self.priority, self.begin, self.end, self.tag.name)
+            s = 'Node {} {} {}:{} Loop {}'.format(
+                hex(self.__hash__())[-4:],
+                self.priority,
+                self.begin,
+                self.end,
+                self.tag.name
+            )
         elif self.typ == 'Block':
-            s = 'Node {} {} {}:{} Block'.format(hex(self.__hash__())[-4:], self.priority, self.begin, self.end)
+            s = 'Node {} {} {}:{} Block'.format(
+                hex(self.__hash__())[-4:],
+                self.priority,
+                self.begin,
+                self.end
+            )
         else:
             assert False
         return s
@@ -36,7 +55,7 @@ class DFNode:
         return self.priority < other.priority
 
 
-class DataFlowGraph:
+class DataFlowGraph(object):
     def __init__(self, name, blocks):
         self.name = name
         self.blocks = blocks
@@ -75,7 +94,6 @@ class DataFlowGraph:
             s += '{}{} {}\n'.format(back_edge, prefix1, n1)
             s += '{}{} {}\n'.format(back_edge, prefix2, n2)
         return s
-
 
     def set_child(self, child):
         self.children.append(child)
@@ -130,17 +148,14 @@ class DataFlowGraph:
     def _is_back_edge(self, n1, n2):
         return self._stm_order_gt(n1.tag, n2.tag)
 
-
     def _get_stm(self, node):
         return node.tag
-
 
     def _stm_order_gt(self, stm1, stm2):
         if stm1.block is stm2.block:
             return stm1.block.stms.index(stm1) > stm2.block.stms.index(stm2)
         else:
             return stm1.block.order > stm2.block.order
-
 
     def succs(self, node):
         succs = []
@@ -262,13 +277,13 @@ class DataFlowGraph:
     def get_loop_nodes(self):
         return filter(lambda n: n.typ == 'Loop', self.nodes)
 
-    
     def write_dot(self, name):
         try:
             import pydot
         except ImportError:
             return
         g = pydot.Dot(name, graph_type='digraph')
+
         def get_node_tag_text(node):
             s = hex(node.__hash__())[-5:-1] + '_' + str(node.tag)
             if len(s) > 50:
@@ -276,7 +291,7 @@ class DataFlowGraph:
             else:
                 return s
 
-        node_map = {n:pydot.Node(get_node_tag_text(n), shape='box') for n in self.nodes}
+        node_map = {n: pydot.Node(get_node_tag_text(n), shape='box') for n in self.nodes}
         for n in node_map.values():
             g.add_node(n)
 
@@ -294,7 +309,7 @@ class DataFlowGraph:
                 else:
                     g.add_edge(pydot.Edge(dotn1, dotn2, style='dashed', color='blue'))
         if self.edges:
-            g.write_png('.tmp/' + name+'.png')
+            g.write_png('.tmp/' + name + '.png')
             #g.write_svg(name+'.svg')
             #g.write(name+'.dot')
 
@@ -304,6 +319,7 @@ class DataFlowGraph:
         except ImportError:
             return
         G = pgv.AGraph(directed=True, strict=False, landscape='false')
+
         def get_node_tag_text(node):
             s = str(node.tag)
             if len(s) > 50:
@@ -324,7 +340,8 @@ class DataFlowGraph:
         G.draw('{}_{}_dfg.png'.format(name, self.name), prog='dot')
         logger.debug('drawing dot is done')
 
-class DFGBuilder:
+
+class DFGBuilder(object):
     def __init__(self):
         pass
 
@@ -380,7 +397,6 @@ class DFGBuilder:
             for succ in succs:
                 logger.debug(succ)
 
-
     def _make_graph(self, name, blocks):
         logger.debug('make graph ' + name)
         dfg = DataFlowGraph(name, blocks)
@@ -390,7 +406,7 @@ class DFGBuilder:
             for stm in b.stms:
                 logger.log(0, 'loop head ' + name + ' :: ' + str(stm))
                 usenode = dfg.add_stm_node(stm)
-                
+
                 # collect source nodes
                 self._add_source_node(usenode, dfg, usedef, blocks)
 
@@ -418,7 +434,6 @@ class DFGBuilder:
         self._add_mem_edges(dfg)
         self._add_special_seq_edges(dfg)
         return dfg
-
 
     def _add_source_node(self, node, dfg, usedef, blocks):
         stm = node.tag
@@ -463,7 +478,6 @@ class DFGBuilder:
             if len(call.args) == 0 or has_mem_arg(call.args):
                 dfg.src_nodes.add(node)
 
-
     def _is_constant_stm(self, stm):
         if stm.is_a(PHI):
             return True
@@ -486,14 +500,12 @@ class DFGBuilder:
             if any(c.is_a(CONST) for c in stm.conds[:-1]):
                 return True
         return False
-        
 
     def _all_stms(self, blocks):
         all_stms_in_section = []
         for b in blocks:
             all_stms_in_section.extend(b.stms)
         return all_stms_in_section
-
 
     def _node_order_by_ctrl(self, node):
         return (node.tag.block.order, node.tag.block.stms.index(node.tag))
@@ -520,11 +532,10 @@ class DFGBuilder:
                             node_groups[mem_group].append(node)
         for nodes in node_groups.values():
             sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
-            for i in range(len(sorted_nodes)-1):
+            for i in range(len(sorted_nodes) - 1):
                 n1 = sorted_nodes[i]
-                n2 = sorted_nodes[i+1]
+                n2 = sorted_nodes[i + 1]
                 dfg.add_seq_edge(n1, n2)
-
 
     def _add_edges_between_func_modules(self, blocks, dfg):
         """this function is used for testbench only"""
@@ -582,12 +593,10 @@ class DFGBuilder:
                 stm = node.tag
                 #assert len(stm.block.stms) > 1
                 assert stm.block.stms[-1] is stm
-                idx = stm.block.stms.index(stm)
                 for prev_stm in stm.block.stms[:-1]:
                     prev_node = dfg.find_node(prev_stm)
                     dfg.add_seq_edge(prev_node, node)
 
-    
     def _has_timing_function(self, stm):
         if stm.is_a(MOVE):
             call = stm.src

@@ -4,6 +4,7 @@ from .dataflow import DataFlowGraph
 MINIMUM_STEP = 1
 CALL_MINIMUM_STEP = MINIMUM_STEP * 2
 
+
 def get_latency(tag):
     if isinstance(tag, DataFlowGraph):
         #TODO:

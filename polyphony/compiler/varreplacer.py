@@ -2,7 +2,8 @@
 from logging import getLogger
 logger = getLogger(__name__)
 
-class VarReplacer:
+
+class VarReplacer(object):
     @classmethod
     def replace_uses(cls, dst, src, usedef):
         assert dst.is_a([TEMP, ATTR])
@@ -10,11 +11,10 @@ class VarReplacer:
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(dst, src, usedef)
         uses = list(usedef.get_stms_using(dst.qualified_symbol()))
-        for use in uses: 
+        for use in uses:
             replacer.current_stm = use
             replacer.visit(use)
         return replacer.replaces
-
 
     def __init__(self, dst, src, usedef):
         super().__init__()
@@ -126,7 +126,6 @@ class VarReplacer:
 
     def visit_PHI(self, ir):
         self.replaced = False
-        args = ir.args[:]
         ir.args = [self.visit(arg) for arg in ir.args]
         if self.replaced:
             self.replaces.append(ir)
@@ -138,4 +137,3 @@ class VarReplacer:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
         return visitor(ir)
-            

@@ -1,16 +1,12 @@
 ﻿from collections import deque, defaultdict
-from .varreplacer import VarReplacer
 from .ir import *
-from .symbol import Symbol
-from .type import Type
-from .irvisitor import IRTransformer, IRVisitor
+from .irvisitor import IRVisitor
 from .env import env
-from .scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class MemoryRenamer:
+class MemoryRenamer(object):
     def _collect_def_mem_stm(self, scope):
         stms = []
         for block in scope.traverse_blocks():
@@ -18,7 +14,9 @@ class MemoryRenamer:
                 if stm.is_a(MOVE):
                     if stm.src.is_a(ARRAY):
                         stms.append(stm)
-                    elif stm.src.is_a(TEMP) and stm.src.sym.is_param() and stm.src.sym.typ.is_list():
+                    elif (stm.src.is_a(TEMP) and
+                          stm.src.sym.is_param() and
+                          stm.src.sym.typ.is_list()):
                         stms.append(stm)
         return stms
 
@@ -49,7 +47,7 @@ class MemoryRenamer:
         worklist = deque()
         stms = self._collect_def_mem_stm(scope)
         mem_var_map = defaultdict(set)
-        memsrcs = []#tuple([mv.dst.sym for mv in stms])
+        memsrcs = []  # tuple([mv.dst.sym for mv in stms])
 
         for mv in stms:
             logger.debug('!!! mem def stm ' + str(mv))
@@ -91,7 +89,9 @@ class MemoryRenamer:
                     else:
                         assert stm.src.sym in memsrcs
                         mem = stm.src.sym
-                        if stm.dst.sym in mem_var_map and mem in mem_var_map[stm.dst.sym] and stm in dones:
+                        if (stm.dst.sym in mem_var_map and
+                                mem in mem_var_map[stm.dst.sym] and
+                                stm in dones):
                             # reach fix point ?
                             continue
                         mem_var_map[stm.dst.sym].add(mem)
@@ -110,7 +110,9 @@ class MemoryRenamer:
                     else:
                         assert stm.src.mem.sym in memsrcs
                         mem = stm.src.mem.sym
-                        if stm.dst.sym in mem_var_map and mem in mem_var_map[stm.dst.sym] and stm in dones:
+                        if (stm.dst.sym in mem_var_map and
+                                mem in mem_var_map[stm.dst.sym] and
+                                stm in dones):
                             # reach fix point ?
                             continue
                         mem_var_map[stm.dst.sym].add(mem)
@@ -125,7 +127,9 @@ class MemoryRenamer:
                         updated = merge_mem_var(arg, stm.var)
                     elif arg.symbol() in memsrcs:
                         mem = arg.symbol()
-                        if stm.var.symbol() != mem and (stm.var.symbol() not in mem_var_map or mem not in mem_var_map[stm.var.symbol()]):
+                        if (stm.var.symbol() != mem and
+                                (stm.var.symbol() not in mem_var_map or
+                                 mem not in mem_var_map[stm.var.symbol()])):
                             mem_var_map[stm.var.symbol()].add(mem)
                             updated = True
                 # reach fix point ?
@@ -166,6 +170,7 @@ class MemCollector(IRVisitor):
         if ir.sym.typ.is_list() and not ir.sym.is_param():
             self.stm_map[ir.sym].append(self.current_stm)
 
+
 class ContextModifier(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -178,7 +183,8 @@ class ContextModifier(IRVisitor):
                 if memnode.is_writable():
                     arg.ctx = Ctx.LOAD | Ctx.STORE
 
-class RomDetector:
+
+class RomDetector(object):
     def _propagate_writable_flag(self):
         for node in self.mrg.collect_top_module_nodes():
             node.set_writable()
@@ -210,4 +216,3 @@ class RomDetector:
         self.mrg = env.memref_graph
         self._propagate_info()
         self._propagate_writable_flag()
-

@@ -1,18 +1,17 @@
-﻿from collections import OrderedDict
-from .verilog_common import pyop2verilogop
+﻿from .verilog_common import pyop2verilogop
 from .ir import Ctx
 from .signal import Signal
 from .ahdl import *
+from .ahdlvisitor import AHDLVisitor
 from .env import env
 from .common import INT_WIDTH
-from .type import Type
 from .hdlinterface import *
 from .memref import One2NMemNode, N2OneMemNode
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class VerilogCodeGen:
+class VerilogCodeGen(AHDLVisitor):
     def __init__(self, scope):
         self.codes = []
         self.indent = 0
@@ -24,31 +23,30 @@ class VerilogCodeGen:
 
     def emit(self, code, with_indent=True, newline=True):
         if with_indent:
-            self.codes.append((' '*self.indent) + code)
+            self.codes.append((' ' * self.indent) + code)
         else:
             self.codes.append(code)
         if newline:
             self.codes.append('\n')
 
     def tab(self):
-        return ' '*self.indent
-    
+        return ' ' * self.indent
+
     def set_indent(self, val):
         self.indent += val
 
     def generate(self):
-        """
-        output verilog module format:
+        """Output verilog module format:
 
-        module {module_name}
-        {params}
-        {portdefs}
-        {localparams}
-        {internal_regs}
-        {internal_nets}
-        {functions}
-        {fsm}
-        endmodule
+           module {module_name}
+           {params}
+           {portdefs}
+           {localparams}
+           {internal_regs}
+           {internal_nets}
+           {functions}
+           {fsm}
+           endmodule
         """
 
         self.set_indent(2)
@@ -92,7 +90,7 @@ class VerilogCodeGen:
 
         self.emit('endcase')
         self.set_indent(-2)
-        self.emit('end')#end if (READY)
+        self.emit('end')  # end if (READY)
         self.set_indent(-2)
         self.emit('end')
         self.emit('')
@@ -106,14 +104,14 @@ class VerilogCodeGen:
         self.set_indent(2)
         self._generate_localparams()
         self._generate_decls()
-        self._generate_sub_module_instances()        
+        self._generate_sub_module_instances()
         self._generate_edge_detector()
         self._generate_net_monitor()
         self.set_indent(-2)
 
     def _generate_module_header(self):
         self.emit('module {}'.format(self.module_info.qualified_name))
-        
+
         self.set_indent(2)
         self.emit('(')
         self.set_indent(2)
@@ -134,12 +132,12 @@ class VerilogCodeGen:
                 continue
             for p in i.ports:
                 ports.append(self._to_io_name(self.module_info.name, i, p))
-        self.emit((',\n'+self.tab()).join(ports))
+        self.emit((',\n' + self.tab()).join(ports))
         self.emit('')
-                
+
     def _generate_signal(self, sig):
         sign = 'signed' if sig.is_int() else ''
-        return '{:<6} [{}:0] {}'.format(sign, sig.width-1, sig.name)
+        return '{:<6} [{}:0] {}'.format(sign, sig.width - 1, sig.name)
 
     def _generate_localparams(self):
         constants = self.module_info.constants + self.module_info.state_constants
@@ -157,9 +155,13 @@ class VerilogCodeGen:
             for tag, nets in self.module_info.get_net_decls(with_array=False):
                 for net in nets:
                     if net.sig.is_onehot():
-                        self.emit('$display("%8d:WIRE  :{}      {} = 0b%b", $time, {});'.format(self.scope.orig_name, net.sig, net.sig))
+                        self.emit(
+                            '$display("%8d:WIRE  :{}      {} = 0b%b", $time, {});'.
+                            format(self.scope.orig_name, net.sig, net.sig))
                     else:
-                        self.emit('$display("%8d:WIRE  :{}      {} = 0x%2h (%1d)", $time, {}, {});'.format(self.scope.orig_name, net.sig, net.sig, net.sig))
+                        self.emit(
+                            '$display("%8d:WIRE  :{}      {} = 0x%2h (%1d)", $time, {}, {});'.
+                            format(self.scope.orig_name, net.sig, net.sig, net.sig))
             self.emit('end')
             self.emit('end')
             self.emit('')
@@ -181,17 +183,22 @@ class VerilogCodeGen:
                     self.visit(decl)
 
     def _to_io_name(self, module_name, interface, port):
-        io = 'input' if port.dir=='in' else 'output'
-        typ = 'wire' if port.dir=='in' or interface.thru else 'reg'
+        io = 'input' if port.dir == 'in' else 'output'
+        typ = 'wire' if port.dir == 'in' or interface.thru else 'reg'
         port_name = interface.port_name(module_name, port)
 
         if port.width == 1:
             ioname = '{} {} {}'.format(io, typ, port_name)
         else:
             if port.signed:
-                ioname = '{} {} signed [{}:0] {}'.format(io, typ, port.width-1, port_name)
+                ioname = '{} {} signed [{}:0] {}'.format(io,
+                                                         typ, port.width - 1,
+                                                         port_name)
             else:
-                ioname = '{} {} [{}:0] {}'.format(io, typ, port.width-1, port_name)
+                ioname = '{} {} [{}:0] {}'.format(io,
+                                                  typ,
+                                                  port.width - 1,
+                                                  port_name)
         return ioname
 
     def _to_sub_module_connect(self, module_name, instance_name, inf, acc, port):
@@ -199,12 +206,13 @@ class VerilogCodeGen:
         accessor_name = acc.port_name("sub", port)
         connection = '.{}({})'.format(port_name, accessor_name)
         return connection
-                
+
     def _generate_sub_module_instances(self):
         if not self.module_info.sub_modules:
             return
         self.emit('//sub modules')
-        for name, info, connections, param_map in sorted(self.module_info.sub_modules.values(), key=lambda n: str(n)):
+        for name, info, connections, param_map in sorted(self.module_info.sub_modules.values(),
+                                                         key=lambda n: str(n)):
             ports = []
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
@@ -224,18 +232,18 @@ class VerilogCodeGen:
 
                 self.emit('{}#('.format(info.qualified_name))
                 self.set_indent(2)
-                self.emit('{}'.format((',\n'+self.tab()).join(params)))
+                self.emit('{}'.format((',\n' + self.tab()).join(params)))
                 self.emit(')')
                 self.emit('{}('.format(name))
                 self.set_indent(2)
-                self.emit('{}'.format((',\n'+self.tab()).join(ports)))
+                self.emit('{}'.format((',\n' + self.tab()).join(ports)))
                 self.set_indent(-2)
                 self.emit(');')
                 self.set_indent(-2)
             else:
                 self.emit('{} {}('.format(info.qualified_name, name))
                 self.set_indent(2)
-                self.emit('{}'.format((',\n'+self.tab()).join(ports)))
+                self.emit('{}'.format((',\n' + self.tab()).join(ports)))
                 self.set_indent(-2)
                 self.emit(');')
         self.emit('')
@@ -257,7 +265,12 @@ class VerilogCodeGen:
             delayed_name = '{}_d'.format(sig.name)
             detect_var_name = 'is_{}_change_{}_to_{}'.format(sig.name, old, new)
             self.emit('wire {};'.format(detect_var_name))
-            self.emit('assign {} = ({}=={} && {}=={});'.format(detect_var_name, delayed_name, old, sig.name, new))
+            self.emit('assign {} = ({}=={} && {}=={});'.
+                      format(detect_var_name,
+                             delayed_name,
+                             old,
+                             sig.name,
+                             new))
 
     def _process_State(self, state):
         self.current_state = state
@@ -265,7 +278,9 @@ class VerilogCodeGen:
         self.emit(code)
         self.set_indent(2)
         if env.hdl_debug_mode:
-            self.emit('$display("%8d:STATE:{}  {}", $time);'.format(self.scope.orig_name, state.name))
+            self.emit('$display("%8d:STATE:{}  {}", $time);'.
+                      format(self.scope.orig_name,
+                             state.name))
 
         for code in state.codes:
             self.visit(code)
@@ -275,11 +290,11 @@ class VerilogCodeGen:
 
     def visit_AHDL_CONST(self, ahdl):
         if ahdl.value is None:
-            return "'bx";
+            return "'bx"
         elif isinstance(ahdl.value, bool):
             return str(int(ahdl.value))
         elif isinstance(ahdl.value, str):
-            return '"' + ahdl.value +'"'
+            return '"' + ahdl.value + '"'
         return str(ahdl.value)
 
     def visit_AHDL_VAR(self, ahdl):
@@ -310,7 +325,7 @@ class VerilogCodeGen:
         else:
             exp = self.visit(ahdl.args[0])
             return '{}{}'.format(pyop2verilogop(ahdl.op), exp)
-            
+
     def visit_AHDL_NOP(self, ahdl):
         if isinstance(ahdl.info, AHDL):
             self.emit('/*')
@@ -318,7 +333,7 @@ class VerilogCodeGen:
             self.emit('*/')
         else:
             self.emit('/*' + str(ahdl.info) + '*/')
-        
+
     def _memswitch(self, prefix, dst_node, src_node):
         n2o = dst_node.pred_branch()
         assert isinstance(n2o, N2OneMemNode)
@@ -326,7 +341,7 @@ class VerilogCodeGen:
             assert isinstance(p, One2NMemNode)
         assert isinstance(src_node.preds[0], One2NMemNode)
         assert src_node in n2o.orig_preds
-        
+
         preds = [p for p in n2o.preds if self.scope in p.scopes]
         width = len(preds)
         if width < 2:
@@ -339,8 +354,8 @@ class VerilogCodeGen:
         else:
             cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
         one_hot_mask = bin(1 << idx)[2:]
-        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE), AHDL_SYMBOL('\'b'+one_hot_mask)))
-
+        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
+                             AHDL_SYMBOL('\'b' + one_hot_mask)))
 
     def visit_AHDL_MOVE(self, ahdl):
         if ahdl.dst.is_a(AHDL_VAR) and (ahdl.dst.sig.is_condition() or ahdl.dst.sig.is_net()):
@@ -355,7 +370,8 @@ class VerilogCodeGen:
             src = self.visit(ahdl.src)
             dst = self.visit(ahdl.dst)
             if env.hdl_debug_mode:
-                self.emit('$display("%8d:REG  :{}      {} <= 0x%2h (%1d)", $time, {}, {});'.format(self.scope.orig_name, dst, src, src))
+                self.emit('$display("%8d:REG  :{}      {} <= 0x%2h (%1d)", $time, {}, {});'.
+                          format(self.scope.orig_name, dst, src, src))
             self.emit('{} <= {};'.format(dst, src))
 
     def _memif_names(self, sig, memnode):
@@ -373,38 +389,48 @@ class VerilogCodeGen:
         return (req, addr, we, d, q, len)
 
     def _is_sequential_access_to_mem(self, ahdl):
-        other_memnodes = [c.mem.memnode for c in self.current_state.codes \
-                       if c.is_a([AHDL_STORE, AHDL_LOAD]) and c is not ahdl]
+        other_memnodes = [c.mem.memnode for c in self.current_state.codes
+                          if c.is_a([AHDL_STORE, AHDL_LOAD]) and c is not ahdl]
         for memnode in other_memnodes:
             if memnode is ahdl.mem.memnode:
                 return True
         return False
-        
+
     def visit_AHDL_STORE(self, ahdl):
         req, addr, we, d, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr), ahdl.offset))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(we), AHDL_CONST(1)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(1)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(d), ahdl.src))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr),
+                             ahdl.offset))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(we),
+                             AHDL_CONST(1)))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
+                             AHDL_CONST(1)))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(d),
+                             ahdl.src))
 
     def visit_POST_AHDL_STORE(self, ahdl):
         if self._is_sequential_access_to_mem(ahdl):
             return
         req, _, _, _, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(0)))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
+                             AHDL_CONST(0)))
 
     def visit_AHDL_LOAD(self, ahdl):
         req, addr, we, _, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr), ahdl.offset))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(we), AHDL_CONST(0)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(1)))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr),
+                             ahdl.offset))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(we),
+                             AHDL_CONST(0)))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
+                             AHDL_CONST(1)))
 
     def visit_POST_AHDL_LOAD(self, ahdl):
         req, _, _, _, q, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(ahdl.dst, AHDL_SYMBOL(q)))
+        self.visit(AHDL_MOVE(ahdl.dst,
+                             AHDL_SYMBOL(q)))
         if self._is_sequential_access_to_mem(ahdl):
             return
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req), AHDL_CONST(0)))
+        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
+                             AHDL_CONST(0)))
 
     def visit_AHDL_POST_PROCESS(self, ahdl):
         method = 'visit_POST_' + ahdl.factor.__class__.__name__
@@ -419,7 +445,7 @@ class VerilogCodeGen:
     def visit_AHDL_IF(self, ahdl):
         cond0 = self.visit(ahdl.conds[0])
         if cond0[0] != '(':
-            cond0 = '('+cond0+')'
+            cond0 = '(' + cond0 + ')'
         self.emit('if {} begin'.format(cond0))
         self.set_indent(2)
         for code in ahdl.codes_list[0]:
@@ -429,7 +455,7 @@ class VerilogCodeGen:
             if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1):
                 cond = self.visit(cond)
                 if cond[0] != '(':
-                    cond = '('+cond+')'
+                    cond = '(' + cond + ')'
                 self.emit('end else if {} begin'.format(cond))
                 self.set_indent(2)
                 for code in codes:
@@ -457,7 +483,7 @@ class VerilogCodeGen:
         else:
             params = ahdl.scope.params
         for arg, param in zip(ahdl.args, params):
-            p, _, _ = param            
+            p, _, _ = param
             if arg.is_a(AHDL_MEMVAR):
                 assert p.typ.is_seq()
                 param_memnode = p.typ.get_memnode()
@@ -467,11 +493,15 @@ class VerilogCodeGen:
                 if is_joinable_param and param_memnode.is_writable():
                     self._memswitch(ahdl.instance_name, param_memnode, arg.memnode)
             else:
-                argsig = self.scope.gen_sig('{}_{}'.format(ahdl.prefix, p.hdl_name()), INT_WIDTH, ['int'])
-                self.visit(AHDL_MOVE(AHDL_VAR(argsig, Ctx.STORE), arg))
+                argsig = self.scope.gen_sig('{}_{}'.format(ahdl.prefix, p.hdl_name()),
+                                            INT_WIDTH,
+                                            ['int'])
+                self.visit(AHDL_MOVE(AHDL_VAR(argsig, Ctx.STORE),
+                                     arg))
 
         ready = self.scope.gen_sig(ahdl.prefix + '_ready', 1)
-        self.visit(AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(1)))
+        self.visit(AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE),
+                             AHDL_CONST(1)))
 
     def visit_AHDL_FUNCALL(self, ahdl):
         return '{}({})'.format(ahdl.name, ', '.join([self.visit(arg) for arg in ahdl.args]))
@@ -483,7 +513,7 @@ class VerilogCodeGen:
             args.append(a)
 
         if ahdl.name == '!hdl_print':
-            fmts = ['%s' if a[0]=='"' else '%1d' for a in args]
+            fmts = ['%s' if a[0] == '"' else '%1d' for a in args]
             self.emit('$display("{}", {});'.format(' '.join(fmts), ', '.join(args)))
         elif ahdl.name == '!hdl_verilog_display':
             self.emit('$display({});'.format(', '.join(args)))
@@ -521,10 +551,16 @@ class VerilogCodeGen:
     def visit_AHDL_SIGNAL_ARRAY_DECL(self, ahdl):
         nettype = 'reg' if ahdl.sig.is_reg() else 'wire'
         if ahdl.sig.width == 1:
-            self.emit('{} {}[0:{}];'.format(nettype, ahdl.sig.name, ahdl.size-1))
+            self.emit('{} {}[0:{}];'.format(nettype,
+                                            ahdl.sig.name,
+                                            ahdl.size - 1))
         else:
             sign = 'signed' if ahdl.sig.is_int() else ''
-            self.emit('{} {:<6} [{}:0] {} [0:{}];'.format(nettype, sign, ahdl.sig.width-1, ahdl.sig.name, ahdl.size-1))
+            self.emit('{} {:<6} [{}:0] {} [0:{}];'.format(nettype,
+                                                          sign,
+                                                          ahdl.sig.width - 1,
+                                                          ahdl.sig.name,
+                                                          ahdl.size - 1))
 
     def visit_AHDL_ASSIGN(self, ahdl):
         src = self.visit(ahdl.src)
@@ -539,33 +575,47 @@ class VerilogCodeGen:
     def visit_SET_READY(self, ahdl):
         modulecall = ahdl.args[0]
         value = ahdl.args[1]
-        ready = self.scope.gen_sig('{}_{}'.format(modulecall.prefix, 'ready'), 1, ['reg'])
-        self.visit(AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(value)))
+        ready = self.scope.gen_sig('{}_{}'.format(modulecall.prefix, 'ready'),
+                                   1,
+                                   ['reg'])
+        self.visit(AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE),
+                             AHDL_CONST(value)))
 
     def visit_ACCEPT_IF_VALID(self, ahdl):
         modulecall = ahdl.args[0]
-        valid = self.scope.gen_sig(modulecall.prefix+'_valid', 1, ['net'])
-        accept = self.scope.gen_sig(modulecall.prefix+'_accept', 1, ['reg'])
-        cond = AHDL_OP('Eq', AHDL_VAR(valid, Ctx.LOAD), AHDL_CONST(1))
+        valid = self.scope.gen_sig(modulecall.prefix + '_valid', 1, ['net'])
+        accept = self.scope.gen_sig(modulecall.prefix + '_accept', 1, ['reg'])
+        cond = AHDL_OP('Eq',
+                       AHDL_VAR(valid, Ctx.LOAD),
+                       AHDL_CONST(1))
         codes = []
-        codes.append(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE), AHDL_CONST(1)))
+        codes.append(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE),
+                               AHDL_CONST(1)))
         self.visit(AHDL_IF([cond], [codes]))
 
     def visit_GET_RET_IF_VALID(self, ahdl):
         modulecall = ahdl.args[0]
         dst = ahdl.args[1]
-        valid = self.scope.gen_sig(modulecall.prefix+'_valid', 1, ['net'])
-        cond = AHDL_OP('Eq', AHDL_VAR(valid, Ctx.LOAD), AHDL_CONST(1))
+        valid = self.scope.gen_sig(modulecall.prefix + '_valid', 1, ['net'])
+        cond = AHDL_OP('Eq',
+                       AHDL_VAR(valid, Ctx.LOAD),
+                       AHDL_CONST(1))
         codes = []
-        sub_out = self.scope.gen_sig(modulecall.prefix+'_out_0', INT_WIDTH, ['net', 'int']) # FIXME '_out_0'
-        codes.append(AHDL_MOVE(dst, AHDL_VAR(sub_out, Ctx.LOAD)))
+        sub_out = self.scope.gen_sig(modulecall.prefix + '_out_0',  # FIXME '_out_0'
+                                     INT_WIDTH,
+                                     ['net', 'int'])
+        codes.append(AHDL_MOVE(dst,
+                               AHDL_VAR(sub_out, Ctx.LOAD)))
         self.visit(AHDL_IF([cond], [codes]))
 
     def visit_SET_ACCEPT(self, ahdl):
         modulecall = ahdl.args[0]
         value = ahdl.args[1]
-        accept = self.scope.gen_sig('{}_{}'.format(modulecall.prefix, 'accept'), 1, ['reg'])
-        self.visit(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE), AHDL_CONST(value)))
+        accept = self.scope.gen_sig('{}_{}'.format(modulecall.prefix, 'accept'),
+                                    1,
+                                    ['reg'])
+        self.visit(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE),
+                             AHDL_CONST(value)))
 
     def visit_AHDL_META(self, ahdl):
         method = 'visit_' + ahdl.metaid
@@ -581,7 +631,8 @@ class VerilogCodeGen:
             codes = ahdl.codes[:]
         else:
             codes = []
-        codes.append(AHDL_MOVE(valid, AHDL_CONST(0)))
+        codes.append(AHDL_MOVE(valid,
+                               AHDL_CONST(0)))
         codes.append(ahdl.transition)
         ahdl_if = AHDL_IF(conds, [codes])
         self.visit(ahdl_if)
@@ -591,7 +642,8 @@ class VerilogCodeGen:
         accept  = AHDL_SYMBOL('{}_{}'.format(name, 'accept'))
         valid  = AHDL_SYMBOL('{}_{}'.format(name, 'valid'))
 
-        self.visit(AHDL_MOVE(valid, AHDL_CONST(1)))
+        self.visit(AHDL_MOVE(valid,
+                             AHDL_CONST(1)))
 
         conds = [AHDL_OP('Eq', accept, AHDL_CONST(1))]
         codes_list = [
@@ -605,8 +657,10 @@ class VerilogCodeGen:
     def visit_WAIT_RET_AND_GATE(self, ahdl):
         conds = []
         for modulecall in ahdl.args[0]:
-            valid = self.scope.gen_sig(modulecall.prefix+'_valid', 1, ['net'])
-            conds.append(AHDL_OP('Eq', AHDL_VAR(valid, Ctx.LOAD), AHDL_CONST(1)))
+            valid = self.scope.gen_sig(modulecall.prefix + '_valid', 1, ['net'])
+            conds.append(AHDL_OP('Eq',
+                                 AHDL_VAR(valid, Ctx.LOAD),
+                                 AHDL_CONST(1)))
         op = conds[0]
         for cond in conds[1:]:
             op = AHDL_OP('And', op, cond)
@@ -654,14 +708,15 @@ class VerilogCodeGen:
         return visitor(ahdl)
 
     def visit_AHDL_FUNCTION(self, ahdl):
-        self.emit('function [{}:0] {} ('.format(ahdl.output.sig.width-1, ahdl.output.sig.name))
+        self.emit('function [{}:0] {} ('.format(ahdl.output.sig.width - 1,
+                                                ahdl.output.sig.name))
         self.set_indent(2)
         last_idx = len(ahdl.inputs) - 1
         for idx, input in enumerate(ahdl.inputs):
             if idx == last_idx:
-                self.emit('input [{}:0] {}'.format(input.sig.width-1, input.sig.name))
+                self.emit('input [{}:0] {}'.format(input.sig.width - 1, input.sig.name))
             else:
-                self.emit('input [{}:0] {},'.format(input.sig.width-1, input.sig.name))
+                self.emit('input [{}:0] {},'.format(input.sig.width - 1, input.sig.name))
         #self.emit(',\n'.join([str(i) for i in ahdl.inputs]))
         self.set_indent(-2)
         self.emit(');')
@@ -670,7 +725,7 @@ class VerilogCodeGen:
         for stm in ahdl.stms:
             self.visit(stm)
         self.set_indent(-2)
-        self.emit('end')        
+        self.emit('end')
         self.emit('endfunction')
 
     def visit_AHDL_CASE(self, ahdl):
@@ -686,18 +741,17 @@ class VerilogCodeGen:
         self.visit(ahdl.stm)
 
     def visit_AHDL_MUX(self, ahdl):
-        self.emit('function [{}:0] {} ('.format(ahdl.output.width-1, ahdl.name))
+        self.emit('function [{}:0] {} ('.format(ahdl.output.width - 1, ahdl.name))
         self.set_indent(2)
-        
-        self.emit('input [{}:0] {},'.format(ahdl.selector.sig.width-1, ahdl.selector.sig.name))
-        
+        self.emit('input [{}:0] {},'.format(ahdl.selector.sig.width - 1, ahdl.selector.sig.name))
+
         last_idx = len(ahdl.inputs) - 1
         for idx, input in enumerate(ahdl.inputs):
             if idx == last_idx:
-                self.emit('input [{}:0] {}'.format(input.width-1, input.name))
+                self.emit('input [{}:0] {}'.format(input.width - 1, input.name))
             else:
-                self.emit('input [{}:0] {},'.format(input.width-1, input.name))
-            
+                self.emit('input [{}:0] {},'.format(input.width - 1, input.name))
+
         self.set_indent(-2)
         self.emit(');')
         self.emit('begin')
@@ -706,7 +760,10 @@ class VerilogCodeGen:
         self.emit('case (1\'b1)')
         self.set_indent(2)
         for i, input in enumerate(ahdl.inputs):
-            self.emit("{}[{}]: {} = {};".format(ahdl.selector.sig.name, i, ahdl.name, input.name))
+            self.emit("{}[{}]: {} = {};".format(ahdl.selector.sig.name,
+                                                i,
+                                                ahdl.name,
+                                                input.name))
         self.set_indent(-2)
         self.emit('endcase')
         self.set_indent(-2)
@@ -721,9 +778,17 @@ class VerilogCodeGen:
         if len(ahdl.outputs) > 1:
             for i, output in enumerate(ahdl.outputs):
                 if isinstance(ahdl.input, Signal):
-                    self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;'.format(output.name, ahdl.selector.sig.name, i, ahdl.input.name, ahdl.input.width))
+                    input_name = ahdl.input.name
+                    input_width = ahdl.input.width
                 elif isinstance(ahdl.input, int):
-                    self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;'.format(output.name, ahdl.selector.sig.name, i, ahdl.input, ahdl.width))
+                    input_name = ahdl.input
+                    input_width = ahdl.width
+                self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;'
+                          .format(output.name,
+                                  ahdl.selector.sig.name,
+                                  i,
+                                  input_name,
+                                  input_width))
         else:
             self.emit('assign {} = {};'.format(ahdl.outputs[0].name, ahdl.input.name))
 
@@ -734,9 +799,3 @@ class VerilogCodeGen:
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
         self.visit_AHDL_IF(ahdl)
-
-    def visit(self, ahdl):
-        method = 'visit_' + ahdl.__class__.__name__
-        visitor = getattr(self, method, None)
-        return visitor(ahdl)
-

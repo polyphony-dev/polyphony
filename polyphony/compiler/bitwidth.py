@@ -1,12 +1,9 @@
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
-from .irvisitor import IRVisitor
 from .ir import *
-from .scope import Scope
-from .type import Type
-from .builtin import builtin_return_type_table
 import logging
 logger = logging.getLogger(__name__)
+
 
 class BitwidthReducer(AHDLVisitor):
     def process(self, scope):
@@ -27,7 +24,7 @@ class BitwidthReducer(AHDLVisitor):
             elif ahdl.value > 0:
                 return ahdl.value.bit_length()
             else:
-                return ahdl.value.bit_length()+1
+                return ahdl.value.bit_length() + 1
         elif isinstance(ahdl.value, str):
             return 1
         elif ir.value is None:
@@ -48,16 +45,16 @@ class BitwidthReducer(AHDLVisitor):
         if ahdl.is_relop():
             return 1
         widths = [self.visit(a) for a in ahdl.args]
-        
+
         if ahdl.op == 'BitAnd':
-            width = min(widths) + 1 # +1 means signbit for signed destination
+            width = min(widths) + 1  # +1 means signbit for signed destination
         elif ahdl.op == 'Sub':
             width = widths[0]
         elif ahdl.op == 'LShift':
-            assert len(ahdl.args)==2
-            width = widths[0] + (1<<widths[1])-1
+            assert len(ahdl.args) == 2
+            width = widths[0] + (1 << widths[1]) - 1
         elif ahdl.op == 'RShift':
-            assert len(ahdl.args)==2
+            assert len(ahdl.args) == 2
             width = widths[0]
             if ahdl.args[1].is_a(AHDL_CONST):
                 width -= ahdl.args[1].value
@@ -65,7 +62,7 @@ class BitwidthReducer(AHDLVisitor):
             width = max(widths)
         if width < 0:
             width = 1
-        elif width > 64: # TODO
+        elif width > 64:  # TODO
             width = 64
         return width
 
@@ -93,7 +90,7 @@ class BitwidthReducer(AHDLVisitor):
             return
         if dst_sig.width > srcw:
             dst_sig.width = srcw
-        
+
     def visit_AHDL_STORE(self, ahdl):
         pass
 
@@ -123,4 +120,3 @@ class BitwidthReducer(AHDLVisitor):
         lw = self.visit(ahdl.lexp)
         rw = self.visit(ahdl.rexp)
         return lw if lw >= rw else rw
-

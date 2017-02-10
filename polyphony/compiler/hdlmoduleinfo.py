@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict
-from logging import getLogger, DEBUG
+from logging import getLogger
 from .hdlinterface import *
 from . import libs
 from .env import env
@@ -7,7 +7,8 @@ from .ahdl import *
 
 logger = getLogger(__name__)
 
-class FSM:
+
+class FSM(object):
     def __init__(self):
         self.name = None
         self.state_var = None
@@ -15,12 +16,13 @@ class FSM:
         self.outputs = set()
         self.reset_stms = []
 
-class HDLModuleInfo:
+
+class HDLModuleInfo(object):
     #Port = namedtuple('Port', ['name', 'width'])
     def __init__(self, scope, name, qualified_name):
         self.scope = scope
         self.name = name
-        self.qualified_name = qualified_name[len('@top')+1:].replace('.', '_')
+        self.qualified_name = qualified_name[len('@top') + 1:].replace('.', '_')
         self.interfaces = []
         self.interconnects = []
         self.parameters = []
@@ -177,9 +179,10 @@ class HDLModuleInfo:
     def add_edge_detector(self, sig, old, new):
         self.edge_detectors.add((sig, old, new))
 
+
 class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):
-        super().__init__(None, 'ram', '@top'+'.BidirectionalSinglePortRam')
+        super().__init__(None, 'ram', '@top' + '.BidirectionalSinglePortRam')
         self.ramif = RAMInterface('', data_width, addr_width, is_public=True)
         self.add_interface(self.ramif)
         env.add_using_lib(libs.bidirectional_single_port_ram)

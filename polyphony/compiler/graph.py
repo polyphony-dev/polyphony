@@ -2,7 +2,8 @@ from collections import defaultdict, namedtuple
 
 Edge = namedtuple('Edge', ('src', 'dst', 'flags'))
 
-class Graph:
+
+class Graph(object):
     def __init__(self):
         self.succ_nodes = defaultdict(set)
         self.pred_nodes = defaultdict(set)
@@ -28,7 +29,7 @@ class Graph:
     def has_node(self, node):
         return node in self.nodes
 
-    def add_edge(self, src_node, dst_node, flags = 0):
+    def add_edge(self, src_node, dst_node, flags=0):
         self.add_node(src_node)
         self.add_node(dst_node)
         self.succ_nodes[src_node].add(dst_node)
@@ -104,17 +105,18 @@ class Graph:
         self.del_edge(node, old_succ)
         self.add_edge(node, new_succ)
 
-    def replace_pred(self, node, old_pred, new_ored):
+    def replace_pred(self, node, old_pred, new_pred):
         self.del_edge(old_pred, node)
         self.add_edge(new_pred, node)
 
     def find_succ_node_if(self, node, predicate):
         order_map = self.node_order_map()
+
         def find_succ_node_if_r(start_node, node, predicate, order_map):
             if order_map[node] < order_map[start_node]:
                 return
             for succ in self.succs(node):
-                if preficate(succ):
+                if predicate(succ):
                     return succ
                 else:
                     found = find_succ_node_if_r(start_node, succ, predicate, order_map)

@@ -1,18 +1,11 @@
-﻿from collections import defaultdict, namedtuple
-from .signal import Signal
+﻿from collections import namedtuple
 
 Port = namedtuple('Port', ('basename', 'width', 'dir', 'signed'))
 
-'''
-module I/O port
-  <interface prefix>_<param name>
 
-sub module access port
-  <instance name>_<interface prefix>_<param name>
-'''
-
-class Interface:
+class Interface(object):
     ANY = -1
+
     def __init__(self, name, thru, is_public):
         self.name = name
         self.ports = []
@@ -20,7 +13,8 @@ class Interface:
         self.is_public = is_public
 
     def __str__(self):
-        ports = '{' + ', '.join(['<{}:{}:{}>'.format(p.basename, p.width, p.dir) for p in self.ports]) + '}'
+        # ports = ', '.join(['<{}:{}:{}>'.format(p.basename, p.width, p.dir)
+        #                   for p in self.ports])
         return self.name
 
     def __lt__(self, other):
@@ -45,7 +39,7 @@ class Interface:
                 yield p
 
     def port_name(self, prefix, port):
-        pfx = prefix+'_' if prefix else ''
+        pfx = prefix + '_' if prefix else ''
         if self.name:
             if port.basename:
                 return pfx + '{}_{}'.format(self.name, port.basename)
@@ -55,6 +49,7 @@ class Interface:
             assert port.basename
             return pfx + port.basename
 
+
 class PlainInterface(Interface):
     def port_name(self, prefix, port):
         return port.basename
@@ -63,6 +58,7 @@ class PlainInterface(Interface):
         acc = PlainAccessor(name, False, False)
         acc.ports = self.ports[:]
         return acc
+
 
 class PlainAccessor(Interface):
     def port_name(self, prefix, port):
@@ -75,13 +71,14 @@ class PlainAccessor(Interface):
             assert port.basename
             return port.basename
 
+
 class FunctionInterface(Interface):
-    def __init__(self, name, thru = False, is_method = False):
+    def __init__(self, name, thru=False, is_method=False):
         super().__init__(name, thru, is_public=True)
         self.is_method = is_method
-        self.ports.append(Port('ready',  1, 'in', False))
+        self.ports.append(Port('ready', 1, 'in', False))
         self.ports.append(Port('accept', 1, 'in', False))
-        self.ports.append(Port('valid',  1, 'out', False))
+        self.ports.append(Port('valid', 1, 'out', False))
 
     def add_data_in(self, din_name, width, signed):
         self.ports.append(Port(din_name, width, 'in', signed))
@@ -103,6 +100,7 @@ class FunctionInterface(Interface):
         inf.ports = list(self.ports)
         return inf
 
+
 class RAMInterface(Interface):
     def __init__(self, name, data_width, addr_width, thru=False, is_public=False):
         super().__init__(name, thru=thru, is_public=is_public)
@@ -120,13 +118,15 @@ class RAMInterface(Interface):
     def shared_accessor(self, name):
         return RAMInterface(name, self.data_width, self.addr_width, thru=True, is_public=True)
 
+
 class RAMAccessInterface(RAMInterface):
     def __init__(self, name, data_width, addr_width, flip=False, thru=False):
         super().__init__(name, data_width, addr_width, thru, is_public=True)
         self.ports.append(Port('req', 1, 'in', False))
         if flip:
             self._flip_direction()
-        
+
+
 class RegArrayInterface(Interface):
     def __init__(self, name, data_width, length):
         super().__init__(name, thru=True, is_public=True)
@@ -140,7 +140,7 @@ class RegArrayInterface(Interface):
         return RegArrayInterface(name, self.data_width, self.length)
 
     def port_name(self, prefix, port):
-        pfx = prefix+'_' if prefix else ''
+        pfx = prefix + '_' if prefix else ''
         if self.name:
             if port.basename:
                 return pfx + '{}{}'.format(self.name, port.basename)
@@ -151,7 +151,7 @@ class RegArrayInterface(Interface):
             return pfx + port.basename
 
 
-class Interconnect:
+class Interconnect(object):
     def __init__(self, name, ins, outs, cs_name=''):
         self.name = name
         self.ins = ins
@@ -159,9 +159,9 @@ class Interconnect:
         self.cs_name = cs_name
 
     def __str__(self):
-        s = self.name+'\n'
+        s = self.name + '\n'
         for i in self.ins:
-            s += str(i)+'\n'
+            s += str(i) + '\n'
         for o in self.outs:
-            s += str(o)+'\n'
+            s += str(o) + '\n'
         return s

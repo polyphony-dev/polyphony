@@ -5,6 +5,7 @@ from .type import Type
 from .builtin import builtin_return_type_table
 from .common import error_info
 from .env import env
+from .symbol import Symbol
 import logging
 logger = logging.getLogger(__name__)
 
@@ -13,8 +14,10 @@ def type_error(ir, msg):
     print(error_info(ir.block.scope, ir.lineno))
     raise TypeError(msg)
 
+
 class RejectPropagation(Exception):
     pass
+
 
 class TypePropagation(IRVisitor):
     def __init__(self):
@@ -23,7 +26,10 @@ class TypePropagation(IRVisitor):
 
     def propagate_global_function_type(self):
         self.check_error = False
-        scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True, with_lib=True)
+        scopes = Scope.get_scopes(bottom_up=False,
+                                  with_global=True,
+                                  with_class=True,
+                                  with_lib=True)
         for s in scopes:
             if s.return_type is None:
                 s.return_type = Type.none_t
@@ -40,7 +46,9 @@ class TypePropagation(IRVisitor):
             if untyped:
                 if len(prev_untyped) == len(untyped):
                     str_untypes = ', '.join([s.name[len('@top.'):] for s in untyped])
-                    raise TypeError('BUG: can not complete the type inference process for ' + str_untypes)
+                    raise TypeError(
+                        'BUG: can not complete the type inference process for ' +
+                        str_untypes)
                 prev_untyped = untyped[:]
                 continue
             break
@@ -109,7 +117,7 @@ class TypePropagation(IRVisitor):
                 raise RejectPropagation(str(ir))
             #assert ir.func_scope.is_method()
             if ir.func_scope.is_mutable():
-                pass #ir.func.exp.ctx |= Ctx.STORE
+                pass  # ir.func.exp.ctx |= Ctx.STORE
         else:
             assert False
 
@@ -133,7 +141,9 @@ class TypePropagation(IRVisitor):
             for i, param in enumerate(params):
                 if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
                     param.sym.typ = arg_types[i]
-            funct = Type.function(ir.func_scope, ret_t, tuple([param.sym.typ for param in ir.func_scope.params]))
+            funct = Type.function(ir.func_scope,
+                                  ret_t,
+                                  tuple([param.sym.typ for param in ir.func_scope.params]))
 
         ir.func.symbol().set_type(funct)
 
@@ -157,8 +167,6 @@ class TypePropagation(IRVisitor):
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
                 param.sym.typ = arg_types[i]
-        funct = Type.function(ctor, ret_t, tuple([param.sym.typ for param in ctor.params[1:]]))
-
         return ret_t
 
     def visit_CONST(self, ir):
@@ -220,7 +228,8 @@ class TypePropagation(IRVisitor):
 
     def _propagate_worker_arg_types(self, call):
         if len(call.args) == 0:
-            type_error(self.current_stm, "{}() missing required argument".format(call.func_scope.orig_name))
+            type_error(self.current_stm,
+                       "{}() missing required argument".format(call.func_scope.orig_name))
         func = call.args[0]
         if not func.symbol().typ.is_function():
             type_error(self.current_stm, "!!!")
@@ -243,17 +252,20 @@ class TypePropagation(IRVisitor):
         arg_types = [self.visit(arg) for arg in args]
         for i, param in enumerate(params):
             param.copy.typ = param.sym.typ = arg_types[i]
-        funct = Type.function(worker_scope, Type.none_t, tuple([param.sym.typ for param in worker_scope.params]))
+        funct = Type.function(worker_scope,
+                              Type.none_t,
+                              tuple([param.sym.typ for param in worker_scope.params]))
         func.symbol().set_type(funct)
         mod_sym = call.func.tail()
         assert mod_sym.typ.is_object()
         mod_scope = mod_sym.typ.get_scope()
         mod_scope.append_worker(call, worker_scope, args)
-        
+
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
 
-        if ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and ir.exp.func_scope.parent.is_module():
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
+                ir.exp.func_scope.parent.is_module()):
             if ir.exp.func_scope.orig_name == 'append_worker':
                 self._propagate_worker_arg_types(ir.exp)
 
@@ -273,9 +285,9 @@ class TypePropagation(IRVisitor):
             self.scope.return_type = typ
 
     def _is_valid_list_type_source(self, src):
-        return src.is_a([ARRAY,  MSTORE]) \
-        or src.is_a(BINOP) and src.left.is_a(ARRAY) and src.op == 'Mult' \
-        or src.is_a(TEMP) and src.sym.is_param()
+        return (src.is_a([ARRAY,  MSTORE])
+                or src.is_a(BINOP) and src.left.is_a(ARRAY) and src.op == 'Mult'
+                or src.is_a(TEMP) and src.sym.is_param())
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
@@ -307,7 +319,9 @@ class TypePropagation(IRVisitor):
         else:
             assert False
         # check mutable method
-        if self.scope.is_method() and ir.dst.is_a(ATTR) and ir.dst.head().name == env.self_name and not self.scope.is_mutable():
+        if (self.scope.is_method() and ir.dst.is_a(ATTR) and
+                ir.dst.head().name == env.self_name and
+                not self.scope.is_mutable()):
             self.scope.add_tag('mutable')
 
     def visit_PHI(self, ir):
@@ -323,17 +337,20 @@ class TypePropagation(IRVisitor):
     def _fill_args_if_needed(self, func_name, params, args):
         if len(args) < len(params):
             for i, param in enumerate(params):
-                if i >= len(args):
-                    if param.defval:
-                        args.append(param.defval)
-                    else:
-                        type_error(self.current_stm, "{}() missing required argument: '{}'".format(func_name, param.copy.name))
+                if i < len(args):
+                    continue
+                if param.defval:
+                    args.append(param.defval)
+                else:
+                    type_error(self.current_stm,
+                               "{}() missing required argument: '{}'".format(func_name,
+                                                                             param.copy.name))
+
 
 class ClassFieldChecker(IRVisitor):
     def __init__(self):
         super().__init__()
 
-       
     def process_all(self):
         scopes = Scope.get_scopes(with_global=False, with_class=False)
         for s in scopes:
@@ -368,18 +385,22 @@ class TypeChecker(IRVisitor):
             return l_t
 
         if not l_t.is_scalar() or not r_t.is_scalar():
-            type_error(self.current_stm, 'unsupported operand type(s) for {}: \'{}\' and \'{}\''.format(op2sym_map[ir.op], l_t, r_t))
+            type_error(self.current_stm,
+                       'unsupported operand type(s) for {}: \'{}\' and \'{}\''.
+                       format(op2sym_map[ir.op], l_t, r_t))
         return l_t
 
     def visit_RELOP(self, ir):
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
         if not l_t.is_scalar() or not r_t.is_scalar():
-            type_error(self.current_stm, 'unsupported operand type(s) for {}: \'{}\' and \'{}\''.format(op2sym_map[ir.op], l_t, r_t))
+            type_error(self.current_stm,
+                       'unsupported operand type(s) for {}: \'{}\' and \'{}\''.
+                       format(op2sym_map[ir.op], l_t, r_t))
         return Type.bool_t
 
     def visit_CONDOP(self, ir):
-        c_t = self.visit(ir.cond)
+        self.visit(ir.cond)
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
         if not Type.is_commutable(l_t, r_t):
@@ -395,7 +416,7 @@ class TypeChecker(IRVisitor):
             type_error(self.current_stm, '{} is not callable'.format(ir.func.sym.name))
         elif ir.func_scope.is_method():
             self.scope.add_callee_scope(ir.func_scope)
-            param_len = len(ir.func_scope.params)-1
+            param_len = len(ir.func_scope.params) - 1
         else:
             self.scope.add_callee_scope(ir.func_scope)
             param_len = len(ir.func_scope.params)
@@ -427,15 +448,18 @@ class TypeChecker(IRVisitor):
 
         ctor = ir.func_scope.find_ctor()
         if not ctor and arg_len:
-            type_error(self.current_stm, '{}() takes 0 positional arguments but {} were given'.format(ir.func_scope.orig_name, arg_len))
-        param_len = len(ctor.params)-1
+            type_error(self.current_stm,
+                       '{}() takes 0 positional arguments but {} were given'.
+                       format(ir.func_scope.orig_name, arg_len))
+        param_len = len(ctor.params) - 1
         self._check_param_number(arg_len, param_len, ir)
 
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         self._check_param_type(param_typs, ir)
 
         if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
-            type_error(self.current_stm, '@top decorated class must be in the global scope')
+            type_error(self.current_stm,
+                       '@top decorated class must be in the global scope')
 
         return Type.object(ir.func_scope)
 
@@ -447,7 +471,8 @@ class TypeChecker(IRVisitor):
         elif ir.value is None:
             return Type.int()
         else:
-            type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ir)))
+            type_error(self.current_stm,
+                       'unsupported literal type {}'.format(repr(ir)))
 
     def visit_TEMP(self, ir):
         return ir.sym.typ
@@ -474,21 +499,23 @@ class TypeChecker(IRVisitor):
         exp_t = self.visit(ir.exp)
         elem_t = mem_t.get_element()
         if not Type.is_commutable(exp_t, elem_t):
-            type_error(ir, 'assignment type missmatch {} {}'.format(exp_t, elem_t))
+            type_error(self.current_stm,
+                       'assignment type missmatch {} {}'.format(exp_t, elem_t))
         return mem_t
 
     def visit_ARRAY(self, ir):
         for item in ir.items:
             item_type = self.visit(item)
             if not item_type.is_int():
-                type_error(self.current_stm, 'sequence item must be integer {}'.format(item_type[0]))
+                type_error(self.current_stm,
+                           'sequence item must be integer {}'.format(item_type[0]))
         if ir.is_mutable:
             return Type.list(Type.int(), None)
         else:
             return Type.tuple(Type.int(), None, len(ir.items))
 
     def visit_EXPR(self, ir):
-        typ = self.visit(ir.exp)
+        self.visit(ir.exp)
         if ir.exp.is_a(CALL):
             if ir.exp.func_scope.return_type is Type.none_t:
                 #TODO: warning
@@ -532,13 +559,18 @@ class TypeChecker(IRVisitor):
         if arg_len == param_len:
             pass
         elif arg_len < param_len:
-            type_error(self.current_stm, "{}() missing required argument: '{}'".format(ir.func_scope.orig_name, param.sym.name))
+            type_error(self.current_stm,
+                       "{}() missing required argument: '{}'".
+                       format(ir.func_scope.orig_name, param.sym.name))
         else:
-            type_error(self.current_stm, '{}() takes {} positional arguments but {} were given'.format(ir.func_scope.orig_name, param_len, arg_len))
+            type_error(self.current_stm,
+                       '{}() takes {} positional arguments but {} were given'.
+                       format(ir.func_scope.orig_name, param_len, arg_len))
 
     def _check_param_type(self, param_typs, ir):
         assert len(ir.args) == len(param_typs)
         for arg, param_t in zip(ir.args, param_typs):
             arg_t = self.visit(arg)
             if not Type.is_commutable(arg_t, param_t):
-                type_error(self.current_stm, 'type missmatch "{}" "{}"'.format(arg_t[0], param_t[0]))
+                type_error(self.current_stm,
+                           'type missmatch "{}" "{}"'.format(arg_t[0], param_t[0]))

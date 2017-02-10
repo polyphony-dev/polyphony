@@ -1,21 +1,17 @@
-﻿from collections import defaultdict, deque
-from .common import get_src_text
+﻿from collections import deque
 from .env import env
-from .stg import STG, State
-from .symbol import Symbol
-from .ir import Ctx, CONST, ARRAY, MOVE
+from .ir import Ctx, CONST
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .hdlmoduleinfo import HDLModuleInfo
 from .hdlmemport import HDLMemPortMaker, HDLRegArrayPortMaker
 from .hdlinterface import *
 from .memref import *
-from .utils import replace_item
-from logging import getLogger, DEBUG
+from logging import getLogger
 logger = getLogger(__name__)
 
 
-class HDLModuleBuilder:
+class HDLModuleBuilder(object):
     @classmethod
     def create(cls, scope):
         if scope.is_module():
@@ -49,7 +45,7 @@ class HDLModuleBuilder:
                 funcif.add_data_in(sym.hdl_name(), sym.typ.get_width(), True)
             elif sym.typ.is_list():
                 continue
- 
+
     def _add_output_ports(self, funcif, scope):
         if scope.return_type.is_scalar():
             funcif.add_data_out('out_0', scope.return_type.get_width(), True)
@@ -67,7 +63,9 @@ class HDLModuleBuilder:
                 self.module_info.add_internal_net(sig)
                 nets.append(sig)
             else:
-                assert (sig.is_net() and not sig.is_reg()) or (not sig.is_net() and sig.is_reg()) or (not sig.is_net() and not sig.is_reg())
+                assert ((sig.is_net() and not sig.is_reg()) or
+                        (not sig.is_net() and sig.is_reg()) or
+                        (not sig.is_net() and not sig.is_reg()))
                 if sig.is_net():
                     self.module_info.add_internal_net(sig)
                     nets.append(sig)
@@ -78,13 +76,11 @@ class HDLModuleBuilder:
 
     def _add_state_register(self, fsm_name, scope, stgs):
         states_n = sum([len(stg.states) for stg in stgs])
-        state_sig = scope.gen_sig(fsm_name+'_state', states_n.bit_length(), ['statevar'])
+        state_sig = scope.gen_sig(fsm_name + '_state', states_n.bit_length(), ['statevar'])
         self.module_info.add_fsm_state_var(fsm_name, state_sig)
         self.module_info.add_internal_reg(state_sig)
 
-
     def _add_submodules(self, scope):
-        
         for callee_scope, inst_names in scope.callee_instances.items():
             if callee_scope.is_port():
                 continue
@@ -116,11 +112,11 @@ class HDLModuleBuilder:
             source = memnode.single_source()
             if source:
                 source_scope = list(source.scopes)[0]
-                if source_scope.is_class(): # class field rom
+                if source_scope.is_class():  # class field rom
                     hdl_name = source_scope.orig_name + '_field_' + hdl_name
-            output_sig = scope.gen_sig(hdl_name, memnode.width) #TODO
+            output_sig = scope.gen_sig(hdl_name, memnode.width)  # TODO
             fname = AHDL_VAR(output_sig, Ctx.STORE)
-            input_sig = scope.gen_sig(hdl_name+'_in', memnode.width) #TODO
+            input_sig = scope.gen_sig(hdl_name + '_in', memnode.width)  # TODO
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             if source:
@@ -143,7 +139,7 @@ class HDLModuleBuilder:
                     connect = AHDL_CONNECT(fname, call)
                     case_val = '{}_cs[{}]'.format(hdl_name, i)
                     case_items.append(AHDL_CASE_ITEM(case_val, connect))
-                rom_sel_sig = scope.gen_sig(hdl_name+'_cs', len(memnode.pred_ref_nodes()))
+                rom_sel_sig = scope.gen_sig(hdl_name + '_cs', len(memnode.pred_ref_nodes()))
                 case = AHDL_CASE(AHDL_SYMBOL('1\'b1'), case_items)
                 self.module_info.add_internal_reg(rom_sel_sig)
             rom_func = AHDL_FUNCTION(fname, [input], [case])
@@ -152,10 +148,12 @@ class HDLModuleBuilder:
     def _rename_signal(self, scope):
         for input_sig in [sig for sig in scope.signals.values() if sig.is_input()]:
             if scope.is_method():
-                new_name = '{}_{}_{}'.format(scope.parent.orig_name, scope.orig_name, input_sig.name)
+                new_name = '{}_{}_{}'.format(scope.parent.orig_name,
+                                             scope.orig_name,
+                                             input_sig.name)
             else:
                 new_name = '{}_{}'.format(scope.orig_name, input_sig.name)
-            scope.rename_sig(input_sig.name,  new_name)
+            scope.rename_sig(input_sig.name, new_name)
         for output_sig in [sig for sig in scope.signals.values() if sig.is_output()]:
             # TODO
             if scope.is_method():
@@ -352,7 +350,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
 
 class AHDLVarCollector(AHDLVisitor):
-    ''' this class collects inputs and outputs and locals'''
+    '''this class collects inputs and outputs and locals'''
     def __init__(self, module_info, local_defs, local_uses, output_temps):
         self.local_defs = local_defs
         self.local_uses = local_uses
@@ -376,6 +374,7 @@ class AHDLVarCollector(AHDLVisitor):
         #    text = ahdl.sym.name #get_src_text(ir)
         #    raise RuntimeError('free variable is not supported yet.\n' + text)
 
+
 class AHDLSpecialDeclCollector(AHDLVisitor):
     def __init__(self, edge_detectors):
         self.edge_detectors = edge_detectors
@@ -387,4 +386,3 @@ class AHDLSpecialDeclCollector(AHDLVisitor):
             if ahdl.codes:
                 for code in ahdl.codes:
                     self.visit(code)
-

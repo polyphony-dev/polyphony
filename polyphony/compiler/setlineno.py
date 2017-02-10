@@ -3,6 +3,7 @@ from .common import get_src_text
 import logging
 logger = logging.getLogger()
 
+
 class LineNumberSetter(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -120,7 +121,7 @@ class SourceDump(IRVisitor):
 
     def visit_SYSCALL(self, ir):
         pass
-    
+
     def visit_CONST(self, ir):
         pass
 
@@ -162,5 +163,3 @@ class SourceDump(IRVisitor):
 
     def visit_PHI(self, ir):
         pass
-
-    

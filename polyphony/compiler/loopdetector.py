@@ -1,13 +1,12 @@
-﻿from collections import deque
-from .dominator import DominatorTreeBuilder
-from .ir import CONST, BINOP, RELOP, TEMP, MOVE, JUMP, CJUMP
+﻿from .ir import CONST, BINOP, RELOP, TEMP, MOVE, JUMP, CJUMP
 from .varreplacer import VarReplacer
 from .usedef import UseDefDetector
 from .block import Block, CompositBlock
 from logging import getLogger
 logger = getLogger(__name__)
 
-class LoopNestTree:
+
+class LoopNestTree(object):
     def __init__(self):
         self.nodes = []
         self.edges = []
@@ -68,7 +67,7 @@ class LoopNestTree:
         stack.append(node)
 
 
-class LoopDetector:
+class LoopDetector(object):
     def __init__(self):
         pass
 
@@ -93,14 +92,11 @@ class LoopDetector:
         #lbd = LoopBlockDestructor()
         #lbd.process(scope)
 
-
     def _make_loop_block(self, head, loop_region):
         lblks, blks = self._make_loop_block_bodies(loop_region)
-        bodies = sorted(lblks+blks, key=lambda b: b.order)
-        lb = CompositBlock(self.scope, head, bodies, [head]+loop_region)
-
+        bodies = sorted(lblks + blks, key=lambda b: b.order)
+        lb = CompositBlock(self.scope, head, bodies, [head] + loop_region)
         self._add_loop_tree_entry(lb, lblks)
-
         return lb
 
     def _make_loop_block_bodies(self, blks):
@@ -166,8 +162,9 @@ class LoopDetector:
         for child in children:
             self.scope.loop_nest_tree.add_edge(parent, child)
 
+
 # hierarchize
-class LoopDependencyDetector:
+class LoopDependencyDetector(object):
     def processs(self, scope):
         all_blks = set()
         scope.entry_block.collect_basic_blocks(all_blks)
@@ -176,7 +173,10 @@ class LoopDependencyDetector:
                 break
             outer_region = all_blks.difference(set(lb.region))
             inner_region = set(lb.region).difference(set([lb.head])).difference(set(lb.bodies))
-            od, ou, id, iu = self._get_loop_block_dependency(scope.usedef, lb, outer_region, inner_region)
+            od, ou, id, iu = self._get_loop_block_dependency(scope.usedef,
+                                                             lb,
+                                                             outer_region,
+                                                             inner_region)
             lb.outer_defs = od
             lb.outer_uses = ou
             lb.inner_defs = id
@@ -213,7 +213,8 @@ class LoopDependencyDetector:
 
         return (outer_defs, outer_uses, inner_defs, inner_uses)
 
-class LoopBlockDestructor:
+
+class LoopBlockDestructor(object):
     def __init__(self):
         pass
 
@@ -226,7 +227,7 @@ class LoopBlockDestructor:
             for p in lb.preds:
                 p.replace_succ(lb, lb.head)
             for s in lb.succs:
-                for body in [lb.head]+lb.bodies:
+                for body in [lb.head] + lb.bodies:
                     if s in body.succs:
                         s.replace_pred(lb, body)
                         break
@@ -236,8 +237,8 @@ class LoopBlockDestructor:
         Block.set_order(scope.entry_block, 0)
 
 
-class SimpleLoopUnroll:
-    ''' simplyfied loop unrolling for testbench'''
+class SimpleLoopUnroll(object):
+    '''simplyfied loop unrolling for testbench'''
     def __init__(self):
         pass
 
@@ -391,4 +392,3 @@ class SimpleLoopUnroll:
         jump = JUMP(block.succs[0])
         jump.lineno = 1
         block.append_stm(jump)
-

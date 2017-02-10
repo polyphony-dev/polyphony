@@ -1,41 +1,42 @@
 ﻿import os
 import sys
 from optparse import OptionParser
-from . builtin import builtin_names
-from . driver import Driver
-from . env import env
-from . common import read_source
-from . scope import Scope
-from . block import BlockReducer, PathExpTracer
-from . irtranslator import IRTranslator
-from . typecheck import TypePropagation, TypeChecker, ClassFieldChecker
-from . quadruplet import QuadrupleMaker
-from . hdlgen import HDLModuleBuilder
-from . vericodegen import VerilogCodeGen
-from . veritestgen import VerilogTestGen
-from . stg import STGBuilder
-from . dataflow import DFGBuilder
-from . ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
-from . usedef import UseDefDetector
-from . scheduler import Scheduler
-from . phiresolve import PHICondResolver
-from . liveness import Liveness
-from . memorytransform import MemoryRenamer, RomDetector
-from . memref import MemRefGraphBuilder, MemInstanceGraphBuilder
-from . constantfolding import ConstantOptPreDetectROM, ConstantOpt, GlobalConstantOpt, EarlyConstantOptNonSSA
-from . iftransform import IfTransformer
-from . setlineno import LineNumberSetter, SourceDump
-from . loopdetector import LoopDetector, SimpleLoopUnroll, LoopBlockDestructor
-from . specfunc import SpecializedFunctionMaker
-from . selectorbuilder import SelectorBuilder
-from . inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
-from . copyopt import CopyOpt
-from . callgraph import CallGraphBuilder
-from . statereducer import StateReducer
-from . portconverter import PortConverter
-from . ahdlusedef import AHDLUseDefDetector
-from . regreducer import RegReducer
-from . bitwidth import BitwidthReducer
+from .builtin import builtin_names
+from .driver import Driver
+from .env import env
+from .common import read_source
+from .scope import Scope
+from .block import BlockReducer, PathExpTracer
+from .irtranslator import IRTranslator
+from .typecheck import TypePropagation, TypeChecker, ClassFieldChecker
+from .quadruplet import QuadrupleMaker
+from .hdlgen import HDLModuleBuilder
+from .vericodegen import VerilogCodeGen
+from .veritestgen import VerilogTestGen
+from .stg import STGBuilder
+from .dataflow import DFGBuilder
+from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
+from .usedef import UseDefDetector
+from .scheduler import Scheduler
+from .phiresolve import PHICondResolver
+from .liveness import Liveness
+from .memorytransform import MemoryRenamer, RomDetector
+from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
+from .constopt import ConstantOpt, GlobalConstantOpt
+from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
+from .iftransform import IfTransformer
+from .setlineno import LineNumberSetter, SourceDump
+from .loopdetector import LoopDetector, SimpleLoopUnroll, LoopBlockDestructor
+from .specfunc import SpecializedFunctionMaker
+from .selectorbuilder import SelectorBuilder
+from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
+from .copyopt import CopyOpt
+from .callgraph import CallGraphBuilder
+from .statereducer import StateReducer
+from .portconverter import PortConverter
+from .ahdlusedef import AHDLUseDefDetector
+from .regreducer import RegReducer
+from .bitwidth import BitwidthReducer
 import logging
 logger = logging.getLogger()
 
@@ -43,7 +44,7 @@ logging_setting = {
     'level': logging.DEBUG,
     'filename': '.tmp/debug_log',
     'filemode': 'w'
-    }
+}
 
 
 def phase(phase):
@@ -397,11 +398,11 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     internal_root_dir = '{0}{1}{2}{1}_internal{1}'.format(
         os.path.dirname(__file__),
         os.path.sep, os.path.pardir
-        )
-    package_file = os.path.abspath(internal_root_dir+'_polyphony.py')
+    )
+    package_file = os.path.abspath(internal_root_dir + '_polyphony.py')
     translator.translate(read_source(package_file), 'polyphony')
     for name in ('_io', '_timing'):
-        package_file = os.path.abspath(internal_root_dir+name+'.py')
+        package_file = os.path.abspath(internal_root_dir + name + '.py')
         package_name = os.path.basename(package_file).split('.')[0]
         package_name = package_name[1:]
         translator.translate(read_source(package_file), package_name)
@@ -487,9 +488,4 @@ def main():
     if options.verbose:
         logging.basicConfig(level=logging.INFO)
 
-    compile_main(
-        src_file,
-        options.output_name,
-        options.output_dir,
-        options.debug_mode
-        )
+    compile_main(src_file, options.output_name, options.output_dir, options.debug_mode)

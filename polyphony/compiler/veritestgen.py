@@ -1,14 +1,13 @@
-﻿from collections import defaultdict, OrderedDict
-from .ir import Ctx
+﻿from .ir import Ctx
 from .ahdl import *
 from .env import env
 from .vericodegen import VerilogCodeGen
 from .common import INT_WIDTH
-from .type import Type
 from .hdlmoduleinfo import RAMModuleInfo
 from .hdlinterface import *
 from logging import getLogger
 logger = getLogger(__name__)
+
 
 class VerilogTestGen(VerilogCodeGen):
     def __init__(self, scope):
@@ -22,23 +21,23 @@ class VerilogTestGen(VerilogCodeGen):
         self.module_info.add_internal_reg(rst)
 
     def generate(self):
-        """
-        output verilog module format:
+        """output verilog module format:
 
-        module {module_name}
-        {params}
-        {portdefs}
-        {localparams}
-        {internal_regs}
-        {internal_wires}
-        {functions}
-        {fsm}
-        endmodule
+           module {module_name}
+           {params}
+           {portdefs}
+           {localparams}
+           {internal_regs}
+           {internal_wires}
+           {functions}
+           {fsm}
+           endmodule
         """
-        clk_period = 10 #TODO
+
+        clk_period = 10
         self.module_info.add_constant('CLK_PERIOD', clk_period)
-        self.module_info.add_constant('CLK_HALF_PERIOD', int(clk_period/2))
-        self.module_info.add_constant('INITIAL_RESET_SPAN', clk_period*10)
+        self.module_info.add_constant('CLK_HALF_PERIOD', int(clk_period / 2))
+        self.module_info.add_constant('INITIAL_RESET_SPAN', clk_period * 10)
 
         self.set_indent(2)
         self._generate_main()
@@ -97,7 +96,8 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit(code)
 
         if env.hdl_debug_mode:
-            self.emit('$display("state: {}::{}");'.format(self.scope.name, state.name))
+            self.emit('$display("state: {}::{}");'.
+                      format(self.scope.name, state.name))
 
         for code in state.codes:
             self.visit(code)
@@ -118,7 +118,7 @@ class VerilogTestGen(VerilogCodeGen):
                 continue
             if isinstance(info.interfaces[0], FunctionInterface):
                 accessor = connections[0][1]
-                ports = accessor.ports[3:] # skip controls
+                ports = accessor.ports[3:]  # skip controls
             elif isinstance(info.interfaces[0], PlainInterface):
                 accessor = connections[0][1]
                 ports = accessor.ports[:]
@@ -132,7 +132,6 @@ class VerilogTestGen(VerilogCodeGen):
                         formats.append('{}=%1d'.format(accessor_name))
                     else:
                         formats.append('{}=%4d'.format(accessor_name))
-                            
         format_text = '"%5t:' + ', '.join(formats) + '"'
         args_text = ', '.join(args)
 
@@ -185,7 +184,7 @@ class VerilogTestGen(VerilogCodeGen):
         if ahdl.codes:
             for code in ahdl.codes:
                 self.visit(code)
-    
+
     def visit_ACCEPT_IF_VALID(self, ahdl):
         modulecall = ahdl.args[0]
 
@@ -195,28 +194,36 @@ class VerilogTestGen(VerilogCodeGen):
                 assert p.typ.is_seq()
                 param_memnode = p.typ.get_memnode()
                 if param_memnode.is_joinable() and param_memnode.is_writable():
-                    csstr = '{}_{}_{}_cs'.format(modulecall.instance_name, i, arg.memnode.sym.hdl_name())
+                    csstr = '{}_{}_{}_cs'.format(modulecall.instance_name,
+                                                 i,
+                                                 arg.memnode.sym.hdl_name())
                     cs = self.scope.gen_sig(csstr, 1, ['memif'])
-                    self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE), AHDL_CONST(0)))
+                    self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
+                                         AHDL_CONST(0)))
 
-        accept = self.scope.gen_sig(modulecall.prefix+'_accept', 1, ['reg'])
-        self.visit(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE), AHDL_CONST(1)))
+        accept = self.scope.gen_sig(modulecall.prefix + '_accept', 1, ['reg'])
+        self.visit(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE),
+                             AHDL_CONST(1)))
 
     def visit_GET_RET_IF_VALID(self, ahdl):
         modulecall = ahdl.args[0]
         dst = ahdl.args[1]
-        sub_out = self.scope.gen_sig(modulecall.prefix+'_out_0', INT_WIDTH, ['net', 'int'])
-        self.visit(AHDL_MOVE(dst, AHDL_VAR(sub_out, Ctx.LOAD)))
+        sub_out = self.scope.gen_sig(modulecall.prefix + '_out_0', INT_WIDTH, ['net', 'int'])
+        self.visit(AHDL_MOVE(dst,
+                             AHDL_VAR(sub_out, Ctx.LOAD)))
 
     def visit_WAIT_RET_AND_GATE(self, ahdl):
         for modulecall in ahdl.args[0]:
-            valid = self.scope.gen_sig(modulecall.prefix+'_valid', 1, ['net'])
-            cond = AHDL_OP('Eq', AHDL_VAR(valid, Ctx.LOAD), AHDL_CONST(1))
+            valid = self.scope.gen_sig(modulecall.prefix + '_valid', 1, ['net'])
+            cond = AHDL_OP('Eq',
+                           AHDL_VAR(valid, Ctx.LOAD),
+                           AHDL_CONST(1))
 
             if len(modulecall.scope.module_info.state_constants) > 1:
                 condsym = self.scope.add_temp('@condtest')
                 condsig = self.scope.gen_sig(condsym.hdl_name(), 1)
-                self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(condsig, Ctx.STORE), cond))
+                self.module_info.add_static_assignment(AHDL_ASSIGN(AHDL_VAR(condsig, Ctx.STORE),
+                                                                   cond))
                 self.module_info.add_internal_net(condsig)
                 self.emit('@(posedge {});'.format(condsig.name))
 

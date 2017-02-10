@@ -1,10 +1,8 @@
 ﻿from collections import defaultdict, namedtuple
-from copy import copy
 from .common import Tagged
 from .env import env
 from .symbol import Symbol
 from .irvisitor import IRVisitor
-from .block import Block
 from .ir import *
 from .signal import Signal
 
@@ -13,10 +11,12 @@ logger = getLogger(__name__)
 
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 
-class Worker:
+
+class Worker(object):
     def __init__(self, scope, args):
         self.scope = scope
         self.args = args
+
 
 class Scope(Tagged):
     ordered_scopes = []
@@ -31,7 +31,7 @@ class Scope(Tagged):
     }
 
     @classmethod
-    def create(cls, parent, name, tags, lineno = 0):
+    def create(cls, parent, name, tags, lineno=0):
         if name is None:
             name = "unnamed_scope" + str(len(env.scopes))
         s = Scope(parent, name, tags, lineno)
@@ -87,7 +87,8 @@ class Scope(Tagged):
 
     @classmethod
     def is_unremoveable(cls, s):
-        return s.is_global() or s.is_class() or s.is_testbench() or s.is_worker() or (s.is_method() and s.parent.is_module())
+        return (s.is_global() or s.is_class() or s.is_testbench() or
+                s.is_worker() or (s.is_method() and s.parent.is_module()))
 
     def __init__(self, parent, name, tags, lineno):
         super().__init__(tags, Scope.TAGS)
@@ -141,7 +142,7 @@ class Scope(Tagged):
         s += '================================\n'
         for blk in self.traverse_blocks(longitude=True):
             s += str(blk)
-        s += '================================\n'    
+        s += '================================\n'
         return s
 
     def __repr__(self):
@@ -150,7 +151,7 @@ class Scope(Tagged):
     def __lt__(self, other):
         return (self.order, self.lineno) < (other.order, other.lineno)
 
-    def clone_symbols(self, scope, postfix = ''):
+    def clone_symbols(self, scope, postfix=''):
         symbol_map = {}
         for orig_sym in self.symbols.values():
             new_sym = Symbol.new(orig_sym.name + postfix, scope)
@@ -192,9 +193,13 @@ class Scope(Tagged):
 
         symbol_map = self.clone_symbols(s)
 
-        s.params = [FunctionParam(symbol_map[p], symbol_map[copy], defval.clone() if defval else None) for p, copy, defval in self.params]
+        s.params = []
+        for p, copy, defval in self.params:
+            param = FunctionParam(symbol_map[p],
+                                  symbol_map[copy],
+                                  defval.clone() if defval else None)
+            s.params.append(param)
         s.return_type = self.return_type
-
         block_map = self.clone_blocks(s)
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
@@ -320,7 +325,7 @@ class Scope(Tagged):
         return new_sym
 
     def gen_refsym(self, orig_sym):
-        new_name =  Symbol.ref_prefix + '_' + orig_sym.name
+        new_name = Symbol.ref_prefix + '_' + orig_sym.name
         new_sym = self.gen_sym(new_name)
         new_sym.typ = orig_sym.typ
         if orig_sym.ancestor:
@@ -409,7 +414,7 @@ class Scope(Tagged):
                 return stg
         return None
 
-    def gen_sig(self, name, width, tag = None):
+    def gen_sig(self, name, width, tag=None):
         if name in self.signals:
             sig = self.signals[name]
             sig.width = width
@@ -443,6 +448,7 @@ class Scope(Tagged):
             worker_scope.add_tag('worker')
             worker_scope.worker_owner = self
 
+
 class SymbolReplacer(IRVisitor):
     def __init__(self, sym_map):
         super().__init__()
@@ -453,5 +459,3 @@ class SymbolReplacer(IRVisitor):
 
     def visit_ATTR(self, ir):
         ir.attr = self.sym_map[ir.attr]
-
-

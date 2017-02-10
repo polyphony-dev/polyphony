@@ -1,8 +1,6 @@
-﻿import ast
-from collections import namedtuple
+﻿class Type(object):
+    DEFAULT_INT_WIDTH = 32
 
-class Type:
-    DEFAULT_INT_WIDTH=32
     def __init__(self, name, **attrs):
         self.name = name
         self.attrs = attrs
@@ -10,18 +8,18 @@ class Type:
     def __getattr__(self, name):
         if name.startswith('is_'):
             typename = name[3:]
-            return lambda : self.name == typename
+            return lambda: self.name == typename
         elif name.startswith('get_'):
             attrname = name[4:]
             if attrname not in self.attrs:
                 raise AttributeError(name)
-            return lambda : self.attrs[attrname]
+            return lambda: self.attrs[attrname]
         elif name.startswith('set_'):
             attrname = name[4:]
             return lambda v: self.attrs.update({attrname:v})
         elif name.startswith('has_'):
             attrname = name[4:]
-            return lambda : attrname in self.attrs
+            return lambda: attrname in self.attrs
         else:
             raise AttributeError(name)
 
@@ -65,7 +63,6 @@ class Type:
             return Type.none_t
         return None
 
-
     def __str__(self):
         return self.name
 
@@ -108,7 +105,7 @@ class Type:
     @classmethod
     def port(cls, portcls, attrs):
         assert isinstance(attrs, dict)
-        d =  {'scope':portcls}
+        d = {'scope':portcls}
         d.update(attrs)
         return Type('port', **d)
 
@@ -157,7 +154,7 @@ class Type:
     def is_freezed(self):
         return 'freezed' in self.attrs and self.attrs['freezed'] is True
 
+
 Type.bool_t = Type('bool', width=1)
 Type.str_t = Type('str')
 Type.none_t = Type('none')
-

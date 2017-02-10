@@ -4,13 +4,13 @@ from .irvisitor import IRVisitor
 from .ir import *
 from .utils import unique
 from .scope import Scope
-from logging import getLogger, INFO, DEBUG
+from logging import getLogger
 logger = getLogger(__name__)
-#logger.setLevel(INFO)
 
 MAX_FUNC_UNIT = 10
 
-class Scheduler:
+
+class Scheduler(object):
     def __init__(self):
         self.done_blocks = []
         self.res_tables = {}
@@ -49,7 +49,7 @@ class Scheduler:
         if prio > node.priority:
             node.priority = prio
             logger.debug('update priority ... ' + str(node))
-            return (dfg.succs_without_back(node), prio+1)
+            return (dfg.succs_without_back(node), prio + 1)
         return (None, None)
 
     def _node_sched_default(self, dfg, node):
@@ -135,17 +135,19 @@ class Scheduler:
                 return time
 
             while self._is_resource_full(res, scheduled_resources):
-                logger.debug("!!! resource {}'s slot '{}' is full !!!".format(self._str_res(res), time))
+                logger.debug("!!! resource {}'s slot '{}' is full !!!".
+                             format(self._str_res(res), time))
                 time += 1
                 scheduled_resources = table[time]
 
             node.instance_num = len(scheduled_resources)
-            #logger.debug("{} is scheduled to {}, instance_num {}".format(node, time, node.instance_num))
+            #logger.debug("{} is scheduled to {}, instance_num {}".
+            #             format(node, time, node.instance_num))
 
-            #fill scheduled_resources table
+            # fill scheduled_resources table
             n = latency if latency != 0 else 1
             for i in range(n):
-                scheduled_resources = table[time+i]
+                scheduled_resources = table[time + i]
                 scheduled_resources.append(node)
 
         return time
@@ -165,7 +167,7 @@ class ResourceExtractor(IRVisitor):
         self.visit(ir.exp)
         #TODO:
         #self.results.append(ir.op)
-       
+
     def visit_BINOP(self, ir):
         self.visit(ir.left)
         self.visit(ir.right)
@@ -231,5 +233,3 @@ class ResourceExtractor(IRVisitor):
 
     def visit_PHI(self, ir):
         pass
-
-

@@ -1,13 +1,11 @@
 from collections import defaultdict
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
-from .stg import State
-from .type import Type
-from .env import env
 from logging import getLogger
 logger = getLogger(__name__)
 
-class UseDefTable:
+
+class UseDefTable(object):
     def __init__(self):
         self._def_sig2stm = defaultdict(set)
         self._def_stm2sig = defaultdict(set)
@@ -20,7 +18,6 @@ class UseDefTable:
 
         self._use_var2stm = defaultdict(set)
         self._use_stm2var = defaultdict(set)
-        
 
     def add_var_def(self, var, stm, state):
         assert var.is_a(AHDL_VAR) and stm.is_a(AHDL_STM)
@@ -63,7 +60,7 @@ class UseDefTable:
     def get_vars_defined_at(self, stm):
         if isinstance(stm, AHDL_STM):
             return self._def_stm2var[stm]
-        
+
     def get_stms_using(self, key):
         if isinstance(key, Signal):
             return self._use_sig2stm[key]
@@ -92,6 +89,7 @@ class UseDefTable:
                 s += '    ' + str(stm) + '\n'
         return s
 
+
 class AHDLUseDefDetector(AHDLVisitor):
     def __init__(self):
         super().__init__()
@@ -113,4 +111,3 @@ class AHDLUseDefDetector(AHDLVisitor):
             self.table.add_var_def(ahdl, self.current_stm, self.current_state)
         else:
             self.table.add_var_use(ahdl, self.current_stm, self.current_state)
-

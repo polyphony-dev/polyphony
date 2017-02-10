@@ -1,4 +1,5 @@
-import time, types
+import time
+import types
 import threading
 import inspect
 from collections import defaultdict
@@ -10,13 +11,16 @@ __all__ = [
     'is_worker_running',
 ]
 
+
 # @testbench decorator
 def testbench(func):
     def _testbench_decorator(module_instance=None):
         if module_instance:
             if module_instance.__class__.__name__ not in module.module_instances:
                 print(inspect.getsourcelines(func)[0][1])
-                raise RuntimeError('The argument of testbench must be an instance of the module class')
+                raise RuntimeError(
+                    'The argument of testbench must be an instance of the module class'
+                )
             module_instance._start()
             func(module_instance)
             module_instance._stop()
@@ -26,8 +30,11 @@ def testbench(func):
 
 
 _is_worker_running = False
+
+
 def is_worker_running() -> bool:
     return _is_worker_running
+
 
 def _module_start(self):
     global _is_worker_running
@@ -38,6 +45,7 @@ def _module_start(self):
     for w in self.__workers:
         w.start()
     time.sleep(0.001)
+
 
 def _module_stop(self):
     global _is_worker_running
@@ -50,12 +58,14 @@ def _module_stop(self):
     for w in self.__workers:
         w.join()
 
+
 def _module_append_worker(self, fn, *args):
     if not hasattr(self, '__workers'):
         self.__workers = []
     self.__workers.append(_Worker(fn, *args))
 
-class _ModuleDecorator:
+
+class _ModuleDecorator(object):
     def __init__(self):
         self.module_instances = defaultdict(list)
 
@@ -75,6 +85,7 @@ class _ModuleDecorator:
         for instances in self.module_instances.values():
             for inst in instances:
                 inst._stop()
+
 
 # @module decorator
 module = _ModuleDecorator()
@@ -101,4 +112,3 @@ class _Worker(threading.Thread):
 
     def prejoin(self):
         super().join(0.01)
-

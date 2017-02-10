@@ -2,7 +2,8 @@
 from logging import getLogger
 logger = getLogger(__name__)
 
-class IfTransformer:
+
+class IfTransformer(object):
     def process(self, scope):
         for blk in scope.traverse_blocks():
             self._process_block(blk)

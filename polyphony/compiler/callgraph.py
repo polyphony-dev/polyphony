@@ -3,6 +3,7 @@ from .graph import Graph
 from .irvisitor import IRVisitor
 from .scope import Scope
 
+
 class CallGraphBuilder(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -21,10 +22,9 @@ class CallGraphBuilder(IRVisitor):
     def visit_CALL(self, ir):
         assert ir.func_scope
         self.call_graph.add_edge(self.scope, ir.func_scope)
- 
+
     def visit_NEW(self, ir):
         assert ir.func_scope
         ctor = ir.func_scope.find_ctor()
         assert ctor
         self.call_graph.add_edge(self.scope, ctor)
-

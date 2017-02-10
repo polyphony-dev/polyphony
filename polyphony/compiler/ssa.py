@@ -1,16 +1,16 @@
-﻿import sys
-from collections import OrderedDict, defaultdict, deque
+﻿from collections import defaultdict, deque
 from .dominator import DominatorTreeBuilder, DominanceFrontierBuilder
+from .env import env
 from .symbol import Symbol
 from .ir import *
-from .type import Type
+from .tuple import TupleTransformer
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class SSATransformerBase:
+class SSATransformerBase(object):
     def __init__(self):
         pass
 
@@ -72,7 +72,7 @@ class SSATransformerBase:
                     self._add_phi_var_to_usedef(var, phi)
                     self.phis.append(phi)
                     dfs.add(df)
-        # In objectssa, the following code is important to make 
+        # In objectssa, the following code is important to make
         # hierarchical PHI definitions in the proper order.
         for df in dfs:
             self._sort_phi(df)
@@ -147,7 +147,7 @@ class SSATransformerBase:
             phis = succ.collect_stms(PHI)
             for phi in phis:
                 self._add_new_phi_arg(phi, phi.var, stack, block)
-                    
+
         for c in self.tree.get_children_of(block):
             self._rename_rec(c, count, stack)
         for stm in block.stms:
@@ -156,7 +156,7 @@ class SSATransformerBase:
                 if key in stack and stack[key]:
                     stack[key].pop()
 
-    def _add_new_phi_arg(self, phi, var, stack, block, is_tail_attr = True):
+    def _add_new_phi_arg(self, phi, var, stack, block, is_tail_attr=True):
         key = var.qualified_symbol()
         i, v = stack[key][-1]
         if is_tail_attr:
@@ -170,10 +170,9 @@ class SSATransformerBase:
                 self._add_new_sym(var, i)
         else:
             self._add_new_sym(var, i)
-        
+
         if var.is_a(ATTR):
             self._add_new_phi_arg(phi, var.exp, stack, block, is_tail_attr=False)
-
 
     def _need_rename(self, sym):
         return False
@@ -211,7 +210,6 @@ class SSATransformerBase:
     def dump_df(self):
         for node, dfs in sorted(self.dominance_frontier.items(), key=lambda n: n[0].name):
             logger.debug('DF of ' + node.name + ' is ...' + ', '.join([df.name for df in dfs]))
-
 
     def _compute_dominance_frontier(self):
         dtree_builder = DominatorTreeBuilder(self.scope)
@@ -281,8 +279,6 @@ class SSATransformerBase:
         self._idom_path(idom, path)
 
     def _insert_predicate(self):
-        usedef = self.scope.usedef
-
         for blk in self.scope.traverse_blocks():
             phis = blk.collect_stms(PHI)
             if not phis:
@@ -292,14 +288,18 @@ class SSATransformerBase:
                 phi.ps = phi_predicates[:]
                 assert len(phi.ps) == len(phi.args)
 
+
 class ScalarSSATransformer(SSATransformerBase):
     def __init__(self):
         super().__init__()
 
     def _need_rename(self, sym):
-        return not (sym.is_condition() or sym.is_param() or sym.is_return() or sym.typ.name in ['function', 'class', 'object', 'tuple', 'port'])
+        return not (sym.is_condition() or
+                    sym.is_param() or
+                    sym.is_return() or
+                    sym.typ.name in ['function', 'class', 'object', 'tuple', 'port'])
 
-from .tuple import TupleTransformer
+
 class TupleSSATransformer(SSATransformerBase):
     def __init__(self):
         super().__init__()
@@ -326,13 +326,15 @@ class TupleSSATransformer(SSATransformerBase):
         insert_idx = use_stm.block.stms.index(use_stm)
         use_mrefs = [ir for ir in use_stm.find_irs(MREF) if ir.mem.symbol().typ.is_tuple()]
         qsym = phi.var.qualified_symbol()
+
         def replace_attr(mref, qsym, newmem):
             if mref.mem.qualified_symbol() == qsym:
                 mref.mem = newmem
-                
+
         for mref in use_mrefs:
             if mref.mem.qualified_symbol() == qsym:
-                tmp = self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix, mref.mem.symbol().orig_name()))
+                tmp = self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix,
+                                                         mref.mem.symbol().orig_name()))
                 var = TEMP(tmp, Ctx.STORE)
                 var.lineno = use_stm.lineno
                 uphi = UPHI(var)
@@ -351,6 +353,7 @@ class TupleSSATransformer(SSATransformerBase):
 
     def _need_rename(self, sym):
         return sym.typ.is_tuple() and not sym.is_param()
+
 
 class ObjectSSATransformer(SSATransformerBase):
     def __init__(self):
@@ -375,6 +378,7 @@ class ObjectSSATransformer(SSATransformerBase):
         insert_idx = use_stm.block.stms.index(use_stm)
         use_attrs = [ir for ir in use_stm.kids() if ir.is_a(ATTR)]
         qsym = phi.var.qualified_symbol()
+
         def replace_attr(attr, qsym, newattr):
             if attr.is_a(ATTR):
                 if attr.exp.qualified_symbol() == qsym:
@@ -394,7 +398,7 @@ class ObjectSSATransformer(SSATransformerBase):
                     replace_attr(uarg, qsym, arg.clone())
                     uphi.args.append(uarg)
                 use_stm.block.insert_stm(insert_idx, uphi)
-                    
+
     def _need_rename(self, sym):
         if self.scope.is_method() and self.scope.parent.is_module():
             return False
@@ -406,4 +410,3 @@ class ObjectSSATransformer(SSATransformerBase):
         if scope.is_port() or scope.is_module():
             return False
         return True
-

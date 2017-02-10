@@ -4,6 +4,7 @@ __all__ = [
     'Uint'
 ]
 
+
 class _DataPort:
     def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
         pass
@@ -18,13 +19,16 @@ class _DataPort:
     def __call__(self, v=None) -> int:
         pass
 
+
 class Bit(_DataPort):
     def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
         pass
 
+
 class Int(_DataPort):
     def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
         pass
+
 
 class Uint(_DataPort):
     def __init__(self, width:uint=32, init_v:int=0, protocol:int='none') -> object:
@@ -36,6 +40,7 @@ class Uint(_DataPort):
     @mutable
     def wr(self, v:uint) -> None:
         pass
+
 
 class Queue:
     def __init__(self, width:int=32, max_size:int=0, name='') -> object:
@@ -55,4 +60,3 @@ class Queue:
 
     def full(self) -> bool:
         pass
-

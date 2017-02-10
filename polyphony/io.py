@@ -1,4 +1,6 @@
-import queue, time, sys, pdb
+import queue
+import time
+import sys
 import threading
 
 __all__ = [
@@ -7,30 +9,36 @@ __all__ = [
     'Uint'
 ]
 
+
 def _init_io():
     if sys.getswitchinterval() > 0.005:
-        sys.setswitchinterval(0.005) # 5ms
+        sys.setswitchinterval(0.005)  # 5ms
 
 _events = []
 _conds = []
 _io_enabled = False
+
 
 def _create_event():
     ev = threading.Event()
     _events.append(ev)
     return ev
 
+
 def _create_cond():
     cv = threading.Condition()
     _conds.append(cv)
     return cv
 
+
 def _remove_cond(cv):
     _conds.remove(cv)
+
 
 def _enable():
     global _io_enabled
     _io_enabled = True
+
 
 def _disable():
     global _io_enabled
@@ -41,11 +49,14 @@ def _disable():
         with cv:
             cv.notify_all()
 
+
 class PolyphonyException(Exception):
     pass
 
+
 class PolyphonyIOException(PolyphonyException):
     pass
+
 
 def _portmethod(func):
     def _portmethod_decorator(*args, **kwargs):
@@ -54,7 +65,8 @@ def _portmethod(func):
         return func(*args, **kwargs)
     return _portmethod_decorator
 
-class _DataPort:
+
+class _DataPort(object):
     def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
         self.__v = init_v
         self.__oldv = 0
@@ -101,15 +113,18 @@ class Bit(_DataPort):
     def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
         super().__init__(init_v, width, protocol)
 
+
 class Int(_DataPort):
     def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
         super().__init__(init_v, width, protocol)
+
 
 class Uint(_DataPort):
     def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
         super().__init__(init_v, width, protocol)
 
-class Queue:
+
+class Queue(object):
     def __init__(self, width:int=32, max_size:int=0, name='') -> object:
         self.__width = width
         self.__q = queue.Queue(max_size)

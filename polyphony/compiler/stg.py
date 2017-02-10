@@ -1,19 +1,18 @@
 ﻿import sys
-from collections import OrderedDict, defaultdict, deque
+from collections import OrderedDict, defaultdict
 import functools
 from .block import Block
 from .ir import *
 from .ahdl import *
 from .latency import get_latency
 from .common import INT_WIDTH, error_info
-from .symbol import Symbol
 from .env import env
 from .memref import *
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class State:
+class State(object):
     def __init__(self, name, step, codes, stg):
         assert isinstance(name, str)
         self.name = name
@@ -59,12 +58,12 @@ class State:
 
         move_transition = False
         for code in self.codes:
-           if code.is_a(AHDL_META_WAIT):
-               if transition:
-                   code.transition = transition
-                   move_transition = True
-               else:
-                   code.transition = AHDL_TRANSITION(next_state)
+            if code.is_a(AHDL_META_WAIT):
+                if transition:
+                    code.transition = transition
+                    move_transition = True
+                else:
+                    code.transition = AHDL_TRANSITION(next_state)
         if move_transition:
             self.codes.pop()
         return next_state
@@ -100,7 +99,6 @@ class State:
 
     def merge_wait_function(self, id):
         wait_edge = None
-        removes = []
         for code in self.codes:
             if code.is_a(AHDL_META_WAIT) and code.metaid == id:
                 assert len(self.codes) == 1
@@ -115,7 +113,7 @@ class State:
         wait_edge.transition = None
 
 
-class STG:
+class STG(object):
     "State Transition Graph"
     def __init__(self, name, parent, states, scope):
         self.name = name
@@ -149,8 +147,8 @@ class STG:
     def remove_state(self, state):
         state.states.remove(state)
 
-    
-class ScheduledItemQueue:
+
+class ScheduledItemQueue(object):
     def __init__(self):
         self.queue = defaultdict(list)
 
@@ -168,7 +166,7 @@ class ScheduledItemQueue:
             yield (sched_time, items)
 
 
-class STGBuilder:
+class STGBuilder(object):
     def __init__(self):
         self.dfg2stg = {}
         self.mrg = env.memref_graph
@@ -219,9 +217,15 @@ class STGBuilder:
     def _process_dfg(self, index, dfg):
         is_main = index == 0
         if self.scope.parent.is_module() and self.scope.is_callable():
-            stg_name = self.scope.parent.orig_name if is_main else '{}_L{}'.format(self.scope.parent.orig_name, index)
+            if is_main:
+                stg_name = self.scope.parent.orig_name
+            else:
+                stg_name = '{}_L{}'.format(self.scope.parent.orig_name, index)
         else:
-            stg_name = self.scope.orig_name if is_main else '{}_L{}'.format(self.scope.orig_name, index)
+            if is_main:
+                stg_name = self.scope.orig_name
+            else:
+                stg_name = '{}_L{}'.format(self.scope.orig_name, index)
             if self.scope.is_method():
                 stg_name = self.scope.parent.orig_name + '_' + stg_name
         self.translator = AHDLTranslator(stg_name, self, self.scope)
@@ -235,7 +239,7 @@ class STGBuilder:
             state_prefix = stg_name + '_' + blk_name
             logger.debug('# BLOCK ' + state_prefix + ' #')
             is_first = True if i == 0 else False
-            is_last = True if i == len(dfg.blocks)-1 else False
+            is_last = True if i == len(dfg.blocks) - 1 else False
 
             self.scheduled_items = ScheduledItemQueue()
             if blk in blk_nodes_map:
@@ -249,15 +253,12 @@ class STGBuilder:
 
         return self.stg
 
-
     def _build_scheduled_items(self, nodes):
         scheduled_node_map = OrderedDict()
-        max_sched_time = 0
         for n in nodes:
             if n.begin not in scheduled_node_map:
                 scheduled_node_map[n.begin] = []
             scheduled_node_map[n.begin].append(n)
-            max_sched_time = n.begin
 
         last_step = 0
         scheduled_node_list = []
@@ -270,9 +271,8 @@ class STGBuilder:
             self.cur_sched_time += delta
             self._translate_nodes(nodes)
 
-
     def _translate_nodes(self, nodes):
-        ''' translates IR to AHDL or Transition, and emit to scheduled_items'''
+        '''translates IR to AHDL or Transition, and emit to scheduled_items'''
         self.translator.reset(self.cur_sched_time)
         for node in nodes:
             self.translator.visit(node.tag, node)
@@ -289,7 +289,7 @@ class STGBuilder:
             if not codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF, AHDL_META_WAIT]):
                 codes.append(AHDL_TRANSITION(None))
             name = '{}_S{}'.format(state_prefix, step)
-            state = self._new_state(name, step+1, codes)
+            state = self._new_state(name, step + 1, codes)
             states.append(state)
         if not states:
             name = '{}_S{}'.format(state_prefix, 0)
@@ -329,7 +329,7 @@ class STGBuilder:
                 init_state.name = name
                 assert init_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
                 if not (len(states) <= 1 and is_last):
-                    pos = len(init_state.codes)-1
+                    pos = len(init_state.codes) - 1
                     init_state.codes.insert(pos, AHDL_META_WAIT("WAIT_INPUT_READY", self.stg.name))
                 self.stg.init_state = init_state
             if is_last:
@@ -341,7 +341,7 @@ class STGBuilder:
                 self.stg.finish_state = finish_state
         return states
 
-    def gen_sig(self, prefix, postfix, width, tag = None):
+    def gen_sig(self, prefix, postfix, width, tag=None):
         sig = self.scope.gen_sig('{}_{}'.format(prefix, postfix), width, tag)
         return sig
 
@@ -361,11 +361,10 @@ class STGBuilder:
         sched_time += 1
         self.emit(AHDL_META('SET_ACCEPT', ahdl_call, 0), sched_time)
 
-
     def emit_memload_sequence(self, ahdl_load, sched_time):
         assert ahdl_load.is_a(AHDL_LOAD)
         mem_name = ahdl_load.mem.name()
-        memload_latency = 2 #TODO
+        memload_latency = 2  # TODO
         self.emit(ahdl_load, sched_time)
         for i in range(1, memload_latency):
             self.emit(AHDL_NOP('wait for output of {}'.format(mem_name)),   sched_time + i)
@@ -373,8 +372,7 @@ class STGBuilder:
 
     def emit_memstore_sequence(self, ahdl_store, sched_time):
         assert ahdl_store.is_a(AHDL_STORE)
-        mem_name = ahdl_store.mem.name()
-        memstore_latency = 1 #TODO
+        memstore_latency = 1  # TODO
         self.emit(ahdl_store, sched_time)
         self.emit(AHDL_POST_PROCESS(ahdl_store), sched_time + memstore_latency)
 
@@ -387,17 +385,16 @@ class STGBuilder:
         assert mv.src.is_a(ARRAY)
         memsig = self.scope.gen_sig(memnode.sym.hdl_name(), memnode.width, ['memif'])
         for i, item in enumerate(mv.src.items):
-            val = self.translator.visit(item, None) #FIXME
+            val = self.translator.visit(item, None)  # FIXME
             if val:
                 memvar = AHDL_MEMVAR(memsig, memnode, Ctx.STORE)
                 store = AHDL_STORE(memvar, val, AHDL_CONST(i))
                 self.emit_memstore_sequence(store, sched_time)
                 sched_time += 1
 
-    def emit(self, item, sched_time, tag = ''):
-        logger.debug('emit '+str(item) + ' at ' + str(sched_time))
+    def emit(self, item, sched_time, tag=''):
+        logger.debug('emit ' + str(item) + ' at ' + str(sched_time))
         self.scheduled_items.push(sched_time, item, tag)
-
 
     def get_signal_prefix(self, ir, node):
         if ir.func_scope.is_class():
@@ -413,6 +410,7 @@ class STGBuilder:
 
     def make_instance_name(self, ir):
         assert ir.is_a(ATTR)
+
         def make_instance_name_rec(ir):
             assert ir.is_a(ATTR)
             if ir.exp.is_a(TEMP):
@@ -429,7 +427,7 @@ class STGBuilder:
         return make_instance_name_rec(ir)
 
 
-class AHDLTranslator:
+class AHDLTranslator(object):
     def __init__(self, name, host, scope):
         super().__init__()
         self.name = name
@@ -516,8 +514,8 @@ class AHDLTranslator:
             memlensig = self.scope.gen_sig('{}_len'.format(memnode.sym.hdl_name()), -1, ['memif'])
             return AHDL_VAR(memlensig, Ctx.LOAD)
         else:
-            assert False # len() must be constant value
-        
+            assert False  # len() must be constant value
+
     def visit_SYSCALL(self, ir, node):
         logger.debug(ir.name)
         if ir.name == 'print':
@@ -533,7 +531,7 @@ class AHDLTranslator:
         elif ir.name == 'polyphony.timing.clksleep':
             assert ir.args[0].is_a(CONST)
             for i in range(ir.args[0].value):
-                self.host.emit(AHDL_NOP('wait a cycle'), self.sched_time+i)
+                self.host.emit(AHDL_NOP('wait a cycle'), self.sched_time + i)
             return
         elif ir.name == 'polyphony.timing.wait_rising':
             ports = []
@@ -640,7 +638,6 @@ class AHDLTranslator:
         assert arraynode.initstm
         mv = arraynode.initstm
         assert mv.src.is_a(ARRAY)
-        
         self._build_mem_initialize_seq(ir, ahdl_memvar, node)
 
     def visit_TEMP(self, ir, node):
@@ -679,10 +676,14 @@ class AHDLTranslator:
         if self.scope.is_worker():
             signame = ir.sym.ancestor.hdl_name() if ir.sym.ancestor else ir.sym.hdl_name()
             # a local variable's name is localized
-            sig = self.scope.worker_owner.gen_sig('{}_{}'.format(self.scope.orig_name, signame), width, tags)
+            sig = self.scope.worker_owner.gen_sig('{}_{}'.format(self.scope.orig_name, signame),
+                                                  width,
+                                                  tags)
         elif self.scope.is_method() and not ir.sym.is_param():
             # a local variable's name in the method is localized
-            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()), width, tags)
+            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()),
+                                     width,
+                                     tags)
         else:
             sig = self.scope.gen_sig(ir.sym.hdl_name(), width, tags)
 
@@ -709,7 +710,7 @@ class AHDLTranslator:
             # external access to the field
             io = '' if ir.ctx == Ctx.LOAD else '_in'
             instance_name = self.host.make_instance_name(ir)
-            sig = self.host.gen_sig(instance_name + '_field', attr+io, INT_WIDTH, sig_tags)
+            sig = self.host.gen_sig(instance_name + '_field', attr + io, INT_WIDTH, sig_tags)
         if ir.attr.typ.is_list():
             memnode = self.mrg.node(ir.attr)
             return AHDL_MEMVAR(sig, memnode, ir.ctx)
@@ -747,7 +748,6 @@ class AHDLTranslator:
 
     def visit_MCJUMP(self, ir, node):
         for c, target in zip(ir.conds[:-1], ir.targets[:-1]):
-        
             if c.is_a(CONST) and c.value == 1:
                 cond = self.visit(c, node)
                 self._emit(AHDL_TRANSITION(target), self.sched_time)
@@ -765,7 +765,6 @@ class AHDLTranslator:
         pass
 
     def _call_proc(self, ir, node):
-        
         src = self.visit(ir.src, node)
         if ir.src.is_a(CALL):
             dst = self.visit(ir.dst, node)
@@ -813,9 +812,7 @@ class AHDLTranslator:
             assert memnode
             if ir.src.sym.is_param():
                 return
-        
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
-
 
     def visit_PHI(self, ir, node):
         pass
@@ -823,11 +820,10 @@ class AHDLTranslator:
     def visit_UPHI(self, ir, node):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
         ahdl_dst = self.visit(ir.var, node)
-        ahdl_src = None
         arg_p = list(zip(ir.args, ir.ps))
         rexp, cond = arg_p[-1]
         cond = self.visit(cond, node)
-        if cond.is_a(CONST) and cond.value == True:
+        if cond.is_a(CONST) and cond.value:
             rexp = self.visit(rexp, node)
         else:
             lexp = self.visit(rexp, node)
@@ -862,7 +858,6 @@ class AHDLTranslator:
         if port_prefixes[0].name == env.self_name:
             port_prefixes = port_prefixes[1:]
         port_name = '_'.join([pfx.name for pfx in port_prefixes])
-        owner = port_sym.scope
         width = port_sym.typ.get_width()
         port_scope = port_sym.typ.get_scope()
         tags = set()
@@ -885,12 +880,12 @@ class AHDLTranslator:
                 assert False
         port_sig = port_sym.scope.gen_sig(port_name, width, tags)
         return port_sig
-        
+
     def _make_port_access(self, call, target, node):
         assert call.func.is_a(ATTR)
         #port_sym = call.func.tail()
         port_sig = self._port_sig(call.func.qualified_symbol())
-        
+
         if call.func_scope.orig_name == 'wr':
             assert call.args
             src = self.visit(call.args[0], node)
@@ -914,4 +909,3 @@ class AHDLTranslator:
 
     def _is_module_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_module()
-

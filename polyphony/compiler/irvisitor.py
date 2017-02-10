@@ -1,4 +1,4 @@
-class IRVisitor:
+class IRVisitor(object):
     def __init__(self):
         pass
 
@@ -99,9 +99,9 @@ class IRVisitor:
         self.visit(ir.var)
         for arg in ir.args:
             self.visit(arg)
-        if ir.ps:
-            for p in ir.ps:
-                if p : self.visit(p)
+        for p in ir.ps:
+            if p:
+                self.visit(p)
 
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
@@ -120,7 +120,6 @@ class IRTransformer(IRVisitor):
         #set the pointer to the block to each stm
         for stm in block.stms:
             stm.block = block
-
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)

@@ -1,11 +1,10 @@
-﻿from collections import deque, defaultdict
+﻿from collections import deque
 from .irvisitor import IRVisitor
 from .ir import *
 from .env import env
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
 from .dominator import DominatorTreeBuilder
-from .type import Type
 from .scope import Scope
 from .common import error_info
 from .utils import *
@@ -25,6 +24,7 @@ def eval_unop(ir):
     else:
         print(error_info(ir.block.scope, ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
+
 
 def eval_binop(ir):
     op = ir.op
@@ -56,6 +56,7 @@ def eval_binop(ir):
         print(error_info(ir.block.scope, ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
 
+
 def eval_relop(op, lv, rv):
     if op == 'Eq':
         return lv == rv
@@ -80,6 +81,7 @@ def eval_relop(op, lv, rv):
     else:
         print(error_info(ir.block.scope, ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
+
 
 def try_get_constant(sym, scope):
     assert scope.usedef
@@ -118,7 +120,9 @@ class ConstantOptBase(IRVisitor):
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
             return CONST(eval_relop(ir.op, ir.left.value, ir.right.value))
-        if ir.left.is_a([TEMP, ATTR]) and ir.right.is_a([TEMP, ATTR]) and ir.left.qualified_symbol() == ir.right.qualified_symbol():
+        if (ir.left.is_a([TEMP, ATTR])
+                and ir.right.is_a([TEMP, ATTR])
+                and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
             c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id))
             return c
         return ir
@@ -136,7 +140,10 @@ class ConstantOptBase(IRVisitor):
 
     def visit_CALL(self, ir):
         ir.args = [self.visit(arg) for arg in ir.args]
-        if ir.is_a(CALL) and ir.func.symbol().typ.is_function() and ir.func.symbol().typ.get_scope().is_lib() and ir.func.symbol().name == 'is_worker_running':
+        if (ir.is_a(CALL)
+                and ir.func.symbol().typ.is_function()
+                and ir.func.symbol().typ.get_scope().is_lib()
+                and ir.func.symbol().name == 'is_worker_running'):
             return CONST(True)
         return ir
 
@@ -189,6 +196,7 @@ class ConstantOptBase(IRVisitor):
     def visit_PHI(self, ir):
         pass
 
+
 class ConstantOpt(ConstantOptBase):
     def __init__(self):
         super().__init__()
@@ -208,7 +216,7 @@ class ConstantOpt(ConstantOptBase):
             stm = worklist.popleft()
             self.current_stm = stm
             self.visit(stm)
-            if stm.is_a(PHI) and len(stm.args)==1:
+            if stm.is_a(PHI) and len(stm.args) == 1:
                 arg = stm.args[0]
                 blk = stm.defblks[0]
                 mv = MOVE(stm.var, arg)
@@ -217,7 +225,10 @@ class ConstantOpt(ConstantOptBase):
                 dead_stms.append(stm)
                 if stm in worklist:
                     worklist.remove(stm)
-            if stm.is_a(MOVE) and stm.src.is_a(CONST) and stm.dst.is_a(TEMP) and not stm.dst.sym.is_return():
+            if (stm.is_a(MOVE)
+                    and stm.src.is_a(CONST)
+                    and stm.dst.is_a(TEMP)
+                    and not stm.dst.sym.is_return()):
                 #sanity check
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 assert len(defstms) <= 1
@@ -238,7 +249,7 @@ class ConstantOpt(ConstantOptBase):
 
     def _process_uncoditional_cjump(self, cjump, worklist):
         def remove_dominated_branch(blk):
-            blk.preds = [] # mark as garbage block
+            blk.preds = []  # mark as garbage block
             remove_from_list(worklist, blk.stms)
             for succ in blk.succs:
                 succ.preds.remove(blk)
@@ -293,7 +304,9 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope is not self.scope and ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
+        if (ir.sym.scope is not self.scope
+                and ir.sym.scope.is_global()
+                and ir.sym.typ.is_scalar()):
             c = try_get_constant(ir.sym, ir.sym.scope)
             if c:
                 return c
@@ -321,6 +334,7 @@ class ConstantOpt(ConstantOptBase):
             for arg in remove_args:
                 ir.remove_arg(arg)
 
+
 class EarlyConstantOptNonSSA(ConstantOptBase):
     def __init__(self):
         super().__init__()
@@ -338,6 +352,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
             if c:
                 return c
         return ir
+
 
 class ConstantOptPreDetectROM(ConstantOpt):
     def __init__(self):
@@ -368,6 +383,7 @@ class ConstantOptPreDetectROM(ConstantOpt):
         for i, arg in enumerate(ir.args):
             ir.args[i] = self.visit(arg)
 
+
 class GlobalConstantOpt(ConstantOptBase):
     def __init__(self):
         super().__init__()
@@ -390,7 +406,7 @@ class GlobalConstantOpt(ConstantOptBase):
             defstms = self.scope.usedef.get_stms_defining(sym)
             if len(defstms) > 1:
                 defstms = sorted(defstms, key=lambda s: s.program_order())
-                for i in range(len(defstms)-1):
+                for i in range(len(defstms) - 1):
                     dead_stms.append(defstms[i])
         for stm in dead_stms:
             if stm in stm.block.stms:

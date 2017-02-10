@@ -2,7 +2,8 @@
 from logging import getLogger
 logger = getLogger(__name__)
 
-class Symbol:
+
+class Symbol(object):
     all_symbols = []
 
     @classmethod
@@ -14,7 +15,7 @@ class Symbol:
     @classmethod
     def newtemp(cls, name, scope):
         id = len(cls.all_symbols)
-        t = Symbol(name+str(id), scope, id)
+        t = Symbol(name + str(id), scope, id)
         cls.all_symbols.append(t)
         return t
 
@@ -57,7 +58,7 @@ class Symbol:
 
     def __lt__(self, other):
         return self.name < other.name
-  
+
     def orig_name(self):
         if self.ancestor:
             return self.ancestor.orig_name()
@@ -71,7 +72,7 @@ class Symbol:
             name = self.name[:]
         name = name.replace('#', '')
         return name
-   
+
     def is_return(self):
         return self.name.startswith(Symbol.return_prefix)
 
@@ -97,4 +98,3 @@ class Symbol:
         self.typ = typ
         if self.ancestor:
             self.ancestor.set_type(typ)
-

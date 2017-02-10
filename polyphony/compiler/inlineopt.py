@@ -4,13 +4,13 @@ from .block import Block
 from .irvisitor import IRVisitor
 from .ir import *
 from .env import env
-from .type import Type
-from .varreplacer import VarReplacer
 from .copyopt import CopyOpt
+from .symbol import Symbol
 import logging
 logger = logging.getLogger()
 
-class InlineOpt:
+
+class InlineOpt(object):
     def __init__(self):
         pass
 
@@ -63,7 +63,10 @@ class InlineOpt:
             self.inline_counts[caller] += 1
             assert callee is call.func_scope
 
-            symbol_map = self._make_replace_symbol_map(call, caller, callee, str(self.inline_counts[caller]))
+            symbol_map = self._make_replace_symbol_map(call,
+                                                       caller,
+                                                       callee,
+                                                       str(self.inline_counts[caller]))
             result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
             result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
 
@@ -95,7 +98,10 @@ class InlineOpt:
         for call, call_stm in calls:
             self.inline_counts[caller] += 1
 
-            symbol_map = self._make_replace_symbol_map(call, caller, callee, str(self.inline_counts[caller]))
+            symbol_map = self._make_replace_symbol_map(call,
+                                                       caller,
+                                                       callee,
+                                                       str(self.inline_counts[caller]))
             result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
             result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
 
@@ -169,7 +175,6 @@ class InlineOpt:
                 assert False
         return symbol_map
 
-
     def _merge_blocks(self, call_stm, callee_entry_blk, callee_exit_blk):
         caller_scope = call_stm.block.scope
         early_call_blk = call_stm.block
@@ -203,7 +208,8 @@ class InlineOpt:
         for block in scope.traverse_blocks():
             removes = []
             for stm in block.stms:
-                if stm.is_a(MOVE) and stm.dst.is_a(TEMP) and stm.src.is_a(TEMP) and stm.dst.sym is stm.src.sym:
+                if (stm.is_a(MOVE) and stm.dst.is_a(TEMP) and
+                        stm.src.is_a(TEMP) and stm.dst.sym is stm.src.sym):
                     removes.append(stm)
             for rm in removes:
                 block.stms.remove(rm)
@@ -225,7 +231,7 @@ class CallCollector(IRVisitor):
 
 
 class SymbolReplacer(IRVisitor):
-    def __init__(self, sym_map, attr_map = None, inst_name = None):
+    def __init__(self, sym_map, attr_map=None, inst_name=None):
         super().__init__()
         self.sym_map = sym_map
         self.attr_map = attr_map
@@ -257,7 +263,7 @@ class SymbolReplacer(IRVisitor):
             if isinstance(rep, Symbol):
                 ir.sym = rep
                 return ir
-            elif isinstance(rep, tuple): # qualified_symbol
+            elif isinstance(rep, tuple):  # qualified_symbol
                 var = self._qsym_to_var(rep, ir.ctx)
                 var.lineno = ir.lineno
                 return var
@@ -283,6 +289,7 @@ class AliasReplacer(CopyOpt):
 
     def _find_old_use(self, ir, qsym):
         vars = []
+
         def find_vars_rec(ir, qsym, vars):
             if isinstance(ir, IR):
                 if ir.is_a(ATTR):
@@ -316,7 +323,8 @@ class AliasDefCollector(IRVisitor):
             return False
         if not mov.dst.symbol().typ.is_object():
             return False
-        if mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and mov.dst.tail().typ.get_scope().is_module():
+        if (mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and
+                mov.dst.tail().typ.get_scope().is_module()):
             return False
         return True
 
@@ -327,9 +335,11 @@ class AliasDefCollector(IRVisitor):
             return
         self.copies.append(ir)
 
+
 class FlattenFieldAccess(IRVisitor):
     def make_flatname(self, ir):
         assert ir.is_a(ATTR)
+
         def make_flatname_rec(ir):
             assert ir.is_a(ATTR)
             if ir.exp.is_a(TEMP):
@@ -375,12 +385,13 @@ class FlattenFieldAccess(IRVisitor):
         super().visit_CALL(ir)
 
 
-class ObjectHierarchyCopier:
+class ObjectHierarchyCopier(object):
     def __init__(self):
         pass
 
     def _is_inlining_object(self, ir):
-        return ir.is_a([TEMP, ATTR]) and ir.symbol().typ.is_object() and not ir.symbol().typ.get_scope().is_module()
+        return (ir.is_a([TEMP, ATTR]) and ir.symbol().typ.is_object() and
+                not ir.symbol().typ.get_scope().is_module())
 
     def _is_object_copy(self, mov):
         return self._is_inlining_object(mov.src) and self._is_inlining_object(mov.dst)
@@ -410,6 +421,6 @@ class ObjectHierarchyCopier:
                 new_src.lineno = cp.lineno
                 new_cp.lineno = cp.lineno
                 cp_idx = cp.block.stms.index(cp)
-                cp.block.insert_stm(cp_idx+1, new_cp)
+                cp.block.insert_stm(cp_idx + 1, new_cp)
                 if sym.typ.is_object():
                     worklist.append(new_cp)

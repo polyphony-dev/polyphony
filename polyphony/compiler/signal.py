@@ -1,13 +1,15 @@
 from .common import Tagged
 
+
 class Signal(Tagged):
     TAGS = {
-        'reg', 'net', 'int', 'condition', 
+        'reg', 'net', 'int', 'condition',
         'input', 'output',
         'extport',
         'statevar',
         'field', 'ctrl', 'memif', 'onehot',
     }
+
     def __init__(self, name, width, tags):
         if tags is None:
             tags = set()

@@ -1,6 +1,7 @@
 ﻿import logging
 
-class Env:
+
+class Env(object):
     PHASE_1 = 1
     PHASE_2 = 2
     PHASE_3 = 3
@@ -30,15 +31,11 @@ class Env:
         self.scope_file_map[scope] = self.current_filename
         self.scopes[scope.name] = scope
         if self.dev_debug_mode:
-            logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@',''), 'w')
+            logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@', ''), 'w')
             self.logfiles[scope] = logfile
 
     def remove_scope(self, scope):
         del self.scopes[scope.name]
-
-    def dump(self):
-        for s in self.scopes:
-            logger.debug(str(s))
 
     def add_using_lib(self, lib):
         self.using_libs.add(lib)

@@ -1,6 +1,7 @@
 from .ahdl import AHDL_STM
 
-class AHDLVisitor:
+
+class AHDLVisitor(object):
     def __init__(self):
         pass
 

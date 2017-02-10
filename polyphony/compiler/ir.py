@@ -1,38 +1,20 @@
-﻿import copy
-from .symbol import Symbol
-from .utils import is_a
-from .env import env
+﻿from .utils import is_a
+
 
 op2sym_map = {
-    'And':'and',
-    'Or':'or',
-    'Add':'+',
-    'Sub':'-',
-    'Mult':'*',
-    'FloorDiv':'//',
-    'Mod':'%',
-    'LShift':'<<',
-    'RShift':'>>',
-    'BitOr':'|',
-    'BitXor':'^',
-    'BitAnd':'&',
-    'Eq':'==',
-    'NotEq':'!=',
-    'Lt':'<',
-    'LtE':'<=',
-    'Gt':'>',
-    'GtE':'>=',
-    'IsNot':'!=',
-    'USub':'-',
-    'UAdd':'+',
-    'Not':'!',
-    'Invert':'~'
-    }
+    'And': 'and', 'Or': 'or',
+    'Add': '+', 'Sub': '-', 'Mult': '*', 'FloorDiv': '//', 'Mod': '%',
+    'LShift': '<<', 'RShift': '>>',
+    'BitOr': '|', 'BitXor': '^', 'BitAnd': '&',
+    'Eq': '==', 'NotEq': '!=', 'Lt': '<', 'LtE': '<=', 'Gt': '>', 'GtE': '>=',
+    'IsNot': '!=',
+    'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~'
+}
 
 
-class Ctx:
-    LOAD=1
-    STORE=2
+class Ctx(object):
+    LOAD = 1
+    STORE = 2
 
     @classmethod
     def str(cls, ctx):
@@ -43,7 +25,8 @@ class Ctx:
             sctx += 'S'
         return sctx
 
-class IR:
+
+class IR(object):
     def __init__(self):
         self.lineno = -1
 
@@ -90,10 +73,11 @@ class IR:
 
     def find_vars(self, qsym):
         vars = []
+
         def find_vars_rec(ir, qsym, vars):
             if isinstance(ir, IR):
                 if ir.is_a(TEMP):
-                   if ir.qualified_symbol() == qsym:
+                    if ir.qualified_symbol() == qsym:
                         vars.append(ir)
                 elif ir.is_a(ATTR):
                     if ir.qualified_symbol() == qsym:
@@ -111,6 +95,7 @@ class IR:
 
     def find_irs(self, typ):
         irs = []
+
         def find_irs_rec(ir, typ, irs):
             if isinstance(ir, IR):
                 if ir.is_a(typ):
@@ -123,9 +108,11 @@ class IR:
         find_irs_rec(self, typ, irs)
         return irs
 
+
 class IRExp(IR):
     def __init__(self):
         super().__init__()
+
 
 class UNOP(IRExp):
     def __init__(self, op, exp):
@@ -138,6 +125,7 @@ class UNOP(IRExp):
 
     def kids(self):
         return self.exp.kids()
+
 
 class BINOP(IRExp):
     def __init__(self, op, left, right):
@@ -152,6 +140,7 @@ class BINOP(IRExp):
     def kids(self):
         return self.left.kids() + self.right.kids()
 
+
 class RELOP(IRExp):
     def __init__(self, op, left, right):
         super().__init__()
@@ -165,6 +154,7 @@ class RELOP(IRExp):
     def kids(self):
         return self.left.kids() + self.right.kids()
 
+
 class CONDOP(IRExp):
     def __init__(self, cond, left, right):
         super().__init__()
@@ -174,6 +164,7 @@ class CONDOP(IRExp):
 
     def __str__(self):
         return '({} ? {} : {})'.format(self.cond, self.left, self.right)
+
 
 class CALL(IRExp):
     def __init__(self, func, args):
@@ -215,7 +206,7 @@ class SYSCALL(IRExp):
             kids += arg.kids()
         return kids
 
-    
+
 class NEW(IRExp):
     def __init__(self, scope, args):
         super().__init__()
@@ -251,6 +242,7 @@ class CONST(IRExp):
     def kids(self):
         return [self]
 
+
 class MREF(IRExp):
     def __init__(self, mem, offset, ctx):
         super().__init__()
@@ -264,6 +256,7 @@ class MREF(IRExp):
 
     def kids(self):
         return self.mem.kids() + self.offset.kids()
+
 
 class MSTORE(IRExp):
     def __init__(self, mem, offset, exp):
@@ -313,6 +306,7 @@ class ARRAY(IRExp):
         else:
             return -1
 
+
 class TEMP(IRExp):
     def __init__(self, sym, ctx):
         super().__init__()
@@ -335,8 +329,9 @@ class TEMP(IRExp):
     def qualified_symbol(self):
         return (self.sym, )
 
+
 class ATTR(IRExp):
-    def __init__(self, exp, attr, ctx, attr_scope = None):
+    def __init__(self, exp, attr, ctx, attr_scope=None):
         super().__init__()
         self.exp = exp
         self.attr = attr
@@ -361,7 +356,7 @@ class ATTR(IRExp):
             return self.exp.sym
         else:
             return None
-    
+
     def tail(self):
         if self.exp.is_a(ATTR):
             #assert isinstance(self.exp.attr, Symbol)
@@ -419,9 +414,6 @@ class CJUMP(IRStm):
         self.loop_branch = False
 
     def __str__(self):
-        uses = ''
-        if self.uses:
-            uses = ', '.join([str(u) for u in self.uses])
         return '(CJUMP {}, {}, {})'.format(self.exp, self.true.name, self.false.name)
 
 
@@ -437,18 +429,15 @@ class MCJUMP(IRStm):
         items = []
         for cond, target in zip(self.conds, self.targets):
             items.append('({}) => {}'.format(cond, target.name))
-            
-        uses = ''
-        if self.uses:
-            uses = ', '.join([str(u) for u in self.uses])
+
         return '(MCJUMP \n        {})'.format(', \n        '.join([item for item in items]))
 
 
 class JUMP(IRStm):
-    def __init__(self, target, typ = ''):
+    def __init__(self, target, typ=''):
         super().__init__()
         self.target = target
-        self.typ = typ # 'B': break, 'C': continue, 'L': loop-back, 'S': specific
+        self.typ = typ  # 'B': break, 'C': continue, 'L': loop-back, 'S': specific
 
     def __str__(self):
         return "(JUMP {} '{}')".format(self.target.name, self.typ)
@@ -487,7 +476,6 @@ def conds2str(conds):
         return ' and '.join(cs)
     else:
         return 'None'
-
 
 
 class PHIBase(IRStm):
@@ -540,6 +528,7 @@ class PHI(PHIBase):
         s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
         return s
 
+
 class UPHI(PHIBase):
     def __init__(self, var):
         super().__init__(var)
@@ -548,8 +537,6 @@ class UPHI(PHIBase):
         s = "(UPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
         return s
 
+
 def op2str(op):
     return op.__class__.__name__
-
-
-

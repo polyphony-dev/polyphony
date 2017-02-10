@@ -1,14 +1,14 @@
 ﻿from collections import defaultdict
 from .irvisitor import IRVisitor
 from .ir import *
-from .type import Type
 from .block import Block
 from .env import env
+from .symbol import Symbol
 from logging import getLogger
 logger = getLogger(__name__)
 
-class UseDefTable:
 
+class UseDefTable(object):
     def __init__(self):
         self._def_sym2stm = defaultdict(set)
         self._use_sym2stm = defaultdict(set)
@@ -204,7 +204,9 @@ class UseDefDetector(IRVisitor):
     def _visit_args(self, ir):
         for arg in ir.args:
             self.visit(arg)
-            if env.compile_phase >= env.PHASE_4 and arg.is_a([TEMP, ATTR]) and arg.symbol().typ.is_list():
+            if (env.compile_phase >= env.PHASE_4
+                    and arg.is_a([TEMP, ATTR])
+                    and arg.symbol().typ.is_list()):
                 memnode = None
                 if env.memref_graph:
                     memnode = env.memref_graph.node(arg.symbol())
@@ -274,18 +276,10 @@ class UseDefDetector(IRVisitor):
 
     def visit_PHI(self, ir):
         self.visit(ir.var)
-        for arg in ir.args:
-            if arg:
-                self.visit(arg)
-        if ir.ps:
-            for p in ir.ps:
-                if p: self.visit(p)
+        [self.visit(arg) for arg in ir.args if arg]
+        [self.visit(p) for p in ir.ps if p]
 
     def visit_UPHI(self, ir):
         self.visit(ir.var)
-        for arg in ir.args:
-            if arg:
-                self.visit(arg)
-        if ir.ps:
-            for p in ir.ps:
-                if p: self.visit(p)
+        [self.visit(arg) for arg in ir.args if arg]
+        [self.visit(p) for p in ir.ps if p]
