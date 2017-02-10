@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name = 'polyphony',
-    version = '0.2.0',
+    version = '0.2.1',
     packages = setuptools.find_packages(),
     author = "Hiroaki Kataoka",
     author_email = "kataoka@sinby.com",
