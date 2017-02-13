@@ -29,6 +29,8 @@ class PHICondResolver(object):
         for i, (arg, blk) in enumerate(zip(phi.args, phi.defblks)):
             if not blk:
                 continue
+            if phi.var.symbol().typ.is_object():
+                continue
             pred = blk
             mv = MOVE(phi.var.clone(), arg)
             mv.lineno = arg.lineno

@@ -336,7 +336,7 @@ class Scope(Tagged):
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
-            new_sym = self.add_sym(new_name, orig_sym.tags)
+            new_sym = self.add_sym(new_name, set(orig_sym.tags))
             new_sym.typ = orig_sym.typ
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor

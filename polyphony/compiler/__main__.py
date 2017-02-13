@@ -36,6 +36,7 @@ from .statereducer import StateReducer
 from .portconverter import PortConverter
 from .ahdlusedef import AHDLUseDefDetector
 from .regreducer import RegReducer
+from .regreducer import AliasVarDetector
 from .bitwidth import BitwidthReducer
 import logging
 logger = logging.getLogger()
@@ -230,6 +231,10 @@ def reducereg(driver, scope):
     RegReducer().process(scope)
 
 
+def aliasvar(driver, scope):
+    AliasVarDetector().process(scope)
+
+
 def reducebits(driver, scope):
     BitwidthReducer().process(scope)
 
@@ -360,6 +365,8 @@ def compile_plan():
         loop,
         tbopt,
         phase(env.PHASE_4),
+        usedef,
+        aliasvar,
         dbg(dumpscope),
         dfg,
         dbg(dumpdfg),
@@ -373,7 +380,7 @@ def compile_plan():
         buildmodule,
         ahdlopt(ahdlusedef),
         ahdlopt(reducebits),
-        ahdlopt(reducereg),
+        #ahdlopt(reducereg),
         reducestate,
         dbg(dumpmodule),
         genhdl,

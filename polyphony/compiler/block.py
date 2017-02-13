@@ -113,10 +113,12 @@ class Block(object):
                     jmp.true = new
                 else:
                     jmp.false = new
+                self._convert_if_unidirectional(jmp)
             elif jmp.is_a(MCJUMP):
                 for i, t in enumerate(jmp.targets):
                     if t is old:
                         jmp.targets[i] = new
+                self._convert_if_unidirectional(jmp)
 
     def replace_succ_loop(self, old, new):
         replace_item(self.succs_loop, old, new)
@@ -170,6 +172,36 @@ class Block(object):
     def collect_stms(self, typs):
         return [stm for stm in self.stms if stm.is_a(typs)]
 
+    def _convert_if_unidirectional(self, jmp):
+        if not self.scope.usedef:
+            return
+        if jmp.is_a(CJUMP):
+            conds = [jmp.exp]
+            targets = [jmp.true, jmp.false]
+        elif jmp.is_a(MCJUMP):
+            conds = jmp.conds[:]
+            targets = jmp.targets[:]
+        else:
+            return
+
+        if all([targets[0] is target for target in targets[1:]]):
+            newjmp = JUMP(targets[0])
+            newjmp.block = self
+            self.stms[-1] = newjmp
+            self.succs = [targets[0]]
+            targets[0].path_exp = None
+        else:
+            return
+
+        usedef = self.scope.usedef
+        for cond in conds:
+            defstms = usedef.get_stms_defining(cond.symbol())
+            assert len(defstms) == 1
+            stm = defstms.pop()
+            usestms = usedef.get_stms_using(cond.symbol())
+            if len(usestms) > 1:
+                continue
+            stm.block.stms.remove(stm)
 
 class CompositBlock(Block):
     def __init__(self, scope, head, bodies, region):
@@ -340,7 +372,8 @@ class BlockReducer(object):
                     succ.preds.remove(block)
                     for pred in block.preds:
                         pred.replace_succ(block, succ)
-                        succ.preds.append(pred)
+                        if pred not in succ.preds:
+                            succ.preds.append(pred)
 
                 logger.debug('remove empty block ' + block.name)
                 if block is scope.entry_block:

@@ -516,21 +516,23 @@ class DFGBuilder(object):
             if node.tag.is_a(MOVE):
                 mv = node.tag
                 if mv.src.is_a([MREF, MSTORE]):
-                    mem_group = mv.src.mem.symbol().name
+                    mem_group = mv.src.mem.symbol()
                     node_groups[mem_group].append(node)
                 elif mv.src.is_a(CALL):
                     for arg in mv.src.args:
                         if arg.is_a(TEMP) and arg.symbol().typ.is_list():
-                            mem_group = arg.symbol().name
+                            mem_group = arg.symbol()
                             node_groups[mem_group].append(node)
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
                     for arg in expr.exp.args:
                         if arg.is_a(TEMP) and arg.symbol().typ.is_list():
-                            mem_group = arg.symbol().name
+                            mem_group = arg.symbol()
                             node_groups[mem_group].append(node)
-        for nodes in node_groups.values():
+        for group, nodes in node_groups.items():
+            if group.typ.get_memnode().is_immutable():
+                continue
             sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
             for i in range(len(sorted_nodes) - 1):
                 n1 = sorted_nodes[i]

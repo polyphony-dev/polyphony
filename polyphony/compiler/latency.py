@@ -18,13 +18,16 @@ def get_latency(tag):
             return CALL_MINIMUM_STEP
         elif tag.src.is_a(NEW):
             return 0
-        elif tag.dst.is_a(TEMP) and tag.dst.sym.is_condition():
+        elif tag.dst.is_a(TEMP) and tag.dst.sym.is_alias():
             return 0
         elif tag.dst.is_a(ATTR):
             return MINIMUM_STEP * 2
         elif tag.src.is_a(ARRAY):
             return MINIMUM_STEP * len(tag.src.items)
         elif tag.src.is_a(MREF):
+            memnode = tag.src.mem.symbol().typ.get_memnode()
+            if memnode.is_immutable() or not memnode.is_writable():
+                return 1
             return MINIMUM_STEP * 3
         elif tag.src.is_a(MSTORE):
             return MINIMUM_STEP * 1

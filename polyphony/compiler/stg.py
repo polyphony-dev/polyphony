@@ -672,6 +672,9 @@ class AHDLTranslator(object):
         elif ir.sym.is_condition():
             tags.add('condition')
             width = 1
+        if ir.sym.is_alias():
+            tags.discard('reg')
+            tags.add('net')
 
         if self.scope.is_worker():
             signame = ir.sym.ancestor.hdl_name() if ir.sym.ancestor else ir.sym.hdl_name()
