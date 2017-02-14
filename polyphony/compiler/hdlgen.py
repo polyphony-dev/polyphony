@@ -256,9 +256,12 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
                 mod_scope = sym.typ.get_scope()
                 info = mod_scope.module_info
-                accessor = info.interfaces[0].accessor(cp.name)
-                connection = (info.interfaces[0], accessor)
-                self.module_info.add_sub_module(cp.name, info, [connection])
+                if info.interfaces:
+                    accessor = info.interfaces[0].accessor(cp.name)
+                    connections = [(info.interfaces[0], accessor)]
+                else:
+                    connections = []
+                self.module_info.add_sub_module(cp.name, info, connections)
 
         self._add_roms(scope)
         self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)

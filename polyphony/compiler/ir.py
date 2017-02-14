@@ -165,6 +165,8 @@ class CONDOP(IRExp):
     def __str__(self):
         return '({} ? {} : {})'.format(self.cond, self.left, self.right)
 
+    def kids(self):
+        return self.cond.kids() + self.left.kids() + self.right.kids()
 
 class CALL(IRExp):
     def __init__(self, func, args):

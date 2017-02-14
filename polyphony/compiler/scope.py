@@ -69,8 +69,9 @@ class Scope(Tagged):
             order += 1
             for s in scope.children:
                 set_order(s, order, ordered)
-            for s in scope.callee_scopes:
-                set_order(s, order, ordered)
+            if env.call_graph:
+                for s in env.call_graph.succs(scope):
+                    set_order(s, order, ordered)
         top = cls.global_scope()
         top.order = 0
         ordered = set()
@@ -112,8 +113,6 @@ class Scope(Tagged):
         self.callee_instances = defaultdict(set)
         self.stgs = []
         self.order = -1
-        self.callee_scopes = set()
-        self.caller_scopes = set()
         self.module_info = None
         #self.field_access = defaultdict(set)
         self.signals = {}
@@ -218,8 +217,6 @@ class Scope(Tagged):
             new_callee_instances[new_func_sym] = copy(inst_names)
         s.callee_instances = new_callee_instances
         s.order = self.order
-        s.callee_scopes = set(self.callee_scopes)
-        s.caller_scopes = set(self.caller_scopes)
 
         sym_replacer = SymbolReplacer(symbol_map)
         sym_replacer.process(s)
@@ -251,12 +248,6 @@ class Scope(Tagged):
         if self.parent:
             return self.parent.find_scope(name)
         return None
-
-    def add_callee_scope(self, callee):
-        self.callee_scopes.add(callee)
-        if callee is None:
-            assert False
-        callee.caller_scopes.add(self)
 
     def add_sym(self, name, tags=None):
         if name in self.symbols:

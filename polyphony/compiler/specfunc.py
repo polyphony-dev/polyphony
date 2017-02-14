@@ -75,7 +75,6 @@ class SpecializedFunctionMaker:
                     call.func.sym.set_type(('func', ret_t, tuple([param.sym.typ for param in call.func_scope.params])))
                     for _, i, _ in reversed(binding):
                         call.args.pop(i)
-                    caller.add_callee_scope(new_scope)
                     using_scopes.add(new_scope)
                 else:
                     using_scopes.add(callee)

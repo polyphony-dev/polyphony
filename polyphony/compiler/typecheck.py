@@ -125,8 +125,6 @@ class TypePropagation(IRVisitor):
             # we cannot specify the callee because it has not been evaluated yet.
             raise RejectPropagation(str(ir))
 
-        self.scope.add_callee_scope(ir.func_scope)
-
         if ir.func_scope.is_method():
             params = ir.func_scope.params[1:]
         else:
@@ -158,7 +156,6 @@ class TypePropagation(IRVisitor):
         return builtin_return_type_table[ir.name]
 
     def visit_NEW(self, ir):
-        self.scope.add_callee_scope(ir.func_scope)
         ret_t = Type.object(ir.func_scope)
         ir.func_scope.return_type = ret_t
         ctor = ir.func_scope.find_ctor()
@@ -195,8 +192,6 @@ class TypePropagation(IRVisitor):
                     type_error(self.current_stm, 'unknown attribute name {}'.format(ir.attr))
                 ir.attr = ir.attr_scope.find_sym(ir.attr)
 
-            if self.scope.parent is not ir.attr_scope:
-                self.scope.add_callee_scope(ir.attr_scope)
             return ir.attr.typ
 
         raise RejectPropagation(str(ir))
@@ -415,10 +410,8 @@ class TypeChecker(IRVisitor):
         if not ir.func_scope:
             type_error(self.current_stm, '{} is not callable'.format(ir.func.sym.name))
         elif ir.func_scope.is_method():
-            self.scope.add_callee_scope(ir.func_scope)
             param_len = len(ir.func_scope.params) - 1
         else:
-            self.scope.add_callee_scope(ir.func_scope)
             param_len = len(ir.func_scope.params)
 
         self._check_param_number(arg_len, param_len, ir)

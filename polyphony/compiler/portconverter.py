@@ -1,4 +1,5 @@
 from .common import error_info
+from .env import env
 from .scope import Scope
 from .ir import *
 from .irvisitor import IRTransformer
@@ -37,15 +38,10 @@ class PortConverter(IRTransformer):
             return
         typeprop = PortTypeProp()
         for m in modules:
-            for caller in m.caller_scopes:
-                typeprop.process(caller)
-
             ctor = m.find_ctor()
             typeprop.process(ctor)
-            self.process(ctor)
 
-            for w in m.workers.values():
-                typeprop.process(w.scope)
+            self.process(ctor)
 
             for w in m.workers.values():
                 self.process(w.scope)
