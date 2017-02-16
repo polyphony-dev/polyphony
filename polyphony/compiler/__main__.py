@@ -476,13 +476,19 @@ def output_individual(driver, output_name, output_dir):
         d += '/'
 
     scopes = Scope.get_scopes(with_class=True)
+    if output_name.endswith('.v'):
+        output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:
         for scope in scopes:
+            code = driver.result(scope)
+            if not code:
+                continue
             file_name = '{}_{}.v'.format(output_name, scope.orig_name)
             with open('{}{}'.format(d, file_name), 'w') as f2:
-                if driver.result(scope):
-                    f2.write(driver.result(scope))
-            if not scope.is_testbench():
+                f2.write(code)
+            if scope.is_testbench():
+                env.append_testbench(scope)
+            else:
                 f.write('`include "./{}"\n'.format(file_name))
         for lib in env.using_libs:
             f.write(lib)

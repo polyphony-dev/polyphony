@@ -218,10 +218,11 @@ class FunctionVisitor(ast.NodeVisitor):
             else:
                 print(error_info(outer_scope, node.lineno))
                 raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
-
+        if (outer_scope.name + '.' + node.name) in lib_port_type_names:
+            tags |= {'port', 'lib'}
         self.current_scope = Scope.create(outer_scope,
                                           node.name,
-                                          tags.union({'class'}),
+                                          tags | {'class'},
                                           node.lineno)
 
         for base in node.bases:
@@ -233,8 +234,6 @@ class FunctionVisitor(ast.NodeVisitor):
                 self.current_scope.import_sym(sym)
             self.current_scope.bases.append(base_scope)
 
-        if self.current_scope.name in lib_port_type_names:
-            self.current_scope.add_tag({'port', 'lib'})
         if self.current_scope.is_module():
             for m in ['append_worker']:
                 sym = self.current_scope.add_sym(m)

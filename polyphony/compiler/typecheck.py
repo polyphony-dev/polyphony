@@ -144,7 +144,8 @@ class TypePropagation(IRVisitor):
                                   tuple([param.sym.typ for param in ir.func_scope.params]))
         self._set_type(ir.func.symbol(), funct)
 
-        if self.scope.is_testbench() and ir.func_scope.is_function():
+        if (self.scope.is_testbench() and
+                ir.func_scope.is_function() and not ir.func_scope.is_inlinelib()):
             ir.func_scope.add_tag('function_module')
 
         return ret_t

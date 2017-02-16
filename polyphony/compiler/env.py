@@ -23,6 +23,7 @@ class Env(object):
         self.scope_file_map = {}
         self.current_filename = None
         self.enable_ahdl_opt = False
+        self.testbenches = []
 
     def set_current_filename(self, filename):
         self.current_filename = filename
@@ -30,7 +31,7 @@ class Env(object):
     def append_scope(self, scope):
         self.scope_file_map[scope] = self.current_filename
         self.scopes[scope.name] = scope
-        if self.dev_debug_mode:
+        if self.dev_debug_mode and not scope.is_lib():
             logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@', ''), 'w')
             self.logfiles[scope] = logfile
 
@@ -40,5 +41,7 @@ class Env(object):
     def add_using_lib(self, lib):
         self.using_libs.add(lib)
 
+    def append_testbench(self, testbench):
+        self.testbenches.append(testbench)
 
 env = Env()
