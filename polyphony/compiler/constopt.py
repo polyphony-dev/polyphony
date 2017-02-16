@@ -268,6 +268,8 @@ class ConstantOpt(ConstantOptBase):
 
         false_blk.preds.remove(blk)
         blk.succs.remove(false_blk)
+        if self.scope.exit_block is false_blk:
+            self.scope.exit_block = blk
         if not false_blk.preds and self.dtree.is_child(blk, false_blk):
             remove_dominated_branch(false_blk)
 

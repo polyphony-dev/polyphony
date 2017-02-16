@@ -172,7 +172,7 @@ class STGBuilder(object):
         self.mrg = env.memref_graph
 
     def process(self, scope):
-        if scope.is_class():
+        if scope.is_class() or scope.is_lib():
             return
         self.scope = scope
         self.scope.blk2state = {}
@@ -702,7 +702,8 @@ class AHDLTranslator(object):
             sig_tags = {'field', 'int'}
         attr = ir.attr.hdl_name()
         if self.scope.parent.is_module():
-            signame = ir.symbol().ancestor.hdl_name() if ir.symbol().ancestor else ir.symbol().hdl_name()
+            sym = ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
+            signame = sym.hdl_name()
             instance_name = self.host.make_instance_name(ir)
 
             sig = self.scope.gen_sig(signame, INT_WIDTH, sig_tags)

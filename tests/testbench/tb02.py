@@ -11,3 +11,4 @@ def test():
     assert f(a) == f(a)
     print(f(a))
 
+test()

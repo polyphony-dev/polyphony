@@ -10,3 +10,5 @@ def test():
     assert 0 == f(rom, 0)
     assert 1 == f(rom, 1)
     assert 2 == f(rom, 2)
+
+test()

@@ -1,8 +1,7 @@
 ﻿from collections import defaultdict, deque
-from .scope import Scope
 from .block import Block
 from .irvisitor import IRVisitor
-from .ir import *
+from .ir import Ctx, IR, CONST, TEMP, ATTR, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
@@ -20,25 +19,6 @@ class InlineOpt(object):
         for scope in env.call_graph.bfs_ordered_nodes():
             if scope not in self.dones:
                 self._process_scope(scope)
-
-        using_scopes = self.collect_using_scopes()
-
-        scopes = Scope.get_scopes(bottom_up=False, with_class=True)
-        return set(scopes).difference(using_scopes)
-
-    def collect_using_scopes(self):
-        calls = defaultdict(list)
-        collector = CallCollector(calls)
-        using_scopes = set()
-        scopes = Scope.get_scopes(bottom_up=False, with_class=True)
-        for s in scopes:
-            if s.is_testbench() or s.is_global() or s.is_class():
-                using_scopes.add(s)
-            collector.process(s)
-
-        for callee, _ in calls.items():
-            using_scopes.add(callee)
-        return using_scopes
 
     def _process_scope(self, scope):
         calls = defaultdict(list)

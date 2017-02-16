@@ -685,10 +685,12 @@ class MemRefGraphBuilder(IRVisitor):
                 memsym = ir.sym
                 self.mrg.add_node(MemParamNode(memsym, self.scope))
                 memnode = self.mrg.node(memsym)
+                elm_t = ir.sym.typ.get_element()
                 if ir.sym.typ.is_list():
-                    memsym.set_type(Type.list(Type.int(), memnode))
+                    mem_t = Type.list(elm_t, memnode)
                 else:
-                    memsym.set_type(Type.tuple(Type.int(), memnode, ir.sym.typ.get_length()))
+                    mem_t = Type.tuple(elm_t, memnode, ir.sym.typ.get_length())
+                memsym.set_type(mem_t)
 
     def visit_ARRAY(self, ir):
         ir.sym = self.scope.add_temp('@array')
@@ -700,10 +702,11 @@ class MemRefGraphBuilder(IRVisitor):
             memnode.set_writable()
         # TODO: element type
         if ir.is_mutable:
-            ir.sym.set_type(Type.list(Type.int(), memnode))
+            mem_t = Type.list(Type.int(), memnode)
         else:
             memnode.set_immutable()
-            ir.sym.set_type(Type.tuple(Type.int(), memnode, len(ir.items)))
+            mem_t =Type.tuple(Type.int(), memnode, len(ir.items))
+        ir.sym.set_type(mem_t)
 
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
@@ -715,7 +718,8 @@ class MemRefGraphBuilder(IRVisitor):
                 memsym = memsym.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
-                memsym.typ = Type.list(Type.int(), self.mrg.node(memsym))
+                mem_t = Type.list(Type.int(), self.mrg.node(memsym))
+                memsym.set_type(mem_t)
                 ir.mem.set_symbol(memsym)
 
     def visit_MSTORE(self, ir):
@@ -742,18 +746,20 @@ class MemRefGraphBuilder(IRVisitor):
             memnode = self.mrg.node(memsym)
             elem_t = memsym.typ.get_element()
             if memsym.typ.is_list():
-                memsym.set_type(Type.list(elem_t, memnode))
+                mem_t = Type.list(elem_t, memnode)
             else:
-                memsym.set_type(Type.tuple(elem_t, memnode, memsym.typ.get_length()))
+                mem_t = Type.tuple(elem_t, memnode, memsym.typ.get_length())
+            memsym.set_type(mem_t)
             self._append_edge(ir.src.sym, memsym)
         elif ir.src.is_a(TEMP) and ir.src.sym.is_param() and ir.src.sym.typ.is_seq():
             self.mrg.add_node(MemRefNode(memsym, self.scope))
             memnode = self.mrg.node(memsym)
             elem_t = memsym.typ.get_element()
             if memsym.typ.is_list():
-                memsym.set_type(Type.list(elem_t, memnode))
+                mem_t = Type.list(elem_t, memnode)
             else:
-                memsym.set_type(Type.tuple(elem_t, memnode, memsym.typ.get_length()))
+                mem_t = Type.tuple(elem_t, memnode, memsym.typ.get_length())
+            memsym.set_type(mem_t)
             self._append_edge(ir.src.sym, memsym)
         elif ir.src.is_a(ATTR) and ir.src.attr.typ.is_seq():
             assert 0
@@ -766,9 +772,10 @@ class MemRefGraphBuilder(IRVisitor):
             memnode = self.mrg.node(ir.var.sym)
             elem_t = ir.var.sym.typ.get_element()
             if ir.var.sym.typ.is_list():
-                ir.var.sym.set_type(Type.list(elem_t, memnode))
+                mem_t = Type.list(elem_t, memnode)
             else:
-                ir.var.sym.set_type(Type.tuple(elem_t, memnode, ir.var.sym.typ.get_length()))
+                mem_t = Type.tuple(elem_t, memnode, ir.var.sym.typ.get_length())
+            ir.var.sym.set_type(mem_t)
 
 
 class MemInstanceGraphBuilder(object):

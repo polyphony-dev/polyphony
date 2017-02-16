@@ -13,3 +13,4 @@ def test():
     b = f(1) + f(1)
     assert b == f(2)
 
+test()

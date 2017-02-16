@@ -172,7 +172,9 @@ class FunctionVisitor(ast.NodeVisitor):
                     print(error_info(self.current_scope, node.lineno))
                     raise TypeError("Unknown type is specified.")
             else:
-                param_in.typ = param_copy.typ = Type.int()
+                param_t = Type.int()
+                param_in.set_type(param_t)
+                param_copy.set_type(param_t)
             self.current_scope.add_param(param_in, param_copy, None)
         if node.returns:
             ann = self.annotation_visitor.visit(node.returns)
@@ -186,12 +188,14 @@ class FunctionVisitor(ast.NodeVisitor):
                 raise TypeError("Unknown type is specified.")
 
         if self.current_scope.is_method():
-            if (not self.current_scope.params
-                    or not self.current_scope.params[0].sym.is_param()):
+            if (not self.current_scope.params or
+                    not self.current_scope.params[0].sym.is_param()):
                 print(error_info(self.current_scope, node.lineno))
                 raise RuntimeError("Class method must have a {} parameter.".format(env.self_name))
             first_param = self.current_scope.params[0]
-            first_param.copy.typ = first_param.sym.typ = Type.object(outer_scope)
+            self_typ = Type.object(outer_scope)
+            first_param.copy.set_type(self_typ)
+            first_param.sym.set_type(self_typ)
 
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
@@ -400,9 +404,10 @@ class CodeVisitor(ast.NodeVisitor):
             ctor = Scope.create(self.current_scope, '__init__', ['method', 'ctor'], node.lineno)
             # add 'self' parameter
             param_in = ctor.add_param_sym(env.self_name)
-            param_in.typ = Type.object(self.current_scope)
             param_copy = ctor.add_sym(env.self_name)
-            param_copy.typ = param_in.typ
+            param_t = Type.object(self.current_scope)
+            param_in.set_type(param_t)
+            param_copy.set_type(param_t)
             ctor.add_param(param_in, param_copy, None)
             # add empty block
             blk = Block(ctor)
@@ -411,6 +416,7 @@ class CodeVisitor(ast.NodeVisitor):
             # add necessary symbol
             ctor.add_return_sym()
 
+        self.current_scope.set_exit_block(self.current_block)
         self._leave_scope(*context)
 
     def visit_Return(self, node):
@@ -583,9 +589,10 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_block.connect(loop_bridge_block)
 
         # need loop bridge for branch merging
-        self.current_block = loop_bridge_block
-        self.emit(JUMP(while_block, 'L'), node)
-        loop_bridge_block.connect_loop(while_block)
+        if loop_bridge_block.preds:
+            self.current_block = loop_bridge_block
+            self.emit(JUMP(while_block, 'L'), node)
+            loop_bridge_block.connect_loop(while_block)
 
         # else part
         self.current_block = else_block

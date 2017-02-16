@@ -7,22 +7,16 @@ import logging
 class Driver(object):
     def __init__(self, procs, scopes):
         self.procs = procs
-        self.unprocessed_scopes = [None] * len(procs)
-        for i in range(len(procs)):
-            self.unprocessed_scopes[i] = scopes[:]
-        self.updated = False
+        self.scopes = scopes[:]
         self.logger = logging.getLogger()  # root logger
         self.codes = {}
-        self.insert_reserved_scopes = []
 
     def insert_scope(self, scope):
-        self.insert_reserved_scopes.append(scope)
-        self.updated = True
+        self.scopes.append(scope)
 
     def remove_scope(self, scope):
-        for scopes in self.unprocessed_scopes:
-            if scope in scopes:
-                scopes.remove(scope)
+        if scope in self.scopes:
+            self.scopes.remove(scope)
 
     def start_logging(self, proc, scope):
         if env.dev_debug_mode:
@@ -40,8 +34,8 @@ class Driver(object):
                 self.stage = i
                 args, _, _, _ = inspect.getargspec(proc)
                 Scope.reorder_scopes()
-                self.unprocessed_scopes[i].sort(key=lambda s: s.order)
-                scopes = self.unprocessed_scopes[i][:]
+                self.scopes.sort(key=lambda s: s.order)
+                scopes = self.scopes[:]
 
                 if 'scope' not in args:
                     for s in scopes:
@@ -49,22 +43,11 @@ class Driver(object):
                     proc(self)
                     for s in scopes:
                         self.end_logging(proc, s)
-                        if s in self.unprocessed_scopes[i]:
-                            self.unprocessed_scopes[i].remove(s)
                 else:
                     for s in reversed(scopes):
                         self.start_logging(proc, s)
                         proc(self, s)
                         self.end_logging(proc, s)
-                        if s in self.unprocessed_scopes[i]:
-                            self.unprocessed_scopes[i].remove(s)
-                if self.updated:
-                    for s in self.insert_reserved_scopes:
-                        for i in range(len(self.procs)):
-                            self.unprocessed_scopes[i].append(s)
-                    self.updated = False
-                    self.insert_reserved_scopes = []
-                    break
             else:
                 break
 

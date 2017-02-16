@@ -154,6 +154,9 @@
     def is_freezed(self):
         return 'freezed' in self.attrs and self.attrs['freezed'] is True
 
+    def clone(self):
+        return Type(self.name, **self.attrs)
+
 
 Type.bool_t = Type('bool', width=1)
 Type.str_t = Type('str')

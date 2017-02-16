@@ -8,7 +8,7 @@ from .common import read_source
 from .scope import Scope
 from .block import BlockReducer, PathExpTracer
 from .irtranslator import IRTranslator
-from .typecheck import TypePropagation, TypeChecker, ClassFieldChecker
+from .typecheck import TypePropagation, InstanceTypePropagation, TypeChecker, ClassFieldChecker
 from .quadruplet import QuadrupleMaker
 from .hdlgen import HDLModuleBuilder
 from .vericodegen import VerilogCodeGen
@@ -28,6 +28,7 @@ from .iftransform import IfTransformer
 from .setlineno import LineNumberSetter, SourceDump
 from .loopdetector import LoopDetector, SimpleLoopUnroll, LoopBlockDestructor
 from .specfunc import SpecializedFunctionMaker
+from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .selectorbuilder import SelectorBuilder
 from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
 from .copyopt import CopyOpt
@@ -73,7 +74,7 @@ def callgraph(driver):
         if Scope.is_unremoveable(s):
             continue
         driver.remove_scope(s)
-        env.remove_scope(s)
+        Scope.destroy(s)
 
 
 def iftrans(driver, scope):
@@ -137,25 +138,42 @@ def detectrom(driver):
     RomDetector().process_all()
 
 
+def instantiate(driver):
+    new_modules = ModuleInstantiator().process_all()
+    for module in new_modules:
+        assert module.name in env.scopes
+        driver.insert_scope(module)
+        driver.insert_scope(module.find_ctor())
+
+        assert module.is_module()
+        for child in module.children:
+            if child.is_lib():
+                continue
+            assert child.is_ctor() or child.is_worker()
+            ConstantOpt().process(child)
+    InstanceTypePropagation().process_all()
+
+    new_workers = WorkerInstantiator().process_all()
+    for worker in new_workers:
+        assert worker.name in env.scopes
+        driver.insert_scope(worker)
+
+        assert worker.is_worker()
+        ConstantOpt().process(worker)
+
+    callgraph(driver)
+
+
 def specfunc(driver):
     new_scopes, unused_scopes = SpecializedFunctionMaker().process_all()
     for s in new_scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
-    for s in unused_scopes:
-        if Scope.is_unremoveable(s):
-            continue
-        driver.remove_scope(s)
-        env.remove_scope(s)
 
 
 def inlineopt(driver):
-    unused_scopes = InlineOpt().process_all()
-    for s in unused_scopes:
-        if Scope.is_unremoveable(s):
-            continue
-        driver.remove_scope(s)
-        env.remove_scope(s)
+    InlineOpt().process_all()
+    callgraph(driver)
 
 
 def scalarize(driver, scope):
@@ -350,12 +368,13 @@ def compile_plan():
         usedef,
         constopt,
         dbg(dumpscope),
+        instantiate,
         convport,
         dbg(dumpscope),
         usedef,
         phi,
         usedef,
-        specfunc,
+        #specfunc,
         dbg(dumpscope),
         usedef,
         reduceblk,

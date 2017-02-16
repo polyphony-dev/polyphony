@@ -8,3 +8,5 @@ def test():
         sum += x
         print(sum)
     assert sum == 100
+
+test()

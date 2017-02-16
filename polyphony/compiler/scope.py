@@ -1,13 +1,17 @@
 ﻿from collections import defaultdict, namedtuple
+from copy import copy
+from .block import Block
 from .common import Tagged
 from .env import env
 from .symbol import Symbol
+from .type import Type
 from .irvisitor import IRVisitor
-from .ir import *
+from .ir import JUMP, CJUMP, MCJUMP, PHI
 from .signal import Signal
 
 from logging import getLogger
 logger = getLogger(__name__)
+
 
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 
@@ -38,6 +42,14 @@ class Scope(Tagged):
         assert s.name not in env.scopes
         env.append_scope(s)
         return s
+
+    @classmethod
+    def destroy(cls, scope):
+        assert scope.name in env.scopes
+        env.remove_scope(scope)
+        if scope.parent:
+            assert scope in scope.parent.children
+            scope.parent.children.remove(scope)
 
     @classmethod
     def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False):
@@ -88,8 +100,7 @@ class Scope(Tagged):
 
     @classmethod
     def is_unremoveable(cls, s):
-        return (s.is_global() or s.is_class() or s.is_testbench() or
-                s.is_worker() or (s.is_method() and s.parent.is_module()))
+        return s.is_global()
 
     def __init__(self, parent, name, tags, lineno):
         super().__init__(tags)
@@ -114,12 +125,11 @@ class Scope(Tagged):
         self.stgs = []
         self.order = -1
         self.module_info = None
-        #self.field_access = defaultdict(set)
         self.signals = {}
         self.block_count = 0
         self.class_fields = {}
         self.paths = []
-        self.workers = {}
+        self.workers = []
         self.worker_owner = None
         self.asap_latency = -1
 
@@ -135,7 +145,7 @@ class Scope(Tagged):
         s += "\n"
         s += '================================\n'
         s += 'Parameters\n'
-        for p, copy, val in self.params:
+        for p, _, val in self.params:
             s += '{}:{} = {}\n'.format(p, p.typ, val)
         s += "\n"
         s += '================================\n'
@@ -152,11 +162,9 @@ class Scope(Tagged):
 
     def clone_symbols(self, scope, postfix=''):
         symbol_map = {}
+
         for orig_sym in self.symbols.values():
-            new_sym = Symbol(orig_sym.name + postfix,
-                             scope,
-                             set(orig_sym.tags),
-                             orig_sym.typ)
+            new_sym = orig_sym.clone(scope, postfix)
             assert new_sym.name not in scope.symbols
             scope.symbols[new_sym.name] = new_sym
             symbol_map[orig_sym] = new_sym
@@ -181,23 +189,30 @@ class Scope(Tagged):
             elif stm.is_a(MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
             elif stm.is_a(PHI):
-                stm.args = [(arg, block_map[blk]) for arg, blk in stm.args]
+                stm.defblks = [block_map[blk] for blk in stm.defblks]
         return block_map
 
-    def clone(self, prefix, postfix):
-        assert not self.is_class()
-
+    def clone(self, prefix, postfix, parent=None):
+        if self.is_lib():
+            return
         name = prefix + '_' if prefix else ''
         name += self.orig_name
         name = name + '_' + postfix if postfix else name
-        s = Scope(self.parent, name, self.tags, self.lineno)
+        parent = self.parent if parent is None else parent
+        s = Scope(parent, name, set(self.tags), self.lineno)
+        logger.debug('CLONE {} {}'.format(self.name, s.name))
+
+        s.children = list(self.children)
+        for child in s.children:
+            child.parent = s
+
+        s.bases = list(self.bases)
 
         symbol_map = self.clone_symbols(s)
-
         s.params = []
-        for p, copy, defval in self.params:
+        for p, cp, defval in self.params:
             param = FunctionParam(symbol_map[p],
-                                  symbol_map[copy],
+                                  symbol_map[cp],
                                   defval.clone() if defval else None)
             s.params.append(param)
         s.return_type = self.return_type
@@ -205,17 +220,14 @@ class Scope(Tagged):
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
 
-        s.children = list(self.children)
-        for child in s.children:
-            child.parent = s
-        s.bases = list(self.bases)
         s.usedef = None
 
-        new_callee_instances = defaultdict(set)
-        for func_sym, inst_names in self.callee_instances.items():
-            new_func_sym = symbol_map[func_sym]
-            new_callee_instances[new_func_sym] = copy(inst_names)
-        s.callee_instances = new_callee_instances
+        if self.is_function_module():
+            new_callee_instances = defaultdict(set)
+            for func_sym, inst_names in self.callee_instances.items():
+                new_func_sym = symbol_map[func_sym]
+                new_callee_instances[new_func_sym] = copy(inst_names)
+            s.callee_instances = new_callee_instances
         s.order = self.order
 
         sym_replacer = SymbolReplacer(symbol_map)
@@ -224,6 +236,33 @@ class Scope(Tagged):
         s.parent.append_child(s)
         env.append_scope(s)
         return s
+
+    def inherit(self, name, overrides):
+        sub = Scope(self.parent, name, set(self.tags), self.lineno)
+        sub.bases.append(self)
+        sub.symbols = copy(self.symbols)
+        sub.workers = copy(self.workers)
+        sub.class_fields = copy(self.class_fields)
+        sub.children = copy(self.children)
+        sub.exit_block = sub.entry_block = Block(sub)
+        sub.return_type = Type.object(sub)
+        env.append_scope(sub)
+
+        for method in overrides:
+            sub.children.remove(method)
+            sub_method = method.clone('', '', sub)
+            _in_self_sym, self_sym, _ = sub_method.params[0]
+            assert self_sym.name == 'self'
+            assert self_sym.typ.get_scope() is self
+            self_typ = Type.object(sub)
+            _in_self_sym.set_type(self_typ)
+            self_sym.set_type(self_typ)
+
+            method_sym = sub.symbols[sub_method.orig_name]
+            sub_method_sym = method_sym.clone(sub)
+            sub_method_sym.typ.set_scope(sub_method)
+            sub.symbols[sub_method.orig_name] = sub_method_sym
+        return sub
 
     def find_child(self, name):
         for child in self.children:
@@ -280,7 +319,7 @@ class Scope(Tagged):
 
     def import_sym(self, sym):
         if sym.name in self.symbols and sym is not self.symbols[sym.name]:
-            raise RuntimeError("symbol '{}' is already registered ".format(name))
+            raise RuntimeError("symbol '{}' is already registered ".format(sym.name))
         self.symbols[sym.name] = sym
 
     def find_sym(self, name):
@@ -443,11 +482,10 @@ class Scope(Tagged):
         assert self.is_class()
         self.class_fields[f] = init_stm
 
-    def append_worker(self, key, worker_scope, worker_args):
-        self.workers[key] = Worker(worker_scope, worker_args)
-        if not worker_scope.is_worker():
-            worker_scope.add_tag('worker')
-            worker_scope.worker_owner = self
+    def register_worker(self, worker_scope, worker_args):
+        self.workers.append((worker_scope, worker_args))
+        assert worker_scope.worker_owner is None
+        worker_scope.worker_owner = self
 
 
 class SymbolReplacer(IRVisitor):
@@ -456,7 +494,14 @@ class SymbolReplacer(IRVisitor):
         self.sym_map = sym_map
 
     def visit_TEMP(self, ir):
-        ir.sym = self.sym_map[ir.sym]
+        if ir.sym in self.sym_map:
+            ir.sym = self.sym_map[ir.sym]
+        else:
+            logger.debug('WARNING: not found {}'.format(ir.sym))
 
     def visit_ATTR(self, ir):
-        ir.attr = self.sym_map[ir.attr]
+        self.visit(ir.exp)
+        if ir.attr in self.sym_map:
+            ir.attr = self.sym_map[ir.attr]
+        else:
+            logger.debug('WARNING: not found {}'.format(ir.attr))

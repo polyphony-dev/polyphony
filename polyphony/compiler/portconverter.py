@@ -1,7 +1,6 @@
 from .common import error_info
-from .env import env
 from .scope import Scope
-from .ir import *
+from .ir import CONST
 from .irvisitor import IRTransformer
 from .type import Type
 from .typecheck import TypePropagation
@@ -39,12 +38,13 @@ class PortConverter(IRTransformer):
         typeprop = PortTypeProp()
         for m in modules:
             ctor = m.find_ctor()
+            assert ctor
             typeprop.process(ctor)
 
             self.process(ctor)
 
-            for w in m.workers.values():
-                self.process(w.scope)
+            for w, args in m.workers:
+                self.process(w)
 
             for name, mv in m.class_fields.items():
                 field = mv.dst.symbol()

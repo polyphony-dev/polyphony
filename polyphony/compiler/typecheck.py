@@ -29,7 +29,7 @@ class TypePropagation(IRVisitor):
         scopes = Scope.get_scopes(bottom_up=False,
                                   with_global=True,
                                   with_class=True,
-                                  with_lib=True)
+                                  with_lib=False)
         for s in scopes:
             if s.return_type is None:
                 s.return_type = Type.none_t
@@ -138,12 +138,11 @@ class TypePropagation(IRVisitor):
         else:
             for i, param in enumerate(params):
                 if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
-                    param.sym.typ = arg_types[i]
+                    self._set_type(param.sym, arg_types[i])
             funct = Type.function(ir.func_scope,
                                   ret_t,
                                   tuple([param.sym.typ for param in ir.func_scope.params]))
-
-        ir.func.symbol().set_type(funct)
+        self._set_type(ir.func.symbol(), funct)
 
         if self.scope.is_testbench() and ir.func_scope.is_function():
             ir.func_scope.add_tag('function_module')
@@ -163,7 +162,7 @@ class TypePropagation(IRVisitor):
         arg_types = [self.visit(arg) for arg in ir.args]
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
-                param.sym.typ = arg_types[i]
+                self._set_type(param.sym, arg_types[i])
         return ret_t
 
     def visit_CONST(self, ir):
@@ -246,15 +245,17 @@ class TypePropagation(IRVisitor):
         self._fill_args_if_needed(worker_scope.orig_name, params, args)
         arg_types = [self.visit(arg) for arg in args]
         for i, param in enumerate(params):
-            param.copy.typ = param.sym.typ = arg_types[i]
+            self._set_type(param.sym, arg_types[i])
+            self._set_type(param.copy, arg_types[i])
+
         funct = Type.function(worker_scope,
                               Type.none_t,
                               tuple([param.sym.typ for param in worker_scope.params]))
-        func.symbol().set_type(funct)
+        self._set_type(func.symbol(), funct)
         mod_sym = call.func.tail()
         assert mod_sym.typ.is_object()
-        mod_scope = mod_sym.typ.get_scope()
-        mod_scope.append_worker(call, worker_scope, args)
+        if not worker_scope.is_worker():
+            worker_scope.add_tag('worker')
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
@@ -294,13 +295,14 @@ class TypePropagation(IRVisitor):
             if not isinstance(ir.dst.symbol(), Symbol):
                 # the type of object has not inferenced yet
                 raise RejectPropagation(str(ir))
-            if not ir.dst.symbol().typ.is_freezed():
-                ir.dst.symbol().set_type(src_typ)
+            self._set_type(ir.dst.symbol(), src_typ)
             if self.scope.is_method() and ir.dst.is_a(ATTR):
-                sym = self.scope.parent.find_sym(ir.dst.symbol().name)
-                sym.set_type(src_typ)
+                receiver = ir.dst.tail()
+                if receiver.typ.is_object():
+                    sym = receiver.typ.get_scope().find_sym(ir.dst.symbol().name)
+                    self._set_type(sym, src_typ)
         elif ir.dst.is_a(MREF):
-            ir.dst.mem.symbol().set_type(Type.list(src_typ, None))
+            self._set_type(ir.dst.mem.symbol(), Type.list(src_typ, None))
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_none():
                 # the type of object has not inferenced yet
@@ -310,7 +312,7 @@ class TypePropagation(IRVisitor):
             elem_t = src_typ.get_element()
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR])
-                item.symbol().set_type(elem_t)
+                self._set_type(item.symbol(), elem_t)
         else:
             assert False
         # check mutable method
@@ -323,7 +325,7 @@ class TypePropagation(IRVisitor):
         arg_types = [self.visit(arg) for arg in ir.args]
         for arg_t in arg_types:
             if not arg_t.is_none() and not ir.var.symbol().typ.is_freezed():
-                ir.var.symbol().set_type(arg_t)
+                self._set_type(ir.var.symbol(), arg_t)
                 break
 
     def visit_UPHI(self, ir):
@@ -340,6 +342,21 @@ class TypePropagation(IRVisitor):
                     type_error(self.current_stm,
                                "{}() missing required argument: '{}'".format(func_name,
                                                                              param.copy.name))
+
+    def _set_type(self, sym, typ):
+        if not sym.typ.is_freezed():
+            sym.set_type(typ)
+
+
+class InstanceTypePropagation(TypePropagation):
+    def process_all(self):
+        scopes = Scope.get_scopes(bottom_up=False, with_global=True)
+        for s in scopes:
+            self.process(s)
+
+    def _set_type(self, sym, typ):
+        if sym.typ.is_object() and sym.typ.get_scope().is_module():
+            sym.set_type(typ)
 
 
 class ClassFieldChecker(IRVisitor):

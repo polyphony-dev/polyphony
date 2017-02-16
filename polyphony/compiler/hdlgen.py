@@ -340,8 +340,8 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 break
 
         self._process_io(scope)
-        for worker in scope.workers.values():
-            self._process_worker(scope, worker.scope, reset_stms)
+        for worker, args in scope.workers:
+            self._process_worker(scope, worker, reset_stms)
 
     def _collect_field_defs(self, scope):
         moves = self._collect_moves(scope)
