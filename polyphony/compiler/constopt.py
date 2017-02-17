@@ -342,7 +342,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         super().__init__()
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope is not self.scope:
+        if ir.sym.scope.is_global():
             c = try_get_constant(ir.sym, ir.sym.scope)
             if c:
                 return c

@@ -329,7 +329,11 @@ class Scope(Tagged):
         if name in self.symbols:
             return self.symbols[name]
         elif self.parent:
-            found = self.parent.find_sym(name)
+            if self.parent.is_class():
+                # look-up from global
+                found = self.global_scope().find_sym(name)
+            else:
+                found = self.parent.find_sym(name)
             return found
         return None
 

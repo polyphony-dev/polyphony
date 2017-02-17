@@ -294,6 +294,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.last_node = None
 
         self.annotation_visitor = AnnotationVisitor(self)
+        self.lazy_defs = []
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -334,13 +335,30 @@ class CodeVisitor(ast.NodeVisitor):
         return (outer_scope, last_block)
 
     def _leave_scope(self, outer_scope, last_block):
+        self._visit_lazy_defs()
         self.current_scope = outer_scope
         self.current_block = last_block
+
+    def _visit_lazy_defs(self):
+        lazy_defs = self.lazy_defs[:]
+        self.lazy_defs = []
+        for lazy_def in lazy_defs:
+            if isinstance(lazy_def, ast.FunctionDef):
+                self._visit_lazy_FunctionDef(lazy_def)
+            elif isinstance(lazy_def, ast.ClassDef):
+                self._visit_lazy_ClassDef(lazy_def)
+
+    def visit_Module(self, node):
+        for stm in node.body:
+            self.visit(stm)
+        self._visit_lazy_defs()
 
     def visit_FunctionDef(self, node):
         if node.name.startswith(IGNORE_PREFIX):
             return
+        self.lazy_defs.append(node)
 
+    def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
 
         outer_function_exit = self.function_exit
@@ -384,7 +402,6 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.set_exit_block(self.current_block)
 
         self.function_exit = outer_function_exit
-
         self._leave_scope(*context)
 
     def visit_AsyncFunctionDef(self, node):
@@ -394,7 +411,9 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node):
         if node.name.startswith(IGNORE_PREFIX):
             return
+        self.lazy_defs.append(node)
 
+    def _visit_lazy_ClassDef(self, node):
         context = self._enter_scope(node.name)
         for body in node.body:
             self.visit(body)
