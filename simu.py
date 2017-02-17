@@ -15,7 +15,6 @@ from polyphony.compiler.env import env
 
 
 def exec_test(casefile_path, output=True, compile_only=False):
-    compile_only = False
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
     try:

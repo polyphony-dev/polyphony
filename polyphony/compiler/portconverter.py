@@ -8,8 +8,6 @@ from .typecheck import TypePropagation
 
 class PortTypeProp(TypePropagation):
     def visit_NEW(self, ir):
-        if not ir.func_scope.is_module() and not ir.func_scope.is_lib():
-            return ir.func_scope.return_type
         if ir.func_scope.is_port():
             attrs = {}
             ctor = ir.func_scope.find_ctor()
@@ -20,6 +18,7 @@ class PortTypeProp(TypePropagation):
                 attrs[p.copy.name] = a.value
 
             attrs['direction'] = '?'
+            attrs['iosymbol'] = self.current_stm.dst.symbol()
             port_typ = Type.port(ir.func_scope, attrs)
             #port_typ.freeze()
             ir.func_scope.return_type = port_typ

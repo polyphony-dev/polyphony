@@ -851,14 +851,11 @@ class AHDLTranslator(object):
         return ir.is_a(NEW) and ir.func_scope.is_port()
 
     def _port_sig(self, port_qsym):
-        if port_qsym[-1].typ.is_port():
-            port_sym = port_qsym[-1]
-            port_prefixes = port_qsym
-        elif port_qsym[-2].typ.is_port():
-            port_sym = port_qsym[-2]
-            port_prefixes = port_qsym[:-1]
-        else:
-            assert False
+        assert port_qsym[-1].typ.is_port()
+        port_sym = port_qsym[-1]
+        iosym = port_sym.typ.get_iosymbol()
+        port_prefixes = port_qsym[:-1] + (iosym,)
+
         if port_prefixes[0].name == env.self_name:
             port_prefixes = port_prefixes[1:]
         port_name = '_'.join([pfx.name for pfx in port_prefixes])
@@ -888,7 +885,7 @@ class AHDLTranslator(object):
     def _make_port_access(self, call, target, node):
         assert call.func.is_a(ATTR)
         #port_sym = call.func.tail()
-        port_sig = self._port_sig(call.func.qualified_symbol())
+        port_sig = self._port_sig(call.func.qualified_symbol()[:-1])
 
         if call.func_scope.orig_name == 'wr':
             assert call.args
