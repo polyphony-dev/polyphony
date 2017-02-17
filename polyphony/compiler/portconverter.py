@@ -1,6 +1,6 @@
 from .common import error_info
 from .scope import Scope
-from .ir import CONST
+from .ir import CONST, TEMP, MOVE
 from .irvisitor import IRTransformer
 from .type import Type
 from .typecheck import TypePropagation
@@ -18,7 +18,11 @@ class PortTypeProp(TypePropagation):
                 attrs[p.copy.name] = a.value
 
             attrs['direction'] = '?'
-            attrs['iosymbol'] = self.current_stm.dst.symbol()
+            attrs['root_symbol'] = self.current_stm.dst.symbol()
+            if self.current_stm.is_a(MOVE) and self.current_stm.dst.is_a(TEMP):
+                attrs['port_kind'] = 'internal'
+            else:
+                attrs['port_kind'] = 'external'
             port_typ = Type.port(ir.func_scope, attrs)
             #port_typ.freeze()
             ir.func_scope.return_type = port_typ
@@ -64,12 +68,14 @@ class PortConverter(IRTransformer):
             if not sym.typ.has_direction():
                 sym.typ.set_direction('?')
             di = sym.typ.get_direction()
-            if di == '?':
-                sym.typ.set_direction(direction)
-                sym.typ.freeze()
-            elif di != direction:
-                print(error_info(self.scope, ir.lineno))
-                raise RuntimeError('Port direction is conflicted')
+            kind = sym.typ.get_port_kind()
+            if kind == 'external':
+                if di == '?':
+                    sym.typ.set_direction(direction)
+                    sym.typ.freeze()
+                elif di != direction:
+                    print(error_info(self.scope, ir.lineno))
+                    raise RuntimeError('Port direction is conflicted')
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -85,10 +91,12 @@ class PortConverter(IRTransformer):
                 port = p.symbol().typ
                 assert port.is_port()
                 di = port.get_direction()
-                if di == 'output':
-                    print(error_info(self.scope, ir.lineno))
-                    raise RuntimeError('Cannot wait for output port')
-                elif di == '?':
-                    port.set_direction('input')
-                    port.freeze()
+                kind = port.get_port_kind()
+                if kind == 'external':
+                    if di == 'output':
+                        print(error_info(self.scope, ir.lineno))
+                        raise RuntimeError('Cannot wait for output port')
+                    elif di == '?':
+                        port.set_direction('input')
+                        port.freeze()
         return ir

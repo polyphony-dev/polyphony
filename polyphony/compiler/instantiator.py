@@ -1,3 +1,4 @@
+from .common import error_info
 from .scope import Scope
 from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
@@ -34,7 +35,7 @@ class WorkerInstantiator(object):
         calls = collector.process(ctor)
         for stm, call in calls:
             if call.is_a(CALL) and call.func_scope.orig_name == 'append_worker':
-                new_worker = self._instantiate_worker(call)
+                new_worker = self._instantiate_worker(call, ctor)
                 new_workers.add(new_worker)
                 module.register_worker(new_worker, call.args)
                 new_worker_sym = module.add_sym(new_worker.orig_name)
@@ -42,7 +43,7 @@ class WorkerInstantiator(object):
                 call.args[0].set_symbol(new_worker_sym)
         return new_workers
 
-    def _instantiate_worker(self, call):
+    def _instantiate_worker(self, call, ctor):
         assert len(call.args) >= 1
         assert call.args[0].is_a([TEMP, ATTR])
         assert call.args[0].symbol().typ.is_function()
@@ -51,8 +52,17 @@ class WorkerInstantiator(object):
         worker = call.args[0].symbol().typ.get_scope()
         binding = []
         for i, arg in enumerate(call.args):
+            if i == 0:
+                continue
             if arg.is_a(CONST):
                 binding.append((bind_val, i, arg.value))
+            elif (arg.is_a([TEMP, ATTR]) and
+                    arg.symbol().typ.is_object() and
+                    arg.symbol().typ.get_scope().is_port()):
+                pass
+            else:
+                print(error_info(ctor, call.lineno))
+                raise RuntimeError('The argument of the worker must be a constant or a port')
         if binding:
             postfix = '{}_{}'.format(call.lineno,
                                      '_'.join([str(v) for _, _, v in binding]))

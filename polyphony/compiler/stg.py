@@ -853,8 +853,8 @@ class AHDLTranslator(object):
     def _port_sig(self, port_qsym):
         assert port_qsym[-1].typ.is_port()
         port_sym = port_qsym[-1]
-        iosym = port_sym.typ.get_iosymbol()
-        port_prefixes = port_qsym[:-1] + (iosym,)
+        root_sym = port_sym.typ.get_root_symbol()
+        port_prefixes = port_qsym[:-1] + (root_sym,)
 
         if port_prefixes[0].name == env.self_name:
             port_prefixes = port_prefixes[1:]
@@ -865,8 +865,12 @@ class AHDLTranslator(object):
         if port_scope.orig_name == 'Int':
             tags.add('int')
         direction = port_sym.typ.get_direction()
+        kind = port_sym.typ.get_port_kind()
 
-        if self.scope.parent is port_sym.scope and port_sym.scope.is_module():
+        if kind == 'internal':
+            # TODO: specific protocol port
+            tags.add('reg')
+        elif self.scope.parent is port_sym.scope and port_sym.scope.is_module():
             tags.add(direction)
         elif self.scope.is_worker():
             tags.add(direction)
@@ -900,7 +904,7 @@ class AHDLTranslator(object):
 
     def _make_port_init(self, new, target, node):
         assert new.func_scope.is_port()
-        assert target.is_a(ATTR)
+        #assert target.is_a(ATTR)
         port = target.symbol().typ
         assert port.is_port()
         port_sig = self._port_sig(target.qualified_symbol())

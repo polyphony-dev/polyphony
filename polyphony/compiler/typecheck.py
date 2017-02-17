@@ -486,7 +486,9 @@ class TypeChecker(IRVisitor):
                        'unsupported literal type {}'.format(repr(ir)))
 
     def visit_TEMP(self, ir):
-        if ir.ctx == Ctx.LOAD and ir.sym.scope is not self.scope and self.scope.has_sym(ir.sym.name):
+        if (ir.ctx == Ctx.LOAD and
+                ir.sym.scope is not self.scope and
+                self.scope.has_sym(ir.sym.name)):
             type_error(self.current_stm,
                        "local variable '{}' referenced before assignment".format(ir.sym.name))
         return ir.sym.typ

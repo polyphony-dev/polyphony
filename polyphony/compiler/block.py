@@ -203,6 +203,7 @@ class Block(object):
                 continue
             stm.block.stms.remove(stm)
 
+
 class CompositBlock(Block):
     def __init__(self, scope, head, bodies, region):
         super().__init__(scope, 'composit')
