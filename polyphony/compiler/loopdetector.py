@@ -1,5 +1,6 @@
 ﻿from .ir import CONST, BINOP, RELOP, TEMP, ATTR, MOVE, JUMP, CJUMP
 from .irvisitor import IRVisitor
+from .graph import Graph
 from .varreplacer import VarReplacer
 from .usedef import UseDefDetector
 from .block import Block, CompositBlock
@@ -7,65 +8,25 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-class LoopNestTree(object):
-    def __init__(self):
-        self.nodes = []
-        self.edges = []
-        self.root = None
-
+class LoopNestTree(Graph):
     def set_root(self, n):
+        self.add_node(n)
         self.root = n
 
-    def add_node(self, n):
-        if n not in self.nodes:
-            self.nodes.append(n)
-        return n
-
-    def add_edge(self, n1, n2):
-        edge = (n1, n2)
-        if edge not in self.edges:
-            self.edges.append(edge)
+    def traverse(self):
+        return reversed(self.bfs_ordered_nodes())
 
     def is_child(self, loop_head1, loop_head2):
-        for h1, h2 in self.edges:
-            if loop_head1 is h1 and loop_head2 is h2:
-                return True
-        return False
+        return loop_head2 in self.succs(loop_head1)
+
+    def is_leaf(self, loop_head):
+        return not self.succs(loop_head)
 
     def get_children_of(self, loop_head):
-        children = []
-        for h1, h2 in self.edges:
-            if loop_head is h1:
-                children.append(h2)
-        return children
+        return self.succs(loop_head)
 
     def get_parent_of(self, loop_head):
-        for h1, h2 in self.edges:
-            if loop_head is h2:
-                return h1
-        return None
-
-    def dump(self):
-        logger.debug('loop nest tree')
-        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
-            logger.debug(n1.name + ' --> ' + n2.name)
-
-    def __str__(self):
-        s = ''
-        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
-            s += n1.name + ' --> ' + n2.name + '\n'
-        return s
-
-    def traverse(self):
-        stack = []
-        self._traverse_rec(self.root, stack)
-        return stack
-
-    def _traverse_rec(self, node, stack):
-        children = self.get_children_of(node)
-        for child in children:
-            self._traverse_rec(child, stack)
-        stack.append(node)
+        return self.preds(loop_head)
 
 
 class LoopDetector(object):
@@ -293,7 +254,10 @@ class SimpleLoopUnroll(object):
         udd.process(scope)
 
         for c in self.scope.loop_nest_tree.get_children_of(entry):
-            self._process(c)
+            if self.scope.loop_nest_tree.is_leaf(c):
+                self._process(c)
+            else:
+                raise NotImplementedError('cannot unroll the nested loop')
         for blk in scope.traverse_blocks():
             blk.order = -1
         Block.set_order(entry, 0)
@@ -306,16 +270,13 @@ class SimpleLoopUnroll(object):
         logger.debug(str(loop_init))
         logger.debug(str(loop_limit))
         logger.debug(str(loop_step))
-        assert loop_init.is_a(CONST)
-        assert loop_limit.is_a(CONST)
-        assert loop_step.is_a(CONST)
-        # should success unrolling if loop is exsisting in a testbench
-        if not inductions:
-            return False
+        if (not inductions or not loop_init.is_a(CONST) or
+                not loop_limit.is_a(CONST) or not loop_step.is_a(CONST)):
+            raise NotImplementedError('cannot unroll the loop')
 
         unroll_blocks = blocks[1:-1]
         if len(unroll_blocks) > 1:
-            return False
+            raise NotImplementedError('cannot unroll the loop containing branches')
         unroll_block = unroll_blocks[0]
         self._unroll(inductions, loop_init.value, loop_limit.value, loop_step.value, unroll_block)
 
