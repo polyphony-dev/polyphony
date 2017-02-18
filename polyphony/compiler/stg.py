@@ -317,10 +317,11 @@ class STGBuilder(object):
                 assert init_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
                 self.stg.init_state = init_state
             if is_last:
-                name = '{}_FINISH'.format(state_prefix)
-                finish_state = states[-1]
-                finish_state.name = name
-                assert finish_state.codes[-1].is_a(AHDL_TRANSITION)
+                last_state = states[-1]
+                finish_state = self._new_state('{}_FINISH'.format(state_prefix),
+                                            last_state.step + 1,
+                                            [AHDL_TRANSITION(None)])
+                states.append(finish_state)
                 self.stg.finish_state = finish_state
         else:
             if is_first:

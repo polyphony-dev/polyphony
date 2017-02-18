@@ -1,5 +1,6 @@
 from polyphony import module
 from polyphony import testbench
+from polyphony import is_worker_running
 from polyphony.timing import clksleep
 
 
@@ -11,7 +12,8 @@ class WorkerTest02:
         self.append_worker(self.worker, 3 * mparam)
 
     def worker(self, param):
-        print('worker', param)
+        while is_worker_running():
+            print('worker', param)
 
 
 @testbench

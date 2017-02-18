@@ -13,7 +13,8 @@ class WorkerTest01:
         print('worker0', param)
 
     def worker1(self, param):
-        print('worker1', param)
+        for i in range(10):
+            print('worker1', param)
 
 
 @testbench
@@ -23,7 +24,7 @@ def test0(wtest):
 
 @testbench
 def test1(wtest):
-    clksleep(10)
+    clksleep(30)
 
 
 w0 = WorkerTest01(10)
