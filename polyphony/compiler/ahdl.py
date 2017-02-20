@@ -501,6 +501,9 @@ class AHDL_TRANSITION(AHDL_STM):
     def __str__(self):
         return '(next state: {})'.format(self.target.name)
 
+    def __repr__(self):
+        return 'AHDL_TRANSITION({})'.format(self.target.name)
+
 
 class AHDL_TRANSITION_IF(AHDL_IF):
     def __init__(self, conds, codes_list):

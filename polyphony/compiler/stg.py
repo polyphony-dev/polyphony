@@ -185,7 +185,7 @@ class STGBuilder(object):
 
         main_stg = stgs[0]
         functools.reduce(lambda s1, s2: s1.resolve_transition(s2), main_stg.states)
-        if scope.is_worker():
+        if scope.is_worker() or scope.is_testbench():
             main_stg.states[-1].resolve_transition(main_stg.states[-1])
         else:
             main_stg.states[-1].resolve_transition(main_stg.states[0])
@@ -216,7 +216,7 @@ class STGBuilder(object):
 
     def _process_dfg(self, index, dfg):
         is_main = index == 0
-        if self.scope.parent.is_module() and self.scope.is_callable():
+        if self.scope.parent and self.scope.parent.is_module() and self.scope.is_callable():
             if is_main:
                 stg_name = self.scope.parent.orig_name
             else:
@@ -314,13 +314,15 @@ class STGBuilder(object):
                 name = '{}_INIT'.format(state_prefix)
                 init_state = states[0]
                 init_state.name = name
-                assert init_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
+                assert init_state.codes[-1].is_a([AHDL_TRANSITION,
+                                                  AHDL_TRANSITION_IF,
+                                                  AHDL_META_WAIT])
                 self.stg.init_state = init_state
             if is_last:
                 last_state = states[-1]
                 finish_state = self._new_state('{}_FINISH'.format(state_prefix),
-                                            last_state.step + 1,
-                                            [AHDL_TRANSITION(None)])
+                                               last_state.step + 1,
+                                               [AHDL_TRANSITION(None)])
                 states.append(finish_state)
                 self.stg.finish_state = finish_state
         else:

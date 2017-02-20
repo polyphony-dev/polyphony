@@ -381,7 +381,6 @@ class ClassFieldChecker(IRVisitor):
             return
         class_scope = self.scope.parent
         assert class_scope.is_class()
-        class_scope.add_class_field(irattr.attr, ir)
 
 
 class TypeChecker(IRVisitor):

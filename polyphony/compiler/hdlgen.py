@@ -284,8 +284,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         self.module_info.add_interface(inf)
         iports = []
         oports = []
-        for name, mv in sorted(module_scope.class_fields.items()):
-            field = mv.dst.symbol()
+        for field in sorted(module_scope.class_fields().values()):
             if field.typ.is_port():
                 p_scope = field.typ.get_scope()
                 assert p_scope.is_port()

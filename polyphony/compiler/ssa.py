@@ -15,7 +15,7 @@ class SSATransformerBase(object):
         pass
 
     def process(self, scope):
-        if scope.is_class():
+        if scope.is_class() or scope.is_global():
             return
         self.scope = scope
         self.dominance_frontier = {}
@@ -306,7 +306,7 @@ class TupleSSATransformer(SSATransformerBase):
         super().__init__()
 
     def process(self, scope):
-        if scope.is_class():
+        if scope.is_class() or scope.is_global():
             return
         super().process(scope)
         UseDefDetector().process(scope)
@@ -361,7 +361,7 @@ class ObjectSSATransformer(SSATransformerBase):
         super().__init__()
 
     def process(self, scope):
-        if scope.is_class():
+        if scope.is_class() or scope.is_global():
             return
         super().process(scope)
         self._process_use_phi()
@@ -406,6 +406,8 @@ class ObjectSSATransformer(SSATransformerBase):
         if not sym.typ.is_object():
             return False
         if sym.name == env.self_name:
+            return False
+        if sym.scope.is_module():
             return False
         scope = sym.typ.get_scope()
         if scope.is_port() or scope.is_module():

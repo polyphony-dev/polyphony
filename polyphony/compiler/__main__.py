@@ -434,7 +434,7 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
         translator.translate(read_source(package_file), package_name)
     translator.translate(read_source(src_file), '')
 
-    scopes = Scope.get_scopes(bottom_up=False, with_class=True)
+    scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)
     driver = Driver(compile_plan(), scopes)
     driver.run()
     #output_all(driver, output_name, output_dir)

@@ -344,32 +344,63 @@ class FlattenFieldAccess(IRVisitor):
         else:
             return ir.attr.name
 
+    def _make_flatname(self, qsym):
+        qnames = [sym.name for sym in qsym if sym.name != env.self_name]
+        return '_'.join(qnames)
+
+    def _make_flatten_qsym(self, ir):
+        flatname = None
+        qsym = ir.qualified_symbol()
+        if qsym[-1].typ.is_function():
+            tail = (qsym[-1], )
+            qsym = qsym[:-1]
+        else:
+            tail = tuple()
+
+        ancestor = qsym[-1]
+        for i, sym in enumerate(qsym):
+            if sym.typ.is_object() and sym.typ.get_scope().is_module():
+                flatname = self._make_flatname(qsym[i + 1:])
+                head = qsym[:i + 1]
+                scope = sym.typ.get_scope()
+                break
+        else:
+            flatname = self._make_flatname(qsym)
+            head = tuple()
+            scope = self.scope
+        if flatname:
+            if scope.has_sym(flatname):
+                flatsym = scope.find_sym(flatname)
+            else:
+                flatsym = scope.add_sym(flatname, ir.attr.tags)
+                flatsym.typ = ancestor.typ
+                #flatsym.ancestor = ancestor
+            return head + (flatsym, ) + tail
+        else:
+            return head + tail
+
+    def _make_new_ATTR(self, qsym, ir):
+        newir = TEMP(qsym[0], Ctx.LOAD)
+        for sym in qsym[1:]:
+            newir = ATTR(newir, sym, Ctx.LOAD)
+        newir.ctx = ir.ctx
+        return newir
+
     def visit_ATTR(self, ir):
-        # don't flatten use of the other instance in the class
+        # don't flatten use of the other instance in the class except module
         if self.scope.is_method():
-            return
+            if self.scope.parent.is_module():
+                pass
+            else:
+                return
         # don't flatten use of the static class field
         if ir.tail().typ.is_class():
             return
-        # don't flatten use of the module class field
-        if ir.tail().typ.is_object() and ir.tail().typ.get_scope().is_module():
-            return
-        flatname = self.make_flatname(ir)
-        if self.scope.has_sym(flatname):
-            flatsym = self.scope.find_sym(flatname)
-        else:
-            flatsym = self.scope.add_sym(flatname, ir.attr.tags)
-        flatsym.typ = ir.attr.typ
-        flatsym.ancestor = ir.attr
-        newtemp = TEMP(flatsym, ir.ctx)
-        newtemp.lineno = ir.lineno
-        self.current_stm.replace(ir, newtemp)
 
-    def visit_CALL(self, ir):
-        # we don't flatten a method call
-        if ir.func_scope.is_method():
-            return
-        super().visit_CALL(ir)
+        qsym = self._make_flatten_qsym(ir)
+        newattr = self._make_new_ATTR(qsym, ir)
+        newattr.lineno = ir.lineno
+        self.current_stm.replace(ir, newattr)
 
 
 class ObjectHierarchyCopier(object):
@@ -398,7 +429,7 @@ class ObjectHierarchyCopier(object):
             cp = worklist.popleft()
             class_scope = cp.src.symbol().typ.get_scope()
             assert class_scope is cp.dst.symbol().typ.get_scope()
-            for sym in class_scope.class_fields.keys():
+            for sym in class_scope.class_fields().values():
                 if not sym.typ.is_object():
                     continue
                 new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)

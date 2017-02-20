@@ -127,7 +127,6 @@ class Scope(Tagged):
         self.module_info = None
         self.signals = {}
         self.block_count = 0
-        self.class_fields = {}
         self.paths = []
         self.workers = []
         self.worker_owner = None
@@ -242,7 +241,6 @@ class Scope(Tagged):
         sub.bases.append(self)
         sub.symbols = copy(self.symbols)
         sub.workers = copy(self.workers)
-        sub.class_fields = copy(self.class_fields)
         sub.children = copy(self.children)
         sub.exit_block = sub.entry_block = Block(sub)
         sub.return_type = Type.object(sub)
@@ -482,9 +480,15 @@ class Scope(Tagged):
         self.signals[new] = sig
         return sig
 
-    def add_class_field(self, f, init_stm):
+    def class_fields(self):
         assert self.is_class()
-        self.class_fields[f] = init_stm
+        class_fields = {}
+        if self.bases:
+            for base in self.bases:
+                fields = base.class_fields()
+                class_fields.update(fields)
+        class_fields.update(self.symbols)
+        return class_fields
 
     def register_worker(self, worker_scope, worker_args):
         self.workers.append((worker_scope, worker_args))

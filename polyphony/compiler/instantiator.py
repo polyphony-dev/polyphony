@@ -118,7 +118,6 @@ class ModuleInstantiator(object):
             for _, i, _ in reversed(binding):
                 new_module_ctor.params.pop(i + 1)
             new.func_scope = new_module
-            #ret_t = new.func_scope.return_type
             for _, i, _ in reversed(binding):
                 new.args.pop(i)
         else:

@@ -33,7 +33,6 @@ class HDLModuleInfo(object):
         self.muxes = []
         self.demuxes = []
         self.decls = defaultdict(list)
-        self.class_fields = set()
         self.internal_field_accesses = {}
         self.fsms = defaultdict(FSM)
         self.node2if = {}

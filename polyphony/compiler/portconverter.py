@@ -9,6 +9,7 @@ from .typecheck import TypePropagation
 class PortTypeProp(TypePropagation):
     def visit_NEW(self, ir):
         if ir.func_scope.is_port():
+            assert self.scope.is_ctor() and self.scope.parent.is_module()
             attrs = {}
             ctor = ir.func_scope.find_ctor()
             for a, p in zip(ir.args, ctor.params[1:]):
@@ -45,15 +46,12 @@ class PortConverter(IRTransformer):
             typeprop.process(ctor)
 
             self.process(ctor)
-
             for w, args in m.workers:
                 self.process(w)
 
-            for name, mv in m.class_fields.items():
-                field = mv.dst.symbol()
+            for field in m.class_fields().values():
                 if field.typ.is_port() and field.typ.get_direction() == '?':
-                    print(error_info(m, mv.lineno))
-                    raise RuntimeError("The port '{}' is not used at all".format(mv.dst))
+                    raise RuntimeError("The port '{}' is not used at all".format(field))
 
     def visit_CALL(self, ir):
         if not ir.func_scope.is_lib():

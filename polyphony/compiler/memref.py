@@ -553,7 +553,7 @@ class MemRefGraphBuilder(IRVisitor):
         #usedefs = [s.usedef for s in scopes]
         for s in scopes:
             if s.is_ctor():
-                listtypes = [f for f, init_stm in s.parent.class_fields.items() if f.typ.is_seq()]
+                listtypes = [f for f in s.parent.class_fields().values() if f.typ.is_seq()]
                 if listtypes:
                     pass
 
