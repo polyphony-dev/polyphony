@@ -442,6 +442,16 @@ class Scope(Tagged):
     def is_containable(self):
         return self.is_namespace() or self.is_class()
 
+    def is_subclassof(self, clazz):
+        if self is clazz:
+            return True
+        for base in self.bases:
+            if base is clazz:
+                return True
+            if base.is_subclassof(clazz):
+                return True
+        return False
+
     def find_stg(self, name):
         assert self.stgs
         for stg in self.stgs:

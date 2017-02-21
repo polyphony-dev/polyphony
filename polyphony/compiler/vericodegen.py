@@ -67,14 +67,20 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('if (rst) begin')
         self.set_indent(2)
 
+        for stm in sorted(fsm.reset_stms, key=lambda s: str(s)):
+            if not stm.dst.sig.is_net():
+                self.visit(stm)
+        if not fsm.stgs:
+            self.set_indent(-2)
+            self.emit('end')  # end if (READY)
+            self.set_indent(-2)
+            self.emit('end')
+            self.emit('')
+            return
         for stg in fsm.stgs:
             if stg.is_main():
                 main_stg = stg
         assert main_stg
-
-        for stm in sorted(fsm.reset_stms, key=lambda s: str(s)):
-            if not stm.dst.sig.is_net():
-                self.visit(stm)
 
         self.current_state_sig = fsm.state_var
         self.emit('{} <= {};'.format(self.current_state_sig.name, main_stg.init_state.name))
@@ -133,7 +139,6 @@ class VerilogCodeGen(AHDLVisitor):
             for p in i.ports:
                 ports.append(self._to_io_name(self.module_info.name, i, p))
         self.emit((',\n' + self.tab()).join(ports))
-        self.emit('')
 
     def _generate_signal(self, sig):
         sign = 'signed' if sig.is_int() else ''
@@ -249,6 +254,8 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('')
 
     def _generate_edge_detector(self):
+        if not self.module_info.edge_detectors:
+            return
         regs = set([sig for sig, _, _ in self.module_info.edge_detectors])
         self.emit('//edge detectors')
         for sig in regs:
@@ -671,7 +678,9 @@ class VerilogCodeGen(AHDLVisitor):
         old, new = ahdl.args[0], ahdl.args[1]
         detect_vars = []
         for var in ahdl.args[2:]:
-            detect_var_name = 'is_{}_change_{}_to_{}'.format(var.sig.name, old, new)
+            detect_var_name = 'is_{}_change_{}_to_{}'.format(var.sig.name,
+                                                             self.visit(old),
+                                                             self.visit(new))
             detect_vars.append(AHDL_SYMBOL(detect_var_name))
         if len(detect_vars) > 1:
             conds = [AHDL_OP('And', *detect_vars)]
@@ -688,7 +697,7 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_WAIT_VALUE(self, ahdl):
         value = ahdl.args[0]
-        detect_exps = [AHDL_OP('Eq', var, AHDL_CONST(value)) for var in ahdl.args[1:]]
+        detect_exps = [AHDL_OP('Eq', var, value) for var in ahdl.args[1:]]
         if len(detect_exps) > 1:
             conds = [AHDL_OP('And', *detect_exps)]
         else:

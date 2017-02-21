@@ -12,7 +12,7 @@ class FSM(object):
     def __init__(self):
         self.name = None
         self.state_var = None
-        self.stgs = None
+        self.stgs = []
         self.outputs = set()
         self.reset_stms = []
 

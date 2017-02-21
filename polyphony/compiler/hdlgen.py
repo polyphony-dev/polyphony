@@ -320,6 +320,8 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             if stm.dst.sig in defs or stm.dst.sig in outputs:
                 self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
         for reg in regs:
+            if reg.is_field():
+                continue
             clear_var = AHDL_MOVE(AHDL_VAR(reg, Ctx.STORE), AHDL_CONST(0))
             self.module_info.add_fsm_reset_stm(worker.orig_name, clear_var)
 
@@ -341,12 +343,16 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         self._process_io(scope)
         for worker, args in scope.workers:
             self._process_worker(scope, worker, reset_stms)
-
+        for stm in reset_stms:
+            if stm.dst.sig.is_field():
+                assign = AHDL_ASSIGN(stm.dst, stm.src)
+                self.module_info.add_static_assignment(assign, '')
+                self.module_info.add_internal_net(stm.dst.sig, '')
     def _collect_field_defs(self, scope):
         moves = self._collect_moves(scope)
         defs = []
         for mv in moves:
-            if mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_output():
+            if mv.dst.is_a(AHDL_VAR) and (mv.dst.sig.is_output() or mv.dst.sig.is_field()):
                 defs.append(mv)
         return defs
 

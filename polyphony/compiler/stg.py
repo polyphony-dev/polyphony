@@ -542,7 +542,7 @@ class AHDLTranslator(object):
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', 0, 1, *ports), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(0), AHDL_CONST(1), *ports), self.sched_time)
             return
         elif ir.name == 'polyphony.timing.wait_falling':
             ports = []
@@ -550,13 +550,12 @@ class AHDLTranslator(object):
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', 1, 0, *ports), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(1), AHDL_CONST(0), *ports), self.sched_time)
             return
         elif ir.name == 'polyphony.timing.wait_edge':
             ports = []
-            assert ir.args[0].is_a(CONST) and ir.args[1].is_a(CONST)
-            old = ir.args[0].value
-            new = ir.args[1].value
+            old = self.visit(ir.args[0])
+            new = self.visit(ir.args[1])
             for a in ir.args[2:]:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
@@ -565,8 +564,7 @@ class AHDLTranslator(object):
             return
         elif ir.name == 'polyphony.timing.wait_value':
             ports = []
-            assert ir.args[0].is_a(CONST)
-            value = ir.args[0].value
+            value = self.visit(ir.args[0], node)
             for a in ir.args[1:]:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
@@ -873,7 +871,7 @@ class AHDLTranslator(object):
         if kind == 'internal':
             # TODO: specific protocol port
             tags.add('reg')
-        elif self.scope.parent is port_sym.scope and port_sym.scope.is_module():
+        elif self.scope.parent.is_subclassof(port_sym.scope) and port_sym.scope.is_module():
             tags.add(direction)
         elif self.scope.is_worker():
             tags.add(direction)

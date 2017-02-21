@@ -8,7 +8,7 @@ from .common import read_source
 from .scope import Scope
 from .block import BlockReducer, PathExpTracer
 from .irtranslator import IRTranslator
-from .typecheck import TypePropagation, InstanceTypePropagation, TypeChecker, ClassFieldChecker
+from .typecheck import TypePropagation, InstanceTypePropagation, TypeChecker, ModuleChecker
 from .quadruplet import QuadrupleMaker
 from .hdlgen import HDLModuleBuilder
 from .vericodegen import VerilogCodeGen
@@ -130,8 +130,8 @@ def typecheck(driver, scope):
     TypeChecker().process(scope)
 
 
-def classcheck(driver):
-    ClassFieldChecker().process_all()
+def modulecheck(driver, scope):
+    ModuleChecker().process(scope)
 
 
 def detectrom(driver):
@@ -338,8 +338,8 @@ def compile_plan():
         dbg(dumpscope),
         earlyconstopt_nonssa,
         dbg(dumpscope),
-        classcheck,
         inlineopt,
+        modulecheck,
         reduceblk,
         dbg(dumpscope),
         phase(env.PHASE_2),

@@ -1,4 +1,5 @@
-﻿from .irvisitor import IRVisitor
+﻿from collections import defaultdict
+from .irvisitor import IRVisitor
 from .ir import *
 from .scope import Scope
 from .type import Type
@@ -131,6 +132,8 @@ class TypePropagation(IRVisitor):
             params = ir.func_scope.params[:]
         self._fill_args_if_needed(ir.func_scope.orig_name, params, ir.args)
         arg_types = [self.visit(arg) for arg in ir.args]
+        if any([atype.is_none() for atype in arg_types]):
+            raise RejectPropagation(str(ir))
 
         ret_t = ir.func_scope.return_type
         if ir.func_scope.is_class():
@@ -360,29 +363,6 @@ class InstanceTypePropagation(TypePropagation):
             sym.set_type(typ)
 
 
-class ClassFieldChecker(IRVisitor):
-    def __init__(self):
-        super().__init__()
-
-    def process_all(self):
-        scopes = Scope.get_scopes(with_global=False, with_class=False)
-        for s in scopes:
-            if not s.is_ctor():
-                continue
-            self.process(s)
-
-    def visit_MOVE(self, ir):
-        if not ir.dst.is_a(ATTR):
-            return
-        irattr = ir.dst
-        if not irattr.exp.is_a(TEMP):
-            return
-        if irattr.exp.sym.name != env.self_name:
-            return
-        class_scope = self.scope.parent
-        assert class_scope.is_class()
-
-
 class TypeChecker(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -589,3 +569,33 @@ class TypeChecker(IRVisitor):
             if not Type.is_commutable(arg_t, param_t):
                 type_error(self.current_stm,
                            'type missmatch "{}" "{}"'.format(arg_t[0], param_t[0]))
+
+
+class ModuleChecker(IRVisitor):
+    def __init__(self):
+        super().__init__()
+        self.assigns = defaultdict(set)
+
+    def process(self, scope):
+        if not (scope.parent and scope.parent.is_module()):
+            return
+        super().process(scope)
+
+    def visit_MOVE(self, ir):
+        if not ir.dst.is_a(ATTR):
+            return
+        irattr = ir.dst
+        if not irattr.exp.is_a(TEMP):
+            return
+        if irattr.exp.sym.name != env.self_name:
+            return
+        class_scope = self.scope.parent
+        if self.scope.is_ctor():
+            if irattr.symbol() not in self.assigns[class_scope]:
+                self.assigns[class_scope].add(irattr.symbol())
+            else:
+                type_error(self.current_stm, 'Assignment to a module field can only be done once')
+        else:
+            type_error(self.current_stm,
+                       'Assignment to a module field can only at the constructor or a function called from the constructor')
+
