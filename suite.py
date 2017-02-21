@@ -22,6 +22,7 @@ DIRS = (
     'parallel',
     'testbench',
     'class',
+    'module',
 )
 
 

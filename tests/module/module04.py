@@ -13,7 +13,7 @@ class Interface:
 
 
 @module
-class WorkerTest04:
+class ModuleTest04:
     def __init__(self):
         self.inf = Interface()
         self.append_worker(self.worker, 'foo', self.inf.i0, self.inf.o0)
@@ -26,15 +26,15 @@ class WorkerTest04:
 
 
 @testbench
-def test(wtest):
-    wtest.inf.i0.wr(1)
-    wait_value(1, wtest.inf.o0)
-    assert wtest.inf.o0.rd() == 1
+def test(m):
+    m.inf.i0.wr(1)
+    wait_value(1, m.inf.o0)
+    assert m.inf.o0.rd() == 1
 
-    wtest.inf.i1.wr(1)
-    wait_value(1, wtest.inf.o1)
-    assert wtest.inf.o1.rd() == 1
+    m.inf.i1.wr(1)
+    wait_value(1, m.inf.o1)
+    assert m.inf.o1.rd() == 1
 
 
-w = WorkerTest04()
-test(w)
+m = ModuleTest04()
+test(m)

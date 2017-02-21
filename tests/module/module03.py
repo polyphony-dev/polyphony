@@ -6,7 +6,7 @@ from polyphony.io import Int, Bit
 
 
 @module
-class WorkerTest03:
+class ModuleTest03:
     def __init__(self):
         self.idata = Int()
         self.ivalid = Bit()
@@ -31,12 +31,12 @@ def pow(idata, ivalid, odata, ovalid):
 
 
 @testbench
-def test(wtest):
-    wtest.idata.wr(2)
-    wtest.ivalid.wr(1)
-    wait_rising(wtest.ovalid)
-    assert wtest.odata.rd() == 256
+def test(m):
+    m.idata.wr(2)
+    m.ivalid.wr(1)
+    wait_rising(m.ovalid)
+    assert m.odata.rd() == 256
 
 
-w = WorkerTest03()
-test(w)
+m = ModuleTest03()
+test(m)

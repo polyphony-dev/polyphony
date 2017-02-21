@@ -4,7 +4,7 @@ from polyphony.timing import clksleep
 
 
 @module
-class WorkerTest01:
+class ModuleTest01:
     def __init__(self, mparam):
         self.append_worker(self.worker0, 1 * mparam)
         self.append_worker(self.worker1, 2 * mparam)
@@ -18,16 +18,16 @@ class WorkerTest01:
 
 
 @testbench
-def test0(wtest):
+def test0(m):
     clksleep(10)
 
 
 @testbench
-def test1(wtest):
+def test1(m):
     clksleep(30)
 
 
-w0 = WorkerTest01(10)
-w1 = WorkerTest01(20)
-test0(w0)
-test1(w1)
+m0 = ModuleTest01(10)
+m1 = ModuleTest01(20)
+test0(m0)
+test1(m1)
