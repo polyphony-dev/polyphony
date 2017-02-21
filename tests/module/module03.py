@@ -1,7 +1,7 @@
 from polyphony import module
 from polyphony import testbench
 from polyphony import is_worker_running
-from polyphony.timing import clkfence, wait_rising
+from polyphony.timing import clkfence, clksleep, wait_rising
 from polyphony.io import Int, Bit
 
 
@@ -28,14 +28,22 @@ def pow(idata, ivalid, odata, ovalid):
         odata.wr(d * d)
         clkfence()
         ovalid.wr(1)
+        ovalid.wr(0)
 
 
 @testbench
 def test(m):
     m.idata.wr(2)
     m.ivalid.wr(1)
+    m.ivalid.wr(0)
     wait_rising(m.ovalid)
     assert m.odata.rd() == 256
+
+    m.idata.wr(4)
+    m.ivalid.wr(1)
+    m.ivalid.wr(0)
+    wait_rising(m.ovalid)
+    assert m.odata.rd() == 65536
 
 
 m = ModuleTest03()

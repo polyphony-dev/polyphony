@@ -268,9 +268,13 @@ class VerilogCodeGen(AHDLVisitor):
             #self.emit('end')
             #self.emit('')
 
+        detect_var_names = set()
         for sig, old, new in self.module_info.edge_detectors:
             delayed_name = '{}_d'.format(sig.name)
             detect_var_name = 'is_{}_change_{}_to_{}'.format(sig.name, old, new)
+            if detect_var_name in detect_var_names:
+                continue
+            detect_var_names.add(detect_var_name)
             self.emit('wire {};'.format(detect_var_name))
             self.emit('assign {} = ({}=={} && {}=={});'.
                       format(detect_var_name,

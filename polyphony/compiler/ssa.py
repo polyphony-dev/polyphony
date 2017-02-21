@@ -46,7 +46,7 @@ class SSATransformerBase(object):
         dfs = set()
         for qsym, def_blocks in self.usedef._def_qsym2blk.items():
             assert isinstance(qsym, tuple)
-            if not self._need_rename(qsym[-1]):
+            if not self._need_rename(qsym[-1], qsym):
                 continue
             while def_blocks:
                 def_block = def_blocks.pop()
@@ -113,7 +113,7 @@ class SSATransformerBase(object):
 
         for var, version in self.new_syms:
             assert var.is_a([TEMP, ATTR])
-            if self._need_rename(var.symbol()):
+            if self._need_rename(var.symbol(), var.qualified_symbol()):
                 new_name = var.symbol().name + '#' + str(version)
                 var_sym = var.symbol()
                 new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
@@ -134,7 +134,7 @@ class SSATransformerBase(object):
                 assert d.lineno > 0
                 assert d.is_a([TEMP, ATTR])
                 key = d.qualified_symbol()
-                if self._need_rename(d.symbol()):
+                if self._need_rename(d.symbol(), d.qualified_symbol()):
                     logger.debug('count up ' + str(d) + ' ' + str(stm))
                     count[key] += 1
                 i = count[key]
@@ -175,12 +175,12 @@ class SSATransformerBase(object):
         if var.is_a(ATTR):
             self._add_new_phi_arg(phi, var.exp, stack, block, is_tail_attr=False)
 
-    def _need_rename(self, sym):
+    def _need_rename(self, sym, qsym):
         return False
 
     def _add_new_sym(self, var, version):
         assert var.is_a([TEMP, ATTR])
-        if self._need_rename(var.symbol()):
+        if self._need_rename(var.symbol(), var.qualified_symbol()):
             self.new_syms.add((var, version))
 
     def _add_new_sym_rest(self, var, stack):
@@ -294,7 +294,7 @@ class ScalarSSATransformer(SSATransformerBase):
     def __init__(self):
         super().__init__()
 
-    def _need_rename(self, sym):
+    def _need_rename(self, sym, qsym):
         return not (sym.is_condition() or
                     sym.is_param() or
                     sym.is_return() or
@@ -352,7 +352,7 @@ class TupleSSATransformer(SSATransformerBase):
             use_stm.replace(mref, var)
         pass
 
-    def _need_rename(self, sym):
+    def _need_rename(self, sym, qsym):
         return sym.typ.is_tuple() and not sym.is_param()
 
 
@@ -400,9 +400,7 @@ class ObjectSSATransformer(SSATransformerBase):
                     uphi.args.append(uarg)
                 use_stm.block.insert_stm(insert_idx, uphi)
 
-    def _need_rename(self, sym):
-        if self.scope.is_method() and self.scope.parent.is_module():
-            return False
+    def _need_rename(self, sym, qsym):
         if not sym.typ.is_object():
             return False
         if sym.name == env.self_name:
@@ -412,4 +410,9 @@ class ObjectSSATransformer(SSATransformerBase):
         scope = sym.typ.get_scope()
         if scope.is_port() or scope.is_module():
             return False
+
+        idx = qsym.index(sym)
+        if idx > 0:
+            if not self._need_rename(qsym[idx - 1], qsym):
+                return False
         return True
