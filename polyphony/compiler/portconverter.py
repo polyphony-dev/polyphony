@@ -74,6 +74,16 @@ class PortConverter(IRTransformer):
                 elif di != direction:
                     print(error_info(self.scope, ir.lineno))
                     raise RuntimeError('Port direction is conflicted')
+            elif kind == 'internal':
+                if direction == 'output':
+                    if sym.typ.has_writer():
+                        writer = sym.typ.get_writer()
+                        if writer is not self.scope:
+                            print(error_info(self.scope, ir.lineno))
+                            raise RuntimeError('Writing to the port is conflicted')
+                    else:
+                        assert self.scope.is_worker() or self.scope.parent.is_module()
+                        sym.typ.set_writer(self.scope)
         return ir
 
     def visit_SYSCALL(self, ir):
