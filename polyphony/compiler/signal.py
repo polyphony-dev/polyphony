@@ -6,6 +6,7 @@ class Signal(Tagged):
         'reg', 'net', 'int', 'condition',
         'input', 'output',
         'extport',
+        'valid_protocol', 'ready_valid_protocol',
         'statevar',
         'field', 'ctrl', 'memif', 'onehot',
     }

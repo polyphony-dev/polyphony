@@ -291,10 +291,21 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 signed = True if p_scope.name == 'polyphony.io.Int' else False
                 port_t = field.typ
                 width = port_t.get_width()
+                protocol = port_t.get_protocol()
                 if port_t.get_direction() == 'input':
                     iports.append(Port(field.name, width, 'in', signed))
+                    if protocol == 'valid':
+                        iports.append(Port(field.name + '_valid', 1, 'in', False))
+                    elif protocol == 'ready_valid':
+                        iports.append(Port(field.name + '_valid', 1, 'in', False))
+                        oports.append(Port(field.name + '_ready', 1, 'out', False))
                 elif port_t.get_direction() == 'output':
                     oports.append(Port(field.name, width, 'out', signed))
+                    if protocol == 'valid':
+                        oports.append(Port(field.name + '_valid', 1, 'out', False))
+                    elif protocol == 'ready_valid':
+                        oports.append(Port(field.name + '_valid', 1, 'out', False))
+                        iports.append(Port(field.name + '_ready', 1, 'in', False))
                 else:
                     assert False
         inf.ports.extend(iports)
@@ -319,11 +330,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         for stm in reset_stms:
             if stm.dst.sig in defs or stm.dst.sig in outputs:
                 self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-        for reg in regs:
-            if reg.is_field():
-                continue
-            clear_var = AHDL_MOVE(AHDL_VAR(reg, Ctx.STORE), AHDL_CONST(0))
-            self.module_info.add_fsm_reset_stm(worker.orig_name, clear_var)
+                if stm.dst.sig.is_valid_protocol() or stm.dst.sig.is_ready_valid_protocol():
+                    valid_sig = module_scope.signal(stm.dst.sig.name + '_valid')
+                    clear_valid = AHDL_MOVE(AHDL_VAR(valid_sig, Ctx.STORE), AHDL_CONST(0))
+                    self.module_info.add_fsm_reset_stm(worker.orig_name, clear_valid)
+        for stm in self._collect_worker_defs(worker):
+            self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
 
         edge_detectors = self._collect_special_decls(worker)
         for sig, old, new in edge_detectors:
@@ -333,11 +345,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         assert scope.is_module()
         assert scope.is_class()
 
-        reset_stms = set()
+        reset_stms = []
         for s in scope.children:
             if s.is_ctor():
-                # TODO parse for reset signal
-                reset_stms = self._collect_field_defs(s)
+                reset_stms.extend(self._collect_module_defs(s))
                 break
 
         self._process_io(scope)
@@ -348,12 +359,24 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 assign = AHDL_ASSIGN(stm.dst, stm.src)
                 self.module_info.add_static_assignment(assign, '')
                 self.module_info.add_internal_net(stm.dst.sig, '')
-    def _collect_field_defs(self, scope):
+
+    def _collect_module_defs(self, scope):
         moves = self._collect_moves(scope)
         defs = []
         for mv in moves:
-            if mv.dst.is_a(AHDL_VAR) and (mv.dst.sig.is_output() or mv.dst.sig.is_field()):
+            if (mv.dst.is_a(AHDL_VAR) and
+                    (mv.dst.sig.is_output() or
+                     mv.dst.sig.is_field())):
                 defs.append(mv)
+        return defs
+
+    def _collect_worker_defs(self, scope):
+        moves = self._collect_moves(scope)
+        defs = []
+        for mv in moves:
+            if (mv.dst.is_a(AHDL_VAR) and mv.dst.sig.is_reg() and
+                    not (mv.dst.sig.is_output() or mv.dst.sig.is_field())):
+                defs.append(AHDL_MOVE(mv.dst, AHDL_CONST(0)))
         return defs
 
 

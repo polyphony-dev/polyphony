@@ -4,7 +4,7 @@ from polyphony.timing import clkfence, wait_rising, wait_value
 
 
 @module
-class port01:
+class Port01:
     def __init__(self):
         self.in0 = Int(8)
         self.out0 = Int(8)
@@ -43,5 +43,5 @@ def test(p01):
     print(p01.out0())
 
 
-p01 = port01()
+p01 = Port01()
 test(p01)
