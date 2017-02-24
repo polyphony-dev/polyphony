@@ -83,6 +83,9 @@ def iftrans(driver, scope):
 
 def reduceblk(driver, scope):
     BlockReducer().process(scope)
+
+
+def pathexp(driver, scope):
     PathExpTracer().process(scope)
 
 
@@ -341,6 +344,7 @@ def compile_plan():
         inlineopt,
         modulecheck,
         reduceblk,
+        pathexp,
         dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
@@ -378,6 +382,7 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         reduceblk,
+        pathexp,
         dbg(dumpscope),
         phase(env.PHASE_3),
         usedef,

@@ -1,4 +1,5 @@
-﻿from .ir import *
+﻿from collections import deque
+from .ir import *
 from .dominator import DominatorTreeBuilder
 from .utils import replace_item
 from logging import getLogger
@@ -387,7 +388,11 @@ class PathExpTracer(object):
         tree = DominatorTreeBuilder(scope).process()
         tree.dump()
         self.tree = tree
-        self.traverse_dtree(scope.entry_block)
+        self.worklist = deque()
+        self.worklist.append(scope.entry_block)
+        while self.worklist:
+            blk = self.worklist.popleft()
+            self.traverse_dtree(blk)
 
     def traverse_dtree(self, blk):
         if not blk.stms:
@@ -398,6 +403,20 @@ class PathExpTracer(object):
             if blk.path_exp:
                 for c in children:
                     c.path_exp = blk.path_exp.clone()
+            # Unlike other jump instructions,
+            # the target of JUMP may be a confluence node
+            if jump.target.path_exp:
+                if (jump.target.path_exp.is_a(UNOP) and
+                        jump.target.path_exp.op == 'Not' and
+                        str(jump.target.path_exp.exp) == str(blk.path_exp)):
+                    jump.target.path_exp = None
+                    # evaluate again from here
+                    if jump.target not in self.worklist:
+                        self.worklist.append(jump.target)
+                else:
+                    jump.target.path_exp = BINOP('Or', blk.path_exp, jump.target.path_exp)
+            else:
+                jump.target.path_exp = blk.path_exp
         elif jump.is_a(CJUMP):
             if blk.path_exp:
                 for c in children:

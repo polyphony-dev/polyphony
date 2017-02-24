@@ -59,28 +59,29 @@ def eval_binop(ir):
 
 def eval_relop(op, lv, rv):
     if op == 'Eq':
-        return lv == rv
+        b = lv == rv
     elif op == 'NotEq':
-        return lv != rv
+        b = lv != rv
     elif op == 'Lt':
-        return lv < rv
+        b = lv < rv
     elif op == 'LtE':
-        return lv <= rv
+        b = lv <= rv
     elif op == 'Gt':
-        return lv > rv
+        b = lv > rv
     elif op == 'GtE':
-        return lv >= rv
+        b = lv >= rv
     elif op == 'Is':
-        return lv is rv
+        b = lv is rv
     elif op == 'IsNot':
-        return lv is not rv
+        b = lv is not rv
     elif op == 'And':
-        return lv and rv
+        b = lv and rv
     elif op == 'Or':
-        return lv or rv
+        b = lv or rv
     else:
         print(error_info(ir.block.scope, ir.lineno))
         raise RuntimeError('operator is not supported yet ' + op)
+    return 1 if b else 0
 
 
 def try_get_constant(sym, scope):
@@ -216,15 +217,22 @@ class ConstantOpt(ConstantOptBase):
             stm = worklist.popleft()
             self.current_stm = stm
             self.visit(stm)
-            if stm.is_a(PHI) and len(stm.args) == 1:
-                arg = stm.args[0]
-                blk = stm.defblks[0]
-                mv = MOVE(stm.var, arg)
-                blk.insert_stm(-1, mv)
-                worklist.append(mv)
-                dead_stms.append(stm)
-                if stm in worklist:
-                    worklist.remove(stm)
+            if stm.is_a(PHI):
+                for i, p in enumerate(stm.ps[:]):
+                        if p.is_a(CONST) and not p.value:
+                            stm.ps.pop(i)
+                            stm.args.pop(i)
+                            stm.defblks.pop(i)
+                if len(stm.args) == 1:
+                    assert stm.ps[0].is_a(CONST) and stm.ps[0].value
+                    arg = stm.args[0]
+                    blk = stm.defblks[0]
+                    mv = MOVE(stm.var, arg)
+                    blk.insert_stm(-1, mv)
+                    worklist.append(mv)
+                    dead_stms.append(stm)
+                    if stm in worklist:
+                        worklist.remove(stm)
             if (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(TEMP)
@@ -236,6 +244,7 @@ class ConstantOpt(ConstantOptBase):
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
                 worklist.extend(replaces)
                 scope.usedef.remove_var_def(stm.dst, stm)
+                scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
                 if stm in worklist:
                     worklist.remove(stm)
