@@ -42,15 +42,6 @@ class CallGraphBuilder(IRVisitor):
         self._add_edge_for_params(scope)
         super().process(scope)
 
-    def _process_all(self):
-        for s in Scope.get_scopes(with_global=True, with_class=True):
-            self._add_edge_for_params(s)
-            self.process(s)
-
-        using_scopes = set(self.call_graph.bfs_ordered_nodes())
-        unused_scopes = set(env.scopes.values()).difference(using_scopes)
-        return unused_scopes
-
     def visit_CALL(self, ir):
         self.visit(ir.func)
         assert ir.func_scope

@@ -178,18 +178,15 @@ class AHDL_MOVE(AHDL_STM):
 
 
 class AHDL_DECL(AHDL):
-    pass
+    def __init__(self, name):
+        assert isinstance(name, str)
+        self.name = name
 
 
 class AHDL_SIGNAL_DECL(AHDL_DECL):
     def __init__(self, sig):
+        super().__init__(sig.name)
         self.sig = sig
-
-    def __eq__(self, other):
-        return other.is_a(AHDL_SIGNAL_DECL) and self.sig == other.sig
-
-    def __hash__(self, other):
-        return hash(self.sig)
 
     def __str__(self):
         sign = 'signed' if self.sig.is_int() else ''
@@ -203,6 +200,7 @@ class AHDL_SIGNAL_DECL(AHDL_DECL):
 class AHDL_SIGNAL_ARRAY_DECL(AHDL_SIGNAL_DECL):
     def __init__(self, sig, size):
         super().__init__(sig)
+        self.name += '[{}]'.format(size)
         self.size = size
 
     def __str__(self):
@@ -216,7 +214,12 @@ class AHDL_ASSIGN(AHDL_DECL):
     def __init__(self, dst, src):
         assert dst.is_a(AHDL)
         assert src.is_a(AHDL)
-        super().__init__()
+        if dst.is_a(AHDL_VAR):
+            super().__init__(dst.sig.name)
+        elif dst.is_a(AHDL_SUBSCRIPT):
+            super().__init__(dst.memvar.sig.name + '[{}]'.format(dst.offset))
+        else:
+            assert False
         self.dst = dst
         self.src = src
 
@@ -419,7 +422,7 @@ class AHDL_META_WAIT(AHDL_STM):
 
 class AHDL_FUNCTION(AHDL_DECL):
     def __init__(self, output, inputs, stms):
-        super().__init__()
+        super().__init__(output.sig.name)
         self.inputs = inputs
         self.output = output
         self.stms = stms
@@ -437,10 +440,8 @@ class AHDL_FUNCTION(AHDL_DECL):
 
 class AHDL_MUX(AHDL_DECL):
     def __init__(self, name, selector, inputs, output):
-        super().__init__()
-        assert isinstance(name, str)
+        super().__init__(name)
         assert isinstance(output, Signal)
-        self.name = name
         self.selector = selector
         self.inputs = inputs
         self.output = output
@@ -451,10 +452,8 @@ class AHDL_MUX(AHDL_DECL):
 
 class AHDL_DEMUX(AHDL_DECL):
     def __init__(self, name, selector, input, outputs):
-        super().__init__()
-        assert isinstance(name, str)
+        super().__init__(name)
         assert isinstance(input, Signal)
-        self.name = name
         self.selector = selector
         self.input = input
         self.outputs = outputs
@@ -465,9 +464,7 @@ class AHDL_DEMUX(AHDL_DECL):
 
 class AHDL_COMB(AHDL_DECL):
     def __init__(self, name, stms):
-        super().__init__()
-        assert isinstance(name, str)
-        self.name = name
+        super().__init__(name)
         self.stms = stms
 
     def __str__(self):

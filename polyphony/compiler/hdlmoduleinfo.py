@@ -137,8 +137,9 @@ class HDLModuleInfo(object):
 
     def add_decl(self, tag, decl):
         assert isinstance(decl, AHDL_DECL)
-        if decl not in self.decls[tag]:
-            self.decls[tag].append(decl)
+        if decl.name in (d.name for d in self.decls[tag] if type(d) == type(decl)):
+            return
+        self.decls[tag].append(decl)
 
     def remove_decl(self, tag, decl):
         assert isinstance(decl, AHDL_DECL)

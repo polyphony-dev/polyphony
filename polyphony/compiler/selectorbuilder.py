@@ -143,22 +143,20 @@ class SelectorBuilder(object):
                                     trunk[port_name])
                 self.module_info.add_mux(selector, tag)
 
-    def _build_sub_module(self, inf, acc):
+    def _add_sub_module_accessors(self, inf, acc):
         tag = acc.name
         for p in inf.ports:
             int_name = acc.port_name('', p)
             sig = self.scope.gen_sig(int_name, p.width)
             if p.dir == 'in' and not acc.thru:
                 self.module_info.add_internal_reg(sig, tag)
-                reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
-                self.module_info.add_fsm_reset_stm(self.scope.orig_name, reset_stm)
             else:
                 self.module_info.add_internal_net(sig, tag)
 
     def _build_sub_module_selectors(self):
         for name, info, connections, param_map in self.module_info.sub_modules.values():
             if info.scope and info.scope.is_module():
-                self._build_sub_module(*connections[0])
+                self._add_sub_module_accessors(*connections[0])
                 continue
             # TODO
             for inf, acc in connections:

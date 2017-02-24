@@ -55,6 +55,9 @@ class WorkerInstantiator(object):
             if i == 0:
                 continue
             if arg.is_a(CONST):
+                if worker.is_function():
+                    # adjust the index for the first parameter of append_worker()
+                    i -= 1
                 binding.append((bind_val, i, arg.value))
             elif (arg.is_a([TEMP, ATTR]) and
                     arg.symbol().typ.is_object() and
@@ -75,7 +78,11 @@ class WorkerInstantiator(object):
             for _, i, _ in reversed(binding):
                 new_worker.params.pop(i)
             for _, i, _ in reversed(binding):
-                call.args.pop(i)
+                if worker.is_function():
+                    # adjust the index for the first parameter of append_worker()
+                    call.args.pop(i + 1)
+                else:
+                    call.args.pop(i)
         else:
             new_worker = worker.clone('', str(call.lineno))
         return new_worker

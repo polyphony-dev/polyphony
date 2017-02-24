@@ -138,10 +138,6 @@ class LoopVariableDetector(IRVisitor):
             src_sym = ir.src.symbol()
             if src_sym.is_param() or src_sym.typ.is_port():
                 return
-
-        stms = self.usedef.get_stms_defining(sym)
-        if len(stms) > 1:
-            return
         if self._has_depend_cycle(ir, sym):
             sym.add_tag('induction')
 

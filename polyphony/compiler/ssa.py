@@ -198,16 +198,6 @@ class SSATransformerBase(object):
             exp = self._qsym_to_var(qsym[:-1], Ctx.LOAD)
             return ATTR(exp, qsym[-1], ctx)
 
-    def _need_name_version(self, defvar, stm):
-        if not defvar.symbol().typ.is_list():
-            return True
-        elif stm.is_a(MOVE):
-            if stm.dst is defvar:
-                return True
-        elif stm.is_a(PHI):
-            return True
-        return False
-
     def dump_df(self):
         for node, dfs in sorted(self.dominance_frontier.items(), key=lambda n: n[0].name):
             logger.debug('DF of ' + node.name + ' is ...' + ', '.join([df.name for df in dfs]))
