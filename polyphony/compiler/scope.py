@@ -16,12 +16,6 @@ logger = getLogger(__name__)
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 
 
-class Worker(object):
-    def __init__(self, scope, args):
-        self.scope = scope
-        self.args = args
-
-
 class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
@@ -328,8 +322,14 @@ class Scope(Tagged):
             return self.symbols[name]
         elif self.parent:
             if self.parent.is_class():
-                # look-up from global
-                found = self.global_scope().find_sym(name)
+                # look-up from bases
+                for base in self.bases:
+                    found = base.find_sym(name)
+                    if found:
+                        break
+                else:
+                    # otherwise, look-up from global
+                    found = self.global_scope().find_sym(name)
             else:
                 found = self.parent.find_sym(name)
             return found
@@ -480,6 +480,10 @@ class Scope(Tagged):
     def signal(self, name):
         if name in self.signals:
             return self.signals[name]
+        for base in self.bases:
+            found = base.signal(name)
+            if found:
+                return found
         return None
 
     def rename_sig(self, old, new):
