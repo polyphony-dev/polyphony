@@ -78,16 +78,16 @@ class DataFlowGraph(object):
             back_edge = "(back) " if back else ''
             if typ == 'DefUse':
                 prefix1 = 'def '
-                prefix2 = 'use -> '
+                prefix2 = '  -> use '
             elif typ == 'UseDef':
                 prefix1 = 'use '
-                prefix2 = 'def -> '
+                prefix2 = '  -> def '
             elif typ == 'Branch':
                 prefix1 = 'pred blk '
-                prefix2 = 'succ blk -> '
+                prefix2 = '  -> succ blk '
             elif typ == 'Seq':
                 prefix1 = 'pred '
-                prefix2 = 'succ -> '
+                prefix2 = '  -> succ '
             else:
                 prefix1 = 'sync '
                 prefix2 = '<- -> '
@@ -410,7 +410,7 @@ class DFGBuilder(object):
                 # collect source nodes
                 self._add_source_node(usenode, dfg, usedef, blocks)
 
-                # add edges
+                # add def-use edges
                 for v in usedef.get_vars_used_at(stm):
                     defstms = usedef.get_stms_defining(v.symbol())
                     logger.log(0, v.symbol().name + ' defstms ')
@@ -426,6 +426,21 @@ class DFGBuilder(object):
                             continue
                         defnode = dfg.add_stm_node(defstm)
                         dfg.add_defuse_edge(defnode, usenode)
+
+                # add use-def edges
+                defnode = usenode
+                for v in usedef.get_vars_defined_at(stm):
+                    usestms = usedef.get_stms_using(v.symbol())
+                    for usestm in usestms:
+                        if stm is usestm:
+                            continue
+                        if stm.program_order() <= usestm.program_order():
+                            continue
+                        # this definition stm is in the out of the section
+                        if usestm.block is not stm.block:
+                            continue
+                        usenode = dfg.add_stm_node(usestm)
+                        dfg.add_usedef_edge(usenode, defnode)
 
         if self.scope.is_testbench():
             self._add_edges_between_func_modules(blocks, dfg)
@@ -616,6 +631,11 @@ class DFGBuilder(object):
             ]
             return call.name in wait_funcs
         elif call.is_a(CALL):
+            if call.func_scope.is_method() and call.func_scope.parent.is_port():
+                port_sym = call.func.qualified_symbol()[-2]
+                assert port_sym.typ.is_port()
+                protocol = port_sym.typ.get_protocol()
+                return protocol != 'none'
             return False
 
     def _add_timinglib_seq_edges(self, blocks, dfg):

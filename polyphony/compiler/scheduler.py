@@ -56,13 +56,22 @@ class Scheduler(object):
         preds = dfg.preds_without_back(node)
         if preds:
             defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
+            usedef_preds = dfg.preds_typ_without_back(node, 'UseDef')
             seq_preds = dfg.preds_typ_without_back(node, 'Seq')
-            if defuse_preds or seq_preds:
-                latest_node = max(preds, key=lambda p: p.end)
-                scheduled_time = latest_node.end
-            else:
+            sched_times = []
+            if seq_preds:
+                latest_node = max(seq_preds, key=lambda p: p.end)
+                sched_times.append(latest_node.end)
+            if defuse_preds:
+                latest_node = max(defuse_preds, key=lambda p: p.end)
+                sched_times.append(latest_node.end)
+            if usedef_preds:
+                latest_node = max(usedef_preds, key=lambda p: p.end)
+                sched_times.append(latest_node.begin)
+            if not sched_times:
                 latest_node = max(preds, key=lambda p: p.begin)
-                scheduled_time = latest_node.begin
+                sched_times.append(latest_node.begin)
+            scheduled_time = max(sched_times)
             if scheduled_time < 0:
                 scheduled_time = 0
         else:
