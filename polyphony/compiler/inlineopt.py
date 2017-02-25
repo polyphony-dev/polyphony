@@ -145,7 +145,7 @@ class InlineOpt(object):
             params = callee.params[:]
         for i, (p, copy, defval) in enumerate(params):
             if len(call.args) > i:
-                arg = call.args[i]
+                _, arg = call.args[i]
             else:
                 arg = defval
             if arg.is_a(TEMP):
@@ -400,6 +400,7 @@ class FlattenFieldAccess(IRVisitor):
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
         newattr.lineno = ir.lineno
+        newattr.attr_scope = ir.attr_scope
         self.current_stm.replace(ir, newattr)
 
 

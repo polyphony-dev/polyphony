@@ -646,16 +646,16 @@ class CodeVisitor(ast.NodeVisitor):
         if it.is_a(SYSCALL) and it.name == 'range':
             if len(it.args) == 1:
                 start = CONST(0)
-                end = it.args[0]
+                end = it.args[0][1]
                 step = CONST(1)
             elif len(it.args) == 2:
-                start = it.args[0]
-                end = it.args[1]
+                start = it.args[0][1]
+                end = it.args[1][1]
                 step = CONST(1)
             else:
-                start = it.args[0]
-                end = it.args[1]
-                step = it.args[2]
+                start = it.args[0][1]
+                end = it.args[1][1]
+                step = it.args[2][1]
 
             var.sym.add_tag('induction')
             init_parts = [
@@ -679,7 +679,7 @@ class CodeVisitor(ast.NodeVisitor):
             self._build_for_loop_blocks(init_parts, condition, [], continue_parts, node)
         elif it.is_a(TEMP):
             start = CONST(0)
-            end  = SYSCALL('len', [(TEMP(it.sym, Ctx.LOAD))])
+            end  = SYSCALL('len', [('seq', TEMP(it.sym, Ctx.LOAD))], {})
             counter_name = Symbol.unique_name('@counter')
             counter = self.current_scope.add_sym(counter_name, {'induction'})
             init_parts = [
@@ -703,7 +703,7 @@ class CodeVisitor(ast.NodeVisitor):
         elif it.is_a(ARRAY):
             unnamed_array = self.current_scope.add_temp('@unnamed')
             start = CONST(0)
-            end  = SYSCALL('len', [(TEMP(unnamed_array, Ctx.LOAD))])
+            end  = SYSCALL('len', [('seq', TEMP(unnamed_array, Ctx.LOAD))], {})
             counter_name = Symbol.unique_name('@counter')
             counter = self.current_scope.add_sym(counter_name, {'induction'})
             init_parts = [
@@ -811,7 +811,7 @@ class CodeVisitor(ast.NodeVisitor):
 
     def visit_Assert(self, node):
         testexp = self.visit(node.test)
-        self.emit(EXPR(SYSCALL('assert', [testexp])), node)
+        self.emit(EXPR(SYSCALL('assert', [('exp', testexp)], {})), node)
 
     def visit_Global(self, node):
         print(self._err_info(node))
@@ -915,11 +915,12 @@ class CodeVisitor(ast.NodeVisitor):
         if isinstance(node.func, ast.Name) and node.func.id.startswith(IGNORE_PREFIX):
             return CONST(0)
         func = self.visit(node.func)
-        args = list(map(self.visit, node.args))
-
+        kwargs = {}
         if node.keywords:
-            print(self._err_info(node))
-            raise NotImplementedError('keyword args is not supported')
+            for kw in node.keywords:
+                kwargs[kw.arg] = self.visit(kw.value)
+        args = [(None, self.visit(arg)) for arg in node.args]
+
         if getattr(node, 'starargs', None) and node.starargs:
             print(self._err_info(node))
             raise NotImplementedError('star args is not supported')
@@ -927,14 +928,14 @@ class CodeVisitor(ast.NodeVisitor):
 
         if func.is_a(TEMP):
             if func.symbol().typ.is_class():
-                return NEW(func.symbol().typ.get_scope(), args)
+                return NEW(func.symbol().typ.get_scope(), args, kwargs)
 
             func_name = func.symbol().orig_name()
             sym = self.current_scope.find_sym(func_name)
             func_scope = sym.typ.get_scope() if sym.typ.has_scope() else None
             if not func_scope:
                 if func.symbol().name in builtin_names:
-                    return SYSCALL(func.symbol().name, args)
+                    return SYSCALL(func.symbol().name, args, kwargs)
 
                 if func.symbol().name in dir(python_builtins):
                     raise NameError(
@@ -942,17 +943,17 @@ class CodeVisitor(ast.NodeVisitor):
                         format(node.id))
             else:
                 if func_scope.name in builtin_names:
-                    return SYSCALL(func_scope.name, args)
+                    return SYSCALL(func_scope.name, args, kwargs)
                 #print(self._err_info(node))
                 #raise TypeError('{} is not callable'.format(func.symbol().name))
         elif func.is_a(ATTR) and func.exp.is_a([TEMP, ATTR]):
             if isinstance(func.attr, Symbol):
                 if (func.attr.typ.is_function()
                         and func.attr.typ.get_scope().name in builtin_names):
-                    return SYSCALL(func.attr.typ.get_scope().name, args)
+                    return SYSCALL(func.attr.typ.get_scope().name, args, kwargs)
                 elif (func.attr.typ.is_class()
                       and func.attr.typ.get_scope().name in lib_class_names):
-                    return NEW(func.attr.typ.get_scope(), args)
+                    return NEW(func.attr.typ.get_scope(), args, kwargs)
             else:
                 scope_sym = func.tail()
                 if isinstance(scope_sym, Symbol):
@@ -961,8 +962,8 @@ class CodeVisitor(ast.NodeVisitor):
                         attr_sym = receiver.find_sym(func.attr)
                         if attr_sym.typ.is_class():
                             attr_scope = attr_sym.typ.get_scope()
-                            return NEW(attr_scope, args)
-        return CALL(func, args)
+                            return NEW(attr_scope, args, kwargs)
+        return CALL(func, args, kwargs)
 
     def visit_Num(self, node):
         return CONST(node.n)

@@ -40,18 +40,20 @@ class WorkerInstantiator(object):
                 module.register_worker(new_worker, call.args)
                 new_worker_sym = module.add_sym(new_worker.orig_name)
                 new_worker_sym.set_type(Type.function(new_worker, None, None))
-                call.args[0].set_symbol(new_worker_sym)
+                _, w = call.args[0]
+                w.set_symbol(new_worker_sym)
         return new_workers
 
     def _instantiate_worker(self, call, ctor):
         assert len(call.args) >= 1
-        assert call.args[0].is_a([TEMP, ATTR])
-        assert call.args[0].symbol().typ.is_function()
-        assert call.args[0].symbol().typ.get_scope().is_worker()
+        _, w = call.args[0]
+        assert w.is_a([TEMP, ATTR])
+        assert w.symbol().typ.is_function()
+        assert w.symbol().typ.get_scope().is_worker()
 
-        worker = call.args[0].symbol().typ.get_scope()
+        worker = w.symbol().typ.get_scope()
         binding = []
-        for i, arg in enumerate(call.args):
+        for i, (_, arg) in enumerate(call.args):
             if i == 0:
                 continue
             if arg.is_a(CONST):
@@ -109,7 +111,7 @@ class ModuleInstantiator(object):
     def _apply_module_if_needed(self, new, module_var):
         module = new.func_scope
         binding = []
-        for i, arg in enumerate(new.args):
+        for i, (_, arg) in enumerate(new.args):
             if arg.is_a(CONST):
                 binding.append((bind_val, i, arg.value))
 

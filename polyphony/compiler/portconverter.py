@@ -12,7 +12,7 @@ class PortTypeProp(TypePropagation):
             assert self.scope.is_ctor() and self.scope.parent.is_module()
             attrs = {}
             ctor = ir.func_scope.find_ctor()
-            for a, p in zip(ir.args, ctor.params[1:]):
+            for (_, a), p in zip(ir.args, ctor.params[1:]):
                 if not a.is_a(CONST):
                     print(error_info(self.scope, ir.lineno))
                     raise RuntimeError('The port class constructor accepts only constants.')
@@ -95,7 +95,7 @@ class PortConverter(IRTransformer):
                 ports = ir.args[2:]
             elif ir.name == 'polyphony.timing.wait_value':
                 ports = ir.args[1:]
-            for p in ports:
+            for _, p in ports:
                 port = p.symbol().typ
                 assert port.is_port()
                 di = port.get_direction()

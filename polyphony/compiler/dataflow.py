@@ -478,7 +478,7 @@ class DFGBuilder(object):
                 return
 
         def has_mem_arg(args):
-            for a in args:
+            for _, a in args:
                 if a.is_a(TEMP) and a.symbol().typ.is_list():
                     return True
             return False
@@ -508,7 +508,7 @@ class DFGBuilder(object):
         elif stm.is_a(EXPR):
             if stm.exp.is_a([CALL, SYSCALL]):
                 call = stm.exp
-                return all(a.is_a(CONST) for a in call.args)
+                return all(a.is_a(CONST) for _, a in call.args)
         elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
             return True
         elif stm.is_a(MCJUMP):
@@ -534,14 +534,14 @@ class DFGBuilder(object):
                     mem_group = mv.src.mem.symbol()
                     node_groups[mem_group].append(node)
                 elif mv.src.is_a(CALL):
-                    for arg in mv.src.args:
+                    for _, arg in mv.src.args:
                         if arg.is_a(TEMP) and arg.symbol().typ.is_list():
                             mem_group = arg.symbol()
                             node_groups[mem_group].append(node)
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
-                    for arg in expr.exp.args:
+                    for _, arg in expr.exp.args:
                         if arg.is_a(TEMP) and arg.symbol().typ.is_list():
                             mem_group = arg.symbol()
                             node_groups[mem_group].append(node)

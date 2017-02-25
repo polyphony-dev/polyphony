@@ -385,6 +385,7 @@ class BlockReducer(object):
 
 class PathExpTracer(object):
     def process(self, scope):
+        self.scope = scope
         tree = DominatorTreeBuilder(scope).process()
         tree.dump()
         self.tree = tree
@@ -402,46 +403,55 @@ class PathExpTracer(object):
         if jump.is_a(JUMP):
             if blk.path_exp:
                 for c in children:
-                    c.path_exp = blk.path_exp.clone()
+                    c.path_exp = blk.path_exp
             # Unlike other jump instructions,
             # the target of JUMP may be a confluence node
             if jump.target.path_exp:
-                if (jump.target.path_exp.is_a(UNOP) and
+                if ((jump.target.path_exp.is_a(UNOP) and
                         jump.target.path_exp.op == 'Not' and
-                        str(jump.target.path_exp.exp) == str(blk.path_exp)):
+                        jump.target.path_exp.exp == blk.path_exp) or
+                        (blk.path_exp and blk.path_exp.is_a(UNOP) and
+                         blk.path_exp.op == 'Not' and
+                         blk.path_exp.exp == jump.target.path_exp)):
                     jump.target.path_exp = None
                     # evaluate again from here
                     if jump.target not in self.worklist:
                         self.worklist.append(jump.target)
+                elif jump.target.path_exp == blk.path_exp:
+                    pass
+                elif not blk.path_exp:
+                    pass
                 else:
                     jump.target.path_exp = BINOP('Or', blk.path_exp, jump.target.path_exp)
+            elif jump.target in blk.succs_loop:
+                pass
             else:
                 jump.target.path_exp = blk.path_exp
         elif jump.is_a(CJUMP):
             if blk.path_exp:
                 for c in children:
                     if c is jump.true:
-                        c.path_exp = BINOP('And', blk.path_exp.clone(),
-                                           jump.exp.clone())
+                        c.path_exp = BINOP('And', blk.path_exp,
+                                           jump.exp)
                     elif c is jump.false:
-                        c.path_exp = BINOP('And', blk.path_exp.clone(),
-                                           UNOP('Not', jump.exp.clone()))
+                        c.path_exp = BINOP('And', blk.path_exp,
+                                           UNOP('Not', jump.exp))
                     else:
-                        c.path_exp = blk.path_exp.clone()
+                        c.path_exp = blk.path_exp
             else:
-                jump.true.path_exp = jump.exp.clone()
-                jump.false.path_exp = UNOP('Not', jump.exp.clone())
+                jump.true.path_exp = jump.exp
+                jump.false.path_exp = UNOP('Not', jump.exp)
         elif jump.is_a(MCJUMP):
             if blk.path_exp:
                 for c in children:
                     if c in jump.targets:
                         idx = jump.targets.index(c)
-                        c.path_exp = BINOP('And', blk.path_exp.clone(),
-                                           jump.conds[idx].clone())
+                        c.path_exp = BINOP('And', blk.path_exp,
+                                           jump.conds[idx])
                     else:
-                        c.path_exp = blk.path_exp.clone()
+                        c.path_exp = blk.path_exp
             else:
                 for t, cond in zip(jump.targets, jump.conds):
-                    t.path_exp = cond.clone()
+                    t.path_exp = cond
         for child in children:
             self.traverse_dtree(child)

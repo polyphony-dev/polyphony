@@ -674,7 +674,7 @@ class MemRefGraphBuilder(IRVisitor):
             self.edges.append((src, dst))
 
     def visit_CALL(self, ir):
-        for i, arg in enumerate(ir.args):
+        for i, (_, arg) in enumerate(ir.args):
             if arg.is_a(TEMP) and arg.sym.typ.is_seq():
                 p, _, _ = ir.func_scope.params[i]
                 self._append_edge(arg.sym, p)
@@ -792,7 +792,7 @@ class MemInstanceGraphBuilder(object):
         func_name = ir.func.symbol().orig_name()
         inst_name = '{}_{}'.format(func_name, node.instance_num)
 
-        for i, arg in enumerate(ir.args):
+        for i, (_, arg) in enumerate(ir.args):
             assert arg.is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
             if arg.is_a(TEMP) and arg.sym.typ.is_seq():
                 p, _, _ = ir.func_scope.params[i]

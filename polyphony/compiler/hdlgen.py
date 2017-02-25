@@ -352,7 +352,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 break
 
         self._process_io(scope)
-        for worker, args in scope.workers:
+        for worker, _ in scope.workers:
             self._process_worker(scope, worker, reset_stms)
         for stm in reset_stms:
             if stm.dst.sig.is_field():

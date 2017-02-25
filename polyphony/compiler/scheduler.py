@@ -192,14 +192,19 @@ class ResourceExtractor(IRVisitor):
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_CALL(self, ir):
-        self.results.append(ir.func_scope)
-        for arg in ir.args:
+    def visit_args(self, args):
+        for _, arg in args:
             self.visit(arg)
 
+    def visit_CALL(self, ir):
+        self.results.append(ir.func_scope)
+        self.visit_args(ir.args)
+
     def visit_SYSCALL(self, ir):
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args)
+
+    def visit_NEW(self, ir):
+        self.visit_args(ir.args)
 
     def visit_CONST(self, ir):
         pass

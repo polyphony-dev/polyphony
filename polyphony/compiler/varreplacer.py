@@ -45,7 +45,7 @@ class VarReplacer(object):
         return ir
 
     def visit_CALL(self, ir):
-        ir.args = [self.visit(arg) for arg in ir.args]
+        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 
     def visit_SYSCALL(self, ir):

@@ -40,7 +40,7 @@ class SpecializedFunctionMaker:
 
             for call in calls:
                 binding = []
-                for i, arg in enumerate(call.args):
+                for i, (_, arg) in enumerate(call.args):
                     if arg.is_a(CONST):
                         binding.append((self.bind_val, i, arg.value))
                     elif arg.is_a(TEMP) and arg.sym.typ.is_list():

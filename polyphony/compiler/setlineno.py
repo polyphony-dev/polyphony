@@ -31,18 +31,15 @@ class LineNumberSetter(IRVisitor):
     def visit_CALL(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.func)
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_SYSCALL(self, ir):
         ir.lineno = self.current_stm.lineno
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_NEW(self, ir):
         ir.lineno = self.current_stm.lineno
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_CONST(self, ir):
         ir.lineno = self.current_stm.lineno

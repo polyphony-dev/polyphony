@@ -130,8 +130,8 @@ class TypePropagation(IRVisitor):
             params = ir.func_scope.params[1:]
         else:
             params = ir.func_scope.params[:]
-        self._fill_args_if_needed(ir.func_scope.orig_name, params, ir.args)
-        arg_types = [self.visit(arg) for arg in ir.args]
+        ir.args = self._normalize_args(ir.func_scope.orig_name, params, ir.args, ir.kwargs)
+        arg_types = [self.visit(arg) for _, arg in ir.args]
         if any([atype.is_none() for atype in arg_types]):
             raise RejectPropagation(str(ir))
 
@@ -154,7 +154,8 @@ class TypePropagation(IRVisitor):
         return ret_t
 
     def visit_SYSCALL(self, ir):
-        for arg in ir.args:
+        ir.args = self._normalize_syscall_args(ir.name, ir.args, ir.kwargs)
+        for _, arg in ir.args:
             self.visit(arg)
         return builtin_return_type_table[ir.name]
 
@@ -162,8 +163,8 @@ class TypePropagation(IRVisitor):
         ret_t = Type.object(ir.func_scope)
         ir.func_scope.return_type = ret_t
         ctor = ir.func_scope.find_ctor()
-        self._fill_args_if_needed(ir.func_scope.orig_name, ctor.params[1:], ir.args)
-        arg_types = [self.visit(arg) for arg in ir.args]
+        ir.args = self._normalize_args(ir.func_scope.orig_name, ctor.params[1:], ir.args, ir.kwargs)
+        arg_types = [self.visit(arg) for _, arg in ir.args]
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
                 self._set_type(param.sym, arg_types[i])
@@ -228,7 +229,7 @@ class TypePropagation(IRVisitor):
         if len(call.args) == 0:
             type_error(self.current_stm,
                        "{}() missing required argument".format(call.func_scope.orig_name))
-        func = call.args[0]
+        _, func = call.args[0]
         if not func.symbol().typ.is_function():
             type_error(self.current_stm, "!!!")
         worker_scope = func.symbol().typ.get_scope()
@@ -239,15 +240,15 @@ class TypePropagation(IRVisitor):
             params = worker_scope.params[:]
 
         if len(call.args) > 1:
-            arg = call.args[1]
+            _, arg = call.args[1]
             if arg.is_a(ARRAY):
-                args = arg.items[:]
+                args = [(None, item) for item in arg.items]
             else:
-                args = call.args[1:]
+                args = [(_, arg) for _, arg in call.args[1:]]
         else:
             args = []
-        self._fill_args_if_needed(worker_scope.orig_name, params, args)
-        arg_types = [self.visit(arg) for arg in args]
+        args = self._normalize_args(worker_scope.orig_name, params, args, {})
+        arg_types = [self.visit(arg) for _, arg in args]
         for i, param in enumerate(params):
             self._set_type(param.sym, arg_types[i])
             self._set_type(param.copy, arg_types[i])
@@ -335,17 +336,29 @@ class TypePropagation(IRVisitor):
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
 
-    def _fill_args_if_needed(self, func_name, params, args):
-        if len(args) < len(params):
-            for i, param in enumerate(params):
-                if i < len(args):
-                    continue
-                if param.defval:
-                    args.append(param.defval)
-                else:
-                    type_error(self.current_stm,
-                               "{}() missing required argument: '{}'".format(func_name,
-                                                                             param.copy.name))
+    def _normalize_args(self, func_name, params, args, kwargs):
+        nargs = []
+        if len(params) < len(args):
+            nargs = args[:]
+            for name, arg in kwargs.items():
+                nargs.append((name, arg))
+            return nargs
+        for i, param in enumerate(params):
+            name = param.copy.name
+            if i < len(args):
+                nargs.append((name, args[i][1]))
+            elif name in kwargs:
+                nargs.append((name, kwargs[name]))
+            elif param.defval:
+                nargs.append((name, param.defval))
+            else:
+                type_error(self.current_stm,
+                           "{}() missing required argument: '{}'".format(func_name,
+                                                                         param.copy.name))
+        return nargs
+
+    def _normalize_syscall_args(self, func_name, args, kwargs):
+        return args
 
     def _set_type(self, sym, typ):
         if not sym.typ.is_freezed():
@@ -425,11 +438,11 @@ class TypeChecker(IRVisitor):
         if ir.name == 'len':
             if len(ir.args) != 1:
                 type_error(self.current_stm, 'len() takes exactly one argument')
-            mem = ir.args[0]
+            _, mem = ir.args[0]
             if not mem.is_a([TEMP, ATTR]) or not mem.symbol().typ.is_seq():
                 type_error(self.current_stm, 'len() takes sequence type argument')
         else:
-            for arg in ir.args:
+            for _, arg in ir.args:
                 self.visit(arg)
         return builtin_return_type_table[ir.name]
 
@@ -517,7 +530,7 @@ class TypeChecker(IRVisitor):
                 pass
             if ir.exp.func_scope.is_method() and ir.exp.func_scope.parent.is_module():
                 if ir.exp.func_scope.orig_name == 'append_worker':
-                    arg_types = [self.visit(arg) for arg in ir.exp.args[1:]]
+                    arg_types = [self.visit(arg) for _, arg in ir.exp.args[1:]]
                     if len(arg_types):
                         # TODO
                         pass
@@ -564,7 +577,7 @@ class TypeChecker(IRVisitor):
 
     def _check_param_type(self, param_typs, ir):
         assert len(ir.args) == len(param_typs)
-        for arg, param_t in zip(ir.args, param_typs):
+        for (name, arg), param_t in zip(ir.args, param_typs):
             arg_t = self.visit(arg)
             if not Type.is_commutable(arg_t, param_t):
                 type_error(self.current_stm,

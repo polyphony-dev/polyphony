@@ -211,7 +211,7 @@ class UseDefDetector(IRVisitor):
         self.visit(ir.right)
 
     def _visit_args(self, ir):
-        for arg in ir.args:
+        for _, arg in ir.args:
             self.visit(arg)
             if (env.compile_phase >= env.PHASE_4
                     and arg.is_a([TEMP, ATTR])

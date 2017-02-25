@@ -49,9 +49,10 @@ class CallGraphBuilder(IRVisitor):
         self.worklist.append(ir.func_scope)
 
         if ir.func_scope.orig_name == 'append_worker':
-            assert ir.args[0].symbol().typ.is_function()
-            assert ir.args[0].symbol().typ.get_scope().is_worker()
-            worker = ir.args[0].symbol().typ.get_scope()
+            _, w = ir.args[0]
+            assert w.symbol().typ.is_function()
+            assert w.symbol().typ.get_scope().is_worker()
+            worker = w.symbol().typ.get_scope()
             self.call_graph.add_edge(self.scope, worker)
             self.worklist.append(worker)
 

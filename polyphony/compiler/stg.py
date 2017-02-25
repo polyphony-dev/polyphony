@@ -450,7 +450,7 @@ class AHDLTranslator(object):
 
     def _visit_args(self, ir, node):
         callargs = []
-        for i, arg in enumerate(ir.args):
+        for i, (_, arg) in enumerate(ir.args):
             a = self.visit(arg, node)
             callargs.append(a)
         return callargs
@@ -491,7 +491,7 @@ class AHDLTranslator(object):
         return ahdl_call
 
     def translate_builtin_len(self, syscall):
-        mem = syscall.args[0]
+        _, mem = syscall.args[0]
         assert mem.is_a(TEMP)
         memnode = self.mrg.node(mem.sym)
         lens = []
@@ -516,13 +516,14 @@ class AHDLTranslator(object):
         elif ir.name == 'len':
             return self.translate_builtin_len(ir)
         elif ir.name == 'polyphony.timing.clksleep':
-            assert ir.args[0].is_a(CONST)
-            for i in range(ir.args[0].value):
+            _, cycle = ir.args[0]
+            assert cycle.is_a(CONST)
+            for i in range(cycle.value):
                 self.host.emit(AHDL_NOP('wait a cycle'), self.sched_time + i)
             return
         elif ir.name == 'polyphony.timing.wait_rising':
             ports = []
-            for a in ir.args:
+            for _, a in ir.args:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
@@ -530,7 +531,7 @@ class AHDLTranslator(object):
             return
         elif ir.name == 'polyphony.timing.wait_falling':
             ports = []
-            for a in ir.args:
+            for _, a in ir.args:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
@@ -538,9 +539,11 @@ class AHDLTranslator(object):
             return
         elif ir.name == 'polyphony.timing.wait_edge':
             ports = []
-            old = self.visit(ir.args[0])
-            new = self.visit(ir.args[1])
-            for a in ir.args[2:]:
+            _, _old = ir.args[0]
+            _, _new = ir.args[1]
+            old = self.visit(_old, node)
+            new = self.visit(_new, node)
+            for _, a in ir.args[2:]:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
@@ -548,8 +551,9 @@ class AHDLTranslator(object):
             return
         elif ir.name == 'polyphony.timing.wait_value':
             ports = []
-            value = self.visit(ir.args[0], node)
-            for a in ir.args[1:]:
+            _, _val = ir.args[0]
+            value = self.visit(_val, node)
+            for _, a in ir.args[1:]:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
@@ -558,7 +562,7 @@ class AHDLTranslator(object):
         else:
             return
         args = []
-        for i, arg in enumerate(ir.args):
+        for i, (_, arg) in enumerate(ir.args):
             a = self.visit(arg, node)
             args.append(a)
         return AHDL_PROCCALL(fname, args)
@@ -934,7 +938,8 @@ class AHDLTranslator(object):
 
         if call.func_scope.orig_name == 'wr':
             assert call.args
-            src = self.visit(call.args[0], node)
+            _, val = call.args[0]
+            src = self.visit(val, node)
             self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), src), self.sched_time)
             # makes the port as 'valid'
             if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():

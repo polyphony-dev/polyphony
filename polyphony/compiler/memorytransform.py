@@ -178,7 +178,7 @@ class ContextModifier(IRVisitor):
         super().__init__()
 
     def visit_CALL(self, ir):
-        for arg in ir.args:
+        for _, arg in ir.args:
             if arg.is_a(TEMP) and arg.sym.typ.is_list():
                 memnode = arg.sym.typ.get_memnode()
                 # FIXME: check the memnode is locally writable or not

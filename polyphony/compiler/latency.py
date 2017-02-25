@@ -36,7 +36,9 @@ def get_latency(tag):
             return CALL_MINIMUM_STEP
         elif tag.exp.is_a(SYSCALL):
             if tag.exp.name == 'polyphony.timing.clksleep':
-                return tag.exp.args[0].value
+                _, cycle = tag.exp.args[0]
+                assert cycle.is_a(CONST)
+                return cycle.value
             elif tag.exp.name.startswith('polyphony.timing.wait_'):
                 return 1
     return MINIMUM_STEP

@@ -89,11 +89,12 @@ class QuadrupleMaker(IRTransformer):
             return builtin_return_type_table[ir.name] != Type.none_t
 
     def _visit_args(self, ir):
-        for i in range(len(ir.args)):
-            ir.args[i] = self.visit(ir.args[i])
-            assert ir.args[i].is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
-            if ir.args[i].is_a(ARRAY):
-                ir.args[i] = self._new_temp_move(ir.args[i], self.scope.add_temp())
+        for i, (name, arg) in enumerate(ir.args):
+            arg = self.visit(arg)
+            assert arg.is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
+            if arg.is_a(ARRAY):
+                arg = self._new_temp_move(arg, self.scope.add_temp())
+            ir.args[i] = (name, arg)
 
     def visit_CALL(self, ir):
         #suppress converting
