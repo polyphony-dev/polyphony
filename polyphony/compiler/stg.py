@@ -961,6 +961,7 @@ class AHDLTranslator(object):
         elif call.func_scope.orig_name == 'rd':
             assert target
             dst = self.visit(target, node)
+            sched_time = self.sched_time
             # blocking if the port is not 'valid'
             if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():
                 valid_sig = port_sig.valid
@@ -968,19 +969,20 @@ class AHDLTranslator(object):
                 self._emit(AHDL_META_WAIT('WAIT_VALUE',
                                           AHDL_CONST(1),
                                           *ports),
-                           self.sched_time)
+                           sched_time)
+                sched_time += 1
             # Note that reading from the port is in the next scheduling time of the wait function
             # However, in fact reading is doing on the same time of the wait function by merging process
-            self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), self.sched_time + 1)
+            self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), sched_time)
             # makes the port as 'ready'
             if port_sig.is_ready_valid_protocol():
                 ready_sig = port_sig.ready
                 self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
                                      AHDL_CONST(1)),
-                           self.sched_time + 1)
+                           sched_time)
                 self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
                                      AHDL_CONST(0)),
-                           self.sched_time + 2)
+                           sched_time + 1)
         else:
             assert False
 

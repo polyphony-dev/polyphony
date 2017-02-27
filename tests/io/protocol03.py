@@ -12,8 +12,8 @@ def worker(i, o, param):
 @module
 class Protocol03:
     def __init__(self):
-        self.i = Int(8, 0, 'ready_valid')
-        self.o = Int(8, 0, 'ready_valid')
+        self.i = Int(width=8, init=0, protocol='ready_valid')
+        self.o = Int(width=8, init=0, protocol='ready_valid')
         t0 = Int(8, 0, 'ready_valid')
         t1 = Int(8, 0, 'ready_valid')
         self.append_worker(worker, self.i, t0, 1)

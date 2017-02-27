@@ -6,11 +6,11 @@ from polyphony.timing import clkfence, wait_rising, wait_value
 @module
 class Port01:
     def __init__(self):
-        self.in0 = Int(8)
-        self.out0 = Int(8)
-        self.out_valid = Bit(0)
-        self.in_valid = Bit(0)
-        self.start = Bit(0)
+        self.in0 = Int(width=8)
+        self.out0 = Int(width=8)
+        self.out_valid = Bit(init=0)
+        self.in_valid = Bit(init=0)
+        self.start = Bit(init=0)
         self.append_worker(self.main)
 
     def main(self):

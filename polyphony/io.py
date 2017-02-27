@@ -68,8 +68,8 @@ def _portmethod(func):
 
 
 class _DataPort(object):
-    def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
-        self.__v = init_v
+    def __init__(self, init:int=0, width:int=1, protocol:int='none') -> object:
+        self.__v = init
         self.__oldv = 0
         self.__protocol = protocol
         self.__cv = []
@@ -136,18 +136,18 @@ class _DataPort(object):
 
 
 class Bit(_DataPort):
-    def __init__(self, init_v:int=0, width:int=1, protocol:int='none') -> object:
-        super().__init__(init_v, width, protocol)
+    def __init__(self, init:int=0, width:int=1, protocol:int='none') -> object:
+        super().__init__(init, width, protocol)
 
 
 class Int(_DataPort):
-    def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
-        super().__init__(init_v, width, protocol)
+    def __init__(self, width:int=32, init:int=0, protocol:int='none') -> object:
+        super().__init__(init, width, protocol)
 
 
 class Uint(_DataPort):
-    def __init__(self, width:int=32, init_v:int=0, protocol:int='none') -> object:
-        super().__init__(init_v, width, protocol)
+    def __init__(self, width:int=32, init:int=0, protocol:int='none') -> object:
+        super().__init__(init, width, protocol)
 
 
 class Queue(object):

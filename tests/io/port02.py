@@ -18,9 +18,9 @@ def other_main(clk1, clk2, out):
 @module
 class Port02:
     def __init__(self):
-        self.clk1 = Bit(1)
-        self.clk2 = Bit(1)
-        self.out = Bit(0)
+        self.clk1 = Bit(init=1)
+        self.clk2 = Bit(init=1)
+        self.out = Bit(init=0)
         self.append_worker(self.main)
         self.append_worker(other_main, self.clk1, self.clk2, self.out)
 
