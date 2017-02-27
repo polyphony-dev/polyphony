@@ -1,4 +1,5 @@
 from .common import error_info
+from .env import env
 from .scope import Scope
 from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
@@ -87,7 +88,12 @@ class WorkerInstantiator(object):
                     call.args.pop(i)
         else:
             new_worker = worker.clone('', str(call.lineno))
+        self._instantiate_memnode(worker, new_worker)
         return new_worker
+
+    def _instantiate_memnode(self, orig_worker, new_worker):
+        mrg = env.memref_graph
+        mrg.clone_subgraph(orig_worker, new_worker)
 
 
 class ModuleInstantiator(object):

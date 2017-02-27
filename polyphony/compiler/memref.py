@@ -1,4 +1,5 @@
 ﻿from collections import deque, defaultdict
+import copy
 from .ir import *
 from .symbol import Symbol
 from .type import Type
@@ -44,6 +45,8 @@ class RefNode(object):
         return self.sym < other.sym
 
     def name(self):
+        if len(self.scopes) == 1 and list(self.scopes)[0].is_worker():
+            return list(self.scopes)[0].orig_name + '_' + self.sym.hdl_name()
         return self.sym.hdl_name()
 
     def _str_properties(self):
@@ -153,6 +156,16 @@ class RefNode(object):
     def add_flag(self, f):
         self.flags |= f
 
+    def clone(self, orig_scope, new_scope):
+        new_scope.clone_symbols
+        new_sym = new_scope.clone_symbols[self.sym]
+        new_node = self.__class__(new_sym, new_scope)
+        new_node.preds = self.preds[:]
+        new_node.succs = self.succs[:]
+        new_node.flags = self.flags
+        new_node.order = self.order
+        return new_node
+
 
 class JointNode(RefNode):
     def __init__(self, sym, scope):
@@ -189,6 +202,12 @@ class JointNode(RefNode):
             else:
                 succs.append(succ)
         return succs
+
+    def clone(self, orig_scope, new_scope):
+        c = super().clone(orig_scope, new_scope)
+        c.orig_preds = self.orig_preds[:]
+        c.orig_succs = self.orig_succs[:]
+        return c
 
 
 class N2OneNode(JointNode):
@@ -307,6 +326,13 @@ class MemRefNode(RefNode, MemTrait):
 
         if self.preds and self.preds[0].is_immutable():
             self.set_immutable()
+
+    def clone(self, orig_scope, new_scope):
+        c = super().clone(orig_scope, new_scope)
+        c.initstm = self.initstm
+        c.width = self.width
+        c.length = self.length
+        return c
 
 
 class MemParamNode(RefNode, MemTrait):
@@ -513,6 +539,29 @@ class MemRefGraph(object):
 
     def is_live_node(self, node):
         return node.sym in self.nodes
+
+    def clone_subgraph(self, orig, new):
+        assert new.clone_symbols
+        new_nodes = []
+        node_map = {}
+        for node in self.scope_nodes(orig):
+            new_node = node.clone(orig, new)
+            assert new_node.sym is not node.sym
+            assert new_node.sym.name == node.sym.name
+            new_nodes.append(new_node)
+            node_map[node] = new_node
+        for new_node in new_nodes:
+            self.add_node(new_node)
+            succs = new_node.succs[:]
+            new_node.succs = []
+            preds = new_node.preds[:]
+            new_node.preds = []
+            for succ in succs:
+                new_succ = node_map[succ]
+                self.add_edge(new_node, new_succ)
+            for pred in preds:
+                new_pred = node_map[pred]
+                self.add_edge(new_pred, new_node)
 
 
 class MemRefGraphBuilder(IRVisitor):

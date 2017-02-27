@@ -677,9 +677,9 @@ class CodeVisitor(ast.NodeVisitor):
                            step))
             ]
             self._build_for_loop_blocks(init_parts, condition, [], continue_parts, node)
-        elif it.is_a(TEMP):
+        elif it.is_a([TEMP, ATTR]):
             start = CONST(0)
-            end  = SYSCALL('len', [('seq', TEMP(it.sym, Ctx.LOAD))], {})
+            end  = SYSCALL('len', [('seq', it.clone())], {})
             counter_name = Symbol.unique_name('@counter')
             counter = self.current_scope.add_sym(counter_name, {'induction'})
             init_parts = [
@@ -689,7 +689,7 @@ class CodeVisitor(ast.NodeVisitor):
             condition = RELOP('Lt', TEMP(counter, Ctx.LOAD), end)
             body_parts = [
                 MOVE(TEMP(var.sym, Ctx.STORE),
-                     MREF(TEMP(it.sym, Ctx.LOAD),
+                     MREF(it.clone(),
                           TEMP(counter, Ctx.LOAD),
                           Ctx.LOAD))
             ]

@@ -183,7 +183,7 @@ class Scope(Tagged):
                 stm.targets = [block_map[t] for t in stm.targets]
             elif stm.is_a(PHI):
                 stm.defblks = [block_map[blk] for blk in stm.defblks]
-        return block_map
+        return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None):
         if self.is_lib():
@@ -209,7 +209,7 @@ class Scope(Tagged):
                                   defval.clone() if defval else None)
             s.params.append(param)
         s.return_type = self.return_type
-        block_map = self.clone_blocks(s)
+        block_map, stm_map = self.clone_blocks(s)
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
 
@@ -228,6 +228,9 @@ class Scope(Tagged):
 
         s.parent.append_child(s)
         env.append_scope(s)
+        s.clone_symbols = symbol_map
+        s.clone_blocks = block_map
+        s.clone_stms = stm_map
         return s
 
     def inherit(self, name, overrides):

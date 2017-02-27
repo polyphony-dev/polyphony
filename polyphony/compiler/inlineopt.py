@@ -52,7 +52,7 @@ class InlineOpt(object):
             assert result_sym.is_return()
             result_sym.del_tag('return')
 
-            block_map = callee.clone_blocks(caller)
+            block_map, _ = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
             callee_exit_blk = block_map[callee.exit_block]
             assert len(callee_exit_blk.succs) <= 1
@@ -89,7 +89,7 @@ class InlineOpt(object):
             assert result_sym.is_return()
             result_sym.del_tag('return')
 
-            block_map = callee.clone_blocks(caller)
+            block_map, _ = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
             callee_exit_blk = block_map[callee.exit_block]
             assert len(callee_exit_blk.succs) <= 1

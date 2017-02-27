@@ -109,6 +109,8 @@ class HDLModuleBuilder(object):
         while roms:
             memnode = roms.pop()
             hdl_name = memnode.sym.hdl_name()
+            if scope.is_worker():
+                hdl_name = '{}_{}'.format(scope.orig_name, hdl_name)
             source = memnode.single_source()
             if source:
                 source_scope = list(source.scopes)[0]
