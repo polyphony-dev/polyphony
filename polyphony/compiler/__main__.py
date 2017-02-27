@@ -442,37 +442,7 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)
     driver = Driver(compile_plan(), scopes)
     driver.run()
-    #output_all(driver, output_name, output_dir)
     output_individual(driver, output_name, output_dir)
-
-
-def output_all(driver, output_name, output_dir):
-    codes = []
-    d = output_dir if output_dir else './'
-    if d[-1] != '/':
-        d += '/'
-
-    scopes = Scope.get_scopes(with_class=True)
-    for scope in scopes:
-        if not scope.is_testbench():
-            codes.append(driver.result(scope))
-        else:
-            file_name = '{}{}_{}.v'.format(d, output_name, scope.orig_name)
-            with open(file_name, 'w') as f:
-                if driver.result(scope):
-                    f.write(driver.result(scope))
-
-    mains = []
-    for scope in scopes:
-        if scope.is_main():
-            mains.append(env.scopes[scope.name].module_info)
-
-    with open(d + output_name + '.v', 'w') as f:
-        for code in codes:
-            if code:
-                f.write(code)
-        for lib in env.using_libs:
-            f.write(lib)
 
 
 def output_individual(driver, output_name, output_dir):
@@ -488,7 +458,9 @@ def output_individual(driver, output_name, output_dir):
             code = driver.result(scope)
             if not code:
                 continue
-            file_name = '{}_{}.v'.format(output_name, scope.orig_name)
+            file_name = '{}.v'.format(scope.orig_name)
+            if output_name == scope.orig_name:
+                file_name = '_' + file_name
             with open('{}{}'.format(d, file_name), 'w') as f2:
                 f2.write(code)
             if scope.is_testbench():

@@ -32,7 +32,7 @@ def exec_test(casefile_path, output=True, compile_only=False):
 
 
 def simulate_verilog(testname, casename, casefile_path, output):
-    hdl_files = ['{}/{}.v'.format(TMP_DIR, casename), '{}/{}_{}.v'.format(TMP_DIR, casename, testname)]
+    hdl_files = ['{}/{}.v'.format(TMP_DIR, casename), '{}/{}.v'.format(TMP_DIR, testname)]
     exec_name = '{}/{}'.format(TMP_DIR, testname)
     args = ('{} -I {} -W all -o {} -s {}'.format(IVERILOG_PATH, TMP_DIR, exec_name, testname)).split(' ')
     args += hdl_files
