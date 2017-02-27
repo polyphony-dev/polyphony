@@ -151,12 +151,11 @@ class Uint(_DataPort):
 
 
 class Queue(object):
-    def __init__(self, width:int=32, max_size:int=0, name='') -> object:
+    def __init__(self, width:int=32, maxsize:int=0) -> object:
         self.__width = width
-        self.__q = queue.Queue(max_size)
+        self.__q = queue.Queue(maxsize)
         self.__ev_put = _create_event()
         self.__ev_get = _create_event()
-        self.__name = name
 
     @_portmethod
     def rd(self) -> int:

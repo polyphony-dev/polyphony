@@ -896,7 +896,10 @@ class AHDLTranslator(object):
         if port_scope.orig_name == 'Int':
             tags.add('int')
         direction = port_sym.typ.get_direction()
-        protocol = port_sym.typ.get_protocol()
+        if port_sym.typ.has_protocol():
+            protocol = port_sym.typ.get_protocol()
+        else:
+            protocol = 'none'
         kind = port_sym.typ.get_port_kind()
 
         if kind == 'internal':
@@ -993,8 +996,8 @@ class AHDLTranslator(object):
         assert port.is_port()
         port_sig = self._port_sig(target.qualified_symbol())
         if port_sig.is_output():
-            init_v = AHDL_CONST(port.get_init_v())
-            self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), init_v), self.sched_time)
+            init = AHDL_CONST(port.get_init())
+            self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), init), self.sched_time)
         elif port_sig.is_input() and port_sig.is_ready_valid_protocol():
             ready_sig = port_sig.ready
             self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE), AHDL_CONST(0)), self.sched_time)

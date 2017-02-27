@@ -634,8 +634,9 @@ class DFGBuilder(object):
             if call.func_scope.is_method() and call.func_scope.parent.is_port():
                 port_sym = call.func.qualified_symbol()[-2]
                 assert port_sym.typ.is_port()
-                protocol = port_sym.typ.get_protocol()
-                return protocol != 'none'
+                if port_sym.typ.has_protocol():
+                    protocol = port_sym.typ.get_protocol()
+                    return protocol != 'none'
             return False
 
     def _add_timinglib_seq_edges(self, blocks, dfg):
