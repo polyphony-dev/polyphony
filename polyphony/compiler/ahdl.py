@@ -13,8 +13,9 @@ PYTHON_OP_2_HDL_OP_MAP = {
     'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~'
 }
 
-#Abstract HDL
+
 class AHDL(object):
+    '''Abstract HDL'''
     def __init__(self):
         pass
 
@@ -279,6 +280,49 @@ class AHDL_LOAD(AHDL_STM):
         return 'AHDL_LOAD({}, {}, {})'.format(repr(self.mem),
                                               repr(self.dst),
                                               repr(self.offset))
+
+
+class AHDL_IO_READ(AHDL_STM):
+    def __init__(self, io, dst, is_self=True):
+        super().__init__()
+        self.io = io
+        self.dst = dst
+        self.is_self = is_self
+
+    def __str__(self):
+        return 'dst <= {}.read()'.format(self.dst, self.io)
+
+    def __repr__(self):
+        return 'AHDL_IO_READ({}, {})'.format(repr(self.io),
+                                             repr(self.dst))
+
+
+class AHDL_IO_WRITE(AHDL_STM):
+    def __init__(self, io, src, is_self=True):
+        super().__init__()
+        self.io = io
+        self.src = src
+        self.is_self = is_self
+
+    def __str__(self):
+        return '{}.write({})'.format(self.io, self.src)
+
+    def __repr__(self):
+        return 'AHDL_IO_WRITE({}, {})'.format(repr(self.io),
+                                              repr(self.src))
+
+
+class AHDL_SEQ(AHDL_STM):
+    def __init__(self, factor, step):
+        super().__init__()
+        self.factor = factor
+        self.step = step
+
+    def __str__(self):
+        return 'Sequence {} : {}'.format(self.step, self.factor)
+
+    def __repr__(self):
+        return 'AHDL_SEQ({}, {})'.format(repr(self.factor), repr(self.step))
 
 
 class AHDL_POST_PROCESS(AHDL_STM):

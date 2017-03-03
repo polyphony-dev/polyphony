@@ -239,6 +239,9 @@ class SSATransformerBase(object):
                     logger.debug('remove ' + str(phi))
                     if phi in phi.block.stms:
                         phi.block.stms.remove(phi)
+                        for a in phi.args:
+                            usedef.remove_var_use(a, phi)
+                        usedef.remove_var_def(phi.var, phi)
                     replace_var = phi.var.clone()
                     replace_var.set_symbol(sym)
                     replace_var.ctx = Ctx.LOAD
@@ -397,10 +400,8 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.scope.is_module():
             return False
-        scope = sym.typ.get_scope()
-        if scope.is_port() or scope.is_module():
+        if sym.is_param():
             return False
-
         idx = qsym.index(sym)
         if idx > 0:
             if not self._need_rename(qsym[idx - 1], qsym):

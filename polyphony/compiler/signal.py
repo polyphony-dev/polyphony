@@ -9,6 +9,8 @@ class Signal(Tagged):
         'valid_protocol', 'ready_valid_protocol',
         'statevar',
         'field', 'ctrl', 'memif', 'onehot',
+        'single_port', 'seq_port', 'fifo_port',
+        'initializable',
     }
 
     def __init__(self, name, width, tags):

@@ -635,8 +635,8 @@ class AHDLTranslator(object):
         if ir.sym.typ.is_list():
             tags.add('memif')
             width = ir.sym.typ.get_element().get_width()
-        elif ir.sym.typ.is_int():
-            if ir.sym.typ.get_signed():
+        elif ir.sym.typ.is_int() or ir.sym.typ.is_bool():
+            if ir.sym.typ.has_signed() and ir.sym.typ.get_signed():
                 tags.add('int')
             else:
                 pass
@@ -880,6 +880,8 @@ class AHDLTranslator(object):
         assert port_qsym[-1].typ.is_port()
         port_sym = port_qsym[-1]
         root_sym = port_sym.typ.get_root_symbol()
+        if root_sym.ancestor:
+            root_sym = root_sym.ancestor
         port_prefixes = port_qsym[:-1] + (root_sym,)
 
         if port_prefixes[0].name == env.self_name:
@@ -893,18 +895,23 @@ class AHDLTranslator(object):
         width = port_sym.typ.get_width()
         port_scope = port_sym.typ.get_scope()
         tags = set()
-        if port_scope.orig_name == 'Int':
-            tags.add('int')
+        if port_scope.orig_name == 'Int' or port_scope.orig_name == 'Bit' or port_scope.orig_name == 'Uint':
+            tags.add('single_port')
+            if port_scope.orig_name == 'Int':
+                tags.add('int')
+        elif port_scope.orig_name == 'Queue':
+            # TODO
+            tags.add('fifo_port')
+            tags.add('seq_port')
         direction = port_sym.typ.get_direction()
-        if port_sym.typ.has_protocol():
-            protocol = port_sym.typ.get_protocol()
-        else:
-            protocol = 'none'
+        protocol = port_sym.typ.get_protocol()
         kind = port_sym.typ.get_port_kind()
 
         if kind == 'internal':
-            # TODO: specific protocol port
-            tags.add('reg')
+            if 'seq_port' in tags:
+                pass  # tag?
+            else:
+                tags.add('reg')
         elif self.scope.parent.is_subclassof(port_sym.scope) and port_sym.scope.is_module():
             tags.add(direction)
         elif self.scope.is_worker():
@@ -923,9 +930,22 @@ class AHDLTranslator(object):
             tags.add(protocol + '_protocol')
             valid_sig = self._make_valid_signal(port_sym, port_name, tags)
             ready_sig = self._make_ready_signal(port_sym, port_name, tags)
+        if 'extport' in tags:
+            port_sig = self.scope.gen_sig(port_name, width, tags)
+        else:
+            if root_sym.scope.is_module():
+                module_scope = root_sym.scope
+            elif root_sym.scope.is_ctor() and root_sym.scope.parent.is_module():
+                module_scope = root_sym.scope.parent
+            else:
+                assert False
+            port_sig = module_scope.gen_sig(port_name, width, tags)
 
-        port_sig = port_sym.scope.gen_sig(port_name, width, tags)
-
+        if port_sym.typ.has_init():
+            tags.add('initializable')
+            port_sig.init_value = port_sym.typ.get_init()
+        if port_sym.typ.has_maxsize():
+            port_sig.maxsize = port_sym.typ.get_maxsize()
         if protocol != 'none':
             if valid_sig:
                 port_sig.valid = valid_sig
@@ -940,67 +960,106 @@ class AHDLTranslator(object):
         port_sig = self._port_sig(port_qsym)
 
         if call.func_scope.orig_name == 'wr':
-            assert call.args
-            _, val = call.args[0]
-            src = self.visit(val, node)
-            self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), src), self.sched_time)
-            # makes the port as 'valid'
-            if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():
-                valid_sig = port_sig.valid
-                self._emit(AHDL_MOVE(AHDL_VAR(valid_sig, Ctx.STORE),
-                                     AHDL_CONST(1)),
-                           self.sched_time)
-                self._emit(AHDL_MOVE(AHDL_VAR(valid_sig, Ctx.STORE),
-                                     AHDL_CONST(0)),
-                           self.sched_time + 1)
-            # blocking if the port is not 'ready'
-            if port_sig.is_ready_valid_protocol():
-                ready_sig = port_sig.ready
-                ports = [AHDL_VAR(ready_sig, Ctx.LOAD)]
-                self._emit(AHDL_META_WAIT('WAIT_VALUE',
-                                          AHDL_CONST(1),
-                                          *ports),
-                           self.sched_time)
+            if port_sig.is_single_port():
+                self._make_single_port_write(call, port_sig, node)
+            elif port_sig.is_fifo_port():
+                self._make_fifo_port_write(call, port_sig, node)
         elif call.func_scope.orig_name == 'rd':
-            assert target
-            dst = self.visit(target, node)
-            sched_time = self.sched_time
-            # blocking if the port is not 'valid'
-            if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():
-                valid_sig = port_sig.valid
-                ports = [AHDL_VAR(valid_sig, Ctx.LOAD)]
-                self._emit(AHDL_META_WAIT('WAIT_VALUE',
-                                          AHDL_CONST(1),
-                                          *ports),
-                           sched_time)
-                sched_time += 1
-            # Note that reading from the port is in the next scheduling time of the wait function
-            # However, in fact reading is doing on the same time of the wait function by merging process
-            self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), sched_time)
-            # makes the port as 'ready'
-            if port_sig.is_ready_valid_protocol():
-                ready_sig = port_sig.ready
-                self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
-                                     AHDL_CONST(1)),
-                           sched_time)
-                self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
-                                     AHDL_CONST(0)),
-                           sched_time + 1)
+            if port_sig.is_single_port():
+                self._make_single_port_read(target, port_sig, node)
+            elif port_sig.is_fifo_port():
+                self._make_fifo_port_read(target, port_sig, node)
         else:
             assert False
 
+    def _make_single_port_write(self, call, port_sig, node):
+        assert call.args
+        _, val = call.args[0]
+        src = self.visit(val, node)
+        self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), src), self.sched_time)
+        # makes the port as 'valid'
+        if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():
+            valid_sig = port_sig.valid
+            self._emit(AHDL_MOVE(AHDL_VAR(valid_sig, Ctx.STORE),
+                                 AHDL_CONST(1)),
+                       self.sched_time)
+            self._emit(AHDL_MOVE(AHDL_VAR(valid_sig, Ctx.STORE),
+                                 AHDL_CONST(0)),
+                       self.sched_time + 1)
+        # blocking if the port is not 'ready'
+        if port_sig.is_ready_valid_protocol():
+            ready_sig = port_sig.ready
+            ports = [AHDL_VAR(ready_sig, Ctx.LOAD)]
+            self._emit(AHDL_META_WAIT('WAIT_VALUE',
+                                      AHDL_CONST(1),
+                                      *ports),
+                       self.sched_time)
+
+    def _make_fifo_port_write(self, call, port_sig, node):
+        assert call.args
+        sched_time = self.sched_time
+        _, val = call.args[0]
+        src = self.visit(val, node)
+        ports = [AHDL_SYMBOL(port_sig.name + '_full')]
+        self._emit(AHDL_META_WAIT('WAIT_VALUE',
+                                  AHDL_CONST(0),
+                                  *ports),
+                   sched_time)
+        sched_time += 1
+        iow = AHDL_IO_WRITE(AHDL_VAR(port_sig, Ctx.STORE),
+                            src,
+                            port_sig.is_output())
+        for i in range(node.latency() - 1):  # -1 means for the above WAIT_VALUE
+            self._emit(AHDL_SEQ(iow, i), sched_time + i)
+
+    def _make_single_port_read(self, target, port_sig, node):
+        assert target
+        dst = self.visit(target, node)
+        sched_time = self.sched_time
+        # blocking if the port is not 'valid'
+        if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():
+            valid_sig = port_sig.valid
+            ports = [AHDL_VAR(valid_sig, Ctx.LOAD)]
+            self._emit(AHDL_META_WAIT('WAIT_VALUE',
+                                      AHDL_CONST(1),
+                                      *ports),
+                       sched_time)
+            sched_time += 1
+        # Note that reading from the port is in the next scheduling time of the wait function
+        # However, in fact reading is doing on the same time of the wait function by merging process
+        self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), sched_time)
+        # makes the port as 'ready'
+        if port_sig.is_ready_valid_protocol():
+            ready_sig = port_sig.ready
+            self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
+                                 AHDL_CONST(1)),
+                       sched_time)
+            self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
+                                 AHDL_CONST(0)),
+                       sched_time + 1)
+
+    def _make_fifo_port_read(self, target, port_sig, node):
+        assert target
+        sched_time = self.sched_time
+        dst = self.visit(target, node)
+        ports = [AHDL_SYMBOL(port_sig.name + '_empty')]
+        self._emit(AHDL_META_WAIT('WAIT_VALUE',
+                                  AHDL_CONST(0),
+                                  *ports),
+                   sched_time)
+        sched_time += 1
+        ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
+                           dst,
+                           port_sig.is_input())
+        for i in range(node.latency() - 1):  # -1 means for the above WAIT_VALUE
+            self._emit(AHDL_SEQ(ior, i), sched_time + i)
+
     def _make_port_init(self, new, target, node):
         assert new.func_scope.is_port()
-        #assert target.is_a(ATTR)
         port = target.symbol().typ
         assert port.is_port()
-        port_sig = self._port_sig(target.qualified_symbol())
-        if port_sig.is_output():
-            init = AHDL_CONST(port.get_init())
-            self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), init), self.sched_time)
-        elif port_sig.is_input() and port_sig.is_ready_valid_protocol():
-            ready_sig = port_sig.ready
-            self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE), AHDL_CONST(0)), self.sched_time)
+        # make port signal
+        self._port_sig(target.qualified_symbol())
 
     def _is_module_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_module()

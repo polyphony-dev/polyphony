@@ -611,4 +611,3 @@ class ModuleChecker(IRVisitor):
         else:
             type_error(self.current_stm,
                        'Assignment to a module field can only at the constructor or a function called from the constructor')
-

@@ -13,10 +13,14 @@ def get_latency(tag):
     assert isinstance(tag, IR)
     if tag.is_a(MOVE):
         if tag.src.is_a(CALL):
-            if tag.src.func_scope.asap_latency > 0:
+            if tag.src.func_scope.name == 'polyphony.io.Queue.rd':
+                return MINIMUM_STEP * 3
+            elif tag.src.func_scope.asap_latency > 0:
                 return tag.src.func_scope.asap_latency
             return CALL_MINIMUM_STEP
         elif tag.src.is_a(NEW):
+            return 0
+        elif tag.src.is_a(TEMP) and tag.src.sym.typ.is_port():
             return 0
         elif tag.dst.is_a(TEMP) and tag.dst.sym.is_alias():
             return 0
@@ -33,6 +37,8 @@ def get_latency(tag):
             return MINIMUM_STEP * 1
     elif tag.is_a(EXPR):
         if tag.exp.is_a(CALL):
+            if tag.exp.func_scope.name == 'polyphony.io.Queue.wr':
+                return MINIMUM_STEP * 3
             return CALL_MINIMUM_STEP
         elif tag.exp.is_a(SYSCALL):
             if tag.exp.name == 'polyphony.timing.clksleep':

@@ -54,6 +54,9 @@ class DFNode(object):
     def __lt__(self, other):
         return self.priority < other.priority
 
+    def latency(self):
+        return self.end - self.begin
+
 
 class DataFlowGraph(object):
     def __init__(self, name, blocks):
@@ -634,7 +637,9 @@ class DFGBuilder(object):
             if call.func_scope.is_method() and call.func_scope.parent.is_port():
                 port_sym = call.func.qualified_symbol()[-2]
                 assert port_sym.typ.is_port()
-                if port_sym.typ.has_protocol():
+                if port_sym.typ.get_scope().name == 'polyphony.io.Queue':
+                    return True
+                else:
                     protocol = port_sym.typ.get_protocol()
                     return protocol != 'none'
             return False

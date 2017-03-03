@@ -31,12 +31,12 @@ class SelectorBuilder(object):
         src = {}
         sink = {}
         for p in inif.ports:
-            src[p.basename] = self.scope.gen_sig(inif.name + '_' + p.basename, p.width)
+            src[p.name] = self.scope.gen_sig(inif.if_name + '_' + p.name, p.width)
         for p in outif.ports:
-            sink[p.basename] = self.scope.gen_sig(outif.name + '_' + p.basename, p.width)
+            sink[p.name] = self.scope.gen_sig(outif.if_name + '_' + p.name, p.width)
 
         for p in inif.ports:
-            port_name = p.basename
+            port_name = p.name
             if p.dir == 'in':
                 lhs = AHDL_VAR(src[port_name], Ctx.STORE)
                 rhs = AHDL_VAR(sink[port_name], Ctx.LOAD)
@@ -51,12 +51,12 @@ class SelectorBuilder(object):
         trunk = {}
         branches = defaultdict(list)
         for p in inif.ports:
-            o2n_in_sig = self.scope.gen_sig(inif.name + '_' + p.basename, p.width)
-            trunk[p.basename] = o2n_in_sig
+            o2n_in_sig = self.scope.gen_sig(inif.if_name + '_' + p.name, p.width)
+            trunk[p.name] = o2n_in_sig
         for oif in outifs:
             for p in oif.ports:
-                o2n_out_sig = self.scope.gen_sig(oif.name + '_' + p.basename, p.width)
-                branches[p.basename].append(o2n_out_sig)
+                o2n_out_sig = self.scope.gen_sig(oif.if_name + '_' + p.name, p.width)
+                branches[p.name].append(o2n_out_sig)
 
         #assign switch = {req0, req1, ...}
         switch = self.scope.gen_sig(name + '_switch', len(outifs), ['onehot'])
@@ -73,7 +73,7 @@ class SelectorBuilder(object):
         switch_var = AHDL_VAR(switch, Ctx.LOAD)
         # make interconnect
         for p in inif.ports:
-            port_name = p.basename
+            port_name = p.name
             if port_name == 'req':
                 reqs = [AHDL_VAR(req, Ctx.LOAD) for req in branches['req']]
                 req_ors = AHDL_OP('Or', *reqs)
@@ -106,11 +106,11 @@ class SelectorBuilder(object):
         trunk = {}
         branches = defaultdict(list)
         for p in outif.ports:
-            trunk[p.basename] = self.scope.gen_sig(outif.name + '_' + p.basename, p.width)
+            trunk[p.name] = self.scope.gen_sig(outif.if_name + '_' + p.name, p.width)
         for iif in inifs:
             for p in iif.ports:
-                n2o_in_sig = self.scope.gen_sig(iif.name + '_' + p.basename, p.width)
-                branches[p.basename].append(n2o_in_sig)
+                n2o_in_sig = self.scope.gen_sig(iif.if_name + '_' + p.name, p.width)
+                branches[p.name].append(n2o_in_sig)
 
         # assign switch = cs
         switch = self.scope.gen_sig(name + '_switch', len(inifs), ['onehot'])
@@ -118,7 +118,7 @@ class SelectorBuilder(object):
         self.module_info.add_internal_net(switch, tag)
 
         cs_width = len(inifs)
-        #cs_sig = self.scope.gen_sig('{}_cs'.format(outif.name), cs_width)
+        #cs_sig = self.scope.gen_sig('{}_cs'.format(outif.if_name), cs_width)
         cs_sig = self.scope.gen_sig('{}_cs'.format(cs_name), cs_width)
         self.module_info.add_internal_reg(cs_sig, tag)
 
@@ -129,7 +129,7 @@ class SelectorBuilder(object):
         switch_var = AHDL_VAR(switch, Ctx.LOAD)
         # make interconnect
         for p in outif.ports:
-            port_name = p.basename
+            port_name = p.name
             if p.dir == 'in':
                 selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name),
                                       switch_var,
@@ -143,20 +143,25 @@ class SelectorBuilder(object):
                                     trunk[port_name])
                 self.module_info.add_mux(selector, tag)
 
-    def _add_sub_module_accessors(self, inf, acc):
-        tag = acc.name
-        for p in inf.ports:
-            int_name = acc.port_name('', p)
-            sig = self.scope.gen_sig(int_name, p.width)
-            if p.dir == 'in' and not acc.thru:
+    def _add_sub_module_accessors(self, connections):
+        for inf, acc in connections:
+            tag = inf.if_name
+            for p in acc.regs():
+                int_name = acc.port_name('', p)
+                sig = self.scope.gen_sig(int_name, p.width)
                 self.module_info.add_internal_reg(sig, tag)
-            else:
+            for p in acc.nets():
+                int_name = acc.port_name('', p)
+                sig = self.scope.gen_sig(int_name, p.width)
                 self.module_info.add_internal_net(sig, tag)
 
     def _build_sub_module_selectors(self):
         for name, info, connections, param_map in self.module_info.sub_modules.values():
-            if info.scope and info.scope.is_module():
-                self._add_sub_module_accessors(*connections[0])
+             # TODO
+            if info.name == 'fifo':
+                continue
+            if info.scope and info.scope.is_module() and connections:
+                self._add_sub_module_accessors(connections)
                 continue
             # TODO
             for inf, acc in connections:
@@ -164,16 +169,16 @@ class SelectorBuilder(object):
                     continue
                 trunk = {}
                 branches = defaultdict(list)
-                tag = acc.name
+                tag = acc.if_name
 
                 for p in inf.ports:
                     sig = self.scope.gen_sig(acc.port_name('sub', p), p.width)
-                    trunk[p.basename] = sig
+                    trunk[p.name] = sig
                     self.module_info.add_internal_net(sig, tag)
 
                     int_name = acc.port_name('', p)
                     sig = self.scope.gen_sig(int_name, p.width)
-                    branches[p.basename].append(sig)
+                    branches[p.name].append(sig)
                     if p.dir == 'in' and not acc.thru:
                         self.module_info.add_internal_reg(sig, tag)
                         reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
@@ -183,10 +188,10 @@ class SelectorBuilder(object):
 
                 # make interconnect
                 for p in inf.ports:
-                    port_name = p.basename
+                    port_name = p.name
                     if p.dir == 'in':
-                        if p.basename == 'ready' or p.basename == 'accept':
-                            bits = [AHDL_SYMBOL(sig.name) for sig in branches[p.basename]]
+                        if p.name == 'ready' or p.name == 'accept':
+                            bits = [AHDL_SYMBOL(sig.name) for sig in branches[p.name]]
                             bits.reverse()
                             concat = AHDL_CONCAT(bits, 'BitOr')
                             assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), concat)

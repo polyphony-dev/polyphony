@@ -23,8 +23,11 @@ class HDLModuleInfo(object):
         self.scope = scope
         self.name = name
         self.qualified_name = qualified_name[len('@top') + 1:].replace('.', '_')
-        self.interfaces = []
+        self.interfaces = {}
         self.interconnects = []
+        self.accessors = {}
+        self.local_readers = {}
+        self.local_writers = {}
         self.parameters = []
         self.constants = []
         self.state_constants = []
@@ -55,17 +58,26 @@ class HDLModuleInfo(object):
                 for state in stg.states:
                     s += str(state)
         s += '\n'
-        s += '\n'.join([str(inf) for inf in self.interfaces])
+        s += '\n'.join([str(inf) for inf in self.interfaces.values()])
         return s
 
     def __repr__(self):
         return self.name
 
-    def add_interface(self, interface):
-        self.interfaces.append(interface)
+    def add_interface(self, name, interface):
+        self.interfaces[name] = interface
 
     def add_interconnect(self, interconnect):
         self.interconnects.append(interconnect)
+
+    def add_accessor(self, name, accessor):
+        self.accessors[name] = accessor
+
+    def add_local_reader(self, name, reader):
+        self.local_readers[name] = reader
+
+    def add_local_writer(self, name, writer):
+        self.local_writers[name] = writer
 
     def add_constant(self, name, value):
         assert isinstance(name, str)
@@ -149,7 +161,7 @@ class HDLModuleInfo(object):
         assert isinstance(name, str)
         sub_infs = {}
         for interface, accessor in connections:
-            sub_infs[interface.name] = accessor
+            sub_infs[interface.if_name] = accessor
         self.sub_modules[name] = (name, module_info, connections, param_map)
 
     def add_function(self, func, tag=''):
@@ -184,5 +196,17 @@ class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):
         super().__init__(None, 'ram', '@top' + '.BidirectionalSinglePortRam')
         self.ramif = RAMInterface('', data_width, addr_width, is_public=True)
-        self.add_interface(self.ramif)
+        self.add_interface('', self.ramif)
         env.add_using_lib(libs.bidirectional_single_port_ram)
+
+
+class FIFOModuleInfo(HDLModuleInfo):
+    def __init__(self, signal):
+        super().__init__(None, 'fifo', '@top' + '.FIFO')
+        self.inf = FIFOModuleInterface(signal)
+        maxsize = signal.maxsize
+        addr_width = (signal.maxsize - 1).bit_length() if maxsize > 1 else 1
+        self.param_map = {'LENGTH': maxsize,
+                          'ADDR_WIDTH': addr_width}
+        self.add_interface('', self.inf)
+        env.add_using_lib(libs.fifo)

@@ -489,6 +489,13 @@ class Scope(Tagged):
                 return found
         return None
 
+    def get_signals(self):
+        signals_ = {}
+        for base in self.bases:
+            signals_.update(base.get_signals())
+        signals_.update(self.signals)
+        return signals_
+
     def rename_sig(self, old, new):
         assert old in self.signals
         sig = self.signals[old]

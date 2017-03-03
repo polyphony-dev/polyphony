@@ -24,10 +24,18 @@ class PortTypeProp(TypePropagation):
                 attrs['port_kind'] = 'internal'
             else:
                 attrs['port_kind'] = 'external'
+            if 'protocol' not in attrs:
+                attrs['protocol'] = 'none'
+            if 'init' not in attrs:
+                attrs['init'] = 0
             port_typ = Type.port(ir.func_scope, attrs)
             #port_typ.freeze()
             ir.func_scope.return_type = port_typ
         return ir.func_scope.return_type
+
+    def _set_type(self, sym, typ):
+        if sym.typ.is_object() and sym.typ.get_scope().is_port() and typ.is_port():
+            sym.set_type(typ)
 
 
 class PortConverter(IRTransformer):
@@ -44,7 +52,10 @@ class PortConverter(IRTransformer):
             ctor = m.find_ctor()
             assert ctor
             typeprop.process(ctor)
+            for w, args in m.workers:
+                typeprop.process(w)
 
+            #self.removes = []
             self.process(ctor)
             for w, args in m.workers:
                 self.process(w)
@@ -108,3 +119,10 @@ class PortConverter(IRTransformer):
                         port.set_direction('input')
                         port.freeze()
         return ir
+
+#    def visit_MOVE(self, ir):
+#        ir.src = self.visit(ir.src)
+#        ir.dst = self.visit(ir.dst)
+#        #if ir.src.is_a(TEMP) and ir.src.symbol().is_param() and ir.src.symbol().typ.is_port():
+#        #    return
+#        self.new_stms.append(ir)

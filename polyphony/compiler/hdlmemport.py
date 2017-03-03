@@ -30,17 +30,17 @@ class HDLMemPortMaker(object):
 
     def _add_internal_regs_and_nets(self, ramif):
         for p in ramif.ports:
-            sig = self.scope.gen_sig(ramif.name + '_' + p.basename, p.width)
+            sig = self.scope.gen_sig(ramif.if_name + '_' + p.name, p.width)
             if p.dir == 'in':
-                self.module_info.add_internal_reg(sig, ramif.name)
+                self.module_info.add_internal_reg(sig, ramif.if_name)
                 self.module_info.add_fsm_output(self.scope.orig_name, sig)
             else:
-                self.module_info.add_internal_net(sig, ramif.name)
+                self.module_info.add_internal_net(sig, ramif.if_name)
 
     def _add_internal_nets(self, ramif):
         for p in ramif.ports:
-            sig = self.scope.gen_sig(ramif.name + '_' + p.basename, p.width)
-            self.module_info.add_internal_net(sig, ramif.name)
+            sig = self.scope.gen_sig(ramif.if_name + '_' + p.name, p.width)
+            self.module_info.add_internal_net(sig, ramif.if_name)
 
     def _add_ram_module(self):
         param_map = OrderedDict()
@@ -103,7 +103,7 @@ class HDLMemPortMaker(object):
     def _make_param_node_connection(self):
         # TODO from/to external access
         ramif = RAMAccessInterface(self.name, self.width, self.addr_width, flip=True, thru=True)
-        self.module_info.add_interface(ramif)
+        self.module_info.add_interface(self.name, ramif)
         self.module_info.node2if[self.memnode] = ramif
 
         # direct connect
@@ -189,7 +189,7 @@ class HDLMemPortMaker(object):
                         pred_ramifs.append(ramif)
                 succ_ramif = self._make_ram_access_if(inst + '_' + succ.name())
                 cs_name = inst + '_' + self.memnode.orig_succs[0].name()
-                self._add_interconnect(succ_ramif.name, pred_ramifs, [succ_ramif], cs_name)
+                self._add_interconnect(succ_ramif.if_name, pred_ramifs, [succ_ramif], cs_name)
 
         else:
             pred_ramifs = []
@@ -214,7 +214,7 @@ class HDLMemPortMaker(object):
             else:
                 succ_ramif = self._make_ram_access_if(succ.name())
             cs_name = self.memnode.orig_succs[0].name()
-            self._add_interconnect(succ_ramif.name, pred_ramifs, [succ_ramif], cs_name=cs_name)
+            self._add_interconnect(succ_ramif.if_name, pred_ramifs, [succ_ramif], cs_name=cs_name)
 
 
 class HDLRegArrayPortMaker(object):
@@ -282,7 +282,7 @@ class HDLRegArrayPortMaker(object):
         regarrayif = RegArrayInterface(self.memnode.name(),
                                        self.memnode.width,
                                        self.memnode.length)
-        self.module_info.add_interface(regarrayif)
+        self.module_info.add_interface(self.memnode.name(), regarrayif)
 
     def _make_one2n_node_connection(self):
         assert len(self.memnode.preds) == 1

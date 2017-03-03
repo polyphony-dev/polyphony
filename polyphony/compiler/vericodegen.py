@@ -68,8 +68,9 @@ class VerilogCodeGen(AHDLVisitor):
         self.set_indent(2)
 
         for stm in sorted(fsm.reset_stms, key=lambda s: str(s)):
-            if not stm.dst.sig.is_net():
-                self.visit(stm)
+            if stm.dst.is_a(AHDL_VAR) and stm.dst.sig.is_net():
+                continue
+            self.visit(stm)
         if not fsm.stgs:
             self.set_indent(-2)
             self.emit('end')  # end if (READY)
@@ -133,7 +134,7 @@ class VerilogCodeGen(AHDLVisitor):
         if not self.scope.is_testbench():
             ports.append('input wire clk')
             ports.append('input wire rst')
-        for i in self.module_info.interfaces:
+        for i in self.module_info.interfaces.values():
             if not i.is_public:
                 continue
             for p in i.ports:
@@ -442,6 +443,27 @@ class VerilogCodeGen(AHDLVisitor):
             return
         self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
                              AHDL_CONST(0)))
+
+    def visit_AHDL_IO_READ_SEQ(self, ahdl, step):
+        if ahdl.is_self:
+            io = self.module_info.interfaces[ahdl.io.sig.name]
+        else:
+            io = self.module_info.accessors[ahdl.io.sig.name]
+        for seq in io.read_sequence(step, ahdl.dst):
+            self.visit(seq)
+
+    def visit_AHDL_IO_WRITE_SEQ(self, ahdl, step):
+        if ahdl.is_self:
+            io = self.module_info.interfaces[ahdl.io.sig.name]
+        else:
+            io = self.module_info.accessors[ahdl.io.sig.name]
+        for seq in io.write_sequence(step, ahdl.src):
+            self.visit(seq)
+
+    def visit_AHDL_SEQ(self, ahdl):
+        method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
+        visitor = getattr(self, method, None)
+        return visitor(ahdl.factor, ahdl.step)
 
     def visit_AHDL_POST_PROCESS(self, ahdl):
         method = 'visit_POST_' + ahdl.factor.__class__.__name__

@@ -46,11 +46,24 @@ class AHDLVisitor(object):
         self.visit(ahdl.dst)
         self.visit(ahdl.offset)
 
+    def visit_AHDL_IO_READ(self, ahdl):
+        self.visit(ahdl.io)
+        self.visit(ahdl.dst)
+
+    def visit_AHDL_IO_WRITE(self, ahdl):
+        self.visit(ahdl.io)
+        self.visit(ahdl.src)
+
+    def visit_AHDL_SEQ(self, ahdl):
+        method = 'visit_{}'.format(ahdl.factor.__class__.__name__)
+        visitor = getattr(self, method, None)
+        return visitor(ahdl.factor)
+
     def visit_AHDL_POST_PROCESS(self, ahdl):
-        method = 'visit_POST_' + ahdl.__class__.__name__
+        method = 'visit_POST_' + ahdl.factor.__class__.__name__
         visitor = getattr(self, method, None)
         if visitor:
-            return visitor(ahdl)
+            return visitor(ahdl.factor)
 
     def visit_AHDL_IF(self, ahdl):
         for cond in ahdl.conds:

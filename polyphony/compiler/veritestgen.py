@@ -73,8 +73,9 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('rst <= 1;')
         for fsm in self.module_info.fsms.values():
             for stm in fsm.reset_stms:
-                if not stm.dst.sig.is_net():
-                    self.visit(stm)
+                if stm.dst.is_a(AHDL_VAR) and stm.dst.sig.is_net():
+                    continue
+                self.visit(stm)
 
         self.emit('')
         self.emit('#INITIAL_RESET_SPAN')
@@ -86,6 +87,7 @@ class VerilogTestGen(VerilogCodeGen):
                 self.emit('#CLK_PERIOD')
                 self._process_State(state)
         self.emit('')
+        self.emit('$display("%5t:finish", $time);')
         self.emit('$finish;')
         self.set_indent(-2)
         self.emit('end')
@@ -105,6 +107,16 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('')
 
     def _generate_monitor_task(self):
+        def add_ports(ports):
+            for p in ports:
+                if isinstance(p, tuple):
+                    accessor_name = accessor.port_name('', p)
+                    args.append(accessor_name)
+                    if p.width == 1:
+                        formats.append('{}=%1d'.format(accessor_name))
+                    else:
+                        formats.append('{}=%4d'.format(accessor_name))
+
         self.emit('initial begin')
         self.set_indent(2)
 
@@ -116,22 +128,15 @@ class VerilogTestGen(VerilogCodeGen):
                 continue
             if not info.interfaces:
                 continue
-            if isinstance(info.interfaces[0], FunctionInterface):
-                accessor = connections[0][1]
-                ports = accessor.ports[3:]  # skip controls
-            elif isinstance(info.interfaces[0], PlainInterface):
-                accessor = connections[0][1]
-                ports = accessor.ports[:]
-            else:
-                continue
-            for p in ports:
-                if isinstance(p, tuple):
-                    accessor_name = accessor.port_name('', p)
-                    args.append(accessor_name)
-                    if p.width == 1:
-                        formats.append('{}=%1d'.format(accessor_name))
-                    else:
-                        formats.append('{}=%4d'.format(accessor_name))
+            for inf in info.interfaces.values():
+                if isinstance(inf, FunctionInterface):
+                    accessor = inf.accessor(name)
+                    ports = accessor.ports[3:]  # skip controls
+                    add_ports(ports)
+                elif isinstance(inf, SinglePortInterface):
+                    accessor = inf.accessor(name)
+                    ports = accessor.ports[:]
+                    add_ports(ports)
         format_text = '"%5t:' + ', '.join(formats) + '"'
         args_text = ', '.join(args)
 

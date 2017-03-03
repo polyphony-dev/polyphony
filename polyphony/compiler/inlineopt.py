@@ -303,6 +303,8 @@ class AliasDefCollector(IRVisitor):
             return False
         if not mov.src.symbol().typ.is_object():
             return False
+        if mov.src.symbol().typ.get_scope().is_port():
+            return False
         if not mov.dst.is_a([TEMP, ATTR]):
             return False
         if not mov.dst.symbol().typ.is_object():
