@@ -70,7 +70,7 @@ endmodule
 
 fifo = """module FIFO #
 (
- parameter integer DATA_WIDTH = 8,
+ parameter integer DATA_WIDTH = 32,
  parameter integer ADDR_WIDTH = 2,
  parameter integer LENGTH = 4
 )

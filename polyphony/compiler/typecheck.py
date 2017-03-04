@@ -531,9 +531,10 @@ class TypeChecker(IRVisitor):
             if ir.exp.func_scope.is_method() and ir.exp.func_scope.parent.is_module():
                 if ir.exp.func_scope.orig_name == 'append_worker':
                     arg_types = [self.visit(arg) for _, arg in ir.exp.args[1:]]
-                    if len(arg_types):
-                        # TODO
-                        pass
+                    for atyp in arg_types:
+                        if atyp.is_seq():
+                            type_error(self.current_stm,
+                                       'It is not supported to pass the sequence type argument to append_worker()')
 
     def visit_CJUMP(self, ir):
         self.visit(ir.exp)

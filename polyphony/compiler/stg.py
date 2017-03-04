@@ -577,7 +577,7 @@ class AHDLTranslator(object):
         offset = self.visit(ir.offset, node)
         memvar = self.visit(ir.mem, node)
         if not memvar.memnode.is_writable():
-            return AHDL_FUNCALL(memvar.name(), [offset])
+            return AHDL_FUNCALL(AHDL_SYMBOL(memvar.name()), [offset])
         elif memvar.memnode.is_immutable():
             return AHDL_SUBSCRIPT(memvar, offset)
         else:
@@ -880,13 +880,11 @@ class AHDLTranslator(object):
         assert port_qsym[-1].typ.is_port()
         port_sym = port_qsym[-1]
         root_sym = port_sym.typ.get_root_symbol()
-        if root_sym.ancestor:
-            root_sym = root_sym.ancestor
         port_prefixes = port_qsym[:-1] + (root_sym,)
 
         if port_prefixes[0].name == env.self_name:
             port_prefixes = port_prefixes[1:]
-        port_name = '_'.join([pfx.name for pfx in port_prefixes])
+        port_name = '_'.join([pfx.hdl_name() for pfx in port_prefixes])
 
         port_sig = port_sym.scope.signal(port_name)
         if port_sig:

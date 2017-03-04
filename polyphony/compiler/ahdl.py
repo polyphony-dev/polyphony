@@ -401,7 +401,7 @@ class AHDL_MODULECALL(AHDL_STM):
 
 class AHDL_FUNCALL(AHDL_EXP):
     def __init__(self, name, args):
-        assert isinstance(name, str)
+        assert isinstance(name, AHDL_SYMBOL)
         super().__init__()
         self.name = name
         self.args = args
@@ -466,6 +466,7 @@ class AHDL_META_WAIT(AHDL_STM):
 
 class AHDL_FUNCTION(AHDL_DECL):
     def __init__(self, output, inputs, stms):
+        assert isinstance(output, AHDL_VAR)
         super().__init__(output.sig.name)
         self.inputs = inputs
         self.output = output

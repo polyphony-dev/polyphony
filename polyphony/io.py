@@ -39,6 +39,8 @@ def _remove_cond(cv):
 def _enable():
     global _io_enabled
     _io_enabled = True
+    for ev in _events:
+        ev.clear()
 
 
 def _disable():
@@ -75,24 +77,26 @@ class _DataPort(object):
         self.__cv = []
         self.__cv_lock = threading.Lock()
         if protocol == 'valid':
-            self.__valid = False
             self.__valid_ev = _create_event()
+            self.__valid_ev.clear()
         elif self.__protocol == 'ready_valid':
-            self.__ready = False
-            self.__valid = False
             self.__ready_ev = _create_event()
             self.__valid_ev = _create_event()
+            self.__ready_ev.clear()
+            self.__valid_ev.clear()
+        elif self.__protocol == 'none':
+            pass
+        else:
+            raise TypeError("'Unknown port protocol '{}'".format(self.__protocol))
 
     @_portmethod
     def rd(self) -> int:
         if self.__protocol == 'valid' or self.__protocol == 'ready_valid':
-            if _io_enabled and not self.__valid:
+            while _io_enabled and not self.__valid_ev.is_set():
                 self.__valid_ev.wait()
-                self.__valid_ev.clear()
+            self.__valid_ev.clear()
             if self.__protocol == 'ready_valid':
-                self.__ready = True
                 self.__ready_ev.set()
-                self.__ready = False
         return self.__v
 
     @_portmethod
@@ -108,13 +112,11 @@ class _DataPort(object):
                     with cv:
                         cv.notify_all()
         if self.__protocol == 'valid' or self.__protocol == 'ready_valid':
-            self.__valid = True
             self.__valid_ev.set()
-            self.__valid = False
             if self.__protocol == 'ready_valid':
-                if _io_enabled and not self.__ready:
+                while _io_enabled and not self.__ready_ev.is_set():
                     self.__ready_ev.wait()
-                    self.__ready_ev.clear()
+                self.__ready_ev.clear()
         time.sleep(0.005)
 
     def __call__(self, v=None) -> int:

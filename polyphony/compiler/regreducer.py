@@ -13,6 +13,9 @@ class AliasVarDetector(IRVisitor):
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
         sym = ir.dst.symbol()
+        if sym.is_condition():
+            sym.add_tag('alias')
+            return
         if sym.typ.is_seq() or sym.is_induction() or sym.is_return() or sym.typ.is_port():
             return
         if ir.src.is_a([TEMP, ATTR]):
@@ -29,6 +32,12 @@ class AliasVarDetector(IRVisitor):
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
             return
+        # TODO: need more strict scheme
+        uses = self.usedef.get_syms_used_at(ir)
+        for u in uses:
+            if u.is_induction():
+                return
+
         sym.add_tag('alias')
 
     def visit_UPHI(self, ir):

@@ -206,7 +206,9 @@ class FIFOModuleInfo(HDLModuleInfo):
         self.inf = FIFOModuleInterface(signal)
         maxsize = signal.maxsize
         addr_width = (signal.maxsize - 1).bit_length() if maxsize > 1 else 1
+        data_width = signal.width
         self.param_map = {'LENGTH': maxsize,
-                          'ADDR_WIDTH': addr_width}
+                          'ADDR_WIDTH': addr_width,
+                          'DATA_WIDTH': data_width}
         self.add_interface('', self.inf)
         env.add_using_lib(libs.fifo)

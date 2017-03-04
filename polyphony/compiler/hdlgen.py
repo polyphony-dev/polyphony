@@ -139,7 +139,7 @@ class HDLModuleBuilder(object):
                     if scope not in pred.scopes:
                         roms.append(pred)
                     rom_func_name = pred.sym.hdl_name()
-                    call = AHDL_FUNCALL(rom_func_name, [input])
+                    call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])
                     connect = AHDL_CONNECT(fname, call)
                     case_val = '{}_cs[{}]'.format(hdl_name, i)
                     case_items.append(AHDL_CASE_ITEM(case_val, connect))

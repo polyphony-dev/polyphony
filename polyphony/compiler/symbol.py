@@ -63,6 +63,10 @@ class Symbol(Tagged):
             return self.name
 
     def hdl_name(self):
+        if self.typ.is_list() and self.ancestor:
+            return self.ancestor.hdl_name()
+        if self.typ.is_port() and self.ancestor:
+            return self.ancestor.hdl_name()
         if self.name[0] == '@' or self.name[0] == '!':
             name = self.name[1:]
         else:
@@ -82,4 +86,5 @@ class Symbol(Tagged):
                         scope,
                         set(self.tags),
                         self.typ.clone())
+        newsym.ancestor = self.ancestor
         return newsym

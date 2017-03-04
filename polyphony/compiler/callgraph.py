@@ -77,5 +77,9 @@ class CallGraphBuilder(IRVisitor):
         # we don't add the edge which to its parent
         if receiver_scope is self.scope.parent:
             return
+        if receiver_scope.is_lib():
+            return
+        if receiver_scope.is_class() and ir.symbol().typ.is_scalar():
+            return
         self.call_graph.add_edge(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)

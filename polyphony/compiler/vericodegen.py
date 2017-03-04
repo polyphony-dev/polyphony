@@ -1,4 +1,4 @@
-﻿from .verilog_common import pyop2verilogop
+﻿from .verilog_common import pyop2verilogop, is_verilog_keyword
 from .ir import Ctx
 from .signal import Signal
 from .ahdl import *
@@ -310,15 +310,21 @@ class VerilogCodeGen(AHDLVisitor):
         return str(ahdl.value)
 
     def visit_AHDL_VAR(self, ahdl):
+        if is_verilog_keyword(ahdl.sig.name):
+            return ahdl.sig.name + '_'
         return ahdl.sig.name
 
     def visit_AHDL_MEMVAR(self, ahdl):
-        assert 0
+        if is_verilog_keyword(ahdl.sig.name):
+            return ahdl.sig.name + '_'
+        return ahdl.sig.name
 
     def visit_AHDL_SUBSCRIPT(self, ahdl):
-        return '{}[{}]'.format(ahdl.memvar.sig.name, self.visit(ahdl.offset))
+        return '{}[{}]'.format(self.visit(ahdl.memvar), self.visit(ahdl.offset))
 
     def visit_AHDL_SYMBOL(self, ahdl):
+        if is_verilog_keyword(ahdl.name):
+            return ahdl.name + '_'
         return ahdl.name
 
     def visit_AHDL_CONCAT(self, ahdl):
@@ -537,7 +543,7 @@ class VerilogCodeGen(AHDLVisitor):
                              AHDL_CONST(1)))
 
     def visit_AHDL_FUNCALL(self, ahdl):
-        return '{}({})'.format(ahdl.name, ', '.join([self.visit(arg) for arg in ahdl.args]))
+        return '{}({})'.format(self.visit(ahdl.name), ', '.join([self.visit(arg) for arg in ahdl.args]))
 
     def visit_AHDL_PROCCALL(self, ahdl):
         args = []
@@ -744,14 +750,14 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_AHDL_FUNCTION(self, ahdl):
         self.emit('function [{}:0] {} ('.format(ahdl.output.sig.width - 1,
-                                                ahdl.output.sig.name))
+                                                self.visit(ahdl.output)))
         self.set_indent(2)
         last_idx = len(ahdl.inputs) - 1
         for idx, input in enumerate(ahdl.inputs):
             if idx == last_idx:
-                self.emit('input [{}:0] {}'.format(input.sig.width - 1, input.sig.name))
+                self.emit('input [{}:0] {}'.format(input.sig.width - 1, self.visit(input)))
             else:
-                self.emit('input [{}:0] {},'.format(input.sig.width - 1, input.sig.name))
+                self.emit('input [{}:0] {},'.format(input.sig.width - 1, self.visit(input)))
         #self.emit(',\n'.join([str(i) for i in ahdl.inputs]))
         self.set_indent(-2)
         self.emit(');')
@@ -778,7 +784,7 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_MUX(self, ahdl):
         self.emit('function [{}:0] {} ('.format(ahdl.output.width - 1, ahdl.name))
         self.set_indent(2)
-        self.emit('input [{}:0] {},'.format(ahdl.selector.sig.width - 1, ahdl.selector.sig.name))
+        self.emit('input [{}:0] {},'.format(ahdl.selector.sig.width - 1, self.visit(ahdl.selector)))
 
         last_idx = len(ahdl.inputs) - 1
         for idx, input in enumerate(ahdl.inputs):

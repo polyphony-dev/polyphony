@@ -23,6 +23,7 @@ DIRS = (
     'testbench',
     'class',
     'module',
+    'io',
 )
 
 
