@@ -68,35 +68,6 @@ class State(object):
             self.codes.pop()
         return next_state
 
-    def merge_wait_ret(self):
-        first_wait_ret = None
-        removes = []
-        for code in self.codes:
-            if not (code.is_a(AHDL_META_WAIT) and code.metaid == 'WAIT_RET_AND_GATE'):
-                continue
-
-            if first_wait_ret is None:
-                first_wait_ret = code
-            else:
-                modulecall = code.args[0][0]
-                first_wait_ret.args[0].append(modulecall)
-                removes.append(code)
-        for code in removes:
-            self.codes.remove(code)
-
-    def merge_wait_input_ready(self):
-        wait_input_ready = None
-        removes = []
-        for code in self.codes:
-            if code.is_a(AHDL_META_WAIT) and code.metaid == 'WAIT_INPUT_READY':
-                wait_input_ready = code
-            else:
-                removes.append(code)
-        if wait_input_ready:
-            wait_input_ready.codes = removes[:]
-            for code in removes:
-                self.codes.remove(code)
-
     def merge_wait_function(self, id):
         wait_func = None
         for code in self.codes:
@@ -108,7 +79,10 @@ class State(object):
         next_state_codes = wait_func.transition.target.codes
         if next_state_codes[-1].is_a(AHDL_META_WAIT):
             return
-        wait_func.codes = wait_func.transition.target.codes
+        if wait_func.codes:
+            wait_func.codes.extend(wait_func.transition.target.codes)
+        else:
+            wait_func.codes = wait_func.transition.target.codes
         wait_func.transition.target.codes = []
         wait_func.transition = None
 
@@ -172,7 +146,7 @@ class STGBuilder(object):
         self.mrg = env.memref_graph
 
     def process(self, scope):
-        if scope.is_class() or scope.is_lib():
+        if scope.is_global() or scope.is_class() or scope.is_lib():
             return
         self.scope = scope
         self.scope.blk2state = {}
@@ -193,10 +167,8 @@ class STGBuilder(object):
             functools.reduce(lambda s1, s2: s1.resolve_transition(s2), stg.states)
             stg.states[-1].resolve_transition(stg.states[0])
 
-        stgs[0].states[0].merge_wait_input_ready()
         for stg in stgs:
             for state in stg.states:
-                state.merge_wait_ret()
                 state.merge_wait_function('WAIT_EDGE')
                 state.merge_wait_function('WAIT_VALUE')
 
@@ -333,19 +305,33 @@ class STGBuilder(object):
         else:
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
-                init_state = states[0]
-                init_state.name = name
-                assert init_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
+                first_state = states[0]
+                assert first_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
                 if not (len(states) <= 1 and is_last):
-                    pos = len(init_state.codes) - 1
-                    init_state.codes.insert(pos, AHDL_META_WAIT("WAIT_INPUT_READY", self.stg.name))
-                self.stg.init_state = init_state
+                    ports = [AHDL_SYMBOL(self.stg.name + '_ready')]
+                    wait_ready = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
+                    init_state = self._new_state('{}_INIT'.format(state_prefix),
+                                                 0,
+                                                 [wait_ready])
+                    states.insert(0, init_state)
+                    # valid <= 0
+                    pos = len(first_state.codes) - 1
+                    first_state.codes.insert(pos, AHDL_MOVE(AHDL_SYMBOL(self.stg.name + '_valid'),
+                                                            AHDL_CONST(0)))
+                self.stg.init_state = states[0]
             if is_last:
                 name = '{}_FINISH'.format(state_prefix)
                 finish_state = states[-1]
                 finish_state.name = name
                 assert finish_state.codes[-1].is_a(AHDL_TRANSITION)
-                finish_state.codes[-1] = AHDL_META_WAIT("WAIT_OUTPUT_ACCEPT", self.stg.name)
+                finish_state.codes.pop()
+
+                set_valid = AHDL_MOVE(AHDL_SYMBOL(self.stg.name + '_valid'), AHDL_CONST(1))
+                ports = [AHDL_SYMBOL(self.stg.name + '_accept')]
+                wait_accept = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
+                finish_state.codes.append(set_valid)
+                finish_state.codes.append(wait_accept)
+
                 self.stg.finish_state = finish_state
         return states
 
@@ -357,17 +343,23 @@ class STGBuilder(object):
         return self.stg.new_state(name, step, codes)
 
     def emit_call_ret_sequence(self, ahdl_call, dst, latency, sched_time):
-        self.emit(AHDL_META('SET_READY', ahdl_call, 0), sched_time + 1)
+        self.emit(AHDL_MOVE(AHDL_SYMBOL(ahdl_call.prefix + '_ready'),
+                            AHDL_CONST(0)), sched_time + 1)
 
         sched_time = sched_time + latency - 2
-        # We must emit 'WAIT_RET_AND_GATE' before '*_IF_VALID' for test-bench sequence
-        self.emit(AHDL_META_WAIT('WAIT_RET_AND_GATE', [ahdl_call]), sched_time)
-        self.emit(AHDL_META('ACCEPT_IF_VALID', ahdl_call), sched_time)
-        if dst and ahdl_call.scope.return_type.is_scalar():
-            self.emit(AHDL_META('GET_RET_IF_VALID', ahdl_call, dst), sched_time)
-
+        ports = [AHDL_SYMBOL(ahdl_call.prefix + '_valid')]
+        self.emit(AHDL_META_WAIT('WAIT_VALUE',
+                                 AHDL_CONST(1),
+                                 *ports), sched_time)
         sched_time += 1
-        self.emit(AHDL_META('SET_ACCEPT', ahdl_call, 0), sched_time)
+        self.emit(AHDL_MOVE(AHDL_SYMBOL(ahdl_call.prefix + '_accept'),
+                            AHDL_CONST(1)), sched_time)
+        if dst and ahdl_call.scope.return_type.is_scalar():
+            self.emit(AHDL_MOVE(dst,
+                                AHDL_SYMBOL(ahdl_call.prefix + '_out_0')), sched_time)
+        sched_time += 1
+        self.emit(AHDL_MOVE(AHDL_SYMBOL(ahdl_call.prefix + '_accept'),
+                            AHDL_CONST(0)), sched_time)
 
     def emit_memload_sequence(self, ahdl_load, sched_time):
         assert ahdl_load.is_a(AHDL_LOAD)

@@ -446,6 +446,7 @@ class DFGBuilder(object):
                         dfg.add_usedef_edge(usenode, defnode)
 
         if self.scope.is_testbench():
+            # Test need to call functions sequentially
             self._add_edges_between_func_modules(blocks, dfg)
         self._add_edges_between_objects(blocks, dfg)
         self._add_timinglib_seq_edges(blocks, dfg)

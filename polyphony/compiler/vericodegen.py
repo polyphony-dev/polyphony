@@ -614,100 +614,10 @@ class VerilogCodeGen(AHDLVisitor):
         dst = self.visit(ahdl.dst)
         self.emit('{} = {};'.format(dst, src))
 
-    def visit_SET_READY(self, ahdl):
-        modulecall = ahdl.args[0]
-        value = ahdl.args[1]
-        ready = self.scope.gen_sig('{}_{}'.format(modulecall.prefix, 'ready'),
-                                   1,
-                                   ['reg'])
-        self.visit(AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE),
-                             AHDL_CONST(value)))
-
-    def visit_ACCEPT_IF_VALID(self, ahdl):
-        modulecall = ahdl.args[0]
-        valid = self.scope.gen_sig(modulecall.prefix + '_valid', 1, ['net'])
-        accept = self.scope.gen_sig(modulecall.prefix + '_accept', 1, ['reg'])
-        cond = AHDL_OP('Eq',
-                       AHDL_VAR(valid, Ctx.LOAD),
-                       AHDL_CONST(1))
-        codes = []
-        codes.append(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE),
-                               AHDL_CONST(1)))
-        self.visit(AHDL_IF([cond], [codes]))
-
-    def visit_GET_RET_IF_VALID(self, ahdl):
-        modulecall = ahdl.args[0]
-        dst = ahdl.args[1]
-        valid = self.scope.gen_sig(modulecall.prefix + '_valid', 1, ['net'])
-        cond = AHDL_OP('Eq',
-                       AHDL_VAR(valid, Ctx.LOAD),
-                       AHDL_CONST(1))
-        codes = []
-        sub_out = self.scope.gen_sig(modulecall.prefix + '_out_0',  # FIXME '_out_0'
-                                     INT_WIDTH,
-                                     ['net', 'int'])
-        codes.append(AHDL_MOVE(dst,
-                               AHDL_VAR(sub_out, Ctx.LOAD)))
-        self.visit(AHDL_IF([cond], [codes]))
-
-    def visit_SET_ACCEPT(self, ahdl):
-        modulecall = ahdl.args[0]
-        value = ahdl.args[1]
-        accept = self.scope.gen_sig('{}_{}'.format(modulecall.prefix, 'accept'),
-                                    1,
-                                    ['reg'])
-        self.visit(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE),
-                             AHDL_CONST(value)))
-
     def visit_AHDL_META(self, ahdl):
         method = 'visit_' + ahdl.metaid
         visitor = getattr(self, method, None)
         return visitor(ahdl)
-
-    def visit_WAIT_INPUT_READY(self, ahdl):
-        name = ahdl.args[0]
-        ready  = AHDL_SYMBOL('{}_{}'.format(name, 'ready'))
-        valid  = AHDL_SYMBOL('{}_{}'.format(name, 'valid'))
-        conds = [AHDL_OP('Eq', ready, AHDL_CONST(1))]
-        if ahdl.codes:
-            codes = ahdl.codes[:]
-        else:
-            codes = []
-        codes.append(AHDL_MOVE(valid,
-                               AHDL_CONST(0)))
-        codes.append(ahdl.transition)
-        ahdl_if = AHDL_IF(conds, [codes])
-        self.visit(ahdl_if)
-
-    def visit_WAIT_OUTPUT_ACCEPT(self, ahdl):
-        name = ahdl.args[0]
-        accept  = AHDL_SYMBOL('{}_{}'.format(name, 'accept'))
-        valid  = AHDL_SYMBOL('{}_{}'.format(name, 'valid'))
-
-        self.visit(AHDL_MOVE(valid,
-                             AHDL_CONST(1)))
-
-        conds = [AHDL_OP('Eq', accept, AHDL_CONST(1))]
-        codes_list = [
-            [
-                ahdl.transition
-            ]
-        ]
-        ahdl_if = AHDL_IF(conds, codes_list)
-        self.visit(ahdl_if)
-
-    def visit_WAIT_RET_AND_GATE(self, ahdl):
-        conds = []
-        for modulecall in ahdl.args[0]:
-            valid = self.scope.gen_sig(modulecall.prefix + '_valid', 1, ['net'])
-            conds.append(AHDL_OP('Eq',
-                                 AHDL_VAR(valid, Ctx.LOAD),
-                                 AHDL_CONST(1)))
-        op = conds[0]
-        for cond in conds[1:]:
-            op = AHDL_OP('And', op, cond)
-        ahdl_if = AHDL_IF([op], [[ahdl.transition]])
-        self.visit(ahdl_if)
 
     def visit_WAIT_EDGE(self, ahdl):
         old, new = ahdl.args[0], ahdl.args[1]

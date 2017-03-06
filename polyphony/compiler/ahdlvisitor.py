@@ -99,18 +99,6 @@ class AHDLVisitor(object):
         if visitor:
             return visitor(ahdl)
 
-    def visit_WAIT_INPUT_READY(self, ahdl):
-        if ahdl.codes:
-            for code in ahdl.codes:
-                self.visit(code)
-        self.visit(ahdl.transition)
-
-    def visit_WAIT_OUTPUT_ACCEPT(self, ahdl):
-        self.visit(ahdl.transition)
-
-    def visit_WAIT_RET_AND_GATE(self, ahdl):
-        self.visit(ahdl.transition)
-
     def visit_WAIT_EDGE(self, ahdl):
         for var in ahdl.args[2:]:
             self.visit(var)
