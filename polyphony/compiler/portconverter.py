@@ -82,7 +82,7 @@ class PortConverter(IRTransformer):
             # write-write conflict
             if port_typ.has_writer():
                 writer = port_typ.get_writer()
-                if writer is not self.scope:
+                if writer is not self.scope and writer.worker_owner is self.scope.worker_owner:
                     print(error_info(self.scope, ir.lineno))
                     raise RuntimeError('Writing to the port is conflicted')
             else:
@@ -92,7 +92,7 @@ class PortConverter(IRTransformer):
             # read-read conflict
             if port_typ.has_reader():
                 reader = port_typ.get_reader()
-                if reader is not self.scope:
+                if reader is not self.scope and reader.worker_owner is self.scope.worker_owner:
                     print(error_info(self.scope, ir.lineno))
                     raise RuntimeError('Reading from the queue port is conflicted')
             else:

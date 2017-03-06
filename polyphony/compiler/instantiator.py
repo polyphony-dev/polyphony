@@ -36,7 +36,7 @@ class WorkerInstantiator(object):
         calls = collector.process(ctor)
         for stm, call in calls:
             if call.is_a(CALL) and call.func_scope.orig_name == 'append_worker':
-                new_worker = self._instantiate_worker(call, ctor)
+                new_worker = self._instantiate_worker(call, ctor, module)
                 new_workers.add(new_worker)
                 module.register_worker(new_worker, call.args)
                 new_worker_sym = module.add_sym(new_worker.orig_name)
@@ -45,13 +45,12 @@ class WorkerInstantiator(object):
                 w.set_symbol(new_worker_sym)
         return new_workers
 
-    def _instantiate_worker(self, call, ctor):
+    def _instantiate_worker(self, call, ctor, module):
         assert len(call.args) >= 1
         _, w = call.args[0]
         assert w.is_a([TEMP, ATTR])
         assert w.symbol().typ.is_function()
         assert w.symbol().typ.get_scope().is_worker()
-
         worker = w.symbol().typ.get_scope()
         binding = []
         for i, (_, arg) in enumerate(call.args):
@@ -72,7 +71,7 @@ class WorkerInstantiator(object):
         if binding:
             postfix = '{}_{}'.format(call.lineno,
                                      '_'.join([str(v) for _, _, v in binding]))
-            new_worker = worker.clone('', postfix)
+            new_worker = worker.clone(module.inst_name, postfix)
 
             udd = UseDefDetector()
             udd.process(new_worker)
@@ -87,7 +86,7 @@ class WorkerInstantiator(object):
                 else:
                     call.args.pop(i)
         else:
-            new_worker = worker.clone('', str(call.lineno))
+            new_worker = worker.clone(module.inst_name, str(call.lineno))
         self._instantiate_memnode(worker, new_worker)
         return new_worker
 
@@ -121,8 +120,9 @@ class ModuleInstantiator(object):
             if arg.is_a(CONST):
                 binding.append((bind_val, i, arg.value))
 
+        inst_name = module_var.symbol().name
+        new_module_name = module.orig_name + '_' + inst_name
         if binding:
-            new_module_name = module.orig_name + '_' + module_var.symbol().name
             overrides = [module.find_ctor()]
             new_module = module.inherit(new_module_name, overrides)
             new_module_ctor = new_module.find_ctor()
@@ -136,8 +136,8 @@ class ModuleInstantiator(object):
             for _, i, _ in reversed(binding):
                 new.args.pop(i)
         else:
-            new_module_name = module.orig_name + '_' + module_var.symbol().name
             new_module = module.inherit(new_module_name, [])
+        new_module.inst_name = inst_name
         return new_module
 
 
