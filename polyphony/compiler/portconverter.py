@@ -1,3 +1,4 @@
+from collections import defaultdict
 from .common import error_info
 from .scope import Scope
 from .ir import CONST, TEMP, MOVE
@@ -55,7 +56,7 @@ class PortConverter(IRTransformer):
             for w, args in m.workers:
                 typeprop.process(w)
 
-            #self.removes = []
+            self.union_ports = defaultdict(set)
             self.process(ctor)
             for w, args in m.workers:
                 self.process(w)
@@ -63,6 +64,40 @@ class PortConverter(IRTransformer):
             for field in m.class_fields().values():
                 if field.typ.is_port() and field.typ.get_direction() == '?':
                     raise RuntimeError("The port '{}' is not used at all".format(field))
+
+    def _set_and_check_port_direction(self, direction, port_typ, ir):
+        if not port_typ.has_direction():
+            port_typ.set_direction('?')
+        di = port_typ.get_direction()
+        kind = port_typ.get_port_kind()
+        if kind == 'external':
+            if di == '?':
+                port_typ.set_direction(direction)
+                port_typ.freeze()
+            elif di != direction:
+                print(error_info(self.scope, ir.lineno))
+                raise RuntimeError('Port direction is conflicted')
+
+        if direction == 'output':
+            # write-write conflict
+            if port_typ.has_writer():
+                writer = port_typ.get_writer()
+                if writer is not self.scope:
+                    print(error_info(self.scope, ir.lineno))
+                    raise RuntimeError('Writing to the port is conflicted')
+            else:
+                assert self.scope.is_worker() or self.scope.parent.is_module()
+                port_typ.set_writer(self.scope)
+        elif direction == 'input' and port_typ.get_scope().name == 'polyphony.io.Queue':
+            # read-read conflict
+            if port_typ.has_reader():
+                reader = port_typ.get_reader()
+                if reader is not self.scope:
+                    print(error_info(self.scope, ir.lineno))
+                    raise RuntimeError('Reading from the queue port is conflicted')
+            else:
+                assert self.scope.is_worker() or self.scope.parent.is_module()
+                port_typ.set_reader(self.scope)
 
     def visit_CALL(self, ir):
         if not ir.func_scope.is_lib():
@@ -74,27 +109,11 @@ class PortConverter(IRTransformer):
                 direction = 'output'
             else:
                 direction = 'input'
-            if not sym.typ.has_direction():
-                sym.typ.set_direction('?')
-            di = sym.typ.get_direction()
-            kind = sym.typ.get_port_kind()
-            if kind == 'external':
-                if di == '?':
-                    sym.typ.set_direction(direction)
-                    sym.typ.freeze()
-                elif di != direction:
-                    print(error_info(self.scope, ir.lineno))
-                    raise RuntimeError('Port direction is conflicted')
-            elif kind == 'internal':
-                if direction == 'output':
-                    if sym.typ.has_writer():
-                        writer = sym.typ.get_writer()
-                        if writer is not self.scope:
-                            print(error_info(self.scope, ir.lineno))
-                            raise RuntimeError('Writing to the port is conflicted')
-                    else:
-                        assert self.scope.is_worker() or self.scope.parent.is_module()
-                        sym.typ.set_writer(self.scope)
+            if sym in self.union_ports:
+                for s in self.union_ports[sym]:
+                    self._set_and_check_port_direction(direction, s.typ, ir)
+            else:
+                self._set_and_check_port_direction(direction, sym.typ, ir)
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -120,9 +139,8 @@ class PortConverter(IRTransformer):
                         port.freeze()
         return ir
 
-#    def visit_MOVE(self, ir):
-#        ir.src = self.visit(ir.src)
-#        ir.dst = self.visit(ir.dst)
-#        #if ir.src.is_a(TEMP) and ir.src.symbol().is_param() and ir.src.symbol().typ.is_port():
-#        #    return
-#        self.new_stms.append(ir)
+    def visit_PHI(self, ir):
+        if ir.var.symbol().typ.is_port():
+            for arg in ir.args:
+                self.union_ports[ir.var.symbol()].add(arg.symbol())
+        super().visit_PHI(ir)
