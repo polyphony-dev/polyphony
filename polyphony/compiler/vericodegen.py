@@ -131,7 +131,7 @@ class VerilogCodeGen(AHDLVisitor):
 
     def _generate_io_port(self):
         ports = []
-        if not self.scope.is_testbench():
+        if self.scope.is_module() or self.scope.is_function_module():
             ports.append('input wire clk')
             ports.append('input wire rst')
         for i in self.module_info.interfaces.values():
@@ -351,6 +351,9 @@ class VerilogCodeGen(AHDLVisitor):
             self.emit('*/')
         else:
             self.emit('/*' + str(ahdl.info) + '*/')
+
+    def visit_AHDL_INLINE(self, ahdl):
+        self.emit(ahdl.code + ';')
 
     def _memswitch(self, prefix, dst_node, src_node):
         n2o = dst_node.pred_branch()

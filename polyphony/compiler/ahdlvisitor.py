@@ -32,6 +32,9 @@ class AHDLVisitor(object):
     def visit_AHDL_NOP(self, ahdl):
         pass
 
+    def visit_AHDL_INLINE(self, ahdl):
+        pass
+
     def visit_AHDL_MOVE(self, ahdl):
         self.visit(ahdl.src)
         self.visit(ahdl.dst)

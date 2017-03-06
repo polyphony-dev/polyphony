@@ -143,7 +143,11 @@ class AHDL_CONCAT(AHDL_EXP):
         return 'AHDL_CONCAT({}, {})'.format(repr(self.varlist), repr(self.op))
 
 
-class AHDL_NOP(AHDL_EXP):
+class AHDL_STM(AHDL):
+    pass
+
+
+class AHDL_NOP(AHDL_STM):
     def __init__(self, info):
         super().__init__()
         self.info = info
@@ -155,8 +159,17 @@ class AHDL_NOP(AHDL_EXP):
         return 'AHDL_NOP({})'.format(repr(self.info))
 
 
-class AHDL_STM(AHDL):
-    pass
+class AHDL_INLINE(AHDL_STM):
+    def __init__(self, code):
+        super().__init__()
+        assert isinstance(code, str)
+        self.code = code
+
+    def __str__(self):
+        return '{}'.format(self.code)
+
+    def __repr__(self):
+        return 'AHDL_INLINE({})'.format(repr(self.code))
 
 
 class AHDL_MOVE(AHDL_STM):

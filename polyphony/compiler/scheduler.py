@@ -2,6 +2,7 @@
 from .latency import get_latency
 from .irvisitor import IRVisitor
 from .ir import *
+from .latency import CALL_MINIMUM_STEP
 from .utils import unique
 from .scope import Scope
 from logging import getLogger
@@ -17,10 +18,7 @@ class Scheduler(object):
 
     def schedule(self, scope):
         self.scope = scope
-        if scope.is_testbench():
-            self._node_sched = self._node_sched_testbench
-        else:
-            self._node_sched = self._node_sched_default
+        self._node_sched = self._node_sched_default
         for dfg in self.scope.dfgs(bottom_up=True):
             self._schedule(scope, dfg)
 
@@ -43,7 +41,10 @@ class Scheduler(object):
                     worklist.append((succs, nextprio))
         nodes = dfg.get_highest_priority_nodes()
         latency = self._list_schedule(dfg, nodes)
-        scope.asap_latency = latency
+        if latency > CALL_MINIMUM_STEP:
+            scope.asap_latency = latency
+        else:
+            scope.asap_latency = CALL_MINIMUM_STEP
 
     def _set_priority(self, node, prio, dfg):
         if prio > node.priority:
@@ -72,18 +73,6 @@ class Scheduler(object):
                 latest_node = max(preds, key=lambda p: p.begin)
                 sched_times.append(latest_node.begin)
             scheduled_time = max(sched_times)
-            if scheduled_time < 0:
-                scheduled_time = 0
-        else:
-            # source node
-            scheduled_time = 0
-        return scheduled_time
-
-    def _node_sched_testbench(self, dfg, node):
-        preds = dfg.preds_without_back(node)
-        if preds:
-            latest_node = max(preds, key=lambda p: p.end)
-            scheduled_time = latest_node.end
             if scheduled_time < 0:
                 scheduled_time = 0
         else:

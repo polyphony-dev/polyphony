@@ -26,7 +26,7 @@ from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .iftransform import IfTransformer
 from .setlineno import LineNumberSetter, SourceDump
-from .loopdetector import LoopDetector, SimpleLoopUnroll, LoopBlockDestructor
+from .loopdetector import LoopDetector
 from .specfunc import SpecializedFunctionMaker
 from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .selectorbuilder import SelectorBuilder
@@ -209,25 +209,6 @@ def loop(driver, scope):
     LoopDetector().process(scope)
 
 
-def tbopt(driver, scope):
-    if scope.is_testbench():
-        SimpleLoopUnroll().process(scope)
-        LoopBlockDestructor().process(scope)
-        usedef(driver, scope)
-        TupleSSATransformer().process(scope)
-        scalarssa(driver, scope)
-        dumpscope(driver, scope)
-        usedef(driver, scope)
-        memrename(driver, scope)
-        dumpscope(driver, scope)
-        ConstantOpt().process(scope)
-        reduceblk(driver, scope)
-        usedef(driver, scope)
-        phi(driver, scope)
-        usedef(driver, scope)
-        LoopDetector().process(scope)
-
-
 def liveness(driver, scope):
     Liveness().process(scope)
 
@@ -373,6 +354,7 @@ def compile_plan():
         constopt,
         dbg(dumpscope),
         instantiate,
+        dbg(dumpscope),
         convport,
         dbg(dumpscope),
         usedef,
@@ -387,7 +369,6 @@ def compile_plan():
         phase(env.PHASE_3),
         usedef,
         loop,
-        tbopt,
         phase(env.PHASE_4),
         usedef,
         aliasvar,

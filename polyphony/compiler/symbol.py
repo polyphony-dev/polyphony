@@ -65,9 +65,11 @@ class Symbol(Tagged):
     def hdl_name(self):
         if self.typ.is_list() and self.ancestor:
             return self.ancestor.hdl_name()
-        if self.typ.is_port() and self.ancestor:
+        elif self.typ.is_port() and self.ancestor:
             return self.ancestor.hdl_name()
-        if self.name[0] == '@' or self.name[0] == '!':
+        elif self.typ.is_object() and self.typ.get_scope().is_module() and self.ancestor:
+            return self.ancestor.hdl_name()
+        elif self.name[0] == '@' or self.name[0] == '!':
             name = self.name[1:]
         else:
             name = self.name[:]

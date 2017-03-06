@@ -300,16 +300,17 @@ class STGBuilder(object):
             jump = blk.stms[-1]
             last_state = states[-1]
             trans = last_state.codes[-1]
-            assert trans.is_a(AHDL_TRANSITION)
-            trans.target = jump.target
+            assert trans.is_a([AHDL_TRANSITION, AHDL_META_WAIT])
+            if trans.is_a(AHDL_TRANSITION):
+                trans.target = jump.target
 
         # deal with the first/last state
-        if not is_main or self.scope.is_testbench():
+        if not is_main:
             if is_first:
                 self.stg.init_state = states[0]
             if is_last:
                 self.stg.finish_state = states[0]
-        elif self.scope.is_worker():
+        elif self.scope.is_worker() or self.scope.is_testbench():
             if is_first:
                 name = '{}_INIT'.format(state_prefix)
                 init_state = states[0]
@@ -320,9 +321,13 @@ class STGBuilder(object):
                 self.stg.init_state = init_state
             if is_last:
                 last_state = states[-1]
+                if self.scope.is_worker():
+                    codes = [AHDL_TRANSITION(None)]
+                elif self.scope.is_testbench():
+                    codes = [AHDL_INLINE('$finish()')]
                 finish_state = self._new_state('{}_FINISH'.format(state_prefix),
                                                last_state.step + 1,
-                                               [AHDL_TRANSITION(None)])
+                                               codes)
                 states.append(finish_state)
                 self.stg.finish_state = finish_state
         else:
@@ -354,7 +359,7 @@ class STGBuilder(object):
     def emit_call_ret_sequence(self, ahdl_call, dst, latency, sched_time):
         self.emit(AHDL_META('SET_READY', ahdl_call, 0), sched_time + 1)
 
-        sched_time = sched_time + latency - 1
+        sched_time = sched_time + latency - 2
         # We must emit 'WAIT_RET_AND_GATE' before '*_IF_VALID' for test-bench sequence
         self.emit(AHDL_META_WAIT('WAIT_RET_AND_GATE', [ahdl_call]), sched_time)
         self.emit(AHDL_META('ACCEPT_IF_VALID', ahdl_call), sched_time)

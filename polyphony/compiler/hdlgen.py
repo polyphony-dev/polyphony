@@ -223,8 +223,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             return
         mrg = env.memref_graph
 
-        if not scope.is_testbench():
-            self._add_state_constants(scope)
+        self._add_state_constants(scope)
 
         defs, uses, outputs = self._collect_vars(scope)
         locals = defs.union(uses)
@@ -267,13 +266,13 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
     def _build_module(self, scope):
         mrg = env.memref_graph
 
-        if not scope.is_testbench():
-            self._add_state_constants(scope)
+        self._add_state_constants(scope)
 
         defs, uses, outputs = self._collect_vars(scope)
         locals = defs.union(uses)
 
         module_name = scope.stgs[0].name
+        self._add_state_register(module_name, scope, scope.stgs)
         self._add_internal_ports(scope, module_name, locals)
 
         for memnode in mrg.collect_ram(scope):

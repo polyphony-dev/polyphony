@@ -75,7 +75,7 @@ class InlineOpt(object):
                 call_stm.block.stms.remove(call_stm)
 
     def _process_method(self, callee, caller, calls):
-        if caller.is_testbench() or caller.is_global():
+        if caller.is_global():
             return
         for call, call_stm in calls:
             self.inline_counts[caller] += 1
