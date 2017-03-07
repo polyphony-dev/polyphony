@@ -338,15 +338,6 @@ class AHDL_SEQ(AHDL_STM):
         return 'AHDL_SEQ({}, {})'.format(repr(self.factor), repr(self.step))
 
 
-class AHDL_POST_PROCESS(AHDL_STM):
-    def __init__(self, factor):
-        super().__init__()
-        self.factor = factor
-
-    def __str__(self):
-        return 'Post-process of : {}'.format(self.factor)
-
-
 class AHDL_IF(AHDL_STM):
     # ([cond], [code]) => if (cond) code
     # ([cond, None], [code1, code2]) => if (cond) code1 else code2

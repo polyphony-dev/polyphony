@@ -31,7 +31,7 @@ def get_latency(tag):
         elif tag.src.is_a(MREF):
             memnode = tag.src.mem.symbol().typ.get_memnode()
             if memnode.is_immutable() or not memnode.is_writable():
-                return 1
+                return UNIT_STEP
             return UNIT_STEP * 3
         elif tag.src.is_a(MSTORE):
             return UNIT_STEP * 1
@@ -46,5 +46,5 @@ def get_latency(tag):
                 assert cycle.is_a(CONST)
                 return cycle.value
             elif tag.exp.name.startswith('polyphony.timing.wait_'):
-                return 1
+                return UNIT_STEP
     return UNIT_STEP

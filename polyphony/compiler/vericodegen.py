@@ -410,8 +410,10 @@ class VerilogCodeGen(AHDLVisitor):
         return (req, addr, we, d, q, len)
 
     def _is_sequential_access_to_mem(self, ahdl):
-        other_memnodes = [c.mem.memnode for c in self.current_state.codes
-                          if c.is_a([AHDL_STORE, AHDL_LOAD]) and c is not ahdl]
+        other_memnodes = [c.factor.mem.memnode for c in self.current_state.codes
+                          if c.is_a([AHDL_SEQ]) and
+                          c.factor.is_a([AHDL_LOAD, AHDL_STORE]) and
+                          c.factor is not ahdl]
         for memnode in other_memnodes:
             if memnode is ahdl.mem.memnode:
                 return True
@@ -435,6 +437,12 @@ class VerilogCodeGen(AHDLVisitor):
         self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
                              AHDL_CONST(0)))
 
+    def visit_AHDL_STORE_SEQ(self, ahdl, step):
+        if step == 0:
+            self.visit_AHDL_STORE(ahdl)
+        elif step == 1:
+            self.visit_POST_AHDL_STORE(ahdl)
+
     def visit_AHDL_LOAD(self, ahdl):
         req, addr, we, _, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
         self.visit(AHDL_MOVE(AHDL_SYMBOL(addr),
@@ -452,6 +460,15 @@ class VerilogCodeGen(AHDLVisitor):
             return
         self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
                              AHDL_CONST(0)))
+
+    def visit_AHDL_LOAD_SEQ(self, ahdl, step):
+        if step == 0:
+            self.visit_AHDL_LOAD(ahdl)
+        elif step == 1:
+            mem_name = ahdl.mem.name()
+            self.visit(AHDL_NOP('wait for output of {}'.format(mem_name)))
+        elif step == 2:
+            self.visit_POST_AHDL_LOAD(ahdl)
 
     def visit_AHDL_IO_READ_SEQ(self, ahdl, step):
         if ahdl.is_self:
@@ -473,11 +490,6 @@ class VerilogCodeGen(AHDLVisitor):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
         return visitor(ahdl.factor, ahdl.step)
-
-    def visit_AHDL_POST_PROCESS(self, ahdl):
-        method = 'visit_POST_' + ahdl.factor.__class__.__name__
-        visitor = getattr(self, method, None)
-        return visitor(ahdl.factor)
 
     def visit_AHDL_MEM(self, ahdl):
         name = ahdl.name.hdl_name()

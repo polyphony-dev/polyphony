@@ -363,18 +363,15 @@ class STGBuilder(object):
 
     def emit_memload_sequence(self, ahdl_load, sched_time):
         assert ahdl_load.is_a(AHDL_LOAD)
-        mem_name = ahdl_load.mem.name()
-        memload_latency = 2  # TODO
-        self.emit(ahdl_load, sched_time)
-        for i in range(1, memload_latency):
-            self.emit(AHDL_NOP('wait for output of {}'.format(mem_name)),   sched_time + i)
-        self.emit(AHDL_POST_PROCESS(ahdl_load), sched_time + memload_latency)
+        step_n = 3  # TODO : It should calculate from a memory type
+        for i in range(step_n):
+            self.emit(AHDL_SEQ(ahdl_load, i), sched_time + i)
 
     def emit_memstore_sequence(self, ahdl_store, sched_time):
         assert ahdl_store.is_a(AHDL_STORE)
-        memstore_latency = 1  # TODO
-        self.emit(ahdl_store, sched_time)
-        self.emit(AHDL_POST_PROCESS(ahdl_store), sched_time + memstore_latency)
+        step_n = 2  # TODO : It should calculate from a memory type
+        for i in range(step_n):
+            self.emit(AHDL_SEQ(ahdl_store, i), sched_time + i)
 
     def emit(self, item, sched_time, tag=''):
         logger.debug('emit ' + str(item) + ' at ' + str(sched_time))
