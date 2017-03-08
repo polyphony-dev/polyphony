@@ -296,7 +296,10 @@ class STGBuilder(object):
                 if self.scope.is_worker():
                     codes = [AHDL_TRANSITION(None)]
                 elif self.scope.is_testbench():
-                    codes = [AHDL_INLINE('$finish()')]
+                    codes = [
+                        AHDL_INLINE('$display("%5t:finish", $time)'),
+                        AHDL_INLINE('$finish()')
+                    ]
                 finish_state = self._new_state('{}_FINISH'.format(state_prefix),
                                                last_state.step + 1,
                                                codes)
@@ -659,14 +662,8 @@ class AHDLTranslator(object):
             tags.discard('reg')
             tags.add('net')
 
-        if self.scope.is_worker():
-            signame = ir.sym.ancestor.hdl_name() if ir.sym.ancestor else ir.sym.hdl_name()
-            # a local variable's name is localized
-            sig = self.scope.worker_owner.gen_sig('{}_{}'.format(self.scope.orig_name, signame),
-                                                  width,
-                                                  tags)
-        elif self.scope.is_method() and not ir.sym.is_param():
-            # a local variable's name in the method is localized
+        if self.scope.is_worker() or self.scope.is_method():
+            # should localize a local variable's name
             sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()),
                                      width,
                                      tags)

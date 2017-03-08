@@ -134,11 +134,8 @@ class VerilogCodeGen(AHDLVisitor):
         if self.scope.is_module() or self.scope.is_function_module():
             ports.append('input wire clk')
             ports.append('input wire rst')
-        for i in self.module_info.interfaces.values():
-            if not i.is_public:
-                continue
-            for p in i.ports:
-                ports.append(self._to_io_name(self.module_info.name, i, p))
+        for interface in self.module_info.interfaces.values():
+            ports.extend(self._get_io_names_from(interface))
         self.emit((',\n' + self.tab()).join(ports))
 
     def _generate_signal(self, sig):
@@ -188,28 +185,45 @@ class VerilogCodeGen(AHDLVisitor):
                 for decl in sorted(decls, key=lambda d: str(d)):
                     self.visit(decl)
 
-    def _to_io_name(self, module_name, interface, port):
-        io = 'input' if port.dir == 'in' else 'output'
-        typ = 'wire' if port.dir == 'in' or interface.thru else 'reg'
-        port_name = interface.port_name(module_name, port)
+    def _get_io_names_from(self, interface):
+        in_names = []
+        out_names = []
+        for port in interface.regs():
+            if port.dir == 'in':
+                assert False
+            else:
+                io_name = self._to_io_name(port.width, 'reg', 'output', port.signed,
+                                           interface.port_name(port))
+                out_names.append(io_name)
+        for port in interface.nets():
+            if port.dir == 'in':
+                io_name = self._to_io_name(port.width, 'wire', 'input', port.signed,
+                                           interface.port_name(port))
+                in_names.append(io_name)
+            else:
+                io_name = self._to_io_name(port.width, 'wire', 'output', port.signed,
+                                           interface.port_name(port))
+                out_names.append(io_name)
+        return in_names + out_names
 
-        if port.width == 1:
+    def _to_io_name(self, width, typ, io, signed, port_name):
+        if width == 1:
             ioname = '{} {} {}'.format(io, typ, port_name)
         else:
-            if port.signed:
+            if signed:
                 ioname = '{} {} signed [{}:0] {}'.format(io,
-                                                         typ, port.width - 1,
+                                                         typ, width - 1,
                                                          port_name)
             else:
                 ioname = '{} {} [{}:0] {}'.format(io,
                                                   typ,
-                                                  port.width - 1,
+                                                  width - 1,
                                                   port_name)
         return ioname
 
-    def _to_sub_module_connect(self, module_name, instance_name, inf, acc, port):
-        port_name = inf.port_name(module_name, port)
-        accessor_name = acc.port_name("sub", port)
+    def _to_sub_module_connect(self, instance_name, inf, acc, port):
+        port_name = inf.port_name(port)
+        accessor_name = acc.port_name(port)
         connection = '.{}({})'.format(port_name, accessor_name)
         return connection
 
@@ -223,10 +237,8 @@ class VerilogCodeGen(AHDLVisitor):
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
             for inf, acc in sorted(connections, key=lambda c: str(c)):
-                if not inf.is_public:
-                    continue
                 for p in inf.ports:
-                    ports.append(self._to_sub_module_connect(info.name, name, inf, acc, p))
+                    ports.append(self._to_sub_module_connect(name, inf, acc, p))
 
             self.emit('//{} instance'.format(name))
             #for port, signal in port_map.items():

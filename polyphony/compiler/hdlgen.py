@@ -96,11 +96,7 @@ class HDLModuleBuilder(object):
             for inst_name in inst_names:
                 connections = []
                 for inf in info.interfaces.values():
-                    if not inf.if_name:
-                        acc_name = inst_name
-                    else:
-                        acc_name = inst_name + '_' + inf.if_name
-                    connections.append((inf, inf.accessor(acc_name)))
+                    connections.append((inf, inf.accessor(inst_name)))
                 self.module_info.add_sub_module(inst_name, info, connections)
 
     def _add_roms(self, scope):
@@ -230,15 +226,14 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
 
         module_name = scope.stgs[0].name
         self._add_state_register(module_name, scope, scope.stgs)
-        funcif = FunctionInterface('')
+        funcif = FunctionInterface('', module_name)
         self._add_input_ports(funcif, scope)
         self._add_output_ports(funcif, scope)
         self.module_info.add_interface('', funcif)
 
         self._add_internal_ports(scope, module_name, locals)
 
-        for memnode in mrg.collect_ram(scope):
-            HDLMemPortMaker(memnode, scope, self.module_info).make_port()
+        HDLMemPortMaker(mrg.collect_ram(scope), scope, self.module_info).make_port_all()
 
         for memnode in mrg.collect_immutable(scope):
             if not memnode.is_writable():
@@ -275,8 +270,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         self._add_state_register(module_name, scope, scope.stgs)
         self._add_internal_ports(scope, module_name, locals)
 
-        for memnode in mrg.collect_ram(scope):
-            HDLMemPortMaker(memnode, scope, self.module_info).make_port()
+        HDLMemPortMaker(mrg.collect_ram(scope), scope, self.module_info).make_port_all()
 
         for memnode in mrg.collect_immutable(scope):
             if not memnode.is_writable():
@@ -344,7 +338,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             self.module_info.add_local_writer(writer.acc_name, writer)
             ports = reader.regs() + writer.regs()
             for p in ports:
-                name = reader.port_name('', p)
+                name = reader.port_name(p)
                 sig = self.module_info.scope.gen_sig(name, p.width)
                 self.module_info.add_internal_reg(sig)
         else:
@@ -362,7 +356,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             self.module_info.add_sub_module(signal.name, mod, connections, mod.param_map)
             ports = reader.ports + writer.ports
             for p in ports:
-                name = reader.port_name('', p)
+                name = reader.port_name(p)
                 sig = self.module_info.scope.gen_sig(name, p.width)
                 if p.dir == 'in':
                     self.module_info.add_internal_reg(sig)
@@ -379,8 +373,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         self._add_state_register(worker.orig_name, module_scope, worker.stgs)
 
         self._add_submodules(worker)
-        for memnode in mrg.collect_ram(worker):
-            memportmaker = HDLMemPortMaker(memnode, worker, self.module_info).make_port()
+        HDLMemPortMaker(mrg.collect_ram(worker), worker, self.module_info).make_port_all()
 
         self._add_roms(worker)
         self.module_info.add_fsm_stg(worker.orig_name, worker.stgs)

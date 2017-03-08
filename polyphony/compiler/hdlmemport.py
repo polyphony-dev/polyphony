@@ -10,53 +10,71 @@ logger = getLogger(__name__)
 
 
 class HDLMemPortMaker(object):
-    def __init__(self, memnode, scope, module_info):
-        self.memnode = memnode
-        self.name = memnode.name()
+    def __init__(self, memnodes, scope, module_info):
+        self.memnodes = memnodes
         self.scope = scope
-        self.mrg = env.memref_graph
         self.module_info = module_info
-        self.length = memnode.length
-        self.width  = memnode.width
-        self.addr_width = memnode.addr_width()
+        self.mrg = env.memref_graph
+        self.mrg.node2acc = {}
+        self.joint_count = 0
 
-    def _make_ram_if(self, name, thru=False, is_public=False):
-        ramif = RAMInterface(name, self.width, self.addr_width, thru=thru, is_public=is_public)
-        return ramif
+    def make_port_all(self):
+        for memnode in sorted(self.memnodes):
+            self.memnode = memnode
+            self.name = memnode.name()
+            self.length = memnode.length
+            self.width  = memnode.width
+            self.addr_width = memnode.addr_width()
+            self._make_port()
 
-    def _make_ram_access_if(self, name, thru=False):
-        ramif = RAMAccessInterface(name, self.width, self.addr_width, thru=thru)
-        return ramif
+    def _make_ram_accessor(self, node):
+        def gen_name():
+            self.joint_count += 1
+            return 'joint' + str(self.joint_count)
+        if node in self.mrg.node2acc:
+            return self.mrg.node2acc[node]
+        if isinstance(node, tuple):
+            memnode = node[0]
+            name = gen_name()
+            is_sink = False
+        else:
+            memnode = node
+            name = node.name()
+            is_sink = True
+        acc = RAMAccessor(name, memnode.width, memnode.addr_width(), is_sink)
+        self.mrg.node2acc[node] = acc
+        return acc
 
-    def _add_internal_regs_and_nets(self, ramif):
-        for p in ramif.ports:
-            sig = self.scope.gen_sig(ramif.if_name + '_' + p.name, p.width)
-            if p.dir == 'in':
-                self.module_info.add_internal_reg(sig, ramif.if_name)
-                self.module_info.add_fsm_output(self.scope.orig_name, sig)
-            else:
-                self.module_info.add_internal_net(sig, ramif.if_name)
+    def _make_ram_param_accessor(self, inst_name, memnode):
+        ramif = RAMBridgeInterface(memnode.name(), '', memnode.width, memnode.addr_width())
+        acc = ramif.accessor(inst_name)
+        return acc
 
-    def _add_internal_nets(self, ramif):
-        for p in ramif.ports:
-            sig = self.scope.gen_sig(ramif.if_name + '_' + p.name, p.width)
-            self.module_info.add_internal_net(sig, ramif.if_name)
+    def _add_internal_regs_and_nets(self, ramacc):
+        for p in ramacc.regs():
+            port_name = ramacc.port_name(p)
+            sig = self.scope.gen_sig(port_name, p.width)
+            self.module_info.add_internal_reg(sig, ramacc.acc_name)
+            self.module_info.add_fsm_output(self.scope.orig_name, sig)
+        for p in ramacc.nets():
+            port_name = ramacc.port_name(p)
+            sig = self.scope.gen_sig(port_name, p.width)
+            self.module_info.add_internal_net(sig, ramacc.acc_name)
+
+    def _add_internal_nets(self, ramacc):
+        for p in ramacc.nets():
+            sig = self.scope.gen_sig(ramacc.acc_name + '_' + p.name, p.width)
+            self.module_info.add_internal_net(sig, ramacc.acc_name)
 
     def _add_ram_module(self):
         param_map = OrderedDict()
-        #TODO: bit length
         param_map['DATA_WIDTH'] = self.width
         param_map['ADDR_WIDTH'] = self.addr_width
         param_map['RAM_LENGTH'] = self.length
-
-        shared = True if len(self.memnode.succ_ref_nodes()) > 1 else False
         spram_info = RAMModuleInfo(self.name, self.width, self.addr_width)
-        if shared:
-            connections = [(spram_info.ramif, spram_info.ramif.shared_accessor(self.name))]
-        else:
-            connections = [(spram_info.ramif, spram_info.ramif.accessor(self.name))]
+        connections = [(spram_info.ramif, spram_info.ramif.accessor(self.name))]
         self.module_info.add_sub_module(self.name, spram_info, connections, param_map=param_map)
-        self.module_info.node2if[self.memnode] = spram_info.ramif
+        return spram_info
 
     def _add_interconnect(self, name, pred_ifs, succ_ifs, cs_name=''):
         #print('add interconnect ', name)
@@ -70,7 +88,7 @@ class HDLMemPortMaker(object):
             interconnect = Interconnect(name, pred_ifs, succ_ifs)
         self.module_info.add_interconnect(interconnect)
 
-    def make_port(self):
+    def _make_port(self):
         assert self.memnode.is_writable()
         # this function makes the node connection for to the successor node
         if isinstance(self.memnode, MemRefNode) or isinstance(self.memnode, MemParamNode):
@@ -80,7 +98,8 @@ class HDLMemPortMaker(object):
                 self._make_param_node_connection()
             elif self.memnode.is_sink():
                 # add the ram access register and net
-                self._add_internal_regs_and_nets(self._make_ram_access_if(self.memnode.name()))
+                acc = self._make_ram_accessor(self.memnode)
+                self._add_internal_regs_and_nets(acc)
             else:
                 assert False
         elif isinstance(self.memnode, N2OneMemNode):
@@ -89,32 +108,37 @@ class HDLMemPortMaker(object):
             self._make_one2n_node_connection()
 
     def _make_source_node_connection(self):
-        self._add_ram_module()
-        ramif = self._make_ram_if(self.memnode.name())
+        spram_info = self._add_ram_module()
+        spram_acc = spram_info.ramif.accessor(self.memnode.name())
+        assert self.memnode not in self.mrg.node2acc
+        self.mrg.node2acc[self.memnode] = spram_acc
 
         # direct connect
         if isinstance(self.memnode.succs[0], MemRefNode):
             assert len(self.memnode.succs) == 1
             succ = self.memnode.succs[0]
             assert succ.is_sink()
-            succ_ramif = self._make_ram_access_if(succ.name())
-            self._add_interconnect(self.memnode.name(), [ramif], [succ_ramif])
+            succ_ramacc = self._make_ram_accessor(succ)
+            self._add_interconnect(self.memnode.name(), [spram_acc], [succ_ramacc])
 
     def _make_param_node_connection(self):
         # TODO from/to external access
-        ramif = RAMAccessInterface(self.name, self.width, self.addr_width, flip=True, thru=True)
+        if_name = self.name
+        ramif = RAMBridgeInterface(if_name, self.module_info.name, self.width, self.addr_width)
         self.module_info.add_interface(self.name, ramif)
         self.module_info.node2if[self.memnode] = ramif
 
         # direct connect
         if isinstance(self.memnode.succs[0], MemRefNode):
-            # specify the module name explicitly
-            ramif = self._make_ram_access_if(self.module_info.name + '_' + self.name)
+            ramacc = ramif.accessor()
+            assert ramacc not in self.mrg.node2acc
+            self.mrg.node2acc[self.memnode] = ramacc
+
             assert len(self.memnode.succs) == 1
             succ = self.memnode.succs[0]
             assert succ.is_sink()
-            succ_ramif = self._make_ram_access_if(succ.name())
-            self._add_interconnect(self.memnode.name(), [ramif], [succ_ramif])
+            succ_ramacc = self._make_ram_accessor(succ)
+            self._add_interconnect(self.memnode.name(), [ramacc], [succ_ramacc])
 
     def _make_one2n_node_connection(self):
         assert len(self.memnode.preds) == 1
@@ -122,51 +146,26 @@ class HDLMemPortMaker(object):
 
         pred = self.memnode.preds[0]
         if pred.is_source():
-            pred_ramif = self._make_ram_if(pred.name())
+            pred_ramacc = self._make_ram_accessor(pred)
         else:
-            if isinstance(pred, One2NMemNode):
-                #i = pred.succs.index(self.memnode)
-                name = '{}_in'.format(self.memnode.name())
-            elif isinstance(pred, N2OneMemNode):
-                name = '{}_out'.format(pred.name())
-            elif pred.is_param():
-                name = self.module_info.name + '_' + pred.name()
-            else:
-                name = pred.name()
-            pred_ramif = self._make_ram_access_if(name)
+            pred_ramacc = self._make_ram_accessor((pred, self.memnode))
 
-        succ_ramifs = []
+        succ_ramaccs = []
         for i, succ in enumerate(self.memnode.succs):
             if isinstance(succ, MemParamNode):
                 for inst in self.mrg.param_node_instances[succ]:
-                    ramif = self._make_ram_access_if(inst + '_' + succ.name())
-                    succ_ramifs.append(ramif)
+                    ramacc = self._make_ram_param_accessor(inst, succ)
+                    succ_ramaccs.append(ramacc)
             elif isinstance(succ, N2OneMemNode):
-                if isinstance(succ.succs[0], MemParamNode):
-                    for inst in self.mrg.param_node_instances[succ.succs[0]]:
-                        name = '{}_{}_in{}'.format(inst, succ.name(),
-                                                   succ.preds.index(self.memnode))
-                        ramif = self._make_ram_access_if(name)
-                        succ_ramifs.append(ramif)
-                        # add the intermediate nets for connection to the successor node
-                        self._add_internal_nets(ramif)
-                else:
-                    name = '{}_in{}'.format(succ.name(), succ.preds.index(self.memnode))
-                    ramif = self._make_ram_access_if(name)
-                    succ_ramifs.append(ramif)
-                    # add the intermediate nets for connection to the successor node
-                    self._add_internal_nets(ramif)
+                ramacc = self._make_ram_accessor((self.memnode, succ))
+                succ_ramaccs.append(ramacc)
+                self._add_internal_nets(ramacc)
             elif isinstance(succ, One2NMemNode):
-                name = '{}_in'.format(succ.name())
-                ramif = self._make_ram_access_if(name)
-                succ_ramifs.append(ramif)
-                # add the intermediate nets for connection to the successor node
-                self._add_internal_nets(ramif)
-                #assert False
+                assert False
             else:
-                ramif = self._make_ram_access_if(succ.name())
-                succ_ramifs.append(ramif)
-        self._add_interconnect(self.memnode.name(), [pred_ramif], succ_ramifs)
+                ramacc = self._make_ram_accessor(succ)
+                succ_ramaccs.append(ramacc)
+        self._add_interconnect(self.memnode.name(), [pred_ramacc], succ_ramaccs)
 
     def _make_n2one_node_connection(self):
         assert len(self.memnode.preds) > 1
@@ -175,46 +174,41 @@ class HDLMemPortMaker(object):
 
         if isinstance(succ, MemParamNode):
             for inst in self.mrg.param_node_instances[succ]:
-                pred_ramifs = []
+                pred_ramaccs = []
                 preds = [p for p in self.memnode.preds if self.scope in p.scopes]
                 for i, pred in enumerate(self.memnode.preds):
                     if pred not in preds:
                         continue
                     if isinstance(pred, One2NMemNode):
-                        name = '{}_{}_in{}'.format(inst, self.memnode.name(), i)
-                        ramif = self._make_ram_access_if(name)
-                        pred_ramifs.append(ramif)
+                        ramacc = self._make_ram_accessor((pred, self.memnode))
+                        pred_ramaccs.append(ramacc)
                     else:
-                        ramif = self._make_ram_access_if(pred.name())
-                        pred_ramifs.append(ramif)
-                succ_ramif = self._make_ram_access_if(inst + '_' + succ.name())
+                        assert False
+                succ_ramacc = self._make_ram_param_accessor(inst, succ)
                 cs_name = inst + '_' + self.memnode.orig_succs[0].name()
-                self._add_interconnect(succ_ramif.if_name, pred_ramifs, [succ_ramif], cs_name)
+                self._add_interconnect(succ_ramacc.acc_name, pred_ramaccs, [succ_ramacc], cs_name)
 
         else:
-            pred_ramifs = []
+            pred_ramaccs = []
             for i, pred in enumerate(self.memnode.preds):
-                if isinstance(pred, MemParamNode):
-                    assert 0
-                elif isinstance(pred, One2NMemNode):
-                    name = '{}_in{}'.format(self.memnode.name(), i)
-                    ramif = self._make_ram_access_if(name)
-                    pred_ramifs.append(ramif)
+                if isinstance(pred, One2NMemNode):
+                    ramacc = self._make_ram_accessor((pred, self.memnode))
+                    pred_ramaccs.append(ramacc)
                 else:
-                    assert isinstance(pred, MemRefNode)
-                    ramif = self._make_ram_access_if(pred.name())
-                    pred_ramifs.append(ramif)
+                    assert False
 
             if isinstance(succ, MemParamNode):
-                succ_ramif = self._make_ram_access_if(succ.name())
+                assert False
             elif isinstance(succ, JointNode):
-                succ_ramif = self._make_ram_access_if('{}_out'.format(self.memnode.name()))
-                # add the intermediate nets for connection to the successor node
-                self._add_internal_nets(succ_ramif)
+                succ_ramacc = self._make_ram_accessor((self.memnode, succ))
+                self._add_internal_nets(succ_ramacc)
             else:
-                succ_ramif = self._make_ram_access_if(succ.name())
+                succ_ramacc = self._make_ram_accessor(succ)
             cs_name = self.memnode.orig_succs[0].name()
-            self._add_interconnect(succ_ramif.if_name, pred_ramifs, [succ_ramif], cs_name=cs_name)
+            self._add_interconnect(succ_ramacc.acc_name,
+                                   pred_ramaccs,
+                                   [succ_ramacc],
+                                   cs_name=cs_name)
 
 
 class HDLRegArrayPortMaker(object):
@@ -280,6 +274,7 @@ class HDLRegArrayPortMaker(object):
                 ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)), src_var)
                 self.module_info.add_static_assignment(ahdl_assign)
         regarrayif = RegArrayInterface(self.memnode.name(),
+                                       self.module_info.name,
                                        self.memnode.width,
                                        self.memnode.length)
         self.module_info.add_interface(self.memnode.name(), regarrayif)

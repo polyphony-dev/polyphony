@@ -80,7 +80,7 @@ class VerilogTestGen(VerilogCodeGen):
         def add_ports(ports):
             for p in ports:
                 if isinstance(p, tuple):
-                    accessor_name = accessor.port_name('', p)
+                    accessor_name = accessor.port_name(p)
                     args.append(accessor_name)
                     if p.width == 1:
                         formats.append('{}=%1d'.format(accessor_name))

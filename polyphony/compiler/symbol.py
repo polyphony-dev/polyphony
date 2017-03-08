@@ -63,9 +63,7 @@ class Symbol(Tagged):
             return self.name
 
     def hdl_name(self):
-        if self.typ.is_list() and self.ancestor:
-            return self.ancestor.hdl_name()
-        elif self.typ.is_port() and self.ancestor:
+        if self.typ.is_port() and self.ancestor:
             return self.ancestor.hdl_name()
         elif self.typ.is_object() and self.typ.get_scope().is_module() and self.ancestor:
             return self.ancestor.hdl_name()

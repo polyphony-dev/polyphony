@@ -31,9 +31,11 @@ class SelectorBuilder(object):
         src = {}
         sink = {}
         for p in inif.ports:
-            src[p.name] = self.scope.gen_sig(inif.if_name + '_' + p.name, p.width)
+            port_name = inif.port_name(p)
+            src[p.name] = self.scope.gen_sig(port_name, p.width)
         for p in outif.ports:
-            sink[p.name] = self.scope.gen_sig(outif.if_name + '_' + p.name, p.width)
+            port_name = outif.port_name(p)
+            sink[p.name] = self.scope.gen_sig(port_name, p.width)
 
         for p in inif.ports:
             port_name = p.name
@@ -51,11 +53,13 @@ class SelectorBuilder(object):
         trunk = {}
         branches = defaultdict(list)
         for p in inif.ports:
-            o2n_in_sig = self.scope.gen_sig(inif.if_name + '_' + p.name, p.width)
+            port_name = inif.port_name(p)
+            o2n_in_sig = self.scope.gen_sig(port_name, p.width)
             trunk[p.name] = o2n_in_sig
         for oif in outifs:
             for p in oif.ports:
-                o2n_out_sig = self.scope.gen_sig(oif.if_name + '_' + p.name, p.width)
+                port_name = oif.port_name(p)
+                o2n_out_sig = self.scope.gen_sig(port_name, p.width)
                 branches[p.name].append(o2n_out_sig)
 
         #assign switch = {req0, req1, ...}
@@ -106,10 +110,10 @@ class SelectorBuilder(object):
         trunk = {}
         branches = defaultdict(list)
         for p in outif.ports:
-            trunk[p.name] = self.scope.gen_sig(outif.if_name + '_' + p.name, p.width)
+            trunk[p.name] = self.scope.gen_sig(outif.acc_name + '_' + p.name, p.width)
         for iif in inifs:
             for p in iif.ports:
-                n2o_in_sig = self.scope.gen_sig(iif.if_name + '_' + p.name, p.width)
+                n2o_in_sig = self.scope.gen_sig(iif.acc_name + '_' + p.name, p.width)
                 branches[p.name].append(n2o_in_sig)
 
         # assign switch = cs
@@ -118,7 +122,6 @@ class SelectorBuilder(object):
         self.module_info.add_internal_net(switch, tag)
 
         cs_width = len(inifs)
-        #cs_sig = self.scope.gen_sig('{}_cs'.format(outif.if_name), cs_width)
         cs_sig = self.scope.gen_sig('{}_cs'.format(cs_name), cs_width)
         self.module_info.add_internal_reg(cs_sig, tag)
 
@@ -147,71 +150,28 @@ class SelectorBuilder(object):
         for inf, acc in connections:
             tag = inf.if_name
             for p in acc.regs():
-                int_name = acc.port_name('', p)
+                int_name = acc.port_name(p)
                 sig = self.scope.gen_sig(int_name, p.width)
                 self.module_info.add_internal_reg(sig, tag)
             for p in acc.nets():
-                int_name = acc.port_name('', p)
+                int_name = acc.port_name(p)
                 sig = self.scope.gen_sig(int_name, p.width)
                 self.module_info.add_internal_net(sig, tag)
 
     def _build_sub_module_selectors(self):
         for name, info, connections, param_map in self.module_info.sub_modules.values():
-             # TODO
+            # TODO
             if info.name == 'fifo':
                 continue
-            if info.scope and info.scope.is_module() and connections:
+            if connections:
                 self._add_sub_module_accessors(connections)
                 continue
-            # TODO
-            for inf, acc in connections:
-                if not inf.is_public:
-                    continue
-                trunk = {}
-                branches = defaultdict(list)
-                tag = acc.if_name
-
-                for p in inf.ports:
-                    sig = self.scope.gen_sig(acc.port_name('sub', p), p.width)
-                    trunk[p.name] = sig
-                    self.module_info.add_internal_net(sig, tag)
-
-                    int_name = acc.port_name('', p)
-                    sig = self.scope.gen_sig(int_name, p.width)
-                    branches[p.name].append(sig)
-                    if p.dir == 'in' and not acc.thru:
-                        self.module_info.add_internal_reg(sig, tag)
-                        reset_stm = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), AHDL_CONST(0))
-                        self.module_info.add_fsm_reset_stm(self.scope.orig_name, reset_stm)
-                    else:
-                        self.module_info.add_internal_net(sig, tag)
-
-                # make interconnect
-                for p in inf.ports:
-                    port_name = p.name
-                    if p.dir == 'in':
-                        if p.name == 'ready' or p.name == 'accept':
-                            bits = [AHDL_SYMBOL(sig.name) for sig in branches[p.name]]
-                            bits.reverse()
-                            concat = AHDL_CONCAT(bits, 'BitOr')
-                            assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE), concat)
-                            self.module_info.add_static_assignment(assign, tag)
-                        else:
-                            assign = AHDL_ASSIGN(AHDL_VAR(trunk[port_name], Ctx.STORE),
-                                                 AHDL_VAR(branches[port_name][0], Ctx.LOAD))
-                            self.module_info.add_static_assignment(assign, tag)
-                    else:
-                        for sig in branches[port_name]:
-                            assign = AHDL_ASSIGN(AHDL_VAR(sig, Ctx.STORE),
-                                                 AHDL_VAR(trunk[port_name], Ctx.LOAD))
-                            self.module_info.add_static_assignment(assign, tag)
             if False:  # env.hdl_debug_mode and not self.scope.is_testbench():
                 self.emit('always @(posedge clk) begin')
                 self.emit('if (rst==0 && {}!={}) begin'.format(self.current_state_sig.name, 0))
                 for a in accessors:
                     for p in a.ports:
-                        # aname = self._accessor_name(name, a, p)
-                        aname = a.port_name(name, p)
+                        aname = a.port_name(p)
                         self.emit('$display("%8d:ACCESSOR :{}      {} = 0x%2h (%1d)", $time, {}, {});'.format(self.scope.orig_name, aname, aname, aname))
                 self.emit('end')
                 self.emit('end')

@@ -754,7 +754,7 @@ class MemRefGraphBuilder(IRVisitor):
             mem_t = Type.list(Type.int(), memnode)
         else:
             memnode.set_immutable()
-            mem_t =Type.tuple(Type.int(), memnode, len(ir.items))
+            mem_t = Type.tuple(Type.int(), memnode, len(ir.items))
         ir.sym.set_type(mem_t)
 
     def visit_MREF(self, ir):

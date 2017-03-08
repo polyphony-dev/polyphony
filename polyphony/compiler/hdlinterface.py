@@ -10,10 +10,11 @@ class InterfaceBase(object):
                            for p in self.ports])
         return self.if_name + ports
 
-    def _flip_direction(self):
+    def _flip_direction(self, ports):
         def flip(d):
             return 'in' if d == 'out' else 'out'
-        self.ports = [Port(p.name, p.width, flip(p.dir), p.signed) for p in self.ports]
+        ports = [Port(p.name, p.width, flip(p.dir), p.signed) for p in ports]
+        return ports
 
     def inports(self):
         return [p for p in self.ports if p.dir == 'in']
@@ -23,17 +24,16 @@ class InterfaceBase(object):
 
 
 class Interface(InterfaceBase):
-    def __init__(self, if_name, thru, is_public):
+    def __init__(self, if_name, if_owner_name):
         self.if_name = if_name
+        self.if_owner_name = if_owner_name
         self.ports = []
-        self.thru = thru
-        self.is_public = is_public
 
     def __lt__(self, other):
         return self.if_name < other.if_name
 
-    def port_name(self, prefix, port):
-        return self._prefixed_port_name(prefix, port)
+    def port_name(self, port):
+        return self._prefixed_port_name(self.if_owner_name, port)
 
     def _prefixed_port_name(self, prefix, port):
         pfx = prefix + '_' if prefix else ''
@@ -56,22 +56,26 @@ class Interface(InterfaceBase):
             assert port.name
             return port.name
 
+    def regs(self):
+        return self.outports()
+
+    def nets(self):
+        return self.inports()
+
 
 class Accessor(InterfaceBase):
-    def __init__(self, inf, inst_name):
-        if inst_name:
-            self.acc_name = '{}_{}'.format(inst_name, inf.if_name)
-        else:
-            self.acc_name = inf.if_name
+    def __init__(self, inf):
+        self.acc_name = inf.if_name
         self.inf = inf
-        self.inst_name = inst_name
         self.ports = []
 
-    def port_name(self, prefix, port):
-        if self.inst_name:
-            return '{}_{}'.format(self.inst_name, self.inf.port_name(prefix, port))
-        else:
-            return self.inf.port_name(prefix, port)
+    def __str__(self):
+        ports = ', '.join(['<{}:{}:{}>'.format(p.name, p.width, p.dir)
+                           for p in self.ports])
+        return self.acc_name + ports
+
+    def port_name(self, port):
+        return self.inf.port_name(port)
 
     def regs(self):
         return self.inports()
@@ -80,13 +84,31 @@ class Accessor(InterfaceBase):
         return self.outports()
 
 
+class IOAccessor(Accessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf)
+        if inst_name and inf.if_name:
+            self.acc_name = '{}_{}'.format(inst_name, inf.if_name)
+        elif inf.if_name:
+            self.acc_name = inf.if_name
+        else:
+            self.acc_name = inst_name
+        self.inst_name = inst_name
+
+    def port_name(self, port):
+        if self.inst_name:
+            return '{}_{}'.format(self.inst_name, self.inf.port_name(port))
+        else:
+            return self.inf.port_name(port)
+
+
 class SinglePortInterface(Interface):
     def __init__(self, signal):
-        super().__init__(signal.name, False, True)
+        super().__init__(signal.name, '')
         self.signal = signal
         self.data_width = signal.width
 
-    def port_name(self, prefix, port):
+    def port_name(self, port):
         if port.name:
             return '{}_{}'.format(self.if_name, port.name)
         else:
@@ -96,7 +118,6 @@ class SinglePortInterface(Interface):
 class SingleReadInterface(SinglePortInterface):
     def __init__(self, signal):
         super().__init__(signal)
-        #assert signal.is_input()
         signed = True if signal.is_int() else False
         self.ports.append(Port('', self.data_width, 'in', signed))
         if signal.is_valid_protocol():
@@ -105,7 +126,7 @@ class SingleReadInterface(SinglePortInterface):
             self.ports.append(Port('valid', 1, 'in', False))
             self.ports.append(Port('ready', 1, 'out', False))
 
-    def accessor(self, inst_name):
+    def accessor(self, inst_name=''):
         acc = SingleWriteAccessor(self, inst_name)
         return acc
 
@@ -129,7 +150,7 @@ class SingleWriteInterface(SinglePortInterface):
             self.ports.append(Port('valid', 1, 'out', False))
             self.ports.append(Port('ready', 1, 'in', False))
 
-    def accessor(self, inst_name):
+    def accessor(self, inst_name=''):
         acc = SingleReadAccessor(self, inst_name)
         return acc
 
@@ -147,7 +168,7 @@ class SingleWriteInterface(SinglePortInterface):
         return stms
 
 
-class SingleReadAccessor(Accessor):
+class SingleReadAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
         self.ports = inf.ports[:]
@@ -161,7 +182,7 @@ class SingleReadAccessor(Accessor):
         return stms
 
 
-class SingleWriteAccessor(Accessor):
+class SingleWriteAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
         self.ports = inf.ports[:]
@@ -182,9 +203,8 @@ class SingleWriteAccessor(Accessor):
 
 
 class FunctionInterface(Interface):
-    def __init__(self, name, thru=False, is_method=False):
-        super().__init__(name, thru, is_public=True)
-        self.is_method = is_method
+    def __init__(self, name, owner_name=''):
+        super().__init__(name, owner_name)
         self.ports.append(Port('ready', 1, 'in', False))
         self.ports.append(Port('accept', 1, 'in', False))
         self.ports.append(Port('valid', 1, 'out', False))
@@ -195,24 +215,24 @@ class FunctionInterface(Interface):
     def add_data_out(self, dout_name, width, signed):
         self.ports.append(Port(dout_name, width, 'out', signed))
 
-    def add_ram_in(self, ramif):
-        #TODO
-        pass
-
-    def add_ram_out(self, ramif):
-        #TODO
-        pass
-
-    def accessor(self, name):
-        inf = FunctionInterface(name, self.thru, self.is_method)
-        inf.is_public = False
-        inf.ports = list(self.ports)
-        return inf
+    def accessor(self, inst_name=''):
+        acc = FunctionAccessor(self, inst_name)
+        return acc
 
 
-class RAMInterface(Interface):
-    def __init__(self, name, data_width, addr_width, thru=False, is_public=False):
-        super().__init__(name, thru=thru, is_public=is_public)
+class FunctionAccessor(IOAccessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf, inst_name)
+        self.ports = inf.ports[:]
+
+    def port_name(self, port):
+        assert self.inst_name
+        return '{}_{}'.format(self.inst_name, self.inf._port_name(port))
+
+
+class RAMModuleInterface(Interface):
+    def __init__(self, name, data_width, addr_width):
+        super().__init__(name, '')
         self.data_width = data_width
         self.addr_width = addr_width
         self.ports.append(Port('addr', addr_width, 'in', True))
@@ -221,43 +241,119 @@ class RAMInterface(Interface):
         self.ports.append(Port('q',    data_width, 'out', True))
         self.ports.append(Port('len',  addr_width, 'out', False))
 
-    def accessor(self, name):
-        return RAMInterface(name, self.data_width, self.addr_width, thru=True, is_public=False)
-
-    def shared_accessor(self, name):
-        return RAMInterface(name, self.data_width, self.addr_width, thru=True, is_public=True)
+    def accessor(self, inst_name=''):
+        return RAMModuleAccessor(self, inst_name)
 
 
-class RAMAccessInterface(RAMInterface):
-    def __init__(self, name, data_width, addr_width, flip=False, thru=False):
-        super().__init__(name, data_width, addr_width, thru, is_public=True)
-        self.ports.append(Port('req', 1, 'in', False))
-        if flip:
-            self._flip_direction()
+class RAMModuleAccessor(IOAccessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf, inst_name)
+        self.ports = inf.ports[:]
+
+    def regs(self):
+        return []
+
+    def nets(self):
+        return self.ports
+
+
+class RAMBridgeInterface(Interface):
+    def __init__(self, name, owner_name, data_width, addr_width):
+        super().__init__(name, owner_name)
+        self.data_width = data_width
+        self.addr_width = addr_width
+        self.ports.append(Port('addr', addr_width, 'in', True))
+        self.ports.append(Port('d',    data_width, 'in', True))
+        self.ports.append(Port('we',   1,          'in', False))
+        self.ports.append(Port('q',    data_width, 'out', True))
+        self.ports.append(Port('len',  addr_width, 'out', False))
+        self.ports.append(Port('req',  addr_width, 'in', False))
+
+    def accessor(self, inst_name=''):
+        return RAMBridgeAccessor(self, inst_name)
+
+    def regs(self):
+        return []
+
+    def nets(self):
+        ports = self.ports[:]
+        return self._flip_direction(ports)
+
+
+class RAMBridgeAccessor(IOAccessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf, inst_name)
+        self.ports = inf.ports[:]
+
+    def port_name(self, port):
+        if self.inst_name:
+            return '{}_{}'.format(self.inst_name, self.inf._port_name(port))
+        else:
+            return self.inf.port_name(port)
+
+    def regs(self):
+        return []
+
+    def nets(self):
+        return self.ports
+
+
+class RAMAccessor(Accessor):
+    def __init__(self, name, data_width, addr_width, is_sink=True):
+        inf = Interface(name, '')
+        super().__init__(inf)
+        self.data_width = data_width
+        self.addr_width = addr_width
+        self.is_sink = is_sink
+        self.ports.append(Port('addr', addr_width, 'in', True))
+        self.ports.append(Port('d',    data_width, 'in', True))
+        self.ports.append(Port('we',   1,          'in', False))
+        self.ports.append(Port('q',    data_width, 'out', True))
+        self.ports.append(Port('len',  addr_width, 'out', False))
+        self.ports.append(Port('req',  1,          'in', False))
+
+    def regs(self):
+        if self.is_sink:
+            return self.inports()
+        else:
+            return []
+
+    def nets(self):
+        if self.is_sink:
+            return self.outports()
+        else:
+            return self.ports
 
 
 class RegArrayInterface(Interface):
-    def __init__(self, name, data_width, length):
-        super().__init__(name, thru=True, is_public=True)
+    def __init__(self, name, owner_name, data_width, length):
+        super().__init__(name, owner_name)
         self.data_width = data_width
         self.length = length
         for i in range(length):
             pname = '{}'.format(i)
             self.ports.append(Port(pname, data_width, 'in', True))
 
-    def accessor(self, name):
-        return RegArrayInterface(name, self.data_width, self.length)
+    def accessor(self, inst_name=''):
+        return RegArrayAccessor(self, inst_name)
 
-    def port_name(self, prefix, port):
-        pfx = prefix + '_' if prefix else ''
-        if self.if_name:
-            if port.name:
-                return pfx + '{}{}'.format(self.if_name, port.name)
-            else:
-                return pfx + self.if_name
-        else:
-            assert port.name
-            return pfx + port.name
+    def port_name(self, port):
+        return '{}_{}{}'.format(self.if_owner_name, self.if_name, port.name)
+
+
+class RegArrayAccessor(IOAccessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf, inst_name)
+        self.ports = inf.ports[:]
+
+    def port_name(self, port):
+        return '{}{}'.format(self.acc_name, port.name)
+
+    def regs(self):
+        return []
+
+    def nets(self):
+        return self.ports
 
 
 def fifo_read_seq(name, step, dst):
@@ -284,12 +380,12 @@ def fifo_write_seq(name, step, src):
 
 class FIFOInterface(Interface):
     def __init__(self, signal):
-        super().__init__(signal.name, False, True)
+        super().__init__(signal.name, '')
         self.signal = signal
         self.data_width = signal.width
         self.max_size = signal.maxsize
 
-    def port_name(self, prefix, port):
+    def port_name(self, port):
         return self._port_name(port)
 
     def read_sequence(self, step, dst):
@@ -301,12 +397,12 @@ class FIFOInterface(Interface):
     def reset_stms(self):
         stms = []
         for p in self.outports():
-            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name('', p)),
+            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
                                   AHDL_CONST(0)))
         return stms
 
 
-class FIFOAccessor(Accessor):
+class FIFOAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
 
@@ -319,7 +415,7 @@ class FIFOAccessor(Accessor):
     def reset_stms(self):
         stms = []
         for p in self.inports():
-            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name('', p)),
+            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
                                   AHDL_CONST(0)))
         return stms
 
@@ -334,10 +430,10 @@ class FIFOModuleInterface(FIFOInterface):
         self.ports.append(Port('read', 1, 'in', False))
         self.ports.append(Port('empty', 1, 'out', False))
 
-    def port_name(self, prefix, port):
+    def port_name(self, port):
         return port.name
 
-    def accessor(self, inst_name):
+    def accessor(self, inst_name=''):
         return FIFOModuleAccessor(self, inst_name)
 
 
@@ -346,7 +442,7 @@ class FIFOModuleAccessor(FIFOAccessor):
         super().__init__(inf, inst_name)
         self.ports = inf.ports[:]
 
-    def port_name(self, prefix, port):
+    def port_name(self, port):
         return '{}_{}'.format(self.acc_name, port.name)
 
 
@@ -357,7 +453,7 @@ class FIFOReadInterface(FIFOInterface):
         self.ports.append(Port('read', 1, 'out', False))
         self.ports.append(Port('empty', 1, 'in', False))
 
-    def accessor(self, inst_name):
+    def accessor(self, inst_name=''):
         return FIFOWriteAccessor(self, inst_name)
 
 
@@ -368,7 +464,7 @@ class FIFOWriteInterface(FIFOInterface):
         self.ports.append(Port('write', 1, 'out', False))
         self.ports.append(Port('full', 1, 'in', False))
 
-    def accessor(self, inst_name):
+    def accessor(self, inst_name=''):
         return FIFOReadAccessor(self, inst_name)
 
 

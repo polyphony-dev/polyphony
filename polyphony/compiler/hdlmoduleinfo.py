@@ -195,7 +195,7 @@ class HDLModuleInfo(object):
 class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):
         super().__init__(None, 'ram', '@top' + '.BidirectionalSinglePortRam')
-        self.ramif = RAMInterface('', data_width, addr_width, is_public=True)
+        self.ramif = RAMModuleInterface('ram', data_width, addr_width)
         self.add_interface('', self.ramif)
         env.add_using_lib(libs.bidirectional_single_port_ram)
 
