@@ -6,7 +6,7 @@ __all__ = [
 
 
 class _DataPort:
-    def __init__(self, init:int=0, width:int=1, protocol:int='none') -> object:
+    def __init__(self, init:int=0, width:int=1, protocol:str='none') -> object:
         pass
 
     def rd(self) -> int:
@@ -21,17 +21,17 @@ class _DataPort:
 
 
 class Bit(_DataPort):
-    def __init__(self, init:int=0, width:int=1, protocol:int='none') -> object:
+    def __init__(self, init:int=0, width:int=1, protocol:str='none') -> object:
         pass
 
 
 class Int(_DataPort):
-    def __init__(self, width:int=32, init:int=0, protocol:int='none') -> object:
+    def __init__(self, width:int=32, init:int=0, protocol:str='none') -> object:
         pass
 
 
 class Uint(_DataPort):
-    def __init__(self, width:uint=32, init:int=0, protocol:int='none') -> object:
+    def __init__(self, width:uint=32, init:int=0, protocol:str='none') -> object:
         pass
 
     def rd(self) -> uint:

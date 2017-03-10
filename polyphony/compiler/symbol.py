@@ -35,7 +35,7 @@ class Symbol(Tagged):
     temp_prefix = '@t'
     param_prefix = '@in'
 
-    def __init__(self, name, scope, tags, typ=Type.none_t):
+    def __init__(self, name, scope, tags, typ=Type.undef_t):
         super().__init__(tags)
         self.id = len(Symbol.all_symbols)
         self.name = name

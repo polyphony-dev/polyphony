@@ -128,6 +128,23 @@ class FunctionVisitor(ast.NodeVisitor):
         self.current_scope = outer_scope
 
     def visit_FunctionDef(self, node):
+        def _make_param_symbol(arg, is_vararg=False):
+            param_in = self.current_scope.add_param_sym(arg.arg)
+            param_copy = self.current_scope.add_sym(arg.arg)
+            if arg.annotation:
+                ann = self.annotation_visitor.visit(arg.annotation)
+                param_t = Type.from_annotation(ann, self.current_scope.parent)
+                if not param_t:
+                    print(error_info(self.current_scope, node.lineno))
+                    raise TypeError("Unknown type is specified.")
+            else:
+                param_t = Type.int()
+            param_in.set_type(param_t)
+            param_copy.set_type(param_t)
+            if is_vararg:
+                param_t.set_vararg(True)
+            return param_in, param_copy
+
         if node.name.startswith(IGNORE_PREFIX):
             return
 
@@ -161,20 +178,10 @@ class FunctionVisitor(ast.NodeVisitor):
         self.current_scope = Scope.create(outer_scope, node.name, tags, node.lineno)
 
         for arg in node.args.args:
-            param_in = self.current_scope.add_param_sym(arg.arg)
-            param_copy = self.current_scope.add_sym(arg.arg)
-            if arg.annotation:
-                ann = self.annotation_visitor.visit(arg.annotation)
-                t = Type.from_annotation(ann, self.current_scope.parent)
-                if t:
-                    param_in.typ = param_copy.typ = t
-                else:
-                    print(error_info(self.current_scope, node.lineno))
-                    raise TypeError("Unknown type is specified.")
-            else:
-                param_t = Type.int()
-                param_in.set_type(param_t)
-                param_copy.set_type(param_t)
+            param_in, param_copy = _make_param_symbol(arg)
+            self.current_scope.add_param(param_in, param_copy, None)
+        if node.args.vararg:
+            param_in, param_copy = _make_param_symbol(node.args.vararg, is_vararg=True)
             self.current_scope.add_param(param_in, param_copy, None)
         if node.returns:
             ann = self.annotation_visitor.visit(node.returns)

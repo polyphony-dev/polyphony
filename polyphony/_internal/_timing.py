@@ -8,7 +8,7 @@ __all__ = [
 ]
 
 
-def clksleep(clk_cycles) -> None:
+def clksleep(clk_cycles:int) -> None:
     pass
 
 
@@ -17,17 +17,17 @@ def clkfence():
     clksleep(0)
 
 
-def wait_edge(old, new, *ports) -> None:
+def wait_edge(old:int, new:int, *ports:polyphony.io._DataPort) -> None:
     pass
 
 
-def wait_rising(*ports) -> None:
+def wait_rising(*ports:polyphony.io.Bit) -> None:
     pass
 
 
-def wait_falling(*ports) -> None:
+def wait_falling(*ports:polyphony.io.Bit) -> None:
     pass
 
 
-def wait_value(value, *ports) -> None:
+def wait_value(value:int, *ports:polyphony.io._DataPort) -> None:
     pass

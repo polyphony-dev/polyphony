@@ -33,7 +33,7 @@ class TypePropagation(IRVisitor):
                                   with_lib=False)
         for s in scopes:
             if s.return_type is None:
-                s.return_type = Type.none_t
+                s.return_type = Type.undef_t
         prev_untyped = []
         while True:
             untyped = []
@@ -132,7 +132,7 @@ class TypePropagation(IRVisitor):
             params = ir.func_scope.params[:]
         ir.args = self._normalize_args(ir.func_scope.orig_name, params, ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
-        if any([atype.is_none() for atype in arg_types]):
+        if any([atype.is_undef() for atype in arg_types]):
             raise RejectPropagation(str(ir))
 
         ret_t = ir.func_scope.return_type
@@ -208,7 +208,7 @@ class TypePropagation(IRVisitor):
                 type_error(self.current_stm, 'expects list')
         else:
             if not mem_t.is_seq():
-                return Type.none_t
+                return Type.undef_t
         return mem_t.get_element()
 
     def visit_MSTORE(self, ir):
@@ -282,7 +282,7 @@ class TypePropagation(IRVisitor):
 
     def visit_RET(self, ir):
         typ = self.visit(ir.exp)
-        if self.scope.return_type.is_none() and not typ.is_none():
+        if self.scope.return_type.is_undef() and not typ.is_undef():
             self.scope.return_type = typ
 
     def _is_valid_list_type_source(self, src):
@@ -292,7 +292,7 @@ class TypePropagation(IRVisitor):
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
-        if src_typ is Type.none_t:
+        if src_typ is Type.undef_t:
             raise RejectPropagation(str(ir))
         dst_typ = self.visit(ir.dst)
 
@@ -309,7 +309,7 @@ class TypePropagation(IRVisitor):
         elif ir.dst.is_a(MREF):
             self._set_type(ir.dst.mem.symbol(), Type.list(src_typ, None))
         elif ir.dst.is_a(ARRAY):
-            if src_typ.is_none():
+            if src_typ.is_undef():
                 # the type of object has not inferenced yet
                 raise RejectPropagation(str(ir))
             if not src_typ.is_tuple() or not dst_typ.is_tuple():
@@ -328,8 +328,9 @@ class TypePropagation(IRVisitor):
 
     def visit_PHI(self, ir):
         arg_types = [self.visit(arg) for arg in ir.args]
+        # TODO: Union type
         for arg_t in arg_types:
-            if not arg_t.is_none() and not ir.var.symbol().typ.is_freezed():
+            if not arg_t.is_undef() and not ir.var.symbol().typ.is_freezed():
                 self._set_type(ir.var.symbol(), arg_t)
                 break
 
@@ -421,16 +422,14 @@ class TypeChecker(IRVisitor):
             type_error(self.current_stm, '{} is not callable'.format(ir.func.sym.name))
         elif ir.func_scope.is_method():
             param_len = len(ir.func_scope.params) - 1
+            param_typs = tuple(func_sym.typ.get_param_types()[1:])
         else:
             param_len = len(ir.func_scope.params)
+            param_typs = tuple(func_sym.typ.get_param_types())
 
-        self._check_param_number(arg_len, param_len, ir)
-
-        if ir.func_scope.is_method():
-            param_typs = func_sym.typ.get_param_types()[1:]
-        else:
-            param_typs = func_sym.typ.get_param_types()
-        self._check_param_type(param_typs, ir)
+        with_vararg = len(param_typs) and param_typs[-1].has_vararg()
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
+        self._check_param_type(param_typs, ir, with_vararg)
 
         return ir.func_scope.return_type
 
@@ -441,6 +440,14 @@ class TypeChecker(IRVisitor):
             _, mem = ir.args[0]
             if not mem.is_a([TEMP, ATTR]) or not mem.symbol().typ.is_seq():
                 type_error(self.current_stm, 'len() takes sequence type argument')
+        elif ir.name in env.all_scopes:
+            scope = env.all_scopes[ir.name]
+            arg_len = len(ir.args)
+            param_len = len(scope.params)
+            param_typs = tuple([sym.typ for sym, _, _ in scope.params])
+            with_vararg = len(param_typs) and param_typs[-1].has_vararg()
+            self._check_param_number(arg_len, param_len, ir, ir.name, with_vararg)
+            self._check_param_type(param_typs, ir, with_vararg)
         else:
             for _, arg in ir.args:
                 self.visit(arg)
@@ -455,10 +462,10 @@ class TypeChecker(IRVisitor):
                        '{}() takes 0 positional arguments but {} were given'.
                        format(ir.func_scope.orig_name, arg_len))
         param_len = len(ctor.params) - 1
-        self._check_param_number(arg_len, param_len, ir)
-
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
-        self._check_param_type(param_typs, ir)
+        with_vararg = len(param_typs) and param_typs[-1].has_vararg()
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
+        self._check_param_type(param_typs, ir, with_vararg)
 
         if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
             type_error(self.current_stm,
@@ -506,7 +513,7 @@ class TypeChecker(IRVisitor):
             type_error(self.current_stm, 'type missmatch')
         exp_t = self.visit(ir.exp)
         elem_t = mem_t.get_element()
-        if not Type.is_commutable(exp_t, elem_t):
+        if not Type.can_overwrite(elem_t, exp_t):
             type_error(self.current_stm,
                        'assignment type missmatch {} {}'.format(exp_t, elem_t))
         return mem_t
@@ -516,7 +523,7 @@ class TypeChecker(IRVisitor):
             item_type = self.visit(item)
             if not item_type.is_int():
                 type_error(self.current_stm,
-                           'sequence item must be integer {}'.format(item_type[0]))
+                           'sequence item must be integer {}'.format(item_type))
         if ir.is_mutable:
             return Type.list(Type.int(), None)
         else:
@@ -548,14 +555,14 @@ class TypeChecker(IRVisitor):
 
     def visit_RET(self, ir):
         exp_t = self.visit(ir.exp)
-        if not Type.is_commutable(exp_t, self.scope.return_type):
+        if not Type.can_overwrite(self.scope.return_type, exp_t):
             type_error(ir, 'function return type is not missmatch')
 
     def visit_MOVE(self, ir):
         src_t = self.visit(ir.src)
         dst_t = self.visit(ir.dst)
 
-        if not Type.is_commutable(dst_t, src_t):
+        if not Type.can_overwrite(dst_t, src_t):
             type_error(ir, 'assignment type missmatch {} {}'.format(src_t, dst_t))
 
     def visit_PHI(self, ir):
@@ -564,25 +571,29 @@ class TypeChecker(IRVisitor):
         #assert all([arg is None or arg.symbol().typ is not None for arg, blk in ir.args])
         pass
 
-    def _check_param_number(self, arg_len, param_len, ir):
+    def _check_param_number(self, arg_len, param_len, ir, scope_name, with_vararg=False):
         if arg_len == param_len:
             pass
         elif arg_len < param_len:
             type_error(self.current_stm,
-                       "{}() missing required argument: '{}'".
-                       format(ir.func_scope.orig_name, param.sym.name))
-        else:
+                       "{}() missing required argument".
+                       format(scope_name))
+        elif not with_vararg:
             type_error(self.current_stm,
                        '{}() takes {} positional arguments but {} were given'.
-                       format(ir.func_scope.orig_name, param_len, arg_len))
+                       format(scope_name, param_len, arg_len))
 
-    def _check_param_type(self, param_typs, ir):
+    def _check_param_type(self, param_typs, ir, with_vararg=False):
+        if with_vararg:
+            if len(ir.args) > len(param_typs):
+                tails = tuple([param_typs[-1]] * (len(ir.args) - len(param_typs)))
+                param_typs = param_typs + tails
         assert len(ir.args) == len(param_typs)
         for (name, arg), param_t in zip(ir.args, param_typs):
             arg_t = self.visit(arg)
-            if not Type.is_commutable(arg_t, param_t):
+            if not Type.can_overwrite(param_t, arg_t):
                 type_error(self.current_stm,
-                           'type missmatch "{}" "{}"'.format(arg_t[0], param_t[0]))
+                           'type missmatch "{}" "{}"'.format(param_t, arg_t))
 
 
 class ModuleChecker(IRVisitor):

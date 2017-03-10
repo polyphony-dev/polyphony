@@ -11,6 +11,7 @@ class Env(object):
     def __init__(self):
         self.call_graph = None
         self.scopes = {}
+        self.all_scopes = {}
         self.dev_debug_mode = False
         self.hdl_debug_mode = False
         self.compile_phase = 0
@@ -31,6 +32,7 @@ class Env(object):
     def append_scope(self, scope):
         self.scope_file_map[scope] = self.current_filename
         self.scopes[scope.name] = scope
+        self.all_scopes[scope.name] = scope
         if self.dev_debug_mode and not scope.is_lib():
             logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@', ''), 'w')
             self.logfiles[scope] = logfile

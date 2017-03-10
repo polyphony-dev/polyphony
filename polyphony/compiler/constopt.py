@@ -311,7 +311,8 @@ class ConstantOpt(ConstantOptBase):
             source = memnode.single_source()
             if source:
                 assert source.initstm
-                return source.initstm.src.items[ir.offset.value]
+                items = source.initstm.src.items * source.initstm.src.repeat.value
+                return items[ir.offset.value]
         return ir
 
     def visit_TEMP(self, ir):

@@ -1,4 +1,6 @@
-﻿class Type(object):
+﻿from .env import env
+
+class Type(object):
     DEFAULT_INT_WIDTH = 32
 
     def __init__(self, name, **attrs):
@@ -27,17 +29,25 @@
     def from_annotation(cls, ann, scope):
         if isinstance(ann, str):
             if ann == 'int':
-                return Type.int()
+                t = Type.int()
+                t.freeze()
             elif ann == 'uint':
-                return Type.int(signed=False)
+                t = Type.int(signed=False)
+                t.freeze()
             elif ann == 'bool':
-                return Type.bool_t
+                t = Type.bool_t
             elif ann == 'list':
-                return Type.list(Type.int(), None)
+                t = Type.list(Type.int(), None)
             elif ann == 'tuple':
-                return Type.tuple(Type.int(), None, 0)
+                t = Type.tuple(Type.int(), None, 0)
             elif ann == 'object':
-                return Type.object(None)
+                t = Type.object(None)
+            elif ann == 'str':
+                t = Type.str_t
+            elif ann in env.all_scopes:
+                t = Type.object(env.all_scopes[ann])
+                t.freeze()
+            return t
         elif isinstance(ann, tuple):
             qnames = ann[0].split('.')
             args = ann[1]
@@ -60,8 +70,8 @@
                 p = Type.port(target, attrs)
                 return p
         elif ann is None:
-            return Type.none_t
-        return None
+            return Type.undef_t
+        assert False
 
     def __str__(self):
         return self.name
@@ -127,6 +137,32 @@
         return t0.name == t1.name
 
     @classmethod
+    def can_overwrite(cls, to_t, from_t):
+        if to_t is from_t:
+            return True
+        if to_t.is_int() and from_t.is_int():
+            return True
+        if to_t.is_int() and from_t.is_bool():
+            return True
+        if to_t.is_list() and from_t.is_list():
+            return True
+        if to_t.is_tuple() and from_t.is_tuple():
+            return True
+        if to_t.is_object() and from_t.is_object():
+            to_scope = to_t.get_scope()
+            from_scope = from_t.get_scope()
+            if to_scope is from_scope:
+                return True
+            elif from_scope.is_subclassof(to_scope):
+                return True
+            return False
+        if to_t.is_object() and from_t.is_port() and to_t.get_scope() is from_t.get_scope():
+            return True
+        if to_t == from_t:
+            return True
+        return False
+
+    @classmethod
     def is_commutable(cls, t0, t1):
         if t0 is t1:
             return True
@@ -158,6 +194,7 @@
         return Type(self.name, **self.attrs)
 
 
-Type.bool_t = Type('bool', width=1)
-Type.str_t = Type('str')
-Type.none_t = Type('none')
+Type.bool_t = Type('bool', width=1, freezed=True)
+Type.str_t = Type('str', freezed=True)
+Type.none_t = Type('none', freezed=True)
+Type.undef_t = Type('undef')
