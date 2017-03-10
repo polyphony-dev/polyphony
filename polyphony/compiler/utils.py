@@ -8,6 +8,15 @@
         return isinstance(inst, cls)
 
 
+def find_only_one_in(typ, seq):
+    it = None
+    for item in seq:
+        if item.is_a(typ):
+            assert it is None
+            it = item
+    return it
+
+
 def replace_item(lst, old, new):
     if isinstance(old, list) or isinstance(old, tuple):
         for o in old:

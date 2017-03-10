@@ -39,6 +39,7 @@ from .ahdlusedef import AHDLUseDefDetector
 from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
 from .bitwidth import BitwidthReducer
+from .iotransformer import IOTransformer
 import logging
 logger = logging.getLogger()
 
@@ -229,6 +230,10 @@ def reducestate(driver, scope):
     StateReducer().process(scope)
 
 
+def transformio(driver, scope):
+    IOTransformer().process(scope)
+
+
 def reducereg(driver, scope):
     RegReducer().process(scope)
 
@@ -386,6 +391,9 @@ def compile_plan():
         ahdlopt(ahdlusedef),
         ahdlopt(reducebits),
         #ahdlopt(reducereg),
+        dbg(dumpmodule),
+        transformio,
+        dbg(dumpmodule),
         reducestate,
         dbg(dumpmodule),
         genhdl,

@@ -68,24 +68,6 @@ class State(object):
             self.codes.pop()
         return next_state
 
-    def merge_wait_function(self, id):
-        wait_func = None
-        for code in self.codes:
-            if code.is_a(AHDL_META_WAIT) and code.metaid == id:
-                assert wait_func is None
-                wait_func = code
-        if not wait_func:
-            return
-        next_state_codes = wait_func.transition.target.codes
-        if next_state_codes[-1].is_a(AHDL_META_WAIT):
-            return
-        if wait_func.codes:
-            wait_func.codes.extend(wait_func.transition.target.codes)
-        else:
-            wait_func.codes = wait_func.transition.target.codes
-        wait_func.transition.target.codes = []
-        wait_func.transition = None
-
 
 class STG(object):
     "State Transition Graph"
@@ -166,11 +148,6 @@ class STGBuilder(object):
         for stg in stgs[1:]:
             functools.reduce(lambda s1, s2: s1.resolve_transition(s2), stg.states)
             stg.states[-1].resolve_transition(stg.states[0])
-
-        for stg in stgs:
-            for state in stg.states:
-                state.merge_wait_function('WAIT_EDGE')
-                state.merge_wait_function('WAIT_VALUE')
 
         scope.stgs = stgs
 
@@ -945,103 +922,34 @@ class AHDLTranslator(object):
     def _make_port_access(self, call, target, node):
         assert call.func.is_a(ATTR)
         port_qsym = call.func.qualified_symbol()[:-1]
-        #port_sym = port_qsym[-1]
         port_sig = self._port_sig(port_qsym)
 
         if call.func_scope.orig_name == 'wr':
-            if port_sig.is_single_port():
-                self._make_single_port_write(call, port_sig, node)
-            elif port_sig.is_fifo_port():
-                self._make_fifo_port_write(call, port_sig, node)
+            self._make_port_write_seq(call, port_sig, node)
         elif call.func_scope.orig_name == 'rd':
-            if port_sig.is_single_port():
-                self._make_single_port_read(target, port_sig, node)
-            elif port_sig.is_fifo_port():
-                self._make_fifo_port_read(target, port_sig, node)
+            self._make_port_read_seq(target, port_sig, node)
         else:
             assert False
 
-    def _make_single_port_write(self, call, port_sig, node):
+    def _make_port_write_seq(self, call, port_sig, node):
         assert call.args
         _, val = call.args[0]
         src = self.visit(val, node)
-        self._emit(AHDL_MOVE(AHDL_VAR(port_sig, Ctx.STORE), src), self.sched_time)
-        # makes the port as 'valid'
-        if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():
-            valid_sig = port_sig.valid
-            self._emit(AHDL_MOVE(AHDL_VAR(valid_sig, Ctx.STORE),
-                                 AHDL_CONST(1)),
-                       self.sched_time)
-            self._emit(AHDL_MOVE(AHDL_VAR(valid_sig, Ctx.STORE),
-                                 AHDL_CONST(0)),
-                       self.sched_time + 1)
-        # blocking if the port is not 'ready'
-        if port_sig.is_ready_valid_protocol():
-            ready_sig = port_sig.ready
-            ports = [AHDL_VAR(ready_sig, Ctx.LOAD)]
-            self._emit(AHDL_META_WAIT('WAIT_VALUE',
-                                      AHDL_CONST(1),
-                                      *ports),
-                       self.sched_time)
-
-    def _make_fifo_port_write(self, call, port_sig, node):
-        assert call.args
-        sched_time = self.sched_time
-        _, val = call.args[0]
-        src = self.visit(val, node)
-        ports = [AHDL_SYMBOL(port_sig.name + '_full')]
-        self._emit(AHDL_META_WAIT('WAIT_VALUE',
-                                  AHDL_CONST(0),
-                                  *ports),
-                   sched_time)
-        sched_time += 1
         iow = AHDL_IO_WRITE(AHDL_VAR(port_sig, Ctx.STORE),
                             src,
                             port_sig.is_output())
-        for i in range(node.latency() - 1):  # -1 means for the above WAIT_VALUE
-            self._emit(AHDL_SEQ(iow, i), sched_time + i)
+        for i in range(node.latency()):
+            self._emit(AHDL_SEQ(iow, i), self.sched_time + i)
+        return
 
-    def _make_single_port_read(self, target, port_sig, node):
+    def _make_port_read_seq(self, target, port_sig, node):
         assert target
         dst = self.visit(target, node)
-        sched_time = self.sched_time
-        # blocking if the port is not 'valid'
-        if port_sig.is_valid_protocol() or port_sig.is_ready_valid_protocol():
-            valid_sig = port_sig.valid
-            ports = [AHDL_VAR(valid_sig, Ctx.LOAD)]
-            self._emit(AHDL_META_WAIT('WAIT_VALUE',
-                                      AHDL_CONST(1),
-                                      *ports),
-                       sched_time)
-            sched_time += 1
-        # Note that reading from the port is in the next scheduling time of the wait function
-        # However, in fact reading is doing on the same time of the wait function by merging process
-        self._emit(AHDL_MOVE(dst, AHDL_VAR(port_sig, Ctx.LOAD)), sched_time)
-        # makes the port as 'ready'
-        if port_sig.is_ready_valid_protocol():
-            ready_sig = port_sig.ready
-            self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
-                                 AHDL_CONST(1)),
-                       sched_time)
-            self._emit(AHDL_MOVE(AHDL_VAR(ready_sig, Ctx.STORE),
-                                 AHDL_CONST(0)),
-                       sched_time + 1)
-
-    def _make_fifo_port_read(self, target, port_sig, node):
-        assert target
-        sched_time = self.sched_time
-        dst = self.visit(target, node)
-        ports = [AHDL_SYMBOL(port_sig.name + '_empty')]
-        self._emit(AHDL_META_WAIT('WAIT_VALUE',
-                                  AHDL_CONST(0),
-                                  *ports),
-                   sched_time)
-        sched_time += 1
         ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
                            dst,
                            port_sig.is_input())
-        for i in range(node.latency() - 1):  # -1 means for the above WAIT_VALUE
-            self._emit(AHDL_SEQ(ior, i), sched_time + i)
+        for i in range(node.latency()):
+            self._emit(AHDL_SEQ(ior, i), self.sched_time + i)
 
     def _make_port_init(self, new, target, node):
         assert new.func_scope.is_port()

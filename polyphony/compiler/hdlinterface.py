@@ -101,6 +101,46 @@ class IOAccessor(Accessor):
         else:
             return self.inf.port_name(port)
 
+def single_read_seq(signal, name, step, dst):
+    # blocking if the port is not 'valid'
+    if signal.is_valid_protocol() or signal.is_ready_valid_protocol():
+        if step == 0:
+            ports = [AHDL_SYMBOL(name + '_valid')]
+            return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports), )
+        elif step == 1:
+            # Note that reading from the port is in the next scheduling time of the wait function
+            # However, in fact reading is doing on the same time of the wait function by merging process
+            if signal.is_ready_valid_protocol():
+                return (AHDL_MOVE(AHDL_SYMBOL(name + '_ready'), AHDL_CONST(1)),
+                        AHDL_MOVE(dst, AHDL_SYMBOL(name)))
+            else:
+                return (AHDL_MOVE(dst, AHDL_SYMBOL(name)), )
+        elif step == 2:
+            assert signal.is_ready_valid_protocol()
+            return (AHDL_MOVE(AHDL_SYMBOL(name + '_ready'),
+                              AHDL_CONST(0)), )
+    else:
+        if step == 0:
+            return (AHDL_MOVE(dst, AHDL_SYMBOL(name)), )
+
+
+def single_write_seq(signal, name, step, src):
+    if signal.is_valid_protocol() or signal.is_ready_valid_protocol():
+        if step == 0:
+            if signal.is_ready_valid_protocol():
+                ports = [AHDL_SYMBOL(name + '_ready')]
+                return (AHDL_MOVE(AHDL_SYMBOL(name), src),
+                        AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(1)),
+                        AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
+            else:
+                return (AHDL_MOVE(AHDL_SYMBOL(name), src),
+                        AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(1)))
+        elif step == 1:
+            return (AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(0)), )
+    else:
+        if step == 0:
+            return (AHDL_MOVE(AHDL_SYMBOL(name), src), )
+
 
 class SinglePortInterface(Interface):
     def __init__(self, signal):
@@ -137,6 +177,9 @@ class SingleReadInterface(SinglePortInterface):
                                   AHDL_CONST(0)))
         return stms
 
+    def read_sequence(self, step, dst):
+        return single_read_seq(self.signal, self.if_name, step, dst)
+
 
 class SingleWriteInterface(SinglePortInterface):
     def __init__(self, signal):
@@ -167,6 +210,9 @@ class SingleWriteInterface(SinglePortInterface):
                                   AHDL_CONST(0)))
         return stms
 
+    def write_sequence(self, step, src):
+        return single_write_seq(self.signal, self.if_name, step, src)
+
 
 class SingleReadAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
@@ -180,6 +226,9 @@ class SingleReadAccessor(IOAccessor):
             stms.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_ready'),
                                   AHDL_CONST(0)))
         return stms
+
+    def read_sequence(self, step, dst):
+        return single_read_seq(self.inf.signal, self.acc_name, step, dst)
 
 
 class SingleWriteAccessor(IOAccessor):
@@ -200,6 +249,9 @@ class SingleWriteAccessor(IOAccessor):
             stms.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_valid'),
                                   AHDL_CONST(0)))
         return stms
+
+    def write_sequence(self, step, src):
+        return single_write_seq(self.inf.signal, self.acc_name, step, src)
 
 
 class FunctionInterface(Interface):
@@ -358,9 +410,12 @@ class RegArrayAccessor(IOAccessor):
 
 def fifo_read_seq(name, step, dst):
     if step == 0:
+        ports = [AHDL_SYMBOL(name + '_empty')]
+        return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(0), *ports), )
+    elif step == 1:
         q_read = AHDL_SYMBOL(name + '_read')
         return (AHDL_MOVE(q_read, AHDL_CONST(1)), )
-    elif step == 1:
+    elif step == 2:
         q_read = AHDL_SYMBOL(name + '_read')
         q_dout = AHDL_SYMBOL(name + '_dout')
         return (AHDL_MOVE(q_read, AHDL_CONST(0)),
@@ -369,11 +424,14 @@ def fifo_read_seq(name, step, dst):
 
 def fifo_write_seq(name, step, src):
     if step == 0:
+        ports = [AHDL_SYMBOL(name + '_full')]
+        return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(0), *ports), )
+    elif step == 1:
         q_write = AHDL_SYMBOL(name + '_write')
         q_din = AHDL_SYMBOL(name + '_din')
         return (AHDL_MOVE(q_write, AHDL_CONST(1)),
                 AHDL_MOVE(q_din, src))
-    elif step == 1:
+    elif step == 2:
         q_write = AHDL_SYMBOL(name + '_write')
         return (AHDL_MOVE(q_write, AHDL_CONST(0)), )
 
