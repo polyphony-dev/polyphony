@@ -551,6 +551,8 @@ class MemRefGraph(object):
             new_nodes.append(new_node)
             node_map[node] = new_node
         for new_node in new_nodes:
+            if new_node.initstm:
+                new_node.initstm = new.clone_stms[new_node.initstm]
             self.add_node(new_node)
             succs = new_node.succs[:]
             new_node.succs = []
@@ -562,7 +564,7 @@ class MemRefGraph(object):
             for pred in preds:
                 new_pred = node_map[pred]
                 self.add_edge(new_pred, new_node)
-
+        return node_map
 
 class MemRefGraphBuilder(IRVisitor):
     def __init__(self):

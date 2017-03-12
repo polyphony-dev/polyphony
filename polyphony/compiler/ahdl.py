@@ -554,3 +554,6 @@ class AHDL_TRANSITION(AHDL_STM):
 class AHDL_TRANSITION_IF(AHDL_IF):
     def __init__(self, conds, codes_list):
         super().__init__(conds, codes_list)
+
+    def __repr__(self):
+        return 'AHDL_TRANSITION_IF({}, {})'.format(repr(self.conds), repr(self.codes_list))

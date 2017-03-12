@@ -164,9 +164,8 @@ def instantiate(driver):
 
         assert worker.is_worker()
         ConstantOpt().process(worker)
-
     callgraph(driver)
-
+    detectrom(driver)
 
 def specfunc(driver):
     new_scopes, unused_scopes = SpecializedFunctionMaker().process_all()

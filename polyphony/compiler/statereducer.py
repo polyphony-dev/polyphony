@@ -8,7 +8,8 @@ class StateReducer(object):
     def process(self, scope):
         if not scope.stgs:
             return
-        WaitReducer().process(scope)
+        WaitForwarder().process(scope)
+        IfForwarder().process(scope)
         graph = StateGraphBuilder().process(scope)
         self._remove_unreached_state(scope, graph)
 
@@ -30,7 +31,6 @@ class StateGraphBuilder(AHDLVisitor):
         if state in visited:
             return
         visited.add(state)
-
         self.next_states = []
         for code in state.codes:
             self.visit(code)
@@ -52,13 +52,16 @@ class StateGraphBuilder(AHDLVisitor):
         self.next_states.append(ahdl.target)
 
 
-class WaitReducer(AHDLVisitor):
+class WaitForwarder(AHDLVisitor):
     def process(self, scope):
         for stg in scope.stgs:
             for state in stg.states:
                 wait = find_only_one_in(AHDL_META_WAIT, state.codes)
                 if wait:
                     self.merge_wait_function(wait)
+                else:
+                    for code in state.codes:
+                        self.visit(code)
 
     def merge_wait_function(self, wait_func):
         next_state_codes = wait_func.transition.target.codes
@@ -71,3 +74,23 @@ class WaitReducer(AHDLVisitor):
         wait_func.transition.target.codes = []
         wait_func.transition = None
 
+    def visit_AHDL_TRANSITION_IF(self, ahdl):
+        for codes in ahdl.codes_list:
+            wait = find_only_one_in(AHDL_META_WAIT, codes)
+            if wait:
+                self.merge_wait_function(wait)
+
+
+class IfForwarder(AHDLVisitor):
+    def process(self, scope):
+        for stg in scope.stgs:
+            for state in stg.states:
+                for code in state.codes:
+                    self.visit(code)
+
+    def visit_AHDL_TRANSITION_IF(self, ahdl):
+        for i, codes in enumerate(ahdl.codes_list):
+            assert len(codes) == 1
+            transition = codes[0]
+            assert transition.is_a(AHDL_TRANSITION)
+            ahdl.codes_list[i] = transition.target.codes[:]

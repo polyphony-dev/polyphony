@@ -92,8 +92,22 @@ class WorkerInstantiator(object):
 
     def _instantiate_memnode(self, orig_worker, new_worker):
         mrg = env.memref_graph
-        mrg.clone_subgraph(orig_worker, new_worker)
+        node_map = mrg.clone_subgraph(orig_worker, new_worker)
+        MemnodeReplacer(node_map).process(new_worker)
 
+
+class MemnodeReplacer(IRVisitor):
+    def __init__(self, node_map):
+        self.node_map = node_map
+        self.replaced = set()
+
+    def visit_TEMP(self, ir):
+        typ = ir.symbol().typ
+        if typ.is_seq() and typ not in self.replaced:
+            memnode = typ.get_memnode()
+            new_memnode = self.node_map[memnode]
+            typ.set_memnode(new_memnode)
+            self.replaced.add(typ)
 
 class ModuleInstantiator(object):
     def process_all(self):

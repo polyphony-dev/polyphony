@@ -47,11 +47,12 @@ class State(object):
             transition = code
         elif code.is_a(AHDL_TRANSITION_IF):
             for i, codes in enumerate(code.codes_list):
-                transition = codes[-1]
+                assert len(codes) == 1
+                transition = codes[0]
                 assert transition.is_a(AHDL_TRANSITION)
                 assert isinstance(transition.target, Block)
                 target_state = self.stg.scope.blk2state[transition.target][0]
-                code.codes_list[i] = target_state.codes[:]
+                transition.target = target_state
             transition = code
         else:
             transition = None

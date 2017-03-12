@@ -482,22 +482,6 @@ class VerilogCodeGen(AHDLVisitor):
         elif step == 2:
             self.visit_POST_AHDL_LOAD(ahdl)
 
-    def visit_AHDL_IO_READ_SEQ(self, ahdl, step):
-        if ahdl.is_self:
-            io = self.module_info.interfaces[ahdl.io.sig.name]
-        else:
-            io = self.module_info.accessors[ahdl.io.sig.name]
-        for seq in io.read_sequence(step, ahdl.dst):
-            self.visit(seq)
-
-    def visit_AHDL_IO_WRITE_SEQ(self, ahdl, step):
-        if ahdl.is_self:
-            io = self.module_info.interfaces[ahdl.io.sig.name]
-        else:
-            io = self.module_info.accessors[ahdl.io.sig.name]
-        for seq in io.write_sequence(step, ahdl.src):
-            self.visit(seq)
-
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
