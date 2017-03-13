@@ -41,7 +41,8 @@ class HDLMemPortMaker(object):
             memnode = node
             name = node.name()
             is_sink = True
-        acc = RAMAccessor(name, memnode.width, memnode.addr_width(), is_sink)
+        sig = self.scope.gen_sig(name, memnode.width)
+        acc = RAMAccessor(sig, memnode.width, memnode.addr_width(), is_sink)
         self.mrg.node2acc[node] = acc
         return acc
 
@@ -100,6 +101,8 @@ class HDLMemPortMaker(object):
                 # add the ram access register and net
                 acc = self._make_ram_accessor(self.memnode)
                 self._add_internal_regs_and_nets(acc)
+                self.module_info.add_local_reader(acc.acc_name, acc)
+                self.module_info.add_local_writer(acc.acc_name, acc)
             else:
                 assert False
         elif isinstance(self.memnode, N2OneMemNode):

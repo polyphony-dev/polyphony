@@ -577,7 +577,7 @@ class AHDLTranslator(object):
                     self.host.emit_memstore_sequence(ahdl, sched_time)
                     sched_time += 1
         else:
-            sig = self.scope.gen_sig(array.sym.hdl_name(), 1)
+            sig = self.scope.gen_sig(array.sym.hdl_name(), 1, {'memif'})
             for i, item in enumerate(array.items):
                 idx = AHDL_CONST(i)
                 memvar = AHDL_MEMVAR(sig, array.sym.typ.get_memnode(), Ctx.STORE)

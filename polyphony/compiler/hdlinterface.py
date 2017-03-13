@@ -28,6 +28,7 @@ class Interface(InterfaceBase):
         self.if_name = if_name
         self.if_owner_name = if_owner_name
         self.ports = []
+        self.signal = None
 
     def __lt__(self, other):
         return self.if_name < other.if_name
@@ -100,6 +101,7 @@ class IOAccessor(Accessor):
             return '{}_{}'.format(self.inst_name, self.inf.port_name(port))
         else:
             return self.inf.port_name(port)
+
 
 def single_read_seq(signal, name, step, dst):
     # blocking if the port is not 'valid'
@@ -351,8 +353,9 @@ class RAMBridgeAccessor(IOAccessor):
 
 
 class RAMAccessor(Accessor):
-    def __init__(self, name, data_width, addr_width, is_sink=True):
-        inf = Interface(name, '')
+    def __init__(self, signal, data_width, addr_width, is_sink=True):
+        inf = Interface(signal.name, '')
+        inf.signal = signal
         super().__init__(inf)
         self.data_width = data_width
         self.addr_width = addr_width
@@ -375,6 +378,41 @@ class RAMAccessor(Accessor):
             return self.outports()
         else:
             return self.ports
+
+    def reset_stms(self):
+        stms = []
+        for p in self.inports():
+            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
+                                  AHDL_CONST(0)))
+        return stms
+
+    def read_sequence(self, step, offset, dst, is_continuous):
+        name = self.acc_name
+        if step == 0:
+            return (AHDL_MOVE(AHDL_SYMBOL(name + '_addr'), offset),
+                    AHDL_MOVE(AHDL_SYMBOL(name + '_we'), AHDL_CONST(0)),
+                    AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(1)))
+        elif step == 1:
+            return (AHDL_NOP('wait for output of {}'.format(name)), )
+        elif step == 2:
+            if is_continuous:
+                return (AHDL_MOVE(dst, AHDL_SYMBOL(name + '_q')), )
+            else:
+                return (AHDL_MOVE(dst, AHDL_SYMBOL(name + '_q')),
+                        AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(0)))
+
+    def write_sequence(self, step, offset, src, is_continuous):
+        name = self.acc_name
+        if step == 0:
+            return (AHDL_MOVE(AHDL_SYMBOL(name + '_addr'), offset),
+                    AHDL_MOVE(AHDL_SYMBOL(name + '_we'), AHDL_CONST(1)),
+                    AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(1)),
+                    AHDL_MOVE(AHDL_SYMBOL(name + '_d'), src))
+        elif step == 1:
+            if is_continuous:
+                return tuple()
+            else:
+                return (AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(0)), )
 
 
 class RegArrayInterface(Interface):

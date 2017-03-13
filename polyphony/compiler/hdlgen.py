@@ -243,12 +243,39 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_submodules(scope)
         self._add_roms(scope)
         self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
-        for d in defs:
-            if d.is_reg():
-                clear_var = AHDL_MOVE(AHDL_VAR(d, Ctx.STORE), AHDL_CONST(0))
-                self.module_info.add_fsm_reset_stm(scope.orig_name, clear_var)
 
         self._rename_signal(scope)
+        self._add_reset_stms_for_func(scope, defs, uses, outputs)
+
+    def _add_reset_stms_for_func(self, worker, defs, uses, outputs):
+        for sig in outputs:
+            # reset output ports
+            infs = [inf for inf in self.module_info.interfaces.values() if inf.signal is sig]
+            for inf in infs:
+                for stm in inf.reset_stms():
+                    self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+        for sig in uses:
+            local_accessors = self.module_info.local_readers.values()
+            accs = [acc for acc in local_accessors if acc.inf.signal is sig]
+            for acc in accs:
+                for stm in acc.reset_stms():
+                    self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+        for sig in defs:
+            # reset internal ports
+            if sig.is_memif() and sig not in uses:
+                local_accessors = self.module_info.local_writers.values()
+                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
+                for acc in accs:
+                    for stm in acc.reset_stms():
+                        self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+            # reset internal regs
+            elif sig.is_reg():
+                if sig.is_initializable():
+                    v = AHDL_CONST(sig.init_value)
+                else:
+                    v = AHDL_CONST(0)
+                mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
+                self.module_info.add_fsm_reset_stm(worker.orig_name, mv)
 
 
 def accessor2module(acc):
@@ -454,6 +481,12 @@ class AHDLVarCollector(AHDLVisitor):
 
     def visit_AHDL_CONST(self, ahdl):
         pass
+
+    def visit_AHDL_MEMVAR(self, ahdl):
+        if ahdl.ctx & Ctx.STORE:
+            self.local_defs.add(ahdl.sig)
+        else:
+            self.local_uses.add(ahdl.sig)
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.sig.is_ctrl() or ahdl.sig.name in self.module_constants:

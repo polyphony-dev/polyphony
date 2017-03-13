@@ -34,11 +34,30 @@ class IOTransformer(AHDLVisitor):
             io = self.module_info.local_writers[ahdl.io.sig.name]
         return io.write_sequence(step, ahdl.src)
 
+    def _is_continuous_access_to_mem(self, ahdl):
+        other_memnodes = [c.factor.mem.memnode for c in self.current_parent.codes
+                          if c.is_a([AHDL_SEQ]) and
+                          c.factor.is_a([AHDL_LOAD, AHDL_STORE]) and
+                          c.factor is not ahdl]
+        for memnode in other_memnodes:
+            if memnode is ahdl.mem.memnode:
+                return True
+        return False
+
+    def visit_AHDL_LOAD_SEQ(self, ahdl, step):
+        is_continuous = self._is_continuous_access_to_mem(ahdl)
+        memacc = self.module_info.local_readers[ahdl.mem.sig.name]
+        return memacc.read_sequence(step, ahdl.offset, ahdl.dst, is_continuous)
+
+    def visit_AHDL_STORE_SEQ(self, ahdl, step):
+        is_continuous = self._is_continuous_access_to_mem(ahdl)
+        memacc = self.module_info.local_writers[ahdl.mem.sig.name]
+        return memacc.write_sequence(step, ahdl.offset, ahdl.src, is_continuous)
+
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
-        if not visitor:
-            return
+        assert visitor
         seq = visitor(ahdl.factor, ahdl.step)
         self.current_parent.codes.remove(ahdl)
         meta_wait = find_only_one_in(AHDL_META_WAIT, seq)
