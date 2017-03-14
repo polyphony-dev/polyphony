@@ -248,21 +248,19 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_reset_stms_for_func(scope, defs, uses, outputs)
 
     def _add_reset_stms_for_func(self, worker, defs, uses, outputs):
-        for sig in outputs:
-            # reset output ports
-            infs = [inf for inf in self.module_info.interfaces.values() if inf.signal is sig]
-            for inf in infs:
-                for stm in inf.reset_stms():
-                    self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+        for inf in self.module_info.interfaces.values():
+            for stm in inf.reset_stms():
+                self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
         for sig in uses:
-            local_accessors = self.module_info.local_readers.values()
-            accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-            for acc in accs:
-                for stm in acc.reset_stms():
-                    self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+            if sig not in defs:
+                local_accessors = self.module_info.local_readers.values()
+                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
+                for acc in accs:
+                    for stm in acc.reset_stms():
+                        self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
         for sig in defs:
             # reset internal ports
-            if sig.is_memif() and sig not in uses:
+            if sig.is_memif():
                 local_accessors = self.module_info.local_writers.values()
                 accs = [acc for acc in local_accessors if acc.inf.signal is sig]
                 for acc in accs:

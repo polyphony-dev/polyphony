@@ -792,7 +792,7 @@ class MemRefGraphBuilder(IRVisitor):
         self.visit(ir.dst)
 
         memsym = ir.dst.symbol()
-        if ir.src.is_a(ARRAY):
+        if memsym.typ.is_seq() and self.mrg.node(memsym) is None:
             self.mrg.add_node(MemRefNode(memsym, self.scope))
             memnode = self.mrg.node(memsym)
             elem_t = memsym.typ.get_element()
@@ -801,19 +801,15 @@ class MemRefGraphBuilder(IRVisitor):
             else:
                 mem_t = Type.tuple(elem_t, memnode, memsym.typ.get_length())
             memsym.set_type(mem_t)
-            self._append_edge(ir.src.sym, memsym)
-        elif ir.src.is_a(TEMP) and ir.src.sym.is_param() and ir.src.sym.typ.is_seq():
-            self.mrg.add_node(MemRefNode(memsym, self.scope))
-            memnode = self.mrg.node(memsym)
-            elem_t = memsym.typ.get_element()
-            if memsym.typ.is_list():
-                mem_t = Type.list(elem_t, memnode)
-            else:
-                mem_t = Type.tuple(elem_t, memnode, memsym.typ.get_length())
-            memsym.set_type(mem_t)
-            self._append_edge(ir.src.sym, memsym)
-        elif ir.src.is_a(ATTR) and ir.src.attr.typ.is_seq():
-            assert 0
+            if ir.src.is_a(TEMP):
+                self._append_edge(ir.src.sym, memsym)
+            elif ir.src.is_a(ARRAY):
+                self._append_edge(ir.src.sym, memsym)
+            elif ir.src.is_a(CONDOP):
+                self._append_edge(ir.src.left.symbol(), memsym)
+                self._append_edge(ir.src.right.symbol(), memsym)
+            elif ir.src.is_a(ATTR) and ir.src.attr.typ.is_seq():
+                assert 0
 
     def visit_PHI(self, ir):
         if ir.var.sym.typ.is_seq():

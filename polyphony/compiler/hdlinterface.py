@@ -273,6 +273,13 @@ class FunctionInterface(Interface):
         acc = FunctionAccessor(self, inst_name)
         return acc
 
+    def reset_stms(self):
+        stms = []
+        for p in self.outports():
+            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
+                                  AHDL_CONST(0)))
+        return stms
+
 
 class FunctionAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
@@ -332,6 +339,9 @@ class RAMBridgeInterface(Interface):
     def nets(self):
         ports = self.ports[:]
         return self._flip_direction(ports)
+
+    def reset_stms(self):
+        return []
 
 
 class RAMBridgeAccessor(IOAccessor):
@@ -429,6 +439,9 @@ class RegArrayInterface(Interface):
 
     def port_name(self, port):
         return '{}_{}{}'.format(self.if_owner_name, self.if_name, port.name)
+
+    def reset_stms(self):
+        return []
 
 
 class RegArrayAccessor(IOAccessor):

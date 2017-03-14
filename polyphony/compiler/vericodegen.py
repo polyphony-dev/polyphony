@@ -599,7 +599,7 @@ class VerilogCodeGen(AHDLVisitor):
             self.emit('{} {};'.format(nettype, self._generate_signal(ahdl.sig)))
 
     def visit_AHDL_SIGNAL_ARRAY_DECL(self, ahdl):
-        nettype = 'reg' if ahdl.sig.is_reg() else 'wire'
+        nettype = 'reg' if ahdl.sig.is_regarray() else 'wire'
         if ahdl.sig.width == 1:
             self.emit('{} {}[0:{}];'.format(nettype,
                                             ahdl.sig.name,

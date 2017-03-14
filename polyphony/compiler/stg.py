@@ -564,6 +564,7 @@ class AHDLTranslator(object):
         offset = self.visit(ir.offset, node)
         exp = self.visit(ir.exp, node)
         memvar = self.visit(ir.mem, node)
+        memvar.ctx = Ctx.STORE
         assert memvar.memnode.is_writable()
         return AHDL_STORE(memvar, exp, offset)
 

@@ -94,7 +94,7 @@ class HDLModuleInfo(object):
 
     def add_internal_reg_array(self, sig, size, tag=''):
         assert not sig.is_net()
-        sig.add_tag('reg')
+        sig.add_tag('regarray')
         self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def add_internal_net(self, sig, tag=''):
@@ -104,7 +104,7 @@ class HDLModuleInfo(object):
 
     def add_internal_net_array(self, sig, size, tag=''):
         assert not sig.is_reg()
-        sig.add_tag('net')
+        sig.add_tag('netarray')
         self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def remove_internal_net(self, sig):
@@ -123,7 +123,7 @@ class HDLModuleInfo(object):
             sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
             if not with_array:
                 sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
-            regdecls = [decl for decl in sigdecls if not decl.sig.is_reg()]
+            regdecls = [decl for decl in sigdecls if decl.sig.is_reg()]
             results.append((tag, regdecls))
         return results
 
@@ -133,7 +133,7 @@ class HDLModuleInfo(object):
             sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
             if not with_array:
                 sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
-            netdecls = [decl for decl in sigdecls if not decl.sig.is_net()]
+            netdecls = [decl for decl in sigdecls if decl.sig.is_net()]
             results.append((tag, netdecls))
         return results
 

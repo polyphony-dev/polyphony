@@ -4,6 +4,7 @@ from .common import Tagged
 class Signal(Tagged):
     TAGS = {
         'reg', 'net', 'int', 'condition',
+        'regarray', 'netarray',
         'input', 'output',
         'extport',
         'valid_protocol', 'ready_valid_protocol',

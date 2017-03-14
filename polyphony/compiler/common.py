@@ -79,6 +79,7 @@ class Tagged(object):
             self.tags = self.tags | set(tag)
         else:
             self.tags.add(tag)
+        assert self.tags.issubset(self.TAGS)
 
     def del_tag(self, tag):
         if isinstance(tag, set):

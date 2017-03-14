@@ -251,7 +251,7 @@ class HDLRegArrayPortMaker(object):
             succ = self.memnode.succs[0]
             assert succ.is_sink()
 
-            src_sig = self.scope.gen_sig(self.name, self.width)
+            src_sig = sig
             ref_sig = self.scope.gen_sig(succ.name(), succ.width)
             self.module_info.add_internal_net_array(ref_sig, succ.length)
             src_mem = AHDL_MEMVAR(src_sig, self.memnode, Ctx.LOAD)
