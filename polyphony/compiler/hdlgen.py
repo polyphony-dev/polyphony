@@ -379,7 +379,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             self.module_info.add_accessor(acc.acc_name, acc)
             connections = [(mod.inf, acc)]
             self.module_info.add_sub_module(signal.name, mod, connections, mod.param_map)
-            ports = reader.ports + writer.ports
+            ports = reader.ports.all() + writer.ports.all()
             for p in ports:
                 name = reader.port_name(p)
                 sig = self.module_info.scope.gen_sig(name, p.width)

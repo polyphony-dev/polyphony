@@ -236,7 +236,7 @@ class VerilogCodeGen(AHDLVisitor):
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
             for inf, acc in sorted(connections, key=lambda c: str(c)):
-                for p in inf.ports:
+                for p in inf.ports.all():
                     ports.append(self._to_sub_module_connect(name, inf, acc, p))
 
             self.emit('//{} instance'.format(name))

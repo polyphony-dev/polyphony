@@ -326,11 +326,11 @@ class AHDL_IO_WRITE(AHDL_STM):
 
 
 class AHDL_SEQ(AHDL_STM):
-    def __init__(self, factor, step, maxstep):
+    def __init__(self, factor, step, step_n):
         super().__init__()
         self.factor = factor
         self.step = step
-        self.maxstep = maxstep
+        self.step_n = step_n
 
     def __str__(self):
         return 'Sequence {} : {}'.format(self.step, self.factor)

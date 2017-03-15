@@ -30,14 +30,14 @@ class SelectorBuilder(object):
         tag = name
         src = {}
         sink = {}
-        for p in inif.ports:
+        for p in inif.ports.all():
             port_name = inif.port_name(p)
             src[p.name] = self.scope.gen_sig(port_name, p.width)
-        for p in outif.ports:
+        for p in outif.ports.all():
             port_name = outif.port_name(p)
             sink[p.name] = self.scope.gen_sig(port_name, p.width)
 
-        for p in inif.ports:
+        for p in inif.ports.all():
             port_name = p.name
             if p.dir == 'in':
                 lhs = AHDL_VAR(src[port_name], Ctx.STORE)
@@ -52,12 +52,12 @@ class SelectorBuilder(object):
         tag = name
         trunk = {}
         branches = defaultdict(list)
-        for p in inif.ports:
+        for p in inif.ports.all():
             port_name = inif.port_name(p)
             o2n_in_sig = self.scope.gen_sig(port_name, p.width)
             trunk[p.name] = o2n_in_sig
         for oif in outifs:
-            for p in oif.ports:
+            for p in oif.ports.all():
                 port_name = oif.port_name(p)
                 o2n_out_sig = self.scope.gen_sig(port_name, p.width)
                 branches[p.name].append(o2n_out_sig)
@@ -76,7 +76,7 @@ class SelectorBuilder(object):
 
         switch_var = AHDL_VAR(switch, Ctx.LOAD)
         # make interconnect
-        for p in inif.ports:
+        for p in inif.ports.all():
             port_name = p.name
             if port_name == 'req':
                 reqs = [AHDL_VAR(req, Ctx.LOAD) for req in branches['req']]
@@ -109,10 +109,10 @@ class SelectorBuilder(object):
         tag = name
         trunk = {}
         branches = defaultdict(list)
-        for p in outif.ports:
+        for p in outif.ports.all():
             trunk[p.name] = self.scope.gen_sig(outif.acc_name + '_' + p.name, p.width)
         for iif in inifs:
-            for p in iif.ports:
+            for p in iif.ports.all():
                 n2o_in_sig = self.scope.gen_sig(iif.acc_name + '_' + p.name, p.width)
                 branches[p.name].append(n2o_in_sig)
 
@@ -131,7 +131,7 @@ class SelectorBuilder(object):
 
         switch_var = AHDL_VAR(switch, Ctx.LOAD)
         # make interconnect
-        for p in outif.ports:
+        for p in outif.ports.all():
             port_name = p.name
             if p.dir == 'in':
                 selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name),
@@ -170,7 +170,7 @@ class SelectorBuilder(object):
                 self.emit('always @(posedge clk) begin')
                 self.emit('if (rst==0 && {}!={}) begin'.format(self.current_state_sig.name, 0))
                 for a in accessors:
-                    for p in a.ports:
+                    for p in a.ports.all():
                         aname = a.port_name(p)
                         self.emit('$display("%8d:ACCESSOR :{}      {} = 0x%2h (%1d)", $time, {}, {});'.format(self.scope.orig_name, aname, aname, aname))
                 self.emit('end')

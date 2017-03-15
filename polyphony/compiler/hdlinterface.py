@@ -5,17 +5,27 @@ from .ahdl import *
 Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
 
 
-class InterfaceBase(object):
-    def __str__(self):
-        ports = ', '.join(['<{}:{}:{}>'.format(p.name, p.width, p.dir)
-                           for p in self.ports])
-        return self.if_name + ports
+class Ports(object):
+    def __init__(self):
+        self.ports = []
+        self.cnt = 0
 
-    def _flip_direction(self, ports):
+    def __str__(self):
+        return ', '.join(['<{}:{}:{}>'.format(p.name, p.width, p.dir)
+                          for p in self.ports])
+
+    def __getitem__(self, key):
+        for p in self.ports:
+            if p.name == key:
+                return p
+
+    def append(self, port):
+        self.ports.append(port)
+
+    def flipped(self):
         def flip(d):
             return 'in' if d == 'out' else 'out'
-        ports = [Port(p.name, p.width, flip(p.dir), p.signed) for p in ports]
-        return ports
+        return [Port(p.name, p.width, flip(p.dir), p.signed) for p in self.ports]
 
     def inports(self):
         return [p for p in self.ports if p.dir == 'in']
@@ -23,13 +33,28 @@ class InterfaceBase(object):
     def outports(self):
         return [p for p in self.ports if p.dir == 'out']
 
+    def all(self):
+        return self.ports
 
-class Interface(InterfaceBase):
+    def clone(self):
+        p = Ports()
+        p.ports = self.ports[:]
+        return p
+
+
+def port2ahdl(inf, name):
+    return AHDL_SYMBOL(inf.port_name(inf.ports[name]))
+
+
+class Interface(object):
     def __init__(self, if_name, if_owner_name):
         self.if_name = if_name
         self.if_owner_name = if_owner_name
-        self.ports = []
+        self.ports = Ports()
         self.signal = None
+
+    def __str__(self):
+        return self.if_name + str(self.ports)
 
     def __lt__(self, other):
         return self.if_name < other.if_name
@@ -59,31 +84,29 @@ class Interface(InterfaceBase):
             return port.name
 
     def regs(self):
-        return self.outports()
+        return self.ports.outports()
 
     def nets(self):
-        return self.inports()
+        return self.ports.inports()
 
 
-class Accessor(InterfaceBase):
+class Accessor(object):
     def __init__(self, inf):
         self.acc_name = inf.if_name
         self.inf = inf
-        self.ports = []
+        self.ports = Ports()
 
     def __str__(self):
-        ports = ', '.join(['<{}:{}:{}>'.format(p.name, p.width, p.dir)
-                           for p in self.ports])
-        return self.acc_name + ports
+        return self.acc_name + str(self.ports)
 
     def port_name(self, port):
         return self.inf.port_name(port)
 
     def regs(self):
-        return self.inports()
+        return self.ports.inports()
 
     def nets(self):
-        return self.outports()
+        return self.ports.outports()
 
 
 class IOAccessor(Accessor):
@@ -104,45 +127,53 @@ class IOAccessor(Accessor):
             return self.inf.port_name(port)
 
 
-def single_read_seq(signal, name, step, dst):
+def single_read_seq(inf, signal, step, dst):
     # blocking if the port is not 'valid'
+    data = port2ahdl(inf, '')
     if signal.is_valid_protocol() or signal.is_ready_valid_protocol():
+        valid = port2ahdl(inf, 'valid')
+        if signal.is_ready_valid_protocol():
+            ready = port2ahdl(inf, 'ready')
+
         if step == 0:
-            ports = [AHDL_SYMBOL(name + '_valid')]
+            ports = [valid]
             return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports), )
         elif step == 1:
             # Note that reading from the port is in the next scheduling time of the wait function
             # However, in fact reading is doing on the same time of the wait function by merging process
             if signal.is_ready_valid_protocol():
-                return (AHDL_MOVE(AHDL_SYMBOL(name + '_ready'), AHDL_CONST(1)),
-                        AHDL_MOVE(dst, AHDL_SYMBOL(name)))
+                return (AHDL_MOVE(ready, AHDL_CONST(1)),
+                        AHDL_MOVE(dst, data))
             else:
-                return (AHDL_MOVE(dst, AHDL_SYMBOL(name)), )
+                return (AHDL_MOVE(dst, data), )
         elif step == 2:
             assert signal.is_ready_valid_protocol()
-            return (AHDL_MOVE(AHDL_SYMBOL(name + '_ready'),
-                              AHDL_CONST(0)), )
+            return (AHDL_MOVE(ready, AHDL_CONST(0)), )
     else:
         if step == 0:
-            return (AHDL_MOVE(dst, AHDL_SYMBOL(name)), )
+            return (AHDL_MOVE(dst, data), )
 
 
-def single_write_seq(signal, name, step, src):
+def single_write_seq(inf, signal, step, src):
+    data = port2ahdl(inf, '')
     if signal.is_valid_protocol() or signal.is_ready_valid_protocol():
+        valid = port2ahdl(inf, 'valid')
+        if signal.is_ready_valid_protocol():
+            ready = port2ahdl(inf, 'ready')
         if step == 0:
             if signal.is_ready_valid_protocol():
-                ports = [AHDL_SYMBOL(name + '_ready')]
-                return (AHDL_MOVE(AHDL_SYMBOL(name), src),
-                        AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(1)),
+                ports = [ready]
+                return (AHDL_MOVE(data, src),
+                        AHDL_MOVE(valid, AHDL_CONST(1)),
                         AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
             else:
-                return (AHDL_MOVE(AHDL_SYMBOL(name), src),
-                        AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(1)))
+                return (AHDL_MOVE(data, src),
+                        AHDL_MOVE(valid, AHDL_CONST(1)))
         elif step == 1:
-            return (AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(0)), )
+            return (AHDL_MOVE(valid, AHDL_CONST(0)), )
     else:
         if step == 0:
-            return (AHDL_MOVE(AHDL_SYMBOL(name), src), )
+            return (AHDL_MOVE(data, src), )
 
 
 class SinglePortInterface(Interface):
@@ -173,12 +204,12 @@ class SingleReadInterface(SinglePortInterface):
     def reset_stms(self):
         stms = []
         if self.signal.is_ready_valid_protocol():
-            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.signal.name + '_ready'),
-                                  AHDL_CONST(0)))
+            ready = port2ahdl(self, 'ready')
+            stms.append(AHDL_MOVE(ready, AHDL_CONST(0)))
         return stms
 
     def read_sequence(self, step, dst):
-        return single_read_seq(self.signal, self.if_name, step, dst)
+        return single_read_seq(self, self.signal, step, dst)
 
 
 class SingleWriteInterface(SinglePortInterface):
@@ -209,35 +240,36 @@ class SingleWriteInterface(SinglePortInterface):
         stms.append(AHDL_MOVE(AHDL_SYMBOL(self.signal.name),
                               AHDL_CONST(iv)))
         if self.signal.is_valid_protocol() or self.signal.is_ready_valid_protocol():
-            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.signal.name + '_valid'),
-                                  AHDL_CONST(0)))
+            valid = port2ahdl(self, 'valid')
+            stms.append(AHDL_MOVE(valid, AHDL_CONST(0)))
         return stms
 
     def write_sequence(self, step, src):
-        return single_write_seq(self.signal, self.if_name, step, src)
+        return single_write_seq(self, self.signal, step, src)
 
 
 class SingleReadAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
-        self.ports = inf.ports[:]
+        self.ports = inf.ports.clone()
 
     def reset_stms(self):
         stms = []
         signal = self.inf.signal
+
         if signal.is_ready_valid_protocol():
-            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_ready'),
-                                  AHDL_CONST(0)))
+            ready = port2ahdl(self, 'ready')
+            stms.append(AHDL_MOVE(ready, AHDL_CONST(0)))
         return stms
 
     def read_sequence(self, step, dst):
-        return single_read_seq(self.inf.signal, self.acc_name, step, dst)
+        return single_read_seq(self, self.inf.signal, step, dst)
 
 
 class SingleWriteAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
-        self.ports = inf.ports[:]
+        self.ports = inf.ports.clone()
 
     def reset_stms(self):
         stms = []
@@ -249,12 +281,12 @@ class SingleWriteAccessor(IOAccessor):
         stms.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name),
                               AHDL_CONST(iv)))
         if signal.is_valid_protocol() or signal.is_ready_valid_protocol():
-            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_valid'),
-                                  AHDL_CONST(0)))
+            valid = port2ahdl(self, 'valid')
+            stms.append(AHDL_MOVE(valid, AHDL_CONST(0)))
         return stms
 
     def write_sequence(self, step, src):
-        return single_write_seq(self.inf.signal, self.acc_name, step, src)
+        return single_write_seq(self, self.inf.signal, step, src)
 
 
 class CallInterface(Interface):
@@ -270,22 +302,28 @@ class CallInterface(Interface):
 
     def reset_stms(self):
         stms = []
-        for p in self.outports():
+        for p in self.ports.outports():
             stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
                                   AHDL_CONST(0)))
         return stms
 
     def callee_prolog(self, step, name):
         if step == 0:
-            unset_valid = AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(0))
-            ports = [AHDL_SYMBOL(name + '_ready')]
+            valid = port2ahdl(self, 'valid')
+            ready = port2ahdl(self, 'ready')
+
+            unset_valid = AHDL_MOVE(valid, AHDL_CONST(0))
+            ports = [ready]
             wait_ready = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
             return (unset_valid, wait_ready)
 
     def callee_epilog(self, step, name):
         if step == 0:
-            set_valid = AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(1))
-            ports = [AHDL_SYMBOL(name + '_accept')]
+            valid = port2ahdl(self, 'valid')
+            accept = port2ahdl(self, 'accept')
+
+            set_valid = AHDL_MOVE(valid, AHDL_CONST(1))
+            ports = [accept]
             wait_accept = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
             return (set_valid, wait_accept)
 
@@ -293,7 +331,7 @@ class CallInterface(Interface):
 class CallAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
-        self.ports = inf.ports[:]
+        self.ports = inf.ports.clone()
 
     def port_name(self, port):
         assert self.inst_name
@@ -301,31 +339,35 @@ class CallAccessor(IOAccessor):
 
     def reset_stms(self):
         stms = []
-        for p in self.inports():
+        for p in self.ports.inports():
             stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
                                   AHDL_CONST(0)))
         return stms
 
-    def call_sequence(self, step, maxstep, argaccs, retaccs, ahdl_call, scope):
+    def call_sequence(self, step, step_n, argaccs, retaccs, ahdl_call, scope):
         seq = []
+        valid = port2ahdl(self, 'valid')
+        ready = port2ahdl(self, 'ready')
+        accept = port2ahdl(self, 'accept')
+
         if step == 0:
-            seq = [AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_ready'), AHDL_CONST(1))]
+            seq = [AHDL_MOVE(ready, AHDL_CONST(1))]
             for acc, arg in zip(argaccs, ahdl_call.args):
                 if arg.is_a(AHDL_MEMVAR):
                     continue
                 seq.extend(acc.write_sequence(0, arg))
         elif step == 1:
-            seq = [AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_ready'), AHDL_CONST(0))]
+            seq = [AHDL_MOVE(ready, AHDL_CONST(0))]
 
-        if step == maxstep - 3:
-            ports = [AHDL_SYMBOL(self.acc_name + '_valid')]
+        if step == step_n - 3:
+            ports = [valid]
             seq.append(AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
-        elif step == maxstep - 2:
+        elif step == step_n - 2:
             for acc, ret in zip(retaccs, ahdl_call.returns):
                 seq.extend(acc.read_sequence(0, ret))
-            seq.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_accept'), AHDL_CONST(1)))
-        elif step == maxstep - 1:
-            seq.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_accept'), AHDL_CONST(0)))
+            seq.append(AHDL_MOVE(accept, AHDL_CONST(1)))
+        elif step == step_n - 1:
+            seq.append(AHDL_MOVE(accept, AHDL_CONST(0)))
         return tuple(seq)
 
 
@@ -347,13 +389,13 @@ class RAMModuleInterface(Interface):
 class RAMModuleAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
-        self.ports = inf.ports[:]
+        self.ports = inf.ports.clone()
 
     def regs(self):
         return []
 
     def nets(self):
-        return self.ports
+        return self.ports.all()
 
 
 class RAMBridgeInterface(Interface):
@@ -375,8 +417,7 @@ class RAMBridgeInterface(Interface):
         return []
 
     def nets(self):
-        ports = self.ports[:]
-        return self._flip_direction(ports)
+        return self.ports.flipped()
 
     def reset_stms(self):
         return []
@@ -385,7 +426,7 @@ class RAMBridgeInterface(Interface):
 class RAMBridgeAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
-        self.ports = inf.ports[:]
+        self.ports = inf.ports.clone()
 
     def port_name(self, port):
         if self.inst_name:
@@ -397,7 +438,7 @@ class RAMBridgeAccessor(IOAccessor):
         return []
 
     def nets(self):
-        return self.ports
+        return self.ports.all()
 
     def reset_stms(self):
         return []
@@ -420,50 +461,58 @@ class RAMAccessor(Accessor):
 
     def regs(self):
         if self.is_sink:
-            return self.inports()
+            return self.ports.inports()
         else:
             return []
 
     def nets(self):
         if self.is_sink:
-            return self.outports()
+            return self.ports.outports()
         else:
-            return self.ports
+            return self.ports.all()
 
     def reset_stms(self):
         stms = []
-        for p in self.inports():
+        for p in self.ports.inports():
             stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
                                   AHDL_CONST(0)))
         return stms
 
     def read_sequence(self, step, offset, dst, is_continuous):
-        name = self.acc_name
+        addr = port2ahdl(self, 'addr')
+        we = port2ahdl(self, 'we')
+        req = port2ahdl(self, 'req')
+        q = port2ahdl(self, 'q')
+
         if step == 0:
-            return (AHDL_MOVE(AHDL_SYMBOL(name + '_addr'), offset),
-                    AHDL_MOVE(AHDL_SYMBOL(name + '_we'), AHDL_CONST(0)),
-                    AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(1)))
+            return (AHDL_MOVE(addr, offset),
+                    AHDL_MOVE(we, AHDL_CONST(0)),
+                    AHDL_MOVE(req, AHDL_CONST(1)))
         elif step == 1:
-            return (AHDL_NOP('wait for output of {}'.format(name)), )
+            return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
         elif step == 2:
             if is_continuous:
-                return (AHDL_MOVE(dst, AHDL_SYMBOL(name + '_q')), )
+                return (AHDL_MOVE(dst, q), )
             else:
-                return (AHDL_MOVE(dst, AHDL_SYMBOL(name + '_q')),
-                        AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(0)))
+                return (AHDL_MOVE(dst, q),
+                        AHDL_MOVE(req, AHDL_CONST(0)))
 
     def write_sequence(self, step, offset, src, is_continuous):
-        name = self.acc_name
+        addr = port2ahdl(self, 'addr')
+        we = port2ahdl(self, 'we')
+        req = port2ahdl(self, 'req')
+        d = port2ahdl(self, 'd')
+
         if step == 0:
-            return (AHDL_MOVE(AHDL_SYMBOL(name + '_addr'), offset),
-                    AHDL_MOVE(AHDL_SYMBOL(name + '_we'), AHDL_CONST(1)),
-                    AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(1)),
-                    AHDL_MOVE(AHDL_SYMBOL(name + '_d'), src))
+            return (AHDL_MOVE(addr, offset),
+                    AHDL_MOVE(we, AHDL_CONST(1)),
+                    AHDL_MOVE(req, AHDL_CONST(1)),
+                    AHDL_MOVE(d, src))
         elif step == 1:
             if is_continuous:
                 return tuple()
             else:
-                return (AHDL_MOVE(AHDL_SYMBOL(name + '_req'), AHDL_CONST(0)), )
+                return (AHDL_MOVE(req, AHDL_CONST(0)), )
 
 
 class RegArrayInterface(Interface):
@@ -488,7 +537,7 @@ class RegArrayInterface(Interface):
 class RegArrayAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
-        self.ports = inf.ports[:]
+        self.ports = inf.ports.clone()
 
     def port_name(self, port):
         return '{}{}'.format(self.acc_name, port.name)
@@ -497,38 +546,40 @@ class RegArrayAccessor(IOAccessor):
         return []
 
     def nets(self):
-        return self.ports
+        return self.ports.all()
 
     def reset_stms(self):
         return []
 
 
-def fifo_read_seq(name, step, dst):
+def fifo_read_seq(inf, step, dst):
+    empty = port2ahdl(inf, 'empty')
+    read = port2ahdl(inf, 'read')
+    dout = port2ahdl(inf, 'dout')
+
     if step == 0:
-        ports = [AHDL_SYMBOL(name + '_empty')]
+        ports = [empty]
         return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(0), *ports), )
     elif step == 1:
-        q_read = AHDL_SYMBOL(name + '_read')
-        return (AHDL_MOVE(q_read, AHDL_CONST(1)), )
+        return (AHDL_MOVE(read, AHDL_CONST(1)), )
     elif step == 2:
-        q_read = AHDL_SYMBOL(name + '_read')
-        q_dout = AHDL_SYMBOL(name + '_dout')
-        return (AHDL_MOVE(q_read, AHDL_CONST(0)),
-                AHDL_MOVE(dst, q_dout))
+        return (AHDL_MOVE(read, AHDL_CONST(0)),
+                AHDL_MOVE(dst, dout))
 
 
-def fifo_write_seq(name, step, src):
+def fifo_write_seq(inf, step, src):
+    full = port2ahdl(inf, 'full')
+    write = port2ahdl(inf, 'write')
+    din = port2ahdl(inf, 'din')
+
     if step == 0:
-        ports = [AHDL_SYMBOL(name + '_full')]
+        ports = [full]
         return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(0), *ports), )
     elif step == 1:
-        q_write = AHDL_SYMBOL(name + '_write')
-        q_din = AHDL_SYMBOL(name + '_din')
-        return (AHDL_MOVE(q_write, AHDL_CONST(1)),
-                AHDL_MOVE(q_din, src))
+        return (AHDL_MOVE(write, AHDL_CONST(1)),
+                AHDL_MOVE(din, src))
     elif step == 2:
-        q_write = AHDL_SYMBOL(name + '_write')
-        return (AHDL_MOVE(q_write, AHDL_CONST(0)), )
+        return (AHDL_MOVE(write, AHDL_CONST(0)), )
 
 
 class FIFOInterface(Interface):
@@ -542,14 +593,14 @@ class FIFOInterface(Interface):
         return self._port_name(port)
 
     def read_sequence(self, step, dst):
-        return fifo_read_seq(self.if_name, step, dst)
+        return fifo_read_seq(self, step, dst)
 
     def write_sequence(self, step, src):
-        return fifo_write_seq(self.if_name, step, src)
+        return fifo_write_seq(self, step, src)
 
     def reset_stms(self):
         stms = []
-        for p in self.outports():
+        for p in self.ports.outports():
             stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
                                   AHDL_CONST(0)))
         return stms
@@ -560,14 +611,14 @@ class FIFOAccessor(IOAccessor):
         super().__init__(inf, inst_name)
 
     def read_sequence(self, step, dst):
-        return fifo_read_seq(self.acc_name, step, dst)
+        return fifo_read_seq(self, step, dst)
 
     def write_sequence(self, step, src):
-        return fifo_write_seq(self.acc_name, step, src)
+        return fifo_write_seq(self, step, src)
 
     def reset_stms(self):
         stms = []
-        for p in self.inports():
+        for p in self.ports.inports():
             stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
                                   AHDL_CONST(0)))
         return stms
@@ -593,7 +644,7 @@ class FIFOModuleInterface(FIFOInterface):
 class FIFOModuleAccessor(FIFOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
-        self.ports = inf.ports[:]
+        self.ports = inf.ports.clone()
 
     def port_name(self, port):
         return '{}_{}'.format(self.acc_name, port.name)
@@ -631,7 +682,7 @@ class FIFOReadAccessor(FIFOAccessor):
         self.ports.append(Port('empty', 1, 'out', False))
 
     def nets(self):
-        ports = list(self.outports())
+        ports = list(self.ports.outports())
         # nets for fifo write interface
         ports.append(Port('din', self.inf.data_width, 'out', True))
         ports.append(Port('write', 1, 'out', False))
@@ -650,7 +701,7 @@ class FIFOWriteAccessor(FIFOAccessor):
         # nets for fifo write interface
 
     def nets(self):
-        ports = list(self.outports())
+        ports = list(self.ports.outports())
         # nets for fifo write interface
         ports.append(Port('dout', self.inf.data_width, 'out', True))
         ports.append(Port('read', 1, 'out', False))
