@@ -404,14 +404,20 @@ class AHDL_MODULECALL(AHDL_STM):
                                                         repr(self.prefix))
 
 
-class AHDL_CALLER_PROLOG(AHDL_STM):
-    def __init__(self):
-        pass
+class AHDL_CALLEE_PROLOG(AHDL_STM):
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return 'AHDL_CALLEE_PROLOG({})'.format(repr(self.name))
 
 
-class AHDL_CALLER_EPILOG(AHDL_STM):
-    def __init__(self):
-        pass
+class AHDL_CALLEE_EPILOG(AHDL_STM):
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return 'AHDL_CALLEE_EPILOG({})'.format(repr(self.name))
 
 
 class AHDL_FUNCALL(AHDL_EXP):

@@ -24,6 +24,14 @@ class IOTransformer(AHDLVisitor):
         retaccs = [acc for inf, acc in connections[len(ahdl.args) + 1:]]
         return callacc.call_sequence(step, maxstep, argaccs, retaccs, ahdl, self.module_info.scope)
 
+    def visit_AHDL_CALLEE_PROLOG_SEQ(self, ahdl, step, maxstep):
+        callinf = self.module_info.interfaces['']
+        return callinf.callee_prolog(step, ahdl.name)
+
+    def visit_AHDL_CALLEE_EPILOG_SEQ(self, ahdl, step, maxstep):
+        callinf = self.module_info.interfaces['']
+        return callinf.callee_epilog(step, ahdl.name)
+
     def visit_AHDL_IO_READ_SEQ(self, ahdl, step, maxstep):
         if ahdl.is_self:
             io = self.module_info.interfaces[ahdl.io.sig.name]

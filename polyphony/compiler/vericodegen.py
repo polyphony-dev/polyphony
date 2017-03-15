@@ -380,11 +380,6 @@ class VerilogCodeGen(AHDLVisitor):
                           format(self.scope.orig_name, dst, src, src))
             self.emit('{} <= {};'.format(dst, src))
 
-    def visit_AHDL_SEQ(self, ahdl):
-        method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
-        visitor = getattr(self, method, None)
-        return visitor(ahdl.factor, ahdl.step)
-
     def visit_AHDL_MEM(self, ahdl):
         name = ahdl.name.hdl_name()
         offset = self.visit(ahdl.offset)

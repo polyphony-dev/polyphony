@@ -79,6 +79,12 @@ class AHDLVisitor(object):
         for arg in ahdl.args:
             self.visit(arg)
 
+    def visit_AHDL_CALLEE_PROLOG(self, ahdl):
+        pass
+
+    def visit_AHDL_CALLEE_EPILOG(self, ahdl):
+        pass
+
     def visit_AHDL_FUNCALL(self, ahdl):
         for arg in ahdl.args:
             self.visit(arg)

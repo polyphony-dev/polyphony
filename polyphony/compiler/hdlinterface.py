@@ -275,6 +275,20 @@ class CallInterface(Interface):
                                   AHDL_CONST(0)))
         return stms
 
+    def callee_prolog(self, step, name):
+        if step == 0:
+            unset_valid = AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(0))
+            ports = [AHDL_SYMBOL(name + '_ready')]
+            wait_ready = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
+            return (unset_valid, wait_ready)
+
+    def callee_epilog(self, step, name):
+        if step == 0:
+            set_valid = AHDL_MOVE(AHDL_SYMBOL(name + '_valid'), AHDL_CONST(1))
+            ports = [AHDL_SYMBOL(name + '_accept')]
+            wait_accept = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
+            return (set_valid, wait_accept)
+
 
 class CallAccessor(IOAccessor):
     def __init__(self, inf, inst_name):

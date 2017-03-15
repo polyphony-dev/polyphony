@@ -57,7 +57,7 @@ class WaitForwarder(AHDLVisitor):
         for stg in scope.stgs:
             for state in stg.states:
                 wait = find_only_one_in(AHDL_META_WAIT, state.codes)
-                if wait:
+                if wait and wait.transition.target is not state:
                     self.merge_wait_function(wait)
                 else:
                     for code in state.codes:

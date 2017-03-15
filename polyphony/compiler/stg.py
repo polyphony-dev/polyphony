@@ -284,34 +284,22 @@ class STGBuilder(object):
                 self.stg.finish_state = finish_state
         else:
             if is_first:
-                name = '{}_INIT'.format(state_prefix)
                 first_state = states[0]
                 assert first_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
                 if not (len(states) <= 1 and is_last):
-                    ports = [AHDL_SYMBOL(self.stg.name + '_ready')]
-                    wait_ready = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
+                    prolog = AHDL_SEQ(AHDL_CALLEE_PROLOG(self.stg.name), 0, 1)
                     init_state = self._new_state('{}_INIT'.format(state_prefix),
                                                  0,
-                                                 [wait_ready])
+                                                 [prolog, AHDL_TRANSITION(None)])
                     states.insert(0, init_state)
-                    # valid <= 0
-                    pos = len(first_state.codes) - 1
-                    first_state.codes.insert(pos, AHDL_MOVE(AHDL_SYMBOL(self.stg.name + '_valid'),
-                                                            AHDL_CONST(0)))
                 self.stg.init_state = states[0]
             if is_last:
                 name = '{}_FINISH'.format(state_prefix)
                 finish_state = states[-1]
                 finish_state.name = name
                 assert finish_state.codes[-1].is_a(AHDL_TRANSITION)
-                finish_state.codes.pop()
-
-                set_valid = AHDL_MOVE(AHDL_SYMBOL(self.stg.name + '_valid'), AHDL_CONST(1))
-                ports = [AHDL_SYMBOL(self.stg.name + '_accept')]
-                wait_accept = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
-                finish_state.codes.append(set_valid)
-                finish_state.codes.append(wait_accept)
-
+                epilog = AHDL_SEQ(AHDL_CALLEE_EPILOG(self.stg.name), 0, 1)
+                finish_state.codes.insert(-1, epilog)
                 self.stg.finish_state = finish_state
         return states
 
@@ -829,43 +817,6 @@ class AHDLTranslator(object):
     def _is_port_ctor(self, ir):
         return ir.is_a(NEW) and ir.func_scope.is_port()
 
-    def _make_valid_signal(self, port_sym, port_name, tags):
-        protocol = port_sym.typ.get_protocol()
-        if protocol != 'valid' and protocol != 'ready_valid':
-            return None
-        valid_sig = port_sym.scope.signal(port_name + '_valid')
-        if valid_sig:
-            return valid_sig
-        valid_tag = set()
-        for tag in ['input', 'output', 'reg', 'net', 'extport']:
-            if tag in tags:
-                valid_tag.add(tag)
-        return port_sym.scope.gen_sig(port_name + '_valid', 1, valid_tag)
-
-    def _make_ready_signal(self, port_sym, port_name, tags):
-        protocol = port_sym.typ.get_protocol()
-        if protocol != 'ready_valid':
-            return None
-        ready_sig = port_sym.scope.signal(port_name + '_ready')
-        if ready_sig:
-            return ready_sig
-        ready_tag = set()
-        if 'extport' in tags:
-            ready_tag.add('extport')
-            tag_dict = {'input':'output',
-                        'output':'input',
-                        'reg':'net',
-                        'net':'reg'}
-        else:
-            tag_dict = {'input':'output',
-                        'output':'input',
-                        'reg':'reg',
-                        'net':'reg'}
-        for tag, addtag in tag_dict.items():
-            if tag in tags:
-                ready_tag.add(addtag)
-        return port_sym.scope.gen_sig(port_name + '_ready', 1, ready_tag)
-
     def _port_sig(self, port_qsym):
         assert port_qsym[-1].typ.is_port()
         port_sym = port_qsym[-1]
@@ -916,8 +867,6 @@ class AHDLTranslator(object):
 
         if protocol != 'none':
             tags.add(protocol + '_protocol')
-            valid_sig = self._make_valid_signal(port_sym, port_name, tags)
-            ready_sig = self._make_ready_signal(port_sym, port_name, tags)
         if 'extport' in tags:
             port_sig = self.scope.gen_sig(port_name, width, tags)
         else:
@@ -934,11 +883,6 @@ class AHDLTranslator(object):
             port_sig.init_value = port_sym.typ.get_init()
         if port_sym.typ.has_maxsize():
             port_sig.maxsize = port_sym.typ.get_maxsize()
-        if protocol != 'none':
-            if valid_sig:
-                port_sig.valid = valid_sig
-            if ready_sig:
-                port_sig.ready = ready_sig
         return port_sig
 
     def _make_port_access(self, call, target, node):
