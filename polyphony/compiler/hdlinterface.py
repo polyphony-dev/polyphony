@@ -1,6 +1,6 @@
 ﻿from collections import namedtuple
 from .ahdl import *
-from .memref import One2NMemNode, N2OneMemNode
+
 
 Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
 

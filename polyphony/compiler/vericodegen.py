@@ -4,7 +4,6 @@ from .signal import Signal
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .env import env
-from .common import INT_WIDTH
 from .hdlinterface import *
 from .memref import One2NMemNode, N2OneMemNode
 from logging import getLogger

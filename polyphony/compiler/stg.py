@@ -4,8 +4,7 @@ import functools
 from .block import Block
 from .ir import *
 from .ahdl import *
-from .latency import get_latency
-from .common import INT_WIDTH, error_info
+from .common import error_info
 from .env import env
 from .memref import *
 from logging import getLogger
@@ -597,52 +596,58 @@ class AHDLTranslator(object):
         assert mv.src.is_a(ARRAY)
         self._build_mem_initialize_seq(ir, ahdl_memvar, node)
 
-    def visit_TEMP(self, ir, node):
-        tags = set()
+    def _signal_width(self, sym):
         width = -1
-        if ir.sym.typ.is_list():
-            tags.add('memif')
-            width = ir.sym.typ.get_element().get_width()
-        elif ir.sym.typ.is_int() or ir.sym.typ.is_bool():
-            if ir.sym.typ.has_signed() and ir.sym.typ.get_signed():
+        if sym.typ.is_seq():
+            width = sym.typ.get_element().get_width()
+        elif sym.typ.is_int() or sym.typ.is_bool():
+            width = sym.typ.get_width()
+        elif sym.typ.is_port():
+            width = sym.typ.get_width()
+        elif sym.is_condition():
+            width = 1
+        return width
+
+    def _sym_2_sig(self, sym, ctx):
+        tags = set()
+        if sym.typ.is_seq():
+            if sym.typ.is_list():
+                tags.add('memif')
+        elif sym.typ.is_int() or sym.typ.is_bool():
+            if sym.typ.has_signed() and sym.typ.get_signed():
                 tags.add('int')
             else:
                 pass
-            if ir.ctx & Ctx.STORE:
+            if ctx & Ctx.STORE:
                 tags.add('reg')
-            width = ir.sym.typ.get_width()
-        elif ir.sym.typ.is_port():
-            width = ir.sym.typ.get_width()
-            tags.add(ir.sym.typ.get_direction())
+        elif sym.typ.is_port():
+            tags.add(sym.typ.get_direction())
 
-        if ir.sym.is_param():
+        if sym.is_param():
             tags.add('input')
-            if ir.sym.typ.is_int():
-                width = ir.sym.typ.get_width()
-            elif ir.sym.typ.is_list():
-                width = ir.sym.typ.get_element().get_width()
-            else:
-                width = INT_WIDTH
-        elif ir.sym.is_return():
+        elif sym.is_return():
             tags.add('output')
-            width = ir.sym.typ.get_width()
-        elif ir.sym.is_condition():
+        elif sym.is_condition():
             tags.add('condition')
-            width = 1
-        if ir.sym.is_alias():
+        if sym.is_alias():
             tags.discard('reg')
             tags.add('net')
 
         if self.scope.is_worker() or self.scope.is_method():
-            sig_name = '{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name())
+            sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'input' in tags:
-            sig_name = '{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name())
+            sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'output' in tags:
             sig_name = '{}_out_0'.format(self.scope.orig_name)
         else:
-            sig_name = ir.sym.hdl_name()
-        sig = self.scope.gen_sig(sig_name, width, tags)
+            sig_name = sym.hdl_name()
 
+        width = self._signal_width(sym)
+        sig = self.scope.gen_sig(sig_name, width, tags)
+        return sig
+
+    def visit_TEMP(self, ir, node):
+        sig = self._sym_2_sig(ir.sym, ir.ctx)
         if ir.sym.typ.is_seq():
             return AHDL_MEMVAR(sig, ir.sym.typ.get_memnode(), ir.ctx)
         else:
@@ -657,17 +662,18 @@ class AHDLTranslator(object):
         if self.scope.parent.is_module():
             sym = ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
             signame = sym.hdl_name()
-            instance_name = self.host.make_instance_name(ir)
-
-            sig = self.scope.gen_sig(signame, INT_WIDTH, sig_tags)
+            width = self._signal_width(sym)
+            sig = self.scope.gen_sig(signame, width, sig_tags)
         elif self.scope.is_method() and self.scope.parent is ir.attr_scope:
             # internal access to the field
-            sig = self.host.gen_sig(ir.attr_scope.orig_name + '_field', attr, INT_WIDTH, sig_tags)
+            width = self._signal_width(ir.attr)
+            sig = self.host.gen_sig(ir.attr_scope.orig_name + '_field', attr, width, sig_tags)
         else:
             # external access to the field
             io = '' if ir.ctx == Ctx.LOAD else '_in'
             instance_name = self.host.make_instance_name(ir)
-            sig = self.host.gen_sig(instance_name + '_field', attr + io, INT_WIDTH, sig_tags)
+            width = self._signal_width(ir.attr)
+            sig = self.host.gen_sig(instance_name + '_field', attr + io, width, sig_tags)
         if ir.attr.typ.is_list():
             memnode = self.mrg.node(ir.attr)
             return AHDL_MEMVAR(sig, memnode, ir.ctx)

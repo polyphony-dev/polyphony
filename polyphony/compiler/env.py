@@ -1,6 +1,12 @@
 ﻿import logging
 
 
+class Config(object):
+    default_int_width = 32
+    main_clock_frequency = 100000000
+    reset_activation_signal = 1
+
+
 class Env(object):
     PHASE_1 = 1
     PHASE_2 = 2
@@ -8,23 +14,25 @@ class Env(object):
     PHASE_4 = 4
     PHASE_GEN_HDL = 5
 
+    dev_debug_mode = False
+    hdl_debug_mode = False
+    ctor_name = '__init__'
+    self_name = 'self'
+    callop_name = '__call__'
+    enable_ahdl_opt = False
+
     def __init__(self):
         self.call_graph = None
         self.scopes = {}
         self.all_scopes = {}
-        self.dev_debug_mode = False
-        self.hdl_debug_mode = False
         self.compile_phase = 0
         self.logfiles = {}
         self.using_libs = set()
         self.memref_graph = None
-        self.ctor_name = '__init__'
-        self.self_name = 'self'
-        self.callop_name = '__call__'
         self.scope_file_map = {}
         self.current_filename = None
-        self.enable_ahdl_opt = False
         self.testbenches = []
+        self.config = Config()
 
     def set_current_filename(self, filename):
         self.current_filename = filename

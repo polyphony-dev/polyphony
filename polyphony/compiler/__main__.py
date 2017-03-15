@@ -167,6 +167,7 @@ def instantiate(driver):
     callgraph(driver)
     detectrom(driver)
 
+
 def specfunc(driver):
     new_scopes, unused_scopes = SpecializedFunctionMaker().process_all()
     for s in new_scopes:
@@ -316,6 +317,7 @@ def compile_plan():
         reduceblk,
         dbg(dumpscope),
         earlytypeprop,
+        dbg(dumpscope),
         quadruple,
         typeprop,
         dbg(dumpscope),

@@ -1,8 +1,7 @@
 ﻿from .env import env
 
-class Type(object):
-    DEFAULT_INT_WIDTH = 32
 
+class Type(object):
     def __init__(self, name, **attrs):
         self.name = name
         self.attrs = attrs
@@ -80,7 +79,9 @@ class Type(object):
         return 'Type({}, {})'.format(repr(self.name), repr(self.attrs))
 
     @classmethod
-    def int(cls, width=DEFAULT_INT_WIDTH, signed=True):
+    def int(cls, width=None, signed=True):
+        if width is None:
+            width = env.config.default_int_width
         return Type('int', width=width, signed=signed)
 
     @classmethod
@@ -92,12 +93,12 @@ class Type(object):
 
     @classmethod
     def list(cls, elm_t, memnode):
-        assert elm_t.is_scalar()
+        assert elm_t.is_scalar() or elm_t.is_undef()
         return Type('list', element=elm_t, memnode=memnode)
 
     @classmethod
     def tuple(cls, elm_t, memnode, length):
-        assert elm_t.is_scalar()
+        assert elm_t.is_scalar() or elm_t.is_undef()
         return Type('tuple', element=elm_t, memnode=memnode, length=length)
 
     @classmethod

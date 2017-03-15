@@ -214,16 +214,30 @@ class TypePropagation(IRVisitor):
     def visit_MSTORE(self, ir):
         mem_t = self.visit(ir.mem)
         self.visit(ir.offset)
-        self.visit(ir.exp)
+        exp_t = self.visit(ir.exp)
+
+        elm_t = mem_t.get_element()
+        if exp_t.is_scalar() and elm_t.is_scalar():
+            if exp_t.get_width() > elm_t.get_width():
+                self._set_type(ir.dst.mem.symbol(), Type.list(exp_t, None))
         return mem_t
 
     def visit_ARRAY(self, ir):
-        for item in ir.items:
-            self.visit(item)
-        if ir.is_mutable:
-            return Type.list(Type.int(), None)
+        item_typs = [self.visit(item) for item in ir.items]
+
+        if item_typs and all([Type.is_same(item_typs[0], item_t) for item_t in item_typs]):
+            if item_typs[0].is_scalar():
+                maxwidth = max([item_t.get_width() for item_t in item_typs])
+                signed = any([item_t.get_signed() for item_t in item_typs])
+                item_t = Type.int(maxwidth, signed)
+            else:
+                item_t = item_typs[0]
         else:
-            return Type.tuple(Type.int(), None, len(ir.items))
+            assert False  # TODO
+        if ir.is_mutable:
+            return Type.list(item_t, None)
+        else:
+            return Type.tuple(item_t, None, len(ir.items))
 
     def _propagate_worker_arg_types(self, call):
         if len(call.args) == 0:
@@ -306,8 +320,6 @@ class TypePropagation(IRVisitor):
                 if receiver.typ.is_object():
                     sym = receiver.typ.get_scope().find_sym(ir.dst.symbol().name)
                     self._set_type(sym, src_typ)
-        elif ir.dst.is_a(MREF):
-            self._set_type(ir.dst.mem.symbol(), Type.list(src_typ, None))
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet
@@ -318,6 +330,8 @@ class TypePropagation(IRVisitor):
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR])
                 self._set_type(item.symbol(), elem_t)
+        elif ir.dst.is_a(MREF):
+            pass
         else:
             assert False
         # check mutable method
