@@ -1,5 +1,6 @@
 ﻿from collections import namedtuple
 from .ahdl import *
+from .memref import One2NMemNode, N2OneMemNode
 
 Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
 
@@ -98,7 +99,7 @@ class IOAccessor(Accessor):
 
     def port_name(self, port):
         if self.inst_name:
-            return '{}_{}'.format(self.inst_name, self.inf.port_name(port))
+            return self.inf._prefixed_port_name(self.inst_name, port)
         else:
             return self.inf.port_name(port)
 
@@ -145,21 +146,18 @@ def single_write_seq(signal, name, step, src):
 
 
 class SinglePortInterface(Interface):
-    def __init__(self, signal):
-        super().__init__(signal.name, '')
+    def __init__(self, signal, if_name, if_owner_name):
+        super().__init__(if_name, if_owner_name)
         self.signal = signal
         self.data_width = signal.width
 
-    def port_name(self, port):
-        if port.name:
-            return '{}_{}'.format(self.if_name, port.name)
-        else:
-            return self.if_name
-
 
 class SingleReadInterface(SinglePortInterface):
-    def __init__(self, signal):
-        super().__init__(signal)
+    def __init__(self, signal, if_name='', if_owner_name=''):
+        if if_name:
+            super().__init__(signal, if_name, if_owner_name)
+        else:
+            super().__init__(signal, signal.name, if_owner_name)
         signed = True if signal.is_int() else False
         self.ports.append(Port('', self.data_width, 'in', signed))
         if signal.is_valid_protocol():
@@ -184,8 +182,11 @@ class SingleReadInterface(SinglePortInterface):
 
 
 class SingleWriteInterface(SinglePortInterface):
-    def __init__(self, signal):
-        super().__init__(signal)
+    def __init__(self, signal, if_name='', if_owner_name=''):
+        if if_name:
+            super().__init__(signal, if_name, if_owner_name)
+        else:
+            super().__init__(signal, signal.name, if_owner_name)
         #assert signal.is_output()
         signed = True if signal.is_int() else False
         self.ports.append(Port('', self.data_width, 'out', signed))
@@ -256,21 +257,15 @@ class SingleWriteAccessor(IOAccessor):
         return single_write_seq(self.inf.signal, self.acc_name, step, src)
 
 
-class FunctionInterface(Interface):
+class CallInterface(Interface):
     def __init__(self, name, owner_name=''):
         super().__init__(name, owner_name)
         self.ports.append(Port('ready', 1, 'in', False))
         self.ports.append(Port('accept', 1, 'in', False))
         self.ports.append(Port('valid', 1, 'out', False))
 
-    def add_data_in(self, din_name, width, signed):
-        self.ports.append(Port(din_name, width, 'in', signed))
-
-    def add_data_out(self, dout_name, width, signed):
-        self.ports.append(Port(dout_name, width, 'out', signed))
-
     def accessor(self, inst_name=''):
-        acc = FunctionAccessor(self, inst_name)
+        acc = CallAccessor(self, inst_name)
         return acc
 
     def reset_stms(self):
@@ -281,7 +276,7 @@ class FunctionInterface(Interface):
         return stms
 
 
-class FunctionAccessor(IOAccessor):
+class CallAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
         self.ports = inf.ports[:]
@@ -289,6 +284,35 @@ class FunctionAccessor(IOAccessor):
     def port_name(self, port):
         assert self.inst_name
         return '{}_{}'.format(self.inst_name, self.inf._port_name(port))
+
+    def reset_stms(self):
+        stms = []
+        for p in self.inports():
+            stms.append(AHDL_MOVE(AHDL_SYMBOL(self.port_name(p)),
+                                  AHDL_CONST(0)))
+        return stms
+
+    def call_sequence(self, step, maxstep, argaccs, retaccs, ahdl_call, scope):
+        seq = []
+        if step == 0:
+            seq = [AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_ready'), AHDL_CONST(1))]
+            for acc, arg in zip(argaccs, ahdl_call.args):
+                if arg.is_a(AHDL_MEMVAR):
+                    continue
+                seq.extend(acc.write_sequence(0, arg))
+        elif step == 1:
+            seq = [AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_ready'), AHDL_CONST(0))]
+
+        if step == maxstep - 3:
+            ports = [AHDL_SYMBOL(self.acc_name + '_valid')]
+            seq.append(AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
+        elif step == maxstep - 2:
+            for acc, ret in zip(retaccs, ahdl_call.returns):
+                seq.extend(acc.read_sequence(0, ret))
+            seq.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_accept'), AHDL_CONST(1)))
+        elif step == maxstep - 1:
+            seq.append(AHDL_MOVE(AHDL_SYMBOL(self.acc_name + '_accept'), AHDL_CONST(0)))
+        return tuple(seq)
 
 
 class RAMModuleInterface(Interface):
@@ -328,7 +352,7 @@ class RAMBridgeInterface(Interface):
         self.ports.append(Port('we',   1,          'in', False))
         self.ports.append(Port('q',    data_width, 'out', True))
         self.ports.append(Port('len',  addr_width, 'out', False))
-        self.ports.append(Port('req',  addr_width, 'in', False))
+        self.ports.append(Port('req',  1,          'in', False))
 
     def accessor(self, inst_name=''):
         return RAMBridgeAccessor(self, inst_name)
@@ -360,6 +384,9 @@ class RAMBridgeAccessor(IOAccessor):
 
     def nets(self):
         return self.ports
+
+    def reset_stms(self):
+        return []
 
 
 class RAMAccessor(Accessor):
@@ -457,6 +484,9 @@ class RegArrayAccessor(IOAccessor):
 
     def nets(self):
         return self.ports
+
+    def reset_stms(self):
+        return []
 
 
 def fifo_read_seq(name, step, dst):

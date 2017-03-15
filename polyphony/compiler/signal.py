@@ -18,6 +18,7 @@ class Signal(Tagged):
         super().__init__(tags)
         self.name = name
         self.width = width
+        self.init_value = 0
 
     def __str__(self):
         return self.name

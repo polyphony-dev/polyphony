@@ -367,38 +367,12 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_INLINE(self, ahdl):
         self.emit(ahdl.code + ';')
 
-    def _memswitch(self, prefix, dst_node, src_node):
-        n2o = dst_node.pred_branch()
-        assert isinstance(n2o, N2OneMemNode)
-        for p in n2o.preds:
-            assert isinstance(p, One2NMemNode)
-        assert isinstance(src_node.preds[0], One2NMemNode)
-        assert src_node in n2o.orig_preds
-
-        preds = [p for p in n2o.preds if self.scope in p.scopes]
-        width = len(preds)
-        if width < 2:
-            return
-        orig_preds = [p for p in n2o.orig_preds if self.scope in p.scopes]
-        idx = orig_preds.index(src_node)
-        cs_name = dst_node.name()
-        if prefix:
-            cs = self.scope.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
-        else:
-            cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
-        one_hot_mask = bin(1 << idx)[2:]
-        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
-                             AHDL_SYMBOL('\'b' + one_hot_mask)))
-
     def visit_AHDL_MOVE(self, ahdl):
         if ahdl.dst.is_a(AHDL_VAR) and (ahdl.dst.sig.is_condition() or ahdl.dst.sig.is_net()):
             self.module_info.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
             self.emit('/* {} <= {}; */'.format(self.visit(ahdl.dst), self.visit(ahdl.src)))
         elif ahdl.dst.is_a(AHDL_MEMVAR) and ahdl.src.is_a(AHDL_MEMVAR):
-            memnode = ahdl.dst.memnode
-            assert memnode
-            if memnode.is_joinable() and not memnode.is_immutable():
-                self._memswitch('', ahdl.dst.memnode, ahdl.src.memnode)
+            assert False
         else:
             src = self.visit(ahdl.src)
             dst = self.visit(ahdl.dst)
@@ -406,81 +380,6 @@ class VerilogCodeGen(AHDLVisitor):
                 self.emit('$display("%8d:REG  :{}      {} <= 0x%2h (%1d)", $time, {}, {});'.
                           format(self.scope.orig_name, dst, src, src))
             self.emit('{} <= {};'.format(dst, src))
-
-    def _memif_names(self, sig, memnode):
-        memname = sig.name
-        if memnode.is_param():
-            prefix = self.module_info.name + '_' + memname
-        else:
-            prefix = memname
-        req  = '{}_{}'.format(prefix, 'req')
-        addr = '{}_{}'.format(prefix, 'addr')
-        we   = '{}_{}'.format(prefix, 'we')
-        d    = '{}_{}'.format(prefix, 'd')
-        q    = '{}_{}'.format(prefix, 'q')
-        len  = '{}_{}'.format(prefix, 'len')
-        return (req, addr, we, d, q, len)
-
-    def _is_sequential_access_to_mem(self, ahdl):
-        other_memnodes = [c.factor.mem.memnode for c in self.current_state.codes
-                          if c.is_a([AHDL_SEQ]) and
-                          c.factor.is_a([AHDL_LOAD, AHDL_STORE]) and
-                          c.factor is not ahdl]
-        for memnode in other_memnodes:
-            if memnode is ahdl.mem.memnode:
-                return True
-        return False
-
-    def visit_AHDL_STORE(self, ahdl):
-        req, addr, we, d, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr),
-                             ahdl.offset))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(we),
-                             AHDL_CONST(1)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
-                             AHDL_CONST(1)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(d),
-                             ahdl.src))
-
-    def visit_POST_AHDL_STORE(self, ahdl):
-        if self._is_sequential_access_to_mem(ahdl):
-            return
-        req, _, _, _, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
-                             AHDL_CONST(0)))
-
-    def visit_AHDL_STORE_SEQ(self, ahdl, step):
-        if step == 0:
-            self.visit_AHDL_STORE(ahdl)
-        elif step == 1:
-            self.visit_POST_AHDL_STORE(ahdl)
-
-    def visit_AHDL_LOAD(self, ahdl):
-        req, addr, we, _, _, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(addr),
-                             ahdl.offset))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(we),
-                             AHDL_CONST(0)))
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
-                             AHDL_CONST(1)))
-
-    def visit_POST_AHDL_LOAD(self, ahdl):
-        req, _, _, _, q, _ = self._memif_names(ahdl.mem.sig, ahdl.mem.memnode)
-        self.visit(AHDL_MOVE(ahdl.dst,
-                             AHDL_SYMBOL(q)))
-        if self._is_sequential_access_to_mem(ahdl):
-            return
-        self.visit(AHDL_MOVE(AHDL_SYMBOL(req),
-                             AHDL_CONST(0)))
-
-    def visit_AHDL_LOAD_SEQ(self, ahdl, step):
-        if step == 0:
-            self.visit_AHDL_LOAD(ahdl)
-        elif step == 1:
-            mem_name = ahdl.mem.name()
-            self.visit(AHDL_NOP('wait for output of {}'.format(mem_name)))
-        elif step == 2:
-            self.visit_POST_AHDL_LOAD(ahdl)
 
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
@@ -524,34 +423,6 @@ class VerilogCodeGen(AHDLVisitor):
         lexp = self.visit(ahdl.lexp)
         rexp = self.visit(ahdl.rexp)
         return '{} ? {} : {}'.format(cond, lexp, rexp)
-
-    def visit_AHDL_MODULECALL(self, ahdl):
-        if ahdl.scope.is_class():
-            params = ahdl.scope.find_ctor().params[1:]
-        elif ahdl.scope.is_method():
-            params = ahdl.scope.params[1:]
-        else:
-            params = ahdl.scope.params
-        for arg, param in zip(ahdl.args, params):
-            p, _, _ = param
-            if arg.is_a(AHDL_MEMVAR):
-                assert p.typ.is_seq()
-                param_memnode = p.typ.get_memnode()
-                # find joint node in outer scope
-                assert len(param_memnode.preds) == 1
-                is_joinable_param = isinstance(param_memnode.preds[0], N2OneMemNode)
-                if is_joinable_param and param_memnode.is_writable():
-                    self._memswitch(ahdl.instance_name, param_memnode, arg.memnode)
-            else:
-                argsig = self.scope.gen_sig('{}_{}'.format(ahdl.prefix, p.hdl_name()),
-                                            INT_WIDTH,
-                                            ['int'])
-                self.visit(AHDL_MOVE(AHDL_VAR(argsig, Ctx.STORE),
-                                     arg))
-
-        ready = self.scope.gen_sig(ahdl.prefix + '_ready', 1)
-        self.visit(AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE),
-                             AHDL_CONST(1)))
 
     def visit_AHDL_FUNCALL(self, ahdl):
         return '{}({})'.format(self.visit(ahdl.name), ', '.join([self.visit(arg) for arg in ahdl.args]))
@@ -621,6 +492,32 @@ class VerilogCodeGen(AHDLVisitor):
         src = self.visit(ahdl.src)
         dst = self.visit(ahdl.dst)
         self.emit('{} = {};'.format(dst, src))
+
+    def visit_MEM_SWITCH(self, ahdl):
+        prefix = ahdl.args[0]
+        dst_node = ahdl.args[1]
+        src_node = ahdl.args[2]
+        n2o = dst_node.pred_branch()
+        assert isinstance(n2o, N2OneMemNode)
+        for p in n2o.preds:
+            assert isinstance(p, One2NMemNode)
+        assert isinstance(src_node.preds[0], One2NMemNode)
+        assert src_node in n2o.orig_preds
+
+        preds = [p for p in n2o.preds if self.scope in p.scopes]
+        width = len(preds)
+        if width < 2:
+            return
+        orig_preds = [p for p in n2o.orig_preds if self.scope in p.scopes]
+        idx = orig_preds.index(src_node)
+        cs_name = dst_node.name()
+        if prefix:
+            cs = self.scope.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
+        else:
+            cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
+        one_hot_mask = bin(1 << idx)[2:]
+        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
+                             AHDL_SYMBOL('\'b' + one_hot_mask)))
 
     def visit_AHDL_META(self, ahdl):
         method = 'visit_' + ahdl.metaid

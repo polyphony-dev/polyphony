@@ -1,4 +1,4 @@
-﻿from collections import defaultdict
+﻿from collections import defaultdict, OrderedDict
 from logging import getLogger
 from .hdlinterface import *
 from . import libs
@@ -23,7 +23,7 @@ class HDLModuleInfo(object):
         self.scope = scope
         self.name = name
         self.qualified_name = qualified_name[len('@top') + 1:].replace('.', '_')
-        self.interfaces = {}
+        self.interfaces = OrderedDict()
         self.interconnects = []
         self.accessors = {}
         self.local_readers = {}

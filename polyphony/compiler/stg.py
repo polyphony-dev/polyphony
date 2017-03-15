@@ -323,36 +323,28 @@ class STGBuilder(object):
     def _new_state(self, name, step, codes):
         return self.stg.new_state(name, step, codes)
 
-    def emit_call_ret_sequence(self, ahdl_call, dst, latency, sched_time):
-        self.emit(AHDL_MOVE(AHDL_SYMBOL(ahdl_call.prefix + '_ready'),
-                            AHDL_CONST(0)), sched_time + 1)
-
-        sched_time = sched_time + latency - 2
-        ports = [AHDL_SYMBOL(ahdl_call.prefix + '_valid')]
-        self.emit(AHDL_META_WAIT('WAIT_VALUE',
-                                 AHDL_CONST(1),
-                                 *ports), sched_time)
-        sched_time += 1
-        self.emit(AHDL_MOVE(AHDL_SYMBOL(ahdl_call.prefix + '_accept'),
-                            AHDL_CONST(1)), sched_time)
-        if dst and ahdl_call.scope.return_type.is_scalar():
-            self.emit(AHDL_MOVE(dst,
-                                AHDL_SYMBOL(ahdl_call.prefix + '_out_0')), sched_time)
-        sched_time += 1
-        self.emit(AHDL_MOVE(AHDL_SYMBOL(ahdl_call.prefix + '_accept'),
-                            AHDL_CONST(0)), sched_time)
+    def emit_call_sequence(self, ahdl_call, dst, node, sched_time):
+        assert ahdl_call.is_a(AHDL_MODULECALL)
+        # TODO:
+        if dst:
+            ahdl_call.returns = [dst]
+        else:
+            ahdl_call.returns = []
+        step_n = node.latency()
+        for i in range(step_n):
+            self.emit(AHDL_SEQ(ahdl_call, i, step_n), sched_time + i)
 
     def emit_memload_sequence(self, ahdl_load, sched_time):
         assert ahdl_load.is_a(AHDL_LOAD)
         step_n = 3  # TODO : It should calculate from a memory type
         for i in range(step_n):
-            self.emit(AHDL_SEQ(ahdl_load, i), sched_time + i)
+            self.emit(AHDL_SEQ(ahdl_load, i, step_n), sched_time + i)
 
     def emit_memstore_sequence(self, ahdl_store, sched_time):
         assert ahdl_store.is_a(AHDL_STORE)
         step_n = 2  # TODO : It should calculate from a memory type
         for i in range(step_n):
-            self.emit(AHDL_SEQ(ahdl_store, i), sched_time + i)
+            self.emit(AHDL_SEQ(ahdl_store, i, step_n), sched_time + i)
 
     def emit(self, item, sched_time, tag=''):
         logger.debug('emit ' + str(item) + ' at ' + str(sched_time))
@@ -642,12 +634,14 @@ class AHDLTranslator(object):
             tags.add('net')
 
         if self.scope.is_worker() or self.scope.is_method():
-            # should localize a local variable's name
-            sig = self.scope.gen_sig('{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name()),
-                                     width,
-                                     tags)
+            sig_name = '{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name())
+        elif 'input' in tags:
+            sig_name = '{}_{}'.format(self.scope.orig_name, ir.sym.hdl_name())
+        elif 'output' in tags:
+            sig_name = '{}_out_0'.format(self.scope.orig_name)
         else:
-            sig = self.scope.gen_sig(ir.sym.hdl_name(), width, tags)
+            sig_name = ir.sym.hdl_name()
+        sig = self.scope.gen_sig(sig_name, width, tags)
 
         if ir.sym.typ.is_seq():
             return AHDL_MEMVAR(sig, ir.sym.typ.get_memnode(), ir.ctx)
@@ -688,13 +682,12 @@ class AHDLTranslator(object):
             return self._make_port_access(ir.exp, None, node)
         elif self._is_module_method(ir.exp):
             return
-
-        exp = self.visit(ir.exp, node)
-        if exp:
-            self._emit(exp, self.sched_time)
-        if ir.exp.is_a(CALL) and exp.is_a([AHDL_PROCCALL, AHDL_MODULECALL]):
-            latency = get_latency(node.tag)
-            self.host.emit_call_ret_sequence(exp, None, latency, self.sched_time)
+        if ir.exp.is_a(CALL):
+            self._call_proc(ir, node)
+        else:
+            exp = self.visit(ir.exp, node)
+            if exp:
+                self._emit(exp, self.sched_time)
 
     def visit_CJUMP(self, ir, node):
         cond = self.visit(ir.exp, node)
@@ -728,17 +721,34 @@ class AHDLTranslator(object):
         pass
 
     def _call_proc(self, ir, node):
-        src = self.visit(ir.src, node)
-        if ir.src.is_a(CALL):
+        if ir.is_a(MOVE):
+            call = ir.src
+        elif ir.is_a(EXPR):
+            call = ir.exp
+
+        ahdl_call = self.visit(call, node)
+        if call.is_a(CALL) and ir.is_a(MOVE):
             dst = self.visit(ir.dst, node)
         else:
             dst = None
-        # we must skip the call-ret sequence after visiting
-        if ir.src.is_a([NEW, CALL]) and ir.src.func_scope.is_module():
+        if ir.is_a(MOVE) and ir.src.is_a([NEW, CALL]) and ir.src.func_scope.is_module():
             return
-        latency = get_latency(node.tag)
-        self._emit(src, self.sched_time)
-        self.host.emit_call_ret_sequence(src, dst, latency, self.sched_time)
+        self.host.emit_call_sequence(ahdl_call, dst, node, self.sched_time)
+
+        params = ahdl_call.scope.params
+        for arg, param in zip(ahdl_call.args, params):
+            p, _, _ = param
+            if arg.is_a(AHDL_MEMVAR):
+                assert p.typ.is_seq()
+                param_memnode = p.typ.get_memnode()
+                # find joint node in outer scope
+                assert len(param_memnode.preds) == 1
+                is_joinable_param = isinstance(param_memnode.preds[0], N2OneMemNode)
+                if is_joinable_param and param_memnode.is_writable():
+                    self._emit(AHDL_META('MEM_SWITCH',
+                                         ahdl_call.instance_name,
+                                         param_memnode,
+                                         arg.memnode), self.sched_time)
 
     def visit_MOVE(self, ir, node):
         if ir.src.is_a([CALL, NEW]):
@@ -769,11 +779,15 @@ class AHDLTranslator(object):
         elif src.is_a(AHDL_LOAD):
             self.host.emit_memload_sequence(src, self.sched_time)
             return
-
-        if dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
+        elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
             memnode = dst.memnode
             assert memnode
             if ir.src.sym.is_param():
+                return
+            elif memnode.is_immutable():
+                return
+            elif memnode.is_joinable():
+                self._emit(AHDL_META('MEM_SWITCH', '', dst.memnode, src.memnode), self.sched_time)
                 return
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
 
@@ -940,8 +954,9 @@ class AHDLTranslator(object):
         iow = AHDL_IO_WRITE(AHDL_VAR(port_sig, Ctx.STORE),
                             src,
                             port_sig.is_output())
-        for i in range(node.latency()):
-            self._emit(AHDL_SEQ(iow, i), self.sched_time + i)
+        step_n = node.latency()
+        for i in range(step_n):
+            self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i)
         return
 
     def _make_port_read_seq(self, target, port_sig, node):
@@ -950,8 +965,9 @@ class AHDLTranslator(object):
         ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
                            dst,
                            port_sig.is_input())
-        for i in range(node.latency()):
-            self._emit(AHDL_SEQ(ior, i), self.sched_time + i)
+        step_n = node.latency()
+        for i in range(step_n):
+            self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
 
     def _make_port_init(self, new, target, node):
         assert new.func_scope.is_port()

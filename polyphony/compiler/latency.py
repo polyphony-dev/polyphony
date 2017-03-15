@@ -2,7 +2,7 @@
 from .dataflow import DataFlowGraph
 
 UNIT_STEP = 1
-CALL_MINIMUM_STEP = 4
+CALL_MINIMUM_STEP = 5
 
 
 def get_call_latency(call):

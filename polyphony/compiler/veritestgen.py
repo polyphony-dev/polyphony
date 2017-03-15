@@ -99,11 +99,7 @@ class VerilogTestGen(VerilogCodeGen):
             if not info.interfaces:
                 continue
             for inf in info.interfaces.values():
-                if isinstance(inf, FunctionInterface):
-                    accessor = inf.accessor(name)
-                    ports = accessor.ports[3:]  # skip controls
-                    add_ports(ports)
-                elif isinstance(inf, SinglePortInterface):
+                if isinstance(inf, SinglePortInterface):
                     accessor = inf.accessor(name)
                     ports = accessor.ports[:]
                     add_ports(ports)

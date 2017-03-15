@@ -326,10 +326,11 @@ class AHDL_IO_WRITE(AHDL_STM):
 
 
 class AHDL_SEQ(AHDL_STM):
-    def __init__(self, factor, step):
+    def __init__(self, factor, step, maxstep):
         super().__init__()
         self.factor = factor
         self.step = step
+        self.maxstep = maxstep
 
     def __str__(self):
         return 'Sequence {} : {}'.format(self.step, self.factor)
@@ -401,6 +402,16 @@ class AHDL_MODULECALL(AHDL_STM):
                                                         repr(self.args),
                                                         repr(self.instance_name),
                                                         repr(self.prefix))
+
+
+class AHDL_CALLER_PROLOG(AHDL_STM):
+    def __init__(self):
+        pass
+
+
+class AHDL_CALLER_EPILOG(AHDL_STM):
+    def __init__(self):
+        pass
 
 
 class AHDL_FUNCALL(AHDL_EXP):

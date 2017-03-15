@@ -125,11 +125,8 @@ class HDLMemPortMaker(object):
             self._add_interconnect(self.memnode.name(), [spram_acc], [succ_ramacc])
 
     def _make_param_node_connection(self):
-        # TODO from/to external access
-        if_name = self.name
-        ramif = RAMBridgeInterface(if_name, self.module_info.name, self.width, self.addr_width)
-        self.module_info.add_interface(self.name, ramif)
-        self.module_info.node2if[self.memnode] = ramif
+        assert self.memnode in self.module_info.node2if
+        ramif = self.module_info.node2if[self.memnode]
 
         # direct connect
         if isinstance(self.memnode.succs[0], MemRefNode):
@@ -276,11 +273,6 @@ class HDLRegArrayPortMaker(object):
                 src_var = AHDL_VAR(src_sig, Ctx.LOAD)
                 ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)), src_var)
                 self.module_info.add_static_assignment(ahdl_assign)
-        regarrayif = RegArrayInterface(self.memnode.name(),
-                                       self.module_info.name,
-                                       self.memnode.width,
-                                       self.memnode.length)
-        self.module_info.add_interface(self.memnode.name(), regarrayif)
 
     def _make_one2n_node_connection(self):
         assert len(self.memnode.preds) == 1

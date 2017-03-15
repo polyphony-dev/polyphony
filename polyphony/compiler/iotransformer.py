@@ -16,7 +16,15 @@ class IOTransformer(AHDLVisitor):
                     for code in state.codes[:]:
                         self.visit(code)
 
-    def visit_AHDL_IO_READ_SEQ(self, ahdl, step):
+    def visit_AHDL_MODULECALL_SEQ(self, ahdl, step, maxstep):
+        _, sub_info, connections, _ = self.module_info.sub_modules[ahdl.instance_name]
+        assert len(connections) >= 1 + len(ahdl.args) + len(ahdl.returns)
+        callacc = connections[0][1]
+        argaccs = [acc for inf, acc in connections[1:len(ahdl.args) + 1]]
+        retaccs = [acc for inf, acc in connections[len(ahdl.args) + 1:]]
+        return callacc.call_sequence(step, maxstep, argaccs, retaccs, ahdl, self.module_info.scope)
+
+    def visit_AHDL_IO_READ_SEQ(self, ahdl, step, maxstep):
         if ahdl.is_self:
             io = self.module_info.interfaces[ahdl.io.sig.name]
         elif ahdl.io.sig.is_extport():
@@ -25,7 +33,7 @@ class IOTransformer(AHDLVisitor):
             io = self.module_info.local_readers[ahdl.io.sig.name]
         return io.read_sequence(step, ahdl.dst)
 
-    def visit_AHDL_IO_WRITE_SEQ(self, ahdl, step):
+    def visit_AHDL_IO_WRITE_SEQ(self, ahdl, step, maxstep):
         if ahdl.is_self:
             io = self.module_info.interfaces[ahdl.io.sig.name]
         elif ahdl.io.sig.is_extport():
@@ -44,12 +52,12 @@ class IOTransformer(AHDLVisitor):
                 return True
         return False
 
-    def visit_AHDL_LOAD_SEQ(self, ahdl, step):
+    def visit_AHDL_LOAD_SEQ(self, ahdl, step, maxstep):
         is_continuous = self._is_continuous_access_to_mem(ahdl)
         memacc = self.module_info.local_readers[ahdl.mem.sig.name]
         return memacc.read_sequence(step, ahdl.offset, ahdl.dst, is_continuous)
 
-    def visit_AHDL_STORE_SEQ(self, ahdl, step):
+    def visit_AHDL_STORE_SEQ(self, ahdl, step, maxstep):
         is_continuous = self._is_continuous_access_to_mem(ahdl)
         memacc = self.module_info.local_writers[ahdl.mem.sig.name]
         return memacc.write_sequence(step, ahdl.offset, ahdl.src, is_continuous)
@@ -58,7 +66,7 @@ class IOTransformer(AHDLVisitor):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
         assert visitor
-        seq = visitor(ahdl.factor, ahdl.step)
+        seq = visitor(ahdl.factor, ahdl.step, ahdl.maxstep)
         self.current_parent.codes.remove(ahdl)
         meta_wait = find_only_one_in(AHDL_META_WAIT, seq)
         if meta_wait:

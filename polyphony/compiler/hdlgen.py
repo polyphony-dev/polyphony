@@ -37,23 +37,6 @@ class HDLModuleBuilder(object):
                 self.module_info.add_state_constant(state.name, i)
                 i += 1
 
-    def _add_input_ports(self, funcif, scope):
-        if scope.is_method():
-            params = scope.params[1:]
-        else:
-            params = scope.params
-        for i, (sym, _, _) in enumerate(params):
-            if sym.typ.is_int():
-                funcif.add_data_in(sym.hdl_name(), sym.typ.get_width(), True)
-            elif sym.typ.is_list():
-                continue
-
-    def _add_output_ports(self, funcif, scope):
-        if scope.return_type.is_scalar():
-            funcif.add_data_out('out_0', scope.return_type.get_width(), True)
-        elif scope.return_type.is_seq():
-            raise NotImplementedError('return of a suquence type is not implemented')
-
     def _add_internal_ports(self, scope, module_name, locals):
         regs = []
         nets = []
@@ -96,7 +79,9 @@ class HDLModuleBuilder(object):
             for inst_name in inst_names:
                 connections = []
                 for inf in info.interfaces.values():
-                    connections.append((inf, inf.accessor(inst_name)))
+                    acc = inf.accessor(inst_name)
+                    connections.append((inf, acc))
+                    self.module_info.add_accessor(acc.acc_name, acc)
                 self.module_info.add_sub_module(inst_name, info, connections)
 
     def _add_roms(self, scope):
@@ -144,23 +129,6 @@ class HDLModuleBuilder(object):
                 self.module_info.add_internal_reg(rom_sel_sig)
             rom_func = AHDL_FUNCTION(fname, [input], [case])
             self.module_info.add_function(rom_func)
-
-    def _rename_signal(self, scope):
-        for input_sig in [sig for sig in scope.signals.values() if sig.is_input()]:
-            if scope.is_method():
-                new_name = '{}_{}_{}'.format(scope.parent.orig_name,
-                                             scope.orig_name,
-                                             input_sig.name)
-            else:
-                new_name = '{}_{}'.format(scope.orig_name, input_sig.name)
-            scope.rename_sig(input_sig.name, new_name)
-        for output_sig in [sig for sig in scope.signals.values() if sig.is_output()]:
-            # TODO
-            if scope.is_method():
-                out_name = '{}_{}_out_0'.format(scope.parent.orig_name, scope.orig_name)
-            else:
-                out_name = '{}_out_0'.format(scope.orig_name)
-            scope.rename_sig(output_sig.name, out_name)
 
     def _collect_vars(self, scope):
         outputs = set()
@@ -226,11 +194,10 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
 
         module_name = scope.stgs[0].name
         self._add_state_register(module_name, scope, scope.stgs)
-        funcif = FunctionInterface('', module_name)
-        self._add_input_ports(funcif, scope)
-        self._add_output_ports(funcif, scope)
-        self.module_info.add_interface('', funcif)
-
+        callif = CallInterface('', module_name)
+        self.module_info.add_interface('', callif)
+        self._add_input_interfaces(scope)
+        self._add_output_interfaces(scope)
         self._add_internal_ports(scope, module_name, locals)
 
         HDLMemPortMaker(mrg.collect_ram(scope), scope, self.module_info).make_port_all()
@@ -243,8 +210,6 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_submodules(scope)
         self._add_roms(scope)
         self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
-
-        self._rename_signal(scope)
         self._add_reset_stms_for_func(scope, defs, uses, outputs)
 
     def _add_reset_stms_for_func(self, worker, defs, uses, outputs):
@@ -274,6 +239,43 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                     v = AHDL_CONST(0)
                 mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
                 self.module_info.add_fsm_reset_stm(worker.orig_name, mv)
+
+    def _add_input_interfaces(self, scope):
+        if scope.is_method():
+            assert False
+            params = scope.params[1:]
+        else:
+            params = scope.params
+        for i, (sym, _, _) in enumerate(params):
+            if sym.typ.is_int():
+                sig_name = '{}_{}'.format(scope.orig_name, sym.hdl_name())
+                sig = scope.signal(sig_name)
+                inf = SingleReadInterface(sig, sym.hdl_name(), scope.orig_name)
+            elif sym.typ.is_list():
+                memnode = sym.typ.get_memnode()
+                inf = RAMBridgeInterface(memnode.name(),
+                                         self.module_info.name,
+                                         memnode.width,
+                                         memnode.addr_width())
+                self.module_info.node2if[memnode] = inf
+            elif sym.typ.is_tuple():
+                memnode = sym.typ.get_memnode()
+                inf = RegArrayInterface(memnode.name(),
+                                        self.module_info.name,
+                                        memnode.width,
+                                        memnode.length)
+            else:
+                assert False
+            self.module_info.add_interface(inf.if_name, inf)
+
+    def _add_output_interfaces(self, scope):
+        if scope.return_type.is_scalar():
+            sig_name = '{}_out_0'.format(scope.orig_name)
+            sig = scope.signal(sig_name)
+            inf = SingleWriteInterface(sig, 'out_0', scope.orig_name)
+            self.module_info.add_interface(inf.if_name, inf)
+        elif scope.return_type.is_seq():
+            raise NotImplementedError('return of a suquence type is not implemented')
 
 
 def accessor2module(acc):
@@ -334,8 +336,6 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         edge_detectors = self._collect_special_decls(scope)
         for sig, old, new in edge_detectors:
             self.module_info.add_edge_detector(sig, old, new)
-
-        self._rename_signal(scope)
 
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
