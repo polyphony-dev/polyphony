@@ -1,4 +1,6 @@
 ﻿from collections import deque
+from .common import fail
+from .errors import Errors
 from .irvisitor import IRVisitor
 from .ir import *
 from .env import env
@@ -6,7 +8,6 @@ from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
 from .dominator import DominatorTreeBuilder
 from .scope import Scope
-from .common import error_info
 from .utils import *
 
 
@@ -22,8 +23,7 @@ def eval_unop(ir):
     elif op == 'USub':
         return -v
     else:
-        print(error_info(ir.block.scope, ir.lineno))
-        raise RuntimeError('operator is not supported yet ' + op)
+        fail(ir, Errors.UNSUPPORTED_OPERATOR, [op])
 
 
 def eval_binop(ir):
@@ -53,8 +53,7 @@ def eval_binop(ir):
     elif op == 'BitAnd':
         return lv & rv
     else:
-        print(error_info(ir.block.scope, ir.lineno))
-        raise RuntimeError('operator is not supported yet ' + op)
+        fail(ir, Errors.UNSUPPORTED_OPERATOR, [op])
 
 
 def eval_relop(op, lv, rv):
@@ -79,8 +78,7 @@ def eval_relop(op, lv, rv):
     elif op == 'Or':
         b = lv or rv
     else:
-        print(error_info(ir.block.scope, ir.lineno))
-        raise RuntimeError('operator is not supported yet ' + op)
+        fail(ir, Errors.UNSUPPORTED_OPERATOR, [op])
     return 1 if b else 0
 
 
@@ -311,6 +309,8 @@ class ConstantOpt(ConstantOptBase):
             source = memnode.single_source()
             if source:
                 assert source.initstm
+                if not source.initstm.src.repeat.is_a(CONST):
+                    fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
                 items = source.initstm.src.items * source.initstm.src.repeat.value
                 return items[ir.offset.value]
         return ir

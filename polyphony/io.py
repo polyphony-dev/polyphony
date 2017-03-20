@@ -11,8 +11,9 @@ __all__ = [
 
 
 def _init_io():
-    if sys.getswitchinterval() > 0.005:
-        sys.setswitchinterval(0.005)  # 5ms
+    if hasattr(sys, 'getswitchinterval'):
+        if sys.getswitchinterval() > 0.005:
+            sys.setswitchinterval(0.005)  # 5ms
 
 
 _events = []
@@ -70,7 +71,7 @@ def _portmethod(func):
 
 
 class _DataPort(object):
-    def __init__(self, init:int=0, width:int=1, protocol:int='none') -> object:
+    def __init__(self, init=0, width=1, protocol='none'):
         self.__v = init
         self.__oldv = 0
         self.__protocol = protocol
@@ -90,7 +91,7 @@ class _DataPort(object):
             raise TypeError("'Unknown port protocol '{}'".format(self.__protocol))
 
     @_portmethod
-    def rd(self) -> int:
+    def rd(self):
         if self.__protocol == 'valid' or self.__protocol == 'ready_valid':
             while _io_enabled and not self.__valid_ev.is_set():
                 self.__valid_ev.wait()
@@ -119,7 +120,7 @@ class _DataPort(object):
                 self.__ready_ev.clear()
         time.sleep(0.005)
 
-    def __call__(self, v=None) -> int:
+    def __call__(self, v=None):
         if v is None:
             return self.rd()
         else:
@@ -138,29 +139,29 @@ class _DataPort(object):
 
 
 class Bit(_DataPort):
-    def __init__(self, init:int=0, width:int=1, protocol:int='none') -> object:
+    def __init__(self, init=0, width=1, protocol='none'):
         super().__init__(init, width, protocol)
 
 
 class Int(_DataPort):
-    def __init__(self, width:int=32, init:int=0, protocol:int='none') -> object:
+    def __init__(self, width=32, init=0, protocol='none'):
         super().__init__(init, width, protocol)
 
 
 class Uint(_DataPort):
-    def __init__(self, width:int=32, init:int=0, protocol:int='none') -> object:
+    def __init__(self, width=32, init=0, protocol='none'):
         super().__init__(init, width, protocol)
 
 
 class Queue(object):
-    def __init__(self, width:int=32, maxsize:int=0) -> object:
+    def __init__(self, width=32, maxsize=0):
         self.__width = width
         self.__q = queue.Queue(maxsize)
         self.__ev_put = _create_event()
         self.__ev_get = _create_event()
 
     @_portmethod
-    def rd(self) -> int:
+    def rd(self):
         while self.__q.empty():
             self.__ev_put.wait()
             if _io_enabled:
@@ -184,7 +185,7 @@ class Queue(object):
         self.__q.put(v, block=False)
         self.__ev_put.set()
 
-    def __call__(self, v=None) -> int:
+    def __call__(self, v=None):
         if v is None:
             return self.rd()
         else:

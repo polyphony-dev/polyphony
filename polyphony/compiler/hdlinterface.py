@@ -8,7 +8,6 @@ Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
 class Ports(object):
     def __init__(self):
         self.ports = []
-        self.cnt = 0
 
     def __str__(self):
         return ', '.join(['<{}:{}:{}>'.format(p.name, p.width, p.dir)

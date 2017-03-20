@@ -5,7 +5,7 @@ import traceback
 import subprocess
 
 IVERILOG_PATH = 'iverilog'
-ROOT_DIR = './'
+ROOT_DIR = '.' + os.path.sep
 TEST_DIR = ROOT_DIR + 'tests'
 TMP_DIR  = ROOT_DIR + '.tmp'
 sys.path.append(ROOT_DIR)
@@ -32,8 +32,8 @@ def exec_test(casefile_path, output=True, compile_only=False):
 
 
 def simulate_verilog(testname, casename, casefile_path, output):
-    hdl_files = ['{}/{}.v'.format(TMP_DIR, casename), '{}/{}.v'.format(TMP_DIR, testname)]
-    exec_name = '{}/{}'.format(TMP_DIR, testname)
+    hdl_files = ['{}{}{}.v'.format(TMP_DIR, os.path.sep, casename), '{}{}{}.v'.format(TMP_DIR, os.path.sep, testname)]
+    exec_name = '{}{}{}'.format(TMP_DIR, os.path.sep, testname)
     args = ('{} -I {} -W all -o {} -s {}'.format(IVERILOG_PATH, TMP_DIR, exec_name, testname)).split(' ')
     args += hdl_files
     try:

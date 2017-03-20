@@ -73,6 +73,8 @@ class Type(object):
         assert False
 
     def __str__(self):
+        if self.name == 'object':
+            return self.get_scope().orig_name
         return self.name
 
     def __repr__(self):
@@ -164,7 +166,7 @@ class Type(object):
         return False
 
     @classmethod
-    def is_commutable(cls, t0, t1):
+    def is_compatible(cls, t0, t1):
         if t0 is t1:
             return True
         if t0.is_int() and t1.is_int():

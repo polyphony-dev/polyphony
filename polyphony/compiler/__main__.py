@@ -8,7 +8,8 @@ from .common import read_source
 from .scope import Scope
 from .block import BlockReducer, PathExpTracer
 from .irtranslator import IRTranslator
-from .typecheck import TypePropagation, InstanceTypePropagation, TypeChecker, ModuleChecker
+from .typecheck import TypePropagation, InstanceTypePropagation
+from .typecheck import TypeChecker, RestrictionChecker, ModuleChecker
 from .quadruplet import QuadrupleMaker
 from .hdlgen import HDLModuleBuilder
 from .vericodegen import VerilogCodeGen
@@ -132,6 +133,10 @@ def typeprop(driver, scope):
 
 def typecheck(driver, scope):
     TypeChecker().process(scope)
+
+
+def restrictioncheck(driver, scope):
+    RestrictionChecker().process(scope)
 
 
 def modulecheck(driver, scope):
@@ -323,13 +328,13 @@ def compile_plan():
         dbg(dumpscope),
         callgraph,
         typecheck,
+        restrictioncheck,
         dbg(dumpscope),
         phase(env.PHASE_1),
         dbg(dumpscope),
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
-        modulecheck,
         reduceblk,
         pathexp,
         dbg(dumpscope),
@@ -360,6 +365,7 @@ def compile_plan():
         constopt,
         dbg(dumpscope),
         instantiate,
+        modulecheck,
         dbg(dumpscope),
         convport,
         dbg(dumpscope),

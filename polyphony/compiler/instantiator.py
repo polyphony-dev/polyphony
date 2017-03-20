@@ -66,8 +66,7 @@ class WorkerInstantiator(object):
                     arg.symbol().typ.get_scope().is_port()):
                 pass
             else:
-                print(error_info(ctor, call.lineno))
-                raise RuntimeError('The argument of the worker must be a constant or a port')
+                pass
         if binding:
             postfix = '{}_{}'.format(call.lineno,
                                      '_'.join([str(v) for _, _, v in binding]))

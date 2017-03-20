@@ -32,7 +32,7 @@ def testbench(func):
 _is_worker_running = False
 
 
-def is_worker_running() -> bool:
+def is_worker_running():
     return _is_worker_running
 
 

@@ -30,6 +30,19 @@ def error_info(scope, lineno):
     return '{}\n{}:{}'.format(filename, lineno, get_src_text(scope, lineno))
 
 
+class CompileError(Exception):
+    pass
+
+
+def fail(ir, err_id, args=None):
+    print(error_info(ir.block.scope, ir.lineno))
+    if args:
+        msg = str(err_id).format(*args)
+    else:
+        msg = str(err_id)
+    raise CompileError(msg)
+
+
 class Tagged(object):
     def __init__(self, tags):
         if isinstance(tags, list):
