@@ -8,7 +8,8 @@ class Symbol(Tagged):
     all_symbols = []
 
     TAGS = {
-        'temp', 'param', 'return', 'condition', 'induction', 'alias'
+        'temp', 'param', 'return', 'condition', 'induction', 'alias',
+        'self'
     }
 
     @classmethod

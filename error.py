@@ -21,6 +21,8 @@ def error_test(casefile_path, output=True):
             first_line = f.readline()
             expected_msg = first_line.split('#')[1].rstrip('\n')
         compile_main(casefile_path, casename, TMP_DIR, debug_mode=output)
+    except AssertionError:
+        raise
     except Exception as e:
         if e.args[0] == expected_msg:
             return

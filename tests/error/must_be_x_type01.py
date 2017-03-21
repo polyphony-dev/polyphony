@@ -1,10 +1,11 @@
-#Type of 'x' must be list or tuple, not int
+#Type of 'i' must be int, not str
 from polyphony import testbench
 
 
 def must_be_x_type01():
-    x = 1
-    return x[0]
+    x = [0]
+    i = '0'
+    return x[i]
 
 
 @testbench

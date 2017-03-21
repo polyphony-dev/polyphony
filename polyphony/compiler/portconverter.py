@@ -1,5 +1,7 @@
 from collections import defaultdict
 from .common import error_info
+from .common import fail
+from .errors import Errors
 from .scope import Scope
 from .ir import CONST, TEMP, MOVE
 from .irvisitor import IRTransformer
@@ -15,8 +17,9 @@ class PortTypeProp(TypePropagation):
             ctor = ir.func_scope.find_ctor()
             for (_, a), p in zip(ir.args, ctor.params[1:]):
                 if not a.is_a(CONST):
+                    fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
                     print(error_info(self.scope, ir.lineno))
-                    raise RuntimeError('The port class constructor accepts only constants.')
+                    raise RuntimeError('')
                 attrs[p.copy.name] = a.value
 
             attrs['direction'] = '?'
@@ -63,9 +66,24 @@ class PortConverter(IRTransformer):
 
             for field in m.class_fields().values():
                 if field.typ.is_port() and field.typ.get_direction() == '?':
-                    raise RuntimeError("The port '{}' is not used at all".format(field))
+                    assert ctor.usedef
+                    stm = ctor.usedef.get_stms_defining(field).pop()
+                    fail(stm, Errors.PORT_IS_NOT_USED,
+                         [field.orig_name()])
+                    #field.typ.set_direction('inout')
+            for sym in ctor.symbols.values():
+                if sym.typ.is_port() and sym.typ.get_direction() == '?':
+                    assert ctor.usedef
+                    stms = ctor.usedef.get_stms_defining(sym)
+                    # This symbol might not be used (e.g. ancestor symbol),
+                    # so we have to check if its definition statement exists.
+                    if stms:
+                        fail(stms.pop(), Errors.PORT_IS_NOT_USED,
+                             [sym.orig_name()])
+                        #sym.typ.set_direction('inout')
 
-    def _set_and_check_port_direction(self, direction, port_typ, ir):
+    def _set_and_check_port_direction(self, direction, sym, ir):
+        port_typ = sym.typ
         if not port_typ.has_direction():
             port_typ.set_direction('?')
         di = port_typ.get_direction()
@@ -75,16 +93,18 @@ class PortConverter(IRTransformer):
                 port_typ.set_direction(direction)
                 port_typ.freeze()
             elif di != direction:
-                print(error_info(self.scope, ir.lineno))
-                raise RuntimeError('Port direction is conflicted')
+                fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
+                     [sym.orig_name()])
+        elif kind == 'internal':
+            port_typ.set_direction('inout')
 
         if direction == 'output':
             # write-write conflict
             if port_typ.has_writer():
                 writer = port_typ.get_writer()
                 if writer is not self.scope and writer.worker_owner is self.scope.worker_owner:
-                    print(error_info(self.scope, ir.lineno))
-                    raise RuntimeError('Writing to the port is conflicted')
+                    fail(self.current_stm, Errors.WRITING_IS_CONFLICTED,
+                         [sym.orig_name()])
             else:
                 assert self.scope.is_worker() or self.scope.parent.is_module()
                 port_typ.set_writer(self.scope)
@@ -93,8 +113,8 @@ class PortConverter(IRTransformer):
             if port_typ.has_reader():
                 reader = port_typ.get_reader()
                 if reader is not self.scope and reader.worker_owner is self.scope.worker_owner:
-                    print(error_info(self.scope, ir.lineno))
-                    raise RuntimeError('Reading from the queue port is conflicted')
+                    fail(self.current_stm, Errors.READING_IS_CONFLICTED,
+                         [sym.orig_name()])
             else:
                 assert self.scope.is_worker() or self.scope.parent.is_module()
                 port_typ.set_reader(self.scope)
@@ -111,9 +131,9 @@ class PortConverter(IRTransformer):
                 direction = 'input'
             if sym in self.union_ports:
                 for s in self.union_ports[sym]:
-                    self._set_and_check_port_direction(direction, s.typ, ir)
+                    self._set_and_check_port_direction(direction, s, ir)
             else:
-                self._set_and_check_port_direction(direction, sym.typ, ir)
+                self._set_and_check_port_direction(direction, sym, ir)
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -132,8 +152,7 @@ class PortConverter(IRTransformer):
                 kind = port.get_port_kind()
                 if kind == 'external':
                     if di == 'output':
-                        print(error_info(self.scope, ir.lineno))
-                        raise RuntimeError('Cannot wait for output port')
+                        fail(self.current_stm, Errors.CANNOT_WAIT_OUTPUT)
                     elif di == '?':
                         port.set_direction('input')
                         port.freeze()

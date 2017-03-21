@@ -609,7 +609,10 @@ class AHDLTranslator(object):
             if ctx & Ctx.STORE:
                 tags.add('reg')
         elif sym.typ.is_port():
-            tags.add(sym.typ.get_direction())
+            di = sym.typ.get_direction()
+            assert di != '?'
+            if di != 'inout':
+                tags.add(di)
 
         if sym.is_param():
             tags.add('input')
@@ -843,6 +846,7 @@ class AHDLTranslator(object):
             tags.add('fifo_port')
             tags.add('seq_port')
         direction = port_sym.typ.get_direction()
+        assert direction != '?'
         protocol = port_sym.typ.get_protocol()
         kind = port_sym.typ.get_port_kind()
 
@@ -852,9 +856,11 @@ class AHDLTranslator(object):
             else:
                 tags.add('reg')
         elif self.scope.parent.is_subclassof(port_sym.scope) and port_sym.scope.is_module():
-            tags.add(direction)
+            if direction != 'inout':
+                tags.add(direction)
         elif self.scope.is_worker():
-            tags.add(direction)
+            if direction != 'inout':
+                tags.add(direction)
         else:
             # TODO
             tags.add('extport')

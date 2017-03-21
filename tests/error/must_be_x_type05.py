@@ -2,15 +2,14 @@
 from polyphony import testbench
 
 
-def must_be_x_type02():
+def must_be_x_type05(i):
     x = [0]
-    i = '0'
-    x[i] = 0
+    return x[i]
 
 
 @testbench
 def test():
-    must_be_x_type02()
+    must_be_x_type05('0')
 
 
 test()

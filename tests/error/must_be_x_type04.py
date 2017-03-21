@@ -2,7 +2,7 @@
 from polyphony import testbench
 
 
-def must_be_x_type03():
+def must_be_x_type04():
     x = [0]
     y = [0]
     x[y] = 0
@@ -10,7 +10,7 @@ def must_be_x_type03():
 
 @testbench
 def test():
-    must_be_x_type03()
+    must_be_x_type04()
 
 
 test()

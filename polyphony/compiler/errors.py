@@ -14,6 +14,7 @@ class Errors(Enum):
     LEN_TAKES_ONE_ARG = 108
     LEN_TAKES_SEQ_TYPE = 109
     IS_NOT_CALLABLE = 110
+    IS_NOT_SUBSCRIPTABLE = 111
 
     # semantic errors
     REFERENCED_BEFORE_ASSIGN = 200
@@ -31,6 +32,17 @@ class Errors(Enum):
     MODULE_FIELD_MUST_ASSIGN_IN_CTOR = 902
     UNSUPPORTED_TYPES_IN_FUNC = 903
     WORKER_ARG_MUST_BE_X_TYPE = 904
+    PORT_MUST_BE_IN_MODULE = 905
+    PORT_PARAM_MUST_BE_CONST = 906
+
+    READING_IS_CONFLICTED = 920
+    WRITING_IS_CONFLICTED = 921
+    DIRECTION_IS_CONFLICTED = 922
+    CANNOT_WAIT_OUTPUT = 923
+
+    # polyphony library warnings
+    PORT_IS_NOT_USED = 1000
+
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -49,6 +61,7 @@ ERROR_MESSAGES = {
     Errors.LEN_TAKES_ONE_ARG: "len() takes exactly one argument",
     Errors.LEN_TAKES_SEQ_TYPE: "len() takes sequence type argument",
     Errors.IS_NOT_CALLABLE: "'{}' is not callable",
+    Errors.IS_NOT_SUBSCRIPTABLE: "'{}' is not subscriptable",
 
     # semantic errors
     Errors.REFERENCED_BEFORE_ASSIGN: "local variable '{}' referenced before assignment",
@@ -65,5 +78,14 @@ ERROR_MESSAGES = {
     Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE: "Assignment to a module field can only be done once",
     Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR: "Assignment to a module field can only at the constructor",
     Errors.UNSUPPORTED_TYPES_IN_FUNC: "It is not supported to pass the {} type argument to {}()",
-    Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}"
+    Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}",
+    Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",
+    Errors.PORT_PARAM_MUST_BE_CONST: "The port class constructor accepts only constants",
+
+    Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
+    Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
+    Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
+    Errors.CANNOT_WAIT_OUTPUT: "Cannot wait for the output port",
+
+    Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
 }

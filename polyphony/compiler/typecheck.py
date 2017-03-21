@@ -211,8 +211,8 @@ class TypePropagation(IRVisitor):
         self.visit(ir.offset)
         if not mem_t.is_seq():
             if self.check_error:
-                type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
-                           [ir.mem, 'list or tuple', mem_t])
+                type_error(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE,
+                           [ir.mem])
             else:
                 return Type.undef_t
         return mem_t.get_element()
@@ -222,8 +222,8 @@ class TypePropagation(IRVisitor):
         self.visit(ir.offset)
         if not mem_t.is_seq():
             if self.check_error:
-                type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
-                           [ir.mem, 'list or tuple', mem_t])
+                type_error(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE,
+                           [ir.mem])
             else:
                 return Type.undef_t
 
@@ -516,9 +516,7 @@ class TypeChecker(IRVisitor):
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
-        if not mem_t.is_seq():
-            type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
-                       [ir.mem, 'list or tuple', mem_t])
+        assert mem_t.is_seq()
         offs_t = self.visit(ir.offset)
         if not offs_t.is_int():
             type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
@@ -527,9 +525,7 @@ class TypeChecker(IRVisitor):
 
     def visit_MSTORE(self, ir):
         mem_t = self.visit(ir.mem)
-        if not mem_t.is_seq():
-            type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
-                       [ir.mem, 'list or tuple', mem_t])
+        assert mem_t.is_seq()
         offs_t = self.visit(ir.offset)
         if not offs_t.is_int():
             type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
@@ -593,7 +589,7 @@ class TypeChecker(IRVisitor):
         if arg_len == param_len:
             pass
         elif arg_len < param_len:
-            type_error(self.current_stm, Errors.MISSING_REQUIRED_ARG
+            type_error(self.current_stm, Errors.MISSING_REQUIRED_ARG,
                        [scope_name])
         elif not with_vararg:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
@@ -616,6 +612,12 @@ class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
         if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
             type_error(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
+
+
+class LateRestrictionChecker(IRVisitor):
+    def visit_NEW(self, ir):
+        if ir.func_scope.is_port() and not (self.scope.is_ctor() and self.scope.parent.is_module()):
+            type_error(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
 
 
 class ModuleChecker(IRVisitor):

@@ -203,6 +203,8 @@ class FunctionVisitor(ast.NodeVisitor):
             self_typ = Type.object(outer_scope)
             first_param.copy.set_type(self_typ)
             first_param.sym.set_type(self_typ)
+            first_param.copy.add_tag('self')
+            first_param.sym.add_tag('self')
 
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass

@@ -9,7 +9,7 @@ from .scope import Scope
 from .block import BlockReducer, PathExpTracer
 from .irtranslator import IRTranslator
 from .typecheck import TypePropagation, InstanceTypePropagation
-from .typecheck import TypeChecker, RestrictionChecker, ModuleChecker
+from .typecheck import TypeChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
 from .quadruplet import QuadrupleMaker
 from .hdlgen import HDLModuleBuilder
 from .vericodegen import VerilogCodeGen
@@ -140,6 +140,7 @@ def restrictioncheck(driver, scope):
 
 
 def modulecheck(driver, scope):
+    LateRestrictionChecker().process(scope)
     ModuleChecker().process(scope)
 
 
@@ -372,9 +373,7 @@ def compile_plan():
         usedef,
         phi,
         usedef,
-        #specfunc,
         dbg(dumpscope),
-        usedef,
         reduceblk,
         pathexp,
         dbg(dumpscope),
