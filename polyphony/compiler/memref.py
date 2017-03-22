@@ -244,7 +244,6 @@ class MemTrait(object):
     IM    = 0x00020000
 
     def __init__(self):
-        self.width = env.config.default_int_width
         self.length = -1
 
     def set_writable(self):
@@ -262,6 +261,13 @@ class MemTrait(object):
     def is_immutable(self):
         return self.flags & MemTrait.IM
 
+    def data_width(self):
+        if self.sym.typ.has_element():
+            elem_t = self.sym.typ.get_element()
+            if elem_t.has_width():
+                return elem_t.get_width()
+        return env.config.default_int_width
+
     def addr_width(self):
         return (self.length - 1).bit_length() + 1  # +1 means sign bit
 
@@ -273,7 +279,7 @@ class MemRefNode(RefNode, MemTrait):
         self.initstm = None
 
     def _str_properties(self):
-        s = ' <{}>[{}] '.format(self.width, self.length)
+        s = ' <{}>[{}] '.format(self.data_width(), self.length)
         s += 'wr ' if self.is_writable() else 'ro '
         if self.initstm:
             s += 'initstm={} '.format(self.initstm)
@@ -329,7 +335,6 @@ class MemRefNode(RefNode, MemTrait):
     def clone(self, orig_scope, new_scope):
         c = super().clone(orig_scope, new_scope)
         c.initstm = self.initstm
-        c.width = self.width
         c.length = self.length
         return c
 
@@ -340,7 +345,7 @@ class MemParamNode(RefNode, MemTrait):
         MemTrait.__init__(self)
 
     def _str_properties(self):
-        s = ' <{}>[{}] '.format(self.width, self.length)
+        s = ' <{}>[{}] '.format(self.data_width(), self.length)
         s += 'wr ' if self.is_writable() else 'ro '
         return s
 
@@ -389,7 +394,7 @@ class N2OneMemNode(N2OneNode, MemTrait):
         MemTrait.__init__(self)
 
     def _str_properties(self):
-        s = ' <{}>[{}] '.format(self.width, self.length)
+        s = ' <{}>[{}] '.format(self.data_width(), self.length)
         s += 'wr ' if self.is_writable() else 'ro '
         return s
 
@@ -408,7 +413,7 @@ class One2NMemNode(One2NNode, MemTrait):
         MemTrait.__init__(self)
 
     def _str_properties(self):
-        s = ' <{}>[{}] '.format(self.width, self.length)
+        s = ' <{}>[{}] '.format(self.data_width(), self.length)
         s += 'wr ' if self.is_writable() else 'ro '
         return s
 
@@ -723,6 +728,12 @@ class MemRefGraphBuilder(IRVisitor):
         if (src, dst) not in self.edges:
             self.edges.append((src, dst))
 
+    def _set_type(self, sym, typ):
+        if not sym.typ.is_freezed():
+            sym.set_type(typ)
+        else:
+            sym.typ = typ
+
     def visit_CALL(self, ir):
         for i, (_, arg) in enumerate(ir.args):
             if arg.is_a(TEMP) and arg.sym.typ.is_seq():
@@ -740,23 +751,19 @@ class MemRefGraphBuilder(IRVisitor):
                     mem_t = Type.list(elm_t, memnode)
                 else:
                     mem_t = Type.tuple(elm_t, memnode, ir.sym.typ.get_length())
-                memsym.set_type(mem_t)
+                self._set_type(memsym, mem_t)
 
     def visit_ARRAY(self, ir):
-        ir.sym = self.scope.add_temp('@array')
         self.mrg.add_node(MemRefNode(ir.sym, self.scope))
         memnode = self.mrg.node(ir.sym)
         memnode.set_initstm(self.current_stm)
 
         if not all(item.is_a(CONST) for item in ir.items):
             memnode.set_writable()
-        # TODO: element type
-        if ir.is_mutable:
-            mem_t = Type.list(Type.int(), memnode)
-        else:
+        if not ir.is_mutable:
             memnode.set_immutable()
-            mem_t = Type.tuple(Type.int(), memnode, len(ir.items))
-        ir.sym.set_type(mem_t)
+        mem_t = memnode.sym.typ
+        mem_t.set_memnode(memnode)
 
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
@@ -769,7 +776,7 @@ class MemRefGraphBuilder(IRVisitor):
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
                 mem_t = Type.list(Type.int(), self.mrg.node(memsym))
-                memsym.set_type(mem_t)
+                self._set_type(memsym, mem_t)
                 ir.mem.set_symbol(memsym)
 
     def visit_MSTORE(self, ir):
@@ -799,7 +806,7 @@ class MemRefGraphBuilder(IRVisitor):
                 mem_t = Type.list(elem_t, memnode)
             else:
                 mem_t = Type.tuple(elem_t, memnode, memsym.typ.get_length())
-            memsym.set_type(mem_t)
+            self._set_type(memsym, mem_t)
             if ir.src.is_a(TEMP):
                 self._append_edge(ir.src.sym, memsym)
             elif ir.src.is_a(ARRAY):
@@ -821,8 +828,7 @@ class MemRefGraphBuilder(IRVisitor):
                 mem_t = Type.list(elem_t, memnode)
             else:
                 mem_t = Type.tuple(elem_t, memnode, ir.var.sym.typ.get_length())
-            ir.var.sym.set_type(mem_t)
-
+            self._set_type(ir.var.sym, mem_t)
 
 class MemInstanceGraphBuilder(object):
     def __init__(self):

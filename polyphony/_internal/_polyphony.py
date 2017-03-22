@@ -5,7 +5,7 @@ __all__ = [
 ]
 
 
-def testbench(func):
+def testbench(func) -> None:
     pass
 
 
@@ -13,5 +13,5 @@ def is_worker_running() -> bool:
     pass
 
 
-def module():
+def module() -> None:
     pass

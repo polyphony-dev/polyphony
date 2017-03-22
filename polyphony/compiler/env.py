@@ -5,6 +5,7 @@ class Config(object):
     default_int_width = 32
     main_clock_frequency = 100000000
     reset_activation_signal = 1
+    internal_ram_threshold_size = 512  # width * length
 
 
 class Env(object):
@@ -41,7 +42,7 @@ class Env(object):
         self.scope_file_map[scope] = self.current_filename
         self.scopes[scope.name] = scope
         self.all_scopes[scope.name] = scope
-        if self.dev_debug_mode and not scope.is_lib():
+        if self.dev_debug_mode and (not scope.is_lib() and not scope.is_inlinelib()):
             logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@', ''), 'w')
             self.logfiles[scope] = logfile
 

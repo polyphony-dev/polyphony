@@ -427,7 +427,7 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     )
     package_file = os.path.abspath(internal_root_dir + '_polyphony.py')
     translator.translate(read_source(package_file), 'polyphony')
-    for name in ('_io', '_timing'):
+    for name in ('_typing', '_io', '_timing'):
         package_file = os.path.abspath(internal_root_dir + name + '.py')
         package_name = os.path.basename(package_file).split('.')[0]
         package_name = package_name[1:]

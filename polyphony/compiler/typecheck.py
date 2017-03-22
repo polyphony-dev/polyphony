@@ -34,6 +34,9 @@ class TypePropagation(IRVisitor):
         for s in scopes:
             if s.return_type is None:
                 s.return_type = Type.undef_t
+            else:
+                ret = s.symbols[Symbol.return_prefix]
+                ret.typ = s.return_type
         prev_untyped = []
         while True:
             untyped = []
@@ -235,6 +238,8 @@ class TypePropagation(IRVisitor):
         return mem_t
 
     def visit_ARRAY(self, ir):
+        if not ir.sym:
+            ir.sym = self.scope.add_temp('@array')
         item_typs = [self.visit(item) for item in ir.items]
 
         if item_typs and all([Type.is_same(item_typs[0], item_t) for item_t in item_typs]):
@@ -247,9 +252,11 @@ class TypePropagation(IRVisitor):
         else:
             assert False  # TODO
         if ir.is_mutable:
-            return Type.list(item_t, None)
+            t = Type.list(item_t, None)
         else:
-            return Type.tuple(item_t, None, len(ir.items))
+            t = Type.tuple(item_t, None, len(ir.items))
+        self._set_type(ir.sym, t)
+        return t
 
     def _propagate_worker_arg_types(self, call):
         if len(call.args) == 0:
@@ -333,6 +340,11 @@ class TypePropagation(IRVisitor):
                 if receiver.typ.is_object():
                     sym = receiver.typ.get_scope().find_sym(ir.dst.symbol().name)
                     self._set_type(sym, src_typ)
+            if ir.src.is_a(ARRAY):
+                if dst_typ.has_element():
+                    elem_t = dst_typ.get_element()
+                    # we have to propagate backward
+                    self._set_type(ir.src.sym, dst_typ)
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet
@@ -453,7 +465,7 @@ class TypeChecker(IRVisitor):
 
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
         self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
-        self._check_param_type(param_typs, ir, with_vararg)
+        self._check_param_type(param_typs, ir, ir.func_scope.orig_name, with_vararg)
 
         return ir.func_scope.return_type
 
@@ -471,7 +483,7 @@ class TypeChecker(IRVisitor):
             param_typs = tuple([sym.typ for sym, _, _ in scope.params])
             with_vararg = len(param_typs) and param_typs[-1].has_vararg()
             self._check_param_number(arg_len, param_len, ir, ir.name, with_vararg)
-            self._check_param_type(param_typs, ir, with_vararg)
+            self._check_param_type(param_typs, ir, ir.name, with_vararg)
         else:
             for _, arg in ir.args:
                 self.visit(arg)
@@ -488,7 +500,7 @@ class TypeChecker(IRVisitor):
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
         self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
-        self._check_param_type(param_typs, ir, with_vararg)
+        self._check_param_type(param_typs, ir, ir.func_scope.orig_name, with_vararg)
 
         return Type.object(ir.func_scope)
 
@@ -543,10 +555,11 @@ class TypeChecker(IRVisitor):
             if not item_type.is_int():
                 type_error(self.current_stm, Errors.SEQ_ITEM_MUST_BE_INT,
                            [item_type])
-        if ir.is_mutable:
-            return Type.list(Type.int(), None)
-        else:
-            return Type.tuple(Type.int(), None, len(ir.items))
+        if ir.sym.typ.is_freezed() and ir.sym.typ.has_length():
+            if len(ir.items * ir.repeat.value) > ir.sym.typ.get_length():
+                type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
+                           [])
+        return ir.sym.typ
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
@@ -595,7 +608,7 @@ class TypeChecker(IRVisitor):
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
                        [scope_name, param_len, arg_len])
 
-    def _check_param_type(self, param_typs, ir, with_vararg=False):
+    def _check_param_type(self, param_typs, ir, scope_name, with_vararg=False):
         if with_vararg:
             if len(ir.args) > len(param_typs):
                 tails = tuple([param_typs[-1]] * (len(ir.args) - len(param_typs)))
@@ -604,8 +617,8 @@ class TypeChecker(IRVisitor):
         for (name, arg), param_t in zip(ir.args, param_typs):
             arg_t = self.visit(arg)
             if not Type.can_overwrite(param_t, arg_t):
-                type_error(self.current_stm, Errors.INCOMPATIBLE_TYPES,
-                           [param_t, arg_t])
+                type_error(self.current_stm, Errors.INCOMPATIBLE_PARAMETER_TYPE,
+                           [arg, scope_name])
 
 
 class RestrictionChecker(IRVisitor):

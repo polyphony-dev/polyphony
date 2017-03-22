@@ -25,9 +25,13 @@ class Type(object):
             raise AttributeError(name)
 
     @classmethod
-    def from_annotation(cls, ann, scope):
+    def from_annotation(cls, ann, scope, is_lib=False):
         if isinstance(ann, str):
-            if ann == 'int':
+            t = None
+            if is_lib and ann in env.all_scopes:
+                t = Type.object(env.all_scopes[ann])
+                t.freeze()
+            elif ann == 'int':
                 t = Type.int()
                 t.freeze()
             elif ann == 'uint':
@@ -43,38 +47,64 @@ class Type(object):
                 t = Type.object(None)
             elif ann == 'str':
                 t = Type.str_t
-            elif ann in env.all_scopes:
-                t = Type.object(env.all_scopes[ann])
-                t.freeze()
+            elif ann == 'None':
+                t = Type.none_t
+            else:
+                sym = scope.find_sym(ann)
+                if sym and sym.typ.has_scope():
+                    sym_scope = sym.typ.get_scope()
+                    if sym_scope.name.startswith('polyphony.typing'):
+                        t = Type.from_typing_class(sym_scope)
+                    else:
+                        t = Type.object(sym_scope)
+                    t.freeze()
             return t
         elif isinstance(ann, tuple):
-            qnames = ann[0].split('.')
-            args = ann[1]
-            target = scope
-            for qname in qnames:
-                sym = target.find_sym(qname)
-                if not sym or (not sym.typ.is_namespace() and not sym.typ.is_class()):
-                    return None
-                target = sym.typ.get_scope()
-                if not target:
-                    return None
-            if target.is_port():
-                ctor = target.find_ctor()
-                attrs = {}
-                for i, (_, copy, defval) in enumerate(ctor.params[1:]):
-                    if i >= len(args):
-                        attrs[copy.name] = defval.value
-                    else:
-                        attrs[copy.name] = args[i]
-                p = Type.port(target, attrs)
-                return p
+            if isinstance(ann[0], tuple):
+                t = Type.from_annotation(ann[0], scope)
+                if t.is_seq():
+                    length = int(ann[1])
+                    t.set_length(length)
+                else:
+                    assert False
+                return t
+            else:
+                target_scope = scope.find_sym(ann[0]).typ.get_scope()
+                assert target_scope
+                elms = [Type.from_annotation(ann[1], scope) for elm in ann[1:]]
+                if target_scope.is_typeclass():
+                    t = Type.from_typing_class(target_scope, elms)
+                    t.freeze()
+                    return t
         elif ann is None:
             return Type.undef_t
         assert False
 
+    @classmethod
+    def from_typing_class(cls, scope, elms=None):
+        if scope.orig_name == 'bit':
+            return Type.int(1, signed=False)
+        elif scope.orig_name.startswith('int'):
+            return Type.int(int(scope.orig_name[3:]))
+        elif scope.orig_name.startswith('uint'):
+            return Type.int(int(scope.orig_name[4:]), signed=False)
+        elif scope.orig_name == ('List'):
+            assert len(elms) == 1
+            return Type.list(elms[0], None)
+        elif scope.orig_name == ('Tuple'):
+            length = len(elms)
+            return Type.tuple(elms[0], None, length)
+        else:
+            assert False
+
     def __str__(self):
-        if self.name == 'object':
+        if self.name == 'object' and self.get_scope():
             return self.get_scope().orig_name
+        if env.dev_debug_mode:
+            if self.name == 'int':
+                return 'int[{}]'.format(self.get_width())
+            if self.name == 'list':
+                return 'list[{}]'.format(self.get_element())
         return self.name
 
     def __repr__(self):
@@ -148,6 +178,10 @@ class Type(object):
         if to_t.is_int() and from_t.is_bool():
             return True
         if to_t.is_list() and from_t.is_list():
+            if to_t.has_length():
+                if from_t.has_length():
+                    return to_t.get_length() == from_t.get_length()
+                return False
             return True
         if to_t.is_tuple() and from_t.is_tuple():
             return True

@@ -25,6 +25,7 @@ class Errors(Enum):
     SEQ_ITEM_MUST_BE_INT = 802
     SEQ_MULTIPLIER_MUST_BE_CONST = 803
     UNSUPPORTED_OPERATOR = 804
+    SEQ_CAPACITY_OVERFLOWED = 805
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -55,8 +56,9 @@ ERROR_MESSAGES = {
     Errors.MISSING_REQUIRED_ARG_N: "{}() missing required argument {}",
     Errors.TAKES_TOOMANY_ARGS: "{}() takes {} positional arguments but {} were given",
     Errors.UNKNOWN_ATTRIBUTE: "Unknown attribute name '{}'",
-    Errors.INCOMPATIBLE_TYPES: "'{}' and '{}' are incompatible types",
+    Errors.INCOMPATIBLE_TYPES: "{} and {} are incompatible types",
     Errors.INCOMPATIBLE_RETURN_TYPE: "Type of return value must be {}, not {}",
+    Errors.INCOMPATIBLE_PARAMETER_TYPE: "'{}' is incompatible type as a parameter of {}()",
 
     Errors.LEN_TAKES_ONE_ARG: "len() takes exactly one argument",
     Errors.LEN_TAKES_SEQ_TYPE: "len() takes sequence type argument",
@@ -72,6 +74,7 @@ ERROR_MESSAGES = {
     Errors.SEQ_ITEM_MUST_BE_INT: "Type of sequence item must be int, not {}",
     Errors.SEQ_MULTIPLIER_MUST_BE_CONST: "Type of sequence multiplier must be constant",
     Errors.UNSUPPORTED_OPERATOR: "Unsupported operator {}",
+    Errors.SEQ_CAPACITY_OVERFLOWED: "Sequence capacity is overflowing",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "@module decorated class must be in the global scope",

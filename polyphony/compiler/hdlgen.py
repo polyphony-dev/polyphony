@@ -99,9 +99,9 @@ class HDLModuleBuilder(object):
                 source_scope = list(source.scopes)[0]
                 if source_scope.is_class():  # class field rom
                     hdl_name = source_scope.orig_name + '_field_' + hdl_name
-            output_sig = scope.gen_sig(hdl_name, memnode.width)  # TODO
+            output_sig = scope.gen_sig(hdl_name, memnode.data_width())  # TODO
             fname = AHDL_VAR(output_sig, Ctx.STORE)
-            input_sig = scope.gen_sig(hdl_name + '_in', memnode.width)  # TODO
+            input_sig = scope.gen_sig(hdl_name + '_in', memnode.data_width())  # TODO
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             if source:
@@ -255,14 +255,14 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                 memnode = sym.typ.get_memnode()
                 inf = RAMBridgeInterface(memnode.name(),
                                          self.module_info.name,
-                                         memnode.width,
+                                         memnode.data_width(),
                                          memnode.addr_width())
                 self.module_info.node2if[memnode] = inf
             elif sym.typ.is_tuple():
                 memnode = sym.typ.get_memnode()
                 inf = RegArrayInterface(memnode.name(),
                                         self.module_info.name,
-                                        memnode.width,
+                                        memnode.data_width(),
                                         memnode.length)
             else:
                 assert False

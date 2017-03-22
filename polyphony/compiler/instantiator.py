@@ -108,6 +108,7 @@ class MemnodeReplacer(IRVisitor):
             typ.set_memnode(new_memnode)
             self.replaced.add(typ)
 
+
 class ModuleInstantiator(object):
     def process_all(self):
         new_modules = self._process_global_module()

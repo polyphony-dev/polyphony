@@ -8,7 +8,7 @@ from .symbol import Symbol
 from .type import Type
 from .env import env
 from .common import error_info
-from .builtin import builtin_names, lib_port_type_names, lib_class_names
+from .builtin import builtin_names, lib_port_type_names, lib_class_names, lib_type_class_prefixes
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -27,6 +27,7 @@ IGNORE_PREFIX = '_polyphony_'
 
 BUILTIN_PACKAGES = (
     'polyphony',
+    'polyphony.typing',
     'polyphony.io',
     'polyphony.timing',
 )
@@ -133,7 +134,8 @@ class FunctionVisitor(ast.NodeVisitor):
             param_copy = self.current_scope.add_sym(arg.arg)
             if arg.annotation:
                 ann = self.annotation_visitor.visit(arg.annotation)
-                param_t = Type.from_annotation(ann, self.current_scope.parent)
+                is_lib = self.current_scope.is_lib()
+                param_t = Type.from_annotation(ann, self.current_scope.parent, is_lib)
                 if not param_t:
                     print(error_info(self.current_scope, node.lineno))
                     raise TypeError("Unknown type is specified.")
@@ -185,7 +187,8 @@ class FunctionVisitor(ast.NodeVisitor):
             self.current_scope.add_param(param_in, param_copy, None)
         if node.returns:
             ann = self.annotation_visitor.visit(node.returns)
-            t = Type.from_annotation(ann, self.current_scope.parent)
+            is_lib = self.current_scope.is_lib()
+            t = Type.from_annotation(ann, self.current_scope.parent, is_lib)
             if t:
                 self.current_scope.return_type = t
                 if t is not Type.none_t:
@@ -227,8 +230,13 @@ class FunctionVisitor(ast.NodeVisitor):
             else:
                 print(error_info(outer_scope, node.lineno))
                 raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
-        if (outer_scope.name + '.' + node.name) in lib_port_type_names:
+        scope_qualified_name = (outer_scope.name + '.' + node.name)
+        if scope_qualified_name in lib_port_type_names:
             tags |= {'port', 'lib'}
+        if outer_scope.name == 'polyphony.typing':
+            tags |= {'typeclass', 'lib'}
+        if outer_scope.is_lib() and 'inlinelib' not in tags:
+            tags.add('lib')
         self.current_scope = Scope.create(outer_scope,
                                           node.name,
                                           tags | {'class'},
@@ -246,7 +254,7 @@ class FunctionVisitor(ast.NodeVisitor):
         if self.current_scope.is_module():
             for m in ['append_worker']:
                 sym = self.current_scope.add_sym(m)
-                scope = Scope.create(self.current_scope, m, ['method', 'lib'], node.lineno)
+                scope = Scope.create(self.current_scope, m, {'method', 'lib'}, node.lineno)
                 sym.set_type(Type.function(scope, None, None))
                 blk = Block(scope)
                 scope.set_entry_block(blk)
@@ -287,10 +295,11 @@ class AugAssignTransformer(ast.NodeTransformer):
 
 
 class CodeVisitor(ast.NodeVisitor):
-    def __init__(self, top_scope):
+    def __init__(self, top_scope, type_comments):
         self.import_list = {}
         self.importfrom_list = {}
         self.current_scope = top_scope
+        self.type_comments = type_comments
 
         self.current_block = Block(self.current_scope)
         self.current_scope.set_entry_block(self.current_block)
@@ -428,7 +437,10 @@ class CodeVisitor(ast.NodeVisitor):
             self.visit(body)
         logger.debug(node.name)
         if not any([method.is_ctor() for method in self.current_scope.children]):
-            ctor = Scope.create(self.current_scope, '__init__', ['method', 'ctor'], node.lineno)
+            tags = {'method', 'ctor'}
+            if self.current_scope.parent.is_lib():
+                tags |= {'lib'}
+            ctor = Scope.create(self.current_scope, '__init__', tags, node.lineno)
             # add 'self' parameter
             param_in = ctor.add_param_sym(env.self_name)
             param_copy = ctor.add_sym(env.self_name)
@@ -467,6 +479,7 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_Assign(self, node):
         if isinstance(node.targets[0], ast.Name) and node.targets[0].id.startswith(IGNORE_PREFIX):
             return
+        tail_lineno = _get_tail_lineno(node.value)
         right = self.visit(node.value)
         for target in node.targets:
             left = self.visit(target)
@@ -482,6 +495,13 @@ class CodeVisitor(ast.NodeVisitor):
                 else:
                     print(self._err_info(node))
                     raise RuntimeError('The list literal is expected')
+            if tail_lineno in self.type_comments:
+                hint = self.type_comments[tail_lineno]
+                mod = ast.parse(hint)
+                ann = self.annotation_visitor.visit(mod.body[0])
+                t = Type.from_annotation(ann, self.current_scope.parent)
+                if t:
+                    left.symbol().set_type(t)
             self.emit(MOVE(left, right), node)
 
     def visit_AugAssign(self, node):
@@ -1099,6 +1119,9 @@ class AnnotationVisitor(ast.NodeVisitor):
     def __init__(self, parent_visitor):
         self.parent_visitor = parent_visitor
 
+    def visit_Expr(self, node):
+        return self.visit(node.value)
+
     def visit_Subscript(self, node):
         v = self.visit(node.value)
         s = self.visit(node.slice)
@@ -1109,6 +1132,15 @@ class AnnotationVisitor(ast.NodeVisitor):
 
     def visit_Name(self, node):
         return node.id
+
+    def visit_NameConstant(self, node):
+        # for Python 3.4
+        if node.value is True:
+            return 'True'
+        elif node.value is False:
+            return 'False'
+        elif node.value is None:
+            return 'None'
 
     def visit_Attribute(self, node):
         value = self.visit(node.value)
@@ -1144,9 +1176,41 @@ def scope_tree_str(scp, name, typ_name, indent):
     return s
 
 
+def _get_tail_lineno(node):
+    def _get_tail_lineno_r(node, maxlineno):
+        if not hasattr(node, 'lineno'):
+            return
+        if node.lineno > maxlineno[0]:
+            maxlineno[0] = node.lineno
+        for field in ast.iter_child_nodes(node):
+            if isinstance(field, list):
+                for fld in field:
+                    _get_tail_lineno_r(fld, maxlineno)
+            else:
+                _get_tail_lineno_r(field, maxlineno)
+    maxlineno = [0]
+    _get_tail_lineno_r(node, maxlineno)
+    return maxlineno[0]
+
+
 class IRTranslator(object):
     def __init__(self):
         pass
+
+    def _extract_type_comment(self, source):
+        lines = source.split('\n')
+        type_comments = {}
+        for i, line in enumerate(lines):
+            idx = line.find('#')
+            if idx == -1:
+                continue
+            comment = line[idx:]
+            idx = comment.find('type:')
+            if idx == -1:
+                continue
+            type_hint = comment[idx + len('type:'):].strip()
+            type_comments[i + 1] = type_hint
+        return type_comments
 
     def translate(self, source, lib_name):
         tree = ast.parse(source)
@@ -1165,10 +1229,12 @@ class IRTranslator(object):
         else:
             top_scope = global_scope
             ImportVisitor().visit(tree)
-            #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
-            #print(ignore_packages)
+            logger.debug(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
+            logger.debug('ignore packages')
+            logger.debug(ignore_packages)
 
+        type_comments = self._extract_type_comment(source)
         FunctionVisitor(top_scope).visit(tree)
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
-        CodeVisitor(top_scope).visit(tree)
+        CodeVisitor(top_scope, type_comments).visit(tree)

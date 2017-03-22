@@ -19,13 +19,13 @@ class Driver(object):
             self.scopes.remove(scope)
 
     def start_logging(self, proc, scope):
-        if env.dev_debug_mode:
+        if env.dev_debug_mode and scope in env.logfiles:
             self.logger.addHandler(env.logfiles[scope])
         self.logger.debug('--------------------------')
         self.logger.debug(str(proc.__name__) + ':' + scope.name)
 
     def end_logging(self, proc, scope):
-        if env.dev_debug_mode:
+        if env.dev_debug_mode and scope in env.logfiles:
             self.logger.removeHandler(env.logfiles[scope])
 
     def run(self):

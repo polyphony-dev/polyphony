@@ -1,4 +1,5 @@
 ﻿from .common import Tagged
+from .env import env
 from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)
@@ -48,6 +49,8 @@ class Symbol(Tagged):
     def __str__(self):
         #return '{}:{}({}:{})'.format(self.name, Type.str(self.typ), self.id, self.scope.orig_name)
         #return '{}:{}({})'.format(self.name, repr(self.typ), self.tags)
+        if env.dev_debug_mode:
+            return '{}:{}'.format(self.name, self.typ)
         return self.name
 
     def __repr__(self):

@@ -23,7 +23,8 @@ class Scope(Tagged):
         'callable', 'returnable', 'mutable',
         'testbench',
         'module', 'worker',
-        'port', 'lib', 'namespace',
+        'lib', 'namespace',
+        'port', 'typeclass',
         'function_module',
         'inlinelib',
     }
@@ -139,8 +140,16 @@ class Scope(Tagged):
         s += '================================\n'
         s += 'Parameters\n'
         for p, _, val in self.params:
-            s += '{}:{} = {}\n'.format(p, p.typ, val)
+            if val:
+                s += '{}:{} = {}\n'.format(p, repr(p.typ), val)
+            else:
+                s += '{}:{}\n'.format(p, repr(p.typ))
         s += "\n"
+        s += 'Return\n'
+        if self.return_type:
+            s += '{}\n'.format(repr(self.return_type))
+        else:
+            s += 'None\n'
         s += '================================\n'
         for blk in self.traverse_blocks(longitude=True):
             s += str(blk)

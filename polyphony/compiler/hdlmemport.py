@@ -23,7 +23,7 @@ class HDLMemPortMaker(object):
             self.memnode = memnode
             self.name = memnode.name()
             self.length = memnode.length
-            self.width  = memnode.width
+            self.width  = memnode.data_width()
             self.addr_width = memnode.addr_width()
             self._make_port()
 
@@ -41,13 +41,13 @@ class HDLMemPortMaker(object):
             memnode = node
             name = node.name()
             is_sink = True
-        sig = self.scope.gen_sig(name, memnode.width)
-        acc = RAMAccessor(sig, memnode.width, memnode.addr_width(), is_sink)
+        sig = self.scope.gen_sig(name, memnode.data_width())
+        acc = RAMAccessor(sig, memnode.data_width(), memnode.addr_width(), is_sink)
         self.mrg.node2acc[node] = acc
         return acc
 
     def _make_ram_param_accessor(self, inst_name, memnode):
-        ramif = RAMBridgeInterface(memnode.name(), '', memnode.width, memnode.addr_width())
+        ramif = RAMBridgeInterface(memnode.name(), '', memnode.data_width(), memnode.addr_width())
         acc = ramif.accessor(inst_name)
         return acc
 
@@ -219,7 +219,7 @@ class HDLRegArrayPortMaker(object):
         self.mrg = env.memref_graph
         self.module_info = module_info
         self.length = memnode.length
-        self.width  = memnode.width
+        self.width  = memnode.data_width()
 
     def make_port(self):
         assert self.memnode.is_writable()
@@ -249,7 +249,7 @@ class HDLRegArrayPortMaker(object):
             assert succ.is_sink()
 
             src_sig = sig
-            ref_sig = self.scope.gen_sig(succ.name(), succ.width)
+            ref_sig = self.scope.gen_sig(succ.name(), succ.data_width())
             self.module_info.add_internal_net_array(ref_sig, succ.length)
             src_mem = AHDL_MEMVAR(src_sig, self.memnode, Ctx.LOAD)
             ref_mem = AHDL_MEMVAR(ref_sig, succ, Ctx.LOAD)
@@ -260,7 +260,7 @@ class HDLRegArrayPortMaker(object):
 
     def _make_param_node_connection(self):
         for sink in self.memnode.sinks():
-            ref_sig = self.scope.gen_sig(sink.name(), sink.width)
+            ref_sig = self.scope.gen_sig(sink.name(), sink.data_width())
             self.module_info.add_internal_net_array(ref_sig, self.memnode.length)
             ref_mem = AHDL_MEMVAR(ref_sig, sink, Ctx.LOAD)
             for i in range(self.memnode.length):
@@ -269,7 +269,7 @@ class HDLRegArrayPortMaker(object):
                     self.memnode.name(),
                     i
                 )
-                src_sig = self.scope.gen_sig(sig_name, self.memnode.width)
+                src_sig = self.scope.gen_sig(sig_name, self.memnode.data_width())
                 src_var = AHDL_VAR(src_sig, Ctx.LOAD)
                 ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)), src_var)
                 self.module_info.add_static_assignment(ahdl_assign)
@@ -281,8 +281,8 @@ class HDLRegArrayPortMaker(object):
         pred = self.memnode.preds[0]
         for succ in self.memnode.succs:
             if succ.is_sink():
-                src_sig = self.scope.gen_sig(pred.name(), pred.width)
-                ref_sig = self.scope.gen_sig(succ.name(), succ.width)
+                src_sig = self.scope.gen_sig(pred.name(), pred.data_width())
+                ref_sig = self.scope.gen_sig(succ.name(), succ.data_width())
                 self.module_info.add_internal_net_array(ref_sig, succ.length)
                 src_mem = AHDL_MEMVAR(src_sig, pred, Ctx.LOAD)
                 ref_mem = AHDL_MEMVAR(ref_sig, succ, Ctx.LOAD)
@@ -292,11 +292,11 @@ class HDLRegArrayPortMaker(object):
                     self.module_info.add_static_assignment(ahdl_assign)
             elif isinstance(succ, MemParamNode):
                 for inst in self.mrg.param_node_instances[succ]:
-                    src_sig = self.scope.gen_sig(pred.name(), pred.width)
+                    src_sig = self.scope.gen_sig(pred.name(), pred.data_width())
                     src_mem = AHDL_MEMVAR(src_sig, pred, Ctx.LOAD)
                     for i in range(self.length):
                         sig_name = '{}_{}{}'.format(inst, succ.name(), i)
-                        ref_sig = self.scope.gen_sig(sig_name, succ.width)
+                        ref_sig = self.scope.gen_sig(sig_name, succ.data_width())
                         ref_var = AHDL_VAR(ref_sig, Ctx.LOAD)
                         ahdl_assign = AHDL_ASSIGN(ref_var, AHDL_SUBSCRIPT(src_mem, AHDL_CONST(i)))
                         self.module_info.add_static_assignment(ahdl_assign)

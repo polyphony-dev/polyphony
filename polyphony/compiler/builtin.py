@@ -25,3 +25,11 @@ lib_port_type_names = (
 )
 
 lib_class_names = lib_port_type_names
+
+lib_type_class_prefixes = (
+    'polyphony.typing.bit',
+    'polyphony.typing.int',
+    'polyphony.typing.uint',
+    'polyphony.typing.List',
+    'polyphony.typing.Tuple',
+)
