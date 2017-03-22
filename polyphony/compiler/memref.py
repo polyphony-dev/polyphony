@@ -1,5 +1,4 @@
 ﻿from collections import deque, defaultdict
-import copy
 from .ir import *
 from .symbol import Symbol
 from .type import Type
@@ -245,7 +244,7 @@ class MemTrait(object):
     IM    = 0x00020000
 
     def __init__(self):
-        self.width = 32  # TODO
+        self.width = env.config.default_int_width
         self.length = -1
 
     def set_writable(self):
