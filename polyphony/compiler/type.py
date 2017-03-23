@@ -2,6 +2,8 @@
 
 
 class Type(object):
+    ANY_LENGTH = -1
+
     def __init__(self, name, **attrs):
         self.name = name
         self.attrs = attrs
@@ -49,6 +51,8 @@ class Type(object):
                 t = Type.str_t
             elif ann == 'None':
                 t = Type.none_t
+            elif ann == '...':
+                t = Type.ellipsis_t
             else:
                 sym = scope.find_sym(ann)
                 if sym and sym.typ.has_scope():
@@ -60,18 +64,33 @@ class Type(object):
                     t.freeze()
             return t
         elif isinstance(ann, tuple):
-            if isinstance(ann[0], tuple):
-                t = Type.from_annotation(ann[0], scope)
+            assert len(ann) == 2
+            first = ann[0]
+            second = ann[1]
+            if isinstance(first, tuple):  # in case of Type[T][Length]
+                t = Type.from_annotation(first, scope)
                 if t.is_seq():
-                    length = int(ann[1])
+                    length = int(second)
                     t.set_length(length)
                 else:
                     assert False
                 return t
-            else:
-                target_scope = scope.find_sym(ann[0]).typ.get_scope()
+            elif isinstance(first, str):  # in case of Type[T]
+                sym = scope.find_sym(first)
+                if not sym:
+                    raise NameError(first + ' is not defined')
+                target_scope = sym.typ.get_scope()
                 assert target_scope
-                elms = [Type.from_annotation(ann[1], scope) for elm in ann[1:]]
+                if isinstance(second, tuple):
+                    elms = [Type.from_annotation(elm, scope) for elm in second]
+                    if len(elms) == 2 and elms[1].is_ellipsis():
+                        pass
+                    elif not all([Type.is_strict_same(elms[0], elm) for elm in elms[1:]]):
+                        raise TypeError('multiple type tuple is not supported yet')
+                elif isinstance(second, str):
+                    elms = [Type.from_annotation(second, scope)]
+                else:
+                    assert False
                 if target_scope.is_typeclass():
                     t = Type.from_typing_class(target_scope, elms)
                     t.freeze()
@@ -92,7 +111,11 @@ class Type(object):
             assert len(elms) == 1
             return Type.list(elms[0], None)
         elif scope.orig_name == ('Tuple'):
-            length = len(elms)
+            if len(elms) == 2 and elms[1].is_ellipsis():
+                length = Type.ANY_LENGTH
+            else:
+                length = len(elms)
+            # TODO: multiple type tuple
             return Type.tuple(elms[0], None, length)
         else:
             assert False
@@ -170,6 +193,14 @@ class Type(object):
         return t0.name == t1.name
 
     @classmethod
+    def is_strict_same(cls, t0, t1):
+        if t0.name != t1.name:
+            return False
+        if t0.is_int():
+            return t0.get_width() == t1.get_width()
+        return True
+
+    @classmethod
     def can_overwrite(cls, to_t, from_t):
         if to_t is from_t:
             return True
@@ -233,3 +264,4 @@ Type.bool_t = Type('bool', width=1, freezed=True)
 Type.str_t = Type('str', freezed=True)
 Type.none_t = Type('none', freezed=True)
 Type.undef_t = Type('undef')
+Type.ellipsis_t = Type('ellipsis', freezed=True)

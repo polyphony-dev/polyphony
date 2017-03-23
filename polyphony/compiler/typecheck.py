@@ -555,7 +555,9 @@ class TypeChecker(IRVisitor):
             if not item_type.is_int():
                 type_error(self.current_stm, Errors.SEQ_ITEM_MUST_BE_INT,
                            [item_type])
-        if ir.sym.typ.is_freezed() and ir.sym.typ.has_length():
+        if (ir.sym.typ.is_freezed() and
+                ir.sym.typ.has_length() and
+                ir.sym.typ.get_length() != Type.ANY_LENGTH):
             if len(ir.items * ir.repeat.value) > ir.sym.typ.get_length():
                 type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
                            [])
@@ -639,7 +641,6 @@ class LateRestrictionChecker(IRVisitor):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
             if not (self.scope.is_method() and self.scope.parent.is_module()):
                 fail(self.current_stm, Errors.CALL_MODULE_METHOD)
-
 
 class ModuleChecker(IRVisitor):
     def __init__(self):

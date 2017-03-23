@@ -1142,6 +1142,9 @@ class AnnotationVisitor(ast.NodeVisitor):
         elif node.value is None:
             return 'None'
 
+    def visit_Ellipsis(self, node):
+        return '...'
+
     def visit_Attribute(self, node):
         value = self.visit(node.value)
         attr = node.attr

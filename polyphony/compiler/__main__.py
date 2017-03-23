@@ -455,7 +455,7 @@ def output_individual(driver, output_name, output_dir):
             if not code:
                 continue
             file_name = '{}.v'.format(scope.orig_name)
-            if output_name == scope.orig_name:
+            if output_name.upper() == scope.orig_name.upper():
                 file_name = '_' + file_name
             with open('{}{}'.format(d, file_name), 'w') as f2:
                 f2.write(code)

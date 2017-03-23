@@ -19,11 +19,11 @@ DIRS = (
     'tuple',
     'scope',
     'func',
-    'parallel',
     'testbench',
     'class',
     'module',
     'io',
+    'typing',
 )
 
 
