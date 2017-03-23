@@ -31,10 +31,12 @@ class Errors(Enum):
     MUDULE_MUST_BE_IN_GLOBAL = 900
     MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE = 901
     MODULE_FIELD_MUST_ASSIGN_IN_CTOR = 902
-    UNSUPPORTED_TYPES_IN_FUNC = 903
-    WORKER_ARG_MUST_BE_X_TYPE = 904
-    PORT_MUST_BE_IN_MODULE = 905
-    PORT_PARAM_MUST_BE_CONST = 906
+    CALL_APPEND_WORKER_IN_CTOR = 903
+    CALL_MODULE_METHOD = 904
+    UNSUPPORTED_TYPES_IN_FUNC = 905
+    WORKER_ARG_MUST_BE_X_TYPE = 906
+    PORT_MUST_BE_IN_MODULE = 907
+    PORT_PARAM_MUST_BE_CONST = 908
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -43,7 +45,6 @@ class Errors(Enum):
 
     # polyphony library warnings
     PORT_IS_NOT_USED = 1000
-
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -77,9 +78,11 @@ ERROR_MESSAGES = {
     Errors.SEQ_CAPACITY_OVERFLOWED: "Sequence capacity is overflowing",
 
     # polyphony library restrictions
-    Errors.MUDULE_MUST_BE_IN_GLOBAL: "@module decorated class must be in the global scope",
+    Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",
     Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE: "Assignment to a module field can only be done once",
     Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR: "Assignment to a module field can only at the constructor",
+    Errors.CALL_APPEND_WORKER_IN_CTOR: "Calling append_worker method can only at the constructor",
+    Errors.CALL_MODULE_METHOD: "Calling a method of the module class can only in the module itself",
     Errors.UNSUPPORTED_TYPES_IN_FUNC: "It is not supported to pass the {} type argument to {}()",
     Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}",
     Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",

@@ -632,6 +632,14 @@ class LateRestrictionChecker(IRVisitor):
         if ir.func_scope.is_port() and not (self.scope.is_ctor() and self.scope.parent.is_module()):
             type_error(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
 
+    def visit_CALL(self, ir):
+        if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
+            if ir.func_scope.orig_name == 'append_worker':
+                if not (self.scope.is_ctor() and self.scope.parent.is_module()):
+                    fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
+            if not (self.scope.is_method() and self.scope.parent.is_module()):
+                fail(self.current_stm, Errors.CALL_MODULE_METHOD)
+
 
 class ModuleChecker(IRVisitor):
     def __init__(self):

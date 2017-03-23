@@ -178,10 +178,8 @@ class Type(object):
         if to_t.is_int() and from_t.is_bool():
             return True
         if to_t.is_list() and from_t.is_list():
-            if to_t.has_length():
-                if from_t.has_length():
-                    return to_t.get_length() == from_t.get_length()
-                return False
+            if to_t.has_length() and from_t.has_length():
+                return to_t.get_length() == from_t.get_length()
             return True
         if to_t.is_tuple() and from_t.is_tuple():
             return True

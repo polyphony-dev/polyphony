@@ -159,7 +159,8 @@ def instantiate(driver):
         for child in module.children:
             if child.is_lib():
                 continue
-            assert child.is_ctor() or child.is_worker()
+            if not (child.is_ctor() or child.is_worker()):
+                continue
             ConstantOpt().process(child)
     InstanceTypePropagation().process_all()
 
