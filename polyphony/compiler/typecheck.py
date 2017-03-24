@@ -64,9 +64,11 @@ class TypePropagation(IRVisitor):
         return self.visit(ir.exp)
 
     def visit_BINOP(self, ir):
-        ltype = self.visit(ir.left)
-        self.visit(ir.right)
-        return ltype
+        l_t = self.visit(ir.left)
+        r_t = self.visit(ir.right)
+        if l_t.is_bool() and r_t.is_bool() and not ir.op.startswith('Bit'):
+            return Type.int(2)
+        return l_t
 
     def visit_RELOP(self, ir):
         self.visit(ir.left)
@@ -178,7 +180,9 @@ class TypePropagation(IRVisitor):
         return ret_t
 
     def visit_CONST(self, ir):
-        if isinstance(ir.value, int):
+        if isinstance(ir.value, bool):
+            return Type.bool_t
+        elif isinstance(ir.value, int):
             return Type.int()
         elif isinstance(ir.value, str):
             return Type.str_t
@@ -429,15 +433,17 @@ class TypeChecker(IRVisitor):
             return l_t
 
         if not l_t.is_scalar() or not r_t.is_scalar():
-            type_error(self.current_stm, Errors.UNSUPPORTED_OPERAND_FOR,
+            type_error(self.current_stm, Errors.UNSUPPORTED_BINARY_OPERAND_TYPE,
                        [op2sym_map[ir.op], l_t, r_t])
+        if l_t.is_bool() and r_t.is_bool() and not ir.op.startswith('Bit'):
+            return Type.int(2)
         return l_t
 
     def visit_RELOP(self, ir):
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
         if not l_t.is_scalar() or not r_t.is_scalar():
-            type_error(self.current_stm, Errors.UNSUPPORTED_OPERAND_FOR,
+            type_error(self.current_stm, Errors.UNSUPPORTED_BINARY_OPERAND_TYPE,
                        [op2sym_map[ir.op], l_t, r_t])
         return Type.bool_t
 
@@ -505,7 +511,9 @@ class TypeChecker(IRVisitor):
         return Type.object(ir.func_scope)
 
     def visit_CONST(self, ir):
-        if isinstance(ir.value, int):
+        if isinstance(ir.value, bool):
+            return Type.bool_t
+        elif isinstance(ir.value, int):
             return Type.int()
         elif isinstance(ir.value, str):
             return Type.str_t

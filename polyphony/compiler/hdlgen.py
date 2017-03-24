@@ -247,7 +247,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         else:
             params = scope.params
         for i, (sym, _, _) in enumerate(params):
-            if sym.typ.is_int():
+            if sym.typ.is_int() or sym.typ.is_bool():
                 sig_name = '{}_{}'.format(scope.orig_name, sym.hdl_name())
                 sig = scope.signal(sig_name)
                 inf = SingleReadInterface(sig, sym.hdl_name(), scope.orig_name)

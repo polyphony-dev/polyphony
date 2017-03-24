@@ -525,8 +525,11 @@ class CodeVisitor(ast.NodeVisitor):
         elif dst.is_a(ATTR):
             if (dst.exp.is_a(TEMP) and dst.head().name == env.self_name and
                     self.current_scope.is_method()):
-                attr_sym = self.current_scope.parent.find_sym(dst.attr)
-                if self.current_scope.parent.is_interface():
+                if isinstance(dst.attr, Symbol):
+                    attr_sym = dst.attr
+                else:
+                    attr_sym = self.current_scope.parent.find_sym(dst.attr)
+                if self.current_scope.parent.is_module():
                     attr_sym.set_type(Type.port(typ))
                 else:
                     attr_sym.set_type(typ)
@@ -1010,6 +1013,7 @@ class CodeVisitor(ast.NodeVisitor):
 
     #     | Attribute(expr value, identifier attr, expr_context ctx)
     def visit_Attribute(self, node):
+        ctx = self._nodectx2irctx(node)
         value = self.visit(node.value)
         if (value.is_a([TEMP, ATTR]) and isinstance(value.symbol(), Symbol) and
                 value.symbol().typ.has_scope()):
@@ -1018,10 +1022,12 @@ class CodeVisitor(ast.NodeVisitor):
             if scope:
                 attr = scope.find_sym(node.attr)
             if not attr:
-                attr = node.attr
+                if ctx == Ctx.STORE:
+                    attr = scope.add_sym(node.attr)
+                else:
+                    attr = node.attr
         else:
             attr = node.attr
-        ctx = self._nodectx2irctx(node)
         irattr = ATTR(value, attr, ctx)
 
         if irattr.head() and irattr.head().name == env.self_name and isinstance(attr, str):
@@ -1047,9 +1053,9 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_Name(self, node):
         # for Python 3.3 or older
         if node.id == 'True':
-            return CONST(1)
+            return CONST(True)
         elif node.id == 'False':
-            return CONST(0)
+            return CONST(False)
         elif node.id == 'None':
             return CONST(None)
 
@@ -1090,9 +1096,9 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_NameConstant(self, node):
         # for Python 3.4
         if node.value is True:
-            return CONST(1)
+            return CONST(True)
         elif node.value is False:
-            return CONST(0)
+            return CONST(False)
         elif node.value is None:
             return CONST(None)
 

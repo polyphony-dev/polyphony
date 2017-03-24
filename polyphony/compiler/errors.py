@@ -21,11 +21,12 @@ class Errors(Enum):
 
     # polyphony language restrictions
     UNSUPPORTED_LETERAL_TYPE = 800
-    UNSUPPORTED_OPERAND_FOR = 801
+    UNSUPPORTED_BINARY_OPERAND_TYPE = 801
     SEQ_ITEM_MUST_BE_INT = 802
     SEQ_MULTIPLIER_MUST_BE_CONST = 803
     UNSUPPORTED_OPERATOR = 804
     SEQ_CAPACITY_OVERFLOWED = 805
+    UNSUPPORTED_EXPR = 806
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -71,11 +72,12 @@ ERROR_MESSAGES = {
 
     # polyphony language restrictions
     Errors.UNSUPPORTED_LETERAL_TYPE: "Unsupported literal type {}",
-    Errors.UNSUPPORTED_OPERAND_FOR: "Unsupported operand type(s) for {}: {} and {}",
+    Errors.UNSUPPORTED_BINARY_OPERAND_TYPE: "Unsupported operand type(s) for {}: {} and {}",
     Errors.SEQ_ITEM_MUST_BE_INT: "Type of sequence item must be int, not {}",
     Errors.SEQ_MULTIPLIER_MUST_BE_CONST: "Type of sequence multiplier must be constant",
     Errors.UNSUPPORTED_OPERATOR: "Unsupported operator {}",
     Errors.SEQ_CAPACITY_OVERFLOWED: "Sequence capacity is overflowing",
+    Errors.UNSUPPORTED_EXPR: "Unsupported expression",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",

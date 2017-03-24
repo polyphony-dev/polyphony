@@ -42,9 +42,9 @@ class Type(object):
             elif ann == 'bool':
                 t = Type.bool_t
             elif ann == 'list':
-                t = Type.list(Type.int(), None)
+                t = Type.list(Type.int(), None)  # TODO: use Type.any
             elif ann == 'tuple':
-                t = Type.tuple(Type.int(), None, 0)
+                t = Type.tuple(Type.int(), None, Type.ANY_LENGTH)  # TODO: use Type.any
             elif ann == 'object':
                 t = Type.object(None)
             elif ann == 'str':
@@ -62,6 +62,8 @@ class Type(object):
                     else:
                         t = Type.object(sym_scope)
                     t.freeze()
+                else:
+                    raise NameError(ann + ' is not defined')
             return t
         elif isinstance(ann, tuple):
             assert len(ann) == 2
@@ -108,15 +110,23 @@ class Type(object):
         elif scope.orig_name.startswith('uint'):
             return Type.int(int(scope.orig_name[4:]), signed=False)
         elif scope.orig_name == ('List'):
-            assert len(elms) == 1
-            return Type.list(elms[0], None)
-        elif scope.orig_name == ('Tuple'):
-            if len(elms) == 2 and elms[1].is_ellipsis():
-                length = Type.ANY_LENGTH
+            if elms:
+                assert len(elms) == 1
+                return Type.list(elms[0], None)
             else:
-                length = len(elms)
-            # TODO: multiple type tuple
-            return Type.tuple(elms[0], None, length)
+                # TODO: use Type.any
+                return Type.list(Type.int(), None)
+        elif scope.orig_name == ('Tuple'):
+            if elms:
+                if len(elms) == 2 and elms[1].is_ellipsis():
+                    length = Type.ANY_LENGTH
+                else:
+                    length = len(elms)
+                # TODO: multiple type tuple
+                return Type.tuple(elms[0], None, length)
+            else:
+                # TODO: use Type.any
+                return Type.tuple(Type.int(), None, Type.ANY_LENGTH)
         else:
             assert False
 
@@ -207,6 +217,8 @@ class Type(object):
         if to_t.is_int() and from_t.is_int():
             return True
         if to_t.is_int() and from_t.is_bool():
+            return True
+        if to_t.is_bool() and from_t.is_int():
             return True
         if to_t.is_list() and from_t.is_list():
             if to_t.has_length() and from_t.has_length():

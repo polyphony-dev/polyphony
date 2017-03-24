@@ -3,7 +3,8 @@ from .symbol import Symbol
 from .irvisitor import IRTransformer
 from .type import Type
 from .typecheck import builtin_return_type_table
-from .common import error_info
+from .common import fail
+from .errors import Errors
 
 # QuadrupleMaker makes following quadruples.
 #
@@ -35,7 +36,8 @@ class QuadrupleMaker(IRTransformer):
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
-        assert ir.exp.is_a([TEMP, ATTR, CONST, MREF])
+        if not ir.exp.is_a([TEMP, ATTR, CONST, MREF]):
+            fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
         return ir
 
     def visit_BINOP(self, ir):
@@ -54,18 +56,8 @@ class QuadrupleMaker(IRTransformer):
                 array = ir.left
                 array.repeat = ir.right
                 return array
-            #if ir.right.is_a(CONST) and ir.op == 'Mult':
-            ##    #array times n
-            #   array = ir.left
-            #   time = ir.right.value
-            #    if not array.items:
-            #        raise RuntimeError('unsupported expression')
-            #    else:
-            #        array.items = [item.clone() for item in array.items * time]
-            #    return array
             else:
-                print(error_info(self.scope, ir.lineno))
-                raise RuntimeError('unsupported expression')
+                fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
 
         if suppress:
             return ir
@@ -139,7 +131,8 @@ class QuadrupleMaker(IRTransformer):
         self.suppress_converting = False
 
         ir.offset = self.visit(ir.offset)
-        assert ir.offset.is_a([TEMP, ATTR, CONST, UNOP])
+        if not ir.offset.is_a([TEMP, ATTR, CONST, UNOP]):
+            fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
 
         if not suppress and ir.ctx & Ctx.LOAD:
             return self._new_temp_move(ir, self.scope.add_temp())
