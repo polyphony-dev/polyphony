@@ -1,5 +1,4 @@
 ﻿from .ir import *
-from .symbol import Symbol
 from .irvisitor import IRTransformer
 from .type import Type
 from .typecheck import builtin_return_type_table

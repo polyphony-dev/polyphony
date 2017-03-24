@@ -11,7 +11,7 @@ from .scope import Scope
 from .utils import *
 
 
-def eval_unop(ir):
+def eval_unop(ir, ctx):
     op = ir.op
     v = ir.exp.value
     if op == 'Invert':
@@ -23,10 +23,10 @@ def eval_unop(ir):
     elif op == 'USub':
         return -v
     else:
-        fail(ir, Errors.UNSUPPORTED_OPERATOR, [op])
+        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
 
 
-def eval_binop(ir):
+def eval_binop(ir, ctx):
     op = ir.op
     lv = ir.left.value
     rv = ir.right.value
@@ -53,10 +53,10 @@ def eval_binop(ir):
     elif op == 'BitAnd':
         return lv & rv
     else:
-        fail(ir, Errors.UNSUPPORTED_OPERATOR, [op])
+        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
 
 
-def eval_relop(op, lv, rv):
+def eval_relop(op, lv, rv, ctx):
     if op == 'Eq':
         b = lv == rv
     elif op == 'NotEq':
@@ -78,7 +78,7 @@ def eval_relop(op, lv, rv):
     elif op == 'Or':
         b = lv or rv
     else:
-        fail(ir, Errors.UNSUPPORTED_OPERATOR, [op])
+        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
     return 1 if b else 0
 
 
@@ -104,25 +104,25 @@ class ConstantOptBase(IRVisitor):
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            return CONST(eval_unop(ir))
+            return CONST(eval_unop(ir, self))
         return ir
 
     def visit_BINOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            return CONST(eval_binop(ir))
+            return CONST(eval_binop(ir, self))
         return ir
 
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            return CONST(eval_relop(ir.op, ir.left.value, ir.right.value))
+            return CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
         if (ir.left.is_a([TEMP, ATTR])
                 and ir.right.is_a([TEMP, ATTR])
                 and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
-            c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id))
+            c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id, self))
             return c
         return ir
 
@@ -193,6 +193,8 @@ class ConstantOptBase(IRVisitor):
         ir.src = self.visit(ir.src)
 
     def visit_PHI(self, ir):
+        # TODO: loop-phi
+        #ir.ps = [self.visit(p) for p in ir.ps]
         pass
 
 
@@ -217,11 +219,14 @@ class ConstantOpt(ConstantOptBase):
             self.visit(stm)
             if stm.is_a(PHI):
                 for i, p in enumerate(stm.ps[:]):
-                        if p.is_a(CONST) and not p.value:
-                            stm.ps.pop(i)
-                            stm.args.pop(i)
-                            stm.defblks.pop(i)
+                    if p.is_a(CONST) and not p.value:
+                        stm.ps.pop(i)
+                        stm.args.pop(i)
+                        stm.defblks.pop(i)
                 if len(stm.args) == 1:
+                    # TODO: Phi predicates does not unconditionally optimize until introducing loop-phi
+                    if not stm.ps[0].is_a(CONST):
+                        stm.ps[0] = self.visit(stm.ps[0])
                     assert stm.ps[0].is_a(CONST) and stm.ps[0].value
                     arg = stm.args[0]
                     blk = stm.defblks[0]
@@ -241,6 +246,7 @@ class ConstantOpt(ConstantOptBase):
 
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
                 worklist.extend(replaces)
+                worklist = deque(unique(worklist))
                 scope.usedef.remove_var_def(stm.dst, stm)
                 scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
@@ -323,8 +329,7 @@ class ConstantOpt(ConstantOptBase):
             if c:
                 return c
             else:
-                print(error_info(self.scope, ir.lineno))
-                raise RuntimeError('global variable must be a constant value')
+                fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         return ir
 
     def visit_ATTR(self, ir):
@@ -333,11 +338,11 @@ class ConstantOpt(ConstantOptBase):
             if c:
                 return c
             else:
-                print(error_info(self.scope, ir.lineno))
-                raise RuntimeError('class variable must be a constant value')
+                fail(self.current_stm, Errors.CLASS_VAR_MUST_BE_CONST)
         return ir
 
     def visit_PHI(self, ir):
+        super().visit_PHI(ir)
         if len(ir.block.preds) != len(ir.args):
             remove_args = []
             for arg, blk in zip(ir.args, ir.defblks):
@@ -392,6 +397,7 @@ class ConstantOptPreDetectROM(ConstantOpt):
         return ir
 
     def visit_PHI(self, ir):
+        super().visit_PHI(ir)
         for i, arg in enumerate(ir.args):
             ir.args[i] = self.visit(arg)
 

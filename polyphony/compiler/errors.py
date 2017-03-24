@@ -27,6 +27,9 @@ class Errors(Enum):
     UNSUPPORTED_OPERATOR = 804
     SEQ_CAPACITY_OVERFLOWED = 805
     UNSUPPORTED_EXPR = 806
+    GLOBAL_VAR_MUST_BE_CONST = 807
+    GLOBAL_OBJECT_CANT_BE_MUTABLE = 808
+    CLASS_VAR_MUST_BE_CONST = 809
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -78,6 +81,9 @@ ERROR_MESSAGES = {
     Errors.UNSUPPORTED_OPERATOR: "Unsupported operator {}",
     Errors.SEQ_CAPACITY_OVERFLOWED: "Sequence capacity is overflowing",
     Errors.UNSUPPORTED_EXPR: "Unsupported expression",
+    Errors.GLOBAL_VAR_MUST_BE_CONST: "A global variable must be a constant value",
+    Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE: "Writing to a global object is not allowed",
+    Errors.CLASS_VAR_MUST_BE_CONST: "A class variable must be a constant value",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",

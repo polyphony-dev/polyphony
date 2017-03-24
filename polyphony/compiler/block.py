@@ -422,7 +422,7 @@ class PathExpTracer(object):
                 elif not blk.path_exp:
                     pass
                 else:
-                    jump.target.path_exp = BINOP('Or', blk.path_exp, jump.target.path_exp)
+                    jump.target.path_exp = RELOP('Or', blk.path_exp, jump.target.path_exp)
             elif jump.target in blk.succs_loop:
                 pass
             else:
@@ -431,10 +431,10 @@ class PathExpTracer(object):
             if blk.path_exp:
                 for c in children:
                     if c is jump.true:
-                        c.path_exp = BINOP('And', blk.path_exp,
+                        c.path_exp = RELOP('And', blk.path_exp,
                                            jump.exp)
                     elif c is jump.false:
-                        c.path_exp = BINOP('And', blk.path_exp,
+                        c.path_exp = RELOP('And', blk.path_exp,
                                            UNOP('Not', jump.exp))
                     else:
                         c.path_exp = blk.path_exp
@@ -446,7 +446,7 @@ class PathExpTracer(object):
                 for c in children:
                     if c in jump.targets:
                         idx = jump.targets.index(c)
-                        c.path_exp = BINOP('And', blk.path_exp,
+                        c.path_exp = RELOP('And', blk.path_exp,
                                            jump.conds[idx])
                     else:
                         c.path_exp = blk.path_exp

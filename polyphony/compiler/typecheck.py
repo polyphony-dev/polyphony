@@ -634,7 +634,11 @@ class TypeChecker(IRVisitor):
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
         if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
-            type_error(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
+            fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
+
+    def visit_MSTORE(self, ir):
+        if ir.mem.symbol().scope.is_global():
+            fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
 
 
 class LateRestrictionChecker(IRVisitor):
@@ -649,6 +653,7 @@ class LateRestrictionChecker(IRVisitor):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
             if not (self.scope.is_method() and self.scope.parent.is_module()):
                 fail(self.current_stm, Errors.CALL_MODULE_METHOD)
+
 
 class ModuleChecker(IRVisitor):
     def __init__(self):

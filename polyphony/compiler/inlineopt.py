@@ -351,7 +351,9 @@ class FlattenFieldAccess(IRVisitor):
         return '_'.join(qnames)
 
     def _make_flatten_qsym(self, ir):
+        assert ir.is_a(ATTR)
         flatname = None
+        receivers_scope = ir.tail().scope
         qsym = ir.qualified_symbol()
         if qsym[-1].typ.is_function():
             tail = (qsym[-1], )
@@ -369,14 +371,14 @@ class FlattenFieldAccess(IRVisitor):
         else:
             flatname = self._make_flatname(qsym)
             head = tuple()
-            scope = self.scope
+            scope = receivers_scope
         if flatname:
             if scope.has_sym(flatname):
                 flatsym = scope.find_sym(flatname)
             else:
                 flatsym = scope.add_sym(flatname, ir.attr.tags)
                 flatsym.typ = ancestor.typ
-                #flatsym.ancestor = ancestor
+                flatsym.ancestor = ancestor
             return head + (flatsym, ) + tail
         else:
             return head + tail

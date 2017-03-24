@@ -36,6 +36,9 @@ class IR(object):
     def __hash__(self):
         return super().__hash__()
 
+    def __lt__(self, other):
+        return hash(self) < hash(other)
+
     def is_a(self, cls):
         return is_a(self, cls)
 
@@ -129,6 +132,7 @@ class UNOP(IRExp):
         super().__init__()
         self.op = op
         self.exp = exp
+        assert op in {'USub', 'UAdd', 'Not', 'Invert'}
 
     def __str__(self):
         return '{}{}'.format(op2sym_map[self.op], self.exp)
@@ -151,6 +155,11 @@ class BINOP(IRExp):
         self.op = op
         self.left = left
         self.right = right
+        assert op in {
+            'Add', 'Sub', 'Mult', 'FloorDiv', 'Mod',
+            'LShift', 'RShift',
+            'BitOr', 'BitXor', 'BitAnd',
+        }
 
     def __str__(self):
         return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
@@ -173,6 +182,11 @@ class RELOP(IRExp):
         self.op = op
         self.left = left
         self.right = right
+        assert op in {
+            'And', 'Or',
+            'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE',
+            'IsNot',
+        }
 
     def __str__(self):
         return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
