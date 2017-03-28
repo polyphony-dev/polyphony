@@ -1,7 +1,7 @@
 ﻿import os
 import sys
 from optparse import OptionParser
-from .builtin import builtin_names
+from .builtin import builtin_symbols
 from .driver import Driver
 from .env import env
 from .common import read_source
@@ -361,6 +361,7 @@ def compile_plan():
         dbg(dumpmrg),
         dbg(dumpscope),
         constopt_pre_detectrom,
+        dbg(dumpscope),
         detectrom,
         dbg(dumpmrg),
         usedef,
@@ -416,23 +417,27 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     if debug_mode:
         logging.basicConfig(**logging_setting)
 
-    env.set_current_filename(src_file)
-    g = Scope.create(None, '@top', ['global', 'namespace'], lineno=1)
-    for builtin in builtin_names:
-        g.add_sym(builtin)
-
     translator = IRTranslator()
     internal_root_dir = '{0}{1}{2}{1}_internal{1}'.format(
         os.path.dirname(__file__),
         os.path.sep, os.path.pardir
     )
+    package_file = os.path.abspath(internal_root_dir + '_builtins.py')
+    env.set_current_filename(package_file)
+    translator.translate(read_source(package_file), '__builtin__')
     package_file = os.path.abspath(internal_root_dir + '_polyphony.py')
+    env.set_current_filename(package_file)
     translator.translate(read_source(package_file), 'polyphony')
     for name in ('_typing', '_io', '_timing'):
         package_file = os.path.abspath(internal_root_dir + name + '.py')
         package_name = os.path.basename(package_file).split('.')[0]
         package_name = package_name[1:]
+        env.set_current_filename(package_file)
         translator.translate(read_source(package_file), package_name)
+    env.set_current_filename(src_file)
+    g = Scope.create(None, '@top', ['global', 'namespace'], lineno=1)
+    for sym in builtin_symbols.values():
+        g.import_sym(sym)
     translator.translate(read_source(src_file), '')
 
     scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)

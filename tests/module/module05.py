@@ -1,15 +1,16 @@
 from polyphony import module
 from polyphony import testbench
 from polyphony.timing import wait_value
-from polyphony.io import Int
+from polyphony.io import Port
+from polyphony.typing import int8
 
 
 class Interface:
     def __init__(self):
-        self.i0 = Int(8)
-        self.i1 = Int(8)
-        self.o0 = Int(8)
-        self.o1 = Int(8)
+        self.i0 = Port(int8)
+        self.i1 = Port(int8)
+        self.o0 = Port(int8)
+        self.o1 = Port(int8)
 
 
 @module

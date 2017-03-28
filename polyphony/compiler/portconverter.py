@@ -4,7 +4,7 @@ from .common import fail
 from .errors import Errors
 from .scope import Scope
 from .ir import CONST, TEMP, MOVE
-from .irvisitor import IRTransformer
+from .irvisitor import IRVisitor, IRTransformer
 from .type import Type
 from .typecheck import TypePropagation
 
@@ -16,13 +16,22 @@ class PortTypeProp(TypePropagation):
             attrs = {}
             ctor = ir.func_scope.find_ctor()
             for (_, a), p in zip(ir.args, ctor.params[1:]):
-                if not a.is_a(CONST):
+                if a.is_a(CONST):
+                    if p.copy.name == 'direction':
+                        attrs[p.copy.name] = self._normalize_direction(a.value)
+                    else:
+                        attrs[p.copy.name] = a.value
+                elif a.is_a(TEMP) and a.symbol().typ.is_class():
+                    attrs[p.copy.name] = a.symbol().typ.name
+                else:
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
                     print(error_info(self.scope, ir.lineno))
                     raise RuntimeError('')
-                attrs[p.copy.name] = a.value
 
-            attrs['direction'] = '?'
+            assert len(ir.func_scope.type_args) == 1
+            attrs['dtype'] = ir.func_scope.type_args[0]
+            if 'direction' not in attrs or attrs['direction'] == 'any':
+                attrs['direction'] = '?'
             attrs['root_symbol'] = self.current_stm.dst.symbol()
             if self.current_stm.is_a(MOVE) and self.current_stm.dst.is_a(TEMP):
                 attrs['port_kind'] = 'internal'
@@ -30,7 +39,7 @@ class PortTypeProp(TypePropagation):
                 attrs['port_kind'] = 'external'
             if 'protocol' not in attrs:
                 attrs['protocol'] = 'none'
-            if 'init' not in attrs:
+            if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
             port_typ = Type.port(ir.func_scope, attrs)
             #port_typ.freeze()
@@ -40,6 +49,13 @@ class PortTypeProp(TypePropagation):
     def _set_type(self, sym, typ):
         if sym.typ.is_object() and sym.typ.get_scope().is_port() and typ.is_port():
             sym.set_type(typ)
+
+    def _normalize_direction(self, di):
+        if di == 'in' or di == 'input' or di == 'i':
+            return 'input'
+        elif di == 'out' or di == 'output' or di == 'o':
+            return 'output'
+        return '?'
 
 
 class PortConverter(IRTransformer):
@@ -70,9 +86,9 @@ class PortConverter(IRTransformer):
                     stm = ctor.usedef.get_stms_defining(field).pop()
                     fail(stm, Errors.PORT_IS_NOT_USED,
                          [field.orig_name()])
-                    #field.typ.set_direction('inout')
             for sym in ctor.symbols.values():
                 if sym.typ.is_port() and sym.typ.get_direction() == '?':
+
                     assert ctor.usedef
                     stms = ctor.usedef.get_stms_defining(sym)
                     # This symbol might not be used (e.g. ancestor symbol),
@@ -80,7 +96,6 @@ class PortConverter(IRTransformer):
                     if stms:
                         fail(stms.pop(), Errors.PORT_IS_NOT_USED,
                              [sym.orig_name()])
-                        #sym.typ.set_direction('inout')
 
     def _set_and_check_port_direction(self, direction, sym, ir):
         port_typ = sym.typ
@@ -108,7 +123,7 @@ class PortConverter(IRTransformer):
             else:
                 assert self.scope.is_worker() or self.scope.parent.is_module()
                 port_typ.set_writer(self.scope)
-        elif direction == 'input' and port_typ.get_scope().name == 'polyphony.io.Queue':
+        elif direction == 'input' and port_typ.get_scope().name.startswith('polyphony.io.Queue'):
             # read-read conflict
             if port_typ.has_reader():
                 reader = port_typ.get_reader()
@@ -137,13 +152,13 @@ class PortConverter(IRTransformer):
         return ir
 
     def visit_SYSCALL(self, ir):
-        if ir.name.startswith('polyphony.timing.wait_'):
-            if (ir.name == 'polyphony.timing.wait_rising' or
-                    ir.name == 'polyphony.timing.wait_falling'):
+        if ir.sym.name.startswith('polyphony.timing.wait_'):
+            if (ir.sym.name == 'polyphony.timing.wait_rising' or
+                    ir.sym.name == 'polyphony.timing.wait_falling'):
                 ports = ir.args
-            elif ir.name == 'polyphony.timing.wait_edge':
+            elif ir.sym.name == 'polyphony.timing.wait_edge':
                 ports = ir.args[2:]
-            elif ir.name == 'polyphony.timing.wait_value':
+            elif ir.sym.name == 'polyphony.timing.wait_value':
                 ports = ir.args[1:]
             for _, p in ports:
                 port = p.symbol().typ

@@ -6,9 +6,9 @@ CALL_MINIMUM_STEP = 5
 
 
 def get_call_latency(call):
-    if call.func_scope.name == 'polyphony.io.Queue.rd':
+    if call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.rd'):
         return UNIT_STEP * 3
-    elif call.func_scope.name == 'polyphony.io.Queue.wr':
+    elif call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.wr'):
         return UNIT_STEP * 3
     elif call.func_scope.is_method() and call.func_scope.parent.is_port():
         receiver = call.func.tail()
@@ -31,11 +31,11 @@ def get_call_latency(call):
 
 
 def get_syscall_latency(call):
-    if call.name == 'polyphony.timing.clksleep':
+    if call.sym.name == 'polyphony.timing.clksleep':
         _, cycle = call.args[0]
         assert cycle.is_a(CONST)
         return cycle.value
-    elif call.name.startswith('polyphony.timing.wait_'):
+    elif call.sym.name.startswith('polyphony.timing.wait_'):
         return UNIT_STEP
     return UNIT_STEP
 

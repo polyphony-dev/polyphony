@@ -1,16 +1,18 @@
 from polyphony import testbench, module, is_worker_running
-from polyphony.io import Int, Bit
-from polyphony.timing import clkfence, wait_rising, wait_value
+from polyphony.io import Port
+from polyphony.typing import int8, bit
+from polyphony.timing import clkfence, wait_value
 
 
 @module
 class Port01:
     def __init__(self):
-        self.in0 = Int(width=8)
-        self.out0 = Int(width=8)
-        self.out_valid = Bit(init=0)
-        self.in_valid = Bit(init=0)
-        self.start = Bit(init=0)
+        self.in0       = Port(int8, 'in')
+        self.in_valid  = Port(bit, 'in')
+        self.out0      = Port(int8, 'out')
+        self.out_valid = Port(bit, 'out', init=0)
+        self.start     = Port(bit, 'out', init=0)
+        # append this module's worker
         self.append_worker(self.main)
 
     def main(self):
@@ -35,9 +37,9 @@ def test(p01):
 
     p01.in0(2)
     p01.in_valid(1)
-    print('wait_rising out_valid')
+    print('wait out_valid')
 
-    wait_rising(p01.out_valid)
+    wait_value(1, p01.out_valid)
     assert p01.out0() == 4
     clkfence()
     print(p01.out0())

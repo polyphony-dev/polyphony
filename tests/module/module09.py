@@ -1,17 +1,17 @@
 from polyphony import module
 from polyphony import testbench
 from polyphony import is_worker_running
-from polyphony.timing import clkfence, clksleep, wait_rising
 from polyphony.io import Queue
+from polyphony.typing import uint16
 
 
 @module
 class ModuleTest09:
     def __init__(self, data_size):
-        self.i_q = Queue(width=16, maxsize=data_size)
-        self.o_q = Queue(width=16, maxsize=data_size)
-        tmp_q0 = Queue(width=16, maxsize=data_size)
-        tmp_q1 = Queue(width=16, maxsize=data_size)
+        self.i_q = Queue(uint16, maxsize=data_size)
+        self.o_q = Queue(uint16, maxsize=data_size)
+        tmp_q0 = Queue(uint16, maxsize=data_size)
+        tmp_q1 = Queue(uint16, maxsize=data_size)
         self.append_worker(mul, 2, data_size, self.i_q, tmp_q0)
         self.append_worker(mul, 3, data_size, tmp_q0, tmp_q1)
         self.append_worker(mul, 4, data_size, tmp_q1, self.o_q)

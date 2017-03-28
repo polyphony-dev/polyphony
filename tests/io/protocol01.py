@@ -1,12 +1,13 @@
 from polyphony import testbench, module
-from polyphony.io import Int
+from polyphony.io import Port
+from polyphony.typing import int8
 
 
 @module
 class Protocol01:
     def __init__(self):
-        self.i = Int(width=8, init=0, protocol='valid')
-        self.o = Int(width=8, init=0, protocol='ready_valid')
+        self.i = Port(int8, init=0, protocol='valid')
+        self.o = Port(int8, init=0, protocol='ready_valid')
         self.append_worker(self.main)
 
     def main(self):

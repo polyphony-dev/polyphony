@@ -1,15 +1,15 @@
 from polyphony import module
 from polyphony import testbench
 from polyphony.timing import wait_value
-from polyphony.io import Bit
-
+from polyphony.io import Port
+from polyphony.typing import bit
 
 class Interface:
     def __init__(self):
-        self.i0 = Bit()
-        self.i1 = Bit()
-        self.o0 = Bit()
-        self.o1 = Bit()
+        self.i0 = Port(bit)
+        self.i1 = Port(bit)
+        self.o0 = Port(bit)
+        self.o1 = Port(bit)
 
 
 @module

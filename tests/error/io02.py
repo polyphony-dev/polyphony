@@ -1,11 +1,11 @@
 #Port object must created in the constructor of the module class
 from polyphony import testbench
-from polyphony.io import Bit
+from polyphony.io import Port
 
 
 class C:
     def __init__(self):
-        self.p = Bit()
+        self.p = Port(bool)
 
 
 def io02():

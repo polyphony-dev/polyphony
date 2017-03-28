@@ -1,5 +1,7 @@
 from polyphony import testbench, module, is_worker_running
-from polyphony.io import Bit
+#from polyphony.io import Bit
+from polyphony.io import Port
+from polyphony.typing import bit
 from polyphony.timing import clksleep, wait_rising, wait_falling
 
 
@@ -18,9 +20,9 @@ def other_main(clk1, clk2, out):
 @module
 class Port02:
     def __init__(self):
-        self.clk1 = Bit(init=1)
-        self.clk2 = Bit(init=1)
-        self.out = Bit(init=0)
+        self.clk1 = Port(bit, init=1)
+        self.clk2 = Port(bit, init=1)
+        self.out = Port(bit, init=0)
         self.append_worker(self.main)
         self.append_worker(other_main, self.clk1, self.clk2, self.out)
 

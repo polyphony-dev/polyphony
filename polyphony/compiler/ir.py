@@ -1,5 +1,5 @@
 ﻿from .utils import is_a
-
+from .symbol import Symbol
 
 op2sym_map = {
     'And': 'and', 'Or': 'or',
@@ -263,7 +263,7 @@ class CALL(IRExp):
 
     def __str__(self):
         s = '(CALL {}, '.format(self.func)
-        s += ', '.join(['{}:{}'.format(name, arg) for name, arg in self.args])
+        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ")"
         return s
 
@@ -315,22 +315,23 @@ class CALL(IRExp):
 
 
 class SYSCALL(IRExp):
-    def __init__(self, name, args, kwargs):
+    def __init__(self, sym, args, kwargs):
         super().__init__()
-        self.name = name
+        assert isinstance(sym, Symbol)
+        self.sym = sym
         self.args = args
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '(SYSCALL {}, '.format(self.name)
-        s += ', '.join(['{}:{}'.format(name, arg) for name, arg in self.args])
+        s = '(SYSCALL {}, '.format(self.sym)
+        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ")"
         return s
 
     def __eq__(self, other):
         if other is None or not other.is_a(SYSCALL):
             return False
-        return (self.name == other.name and
+        return (self.sym is other.sym and
                 len(self.args) == len(other.args) and
                 all([name == other_name and a == other_a
                      for (name, a), (other_name, other_a) in zip(self.args, other.args)]))
@@ -346,7 +347,7 @@ class SYSCALL(IRExp):
 
     def clone(self):
         args = [(name, arg.clone()) for name, arg in self.args]
-        clone = SYSCALL(self.name, args, {})
+        clone = SYSCALL(self.sym, args, {})
         clone.lineno = self.lineno
         return clone
 
@@ -369,7 +370,7 @@ class NEW(IRExp):
 
     def __str__(self):
         s = '(NEW {}, '.format(self.func_scope.orig_name)
-        s += ', '.join(map(str, self.args))
+        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ")"
         return s
 

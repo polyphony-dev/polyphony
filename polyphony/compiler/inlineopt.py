@@ -37,7 +37,7 @@ class InlineOpt(object):
             self._reduce_useless_move(scope)
 
     def _process_func(self, callee, caller, calls):
-        if caller.is_global() or callee.is_function_module():
+        if callee.is_function_module() or callee.is_testbench():
             return
         for call, call_stm in calls:
             self.inline_counts[caller] += 1
@@ -378,7 +378,11 @@ class FlattenFieldAccess(IRVisitor):
             else:
                 flatsym = scope.add_sym(flatname, ir.attr.tags)
                 flatsym.typ = ancestor.typ
-                flatsym.ancestor = ancestor
+                if flatsym.typ.is_object() and flatsym.typ.get_scope().is_port():
+                    # we use a flattened name for the port
+                    flatsym.ancestor = None
+                else:
+                    flatsym.ancestor = ancestor
             return head + (flatsym, ) + tail
         else:
             return head + tail
@@ -400,7 +404,6 @@ class FlattenFieldAccess(IRVisitor):
         # don't flatten use of the static class field
         if ir.tail().typ.is_class():
             return
-
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
         newattr.lineno = ir.lineno

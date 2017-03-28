@@ -1,12 +1,13 @@
 from polyphony import testbench, module, is_worker_running
 from polyphony.io import Queue
+from polyphony.typing import int8
 
 
 @module
 class Port03:
     def __init__(self):
-        self.in_q = Queue(width=8, maxsize=2)
-        self.out_q = Queue(width=8, maxsize=2)
+        self.in_q = Queue(int8, maxsize=2)
+        self.out_q = Queue(int8, maxsize=2)
         self.append_worker(self.main)
 
     def main(self):

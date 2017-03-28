@@ -23,7 +23,7 @@ class Scope(Tagged):
         'callable', 'returnable', 'mutable',
         'testbench',
         'module', 'worker',
-        'lib', 'namespace',
+        'lib', 'namespace', 'builtin',
         'port', 'typeclass',
         'function_module',
         'inlinelib',
@@ -126,6 +126,7 @@ class Scope(Tagged):
         self.workers = []
         self.worker_owner = None
         self.asap_latency = -1
+        self.type_args = []
 
     def __str__(self):
         s = '\n================================\n'
@@ -195,8 +196,8 @@ class Scope(Tagged):
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None):
-        if self.is_lib():
-            return
+        #if self.is_lib():
+        #    return
         name = prefix + '_' if prefix else ''
         name += self.orig_name
         name = name + '_' + postfix if postfix else name
@@ -209,6 +210,7 @@ class Scope(Tagged):
             child.parent = s
 
         s.bases = list(self.bases)
+        s.type_args = list(self.type_args)
 
         symbol_map = self.clone_symbols(s)
         s.params = []

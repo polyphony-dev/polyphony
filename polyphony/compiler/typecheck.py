@@ -5,7 +5,6 @@ from .irvisitor import IRVisitor
 from .ir import *
 from .scope import Scope
 from .type import Type
-from .builtin import builtin_return_type_table
 from .env import env
 from .symbol import Symbol
 import logging
@@ -163,10 +162,11 @@ class TypePropagation(IRVisitor):
         return ret_t
 
     def visit_SYSCALL(self, ir):
-        ir.args = self._normalize_syscall_args(ir.name, ir.args, ir.kwargs)
+        ir.args = self._normalize_syscall_args(ir.sym.name, ir.args, ir.kwargs)
         for _, arg in ir.args:
             self.visit(arg)
-        return builtin_return_type_table[ir.name]
+        assert ir.sym.typ.is_function()
+        return ir.sym.typ.get_return_type()
 
     def visit_NEW(self, ir):
         ret_t = Type.object(ir.func_scope)
@@ -177,6 +177,15 @@ class TypePropagation(IRVisitor):
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
                 self._set_type(param.sym, arg_types[i])
+            elif param.sym.typ.is_generic():
+                new_scope = self._instanciate_type(ir.func_scope, arg_types[i])
+                if not new_scope:
+                    raise RejectPropagation(ir)
+                new_ctor = new_scope.find_ctor()
+                new_ctor.params.pop(i + 1)
+                ir.args.pop(i)
+                ir.func_scope = new_scope
+                return self.visit_NEW(ir)
         return ret_t
 
     def visit_CONST(self, ir):
@@ -407,6 +416,45 @@ class TypePropagation(IRVisitor):
         if not sym.typ.is_freezed():
             sym.set_type(typ)
 
+    def _instanciate_type(self, scope, typ):
+        if typ.is_class():
+            typscope = typ.get_scope()
+            name = scope.orig_name + '_' + typscope.orig_name
+            if typscope.is_typeclass():
+                t = Type.from_typeclass(typscope)
+            else:
+                t = Type.object(typscope)
+        else:
+            return None
+        new_scope = scope.inherit(name, scope.children)
+        replacer = TypeReplacer(Type.generic_t, t, Type.is_same)
+        for child in new_scope.children:
+            for sym, copy, _ in child.params:
+                if Type.is_same(sym.typ, Type.generic_t):
+                    sym.set_type(t)
+                    copy.set_type(t)
+            if Type.is_same(child.return_type, Type.generic_t):
+                child.return_type = t
+            replacer.process(child)
+        new_scope.type_args.append(t)
+        return new_scope
+
+
+class TypeReplacer(IRVisitor):
+    def __init__(self, old_t, new_t, comparator):
+        self.old_t = old_t
+        self.new_t = new_t
+        self.comparator = comparator
+
+    def visit_TEMP(self, ir):
+        if self.comparator(ir.sym.typ, self.old_t):
+            ir.sym.typ = self.new_t
+
+    def visit_ATTR(self, ir):
+        self.visit(ir.exp)
+        if self.comparator(ir.attr.typ, self.old_t):
+            ir.attr.typ = self.new_t
+
 
 class InstanceTypePropagation(TypePropagation):
     def process_all(self):
@@ -476,24 +524,25 @@ class TypeChecker(IRVisitor):
         return ir.func_scope.return_type
 
     def visit_SYSCALL(self, ir):
-        if ir.name == 'len':
+        if ir.sym.name == 'len':
             if len(ir.args) != 1:
                 type_error(self.current_stm, Errors.LEN_TAKES_ONE_ARG)
             _, mem = ir.args[0]
             if not mem.is_a([TEMP, ATTR]) or not mem.symbol().typ.is_seq():
                 type_error(self.current_stm, Errors.LEN_TAKES_SEQ_TYPE)
-        elif ir.name in env.all_scopes:
-            scope = env.all_scopes[ir.name]
+        elif ir.sym.name in env.all_scopes:
+            scope = env.all_scopes[ir.sym.name]
             arg_len = len(ir.args)
             param_len = len(scope.params)
             param_typs = tuple([sym.typ for sym, _, _ in scope.params])
             with_vararg = len(param_typs) and param_typs[-1].has_vararg()
-            self._check_param_number(arg_len, param_len, ir, ir.name, with_vararg)
-            self._check_param_type(param_typs, ir, ir.name, with_vararg)
+            self._check_param_number(arg_len, param_len, ir, ir.sym.name, with_vararg)
+            self._check_param_type(param_typs, ir, ir.sym.name, with_vararg)
         else:
             for _, arg in ir.args:
                 self.visit(arg)
-        return builtin_return_type_table[ir.name]
+        assert ir.sym.typ.is_function()
+        return ir.sym.typ.get_return_type()
 
     def visit_NEW(self, ir):
         arg_len = len(ir.args)
@@ -635,6 +684,8 @@ class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
         if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
             fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
+        if self.scope.is_global() and not ir.func_scope.is_module():
+            fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)
 
     def visit_MSTORE(self, ir):
         if ir.mem.symbol().scope.is_global():

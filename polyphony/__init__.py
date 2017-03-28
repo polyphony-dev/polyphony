@@ -60,8 +60,6 @@ def _module_stop(self):
 
 
 def _module_append_worker(self, fn, *args):
-    if not hasattr(self, '__workers'):
-        self.__workers = []
     self.__workers.append(_Worker(fn, *args))
 
 
@@ -75,7 +73,10 @@ class _ModuleDecorator(object):
             instance._start = types.MethodType(_module_start, instance)
             instance._stop = types.MethodType(_module_stop, instance)
             instance.append_worker = types.MethodType(_module_append_worker, instance)
+            io._enable()
+            setattr(instance, '__workers', [])
             instance.__init__(*args, **kwargs)
+            io._disable()
             self.module_instances[cls.__name__].append(instance)
             return instance
         _module_decorator.__dict__ = cls.__dict__.copy()

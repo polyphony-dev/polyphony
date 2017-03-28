@@ -1,12 +1,12 @@
 #Writing to 'p' is conflicted
 from polyphony import module
-from polyphony.io import Int
+from polyphony.io import Port
 
 
 @module
 class io_write_conflict03:
     def __init__(self):
-        p = Int()
+        p = Port(int)
         self.append_worker(self.w, p)
         self.append_worker(self.w, p)
 

@@ -1,12 +1,12 @@
 #Writing to 'p' is conflicted
 from polyphony import module
-from polyphony.io import Bit
+from polyphony.io import Port
 
 
 @module
 class io_write_conflict02:
     def __init__(self):
-        self.p = Bit()
+        self.p = Port(bool)
         self.append_worker(self.w)
         self.append_worker(self.w)
 

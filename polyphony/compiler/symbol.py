@@ -10,7 +10,8 @@ class Symbol(Tagged):
 
     TAGS = {
         'temp', 'param', 'return', 'condition', 'induction', 'alias',
-        'self'
+        'self',
+        'builtin'
     }
 
     @classmethod

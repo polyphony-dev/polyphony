@@ -29,7 +29,8 @@ class Errors(Enum):
     UNSUPPORTED_EXPR = 806
     GLOBAL_VAR_MUST_BE_CONST = 807
     GLOBAL_OBJECT_CANT_BE_MUTABLE = 808
-    CLASS_VAR_MUST_BE_CONST = 809
+    GLOBAL_INSTANCE_IS_NOT_SUPPORTED = 809
+    CLASS_VAR_MUST_BE_CONST = 810
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -83,6 +84,7 @@ ERROR_MESSAGES = {
     Errors.UNSUPPORTED_EXPR: "Unsupported expression",
     Errors.GLOBAL_VAR_MUST_BE_CONST: "A global variable must be a constant value",
     Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE: "Writing to a global object is not allowed",
+    Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED: "A global instance is not supported",
     Errors.CLASS_VAR_MUST_BE_CONST: "A class variable must be a constant value",
 
     # polyphony library restrictions

@@ -1,21 +1,21 @@
 from polyphony import module
 from polyphony import testbench
 from polyphony import is_worker_running
-from polyphony.timing import clkfence, clksleep, wait_rising
-from polyphony.io import Int, Bit
+from polyphony.timing import clkfence, wait_rising
+from polyphony.io import Port
 
 
 @module
 class ModuleTest03:
     def __init__(self):
-        self.idata = Int()
-        self.ivalid = Bit()
-        self.odata = Int()
-        self.ovalid = Bit()
-        t0 = Int()
-        t0valid = Bit()
-        t1 = Int()
-        t1valid = Bit()
+        self.idata = Port(int)
+        self.ivalid = Port(bool)
+        self.odata = Port(int)
+        self.ovalid = Port(bool)
+        t0 = Port(int)
+        t0valid = Port(bool)
+        t1 = Port(int)
+        t1valid = Port(bool)
         self.append_worker(pow, self.idata, self.ivalid, t0, t0valid)
         self.append_worker(pow, t0, t0valid, t1, t1valid)
         self.append_worker(pow, t1, t1valid, self.odata, self.ovalid)

@@ -51,14 +51,20 @@ class Type(object):
                 t = Type.str_t
             elif ann == 'None':
                 t = Type.none_t
+            elif ann == 'any':
+                t = Type.any_t
+            elif ann == 'generic':
+                t = Type.generic_t
+            elif ann == 'class':
+                t = Type.klass(None)
             elif ann == '...':
                 t = Type.ellipsis_t
             else:
                 sym = scope.find_sym(ann)
                 if sym and sym.typ.has_scope():
                     sym_scope = sym.typ.get_scope()
-                    if sym_scope.name.startswith('polyphony.typing'):
-                        t = Type.from_typing_class(sym_scope)
+                    if sym_scope.is_typeclass():
+                        t = Type.from_typeclass(sym_scope)
                     else:
                         t = Type.object(sym_scope)
                     t.freeze()
@@ -94,7 +100,7 @@ class Type(object):
                 else:
                     assert False
                 if target_scope.is_typeclass():
-                    t = Type.from_typing_class(target_scope, elms)
+                    t = Type.from_typeclass(target_scope, elms)
                     t.freeze()
                     return t
         elif ann is None:
@@ -102,8 +108,13 @@ class Type(object):
         assert False
 
     @classmethod
-    def from_typing_class(cls, scope, elms=None):
-        if scope.orig_name == 'bit':
+    def from_typeclass(cls, scope, elms=None):
+        assert scope.is_typeclass()
+        if scope.orig_name == 'int':
+            return Type.int()
+        elif scope.orig_name == 'bool':
+            return Type.bool_t
+        elif scope.orig_name == 'bit':
             return Type.int(1, signed=False)
         elif scope.orig_name.startswith('int'):
             return Type.int(int(scope.orig_name[3:]))
@@ -158,17 +169,17 @@ class Type(object):
 
     @classmethod
     def list(cls, elm_t, memnode):
-        assert elm_t.is_scalar() or elm_t.is_undef()
+        assert elm_t.is_scalar() or elm_t.is_any() or elm_t.is_undef()
         return Type('list', element=elm_t, memnode=memnode)
 
     @classmethod
     def tuple(cls, elm_t, memnode, length):
-        assert elm_t.is_scalar() or elm_t.is_undef()
+        assert elm_t.is_scalar() or elm_t.is_any() or elm_t.is_undef()
         return Type('tuple', element=elm_t, memnode=memnode, length=length)
 
     @classmethod
     def function(cls, scope, ret_t, param_ts):
-        return Type('function', scope=scope, retutn_type=ret_t, param_types=param_ts)
+        return Type('function', scope=scope, return_type=ret_t, param_types=param_ts)
 
     @classmethod
     def object(cls, scope):
@@ -219,6 +230,8 @@ class Type(object):
         if to_t.is_int() and from_t.is_bool():
             return True
         if to_t.is_bool() and from_t.is_int():
+            return True
+        if to_t.is_str() and from_t.is_str():
             return True
         if to_t.is_list() and from_t.is_list():
             if to_t.has_length() and from_t.has_length():
@@ -277,3 +290,5 @@ Type.str_t = Type('str', freezed=True)
 Type.none_t = Type('none', freezed=True)
 Type.undef_t = Type('undef')
 Type.ellipsis_t = Type('ellipsis', freezed=True)
+Type.generic_t = Type('generic')
+Type.any_t = Type('any', freezed=True)

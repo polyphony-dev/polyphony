@@ -458,24 +458,25 @@ class AHDLTranslator(object):
             assert False  # len() must be constant value
 
     def visit_SYSCALL(self, ir, node):
-        logger.debug(ir.name)
-        if ir.name == 'print':
+        syscall_name = ir.sym.name
+        logger.debug(ir.sym.name)
+        if ir.sym.name == 'print':
             fname = '!hdl_print'
-        elif ir.name == 'assert':
+        elif ir.sym.name == 'assert':
             fname = '!hdl_assert'
-        elif ir.name == 'polyphony.verilog.display':
+        elif ir.sym.name == 'polyphony.verilog.display':
             fname = '!hdl_verilog_display'
-        elif ir.name == 'polyphony.verilog.write':
+        elif ir.sym.name == 'polyphony.verilog.write':
             fname = '!hdl_verilog_write'
-        elif ir.name == 'len':
+        elif ir.sym.name == 'len':
             return self.translate_builtin_len(ir)
-        elif ir.name == 'polyphony.timing.clksleep':
+        elif ir.sym.name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
             assert cycle.is_a(CONST)
             for i in range(cycle.value):
                 self.host.emit(AHDL_NOP('wait a cycle'), self.sched_time + i)
             return
-        elif ir.name == 'polyphony.timing.wait_rising':
+        elif ir.sym.name == 'polyphony.timing.wait_rising':
             ports = []
             for _, a in ir.args:
                 assert a.is_a([TEMP, ATTR])
@@ -483,7 +484,7 @@ class AHDLTranslator(object):
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
             self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(0), AHDL_CONST(1), *ports), self.sched_time)
             return
-        elif ir.name == 'polyphony.timing.wait_falling':
+        elif ir.sym.name == 'polyphony.timing.wait_falling':
             ports = []
             for _, a in ir.args:
                 assert a.is_a([TEMP, ATTR])
@@ -491,7 +492,7 @@ class AHDLTranslator(object):
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
             self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(1), AHDL_CONST(0), *ports), self.sched_time)
             return
-        elif ir.name == 'polyphony.timing.wait_edge':
+        elif ir.sym.name == 'polyphony.timing.wait_edge':
             ports = []
             _, _old = ir.args[0]
             _, _new = ir.args[1]
@@ -503,7 +504,7 @@ class AHDLTranslator(object):
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
             self._emit(AHDL_META_WAIT('WAIT_EDGE', old, new, *ports), self.sched_time)
             return
-        elif ir.name == 'polyphony.timing.wait_value':
+        elif ir.sym.name == 'polyphony.timing.wait_value':
             ports = []
             _, _val = ir.args[0]
             value = self.visit(_val, node)
@@ -514,6 +515,7 @@ class AHDLTranslator(object):
             self._emit(AHDL_META_WAIT('WAIT_VALUE', value, *ports), self.sched_time)
             return
         else:
+            # TODO: user-defined builtins
             return
         args = []
         for i, (_, arg) in enumerate(ir.args):
@@ -834,14 +836,15 @@ class AHDLTranslator(object):
         if port_sig:
             return port_sig
 
-        width = port_sym.typ.get_width()
+        dtype = port_sym.typ.get_dtype()
+        width = dtype.get_width()
         port_scope = port_sym.typ.get_scope()
         tags = set()
-        if port_scope.orig_name == 'Int' or port_scope.orig_name == 'Bit' or port_scope.orig_name == 'Uint':
+        if port_scope.orig_name.startswith('Port'):
             tags.add('single_port')
-            if port_scope.orig_name == 'Int':
+            if dtype.has_signed() and dtype.get_signed():
                 tags.add('int')
-        elif port_scope.orig_name == 'Queue':
+        elif port_scope.orig_name.startswith('Queue'):
             # TODO
             tags.add('fifo_port')
             tags.add('seq_port')

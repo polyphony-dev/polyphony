@@ -8,7 +8,8 @@ from .symbol import Symbol
 from .type import Type
 from .env import env
 from .common import error_info
-from .builtin import builtin_names, lib_port_type_names, lib_class_names, lib_type_class_prefixes
+from .builtin import builtin_symbols, append_builtin
+from .builtin import lib_port_type_names, lib_class_names
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -18,9 +19,14 @@ FUNCTION_DECORATORS = [
 INTERNAL_FUNCTION_DECORATORS = [
     'mutable',
     'inlinelib',
+    'builtin'
 ]
 CLASS_DECORATORS = [
     'module',
+]
+INTERNAL_CLASS_DECORATORS = [
+    'builtin',
+    'typeclass',
 ]
 
 IGNORE_PREFIX = '_polyphony_'
@@ -117,7 +123,7 @@ class FunctionVisitor(ast.NodeVisitor):
         a = '{}.{}'.format(self.visit(node.value), node.attr)
         return a
 
-    def _leve_scope(self, outer_scope):
+    def _leave_scope(self, outer_scope):
         # override it if already exists
         outer_scope.del_sym(self.current_scope.orig_name)
         scopesym = outer_scope.add_sym(self.current_scope.orig_name)
@@ -209,12 +215,14 @@ class FunctionVisitor(ast.NodeVisitor):
             first_param.copy.add_tag('self')
             first_param.sym.add_tag('self')
 
+        if self.current_scope.is_builtin():
+            append_builtin(outer_scope, self.current_scope)
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
         else:
             for stm in node.body:
                 self.visit(stm)
-        self._leve_scope(outer_scope)
+        self._leave_scope(outer_scope)
 
     def visit_ClassDef(self, node):
         if node.name.startswith(IGNORE_PREFIX):
@@ -227,6 +235,8 @@ class FunctionVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(deco_name)
             if sym and sym.name in CLASS_DECORATORS:
                 tags.add(sym.name)
+            elif deco_name in INTERNAL_CLASS_DECORATORS:
+                tags.add(deco_name)
             else:
                 print(error_info(outer_scope, node.lineno))
                 raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
@@ -260,10 +270,13 @@ class FunctionVisitor(ast.NodeVisitor):
                 scope.set_entry_block(blk)
                 scope.set_exit_block(blk)
 
+        if self.current_scope.is_builtin():
+            append_builtin(outer_scope, self.current_scope)
+
         for stm in node.body:
             self.visit(stm)
 
-        self._leve_scope(outer_scope)
+        self._leave_scope(outer_scope)
 
 
 class CompareTransformer(ast.NodeTransformer):
@@ -354,6 +367,8 @@ class CodeVisitor(ast.NodeVisitor):
 
     def _leave_scope(self, outer_scope, last_block):
         self._visit_lazy_defs()
+        if self.current_scope.exit_block is None:
+            self.current_scope.exit_block = self.current_scope.entry_block
         self.current_scope = outer_scope
         self.current_block = last_block
 
@@ -675,7 +690,7 @@ class CodeVisitor(ast.NodeVisitor):
         it = self.visit(node.iter)
 
         # In case of range() loop
-        if it.is_a(SYSCALL) and it.name == 'range':
+        if it.is_a(SYSCALL) and it.sym.name == 'range':
             if len(it.args) == 1:
                 start = CONST(0)
                 end = it.args[0][1]
@@ -711,7 +726,7 @@ class CodeVisitor(ast.NodeVisitor):
             self._build_for_loop_blocks(init_parts, condition, [], continue_parts, node)
         elif it.is_a([TEMP, ATTR]):
             start = CONST(0)
-            end  = SYSCALL('len', [('seq', it.clone())], {})
+            end  = SYSCALL(builtin_symbols['len'], [('seq', it.clone())], {})
             counter_name = Symbol.unique_name('@counter')
             counter = self.current_scope.add_sym(counter_name, {'induction'})
             init_parts = [
@@ -735,7 +750,7 @@ class CodeVisitor(ast.NodeVisitor):
         elif it.is_a(ARRAY):
             unnamed_array = self.current_scope.add_temp('@unnamed')
             start = CONST(0)
-            end  = SYSCALL('len', [('seq', TEMP(unnamed_array, Ctx.LOAD))], {})
+            end  = SYSCALL(builtin_symbols['len'], [('seq', TEMP(unnamed_array, Ctx.LOAD))], {})
             counter_name = Symbol.unique_name('@counter')
             counter = self.current_scope.add_sym(counter_name, {'induction'})
             init_parts = [
@@ -843,7 +858,7 @@ class CodeVisitor(ast.NodeVisitor):
 
     def visit_Assert(self, node):
         testexp = self.visit(node.test)
-        self.emit(EXPR(SYSCALL('assert', [('exp', testexp)], {})), node)
+        self.emit(EXPR(SYSCALL(builtin_symbols['assert'], [('exp', testexp)], {})), node)
 
     def visit_Global(self, node):
         print(self._err_info(node))
@@ -965,24 +980,22 @@ class CodeVisitor(ast.NodeVisitor):
             func_name = func.symbol().orig_name()
             sym = self.current_scope.find_sym(func_name)
             func_scope = sym.typ.get_scope() if sym.typ.has_scope() else None
+            #assert func_scope
             if not func_scope:
-                if func.symbol().name in builtin_names:
-                    return SYSCALL(func.symbol().name, args, kwargs)
-
                 if func.symbol().name in dir(python_builtins):
-                    raise NameError(
-                        "The name \'{}\' is reserved as the name of the built-in function.".
-                        format(node.id))
+                    raise NameError("The name \'{}\' is reserved as the name of the built-in function.".
+                                    format(node.id))
             else:
-                if func_scope.name in builtin_names:
-                    return SYSCALL(func_scope.name, args, kwargs)
-                #print(self._err_info(node))
-                #raise TypeError('{} is not callable'.format(func.symbol().name))
+                if func.symbol().name in builtin_symbols:
+                    return SYSCALL(builtin_symbols[func.symbol().name], args, kwargs)
+                elif func_scope.name in builtin_symbols:
+                    return SYSCALL(builtin_symbols[func_scope.name], args, kwargs)
         elif func.is_a(ATTR) and func.exp.is_a([TEMP, ATTR]):
             if isinstance(func.attr, Symbol):
                 if (func.attr.typ.is_function()
-                        and func.attr.typ.get_scope().name in builtin_names):
-                    return SYSCALL(func.attr.typ.get_scope().name, args, kwargs)
+                        and func.attr.typ.get_scope().name in builtin_symbols):
+                    builtin_sym = builtin_symbols[func.attr.typ.get_scope().name]
+                    return SYSCALL(builtin_sym, args, kwargs)
                 elif (func.attr.typ.is_class()
                       and func.attr.typ.get_scope().name in lib_class_names):
                     return NEW(func.attr.typ.get_scope(), args, kwargs)
@@ -1224,19 +1237,20 @@ class IRTranslator(object):
     def translate(self, source, lib_name):
         tree = ast.parse(source)
 
-        global_scope = Scope.global_scope()
         if lib_name:
-            if lib_name == 'polyphony':
+            if lib_name == '__builtin__':
                 top_scope = Scope.create(None, lib_name, {'namespace', 'lib'}, lineno=1)
-                for builtin in builtin_names:
-                    top_scope.add_sym(builtin)
+            elif lib_name == 'polyphony':
+                top_scope = Scope.create(None, lib_name, {'namespace', 'lib'}, lineno=1)
+                for sym in builtin_symbols.values():
+                    top_scope.import_sym(sym)
             else:
                 lib_root = env.scopes['polyphony']
                 top_scope = Scope.create(lib_root, lib_name, {'namespace', 'lib'}, lineno=1)
                 sym = lib_root.add_sym(lib_name)
                 sym.set_type(Type.namespace(top_scope))
         else:
-            top_scope = global_scope
+            top_scope = Scope.global_scope()
             ImportVisitor().visit(tree)
             logger.debug(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
             logger.debug('ignore packages')
@@ -1247,3 +1261,4 @@ class IRTranslator(object):
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
         CodeVisitor(top_scope, type_comments).visit(tree)
+        #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))

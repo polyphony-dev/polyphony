@@ -119,7 +119,19 @@ class ConstantOptBase(IRVisitor):
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
             return CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
-        if (ir.left.is_a([TEMP, ATTR])
+        elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
+            const, var = (ir.left.value, ir.right) if ir.left.is_a(CONST) else (ir.right.value, ir.left)
+            if ir.op == 'And':
+                if const:
+                    return var
+                else:
+                    return CONST(False)
+            elif ir.op == 'Or':
+                if const:
+                    return CONST(True)
+                else:
+                    return var
+        elif (ir.left.is_a([TEMP, ATTR])
                 and ir.right.is_a([TEMP, ATTR])
                 and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
             c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id, self))
@@ -224,10 +236,6 @@ class ConstantOpt(ConstantOptBase):
                         stm.args.pop(i)
                         stm.defblks.pop(i)
                 if len(stm.args) == 1:
-                    # TODO: Phi predicates does not unconditionally optimize until introducing loop-phi
-                    if not stm.ps[0].is_a(CONST):
-                        stm.ps[0] = self.visit(stm.ps[0])
-                    assert stm.ps[0].is_a(CONST) and stm.ps[0].value
                     arg = stm.args[0]
                     blk = stm.defblks[0]
                     mv = MOVE(stm.var, arg)
@@ -291,7 +299,7 @@ class ConstantOpt(ConstantOptBase):
             worklist.remove(cjump)
 
     def visit_SYSCALL(self, ir):
-        if ir.name == 'len':
+        if ir.sym.name == 'len':
             _, mem = ir.args[0]
             if mem.symbol().scope is Scope.global_scope():
                 memsym = mem.symbol().ancestor

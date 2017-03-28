@@ -1,58 +1,35 @@
 __all__ = [
-    'Bit',
-    'Int',
-    'Uint'
+    'Port',
+    'Queue',
 ]
 
 
-class _DataPort:
-    def __init__(self, init:int=0, width:int=1, protocol:str='none') -> object:
+class Port:
+    def __init__(self, dtype:generic, direction:str='any', init=None, protocol:str='none') -> object:
         pass
 
-    def rd(self) -> int:
-        pass
-
-    @mutable
-    def wr(self, v:int) -> None:
-        pass
-
-    def __call__(self, v=None) -> int:
-        pass
-
-
-class Bit(_DataPort):
-    def __init__(self, init:int=0, width:int=1, protocol:str='none') -> object:
-        pass
-
-
-class Int(_DataPort):
-    def __init__(self, width:int=32, init:int=0, protocol:str='none') -> object:
-        pass
-
-
-class Uint(_DataPort):
-    def __init__(self, width:uint=32, init:int=0, protocol:str='none') -> object:
-        pass
-
-    def rd(self) -> uint:
+    def rd(self) -> generic:
         pass
 
     @mutable
-    def wr(self, v:uint) -> None:
+    def wr(self, v:generic) -> None:
+        pass
+
+    def __call__(self, v=None) -> generic:
         pass
 
 
 class Queue:
-    def __init__(self, width:int=32, maxsize:int=0) -> object:
+    def __init__(self, dtype:generic, direction:str='', maxsize:int=1) -> object:
         pass
 
-    def rd(self) -> int:
+    def rd(self) -> generic:
         pass
 
-    def wr(self, v) -> None:
+    def wr(self, v:generic) -> None:
         pass
 
-    def __call__(self, v=None) -> int:
+    def __call__(self, v=None) -> generic:
         pass
 
     def empty(self) -> bool:

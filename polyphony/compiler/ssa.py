@@ -398,7 +398,7 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.name == env.self_name:
             return False
-        if sym.scope.is_module():
+        if sym.scope.is_module() or sym.scope.is_global():
             return False
         if sym.is_param():
             return False

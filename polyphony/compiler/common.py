@@ -8,7 +8,6 @@ src_texts = {}
 
 def read_source(filename):
     assert filename
-    env.set_current_filename(filename)
     f = open(filename, 'r')
     source_lines = f.readlines()
     f.close()

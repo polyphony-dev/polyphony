@@ -1,7 +1,6 @@
 ﻿from .ir import *
 from .irvisitor import IRTransformer
 from .type import Type
-from .typecheck import builtin_return_type_table
 from .common import fail
 from .errors import Errors
 
@@ -75,9 +74,10 @@ class QuadrupleMaker(IRTransformer):
 
     def _has_return_type(self, ir):
         if ir.is_a(CALL):
-            return True  # ir.func_scope.return_type != Type.none_t
+            return not ir.func_scope.return_type.is_none()
         elif ir.is_a(SYSCALL):
-            return builtin_return_type_table[ir.name] != Type.none_t
+            assert ir.sym.typ.is_function()
+            return not ir.sym.typ.get_return_type().is_none()
 
     def _visit_args(self, ir):
         for i, (name, arg) in enumerate(ir.args):
