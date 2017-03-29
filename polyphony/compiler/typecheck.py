@@ -755,6 +755,6 @@ class ModuleChecker(IRVisitor):
             type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR)
 
         if irattr.symbol() in self.assigns[class_scope]:
-            type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE)
+            type_error(self.current_stm, Errors.MODULE_PORT_MUST_ASSIGN_ONLY_ONCE)
 
         self.assigns[class_scope].add(irattr.symbol())

@@ -34,7 +34,7 @@ class Errors(Enum):
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
-    MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE = 901
+    MODULE_PORT_MUST_ASSIGN_ONLY_ONCE = 901
     MODULE_FIELD_MUST_ASSIGN_IN_CTOR = 902
     CALL_APPEND_WORKER_IN_CTOR = 903
     CALL_MODULE_METHOD = 904
@@ -89,7 +89,7 @@ ERROR_MESSAGES = {
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",
-    Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE: "Assignment to a module field can only be done once",
+    Errors.MODULE_PORT_MUST_ASSIGN_ONLY_ONCE: "Assignment to a module port can only be done once",
     Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR: "Assignment to a module field can only at the constructor",
     Errors.CALL_APPEND_WORKER_IN_CTOR: "Calling append_worker method can only at the constructor",
     Errors.CALL_MODULE_METHOD: "Calling a method of the module class can only in the module itself",
