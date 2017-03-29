@@ -36,9 +36,6 @@ class Type(object):
             elif ann == 'int':
                 t = Type.int()
                 t.freeze()
-            elif ann == 'uint':
-                t = Type.int(signed=False)
-                t.freeze()
             elif ann == 'bool':
                 t = Type.bool_t
             elif ann == 'list':
@@ -51,12 +48,8 @@ class Type(object):
                 t = Type.str_t
             elif ann == 'None':
                 t = Type.none_t
-            elif ann == 'any':
-                t = Type.any_t
             elif ann == 'generic':
                 t = Type.generic_t
-            elif ann == 'class':
-                t = Type.klass(None)
             elif ann == '...':
                 t = Type.ellipsis_t
             else:
@@ -169,12 +162,12 @@ class Type(object):
 
     @classmethod
     def list(cls, elm_t, memnode):
-        assert elm_t.is_scalar() or elm_t.is_any() or elm_t.is_undef()
+        assert elm_t.is_scalar() or elm_t.is_undef()
         return Type('list', element=elm_t, memnode=memnode)
 
     @classmethod
     def tuple(cls, elm_t, memnode, length):
-        assert elm_t.is_scalar() or elm_t.is_any() or elm_t.is_undef()
+        assert elm_t.is_scalar() or elm_t.is_undef()
         return Type('tuple', element=elm_t, memnode=memnode, length=length)
 
     @classmethod
@@ -222,7 +215,7 @@ class Type(object):
         return True
 
     @classmethod
-    def can_overwrite(cls, to_t, from_t):
+    def is_assignable(cls, to_t, from_t):
         if to_t is from_t:
             return True
         if to_t.is_int() and from_t.is_int():
@@ -255,25 +248,7 @@ class Type(object):
 
     @classmethod
     def is_compatible(cls, t0, t1):
-        if t0 is t1:
-            return True
-        if t0.is_int() and t1.is_int():
-            return True
-        if t0.is_bool() and t1.is_int() or t0.is_int() and t1.is_bool():
-            return True
-        if t0.is_list() and t1.is_list():
-            return True
-        if t0.is_tuple() and t1.is_tuple():
-            return True
-        if t0.is_object() and t1.is_object() and t0.get_scope() is t1.get_scope():
-            return True
-        if t0.is_object() and t1.is_port() and t0.get_scope() is t1.get_scope():
-            return True
-        if t1.is_object() and t0.is_port() and t0.get_scope() is t1.get_scope():
-            return True
-        if t0 == t1:
-            return True
-        return False
+        return Type.is_assignable(t0, t1) and Type.is_assignable(t1, t0)
 
     def freeze(self):
         self.attrs['freezed'] = True
@@ -291,4 +266,3 @@ Type.none_t = Type('none', freezed=True)
 Type.undef_t = Type('undef')
 Type.ellipsis_t = Type('ellipsis', freezed=True)
 Type.generic_t = Type('generic')
-Type.any_t = Type('any', freezed=True)

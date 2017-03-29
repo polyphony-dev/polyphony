@@ -1,6 +1,6 @@
 
 @builtin
-def print(*args:any) -> None:
+def print(*args) -> None:
     pass
 
 

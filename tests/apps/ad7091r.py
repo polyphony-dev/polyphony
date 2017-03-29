@@ -1,5 +1,6 @@
 import polyphony
-from polyphony.io import Bit, Uint
+from polyphony.io import Port
+from polyphony.typing import bit, uint3, uint12, uint16
 from polyphony.timing import clksleep, clkfence, wait_rising, wait_falling
 
 
@@ -10,16 +11,16 @@ CONVERSION_CYCLE = 40
 @polyphony.module
 class AD7091R_SPIC:
     def __init__(self):
-        self.sclk = Bit()
-        self.sdo  = Bit()
-        self.sdi  = Bit()
-        self.convst_n = Bit(init=1)
-        self.cs_n = Bit(init=1)
+        self.sclk = Port(bit, 'out')
+        self.sdo  = Port(bit, 'in')
+        self.sdi  = Port(bit, 'out')
+        self.convst_n = Port(bit, 'out', init=1)
+        self.cs_n = Port(bit, 'out', init=1)
 
-        self.dout = Uint(width=12)
-        self.chout = Uint(width=3)
-        self.din = Uint(width=16)
-        self.data_ready = Bit()
+        self.dout = Port(uint12, 'out')
+        self.chout = Port(uint3, 'out')
+        self.din = Port(uint16, 'in')
+        self.data_ready = Port(bit, 'out')
         self.append_worker(self.main)
 
     def main(self):

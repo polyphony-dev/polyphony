@@ -23,8 +23,9 @@ class TypePropagation(IRVisitor):
     def __init__(self):
         super().__init__()
         self.check_error = True
+        self.new_scopes = set()
 
-    def propagate_global_function_type(self):
+    def process_all(self):
         self.check_error = False
         scopes = Scope.get_scopes(bottom_up=False,
                                   with_global=True,
@@ -58,6 +59,11 @@ class TypePropagation(IRVisitor):
             break
         for s in scopes:
             self.process(s)
+        return [scope for scope in self.new_scopes if not scope.is_lib()]
+
+    def process(self, scope):
+        super().process(scope)
+        return [scope for scope in self.new_scopes if not scope.is_lib()]
 
     def visit_UNOP(self, ir):
         return self.visit(ir.exp)
@@ -178,13 +184,12 @@ class TypePropagation(IRVisitor):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
                 self._set_type(param.sym, arg_types[i])
             elif param.sym.typ.is_generic():
-                new_scope = self._instanciate_type(ir.func_scope, arg_types[i])
+                new_scope = self._new_scope_with_type(ir.func_scope, arg_types[i], i + 1)
                 if not new_scope:
                     raise RejectPropagation(ir)
-                new_ctor = new_scope.find_ctor()
-                new_ctor.params.pop(i + 1)
                 ir.args.pop(i)
                 ir.func_scope = new_scope
+                self.new_scopes.add(new_scope)
                 return self.visit_NEW(ir)
         return ret_t
 
@@ -416,18 +421,20 @@ class TypePropagation(IRVisitor):
         if not sym.typ.is_freezed():
             sym.set_type(typ)
 
-    def _instanciate_type(self, scope, typ):
+    def _new_scope_with_type(self, scope, typ, param_idx):
         if typ.is_class():
             typscope = typ.get_scope()
-            name = scope.orig_name + '_' + typscope.orig_name
+            name = scope.orig_name + '<' + typscope.orig_name + '>'
             if typscope.is_typeclass():
                 t = Type.from_typeclass(typscope)
             else:
                 t = Type.object(typscope)
         else:
             return None
+        qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
+        if qualified_name in env.scopes:
+            return env.scopes[qualified_name]
         new_scope = scope.inherit(name, scope.children)
-        replacer = TypeReplacer(Type.generic_t, t, Type.is_same)
         for child in new_scope.children:
             for sym, copy, _ in child.params:
                 if Type.is_same(sym.typ, Type.generic_t):
@@ -435,8 +442,9 @@ class TypePropagation(IRVisitor):
                     copy.set_type(t)
             if Type.is_same(child.return_type, Type.generic_t):
                 child.return_type = t
-            replacer.process(child)
         new_scope.type_args.append(t)
+        new_ctor = new_scope.find_ctor()
+        new_ctor.params.pop(param_idx)
         return new_scope
 
 
@@ -601,7 +609,7 @@ class TypeChecker(IRVisitor):
                        [ir.offset, 'int', offs_t])
         exp_t = self.visit(ir.exp)
         elem_t = mem_t.get_element()
-        if not Type.can_overwrite(elem_t, exp_t):
+        if not Type.is_assignable(elem_t, exp_t):
             type_error(self.current_stm, Errors.INCOMPATIBLE_TYPES,
                        [elem_t, exp_t])
         return mem_t
@@ -639,7 +647,7 @@ class TypeChecker(IRVisitor):
 
     def visit_RET(self, ir):
         exp_t = self.visit(ir.exp)
-        if not Type.can_overwrite(self.scope.return_type, exp_t):
+        if not Type.is_assignable(self.scope.return_type, exp_t):
             type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
                        [self.scope.return_type, exp_t])
 
@@ -647,7 +655,7 @@ class TypeChecker(IRVisitor):
         src_t = self.visit(ir.src)
         dst_t = self.visit(ir.dst)
 
-        if not Type.can_overwrite(dst_t, src_t):
+        if not Type.is_assignable(dst_t, src_t):
             type_error(ir, Errors.INCOMPATIBLE_TYPES,
                        [dst_t, src_t])
 
@@ -675,7 +683,7 @@ class TypeChecker(IRVisitor):
         assert len(ir.args) == len(param_typs)
         for (name, arg), param_t in zip(ir.args, param_typs):
             arg_t = self.visit(arg)
-            if not Type.can_overwrite(param_t, arg_t):
+            if not Type.is_assignable(param_t, arg_t):
                 type_error(self.current_stm, Errors.INCOMPATIBLE_PARAMETER_TYPE,
                            [arg, scope_name])
 

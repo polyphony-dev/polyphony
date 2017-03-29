@@ -124,11 +124,19 @@ def memrename(driver, scope):
 
 
 def earlytypeprop(driver):
-    TypePropagation().propagate_global_function_type()
+    typed_scopes = TypePropagation().process_all()
+    for s in typed_scopes:
+        assert s.name in env.scopes
+        driver.insert_scope(s)
+        TypePropagation().process(s)
 
 
 def typeprop(driver, scope):
-    TypePropagation().process(scope)
+    typed_scopes = TypePropagation().process(scope)
+    for s in typed_scopes:
+        assert s.name in env.scopes
+        driver.insert_scope(s)
+        TypePropagation().process(s)
 
 
 def typecheck(driver, scope):

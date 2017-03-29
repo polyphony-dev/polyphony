@@ -451,7 +451,7 @@ class CodeVisitor(ast.NodeVisitor):
         for body in node.body:
             self.visit(body)
         logger.debug(node.name)
-        if not any([method.is_ctor() for method in self.current_scope.children]):
+        if not self.current_scope.is_typeclass() and not any([method.is_ctor() for method in self.current_scope.children]):
             tags = {'method', 'ctor'}
             if self.current_scope.parent.is_lib():
                 tags |= {'lib'}
