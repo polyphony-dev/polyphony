@@ -10,6 +10,7 @@ from .block import BlockReducer, PathExpTracer
 from .irtranslator import IRTranslator
 from .typecheck import TypePropagation, InstanceTypePropagation
 from .typecheck import TypeChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
+from .typecheck import AssertionChecker
 from .quadruplet import QuadrupleMaker
 from .hdlgen import HDLModuleBuilder
 from .vericodegen import VerilogCodeGen
@@ -66,7 +67,8 @@ def preprocess_global(driver):
         lineno.process(s)
         src_dump.process(s)
 
-    for s in (s for s in scopes if s.is_global() or s.is_class()):
+    scopes = Scope.get_scopes(with_global=True, with_class=True, with_lib=True)
+    for s in (s for s in scopes if s.is_namespace() or (s.is_class() and not s.is_lib())):
         GlobalConstantOpt().process(s)
 
 
@@ -150,6 +152,10 @@ def restrictioncheck(driver, scope):
 def modulecheck(driver, scope):
     LateRestrictionChecker().process(scope)
     ModuleChecker().process(scope)
+
+
+def assertioncheck(driver, scope):
+    AssertionChecker().process(scope)
 
 
 def detectrom(driver):
@@ -400,6 +406,7 @@ def compile_plan():
         dbg(dumpsched),
         meminstgraph,
         dbg(dumpmrg),
+        assertioncheck,
         stg,
         dbg(dumpstg),
         phase(env.PHASE_GEN_HDL),
@@ -493,8 +500,14 @@ def main():
                       help="verbose output")
     parser.add_option("-D", "--debug", dest="debug_mode", action="store_true",
                       help="enable debug mode")
+    parser.add_option("-V", "--version", dest="version", action="store_true",
+                      help="print the Polyphony version number")
 
     options, args = parser.parse_args()
+    if options.version:
+        from .. version import __version__
+        print('Polyphony', __version__)
+        sys.exit(0)
     if len(sys.argv) <= 1:
         parser.print_help()
         sys.exit(0)

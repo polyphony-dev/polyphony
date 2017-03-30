@@ -85,6 +85,7 @@ class ImportVisitor(ast.NodeVisitor):
             else:
                 sym = target_scope.gen_sym(imp_sym.name)
             sym.set_type(imp_sym.typ)
+            sym.ancestor = imp_sym
 
         if node.module not in BUILTIN_PACKAGES:
             print("WARNING: Unsupported module '{}'".format(node.module))

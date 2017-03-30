@@ -43,6 +43,8 @@ def fail(ir, err_id, args=None):
 
 
 class Tagged(object):
+    __slots__ = ['tags']
+
     def __init__(self, tags):
         if isinstance(tags, list):
             tags = set(tags)

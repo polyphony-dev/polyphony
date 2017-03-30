@@ -1,4 +1,5 @@
-﻿from .utils import is_a
+﻿from enum import IntEnum
+from .utils import is_a
 from .symbol import Symbol
 
 op2sym_map = {
@@ -12,18 +13,9 @@ op2sym_map = {
 }
 
 
-class Ctx(object):
+class Ctx(IntEnum):
     LOAD = 1
     STORE = 2
-
-    @classmethod
-    def str(cls, ctx):
-        sctx = ''
-        if ctx & Ctx.LOAD:
-            sctx += 'L'
-        if ctx & Ctx.STORE:
-            sctx += 'S'
-        return sctx
 
 
 class IR(object):
@@ -613,14 +605,6 @@ class IRStm(IR):
     def __init__(self):
         super().__init__()
         self.block = None
-        self.uses = []
-        self.defs = []
-
-    def add_use(self, u):
-        self.uses.append(u)
-
-    def add_def(self, d):
-        self.defs.append(d)
 
     def program_order(self):
         return (self.block.order, self.block.stms.index(self))

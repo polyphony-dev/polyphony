@@ -19,6 +19,8 @@ class Errors(Enum):
     # semantic errors
     REFERENCED_BEFORE_ASSIGN = 200
 
+    ASSERTION_FAILED = 300
+
     # polyphony language restrictions
     UNSUPPORTED_LETERAL_TYPE = 800
     UNSUPPORTED_BINARY_OPERAND_TYPE = 801
@@ -73,6 +75,8 @@ ERROR_MESSAGES = {
 
     # semantic errors
     Errors.REFERENCED_BEFORE_ASSIGN: "local variable '{}' referenced before assignment",
+
+    Errors.ASSERTION_FAILED: "The expression of assert always evaluates to False",
 
     # polyphony language restrictions
     Errors.UNSUPPORTED_LETERAL_TYPE: "Unsupported literal type {}",

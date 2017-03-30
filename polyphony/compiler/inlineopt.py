@@ -323,29 +323,6 @@ class AliasDefCollector(IRVisitor):
 
 
 class FlattenFieldAccess(IRVisitor):
-    def make_flatname(self, ir):
-        assert ir.is_a(ATTR)
-
-        def make_flatname_rec(ir):
-            assert ir.is_a(ATTR)
-            if ir.exp.is_a(TEMP):
-                if ir.exp.sym.name == env.self_name:
-                    return ''
-                else:
-                    return ir.exp.sym.name
-            else:
-                name1 = make_flatname_rec(ir.exp)
-                if name1:
-                    flatname = '{}_{}'.format(name1, ir.exp.attr.name)
-                else:
-                    flatname = ir.exp.attr.name
-            return flatname
-        flatname = make_flatname_rec(ir)
-        if flatname:
-            return flatname + '_' + ir.attr.name
-        else:
-            return ir.attr.name
-
     def _make_flatname(self, qsym):
         qnames = [sym.name for sym in qsym if sym.name != env.self_name]
         return '_'.join(qnames)

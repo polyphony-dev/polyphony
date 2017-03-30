@@ -758,3 +758,12 @@ class ModuleChecker(IRVisitor):
             type_error(self.current_stm, Errors.MODULE_PORT_MUST_ASSIGN_ONLY_ONCE)
 
         self.assigns[class_scope].add(irattr.symbol())
+
+
+class AssertionChecker(IRVisitor):
+    def visit_SYSCALL(self, ir):
+        if ir.sym.name != 'assert':
+            return
+        _, arg = ir.args[0]
+        if arg.is_a(CONST) and not arg.value:
+            fail(self.current_stm, Errors.ASSERTION_FAILED)

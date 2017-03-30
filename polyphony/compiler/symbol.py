@@ -6,6 +6,7 @@ logger = getLogger(__name__)
 
 
 class Symbol(Tagged):
+    __slots__ = ['id', 'name', 'scope', 'typ', 'ancestor']
     all_symbols = []
 
     TAGS = {

@@ -4,7 +4,9 @@ import threading
 import inspect
 from collections import defaultdict
 from . import io
+from . import version
 
+__version__ = version.__version__
 __all__ = [
     'testbench',
     'module',
@@ -33,6 +35,14 @@ _is_worker_running = False
 
 
 def is_worker_running():
+    '''
+    Returns True if the worker is in the running state, False otherwise.
+
+    Notes
+    -----
+    This function is provided to stop the worker function in the simulation with Python interpreter.
+    In the course of compiling to HDL, this function is always replaced with True.
+    '''
     return _is_worker_running
 
 

@@ -88,7 +88,9 @@ def try_get_constant(sym, scope):
         sym = sym.ancestor
     defstms = scope.usedef.get_stms_defining(sym)
     if not defstms:
-        return None
+        defstms = sym.scope.usedef.get_stms_defining(sym)
+        if not defstms:
+            return None
     defstm = sorted(defstms, key=lambda s: s.program_order())[-1]
     if not defstm.is_a(MOVE):
         return None
@@ -341,7 +343,8 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_ATTR(self, ir):
-        if ir.head().typ.is_class():
+        receiver = ir.tail()
+        if receiver.typ.is_class() or receiver.typ.is_namespace():
             c = try_get_constant(ir.attr, ir.attr_scope)
             if c:
                 return c
@@ -365,14 +368,15 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         super().__init__()
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_global():
+        if ir.sym.scope.is_namespace():
             c = try_get_constant(ir.sym, ir.sym.scope)
             if c:
                 return c
         return ir
 
     def visit_ATTR(self, ir):
-        if ir.head().typ.is_class():
+        receiver = ir.tail()
+        if receiver.typ.is_class() or receiver.typ.is_namespace():
             c = try_get_constant(ir.attr, ir.attr_scope)
             if c:
                 return c
@@ -416,7 +420,7 @@ class GlobalConstantOpt(ConstantOptBase):
         self.assign_table = {}
 
     def process(self, scope):
-        assert scope.is_global() or scope.is_class()
+        assert scope.is_namespace() or scope.is_class()
         self.scope = scope
         if scope.block_count > 1:
             raise RuntimeError('A control statement in the global scope is not allowed')

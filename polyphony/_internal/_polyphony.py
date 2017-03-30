@@ -1,3 +1,4 @@
+__version__ = '0.3.0'  # type: str
 __all__ = [
     'testbench',
     'module',
