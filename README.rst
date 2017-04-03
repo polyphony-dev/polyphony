@@ -23,6 +23,8 @@ $ polyphony [Options] [Python source file]
                             output filename (default is 'polyphony_out')
       -d DIR, --dir=DIR     output directory
       -v                    verbose output
+      -D, --debug           enable debug mode
+      -V, --version         print the Polyphony version number
 
 Examples
 --------
