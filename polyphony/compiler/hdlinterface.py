@@ -161,7 +161,7 @@ def single_write_seq(inf, signal, step, src):
             ready = port2ahdl(inf, 'ready')
         if step == 0:
             if signal.is_ready_valid_protocol():
-                ports = [ready]
+                ports = [valid, ready]
                 return (AHDL_MOVE(data, src),
                         AHDL_MOVE(valid, AHDL_CONST(1)),
                         AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
