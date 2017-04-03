@@ -9,3 +9,5 @@ def test():
     assert 1 == f(rom, 0, rom, 1)
     assert 3 == f(rom, 1, rom, 2)
     assert 2 == f(rom, 2, rom ,0)
+
+test()

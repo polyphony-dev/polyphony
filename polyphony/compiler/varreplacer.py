@@ -2,19 +2,19 @@
 from logging import getLogger
 logger = getLogger(__name__)
 
-class VarReplacer:
+
+class VarReplacer(object):
     @classmethod
     def replace_uses(cls, dst, src, usedef):
         assert dst.is_a([TEMP, ATTR])
         assert src.is_a([IRExp])
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(dst, src, usedef)
-        uses = list(usedef.get_use_stms_by_qsym(dst.qualified_symbol()))
-        for use in uses: 
+        uses = list(usedef.get_stms_using(dst.qualified_symbol()))
+        for use in uses:
             replacer.current_stm = use
             replacer.visit(use)
         return replacer.replaces
-
 
     def __init__(self, dst, src, usedef):
         super().__init__()
@@ -38,8 +38,14 @@ class VarReplacer:
         ir.right = self.visit(ir.right)
         return ir
 
+    def visit_CONDOP(self, ir):
+        ir.cond = self.visit(ir.cond)
+        ir.left = self.visit(ir.left)
+        ir.right = self.visit(ir.right)
+        return ir
+
     def visit_CALL(self, ir):
-        ir.args = [self.visit(arg) for arg in ir.args]
+        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -120,8 +126,8 @@ class VarReplacer:
 
     def visit_PHI(self, ir):
         self.replaced = False
-        args = ir.args[:]
         ir.args = [self.visit(arg) for arg in ir.args]
+        ir.ps = [self.visit(p) for p in ir.ps]
         if self.replaced:
             self.replaces.append(ir)
 
@@ -132,4 +138,3 @@ class VarReplacer:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
         return visitor(ir)
-            

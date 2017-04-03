@@ -1,22 +1,25 @@
-﻿from .type import Type
+﻿from .common import Tagged
+from .env import env
+from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
-class Symbol:
+
+class Symbol(Tagged):
+    __slots__ = ['id', 'name', 'scope', 'typ', 'ancestor']
     all_symbols = []
 
-    @classmethod
-    def new(cls, name, scope):
-        t = Symbol(name, scope, len(cls.all_symbols))
-        cls.all_symbols.append(t)
-        return t
+    TAGS = {
+        'temp', 'param', 'return', 'condition', 'induction', 'alias',
+        'self',
+        'builtin'
+    }
 
     @classmethod
-    def newtemp(cls, name, scope):
-        id = len(cls.all_symbols)
-        t = Symbol(name+str(id), scope, id)
-        cls.all_symbols.append(t)
-        return t
+    def unique_name(cls, prefix=None):
+        if not prefix:
+            prefix = cls.temp_prefix
+        return '{}{}'.format(prefix, len(cls.all_symbols))
 
     @classmethod
     def dump(cls):
@@ -35,20 +38,21 @@ class Symbol:
     condition_prefix = '@cond'
     temp_prefix = '@t'
     param_prefix = '@in'
-    field_prefix = '@f'
-    port_prefix = '@p'
-    ref_prefix = '@r'
 
-    def __init__(self, name, scope, id):
-        self.id = id
+    def __init__(self, name, scope, tags, typ=Type.undef_t):
+        super().__init__(tags)
+        self.id = len(Symbol.all_symbols)
         self.name = name
         self.scope = scope
-        self.typ = Type.none_t
+        self.typ = typ
         self.ancestor = None
+        Symbol.all_symbols.append(self)
 
     def __str__(self):
         #return '{}:{}({}:{})'.format(self.name, Type.str(self.typ), self.id, self.scope.orig_name)
-        #return '{}:{}({})'.format(self.name, Type.str(self.typ), self.id)
+        #return '{}:{}({})'.format(self.name, repr(self.typ), self.tags)
+        if env.dev_debug_mode:
+            return '{}:{}'.format(self.name, self.typ)
         return self.name
 
     def __repr__(self):
@@ -57,7 +61,7 @@ class Symbol:
 
     def __lt__(self, other):
         return self.name < other.name
-  
+
     def orig_name(self):
         if self.ancestor:
             return self.ancestor.orig_name()
@@ -65,36 +69,28 @@ class Symbol:
             return self.name
 
     def hdl_name(self):
-        if self.name[0] == '@' or self.name[0] == '!':
+        if self.typ.is_port() and self.ancestor:
+            return self.ancestor.hdl_name()
+        elif self.typ.is_object() and self.typ.get_scope().is_module() and self.ancestor:
+            return self.ancestor.hdl_name()
+        elif self.name[0] == '@' or self.name[0] == '!':
             name = self.name[1:]
         else:
             name = self.name[:]
         name = name.replace('#', '')
         return name
-   
-    def is_return(self):
-        return self.name.startswith(Symbol.return_prefix)
-
-    def is_condition(self):
-        return self.name.startswith(Symbol.condition_prefix)
-
-    def is_temp(self):
-        return self.name.startswith(Symbol.temp_prefix)
-
-    def is_param(self):
-        return self.name.startswith(Symbol.param_prefix)
-
-    def is_field(self):
-        return self.name.startswith(Symbol.field_prefix)
-
-    def is_port(self):
-        return self.name.startswith(Symbol.port_prefix)
-
-    def is_ref(self):
-        return self.name.startswith(Symbol.ref_prefix)
 
     def set_type(self, typ):
+        if self.typ.is_freezed():
+            assert False
         self.typ = typ
-        if self.ancestor:
+        if self.ancestor and not self.ancestor.typ.is_freezed():
             self.ancestor.set_type(typ)
 
+    def clone(self, scope, postfix=''):
+        newsym = Symbol(self.name + postfix,
+                        scope,
+                        set(self.tags),
+                        self.typ.clone())
+        newsym.ancestor = self.ancestor
+        return newsym

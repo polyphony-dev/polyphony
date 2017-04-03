@@ -1,5 +1,5 @@
-﻿from collections import defaultdict
-from logging import getLogger, DEBUG
+﻿from collections import defaultdict, OrderedDict
+from logging import getLogger
 from .hdlinterface import *
 from . import libs
 from .env import env
@@ -7,21 +7,27 @@ from .ahdl import *
 
 logger = getLogger(__name__)
 
-class FSM:
+
+class FSM(object):
     def __init__(self):
         self.name = None
         self.state_var = None
-        self.stgs = None
+        self.stgs = []
         self.outputs = set()
+        self.reset_stms = []
 
-class HDLModuleInfo:
+
+class HDLModuleInfo(object):
     #Port = namedtuple('Port', ['name', 'width'])
     def __init__(self, scope, name, qualified_name):
         self.scope = scope
         self.name = name
-        self.qualified_name = qualified_name[len('@top')+1:].replace('.', '_')
-        self.interfaces = []
+        self.qualified_name = qualified_name[len('@top') + 1:].replace('.', '_')
+        self.interfaces = OrderedDict()
         self.interconnects = []
+        self.accessors = {}
+        self.local_readers = {}
+        self.local_writers = {}
         self.parameters = []
         self.constants = []
         self.state_constants = []
@@ -30,29 +36,48 @@ class HDLModuleInfo:
         self.muxes = []
         self.demuxes = []
         self.decls = defaultdict(list)
-        self.class_fields = set()
         self.internal_field_accesses = {}
         self.fsms = defaultdict(FSM)
         self.node2if = {}
+        self.edge_detectors = set()
 
     def __str__(self):
-        s = 'ModuleInfo {}\n'.format(self.name)
-        s += '  -- num of signals --\n'
-        s += '  - sub modules\n    ' + ', '.join([name for name, _, _, _, _ in self.sub_modules.values()])
+        s = '---------------------------------\n'
+        s += 'ModuleInfo {}\n'.format(self.name)
+        s += '  -- declarations --\n'
+        for tag, decls in self.decls.items():
+            s += 'tag : {}\n'.format(tag)
+            for decl in decls:
+                s += '  {}\n'.format(decl)
         s += '\n'
-        s += '  - functions\n    ' + ', '.join([str(f.output.sig.name) for f in self.functions])
+        s += '  -- fsm --\n'
+        for name, fsm in self.fsms.items():
+            s += '---------------------------------\n'
+            s += 'fsm : {}\n'.format(name)
+            for stg in fsm.stgs:
+                for state in stg.states:
+                    s += str(state)
         s += '\n'
-
+        s += '\n'.join([str(inf) for inf in self.interfaces.values()])
         return s
 
     def __repr__(self):
         return self.name
 
-    def add_interface(self, interface):
-        self.interfaces.append(interface)
+    def add_interface(self, name, interface):
+        self.interfaces[name] = interface
 
     def add_interconnect(self, interconnect):
         self.interconnects.append(interconnect)
+
+    def add_accessor(self, name, accessor):
+        self.accessors[name] = accessor
+
+    def add_local_reader(self, name, reader):
+        self.local_readers[name] = reader
+
+    def add_local_writer(self, name, writer):
+        self.local_writers[name] = writer
 
     def add_constant(self, name, value):
         assert isinstance(name, str)
@@ -64,31 +89,53 @@ class HDLModuleInfo:
 
     def add_internal_reg(self, sig, tag=''):
         assert not sig.is_net()
-        self.add_decl(tag, AHDL_REG_DECL(sig))
+        sig.add_tag('reg')
+        self.add_decl(tag, AHDL_SIGNAL_DECL(sig))
 
     def add_internal_reg_array(self, sig, size, tag=''):
         assert not sig.is_net()
-        self.add_decl(tag, AHDL_REG_ARRAY_DECL(sig, size))
+        sig.add_tag('regarray')
+        self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def add_internal_net(self, sig, tag=''):
         assert not sig.is_reg()
-        self.add_decl(tag, AHDL_NET_DECL(sig))
+        sig.add_tag('net')
+        self.add_decl(tag, AHDL_SIGNAL_DECL(sig))
 
     def add_internal_net_array(self, sig, size, tag=''):
         assert not sig.is_reg()
-        self.add_decl(tag, AHDL_NET_ARRAY_DECL(sig, size))
+        sig.add_tag('netarray')
+        self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def remove_internal_net(self, sig):
         assert isinstance(sig, Signal)
         removes = []
         for tag, decls in self.decls.items():
             for decl in decls:
-                if isinstance(decl, AHDL_NET_DECL):
-                    if decl.sig == sig:
-                        removes.append((tag, decl))
+                if isinstance(decl, AHDL_SIGNAL_DECL) and decl.sig == sig and sig.is_net():
+                    removes.append((tag, decl))
         for tag, decl in removes:
             self.remove_decl(tag, decl)
 
+    def get_reg_decls(self, with_array=True):
+        results = []
+        for tag, decls in self.decls.items():
+            sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
+            if not with_array:
+                sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
+            regdecls = [decl for decl in sigdecls if decl.sig.is_reg()]
+            results.append((tag, regdecls))
+        return results
+
+    def get_net_decls(self, with_array=True):
+        results = []
+        for tag, decls in self.decls.items():
+            sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
+            if not with_array:
+                sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
+            netdecls = [decl for decl in sigdecls if decl.sig.is_net()]
+            results.append((tag, netdecls))
+        return results
 
     def add_static_assignment(self, assign, tag=''):
         assert isinstance(assign, AHDL_ASSIGN)
@@ -102,32 +149,20 @@ class HDLModuleInfo:
 
     def add_decl(self, tag, decl):
         assert isinstance(decl, AHDL_DECL)
+        if decl.name in (d.name for d in self.decls[tag] if type(d) == type(decl)):
+            return
         self.decls[tag].append(decl)
 
     def remove_decl(self, tag, decl):
         assert isinstance(decl, AHDL_DECL)
         self.decls[tag].remove(decl)
 
-    def add_sub_module(self, name, module_info, accessors, param_map=None):
+    def add_sub_module(self, name, module_info, connections, param_map=None):
         assert isinstance(name, str)
-        is_public = self.scope.is_class()
-        sub_infs = defaultdict(list)
-        for inf in accessors:
-            if not inf.is_public:
-                continue
-            if module_info.scope and module_info.scope.is_class():
-                fieldif = InstanceInterface(inf, name, module_info.scope, is_public=is_public)
-                self.add_interface(fieldif)
-                sub_infs[inf.name].append(fieldif)
-            else:
-                fieldif = inf.clone()
-                if fieldif.name:
-                    fieldif.name = name + '_' + fieldif.name
-                else:
-                    fieldif.name = name
-                fieldif.is_public = False
-                sub_infs[inf.name].append(fieldif)
-        self.sub_modules[name] = (name, module_info, accessors, sub_infs, param_map)
+        sub_infs = {}
+        for interface, accessor in connections:
+            sub_infs[interface.if_name] = accessor
+        self.sub_modules[name] = (name, module_info, connections, param_map)
 
     def add_function(self, func, tag=''):
         self.add_decl(tag, func)
@@ -140,14 +175,6 @@ class HDLModuleInfo:
         assert isinstance(demux, AHDL_DEMUX)
         self.add_decl(tag, demux)
 
-    def add_class_field(self, field):
-        assert field.is_field()
-        self.class_fields.add(field)
-
-    def add_internal_field_access(self, field_name, access):
-        assert isinstance(field_name, str)
-        self.internal_field_accesses[field_name] = access
-
     def add_fsm_state_var(self, fsm_name, var):
         self.fsms[fsm_name].name = fsm_name
         self.fsms[fsm_name].state_var = var
@@ -158,10 +185,30 @@ class HDLModuleInfo:
     def add_fsm_output(self, fsm_name, output_sig):
         self.fsms[fsm_name].outputs.add(output_sig)
 
+    def add_fsm_reset_stm(self, fsm_name, ahdl_stm):
+        self.fsms[fsm_name].reset_stms.append(ahdl_stm)
+
+    def add_edge_detector(self, sig, old, new):
+        self.edge_detectors.add((sig, old, new))
+
 
 class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):
-        super().__init__(None, 'ram', '@top'+'.BidirectionalSinglePortRam')
-        self.ramif = RAMInterface('', data_width, addr_width, is_public=True)
-        self.add_interface(self.ramif)
+        super().__init__(None, 'ram', '@top' + '.BidirectionalSinglePortRam')
+        self.ramif = RAMModuleInterface('ram', data_width, addr_width)
+        self.add_interface('', self.ramif)
         env.add_using_lib(libs.bidirectional_single_port_ram)
+
+
+class FIFOModuleInfo(HDLModuleInfo):
+    def __init__(self, signal):
+        super().__init__(None, 'fifo', '@top' + '.FIFO')
+        self.inf = FIFOModuleInterface(signal)
+        maxsize = signal.maxsize
+        addr_width = (signal.maxsize - 1).bit_length() if maxsize > 1 else 1
+        data_width = signal.width
+        self.param_map = {'LENGTH': maxsize,
+                          'ADDR_WIDTH': addr_width,
+                          'DATA_WIDTH': data_width}
+        self.add_interface('', self.inf)
+        env.add_using_lib(libs.fifo)

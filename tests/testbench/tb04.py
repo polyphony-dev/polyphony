@@ -16,3 +16,5 @@ def test():
     assert 11 == f(data, 0)
     assert 22 == f(data, 1)
     assert 33 == f(data, 2)
+
+test()

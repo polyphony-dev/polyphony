@@ -5,7 +5,7 @@ Polyphony is Python based High-Level Synthesis compiler.
 
 Requirements
 ------------
-Python 3.x
+Python 3.4
 
 Installation
 ------------

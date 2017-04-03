@@ -29,17 +29,18 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="polyphony\compiler\ahdl.py" />
-    <Compile Include="polyphony\compiler\ahdl_usedef.py" />
+    <Compile Include="polyphony\compiler\ahdlusedef.py" />
+    <Compile Include="polyphony\compiler\ahdlvisitor.py" />
+    <Compile Include="polyphony\compiler\bitwidth.py" />
     <Compile Include="polyphony\compiler\block.py" />
     <Compile Include="polyphony\compiler\builtin.py" />
     <Compile Include="polyphony\compiler\callgraph.py" />
     <Compile Include="polyphony\compiler\common.py" />
-    <Compile Include="polyphony\compiler\constantfolding.py" />
+    <Compile Include="polyphony\compiler\constopt.py" />
     <Compile Include="polyphony\compiler\copyopt.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="polyphony\compiler\dataflow.py" />
-    <Compile Include="polyphony\compiler\dfg_opt.py" />
     <Compile Include="polyphony\compiler\dominator.py" />
     <Compile Include="polyphony\compiler\driver.py" />
     <Compile Include="polyphony\compiler\env.py" />
@@ -64,7 +65,9 @@
     <Compile Include="polyphony\compiler\memorytransform.py" />
     <Compile Include="polyphony\compiler\memref.py" />
     <Compile Include="polyphony\compiler\phiresolve.py" />
+    <Compile Include="polyphony\compiler\portconverter.py" />
     <Compile Include="polyphony\compiler\quadruplet.py" />
+    <Compile Include="polyphony\compiler\regreducer.py" />
     <Compile Include="polyphony\compiler\scheduler.py" />
     <Compile Include="polyphony\compiler\scope.py" />
     <Compile Include="polyphony\compiler\selectorbuilder.py">
@@ -73,6 +76,7 @@
     <Compile Include="polyphony\compiler\setlineno.py" />
     <Compile Include="polyphony\compiler\specfunc.py" />
     <Compile Include="polyphony\compiler\ssa.py" />
+    <Compile Include="polyphony\compiler\statereducer.py" />
     <Compile Include="polyphony\compiler\stg.py" />
     <Compile Include="polyphony\compiler\symbol.py" />
     <Compile Include="polyphony\compiler\treebalancer.py" />
@@ -90,76 +94,16 @@
     <Compile Include="polyphony\compiler\__init__.py" />
     <Compile Include="polyphony\compiler\__main__.py" />
     <Compile Include="polyphony\compiler\signal.py" />
+    <Compile Include="polyphony\io.py" />
     <Compile Include="polyphony\__init__.py" />
-    <Compile Include="tests\apps\minivm.py" />
-    <Compile Include="tests\apps\mips.py" />
-    <Compile Include="tests\apps\odd_even_sort.py" />
-    <Compile Include="tests\class\class01.py" />
-    <Compile Include="tests\class\class02.py" />
-    <Compile Include="tests\expr\expr01.py" />
-    <Compile Include="tests\expr\expr02.py" />
-    <Compile Include="tests\expr\expr03.py" />
-    <Compile Include="tests\expr\expr04.py" />
-    <Compile Include="tests\expr\expr05.py" />
-    <Compile Include="tests\expr\expr06.py" />
-    <Compile Include="tests\expr\expr07.py" />
-    <Compile Include="tests\expr\expr08.py" />
-    <Compile Include="tests\func\func01.py" />
-    <Compile Include="tests\func\func02.py" />
-    <Compile Include="tests\func\func03.py" />
-    <Compile Include="tests\func\func04.py" />
-    <Compile Include="tests\func\func05.py" />
-    <Compile Include="tests\func\sysfunc01.py" />
-    <Compile Include="tests\func\sysfunc02.py" />
-    <Compile Include="tests\if\if01.py" />
-    <Compile Include="tests\if\if02.py" />
-    <Compile Include="tests\if\if03.py" />
-    <Compile Include="tests\if\if04.py" />
-    <Compile Include="tests\if\if05.py" />
-    <Compile Include="tests\list\list01.py" />
-    <Compile Include="tests\list\list02.py" />
-    <Compile Include="tests\list\list03.py" />
-    <Compile Include="tests\list\list04.py" />
-    <Compile Include="tests\list\list05.py" />
-    <Compile Include="tests\list\rom01.py" />
-    <Compile Include="tests\loop\for01.py" />
-    <Compile Include="tests\loop\for02.py" />
-    <Compile Include="tests\loop\for03.py" />
-    <Compile Include="tests\loop\for04.py" />
-    <Compile Include="tests\loop\for05.py" />
-    <Compile Include="tests\loop\for06.py" />
-    <Compile Include="tests\loop\for07.py" />
-    <Compile Include="tests\loop\for08.py" />
-    <Compile Include="tests\loop\for09.py" />
-    <Compile Include="tests\loop\for10.py" />
-    <Compile Include="tests\loop\while01.py" />
-    <Compile Include="tests\loop\while02.py" />
-    <Compile Include="tests\loop\while03.py" />
-    <Compile Include="tests\loop\while04.py" />
-    <Compile Include="tests\loop\while05.py" />
-    <Compile Include="tests\parallel\parallel_loop01.py" />
-    <Compile Include="tests\parallel\parallel_loop02.py" />
-    <Compile Include="tests\return\return01.py" />
-    <Compile Include="tests\return\return02.py" />
-    <Compile Include="tests\return\return03.py" />
-    <Compile Include="tests\return\return04.py" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="polyphony\" />
     <Folder Include="polyphony\compiler\" />
-    <Folder Include="tests\" />
-    <Folder Include="tests\apps" />
-    <Folder Include="tests\class\" />
-    <Folder Include="tests\expr" />
-    <Folder Include="tests\func" />
-    <Folder Include="tests\if" />
-    <Folder Include="tests\list" />
-    <Folder Include="tests\loop" />
-    <Folder Include="tests\parallel" />
-    <Folder Include="tests\return" />
   </ItemGroup>
   <ItemGroup>
     <InterpreterReference Include="{2af0f10d-7135-4994-9156-5d01c9c11b7e}\3.4" />
+    <InterpreterReference Include="{9a7a9026-48c1-4688-9d5d-e5699d47d074}\3.5" />
   </ItemGroup>
   <Import Project="$(PtvsTargetsFile)" Condition="Exists($(PtvsTargetsFile))" />
   <Import Project="$(MSBuildToolsPath)\Microsoft.Common.targets" Condition="!Exists($(PtvsTargetsFile))" />

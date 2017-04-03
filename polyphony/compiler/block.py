@@ -1,10 +1,12 @@
-﻿from .ir import *
+﻿from collections import deque
+from .ir import *
 from .dominator import DominatorTreeBuilder
 from .utils import replace_item
 from logging import getLogger
 logger = getLogger(__name__)
 
-class Block:
+
+class Block(object):
     @classmethod
     def set_order(cls, block, order):
         order += 1
@@ -16,7 +18,7 @@ class Block:
             for succ in succs:
                 cls.set_order(succ, order)
 
-    def __init__(self, scope, nametag = 'b'):
+    def __init__(self, scope, nametag='b'):
         self.nametag = nametag
         self.stms = []
         self.succs = []
@@ -36,7 +38,7 @@ class Block:
         s += ' # preds: {'
         for blk in self.preds:
             if blk in self.preds_loop:
-                bs.append(blk.name+'$LOOP')
+                bs.append(blk.name + '$LOOP')
             else:
                 bs.append(blk.name)
         s += ', '.join([b for b in bs])
@@ -46,7 +48,7 @@ class Block:
         s += ' # succs: {'
         for blk in self.succs:
             if blk in self.succs_loop:
-                bs.append(blk.name+'$LOOP')
+                bs.append(blk.name + '$LOOP')
             else:
                 bs.append(blk.name)
         s += ', '.join([b for b in bs])
@@ -60,7 +62,7 @@ class Block:
             s += ' # path exp: '
             s += str(self.path_exp) + '\n'
         s += ' # code\n'
-        s += '\n'.join(['  '+str(stm) for stm in self.stms])
+        s += '\n'.join(['  ' + str(stm) for stm in self.stms])
         s += '\n\n'
         return s
 
@@ -112,11 +114,13 @@ class Block:
                     jmp.true = new
                 else:
                     jmp.false = new
+                self._convert_if_unidirectional(jmp)
             elif jmp.is_a(MCJUMP):
                 for i, t in enumerate(jmp.targets):
                     if t is old:
-                       jmp.targets[i] = new
- 
+                        jmp.targets[i] = new
+                self._convert_if_unidirectional(jmp)
+
     def replace_succ_loop(self, old, new):
         replace_item(self.succs_loop, old, new)
 
@@ -167,7 +171,39 @@ class Block:
             self.preds_loop[i] = blk_map[pred]
 
     def collect_stms(self, typs):
-         return [stm for stm in self.stms if stm.is_a(typs)]
+        return [stm for stm in self.stms if stm.is_a(typs)]
+
+    def _convert_if_unidirectional(self, jmp):
+        if not self.scope.usedef:
+            return
+        if jmp.is_a(CJUMP):
+            conds = [jmp.exp]
+            targets = [jmp.true, jmp.false]
+        elif jmp.is_a(MCJUMP):
+            conds = jmp.conds[:]
+            targets = jmp.targets[:]
+        else:
+            return
+
+        if all([targets[0] is target for target in targets[1:]]):
+            newjmp = JUMP(targets[0])
+            newjmp.block = self
+            self.stms[-1] = newjmp
+            self.succs = [targets[0]]
+            targets[0].path_exp = None
+        else:
+            return
+
+        usedef = self.scope.usedef
+        for cond in conds:
+            defstms = usedef.get_stms_defining(cond.symbol())
+            assert len(defstms) == 1
+            stm = defstms.pop()
+            usestms = usedef.get_stms_using(cond.symbol())
+            if len(usestms) > 1:
+                continue
+            stm.block.stms.remove(stm)
+
 
 class CompositBlock(Block):
     def __init__(self, scope, head, bodies, region):
@@ -214,7 +250,7 @@ class CompositBlock(Block):
         bs = str(self.head)
         bs += ''.join([str(b) for b in self.bodies])
         bs = '    ' + bs.replace('\n', '\n    ')
-        bs = bs[:-4] # remove last indent
+        bs = bs[:-4]  # remove last indent
         return s + bs
 
     def _find_succs(self, region):
@@ -269,7 +305,8 @@ class CompositBlock(Block):
         for i, pred in enumerate(self.preds):
             self.preds[i] = blk_map[pred]
 
-class BlockReducer:
+
+class BlockReducer(object):
     def process(self, scope):
         if scope.is_class():
             return
@@ -291,13 +328,15 @@ class BlockReducer:
         for block in scope.traverse_blocks():
             #check unidirectional
             # TODO: any jump.typ
-            if len(block.preds) == 1 and len(block.preds[0].succs) == 1 and not block.preds[0].stms[-1].typ == 'C':
+            if (len(block.preds) == 1 and
+                    len(block.preds[0].succs) == 1 and
+                    not block.preds[0].stms[-1].typ == 'C'):
                 pred = block.preds[0]
                 assert pred.stms[-1].is_a(JUMP)
                 assert pred.succs[0] is block
                 assert not pred.succs_loop
 
-                pred.stms.pop() # remove useless jump
+                pred.stms.pop()  # remove useless jump
                 # merge stms
                 for stm in block.stms:
                     pred.append_stm(stm)
@@ -317,6 +356,8 @@ class BlockReducer:
         for block in scope.traverse_blocks():
             if len(block.stms) > 1:
                 continue
+            if block is scope.entry_block:
+                continue
             if not block.stms:
                 assert not block.succs
                 for pred in block.preds:
@@ -333,19 +374,26 @@ class BlockReducer:
                     succ.preds.remove(block)
                     for pred in block.preds:
                         pred.replace_succ(block, succ)
-                        succ.preds.append(pred)
+                        if pred not in succ.preds:
+                            succ.preds.append(pred)
 
                 logger.debug('remove empty block ' + block.name)
                 if block is scope.entry_block:
                     scope.entry_block = succ
                 self.removed_blks.append(block)
 
-class PathExpTracer:
+
+class PathExpTracer(object):
     def process(self, scope):
+        self.scope = scope
         tree = DominatorTreeBuilder(scope).process()
         tree.dump()
         self.tree = tree
-        self.traverse_dtree(scope.entry_block)
+        self.worklist = deque()
+        self.worklist.append(scope.entry_block)
+        while self.worklist:
+            blk = self.worklist.popleft()
+            self.traverse_dtree(blk)
 
     def traverse_dtree(self, blk):
         if not blk.stms:
@@ -355,31 +403,55 @@ class PathExpTracer:
         if jump.is_a(JUMP):
             if blk.path_exp:
                 for c in children:
-                    c.path_exp = blk.path_exp.clone()
+                    c.path_exp = blk.path_exp
+            # Unlike other jump instructions,
+            # the target of JUMP may be a confluence node
+            if jump.target.path_exp:
+                if ((jump.target.path_exp.is_a(UNOP) and
+                        jump.target.path_exp.op == 'Not' and
+                        jump.target.path_exp.exp == blk.path_exp) or
+                        (blk.path_exp and blk.path_exp.is_a(UNOP) and
+                         blk.path_exp.op == 'Not' and
+                         blk.path_exp.exp == jump.target.path_exp)):
+                    jump.target.path_exp = None
+                    # evaluate again from here
+                    if jump.target not in self.worklist:
+                        self.worklist.append(jump.target)
+                elif jump.target.path_exp == blk.path_exp:
+                    pass
+                elif not blk.path_exp:
+                    pass
+                else:
+                    jump.target.path_exp = RELOP('Or', blk.path_exp, jump.target.path_exp)
+            elif jump.target in blk.succs_loop:
+                pass
+            else:
+                jump.target.path_exp = blk.path_exp
         elif jump.is_a(CJUMP):
             if blk.path_exp:
                 for c in children:
                     if c is jump.true:
-                        c.path_exp = BINOP('And', blk.path_exp.clone(), jump.exp.clone())
+                        c.path_exp = RELOP('And', blk.path_exp,
+                                           jump.exp)
                     elif c is jump.false:
-                        c.path_exp = BINOP('And', blk.path_exp.clone(), UNOP('Not', jump.exp.clone()))
+                        c.path_exp = RELOP('And', blk.path_exp,
+                                           UNOP('Not', jump.exp))
                     else:
-                        c.path_exp = blk.path_exp.clone()
+                        c.path_exp = blk.path_exp
             else:
-                jump.true.path_exp = jump.exp.clone()
-                jump.false.path_exp = UNOP('Not', jump.exp.clone())
+                jump.true.path_exp = jump.exp
+                jump.false.path_exp = UNOP('Not', jump.exp)
         elif jump.is_a(MCJUMP):
             if blk.path_exp:
                 for c in children:
                     if c in jump.targets:
                         idx = jump.targets.index(c)
-                        c.path_exp = BINOP('And', blk.path_exp.clone(), jump.conds[idx].clone())
+                        c.path_exp = RELOP('And', blk.path_exp,
+                                           jump.conds[idx])
                     else:
-                        c.path_exp = blk.path_exp.clone()
+                        c.path_exp = blk.path_exp
             else:
                 for t, cond in zip(jump.targets, jump.conds):
-                    t.path_exp = cond.clone()
+                    t.path_exp = cond
         for child in children:
             self.traverse_dtree(child)
-
-

@@ -1,4 +1,4 @@
-class IRVisitor:
+class IRVisitor(object):
     def __init__(self):
         pass
 
@@ -34,18 +34,26 @@ class IRVisitor:
         self.visit(ir.left)
         self.visit(ir.right)
 
+    def visit_CONDOP(self, ir):
+        self.visit(ir.cond)
+        self.visit(ir.left)
+        self.visit(ir.right)
+
+    def visit_args(self, args, kwargs):
+        for _, arg in args:
+            self.visit(arg)
+        for kwarg in kwargs.values():
+            self.visit(kwarg)
+
     def visit_CALL(self, ir):
         self.visit(ir.func)
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_SYSCALL(self, ir):
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_NEW(self, ir):
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_CONST(self, ir):
         pass
@@ -94,9 +102,9 @@ class IRVisitor:
         self.visit(ir.var)
         for arg in ir.args:
             self.visit(arg)
-        if ir.ps:
-            for p in ir.ps:
-                if p : self.visit(p)
+        for p in ir.ps:
+            if p:
+                self.visit(p)
 
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
@@ -116,7 +124,6 @@ class IRTransformer(IRVisitor):
         for stm in block.stms:
             stm.block = block
 
-
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         return ir
@@ -131,20 +138,27 @@ class IRTransformer(IRVisitor):
         ir.right = self.visit(ir.right)
         return ir
 
+    def visit_CONDOP(self, ir):
+        ir.cond = self.visit(ir.cond)
+        ir.left = self.visit(ir.left)
+        ir.right = self.visit(ir.right)
+        return ir
+
+    def visit_args(self, args):
+        for i, (name, arg) in enumerate(args):
+            args[i] = (name, self.visit(arg))
+
     def visit_CALL(self, ir):
         ir.func = self.visit(ir.func)
-        for i, arg in enumerate(ir.args):
-            ir.args[i] = self.visit(arg)
+        self.visit_args(ir.args)
         return ir
 
     def visit_SYSCALL(self, ir):
-        for i, arg in enumerate(ir.args):
-            ir.args[i] = self.visit(arg)
+        self.visit_args(ir.args)
         return ir
 
     def visit_NEW(self, ir):
-        for i, arg in enumerate(ir.args):
-            ir.args[i] = self.visit(arg)
+        self.visit_args(ir.args)
         return ir
 
     def visit_CONST(self, ir):

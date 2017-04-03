@@ -7,3 +7,5 @@ def test():
         sum += i
         print(sum)
     assert sum == 6
+
+test()

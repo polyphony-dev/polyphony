@@ -1,17 +1,12 @@
 ﻿from collections import deque, defaultdict
-from .varreplacer import VarReplacer
 from .ir import *
-from .symbol import Symbol
-from .type import Type
-from .irvisitor import IRTransformer, IRVisitor
+from .irvisitor import IRVisitor
 from .env import env
-from .scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
-import pdb
 
 
-class MemoryRenamer:
+class MemoryRenamer(object):
     def _collect_def_mem_stm(self, scope):
         stms = []
         for block in scope.traverse_blocks():
@@ -19,12 +14,14 @@ class MemoryRenamer:
                 if stm.is_a(MOVE):
                     if stm.src.is_a(ARRAY):
                         stms.append(stm)
-                    elif stm.src.is_a(TEMP) and stm.src.sym.is_param() and Type.is_list(stm.src.sym.typ):
+                    elif (stm.src.is_a(TEMP) and
+                          stm.src.sym.is_param() and
+                          stm.src.sym.typ.is_list()):
                         stms.append(stm)
         return stms
 
     def _get_phis(self, block):
-        return filter(lambda stm: stm.is_a(PHI) and Type.is_list(stm.var.symbol().typ), block.stms)
+        return filter(lambda stm: stm.is_a(PHI) and stm.var.symbol().typ.is_list(), block.stms)
 
     def _cleanup_phi(self):
         for block in self.scope.traverse_blocks():
@@ -45,12 +42,14 @@ class MemoryRenamer:
                 block.stms.remove(phi)
 
     def process(self, scope):
+        if scope.is_global():
+            return
         self.scope = scope
         usedef = scope.usedef
         worklist = deque()
         stms = self._collect_def_mem_stm(scope)
         mem_var_map = defaultdict(set)
-        memsrcs = []#tuple([mv.dst.sym for mv in stms])
+        memsrcs = []  # tuple([mv.dst.sym for mv in stms])
 
         for mv in stms:
             logger.debug('!!! mem def stm ' + str(mv))
@@ -59,7 +58,7 @@ class MemoryRenamer:
 
             memsym = mv.dst.symbol()
             memsrcs.append(memsym)
-            uses = usedef.get_use_stms_by_sym(memsym)
+            uses = usedef.get_stms_using(memsym)
             worklist.extend(list(uses))
 
         def merge_mem_var(src, dst):
@@ -92,7 +91,9 @@ class MemoryRenamer:
                     else:
                         assert stm.src.sym in memsrcs
                         mem = stm.src.sym
-                        if stm.dst.sym in mem_var_map and mem in mem_var_map[stm.dst.sym] and stm in dones:
+                        if (stm.dst.sym in mem_var_map and
+                                mem in mem_var_map[stm.dst.sym] and
+                                stm in dones):
                             # reach fix point ?
                             continue
                         mem_var_map[stm.dst.sym].add(mem)
@@ -111,7 +112,9 @@ class MemoryRenamer:
                     else:
                         assert stm.src.mem.sym in memsrcs
                         mem = stm.src.mem.sym
-                        if stm.dst.sym in mem_var_map and mem in mem_var_map[stm.dst.sym] and stm in dones:
+                        if (stm.dst.sym in mem_var_map and
+                                mem in mem_var_map[stm.dst.sym] and
+                                stm in dones):
                             # reach fix point ?
                             continue
                         mem_var_map[stm.dst.sym].add(mem)
@@ -126,7 +129,9 @@ class MemoryRenamer:
                         updated = merge_mem_var(arg, stm.var)
                     elif arg.symbol() in memsrcs:
                         mem = arg.symbol()
-                        if stm.var.symbol() != mem and (stm.var.symbol() not in mem_var_map or mem not in mem_var_map[stm.var.symbol()]):
+                        if (stm.var.symbol() != mem and
+                                (stm.var.symbol() not in mem_var_map or
+                                 mem not in mem_var_map[stm.var.symbol()])):
                             mem_var_map[stm.var.symbol()].add(mem)
                             updated = True
                 # reach fix point ?
@@ -135,10 +140,10 @@ class MemoryRenamer:
                 sym = stm.var.symbol()
 
             if sym:
-                uses = usedef.get_use_stms_by_sym(sym)
+                uses = usedef.get_stms_using(sym)
                 worklist.extend(list(uses))
                 for u in uses:
-                    for var in usedef.get_use_vars_by_stm(u):
+                    for var in usedef.get_vars_used_at(u):
                         if var.sym is sym:
                             sym2var[var.sym].add(var)
 
@@ -164,22 +169,24 @@ class MemCollector(IRVisitor):
         self.stm_map = defaultdict(list)
 
     def visit_TEMP(self, ir):
-        if Type.is_list(ir.sym.typ) and not ir.sym.is_param():
+        if ir.sym.typ.is_list() and not ir.sym.is_param():
             self.stm_map[ir.sym].append(self.current_stm)
+
 
 class ContextModifier(IRVisitor):
     def __init__(self):
         super().__init__()
 
     def visit_CALL(self, ir):
-        for arg in ir.args:
-            if arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                memnode = Type.extra(arg.sym.typ)
+        for _, arg in ir.args:
+            if arg.is_a(TEMP) and arg.sym.typ.is_list():
+                memnode = arg.sym.typ.get_memnode()
                 # FIXME: check the memnode is locally writable or not
                 if memnode.is_writable():
                     arg.ctx = Ctx.LOAD | Ctx.STORE
 
-class RomDetector:
+
+class RomDetector(object):
     def _propagate_writable_flag(self):
         for node in self.mrg.collect_top_module_nodes():
             node.set_writable()
@@ -211,4 +218,3 @@ class RomDetector:
         self.mrg = env.memref_graph
         self._propagate_info()
         self._propagate_writable_flag()
-

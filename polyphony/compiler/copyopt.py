@@ -1,8 +1,8 @@
 ﻿from .ir import *
 from .irvisitor import IRVisitor
-from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)
+
 
 class CopyOpt(IRVisitor):
     def _new_collector(self, copies):
@@ -20,7 +20,7 @@ class CopyOpt(IRVisitor):
         collector = self._new_collector(copies)
         collector.process(scope)
         for cp in copies:
-            uses = list(scope.usedef.get_use_stms_by_qsym(cp.dst.qualified_symbol()))
+            uses = list(scope.usedef.get_stms_using(cp.dst.qualified_symbol()))
             orig = self._find_root_def(cp.src.qualified_symbol())
             for u in uses:
                 olds = self._find_old_use(u, cp.dst.qualified_symbol())
@@ -29,6 +29,9 @@ class CopyOpt(IRVisitor):
                         new = orig.clone()
                     else:
                         new = cp.src.clone()
+                    # TODO: we need the bit width propagation
+                    if not new.symbol().typ.is_freezed():
+                        new.symbol().set_type(old.symbol().typ)
                     logger.debug('replace FROM ' + str(u))
                     u.replace(old, new)
                     logger.debug('replace TO ' + str(u))
@@ -39,7 +42,7 @@ class CopyOpt(IRVisitor):
                 cp.block.stms.remove(cp)
 
     def _find_root_def(self, qsym) -> IR:
-        defs = list(self.scope.usedef.get_def_stms_by_qsym(qsym))
+        defs = list(self.scope.usedef.get_stms_defining(qsym))
         if not defs:
             return None
         assert len(defs) == 1
@@ -72,8 +75,6 @@ class CopyCollector(IRVisitor):
         if ir.dst.sym.is_return():
             return
         if ir.src.is_a(TEMP):
-            if ir.src.sym.is_param():# or Type.is_list(ir.src.sym.typ):
+            if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
             self.copies.append(ir)
-
-

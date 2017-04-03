@@ -3,6 +3,7 @@ from .common import get_src_text
 import logging
 logger = logging.getLogger()
 
+
 class LineNumberSetter(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -21,21 +22,24 @@ class LineNumberSetter(IRVisitor):
         self.visit(ir.left)
         self.visit(ir.right)
 
+    def visit_CONDOP(self, ir):
+        ir.lineno = self.current_stm.lineno
+        self.visit(ir.cond)
+        self.visit(ir.left)
+        self.visit(ir.right)
+
     def visit_CALL(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.func)
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_SYSCALL(self, ir):
         ir.lineno = self.current_stm.lineno
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_NEW(self, ir):
         ir.lineno = self.current_stm.lineno
-        for arg in ir.args:
-            self.visit(arg)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_CONST(self, ir):
         ir.lineno = self.current_stm.lineno
@@ -106,12 +110,15 @@ class SourceDump(IRVisitor):
     def visit_RELOP(self, ir):
         pass
 
+    def visit_CONDOP(self, ir):
+        pass
+
     def visit_CALL(self, ir):
         pass
 
     def visit_SYSCALL(self, ir):
         pass
-    
+
     def visit_CONST(self, ir):
         pass
 
@@ -129,29 +136,27 @@ class SourceDump(IRVisitor):
 
     def visit_EXPR(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_CJUMP(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_MCJUMP(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_JUMP(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_RET(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_MOVE(self, ir):
         logger.debug(str(ir))
-        logger.debug(get_src_text(ir.lineno))
+        logger.debug(get_src_text(self.scope, ir.lineno))
 
     def visit_PHI(self, ir):
         pass
-
-    

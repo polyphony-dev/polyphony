@@ -17,7 +17,10 @@ def if10(x, y, z):
 
 @testbench
 def test():
-    assert 1 == if10(0, 1, 2)
-    assert 2 == if10(2, 0, 1)
-    assert 1 == if10(1, 2, 0)
+    assert 0 == if10(0, 0, 1)
+    assert 1 == if10(0, 1, 0)
+    assert 2 == if10(0, 2, 0)
+    assert 1 == if10(1, 0, 0)
+    assert 2 == if10(2, 0, 0)
+    
 test()

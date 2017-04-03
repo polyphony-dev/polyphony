@@ -1,74 +1,35 @@
-﻿from collections import deque
-from .dominator import DominatorTreeBuilder
-from .ir import CONST, BINOP, RELOP, TEMP, MOVE, JUMP, CJUMP
+﻿from .ir import CONST, BINOP, RELOP, TEMP, ATTR, MOVE, JUMP, CJUMP
+from .irvisitor import IRVisitor
+from .graph import Graph
 from .varreplacer import VarReplacer
 from .usedef import UseDefDetector
 from .block import Block, CompositBlock
 from logging import getLogger
 logger = getLogger(__name__)
 
-class LoopNestTree:
-    def __init__(self):
-        self.nodes = []
-        self.edges = []
-        self.root = None
 
+class LoopNestTree(Graph):
     def set_root(self, n):
+        self.add_node(n)
         self.root = n
 
-    def add_node(self, n):
-        if n not in self.nodes:
-            self.nodes.append(n)
-        return n
-
-    def add_edge(self, n1, n2):
-        edge = (n1, n2)
-        if edge not in self.edges:
-            self.edges.append(edge)
+    def traverse(self):
+        return reversed(self.bfs_ordered_nodes())
 
     def is_child(self, loop_head1, loop_head2):
-        for h1, h2 in self.edges:
-            if loop_head1 is h1 and loop_head2 is h2:
-                return True
-        return False
+        return loop_head2 in self.succs(loop_head1)
+
+    def is_leaf(self, loop_head):
+        return not self.succs(loop_head)
 
     def get_children_of(self, loop_head):
-        children = []
-        for h1, h2 in self.edges:
-            if loop_head is h1:
-                children.append(h2)
-        return children
+        return self.succs(loop_head)
 
     def get_parent_of(self, loop_head):
-        for h1, h2 in self.edges:
-            if loop_head is h2:
-                return h1
-        return None
-
-    def dump(self):
-        logger.debug('loop nest tree')
-        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
-            logger.debug(n1.name + ' --> ' + n2.name)
-
-    def __str__(self):
-        s = ''
-        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
-            s += n1.name + ' --> ' + n2.name + '\n'
-        return s
-
-    def traverse(self):
-        stack = []
-        self._traverse_rec(self.root, stack)
-        return stack
-
-    def _traverse_rec(self, node, stack):
-        children = self.get_children_of(node)
-        for child in children:
-            self._traverse_rec(child, stack)
-        stack.append(node)
+        return self.preds(loop_head)
 
 
-class LoopDetector:
+class LoopDetector(object):
     def __init__(self):
         pass
 
@@ -87,20 +48,16 @@ class LoopDetector:
         self._add_loop_tree_entry(head, lblks)
         self.scope.loop_nest_tree.set_root(head)
 
-        ldd = LoopDependencyDetector()
-        ldd.processs(scope)
-
+        LoopDependencyDetector().process(scope)
+        LoopVariableDetector().process(scope)
         #lbd = LoopBlockDestructor()
         #lbd.process(scope)
 
-
     def _make_loop_block(self, head, loop_region):
         lblks, blks = self._make_loop_block_bodies(loop_region)
-        bodies = sorted(lblks+blks, key=lambda b: b.order)
-        lb = CompositBlock(self.scope, head, bodies, [head]+loop_region)
-
+        bodies = sorted(lblks + blks, key=lambda b: b.order)
+        lb = CompositBlock(self.scope, head, bodies, [head] + loop_region)
         self._add_loop_tree_entry(lb, lblks)
-
         return lb
 
     def _make_loop_block_bodies(self, blks):
@@ -166,9 +123,45 @@ class LoopDetector:
         for child in children:
             self.scope.loop_nest_tree.add_edge(parent, child)
 
+
+class LoopVariableDetector(IRVisitor):
+    def process(self, scope):
+        self.usedef = scope.usedef
+        super().process(scope)
+
+    def visit_MOVE(self, ir):
+        assert ir.dst.is_a([TEMP, ATTR])
+        sym = ir.dst.symbol()
+        if sym.is_temp() or sym.is_return() or sym.typ.is_port():
+            return
+        if ir.src.is_a([TEMP, ATTR]):
+            src_sym = ir.src.symbol()
+            if src_sym.is_param() or src_sym.typ.is_port():
+                return
+        if self._has_depend_cycle(ir, sym):
+            sym.add_tag('induction')
+
+    def _has_depend_cycle(self, start_stm, sym):
+        def _has_depend_cycle_r(start_stm, sym, visited):
+            stms = self.usedef.get_stms_using(sym)
+            if start_stm in stms:
+                return True
+            for stm in stms:
+                if stm in visited:
+                    continue
+                visited.add(stm)
+                defsyms = self.usedef.get_syms_defined_at(stm)
+                for defsym in defsyms:
+                    if _has_depend_cycle_r(start_stm, defsym, visited):
+                        return True
+            return False
+        visited = set()
+        return _has_depend_cycle_r(start_stm, sym, visited)
+
+
 # hierarchize
-class LoopDependencyDetector:
-    def processs(self, scope):
+class LoopDependencyDetector(object):
+    def process(self, scope):
         all_blks = set()
         scope.entry_block.collect_basic_blocks(all_blks)
         for lb in scope.loop_nest_tree.traverse():
@@ -176,7 +169,10 @@ class LoopDependencyDetector:
                 break
             outer_region = all_blks.difference(set(lb.region))
             inner_region = set(lb.region).difference(set([lb.head])).difference(set(lb.bodies))
-            od, ou, id, iu = self._get_loop_block_dependency(scope.usedef, lb, outer_region, inner_region)
+            od, ou, id, iu = self._get_loop_block_dependency(scope.usedef,
+                                                             lb,
+                                                             outer_region,
+                                                             inner_region)
             lb.outer_defs = od
             lb.outer_uses = ou
             lb.inner_defs = id
@@ -189,9 +185,9 @@ class LoopDependencyDetector:
         inner_uses = set()
         blocks = [lb.head] + lb.bodies
         for blk in blocks:
-            usesyms = usedef.get_use_syms_by_blk(blk)
+            usesyms = usedef.get_syms_used_at(blk)
             for sym in usesyms:
-                defblks = usedef.get_def_blks_by_sym(sym)
+                defblks = usedef.get_blks_defining(sym)
                 # Is this symbol used in the out of the loop?
                 intersect = outer_region.intersection(defblks)
                 if intersect:
@@ -200,9 +196,9 @@ class LoopDependencyDetector:
                 if intersect:
                     inner_defs.add(sym)
 
-            defsyms = usedef.get_def_syms_by_blk(blk)
+            defsyms = usedef.get_syms_defined_at(blk)
             for sym in defsyms:
-                useblks = usedef.get_use_blks_by_sym(sym)
+                useblks = usedef.get_blks_using(sym)
                 # Is this symbol used in the out of the loop?
                 intersect = outer_region.intersection(useblks)
                 if intersect:
@@ -213,7 +209,8 @@ class LoopDependencyDetector:
 
         return (outer_defs, outer_uses, inner_defs, inner_uses)
 
-class LoopBlockDestructor:
+
+class LoopBlockDestructor(object):
     def __init__(self):
         pass
 
@@ -226,7 +223,7 @@ class LoopBlockDestructor:
             for p in lb.preds:
                 p.replace_succ(lb, lb.head)
             for s in lb.succs:
-                for body in [lb.head]+lb.bodies:
+                for body in [lb.head] + lb.bodies:
                     if s in body.succs:
                         s.replace_pred(lb, body)
                         break
@@ -236,8 +233,8 @@ class LoopBlockDestructor:
         Block.set_order(scope.entry_block, 0)
 
 
-class SimpleLoopUnroll:
-    ''' simplyfied loop unrolling for testbench'''
+class SimpleLoopUnroll(object):
+    '''simplyfied loop unrolling for testbench'''
     def __init__(self):
         pass
 
@@ -253,7 +250,10 @@ class SimpleLoopUnroll:
         udd.process(scope)
 
         for c in self.scope.loop_nest_tree.get_children_of(entry):
-            self._process(c)
+            if self.scope.loop_nest_tree.is_leaf(c):
+                self._process(c)
+            else:
+                raise NotImplementedError('cannot unroll the nested loop')
         for blk in scope.traverse_blocks():
             blk.order = -1
         Block.set_order(entry, 0)
@@ -266,16 +266,13 @@ class SimpleLoopUnroll:
         logger.debug(str(loop_init))
         logger.debug(str(loop_limit))
         logger.debug(str(loop_step))
-        assert loop_init.is_a(CONST)
-        assert loop_limit.is_a(CONST)
-        assert loop_step.is_a(CONST)
-        # should success unrolling if loop is exsisting in a testbench
-        if not inductions:
-            return False
+        if (not inductions or not loop_init.is_a(CONST) or
+                not loop_limit.is_a(CONST) or not loop_step.is_a(CONST)):
+            raise NotImplementedError('cannot unroll the loop')
 
         unroll_blocks = blocks[1:-1]
         if len(unroll_blocks) > 1:
-            return False
+            raise NotImplementedError('cannot unroll the loop containing branches')
         unroll_block = unroll_blocks[0]
         self._unroll(inductions, loop_init.value, loop_limit.value, loop_step.value, unroll_block)
 
@@ -318,7 +315,7 @@ class SimpleLoopUnroll:
         for stm in head.stms:
             if stm.is_a(CJUMP):
                 assert stm.exp.is_a(TEMP) and stm.exp.sym.is_condition()
-                defstms = usedef.get_def_stms_by_sym(stm.exp.sym)
+                defstms = usedef.get_stms_defining(stm.exp.sym)
                 assert len(defstms) == 1
                 mv = defstms.pop()
                 assert mv.is_a(MOVE)
@@ -329,7 +326,7 @@ class SimpleLoopUnroll:
                 break
         # find init value
         if induction:
-            defstms = usedef.get_def_stms_by_sym(induction.sym)
+            defstms = usedef.get_stms_defining(induction.sym)
             for stm in defstms:
                 if stm.block in head.preds and stm.block not in head.preds_loop:
                     assert stm.is_a(MOVE)
@@ -337,7 +334,7 @@ class SimpleLoopUnroll:
                     break
         # find step value
         for tail in tails:
-            defstms = usedef.get_def_stms_by_sym(induction.sym)
+            defstms = usedef.get_stms_defining(induction.sym)
             for stm in defstms:
                 if stm.block is tail and stm.is_a(MOVE) and stm.src.is_a(BINOP):
                     binop = stm.src
@@ -352,7 +349,7 @@ class SimpleLoopUnroll:
 
     def _get_single_assignment_vars(self, block):
         usedef = self.scope.usedef
-        usevars = usedef.get_use_vars_by_blk(block)
+        usevars = usedef.get_vars_used_at(block)
         use_result = []
         for var in usevars:
             if var.symbol().is_temp() or var.symbol().is_condition():
@@ -391,4 +388,3 @@ class SimpleLoopUnroll:
         jump = JUMP(block.succs[0])
         jump.lineno = 1
         block.append_stm(jump)
-

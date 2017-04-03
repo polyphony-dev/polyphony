@@ -1,8 +1,9 @@
 import setuptools
+from polyphony import __version__
 
 setuptools.setup(
     name = 'polyphony',
-    version = '0.2.2',
+    version = __version__,
     packages = setuptools.find_packages(),
     author = "Hiroaki Kataoka",
     author_email = "kataoka@sinby.com",

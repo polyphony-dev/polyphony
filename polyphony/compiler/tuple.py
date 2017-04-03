@@ -1,7 +1,7 @@
 ﻿from .ir import *
 from .irvisitor import IRTransformer
 from .symbol import Symbol
-from .type import Type
+
 
 class TupleTransformer(IRTransformer):
     def __init__(self):
@@ -32,6 +32,7 @@ class TupleTransformer(IRTransformer):
 
     def _can_direct_unpack(self, lhs, rhs):
         assert len(lhs) == len(rhs)
+
         def is_contain(ir, irs):
             if not ir.is_a([TEMP, ATTR]):
                 return False
@@ -39,7 +40,7 @@ class TupleTransformer(IRTransformer):
             return sym in [ir.symbol() for ir in irs if ir.is_a([TEMP, ATTR])]
 
         for i, l in enumerate(lhs):
-            if is_contain(l, rhs[i+1:]):
+            if is_contain(l, rhs[i + 1:]):
                 return False
         return True
 
@@ -73,7 +74,7 @@ class TupleTransformer(IRTransformer):
                     mv.src.lineno = ir.lineno
                     self.new_stms.append(mv)
                 return
-            elif ir.src.is_a([TEMP, ATTR]) and Type.is_tuple(ir.src.symbol().typ):
+            elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol().typ.is_tuple():
                 mvs = self._unpack(ir.dst.items, self._make_mrefs(ir.src, len(ir.dst.items)))
                 for mv in mvs:
                     mv.lineno = ir.lineno
@@ -83,5 +84,3 @@ class TupleTransformer(IRTransformer):
             ir.src = self.visit(ir.src)
             ir.dst = self.visit(ir.dst)
         self.new_stms.append(ir)
-
-

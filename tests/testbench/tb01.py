@@ -11,3 +11,4 @@ def test():
     assert a != c
     print(a)
 
+test()

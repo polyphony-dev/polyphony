@@ -1,14 +1,9 @@
-﻿from collections import defaultdict
-from .ir import *
-from .symbol import Symbol
-from .dominator import DominatorTreeBuilder
-from .varreplacer import VarReplacer
-from .type import Type
+﻿from .ir import *
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class PHICondResolver:
+class PHICondResolver(object):
     def __init__(self):
         self.count = 0
 
@@ -31,10 +26,10 @@ class PHICondResolver:
 
     def _divide_phi_to_mv(self, phi):
         usedef = self.scope.usedef
-        args = []
-        conds = []
         for i, (arg, blk) in enumerate(zip(phi.args, phi.defblks)):
             if not blk:
+                continue
+            if phi.var.symbol().typ.is_object():
                 continue
             pred = blk
             mv = MOVE(phi.var.clone(), arg)

@@ -7,6 +7,16 @@
     else:
         return isinstance(inst, cls)
 
+
+def find_only_one_in(typ, seq):
+    it = None
+    for item in seq:
+        if item.is_a(typ):
+            assert it is None
+            it = item
+    return it
+
+
 def replace_item(lst, old, new):
     if isinstance(old, list) or isinstance(old, tuple):
         for o in old:
@@ -17,12 +27,12 @@ def replace_item(lst, old, new):
                 lst[i] = new
                 break
 
+
 def remove_from_list(lst, removes):
     for r in removes:
         if r in lst:
             lst.remove(r)
 
+
 def unique(lst):
     return sorted(list(set(lst)))
-
-

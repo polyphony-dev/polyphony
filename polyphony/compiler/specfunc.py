@@ -8,7 +8,6 @@ from .env import env
 from .ir import Ctx, CONST, TEMP, ARRAY, MOVE
 from .usedef import UseDefDetector
 from .type import Type
-import pdb
 import logging
 logger = logging.getLogger()
 
@@ -35,14 +34,17 @@ class SpecializedFunctionMaker:
             if caller.is_testbench():
                 using_scopes.add(callee)
                 continue
+            if callee.is_lib():
+                using_scopes.add(callee)
+                continue
 
             for call in calls:
                 binding = []
-                for i, arg in enumerate(call.args):
+                for i, (_, arg) in enumerate(call.args):
                     if arg.is_a(CONST):
                         binding.append((self.bind_val, i, arg.value))
-                    elif arg.is_a(TEMP) and Type.is_list(arg.sym.typ):
-                        memnode = Type.extra(arg.sym.typ)
+                    elif arg.is_a(TEMP) and arg.sym.typ.is_list():
+                        memnode = arg.sym.typ.get_memnode()
                         if not memnode.is_writable() and not memnode.pred_branch():
                             binding.append((self.bind_rom, i, memnode))
                 if binding:
@@ -73,7 +75,6 @@ class SpecializedFunctionMaker:
                     call.func.sym.set_type(('func', ret_t, tuple([param.sym.typ for param in call.func_scope.params])))
                     for _, i, _ in reversed(binding):
                         call.args.pop(i)
-                    caller.add_callee_scope(new_scope)
                     using_scopes.add(new_scope)
                 else:
                     using_scopes.add(callee)

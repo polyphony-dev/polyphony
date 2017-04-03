@@ -1,63 +1,81 @@
-﻿import traceback
-import logging
+﻿import logging
+from .env import env
 logger = logging.getLogger()
 
-INT_WIDTH = 32
 
-def accepts(*types):
-    def check_accepts(f):
-        assert len(types) == f.func_code.co_argcount
-        def new_f(*args, **kwds):
-            for (a, t) in zip(args, types):
-                assert isinstance(a, t), \
-                       "arg %r does not match %s" % (a,t)
-            return f(*args, **kwds)
-        new_f.func_name = f.func_name
-        return new_f
-    return check_accepts
-
-def funclog(func):
-    def inner(*args, **kwargs):
-        logger.debug("LOG:", func.__name__)
-        ret = func(*args, **kwargs)
-        return ret       
-    return inner
+src_texts = {}
 
 
-src_text = []
 def read_source(filename):
     assert filename
-    push_file_name(filename)
     f = open(filename, 'r')
     source_lines = f.readlines()
     f.close()
-    set_src_text(source_lines)
+    src_texts[filename] = source_lines
     source = ''.join(source_lines)
     return source
 
-def set_src_text(srcs):
-    global src_text
-    src_text = srcs
-    logger.debug(src_text)
 
-def get_src_text(lineno):
+def get_src_text(scope, lineno):
+    assert scope in env.scope_file_map
+    filename = env.scope_file_map[scope]
     assert lineno > 0
-    return src_text[lineno-1]
+    return src_texts[filename][lineno - 1]
 
-filenames = []
-def current_file_name():
-    global filenames
-    assert filenames
-    return filenames[-1]
 
-def push_file_name(filename):
-    global filenames
-    filenames.append(filename)
+def error_info(scope, lineno):
+    assert scope in env.scope_file_map
+    filename = env.scope_file_map[scope]
+    return '{}\n{}:{}'.format(filename, lineno, get_src_text(scope, lineno))
 
-def pop_file_name():
-    global filenames
-    filenames.pop()
 
-def error_info(lineno):
-    return '{}\n{}:{}'.format(current_file_name(), lineno, get_src_text(lineno))
+class CompileError(Exception):
+    pass
 
+
+def fail(ir, err_id, args=None):
+    print(error_info(ir.block.scope, ir.lineno))
+    if args:
+        msg = str(err_id).format(*args)
+    else:
+        msg = str(err_id)
+    raise CompileError(msg)
+
+
+class Tagged(object):
+    __slots__ = ['tags']
+
+    def __init__(self, tags):
+        if isinstance(tags, list):
+            tags = set(tags)
+        elif tags is None:
+            tags = set()
+        assert isinstance(tags, set)
+        self.tags = tags
+        assert self.tags.issubset(self.TAGS)
+
+    def __getattr__(self, name):
+        if name.startswith('is_'):
+            tag = name[3:]
+            if tag not in self.TAGS:
+                raise AttributeError(name)
+            return lambda: tag in self.tags
+        else:
+            raise AttributeError(name)
+
+    def add_tag(self, tag):
+        if isinstance(tag, set):
+            self.tags = self.tags | tag
+        elif isinstance(tag, list):
+            self.tags = self.tags | set(tag)
+        else:
+            self.tags.add(tag)
+        assert self.tags.issubset(self.TAGS)
+
+    def del_tag(self, tag):
+        if isinstance(tag, set):
+            self.tags = self.tags - tag
+        elif isinstance(tag, list):
+            self.tags = self.tags - set(tag)
+        else:
+            self.tags.discard(tag)

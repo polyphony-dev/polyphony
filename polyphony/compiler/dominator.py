@@ -1,7 +1,8 @@
 from logging import getLogger
 logger = getLogger(__name__)
 
-class DominatorTree:
+
+class DominatorTree(object):
     def __init__(self):
         self.nodes = []
         self.edges = []
@@ -39,7 +40,7 @@ class DominatorTree:
             if _n1 is n1 and _n2 is n2:
                 return True
         return False
- 
+
     def dump(self):
         logger.debug('dominator tree')
         logger.debug(str(self))
@@ -50,7 +51,8 @@ class DominatorTree:
             s += '{} --> {}\n'.format(n1.name, n2.name)
         return s
 
-class DominatorTreeBuilder:
+
+class DominatorTreeBuilder(object):
     def __init__(self, scope):
         self.scope = scope
         self.done_block_links = []
@@ -73,8 +75,8 @@ class DominatorTreeBuilder:
             domlist = sorted(list(doms))
             assert b is domlist[-1]
             if len(domlist) >= 2:
-                d1 = domlist[-2] #immediate dominator
-                d2 = domlist[-1] #block itself
+                d1 = domlist[-2]  # immediate dominator
+                d2 = domlist[-1]  # block itself
                 tree.add_node(d1)
                 tree.add_node(d2)
                 tree.add_edge(d1, d2)
@@ -92,15 +94,13 @@ class DominatorTreeBuilder:
     def _preds_loop(self, blk):
         return blk.preds_loop
 
-
     def _walk_block(self, block, visit_func):
         self.done_block_links = []
         self._walk_block_rec(block, visit_func)
 
-
     def _walk_block_rec(self, block, visit_func):
         visit_func(block)
-        
+
         #walk into successors
         succs = self._fwd_blks(block)
         for succ in succs:
@@ -134,22 +134,20 @@ class DominatorTreeBuilder:
         return doms
 
 
-class DominanceFrontierBuilder:
+class DominanceFrontierBuilder(object):
     def __init__(self):
         self.dominance_frontier = {}
-
 
     def process(self, block, tree):
         self._compute_df(block, tree)
         return self.dominance_frontier
 
-
     def _compute_df(self, block, tree):
-        '''
-        DF[n] = DFlocal[n] | [DFup[c] for c in tree.children[n]]
+        '''DF[n] = DFlocal[n] | [DFup[c] for c in tree.children[n]]
 
         DFlocal[n]: The successors of n that are not strictly dominated by n;
-        DFup[n]: Nodes in the dominance frontier of n that are not strictly dominated by n's immediate dominator.
+        DFup[n]: Nodes in the dominance frontier of n
+        that are not strictly dominated by n's immediate dominator.
         '''
         result = set()
         for succ in block.succs:
