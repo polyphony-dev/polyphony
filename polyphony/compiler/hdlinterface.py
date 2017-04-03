@@ -135,19 +135,19 @@ def single_read_seq(inf, signal, step, dst):
             ready = port2ahdl(inf, 'ready')
 
         if step == 0:
-            ports = [valid]
-            return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports), )
-        elif step == 1:
-            # Note that reading from the port is in the next scheduling time of the wait function
-            # However, in fact reading is doing on the same time of the wait function by merging process
             if signal.is_ready_valid_protocol():
+                ports = [valid, ready]
                 return (AHDL_MOVE(ready, AHDL_CONST(1)),
-                        AHDL_MOVE(dst, data))
+                        AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
+            else:
+                ports = [valid]
+                return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports), )
+        elif step == 1:
+            if signal.is_ready_valid_protocol():
+                return (AHDL_MOVE(dst, data),
+                        AHDL_MOVE(ready, AHDL_CONST(0)))
             else:
                 return (AHDL_MOVE(dst, data), )
-        elif step == 2:
-            assert signal.is_ready_valid_protocol()
-            return (AHDL_MOVE(ready, AHDL_CONST(0)), )
     else:
         if step == 0:
             return (AHDL_MOVE(dst, data), )

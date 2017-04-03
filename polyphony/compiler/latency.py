@@ -16,7 +16,7 @@ def get_call_latency(call):
         protocol = receiver.typ.get_protocol()
         if call.func_scope.orig_name == 'rd':
             if protocol == 'ready_valid':
-                return UNIT_STEP * 3
+                return UNIT_STEP * 2
             elif protocol == 'valid':
                 return UNIT_STEP * 2
         elif call.func_scope.orig_name == 'wr':
