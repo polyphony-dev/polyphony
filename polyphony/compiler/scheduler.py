@@ -20,6 +20,7 @@ class Scheduler(object):
         self.scope = scope
         self._node_sched = self._node_sched_default
         for dfg in self.scope.dfgs(bottom_up=True):
+            self.res_tables = {}
             self._schedule(scope, dfg)
 
     def _schedule(self, scope, dfg):
