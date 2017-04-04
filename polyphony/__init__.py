@@ -31,6 +31,11 @@ def testbench(func):
     return _testbench_decorator
 
 
+# @preprocess decorator
+def preprocess(func):
+    return func
+
+
 _is_worker_running = False
 
 
@@ -90,6 +95,7 @@ class _ModuleDecorator(object):
             self.module_instances[cls.__name__].append(instance)
             return instance
         _module_decorator.__dict__ = cls.__dict__.copy()
+        _module_decorator.cls = cls
         return _module_decorator
 
     def abort(self):

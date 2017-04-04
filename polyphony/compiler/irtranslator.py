@@ -13,24 +13,16 @@ from .builtin import lib_port_type_names, lib_class_names
 from logging import getLogger
 logger = getLogger(__name__)
 
-FUNCTION_DECORATORS = [
-    'testbench',
-]
 INTERNAL_FUNCTION_DECORATORS = [
     'mutable',
     'inlinelib',
-    'builtin'
-]
-CLASS_DECORATORS = [
-    'module',
+    'builtin',
+    'decorator',
 ]
 INTERNAL_CLASS_DECORATORS = [
     'builtin',
     'typeclass',
 ]
-
-IGNORE_PREFIX = '_polyphony_'
-
 BUILTIN_PACKAGES = (
     'polyphony',
     'polyphony.typing',
@@ -154,25 +146,19 @@ class FunctionVisitor(ast.NodeVisitor):
                 param_t.set_vararg(True)
             return param_in, param_copy
 
-        if node.name.startswith(IGNORE_PREFIX):
-            return
-
         outer_scope = self.current_scope
 
         tags = set()
         for deco in node.decorator_list:
             deco_name = self.visit(deco)
-            if deco_name.startswith(IGNORE_PREFIX):
-                continue
+            sym = self.current_scope.find_sym(deco_name)
+            if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
+                tags.add(sym.typ.get_scope().orig_name)
+            elif deco_name in INTERNAL_FUNCTION_DECORATORS:
+                tags.add(deco_name)
             else:
-                sym = self.current_scope.find_sym(deco_name)
-                if sym and sym.name in FUNCTION_DECORATORS:
-                    tags.add(sym.name)
-                elif deco_name in INTERNAL_FUNCTION_DECORATORS:
-                    tags.add(deco_name)
-                else:
-                    print(error_info(outer_scope, node.lineno))
-                    raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
+                print(error_info(outer_scope, node.lineno))
+                raise RuntimeError("Unknown decorator '@{}' is specified.".format(deco_name))
         if outer_scope.is_class() and 'classmethod' not in tags:
             tags.add('method')
             if node.name == '__init__':
@@ -226,21 +212,19 @@ class FunctionVisitor(ast.NodeVisitor):
         self._leave_scope(outer_scope)
 
     def visit_ClassDef(self, node):
-        if node.name.startswith(IGNORE_PREFIX):
-            return
         outer_scope = self.current_scope
 
         tags = set()
         for deco in node.decorator_list:
             deco_name = self.visit(deco)
             sym = self.current_scope.find_sym(deco_name)
-            if sym and sym.name in CLASS_DECORATORS:
-                tags.add(sym.name)
+            if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
+                tags.add(sym.typ.get_scope().orig_name)
             elif deco_name in INTERNAL_CLASS_DECORATORS:
                 tags.add(deco_name)
             else:
                 print(error_info(outer_scope, node.lineno))
-                raise RuntimeError("Unknown decorator \'@{}\' is specified.".format(deco_name))
+                raise RuntimeError("Unknown decorator '@{}' is specified.".format(deco_name))
         scope_qualified_name = (outer_scope.name + '.' + node.name)
         if scope_qualified_name in lib_port_type_names:
             tags |= {'port', 'lib'}
@@ -388,13 +372,13 @@ class CodeVisitor(ast.NodeVisitor):
         self._visit_lazy_defs()
 
     def visit_FunctionDef(self, node):
-        if node.name.startswith(IGNORE_PREFIX):
-            return
         self.lazy_defs.append(node)
 
     def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
-
+        if self.current_scope.is_preprocess():
+            self._leave_scope(*context)
+            return
         outer_function_exit = self.function_exit
         self.function_exit = Block(self.current_scope, 'exit')
         if self.current_scope.is_method():
@@ -443,8 +427,6 @@ class CodeVisitor(ast.NodeVisitor):
         raise NotImplementedError('async def statement is not supported')
 
     def visit_ClassDef(self, node):
-        if node.name.startswith(IGNORE_PREFIX):
-            return
         self.lazy_defs.append(node)
 
     def _visit_lazy_ClassDef(self, node):
@@ -493,8 +475,6 @@ class CodeVisitor(ast.NodeVisitor):
         raise RuntimeError("def statement is not supported.")
 
     def visit_Assign(self, node):
-        if isinstance(node.targets[0], ast.Name) and node.targets[0].id.startswith(IGNORE_PREFIX):
-            return
         tail_lineno = _get_tail_lineno(node.value)
         right = self.visit(node.value)
         for target in node.targets:
@@ -960,8 +940,6 @@ class CodeVisitor(ast.NodeVisitor):
         #if isinstance(node.func, ast.Name):
         #    if node.func.id in builtin_type_names:
         #        pass
-        if isinstance(node.func, ast.Name) and node.func.id.startswith(IGNORE_PREFIX):
-            return CONST(0)
         func = self.visit(node.func)
         kwargs = {}
         if node.keywords:

@@ -57,8 +57,8 @@ def wait_edge(old, new, *ports):
         raise TypeError("wait_edge() missing required argument: 'ports'")
     cv = io._create_cond()
     for p in ports:
-        if p.typ is not typing.bit:
-            raise TypeError("'wait_rising' and 'wait_falling' functions take io.Port(bit) instances")
+        if p._dtype is not typing.bit and p._dtype is not bool:
+            raise TypeError("'wait_rising' and 'wait_falling' functions take io.Port(bit) or io.Port(bool) instances")
         p._add_cv(cv)
     with cv:
         while io._io_enabled:
@@ -81,8 +81,8 @@ def wait_rising(*ports):
     if not ports:
         raise TypeError("wait_rising() missing required argument: 'ports'")
     for p in ports:
-        if p.typ is not typing.bit:
-            raise TypeError("'wait_rising' function takes io.Port(bit) instances")
+        if p._dtype is not typing.bit and p._dtype is not bool:
+            raise TypeError("'wait_rising' function takes io.Port(bit) or io.Port(bool) instances")
     wait_edge(0, 1, *ports)
 
 
@@ -97,8 +97,8 @@ def wait_falling(*ports):
     if not ports:
         raise TypeError("wait_falling() missing required argument: 'ports'")
     for p in ports:
-        if p.typ is not typing.bit:
-            raise TypeError("'wait_falling' function takes io.Port(bit) instances")
+        if p._dtype is not typing.bit and p._dtype is not bool:
+            raise TypeError("'wait_falling' function takes io.Port(bit) or io.Port(bool) instances")
     wait_edge(1, 0, *ports)
 
 

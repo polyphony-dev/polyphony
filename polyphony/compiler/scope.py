@@ -21,9 +21,9 @@ class Scope(Tagged):
     TAGS = {
         'global', 'function', 'class', 'method', 'ctor',
         'callable', 'returnable', 'mutable',
-        'testbench',
+        'testbench', 'preprocess',
         'module', 'worker',
-        'lib', 'namespace', 'builtin',
+        'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass',
         'function_module',
         'inlinelib',

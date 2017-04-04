@@ -111,49 +111,49 @@ class Port(object):
 
     '''
     def __init__(self, dtype, direction='any', init=None, protocol='none'):
-        self.dtype = dtype
+        self._dtype = dtype
         if init:
             self.__v = init
         else:
             self.__v = dtype()
-        self.__direction = _normalize_direction(direction)
+        self._direction = _normalize_direction(direction)
         self.__oldv = dtype()
-        self.__protocol = protocol
+        self._protocol = protocol
         self.__cv = []
         self.__cv_lock = threading.Lock()
         if protocol == 'valid':
             self.__valid_ev = _create_event()
             self.__valid_ev.clear()
-        elif self.__protocol == 'ready_valid':
+        elif self._protocol == 'ready_valid':
             self.__ready_ev = _create_event()
             self.__valid_ev = _create_event()
             self.__ready_ev.clear()
             self.__valid_ev.clear()
-        elif self.__protocol == 'none':
+        elif self._protocol == 'none':
             pass
         else:
-            raise TypeError("'Unknown port protocol '{}'".format(self.__protocol))
+            raise TypeError("'Unknown port protocol '{}'".format(self._protocol))
 
     @_portmethod
     def rd(self):
-        if self.__direction == 'out':
+        if self._direction == 'out':
             if _is_called_from_owner():
                 raise TypeError("Reading from 'out' Port is not allowed")
-        if self.__protocol == 'valid' or self.__protocol == 'ready_valid':
+        if self._protocol == 'valid' or self._protocol == 'ready_valid':
             while _io_enabled and not self.__valid_ev.is_set():
                 self.__valid_ev.wait()
             self.__valid_ev.clear()
-            if self.__protocol == 'ready_valid':
+            if self._protocol == 'ready_valid':
                 self.__ready_ev.set()
-        if not isinstance(self.__v, self.dtype):
-            raise TypeError("Incompatible value type, got {} expected {}".format(type(self.__v), self.dtype))
+        if not isinstance(self.__v, self._dtype):
+            raise TypeError("Incompatible value type, got {} expected {}".format(type(self.__v), self._dtype))
         return self.__v
 
     @_portmethod
     def wr(self, v):
-        if not isinstance(v, self.dtype):
-            raise TypeError("Incompatible value type, got {} expected {}".format(type(v), self.dtype))
-        if self.__direction == 'in':
+        if not isinstance(v, self._dtype):
+            raise TypeError("Incompatible value type, got {} expected {}".format(type(v), self._dtype))
+        if self._direction == 'in':
             if _is_called_from_owner():
                 raise TypeError("Writing to 'in' Port is not allowed")
         if not self.__cv:
@@ -166,9 +166,9 @@ class Port(object):
                 for cv in self.__cv:
                     with cv:
                         cv.notify_all()
-        if self.__protocol == 'valid' or self.__protocol == 'ready_valid':
+        if self._protocol == 'valid' or self._protocol == 'ready_valid':
             self.__valid_ev.set()
-            if self.__protocol == 'ready_valid':
+            if self._protocol == 'ready_valid':
                 while _io_enabled and not self.__ready_ev.is_set():
                     self.__ready_ev.wait()
                 self.__ready_ev.clear()
@@ -216,8 +216,8 @@ class Queue(object):
     '''
 
     def __init__(self, dtype, direction='', maxsize=1):
-        self.dtype = dtype
-        self.__direction = _normalize_direction(direction)
+        self._dtype = dtype
+        self._direction = _normalize_direction(direction)
         self.__q = queue.Queue(maxsize)
         self.__ev_put = _create_event()
         self.__ev_get = _create_event()
@@ -233,12 +233,12 @@ class Queue(object):
         d = self.__q.get(block=False)
 
         self.__ev_get.set()
-        assert isinstance(d, self.dtype)
+        assert isinstance(d, self._dtype)
         return d
 
     @_portmethod
     def wr(self, v):
-        assert isinstance(v, self.dtype)
+        assert isinstance(v, self._dtype)
         while self.__q.full():
             self.__ev_get.wait()
             if _io_enabled:
