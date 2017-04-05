@@ -1,47 +1,47 @@
 ﻿import os
 import sys
 from optparse import OptionParser
+from .ahdlusedef import AHDLUseDefDetector
+from .bitwidth import BitwidthReducer
+from .block import BlockReducer, PathExpTracer
 from .builtin import builtin_symbols
+from .callgraph import CallGraphBuilder
+from .common import read_source
+from .constopt import ConstantOpt, GlobalConstantOpt
+from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
+from .copyopt import CopyOpt
+from .dataflow import DFGBuilder
 from .driver import Driver
 from .env import env
-from .common import read_source
-from .scope import Scope
-from .block import BlockReducer, PathExpTracer
+from .hdlgen import HDLModuleBuilder
+from .iftransform import IfTransformer
+from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
+from .instantiator import ModuleInstantiator, WorkerInstantiator
+from .iotransformer import IOTransformer
 from .irtranslator import IRTranslator
+from .loopdetector import LoopDetector
+from .memorytransform import MemoryRenamer, RomDetector
+from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
+from .phiresolve import PHICondResolver
+from .portconverter import PortConverter
+from .preprocess import interpret, Preprocessor
+from .quadruplet import QuadrupleMaker
+from .regreducer import RegReducer
+from .regreducer import AliasVarDetector
+from .scheduler import Scheduler
+from .scope import Scope
+from .selectorbuilder import SelectorBuilder
+from .setlineno import LineNumberSetter, SourceDump
+from .specfunc import SpecializedFunctionMaker
+from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
+from .statereducer import StateReducer
+from .stg import STGBuilder
 from .typecheck import TypePropagation, InstanceTypePropagation
 from .typecheck import TypeChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
 from .typecheck import AssertionChecker
-from .quadruplet import QuadrupleMaker
-from .hdlgen import HDLModuleBuilder
+from .usedef import UseDefDetector
 from .vericodegen import VerilogCodeGen
 from .veritestgen import VerilogTestGen
-from .stg import STGBuilder
-from .dataflow import DFGBuilder
-from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
-from .usedef import UseDefDetector
-from .scheduler import Scheduler
-from .phiresolve import PHICondResolver
-from .liveness import Liveness
-from .memorytransform import MemoryRenamer, RomDetector
-from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
-from .constopt import ConstantOpt, GlobalConstantOpt
-from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
-from .iftransform import IfTransformer
-from .setlineno import LineNumberSetter, SourceDump
-from .loopdetector import LoopDetector
-from .specfunc import SpecializedFunctionMaker
-from .instantiator import ModuleInstantiator, WorkerInstantiator
-from .selectorbuilder import SelectorBuilder
-from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
-from .copyopt import CopyOpt
-from .callgraph import CallGraphBuilder
-from .statereducer import StateReducer
-from .portconverter import PortConverter
-from .ahdlusedef import AHDLUseDefDetector
-from .regreducer import RegReducer
-from .regreducer import AliasVarDetector
-from .bitwidth import BitwidthReducer
-from .iotransformer import IOTransformer
 import logging
 logger = logging.getLogger()
 
@@ -91,6 +91,10 @@ def reduceblk(driver, scope):
 
 def pathexp(driver, scope):
     PathExpTracer().process(scope)
+
+
+def preproc(driver, scope):
+    Preprocessor().process(scope)
 
 
 def convport(driver):
@@ -231,10 +235,6 @@ def loop(driver, scope):
     LoopDetector().process(scope)
 
 
-def liveness(driver, scope):
-    Liveness().process(scope)
-
-
 def dfg(driver, scope):
     DFGBuilder().process(scope)
 
@@ -334,6 +334,8 @@ def compile_plan():
 
     plan = [
         preprocess_global,
+        dbg(dumpscope),
+        preproc,
         iftrans,
         reduceblk,
         dbg(dumpscope),
@@ -345,9 +347,7 @@ def compile_plan():
         callgraph,
         typecheck,
         restrictioncheck,
-        dbg(dumpscope),
         phase(env.PHASE_1),
-        dbg(dumpscope),
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
@@ -450,10 +450,13 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
         env.set_current_filename(package_file)
         translator.translate(read_source(package_file), package_name)
     env.set_current_filename(src_file)
-    g = Scope.create(None, '@top', ['global', 'namespace'], lineno=1)
+    g = Scope.create(None, env.global_scope_name, ['global', 'namespace'], lineno=1)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
-    translator.translate(read_source(src_file), '')
+    main_source = read_source(src_file)
+    translator.translate(main_source, '')
+    if env.enable_preprocess:
+        interpret(main_source, src_file)
 
     scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)
     driver = Driver(compile_plan(), scopes)
@@ -519,4 +522,9 @@ def main():
     if options.verbose:
         logging.basicConfig(level=logging.INFO)
 
-    compile_main(src_file, options.output_name, options.output_dir, options.debug_mode)
+    try:
+        compile_main(src_file, options.output_name, options.output_dir, options.debug_mode)
+    except Exception as e:
+        if options.debug_mode:
+            raise e
+        print(e)

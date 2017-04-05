@@ -21,6 +21,8 @@ class Env(object):
     self_name = 'self'
     callop_name = '__call__'
     enable_ahdl_opt = False
+    global_scope_name = '@top'
+    enable_preprocess = True
 
     def __init__(self):
         self.call_graph = None

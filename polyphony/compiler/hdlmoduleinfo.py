@@ -22,7 +22,7 @@ class HDLModuleInfo(object):
     def __init__(self, scope, name, qualified_name):
         self.scope = scope
         self.name = name
-        self.qualified_name = qualified_name[len('@top') + 1:].replace('.', '_')
+        self.qualified_name = qualified_name[len(env.global_scope_name) + 1:].replace('.', '_')
         self.interfaces = OrderedDict()
         self.interconnects = []
         self.accessors = {}
@@ -194,7 +194,7 @@ class HDLModuleInfo(object):
 
 class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):
-        super().__init__(None, 'ram', '@top' + '.BidirectionalSinglePortRam')
+        super().__init__(None, 'ram', env.global_scope_name + '.BidirectionalSinglePortRam')
         self.ramif = RAMModuleInterface('ram', data_width, addr_width)
         self.add_interface('', self.ramif)
         env.add_using_lib(libs.bidirectional_single_port_ram)
@@ -202,7 +202,7 @@ class RAMModuleInfo(HDLModuleInfo):
 
 class FIFOModuleInfo(HDLModuleInfo):
     def __init__(self, signal):
-        super().__init__(None, 'fifo', '@top' + '.FIFO')
+        super().__init__(None, 'fifo', env.global_scope_name + '.FIFO')
         self.inf = FIFOModuleInterface(signal)
         maxsize = signal.maxsize
         addr_width = (signal.maxsize - 1).bit_length() if maxsize > 1 else 1

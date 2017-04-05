@@ -12,6 +12,7 @@ TMP_DIR  = ROOT_DIR + '.tmp'
 
 DIRS = (
     'expr',
+    'typing',
     'if',
     'loop',
     'return',
@@ -21,9 +22,9 @@ DIRS = (
     'func',
     'testbench',
     'class',
-    'module',
     'io',
-    'typing',
+    'module',
+    'preprocess',
 )
 
 

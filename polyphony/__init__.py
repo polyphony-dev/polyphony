@@ -33,7 +33,10 @@ def testbench(func):
 
 # @preprocess decorator
 def preprocess(func):
-    return func
+    def _preprocess_decorator(*args, **kwargs):
+        return func(*args, **kwargs)
+    _preprocess_decorator.func = func
+    return _preprocess_decorator
 
 
 _is_worker_running = False

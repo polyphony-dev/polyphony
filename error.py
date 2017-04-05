@@ -16,10 +16,13 @@ from polyphony.compiler.env import env
 def error_test(casefile_path, output=True):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
+    with open(casefile_path, 'r') as f:
+        first_line = f.readline()
+        if not first_line.startswith('#'):
+            print('The file is not error test file')
+            sys.exit(0)
+        expected_msg = first_line.split('#')[1].rstrip('\n')
     try:
-        with open(casefile_path, 'r') as f:
-            first_line = f.readline()
-            expected_msg = first_line.split('#')[1].rstrip('\n')
         compile_main(casefile_path, casename, TMP_DIR, debug_mode=output)
     except AssertionError:
         raise

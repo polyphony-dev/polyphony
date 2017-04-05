@@ -411,9 +411,6 @@ class AHDLTranslator(object):
 
     def visit_CALL(self, ir, node):
         if ir.func_scope.is_method():
-            if ir.func_scope.parent.is_module():
-                print(error_info(self.scope, ir.lineno))
-                raise RuntimeError("It is only supported calling run() of @top decorated class")
             instance_name = self.host.make_instance_name(ir.func)
         else:
             instance_name = '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)

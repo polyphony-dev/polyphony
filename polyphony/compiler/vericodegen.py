@@ -317,7 +317,8 @@ class VerilogCodeGen(AHDLVisitor):
         elif isinstance(ahdl.value, bool):
             return str(int(ahdl.value))
         elif isinstance(ahdl.value, str):
-            return '"' + ahdl.value + '"'
+            s = repr(ahdl.value)
+            return '"' + s[1:-1] + '"'
         return str(ahdl.value)
 
     def visit_AHDL_VAR(self, ahdl):

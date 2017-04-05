@@ -34,7 +34,8 @@ class CompileError(Exception):
 
 
 def fail(ir, err_id, args=None):
-    print(error_info(ir.block.scope, ir.lineno))
+    if ir:
+        print(error_info(ir.block.scope, ir.lineno))
     if args:
         msg = str(err_id).format(*args)
     else:

@@ -206,6 +206,8 @@ class FunctionVisitor(ast.NodeVisitor):
             append_builtin(outer_scope, self.current_scope)
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
+        elif self.current_scope.is_preprocess():
+            pass
         else:
             for stm in node.body:
                 self.visit(stm)

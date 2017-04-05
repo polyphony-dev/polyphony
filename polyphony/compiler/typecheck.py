@@ -50,7 +50,7 @@ class TypePropagation(IRVisitor):
             if untyped:
                 if len(prev_untyped) == len(untyped):
                     if self.check_error:
-                        str_untypes = ', '.join([s.name[len('@top.'):] for s in untyped])
+                        str_untypes = ', '.join([s.name[len(env.global_scope_name) + 1:] for s in untyped])
                         raise TypeError('BUG: can not complete the type inference process for ' +
                                         str_untypes)
                     self.check_error = True
@@ -108,9 +108,8 @@ class TypePropagation(IRVisitor):
             if t.is_object() or t.is_port():
                 self._convert_call(ir)
             elif t.is_function():
-                sym = self.scope.find_sym(func_name)
-                assert sym.typ.has_scope()
-                scope = sym.typ.get_scope()
+                assert t.has_scope()
+                scope = t.get_scope()
                 ir.func_scope = scope
             else:
                 if not self.check_error:

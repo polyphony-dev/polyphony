@@ -50,6 +50,7 @@ class Scope(Tagged):
     def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False):
         def ret_helper():
             scopes = cls.ordered_scopes[:]
+            scopes = [s for s in scopes if not s.is_preprocess()]
             if not with_global:
                 scopes.remove(Scope.global_scope())
             if not with_class:
@@ -91,7 +92,7 @@ class Scope(Tagged):
 
     @classmethod
     def global_scope(cls):
-        return env.scopes['@top']
+        return env.scopes[env.global_scope_name]
 
     @classmethod
     def is_unremoveable(cls, s):
