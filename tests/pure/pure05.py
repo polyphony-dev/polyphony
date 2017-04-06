@@ -1,22 +1,22 @@
-from polyphony import preprocess as pre
+from polyphony import pure
 from polyphony import testbench
 
 
 value = 12345
 
 
-@pre
+@pure
 def f():
     return value
 
 
-def preprocess05():
+def pure05():
     return f()
 
 
 @testbench
 def test():
-    assert value == preprocess05()
+    assert value == pure05()
 
 
 test()

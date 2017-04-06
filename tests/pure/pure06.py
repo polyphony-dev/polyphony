@@ -1,4 +1,4 @@
-from polyphony import preprocess as pre
+from polyphony import pure
 from polyphony import testbench
 
 
@@ -6,18 +6,18 @@ def g(x):
     return x
 
 
-@pre
+@pure
 def f(x):
     return g(x)
 
 
-def preprocess06():
+def pure06():
     return f(100)
 
 
 @testbench
 def test():
-    assert 100 == preprocess06()
+    assert 100 == pure06()
 
 
 test()

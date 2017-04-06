@@ -24,7 +24,7 @@ from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter
-from .preprocess import interpret, Preprocessor
+from .pure import interpret, PureFuncExecutor
 from .quadruplet import QuadrupleMaker
 from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
@@ -93,8 +93,8 @@ def pathexp(driver, scope):
     PathExpTracer().process(scope)
 
 
-def preproc(driver, scope):
-    Preprocessor().process(scope)
+def pureexec(driver, scope):
+    PureFuncExecutor().process(scope)
 
 
 def convport(driver):
@@ -335,7 +335,7 @@ def compile_plan():
     plan = [
         preprocess_global,
         dbg(dumpscope),
-        preproc,
+        pureexec,
         iftrans,
         reduceblk,
         dbg(dumpscope),
@@ -455,7 +455,7 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
         g.import_sym(sym)
     main_source = read_source(src_file)
     translator.translate(main_source, '')
-    if env.enable_preprocess:
+    if env.enable_pure:
         interpret(main_source, src_file)
 
     scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)

@@ -1,10 +1,9 @@
-#@preprocess function must be in the global scope
-from polyphony import preprocess as pre
+from polyphony import pure
 from polyphony import testbench
 
 
+@pure
 def f(x):
-    @pre
     def ff(x):
         return sum([i for i in range(x)])
     return ff(x)
@@ -13,6 +12,8 @@ def f(x):
 @testbench
 def test():
     assert 4950 == f(100)
+    assert 4950 + 4950 == f(100) + f(100)
+    print(f(1000))
 
 
 test()

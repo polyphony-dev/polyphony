@@ -1,8 +1,8 @@
-from polyphony import preprocess as pre
+from polyphony import pure
 from polyphony import testbench
 
 
-@pre
+@pure
 def rand(seed, x, y):
     import random
     random.seed(seed)

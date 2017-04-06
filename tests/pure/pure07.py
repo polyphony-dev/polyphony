@@ -1,19 +1,20 @@
-from polyphony import preprocess as pre
+from polyphony import pure
 from polyphony import testbench
 
 
-@pre
+@pure
 def f(x):
     def ff(x):
         return sum([i for i in range(x)])
     return ff(x)
 
 
+value = f(100)
+
+
 @testbench
 def test():
-    assert 4950 == f(100)
-    assert 4950 + 4950 == f(100) + f(100)
-    print(f(1000))
+    assert 4950 == value
 
 
 test()

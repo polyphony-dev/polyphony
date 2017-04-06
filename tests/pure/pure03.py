@@ -1,18 +1,18 @@
-from polyphony import preprocess as pre
+from polyphony import pure
 from polyphony import testbench
 
 
-@pre
+@pure
 def tuple_numbers(x):
     return tuple([i for i in range(x)])
 
 
-@pre
+@pure
 def list_numbers(x):
     return tuple([i for i in range(x)])
 
 
-def preprocess03_a():
+def pure03_a():
     sum = 0
     data = list_numbers(5 + 5)
     for d in data:
@@ -20,7 +20,7 @@ def preprocess03_a():
     return sum
 
 
-def preprocess03_b():
+def pure03_b():
     sum = 0
     data = tuple_numbers(5 + 5)
     for d in data:
@@ -30,8 +30,8 @@ def preprocess03_b():
 
 @testbench
 def test():
-    assert 45 == preprocess03_a()
-    assert 45 == preprocess03_b()
+    assert 45 == pure03_a()
+    assert 45 == pure03_b()
 
 
 test()

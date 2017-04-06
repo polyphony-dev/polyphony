@@ -24,7 +24,7 @@ DIRS = (
     'class',
     'io',
     'module',
-    'preprocess',
+    'pure',
 )
 
 

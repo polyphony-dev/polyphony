@@ -50,10 +50,10 @@ class Errors(Enum):
     DIRECTION_IS_CONFLICTED = 922
     CANNOT_WAIT_OUTPUT = 923
 
-    PREPROCESS_ERROR = 930
-    PREPROCESS_MUST_BE_GLOBAL = 931
-    PREPROCESS_ARGS_MUST_BE_CONST = 932
-    PREPROCESS_IS_DISABLED = 933
+    PURE_ERROR = 930
+    PURE_MUST_BE_GLOBAL = 931
+    PURE_ARGS_MUST_BE_CONST = 932
+    PURE_IS_DISABLED = 933
 
     # polyphony library warnings
     PORT_IS_NOT_USED = 1000
@@ -112,10 +112,10 @@ ERROR_MESSAGES = {
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
     Errors.CANNOT_WAIT_OUTPUT: "Cannot wait for the output port",
 
-    Errors.PREPROCESS_ERROR: "preprocess is failed",
-    Errors.PREPROCESS_MUST_BE_GLOBAL: "@preprocess function must be in the global scope",
-    Errors.PREPROCESS_ARGS_MUST_BE_CONST: "An argument of @preprocess function must be constant",
-    Errors.PREPROCESS_IS_DISABLED: "@preprocess is disabled",
+    Errors.PURE_ERROR: "@pure Python execution is failed",
+    Errors.PURE_MUST_BE_GLOBAL: "@pure function must be in the global scope",
+    Errors.PURE_ARGS_MUST_BE_CONST: "An argument of @pure function must be constant",
+    Errors.PURE_IS_DISABLED: "@pure Python execution is disabled",
     Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
 
 }

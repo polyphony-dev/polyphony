@@ -1,7 +1,7 @@
 __version__ = '0.3.0'  # type: str
 __all__ = [
     'testbench',
-    'preprocess',
+    'pure',
     'module',
     'is_worker_running',
 ]
@@ -13,7 +13,7 @@ def testbench(func) -> None:
 
 
 @decorator
-def preprocess(func) -> None:
+def pure(func) -> None:
     pass
 
 

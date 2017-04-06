@@ -206,7 +206,7 @@ class FunctionVisitor(ast.NodeVisitor):
             append_builtin(outer_scope, self.current_scope)
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
-        elif self.current_scope.is_preprocess():
+        elif self.current_scope.is_pure():
             pass
         else:
             for stm in node.body:
@@ -378,7 +378,7 @@ class CodeVisitor(ast.NodeVisitor):
 
     def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
-        if self.current_scope.is_preprocess():
+        if self.current_scope.is_pure():
             self._leave_scope(*context)
             return
         outer_function_exit = self.function_exit

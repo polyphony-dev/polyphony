@@ -16,6 +16,11 @@ __all__ = [
 
 # @testbench decorator
 def testbench(func):
+    '''
+    A decorator to mark a testbench function.
+
+    This decorator can be used to define a testbench function.
+    '''
     def _testbench_decorator(module_instance=None):
         if module_instance:
             if module_instance.__class__.__name__ not in module.module_instances:
@@ -31,12 +36,22 @@ def testbench(func):
     return _testbench_decorator
 
 
-# @preprocess decorator
-def preprocess(func):
-    def _preprocess_decorator(*args, **kwargs):
+# @pure decorator
+def pure(func):
+    '''
+    A decorator to mark a pure Python function.
+
+    This decorator can be used to define a pure Python function.
+    Within the pure function you can execute any Python code at compile time.
+    The pure function has the following restrictions.
+      * It must be a function defined in global scope
+      * The call argument must be a constant
+      * The return value (if any) must be compilable with the Polyphony compiler
+    '''
+    def _pure_decorator(*args, **kwargs):
         return func(*args, **kwargs)
-    _preprocess_decorator.func = func
-    return _preprocess_decorator
+    _pure_decorator.func = func
+    return _pure_decorator
 
 
 _is_worker_running = False

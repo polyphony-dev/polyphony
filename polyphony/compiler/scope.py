@@ -21,7 +21,7 @@ class Scope(Tagged):
     TAGS = {
         'global', 'function', 'class', 'method', 'ctor',
         'callable', 'returnable', 'mutable',
-        'testbench', 'preprocess',
+        'testbench', 'pure',
         'module', 'worker',
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass',
@@ -50,7 +50,7 @@ class Scope(Tagged):
     def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False):
         def ret_helper():
             scopes = cls.ordered_scopes[:]
-            scopes = [s for s in scopes if not s.is_preprocess()]
+            scopes = [s for s in scopes if not s.is_pure()]
             if not with_global:
                 scopes.remove(Scope.global_scope())
             if not with_class:

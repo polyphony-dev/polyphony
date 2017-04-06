@@ -22,7 +22,7 @@ class Env(object):
     callop_name = '__call__'
     enable_ahdl_opt = False
     global_scope_name = '@top'
-    enable_preprocess = True
+    enable_pure = True
 
     def __init__(self):
         self.call_graph = None
@@ -36,6 +36,7 @@ class Env(object):
         self.current_filename = None
         self.testbenches = []
         self.config = Config()
+        self.module_instancess = None
 
     def set_current_filename(self, filename):
         self.current_filename = filename

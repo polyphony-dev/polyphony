@@ -1,9 +1,9 @@
-#An argument of @preprocess function must be constant
-from polyphony import preprocess as pre
+#An argument of @pure function must be constant
+from polyphony import pure
 from polyphony import testbench
 
 
-@pre
+@pure
 def ff(x):
     return sum([i for i in range(x)])
 
