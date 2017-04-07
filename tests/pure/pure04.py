@@ -18,12 +18,13 @@ def h(x):
 
 
 def pure04():
-    return f(g(h(100)))
+    #return f(g(h(100))) + f(10) + g(10) + h(10)
+    return f(10) + f(20) + f(30)
 
 
 @testbench
 def test():
-    assert 100 == pure04()
+    assert 60 == pure04()
 
 
 test()

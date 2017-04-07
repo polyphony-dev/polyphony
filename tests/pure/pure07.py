@@ -4,9 +4,7 @@ from polyphony import testbench
 
 @pure
 def f(x):
-    def ff(x):
-        return sum([i for i in range(x)])
-    return ff(x)
+    return sum([i for i in range(x)])
 
 
 value = f(100)

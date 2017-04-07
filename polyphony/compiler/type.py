@@ -242,7 +242,7 @@ class Type(object):
             return False
         if to_t.is_object() and from_t.is_port() and to_t.get_scope() is from_t.get_scope():
             return True
-        if to_t == from_t:
+        if Type.is_strict_same(to_t, from_t):
             return True
         return False
 
@@ -257,6 +257,8 @@ class Type(object):
         return 'freezed' in self.attrs and self.attrs['freezed'] is True
 
     def clone(self):
+        if self.name in {'bool', 'str', 'none', 'undef', 'ellipsis', 'generic'}:
+            return self
         return Type(self.name, **self.attrs)
 
 

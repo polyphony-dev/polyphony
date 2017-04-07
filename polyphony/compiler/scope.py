@@ -22,7 +22,7 @@ class Scope(Tagged):
         'global', 'function', 'class', 'method', 'ctor',
         'callable', 'returnable', 'mutable',
         'testbench', 'pure',
-        'module', 'worker',
+        'module', 'worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass',
         'function_module',
@@ -95,8 +95,8 @@ class Scope(Tagged):
         return env.scopes[env.global_scope_name]
 
     @classmethod
-    def is_unremoveable(cls, s):
-        return s.is_global()
+    def is_unremovable(cls, s):
+        return s.is_global() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
 
     def __init__(self, parent, name, tags, lineno):
         super().__init__(tags)
@@ -252,7 +252,6 @@ class Scope(Tagged):
         sub.workers = copy(self.workers)
         sub.children = copy(self.children)
         sub.exit_block = sub.entry_block = Block(sub)
-        sub.return_type = Type.object(sub)
         env.append_scope(sub)
 
         for method in overrides:

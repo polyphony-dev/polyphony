@@ -296,8 +296,6 @@ class AugAssignTransformer(ast.NodeTransformer):
 
 class CodeVisitor(ast.NodeVisitor):
     def __init__(self, top_scope, type_comments):
-        self.import_list = {}
-        self.importfrom_list = {}
         self.current_scope = top_scope
         self.type_comments = type_comments
 
@@ -378,9 +376,6 @@ class CodeVisitor(ast.NodeVisitor):
 
     def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
-        if self.current_scope.is_pure():
-            self._leave_scope(*context)
-            return
         outer_function_exit = self.function_exit
         self.function_exit = Block(self.current_scope, 'exit')
         if self.current_scope.is_method():
@@ -403,7 +398,10 @@ class CodeVisitor(ast.NodeVisitor):
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             self._leave_scope(*context)
             return
-
+        if self.current_scope.is_pure():
+            PureScopeVisitor(self.current_scope, self.type_comments).visit(node)
+            self._leave_scope(*context)
+            return
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
@@ -500,6 +498,9 @@ class CodeVisitor(ast.NodeVisitor):
                 t = Type.from_annotation(ann, self.current_scope.parent)
                 if t:
                     left.symbol().set_type(t)
+                else:
+                    print(error_info(self.current_scope, tail_lineno))
+                    raise TypeError("Unknown type is specified.")
             self.emit(MOVE(left, right), node)
 
     def visit_AugAssign(self, node):
@@ -516,10 +517,7 @@ class CodeVisitor(ast.NodeVisitor):
             print(error_info(self.current_scope, node.lineno))
             raise TypeError("Unknown type is specified.")
         if dst.is_a(TEMP):
-            if self.current_scope.is_interface():
-                dst.symbol().set_type(Type.port(typ))
-            else:
-                dst.symbol().set_type(typ)
+            dst.symbol().set_type(typ)
         elif dst.is_a(ATTR):
             if (dst.exp.is_a(TEMP) and dst.head().name == env.self_name and
                     self.current_scope.is_method()):
@@ -1167,6 +1165,97 @@ class AnnotationVisitor(ast.NodeVisitor):
 
     def visit_Str(self, node):
         return node.s
+
+
+class PureScopeVisitor(ast.NodeVisitor):
+    def __init__(self, scope, type_comments):
+        self.scope = scope
+        self.scope.local_types = {}
+        self.type_comments = type_comments
+        self.annotation_visitor = AnnotationVisitor(self)
+
+    def _add_local_type(self, local_types, name, typ):
+        if '.' not in name:
+            local_types[name] = typ
+        else:
+            first_dot = name.find('.')
+            receiver = name[:first_dot]
+            rest = name[first_dot + 1:]
+            if receiver not in local_types:
+                local_types[receiver] = {}
+            sub_dict = local_types[receiver]
+            self._add_local_type(sub_dict, rest, typ)
+
+    def visit_Name(self, node):
+        return node.id
+
+    def visit_Attribute(self, node):
+        value = self.visit(node.value)
+        attr = node.attr
+        return '{}.{}'.format(value, attr)
+
+    def visit_Assign(self, node):
+        tail_lineno = _get_tail_lineno(node.value)
+        right = self.visit(node.value)
+        # When there are multiple targets, e.g. x = y = 1
+        for target in node.targets:
+            left = self.visit(target)
+            if not left:
+                continue
+            if tail_lineno in self.type_comments:
+                hint = self.type_comments[tail_lineno]
+                mod = ast.parse(hint)
+                ann = self.annotation_visitor.visit(mod.body[0])
+                typ = Type.from_annotation(ann, self.scope.parent)
+                if typ:
+                    self._add_local_type(self.scope.local_types, left, typ)
+                else:
+                    print(error_info(self.scope, tail_lineno))
+                    raise TypeError("Unknown type is specified.")
+            elif right:
+                typ = self.scope.local_types[right]
+                self._add_local_type(self.scope.local_types, left, typ)
+
+    def visit_AnnAssign(self, node):
+        ann = self.annotation_visitor.visit(node.annotation)
+        left = self.visit(node.target)
+        typ = Type.from_annotation(ann, self.scope.parent)
+        if not typ:
+            print(error_info(self.scope, node.lineno))
+            raise TypeError("Unknown type is specified.")
+        if left:
+            self._add_local_type(self.scope.local_types, left, typ)
+
+    def visit_Call(self, node):
+        func = self.visit(node.func)
+        if func:
+            sym = self.scope.find_sym(func)
+            if sym and sym.typ.has_scope():
+                sym_scope = sym.typ.get_scope()
+                if sym_scope.is_typeclass():
+                    t = Type.from_typeclass(sym_scope)
+                else:
+                    t = Type.object(sym_scope)
+                t.freeze()
+                if t:
+                    self._add_local_type(self.scope.local_types, func, t)
+                    return func
+
+    def visit_Global(self, node):
+        print(error_info(self.scope, node.lineno))
+        raise NotImplementedError('global statement is not supported')
+
+    def visit_FunctionDef(self, node):
+        if self.scope.orig_name != node.name:
+            print(node.name)
+            print(error_info(self.scope, node.lineno))
+            raise NotImplementedError('nested function in @pure function is not supported')
+        else:
+            self.generic_visit(node)
+
+    def visit_ClassDef(self, node):
+        print(error_info(self.scope, node.lineno))
+        raise NotImplementedError('nested class in @pure function is not supported')
 
 
 def scope_tree_str(scp, name, typ_name, indent):

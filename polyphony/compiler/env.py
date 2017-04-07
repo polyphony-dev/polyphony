@@ -36,7 +36,7 @@ class Env(object):
         self.current_filename = None
         self.testbenches = []
         self.config = Config()
-        self.module_instancess = None
+        self.module_instances = {}
 
     def set_current_filename(self, filename):
         self.current_filename = filename

@@ -16,13 +16,22 @@ def interpret(source, file_name):
     objs = {}
     thread = threading.Thread(target=_do_interpret, args=(source, file_name, objs))
     thread.start()
-    thread.join(10)
     # TODO: busy loop?
+    while thread.is_alive():
+        thread.join(1)
     sys.stdout = stdout
     _set_pyfunc(objs)
     module_classes = _find_module_classes(objs)
-    module_instancess = _find_module_instances(objs, module_classes)
-    env.module_instancess = module_instancess
+    instances = _find_module_instances(objs, module_classes)
+    env.module_classes = module_classes
+    env.module_instances = instances
+
+    for name, inst in env.module_instances.items():
+        for worker in inst._workers:
+            worker_scope_name = '{}.{}'.format(env.global_scope_name, worker.func.__qualname__)
+            worker_scope = env.scopes[worker_scope_name]
+            if not worker_scope.is_worker():
+                worker_scope.add_tag('worker')
 
 
 def _do_interpret(source, file_name, objs):
@@ -39,7 +48,7 @@ def _set_pyfunc(objs):
     for name, obj in objs.items():
         if inspect.isfunction(obj) and obj.__name__ == '_pure_decorator':
             assert obj.func
-            scope_name = '{}.{}'.format(env.global_scope_name, obj.func.__name__)
+            scope_name = '{}.{}'.format(env.global_scope_name, obj.func.__qualname__)
             scope = env.scopes[scope_name]
             assert scope.is_pure()
             scope.pyfunc = obj.func
@@ -51,14 +60,15 @@ def _find_module_classes(objs):
         if inspect.isfunction(obj) and obj.__name__ == '_module_decorator':
             assert inspect.isclass(obj.cls)
             classes.add(obj.cls)
+            _set_pyfunc(obj.cls.__dict__)
     return classes
 
 
 def _find_module_instances(objs, classes):
-    instances = set()
+    instances = {}
     for name, obj in objs.items():
         if isinstance(obj, tuple(classes)):
-            instances.add(obj)
+            instances[name] = obj
     return instances
 
 
@@ -131,3 +141,4 @@ class PureFuncExecutor(ConstantOptBase):
                 array.items *= ir.right.value
                 return array
         return ir
+

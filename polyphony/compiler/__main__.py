@@ -17,6 +17,7 @@ from .hdlgen import HDLModuleBuilder
 from .iftransform import IfTransformer
 from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
+from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
 from .iotransformer import IOTransformer
 from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
@@ -75,7 +76,7 @@ def preprocess_global(driver):
 def callgraph(driver):
     unused_scopes = CallGraphBuilder().process_all()
     for s in unused_scopes:
-        if Scope.is_unremoveable(s):
+        if Scope.is_unremovable(s):
             continue
         driver.remove_scope(s)
         Scope.destroy(s)
@@ -166,6 +167,23 @@ def detectrom(driver):
     RomDetector().process_all()
 
 
+def earlyinstantiate(driver):
+    new_modules = EarlyModuleInstantiator().process_all()
+    for module in new_modules:
+        assert module.name in env.scopes
+        driver.insert_scope(module)
+        driver.insert_scope(module.find_ctor())
+
+        assert module.is_module()
+
+    new_workers = EarlyWorkerInstantiator().process_all()
+    for worker in new_workers:
+        assert worker.name in env.scopes
+        driver.insert_scope(worker)
+
+        assert worker.is_worker()
+
+
 def instantiate(driver):
     new_modules = ModuleInstantiator().process_all()
     for module in new_modules:
@@ -180,7 +198,8 @@ def instantiate(driver):
             if not (child.is_ctor() or child.is_worker()):
                 continue
             ConstantOpt().process(child)
-    InstanceTypePropagation().process_all()
+    if new_modules:
+        InstanceTypePropagation().process_all()
 
     new_workers = WorkerInstantiator().process_all()
     for worker in new_workers:
@@ -336,6 +355,7 @@ def compile_plan():
         preprocess_global,
         dbg(dumpscope),
         pureexec,
+        earlyinstantiate,
         iftrans,
         reduceblk,
         dbg(dumpscope),
@@ -470,6 +490,8 @@ def output_individual(driver, output_name, output_dir):
         d += '/'
 
     scopes = Scope.get_scopes(with_class=True)
+    scopes = [scope for scope in scopes
+              if (scope.is_testbench() or scope.is_module() or scope.is_function_module())]
     if output_name.endswith('.v'):
         output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:

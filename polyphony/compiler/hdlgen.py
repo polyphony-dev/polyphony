@@ -441,6 +441,8 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
     def _build_module(self, scope):
         assert scope.is_module()
         assert scope.is_class()
+        if not scope.is_instantiated():
+            return
 
         reset_stms = []
         for s in scope.children:

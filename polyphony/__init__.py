@@ -49,6 +49,7 @@ def pure(func):
       * The return value (if any) must be compilable with the Polyphony compiler
     '''
     def _pure_decorator(*args, **kwargs):
+
         return func(*args, **kwargs)
     _pure_decorator.func = func
     return _pure_decorator
@@ -75,7 +76,7 @@ def _module_start(self):
         return
     _is_worker_running = True
     io._enable()
-    for w in self.__workers:
+    for w in self._workers:
         w.start()
     time.sleep(0.001)
 
@@ -85,15 +86,15 @@ def _module_stop(self):
     if not _is_worker_running:
         return
     _is_worker_running = False
-    for w in self.__workers:
+    for w in self._workers:
         w.prejoin()
     io._disable()
-    for w in self.__workers:
+    for w in self._workers:
         w.join()
 
 
 def _module_append_worker(self, fn, *args):
-    self.__workers.append(_Worker(fn, *args))
+    self._workers.append(_Worker(fn, *args))
 
 
 class _ModuleDecorator(object):
@@ -101,15 +102,54 @@ class _ModuleDecorator(object):
         self.module_instances = defaultdict(list)
 
     def __call__(self, cls):
+        def _normalize_args(params, args, kwargs):
+            nargs = []
+            if len(params) < len(args):
+                nargs = args[:]
+                for name, arg in kwargs.items():
+                    nargs.append((name, arg))
+                return nargs
+            for i, param in enumerate(params):
+                name = param.name
+                if i < len(args):
+                    nargs.append((name, args[i]))
+                elif name in kwargs:
+                    nargs.append((name, kwargs[name]))
+                elif param.default:
+                    nargs.append((name, param.default))
+                else:
+                    assert False
+            return nargs
+
+        def _set_field_default_values(instance):
+            default_values = {}
+            specials = {
+                '_start', '_stop', 'append_worker',
+                '_ctor', '_args', '_workers'
+            }
+            for name, v in instance.__dict__.items():
+                if name in specials:
+                    continue
+                default_values[name] = v
+            instance._default_values = default_values
+
         def _module_decorator(*args, **kwargs):
             instance = object.__new__(cls)
             instance._start = types.MethodType(_module_start, instance)
             instance._stop = types.MethodType(_module_stop, instance)
+            if instance.__init__.__name__ == '_pure_decorator':
+                ctor = instance.__init__.func
+            else:
+                ctor = instance.__init__
+            instance._ctor = ctor
+            params = list(inspect.signature(ctor).parameters.values())[1:]
+            instance._args = _normalize_args(params, args, kwargs)
             instance.append_worker = types.MethodType(_module_append_worker, instance)
             io._enable()
-            setattr(instance, '__workers', [])
+            setattr(instance, '_workers', [])
             instance.__init__(*args, **kwargs)
             io._disable()
+            _set_field_default_values(instance)
             self.module_instances[cls.__name__].append(instance)
             return instance
         _module_decorator.__dict__ = cls.__dict__.copy()
