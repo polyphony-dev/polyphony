@@ -7,7 +7,8 @@ from .scope import Scope, FunctionParam
 from .symbol import Symbol
 from .type import Type
 from .env import env
-from .common import error_info
+from .common import fail
+from .errors import Errors
 from .builtin import builtin_symbols, append_builtin
 from .builtin import lib_port_type_names, lib_class_names
 from logging import getLogger
@@ -99,8 +100,7 @@ class ImportVisitor(ast.NodeVisitor):
                 qname = node.module + '.' + nm.name
                 imp_sym = from_scope.find_sym(nm.name)
                 if not imp_sym:
-                    print(error_info(target_scope, node.lineno))
-                    raise ImportError("cannot import name '{}'".format(nm.name))
+                    fail((target_scope, node.lineno), Errors.CANNOT_IMPORT, [nm.name])
                 import_to_global(imp_sym, nm.asname)
 
 
@@ -136,8 +136,7 @@ class FunctionVisitor(ast.NodeVisitor):
                 is_lib = self.current_scope.is_lib()
                 param_t = Type.from_annotation(ann, self.current_scope.parent, is_lib)
                 if not param_t:
-                    print(error_info(self.current_scope, node.lineno))
-                    raise TypeError("Unknown type is specified.")
+                    fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
             else:
                 param_t = Type.int()
             param_in.set_type(param_t)
@@ -157,8 +156,7 @@ class FunctionVisitor(ast.NodeVisitor):
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
                 tags.add(deco_name)
             else:
-                print(error_info(outer_scope, node.lineno))
-                raise RuntimeError("Unknown decorator '@{}' is specified.".format(deco_name))
+                fail((outer_scope, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
         if outer_scope.is_class() and 'classmethod' not in tags:
             tags.add('method')
             if node.name == '__init__':
@@ -187,14 +185,12 @@ class FunctionVisitor(ast.NodeVisitor):
                 if t is not Type.none_t:
                     self.current_scope.add_tag('returnable')
             else:
-                print(error_info(self.current_scope, node.lineno))
-                raise TypeError("Unknown type is specified.")
+                fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
 
         if self.current_scope.is_method():
             if (not self.current_scope.params or
                     not self.current_scope.params[0].sym.is_param()):
-                print(error_info(self.current_scope, node.lineno))
-                raise RuntimeError("Class method must have a {} parameter.".format(env.self_name))
+                fail((self.current_scope, node.lineno), Errors.METHOD_MUST_HAVE_SELF)
             first_param = self.current_scope.params[0]
             self_typ = Type.object(outer_scope)
             first_param.copy.set_type(self_typ)
@@ -225,8 +221,7 @@ class FunctionVisitor(ast.NodeVisitor):
             elif deco_name in INTERNAL_CLASS_DECORATORS:
                 tags.add(deco_name)
             else:
-                print(error_info(outer_scope, node.lineno))
-                raise RuntimeError("Unknown decorator '@{}' is specified.".format(deco_name))
+                fail((outer_scope, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
         scope_qualified_name = (outer_scope.name + '.' + node.name)
         if scope_qualified_name in lib_port_type_names:
             tags |= {'port', 'lib'}
@@ -390,8 +385,7 @@ class CodeVisitor(ast.NodeVisitor):
         for idx, (param, defval) in enumerate(zip(self.current_scope.params[skip:],
                                                   node.args.defaults)):
             if param.sym.typ.is_seq():
-                print(self._err_info(node))
-                raise RuntimeError("cannot set the default value to the sequence type parameter.")
+                fail((self.current_scope, node.lineno), Erroes.UNSUPPORTED_DEFAULT_SEQ_PARAM)
             d = self.visit(defval)
             self.current_scope.params[skip + idx] = FunctionParam(param.sym, param.copy, d)
 
@@ -423,8 +417,7 @@ class CodeVisitor(ast.NodeVisitor):
         self._leave_scope(*context)
 
     def visit_AsyncFunctionDef(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('async def statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async def statement'])
 
     def visit_ClassDef(self, node):
         self.lazy_defs.append(node)
@@ -471,8 +464,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_block.connect(self.function_exit)
 
     def visit_Delete(self, node):
-        print(self._err_info(node))
-        raise RuntimeError("def statement is not supported.")
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['del statement'])
 
     def visit_Assign(self, node):
         tail_lineno = _get_tail_lineno(node.value)
@@ -484,13 +476,13 @@ class CodeVisitor(ast.NodeVisitor):
                     self.current_scope.all_imports = []
                     for item in right.items:
                         if not (item.is_a(CONST) and isinstance(item.value, str)):
-                            print(self._err_info(node))
-                            raise RuntimeError('string value is expected')
+                            fail((self.current_scope, node.lineno),
+                                 Errors.MUST_BE_X, ['string literal'])
                         imp_name = self.current_scope.name + '.' + item.value
                         self.current_scope.all_imports.append(imp_name)
                 else:
-                    print(self._err_info(node))
-                    raise RuntimeError('The list literal is expected')
+                    fail((self.current_scope, node.lineno),
+                         Errors.MUST_BE_X, ['A sequence of string literal'])
             if tail_lineno in self.type_comments:
                 hint = self.type_comments[tail_lineno]
                 mod = ast.parse(hint)
@@ -499,8 +491,7 @@ class CodeVisitor(ast.NodeVisitor):
                 if t:
                     left.symbol().set_type(t)
                 else:
-                    print(error_info(self.current_scope, tail_lineno))
-                    raise TypeError("Unknown type is specified.")
+                    fail((self.current_scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
             self.emit(MOVE(left, right), node)
 
     def visit_AugAssign(self, node):
@@ -514,9 +505,10 @@ class CodeVisitor(ast.NodeVisitor):
         dst = self.visit(node.target)
         typ = Type.from_annotation(ann, self.current_scope.parent)
         if not typ:
-            print(error_info(self.current_scope, node.lineno))
-            raise TypeError("Unknown type is specified.")
+            fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if dst.is_a(TEMP):
+            if dst.symbol().typ.is_freezed():
+                fail((self.current_scope, node.lineno), Errors.CONFLICT_TYPE_HINT)
             dst.symbol().set_type(typ)
         elif dst.is_a(ATTR):
             if (dst.exp.is_a(TEMP) and dst.head().name == env.self_name and
@@ -525,14 +517,15 @@ class CodeVisitor(ast.NodeVisitor):
                     attr_sym = dst.attr
                 else:
                     attr_sym = self.current_scope.parent.find_sym(dst.attr)
+                if attr_sym.typ.is_freezed():
+                    fail((self.current_scope, node.lineno), Errors.CONFLICT_TYPE_HINT)
                 if self.current_scope.parent.is_module():
                     attr_sym.set_type(Type.port(typ))
                 else:
                     attr_sym.set_type(typ)
                 dst.attr = attr_sym
             else:
-                print(self._err_info(node))
-                raise RuntimeError("An annotation for other than \'self.*\' is not supported.")
+                fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT)
         if src:
             self.emit(MOVE(dst, src), node)
 
@@ -755,8 +748,8 @@ class CodeVisitor(ast.NodeVisitor):
             ]
             self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, node)
         else:
-            print(self._err_info(node))
-            raise RuntimeError("unsupported for-loop")
+            fail((self.current_scope, node.lineno),
+                 Errors.UNSUPPORTED_SYNTAX, ['This type of for statement'])
 
     def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, node):
         loop_check_block = Block(self.current_scope, 'fortest')
@@ -814,40 +807,32 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_block = exit_block
 
     def visit_AyncFor(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('async for statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])
 
     def visit_With(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('with statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['with statement'])
 
     def visit_AsyncWith(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('async with statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async with statement'])
 
     def visit_Raise(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('raise statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['raise statement'])
 
     def visit_Try(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('try statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['try statement'])
 
     def visit_ExceptHandler(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('except statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['except statement'])
 
     def visit_Assert(self, node):
         testexp = self.visit(node.test)
         self.emit(EXPR(SYSCALL(builtin_symbols['assert'], [('exp', testexp)], {})), node)
 
     def visit_Global(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('global statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['global statement'])
 
     def visit_Nonlocal(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('nonlocal statement is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nonlocal statement'])
 
     def visit_Expr(self, node):
         exp = self.visit(node.value)
@@ -887,8 +872,7 @@ class CodeVisitor(ast.NodeVisitor):
         return UNOP(op2str(node.op), exp)
 
     def visit_Lambda(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('lambda is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda'])
 
     def visit_IfExp(self, node):
         condition = self.visit(node.test)
@@ -897,36 +881,28 @@ class CodeVisitor(ast.NodeVisitor):
         return CONDOP(condition, then_exp, else_exp)
 
     def visit_Dict(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('dict is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['dict'])
 
     def visit_Set(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('set is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['set'])
 
     def visit_ListComp(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('list comprehension is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['list comprehension'])
 
     def visit_SetComp(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('set comprehension is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['set comprehension'])
 
     def visit_DictComp(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('dict comprehension is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['dict comprehension'])
 
     def visit_GeneratorExp(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('generator exp is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['generator expression'])
 
     def visit_Yield(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('yield is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['yield'])
 
     def visit_YieldFrom(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('yield from is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['yield from'])
 
     def visit_Compare(self, node):
         assert len(node.ops) == 1
@@ -948,8 +924,7 @@ class CodeVisitor(ast.NodeVisitor):
         args = [(None, self.visit(arg)) for arg in node.args]
 
         if getattr(node, 'starargs', None) and node.starargs:
-            print(self._err_info(node))
-            raise NotImplementedError('star args is not supported')
+            fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['star args'])
         #stararg = self.visit(node.starargs)
 
         if func.is_a(TEMP):
@@ -996,12 +971,10 @@ class CodeVisitor(ast.NodeVisitor):
         return CONST(node.s)
 
     def visit_Bytes(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('bytes is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['bytes'])
 
     def visit_Ellipsis(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('ellipsis is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ellipsis'])
 
     #     | Attribute(expr value, identifier attr, expr_context ctx)
     def visit_Attribute(self, node):
@@ -1038,8 +1011,7 @@ class CodeVisitor(ast.NodeVisitor):
 
     #     | Starred(expr value, expr_context ctx)
     def visit_Starred(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('starred is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['starred'])
 
     #     | Name(identifier id, expr_context ctx)
     def visit_Name(self, node):
@@ -1060,8 +1032,7 @@ class CodeVisitor(ast.NodeVisitor):
 
         if isinstance(node.ctx, ast.Load) or isinstance(node.ctx, ast.AugLoad):
             if sym is None:
-                print(self._err_info(node))
-                raise NameError(node.id + ' is not defined')
+                fail((self.current_scope, node.lineno), Errors.UNDEFINED_NAME, [node.id])
         else:
             if sym is None or sym.scope is not self.current_scope:
                 sym = self.current_scope.add_sym(node.id)
@@ -1095,22 +1066,16 @@ class CodeVisitor(ast.NodeVisitor):
             return CONST(None)
 
     def visit_Slice(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('slice is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['slice'])
 
     def visit_ExtSlice(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('ext slice is not supported')
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ext slice'])
 
     def visit_Index(self, node):
         return self.visit(node.value)
 
     def visit_Print(self, node):
-        print(self._err_info(node))
-        raise NotImplementedError('print statement is not supported')
-
-    def _err_info(self, node):
-        return error_info(self.current_scope, node.lineno)
+        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['print statement'])
 
 
 class AnnotationVisitor(ast.NodeVisitor):
@@ -1210,8 +1175,7 @@ class PureScopeVisitor(ast.NodeVisitor):
                 if typ:
                     self._add_local_type(self.scope.local_types, left, typ)
                 else:
-                    print(error_info(self.scope, tail_lineno))
-                    raise TypeError("Unknown type is specified.")
+                    fail((self.scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
             elif right:
                 typ = self.scope.local_types[right]
                 self._add_local_type(self.scope.local_types, left, typ)
@@ -1221,8 +1185,7 @@ class PureScopeVisitor(ast.NodeVisitor):
         left = self.visit(node.target)
         typ = Type.from_annotation(ann, self.scope.parent)
         if not typ:
-            print(error_info(self.scope, node.lineno))
-            raise TypeError("Unknown type is specified.")
+            fail((self.scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if left:
             self._add_local_type(self.scope.local_types, left, typ)
 
@@ -1242,20 +1205,16 @@ class PureScopeVisitor(ast.NodeVisitor):
                     return func
 
     def visit_Global(self, node):
-        print(error_info(self.scope, node.lineno))
-        raise NotImplementedError('global statement is not supported')
+        fail((self.scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['global statement'])
 
     def visit_FunctionDef(self, node):
         if self.scope.orig_name != node.name:
-            print(node.name)
-            print(error_info(self.scope, node.lineno))
-            raise NotImplementedError('nested function in @pure function is not supported')
+            fail((self.scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nested function in @pure function'])
         else:
             self.generic_visit(node)
 
     def visit_ClassDef(self, node):
-        print(error_info(self.scope, node.lineno))
-        raise NotImplementedError('nested class in @pure function is not supported')
+        fail((self.scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nested class in @pure function'])
 
 
 def scope_tree_str(scp, name, typ_name, indent):

@@ -33,9 +33,13 @@ class CompileError(Exception):
     pass
 
 
-def fail(ir, err_id, args=None):
-    if ir:
+def fail(info, err_id, args=None):
+    from .ir import IR
+    if isinstance(info, IR):
+        ir = info
         print(error_info(ir.block.scope, ir.lineno))
+    elif isinstance(info, tuple):
+        print(error_info(info[0], info[1]))
     if args:
         msg = str(err_id).format(*args)
     else:

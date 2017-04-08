@@ -15,9 +15,15 @@ class Errors(Enum):
     LEN_TAKES_SEQ_TYPE = 109
     IS_NOT_CALLABLE = 110
     IS_NOT_SUBSCRIPTABLE = 111
+    CONFLICT_TYPE_HINT = 112
+    UNSUPPORTED_ATTRIBUTE_TYPE_HINT = 113
+    UNKNOWN_TYPE_NAME = 114
+    MUST_BE_X = 115
 
     # semantic errors
     REFERENCED_BEFORE_ASSIGN = 200
+    UNDEFINED_NAME = 201
+    CANNOT_IMPORT = 202
 
     ASSERTION_FAILED = 300
 
@@ -33,6 +39,11 @@ class Errors(Enum):
     GLOBAL_OBJECT_CANT_BE_MUTABLE = 808
     GLOBAL_INSTANCE_IS_NOT_SUPPORTED = 809
     CLASS_VAR_MUST_BE_CONST = 810
+    UNSUPPORTED_SYNTAX = 811
+    UNSUPPORTED_DEFAULT_SEQ_PARAM = 812
+    UNSUPPORTED_DECORATOR = 813
+    METHOD_MUST_HAVE_SELF = 814
+    UNSUPPORTED_LIBRARY = 815
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -72,6 +83,10 @@ ERROR_MESSAGES = {
     Errors.INCOMPATIBLE_TYPES: "{} and {} are incompatible types",
     Errors.INCOMPATIBLE_RETURN_TYPE: "Type of return value must be {}, not {}",
     Errors.INCOMPATIBLE_PARAMETER_TYPE: "'{}' is incompatible type as a parameter of {}()",
+    Errors.CONFLICT_TYPE_HINT: "A type hint is conflicted",
+    Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT: "A type hint for other than 'self.*' is not supported",
+    Errors.UNKNOWN_TYPE_NAME: "Unknown type name '{}'",
+    Errors.MUST_BE_X: "{} is expected",
 
     Errors.LEN_TAKES_ONE_ARG: "len() takes exactly one argument",
     Errors.LEN_TAKES_SEQ_TYPE: "len() takes sequence type argument",
@@ -80,6 +95,8 @@ ERROR_MESSAGES = {
 
     # semantic errors
     Errors.REFERENCED_BEFORE_ASSIGN: "local variable '{}' referenced before assignment",
+    Errors.UNDEFINED_NAME: "'{}' is not defined",
+    Errors.CANNOT_IMPORT: "cannot import name '{}'",
 
     Errors.ASSERTION_FAILED: "The expression of assert always evaluates to False",
 
@@ -95,6 +112,10 @@ ERROR_MESSAGES = {
     Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE: "Writing to a global object is not allowed",
     Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED: "A global instance is not supported",
     Errors.CLASS_VAR_MUST_BE_CONST: "A class variable must be a constant value",
+    Errors.UNSUPPORTED_SYNTAX: "{} is not supported",
+    Errors.UNSUPPORTED_DEFAULT_SEQ_PARAM:"cannot set the default value to the sequence type parameter",
+    Errors.UNSUPPORTED_DECORATOR: "Unsupported decorator '@{}' is specified",
+    Errors.METHOD_MUST_HAVE_SELF: "Class method must have a 'self' parameter",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",
