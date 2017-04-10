@@ -1,4 +1,5 @@
 ﻿from .ir import *
+from .irvisitor import IRVisitor
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -34,6 +35,7 @@ class PHICondResolver(object):
             pred = blk
             mv = MOVE(phi.var.clone(), arg)
             mv.lineno = arg.lineno
+            mv.iorder = arg.iorder
             mv.dst.lineno = arg.lineno
             assert mv.lineno > 0
             idx = self._find_stm_insetion_index(pred, mv)
@@ -56,6 +58,17 @@ class PHICondResolver(object):
 
     def _find_stm_insetion_index(self, block, target_stm):
         for i, stm in enumerate(block.stms):
-            if stm.lineno > target_stm.lineno:
+            if stm.iorder > target_stm.iorder:
                 return i
         return -1
+
+
+class StmOrdering(IRVisitor):
+    def visit(self, ir):
+        method = 'visit_' + ir.__class__.__name__
+        visitor = getattr(self, method, None)
+        if ir.is_a(IRStm):
+            ir.iorder = ir.block.stms.index(ir)
+        else:
+            ir.iorder = self.current_stm.iorder
+        visitor(ir)

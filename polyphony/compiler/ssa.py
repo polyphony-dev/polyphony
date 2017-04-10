@@ -84,6 +84,8 @@ class SSATransformerBase(object):
         phi.defblks = [None] * len(df.preds)
         phi.lineno = 1
         var.lineno = 1
+        phi.iorder = 0
+        var.iorder = 0
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
@@ -138,6 +140,7 @@ class SSATransformerBase(object):
                     logger.debug('count up ' + str(d) + ' ' + str(stm))
                     count[key] += 1
                 i = count[key]
+                assert hasattr(d, 'iorder')
                 stack[key].append((i, d))
                 self._add_new_sym(d, i)
                 if stm.is_a(PHI) and d.is_a(ATTR):
@@ -165,6 +168,7 @@ class SSATransformerBase(object):
                 var = var.clone()
                 var.ctx = Ctx.LOAD
                 var.lineno = v.lineno
+                var.iorder = v.iorder
                 idx = phi.block.preds.index(block)
                 phi.args[idx] = var
                 phi.defblks[idx] = block
@@ -331,12 +335,15 @@ class TupleSSATransformer(SSATransformerBase):
                                                          mref.mem.symbol().orig_name()))
                 var = TEMP(tmp, Ctx.STORE)
                 var.lineno = use_stm.lineno
+                var.iorder = use_stm.iorder
                 uphi = UPHI(var)
                 uphi.lineno = use_stm.lineno
+                uphi.iorder = use_stm.iorder
                 uphi.ps = phi.ps[:]
                 for arg in phi.args:
                     argmref = mref.clone()
                     argmref.lineno = use_stm.lineno
+                    argmref.iorder = use_stm.iorder
                     argmref.mem = arg.clone()
                     uphi.args.append(argmref)
                 use_stm.block.insert_stm(insert_idx, uphi)
@@ -385,10 +392,12 @@ class ObjectSSATransformer(SSATransformerBase):
             if use_attr.exp.qualified_symbol() == qsym:
                 uphi = UPHI(use_attr.clone())
                 uphi.lineno = use_stm.lineno
+                uphi.iorder = use_stm.iorder
                 uphi.ps = phi.ps[:]
                 for arg in phi.args:
                     uarg = use_attr.clone()
                     uarg.lineno = use_stm.lineno
+                    uarg.iorder = use_stm.iorder
                     replace_attr(uarg, qsym, arg.clone())
                     uphi.args.append(uarg)
                 use_stm.block.insert_stm(insert_idx, uphi)

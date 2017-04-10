@@ -69,15 +69,15 @@ class TupleTransformer(IRTransformer):
                     mvs = self._unpack(self._make_temps(tempsyms, Ctx.STORE), ir.src.items)
                     mvs.extend(self._unpack(ir.dst.items, self._make_temps(tempsyms, Ctx.LOAD)))
                 for mv in mvs:
-                    mv.lineno = ir.lineno
-                    mv.dst.lineno = ir.lineno
-                    mv.src.lineno = ir.lineno
+                    mv.src.lineno = mv.dst.lineno = mv.lineno = ir.lineno
+                    mv.src.iorder = mv.dst.iorder = mv.iorder = ir.iorder
                     self.new_stms.append(mv)
                 return
             elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol().typ.is_tuple():
                 mvs = self._unpack(ir.dst.items, self._make_mrefs(ir.src, len(ir.dst.items)))
                 for mv in mvs:
                     mv.lineno = ir.lineno
+                    mv.iorder = ir.iorder
                     self.new_stms.append(mv)
                 return
         else:

@@ -288,6 +288,8 @@ class ConstantOpt(ConstantOptBase):
             true_blk = blk.succs[1]
             false_blk = blk.succs[0]
         jump = JUMP(true_blk)
+        jump.lineno = cjump.lineno
+        jump.iorder = cjump.iorder
 
         false_blk.preds.remove(blk)
         blk.succs.remove(false_blk)

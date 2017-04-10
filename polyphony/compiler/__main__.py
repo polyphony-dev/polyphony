@@ -23,7 +23,7 @@ from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
 from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
-from .phiresolve import PHICondResolver
+from .phiresolve import PHICondResolver, StmOrdering
 from .portconverter import PortConverter
 from .pure import interpret, PureFuncExecutor
 from .quadruplet import QuadrupleMaker
@@ -113,6 +113,9 @@ def usedef(driver, scope):
 def scalarssa(driver, scope):
     ScalarSSATransformer().process(scope)
 
+
+def stmordering(driver, scope):
+    StmOrdering().process(scope)
 
 def phi(driver, scope):
     PHICondResolver().process(scope)
@@ -375,6 +378,7 @@ def compile_plan():
         pathexp,
         dbg(dumpscope),
         phase(env.PHASE_2),
+        stmordering,
         usedef,
         scalarize,
         dbg(dumpscope),

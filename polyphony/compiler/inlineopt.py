@@ -384,6 +384,7 @@ class FlattenFieldAccess(IRVisitor):
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
         newattr.lineno = ir.lineno
+        newattr.iorder = ir.iorder
         newattr.attr_scope = ir.attr_scope
         self.current_stm.replace(ir, newattr)
 
@@ -420,9 +421,8 @@ class ObjectHierarchyCopier(object):
                 new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
                 new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
                 new_cp = MOVE(new_dst, new_src)
-                new_dst.lineno = cp.lineno
-                new_src.lineno = cp.lineno
-                new_cp.lineno = cp.lineno
+                new_cp.lineno = new_src.lineno = new_dst.lineno = cp.lineno
+                new_cp.iorder = new_src.iorder = new_dst.iorder = cp.iorder
                 cp_idx = cp.block.stms.index(cp)
                 cp.block.insert_stm(cp_idx + 1, new_cp)
                 if sym.typ.is_object():
