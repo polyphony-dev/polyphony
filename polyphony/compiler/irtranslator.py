@@ -659,12 +659,19 @@ class CodeVisitor(ast.NodeVisitor):
         #  i = i + step
         #  goto loop_check
         #end:
+        def make_temp_if_needed(var, stms):
+            if not var.is_a(CONST):
+                temp_sym = self.current_scope.add_temp()
+                stms += [MOVE(TEMP(temp_sym, Ctx.STORE), var)]
+                var = TEMP(temp_sym, Ctx.LOAD)
+            return var
 
         var = self.visit(node.target)
         it = self.visit(node.iter)
 
         # In case of range() loop
         if it.is_a(SYSCALL) and it.sym.name == 'range':
+            init_parts = []
             if len(it.args) == 1:
                 start = CONST(0)
                 end = it.args[0][1]
@@ -677,9 +684,11 @@ class CodeVisitor(ast.NodeVisitor):
                 start = it.args[0][1]
                 end = it.args[1][1]
                 step = it.args[2][1]
-
+            start = make_temp_if_needed(start, init_parts)
+            end = make_temp_if_needed(end, init_parts)
+            step = make_temp_if_needed(step, init_parts)
             var.sym.add_tag('induction')
-            init_parts = [
+            init_parts += [
                 MOVE(TEMP(var.sym, Ctx.STORE), start)
             ]
             # negative step value
