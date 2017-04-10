@@ -140,7 +140,7 @@ class SSATransformerBase(object):
                     logger.debug('count up ' + str(d) + ' ' + str(stm))
                     count[key] += 1
                 i = count[key]
-                assert hasattr(d, 'iorder')
+                assert d.iorder >= 0
                 stack[key].append((i, d))
                 self._add_new_sym(d, i)
                 if stm.is_a(PHI) and d.is_a(ATTR):

@@ -106,37 +106,54 @@ class ConstantOptBase(IRVisitor):
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            return CONST(eval_unop(ir, self))
+            c = CONST(eval_unop(ir, self))
+            c.lineno = ir.lineno
+            c.iorder = ir.iorder
+            return c
         return ir
 
     def visit_BINOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            return CONST(eval_binop(ir, self))
+            c = CONST(eval_binop(ir, self))
+            c.lineno = ir.lineno
+            c.iorder = ir.iorder
+            return c
         return ir
 
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            return CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
+            c = CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
+            c.lineno = ir.lineno
+            c.iorder = ir.iorder
+            return c
         elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
             const, var = (ir.left.value, ir.right) if ir.left.is_a(CONST) else (ir.right.value, ir.left)
             if ir.op == 'And':
                 if const:
                     return var
                 else:
-                    return CONST(False)
+                    c = CONST(False)
+                    c.lineno = ir.lineno
+                    c.iorder = ir.iorder
+                    return c
             elif ir.op == 'Or':
                 if const:
-                    return CONST(True)
+                    c = CONST(True)
+                    c.lineno = ir.lineno
+                    c.iorder = ir.iorder
+                    return c
                 else:
                     return var
         elif (ir.left.is_a([TEMP, ATTR])
                 and ir.right.is_a([TEMP, ATTR])
                 and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
             c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id, self))
+            c.lineno = ir.lineno
+            c.iorder = ir.iorder
             return c
         return ir
 
@@ -157,7 +174,10 @@ class ConstantOptBase(IRVisitor):
                 and ir.func.symbol().typ.is_function()
                 and ir.func.symbol().typ.get_scope().is_lib()
                 and ir.func.symbol().name == 'is_worker_running'):
-            return CONST(True)
+            c = CONST(True)
+            c.lineno = ir.lineno
+            c.iorder = ir.iorder
+            return c
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -316,7 +336,10 @@ class ConstantOpt(ConstantOptBase):
                 lens.append(source.length)
             if len(lens) <= 1 or all(lens[0] == len for len in lens):
                 assert lens[0] > 0
-                return CONST(lens[0])
+                c = CONST(lens[0])
+                c.lineno = ir.lineno
+                c.iorder = ir.iorder
+                return c
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):

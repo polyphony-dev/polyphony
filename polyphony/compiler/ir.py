@@ -21,6 +21,7 @@ class Ctx(IntEnum):
 class IR(object):
     def __init__(self):
         self.lineno = -1
+        self.iorder = -1
 
     def __repr__(self):
         return self.__str__()
