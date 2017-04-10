@@ -36,7 +36,8 @@ class PHICondResolver(object):
             mv.lineno = arg.lineno
             mv.dst.lineno = arg.lineno
             assert mv.lineno > 0
-            pred.insert_stm(-1, mv)
+            idx = self._find_stm_insetion_index(pred, mv)
+            pred.insert_stm(idx, mv)
             logger.debug('PHI divide into ' + str(mv))
             #update usedef table
             if arg.is_a(TEMP):
@@ -51,5 +52,10 @@ class PHICondResolver(object):
         usedef.remove_var_def(phi.var, phi)
         phi.block.stms.remove(phi)
         self.phis.remove(phi)
-
         #assert len(usedef.get_def_stms_by_sym(phi.var.sym)) == len(phi.argv())
+
+    def _find_stm_insetion_index(self, block, target_stm):
+        for i, stm in enumerate(block.stms):
+            if stm.lineno > target_stm.lineno:
+                return i
+        return -1
