@@ -1,6 +1,6 @@
 import polyphony
-from polyphony.io import Int, Queue
-
+from polyphony.io import Port, Queue
+from polyphony.typing import int8, uint8, uint16
 
 @polyphony.module
 class MiniVM:
@@ -13,12 +13,12 @@ class MiniVM:
 
     def __init__(self, start_addr):
         # define i/o
-        self.dout = Int(width=8, protocol='ready_valid')
+        self.dout = Port(int8, protocol='ready_valid')
 
         # define internals
-        instq = Queue(width=16, maxsize=2)
-        opeq = Queue(width=8, maxsize=2)
-        valueq = Queue(width=8, maxsize=2)
+        instq = Queue(uint16, maxsize=2)
+        opeq = Queue(uint8, maxsize=2)
+        valueq = Queue(uint8, maxsize=2)
 
         self.append_worker(fetch, start_addr, instq)
         self.append_worker(decode, instq, opeq, valueq)
