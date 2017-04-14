@@ -20,7 +20,7 @@ class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
         'global', 'function', 'class', 'method', 'ctor',
-        'callable', 'returnable', 'mutable',
+        'callable', 'returnable', 'mutable', 'inherited',
         'testbench', 'pure',
         'module', 'worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',
@@ -28,14 +28,16 @@ class Scope(Tagged):
         'function_module',
         'inlinelib',
     }
+    scope_id = 0
 
     @classmethod
     def create(cls, parent, name, tags, lineno=0):
         if name is None:
-            name = "unnamed_scope" + str(len(env.scopes))
-        s = Scope(parent, name, tags, lineno)
+            name = "unnamed_scope" + str(cls.scope_id)
+        s = Scope(parent, name, tags, lineno, cls.scope_id)
         assert s.name not in env.scopes
         env.append_scope(s)
+        cls.scope_id += 1
         return s
 
     @classmethod
@@ -98,7 +100,7 @@ class Scope(Tagged):
     def is_unremovable(cls, s):
         return s.is_global() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
 
-    def __init__(self, parent, name, tags, lineno):
+    def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(tags)
         self.name = name
         self.orig_name = name
@@ -108,6 +110,7 @@ class Scope(Tagged):
             parent.append_child(self)
 
         self.lineno = lineno
+        self.scope_id = scope_id
         self.symbols = {}
         self.params = []
         self.return_type = None
@@ -203,12 +206,13 @@ class Scope(Tagged):
         name += self.orig_name
         name = name + '_' + postfix if postfix else name
         parent = self.parent if parent is None else parent
-        s = Scope(parent, name, set(self.tags), self.lineno)
+        s = Scope.create(parent, name, set(self.tags), self.lineno)
         logger.debug('CLONE {} {}'.format(self.name, s.name))
 
         s.children = list(self.children)
-        for child in s.children:
-            child.parent = s
+        # TODO: should be reconsidered the owned policy
+        #for child in s.children:
+        #    child.parent = s
 
         s.bases = list(self.bases)
         s.type_args = list(self.type_args)
@@ -238,21 +242,22 @@ class Scope(Tagged):
         sym_replacer = SymbolReplacer(symbol_map)
         sym_replacer.process(s)
 
-        s.parent.append_child(s)
-        env.append_scope(s)
+        #s.parent.append_child(s)
+        #env.append_scope(s)
         s.clone_symbols = symbol_map
         s.clone_blocks = block_map
         s.clone_stms = stm_map
         return s
 
     def inherit(self, name, overrides):
-        sub = Scope(self.parent, name, set(self.tags), self.lineno)
+        sub = Scope.create(self.parent, name, set(self.tags), self.lineno)
         sub.bases.append(self)
         sub.symbols = copy(self.symbols)
         sub.workers = copy(self.workers)
         sub.children = copy(self.children)
         sub.exit_block = sub.entry_block = Block(sub)
-        env.append_scope(sub)
+        sub.add_tag('inherited')
+        #env.append_scope(sub)
 
         for method in overrides:
             sub.children.remove(method)

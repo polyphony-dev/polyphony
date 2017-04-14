@@ -819,3 +819,47 @@ class UPHI(PHIBase):
 
 def op2str(op):
     return op.__class__.__name__
+
+
+def expr2ir(expr, name=None, scope=None):
+    import inspect
+    from .env import env
+    from .type import Type
+    if expr is None:
+        return CONST(None)
+    elif isinstance(expr, int):
+        return CONST(expr)
+    elif isinstance(expr, str):
+        return CONST(expr)
+    elif isinstance(expr, list):
+        items = [expr2ir(e) for e in expr]
+        return ARRAY(items)
+    elif isinstance(expr, tuple):
+        items = [expr2ir(e) for e in expr]
+        return ARRAY(items, is_mutable=False)
+    else:
+        if inspect.isclass(expr):
+            if expr.__module__ == 'polyphony.typing':
+                klass_name = expr.__module__ + '.' + expr.__name__
+                klass_scope = env.scopes[klass_name]
+                t = Type.klass(klass_scope)
+                sym = scope.add_temp('@dtype')
+                sym.set_type(t)
+            elif expr.__module__ == 'builtins':
+                klass_name = '__builtin__.' + expr.__name__
+                klass_scope = env.scopes[klass_name]
+                t = Type.klass(klass_scope)
+                sym = scope.add_temp('@dtype')
+                sym.set_type(t)
+            else:
+                assert False
+            return TEMP(sym, Ctx.LOAD)
+        elif inspect.isfunction(expr):
+            fsym = scope.find_sym(name)
+            assert fsym.typ.is_function()
+            return TEMP(fsym, Ctx.LOAD)
+        elif inspect.ismethod(expr):
+            fsym = scope.find_sym(name)
+            assert fsym.typ.is_function()
+            return TEMP(fsym, Ctx.LOAD)
+        assert False

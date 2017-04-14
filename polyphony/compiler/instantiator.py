@@ -1,12 +1,11 @@
 import inspect
-from .common import error_info
 from .env import env
 from .scope import Scope
+from .ir import *
 from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
-from .ir import Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE
-from .setlineno import LineNumberSetter
 from .usedef import UseDefDetector
+from . import utils
 from .type import Type
 import logging
 logger = logging.getLogger()
@@ -17,11 +16,7 @@ def bind_val(scope, i, value):
 
 
 class EarlyWorkerInstantiator(object):
-    def process_all(self):
-        new_workers = self._process_global_module()
-        return new_workers
-
-    def _process_global_module(self):
+    def instantiate(self):
         new_workers = set()
         for name, inst in env.module_instances.items():
             new_worker = self._process_workers(name, inst)
@@ -38,6 +33,7 @@ class EarlyWorkerInstantiator(object):
                 break
         if not module:
             return None
+
         new_workers = set()
         for worker in instance._workers:
             new_worker = self._instantiate_worker(worker, name)
@@ -53,7 +49,10 @@ class EarlyWorkerInstantiator(object):
             worker_scope_name = '{}.{}'.format(env.global_scope_name, worker.func.__qualname__)
             worker_scope = env.scopes[worker_scope_name]
         _, lineno = inspect.getsourcelines(worker.func)
-        #worker = w.symbol().typ.get_scope()
+        if not worker_scope.is_worker():
+            worker_scope.add_tag('worker')
+        #worker_scope.return_type = Type.none_t
+
         binding = []
         for i, arg in enumerate(worker.args):
             if isinstance(arg, (int, bool, str)):
@@ -64,6 +63,7 @@ class EarlyWorkerInstantiator(object):
             else:
                 pass
         if binding:
+            # FIXME: use scope-id instead of lineno
             postfix = '{}_{}'.format(lineno,
                                      '_'.join([str(v) for _, _, v in binding]))
             new_worker = worker_scope.clone(inst_name, postfix)
@@ -82,19 +82,14 @@ class EarlyWorkerInstantiator(object):
 
 class EarlyModuleInstantiator(object):
     def process_all(self):
-        new_modules = self._process_global_module()
-        return new_modules
-
-    def _process_global_module(self):
         new_modules = set()
         for name, inst in env.module_instances.items():
-            new_module = self._apply_module_if_needed(name, inst)
+            new_module = self._instantiate_module(name, inst)
             if new_module:
                 new_modules.add(new_module)
-            #stm.dst.symbol().set_type(Type.object(new_module))
         return new_modules
 
-    def _apply_module_if_needed(self, inst_name, instance):
+    def _instantiate_module(self, inst_name, instance):
         scope_name = '{}.{}'.format(env.global_scope_name, instance.__class__.__qualname__)
         module = env.scopes[scope_name]
         module.inst_name = ''
@@ -103,83 +98,13 @@ class EarlyModuleInstantiator(object):
             return None
 
         new_module_name = module.orig_name + '_' + inst_name
-
         overrides = [module.find_ctor()]
         new_module = module.inherit(new_module_name, overrides)
-        new_module_ctor = new_module.find_ctor()
-        self._build_ctor_ir(instance, new_module, new_module_ctor, ctor.local_types)
-        new_module_ctor.del_tag('pure')
-        LineNumberSetter().process(new_module_ctor)
-
         new_module.inst_name = inst_name
+        new_module.instance = instance
         new_module.add_tag('instantiated')
-
         self._replace_global_module_call(inst_name, module, new_module)
         return new_module
-
-    def _build_ctor_ir(self, instance, module, ctor, local_types):
-        if 'self' in local_types:
-            self_types = local_types['self']
-        else:
-            self_types = {}
-        self_sym = ctor.find_sym('self')
-        for name, v in instance._default_values.items():
-            if name in self_types:
-                typ = self_types[name]
-            else:
-                typ = self._type_from_expr(v, module)
-            if typ.is_object():
-                klass_scope = typ.get_scope()
-                for field_name, field_v in v.__dict__.items():
-                    fsym = klass_scope.find_sym(field_name)
-                    flatten_sym = module.add_sym('{}_{}'.format(name, fsym.name))
-                    flatten_sym.set_type(fsym.typ)
-                    dst = ATTR(TEMP(self_sym, Ctx.STORE), flatten_sym, Ctx.STORE, attr_scope=module)
-                    stm = self._build_move_stm(dst, field_v)
-                    stm.lineno = ctor.lineno
-                    ctor.entry_block.append_stm(stm)
-            else:
-                sym = module.add_sym(name)
-                sym.set_type(typ)
-                dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
-                stm = self._build_move_stm(dst, v)
-                stm.lineno = ctor.lineno
-                ctor.entry_block.append_stm(stm)
-
-    def _type_from_expr(self, val, module):
-        if isinstance(val, bool):
-            return Type.bool_t
-        elif isinstance(val, int):
-            return Type.int(val.bit_length())
-        elif isinstance(val, str):
-            return Type.str_t
-        elif isinstance(val, list):
-            t = Type.list(Type.undef_t, None)
-            t.attrs['length'] = len(val)
-            return t
-        elif isinstance(val, tuple):
-            t = Type.list(Type.undef_t, None, len(val))
-            return t
-        elif hasattr(val, '__class__'):
-            t = Type.from_annotation(val.__class__.__name__, module)
-            return t
-        else:
-            assert False
-
-    def _build_move_stm(self, dst, v):
-        if dst.symbol().typ.is_scalar():
-            return MOVE(dst, CONST(v))
-        elif dst.symbol().typ.is_list():
-            items = [CONST(item) for item in v]
-            array = ARRAY(items)
-            return MOVE(dst, array)
-        elif dst.symbol().typ.is_tuple():
-            items = [CONST(item) for item in v]
-            array = ARRAY(items, is_mutable=False)
-            return MOVE(dst, array)
-        elif dst.symbol().typ.is_object():
-            scope = dst.symbol().typ.get_scope()
-            return MOVE(dst, NEW(scope, []))
 
     def _replace_global_module_call(self, inst_name, module, new_module):
         # FIXME: If interpreting global scope, another implementation is necessary
@@ -189,6 +114,8 @@ class EarlyModuleInstantiator(object):
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope is module and stm.dst.symbol().name == inst_name:
                 call.func_scope = new_module
+
+
 
 
 class WorkerInstantiator(object):
@@ -244,9 +171,9 @@ class WorkerInstantiator(object):
                 pass
             else:
                 pass
+        idstr = utils.id2str(Scope.scope_id)
         if binding:
-            postfix = '{}_{}'.format(call.lineno,
-                                     '_'.join([str(v) for _, _, v in binding]))
+            postfix = '{}_{}'.format(idstr, '_'.join([str(v) for _, _, v in binding]))
             new_worker = worker.clone(module.inst_name, postfix)
 
             udd = UseDefDetector()
@@ -262,7 +189,7 @@ class WorkerInstantiator(object):
                 else:
                     call.args.pop(i)
         else:
-            new_worker = worker.clone(module.inst_name, str(call.lineno))
+            new_worker = worker.clone(module.inst_name, idstr)
         self._instantiate_memnode(worker, new_worker)
         new_worker.add_tag('instantiated')
         return new_worker

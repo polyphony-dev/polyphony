@@ -203,6 +203,8 @@ class FunctionVisitor(ast.NodeVisitor):
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
         elif self.current_scope.is_pure():
+            if self.current_scope.is_method() and not self.current_scope.parent.is_module():
+                fail((outer_scope, node.lineno), Errors.PURE_CTOR_MUST_BE_MODULE)
             pass
         else:
             for stm in node.body:
@@ -1144,21 +1146,21 @@ class AnnotationVisitor(ast.NodeVisitor):
 class PureScopeVisitor(ast.NodeVisitor):
     def __init__(self, scope, type_comments):
         self.scope = scope
-        self.scope.local_types = {}
+        self.scope.local_type_hints = {}
         self.type_comments = type_comments
         self.annotation_visitor = AnnotationVisitor(self)
 
-    def _add_local_type(self, local_types, name, typ):
+    def _add_local_type_hint(self, local_type_hints, name, typ):
         if '.' not in name:
-            local_types[name] = typ
+            local_type_hints[name] = typ
         else:
             first_dot = name.find('.')
             receiver = name[:first_dot]
             rest = name[first_dot + 1:]
-            if receiver not in local_types:
-                local_types[receiver] = {}
-            sub_dict = local_types[receiver]
-            self._add_local_type(sub_dict, rest, typ)
+            if receiver not in local_type_hints:
+                local_type_hints[receiver] = {}
+            sub_dict = local_type_hints[receiver]
+            self._add_local_type_hint(sub_dict, rest, typ)
 
     def visit_Name(self, node):
         return node.id
@@ -1170,7 +1172,6 @@ class PureScopeVisitor(ast.NodeVisitor):
 
     def visit_Assign(self, node):
         tail_lineno = _get_tail_lineno(node.value)
-        right = self.visit(node.value)
         # When there are multiple targets, e.g. x = y = 1
         for target in node.targets:
             left = self.visit(target)
@@ -1182,12 +1183,9 @@ class PureScopeVisitor(ast.NodeVisitor):
                 ann = self.annotation_visitor.visit(mod.body[0])
                 typ = Type.from_annotation(ann, self.scope.parent)
                 if typ:
-                    self._add_local_type(self.scope.local_types, left, typ)
+                    self._add_local_type_hint(self.scope.local_type_hints, left, typ)
                 else:
                     fail((self.scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
-            elif right:
-                typ = self.scope.local_types[right]
-                self._add_local_type(self.scope.local_types, left, typ)
 
     def visit_AnnAssign(self, node):
         ann = self.annotation_visitor.visit(node.annotation)
@@ -1196,7 +1194,7 @@ class PureScopeVisitor(ast.NodeVisitor):
         if not typ:
             fail((self.scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if left:
-            self._add_local_type(self.scope.local_types, left, typ)
+            self._add_local_type_hint(self.scope.local_type_hints, left, typ)
 
     def visit_Call(self, node):
         func = self.visit(node.func)
@@ -1210,7 +1208,7 @@ class PureScopeVisitor(ast.NodeVisitor):
                     t = Type.object(sym_scope)
                 t.freeze()
                 if t:
-                    self._add_local_type(self.scope.local_types, func, t)
+                    self._add_local_type_hint(self.scope.local_type_hints, func, t)
                     return func
 
     def visit_Global(self, node):

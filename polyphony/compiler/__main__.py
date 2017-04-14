@@ -17,7 +17,7 @@ from .hdlgen import HDLModuleBuilder
 from .iftransform import IfTransformer
 from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
-from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
+from .instantiator import EarlyModuleInstantiator
 from .iotransformer import IOTransformer
 from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
@@ -25,7 +25,7 @@ from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiresolve import PHICondResolver, StmOrdering
 from .portconverter import PortConverter
-from .pure import interpret, PureFuncExecutor
+from .pure import interpret, PureFuncExecutor, PureCtorBuilder
 from .quadruplet import QuadrupleMaker
 from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
@@ -94,6 +94,13 @@ def pathexp(driver, scope):
     PathExpTracer().process(scope)
 
 
+def buildpurector(driver, scope):
+    new_ctors = PureCtorBuilder().process_all()
+    for ctor in new_ctors:
+        assert ctor.name in env.scopes
+        driver.insert_scope(ctor)
+
+
 def pureexec(driver, scope):
     PureFuncExecutor().process(scope)
 
@@ -116,6 +123,7 @@ def scalarssa(driver, scope):
 
 def stmordering(driver, scope):
     StmOrdering().process(scope)
+
 
 def phi(driver, scope):
     PHICondResolver().process(scope)
@@ -175,16 +183,7 @@ def earlyinstantiate(driver):
     for module in new_modules:
         assert module.name in env.scopes
         driver.insert_scope(module)
-        driver.insert_scope(module.find_ctor())
-
         assert module.is_module()
-
-    new_workers = EarlyWorkerInstantiator().process_all()
-    for worker in new_workers:
-        assert worker.name in env.scopes
-        driver.insert_scope(worker)
-
-        assert worker.is_worker()
 
 
 def instantiate(driver):
@@ -359,6 +358,7 @@ def compile_plan():
         dbg(dumpscope),
         pureexec,
         earlyinstantiate,
+        buildpurector,
         iftrans,
         reduceblk,
         dbg(dumpscope),

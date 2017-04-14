@@ -1,3 +1,4 @@
+import copy
 import queue
 import time
 import sys
@@ -83,6 +84,26 @@ def _is_called_from_owner():
     return False
 
 
+def _pytype_from_dtype(dtype):
+    if dtype is bool or dtype is int or dtype is str:
+        return dtype
+    elif hasattr(dtype, 'base_type'):
+        return dtype.base_type
+    else:
+        print(dtype)
+        assert False
+
+
+def _pyvalue_from_dtype(dtype):
+    if dtype is bool or dtype is int or dtype is str:
+        return dtype()
+    elif hasattr(dtype, 'base_type'):
+        return dtype.base_type()
+    else:
+        print(dtype)
+        assert False
+
+
 class Port(object):
     '''
     Port class is used to an I/O port of a module class or a channel between workers.
@@ -112,12 +133,14 @@ class Port(object):
     '''
     def __init__(self, dtype, direction='any', init=None, protocol='none'):
         self._dtype = dtype
+        self.__pytype = _pytype_from_dtype(dtype)
         if init:
-            self.__v = init
+            self._init = init
         else:
-            self.__v = dtype()
+            self._init = _pyvalue_from_dtype(dtype)
+        self.__v = self._init
         self._direction = _normalize_direction(direction)
-        self.__oldv = dtype()
+        self.__oldv = _pyvalue_from_dtype(dtype)
         self._protocol = protocol
         self.__cv = []
         self.__cv_lock = threading.Lock()
@@ -145,13 +168,13 @@ class Port(object):
             self.__valid_ev.clear()
             if self._protocol == 'ready_valid':
                 self.__ready_ev.set()
-        if not isinstance(self.__v, self._dtype):
+        if not isinstance(self.__v, self.__pytype):
             raise TypeError("Incompatible value type, got {} expected {}".format(type(self.__v), self._dtype))
         return self.__v
 
     @_portmethod
     def wr(self, v):
-        if not isinstance(v, self._dtype):
+        if not isinstance(v, self.__pytype):
             raise TypeError("Incompatible value type, got {} expected {}".format(type(v), self._dtype))
         if self._direction == 'in':
             if _is_called_from_owner():
@@ -179,6 +202,9 @@ class Port(object):
             return self.rd()
         else:
             self.wr(v)
+
+    def __deepcopy__(self, memo):
+        return self
 
     def _add_cv(self, cv):
         with self.__cv_lock:
@@ -217,7 +243,9 @@ class Queue(object):
 
     def __init__(self, dtype, direction='', maxsize=1):
         self._dtype = dtype
+        self.__pytype = _pytype_from_dtype(dtype)
         self._direction = _normalize_direction(direction)
+        self._maxsize = maxsize
         self.__q = queue.Queue(maxsize)
         self.__ev_put = _create_event()
         self.__ev_get = _create_event()
@@ -254,6 +282,9 @@ class Queue(object):
             return self.rd()
         else:
             self.wr(v)
+
+    def __deepcopy__(self, memo):
+        return self
 
     @_portmethod
     def empty(self):

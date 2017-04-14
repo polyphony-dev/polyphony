@@ -36,3 +36,19 @@ def remove_from_list(lst, removes):
 
 def unique(lst):
     return sorted(list(set(lst)))
+
+
+_36chars = [chr(ord('0') + i) for i in range(10)] + [chr(ord('a') + i) for i in range(26)]
+
+
+def id2str(idnum):
+    s = ''
+    tmp = idnum
+    if tmp == 0:
+        return '0'
+    while tmp:
+        i = tmp % 36
+        tmp = tmp // 36
+        s += _36chars[i]
+    return s[::-1]
+

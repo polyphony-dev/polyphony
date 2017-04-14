@@ -253,6 +253,10 @@ class Type(object):
     def freeze(self):
         self.attrs['freezed'] = True
 
+    def unfreeze(self):
+        if self.is_freezed():
+            del self.attrs['freezed']
+
     def is_freezed(self):
         return 'freezed' in self.attrs and self.attrs['freezed'] is True
 

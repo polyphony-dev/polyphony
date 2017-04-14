@@ -65,6 +65,7 @@ class Errors(Enum):
     PURE_MUST_BE_GLOBAL = 931
     PURE_ARGS_MUST_BE_CONST = 932
     PURE_IS_DISABLED = 933
+    PURE_CTOR_MUST_BE_MODULE = 934
 
     # polyphony library warnings
     PORT_IS_NOT_USED = 1000
@@ -137,6 +138,7 @@ ERROR_MESSAGES = {
     Errors.PURE_MUST_BE_GLOBAL: "@pure function must be in the global scope",
     Errors.PURE_ARGS_MUST_BE_CONST: "An argument of @pure function must be constant",
     Errors.PURE_IS_DISABLED: "@pure Python execution is disabled",
+    Errors.PURE_CTOR_MUST_BE_MODULE: "Classes other than @module class can not use @pure decorator",
     Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
 
 }

@@ -582,7 +582,8 @@ class TypeChecker(IRVisitor):
     def visit_TEMP(self, ir):
         if (ir.ctx == Ctx.LOAD and
                 ir.sym.scope is not self.scope and
-                self.scope.has_sym(ir.sym.name)):
+                self.scope.has_sym(ir.sym.name) and
+                not self.scope.find_sym(ir.sym.name).is_builtin()):
             type_error(self.current_stm, Errors.REFERENCED_BEFORE_ASSIGN,
                        [ir.sym.name])
         return ir.sym.typ
