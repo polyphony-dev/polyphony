@@ -27,25 +27,18 @@ class StateGraph(Graph):
 
 
 class StateGraphBuilder(AHDLVisitor):
-    def _walk_state(self, init_state, state, visited):
-        if state in visited:
-            return
-        visited.add(state)
-        self.next_states = []
-        for code in state.codes:
-            self.visit(code)
-        for next in self.next_states:
-            if next is init_state:
-                pass
-            else:
-                self.graph.add_edge(state, next)
-                self._walk_state(init_state, next, visited)
-
     def process(self, scope):
         self.graph = StateGraph()
-        visited = set()
         init_state = scope.stgs[0].init_state
-        self._walk_state(init_state, init_state, visited)
+        for stg in scope.stgs:
+            for state in stg.states:
+                self.next_states = []
+                for code in state.codes:
+                    self.visit(code)
+                for next in self.next_states:
+                    if next is init_state:
+                        continue
+                    self.graph.add_edge(state, next)
         return self.graph
 
     def visit_AHDL_TRANSITION(self, ahdl):
