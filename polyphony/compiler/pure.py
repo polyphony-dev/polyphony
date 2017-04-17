@@ -70,22 +70,19 @@ class RuntimeInfo(object):
     def _profile_func(self, frame, event, arg):
         if self.pure_depth:
             if event == 'call':
-                #self.pure_depth += 1
                 if len(frame.f_code.co_varnames) and 'self' == frame.f_code.co_varnames[0]:
                     obj = frame.f_locals['self']
                     self._profile_pure_method_call(obj, frame)
-                    self.pure_depth += 1
                 else:
                     pass  # nothing to do ?
+                self.pure_depth += 1
             elif event == 'return':
                 if len(frame.f_code.co_varnames) and 'self' == frame.f_code.co_varnames[0]:
                     obj = frame.f_locals['self']
                     self._profile_pure_method_return(obj, frame, arg)
-                    self.pure_depth -= 1
-                elif self.pure_depth == 1 and frame.f_code.co_name == '_pure_decorator':
-                    self.pure_depth -= 1
                 else:
                     pass  # nothing to do ?
+                self.pure_depth -= 1
         elif event == 'call' and frame.f_code.co_name == '_pure_decorator':
             self.pure_depth += 1
 
@@ -97,24 +94,26 @@ class RuntimeInfo(object):
             self.current_obj = obj
             self.base_obj = obj
             func = RuntimeInfo.get_method(obj, frame.f_code.co_name)
-            params = list(inspect.signature(func).parameters.values())[1:]
-            args = RuntimeInfo.get_args(params, frame)
-            call = MethodCall(frame.f_code.co_name, args)
-            self.pure_method_calls[self.current_obj].append(call)
+            if func:
+                params = list(inspect.signature(func).parameters.values())[1:]
+                args = RuntimeInfo.get_args(params, frame)
+                call = MethodCall(frame.f_code.co_name, args)
+                self.pure_method_calls[self.current_obj].append(call)
         elif self.pure_depth == 2:
             msg = 'PURE METHOD INTERNAL CALL {} {} {}:{}'.format(frame.f_code.co_name, frame.f_code.co_varnames, frame.f_code.co_filename, frame.f_lineno)
             print(msg)
             func = RuntimeInfo.get_method(obj, frame.f_code.co_name)
-            params = list(inspect.signature(func).parameters.values())[1:]
-            args = RuntimeInfo.get_args(params, frame)
-            caller_info = (frame.f_code.co_filename, frame.f_back.f_lineno)
-            call = MethodInternalCall(frame.f_code.co_name, obj, args, caller_info)
-            self.pure_method_internal_calls[self.current_obj].append(call)
+            if func:
+                params = list(inspect.signature(func).parameters.values())[1:]
+                args = RuntimeInfo.get_args(params, frame)
+                caller_info = (frame.f_code.co_filename, frame.f_back.f_lineno)
+                call = MethodInternalCall(frame.f_code.co_name, obj, args, caller_info)
+                self.pure_method_internal_calls[self.current_obj].append(call)
 
     def _profile_pure_method_return(self, obj, frame, arg):
-        msg = 'PURE RET {} {}:{}'.format(frame.f_code.co_name, frame.f_code.co_filename, frame.f_lineno)
-        print(msg, self.pure_depth)
         if self.pure_depth == 2:
+            msg = 'PURE RET {} {}:{}'.format(frame.f_code.co_name, frame.f_code.co_filename, frame.f_lineno)
+            print(msg, self.pure_depth)
             cp_locals = frame.f_locals.copy()
             del cp_locals['self']
             defaults = self.try_copy(cp_locals)
@@ -125,9 +124,6 @@ class RuntimeInfo(object):
 
             if frame.f_code.co_name == '__init__':
                 self._set_module_field_defaults(obj)
-        #elif self.pure_depth == 2:
-        #    msg = 'PURE RET {} {}:{}'.format(frame.f_code.co_name, frame.f_code.co_filename, frame.f_lineno)
-        #    print(msg, self.pure_depth)
 
     def _set_module_field_defaults(self, instance):
         # default_values will be used later by the instantiator
@@ -160,8 +156,7 @@ class RuntimeInfo(object):
             else:
                 raise InterpretError('get_method {}'.format(name))
         else:
-            print(obj.__dict__)
-            raise InterpretError('get_method {}'.format(name))
+            return None
         if func.__name__ == 'pure_decorator':
             assert func.func
             return func.func
