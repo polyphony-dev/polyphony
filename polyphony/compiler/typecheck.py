@@ -1,6 +1,6 @@
 ﻿from collections import defaultdict
-from .common import fail
-from .errors import Errors
+from .common import fail, warn
+from .errors import Errors, Warnings
 from .irvisitor import IRVisitor
 from .ir import *
 from .scope import Scope
@@ -766,4 +766,4 @@ class AssertionChecker(IRVisitor):
             return
         _, arg = ir.args[0]
         if arg.is_a(CONST) and not arg.value:
-            fail(self.current_stm, Errors.ASSERTION_FAILED)
+            warn(self.current_stm, Warnings.ASSERTION_FAILED)

@@ -33,18 +33,32 @@ class CompileError(Exception):
     pass
 
 
-def fail(info, err_id, args=None):
+def print_error_info(info):
     from .ir import IR
     if isinstance(info, IR):
         ir = info
         print(error_info(ir.block.scope, ir.lineno))
     elif isinstance(info, tuple):
         print(error_info(info[0], info[1]))
+
+
+def fail(info, err_id, args=None):
+    print_error_info(info)
     if args:
         msg = str(err_id).format(*args)
     else:
         msg = str(err_id)
     raise CompileError(msg)
+
+
+def warn(info, err_id, args=None):
+    print_error_info(info)
+    if args:
+        msg = str(err_id).format(*args)
+    else:
+        msg = str(err_id)
+    print('Warning: ' + msg)
+    print('')
 
 
 class Tagged(object):

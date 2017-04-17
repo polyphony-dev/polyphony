@@ -25,8 +25,6 @@ class Errors(Enum):
     UNDEFINED_NAME = 201
     CANNOT_IMPORT = 202
 
-    ASSERTION_FAILED = 300
-
     # polyphony language restrictions
     UNSUPPORTED_LETERAL_TYPE = 800
     UNSUPPORTED_BINARY_OPERAND_TYPE = 801
@@ -55,6 +53,7 @@ class Errors(Enum):
     WORKER_ARG_MUST_BE_X_TYPE = 906
     PORT_MUST_BE_IN_MODULE = 907
     PORT_PARAM_MUST_BE_CONST = 908
+    PORT_IS_NOT_USED = 909
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -66,9 +65,6 @@ class Errors(Enum):
     PURE_ARGS_MUST_BE_CONST = 932
     PURE_IS_DISABLED = 933
     PURE_CTOR_MUST_BE_MODULE = 934
-
-    # polyphony library warnings
-    PORT_IS_NOT_USED = 1000
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -99,8 +95,6 @@ ERROR_MESSAGES = {
     Errors.UNDEFINED_NAME: "'{}' is not defined",
     Errors.CANNOT_IMPORT: "cannot import name '{}'",
 
-    Errors.ASSERTION_FAILED: "The expression of assert always evaluates to False",
-
     # polyphony language restrictions
     Errors.UNSUPPORTED_LETERAL_TYPE: "Unsupported literal type {}",
     Errors.UNSUPPORTED_BINARY_OPERAND_TYPE: "Unsupported operand type(s) for {}: {} and {}",
@@ -128,6 +122,7 @@ ERROR_MESSAGES = {
     Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}",
     Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",
     Errors.PORT_PARAM_MUST_BE_CONST: "The port class constructor accepts only constants",
+    Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
 
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
@@ -139,6 +134,17 @@ ERROR_MESSAGES = {
     Errors.PURE_ARGS_MUST_BE_CONST: "An argument of @pure function must be constant",
     Errors.PURE_IS_DISABLED: "@pure Python execution is disabled",
     Errors.PURE_CTOR_MUST_BE_MODULE: "Classes other than @module class can not use @pure decorator",
-    Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
+}
 
+
+class Warnings(Enum):
+    # warnings
+    ASSERTION_FAILED = 100
+
+    def __str__(self):
+        return WARNING_MESSAGES[self]
+
+
+WARNING_MESSAGES = {
+    Warnings.ASSERTION_FAILED: "The expression of assert always evaluates to False",
 }
