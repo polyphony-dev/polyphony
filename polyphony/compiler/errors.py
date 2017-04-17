@@ -41,7 +41,7 @@ class Errors(Enum):
     UNSUPPORTED_DEFAULT_SEQ_PARAM = 812
     UNSUPPORTED_DECORATOR = 813
     METHOD_MUST_HAVE_SELF = 814
-    UNSUPPORTED_LIBRARY = 815
+    REDEFINED_NAME = 815
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -111,6 +111,7 @@ ERROR_MESSAGES = {
     Errors.UNSUPPORTED_DEFAULT_SEQ_PARAM:"cannot set the default value to the sequence type parameter",
     Errors.UNSUPPORTED_DECORATOR: "Unsupported decorator '@{}' is specified",
     Errors.METHOD_MUST_HAVE_SELF: "Class method must have a 'self' parameter",
+    Errors.REDEFINED_NAME: "'{}' has been redefined",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",

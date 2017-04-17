@@ -1,7 +1,8 @@
 ﻿from collections import defaultdict, namedtuple
 from copy import copy
 from .block import Block
-from .common import Tagged
+from .common import Tagged, fail
+from .errors import Errors
 from .env import env
 from .symbol import Symbol
 from .type import Type
@@ -35,7 +36,9 @@ class Scope(Tagged):
         if name is None:
             name = "unnamed_scope" + str(cls.scope_id)
         s = Scope(parent, name, tags, lineno, cls.scope_id)
-        assert s.name not in env.scopes
+        if s.name in env.scopes:
+            env.append_scope(s)
+            fail((s, lineno), Errors.REDEFINED_NAME, {name})
         env.append_scope(s)
         cls.scope_id += 1
         return s

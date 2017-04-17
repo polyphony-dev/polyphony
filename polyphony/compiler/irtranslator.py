@@ -408,7 +408,8 @@ class CodeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(Symbol.return_prefix)
         else:
             sym = self.current_scope.add_return_sym()
-        self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
+        if self.last_node:
+            self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
 
         if self.function_exit.preds:
             self.current_scope.set_exit_block(self.function_exit)
