@@ -42,6 +42,7 @@ class Errors(Enum):
     UNSUPPORTED_DECORATOR = 813
     METHOD_MUST_HAVE_SELF = 814
     REDEFINED_NAME = 815
+    LOCAL_CLASS_DEFINITION_NOT_ALLOWED = 816
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -112,6 +113,7 @@ ERROR_MESSAGES = {
     Errors.UNSUPPORTED_DECORATOR: "Unsupported decorator '@{}' is specified",
     Errors.METHOD_MUST_HAVE_SELF: "Class method must have a 'self' parameter",
     Errors.REDEFINED_NAME: "'{}' has been redefined",
+    Errors.LOCAL_CLASS_DEFINITION_NOT_ALLOWED: "Local class definition in the function is not allowed",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",

@@ -213,6 +213,8 @@ class FunctionVisitor(ast.NodeVisitor):
 
     def visit_ClassDef(self, node):
         outer_scope = self.current_scope
+        if outer_scope.is_function():
+            fail((outer_scope, node.lineno), Errors.LOCAL_CLASS_DEFINITION_NOT_ALLOWED)
 
         tags = set()
         for deco in node.decorator_list:
