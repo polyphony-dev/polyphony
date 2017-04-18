@@ -261,12 +261,14 @@ class Queue(object):
         d = self.__q.get(block=False)
 
         self.__ev_get.set()
-        assert isinstance(d, self._dtype)
+        if not isinstance(d, self.__pytype):
+            raise TypeError("Incompatible value type, got {} expected {}".format(type(self.__v), self._dtype))
         return d
 
     @_portmethod
     def wr(self, v):
-        assert isinstance(v, self._dtype)
+        if not isinstance(v, self.__pytype):
+            raise TypeError("Incompatible value type, got {} expected {}".format(type(v), self._dtype))
         while self.__q.full():
             self.__ev_get.wait()
             if _io_enabled:
