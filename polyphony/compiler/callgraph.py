@@ -79,7 +79,9 @@ class CallGraphBuilder(IRVisitor):
             return
         if receiver_scope.is_lib():
             return
-        if receiver_scope.is_class() and ir.symbol().typ.is_scalar():
-            return
+        if receiver_scope.is_class():
+            typ = ir.symbol().typ
+            if typ.is_scalar() or typ.is_seq():
+                return
         self.call_graph.add_edge(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)

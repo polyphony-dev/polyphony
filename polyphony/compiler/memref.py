@@ -156,7 +156,7 @@ class RefNode(object):
         self.flags |= f
 
     def clone(self, orig_scope, new_scope):
-        new_scope.clone_symbols
+        assert self.sym.scope is orig_scope
         new_sym = new_scope.clone_symbols[self.sym]
         new_node = self.__class__(new_sym, new_scope)
         new_node.preds = self.preds[:]
@@ -549,11 +549,15 @@ class MemRefGraph(object):
         new_nodes = []
         node_map = {}
         for node in self.scope_nodes(orig):
-            new_node = node.clone(orig, new)
-            assert new_node.sym is not node.sym
-            assert new_node.sym.name == node.sym.name
-            new_nodes.append(new_node)
-            node_map[node] = new_node
+            if node.sym.scope is orig:
+                new_node = node.clone(orig, new)
+                assert new_node.sym is not node.sym
+                assert new_node.sym.name == node.sym.name
+                new_nodes.append(new_node)
+                node_map[node] = new_node
+            else:
+                # The node might be a shared (in global or class scope) node
+                node_map[node] = node
         for new_node in new_nodes:
             if new_node.initstm:
                 new_node.initstm = new.clone_stms[new_node.initstm]

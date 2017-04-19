@@ -101,7 +101,7 @@ class Scope(Tagged):
 
     @classmethod
     def is_unremovable(cls, s):
-        return s.is_global() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
+        return s.is_global() or s.is_class() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
 
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(tags)

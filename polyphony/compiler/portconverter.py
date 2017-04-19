@@ -69,6 +69,8 @@ class PortConverter(IRTransformer):
             return
         typeprop = PortTypeProp()
         for m in modules:
+            if not m.is_instantiated():
+                continue
             ctor = m.find_ctor()
             assert ctor
             typeprop.process(ctor)
