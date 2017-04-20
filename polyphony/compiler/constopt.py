@@ -283,19 +283,19 @@ class ConstantOpt(ConstantOptBase):
                 if stm in worklist:
                     worklist.remove(stm)
             elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
-                self._process_uncoditional_cjump(stm, worklist)
+                self._process_unconditional_cjump(stm, worklist)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
 
     #def _propagate_const(self, dst, const):
 
-    def _process_uncoditional_cjump(self, cjump, worklist):
+    def _process_unconditional_cjump(self, cjump, worklist):
         def remove_dominated_branch(blk):
             blk.preds = []  # mark as garbage block
             remove_from_list(worklist, blk.stms)
             for succ in blk.succs:
-                succ.preds.remove(blk)
+                succ.remove_pred(blk)
             for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
                 if self.dtree.is_child(blk, succ):
                     remove_dominated_branch(succ)
@@ -312,8 +312,8 @@ class ConstantOpt(ConstantOptBase):
         jump.iorder = cjump.iorder
 
         if true_blk is not false_blk:
-            false_blk.preds.remove(blk)
-            blk.succs.remove(false_blk)
+            false_blk.remove_pred(blk)
+            blk.remove_succ(false_blk)
             if self.scope.exit_block is false_blk:
                 self.scope.exit_block = blk
             if not false_blk.preds and self.dtree.is_child(blk, false_blk):

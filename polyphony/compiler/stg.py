@@ -245,7 +245,7 @@ class STGBuilder(object):
             codes = [AHDL_TRANSITION(None)]
             states = [self._new_state(name, 1, codes)]
 
-        if blk.stms[-1].is_a(JUMP):
+        if blk.stms and blk.stms[-1].is_a(JUMP):
             jump = blk.stms[-1]
             last_state = states[-1]
             trans = last_state.codes[-1]

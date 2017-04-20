@@ -53,6 +53,7 @@ class Block(object):
                 bs.append(blk.name)
         s += ', '.join([b for b in bs])
         s += '}\n'
+
         return s
 
     def __str__(self):
@@ -129,6 +130,18 @@ class Block(object):
 
     def replace_pred_loop(self, old, new):
         replace_item(self.preds_loop, old, new)
+
+    def remove_pred(self, pred):
+        assert pred in self.preds
+        self.preds.remove(pred)
+        if pred in self.preds_loop:
+            self.preds_loop.remove(pred)
+
+    def remove_succ(self, succ):
+        assert succ in self.succs
+        self.succs.remove(succ)
+        if succ in self.succs_loop:
+            self.succs_loop.remove(succ)
 
     def collect_basic_blocks(self, blocks):
         if self in blocks:
@@ -358,14 +371,7 @@ class BlockReducer(object):
                 continue
             if block is scope.entry_block:
                 continue
-            if not block.stms:
-                assert not block.succs
-                for pred in block.preds:
-                    if block in pred.succs:
-                        pred.succs.remove(block)
-                logger.debug('remove empty block ' + block.name)
-
-            elif block.stms[0].is_a(JUMP):
+            if block.stms and block.stms[0].is_a(JUMP):
                 succ = block.succs[0]
                 if succ in block.succs_loop:
                     # do not remove a loopback block
