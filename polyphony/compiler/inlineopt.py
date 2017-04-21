@@ -26,7 +26,7 @@ class InlineOpt(object):
         collector.process(scope)
         for callee, calls in calls.items():
             self._process_scope(callee)
-            if callee.is_lib():
+            if callee.is_lib() or callee.is_pure():
                 continue
             elif callee.is_method():
                 self._process_method(callee, scope, calls)
@@ -330,7 +330,7 @@ class FlattenFieldAccess(IRVisitor):
     def _make_flatten_qsym(self, ir):
         assert ir.is_a(ATTR)
         flatname = None
-        receivers_scope = ir.tail().scope
+        inlining_scope = ir.head().scope
         qsym = ir.qualified_symbol()
         if qsym[-1].typ.is_function():
             tail = (qsym[-1], )
@@ -348,7 +348,7 @@ class FlattenFieldAccess(IRVisitor):
         else:
             flatname = self._make_flatname(qsym)
             head = tuple()
-            scope = receivers_scope
+            scope = inlining_scope
         if flatname:
             if scope.has_sym(flatname):
                 flatsym = scope.find_sym(flatname)

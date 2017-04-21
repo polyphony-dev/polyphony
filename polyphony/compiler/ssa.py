@@ -295,6 +295,7 @@ class ScalarSSATransformer(SSATransformerBase):
         return not (sym.is_condition() or
                     sym.is_param() or
                     sym.is_return() or
+                    sym.is_static() or
                     sym.typ.name in ['function', 'class', 'object', 'tuple', 'port'])
 
 

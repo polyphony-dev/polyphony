@@ -18,7 +18,7 @@ def bind_val(scope, i, value):
 class EarlyWorkerInstantiator(object):
     def instantiate(self):
         new_workers = set()
-        for name, inst in env.module_instances.items():
+        for name, inst in env.runtime_info.module_instances.items():
             new_worker = self._process_workers(name, inst)
             if new_worker:
                 new_workers = new_workers | new_worker
@@ -83,7 +83,7 @@ class EarlyWorkerInstantiator(object):
 class EarlyModuleInstantiator(object):
     def process_all(self):
         new_modules = set()
-        for name, inst in env.module_instances.items():
+        for name, inst in env.runtime_info.module_instances.items():
             new_module = self._instantiate_module(name, inst)
             if new_module:
                 new_modules.add(new_module)
@@ -114,8 +114,6 @@ class EarlyModuleInstantiator(object):
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope is module and stm.dst.symbol().name == inst_name:
                 call.func_scope = new_module
-
-
 
 
 class WorkerInstantiator(object):
@@ -190,28 +188,9 @@ class WorkerInstantiator(object):
                     call.args.pop(i)
         else:
             new_worker = worker.clone(module.inst_name, idstr)
-        self._instantiate_memnode(worker, new_worker)
+        _instantiate_memnode(worker, new_worker)
         new_worker.add_tag('instantiated')
         return new_worker
-
-    def _instantiate_memnode(self, orig_worker, new_worker):
-        mrg = env.memref_graph
-        node_map = mrg.clone_subgraph(orig_worker, new_worker)
-        MemnodeReplacer(node_map).process(new_worker)
-
-
-class MemnodeReplacer(IRVisitor):
-    def __init__(self, node_map):
-        self.node_map = node_map
-        self.replaced = set()
-
-    def visit_TEMP(self, ir):
-        typ = ir.symbol().typ
-        if typ.is_seq() and typ not in self.replaced:
-            memnode = typ.get_memnode()
-            new_memnode = self.node_map[memnode]
-            typ.set_memnode(new_memnode)
-            self.replaced.add(typ)
 
 
 class ModuleInstantiator(object):
@@ -226,13 +205,13 @@ class ModuleInstantiator(object):
         calls = collector.process(g)
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope.is_module() and not call.func_scope.is_instantiated():
-                new_module = self._apply_module_if_needed(call, stm.dst)
+                new_module = self._instantiate_module(call, stm.dst)
                 new_modules.add(new_module)
                 stm.dst.symbol().set_type(Type.object(new_module))
                 call.func_scope = new_module
         return new_modules
 
-    def _apply_module_if_needed(self, new, module_var):
+    def _instantiate_module(self, new, module_var):
         module = new.func_scope
         binding = []
         for i, (_, arg) in enumerate(new.args):
@@ -256,9 +235,30 @@ class ModuleInstantiator(object):
                 new.args.pop(i)
         else:
             new_module = module.inherit(new_module_name, [])
+        _instantiate_memnode(module.find_ctor(), new_module.find_ctor())
         new_module.inst_name = inst_name
         new_module.add_tag('instantiated')
         return new_module
+
+
+def _instantiate_memnode(orig_scope, new_scope):
+    mrg = env.memref_graph
+    node_map = mrg.clone_subgraph(orig_scope, new_scope)
+    MemnodeReplacer(node_map).process(new_scope)
+
+
+class MemnodeReplacer(IRVisitor):
+    def __init__(self, node_map):
+        self.node_map = node_map
+        self.replaced = set()
+
+    def visit_TEMP(self, ir):
+        typ = ir.symbol().typ
+        if typ.is_seq() and typ not in self.replaced:
+            memnode = typ.get_memnode()
+            new_memnode = self.node_map[memnode]
+            typ.set_memnode(new_memnode)
+            self.replaced.add(typ)
 
 
 class CallCollector(IRVisitor):

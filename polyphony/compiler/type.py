@@ -134,6 +134,38 @@ class Type(object):
         else:
             assert False
 
+    @classmethod
+    def from_expr(cls, val, scope):
+        if isinstance(val, bool):
+            return Type.bool_t
+        elif isinstance(val, int):
+            return Type.int()
+        elif isinstance(val, str):
+            return Type.str_t
+        elif isinstance(val, list):
+            if len(val):
+                elem_t = Type.from_expr(val[0], scope)
+            else:
+                elem_t = Type.int()
+            t = Type.list(elem_t, None)
+            t.attrs['length'] = len(val)
+            return t
+        elif isinstance(val, tuple):
+            if len(val):
+                elem_t = Type.from_expr(val[0], scope)
+            else:
+                elem_t = Type.int()
+            t = Type.tuple(elem_t, None, len(val))
+            return t
+        elif val is None:
+            return Type.none_t
+        elif hasattr(val, '__class__'):
+            t = Type.from_annotation(val.__class__.__name__, scope)
+            t.unfreeze()
+            return t
+        else:
+            assert False
+
     def __str__(self):
         if self.name == 'object' and self.get_scope():
             return self.get_scope().orig_name
@@ -194,10 +226,10 @@ class Type(object):
         return Type('namespace', scope=scope)
 
     def is_seq(self):
-        return self.name == 'list' or self.name == 'tuple'
+        return self.name == 'list' or self.name == 'tuple' or self.name == 'any'
 
     def is_scalar(self):
-        return self.name == 'int' or self.name == 'bool' or self.name == 'str'
+        return self.name == 'int' or self.name == 'bool' or self.name == 'str' or self.name == 'any'
 
     def is_containable(self):
         return self.name == 'namespace' or self.name == 'class'
@@ -216,6 +248,8 @@ class Type(object):
 
     @classmethod
     def is_assignable(cls, to_t, from_t):
+        if from_t is Type.any_t:
+            return True
         if to_t is from_t:
             return True
         if to_t.is_int() and from_t.is_int():
@@ -272,3 +306,4 @@ Type.none_t = Type('none', freezed=True)
 Type.undef_t = Type('undef')
 Type.ellipsis_t = Type('ellipsis', freezed=True)
 Type.generic_t = Type('generic')
+Type.any_t = Type('any', freezed=True)

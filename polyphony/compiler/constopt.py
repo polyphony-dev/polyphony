@@ -82,7 +82,7 @@ def eval_relop(op, lv, rv, ctx):
     return 1 if b else 0
 
 
-def try_get_constant(sym, scope):
+def _try_get_constant(sym, scope):
     assert scope.usedef
     if sym.ancestor:
         sym = sym.ancestor
@@ -97,6 +97,27 @@ def try_get_constant(sym, scope):
     if not defstm.src.is_a(CONST):
         return None
     return defstm.src
+
+
+def try_get_constant(sym, scope, idx=None):
+    def find_value(vars, names):
+        if len(names) > 1:
+            head = names[0]
+            if head in vars:
+                _vars = vars[head]
+                assert isinstance(_vars, dict)
+                return find_value(_vars, names[1:])
+        else:
+            name = names[0]
+            if name in vars:
+                return vars[name]
+        return None
+    vars = env.runtime_info.global_vars
+    names = scope.name.split('.')[1:] + [sym.name]
+    v = find_value(vars, names)
+    if v:
+        return expr2ir(v)
+    return None
 
 
 class ConstantOptBase(IRVisitor):
@@ -326,10 +347,7 @@ class ConstantOpt(ConstantOptBase):
     def visit_SYSCALL(self, ir):
         if ir.sym.name == 'len':
             _, mem = ir.args[0]
-            if mem.symbol().scope is Scope.global_scope():
-                memsym = mem.symbol().ancestor
-            else:
-                memsym = mem.symbol()
+            memsym = mem.symbol()
             memnode = self.mrg.node(memsym)
             lens = []
             assert memnode
@@ -358,9 +376,7 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        if (ir.sym.scope is not self.scope
-                and ir.sym.scope.is_global()
-                and ir.sym.typ.is_scalar()):
+        if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.sym, ir.sym.scope)
             if c:
                 return c
@@ -370,12 +386,12 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_ATTR(self, ir):
         receiver = ir.tail()
-        if receiver.typ.is_class() or receiver.typ.is_namespace():
+        if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
             c = try_get_constant(ir.attr, ir.attr_scope)
             if c:
                 return c
             else:
-                fail(self.current_stm, Errors.CLASS_VAR_MUST_BE_CONST)
+                fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         return ir
 
     def visit_PHI(self, ir):
@@ -394,18 +410,22 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         super().__init__()
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_namespace():
+        if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.sym, ir.sym.scope)
             if c:
                 return c
+            else:
+                fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         return ir
 
     def visit_ATTR(self, ir):
         receiver = ir.tail()
-        if receiver.typ.is_class() or receiver.typ.is_namespace():
+        if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
             c = try_get_constant(ir.attr, ir.attr_scope)
             if c:
                 return c
+            else:
+                fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         return ir
 
 
@@ -420,20 +440,6 @@ class ConstantOptPreDetectROM(ConstantOpt):
         ir.offset = self.visit(ir.offset)
         return ir
 
-    def visit_TEMP(self, ir):
-        if ir.sym.scope is not self.scope:
-            c = try_get_constant(ir.sym, ir.sym.scope)
-            if c:
-                return c
-        return ir
-
-    def visit_ATTR(self, ir):
-        if ir.head().typ.is_class():
-            c = try_get_constant(ir.attr, ir.attr_scope)
-            if c:
-                return c
-        return ir
-
     def visit_PHI(self, ir):
         super().visit_PHI(ir)
         for i, arg in enumerate(ir.args):
@@ -443,7 +449,6 @@ class ConstantOptPreDetectROM(ConstantOpt):
 class GlobalConstantOpt(ConstantOptBase):
     def __init__(self):
         super().__init__()
-        self.assign_table = {}
 
     def process(self, scope):
         assert scope.is_namespace() or scope.is_class()
@@ -476,29 +481,24 @@ class GlobalConstantOpt(ConstantOptBase):
             if array.is_a(ARRAY):
                 return array.items[ir.offset.value]
             else:
-                print(error_info(self.scope, ir.lineno))
-                raise RuntimeError('{} must be a sequence object'.format(ir.mem.symbol()))
+                fail(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE, [ir.mem])
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym in self.assign_table:
-            return self.assign_table[ir.sym]
+        c = try_get_constant(ir.sym, ir.sym.scope)
+        if c:
+            return c
+        return ir
+
+    def visit_ATTR(self, ir):
+        if ir.tail().typ.is_class():
+            c = try_get_constant(ir.attr, ir.attr.scope)
+            if c:
+                return c
         return ir
 
     def visit_EXPR(self, ir):
         pass
-
-    def visit_CJUMP(self, ir):
-        print(error_info(self.scope, ir.lineno))
-        raise RuntimeError('A control statement in the global scope is not allowed')
-
-    def visit_MCJUMP(self, ir):
-        print(error_info(self.scope, ir.lineno))
-        raise RuntimeError('A control statement in the global scope is not allowed')
-
-    def visit_JUMP(self, ir):
-        print(error_info(self.scope, ir.lineno))
-        raise RuntimeError('A control statement in the global scope is not allowed')
 
     def visit_RET(self, ir):
         print(error_info(self.scope, ir.lineno))
@@ -506,7 +506,6 @@ class GlobalConstantOpt(ConstantOptBase):
 
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
-        self.assign_table[ir.dst.symbol()] = ir.src
 
     def visit_PHI(self, ir):
         assert False

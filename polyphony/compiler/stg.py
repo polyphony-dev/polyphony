@@ -644,7 +644,7 @@ class AHDLTranslator(object):
             return AHDL_VAR(sig, ir.ctx)
 
     def visit_ATTR(self, ir, node):
-        if ir.attr.typ.is_list():
+        if ir.attr.typ.is_seq():
             sig_tags = {'field', 'memif'}
         else:
             sig_tags = {'field', 'int'}
@@ -664,7 +664,7 @@ class AHDLTranslator(object):
             instance_name = self.host.make_instance_name(ir)
             width = self._signal_width(ir.attr)
             sig = self.host.gen_sig(instance_name + '_field', attr + io, width, sig_tags)
-        if ir.attr.typ.is_list():
+        if ir.attr.typ.is_seq():
             memnode = self.mrg.node(ir.attr)
             return AHDL_MEMVAR(sig, memnode, ir.ctx)
         else:

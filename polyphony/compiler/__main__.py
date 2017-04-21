@@ -25,7 +25,7 @@ from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiresolve import PHICondResolver, StmOrdering
 from .portconverter import PortConverter
-from .pure import interpret, PureFuncExecutor, PureCtorBuilder
+from .pure import interpret, PureCtorBuilder, PureFuncExecutor
 from .quadruplet import QuadrupleMaker
 from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
@@ -101,7 +101,7 @@ def buildpurector(driver, scope):
         driver.insert_scope(ctor)
 
 
-def pureexec(driver, scope):
+def execpure(driver, scope):
     PureFuncExecutor().process(scope)
 
 
@@ -199,7 +199,9 @@ def instantiate(driver):
                 continue
             if not (child.is_ctor() or child.is_worker()):
                 continue
-            ConstantOpt().process(child)
+            execpure(driver, child)
+            constopt(driver, child)
+
     if new_modules:
         InstanceTypePropagation().process_all()
 
@@ -209,7 +211,8 @@ def instantiate(driver):
         driver.insert_scope(worker)
 
         assert worker.is_worker()
-        ConstantOpt().process(worker)
+        execpure(driver, worker)
+        constopt(driver, worker)
     callgraph(driver)
     detectrom(driver)
 
@@ -356,7 +359,6 @@ def compile_plan():
     plan = [
         preprocess_global,
         dbg(dumpscope),
-        pureexec,
         earlyinstantiate,
         buildpurector,
         iftrans,
@@ -405,6 +407,7 @@ def compile_plan():
         usedef,
         constopt,
         dbg(dumpscope),
+        execpure,
         instantiate,
         modulecheck,
         dbg(dumpscope),
@@ -450,7 +453,7 @@ def compile_plan():
     return plan
 
 
-def compile_main(src_file, output_name, output_dir, debug_mode=False):
+def setup(src_file, debug_mode):
     env.__init__()
     env.dev_debug_mode = debug_mode
     if debug_mode:
@@ -477,18 +480,27 @@ def compile_main(src_file, output_name, output_dir, debug_mode=False):
     g = Scope.create(None, env.global_scope_name, ['global', 'namespace'], lineno=1)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
-    main_source = read_source(src_file)
-    translator.translate(main_source, '')
+
+
+def compile(plan, source, src_file=''):
+    translator = IRTranslator()
+    translator.translate(source, '')
     if env.enable_pure:
-        interpret(main_source, src_file)
-
+        interpret(source, src_file)
     scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)
-    driver = Driver(compile_plan(), scopes)
+    driver = Driver(plan, scopes)
     driver.run()
-    output_individual(driver, output_name, output_dir)
+    return driver.codes
 
 
-def output_individual(driver, output_name, output_dir):
+def compile_main(src_file, output_name, output_dir, debug_mode=False):
+    setup(src_file, debug_mode)
+    main_source = read_source(src_file)
+    compile_results = compile(compile_plan(), main_source, src_file)
+    output_individual(compile_results, output_name, output_dir)
+
+
+def output_individual(compile_results, output_name, output_dir):
     d = output_dir if output_dir else './'
     if d[-1] != '/':
         d += '/'
@@ -500,7 +512,9 @@ def output_individual(driver, output_name, output_dir):
         output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:
         for scope in scopes:
-            code = driver.result(scope)
+            if scope not in compile_results:
+                continue
+            code = compile_results[scope]
             if not code:
                 continue
             file_name = '{}.v'.format(scope.orig_name)

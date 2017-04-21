@@ -3,6 +3,7 @@ from .common import fail, warn
 from .errors import Errors, Warnings
 from .irvisitor import IRVisitor
 from .ir import *
+from .pure import PureFuncTypeInferrer
 from .scope import Scope
 from .type import Type
 from .env import env
@@ -62,6 +63,7 @@ class TypePropagation(IRVisitor):
         return [scope for scope in self.new_scopes if not scope.is_lib()]
 
     def process(self, scope):
+        self.pure_type_inferrer = PureFuncTypeInferrer()
         super().process(scope)
         return [scope for scope in self.new_scopes if not scope.is_lib()]
 
@@ -139,7 +141,19 @@ class TypePropagation(IRVisitor):
             # we cannot specify the callee because it has not been evaluated yet.
             raise RejectPropagation(str(ir))
 
-        if ir.func_scope.is_method():
+        if ir.func_scope.is_pure():
+            if not env.enable_pure:
+                fail(self.current_stm, Errors.PURE_IS_DISABLED)
+            if not ir.func_scope.parent.is_global():
+                fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)
+            if ir.func_scope.return_type and not ir.func_scope.return_type.is_undef() and not ir.func_scope.return_type.is_any():
+                return ir.func_scope.return_type
+            ret, type_or_error = self.pure_type_inferrer.infer_type(ir, self.scope)
+            if ret:
+                return type_or_error
+            else:
+                fail(self.current_stm, type_or_error)
+        elif ir.func_scope.is_method():
             params = ir.func_scope.params[1:]
         else:
             params = ir.func_scope.params[:]
@@ -517,7 +531,9 @@ class TypeChecker(IRVisitor):
         if ir.func_scope.is_lib():
             return ir.func_scope.return_type
         assert ir.func_scope
-        if ir.func_scope.is_method():
+        if ir.func_scope.is_pure():
+            return Type.any_t
+        elif ir.func_scope.is_method():
             param_len = len(ir.func_scope.params) - 1
             param_typs = tuple(func_sym.typ.get_param_types()[1:])
         else:

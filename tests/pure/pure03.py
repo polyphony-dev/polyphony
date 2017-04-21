@@ -9,7 +9,7 @@ def tuple_numbers(x):
 
 @pure
 def list_numbers(x):
-    return tuple([i for i in range(x)])
+    return list([i for i in range(x)])
 
 
 def pure03_a():

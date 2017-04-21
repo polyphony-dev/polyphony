@@ -36,13 +36,12 @@ class Errors(Enum):
     GLOBAL_VAR_MUST_BE_CONST = 807
     GLOBAL_OBJECT_CANT_BE_MUTABLE = 808
     GLOBAL_INSTANCE_IS_NOT_SUPPORTED = 809
-    CLASS_VAR_MUST_BE_CONST = 810
-    UNSUPPORTED_SYNTAX = 811
-    UNSUPPORTED_DEFAULT_SEQ_PARAM = 812
-    UNSUPPORTED_DECORATOR = 813
-    METHOD_MUST_HAVE_SELF = 814
-    REDEFINED_NAME = 815
-    LOCAL_CLASS_DEFINITION_NOT_ALLOWED = 816
+    UNSUPPORTED_SYNTAX = 810
+    UNSUPPORTED_DEFAULT_SEQ_PARAM = 811
+    UNSUPPORTED_DECORATOR = 812
+    METHOD_MUST_HAVE_SELF = 813
+    REDEFINED_NAME = 814
+    LOCAL_CLASS_DEFINITION_NOT_ALLOWED = 815
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -66,6 +65,7 @@ class Errors(Enum):
     PURE_ARGS_MUST_BE_CONST = 932
     PURE_IS_DISABLED = 933
     PURE_CTOR_MUST_BE_MODULE = 934
+    PURE_RETURN_NO_SAME_TYPE = 935
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -104,10 +104,9 @@ ERROR_MESSAGES = {
     Errors.UNSUPPORTED_OPERATOR: "Unsupported operator {}",
     Errors.SEQ_CAPACITY_OVERFLOWED: "Sequence capacity is overflowing",
     Errors.UNSUPPORTED_EXPR: "Unsupported expression",
-    Errors.GLOBAL_VAR_MUST_BE_CONST: "A global variable must be a constant value",
+    Errors.GLOBAL_VAR_MUST_BE_CONST: "A global or class variable must be a constant value",
     Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE: "Writing to a global object is not allowed",
     Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED: "A global instance is not supported",
-    Errors.CLASS_VAR_MUST_BE_CONST: "A class variable must be a constant value",
     Errors.UNSUPPORTED_SYNTAX: "{} is not supported",
     Errors.UNSUPPORTED_DEFAULT_SEQ_PARAM:"cannot set the default value to the sequence type parameter",
     Errors.UNSUPPORTED_DECORATOR: "Unsupported decorator '@{}' is specified",
@@ -137,6 +136,7 @@ ERROR_MESSAGES = {
     Errors.PURE_ARGS_MUST_BE_CONST: "An argument of @pure function must be constant",
     Errors.PURE_IS_DISABLED: "@pure Python execution is disabled",
     Errors.PURE_CTOR_MUST_BE_MODULE: "Classes other than @module class can not use @pure decorator",
+    Errors.PURE_RETURN_NO_SAME_TYPE: "@pure function must return the same type values",
 }
 
 

@@ -28,21 +28,21 @@ def pow(idata, ivalid, odata, ovalid):
         d = idata.rd()
         odata.wr(d * d)
         clkfence()
-        ovalid.wr(1)
-        ovalid.wr(0)
+        ovalid.wr(True)
+        ovalid.wr(False)
 
 
 @testbench
 def test(m):
     m.idata.wr(2)
-    m.ivalid.wr(1)
-    m.ivalid.wr(0)
+    m.ivalid.wr(True)
+    m.ivalid.wr(False)
     wait_rising(m.ovalid)
     assert m.odata.rd() == 256
 
     m.idata.wr(4)
-    m.ivalid.wr(1)
-    m.ivalid.wr(0)
+    m.ivalid.wr(True)
+    m.ivalid.wr(False)
     wait_rising(m.ovalid)
     assert m.odata.rd() == 65536
 

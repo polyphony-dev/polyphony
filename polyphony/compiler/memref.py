@@ -240,8 +240,9 @@ class One2NNode(JointNode):
 
 
 class MemTrait(object):
-    WR    = 0x00010000
-    IM    = 0x00020000
+    WR   = 0x00010000
+    IM   = 0x00020000
+    PURE = 0x00040000
 
     def __init__(self):
         self.length = -1
@@ -252,6 +253,9 @@ class MemTrait(object):
     def set_immutable(self):
         self.flags |= MemTrait.IM
 
+    def set_pure(self):
+        self.flags |= MemTrait.PURE
+
     def set_length(self, length):
         self.length = length
 
@@ -260,6 +264,9 @@ class MemTrait(object):
 
     def is_immutable(self):
         return self.flags & MemTrait.IM
+
+    def is_pure(self):
+        return self.flags & MemTrait.PURE
 
     def data_width(self):
         if self.sym.typ.has_element():
@@ -574,6 +581,7 @@ class MemRefGraph(object):
                 self.add_edge(new_pred, new_node)
         return node_map
 
+
 class MemRefGraphBuilder(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -648,7 +656,6 @@ class MemRefGraphBuilder(IRVisitor):
         for src_sym, dst_sym in reversed(self.edges):
             src = self.mrg.node(src_sym)
             dst = self.mrg.node(dst_sym)
-
             if dst not in n2one_node_map:
                 n2one_node_map[dst] = N2OneMemNode(dst)
             n2one_node_map[dst].add_pred(src)
@@ -743,6 +750,10 @@ class MemRefGraphBuilder(IRVisitor):
             if arg.is_a(TEMP) and arg.sym.typ.is_seq():
                 p, _, _ = ir.func_scope.params[i]
                 self._append_edge(arg.sym, p)
+                if ir.func_scope.is_pure():
+                    purenode = MemParamNode(p, ir.func_scope)
+                    self.mrg.add_node(purenode)
+                    purenode.set_pure()
 
     def visit_TEMP(self, ir):
         if ir.sym.is_param():
@@ -773,13 +784,17 @@ class MemRefGraphBuilder(IRVisitor):
         memsym = ir.mem.symbol()
         if memsym.typ.is_seq():
             if memsym.scope.is_global() or (ir.mem.is_a(ATTR) and ir.mem.head().typ.is_class()):
-                # we have to create a new list symbol for adding the memnode
-                # because the list symbol in the global or a class (memsym) is
-                # used for the source memnode
                 memsym = memsym.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
-                mem_t = Type.list(Type.int(), self.mrg.node(memsym))
+                memnode = self.mrg.node(memsym)
+                elem_t = memsym.typ.get_element()
+                if memsym.typ.is_list():
+                    mem_t = Type.list(elem_t, memnode)
+                    if memsym.typ.has_length():
+                        mem_t.set_length(memsym.typ.get_length())
+                else:
+                    mem_t = Type.tuple(elem_t, memnode, memsym.typ.get_length())
                 self._set_type(memsym, mem_t)
                 ir.mem.set_symbol(memsym)
 
@@ -808,6 +823,8 @@ class MemRefGraphBuilder(IRVisitor):
             elem_t = memsym.typ.get_element()
             if memsym.typ.is_list():
                 mem_t = Type.list(elem_t, memnode)
+                if memsym.typ.has_length():
+                    mem_t.set_length(memsym.typ.get_length())
             else:
                 mem_t = Type.tuple(elem_t, memnode, memsym.typ.get_length())
             self._set_type(memsym, mem_t)
@@ -820,6 +837,19 @@ class MemRefGraphBuilder(IRVisitor):
                 self._append_edge(ir.src.right.symbol(), memsym)
             elif ir.src.is_a(ATTR) and ir.src.attr.typ.is_seq():
                 assert 0
+
+            if ir.src.is_a(CALL) and ir.src.func_scope.is_pure():
+                ret_sym = ir.src.func_scope.add_temp('@pure_return')
+                ret_sym.set_type(memsym.typ)
+                self._append_edge(ret_sym, ir.dst.symbol())
+                # this node is for inlining sequence values
+                # hence the scope must be self.scope
+                purenode = MemRefNode(ret_sym, self.scope)
+                self.mrg.add_node(purenode)
+                purenode.set_pure()
+                assert memsym.typ.has_length()
+                purenode.length = memsym.typ.get_length()
+                purenode.is_source = lambda : True
 
     def visit_PHI(self, ir):
         if ir.var.sym.typ.is_seq():

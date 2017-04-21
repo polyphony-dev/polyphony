@@ -1050,6 +1050,8 @@ class CodeVisitor(ast.NodeVisitor):
         else:
             if sym is None or sym.scope is not self.current_scope:
                 sym = self.current_scope.add_sym(node.id)
+                if self.current_scope.is_global() or self.current_scope.is_class():
+                    sym.add_tag('static')
 
         assert sym is not None
         return TEMP(sym, self._nodectx2irctx(node))

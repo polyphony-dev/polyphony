@@ -8,8 +8,8 @@ from .common import fail
 from .constopt import ConstantOptBase, eval_binop
 from .errors import Errors
 from .env import env
-#from .ir import *
 from .ir import expr2ir, Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
+from .irvisitor import IRTransformer
 from .setlineno import LineNumberSetter
 from .symbol import Symbol
 from .type import Type
@@ -19,7 +19,7 @@ class InterpretError(Exception):
     pass
 
 
-def interpret(source, file_name):
+def interpret(source, file_name=''):
     stdout = sys.stdout
     sys.stdout = None
     objs = {}
@@ -32,17 +32,22 @@ def interpret(source, file_name):
         thread.join(1)
     threading.setprofile(None)
     sys.stdout = stdout
-    _set_pyfunc(objs)
+    rtinfo.pyfuncs = _make_pyfuncs(objs)
     module_classes = _find_module_classes(objs)
+    for cls in module_classes:
+        pyfuncs = _make_pyfuncs(cls.__dict__)
+        rtinfo.pyfuncs.update(pyfuncs)
     instances = _find_module_instances(objs, module_classes)
-    env.module_classes = module_classes
-    env.module_instances = instances
+    rtinfo.module_classes = module_classes
+    rtinfo.module_instances = instances
+    rtinfo.global_vars = _find_vars(objs)
     env.runtime_info = rtinfo
 
 
 def _do_interpret(source, file_name, objs):
-    dir_name = os.path.dirname(file_name)
-    sys.path.append(dir_name)
+    if file_name:
+        dir_name = os.path.dirname(file_name)
+        sys.path.append(dir_name)
     code = compile(source, file_name, 'exec')
     try:
         exec(code, objs)
@@ -55,6 +60,7 @@ def _do_interpret(source, file_name, objs):
 MethodCall = namedtuple('MethodCall', ('name', 'args'))
 MethodReturn = namedtuple('MethodReturn', ('name', 'locals'))
 MethodInternalCall = namedtuple('MethodInternalCall', ('name', 'self', 'args', 'caller_info'))
+FuncReturn = namedtuple('FuncReturn', ('name', 'func', 'arg'))
 
 
 class RuntimeInfo(object):
@@ -65,7 +71,8 @@ class RuntimeInfo(object):
         self.pure_method_internal_calls = defaultdict(list)
         self.object_defaults = {}
         self.current_obj = None
-        self.base_obj = None
+        self.line_stack = defaultdict(int)
+        self.pure_func_returns = defaultdict(list)
 
     def _profile_func(self, frame, event, arg):
         if self.pure_depth:
@@ -81,18 +88,16 @@ class RuntimeInfo(object):
                     obj = frame.f_locals['self']
                     self._profile_pure_method_return(obj, frame, arg)
                 else:
-                    pass  # nothing to do ?
+                    self._profile_pure_func_return(frame, arg)
                 self.pure_depth -= 1
         elif event == 'call' and frame.f_code.co_name == '_pure_decorator':
             self.pure_depth += 1
 
     def _profile_pure_method_call(self, obj, frame):
-
         if self.pure_depth == 1:
             msg = 'PURE METHOD CALL {} {} {}:{}'.format(frame.f_code.co_name, frame.f_code.co_varnames, frame.f_code.co_filename, frame.f_lineno)
             print(msg)
             self.current_obj = obj
-            self.base_obj = obj
             func = RuntimeInfo.get_method(obj, frame.f_code.co_name)
             if func:
                 params = list(inspect.signature(func).parameters.values())[1:]
@@ -124,6 +129,24 @@ class RuntimeInfo(object):
 
             if frame.f_code.co_name == '__init__':
                 self._set_module_field_defaults(obj)
+
+    def _get_caller_context(self, frame):
+        f = frame
+        nums = []
+        while f:
+            nums.append(f.f_lineno)
+            f = f.f_back
+        return tuple(nums)
+
+    def _profile_pure_func_return(self, frame, arg):
+        if self.pure_depth == 2:
+            caller_context = self._get_caller_context(frame.f_back.f_back)
+            caller_num = self.line_stack[caller_context]
+            self.line_stack[caller_context] += 1
+            purefunc = frame.f_back.f_locals['func']
+            caller_id = (caller_context[0], caller_num)
+            ret = FuncReturn(frame.f_code.co_name, purefunc, arg)
+            self.pure_func_returns[caller_id].append(ret)
 
     def _set_module_field_defaults(self, instance):
         # default_values will be used later by the instantiator
@@ -207,14 +230,16 @@ class RuntimeInfo(object):
         return cp_dict
 
 
-def _set_pyfunc(objs):
+def _make_pyfuncs(objs):
+    pyfuncs = {}
     for name, obj in objs.items():
         if inspect.isfunction(obj) and obj.__name__ == '_pure_decorator':
             assert obj.func
             scope_name = '{}.{}'.format(env.global_scope_name, obj.func.__qualname__)
             scope = env.scopes[scope_name]
             assert scope.is_pure()
-            scope.pyfunc = obj.func
+            pyfuncs[scope] = obj.func
+    return pyfuncs
 
 
 def _find_module_classes(objs):
@@ -223,7 +248,6 @@ def _find_module_classes(objs):
         if inspect.isfunction(obj) and obj.__name__ == '_module_decorator':
             assert inspect.isclass(obj.cls)
             classes.add(obj.cls)
-            _set_pyfunc(obj.cls.__dict__)
     return classes
 
 
@@ -233,6 +257,19 @@ def _find_module_instances(objs, classes):
         if isinstance(obj, tuple(classes)):
             instances[name] = obj
     return instances
+
+
+def _find_vars(dic):
+    vars = {}
+    for name, obj in dic.items():
+        if name.startswith('__'):
+            continue
+        if isinstance(obj, int) or isinstance(obj, str) or isinstance(obj, list) or isinstance(obj, tuple):
+            vars[name] = obj
+        elif inspect.isclass(obj):
+            _vars = _find_vars(obj.__dict__)
+            vars[name] = _vars
+    return vars
 
 
 class PureCtorBuilder(object):
@@ -267,7 +304,6 @@ class PureCtorBuilder(object):
         else:
             self_type_hints = {}
         self._build_field_var_init(instance, clazz, ctor, self_type_hints)
-        #self._build_port_init(instance, module, ctor, self_types)
         self._build_local_var_init(instance, clazz, ctor, local_type_hints)
         self._build_append_worker_call(instance, clazz, ctor, self_type_hints)
         ctor.del_tag('pure')
@@ -280,7 +316,7 @@ class PureCtorBuilder(object):
             if name in self_type_hints:
                 typ = self_type_hints[name]
             else:
-                typ = self._type_from_expr(v, module)
+                typ = Type.from_expr(v, module)
             if typ.is_object() and typ.get_scope().is_port():
                     typ.unfreeze()
 
@@ -322,7 +358,7 @@ class PureCtorBuilder(object):
             for name, val in method_locals.items():
                 if isinstance(val, (Port, Queue)):
                     sym = ctor.add_sym(name)
-                    typ = self._type_from_expr(val, ctor)
+                    typ = Type.from_expr(val, ctor)
                     sym.set_type(typ)
                     dst = TEMP(sym, Ctx.LOAD)
                     stm = self._build_move_stm(dst, val, module)
@@ -395,7 +431,7 @@ class PureCtorBuilder(object):
                     if not sym:
                         sym = scope.add_sym(name)
                     if sym.typ.is_undef():
-                        typ = self._type_from_expr(field, scope)
+                        typ = Type.from_expr(field, scope)
                         sym.set_type(typ)
                     return (sym, )
             for name, field in di.items():
@@ -405,7 +441,7 @@ class PureCtorBuilder(object):
                 if not sym:
                     continue
                 if sym.typ.is_undef():
-                    typ = self._type_from_expr(field, scope)
+                    typ = Type.from_expr(field, scope)
                     sym.set_type(typ)
                 assert sym.typ.has_scope()
                 scp = sym.typ.get_scope()
@@ -438,7 +474,7 @@ class PureCtorBuilder(object):
                     sym = ctor.find_sym(name)
                     if not sym:
                         sym = ctor.add_sym(name)
-                        typ = self._type_from_expr(port_obj, ctor)
+                        typ = Type.from_expr(port_obj, ctor)
                         sym.set_type(typ)
                     return TEMP(sym, Ctx.LOAD)
             # this port have been created as a local variable in the other scope
@@ -447,7 +483,7 @@ class PureCtorBuilder(object):
                 sym = self.outer_objs[port_obj]
             else:
                 sym = ctor.add_temp('tmp_port')
-                typ = self._type_from_expr(port_obj, ctor)
+                typ = Type.from_expr(port_obj, ctor)
                 sym.set_type(typ)
 
                 dst = TEMP(sym, Ctx.LOAD)
@@ -459,75 +495,67 @@ class PureCtorBuilder(object):
             return TEMP(sym, Ctx.LOAD)
         assert False
 
-    # def _dtype_symbol(self, dtype, scope):
-    #     sym = scope.find_sym(dtype.__name__)
-    #     if not sym:
-    #         if dtype is bool:
-    #             t = Type.bool_t
-    #         elif hasattr(dtype, 'base_type'):
-    #             scope_name = 'polyphony.typing.{}'.format(dtype.__name__)
-    #             type_scope = env.scopes[scope_name]
-    #             t = Type.klass(type_scope)
-    #         sym = scope.add_sym(dtype.__name__)
-    #         sym.set_type(t)
-    #     return sym
 
-    def _type_from_expr(self, val, module):
-        if isinstance(val, bool):
-            return Type.bool_t
-        elif isinstance(val, int):
-            return Type.int()
-        elif isinstance(val, str):
-            return Type.str_t
-        elif isinstance(val, list):
-            t = Type.list(Type.undef_t, None)
-            t.attrs['length'] = len(val)
-            return t
-        elif isinstance(val, tuple):
-            t = Type.list(Type.undef_t, None, len(val))
-            return t
-        elif hasattr(val, '__class__'):
-            t = Type.from_annotation(val.__class__.__name__, module)
-            t.unfreeze()
-            return t
-        else:
-            assert False
+class PureFuncTypeInferrer(object):
+    def __init__(self):
+        self.used_caller_ids = set()
+
+    def infer_type(self, call, scope):
+        assert call.is_a(CALL)
+        assert call.func_scope.is_pure()
+        if not call.func_scope.return_type:
+            call.func_scope.return_type = Type.any_t
+        pure_func_returns = env.runtime_info.pure_func_returns
+        for caller_id, func_rets in pure_func_returns.items():
+            if caller_id[0] != call.lineno:
+                continue
+            if caller_id in self.used_caller_ids:
+                continue
+            self.used_caller_ids.add(caller_id)
+            if not all([type(func_rets[0].arg) is type(ret.arg) for ret in func_rets[1:]]):
+                return False, Errors.PURE_RETURN_NO_SAME_TYPE
+            return True, Type.from_expr(func_rets[0].arg, scope)
+        assert False
 
 
 class PureFuncExecutor(ConstantOptBase):
     def _args2tuple(self, args):
-        values = []
-        for arg in args:
-            a = self.visit(arg)
-            if a.is_a(CONST):
-                values.append(a.value)
-            elif a.is_a(ARRAY):
-                items = self._args2tuple(a.items)
+        def arg2expr(arg):
+            if arg.is_a(CONST):
+                return arg.value
+            elif arg.is_a(ARRAY):
+                items = self._args2tuple(arg.items)
                 if not items:
                     return None
-                values.append(items)
+                if arg.repeat.value > 1:
+                    items = items * arg.repeat.value
+                return items
+            elif arg.is_a(TEMP):
+                stms = self.scope.usedef.get_stms_defining(arg.symbol())
+                if not stms:
+                    return None
+                assert len(stms) == 1
+                stm = list(stms)[0]
+                return arg2expr(stm.src)
             else:
                 return None
+        values = [arg2expr(self.visit(arg)) for arg in args]
+        if None in values:
+            return None
         return tuple(values)
 
     def visit_CALL(self, ir):
-        if not isinstance(ir.func.symbol(), Symbol):
+        if not ir.func_scope.is_pure():
             return ir
-        if not ir.func.symbol().typ.is_function():
-            return ir
-        assert ir.func.symbol().typ.has_scope()
-        scope = ir.func.symbol().typ.get_scope()
-        if not scope.is_pure():
-            return ir
-        if not env.enable_pure:
-            fail(self.current_stm, Errors.PURE_IS_DISABLED)
-        if not scope.parent.is_global():
-            fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)
-        assert scope.pyfunc
+        assert env.enable_pure
+        assert ir.func_scope.parent.is_global()
         args = self._args2tuple([arg for _, arg in ir.args])
         if args is None:
             fail(self.current_stm, Errors.PURE_ARGS_MUST_BE_CONST)
-        expr = scope.pyfunc(*args)
+
+        assert ir.func_scope in env.runtime_info.pyfuncs
+        pyfunc = env.runtime_info.pyfuncs[ir.func_scope]
+        expr = pyfunc(*args)
         return expr2ir(expr)
 
     def visit_SYSCALL(self, ir):
@@ -536,15 +564,10 @@ class PureFuncExecutor(ConstantOptBase):
     def visit_NEW(self, ir):
         return super().visit_CALL(ir)
 
-    def visit_BINOP(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            return CONST(eval_binop(ir, self))
-        if ir.left.is_a(ARRAY):
-            if ir.op == 'Mult' and ir.right.is_a(CONST):
-                array = ir.left
-                array.items *= ir.right.value
-                return array
-        return ir
-
+    def visit_MOVE(self, ir):
+        ir.src = self.visit(ir.src)
+        if ir.src.is_a(ARRAY):
+            memnode = env.memref_graph.node(ir.dst.symbol())
+            source = memnode.single_source()
+            if source.is_pure() and not source.initstm:  # and not memnode.preds:
+                source.initstm = ir

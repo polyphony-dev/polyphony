@@ -459,7 +459,7 @@ class Scope(Tagged):
         return None
 
     def is_global(self):
-        return self is Scope.global_scope()
+        return self.name == env.global_scope_name
 
     def is_containable(self):
         return self.is_namespace() or self.is_class()
