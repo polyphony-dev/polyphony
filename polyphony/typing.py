@@ -1,4 +1,25 @@
+'''
+Like the Python typing module, this library provides type classes for type hinting.
+The following type classes are provided.
+    - polyphony.typing.bit
+    - polyphony.typing.int<n>
+    - polyphony.typing.uint<n>
+    - polyphony.typing.List[T]
+    - polyphony.typing.List[T][C]  ※C indicates the capacity of the list
+    - polyphony.typing.Tuple[T, ...]
+
+The main purpose of polyphony.typing is to specify arbitrary parameters
+(bit width, RAM size of the list, etc.) for resources such as register
+which is the synthesis result by type hinting for a certain variable.
+
+If you do not specify a type, for example, if it is an int type variable, a default bit width is used.
+
+Type hinting in Polyphony is a feature to generate a resource efficient circuit.
+Also, of course, it can be used to detect errors due to type at compile time.
+'''
+
 import abc
+
 
 __all__ = [
     'bit',

@@ -1,3 +1,6 @@
+'''
+The polyphony.timing library provides functions for timing control.
+'''
 import time
 from . import io
 from . import typing
@@ -17,14 +20,13 @@ def clksleep(clk_cycles):
     During the specified clk_cycles, stop processing.
     This function is used for the timing control in the hardware level.
 
-    Parameters
-    ----------
-    clk_cycles : int
-        The number of cycles of clock signal.
+    *Parameters:*
+        clk_cycles : int
+            The number of cycles of clock signal.
 
-    Notes
-    -----
-    This function does not work as expectedly in the Python interpreter.
+
+    *Notes:*
+        This function does not work as expectedly in the Python interpreter.
     '''
     assert clk_cycles >= 0
     time.sleep(0.001 * clk_cycles)
@@ -35,9 +37,8 @@ def clkfence():
     This function guarantees that the instructions before and after this function are executed in different steps.
     This function is used for the timing control in the hardware level.
 
-    Notes
-    -----
-    This function does not work as expectedly in the Python interpreter.
+    *Notes:*
+        This function does not work as expectedly in the Python interpreter.
     '''
     clksleep(0)
 
@@ -46,11 +47,12 @@ def wait_edge(old, new, *ports):
     '''
     Wait until the signal of the specified port changes from 'old' to 'new'.
 
-    Parameters
-    ----------
-    old : A data type of the port
-    new : A data type of the port
-    ports : Port
+    *Parameters:*
+        old : A data type of the port
+
+        new : A data type of the port
+
+        ports : Port
     '''
 
     if not ports:
@@ -74,9 +76,8 @@ def wait_rising(*ports):
     '''
     Wait until the signal of the specified port with bit dtype changes from 0 to 1.
 
-    Parameters
-    ----------
-    ports : Port with bit dtype
+    *Parameters:*
+        ports : Port with bit dtype
     '''
     if not ports:
         raise TypeError("wait_rising() missing required argument: 'ports'")
@@ -90,9 +91,8 @@ def wait_falling(*ports):
     '''
     Wait until the signal of the specified port with bit dtype changes from 1 to 0.
 
-    Parameters
-    ----------
-    ports : Port with bit dtype
+    *Parameters:*
+        ports : Port with bit dtype
     '''
     if not ports:
         raise TypeError("wait_falling() missing required argument: 'ports'")
@@ -106,10 +106,10 @@ def wait_value(value, *ports):
     '''
     Wait until the signal of the specified port changes specified value.
 
-    Parameters
-    ----------
-    value : A data type of the port
-    ports : Port
+    *Parameters:*
+        value : A data type of the port
+
+        ports : Port
     '''
     if not ports:
         raise TypeError("wait_value() missing required argument: 'ports'")
