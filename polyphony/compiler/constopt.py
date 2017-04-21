@@ -115,7 +115,7 @@ def try_get_constant(sym, scope, idx=None):
     vars = env.runtime_info.global_vars
     names = scope.name.split('.')[1:] + [sym.name]
     v = find_value(vars, names)
-    if v:
+    if v is not None:
         return expr2ir(v)
     return None
 

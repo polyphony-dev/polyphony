@@ -269,6 +269,11 @@ def _find_vars(dic):
         elif inspect.isclass(obj):
             _vars = _find_vars(obj.__dict__)
             vars[name] = _vars
+        elif inspect.isfunction(obj) and obj.__name__ == '_module_decorator':
+            cls = obj.__dict__['cls']
+            assert inspect.isclass(cls)
+            _vars = _find_vars(cls.__dict__)
+            vars[name] = _vars
     return vars
 
 
