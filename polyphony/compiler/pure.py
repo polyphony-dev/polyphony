@@ -309,7 +309,6 @@ class PureCtorBuilder(object):
         else:
             self_type_hints = {}
         self._build_field_var_init(instance, clazz, ctor, self_type_hints)
-        self._build_local_var_init(instance, clazz, ctor, local_type_hints)
         self._build_append_worker_call(instance, clazz, ctor, self_type_hints)
         ctor.del_tag('pure')
         LineNumberSetter().process(ctor)
@@ -353,23 +352,6 @@ class PureCtorBuilder(object):
                 assert stm
                 stm.lineno = ctor.lineno
                 ctor.entry_block.append_stm(stm)
-
-    def _build_local_var_init(self, instance, module, ctor, local_type_hints):
-        from ..io import Port, Queue
-        method_rets = env.runtime_info.pure_method_returns[instance]
-        for method_name, method_locals in method_rets:
-            if method_name != env.ctor_name:
-                continue
-            for name, val in method_locals.items():
-                if isinstance(val, (Port, Queue)):
-                    sym = ctor.add_sym(name)
-                    typ = Type.from_expr(val, ctor)
-                    sym.set_type(typ)
-                    dst = TEMP(sym, Ctx.LOAD)
-                    stm = self._build_move_stm(dst, val, module)
-                    assert stm
-                    stm.lineno = ctor.lineno
-                    ctor.entry_block.append_stm(stm)
 
     def _build_append_worker_call(self, instance, module, ctor, self_type_hints):
         self_sym = ctor.find_sym('self')
@@ -481,13 +463,19 @@ class PureCtorBuilder(object):
                         sym = ctor.add_sym(name)
                         typ = Type.from_expr(port_obj, ctor)
                         sym.set_type(typ)
+
+                        dst = TEMP(sym, Ctx.LOAD)
+                        stm = self._build_move_stm(dst, port_obj, module)
+                        assert stm
+                        stm.lineno = ctor.lineno
+                        ctor.entry_block.append_stm(stm)
                     return TEMP(sym, Ctx.LOAD)
             # this port have been created as a local variable in the other scope
             # so we must append an aditional NEW(port) stmt here
             if port_obj in self.outer_objs:
                 sym = self.outer_objs[port_obj]
             else:
-                sym = ctor.add_temp('tmp_port')
+                sym = ctor.add_temp('local_port')
                 typ = Type.from_expr(port_obj, ctor)
                 sym.set_type(typ)
 
