@@ -78,3 +78,7 @@ class CopyCollector(IRVisitor):
             if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
             self.copies.append(ir)
+        elif ir.src.is_a(ATTR):
+            typ = ir.src.symbol().typ
+            if typ.is_object() and typ.get_scope().is_port():
+                self.copies.append(ir)

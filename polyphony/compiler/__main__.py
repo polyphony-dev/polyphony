@@ -24,7 +24,7 @@ from .loopdetector import LoopDetector
 from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiresolve import PHICondResolver, StmOrdering
-from .portconverter import PortConverter
+from .portconverter import PortConverter, FlattenPortList
 from .pure import interpret, PureCtorBuilder, PureFuncExecutor
 from .quadruplet import QuadrupleMaker
 from .regreducer import RegReducer
@@ -103,6 +103,10 @@ def buildpurector(driver, scope):
 
 def execpure(driver, scope):
     PureFuncExecutor().process(scope)
+
+
+def flattenport(driver, scope):
+    FlattenPortList().process(scope)
 
 
 def convport(driver):
@@ -367,6 +371,7 @@ def compile_plan():
         earlytypeprop,
         dbg(dumpscope),
         quadruple,
+        flattenport,
         typeprop,
         dbg(dumpscope),
         callgraph,

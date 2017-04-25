@@ -174,6 +174,8 @@ class Type(object):
                 return 'int[{}]'.format(self.get_width())
             if self.name == 'list':
                 return 'list[{}]'.format(self.get_element())
+            if self.name == 'port':
+                return 'port[{}, {}]'.format(self.get_dtype(), self.get_direction())
         return self.name
 
     def __repr__(self):
@@ -194,12 +196,12 @@ class Type(object):
 
     @classmethod
     def list(cls, elm_t, memnode):
-        assert elm_t.is_scalar() or elm_t.is_undef()
+        #assert elm_t.is_scalar() or elm_t.is_undef()
         return Type('list', element=elm_t, memnode=memnode)
 
     @classmethod
     def tuple(cls, elm_t, memnode, length):
-        assert elm_t.is_scalar() or elm_t.is_undef()
+        #assert elm_t.is_scalar() or elm_t.is_undef()
         return Type('tuple', element=elm_t, memnode=memnode, length=length)
 
     @classmethod

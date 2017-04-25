@@ -314,6 +314,8 @@ class PureCtorBuilder(object):
         LineNumberSetter().process(ctor)
 
     def _build_field_var_init(self, instance, module, ctor, self_type_hints):
+        from ..io import Port, Queue
+
         self_sym = ctor.find_sym('self')
         assert instance in env.runtime_info.object_defaults
         for name, v in env.runtime_info.object_defaults[instance].items():
@@ -347,11 +349,28 @@ class PureCtorBuilder(object):
                 sym = module.add_sym(name)
                 if sym.typ.is_undef():
                     sym.set_type(typ)
-                dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
-                stm = self._build_move_stm(dst, v, module)
-                assert stm
-                stm.lineno = ctor.lineno
-                ctor.entry_block.append_stm(stm)
+
+                # deal with a list of port
+                if sym.typ.is_seq() and all([isinstance(item, (Port, Queue)) for item in v]):
+                    elem_t = None
+                    for i, item in enumerate(v):
+                        portsym = module.add_sym(name + '_' + str(i))
+                        typ = Type.from_expr(item, module)
+                        if elem_t is None:
+                            elem_t = typ
+                        portsym.set_type(typ)
+                        dst = ATTR(TEMP(self_sym, Ctx.STORE), portsym, Ctx.STORE, attr_scope=module)
+                        stm = self._build_move_stm(dst, item, module)
+                        assert stm
+                        stm.lineno = ctor.lineno
+                        ctor.entry_block.append_stm(stm)
+                    sym.typ.set_element(elem_t)
+                else:
+                    dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
+                    stm = self._build_move_stm(dst, v, module)
+                    assert stm
+                    stm.lineno = ctor.lineno
+                    ctor.entry_block.append_stm(stm)
 
     def _build_append_worker_call(self, instance, module, ctor, self_type_hints):
         self_sym = ctor.find_sym('self')
@@ -381,8 +400,7 @@ class PureCtorBuilder(object):
             assert isinstance(v, (bool, int, str))
             return MOVE(dst, CONST(v))
         elif dst.symbol().typ.is_list():
-            for item in v:
-                assert isinstance(item, (bool, int, str))
+            assert all([isinstance(item, (bool, int, str)) for item in v])
             items = [CONST(item) for item in v]
             array = ARRAY(items)
             return MOVE(dst, array)
@@ -415,11 +433,17 @@ class PureCtorBuilder(object):
             for name, field in di.items():
                 if obj is field:
                     sym = scope.find_sym(name)
-                    if not sym:
-                        sym = scope.add_sym(name)
+                    assert sym
                     if sym.typ.is_undef():
                         typ = Type.from_expr(field, scope)
                         sym.set_type(typ)
+                    return (sym, )
+                if isinstance(field, (list, tuple)) and obj in field:
+                    idx = field.index(obj)
+                    port_name = '{}_{}'.format(name, idx)
+                    sym = scope.find_sym(port_name)
+                    assert sym
+                    assert not sym.typ.is_undef()
                     return (sym, )
             for name, field in di.items():
                 if not hasattr(field, '__dict__'):

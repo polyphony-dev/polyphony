@@ -1,6 +1,7 @@
 from collections import defaultdict
 from .common import error_info
 from .common import fail
+from .env import env
 from .errors import Errors
 from .scope import Scope
 from .ir import CONST, TEMP, MOVE
@@ -76,6 +77,10 @@ class PortConverter(IRTransformer):
             typeprop.process(ctor)
             for w, args in m.workers:
                 typeprop.process(w)
+            for caller in env.call_graph.preds(m):
+                if caller.is_global():
+                    continue
+                typeprop.process(caller)
 
             self.union_ports = defaultdict(set)
             self.process(ctor)
@@ -180,3 +185,23 @@ class PortConverter(IRTransformer):
             for arg in ir.args:
                 self.union_ports[ir.var.symbol()].add(arg.symbol())
         super().visit_PHI(ir)
+
+
+class FlattenPortList(IRTransformer):
+    def visit_MREF(self, ir):
+        memsym = ir.mem.symbol()
+        memtyp = memsym.typ
+        assert memtyp.is_seq()
+        elm_t = memtyp.get_element()
+        if not elm_t.is_object():
+            return ir
+        if not elm_t.get_scope().is_port():
+            return ir
+        if not ir.offset.is_a(CONST):
+            return ir
+        portname = '{}_{}'.format(memsym.name, ir.offset.value)
+        scope = ir.mem.symbol().scope
+        portsym = scope.find_sym(portname)
+        assert portsym
+        ir.mem.set_symbol(portsym)
+        return ir.mem
