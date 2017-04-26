@@ -6,7 +6,7 @@ from .bitwidth import BitwidthReducer
 from .block import BlockReducer, PathExpTracer
 from .builtin import builtin_symbols
 from .callgraph import CallGraphBuilder
-from .common import read_source
+from .common import read_source, CompileError
 from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .copyopt import CopyOpt
@@ -368,14 +368,15 @@ def compile_plan():
         iftrans,
         reduceblk,
         dbg(dumpscope),
+        quadruple,
         earlytypeprop,
         dbg(dumpscope),
-        quadruple,
-        flattenport,
         typeprop,
         dbg(dumpscope),
         callgraph,
         typecheck,
+        flattenport,
+        typeprop,
         restrictioncheck,
         phase(env.PHASE_1),
         earlyconstopt_nonssa,
@@ -482,7 +483,7 @@ def setup(src_file, debug_mode):
         env.set_current_filename(package_file)
         translator.translate(read_source(package_file), package_name)
     env.set_current_filename(src_file)
-    g = Scope.create(None, env.global_scope_name, ['global', 'namespace'], lineno=1)
+    g = Scope.create(None, env.global_scope_name, {'global', 'namespace'}, lineno=1)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
 
@@ -522,8 +523,9 @@ def output_individual(compile_results, output_name, output_dir):
             code = compile_results[scope]
             if not code:
                 continue
-            file_name = '{}.v'.format(scope.orig_name)
-            if output_name.upper() == scope.orig_name.upper():
+            scope_name = scope.qualified_name()
+            file_name = '{}.v'.format(scope_name)
+            if output_name.upper() == scope_name.upper():
                 file_name = '_' + file_name
             with open('{}{}'.format(d, file_name), 'w') as f2:
                 f2.write(code)
@@ -569,7 +571,8 @@ def main():
 
     try:
         compile_main(src_file, options.output_name, options.output_dir, options.debug_mode)
-    except Exception as e:
-        if options.debug_mode:
-            raise e
+    except CompileError as e:
         print(e)
+    except Exception as e:
+        raise
+

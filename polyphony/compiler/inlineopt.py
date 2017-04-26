@@ -37,7 +37,9 @@ class InlineOpt(object):
             self._reduce_useless_move(scope)
 
     def _process_func(self, callee, caller, calls):
-        if callee.is_function_module() or callee.is_testbench():
+        if callee.is_testbench():
+            return
+        if caller.is_testbench() and callee.is_function_module():
             return
         for call, call_stm in calls:
             self.inline_counts[caller] += 1

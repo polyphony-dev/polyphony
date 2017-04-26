@@ -1,5 +1,8 @@
 ﻿import logging
 from .env import env
+from .errors import CompileError
+
+
 logger = logging.getLogger()
 
 
@@ -27,10 +30,6 @@ def error_info(scope, lineno):
     assert scope in env.scope_file_map
     filename = env.scope_file_map[scope]
     return '{}\n{}:{}'.format(filename, lineno, get_src_text(scope, lineno))
-
-
-class CompileError(Exception):
-    pass
 
 
 def print_error_info(info):

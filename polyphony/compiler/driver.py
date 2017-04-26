@@ -1,4 +1,5 @@
 ﻿import inspect
+import sys
 from .scope import Scope
 from .env import env
 import logging
@@ -31,6 +32,9 @@ class Driver(object):
     def run(self):
         while True:
             for i, proc in enumerate(self.procs):
+                if env.dev_debug_mode:
+                    print_progress((i + 1) * 100 // len(self.procs))
+
                 self.stage = i
                 args, _, _, _ = inspect.getargspec(proc)
                 Scope.reorder_scopes()
@@ -58,3 +62,12 @@ class Driver(object):
         if scope in self.codes:
             return self.codes[scope]
         return None
+
+
+def print_progress(percent):
+    i = percent // 4
+    sys.stdout.write('\r')
+    sys.stdout.write("Compiling: [%-25s] %d%%" % ('=' * i, percent))
+    sys.stdout.flush()
+    if percent == 100:
+        print('')

@@ -44,6 +44,14 @@ class Scope(Tagged):
         return s
 
     @classmethod
+    def create_namespace(cls, parent, name, tags):
+        tags |= {'namespace'}
+        namespace = Scope.create(parent, name, tags, lineno=1)
+        namesym = namespace.add_sym('__name__')
+        namesym.set_type(Type.str_t)
+        return namespace
+
+    @classmethod
     def destroy(cls, scope):
         assert scope.name in env.scopes
         env.remove_scope(scope)
@@ -386,7 +394,7 @@ class Scope(Tagged):
         return sym
 
     def inherit_sym(self, orig_sym, new_name):
-        assert orig_sym.scope is self
+        #assert orig_sym.scope is self
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
@@ -399,11 +407,11 @@ class Scope(Tagged):
         return new_sym
 
     def qualified_name(self):
-        n = ""
-        if self.parent is not None:
-            n = self.parent.qualified_name() + "_"
-        n += self.name
-        return n
+        if self.name.startswith(env.global_scope_name):
+            name = self.name[len(env.global_scope_name) + 1:]
+        else:
+            name = self.name
+        return name.replace('.', '_')
 
     def set_entry_block(self, blk):
         assert self.entry_block is None

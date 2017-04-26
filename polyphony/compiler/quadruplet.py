@@ -72,13 +72,6 @@ class QuadrupleMaker(IRTransformer):
         ir.right = self.visit(ir.right)
         return self._new_temp_move(ir, self.scope.add_temp())
 
-    def _has_return_type(self, ir):
-        if ir.is_a(CALL):
-            return not ir.func_scope.return_type.is_none()
-        elif ir.is_a(SYSCALL):
-            assert ir.sym.typ.is_function()
-            return not ir.sym.typ.get_return_type().is_none()
-
     def _visit_args(self, ir):
         for i, (name, arg) in enumerate(ir.args):
             arg = self.visit(arg)
@@ -95,7 +88,7 @@ class QuadrupleMaker(IRTransformer):
         ir.func = self.visit(ir.func)
         self._visit_args(ir)
 
-        if suppress or not self._has_return_type(ir):
+        if suppress:
             return ir
         return self._new_temp_move(ir, self.scope.add_temp())
 
@@ -106,7 +99,7 @@ class QuadrupleMaker(IRTransformer):
 
         self._visit_args(ir)
 
-        if suppress or not self._has_return_type(ir):
+        if suppress:
             return ir
         return self._new_temp_move(ir, self.scope.add_temp())
 
@@ -129,6 +122,7 @@ class QuadrupleMaker(IRTransformer):
         suppress = self.suppress_converting
         self.suppress_converting = False
 
+        ir.mem = self.visit(ir.mem)
         ir.offset = self.visit(ir.offset)
         if not ir.offset.is_a([TEMP, ATTR, CONST, UNOP]):
             fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
@@ -150,6 +144,10 @@ class QuadrupleMaker(IRTransformer):
 
     def visit_ATTR(self, ir):
         ir.exp = self.visit(ir.exp)
+        if ir.exp.is_a(TEMP) and ir.exp.sym.typ.is_namespace():
+            ir_ = TEMP(ir.attr, ir.ctx)
+            ir_.lineno = ir.lineno
+            ir = ir_
         return ir
 
     def visit_EXPR(self, ir):

@@ -360,6 +360,8 @@ class STGBuilder(object):
                         return self.scope.parent.orig_name
                     else:
                         return self.scope.orig_name
+                elif ir.exp.sym.typ.is_class():
+                    return ir.exp.sym.typ.get_scope().orig_name
                 else:
                     return ir.exp.sym.hdl_name()
             else:
@@ -413,7 +415,7 @@ class AHDLTranslator(object):
         if ir.func_scope.is_method():
             instance_name = self.host.make_instance_name(ir.func)
         else:
-            instance_name = '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)
+            instance_name = '{}_{}'.format(ir.func_scope.qualified_name(), node.instance_num)
         signal_prefix = self.host.get_signal_prefix(ir, node)
 
         callargs = self._visit_args(ir, node)

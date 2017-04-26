@@ -26,7 +26,7 @@ class HDLModuleBuilder(object):
             return HDLFunctionModuleBuilder()
 
     def process(self, scope):
-        self.module_info = HDLModuleInfo(scope, scope.orig_name, scope.name)
+        self.module_info = HDLModuleInfo(scope, scope.orig_name, scope.qualified_name())
         self._build_module(scope)
         scope.module_info = self.module_info
 

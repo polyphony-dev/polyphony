@@ -1,5 +1,6 @@
 ﻿import ast
 import copy
+import os
 import builtins as python_builtins
 from .ir import *
 from .block import Block
@@ -35,27 +36,51 @@ ignore_packages = []
 
 
 class ImportVisitor(ast.NodeVisitor):
+    def __init__(self, target_scope):
+        self.target_scope = target_scope
+
+    def _load_subfile(self, name):
+        from .common import read_source
+        dirname = os.path.dirname(env.current_filename)
+        filename = '{}{}{}.py'.format(dirname, os.path.sep, name)
+
+        if not os.path.isfile(filename):
+            filename = filename.lstrip('.')
+            filename = '{}{}'.format(os.getcwd(), filename)
+            if not os.path.isfile(filename):
+                return False
+        if name in env.scopes:
+            return True
+        cur_filename = env.current_filename
+        env.set_current_filename(filename)
+        namespace = Scope.create_namespace(None, name, set())
+        translator = IRTranslator()
+        translator.translate(read_source(filename), '', top=namespace)
+        env.set_current_filename(cur_filename)
+        return True
+
     def visit_Import(self, node):
-        # TODO: import to any scope
-        target_scope = Scope.global_scope()
         for nm in node.names:
             if nm.name not in BUILTIN_PACKAGES:
-                if nm.asname:
-                    ignore_packages.append(nm.asname)
+                if self._load_subfile(nm.name):
+                    pass
                 else:
-                    ignore_packages.append(nm.name)
-                continue
+                    if nm.asname:
+                        ignore_packages.append(nm.asname)
+                    else:
+                        ignore_packages.append(nm.name)
+                    continue
 
             target_namespace = env.scopes[nm.name]
             if nm.asname:
-                sym = target_scope.gen_sym(nm.asname)
+                sym = self.target_scope.gen_sym(nm.asname)
             else:
                 nms = nm.name.split('.')
-                parent = target_scope
+                parent = self.target_scope
                 for n in nms[:-1]:
                     if not parent.has_sym(n):
                         sym = parent.gen_sym(n)
-                        scope = Scope.create(parent, n, {'namespace'}, lineno=1)
+                        scope = Scope.create_namespace(parent, n, set())
                         sym.set_type(Type.namespace(scope))
                         parent = scope
                     else:
@@ -66,42 +91,37 @@ class ImportVisitor(ast.NodeVisitor):
             sym.set_type(Type.namespace(target_namespace))
 
     def visit_ImportFrom(self, node):
-        # TODO: import to any scope
-        target_scope = Scope.global_scope()
-
-        def import_to_global(imp_sym, asname=None):
-            if imp_sym.typ.has_scope():
-                #scope = env.scopes[qualified_name]
-                scope = imp_sym.typ.get_scope()
+        def import_to_scope(imp_sym, asname=None):
             if asname:
-                sym = target_scope.gen_sym(asname)
+                sym = self.target_scope.gen_sym(asname)
             else:
-                sym = target_scope.gen_sym(imp_sym.name)
+                sym = self.target_scope.gen_sym(imp_sym.name)
             sym.set_type(imp_sym.typ)
             sym.ancestor = imp_sym
 
         if node.module not in BUILTIN_PACKAGES:
-            print("WARNING: Unsupported module '{}'".format(node.module))
-            for nm in node.names:
-                if nm.asname:
-                    ignore_packages.append(nm.asname)
-                else:
-                    ignore_packages.append(nm.name)
-            return
-
+            if self._load_subfile(node.module):
+                pass
+            else:
+                # print("WARNING: Unsupported module '{}'".format(node.module))
+                for nm in node.names:
+                    if nm.asname:
+                        ignore_packages.append(nm.asname)
+                    else:
+                        ignore_packages.append(nm.name)
+                return
         from_scope = env.scopes[node.module]
         for nm in node.names:
             if nm.name == '*':
                 for imp_name in from_scope.all_imports:
                     imp_sym = from_scope.find_sym(nm.name)
-                    import_to_global(imp_sym)
+                    import_to_scope(imp_sym)
                 break
             else:
-                qname = node.module + '.' + nm.name
                 imp_sym = from_scope.find_sym(nm.name)
                 if not imp_sym:
-                    fail((target_scope, node.lineno), Errors.CANNOT_IMPORT, [nm.name])
-                import_to_global(imp_sym, nm.asname)
+                    fail((self.target_scope, node.lineno), Errors.CANNOT_IMPORT, [nm.name])
+                import_to_scope(imp_sym, nm.asname)
 
 
 class FunctionVisitor(ast.NodeVisitor):
@@ -299,7 +319,10 @@ class CodeVisitor(ast.NodeVisitor):
         self.type_comments = type_comments
 
         self.current_block = Block(self.current_scope)
-        self.current_scope.set_entry_block(self.current_block)
+        if self.current_scope.entry_block is None:
+            self.current_scope.set_entry_block(self.current_block)
+        else:
+            self.current_scope.entry_block.connect(self.current_block)
         self.function_exit = None
 
         self.loop_bridge_blocks = []
@@ -944,9 +967,7 @@ class CodeVisitor(ast.NodeVisitor):
         if func.is_a(TEMP):
             if func.symbol().typ.is_class():
                 return NEW(func.symbol().typ.get_scope(), args, kwargs)
-
-            func_name = func.symbol().orig_name()
-            sym = self.current_scope.find_sym(func_name)
+            sym = self.current_scope.find_sym(func.symbol().name)
             func_scope = sym.typ.get_scope() if sym.typ.has_scope() else None
             #assert func_scope
             if not func_scope:
@@ -964,8 +985,7 @@ class CodeVisitor(ast.NodeVisitor):
                         and func.attr.typ.get_scope().name in builtin_symbols):
                     builtin_sym = builtin_symbols[func.attr.typ.get_scope().name]
                     return SYSCALL(builtin_sym, args, kwargs)
-                elif (func.attr.typ.is_class()
-                      and func.attr.typ.get_scope().name in lib_class_names):
+                elif func.attr.typ.is_class():
                     return NEW(func.attr.typ.get_scope(), args, kwargs)
             else:
                 scope_sym = func.tail()
@@ -1275,24 +1295,26 @@ class IRTranslator(object):
             type_comments[i + 1] = type_hint
         return type_comments
 
-    def translate(self, source, lib_name):
+    def translate(self, source, lib_name, top=None):
         tree = ast.parse(source)
-
         if lib_name:
             if lib_name == '__builtin__':
-                top_scope = Scope.create(None, lib_name, {'namespace', 'lib'}, lineno=1)
+                top_scope = Scope.create_namespace(None, lib_name, {'lib'})
             elif lib_name == 'polyphony':
-                top_scope = Scope.create(None, lib_name, {'namespace', 'lib'}, lineno=1)
+                top_scope = Scope.create_namespace(None, lib_name, {'lib'})
                 for sym in builtin_symbols.values():
                     top_scope.import_sym(sym)
             else:
                 lib_root = env.scopes['polyphony']
-                top_scope = Scope.create(lib_root, lib_name, {'namespace', 'lib'}, lineno=1)
+                top_scope = Scope.create_namespace(lib_root, lib_name, {'lib'})
                 sym = lib_root.add_sym(lib_name)
                 sym.set_type(Type.namespace(top_scope))
         else:
-            top_scope = Scope.global_scope()
-            ImportVisitor().visit(tree)
+            if top:
+                top_scope = top
+            else:
+                top_scope = Scope.global_scope()
+            ImportVisitor(top_scope).visit(tree)
             logger.debug(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
             logger.debug('ignore packages')
             logger.debug(ignore_packages)

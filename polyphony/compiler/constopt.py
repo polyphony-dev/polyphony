@@ -99,7 +99,7 @@ def _try_get_constant(sym, scope):
     return defstm.src
 
 
-def try_get_constant(sym, scope, idx=None):
+def try_get_constant(qsym):
     def find_value(vars, names):
         if len(names) > 1:
             head = names[0]
@@ -113,7 +113,7 @@ def try_get_constant(sym, scope, idx=None):
                 return vars[name]
         return None
     vars = env.runtime_info.global_vars
-    names = scope.name.split('.')[1:] + [sym.name]
+    names = [sym.name for sym in qsym]
     v = find_value(vars, names)
     if isinstance(v, dict) and not v:
         return None
@@ -379,7 +379,7 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_TEMP(self, ir):
         if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
-            c = try_get_constant(ir.sym, ir.sym.scope)
+            c = try_get_constant(ir.qualified_symbol())
             if c:
                 return c
             else:
@@ -389,7 +389,7 @@ class ConstantOpt(ConstantOptBase):
     def visit_ATTR(self, ir):
         receiver = ir.tail()
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
-            c = try_get_constant(ir.attr, ir.attr_scope)
+            c = try_get_constant(ir.qualified_symbol())
             if c:
                 return c
             else:
@@ -413,7 +413,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
 
     def visit_TEMP(self, ir):
         if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
-            c = try_get_constant(ir.sym, ir.sym.scope)
+            c = try_get_constant(ir.qualified_symbol())
             if c:
                 return c
             else:
@@ -423,7 +423,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
     def visit_ATTR(self, ir):
         receiver = ir.tail()
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
-            c = try_get_constant(ir.attr, ir.attr_scope)
+            c = try_get_constant(ir.qualified_symbol())
             if c:
                 return c
             else:
@@ -487,14 +487,20 @@ class GlobalConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        c = try_get_constant(ir.sym, ir.sym.scope)
+        g = Scope.global_scope()
+        if ir.sym.scope.is_class():
+            class_sym = g.find_sym(ir.sym.scope.orig_name)
+            qsym = (class_sym, ) + ir.qualified_symbol()
+        else:
+            qsym = ir.qualified_symbol()
+        c = try_get_constant(qsym)
         if c:
             return c
         return ir
 
     def visit_ATTR(self, ir):
         if ir.tail().typ.is_class():
-            c = try_get_constant(ir.attr, ir.attr.scope)
+            c = try_get_constant(ir.qualified_symbol())
             if c:
                 return c
         return ir

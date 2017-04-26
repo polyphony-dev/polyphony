@@ -574,11 +574,17 @@ class MemRefGraph(object):
             preds = new_node.preds[:]
             new_node.preds = []
             for succ in succs:
-                new_succ = node_map[succ]
-                self.add_edge(new_node, new_succ)
+                if succ in node_map:
+                    new_succ = node_map[succ]
+                    self.add_edge(new_node, new_succ)
+                else:
+                    self.add_edge(new_node, succ)
             for pred in preds:
-                new_pred = node_map[pred]
-                self.add_edge(new_pred, new_node)
+                if pred in node_map:
+                    new_pred = node_map[pred]
+                    self.add_edge(new_pred, new_node)
+                else:
+                    self.add_edge(pred, new_node)
         return node_map
 
 
@@ -783,8 +789,8 @@ class MemRefGraphBuilder(IRVisitor):
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
         if memsym.typ.is_seq():
-            if memsym.scope.is_global() or (ir.mem.is_a(ATTR) and ir.mem.head().typ.is_class()):
-                memsym = memsym.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
+            if memsym.scope.is_global() or (ir.mem.is_a(ATTR) and ir.mem.tail().typ.is_class()):
+                memsym = self.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
                 memnode = self.mrg.node(memsym)

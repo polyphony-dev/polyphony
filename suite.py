@@ -22,6 +22,7 @@ DIRS = (
     'func',
     'testbench',
     'class',
+    'import',
     'io',
     'module',
     'pure',

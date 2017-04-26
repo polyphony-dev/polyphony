@@ -82,6 +82,8 @@ class EarlyWorkerInstantiator(object):
 
 class EarlyModuleInstantiator(object):
     def process_all(self):
+        if not env.enable_pure:
+            return []
         new_modules = set()
         for name, inst in env.runtime_info.module_instances.items():
             new_module = self._instantiate_module(name, inst)

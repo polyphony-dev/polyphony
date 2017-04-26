@@ -30,7 +30,7 @@ class MemoryRenamer(object):
                 remove_args = []
                 args = set()
                 for arg in phi.args:
-                    args.add(arg.sym)
+                    args.add(arg.symbol())
                     if arg.is_a(TEMP) and arg.symbol() is phi.var.symbol():
                         remove_args.append(arg)
                 if len(args) == 1:
@@ -54,7 +54,7 @@ class MemoryRenamer(object):
         for mv in stms:
             logger.debug('!!! mem def stm ' + str(mv))
             assert mv.src.is_a(ARRAY) \
-                or (mv.src.is_a(TEMP) and mv.src.sym.is_param())
+                or (mv.src.is_a(TEMP) and mv.src.symbol().is_param())
 
             memsym = mv.dst.symbol()
             memsrcs.append(memsym)
@@ -62,16 +62,16 @@ class MemoryRenamer(object):
             worklist.extend(list(uses))
 
         def merge_mem_var(src, dst):
-            src_mems = mem_var_map[src.sym]
-            if dst.sym in src_mems:
-                src_mems.remove(dst.sym)
-            dst_mems = mem_var_map[dst.sym]
+            src_mems = mem_var_map[src.symbol()]
+            if dst.symbol() in src_mems:
+                src_mems.remove(dst.symbol())
+            dst_mems = mem_var_map[dst.symbol()]
             if len(src_mems) > 1:
                 # this src is joined reference
-                mem_var_map[dst.sym] = dst_mems.union(set([src.sym]))
+                mem_var_map[dst.symbol()] = dst_mems.union(set([src.symbol()]))
             else:
-                mem_var_map[dst.sym] = dst_mems.union(src_mems)
-            return len(mem_var_map[dst.sym]) != len(dst_mems)
+                mem_var_map[dst.symbol()] = dst_mems.union(src_mems)
+            return len(mem_var_map[dst.symbol()]) != len(dst_mems)
 
         dones = set()
         moves = set()
@@ -84,43 +84,43 @@ class MemoryRenamer(object):
                     moves.add(stm)
                     if stm.src.sym in mem_var_map:
                         updated = merge_mem_var(stm.src, stm.dst)
-                        sym2var[stm.dst.sym].add(stm.dst)
+                        sym2var[stm.dst.symbol()].add(stm.dst)
                         if not updated and stm in dones:
                             # reach fix point ?
                             continue
                     else:
                         assert stm.src.sym in memsrcs
                         mem = stm.src.sym
-                        if (stm.dst.sym in mem_var_map and
-                                mem in mem_var_map[stm.dst.sym] and
+                        if (stm.dst.symbol() in mem_var_map and
+                                mem in mem_var_map[stm.dst.symbol()] and
                                 stm in dones):
                             # reach fix point ?
                             continue
-                        mem_var_map[stm.dst.sym].add(mem)
-                        sym2var[stm.dst.sym].add(stm.dst)
+                        mem_var_map[stm.dst.symbol()].add(mem)
+                        sym2var[stm.dst.symbol()].add(stm.dst)
 
-                    sym = stm.dst.sym
+                    sym = stm.dst.symbol()
 
                 elif stm.src.is_a(MSTORE):
-                    if stm.src.mem.sym in mem_var_map:
+                    if stm.src.mem.symbol() in mem_var_map:
                         updated = merge_mem_var(stm.src.mem, stm.dst)
-                        sym2var[stm.dst.sym].add(stm.dst)
+                        sym2var[stm.dst.symbol()].add(stm.dst)
                         if not updated:
                             # reach fix point ?
                             if stm in dones:
                                 continue
                     else:
-                        assert stm.src.mem.sym in memsrcs
-                        mem = stm.src.mem.sym
-                        if (stm.dst.sym in mem_var_map and
-                                mem in mem_var_map[stm.dst.sym] and
+                        assert stm.src.mem.symbol() in memsrcs
+                        mem = stm.src.mem.symbol()
+                        if (stm.dst.symbol() in mem_var_map and
+                                mem in mem_var_map[stm.dst.symbol()] and
                                 stm in dones):
                             # reach fix point ?
                             continue
-                        mem_var_map[stm.dst.sym].add(mem)
-                        sym2var[stm.dst.sym].add(stm.dst)
+                        mem_var_map[stm.dst.symbol()].add(mem)
+                        sym2var[stm.dst.symbol()].add(stm.dst)
 
-                    sym = stm.dst.sym
+                    sym = stm.dst.symbol()
 
             elif stm.is_a(PHI):
                 updated = False
@@ -144,8 +144,8 @@ class MemoryRenamer(object):
                 worklist.extend(list(uses))
                 for u in uses:
                     for var in usedef.get_vars_used_at(u):
-                        if var.sym is sym:
-                            sym2var[var.sym].add(var)
+                        if var.symbol() is sym:
+                            sym2var[var.symbol()].add(var)
 
             dones.add(stm)
 
@@ -154,11 +154,11 @@ class MemoryRenamer(object):
             if len(mems) == 1:
                 m = mems.pop()
                 for v in sym2var[sym]:
-                    v.sym = m
+                    v.set_symbol(m)
 
         for mv in moves:
             if mv.src.is_a(TEMP):
-                if mv.dst.sym is mv.src.sym:
+                if mv.dst.symbol() is mv.src.sym:
                     mv.block.stms.remove(mv)
         self._cleanup_phi()
 

@@ -1,6 +1,14 @@
 from enum import Enum
 
 
+class CompileError(Exception):
+    pass
+
+
+class InterpretError(Exception):
+    pass
+
+
 class Errors(Enum):
     # type errors
     MUST_BE_X_TYPE = 100

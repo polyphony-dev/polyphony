@@ -42,19 +42,18 @@ class TypePropagation(IRVisitor):
         while True:
             untyped = []
             for s in scopes:
+                self.pure_type_inferrer = PureFuncTypeInferrer()
                 try:
-                    self.process(s)
+                    super().process(s)
                 except RejectPropagation as r:
                     #print(r)
                     untyped.append(s)
-                    continue
+
             if untyped:
                 if len(prev_untyped) == len(untyped):
-                    if self.check_error:
-                        str_untypes = ', '.join([s.name[len(env.global_scope_name) + 1:] for s in untyped])
-                        raise TypeError('BUG: can not complete the type inference process for ' +
-                                        str_untypes)
-                    self.check_error = True
+                    # a scope in untyped might be unused,
+                    # so we will not make an error cheking here.
+                    break
                 prev_untyped = untyped[:]
                 continue
             break
@@ -64,7 +63,10 @@ class TypePropagation(IRVisitor):
 
     def process(self, scope):
         self.pure_type_inferrer = PureFuncTypeInferrer()
-        super().process(scope)
+        try:
+            super().process(scope)
+        except RejectPropagation as r:
+            pass
         return [scope for scope in self.new_scopes if not scope.is_lib()]
 
     def visit_UNOP(self, ir):
