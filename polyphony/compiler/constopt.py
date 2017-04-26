@@ -315,6 +315,8 @@ class ConstantOpt(ConstantOptBase):
 
     def _process_unconditional_cjump(self, cjump, worklist):
         def remove_dominated_branch(blk):
+            if not blk.preds:
+                return
             blk.preds = []  # mark as garbage block
             remove_from_list(worklist, blk.stms)
             for succ in blk.succs:
