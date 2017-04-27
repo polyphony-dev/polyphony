@@ -33,7 +33,7 @@ class Driver(object):
         while True:
             for i, proc in enumerate(self.procs):
                 if env.dev_debug_mode:
-                    print_progress((i + 1) * 100 // len(self.procs))
+                    print_progress(proc, (i + 1) * 100 // len(self.procs))
 
                 self.stage = i
                 args, _, _, _ = inspect.getargspec(proc)
@@ -64,10 +64,10 @@ class Driver(object):
         return None
 
 
-def print_progress(percent):
+def print_progress(proc, percent):
     i = percent // 4
     sys.stdout.write('\r')
-    sys.stdout.write("Compiling: [%-25s] %d%%" % ('=' * i, percent))
+    sys.stdout.write('Compiling: [{:<25}] {}% ... {:<24}'.format('=' * i, percent, proc.__name__))
     sys.stdout.flush()
     if percent == 100:
         print('')
