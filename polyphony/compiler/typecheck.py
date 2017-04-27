@@ -745,6 +745,13 @@ class ModuleChecker(IRVisitor):
     def _check_append_worker(self, call):
         for i, (_, arg) in enumerate(call.args):
             if i == 0:
+                func = arg
+                assert func.symbol().typ.is_function()
+                worker_scope = func.symbol().typ.get_scope()
+                if worker_scope.is_method():
+                    assert self.scope.is_ctor()
+                    if not self.scope.parent.is_subclassof(worker_scope.parent):
+                        fail(self.current_stm, Errors.WORKER_MUST_BE_METHOD_OF_MODULE)
                 continue
             if arg.is_a(CONST):
                 continue

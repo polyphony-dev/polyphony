@@ -62,6 +62,7 @@ class Errors(Enum):
     PORT_MUST_BE_IN_MODULE = 907
     PORT_PARAM_MUST_BE_CONST = 908
     PORT_IS_NOT_USED = 909
+    WORKER_MUST_BE_METHOD_OF_MODULE = 910
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -133,6 +134,7 @@ ERROR_MESSAGES = {
     Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",
     Errors.PORT_PARAM_MUST_BE_CONST: "The port class constructor accepts only constants",
     Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
+    Errors.WORKER_MUST_BE_METHOD_OF_MODULE: "The worker must be a method of the module",
 
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
