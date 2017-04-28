@@ -287,10 +287,11 @@ class SimpleLoopUnroll(object):
         blk.head.succs = [next_block]
         if blk.head in cjump.false.preds:
             cjump.false.preds.remove(blk.head)
-
+            assert blk.head not in cjump.false.preds_loop
         loop_tails = [p for p in blk.head.preds if p in blk.bodies]
         for tail in loop_tails:
             blk.head.preds.remove(tail)
+            assert tail not in blk.head.preds_loop
             cjump.false.preds = [tail]
             tail.succs = [cjump.false]
             tail.succs_loop = []

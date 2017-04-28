@@ -24,3 +24,8 @@ def is_worker_running() -> bool:
 @decorator
 def module() -> None:
     pass
+
+
+@decorator
+def rule(kwargs) -> None:
+    pass

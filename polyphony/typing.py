@@ -1,6 +1,7 @@
 '''
 Like the Python typing module, this library provides type classes for type hinting.
 The following type classes are provided.
+
     - polyphony.typing.bit
     - polyphony.typing.int<n>
     - polyphony.typing.uint<n>

@@ -31,6 +31,7 @@ class Block(object):
         self.num = scope.block_count
         self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
         self.path_exp = None
+        self.synth_params = self.scope.synth_params.copy()
 
     def _str_connection(self):
         s = ''
@@ -53,6 +54,7 @@ class Block(object):
                 bs.append(blk.name)
         s += ', '.join([b for b in bs])
         s += '}\n'
+        s += ' # synthesis params {}\n'.format(self.synth_params)
 
         return s
 
@@ -319,6 +321,11 @@ class CompositBlock(Block):
             self.preds[i] = blk_map[pred]
 
 
+def can_merge_synth_params(params1, params2):
+    # TODO
+    return params1 == params2
+
+
 class BlockReducer(object):
     def process(self, scope):
         if scope.is_class():
@@ -343,7 +350,8 @@ class BlockReducer(object):
             # TODO: any jump.typ
             if (len(block.preds) == 1 and
                     len(block.preds[0].succs) == 1 and
-                    not block.preds[0].stms[-1].typ == 'C'):
+                    not block.preds[0].stms[-1].typ == 'C' and
+                    can_merge_synth_params(block.synth_params, block.preds[0].synth_params)):
                 pred = block.preds[0]
                 assert pred.stms[-1].is_a(JUMP)
                 assert pred.succs[0] is block

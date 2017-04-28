@@ -128,13 +128,7 @@ class FunctionVisitor(ast.NodeVisitor):
     def __init__(self, top_scope):
         self.current_scope = top_scope
         self.annotation_visitor = AnnotationVisitor(self)
-
-    def visit_Name(self, node):
-        return node.id
-
-    def visit_Attribute(self, node):
-        a = '{}.{}'.format(self.visit(node.value), node.attr)
-        return a
+        self.decorator_visitor = DecoratorVisitor(self)
 
     def _leave_scope(self, outer_scope):
         # override it if already exists
@@ -167,12 +161,24 @@ class FunctionVisitor(ast.NodeVisitor):
 
         outer_scope = self.current_scope
 
+        synth_params = None
         tags = set()
         for deco in node.decorator_list:
-            deco_name = self.visit(deco)
+            deco_info = self.decorator_visitor.visit(deco)
+            if isinstance(deco_info, str):
+                deco_name = deco_info
+            elif isinstance(deco_info, tuple):
+                deco_name = deco_info[0]
+                deco_args = deco_info[1]
+                deco_kwargs = deco_info[2]
+            else:
+                assert False
             sym = self.current_scope.find_sym(deco_name)
             if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
-                tags.add(sym.typ.get_scope().orig_name)
+                if sym.typ.get_scope().name == 'polyphony.rule':
+                    synth_params = deco_kwargs
+                else:
+                    tags.add(sym.typ.get_scope().orig_name)
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
                 tags.add(deco_name)
             else:
@@ -189,7 +195,8 @@ class FunctionVisitor(ast.NodeVisitor):
             tags.add('lib')
 
         self.current_scope = Scope.create(outer_scope, node.name, tags, node.lineno)
-
+        if synth_params:
+            self.current_scope.synth_params.update(synth_params)
         for arg in node.args.args:
             param_in, param_copy = _make_param_symbol(arg)
             self.current_scope.add_param(param_in, param_copy, None)
@@ -238,7 +245,7 @@ class FunctionVisitor(ast.NodeVisitor):
 
         tags = set()
         for deco in node.decorator_list:
-            deco_name = self.visit(deco)
+            deco_name = self.decorator_visitor.visit(deco)
             sym = self.current_scope.find_sym(deco_name)
             if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
                 tags.add(sym.typ.get_scope().orig_name)
@@ -333,6 +340,7 @@ class CodeVisitor(ast.NodeVisitor):
 
         self.annotation_visitor = AnnotationVisitor(self)
         self.lazy_defs = []
+        self.current_synth_params = {}
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -359,14 +367,18 @@ class CodeVisitor(ast.NodeVisitor):
         return not last.is_a(JUMP) and \
             not (last.is_a(MOVE) and last.dst.is_a(TEMP) and last.dst.sym.is_return())
 
-    #-------------------------------------------------------------------------
+    def _new_block(self, scope, nametag='b'):
+        blk = Block(scope, nametag)
+        if self.current_synth_params:
+            blk.synth_params.update(self.current_synth_params)
+        return blk
 
     def _enter_scope(self, name):
         outer_scope = self.current_scope
         self.current_scope = env.scopes[outer_scope.name + '.' + name]
 
         last_block = self.current_block
-        new_block = Block(self.current_scope)
+        new_block = self._new_block(self.current_scope)
         self.current_scope.set_entry_block(new_block)
         self.current_block = new_block
 
@@ -399,7 +411,7 @@ class CodeVisitor(ast.NodeVisitor):
     def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
         outer_function_exit = self.function_exit
-        self.function_exit = Block(self.current_scope, 'exit')
+        self.function_exit = self._new_block(self.current_scope, 'exit')
         if self.current_scope.is_method():
             params = self.current_scope.params[1:]  # skip 'self'
         else:
@@ -440,7 +452,7 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.set_exit_block(self.function_exit)
         else:
             self.current_scope.set_exit_block(self.current_block)
-
+        # self.function_exit.synth_params.update(self.current_synth_params)
         self.function_exit = outer_function_exit
         self._leave_scope(*context)
 
@@ -468,7 +480,7 @@ class CodeVisitor(ast.NodeVisitor):
             param_copy.set_type(param_t)
             ctor.add_param(param_in, param_copy, None)
             # add empty block
-            blk = Block(ctor)
+            blk = self._new_block(ctor)
             ctor.set_entry_block(blk)
             ctor.set_exit_block(blk)
             # add necessary symbol
@@ -569,9 +581,9 @@ class CodeVisitor(ast.NodeVisitor):
         #ifexit:
 
         if_head = self.current_block
-        if_then = Block(self.current_scope, 'ifthen')
-        if_else = Block(self.current_scope, 'ifelse')
-        if_exit = Block(self.current_scope)
+        if_then = self._new_block(self.current_scope, 'ifthen')
+        if_else = self._new_block(self.current_scope, 'ifelse')
+        if_exit = self._new_block(self.current_scope)
 
         condition = self.visit(node.test)
         if not condition.is_a(RELOP):
@@ -625,11 +637,11 @@ class CodeVisitor(ast.NodeVisitor):
         #   goto whileexit
         #whileexit:
 
-        while_block = Block(self.current_scope, 'while')
-        body_block = Block(self.current_scope, 'whilebody')
-        loop_bridge_block = Block(self.current_scope, 'whilebridge')
-        else_block = Block(self.current_scope, 'whileelse')
-        exit_block = Block(self.current_scope, 'whileexit')
+        while_block = self._new_block(self.current_scope, 'while')
+        body_block = self._new_block(self.current_scope, 'whilebody')
+        loop_bridge_block = self._new_block(self.current_scope, 'whilebridge')
+        else_block = self._new_block(self.current_scope, 'whileelse')
+        exit_block = self._new_block(self.current_scope, 'whileexit')
 
         self.emit(JUMP(while_block), node)
         self.current_block.connect(while_block)
@@ -789,11 +801,11 @@ class CodeVisitor(ast.NodeVisitor):
                  Errors.UNSUPPORTED_SYNTAX, ['This type of for statement'])
 
     def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, node):
-        loop_check_block = Block(self.current_scope, 'fortest')
-        body_block = Block(self.current_scope, 'forbody')
-        else_block = Block(self.current_scope, 'forelse')
-        continue_block = Block(self.current_scope, 'continue')
-        exit_block = Block(self.current_scope)
+        loop_check_block = self._new_block(self.current_scope, 'fortest')
+        body_block = self._new_block(self.current_scope, 'forbody')
+        else_block = self._new_block(self.current_scope, 'forelse')
+        continue_block = self._new_block(self.current_scope, 'continue')
+        exit_block = self._new_block(self.current_scope)
 
         # initialize part
         for code in init_parts:
@@ -847,7 +859,53 @@ class CodeVisitor(ast.NodeVisitor):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])
 
     def visit_With(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['with statement'])
+        is_empty_entry = self.current_block is self.current_scope.entry_block and not self.current_block.stms
+        if not is_empty_entry:
+            with_block = self._new_block(self.current_scope, 'with')
+            self.emit(JUMP(with_block), node)
+            self.current_block.connect(with_block)
+            self.current_block = with_block
+        # TODO: __enter__ and __exit__ calls
+        old_synth_params = None
+        for item in node.items:
+            expr, var = self.visit(item)
+            if expr.is_a(CALL):
+                if expr.func.symbol().typ.get_scope().name == 'polyphony.rule':
+                    # merge nested params
+                    old_synth_params = self.current_synth_params
+                    self.current_synth_params = self.current_synth_params.copy()
+                    self.current_synth_params.update(expr.kwargs)
+                    if len(node.items) != 1:
+                        assert False  # TODO: use fail()
+                    if expr.args:
+                        assert False  # TODO: use fail()
+                    break
+                elif var:
+                    self.emit(MOVE(var, expr), node)
+                else:
+                    self.emit(EXPR(expr), node)
+            else:
+                raise NotImplementedError()
+        self.current_block.synth_params.update(self.current_synth_params)
+
+        for body in node.body:
+            self.visit(body)
+        if old_synth_params is not None:
+            self.current_synth_params = old_synth_params
+
+        if self._needJUMP(self.current_block):
+            new_block = self._new_block(self.current_scope)
+            self.emit(JUMP(new_block), node)
+            self.current_block.connect(new_block)
+            self.current_block = new_block
+
+    def visit_withitem(self, node):
+        expr = self.visit(node.context_expr)
+        if node.optional_vars:
+            var = self.visit(node.optional_vars)
+            return expr, var
+        else:
+            return expr, None
 
     def visit_AsyncWith(self, node):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async with statement'])
@@ -1166,6 +1224,16 @@ class AnnotationVisitor(ast.NodeVisitor):
 
     def visit_Str(self, node):
         return node.s
+
+
+class DecoratorVisitor(AnnotationVisitor):
+    def visit_Call(self, node):
+        func = self.visit(node.func)
+        args = list(map(self.visit, node.args))
+        kwargs = {}
+        for kw in node.keywords:
+            kwargs[kw.arg] = self.visit(kw.value)
+        return (func, args, kwargs)
 
 
 class PureScopeVisitor(ast.NodeVisitor):

@@ -5,6 +5,9 @@ import inspect
 from collections import defaultdict
 from . import io
 from . import version
+from . import timing
+from . import typing
+
 
 __version__ = version.__version__
 __all__ = [
@@ -21,10 +24,19 @@ def testbench(func):
     A decorator to mark a testbench function.
 
     This decorator can be used to define a testbench function.
-    The testbench function can accept only one instance of a module class as an argument.
 
-    *Examples:*
+    Usage::
+
+        @testbench
+        def test():
+            ...
+
+
+    The testbench function can also accept only one instance of a module class as an argument.
+
     ::
+
+        m = MyModule()
 
         @testbench
         def test(m):
@@ -32,7 +44,6 @@ def testbench(func):
             m.input1.wr(20)
             ...
 
-        m = MyModule()
         test(m)
     '''
     def _testbench_decorator(module_instance=None):
@@ -247,3 +258,28 @@ class _Worker(threading.Thread):
 
     def prejoin(self):
         super().join(0.01)
+
+
+class _Rule(object):
+    class _Stub(object):
+        def __init__(self, **kwargs):
+            self.rules = kwargs
+
+        def __enter__(self):
+            print('with rules=', self.rules)
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def __call__(self, func):
+            def wrapper(*args, **kwargs):
+                func(*args, **kwargs)
+            print('decorator rules=', self.rules)
+            return wrapper
+
+    def __call__(self, **kwargs):
+        return _Rule._Stub(**kwargs)
+
+
+rule = _Rule()

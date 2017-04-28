@@ -142,6 +142,7 @@ class Scope(Tagged):
         self.worker_owner = None
         self.asap_latency = -1
         self.type_args = []
+        self.synth_params = {}
 
     def __str__(self):
         s = '\n================================\n'
