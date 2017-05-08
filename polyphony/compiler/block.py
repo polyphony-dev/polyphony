@@ -333,6 +333,7 @@ class BlockReducer(object):
         self.removed_blks = []
         self._merge_unidirectional_block(scope)
         self._remove_empty_block(scope)
+        self._replace_cjump(scope)
         for blk in scope.traverse_blocks():
             blk.order = -1
         Block.set_order(scope.entry_block, 0)
@@ -343,6 +344,14 @@ class BlockReducer(object):
                 for p in scope.paths:
                     if r in p:
                         p.remove(r)
+
+    def _replace_cjump(self, scope):
+        for block in scope.traverse_blocks():
+            for stm in block.stms:
+                if stm.is_a(CJUMP) and stm.true is stm.false:
+                    idx = block.stms.index(stm)
+                    block.stms[idx] = JUMP(stm.true)
+                    block.succs = [stm.true]
 
     def _merge_unidirectional_block(self, scope):
         for block in scope.traverse_blocks():
@@ -421,22 +430,8 @@ class PathExpTracer(object):
             # Unlike other jump instructions,
             # the target of JUMP may be a confluence node
             if jump.target.path_exp:
-                if ((jump.target.path_exp.is_a(UNOP) and
-                        jump.target.path_exp.op == 'Not' and
-                        jump.target.path_exp.exp == blk.path_exp) or
-                        (blk.path_exp and blk.path_exp.is_a(UNOP) and
-                         blk.path_exp.op == 'Not' and
-                         blk.path_exp.exp == jump.target.path_exp)):
-                    jump.target.path_exp = None
-                    # evaluate again from here
-                    if jump.target not in self.worklist:
-                        self.worklist.append(jump.target)
-                elif jump.target.path_exp == blk.path_exp:
-                    pass
-                elif not blk.path_exp:
-                    pass
-                else:
-                    jump.target.path_exp = RELOP('Or', blk.path_exp, jump.target.path_exp)
+                parent_blk = self.tree.get_parent_of(blk)
+                jump.target.path_exp = parent_blk.path_exp
             elif jump.target in blk.succs_loop:
                 pass
             else:
@@ -445,23 +440,38 @@ class PathExpTracer(object):
             if blk.path_exp:
                 for c in children:
                     if c is jump.true:
-                        c.path_exp = RELOP('And', blk.path_exp,
-                                           jump.exp)
+                        exp = self.reduce_And_exp(blk.path_exp, jump.exp)
+                        if exp:
+                            c.path_exp = exp
+                        else:
+                            c.path_exp = RELOP('And', blk.path_exp, jump.exp)
                     elif c is jump.false:
-                        c.path_exp = RELOP('And', blk.path_exp,
-                                           UNOP('Not', jump.exp))
+                        exp = self.reduce_And_exp(blk.path_exp, UNOP('Not', jump.exp))
+                        if exp:
+                            c.path_exp = exp
+                        else:
+                            c.path_exp = RELOP('And', blk.path_exp, UNOP('Not', jump.exp))
                     else:
                         c.path_exp = blk.path_exp
             else:
                 jump.true.path_exp = jump.exp
-                jump.false.path_exp = UNOP('Not', jump.exp)
+                if jump.exp.is_a(CONST):
+                    if jump.exp.value != 0:
+                        jump.false.path_exp = CONST(0)
+                    else:
+                        jump.false.path_exp = CONST(1)
+                else:
+                    jump.false.path_exp = UNOP('Not', jump.exp)
         elif jump.is_a(MCJUMP):
             if blk.path_exp:
                 for c in children:
                     if c in jump.targets:
                         idx = jump.targets.index(c)
-                        c.path_exp = RELOP('And', blk.path_exp,
-                                           jump.conds[idx])
+                        exp = self.reduce_And_exp(blk.path_exp, jump.conds[idx])
+                        if exp:
+                            c.path_exp = exp
+                        else:
+                            c.path_exp = RELOP('And', blk.path_exp, jump.conds[idx])
                     else:
                         c.path_exp = blk.path_exp
             else:
@@ -469,3 +479,18 @@ class PathExpTracer(object):
                     t.path_exp = cond
         for child in children:
             self.traverse_dtree(child)
+
+    def reduce_And_exp(self, exp1, exp2):
+        if exp1.is_a(CONST):
+            if exp1.value != 0 or exp1.value is True:
+                return exp2
+            else:
+                return exp1
+        elif exp2.is_a(CONST):
+            if exp2.value != 0 or exp2.value is True:
+                return exp1
+            else:
+                return exp2
+        if exp1.is_a(TEMP) and exp2.is_a(UNOP) and exp2.op == 'Not' and exp1.sym is exp2.exp.sym:
+            return CONST(0)
+        return None
