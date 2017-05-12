@@ -42,6 +42,7 @@ def suite(compile_only, *cases):
 
 def error_test():
     for t in sorted(glob.glob('{1}{0}error{0}*.py'.format(os.path.sep, TEST_DIR))):
+        print(t)
         error.error_test(t, output=False)
 
 

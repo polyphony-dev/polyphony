@@ -1,5 +1,5 @@
 ﻿import logging
-from .env import env
+from .env import env, Env
 from .errors import CompileError
 
 
@@ -42,7 +42,8 @@ def print_error_info(info):
 
 
 def fail(info, err_id, args=None):
-    print_error_info(info)
+    if env.quiet_level < Env.QUIET_ERROR:
+        print_error_info(info)
     if args:
         msg = str(err_id).format(*args)
     else:
@@ -51,6 +52,8 @@ def fail(info, err_id, args=None):
 
 
 def warn(info, err_id, args=None):
+    if env.quiet_level >= Env.QUIET_WARN:
+        return
     print_error_info(info)
     if args:
         msg = str(err_id).format(*args)

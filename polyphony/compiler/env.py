@@ -15,6 +15,9 @@ class Env(object):
     PHASE_4 = 4
     PHASE_GEN_HDL = 5
 
+    QUIET_WARN = 1
+    QUIET_ERROR = 2
+
     dev_debug_mode = False
     hdl_debug_mode = False
     ctor_name = '__init__'
@@ -23,6 +26,8 @@ class Env(object):
     enable_ahdl_opt = False
     global_scope_name = '@top'
     enable_pure = True
+    verbose_level = 0
+    quiet_level = 0
 
     def __init__(self):
         self.call_graph = None

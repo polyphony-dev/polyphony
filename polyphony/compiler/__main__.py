@@ -1,18 +1,19 @@
-﻿import os
+﻿import argparse
+import os
 import sys
-from optparse import OptionParser
 from .ahdlusedef import AHDLUseDefDetector
 from .bitwidth import BitwidthReducer
 from .block import BlockReducer, PathExpTracer
 from .builtin import builtin_symbols
 from .callgraph import CallGraphBuilder
-from .common import read_source, CompileError
+from .common import read_source
 from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
 from .driver import Driver
 from .env import env
+from .errors import CompileError, InterpretError
 from .hdlgen import HDLModuleBuilder
 from .iftransform import IfTransformer
 from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
@@ -459,10 +460,12 @@ def compile_plan():
     return plan
 
 
-def setup(src_file, debug_mode):
+def setup(src_file, options):
     env.__init__()
-    env.dev_debug_mode = debug_mode
-    if debug_mode:
+    env.dev_debug_mode = options.debug_mode
+    env.verbose_level = options.verbose_level if options.verbose_level else 0
+    env.quiet_level = options.quiet_level if options.quiet_level else 0
+    if env.dev_debug_mode:
         logging.basicConfig(**logging_setting)
 
     translator = IRTranslator()
@@ -499,11 +502,11 @@ def compile(plan, source, src_file=''):
     return driver.codes
 
 
-def compile_main(src_file, output_name, output_dir, debug_mode=False):
-    setup(src_file, debug_mode)
+def compile_main(src_file, options):
+    setup(src_file, options)
     main_source = read_source(src_file)
     compile_results = compile(compile_plan(), main_source, src_file)
-    output_individual(compile_results, output_name, output_dir)
+    output_individual(compile_results, options.output_name, options.output_dir)
 
 
 def output_individual(compile_results, output_name, output_dir):
@@ -538,41 +541,42 @@ def output_individual(compile_results, output_name, output_dir):
 
 
 def main():
-    usage = "usage: %prog [Options] [Python source file]"
-    parser = OptionParser(usage)
-    parser.add_option("-o", "--output", dest="output_name",
-                      default='polyphony_out',
-                      help="output filename (default is 'polyphony_out')",
-                      metavar="FILE")
-    parser.add_option("-d", "--dir", dest="output_dir",
-                      help="output directory", metavar="DIR")
-    parser.add_option("-v", dest="verbose", action="store_true",
-                      help="verbose output")
-    parser.add_option("-D", "--debug", dest="debug_mode", action="store_true",
-                      help="enable debug mode")
-    parser.add_option("-V", "--version", dest="version", action="store_true",
-                      help="print the Polyphony version number")
+    parser = argparse.ArgumentParser(prog='Polyphony')
 
-    options, args = parser.parse_args()
-    if options.version:
-        from .. version import __version__
-        print('Polyphony', __version__)
-        sys.exit(0)
-    if len(sys.argv) <= 1:
+    parser.add_argument('-o', '--output', dest='output_name',
+                        default='polyphony_out',
+                        help='output filename (default is "polyphony_out")',
+                        metavar='FILE')
+    parser.add_argument('-d', '--dir', dest='output_dir',
+                        metavar='DIR', help='output directory')
+    parser.add_argument('-v', '--verbose', dest='verbose_level',
+                        action='count', help='verbose output')
+    parser.add_argument('-D', '--debug', dest='debug_mode',
+                        action='store_true', help='enable debug mode')
+    parser.add_argument('-q', '--quiet', dest='quiet_level',
+                        action='count', help='suppress warning/error messages')
+    from .. version import __version__
+    parser.add_argument('-V', '--version', action='version',
+                        version='%(prog)s ' + __version__,
+                        help='print the Polyphony version number')
+    parser.add_argument('source', help='Python source file')
+    options = parser.parse_args()
+    if not os.path.isfile(options.source):
+        print(options.source + ' is not valid file name')
         parser.print_help()
         sys.exit(0)
-    src_file = sys.argv[-1]
-    if not os.path.isfile(src_file):
-        print(src_file + ' is not valid file name')
-        parser.print_help()
-        sys.exit(0)
-    if options.verbose:
+    if options.verbose_level:
         logging.basicConfig(level=logging.INFO)
 
     try:
-        compile_main(src_file, options.output_name, options.output_dir, options.debug_mode)
+        compile_main(options.source, options)
     except CompileError as e:
+        if options.debug_mode:
+            raise
+        print(e)
+    except InterpretError as e:
+        if options.debug_mode:
+            raise
         print(e)
     except Exception as e:
         raise
-

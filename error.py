@@ -3,6 +3,7 @@ import sys
 import os
 import traceback
 import io
+import types
 from contextlib import redirect_stdout
 
 
@@ -24,8 +25,14 @@ def error_test(casefile_path, output=True):
             print('The file is not error test file')
             sys.exit(0)
         expected_msg = first_line.split('#')[1].rstrip('\n')
+    options = types.SimpleNamespace()
+    options.output_name = casename
+    options.output_dir = TMP_DIR
+    options.verbose_level = 0
+    options.quiet_level = 3
+    options.debug_mode = output
     try:
-        compile_main(casefile_path, casename, TMP_DIR, debug_mode=output)
+        compile_main(casefile_path, options)
     except AssertionError:
         raise
     except Exception as e:
@@ -41,10 +48,8 @@ def error_test(casefile_path, output=True):
 
 
 def warn_test(casefile_path, output=True):
-    
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
-    #sys.stdout = 
     with open(casefile_path, 'r') as f:
         first_line = f.readline()
         if not first_line.startswith('#'):

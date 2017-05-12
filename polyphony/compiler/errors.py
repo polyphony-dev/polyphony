@@ -153,6 +153,7 @@ ERROR_MESSAGES = {
 class Warnings(Enum):
     # warnings
     ASSERTION_FAILED = 100
+    EXCEPTION_RAISED = 101
 
     def __str__(self):
         return WARNING_MESSAGES[self]
@@ -160,4 +161,5 @@ class Warnings(Enum):
 
 WARNING_MESSAGES = {
     Warnings.ASSERTION_FAILED: "The expression of assert always evaluates to False",
+    Warnings.EXCEPTION_RAISED: "An exception occurred while executing the Python interpreter at compile time\n(For more information you can use '--verbose' option)",
 }

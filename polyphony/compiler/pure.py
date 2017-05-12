@@ -3,10 +3,11 @@ import inspect
 import os
 import sys
 import threading
+import traceback
 from collections import namedtuple, defaultdict
-from .common import fail
+from .common import fail, warn
 from .constopt import ConstantOptBase
-from .errors import Errors, InterpretError
+from .errors import Errors, Warnings, InterpretError
 from .env import env
 from .ir import expr2ir, Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
 from .setlineno import LineNumberSetter
@@ -26,6 +27,14 @@ def interpret(source, file_name=''):
         thread.join(1)
     threading.setprofile(None)
     sys.stdout = stdout
+    if thread.exc_info:
+        _, exc, tb = thread.exc_info
+        if isinstance(exc, InterpretError):
+            raise exc
+        else:
+            if env.verbose_level:
+                traceback.print_tb(tb)
+            warn(None, Warnings.EXCEPTION_RAISED)
     rtinfo.pyfuncs = _make_pyfuncs(objs)
     module_classes = _find_module_classes(objs)
     for cls in module_classes:
@@ -44,12 +53,12 @@ def _do_interpret(source, file_name, objs):
         dir_name = os.path.dirname(file_name)
         sys.path.append(dir_name)
     code = compile(source, file_name, 'exec')
+    th = threading.current_thread()
+    th.exc_info = None
     try:
         exec(code, objs)
-    except InterpretError as e:
-        raise e
-    except Exception as e:
-        pass
+    except Exception:
+        th.exc_info = sys.exc_info()
 
 
 MethodCall = namedtuple('MethodCall', ('name', 'args'))
@@ -503,6 +512,9 @@ class PureCtorBuilder(object):
                 for name, val in method_locals.items():
                     if val is not port_obj:
                         continue
+                    # make new port name if the port name has been used as a field
+                    if name in instance.__dict__:
+                        name = name + '_'
                     sym = ctor.find_sym(name)
                     if not sym:
                         sym = ctor.add_sym(name)

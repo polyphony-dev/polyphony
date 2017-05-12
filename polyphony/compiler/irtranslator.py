@@ -874,7 +874,7 @@ class CodeVisitor(ast.NodeVisitor):
                     # merge nested params
                     old_synth_params = self.current_synth_params
                     self.current_synth_params = self.current_synth_params.copy()
-                    self.current_synth_params.update(expr.kwargs)
+                    self.current_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
                     if len(node.items) != 1:
                         assert False  # TODO: use fail()
                     if expr.args:

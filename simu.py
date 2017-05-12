@@ -3,6 +3,8 @@ import sys
 import os
 import traceback
 import subprocess
+import types
+
 
 IVERILOG_PATH = 'iverilog'
 ROOT_DIR = '.' + os.path.sep
@@ -17,8 +19,14 @@ from polyphony.compiler.env import env
 def exec_test(casefile_path, output=True, compile_only=False):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
+    options = types.SimpleNamespace()
+    options.output_name = casename
+    options.output_dir = TMP_DIR
+    options.verbose_level = 0
+    options.quiet_level = 0
+    options.debug_mode = output
     try:
-        compile_main(casefile_path, casename, TMP_DIR, debug_mode=output)
+        compile_main(casefile_path, options)
     except Exception as e:
         print('[COMPILE PYTHON] FAILED:' + casefile_path)
         if env.dev_debug_mode:
