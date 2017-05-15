@@ -918,12 +918,15 @@ class AHDLTranslator(object):
         return
 
     def _make_port_read_seq(self, target, port_sig, node):
-        assert target
-        dst = self.visit(target, node)
+        step_n = node.latency()
+        if target:
+            dst = self.visit(target, node)
+        else:
+            dst = None
+            step_n -= 1
         ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
                            dst,
                            port_sig.is_input())
-        step_n = node.latency()
         for i in range(step_n):
             self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
 

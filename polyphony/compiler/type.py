@@ -245,7 +245,7 @@ class Type(object):
         if t0.name != t1.name:
             return False
         if t0.is_int():
-            return t0.get_width() == t1.get_width()
+            return t0.get_width() == t1.get_width() and t0.get_signed() == t1.get_signed()
         return True
 
     @classmethod

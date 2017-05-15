@@ -1,5 +1,6 @@
 ﻿from .ir import *
 from .irvisitor import IRVisitor
+from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -76,6 +77,8 @@ class CopyCollector(IRVisitor):
             return
         if ir.src.is_a(TEMP):
             if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
+                return
+            if not Type.is_strict_same(ir.dst.sym.typ, ir.src.sym.typ):
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):

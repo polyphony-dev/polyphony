@@ -303,7 +303,7 @@ class AHDL_IO_READ(AHDL_STM):
         self.is_self = is_self
 
     def __str__(self):
-        return 'dst <= {}.read()'.format(self.dst, self.io)
+        return '{} <= {}.read()'.format(self.dst, self.io)
 
     def __repr__(self):
         return 'AHDL_IO_READ({}, {})'.format(repr(self.io),

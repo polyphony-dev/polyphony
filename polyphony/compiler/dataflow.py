@@ -450,6 +450,7 @@ class DFGBuilder(object):
             self._add_edges_between_func_modules(blocks, dfg)
         self._add_edges_between_objects(blocks, dfg)
         self._add_timinglib_seq_edges(blocks, dfg)
+        self._add_io_seq_edges(blocks, dfg)
         self._add_mem_edges(dfg)
         self._add_special_seq_edges(dfg)
         return dfg
@@ -663,3 +664,24 @@ class DFGBuilder(object):
                     dfg.add_seq_edge(node, timing_func_node)
                 if self._has_timing_function(stm):
                     timing_func_node = node
+
+    def _add_io_seq_edges(self, blocks, dfg):
+        for block in blocks:
+            ports = {}
+            for stm in block.stms:
+                if stm.is_a(MOVE):
+                    call = stm.src
+                elif stm.is_a(EXPR):
+                    call = stm.exp
+                else:
+                    continue
+                if call.is_a(CALL):
+                    if call.func_scope.is_method() and call.func_scope.parent.is_port():
+                        node = dfg.find_node(stm)
+                        port_sym = call.func.tail()
+                        if port_sym in ports:
+                            prev_port_node = ports[port_sym]
+                            dfg.add_seq_edge(prev_port_node, node)
+                        # update last node
+                        ports[port_sym] = node
+

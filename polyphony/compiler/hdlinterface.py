@@ -150,7 +150,8 @@ def single_read_seq(inf, signal, step, dst):
                 return (AHDL_MOVE(dst, data), )
     else:
         if step == 0:
-            return (AHDL_MOVE(dst, data), )
+            if dst:
+                return (AHDL_MOVE(dst, data), )
 
 
 def single_write_seq(inf, signal, step, src):

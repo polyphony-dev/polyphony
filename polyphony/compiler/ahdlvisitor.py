@@ -51,7 +51,8 @@ class AHDLVisitor(object):
 
     def visit_AHDL_IO_READ(self, ahdl):
         self.visit(ahdl.io)
-        self.visit(ahdl.dst)
+        if ahdl.dst:
+            self.visit(ahdl.dst)
 
     def visit_AHDL_IO_WRITE(self, ahdl):
         self.visit(ahdl.io)
