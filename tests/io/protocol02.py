@@ -1,7 +1,7 @@
 from polyphony import testbench, module
 from polyphony.io import Port
 from polyphony.typing import int8
-
+from polyphony.timing import clkfence
 
 @module
 class Protocol02:
@@ -18,6 +18,7 @@ class Protocol02:
 @testbench
 def test(p02):
     p02.i.wr(2)
+    clkfence()
     assert p02.o() == 4
 
 

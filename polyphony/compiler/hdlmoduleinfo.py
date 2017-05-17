@@ -157,6 +157,13 @@ class HDLModuleInfo(object):
         assert isinstance(decl, AHDL_DECL)
         self.decls[tag].remove(decl)
 
+    def remove_signal_decl(self, sig):
+        for tag, decls in self.decls.items():
+            for decl in decls:
+                if isinstance(decl, AHDL_SIGNAL_DECL) and decl.sig is sig:
+                    self.remove_decl(tag, decl)
+                    return
+
     def add_sub_module(self, name, module_info, connections, param_map=None):
         assert isinstance(name, str)
         sub_infs = {}

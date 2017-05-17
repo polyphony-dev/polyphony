@@ -1,3 +1,4 @@
+from collections import deque
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .graph import Graph
@@ -30,15 +31,18 @@ class StateGraphBuilder(AHDLVisitor):
     def process(self, scope):
         self.graph = StateGraph()
         init_state = scope.stgs[0].init_state
-        for stg in scope.stgs:
-            for state in stg.states:
-                self.next_states = []
-                for code in state.codes:
-                    self.visit(code)
-                for next in self.next_states:
-                    if next is init_state:
-                        continue
-                    self.graph.add_edge(state, next)
+        nexts = deque([init_state])
+        visited = set()
+        while nexts:
+            state = nexts.popleft()
+            visited.add(state)
+            self.next_states = []
+            for code in state.codes:
+                self.visit(code)
+            for next in self.next_states:
+                self.graph.add_edge(state, next)
+                if next not in visited:
+                    nexts.append(next)
         return self.graph
 
     def visit_AHDL_TRANSITION(self, ahdl):

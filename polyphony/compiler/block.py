@@ -173,6 +173,7 @@ class Block(object):
         b.succs_loop = list(self.succs_loop)
         b.preds      = list(self.preds)
         b.preds_loop = list(self.preds_loop)
+        b.synth_params = self.synth_params.copy()
         return b
 
     def reconnect(self, blk_map):
@@ -389,16 +390,21 @@ class BlockReducer(object):
             if block is scope.entry_block:
                 continue
             if block.stms and block.stms[0].is_a(JUMP):
+                assert len(block.succs) == 1
                 succ = block.succs[0]
                 if succ in block.succs_loop:
-                    # do not remove a loopback block
-                    continue
+                    if len(block.preds) > 1:
+                        # do not remove a convergence loopback block
+                        continue
                 else:
-                    succ.preds.remove(block)
+                    succ.remove_pred(block)
                     for pred in block.preds:
                         pred.replace_succ(block, succ)
+                        pred.replace_succ_loop(block, succ)
                         if pred not in succ.preds:
                             succ.preds.append(pred)
+                        if pred in block.preds_loop and pred not in succ.preds_loop:
+                            succ.preds_loop.append(pred)
 
                 logger.debug('remove empty block ' + block.name)
                 if block is scope.entry_block:

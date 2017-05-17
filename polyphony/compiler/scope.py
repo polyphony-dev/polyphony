@@ -497,14 +497,14 @@ class Scope(Tagged):
                 return stg
         return None
 
-    def gen_sig(self, name, width, tag=None):
+    def gen_sig(self, name, width, tag=None, sym=None):
         if name in self.signals:
             sig = self.signals[name]
             sig.width = width
             if tag:
                 sig.add_tag(tag)
             return sig
-        sig = Signal(name, width, tag)
+        sig = Signal(name, width, tag, sym)
         self.signals[name] = sig
         return sig
 

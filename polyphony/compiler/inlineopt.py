@@ -167,6 +167,7 @@ class InlineOpt(object):
         late_call_blk  = Block(caller_scope)
         late_call_blk.succs = early_call_blk.succs
         late_call_blk.succs_loop = early_call_blk.succs_loop
+        late_call_blk.synth_params = early_call_blk.synth_params.copy()
         for succ in late_call_blk.succs:
             succ.replace_pred(early_call_blk, late_call_blk)
             succ.replace_pred_loop(early_call_blk, late_call_blk)
@@ -189,6 +190,18 @@ class InlineOpt(object):
 
         if caller_scope.exit_block is early_call_blk:
             caller_scope.exit_block = late_call_blk
+
+        self._merge_synth_params(early_call_blk.synth_params, late_call_blk, callee_entry_blk, callee_exit_blk)
+
+    def _merge_synth_params(self, synth_params, late_call_blk, callee_entry_blk, callee_exit_blk):
+        if not synth_params:
+            return
+        visited = set([late_call_blk])
+        for blk in callee_entry_blk.traverse(visited):
+            if blk.synth_params:
+                continue
+            else:
+                blk.synth_params = synth_params.copy()
 
     def _reduce_useless_move(self, scope):
         for block in scope.traverse_blocks():

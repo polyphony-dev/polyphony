@@ -136,12 +136,12 @@ def single_read_seq(inf, signal, step, dst):
 
         if step == 0:
             if signal.is_ready_valid_protocol():
-                ports = [valid, ready]
+                expects = [(AHDL_CONST(1), valid), (AHDL_CONST(1), ready)]
                 return (AHDL_MOVE(ready, AHDL_CONST(1)),
-                        AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
+                        AHDL_META_WAIT('WAIT_VALUE', *expects))
             else:
-                ports = [valid]
-                return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports), )
+                expects = [(AHDL_CONST(1), valid)]
+                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
         elif step == 1:
             if signal.is_ready_valid_protocol():
                 return (AHDL_MOVE(dst, data),
@@ -162,10 +162,10 @@ def single_write_seq(inf, signal, step, src):
             ready = port2ahdl(inf, 'ready')
         if step == 0:
             if signal.is_ready_valid_protocol():
-                ports = [valid, ready]
+                expects = [(AHDL_CONST(1), valid), (AHDL_CONST(1), ready)]
                 return (AHDL_MOVE(data, src),
                         AHDL_MOVE(valid, AHDL_CONST(1)),
-                        AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
+                        AHDL_META_WAIT('WAIT_VALUE', *expects))
             else:
                 return (AHDL_MOVE(data, src),
                         AHDL_MOVE(valid, AHDL_CONST(1)))
@@ -313,8 +313,8 @@ class CallInterface(Interface):
             ready = port2ahdl(self, 'ready')
 
             unset_valid = AHDL_MOVE(valid, AHDL_CONST(0))
-            ports = [ready]
-            wait_ready = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
+            expects = [(AHDL_CONST(1), ready)]
+            wait_ready = AHDL_META_WAIT("WAIT_VALUE", *expects)
             return (unset_valid, wait_ready)
 
     def callee_epilog(self, step, name):
@@ -323,8 +323,8 @@ class CallInterface(Interface):
             accept = port2ahdl(self, 'accept')
 
             set_valid = AHDL_MOVE(valid, AHDL_CONST(1))
-            ports = [accept]
-            wait_accept = AHDL_META_WAIT("WAIT_VALUE", AHDL_CONST(1), *ports)
+            expects = [(AHDL_CONST(1), accept)]
+            wait_accept = AHDL_META_WAIT("WAIT_VALUE", *expects)
             return (set_valid, wait_accept)
 
 
@@ -360,8 +360,8 @@ class CallAccessor(IOAccessor):
             seq = [AHDL_MOVE(ready, AHDL_CONST(0))]
 
         if step == step_n - 3:
-            ports = [valid]
-            seq.append(AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(1), *ports))
+            expects = [(AHDL_CONST(1), valid)]
+            seq.append(AHDL_META_WAIT('WAIT_VALUE', *expects))
         elif step == step_n - 2:
             for acc, ret in zip(retaccs, ahdl_call.returns):
                 seq.extend(acc.read_sequence(0, ret))
@@ -558,8 +558,8 @@ def fifo_read_seq(inf, step, dst):
     dout = port2ahdl(inf, 'dout')
 
     if step == 0:
-        ports = [empty]
-        return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(0), *ports), )
+        expects = [(AHDL_CONST(0), empty)]
+        return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
     elif step == 1:
         return (AHDL_MOVE(read, AHDL_CONST(1)), )
     elif step == 2:
@@ -573,8 +573,8 @@ def fifo_write_seq(inf, step, src):
     din = port2ahdl(inf, 'din')
 
     if step == 0:
-        ports = [full]
-        return (AHDL_META_WAIT('WAIT_VALUE', AHDL_CONST(0), *ports), )
+        expects = [(AHDL_CONST(0), full)]
+        return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
     elif step == 1:
         return (AHDL_MOVE(write, AHDL_CONST(1)),
                 AHDL_MOVE(din, src))

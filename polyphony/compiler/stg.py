@@ -507,11 +507,13 @@ class AHDLTranslator(object):
             ports = []
             _, _val = ir.args[0]
             value = self.visit(_val, node)
+            expects = []
             for _, a in ir.args[1:]:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
-                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_VALUE', value, *ports), self.sched_time)
+                p = AHDL_VAR(port_sig, Ctx.LOAD)
+                expects.append((value, p))
+            self._emit(AHDL_META_WAIT('WAIT_VALUE', *expects), self.sched_time)
             return
         else:
             # TODO: user-defined builtins
@@ -624,6 +626,8 @@ class AHDLTranslator(object):
         if sym.is_alias():
             tags.discard('reg')
             tags.add('net')
+        if sym.is_induction():
+            tags.add('induction')
 
         if self.scope.is_worker() or self.scope.is_method():
             sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
@@ -635,7 +639,7 @@ class AHDLTranslator(object):
             sig_name = sym.hdl_name()
 
         width = self._signal_width(sym)
-        sig = self.scope.gen_sig(sig_name, width, tags)
+        sig = self.scope.gen_sig(sig_name, width, tags, sym)
         return sig
 
     def visit_TEMP(self, ir, node):

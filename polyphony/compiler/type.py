@@ -36,6 +36,9 @@ class Type(object):
             elif ann == 'int':
                 t = Type.int()
                 t.freeze()
+            elif ann == 'uint':
+                t = Type.int(signed=False)
+                t.freeze()
             elif ann == 'bool':
                 t = Type.bool_t
             elif ann == 'list':

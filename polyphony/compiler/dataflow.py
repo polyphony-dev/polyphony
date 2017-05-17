@@ -642,8 +642,7 @@ class DFGBuilder(object):
                 if port_sym.typ.get_scope().name.startswith('polyphony.io.Queue'):
                     return True
                 else:
-                    protocol = port_sym.typ.get_protocol()
-                    return protocol != 'none'
+                    return False
             return False
 
     def _add_timinglib_seq_edges(self, blocks, dfg):

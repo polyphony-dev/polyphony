@@ -110,7 +110,8 @@ class AHDLVisitor(object):
             self.visit(ahdl.transition)
 
     def visit_WAIT_VALUE(self, ahdl):
-        for var in ahdl.args[1:]:
+        for value, var in ahdl.args:
+            self.visit(value)
             self.visit(var)
         if ahdl.codes:
             for code in ahdl.codes:

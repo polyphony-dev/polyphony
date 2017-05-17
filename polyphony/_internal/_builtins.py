@@ -10,7 +10,7 @@ def range(stop:int) -> None:
 
 
 @builtin
-def len() -> int:
+def len() -> uint:
     pass
 
 

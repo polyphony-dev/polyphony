@@ -83,7 +83,15 @@ class IOTransformer(AHDLVisitor):
                 meta_wait.transition = trans
                 self.current_parent.codes.remove(trans)
             else:
-                assert False
+                meta_wait_ = find_only_one_in(AHDL_META_WAIT, self.current_parent.codes)
+                assert meta_wait_
+                if meta_wait_.metaid == 'WAIT_VALUE':
+                    meta_wait_.args.extend(meta_wait.args)
+                    seq = list(seq)
+                    seq.remove(meta_wait)
+                else:
+                    # TODO:
+                    assert False
         self.current_parent.codes = list(seq) + self.current_parent.codes
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):

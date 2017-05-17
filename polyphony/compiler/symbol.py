@@ -68,6 +68,12 @@ class Symbol(Tagged):
         else:
             return self.name
 
+    def root_sym(self):
+        if self.ancestor:
+            return self.ancestor.root_sym()
+        else:
+            return self
+
     def hdl_name(self):
         if self.typ.is_port() and self.ancestor:
             return self.ancestor.hdl_name()

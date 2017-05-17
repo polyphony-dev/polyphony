@@ -1,4 +1,5 @@
-﻿from .verilog_common import pyop2verilogop, is_verilog_keyword
+﻿import functools
+from .verilog_common import pyop2verilogop, is_verilog_keyword
 from .ir import Ctx
 from .signal import Signal
 from .ahdl import *
@@ -541,12 +542,9 @@ class VerilogCodeGen(AHDLVisitor):
         self.visit(ahdl_if)
 
     def visit_WAIT_VALUE(self, ahdl):
-        value = ahdl.args[0]
-        detect_exps = [AHDL_OP('Eq', var, value) for var in ahdl.args[1:]]
-        if len(detect_exps) > 1:
-            conds = [AHDL_OP('And', *detect_exps)]
-        else:
-            conds = [detect_exps[0]]
+        eqs = [AHDL_OP('Eq', value, port) for value, port in ahdl.args]
+        cond = functools.reduce(lambda a, b: AHDL_OP('And', a, b), eqs)
+        conds = [cond]
         if ahdl.codes:
             codes = ahdl.codes[:]
         else:

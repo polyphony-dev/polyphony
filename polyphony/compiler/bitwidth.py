@@ -1,5 +1,6 @@
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
+from .env import env
 from .ir import *
 import logging
 logger = logging.getLogger(__name__)
@@ -19,12 +20,7 @@ class BitwidthReducer(AHDLVisitor):
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):
-            if ahdl.value == 0:
-                return 0
-            elif ahdl.value > 0:
-                return ahdl.value.bit_length()
-            else:
-                return ahdl.value.bit_length() + 1
+            return env.config.default_int_width
         elif isinstance(ahdl.value, str):
             return 1
         elif ir.value is None:
@@ -62,8 +58,8 @@ class BitwidthReducer(AHDLVisitor):
             width = max(widths)
         if width < 0:
             width = 1
-        elif width > 64:  # TODO
-            width = 64
+        elif width > env.config.default_int_width:  # TODO
+            width = env.config.default_int_width
         return width
 
     def visit_AHDL_SYMBOL(self, ahdl):

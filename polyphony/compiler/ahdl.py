@@ -452,7 +452,7 @@ class AHDL_META(AHDL_STM):
     def __init__(self, *args):
         super().__init__()
         self.metaid = args[0]
-        self.args = args[1:]
+        self.args = list(args[1:])
 
     def __str__(self):
         return '{}({})'.format(self.metaid, ', '.join([str(arg) for arg in self.args]))
@@ -466,7 +466,7 @@ class AHDL_META_WAIT(AHDL_STM):
     def __init__(self, *args):
         super().__init__()
         self.metaid = args[0]
-        self.args = args[1:]
+        self.args = list(args[1:])
         self.codes = None
         self.transition = None
 

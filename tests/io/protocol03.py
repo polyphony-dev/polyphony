@@ -32,11 +32,13 @@ class Protocol03:
 def test(p03):
     p03.i1.wr(2)
     p03.i2.wr(2)
+    clkfence()
     assert p03.o1.rd() == 2 + 1 + 2 + 3
     assert p03.o2.rd() == 2 + 1 + 2 + 3
     clksleep(10)
     p03.i1.wr(3)
     p03.i2.wr(3)
+    clkfence()
     assert p03.o1.rd() == 3 + 1 + 2 + 3
     assert p03.o2.rd() == 3 + 1 + 2 + 3
 
