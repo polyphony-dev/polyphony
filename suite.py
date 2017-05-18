@@ -5,6 +5,7 @@ import os
 import glob
 import simu
 import error
+import json
 
 ROOT_DIR = '.' + os.path.sep
 TEST_DIR = ROOT_DIR + 'tests'
@@ -30,14 +31,24 @@ DIRS = (
 
 
 def suite(compile_only, *cases):
+    suite_results = {}
     if cases[0]:
         ds = cases
     else:
         ds = DIRS
     for d in ds:
+        suite_cases = {}
+        suite_results[d] = suite_cases
         for t in sorted(glob.glob('{1}{0}{2}{0}*.py'.format(os.path.sep, TEST_DIR, d))):
             print(t)
-            simu.exec_test(t, output=False, compile_only=compile_only)
+            finishes = simu.exec_test(t, output=False, compile_only=compile_only)
+            filename = os.path.basename(t)
+            if finishes:
+                suite_cases[filename] = ','.join(finishes)
+            else:
+                suite_cases[filename] = 'FAIL'
+    with open('suite.json', 'w') as f:
+        f.write(json.dumps(suite_results, sort_keys=True, indent=4))
 
 
 def error_test():

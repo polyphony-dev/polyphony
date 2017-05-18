@@ -35,8 +35,12 @@ def exec_test(casefile_path, output=True, compile_only=False):
         return
     if compile_only:
         return
+    finishes = []
     for testbench in env.testbenches:
-        simulate_verilog(testbench.orig_name, casename, casefile_path, output)
+        result_lines = simulate_verilog(testbench.orig_name, casename, casefile_path, output)
+        if result_lines:
+            finishes.append(result_lines[-2])
+    return finishes
 
 
 def simulate_verilog(testname, casename, casefile_path, output):
@@ -58,9 +62,11 @@ def simulate_verilog(testname, casename, casefile_path, output):
                 print(line)
             if 'FAILED' in line:
                 raise Exception()
+        return lines
     except Exception as e:
         print('[SIMULATION] FAILED:' + casefile_path)
         print(e)
+    return None
 
 
 if __name__ == '__main__':
