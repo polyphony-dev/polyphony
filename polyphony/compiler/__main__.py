@@ -541,7 +541,7 @@ def output_individual(compile_results, output_name, output_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog='Polyphony')
+    parser = argparse.ArgumentParser(prog='polyphony')
 
     parser.add_argument('-o', '--output', dest='output_name',
                         default='polyphony_out',

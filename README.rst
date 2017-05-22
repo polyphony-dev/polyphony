@@ -13,18 +13,20 @@ $ pip3 install polyphony
 
 Usage
 -----
-$ polyphony [Options] [Python source file]
+usage: polyphony [-h] [-o FILE] [-d DIR] [-v] [-D] [-q] [-V] source
 
-::
+positional arguments:
+  source                Python source file
 
-    Options:
-      -h, --help            show this help message and exit
-      -o FILE, --output=FILE
-                            output filename (default is 'polyphony_out')
-      -d DIR, --dir=DIR     output directory
-      -v                    verbose output
-      -D, --debug           enable debug mode
-      -V, --version         print the Polyphony version number
+optional arguments:
+  -h, --help            show this help message and exit
+  -o FILE, --output FILE
+                        output filename (default is "polyphony_out")
+  -d DIR, --dir DIR     output directory
+  -v, --verbose         verbose output
+  -D, --debug           enable debug mode
+  -q, --quiet           suppress warning/error messages
+  -V, --version         print the Polyphony version number
 
 Examples
 --------
