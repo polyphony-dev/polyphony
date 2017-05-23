@@ -804,7 +804,11 @@ class PHI(PHIBase):
         super().__init__(var)
 
     def __str__(self):
-        s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        if self.block.is_hyperblock:
+            s = "(PSI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        else:
+            s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        #s += '(' + ', '.join([blk.name for blk in self.defblks]) + ')'
         return s
 
 
@@ -815,6 +819,24 @@ class UPHI(PHIBase):
     def __str__(self):
         s = "(UPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
         return s
+
+
+class LPHI(PHIBase):
+    def __init__(self, var):
+        super().__init__(var)
+
+    def __str__(self):
+        s = "(LPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        return s
+
+    @classmethod
+    def from_phi(cls, phi):
+        lphi = LPHI(phi.var.clone())
+        lphi.args = phi.args[:]
+        lphi.defblks = phi.defblks[:]
+        lphi.ps = phi.ps[:]
+        lphi.block = phi.block
+        return lphi
 
 
 def op2str(op):

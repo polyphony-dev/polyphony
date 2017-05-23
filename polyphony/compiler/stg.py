@@ -623,6 +623,7 @@ class AHDLTranslator(object):
             tags.add('output')
         elif sym.is_condition():
             tags.add('condition')
+
         if sym.is_alias():
             tags.discard('reg')
             tags.add('net')
@@ -794,9 +795,6 @@ class AHDLTranslator(object):
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
 
     def visit_PHI(self, ir, node):
-        pass
-
-    def visit_UPHI(self, ir, node):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
         ahdl_dst = self.visit(ir.var, node)
         arg_p = list(zip(ir.args, ir.ps))
@@ -813,6 +811,12 @@ class AHDLTranslator(object):
             if_exp = AHDL_IF_EXP(cond, lexp, rexp)
             rexp = if_exp
         self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
+
+    def visit_UPHI(self, ir, node):
+        self.visit_PHI(ir, node)
+
+    def visit_LPHI(self, ir, node):
+        self.visit_PHI(ir, node)
 
     def visit(self, ir, node):
         method = 'visit_' + ir.__class__.__name__

@@ -21,7 +21,7 @@ class MemoryRenamer(object):
         return stms
 
     def _get_phis(self, block):
-        return filter(lambda stm: stm.is_a(PHI) and stm.var.symbol().typ.is_list(), block.stms)
+        return filter(lambda stm: stm.is_a(PHIBase) and stm.var.symbol().typ.is_list(), block.stms)
 
     def _cleanup_phi(self):
         for block in self.scope.traverse_blocks():
@@ -122,7 +122,7 @@ class MemoryRenamer(object):
 
                     sym = stm.dst.symbol()
 
-            elif stm.is_a(PHI):
+            elif stm.is_a([PHI, LPHI]):
                 updated = False
                 for arg in stm.args:
                     if arg.symbol() in mem_var_map:

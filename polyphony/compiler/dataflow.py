@@ -367,13 +367,13 @@ class DFGBuilder(object):
 
         if blk is self.scope.loop_nest_tree.root:
             blocks = sorted(list(self._root_blocks()), key=lambda b: b.order)
-            dfg = self._make_graph(blk.name, blocks)
+            dfg = self._make_graph(blk, blocks)
         else:
             blocks = [blk.head]
             for b in blk.bodies:
                 if not isinstance(b, CompositBlock):
                     blocks.append(b)
-            dfg = self._make_graph(blk.name, blocks)
+            dfg = self._make_graph(blk, blocks)
         for child in children:
             dfg.set_child(child)
         return dfg
@@ -400,7 +400,8 @@ class DFGBuilder(object):
             for succ in succs:
                 logger.debug(succ)
 
-    def _make_graph(self, name, blocks):
+    def _make_graph(self, main_block, blocks):
+        name = main_block.name
         logger.debug('make graph ' + name)
         dfg = DataFlowGraph(name, blocks)
         usedef = self.scope.usedef
@@ -453,6 +454,7 @@ class DFGBuilder(object):
         self._add_io_seq_edges(blocks, dfg)
         self._add_mem_edges(dfg)
         self._add_special_seq_edges(dfg)
+        self._add_special_seq_edges_for_loop(dfg, main_block, blocks)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -499,7 +501,7 @@ class DFGBuilder(object):
                 dfg.src_nodes.add(node)
 
     def _is_constant_stm(self, stm):
-        if stm.is_a(PHI):
+        if stm.is_a(PHIBase):
             return True
         elif stm.is_a(MOVE):
             if stm.src.is_a([CONST, ARRAY, CALL]):
@@ -611,13 +613,40 @@ class DFGBuilder(object):
     # workaround
     def _add_special_seq_edges(self, dfg):
         for node in dfg.nodes:
-            if node.tag.is_a([JUMP, CJUMP, MCJUMP]):
-                stm = node.tag
+            stm = node.tag
+            if stm.is_a([JUMP, CJUMP, MCJUMP]):
                 #assert len(stm.block.stms) > 1
                 assert stm.block.stms[-1] is stm
                 for prev_stm in stm.block.stms[:-1]:
                     prev_node = dfg.find_node(prev_stm)
                     dfg.add_seq_edge(prev_node, node)
+
+    def _add_special_seq_edges_for_loop(self, dfg, main_block, blocks):
+        def stms_in_blocks(blocks):
+            stms = []
+            for blk in blocks:
+                stms.extend(blk.stms)
+            return stms
+
+        if not isinstance(main_block, CompositBlock):
+            return
+
+        usedef = self.scope.usedef
+        outer_defstms = []
+        for outer_sym in main_block.outer_defs:
+            defstms = usedef.get_stms_defining(outer_sym)
+            for defstm in defstms:
+                if defstm.block not in blocks:
+                    continue
+                outer_defstms.append(defstm)
+        all_stms = stms_in_blocks(blocks)
+        all_stms = [stm for stm in all_stms if stm not in outer_defstms]
+        for outer_defstm in outer_defstms:
+            for stm in all_stms:
+                if stm.program_order() < outer_defstm.program_order():
+                    def_node = dfg.find_node(outer_defstm)
+                    prev_node = dfg.find_node(stm)
+                    dfg.add_seq_edge(prev_node, def_node)
 
     def _has_timing_function(self, stm):
         if stm.is_a(MOVE):

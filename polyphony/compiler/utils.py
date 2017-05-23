@@ -17,7 +17,7 @@ def find_only_one_in(typ, seq):
     return it
 
 
-def replace_item(lst, old, new):
+def replace_item(lst, old, new, all=False):
     if isinstance(old, list) or isinstance(old, tuple):
         for o in old:
             replace_item(lst, o, new)
@@ -25,7 +25,8 @@ def replace_item(lst, old, new):
         for i, s in enumerate(lst):
             if s is old:
                 lst[i] = new
-                break
+                if not all:
+                    break
 
 
 def remove_from_list(lst, removes):

@@ -7,7 +7,7 @@ from .env import env
 from .symbol import Symbol
 from .type import Type
 from .irvisitor import IRVisitor
-from .ir import JUMP, CJUMP, MCJUMP, PHI
+from .ir import JUMP, CJUMP, MCJUMP, PHIBase
 from .signal import Signal
 
 from logging import getLogger
@@ -137,7 +137,6 @@ class Scope(Tagged):
         self.module_info = None
         self.signals = {}
         self.block_count = 0
-        self.paths = []
         self.workers = []
         self.worker_owner = None
         self.asap_latency = -1
@@ -207,7 +206,7 @@ class Scope(Tagged):
                 stm.false = block_map[stm.false]
             elif stm.is_a(MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
-            elif stm.is_a(PHI):
+            elif stm.is_a(PHIBase):
                 stm.defblks = [block_map[blk] for blk in stm.defblks]
         return block_map, stm_map
 

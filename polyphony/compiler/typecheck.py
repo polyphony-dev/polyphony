@@ -409,6 +409,9 @@ class TypePropagation(IRVisitor):
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
 
+    def visit_LPHI(self, ir):
+        self.visit_PHI(ir)
+
     def _normalize_args(self, func_name, params, args, kwargs):
         nargs = []
         if len(params) < len(args):

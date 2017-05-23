@@ -4,6 +4,7 @@ import sys
 from .ahdlusedef import AHDLUseDefDetector
 from .bitwidth import BitwidthReducer
 from .block import BlockReducer, PathExpTracer
+from .block import HyperBlockBuilder
 from .builtin import builtin_symbols
 from .callgraph import CallGraphBuilder
 from .common import read_source
@@ -11,6 +12,7 @@ from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
+from .deadcode import DeadCodeEliminator
 from .driver import Driver
 from .env import env
 from .errors import CompileError, InterpretError
@@ -93,6 +95,10 @@ def reduceblk(driver, scope):
 
 def pathexp(driver, scope):
     PathExpTracer().process(scope)
+
+
+def hyperblock(driver, scope):
+    HyperBlockBuilder().process(scope)
 
 
 def buildpurector(driver, scope):
@@ -264,6 +270,10 @@ def loop(driver, scope):
     LoopDetector().process(scope)
 
 
+def deadcode(driver, scope):
+    DeadCodeEliminator().process(scope)
+
+
 def dfg(driver, scope):
     DFGBuilder().process(scope)
 
@@ -395,6 +405,8 @@ def compile_plan():
         scalarssa,
         dbg(dumpscope),
         usedef,
+        # hyperblock,
+        dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
         usedef,
@@ -419,6 +431,10 @@ def compile_plan():
         modulecheck,
         dbg(dumpscope),
         convport,
+        usedef,
+        copyopt,
+        usedef,
+        deadcode,
         dbg(dumpscope),
         usedef,
         phi,

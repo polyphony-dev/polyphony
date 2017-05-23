@@ -134,6 +134,9 @@ class VarReplacer(object):
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
 
+    def visit_LPHI(self, ir):
+        self.visit_PHI(ir)
+
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)

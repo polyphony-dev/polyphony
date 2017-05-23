@@ -140,6 +140,22 @@ class LoopVariableDetector(IRVisitor):
                 return
         if self._has_depend_cycle(ir, sym):
             sym.add_tag('induction')
+            #print('induction', sym, ir)
+
+    def visit_PHI(self, ir):
+        assert ir.var.is_a([TEMP, ATTR])
+        sym = ir.var.symbol()
+        if sym.is_temp() or sym.is_return() or sym.typ.is_port():
+            return
+        if self._has_depend_cycle(ir, sym):
+            sym.add_tag('induction')
+            #print('induction', sym, ir)
+
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
+
+    def visit_LPHI(self, ir):
+        self.visit_PHI(ir)
 
     def _has_depend_cycle(self, start_stm, sym):
         def _has_depend_cycle_r(start_stm, sym, visited):

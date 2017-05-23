@@ -94,6 +94,11 @@ class UseDefTable(object):
         for v in vs:
             self.remove_use(v, stm)
 
+    def remove_stm(self, stm):
+        self.remove_uses(list(self.get_vars_used_at(stm)), stm)
+        for v in list(self.get_vars_defined_at(stm)):
+            self.remove_var_def(v, stm)
+
     def get_stms_defining(self, key):
         if isinstance(key, Symbol):
             return self._def_sym2stm[key]
@@ -289,6 +294,11 @@ class UseDefDetector(IRVisitor):
         [self.visit(p) for p in ir.ps if p]
 
     def visit_UPHI(self, ir):
+        self.visit(ir.var)
+        [self.visit(arg) for arg in ir.args if arg]
+        [self.visit(p) for p in ir.ps if p]
+
+    def visit_LPHI(self, ir):
         self.visit(ir.var)
         [self.visit(arg) for arg in ir.args if arg]
         [self.visit(p) for p in ir.ps if p]

@@ -109,6 +109,9 @@ class IRVisitor(object):
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
 
+    def visit_LPHI(self, ir):
+        self.visit_PHI(ir)
+
 
 class IRTransformer(IRVisitor):
     def __init__(self):
@@ -223,4 +226,7 @@ class IRTransformer(IRVisitor):
         self.new_stms.append(ir)
 
     def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
+
+    def visit_LPHI(self, ir):
         self.visit_PHI(ir)

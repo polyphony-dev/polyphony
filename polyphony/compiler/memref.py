@@ -615,7 +615,7 @@ class MemRefGraphBuilder(IRVisitor):
                             stm.dst.symbol().typ.is_seq() and
                             stm not in stms):
                         stms.append(stm)
-                elif stm.is_a(PHI):
+                elif stm.is_a(PHIBase):
                     if stm.var.is_a(TEMP) and stm.var.sym.typ.is_seq():
                         stms.append(stm)
         return stms
@@ -638,7 +638,7 @@ class MemRefGraphBuilder(IRVisitor):
                 logger.debug('!!! mem def stm ' + str(stm))
                 if stm.is_a(MOVE):
                     memsym = stm.dst.symbol()
-                elif stm.is_a(PHI):
+                elif stm.is_a(PHIBase):
                     memsym = stm.var.sym
 
                 uses = usedef.get_stms_using(memsym)
@@ -869,6 +869,13 @@ class MemRefGraphBuilder(IRVisitor):
             else:
                 mem_t = Type.tuple(elem_t, memnode, ir.var.sym.typ.get_length())
             self._set_type(ir.var.sym, mem_t)
+
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
+
+    def visit_LPHI(self, ir):
+        self.visit_PHI(ir)
+
 
 class MemInstanceGraphBuilder(object):
     def __init__(self):

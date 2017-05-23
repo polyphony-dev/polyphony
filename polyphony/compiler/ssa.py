@@ -1,10 +1,12 @@
 ﻿from collections import defaultdict, deque
+from .block import merge_path_exp
 from .dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from .env import env
 from .symbol import Symbol
 from .ir import *
 from .tuple import TupleTransformer
 from .usedef import UseDefDetector
+from .utils import replace_item
 from .varreplacer import VarReplacer
 from logging import getLogger
 logger = getLogger(__name__)
@@ -28,7 +30,7 @@ class SSATransformerBase(object):
 
         self._remove_useless_phi()
         self._insert_predicate()
-        self._cleanup_phi()
+        self._find_loop_phi()
 
     def _sort_phi(self, blk):
         phis = blk.collect_stms(PHI)
@@ -217,19 +219,20 @@ class SSATransformerBase(object):
         self.dominance_frontier = df_builder.process(first_block, tree)
 
     def _remove_useless_phi(self):
+        logger.debug(str(self.scope))
         udd = UseDefDetector()
         udd.process(self.scope)
         usedef = self.scope.usedef
 
         def get_sym_if_having_only_1(phi):
             syms = [arg.symbol() for arg in phi.args if arg.is_a([TEMP, ATTR]) and arg.symbol() is not phi.var.symbol()]
-            if syms and all(syms[0] is s for s in syms):
+            if syms and all(syms[0] == s for s in syms):
                 return syms[0]
             else:
                 return None
         worklist = deque()
         for blk in self.scope.traverse_blocks():
-            worklist.extend(blk.collect_stms(PHI))
+            worklist.extend(blk.collect_stms(PHIBase))
         while worklist:
             phi = worklist.popleft()
             if not phi.args:
@@ -253,13 +256,8 @@ class SSATransformerBase(object):
                     for rep in replaces:
                         if rep.is_a(PHI):
                             worklist.append(rep)
-
-    def _cleanup_phi(self):
-        for blk in self.scope.traverse_blocks():
-            for phi in blk.collect_stms(PHI):
-                remove_args = [arg for arg in phi.args if arg.is_a(TEMP) and arg.symbol() is phi.var.symbol()]
-                for arg in remove_args:
-                    phi.remove_arg(arg)
+                        usedef.remove_use(phi.var, rep)
+                        usedef.add_use(replace_var, rep)
 
     def _concat_predicates(self, predicates, op):
         if not predicates:
@@ -281,10 +279,29 @@ class SSATransformerBase(object):
             phis = blk.collect_stms(PHI)
             if not phis:
                 continue
-            phi_predicates = [pred.path_exp if pred.path_exp else CONST(1) for pred in blk.preds]
+            phi_predicates = []
+            for pred in blk.preds:
+                if len(pred.succs) == 1:
+                    p = pred.path_exp if pred.path_exp else CONST(1)
+                else:
+                    p = merge_path_exp(pred, blk)
+                phi_predicates.append(p)
+
             for phi in phis:
                 phi.ps = phi_predicates[:]
                 assert len(phi.ps) == len(phi.args)
+
+    def _find_loop_phi(self):
+        for blk in self.scope.traverse_blocks():
+            phis = blk.collect_stms(PHI)
+            if not phis:
+                continue
+            if not blk.preds_loop:
+                continue
+            for phi in phis:
+                #if phi.ps[0].is_a(CONST) and phi.ps[0].value:
+                lphi = LPHI.from_phi(phi)
+                replace_item(blk.stms, phi, lphi)
 
 
 class ScalarSSATransformer(SSATransformerBase):
@@ -292,11 +309,16 @@ class ScalarSSATransformer(SSATransformerBase):
         super().__init__()
 
     def _need_rename(self, sym, qsym):
-        return not (sym.is_condition() or
-                    sym.is_param() or
-                    sym.is_return() or
-                    sym.is_static() or
-                    sym.typ.name in ['function', 'class', 'object', 'tuple', 'port'])
+        if (sym.is_condition() or
+                sym.is_param() or
+                sym.is_return() or
+                sym.is_static() or
+                sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
+            return False
+        defstms = self.usedef.get_stms_defining(qsym)
+        if len(defstms) == 1:
+            return False
+        return True
 
 
 class TupleSSATransformer(SSATransformerBase):

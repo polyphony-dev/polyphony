@@ -122,6 +122,24 @@ def try_get_constant(qsym):
     return None
 
 
+def reduce_relexp(exp):
+    if not exp.is_a(RELOP):
+        return exp
+    if exp.op == 'And':
+        if exp.left.is_a(CONST):
+            if exp.left.value:
+                return exp.right
+            else:
+                return CONST(0)
+    elif exp.op == 'Or':
+        if exp.left.is_a(CONST):
+            if exp.left.value:
+                return CONST(1)
+            else:
+                return exp.right
+    return exp
+
+
 class ConstantOptBase(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -274,17 +292,24 @@ class ConstantOpt(ConstantOptBase):
             stm = worklist.popleft()
             self.current_stm = stm
             self.visit(stm)
-            if stm.is_a(PHI):
+            if stm.is_a(PHIBase):
                 for i, p in enumerate(stm.ps[:]):
-                    if p.is_a(CONST) and not p.value:
-                        stm.ps.pop(i)
-                        stm.args.pop(i)
-                        stm.defblks.pop(i)
+                    stm.ps[i] = reduce_relexp(p)
+                for p in stm.ps[:]:
+                    if (p.is_a(CONST) and not p.value or
+                            p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
+                        idx = stm.ps.index(p)
+                        stm.ps.pop(idx)
+                        stm.args.pop(idx)
+                        stm.defblks.pop(idx)
                 if len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.defblks[0]
                     mv = MOVE(stm.var, arg)
-                    blk.insert_stm(-1, mv)
+                    if blk is stm.block and blk.is_hyperblock:
+                        blk.insert_stm(blk.stms.index(stm), mv)
+                    else:
+                        blk.insert_stm(-1, mv)
                     worklist.append(mv)
                     dead_stms.append(stm)
                     if stm in worklist:
@@ -343,7 +368,6 @@ class ConstantOpt(ConstantOptBase):
                 self.scope.exit_block = blk
             if not false_blk.preds and self.dtree.is_child(blk, false_blk):
                 remove_dominated_branch(false_blk)
-
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
             worklist.remove(cjump)
@@ -400,7 +424,7 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_PHI(self, ir):
         super().visit_PHI(ir)
-        if len(ir.block.preds) != len(ir.args):
+        if not ir.block.is_hyperblock and len(ir.block.preds) != len(ir.args):
             remove_args = []
             for arg, blk in zip(ir.args, ir.defblks):
                 if blk and blk is not self.scope.entry_block and not blk.preds:

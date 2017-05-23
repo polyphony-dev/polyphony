@@ -32,6 +32,8 @@ class Block(object):
         self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
         self.path_exp = None
         self.synth_params = self.scope.synth_params.copy()
+        self.parent = None
+        self.is_hyperblock = False
 
     def _str_connection(self):
         s = ''
@@ -73,7 +75,7 @@ class Block(object):
         return self.name
 
     def __lt__(self, other):
-        return int(self.order) < int(other.order)
+        return self.order < other.order
 
     def connect(self, next_block):
         self.succs.append(next_block)
@@ -105,7 +107,7 @@ class Block(object):
             return None
 
     def replace_succ(self, old, new):
-        replace_item(self.succs, old, new)
+        replace_item(self.succs, old, new, all=True)
         if isinstance(new, CompositBlock):
             return
         if self.stms:
@@ -125,13 +127,13 @@ class Block(object):
                 self._convert_if_unidirectional(jmp)
 
     def replace_succ_loop(self, old, new):
-        replace_item(self.succs_loop, old, new)
+        replace_item(self.succs_loop, old, new, all=True)
 
     def replace_pred(self, old, new):
-        replace_item(self.preds, old, new)
+        replace_item(self.preds, old, new, all=True)
 
     def replace_pred_loop(self, old, new):
-        replace_item(self.preds_loop, old, new)
+        replace_item(self.preds_loop, old, new, all=True)
 
     def remove_pred(self, pred):
         assert pred in self.preds
@@ -206,12 +208,14 @@ class Block(object):
             newjmp.block = self
             self.stms[-1] = newjmp
             self.succs = [targets[0]]
-            targets[0].path_exp = None
+            targets[0].path_exp = self.path_exp
         else:
             return
 
         usedef = self.scope.usedef
         for cond in conds:
+            if cond.is_a(CONST):
+                continue
             defstms = usedef.get_stms_defining(cond.symbol())
             assert len(defstms) == 1
             stm = defstms.pop()
@@ -238,6 +242,9 @@ class CompositBlock(Block):
         self.outer_uses = None
         self.inner_defs = None
         self.inner_uses = None
+        head.parent = self
+        for body in bodies:
+            body.parent = self
 
     def __str__(self):
         s = 'CompositBlock: (' + str(self.order) + ') ' + str(self.name) + '\n'
@@ -332,19 +339,18 @@ class BlockReducer(object):
         if scope.is_class():
             return
         self.removed_blks = []
-        self._merge_unidirectional_block(scope)
-        self._remove_empty_block(scope)
+        while True:
+            self._merge_unidirectional_block(scope)
+            self._remove_empty_block(scope)
+            if not self.removed_blks:
+                break
+            else:
+                self.removed_blks = []
+        self._reconstruct_phi(scope)
         self._replace_cjump(scope)
         for blk in scope.traverse_blocks():
             blk.order = -1
         Block.set_order(scope.entry_block, 0)
-
-        # update scope's paths
-        if self.removed_blks:
-            for r in self.removed_blks:
-                for p in scope.paths:
-                    if r in p:
-                        p.remove(r)
 
     def _replace_cjump(self, scope):
         for block in scope.traverse_blocks():
@@ -389,32 +395,60 @@ class BlockReducer(object):
                 continue
             if block is scope.entry_block:
                 continue
+
             if block.stms and block.stms[0].is_a(JUMP):
                 assert len(block.succs) == 1
                 succ = block.succs[0]
                 if succ in block.succs_loop:
-                    if len(block.preds) > 1:
-                        # do not remove a convergence loopback block
-                        continue
-                else:
-                    succ.remove_pred(block)
-                    for pred in block.preds:
-                        pred.replace_succ(block, succ)
-                        pred.replace_succ_loop(block, succ)
-                        if pred not in succ.preds:
-                            succ.preds.append(pred)
-                        if pred in block.preds_loop and pred not in succ.preds_loop:
-                            succ.preds_loop.append(pred)
+                    continue
+                phis = block.collect_stms(PHIBase)
+                if phis:
+                    continue
+                succ.remove_pred(block)
+                for pred in block.preds:
+                    pred.replace_succ(block, succ)
+                    pred.replace_succ_loop(block, succ)
+                    if pred not in succ.preds:
+                        succ.preds.append(pred)
+                    if pred in block.preds_loop and pred not in succ.preds_loop:
+                        succ.preds_loop.append(pred)
 
                 logger.debug('remove empty block ' + block.name)
                 if block is scope.entry_block:
                     scope.entry_block = succ
                 self.removed_blks.append(block)
 
+    def _reconstruct_phi(self, scope):
+        for block in scope.traverse_blocks():
+            if block.is_hyperblock:
+                continue
+            phis = block.collect_stms(PHIBase)
+            for phi in phis:
+                if len(phi.defblks) == len(block.preds):
+                    phi.defblks = block.preds[:]
+                else:
+                    for defblk in phi.defblks[:]:
+                        if defblk in block.preds:
+                            continue
+                        else:
+                            idx = phi.defblks.index(defblk)
+                            phi.defblks.pop(idx)
+                            phi.ps.pop(idx)
+                            phi.args.pop(idx)
+                    phi.defblks = block.preds[:]
+                    if len(phi.args) == 1:
+                        mv = MOVE(phi.var, phi.args[0])
+                        mv.lineno = phi.args[0].lineno
+                        phi.defblks[0].insert_stm(-1, mv)
+                        block.stms.remove(phi)
+
 
 class PathExpTracer(object):
     def process(self, scope):
         self.scope = scope
+        for blk in scope.traverse_blocks():
+            blk.order = -1
+        Block.set_order(scope.entry_block, 0)
         tree = DominatorTreeBuilder(scope).process()
         tree.dump()
         self.tree = tree
@@ -424,7 +458,22 @@ class PathExpTracer(object):
             blk = self.worklist.popleft()
             self.traverse_dtree(blk)
 
+    def make_path_exp(self, blk, parent):
+        blk.path_exp = parent.path_exp
+        if len(parent.succs) > 1 and len(blk.preds) == 1:
+            blk.path_exp = merge_path_exp(parent, blk)
+
     def traverse_dtree(self, blk):
+        if not blk.stms:
+            return
+        parent = self.tree.get_parent_of(blk)
+        if parent:
+            self.make_path_exp(blk, parent)
+        children = self.tree.get_children_of(blk)
+        for child in children:
+            self.traverse_dtree(child)
+
+    def traverse_dtree_(self, blk):
         if not blk.stms:
             return
         children = self.tree.get_children_of(blk)
@@ -483,20 +532,132 @@ class PathExpTracer(object):
             else:
                 for t, cond in zip(jump.targets, jump.conds):
                     t.path_exp = cond
+        elif jump.is_a(RET):
+            if len(blk.preds) > 1:
+                parent_blk = self.tree.get_parent_of(blk)
+                blk.path_exp = parent_blk.path_exp
         for child in children:
             self.traverse_dtree(child)
 
-    def reduce_And_exp(self, exp1, exp2):
-        if exp1.is_a(CONST):
-            if exp1.value != 0 or exp1.value is True:
-                return exp2
+
+def merge_path_exp(prev, blk):
+    jump = prev.stms[-1]
+    exp = None
+    if jump.is_a(CJUMP):
+        if blk is jump.true:
+            exp = reduce_And_exp(blk.path_exp, jump.exp)
+            if not exp:
+                exp = RELOP('And', blk.path_exp, jump.exp)
+        elif blk is jump.false:
+            exp = reduce_And_exp(blk.path_exp, UNOP('Not', jump.exp))
+            if not exp:
+                exp = RELOP('And', blk.path_exp, UNOP('Not', jump.exp))
+    elif jump.is_a(MCJUMP):
+        if blk in jump.targets:
+            idx  = jump.targets.index(blk)
+            exp = reduce_And_exp(blk.path_exp, jump.conds[idx])
+            if not exp:
+                exp = RELOP('And', blk.path_exp, jump.conds[idx])
+    return exp
+
+
+def reduce_And_exp(exp1, exp2):
+    if exp1 is None:
+        return exp2
+    elif exp2 is None:
+        return exp1
+    if exp1.is_a(CONST):
+        if exp1.value != 0 or exp1.value is True:
+            return exp2
+        else:
+            return exp1
+    elif exp2.is_a(CONST):
+        if exp2.value != 0 or exp2.value is True:
+            return exp1
+        else:
+            return exp2
+    if exp1.is_a(TEMP) and exp2.is_a(UNOP) and exp1.sym is exp2.exp.sym:
+        return CONST(0)
+    elif exp2.is_a(TEMP) and exp1.is_a(UNOP) and exp1.exp.sym is exp2.sym:
+        return CONST(0)
+    return None
+
+
+class HyperBlockBuilder(object):
+    def process(self, scope):
+        self.scope = scope
+        self.diamond_nodes = deque()
+        self._update_domtree()
+        self._find_diamond_nodes()
+        self._convert()
+
+    def _update_domtree(self):
+        self.tree = DominatorTreeBuilder(self.scope).process()
+
+    def _walk_to_convergence(self, blk, path):
+        b = blk
+        while b:
+            path.append(b)
+            if len(b.preds) > 1:
+                return True
+            if not b.succs:
+                return False
+            if len(b.succs) > 1:
+                return False
+            if b.succs[0] in b.succs_loop:
+                return False
+            b = b.succs[0]
+
+    def _find_diamond_nodes(self):
+        for blk in self.scope.traverse_blocks():
+            if len(blk.succs) <= 1:
+                continue
+            ends = []
+            branches = []
+            for succ in blk.succs:
+                path = []
+                if not self._walk_to_convergence(succ, path):
+                    continue
+                ends.append(path[-1])
+                branches.append(path)
+            if len(blk.succs) == len(ends) and all([ends[0] is b for b in ends[1:]]):
+                self.diamond_nodes.append((blk, ends[0], branches))
+
+    def _convert(self):
+        while self.diamond_nodes:
+            begin, end, branches = self.diamond_nodes.popleft()
+            if self.tree.get_parent_of(end) is begin:
+                # pure diamond nodes
+                self._merge_diamond_blocks(begin, end, branches)
             else:
-                return exp1
-        elif exp2.is_a(CONST):
-            if exp2.value != 0 or exp2.value is True:
-                return exp1
-            else:
-                return exp2
-        if exp1.is_a(TEMP) and exp2.is_a(UNOP) and exp2.op == 'Not' and exp1.sym is exp2.exp.sym:
-            return CONST(0)
-        return None
+                # with side edges
+                # TODO:
+                pass
+
+    def _merge_diamond_blocks(self, begin, end, branches):
+        for path in branches:
+            assert end is path[-1]
+            for blk in path[:-1]:
+                assert len(blk.succs) == 1
+                for stm in blk.stms[:-1]:
+                    begin.insert_stm(-1, stm)
+                blk.stms = blk.stms[-1:]
+                blk.preds = blk.succs = []
+
+        for stm in end.stms:
+            begin.insert_stm(-1, stm)
+            if stm.is_a(PHIBase):
+                stm.defblks = [begin] * len(stm.defblks)
+        begin.stms.remove(begin.stms[-1])
+        begin.succs = end.succs
+        begin.succs_loop = end.succs_loop
+        for succ in end.succs:
+            succ.replace_pred(end, begin)
+            succ.replace_pred_loop(end, begin)
+            phis = succ.collect_stms(PHIBase)
+            for phi in phis:
+                idx = phi.defblks.index(end)
+                phi.defblks[idx] = begin
+                phi.args[idx].iorder = len(begin.stms) - 2
+        end.preds = end.succs = []
+        begin.is_hyperblock = True

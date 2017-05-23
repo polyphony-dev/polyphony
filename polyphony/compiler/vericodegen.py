@@ -542,7 +542,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.visit(ahdl_if)
 
     def visit_WAIT_VALUE(self, ahdl):
-        eqs = [AHDL_OP('Eq', value, port) for value, port in ahdl.args]
+        eqs = [AHDL_OP('Eq', port, value) for value, port in ahdl.args]
         cond = functools.reduce(lambda a, b: AHDL_OP('And', a, b), eqs)
         conds = [cond]
         if ahdl.codes:
