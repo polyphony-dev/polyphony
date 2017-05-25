@@ -35,6 +35,14 @@ def remove_from_list(lst, removes):
             lst.remove(r)
 
 
+def remove_except_one(lst, target):
+    for idx, item in enumerate(lst[:]):
+        if item is target:
+            rest = [r for r in lst[idx + 1:] if r is not target]
+            return lst[:idx + 1] + rest
+    return lst
+
+
 def unique(lst):
     return sorted(list(set(lst)))
 

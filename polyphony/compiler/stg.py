@@ -796,6 +796,26 @@ class AHDLTranslator(object):
 
     def visit_PHI(self, ir, node):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
+        if ir.var.symbol().typ.is_seq():
+            self._emit_mem_mux(ir, node)
+        else:
+            self._emit_scalar_mux(ir, node)
+
+    def _emit_mem_mux(self, ir, node):
+        ahdl_dst = self.visit(ir.var, node)
+        assert ahdl_dst.is_a(AHDL_MEMVAR)
+        assert ahdl_dst.memnode.is_joinable()
+        src_nodes = []
+        conds = []
+        for arg, p in zip(ir.args, ir.ps):
+            ahdl_src = self.visit(arg, node)
+            ahdl_cond = self.visit(p, node)
+            assert ahdl_src.is_a(AHDL_MEMVAR)
+            src_nodes.append(ahdl_src.memnode)
+            conds.append(ahdl_cond)
+        self._emit(AHDL_META('MEM_MUX', '', ahdl_dst.memnode, src_nodes, conds), self.sched_time)
+
+    def _emit_scalar_mux(self, ir, node):
         ahdl_dst = self.visit(ir.var, node)
         arg_p = list(zip(ir.args, ir.ps))
         rexp, cond = arg_p[-1]
@@ -817,6 +837,20 @@ class AHDLTranslator(object):
 
     def visit_LPHI(self, ir, node):
         self.visit_PHI(ir, node)
+
+    def _hooked_emit(self, ahdl, sched_time):
+        self.hooked.append((ahdl, sched_time))
+
+    def visit_CSTM(self, ir, node):
+        cond = self.visit(ir.cond, node)
+        orig_emit_func = self._emit
+        self._emit = self._hooked_emit
+        self.hooked = []
+        self.visit(ir.stm, node)
+        self._emit = orig_emit_func
+        for ahdl, sched_time in self.hooked:
+            self._emit(AHDL_IF([cond], [[ahdl]]), sched_time)
+
 
     def visit(self, ir, node):
         method = 'visit_' + ir.__class__.__name__

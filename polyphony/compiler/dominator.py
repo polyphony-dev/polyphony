@@ -72,6 +72,8 @@ class DominatorTreeBuilder(object):
         #build dominator tree
         tree = DominatorTree()
         for b, doms in self.dominators.items():
+            for dom in doms:
+                assert dom.order >= 0
             domlist = sorted(list(doms))
             assert b is domlist[-1]
             if len(domlist) >= 2:

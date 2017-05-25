@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict, deque
-from .block import merge_path_exp
+from .cfgopt import merge_path_exp, rel_and_exp
 from .dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from .env import env
 from .symbol import Symbol
@@ -31,6 +31,7 @@ class SSATransformerBase(object):
         self._remove_useless_phi()
         self._insert_predicate()
         self._find_loop_phi()
+        self._deal_with_return_phi()
 
     def _sort_phi(self, blk):
         phis = blk.collect_stms(PHI)
@@ -82,7 +83,7 @@ class SSATransformerBase(object):
     def _new_phi(self, var, df):
         phi = PHI(var)
         phi.block = df
-        phi.args = [var] * len(df.preds)
+        phi.args = [None] * len(df.preds)
         phi.defblks = [None] * len(df.preds)
         phi.lineno = 1
         var.lineno = 1
@@ -171,10 +172,18 @@ class SSATransformerBase(object):
                 var.ctx = Ctx.LOAD
                 var.lineno = v.lineno
                 var.iorder = v.iorder
-                idx = phi.block.preds.index(block)
-                phi.args[idx] = var
-                phi.defblks[idx] = block
-                self._add_new_sym(var, i)
+                if 1 == phi.block.preds.count(block):
+                    idx = phi.block.preds.index(block)
+                    phi.args[idx] = var
+                    phi.defblks[idx] = block
+                    self._add_new_sym(var, i)
+                else:
+                    for idx, pred in enumerate(phi.block.preds):
+                        if pred is not block:
+                            continue
+                        phi.args[idx] = var
+                        phi.defblks[idx] = block
+                        self._add_new_sym(var, i)
         else:
             self._add_new_sym(var, i)
 
@@ -225,7 +234,7 @@ class SSATransformerBase(object):
         usedef = self.scope.usedef
 
         def get_sym_if_having_only_1(phi):
-            syms = [arg.symbol() for arg in phi.args if arg.is_a([TEMP, ATTR]) and arg.symbol() is not phi.var.symbol()]
+            syms = [arg.symbol() for arg in phi.args if arg and arg.is_a([TEMP, ATTR]) and arg.symbol() is not phi.var.symbol()]
             if syms and all(syms[0] == s for s in syms):
                 return syms[0]
             else:
@@ -236,43 +245,34 @@ class SSATransformerBase(object):
         while worklist:
             phi = worklist.popleft()
             if not phi.args:
-                #assert False
-                logger.debug('remove ' + str(phi))
-                phi.block.stms.remove(phi)
-                #pass
-            else:
-                sym = get_sym_if_having_only_1(phi)
-                if sym:
-                    logger.debug('remove ' + str(phi))
-                    if phi in phi.block.stms:
-                        phi.block.stms.remove(phi)
-                        for a in phi.args:
-                            usedef.remove_var_use(a, phi)
-                        usedef.remove_var_def(phi.var, phi)
-                    replace_var = phi.var.clone()
-                    replace_var.set_symbol(sym)
-                    replace_var.ctx = Ctx.LOAD
-                    replaces = VarReplacer.replace_uses(phi.var, replace_var, usedef)
-                    for rep in replaces:
-                        if rep.is_a(PHI):
-                            worklist.append(rep)
-                        usedef.remove_use(phi.var, rep)
-                        usedef.add_use(replace_var, rep)
+                self._remove_phi(phi, usedef)
+                continue
+            usestms = usedef.get_stms_using(phi.var.symbol())
+            if not usestms:
+                self._remove_phi(phi, usedef)
+                continue
 
-    def _concat_predicates(self, predicates, op):
-        if not predicates:
-            return None
-        concat = predicates[0]
-        for p in predicates[1:]:
-            concat = BINOP(op, concat, p)
-        return concat
+            sym = get_sym_if_having_only_1(phi)
+            if sym:
+                self._remove_phi(phi, usedef)
+                replace_var = phi.var.clone()
+                replace_var.set_symbol(sym)
+                replace_var.ctx = Ctx.LOAD
+                replaces = VarReplacer.replace_uses(phi.var, replace_var, usedef)
+                for rep in replaces:
+                    if rep.is_a(PHI):
+                        worklist.append(rep)
+                    usedef.remove_use(phi.var, rep)
+                    usedef.add_use(replace_var, rep)
 
-    def _idom_path(self, blk, path):
-        path.append(blk)
-        idom = self.tree.get_parent_of(blk)
-        if not idom:
-            return
-        self._idom_path(idom, path)
+    def _remove_phi(self, phi, usedef):
+        logger.debug('remove ' + str(phi))
+        if phi in phi.block.stms:
+            phi.block.stms.remove(phi)
+            for a in phi.args:
+                if a:
+                    usedef.remove_use(a, phi)
+            usedef.remove_var_def(phi.var, phi)
 
     def _insert_predicate(self):
         for blk in self.scope.traverse_blocks():
@@ -280,11 +280,25 @@ class SSATransformerBase(object):
             if not phis:
                 continue
             phi_predicates = []
+            dup_counts = defaultdict(int)
             for pred in blk.preds:
                 if len(pred.succs) == 1:
                     p = pred.path_exp if pred.path_exp else CONST(1)
                 else:
-                    p = merge_path_exp(pred, blk)
+                    if pred.succs.count(blk) == 1:
+                        p = merge_path_exp(pred, blk)
+                    else:
+                        dup_count = dup_counts[pred]
+                        dup_counts[pred] += 1
+                        jump = pred.stms[-1]
+                        targets = [(idx, target) for idx, target in enumerate(jump.targets)
+                                   if target is blk]
+                        for idx, target in targets:
+                            if dup_count == 0:
+                                p = rel_and_exp(blk.path_exp, jump.conds[idx])
+                                break
+                            else:
+                                dup_count -= 1
                 phi_predicates.append(p)
 
             for phi in phis:
@@ -303,6 +317,18 @@ class SSATransformerBase(object):
                 lphi = LPHI.from_phi(phi)
                 replace_item(blk.stms, phi, lphi)
 
+    def _deal_with_return_phi(self):
+        for blk in self.scope.traverse_blocks():
+            phis = blk.collect_stms(PHI)
+            for phi in phis:
+                if phi.var.symbol().is_return():
+                    for a in phi.args:
+                        a.symbol().del_tag('return')
+                        new_name = 'ret' + a.symbol().name.split('#')[1]
+                        while new_name in self.scope.symbols:
+                            new_name = '_' + new_name
+                        a.symbol().name = new_name
+
 
 class ScalarSSATransformer(SSATransformerBase):
     def __init__(self):
@@ -311,7 +337,6 @@ class ScalarSSATransformer(SSATransformerBase):
     def _need_rename(self, sym, qsym):
         if (sym.is_condition() or
                 sym.is_param() or
-                sym.is_return() or
                 sym.is_static() or
                 sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
             return False

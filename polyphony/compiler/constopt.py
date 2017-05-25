@@ -272,6 +272,10 @@ class ConstantOptBase(IRVisitor):
         #ir.ps = [self.visit(p) for p in ir.ps]
         pass
 
+    def visit_CSTM(self, ir):
+        ir.cond = self.visit(ir.cond)
+        self.visit(ir.stm)
+
 
 class ConstantOpt(ConstantOptBase):
     def __init__(self):
@@ -304,12 +308,9 @@ class ConstantOpt(ConstantOptBase):
                         stm.defblks.pop(idx)
                 if len(stm.args) == 1:
                     arg = stm.args[0]
-                    blk = stm.defblks[0]
+                    blk = stm.block
                     mv = MOVE(stm.var, arg)
-                    if blk is stm.block and blk.is_hyperblock:
-                        blk.insert_stm(blk.stms.index(stm), mv)
-                    else:
-                        blk.insert_stm(-1, mv)
+                    blk.insert_stm(blk.stms.index(stm), mv)
                     worklist.append(mv)
                     dead_stms.append(stm)
                     if stm in worklist:
@@ -352,11 +353,11 @@ class ConstantOpt(ConstantOptBase):
 
         blk = cjump.block
         if cjump.exp.value:
-            true_blk = blk.succs[0]
-            false_blk = blk.succs[1]
+            true_blk = cjump.true
+            false_blk = cjump.false
         else:
-            true_blk = blk.succs[1]
-            false_blk = blk.succs[0]
+            true_blk = cjump.false
+            false_blk = cjump.true
         jump = JUMP(true_blk)
         jump.lineno = cjump.lineno
         jump.iorder = cjump.iorder

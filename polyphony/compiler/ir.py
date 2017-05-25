@@ -759,9 +759,9 @@ class PHIBase(IRStm):
         self.defblks = []
         self.ps = []
 
-    def _str_args(self):
+    def _str_args(self, with_p=True):
         str_args = []
-        if self.ps:
+        if self.ps and with_p:
             #assert len(self.ps) == len(self.args)
             for arg, p in zip(self.args, self.ps):
                 if arg:
@@ -798,17 +798,33 @@ class PHIBase(IRStm):
         self.args.pop(idx)
         self.defblks.pop(idx)
 
+    def reorder_args(self, indices):
+        defblks = []
+        args = []
+        ps = []
+        for idx in indices:
+            assert 0 <= idx < len(self.args)
+            defblks.append(self.defblks[idx])
+            args.append(self.args[idx])
+            ps.append(self.ps[idx])
+        self.defblks = defblks
+        self.args = args
+        self.ps = ps
+
 
 class PHI(PHIBase):
     def __init__(self, var):
         super().__init__(var)
 
     def __str__(self):
-        if self.block.is_hyperblock:
-            s = "(PSI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        if len(self.args) >= 3:
+            delim = ',\n        '
         else:
-            s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
-        #s += '(' + ', '.join([blk.name for blk in self.defblks]) + ')'
+            delim = ', '
+        if self.block.is_hyperblock:
+            s = "(PSI '{}' <- phi[{}])".format(self.var, delim.join(self._str_args()))
+        else:
+            s = "(PHI '{}' <- phi[{}])".format(self.var, delim.join(self._str_args(with_p=False)))
         return s
 
 
@@ -837,6 +853,29 @@ class LPHI(PHIBase):
         lphi.ps = phi.ps[:]
         lphi.block = phi.block
         return lphi
+
+
+class CSTM(IRStm):
+    def __init__(self, cond, stm):
+        super().__init__()
+        assert isinstance(cond, IRExp)
+        assert isinstance(stm, IRStm)
+        self.cond = cond
+        self.stm = stm
+
+    def __str__(self):
+        return "(CSTM {} ? {})".format(self.cond, self.stm)
+
+    def __eq__(self, other):
+        if other is None or not other.is_a(CSTM):
+            return False
+        return self.cond == other.cond and self.stm == other.stm
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def kids(self):
+        return self.cond.kids() + self.stm.kids()
 
 
 def op2str(op):

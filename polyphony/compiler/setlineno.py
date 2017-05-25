@@ -1,4 +1,5 @@
-﻿from .irvisitor import IRVisitor
+﻿from collections import defaultdict
+from .irvisitor import IRVisitor
 from .common import get_src_text
 import logging
 logger = logging.getLogger()
@@ -101,62 +102,21 @@ class SourceDump(IRVisitor):
     def __init__(self):
         super().__init__()
 
-    def visit_UNOP(self, ir):
-        pass
+    def process(self, scope):
+        self.stms = defaultdict(list)
+        super().process(scope)
+        logger.debug('-' * 30)
+        logger.debug(scope.name)
+        logger.debug('-' * 30)
+        for lineno in sorted(self.stms.keys()):
+            src_line = get_src_text(scope, lineno)
+            src_line = src_line.replace('\n', '')
+            logger.debug('{}:{}'.format(lineno, src_line))
+            spc_nums = len(src_line) - len(src_line.lstrip())
+            indent = ' ' * spc_nums
+            for stm in self.stms[lineno]:
+                logger.debug(indent + str(stm))
 
-    def visit_BINOP(self, ir):
-        pass
-
-    def visit_RELOP(self, ir):
-        pass
-
-    def visit_CONDOP(self, ir):
-        pass
-
-    def visit_CALL(self, ir):
-        pass
-
-    def visit_SYSCALL(self, ir):
-        pass
-
-    def visit_CONST(self, ir):
-        pass
-
-    def visit_TEMP(self, ir):
-        pass
-
-    def visit_MREF(self, ir):
-        pass
-
-    def visit_MSTORE(self, ir):
-        pass
-
-    def visit_ARRAY(self, ir):
-        pass
-
-    def visit_EXPR(self, ir):
-        logger.debug(str(ir))
-        logger.debug(get_src_text(self.scope, ir.lineno))
-
-    def visit_CJUMP(self, ir):
-        logger.debug(str(ir))
-        logger.debug(get_src_text(self.scope, ir.lineno))
-
-    def visit_MCJUMP(self, ir):
-        logger.debug(str(ir))
-        logger.debug(get_src_text(self.scope, ir.lineno))
-
-    def visit_JUMP(self, ir):
-        logger.debug(str(ir))
-        logger.debug(get_src_text(self.scope, ir.lineno))
-
-    def visit_RET(self, ir):
-        logger.debug(str(ir))
-        logger.debug(get_src_text(self.scope, ir.lineno))
-
-    def visit_MOVE(self, ir):
-        logger.debug(str(ir))
-        logger.debug(get_src_text(self.scope, ir.lineno))
-
-    def visit_PHI(self, ir):
-        pass
+    def _process_block(self, block):
+        for stm in block.stms:
+            self.stms[stm.lineno].append(stm)

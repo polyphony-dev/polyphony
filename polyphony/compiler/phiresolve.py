@@ -13,8 +13,7 @@ class PHICondResolver(object):
         self._collect_phi()
         phis = self.phis[:]
         for phi in phis:
-            if (phi.is_a(PHI) and
-                    (not phi.block.is_hyperblock or not phi.var.symbol().typ.is_scalar())):
+            if (phi.is_a(PHI) and not phi.block.is_hyperblock):
                 self._divide_phi_to_mv(phi)
                 continue
             elif phi.is_a(LPHI):

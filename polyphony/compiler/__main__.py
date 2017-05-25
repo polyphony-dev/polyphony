@@ -3,10 +3,10 @@ import os
 import sys
 from .ahdlusedef import AHDLUseDefDetector
 from .bitwidth import BitwidthReducer
-from .block import BlockReducer, PathExpTracer
-from .block import HyperBlockBuilder
 from .builtin import builtin_symbols
 from .callgraph import CallGraphBuilder
+from .cfgopt import BlockReducer, PathExpTracer
+from .cfgopt import HyperBlockBuilder
 from .common import read_source
 from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
@@ -98,6 +98,8 @@ def pathexp(driver, scope):
 
 
 def hyperblock(driver, scope):
+    if scope.is_testbench():
+        return
     HyperBlockBuilder().process(scope)
 
 
@@ -334,6 +336,12 @@ def dumpscope(driver, scope):
     driver.logger.debug(str(scope))
 
 
+def dumpcfgimg(driver, scope):
+    from .scope import write_dot
+    if scope.is_function_module() or scope.is_method() or scope.is_module():
+        write_dot(scope, driver.stage)
+
+
 def dumpmrg(driver, scope):
     driver.logger.debug(str(env.memref_graph))
 
@@ -405,7 +413,8 @@ def compile_plan():
         scalarssa,
         dbg(dumpscope),
         usedef,
-        # hyperblock,
+        #hyperblock,
+        #reduceblk,
         dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
@@ -532,7 +541,7 @@ def output_individual(compile_results, output_name, output_dir):
 
     scopes = Scope.get_scopes(with_class=True)
     scopes = [scope for scope in scopes
-              if (scope.is_testbench() or scope.is_module() or scope.is_function_module())]
+              if (scope.is_testbench() or (scope.is_module() and scope.is_instantiated()) or scope.is_function_module())]
     if output_name.endswith('.v'):
         output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:

@@ -137,6 +137,14 @@ class VarReplacer(object):
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
 
+    def visit_CSTM(self, ir):
+        self.replaced = False
+        ir.cond = self.visit(ir.cond)
+        self.visit(ir.stm)
+        if self.replaced:
+            self.replaces.remove(ir.stm)
+            self.replaces.append(ir)
+
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)

@@ -564,3 +564,39 @@ class SymbolReplacer(IRVisitor):
             ir.attr = self.sym_map[ir.attr]
         else:
             logger.debug('WARNING: not found {}'.format(ir.attr))
+
+
+def write_dot(scope, tag):
+    try:
+        import pydot
+    except ImportError:
+        raise
+    name = scope.orig_name + '_' + str(tag)
+    g = pydot.Dot(name, graph_type='digraph')
+
+    def get_text(blk):
+        s = blk.name + '\n'
+        for stm in blk.stms:
+            s += str(stm) + '\n'
+        s = s.replace(':', ' ').replace('#', ' ')
+        return s
+
+    blk_map = {blk: pydot.Node(get_text(blk), shape='box') for blk in scope.traverse_blocks()}
+    for n in blk_map.values():
+        g.add_node(n)
+
+    for blk in blk_map.keys():
+        from_node = blk_map[blk]
+        for succ in blk.succs:
+            to_node = blk_map[succ]
+            if succ in blk.succs_loop:
+                g.add_edge(pydot.Edge(from_node, to_node, color='red'))
+            else:
+                g.add_edge(pydot.Edge(from_node, to_node))
+        #for pred in blk.preds:
+        #    to_node = blk_map[pred]
+        #    if pred in blk.preds_loop:
+        #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed', color='red'))
+        #    else:
+        #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed'))
+    g.write_png('.tmp/' + name + '.png')

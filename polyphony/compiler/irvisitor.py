@@ -101,7 +101,8 @@ class IRVisitor(object):
     def visit_PHI(self, ir):
         self.visit(ir.var)
         for arg in ir.args:
-            self.visit(arg)
+            if arg:
+                self.visit(arg)
         for p in ir.ps:
             if p:
                 self.visit(p)
@@ -111,6 +112,10 @@ class IRVisitor(object):
 
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
+
+    def visit_CSTM(self, ir):
+        self.visit(ir.cond)
+        self.visit(ir.stm)
 
 
 class IRTransformer(IRVisitor):
@@ -230,3 +235,9 @@ class IRTransformer(IRVisitor):
 
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
+
+    def visit_CSTM(self, ir):
+        self.visit(ir.cond)
+        self.visit(ir.stm)
+        self.new_stms.remove(ir.stm)
+        self.new_stms.append(ir)
