@@ -16,13 +16,14 @@ class VarReplacer(object):
             replacer.visit(use)
         return replacer.replaces
 
-    def __init__(self, dst, src, usedef):
+    def __init__(self, dst, src, usedef, enable_dst=False):
         super().__init__()
         self.replaces = []
         self.replace_dst = dst
         self.replace_src = src
         self.usedef = usedef
         self.replaced = False
+        self.enable_dst_replacing = enable_dst
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
@@ -121,11 +122,15 @@ class VarReplacer(object):
     def visit_MOVE(self, ir):
         self.replaced = False
         ir.src = self.visit(ir.src)
+        if self.enable_dst_replacing:
+            ir.dst = self.visit(ir.dst)
         if self.replaced:
             self.replaces.append(ir)
 
     def visit_PHI(self, ir):
         self.replaced = False
+        if self.enable_dst_replacing:
+            ir.var = self.visit(ir.var)
         ir.args = [self.visit(arg) for arg in ir.args]
         ir.ps = [self.visit(p) for p in ir.ps]
         if self.replaced:

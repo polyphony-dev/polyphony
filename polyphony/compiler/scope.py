@@ -578,7 +578,7 @@ def write_dot(scope, tag):
         s = blk.name + '\n'
         for stm in blk.stms:
             s += str(stm) + '\n'
-        s = s.replace(':', ' ').replace('#', ' ')
+        s = s.replace(':', '_')
         return s
 
     blk_map = {blk: pydot.Node(get_text(blk), shape='box') for blk in scope.traverse_blocks()}

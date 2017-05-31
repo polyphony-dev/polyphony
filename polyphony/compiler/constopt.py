@@ -149,7 +149,6 @@ class ConstantOptBase(IRVisitor):
         if ir.exp.is_a(CONST):
             c = CONST(eval_unop(ir, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -159,7 +158,6 @@ class ConstantOptBase(IRVisitor):
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
             c = CONST(eval_binop(ir, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -169,7 +167,6 @@ class ConstantOptBase(IRVisitor):
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
             c = CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
             const, var = (ir.left.value, ir.right) if ir.left.is_a(CONST) else (ir.right.value, ir.left)
@@ -179,13 +176,11 @@ class ConstantOptBase(IRVisitor):
                 else:
                     c = CONST(False)
                     c.lineno = ir.lineno
-                    c.iorder = ir.iorder
                     return c
             elif ir.op == 'Or':
                 if const:
                     c = CONST(True)
                     c.lineno = ir.lineno
-                    c.iorder = ir.iorder
                     return c
                 else:
                     return var
@@ -194,7 +189,6 @@ class ConstantOptBase(IRVisitor):
                 and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
             c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -217,7 +211,6 @@ class ConstantOptBase(IRVisitor):
                 and ir.func.symbol().name == 'is_worker_running'):
             c = CONST(True)
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -360,7 +353,6 @@ class ConstantOpt(ConstantOptBase):
             false_blk = cjump.true
         jump = JUMP(true_blk)
         jump.lineno = cjump.lineno
-        jump.iorder = cjump.iorder
 
         if true_blk is not false_blk:
             false_blk.remove_pred(blk)
@@ -386,7 +378,6 @@ class ConstantOpt(ConstantOptBase):
                 assert lens[0] > 0
                 c = CONST(lens[0])
                 c.lineno = ir.lineno
-                c.iorder = ir.iorder
                 return c
         return self.visit_CALL(ir)
 
