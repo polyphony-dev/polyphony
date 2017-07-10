@@ -114,7 +114,7 @@ def is_worker_running():
 
     *Notes:*
         This function is provided to stop the worker function in the simulation with Python interpreter.
-        In the course of compiling to HDL, this function is always replaced with True.
+        While compiling to HDL, this function is always replaced with True.
     '''
     return _is_worker_running
 

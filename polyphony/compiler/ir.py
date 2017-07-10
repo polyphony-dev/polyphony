@@ -254,8 +254,9 @@ class CALL(IRExp):
         self.func_scope = None
 
     def __str__(self):
-        s = '(CALL {}, '.format(self.func)
-        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s = '{}('.format(self.func)
+        #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s += ', '.join(['{}'.format(arg) for name, arg in self.args])
         s += ")"
         return s
 
@@ -315,8 +316,9 @@ class SYSCALL(IRExp):
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '(SYSCALL {}, '.format(self.sym)
-        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s = '{}('.format(self.sym)
+        #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s += ', '.join(['{}'.format(arg) for name, arg in self.args])
         s += ")"
         return s
 
@@ -361,7 +363,7 @@ class NEW(IRExp):
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '(NEW {}, '.format(self.func_scope.orig_name)
+        s = '{}('.format(self.func_scope.orig_name)
         s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ")"
         return s
@@ -433,7 +435,7 @@ class MREF(IRExp):
         self.ctx = ctx
 
     def __str__(self):
-        return '(MREF {}, {})'.format(self.mem, self.offset)
+        return '{}[{}]'.format(self.mem, self.offset)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MREF):
@@ -455,7 +457,7 @@ class MSTORE(IRExp):
         self.exp = exp
 
     def __str__(self):
-        return '(MSTORE {}, {}, {})'.format(self.mem, self.offset, self.exp)
+        return '{}[{}] = {}'.format(self.mem, self.offset, self.exp)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MSTORE):
@@ -478,8 +480,7 @@ class ARRAY(IRExp):
         self.is_mutable = is_mutable
 
     def __str__(self):
-        s = "(ARRAY "
-        s += '[' if self.is_mutable else '('
+        s = '[' if self.is_mutable else '('
         if len(self.items) > 8:
             s += ', '.join(map(str, self.items[:10]))
             s += '...'
@@ -488,7 +489,6 @@ class ARRAY(IRExp):
         s += ']' if self.is_mutable else ')'
         if not (self.repeat.is_a(CONST) and self.repeat.value == 1):
             s += ' * ' + str(self.repeat)
-        s += ")"
         return s
 
     def __eq__(self, other):
@@ -619,7 +619,7 @@ class EXPR(IRStm):
         self.exp = exp
 
     def __str__(self):
-        return '(EXPR {})'.format(self.exp)
+        return '{}'.format(self.exp)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, EXPR):
@@ -642,7 +642,7 @@ class CJUMP(IRStm):
         self.loop_branch = False
 
     def __str__(self):
-        return '(CJUMP {}, {}, {})'.format(self.exp, self.true.name, self.false.name)
+        return 'cjump {} ? {}, {}'.format(self.exp, self.true.name, self.false.name)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CJUMP):
@@ -664,9 +664,9 @@ class MCJUMP(IRStm):
         assert len(self.conds) == len(self.targets)
         items = []
         for cond, target in zip(self.conds, self.targets):
-            items.append('({}) => {}'.format(cond, target.name))
+            items.append('{} ? {}'.format(cond, target.name))
 
-        return '(MCJUMP \n        {})'.format(', \n        '.join([item for item in items]))
+        return 'mcjump(\n        {})'.format(', \n        '.join([item for item in items]))
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MCJUMP):
@@ -686,7 +686,7 @@ class JUMP(IRStm):
         self.typ = typ  # 'B': break, 'C': continue, 'L': loop-back, 'S': specific
 
     def __str__(self):
-        return "(JUMP {} '{}')".format(self.target.name, self.typ)
+        return "jump {} '{}'".format(self.target.name, self.typ)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, JUMP):
@@ -703,7 +703,7 @@ class RET(IRStm):
         self.exp = exp
 
     def __str__(self):
-        return "(RET {})".format(self.exp)
+        return "return {}".format(self.exp)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, RET):
@@ -724,7 +724,7 @@ class MOVE(IRStm):
         self.src = src
 
     def __str__(self):
-        return '(MOVE {}, {})'.format(self.dst, self.src)
+        return '{} = {}'.format(self.dst, self.src)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MOVE):
@@ -736,6 +736,48 @@ class MOVE(IRStm):
 
     def kids(self):
         return self.dst.kids() + self.src.kids()
+
+
+class CEXPR(EXPR):
+    def __init__(self, cond, exp):
+        super().__init__(exp)
+        assert isinstance(cond, IRExp)
+        self.cond = cond
+
+    def __str__(self):
+        return "{} ? {}".format(self.cond, super().__str__())
+
+    def __eq__(self, other):
+        if other is None or not isinstance(other, CEXPR):
+            return False
+        return self.cond == other.cond and super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def kids(self):
+        return self.cond.kids() + super().kids()
+
+
+class CMOVE(MOVE):
+    def __init__(self, cond, dst, src):
+        super().__init__(dst, src)
+        assert isinstance(cond, IRExp)
+        self.cond = cond
+
+    def __str__(self):
+        return "{} ? {}".format(self.cond, super().__str__())
+
+    def __eq__(self, other):
+        if other is None or not isinstance(other, CEXPR):
+            return False
+        return self.cond == other.cond and super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def kids(self):
+        return self.cond.kids() + super().kids()
 
 
 def conds2str(conds):
@@ -762,11 +804,18 @@ class PHIBase(IRStm):
         str_args = []
         if self.ps and with_p:
             #assert len(self.ps) == len(self.args)
-            for arg, p, blk in zip(self.args, self.ps, self.defblks):
-                if arg:
-                    str_args.append('{}?{}({})'.format(p, arg, blk.name))
-                else:
-                    str_args.append('_')
+            if self.defblks:
+                for arg, p, blk in zip(self.args, self.ps, self.defblks):
+                    if arg:
+                        str_args.append('{} ? {}({})'.format(p, arg, blk.name))
+                    else:
+                        str_args.append('_')
+            else:
+                for arg, p in zip(self.args, self.ps):
+                    if arg:
+                        str_args.append('{} ? {}'.format(p, arg))
+                    else:
+                        str_args.append('_')
         else:
             for arg in self.args:
                 if arg:
@@ -816,14 +865,14 @@ class PHI(PHIBase):
         super().__init__(var)
 
     def __str__(self):
-        if len(self.args) >= 3:
+        if len(self.args) >= 2:
             delim = ',\n        '
         else:
             delim = ', '
         if self.block.is_hyperblock:
-            s = "(PSI '{}' <- phi[{}])".format(self.var, delim.join(self._str_args()))
+            s = "{} = psi({})".format(self.var, delim.join(self._str_args()))
         else:
-            s = "(PHI '{}' <- phi[{}])".format(self.var, delim.join(self._str_args(with_p=False)))
+            s = "{} = phi({})".format(self.var, delim.join(self._str_args()))
         return s
 
 
@@ -832,7 +881,7 @@ class UPHI(PHIBase):
         super().__init__(var)
 
     def __str__(self):
-        s = "(UPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        s = "{} = uphi({})".format(self.var, ", ".join(self._str_args()))
         return s
 
 
@@ -841,7 +890,7 @@ class LPHI(PHIBase):
         super().__init__(var)
 
     def __str__(self):
-        s = "(LPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        s = "{} = lphi({})".format(self.var, ", ".join(self._str_args()))
         return s
 
     @classmethod
@@ -852,29 +901,6 @@ class LPHI(PHIBase):
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
         return lphi
-
-
-class CSTM(IRStm):
-    def __init__(self, cond, stm):
-        super().__init__()
-        assert isinstance(cond, IRExp)
-        assert isinstance(stm, IRStm)
-        self.cond = cond
-        self.stm = stm
-
-    def __str__(self):
-        return "(CSTM {} ? {})".format(self.cond, self.stm)
-
-    def __eq__(self, other):
-        if other is None or not isinstance(other, CSTM):
-            return False
-        return self.cond == other.cond and self.stm == other.stm
-
-    def __hash__(self):
-        return super().__hash__()
-
-    def kids(self):
-        return self.cond.kids() + self.stm.kids()
 
 
 def op2str(op):
@@ -923,3 +949,63 @@ def expr2ir(expr, name=None, scope=None):
             assert fsym.typ.is_function()
             return TEMP(fsym, Ctx.LOAD)
         assert False
+
+
+def reduce_relexp(exp):
+    if exp.is_a(RELOP):
+        if exp.op == 'And':
+            exp.left = reduce_relexp(exp.left)
+            exp.right = reduce_relexp(exp.right)
+            if exp.left.is_a(CONST):
+                if exp.left.value:
+                    return exp.right
+                else:
+                    return CONST(0)
+            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
+                if exp.left.exp.value:
+                    return CONST(0)
+                else:
+                    return exp.right
+            elif exp.right.is_a(CONST):
+                if exp.right.value:
+                    return exp.left
+                else:
+                    return CONST(0)
+            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
+                if exp.right.exp.value:
+                    return CONST(0)
+                else:
+                    return exp.left
+        elif exp.op == 'Or':
+            exp.left = reduce_relexp(exp.left)
+            exp.right = reduce_relexp(exp.right)
+            if exp.left.is_a(CONST):
+                if exp.left.value:
+                    return CONST(1)
+                else:
+                    return exp.right
+            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
+                if exp.left.exp.value:
+                    return exp.right
+                else:
+                    return CONST(1)
+            elif exp.right.is_a(CONST):
+                if exp.right.value:
+                    return CONST(1)
+                else:
+                    return exp.left
+            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
+                if exp.right.exp.value:
+                    return exp.left
+                else:
+                    return CONST(1)
+    elif exp.is_a(UNOP) and exp.op == 'Not':
+        nexp = reduce_relexp(exp.exp)
+        if nexp.is_a(CONST):
+            if nexp.value:
+                return CONST(0)
+            else:
+                return CONST(1)
+        else:
+            return UNOP('Not', nexp)
+    return exp

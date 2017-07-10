@@ -17,5 +17,8 @@ def if01(x, y):
 def test():
     assert 721 == if01(0, 1)
     assert 2 == if01(1, 1)
+    assert 4 == if01(1, 2)
+    assert 6 == if01(1, 3)
+    assert 8 == if01(1, 4)
     assert 1442 == if01(0, 2)
 test()

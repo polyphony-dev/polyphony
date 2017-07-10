@@ -122,24 +122,6 @@ def try_get_constant(qsym):
     return None
 
 
-def reduce_relexp(exp):
-    if not exp.is_a(RELOP):
-        return exp
-    if exp.op == 'And':
-        if exp.left.is_a(CONST):
-            if exp.left.value:
-                return exp.right
-            else:
-                return CONST(0)
-    elif exp.op == 'Or':
-        if exp.left.is_a(CONST):
-            if exp.left.value:
-                return CONST(1)
-            else:
-                return exp.right
-    return exp
-
-
 class ConstantOptBase(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -260,14 +242,17 @@ class ConstantOptBase(IRVisitor):
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
 
+    def visit_CEXPR(self, ir):
+        ir.cond = self.visit(ir.cond)
+        self.visit_EXPR(ir)
+
+    def visit_CMOVE(self, ir):
+        ir.cond = self.visit(ir.cond)
+        self.visit_MOVE(ir)
+
     def visit_PHI(self, ir):
         # TODO: loop-phi
-        #ir.ps = [self.visit(p) for p in ir.ps]
         pass
-
-    def visit_CSTM(self, ir):
-        ir.cond = self.visit(ir.cond)
-        self.visit(ir.stm)
 
 
 class ConstantOpt(ConstantOptBase):
@@ -292,23 +277,58 @@ class ConstantOpt(ConstantOptBase):
             if stm.is_a(PHIBase):
                 for i, p in enumerate(stm.ps[:]):
                     stm.ps[i] = reduce_relexp(p)
+                is_move = False
                 for p in stm.ps[:]:
+                    if not stm.is_a(LPHI) and p.is_a(CONST) and p.value and stm.ps.index(p) != (len(stm.ps) - 1):
+                        is_move = True
+                        idx = stm.ps.index(p)
+                        mv = MOVE(stm.var, stm.args[idx])
+                        blk = stm.block
+                        blk.insert_stm(blk.stms.index(stm), mv)
+                        scope.usedef.add_use(mv.src, mv)
+                        scope.usedef.add_var_def(mv.dst, mv)
+                        scope.usedef.remove_var_def(stm.var, stm)
+                        worklist.append(mv)
+                        dead_stms.append(stm)
+                        if stm in worklist:
+                            worklist.remove(stm)
+                            assert stm not in worklist
+                        break
                     if (p.is_a(CONST) and not p.value or
                             p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
                         idx = stm.ps.index(p)
                         stm.ps.pop(idx)
                         stm.args.pop(idx)
                         stm.defblks.pop(idx)
-                if len(stm.args) == 1:
+                if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.block
                     mv = MOVE(stm.var, arg)
                     blk.insert_stm(blk.stms.index(stm), mv)
+                    scope.usedef.add_use(mv.src, mv)
+                    scope.usedef.add_var_def(mv.dst, mv)
+                    scope.usedef.remove_var_def(stm.var, stm)
                     worklist.append(mv)
                     dead_stms.append(stm)
                     if stm in worklist:
                         worklist.remove(stm)
-            if (stm.is_a(MOVE)
+                        assert stm not in worklist
+            elif stm.is_a([CMOVE, CEXPR]):
+                stm.cond = reduce_relexp(stm.cond)
+                if stm.cond.is_a(CONST):
+                    if stm.cond.value:
+                        if stm.is_a(CMOVE):
+                            new_stm = MOVE(stm.dst, stm.src)
+                            scope.usedef.add_use(new_stm.src, new_stm)
+                            scope.usedef.add_var_def(new_stm.dst, new_stm)
+                        else:
+                            new_stm = EXPR(stm.exp)
+                        blk.insert_stm(blk.stms.index(stm), new_stm)
+                    dead_stms.append(stm)
+                    if stm in worklist:
+                        worklist.remove(stm)
+                        assert stm not in worklist
+            elif (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(TEMP)
                     and not stm.dst.sym.is_return()):
@@ -317,29 +337,29 @@ class ConstantOpt(ConstantOptBase):
                 assert len(defstms) <= 1
 
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
-                worklist.extend(replaces)
+                for rep in replaces:
+                    if rep not in dead_stms:
+                        worklist.append(rep)
                 worklist = deque(unique(worklist))
                 scope.usedef.remove_var_def(stm.dst, stm)
                 scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
                 if stm in worklist:
                     worklist.remove(stm)
+                    assert stm not in worklist
             elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
                 self._process_unconditional_cjump(stm, worklist)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
 
-    #def _propagate_const(self, dst, const):
-
     def _process_unconditional_cjump(self, cjump, worklist):
         def remove_dominated_branch(blk):
-            if not blk.preds:
-                return
             blk.preds = []  # mark as garbage block
             remove_from_list(worklist, blk.stms)
             for succ in blk.succs:
-                succ.remove_pred(blk)
+                if blk in succ.preds:
+                    succ.remove_pred(blk)
             for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
                 if self.dtree.is_child(blk, succ):
                     remove_dominated_branch(succ)

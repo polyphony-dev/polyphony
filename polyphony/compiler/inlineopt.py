@@ -1,6 +1,6 @@
 ﻿from collections import defaultdict, deque
 from .block import Block
-from .irvisitor import IRVisitor
+from .irvisitor import IRVisitor, IRTransformer
 from .ir import Ctx, IR, CONST, TEMP, ATTR, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
@@ -337,7 +337,7 @@ class AliasDefCollector(IRVisitor):
         self.copies.append(ir)
 
 
-class FlattenFieldAccess(IRVisitor):
+class FlattenFieldAccess(IRTransformer):
     def _make_flatname(self, qsym):
         qnames = [sym.name for sym in qsym if sym.name != env.self_name]
         return '_'.join(qnames)
@@ -392,15 +392,15 @@ class FlattenFieldAccess(IRVisitor):
             if self.scope.parent.is_module():
                 pass
             else:
-                return
+                return ir
         # don't flatten use of the static class field
         if ir.tail().typ.is_class():
-            return
+            return ir
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
         newattr.lineno = ir.lineno
         newattr.attr_scope = ir.attr_scope
-        self.current_stm.replace(ir, newattr)
+        return newattr
 
 
 class ObjectHierarchyCopier(object):

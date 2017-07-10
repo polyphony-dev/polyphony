@@ -210,6 +210,8 @@ class Block(object):
         else:
             return
 
+        if self.is_hyperblock:
+            return
         usedef = self.scope.usedef
         for cond in conds:
             if cond.is_a(CONST):

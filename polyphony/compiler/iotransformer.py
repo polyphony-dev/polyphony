@@ -94,7 +94,7 @@ class IOTransformer(AHDLVisitor):
                     assert False
         self.current_parent.codes = list(seq) + self.current_parent.codes
 
-    def visit_AHDL_TRANSITION_IF(self, ahdl):
+    def visit_AHDL_IF(self, ahdl):
         for cond in ahdl.conds:
             if cond:
                 self.visit(cond)

@@ -21,7 +21,10 @@ class IRVisitor(object):
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
-        return visitor(ir)
+        if visitor:
+            return visitor(ir)
+        else:
+            return None
 
     def visit_UNOP(self, ir):
         self.visit(ir.exp)
@@ -98,6 +101,14 @@ class IRVisitor(object):
         self.visit(ir.src)
         self.visit(ir.dst)
 
+    def visit_CEXPR(self, ir):
+        self.visit(ir.cond)
+        self.visit_EXPR(ir)
+
+    def visit_CMOVE(self, ir):
+        self.visit(ir.cond)
+        self.visit_MOVE(ir)
+
     def visit_PHI(self, ir):
         self.visit(ir.var)
         for arg in ir.args:
@@ -112,10 +123,6 @@ class IRVisitor(object):
 
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
-
-    def visit_CSTM(self, ir):
-        self.visit(ir.cond)
-        self.visit(ir.stm)
 
 
 class IRTransformer(IRVisitor):
@@ -221,6 +228,14 @@ class IRTransformer(IRVisitor):
         ir.dst = self.visit(ir.dst)
         self.new_stms.append(ir)
 
+    def visit_CEXPR(self, ir):
+        ir.cond = self.visit(ir.cond)
+        self.visit_EXPR(ir)
+
+    def visit_CMOVE(self, ir):
+        ir.cond = self.visit(ir.cond)
+        self.visit_MOVE(ir)
+
     def visit_PHI(self, ir):
         ir.var = self.visit(ir.var)
         for i, arg in enumerate(ir.args):
@@ -235,9 +250,3 @@ class IRTransformer(IRVisitor):
 
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
-
-    def visit_CSTM(self, ir):
-        self.visit(ir.cond)
-        self.visit(ir.stm)
-        self.new_stms.remove(ir.stm)
-        self.new_stms.append(ir)

@@ -3,7 +3,7 @@ from .block import Block
 from .dominator import DominatorTreeBuilder
 from .ir import *
 from .usedef import UseDefDetector
-from .utils import remove_except_one
+from .utils import remove_except_one, replace_item
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -28,8 +28,6 @@ class BlockReducer(object):
                 self._merge_duplicate_paths(scope)
                 self.removed_blks = []
         self._order_blocks(scope)
-        self._reconstruct_phi(scope)
-
 
     def _order_blocks(self, scope):
         for blk in scope.traverse_blocks():
@@ -77,6 +75,7 @@ class BlockReducer(object):
                 for succ in block.succs:
                     succ.replace_pred(block, pred)
                     succ.replace_pred_loop(block, pred)
+                    self._reconstruct_phi(succ, block, pred)
                 pred.succs = block.succs
                 pred.succs_loop = block.succs_loop
                 if block is scope.exit_block:
@@ -108,72 +107,26 @@ class BlockReducer(object):
                     succ.preds_loop.append(pred)
                 pred.replace_succ(block, succ)
                 pred.replace_succ_loop(block, succ)
-
+            if len(block.preds) == 1:
+                self._reconstruct_phi(succ, block, block.preds[0])
+            elif len(block.preds) > 1:
+                self._order_blocks(self.scope)
+                tree = DominatorTreeBuilder(self.scope).process()
+                dom = tree.get_parent_of(block.preds[0])
+                self._reconstruct_phi(succ, block, dom)
             logger.debug('remove empty block ' + block.name)
             return True
         return False
+
+    def _reconstruct_phi(self, blk, old_blk, new_blk):
+        phis = blk.collect_stms([PHI, LPHI])
+        for phi in phis:
+            replace_item(phi.defblks, old_blk, new_blk, True)
 
     def _remove_empty_blocks(self, scope):
         for block in scope.traverse_blocks():
             if self.remove_empty_block(block):
                 self.removed_blks.append(block)
-
-    def _reconstruct_phi(self, scope):
-        phis = []
-        for block in scope.traverse_blocks():
-            if block.is_hyperblock:
-                continue
-            phis.extend(block.collect_stms([PHI, LPHI]))
-        if not phis:
-            return
-        udd = UseDefDetector()
-        udd.process(scope)
-        usedef = scope.usedef
-        tree = DominatorTreeBuilder(scope).process()
-
-        for phi in phis:
-            block = phi.block
-            preds = block.preds[:]
-            # search again for the arg reaching definition block
-            for idx, arg in enumerate(phi.args):
-                if not arg or arg.is_a(CONST):
-                    continue
-                phi.defblks[idx] = None
-                defstms = usedef.get_stms_defining(arg.symbol())
-                assert len(defstms) == 1
-                defstm = list(defstms)[0]
-                # phi.arg and arg definition are in the same block
-                if block is defstm.block:
-                    phi.defblks[idx] = defstm.block
-                    continue
-                else:
-                    for pred in preds[:]:
-                        if tree.is_dominator(defstm.block, pred):
-                            phi.defblks[idx] = pred
-                            preds.remove(pred)
-                            break
-                assert phi.defblks[idx]
-
-            if len(phi.defblks) != len(block.preds):
-                for defblk in phi.defblks[:]:
-                    if defblk in block.preds:
-                        continue
-                    else:
-                        idx = phi.defblks.index(defblk)
-                        phi.defblks.pop(idx)
-                        phi.ps.pop(idx)
-                        phi.args.pop(idx)
-            if len(phi.args) == 1:
-                mv = MOVE(phi.var, phi.args[0])
-                mv.lineno = phi.args[0].lineno
-                phi.defblks[0].insert_stm(-1, mv)
-                block.stms.remove(phi)
-            else:
-                indices = []
-                for pred in block.preds:
-                    if pred in phi.defblks:
-                        indices.append(phi.defblks.index(pred))
-                phi.reorder_args(indices)
 
 
 class PathExpTracer(object):
@@ -207,49 +160,41 @@ class PathExpTracer(object):
             self.traverse_dtree(child)
 
 
-def merge_path_exp(prev, blk):
-    jump = prev.stms[-1]
+def make_else_cond(conds):
+    exp = conds[0]
+    for cond in conds[1:]:
+        exp = RELOP('Or', exp, cond)
+    return UNOP('Not', exp)
+
+
+def merge_path_exp(pred, blk):
+    jump = pred.stms[-1]
     exp = None
     if jump.is_a(CJUMP):
         if blk is jump.true:
-            exp = rel_and_exp(blk.path_exp, jump.exp)
+            exp = rel_and_exp(pred.path_exp, jump.exp)
         elif blk is jump.false:
-            exp = rel_and_exp(blk.path_exp, UNOP('Not', jump.exp))
+            exp = rel_and_exp(pred.path_exp, UNOP('Not', jump.exp))
     elif jump.is_a(MCJUMP):
         if blk in jump.targets:
             assert 1 == jump.targets.count(blk)
             idx = jump.targets.index(blk)
-            exp = rel_and_exp(blk.path_exp, jump.conds[idx])
+            if idx == len(jump.targets) - 1 and jump.conds[idx].is_a(CONST) and jump.conds[idx].value:
+                else_cond = make_else_cond(jump.conds[:-1])
+                exp = rel_and_exp(pred.path_exp, else_cond)
+            else:
+                exp = rel_and_exp(pred.path_exp, jump.conds[idx])
     return exp
 
 
 def rel_and_exp(exp1, exp2):
-    exp = reduce_And_exp(exp1, exp2)
-    if not exp:
-        exp = RELOP('And', exp1, exp2)
-    return exp
-
-
-def reduce_And_exp(exp1, exp2):
     if exp1 is None:
         return exp2
     elif exp2 is None:
         return exp1
-    if exp1.is_a(CONST):
-        if exp1.value != 0 or exp1.value is True:
-            return exp2
-        else:
-            return exp1
-    elif exp2.is_a(CONST):
-        if exp2.value != 0 or exp2.value is True:
-            return exp1
-        else:
-            return exp2
-    if exp1.is_a(TEMP) and exp2.is_a(UNOP) and exp1.sym is exp2.exp.sym:
-        return CONST(0)
-    elif exp2.is_a(TEMP) and exp1.is_a(UNOP) and exp1.exp.sym is exp2.sym:
-        return CONST(0)
-    return None
+    exp1 = reduce_relexp(exp1)
+    exp2 = reduce_relexp(exp2)
+    return RELOP('And', exp1, exp2)
 
 
 class HyperBlockBuilder(object):
@@ -288,13 +233,59 @@ class HyperBlockBuilder(object):
             branches = []
             for succ in blk.succs:
                 path = []
-                if not self._walk_to_convergence(succ, path):
+                to_convergence = self._walk_to_convergence(succ, path)
+                if not to_convergence:
                     continue
                 tails.append(path[-1])
                 branches.append(path)
-            if len(blk.succs) == len(tails) and all([tails[0] is b for b in tails[1:]]):
-                return (blk, tails[0], branches)
+            if all([tails[0] is b for b in tails[1:]]):
+                # perfect diamond-nodes
+                if len(blk.succs) == len(tails):
+                    return (blk, tails[0], branches)
+            else:
+                for tail in tails:
+                    if tails.count(tail) > 1:
+                        indices = [idx for idx, path in enumerate(branches) if path[-1] is tail]
+                        return self._duplicate_head(blk, branches, indices)
+
         return None
+
+    def _duplicate_head(self, head, branches, indices):
+        new_head = Block(self.scope)
+        old_mj = head.stms[-1]
+        mj = MCJUMP()
+        mj.lineno = old_mj.lineno
+        removes = []
+        for idx in indices:
+            path = branches[idx]
+            br = path[0]
+            assert br in head.succs
+            assert old_mj.targets[idx] is br
+            cond = old_mj.conds[idx]
+            mj.conds.append(cond)
+            mj.targets.append(br)
+            removes.append((cond, br))
+        if all([removes[0][1] is br for _, br in removes[1:]]):
+            return
+        for cond, target in removes:
+            old_mj.conds.remove(cond)
+            old_mj.targets.remove(target)
+        for idx in indices:
+            path = branches[idx]
+            br = path[0]
+            head.succs.remove(br)
+            br.replace_pred(head, new_head)
+            new_head.succs.append(br)
+        old_mj.conds.append(CONST(1))
+        old_mj.targets.append(new_head)
+        head.succs.append(new_head)
+        new_head.append_stm(mj)
+        new_head.preds = [head]
+        Block.set_order(new_head, head.order + 1)
+        self._update_domtree()
+        sub_branches = [branches[idx] for idx in indices]
+        tail = sub_branches[0][-1]
+        return (new_head, tail, sub_branches)
 
     def _convert(self, diamond_nodes):
         reducer = BlockReducer()
@@ -307,30 +298,135 @@ class HyperBlockBuilder(object):
                     for blk in path[:-1]:
                         reducer.remove_empty_block(blk)
                 reducer.remove_empty_block(tail)
+                self._visited_heads.add(head)
             else:
-                # TODO: phi-reduction
-                # with side edges on the tail
-
-                pass
-            self._visited_heads.add(head)
-
+                self._do_phi_reduction(head, tail, branches)
             diamond_nodes = self._find_diamond_nodes()
 
+    def _do_phi_reduction(self, head, tail, branches):
+        new_tail = Block(self.scope)
+        new_tail.path_exp = head.path_exp
+        removes = []
+        indices = []
+        for path in branches:
+            if len(path) > 1:
+                br = path[-2]
+            else:
+                br = head
+            removes.append(br)
+        br = removes[0]
+        first_idx = tail.preds.index(br)
+        indices = list(range(first_idx, first_idx + len(removes)))
+        for idx, br in zip(indices, removes):
+            assert tail.preds[idx] is br
+        for stm in tail.stms:
+            if stm.is_a(PHIBase):
+                new_args = []
+                new_defblks = []
+                new_ps = []
+                old_args = []
+                old_defblks = []
+                old_ps = []
+                for idx in range(len(stm.args)):
+                    if idx in indices:
+                        new_args.append(stm.args[idx])
+                        new_defblks.append(stm.defblks[idx])
+                        new_ps.append(stm.ps[idx])
+                    elif stm.args[idx]:
+                        old_args.append(stm.args[idx])
+                        old_defblks.append(stm.defblks[idx])
+                        old_ps.append(stm.ps[idx])
+                new_phi = stm.clone()
+                new_phi.args = new_args
+                new_phi.defblks = new_defblks
+                new_phi.ps = new_ps
+                newsym = self.scope.add_temp()
+                newsym.set_type(stm.var.symbol().typ)
+                new_phi.var = TEMP(newsym, Ctx.STORE)
+                new_phi.var.lineno = stm.var.lineno
+                new_tail.append_stm(new_phi)
+
+                arg = TEMP(newsym, Ctx.LOAD)
+                arg.lineno = stm.var.lineno
+
+                old_args.insert(first_idx, arg)
+                old_ps.insert(first_idx, new_tail.path_exp)
+                old_defblks.insert(first_idx, new_tail)
+                stm.args = old_args
+                stm.defblks = old_defblks
+                stm.ps = old_ps
+
+        for br in removes:
+            old_jmp = br.stms[-1]
+            old_jmp.target = new_tail
+            assert br in tail.preds
+            tail.preds.remove(br)
+            new_tail.preds.append(br)
+            #assert len(br.succs) == 1
+            br.replace_succ(tail, new_tail)
+        new_tail.append_stm(JUMP(tail))
+        new_tail.succs = [tail]
+        tail.preds.insert(first_idx, new_tail)
+        Block.set_order(new_tail, tail.order)
+
+    def _has_timing_function(self, stm):
+        if stm.is_a(MOVE):
+            call = stm.src
+        elif stm.is_a(EXPR):
+            call = stm.exp
+        else:
+            return False
+        if call.is_a(SYSCALL):
+            wait_funcs = [
+                'polyphony.timing.clksleep',
+                'polyphony.timing.wait_rising',
+                'polyphony.timing.wait_falling',
+                'polyphony.timing.wait_value',
+                'polyphony.timing.wait_edge',
+            ]
+            return call.sym.name in wait_funcs
+        elif call.is_a(CALL):
+            if call.func_scope.is_method() and call.func_scope.parent.is_port():
+                return True
+            return False
+
+    def _has_mem_access(self, stm):
+        if stm.is_a(MOVE):
+            if stm.src.is_a([MREF, MSTORE]):
+                return True
+        return False
+
     def _emigrate_to_diamond_head(self, head, blk):
-        unmoves = []
+        unmoves = set()
+        # TODO: port access by cexpr
         for stm in blk.stms[:-1]:
+            if self._has_timing_function(stm):
+                unmoves.add(stm)
+
+        for stm in blk.stms[:-1]:
+            if self._has_mem_access(stm):
+                unmoves.add(stm)
+
+        for stm in blk.stms[:-1]:
+            if stm in unmoves:
+                continue
+            skip = False
+            usesyms = self.scope.usedef.get_syms_used_at(stm)
+            for sym in usesyms:
+                defstms = self.scope.usedef.get_stms_defining(sym)
+                intersection = defstms & unmoves
+                if intersection:
+                    unmoves.add(stm)
+                    skip = True
+                    break
+            if skip:
+                continue
             if stm.is_a(MOVE):
-                if stm.src.is_a(CALL):
-                    unmoves.append(stm)
-                else:
-                    head.insert_stm(-1, stm)
-            elif stm.is_a(EXPR):
-                if stm.exp.is_a(CALL):
-                    unmoves.append(stm)
-                else:
-                    cstm = CSTM(blk.path_exp, stm)
-                    cstm.lineno = stm.lineno
-                    head.insert_stm(-1, cstm)
+                head.insert_stm(-1, stm)
+            elif stm.is_a(EXPR) and not stm.is_a(CEXPR):
+                cexpr = CEXPR(blk.path_exp.clone(), stm.exp.clone())
+                cexpr.lineno = stm.lineno
+                head.insert_stm(-1, cexpr)
             else:
                 head.insert_stm(-1, stm)
         return unmoves
@@ -351,3 +447,6 @@ class HyperBlockBuilder(object):
                     if stm not in unmoves:
                         blk.stms.remove(stm)
         head.is_hyperblock = True
+        for stm in tail.stms[:-1]:
+            if stm.is_a(PHIBase):
+                stm.defblks = [head] * len(stm.defblks)

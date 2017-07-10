@@ -98,6 +98,8 @@ def pathexp(driver, scope):
 
 
 def hyperblock(driver, scope):
+    if not env.enable_hyperblock:
+        return
     if scope.is_testbench():
         return
     HyperBlockBuilder().process(scope)
@@ -337,7 +339,6 @@ def dumpcfgimg(driver, scope):
     if scope.is_function_module() or scope.is_method() or scope.is_module():
         write_dot(scope, driver.stage)
 
-
 def dumpmrg(driver, scope):
     driver.logger.debug(str(env.memref_graph))
 
@@ -397,6 +398,7 @@ def compile_plan():
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
+        dbg(dumpscope),
         reduceblk,
         pathexp,
         dbg(dumpscope),
@@ -408,8 +410,9 @@ def compile_plan():
         scalarssa,
         dbg(dumpscope),
         usedef,
-        #hyperblock,
-        #reduceblk,
+        hyperblock,
+        dbg(dumpscope),
+        reduceblk,
         dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
@@ -440,11 +443,12 @@ def compile_plan():
         usedef,
         deadcode,
         dbg(dumpscope),
+        reduceblk,
         usedef,
+        dbg(dumpscope),
         phi,
         usedef,
         dbg(dumpscope),
-        reduceblk,
         pathexp,
         dbg(dumpscope),
         phase(env.PHASE_3),

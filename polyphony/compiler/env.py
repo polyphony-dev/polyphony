@@ -23,9 +23,10 @@ class Env(object):
     ctor_name = '__init__'
     self_name = 'self'
     callop_name = '__call__'
-    enable_ahdl_opt = False
+    enable_ahdl_opt = True
     global_scope_name = '@top'
     enable_pure = True
+    enable_hyperblock = False
     verbose_level = 0
     quiet_level = 0
 

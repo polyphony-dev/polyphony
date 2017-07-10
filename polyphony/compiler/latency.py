@@ -66,9 +66,17 @@ def get_latency(tag):
             return UNIT_STEP * 3
         elif tag.src.is_a(MSTORE):
             return UNIT_STEP * 1
+        if tag.dst.symbol().is_alias():
+            return 0
     elif tag.is_a(EXPR):
         if tag.exp.is_a(CALL):
             return get_call_latency(tag.exp)
         elif tag.exp.is_a(SYSCALL):
             return get_syscall_latency(tag.exp)
+    elif tag.is_a(PHI):
+        if tag.var.symbol().is_alias():
+            return 0
+    elif tag.is_a(UPHI):
+        if tag.var.symbol().is_alias():
+            return 0
     return UNIT_STEP

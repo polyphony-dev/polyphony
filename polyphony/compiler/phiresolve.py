@@ -1,4 +1,5 @@
-﻿from .graph import Graph
+﻿from .env import env
+from .graph import Graph
 from .ir import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -14,8 +15,9 @@ class PHICondResolver(object):
             if not phis:
                 assert False  # TODO:
             for phi in phis:
-                if (phi.is_a(PHI) and not phi.block.is_hyperblock):
-                    self._divide_phi_to_mv(phi)
+                if phi.is_a(PHI):
+                    # TODO:
+                    #self._divide_phi_to_mv(phi)
                     continue
                 elif phi.is_a(LPHI):
                     self._divide_phi_to_mv(phi)

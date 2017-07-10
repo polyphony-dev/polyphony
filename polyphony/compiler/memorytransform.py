@@ -141,7 +141,9 @@ class MemoryRenamer(object):
 
             if sym:
                 uses = usedef.get_stms_using(sym)
-                worklist.extend(list(uses))
+                for u in list(uses):
+                    if u not in worklist:
+                        worklist.append(u)
                 for u in uses:
                     for var in usedef.get_vars_used_at(u):
                         if var.symbol() is sym:

@@ -207,7 +207,7 @@ class Scope(Tagged):
             elif stm.is_a(MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
             elif stm.is_a(PHIBase):
-                stm.defblks = [block_map[blk] for blk in stm.defblks]
+                stm.defblks = [block_map[blk] for blk in stm.defblks if blk in block_map]
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None):
@@ -577,7 +577,7 @@ def write_dot(scope, tag):
     def get_text(blk):
         s = blk.name + '\n'
         for stm in blk.stms:
-            s += str(stm) + '\n'
+            s += str(stm).replace('\n', '\l') + '\l'
         s = s.replace(':', '_')
         return s
 

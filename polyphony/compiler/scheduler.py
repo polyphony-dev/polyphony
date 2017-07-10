@@ -179,10 +179,12 @@ class ResourceExtractor(IRVisitor):
     def visit_RELOP(self, ir):
         self.visit(ir.left)
         self.visit(ir.right)
-        self.results.append(ir.op)
+        #TODO:
+        #self.results.append(ir.op)
 
     def visit_CONDOP(self, ir):
-        self.visit(ir.cond)
+        #TODO:
+        #self.visit(ir.cond)
         self.visit(ir.left)
         self.visit(ir.right)
 

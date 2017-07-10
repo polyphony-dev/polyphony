@@ -291,7 +291,7 @@ class SSATransformerBase(object):
                                    if target is blk]
                         for idx, target in targets:
                             if dup_count == 0:
-                                p = rel_and_exp(blk.path_exp, jump.conds[idx])
+                                p = rel_and_exp(pred.path_exp, jump.conds[idx])
                                 break
                             else:
                                 dup_count -= 1
