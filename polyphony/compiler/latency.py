@@ -62,7 +62,7 @@ def get_latency(tag):
         elif tag.src.is_a(MREF):
             memnode = tag.src.mem.symbol().typ.get_memnode()
             if memnode.is_immutable() or not memnode.is_writable():
-                return UNIT_STEP
+                return 0
             return UNIT_STEP * 3
         elif tag.src.is_a(MSTORE):
             return UNIT_STEP * 1

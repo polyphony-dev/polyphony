@@ -594,7 +594,7 @@ class AHDLTranslator(object):
         elif sym.typ.is_int() or sym.typ.is_bool():
             width = sym.typ.get_width()
         elif sym.typ.is_port():
-            width = sym.typ.get_width()
+            width = sym.typ.get_dtype().get_width()
         elif sym.is_condition():
             width = 1
         return width

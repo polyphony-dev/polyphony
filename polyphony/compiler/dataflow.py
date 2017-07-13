@@ -454,7 +454,6 @@ class DFGBuilder(object):
         self._add_io_seq_edges(blocks, dfg)
         self._add_mem_edges(dfg)
         self._add_special_seq_edges(dfg)
-        self._add_special_seq_edges_for_loop(dfg, main_block, blocks)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -620,33 +619,6 @@ class DFGBuilder(object):
                 for prev_stm in stm.block.stms[:-1]:
                     prev_node = dfg.find_node(prev_stm)
                     dfg.add_seq_edge(prev_node, node)
-
-    def _add_special_seq_edges_for_loop(self, dfg, main_block, blocks):
-        def stms_in_blocks(blocks):
-            stms = []
-            for blk in blocks:
-                stms.extend(blk.stms)
-            return stms
-
-        if not isinstance(main_block, CompositBlock):
-            return
-
-        usedef = self.scope.usedef
-        outer_defstms = []
-        for outer_sym in main_block.outer_defs:
-            defstms = usedef.get_stms_defining(outer_sym)
-            for defstm in defstms:
-                if defstm.block not in blocks:
-                    continue
-                outer_defstms.append(defstm)
-        all_stms = stms_in_blocks(blocks)
-        all_stms = [stm for stm in all_stms if stm not in outer_defstms]
-        for outer_defstm in outer_defstms:
-            for stm in all_stms:
-                if stm.program_order() < outer_defstm.program_order():
-                    def_node = dfg.find_node(outer_defstm)
-                    prev_node = dfg.find_node(stm)
-                    dfg.add_seq_edge(prev_node, def_node)
 
     def _has_timing_function(self, stm):
         if stm.is_a(MOVE):

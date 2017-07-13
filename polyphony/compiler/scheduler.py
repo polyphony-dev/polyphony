@@ -64,10 +64,10 @@ class Scheduler(object):
             if seq_preds:
                 earliest_node = min(seq_preds, key=lambda p: p.begin)
                 latest_node = max(seq_preds, key=lambda p: p.end)
-                if earliest_node.begin == latest_node.end:
-                    sched_times.append(latest_node.end + 1)
-                else:
-                    sched_times.append(latest_node.end)
+                #if earliest_node.begin == latest_node.end:
+                #    sched_times.append(latest_node.end + 1)
+                #else:
+                sched_times.append(latest_node.end)
             if defuse_preds:
                 latest_node = max(defuse_preds, key=lambda p: p.end)
                 sched_times.append(latest_node.end)

@@ -90,11 +90,11 @@ class BlockReducer(object):
             return False
         if block is block.scope.entry_block:
             return False
+        if block.preds_loop or block.succs_loop:
+            return False
         if block.stms and block.stms[0].is_a(JUMP):
             assert len(block.succs) == 1
             succ = block.succs[0]
-            if succ in block.succs_loop:
-                return False
             phis = block.collect_stms(PHIBase)
             if phis:
                 return False
@@ -103,10 +103,7 @@ class BlockReducer(object):
             for pred in block.preds:
                 succ.preds.insert(idx, pred)
                 idx += 1
-                if pred in block.preds_loop:
-                    succ.preds_loop.append(pred)
                 pred.replace_succ(block, succ)
-                pred.replace_succ_loop(block, succ)
             if len(block.preds) == 1:
                 self._reconstruct_phi(succ, block, block.preds[0])
             elif len(block.preds) > 1:

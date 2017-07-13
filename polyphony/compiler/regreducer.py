@@ -16,7 +16,7 @@ class AliasVarDetector(IRVisitor):
         if sym.is_condition():
             sym.add_tag('alias')
             return
-        if sym.typ.is_seq() or sym.is_induction() or sym.is_return() or sym.typ.is_port():
+        if sym.typ.is_seq() or sym.is_return() or sym.typ.is_port():
             return
         if ir.src.is_a([TEMP, ATTR]):
             src_sym = ir.src.symbol()
@@ -26,18 +26,21 @@ class AliasVarDetector(IRVisitor):
             return
         elif ir.src.is_a(MREF):
             memnode = ir.src.mem.symbol().typ.get_memnode()
-            if memnode.is_writable():
+            if memnode.is_immutable() or not memnode.is_writable():
+                stms = self.usedef.get_stms_defining(sym)
+                if len(stms) == 1:
+                    sym.add_tag('alias')
+                    return
+            else:
                 return
-
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
             return
         # TODO: need more strict scheme
-        uses = self.usedef.get_syms_used_at(ir)
-        for u in uses:
-            if u.is_induction():
-                return
-
+        #uses = self.usedef.get_syms_used_at(ir)
+        #for u in uses:
+        #    if u.is_induction():
+        #        return
         sym.add_tag('alias')
 
     def visit_PHI(self, ir):

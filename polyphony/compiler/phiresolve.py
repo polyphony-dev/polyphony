@@ -47,8 +47,9 @@ class PHICondResolver(object):
         return sorted_phis
 
     def _divide_phi_to_mv(self, phi):
-        for arg, blk in zip(phi.args, phi.defblks):
+        for arg, blk, pred in zip(phi.args, phi.defblks, phi.block.preds):
             if not blk:
+                self._insert_mv(phi.var.clone(), arg, pred)
                 continue
             if phi.var.symbol().typ.is_object():
                 continue
