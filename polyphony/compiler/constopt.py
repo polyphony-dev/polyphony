@@ -466,6 +466,13 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
+        if receiver.typ.is_object() and ir.attr.typ.is_scalar():
+            objscope = receiver.typ.get_scope()
+            if objscope.is_class():
+                classsym = objscope.parent.find_sym(objscope.orig_name)
+                c = try_get_constant((classsym, ir.attr))
+                if c:
+                    return c
         return ir
 
 

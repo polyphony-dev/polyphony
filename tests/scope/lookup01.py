@@ -6,15 +6,14 @@ foo = 1
 def f():
     def ff():
         print('ff.foo', foo)
-        assert foo == 2
+        return foo == 2
     foo = 2
-    ff()
-    return 0
+    return ff()
 
 
 @testbench
 def test():
-    f()
+    assert f() == True
 
 
 test()
