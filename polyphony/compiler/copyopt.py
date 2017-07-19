@@ -24,10 +24,11 @@ class CopyOpt(IRVisitor):
         worklist = deque(copies)
         while worklist:
             cp = worklist.popleft()
-            uses = list(scope.usedef.get_stms_using(cp.dst.qualified_symbol()))
+            dst_qsym = cp.dst.qualified_symbol()
+            uses = list(scope.usedef.get_stms_using(dst_qsym))
             orig = self._find_root_def(cp.src.qualified_symbol())
             for u in uses:
-                olds = self._find_old_use(u, cp.dst.qualified_symbol())
+                olds = self._find_old_use(u, dst_qsym)
                 for old in olds:
                     if orig:
                         new = orig.clone()
@@ -57,7 +58,7 @@ class CopyOpt(IRVisitor):
                             copies.append(mv)
 
         for cp in copies:
-            if cp in cp.block.stms:
+            if cp in cp.block.stms and cp.dst.is_a(TEMP):
                 cp.block.stms.remove(cp)
 
     def _find_root_def(self, qsym) -> IR:
@@ -89,14 +90,12 @@ class CopyCollector(IRVisitor):
         self.copies = copies
 
     def visit_MOVE(self, ir):
-        if not ir.dst.is_a(TEMP):
-            return
-        if ir.dst.sym.is_return():
+        if ir.dst.symbol().is_return():
             return
         if ir.src.is_a(TEMP):
             if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
-            if not Type.is_strict_same(ir.dst.sym.typ, ir.src.sym.typ):
+            if not Type.is_strict_same(ir.dst.symbol().typ, ir.src.sym.typ):
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):
