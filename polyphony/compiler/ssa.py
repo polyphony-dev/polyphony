@@ -450,6 +450,8 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.is_param():
             return False
+        if sym in [copy for _, copy, _ in self.scope.params]:
+            return False
         idx = qsym.index(sym)
         if idx > 0:
             if not self._need_rename(qsym[idx - 1], qsym):

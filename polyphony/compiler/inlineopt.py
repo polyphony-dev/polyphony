@@ -1,7 +1,7 @@
 ﻿from collections import defaultdict, deque
 from .block import Block
 from .irvisitor import IRVisitor, IRTransformer
-from .ir import Ctx, IR, CONST, TEMP, ATTR, MOVE, EXPR, RET, JUMP
+from .ir import Ctx, IR, CONST, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
@@ -355,7 +355,8 @@ class FlattenFieldAccess(IRTransformer):
 
         ancestor = qsym[-1]
         for i, sym in enumerate(qsym):
-            if sym.typ.is_object() and sym.typ.get_scope().is_module():
+            if (sym.typ.is_object() and not sym.is_subobject() and
+                    sym.typ.get_scope().is_module()):
                 flatname = self._make_flatname(qsym[i + 1:])
                 head = qsym[:i + 1]
                 scope = sym.typ.get_scope()
@@ -401,6 +402,83 @@ class FlattenFieldAccess(IRTransformer):
         newattr.lineno = ir.lineno
         newattr.attr_scope = ir.attr_scope
         return newattr
+
+
+class FlattenObjectArgs(IRTransformer):
+    def __init__(self):
+        self.params_modified_scopes = set()
+
+    def visit_EXPR(self, ir):
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
+                ir.exp.func_scope.parent.is_module()):
+            if ir.exp.func_scope.orig_name == 'append_worker':
+                self._flatten_args(ir.exp)
+        self.new_stms.append(ir)
+
+    def _flatten_args(self, call):
+        args = []
+        for pindex, (name, arg) in enumerate(call.args):
+            if arg.is_a([TEMP, ATTR]) and arg.symbol().typ.is_object() and not arg.symbol().typ.get_scope().is_port():
+                flatten_args = self._flatten_object_args(call, arg, pindex)
+                args.extend(flatten_args)
+            else:
+                args.append((name, arg))
+        call.args = args
+
+    def _flatten_object_args(self, call, arg, pindex):
+        worker_scope = call.args[0][1].symbol().typ.get_scope()
+        args = []
+        base_name = arg.symbol().name
+        module_scope = self.scope.parent
+        object_scope = arg.symbol().typ.get_scope()
+        assert object_scope.is_class()
+        flatten_args = []
+        for fname, fsym in object_scope.class_fields().items():
+            if fsym.typ.is_function():
+                continue
+            if ((fsym.typ.is_object() and fsym.typ.get_scope().is_port()) or
+                    fsym.typ.is_scalar()):
+                self_ = arg.exp.clone()
+                new_name = '{}_{}'.format(base_name, fname)
+                new_sym = module_scope.find_sym(new_name)
+                assert new_sym
+                new_arg = ATTR(self_, new_sym, Ctx.LOAD)
+                args.append((new_name, new_arg))
+                flatten_args.append((fname, fsym))
+        if worker_scope not in self.params_modified_scopes:
+            self._flatten_scope_params(worker_scope, pindex, flatten_args)
+            self.params_modified_scopes.add(worker_scope)
+        return args
+
+    def _flatten_scope_params(self, worker_scope, pindex, flatten_args):
+        flatten_params = []
+        in_sym, sym, _ = worker_scope.params[pindex]
+        base_name = sym.name
+        for name, sym in flatten_args:
+            new_name = '{}_{}'.format(base_name, name)
+            param_in = worker_scope.add_param_sym(new_name)
+            param_copy = worker_scope.find_sym(new_name)
+            param_in.set_type(sym.typ)
+            flatten_params.append((param_in, param_copy))
+        new_params = []
+        for idx, (sym, copy, defval) in enumerate(worker_scope.params):
+            if idx == pindex:
+                for new_sym, new_copy in flatten_params:
+                    new_params.append((new_sym, new_copy, None))
+            else:
+                new_params.append((sym, copy, defval))
+        worker_scope.params.clear()
+        for sym, copy, defval in new_params:
+            worker_scope.add_param(sym, copy, defval)
+        for stm in worker_scope.entry_block.stms[:]:
+            if stm.is_a(MOVE) and stm.src.is_a(TEMP) and stm.src.symbol() is in_sym:
+                insert_idx = worker_scope.entry_block.stms.index(stm)
+                worker_scope.entry_block.stms.remove(stm)
+                for new_sym, new_copy in flatten_params:
+                    mv = MOVE(TEMP(new_copy, Ctx.STORE), TEMP(new_sym, Ctx.LOAD))
+                    mv.lineno = mv.dst.lineno = mv.src.lineno = stm.lineno
+                    worker_scope.entry_block.insert_stm(insert_idx, mv)
+                break
 
 
 class ObjectHierarchyCopier(object):

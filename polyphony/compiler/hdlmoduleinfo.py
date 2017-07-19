@@ -198,6 +198,36 @@ class HDLModuleInfo(object):
     def add_edge_detector(self, sig, old, new):
         self.edge_detectors.add((sig, old, new))
 
+    def resources(self):
+        num_of_regs = 0
+        num_of_nets = 0
+        internal_rams = 0
+        for inf in self.interfaces.values():
+            for r in inf.regs():
+                num_of_regs += r.width
+            for n in inf.nets():
+                num_of_nets += n.width
+        for _, decls in self.decls.items():
+            for decl in decls:
+                if decl.is_a(AHDL_SIGNAL_DECL):
+                    if decl.sig.is_reg():
+                        num_of_regs += decl.sig.width
+                    elif decl.sig.is_net():
+                        num_of_nets += decl.sig.width
+                elif decl.is_a(AHDL_SIGNAL_ARRAY_DECL):
+                    if decl.sig.is_reg():
+                        num_of_regs += decl.sig.width * decl.size.value
+                    elif decl.sig.is_net():
+                        num_of_nets += decl.sig.width * decl.size.value
+                elif decl.is_a(AHDL_ASSIGN):
+                    decl.src
+
+        num_of_states = 0
+        for _, fsm in self.fsms.items():
+            for stg in fsm.stgs:
+                num_of_states += len(stg.states)
+        return num_of_regs, num_of_nets, num_of_states
+
 
 class RAMModuleInfo(HDLModuleInfo):
     def __init__(self, name, data_width, addr_width):

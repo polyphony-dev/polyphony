@@ -238,6 +238,10 @@ class TypePropagation(IRVisitor):
                                [ir.attr])
                 ir.attr = ir.attr_scope.find_sym(ir.attr)
 
+            if ir.attr.typ.is_object():
+                ir.attr.add_tag('subobject')
+            if ir.exp.symbol().typ.is_object() and ir.exp.symbol().name != env.self_name and self.scope.is_worker():
+                ir.exp.symbol().add_tag('subobject')
             return ir.attr.typ
 
         raise RejectPropagation(str(ir))

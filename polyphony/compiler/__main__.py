@@ -18,7 +18,7 @@ from .env import env
 from .errors import CompileError, InterpretError
 from .hdlgen import HDLModuleBuilder
 from .iftransform import IfTransformer
-from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
+from .inlineopt import InlineOpt, FlattenFieldAccess, FlattenObjectArgs, AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .instantiator import EarlyModuleInstantiator
 from .iotransformer import IOTransformer
@@ -29,7 +29,8 @@ from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
 from .pure import interpret, PureCtorBuilder, PureFuncExecutor
-from .quadruplet import QuadrupleMaker
+from .quadruplet import EarlyQuadrupleMaker
+from .quadruplet import LateQuadrupleMaker
 from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
 from .scheduler import Scheduler
@@ -124,8 +125,12 @@ def convport(driver):
     PortConverter().process_all()
 
 
-def quadruple(driver, scope):
-    QuadrupleMaker().process(scope)
+def earlyquadruple(driver, scope):
+    EarlyQuadrupleMaker().process(scope)
+
+
+def latequadruple(driver, scope):
+    LateQuadrupleMaker().process(scope)
 
 
 def usedef(driver, scope):
@@ -248,6 +253,7 @@ def scalarize(driver, scope):
     usedef(driver, scope)
     AliasReplacer().process(scope)
     FlattenFieldAccess().process(scope)
+    FlattenObjectArgs().process(scope)
 
 
 def earlyconstopt_nonssa(driver, scope):
@@ -369,6 +375,12 @@ def dumphdl(driver, scope):
     logger.debug(driver.result(scope))
 
 
+def printresouces(driver, scope):
+    if (scope.is_function_module() or scope.is_module()):
+        resources = scope.module_info.resources()
+        print(resources)
+
+
 def compile_plan():
     def dbg(proc):
         return proc if env.dev_debug_mode else None
@@ -384,11 +396,13 @@ def compile_plan():
         iftrans,
         reduceblk,
         dbg(dumpscope),
-        quadruple,
+        earlyquadruple,
+        dbg(dumpscope),
         earlytypeprop,
         dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
+        latequadruple,
         callgraph,
         typecheck,
         flattenport,
@@ -479,6 +493,7 @@ def compile_plan():
         dbg(dumpmodule),
         genhdl,
         dbg(dumphdl),
+        dbg(printresouces),
     ]
     plan = [p for p in plan if p is not None]
     return plan

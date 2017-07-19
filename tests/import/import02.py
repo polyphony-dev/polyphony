@@ -4,11 +4,15 @@ from polyphony import timing as ti_
 from polyphony import typing as ty_
 
 
+def import02():
+    return (io_.__name__ == 'polyphony.io' and
+            ti_.__name__ == 'polyphony.timing' and
+            ty_.__name__ == 'polyphony.typing')
+
+
 @polyphony.testbench
 def test():
-    assert io_.__name__ == 'polyphony.io'
-    assert ti_.__name__ == 'polyphony.timing'
-    assert ty_.__name__ == 'polyphony.typing'
+    assert True == import02()
 
 
 test()

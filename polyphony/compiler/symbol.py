@@ -11,7 +11,7 @@ class Symbol(Tagged):
 
     TAGS = {
         'temp', 'param', 'return', 'condition', 'induction', 'alias',
-        'self', 'static',
+        'self', 'static', 'subobject',
         'builtin'
     }
 
