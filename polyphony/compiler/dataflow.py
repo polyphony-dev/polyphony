@@ -429,7 +429,8 @@ class DFGBuilder(object):
                         if defstm.block not in blocks:
                             continue
                         defnode = dfg.add_stm_node(defstm)
-                        dfg.add_defuse_edge(defnode, usenode)
+                        if defnode.tag.block is usenode.tag.block:
+                            dfg.add_defuse_edge(defnode, usenode)
 
                 # add use-def edges
                 defnode = usenode
@@ -444,7 +445,8 @@ class DFGBuilder(object):
                         if usestm.block is not stm.block:
                             continue
                         usenode = dfg.add_stm_node(usestm)
-                        dfg.add_usedef_edge(usenode, defnode)
+                        if defnode.tag.block is usenode.tag.block:
+                            dfg.add_usedef_edge(usenode, defnode)
 
         if self.scope.is_testbench():
             # Test need to call functions sequentially
@@ -454,6 +456,7 @@ class DFGBuilder(object):
         self._add_io_seq_edges(blocks, dfg)
         self._add_mem_edges(dfg)
         self._add_special_seq_edges(dfg)
+        #dfg.write_dot(name)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -572,7 +575,8 @@ class DFGBuilder(object):
                 node = dfg.add_stm_node(stm)
             if node:
                 if prev_node:
-                    dfg.add_seq_edge(prev_node, node)
+                    if prev_node.tag.block is node.tag.block:
+                        dfg.add_seq_edge(prev_node, node)
                 prev_node = node
 
     def _is_same_block_node(self, n0, n1):
@@ -606,7 +610,8 @@ class DFGBuilder(object):
                 if sym in prevs:
                     prev = prevs[sym]
                     if self._is_same_block_node(prev, node):
-                        dfg.add_seq_edge(prev, node)
+                        if prev.tag.block is node.tag.block:
+                            dfg.add_seq_edge(prev, node)
                 prevs[sym] = node
 
     # workaround
@@ -653,7 +658,8 @@ class DFGBuilder(object):
             for stm in block.stms:
                 node = dfg.find_node(stm)
                 if timing_func_node and self._is_same_block_node(timing_func_node, node):
-                    dfg.add_seq_edge(timing_func_node, node)
+                    if timing_func_node.tag.block is node.tag.block:
+                        dfg.add_seq_edge(timing_func_node, node)
                 if self._has_timing_function(stm):
                     timing_func_node = node
 
@@ -661,7 +667,8 @@ class DFGBuilder(object):
             for stm in reversed(block.stms):
                 node = dfg.find_node(stm)
                 if timing_func_node and self._is_same_block_node(timing_func_node, node):
-                    dfg.add_seq_edge(node, timing_func_node)
+                    if timing_func_node.tag.block is node.tag.block:
+                        dfg.add_seq_edge(node, timing_func_node)
                 if self._has_timing_function(stm):
                     timing_func_node = node
 
@@ -681,7 +688,8 @@ class DFGBuilder(object):
                         port_sym = call.func.tail()
                         if port_sym in ports:
                             prev_port_node = ports[port_sym]
-                            dfg.add_seq_edge(prev_port_node, node)
+                            if prev_port_node.tag.block is node.tag.block:
+                                dfg.add_seq_edge(prev_port_node, node)
                         # update last node
                         ports[port_sym] = node
 
