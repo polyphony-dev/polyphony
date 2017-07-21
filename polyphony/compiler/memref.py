@@ -157,7 +157,7 @@ class RefNode(object):
 
     def clone(self, orig_scope, new_scope):
         assert self.sym.scope is orig_scope
-        new_sym = new_scope.clone_symbols[self.sym]
+        new_sym = new_scope.cloned_symbols[self.sym]
         new_node = self.__class__(new_sym, new_scope)
         new_node.preds = self.preds[:]
         new_node.succs = self.succs[:]
@@ -552,7 +552,7 @@ class MemRefGraph(object):
         return node.sym in self.nodes
 
     def clone_subgraph(self, orig, new):
-        assert new.clone_symbols
+        #assert new.cloned_symbols
         new_nodes = []
         node_map = {}
         for node in self.scope_nodes(orig):
@@ -567,7 +567,7 @@ class MemRefGraph(object):
                 node_map[node] = node
         for new_node in new_nodes:
             if new_node.initstm:
-                new_node.initstm = new.clone_stms[new_node.initstm]
+                new_node.initstm = new.cloned_stms[new_node.initstm]
             self.add_node(new_node)
             succs = new_node.succs[:]
             new_node.succs = []

@@ -255,9 +255,9 @@ class Scope(Tagged):
 
         #s.parent.append_child(s)
         #env.append_scope(s)
-        s.clone_symbols = symbol_map
-        s.clone_blocks = block_map
-        s.clone_stms = stm_map
+        s.cloned_symbols = symbol_map
+        s.cloned_blocks = block_map
+        s.cloned_stms = stm_map
         return s
 
     def inherit(self, name, overrides):
@@ -331,6 +331,10 @@ class Scope(Tagged):
     def add_param_sym(self, param_name):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
         return self.add_sym(name, ['param'])
+
+    def find_param_sym(self, param_name):
+        name = '{}_{}'.format(Symbol.param_prefix, param_name)
+        return self.find_sym(name)
 
     def add_return_sym(self):
         return self.add_sym(Symbol.return_prefix, ['return'])

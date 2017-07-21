@@ -172,6 +172,10 @@ class _ModuleDecorator(object):
             instance.__init__(*args, **kwargs)
             io._disable()
             self.module_instances[cls.__name__].append(instance)
+            # we must merge a submodule's workers
+            for name, obj in instance.__dict__.items():
+                if obj in self.module_instances[obj.__class__.__name__]:
+                    instance._workers.extend(obj._workers)
             return instance
         _module_decorator.__dict__ = cls.__dict__.copy()
         _module_decorator.cls = cls

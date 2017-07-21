@@ -18,7 +18,9 @@ from .env import env
 from .errors import CompileError, InterpretError
 from .hdlgen import HDLModuleBuilder
 from .iftransform import IfTransformer
-from .inlineopt import InlineOpt, FlattenFieldAccess, FlattenObjectArgs, AliasReplacer, ObjectHierarchyCopier
+from .inlineopt import InlineOpt
+from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
+from .inlineopt import AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .instantiator import EarlyModuleInstantiator
 from .iotransformer import IOTransformer
@@ -245,6 +247,10 @@ def inlineopt(driver):
     callgraph(driver)
 
 
+def flattenmodule(driver, scope):
+    FlattenModule(driver).process(scope)
+
+
 def scalarize(driver, scope):
     TupleSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
@@ -252,9 +258,9 @@ def scalarize(driver, scope):
     ObjectSSATransformer().process(scope)
     usedef(driver, scope)
     AliasReplacer().process(scope)
-    FlattenFieldAccess().process(scope)
-    FlattenObjectArgs().process(scope)
 
+    FlattenObjectArgs().process(scope)
+    FlattenFieldAccess().process(scope)
 
 def earlyconstopt_nonssa(driver, scope):
     EarlyConstantOptNonSSA().process(scope)
@@ -418,6 +424,7 @@ def compile_plan():
         dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
+        flattenmodule,
         scalarize,
         dbg(dumpscope),
         usedef,

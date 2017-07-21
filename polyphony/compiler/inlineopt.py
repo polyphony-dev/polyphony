@@ -5,6 +5,9 @@ from .ir import Ctx, IR, CONST, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
+from .type import Type
+from .usedef import UseDefDetector
+from .varreplacer import VarReplacer
 import logging
 logger = logging.getLogger()
 
@@ -382,8 +385,10 @@ class FlattenFieldAccess(IRTransformer):
 
     def _make_new_ATTR(self, qsym, ir):
         newir = TEMP(qsym[0], Ctx.LOAD)
+        newir.lineno = ir.lineno
         for sym in qsym[1:]:
             newir = ATTR(newir, sym, Ctx.LOAD)
+            newir.lineno = ir.lineno
         newir.ctx = ir.ctx
         return newir
 
@@ -441,7 +446,9 @@ class FlattenObjectArgs(IRTransformer):
                 self_ = arg.exp.clone()
                 new_name = '{}_{}'.format(base_name, fname)
                 new_sym = module_scope.find_sym(new_name)
-                assert new_sym
+                if not new_sym:
+                    new_sym = module_scope.add_sym(new_name)
+                    new_sym.set_type(fsym.typ)
                 new_arg = ATTR(self_, new_sym, Ctx.LOAD)
                 args.append((new_name, new_arg))
                 flatten_args.append((fname, fsym))
@@ -456,9 +463,14 @@ class FlattenObjectArgs(IRTransformer):
         base_name = sym.name
         for name, sym in flatten_args:
             new_name = '{}_{}'.format(base_name, name)
-            param_in = worker_scope.add_param_sym(new_name)
+            param_in = worker_scope.find_param_sym(new_name)
+            if not param_in:
+                param_in = worker_scope.add_param_sym(new_name)
+                param_in.set_type(sym.typ)
             param_copy = worker_scope.find_sym(new_name)
-            param_in.set_type(sym.typ)
+            if not param_copy:
+                param_copy = worker_scope.add_sym(new_name)
+                param_in.set_type(sym.typ)
             flatten_params.append((param_in, param_copy))
         new_params = []
         for idx, (sym, copy, defval) in enumerate(worker_scope.params):
@@ -479,6 +491,49 @@ class FlattenObjectArgs(IRTransformer):
                     mv.lineno = mv.dst.lineno = mv.src.lineno = stm.lineno
                     worker_scope.entry_block.insert_stm(insert_idx, mv)
                 break
+
+
+class FlattenModule(IRTransformer):
+    def __init__(self, driver):
+        self.driver = driver
+
+    def visit_EXPR(self, ir):
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
+                ir.exp.func_scope.parent.is_module() and
+                ir.exp.func_scope.orig_name == 'append_worker' and
+                ir.exp.func.head().name == env.self_name and
+                len(ir.exp.func.qualified_symbol()) > 2):
+            call = ir.exp
+            _, arg = call.args[0]
+            new_arg = self._make_new_worker(arg)
+            assert self.scope.parent.is_module()
+            append_worker_sym = self.scope.parent.find_sym('append_worker')
+            assert append_worker_sym
+            self_var = TEMP(call.func.head(), Ctx.LOAD)
+            new_func = ATTR(self_var, append_worker_sym, Ctx.LOAD)
+            new_func.attr_scope = append_worker_sym.scope
+            self_var.lineno = new_func.lineno = call.func.lineno
+            call.func = new_func
+            call.args[0] = (None, new_arg)
+        self.new_stms.append(ir)
+
+    def _make_new_worker(self, arg):
+        parent_module = self.scope.parent
+        worker_scope = arg.attr.typ.get_scope()
+        inst_name = arg.tail().name
+        new_worker = worker_scope.clone(inst_name, str(arg.lineno), parent=parent_module)
+        UseDefDetector().process(new_worker)
+        self_sym = new_worker.find_sym('self')
+        self_sym.typ.set_scope(parent_module)
+        VarReplacer.replace_uses(TEMP(self_sym, Ctx.LOAD), arg.exp, new_worker.usedef)
+
+        new_worker_sym = parent_module.add_sym(new_worker.orig_name)
+        new_worker_sym.set_type(Type.function(new_worker, None, None))
+
+        arg.exp = arg.exp.exp
+        arg.attr = new_worker_sym
+        self.driver.insert_scope(new_worker)
+        return arg
 
 
 class ObjectHierarchyCopier(object):

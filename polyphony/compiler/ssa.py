@@ -224,7 +224,6 @@ class SSATransformerBase(object):
         self.dominance_frontier = df_builder.process(first_block, tree)
 
     def _remove_useless_phi(self):
-        logger.debug(str(self.scope))
         udd = UseDefDetector()
         udd.process(self.scope)
         usedef = self.scope.usedef

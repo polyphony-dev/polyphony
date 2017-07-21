@@ -4,6 +4,7 @@ from polyphony.timing import wait_value
 from polyphony.io import Port
 from polyphony.typing import bit
 
+
 class Interface:
     def __init__(self):
         self.i0 = Port(bit)

@@ -46,14 +46,17 @@ class VarReplacer(object):
         return ir
 
     def visit_CALL(self, ir):
+        ir.func = self.visit(ir.func)
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 
     def visit_SYSCALL(self, ir):
-        return self.visit_CALL(ir)
+        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
+        return ir
 
     def visit_NEW(self, ir):
-        return self.visit_CALL(ir)
+        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
+        return ir
 
     def visit_CONST(self, ir):
         return ir
