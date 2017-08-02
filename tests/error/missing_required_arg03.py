@@ -7,7 +7,7 @@ from polyphony.timing import wait_rising
 @module
 class missing_required_arg03:
     def __init__(self):
-        p = Port(bool)
+        p = Port(bool, 'in')
         self.append_worker(self.w, p)
 
     def w(self, p):

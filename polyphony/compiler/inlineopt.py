@@ -377,11 +377,8 @@ class FlattenFieldAccess(IRTransformer):
             else:
                 flatsym = scope.add_sym(flatname, ir.attr.tags)
                 flatsym.typ = ancestor.typ
-                if flatsym.typ.is_object() and flatsym.typ.get_scope().is_port():
-                    # we use a flattened name for the port
-                    flatsym.ancestor = None
-                else:
-                    flatsym.ancestor = ancestor
+                flatsym.ancestor = ancestor
+                flatsym.add_tag('flattened')
             return head + (flatsym, ) + tail
         else:
             return head + tail

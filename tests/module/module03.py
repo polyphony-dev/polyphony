@@ -8,14 +8,14 @@ from polyphony.io import Port
 @module
 class ModuleTest03:
     def __init__(self):
-        self.idata = Port(int)
-        self.ivalid = Port(bool)
-        self.odata = Port(int)
-        self.ovalid = Port(bool)
-        t0 = Port(int)
-        t0valid = Port(bool)
-        t1 = Port(int)
-        t1valid = Port(bool)
+        self.idata = Port(int, 'in')
+        self.ivalid = Port(bool, 'in')
+        self.odata = Port(int, 'out')
+        self.ovalid = Port(bool, 'out')
+        t0 = Port(int, 'any')
+        t0valid = Port(bool, 'any')
+        t1 = Port(int, 'any')
+        t1valid = Port(bool, 'any')
         self.append_worker(pow, self.idata, self.ivalid, t0, t0valid)
         self.append_worker(pow, t0, t0valid, t1, t1valid)
         self.append_worker(pow, t1, t1valid, self.odata, self.ovalid)

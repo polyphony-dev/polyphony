@@ -6,7 +6,7 @@ from polyphony.io import Port
 @module
 class io_conflict01:
     def __init__(self):
-        self.p = Port(bool)
+        self.p = Port(bool, 'in')
         self.append_worker(self.w0, self.p)
         self.append_worker(self.w1, self.p)
 

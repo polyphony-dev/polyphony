@@ -234,6 +234,7 @@ def instantiate(driver):
                 continue
             if not (child.is_ctor() or child.is_worker()):
                 continue
+            usedef(driver, child)
             execpure(driver, child)
             constopt(driver, child)
 
@@ -246,6 +247,7 @@ def instantiate(driver):
         driver.insert_scope(worker)
 
         assert worker.is_worker()
+        usedef(driver, worker)
         execpure(driver, worker)
         constopt(driver, worker)
     callgraph(driver)

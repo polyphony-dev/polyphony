@@ -15,14 +15,14 @@ def worker(i1, i2, o1, o2, param):
 @module
 class Protocol03:
     def __init__(self):
-        self.i1 = Port(int8, init=0, protocol='ready_valid')
-        self.i2 = Port(int8, init=0, protocol='ready_valid')
-        self.o1 = Port(int8, init=0, protocol='ready_valid')
-        self.o2 = Port(int8, init=0, protocol='ready_valid')
-        t0_0 = Port(int8, init=0, protocol='ready_valid')
-        t0_1 = Port(int8, init=0, protocol='ready_valid')
-        t1_0 = Port(int8, init=0, protocol='ready_valid')
-        t1_1 = Port(int8, init=0, protocol='ready_valid')
+        self.i1 = Port(int8, 'in', init=0, protocol='ready_valid')
+        self.i2 = Port(int8, 'in', init=0, protocol='ready_valid')
+        self.o1 = Port(int8, 'out', init=0, protocol='ready_valid')
+        self.o2 = Port(int8, 'out', init=0, protocol='ready_valid')
+        t0_0 = Port(int8, 'any', init=0, protocol='ready_valid')
+        t0_1 = Port(int8, 'any', init=0, protocol='ready_valid')
+        t1_0 = Port(int8, 'any', init=0, protocol='ready_valid')
+        t1_1 = Port(int8, 'any', init=0, protocol='ready_valid')
         self.append_worker(worker, self.i1, self.i2, t0_0, t0_1, 1)
         self.append_worker(worker, t0_0, t0_1, t1_0, t1_1, 2)
         self.append_worker(worker, t1_0, t1_1, self.o1, self.o2, 3)

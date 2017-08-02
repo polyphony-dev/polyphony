@@ -7,12 +7,12 @@ from polyphony.timing import clkfence
 @module
 class Protocol04:
     def __init__(self):
-        self.i1 = Port(int8, init=0, protocol='valid')
-        self.i2 = Port(int8, init=0, protocol='valid')
-        self.i3 = Port(int8, init=0, protocol='valid')
-        self.o1 = Port(int8, init=0, protocol='valid')
-        self.o2 = Port(int8, init=0, protocol='valid')
-        self.o3 = Port(int8, init=0, protocol='valid')
+        self.i1 = Port(int8, 'in', init=0, protocol='valid')
+        self.i2 = Port(int8, 'in', init=0, protocol='valid')
+        self.i3 = Port(int8, 'in', init=0, protocol='valid')
+        self.o1 = Port(int8, 'out', init=0, protocol='valid')
+        self.o2 = Port(int8, 'out', init=0, protocol='valid')
+        self.o3 = Port(int8, 'out', init=0, protocol='valid')
         self.append_worker(self.main)
 
     def main(self):

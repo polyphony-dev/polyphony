@@ -6,9 +6,9 @@ from polyphony.timing import clksleep
 @module
 class Port06:
     def __init__(self):
-        self.out1 = Port(int, init=0)
-        self.out2 = Port(int, init=0)
-        self.out3 = Port(int, init=0)
+        self.out1 = Port(int, 'out', init=0)
+        self.out2 = Port(int, 'out', init=0)
+        self.out3 = Port(int, 'out', init=0)
         self.append_worker(self.main, self.out1, self.out2, self.out3)
 
     def main(self, out1, out2, out3):

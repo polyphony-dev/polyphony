@@ -7,10 +7,10 @@ from polyphony.typing import int8
 
 class Interface:
     def __init__(self):
-        self.i0 = Port(int8)
-        self.i1 = Port(int8)
-        self.o0 = Port(int8)
-        self.o1 = Port(int8)
+        self.i0 = Port(int8, 'in')
+        self.i1 = Port(int8, 'in')
+        self.o0 = Port(int8, 'out')
+        self.o1 = Port(int8, 'out')
 
 
 @module

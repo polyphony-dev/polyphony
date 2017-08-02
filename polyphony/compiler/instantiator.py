@@ -285,7 +285,8 @@ class ModuleInstantiator(object):
             for _, i, _ in reversed(binding):
                 new.args.pop(i)
         else:
-            new_module = module.inherit(new_module_name, [])
+            overrides = [module.find_ctor()]
+            new_module = module.inherit(new_module_name, overrides)
         _instantiate_memnode(module.find_ctor(), new_module.find_ctor())
         new_module.inst_name = inst_name
         new_module.add_tag('instantiated')

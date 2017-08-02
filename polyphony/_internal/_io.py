@@ -5,7 +5,7 @@ __all__ = [
 
 
 class Port:
-    def __init__(self, dtype:generic, direction:str='any', init=None, protocol:str='none') -> object:
+    def __init__(self, dtype:generic, direction:str, init=None, protocol:str='none') -> object:
         pass
 
     def rd(self) -> generic:

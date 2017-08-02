@@ -20,10 +20,10 @@ def other_main(clk1, clk2, out):
 @module
 class Port02:
     def __init__(self):
-        self.clk1 = Port(bit, init=1)
-        self.clk2 = Port(bit, init=1)
-        self.out1 = Port(bit, init=0)
-        self.out2 = Port(bit, init=0)
+        self.clk1 = Port(bit, 'in', init=1)
+        self.clk2 = Port(bit, 'in', init=1)
+        self.out1 = Port(bit, 'out', init=0)
+        self.out2 = Port(bit, 'out', init=0)
         self.append_worker(self.main)
         self.append_worker(other_main, self.clk1, self.clk2, self.out2)
 

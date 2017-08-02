@@ -6,8 +6,8 @@ from polyphony.io import Port
 @module
 class port_is_not_used01:
     def __init__(self):
-        self.p = Port(bool)
-        self.q = Port(bool)
+        self.p = Port(bool, 'out')
+        self.q = Port(bool, 'out')
         self.append_worker(self.w)
 
     def w(self):

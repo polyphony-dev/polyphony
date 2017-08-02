@@ -9,8 +9,8 @@ from polyphony.timing import clksleep, wait_value
 @module
 class Submodule:
     def __init__(self, param):
-        self.i = Port(int8)
-        self.o = Port(int8)
+        self.i = Port(int8, 'any')
+        self.o = Port(int8, 'any')
         self.param = param
         self.append_worker(self.sub_worker)
 

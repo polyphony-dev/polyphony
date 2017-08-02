@@ -9,10 +9,10 @@ from polyphony.typing import uint16
 class ModuleTest09:
     @pure
     def __init__(self, data_size):
-        self.i_q = Queue(uint16, maxsize=data_size)
-        self.o_q = Queue(uint16, maxsize=data_size)
-        tmp_q0 = Queue(uint16, maxsize=data_size)
-        tmp_q1 = Queue(uint16, maxsize=data_size)
+        self.i_q = Queue(uint16, 'in', maxsize=data_size)
+        self.o_q = Queue(uint16, 'out', maxsize=data_size)
+        tmp_q0 = Queue(uint16, 'any', maxsize=data_size)
+        tmp_q1 = Queue(uint16, 'any', maxsize=data_size)
         self.append_worker(mul, 2, data_size, self.i_q, tmp_q0)
         self.append_worker(mul, 3, data_size, tmp_q0, tmp_q1)
         self.append_worker(mul, 4, data_size, tmp_q1, self.o_q)
