@@ -336,7 +336,7 @@ class ScalarSSATransformer(SSATransformerBase):
                 sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
             return False
         defstms = self.usedef.get_stms_defining(qsym)
-        if len(defstms) == 1:
+        if len(defstms) <= 1:
             return False
         return True
 

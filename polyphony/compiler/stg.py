@@ -657,7 +657,7 @@ class AHDLTranslator(object):
             sig_tags = {'field', 'int'}
         attr = ir.attr.hdl_name()
         if self.scope.parent.is_module():
-            sym = ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
+            sym = ir.symbol() #ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
             signame = sym.hdl_name()
             width = self._signal_width(sym)
             sig = self.scope.gen_sig(signame, width, sig_tags)

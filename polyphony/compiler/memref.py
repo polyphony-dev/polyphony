@@ -631,6 +631,8 @@ class MemRefGraphBuilder(IRVisitor):
                     pass
 
             usedef = s.usedef
+            if not usedef:
+                continue
             # collect the access to a local list variable
             stms = self._collect_def_mem_stms(s)
             worklist.extend(stms)

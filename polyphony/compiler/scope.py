@@ -129,6 +129,7 @@ class Scope(Tagged):
         self.exit_block = None
         self.children = []
         self.bases = []
+        self.subs = []
         self.usedef = None
         self.loop_nest_tree = None
         self.callee_instances = defaultdict(set)
@@ -226,6 +227,7 @@ class Scope(Tagged):
         #    child.parent = s
 
         s.bases = list(self.bases)
+        s.subs = list(self.subs)
         s.type_args = list(self.type_args)
 
         symbol_map = self.clone_symbols(s)
@@ -269,6 +271,7 @@ class Scope(Tagged):
         sub.exit_block = sub.entry_block = Block(sub)
         sub.add_tag('inherited')
         #env.append_scope(sub)
+        self.subs.append(sub)
 
         for method in overrides:
             sub.children.remove(method)
@@ -546,8 +549,11 @@ class Scope(Tagged):
         return class_fields
 
     def register_worker(self, worker_scope, worker_args):
+        for i, (w, _) in enumerate(self.workers[:]):
+            if w is worker_scope:
+                self.workers.pop(i)
         self.workers.append((worker_scope, worker_args))
-        assert worker_scope.worker_owner is None
+        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
 
 

@@ -331,7 +331,7 @@ class ConstantOpt(ConstantOptBase):
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(TEMP)
-                    and not stm.dst.sym.is_return()):
+                    and not stm.dst.symbol().is_return()):
                 #sanity check
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 assert len(defstms) <= 1
@@ -344,6 +344,22 @@ class ConstantOpt(ConstantOptBase):
                 scope.usedef.remove_var_def(stm.dst, stm)
                 scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
+                if stm in worklist:
+                    worklist.remove(stm)
+                    assert stm not in worklist
+            elif (stm.is_a(MOVE)
+                    and stm.src.is_a(CONST)
+                    and stm.dst.is_a(ATTR)
+                    and not stm.dst.symbol().is_return()):
+                #sanity check
+                defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
+                assert len(defstms) <= 1
+
+                replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
+                for rep in replaces:
+                    if rep not in dead_stms:
+                        worklist.append(rep)
+                worklist = deque(unique(worklist))
                 if stm in worklist:
                     worklist.remove(stm)
                     assert stm not in worklist
@@ -470,6 +486,9 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
             objscope = receiver.typ.get_scope()
             if objscope.is_class():
                 classsym = objscope.parent.find_sym(objscope.orig_name)
+                if not classsym and objscope.is_instantiated():
+                    objscope = objscope.bases[0]
+                    classsym = objscope.parent.find_sym(objscope.orig_name)
                 c = try_get_constant((classsym, ir.attr))
                 if c:
                     return c

@@ -13,7 +13,8 @@ class Env(object):
     PHASE_2 = 2
     PHASE_3 = 3
     PHASE_4 = 4
-    PHASE_GEN_HDL = 5
+    PHASE_5 = 5
+    PHASE_GEN_HDL = 6
 
     QUIET_WARN = 1
     QUIET_ERROR = 2

@@ -22,7 +22,7 @@ from .inlineopt import InlineOpt
 from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
 from .inlineopt import AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
-from .instantiator import EarlyModuleInstantiator
+from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
 from .iotransformer import IOTransformer
 from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
@@ -82,7 +82,7 @@ def preprocess_global(driver):
 def callgraph(driver):
     unused_scopes = CallGraphBuilder().process_all()
     for s in unused_scopes:
-        if Scope.is_unremovable(s):
+        if env.compile_phase < env.PHASE_3 and Scope.is_unremovable(s):
             continue
         driver.remove_scope(s)
         Scope.destroy(s)
@@ -108,7 +108,7 @@ def hyperblock(driver, scope):
     HyperBlockBuilder().process(scope)
 
 
-def buildpurector(driver, scope):
+def buildpurector(driver):
     new_ctors = PureCtorBuilder().process_all()
     for ctor in new_ctors:
         assert ctor.name in env.scopes
@@ -203,6 +203,23 @@ def earlyinstantiate(driver):
         driver.insert_scope(module)
         assert module.is_module()
 
+    new_workers, orig_workers = EarlyWorkerInstantiator().process_all()
+    for worker in new_workers:
+        assert worker.name in env.scopes
+        driver.insert_scope(worker)
+        assert worker.is_worker()
+    for orig_worker in orig_workers:
+        driver.remove_scope(orig_worker)
+        Scope.destroy(orig_worker)
+    modules = [scope for scope in env.scopes.values() if scope.is_module()]
+    for m in modules:
+        if m.find_ctor().is_pure() and not m.is_instantiated():
+            for child in m.children:
+                driver.remove_scope(child)
+                Scope.destroy(child)
+            driver.remove_scope(m)
+            Scope.destroy(m)
+
 
 def instantiate(driver):
     new_modules = ModuleInstantiator().process_all()
@@ -261,6 +278,7 @@ def scalarize(driver, scope):
 
     FlattenObjectArgs().process(scope)
     FlattenFieldAccess().process(scope)
+
 
 def earlyconstopt_nonssa(driver, scope):
     EarlyConstantOptNonSSA().process(scope)
@@ -350,6 +368,7 @@ def dumpcfgimg(driver, scope):
     from .scope import write_dot
     if scope.is_function_module() or scope.is_method() or scope.is_module():
         write_dot(scope, driver.stage)
+
 
 def dumpmrg(driver, scope):
     driver.logger.debug(str(env.memref_graph))
@@ -455,6 +474,7 @@ def compile_plan():
         constopt,
         dbg(dumpscope),
         execpure,
+        phase(env.PHASE_3),
         instantiate,
         modulecheck,
         dbg(dumpscope),
@@ -472,10 +492,10 @@ def compile_plan():
         dbg(dumpscope),
         pathexp,
         dbg(dumpscope),
-        phase(env.PHASE_3),
+        phase(env.PHASE_4),
         usedef,
         loop,
-        phase(env.PHASE_4),
+        phase(env.PHASE_5),
         usedef,
         aliasvar,
         dbg(dumpscope),

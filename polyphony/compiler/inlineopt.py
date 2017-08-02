@@ -52,24 +52,26 @@ class InlineOpt(object):
                                                        caller,
                                                        callee,
                                                        str(self.inline_counts[caller]))
-            result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-            result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
-            assert result_sym.is_return()
-            result_sym.del_tag('return')
+            if callee.is_returnable():
+                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
+                result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+                assert result_sym.is_return()
+                result_sym.del_tag('return')
 
             block_map, _ = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
             callee_exit_blk = block_map[callee.exit_block]
             assert len(callee_exit_blk.succs) <= 1
 
-            result = TEMP(result_sym, Ctx.LOAD)
-            result.lineno = call_stm.lineno
-            if call_stm.is_a(MOVE):
-                assert call_stm.src is call
-                call_stm.src = result
-            elif call_stm.is_a(EXPR):
-                assert call_stm.exp is call
-                call_stm.exp = result
+            if callee.is_returnable():
+                result = TEMP(result_sym, Ctx.LOAD)
+                result.lineno = call_stm.lineno
+                if call_stm.is_a(MOVE):
+                    assert call_stm.src is call
+                    call_stm.src = result
+                elif call_stm.is_a(EXPR):
+                    assert call_stm.exp is call
+                    call_stm.exp = result
 
             sym_replacer = SymbolReplacer(symbol_map)
             sym_replacer.process(caller, callee_entry_blk)
@@ -89,17 +91,18 @@ class InlineOpt(object):
                                                        caller,
                                                        callee,
                                                        str(self.inline_counts[caller]))
-            result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-            result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
-            assert result_sym.is_return()
-            result_sym.del_tag('return')
+            if callee.is_returnable():
+                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
+                result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+                assert result_sym.is_return()
+                result_sym.del_tag('return')
 
             block_map, _ = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
             callee_exit_blk = block_map[callee.exit_block]
             assert len(callee_exit_blk.succs) <= 1
 
-            if not callee.is_ctor():
+            if callee.is_returnable():
                 result = TEMP(result_sym, Ctx.LOAD)
                 result.lineno = call_stm.lineno
                 if call_stm.is_a(MOVE):
@@ -443,13 +446,13 @@ class FlattenObjectArgs(IRTransformer):
                 continue
             if ((fsym.typ.is_object() and fsym.typ.get_scope().is_port()) or
                     fsym.typ.is_scalar()):
-                self_ = arg.exp.clone()
                 new_name = '{}_{}'.format(base_name, fname)
                 new_sym = module_scope.find_sym(new_name)
                 if not new_sym:
                     new_sym = module_scope.add_sym(new_name)
                     new_sym.set_type(fsym.typ)
-                new_arg = ATTR(self_, new_sym, Ctx.LOAD)
+                new_arg = arg.clone()
+                new_arg.set_symbol(new_sym)
                 args.append((new_name, new_arg))
                 flatten_args.append((fname, fsym))
         if worker_scope not in self.params_modified_scopes:

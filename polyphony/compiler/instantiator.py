@@ -16,13 +16,17 @@ def bind_val(scope, i, value):
 
 
 class EarlyWorkerInstantiator(object):
-    def instantiate(self):
+    def process_all(self):
+        if not env.enable_pure:
+            return []
         new_workers = set()
+        orig_workers = set()
         for name, inst in env.runtime_info.module_instances.items():
-            new_worker = self._process_workers(name, inst)
+            new_worker, orig_worker = self._process_workers(name, inst)
             if new_worker:
                 new_workers = new_workers | new_worker
-        return new_workers
+                orig_workers = orig_workers | orig_worker
+        return new_workers, orig_workers
 
     def _process_workers(self, name, instance):
         modules = [scope for scope in env.scopes.values() if scope.is_module()]
@@ -32,26 +36,31 @@ class EarlyWorkerInstantiator(object):
                 module = m
                 break
         if not module:
-            return None
+            return None, None
 
         new_workers = set()
+        orig_workers = set()
         for worker in instance._workers:
-            new_worker = self._instantiate_worker(worker, name)
+            new_worker, orig_worker = self._instantiate_worker(worker, name, module)
             new_workers.add(new_worker)
             module.register_worker(new_worker, [])
-        return new_workers
+            orig_workers.add(orig_worker)
+            if orig_worker in module.children:
+                module.children.remove(orig_worker)
+        return new_workers, orig_workers
 
-    def _instantiate_worker(self, worker, inst_name):
+    def _instantiate_worker(self, worker, inst_name, module):
         if inspect.isfunction(worker.func):
             worker_scope_name = '{}.{}'.format(env.global_scope_name, worker.func.__qualname__)
             worker_scope = env.scopes[worker_scope_name]
+            parent = worker_scope.parent
         elif inspect.ismethod(worker.func):
             worker_scope_name = '{}.{}'.format(env.global_scope_name, worker.func.__qualname__)
             worker_scope = env.scopes[worker_scope_name]
+            parent = module
         _, lineno = inspect.getsourcelines(worker.func)
         if not worker_scope.is_worker():
             worker_scope.add_tag('worker')
-        #worker_scope.return_type = Type.none_t
 
         binding = []
         for i, arg in enumerate(worker.args):
@@ -62,11 +71,12 @@ class EarlyWorkerInstantiator(object):
                     binding.append((bind_val, i, arg))
             else:
                 pass
+        idstr = utils.id2str(Scope.scope_id)
         if binding:
             # FIXME: use scope-id instead of lineno
-            postfix = '{}_{}'.format(lineno,
+            postfix = '{}_{}'.format(idstr,
                                      '_'.join([str(v) for _, _, v in binding]))
-            new_worker = worker_scope.clone(inst_name, postfix)
+            new_worker = worker_scope.clone('', postfix, parent=parent)
 
             udd = UseDefDetector()
             udd.process(new_worker)
@@ -75,9 +85,15 @@ class EarlyWorkerInstantiator(object):
             for _, i, _ in reversed(binding):
                 new_worker.params.pop(i)
         else:
-            new_worker = worker_scope.clone(inst_name, str(lineno))
+            new_worker = worker_scope.clone('', idstr, parent=parent)
         new_worker.add_tag('instantiated')
-        return new_worker
+        if inspect.ismethod(worker.func):
+            self_sym = new_worker.find_sym(env.self_name)
+            self_sym.typ.set_scope(module)
+        worker_sym = parent.add_sym(new_worker.orig_name)
+        worker_sym.set_type(Type.function(new_worker, None, None))
+        env.runtime_info.inst2worker[worker] = (new_worker, worker_scope)
+        return new_worker, worker_scope
 
 
 class EarlyModuleInstantiator(object):
@@ -86,8 +102,9 @@ class EarlyModuleInstantiator(object):
             return []
         new_modules = set()
         for name, inst in env.runtime_info.module_instances.items():
-            new_module = self._instantiate_module(name, inst)
+            new_module, orig_module = self._instantiate_module(name, inst)
             if new_module:
+                env.runtime_info.inst2module[new_module.instance] = (new_module, orig_module)
                 new_modules.add(new_module)
         return new_modules
 
@@ -97,25 +114,47 @@ class EarlyModuleInstantiator(object):
         module.inst_name = ''
         ctor = module.find_ctor()
         if not ctor.is_pure():
-            return None
+            return None, None
 
         new_module_name = module.orig_name + '_' + inst_name
-        overrides = [module.find_ctor()]
+
+        overrides = [child for child in module.children if not child.is_lib() and not child.is_worker()]  # [module.find_ctor()]
+        for method in overrides[:]:
+            for worker in instance._workers:
+                if method.orig_name == worker.func.__name__:
+                    if method in overrides:
+                        overrides.remove(method)
         new_module = module.inherit(new_module_name, overrides)
         new_module.inst_name = inst_name
         new_module.instance = instance
         new_module.add_tag('instantiated')
-        self._replace_global_module_call(inst_name, module, new_module)
-        return new_module
+        self._replace_module_call(inst_name, module, new_module)
+        return new_module, module
 
-    def _replace_global_module_call(self, inst_name, module, new_module):
-        # FIXME: If interpreting global scope, another implementation is necessary
-        g = Scope.global_scope()
+    def _replace_module_call(self, inst_name, module, new_module):
+        caller_lineno = -1
+        caller_scope = None
+        inst = env.runtime_info.module_instances[inst_name]
+        for node in env.runtime_info.ctor_nodes:
+            if node.obj is inst:
+                caller_lineno = node.caller_lineno
+                preds = env.runtime_info.call_graph.preds(node)
+                assert len(preds) == 1
+                pred_node = list(preds)[0]
+                if pred_node.obj is None:
+                    caller_scope = Scope.global_scope()
+                else:
+                    typ = Type.from_expr(pred_node.obj, Scope.global_scope())
+                    assert typ.is_object()
+                    caller_scope = typ.get_scope().find_ctor()
+                break
         collector = CallCollector()
-        calls = collector.process(g)
+        calls = collector.process(caller_scope)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope is module and stm.dst.symbol().name == inst_name:
-                call.func_scope = new_module
+            if call.is_a(NEW) and call.func_scope is module and caller_lineno == call.lineno:
+                obj_name = inst_name.split('.')[-1]
+                if stm.dst.symbol().name.endswith(obj_name):
+                    call.func_scope = new_module
 
 
 class WorkerInstantiator(object):
@@ -140,9 +179,11 @@ class WorkerInstantiator(object):
         calls = collector.process(ctor)
         for stm, call in calls:
             if call.is_a(CALL) and call.func_scope.orig_name == 'append_worker':
-                new_worker = self._instantiate_worker(call, ctor, module)
-                new_workers.add(new_worker)
+                new_worker, is_created = self._instantiate_worker(call, ctor, module)
                 module.register_worker(new_worker, call.args)
+                if not is_created:
+                    continue
+                new_workers.add(new_worker)
                 new_worker_sym = module.add_sym(new_worker.orig_name)
                 new_worker_sym.set_type(Type.function(new_worker, None, None))
                 _, w = call.args[0]
@@ -171,11 +212,18 @@ class WorkerInstantiator(object):
                 pass
             else:
                 pass
-        idstr = utils.id2str(Scope.scope_id)
-        if binding:
-            postfix = '{}_{}'.format(idstr, '_'.join([str(v) for _, _, v in binding]))
-            new_worker = worker.clone(module.inst_name, postfix)
 
+        idstr = utils.id2str(Scope.scope_id)
+        if worker.is_instantiated():
+            new_worker = worker
+        else:
+            if binding:
+                postfix = '{}_{}'.format(idstr, '_'.join([str(v) for _, _, v in binding]))
+                new_worker = worker.clone(module.inst_name, postfix)
+            else:
+                new_worker = worker.clone(module.inst_name, idstr)
+
+        if binding:
             udd = UseDefDetector()
             udd.process(new_worker)
             for f, i, a in binding:
@@ -188,11 +236,12 @@ class WorkerInstantiator(object):
                     call.args.pop(i + 1)
                 else:
                     call.args.pop(i)
+        if worker.is_instantiated():
+            return new_worker, False
         else:
-            new_worker = worker.clone(module.inst_name, idstr)
-        _instantiate_memnode(worker, new_worker)
-        new_worker.add_tag('instantiated')
-        return new_worker
+            _instantiate_memnode(worker, new_worker)
+            new_worker.add_tag('instantiated')
+            return new_worker, True
 
 
 class ModuleInstantiator(object):
