@@ -13,12 +13,12 @@ class MiniVM:
 
     def __init__(self, start_addr):
         # define i/o
-        self.dout = Port(int8, protocol='ready_valid')
+        self.dout = Port(int8, 'out', protocol='ready_valid')
 
         # define internals
-        instq = Queue(uint16, maxsize=2)
-        opeq = Queue(uint8, maxsize=2)
-        valueq = Queue(uint8, maxsize=2)
+        instq = Queue(uint16, 'any', maxsize=2)
+        opeq = Queue(uint8, 'any',  maxsize=2)
+        valueq = Queue(uint8, 'any',  maxsize=2)
 
         self.append_worker(fetch, start_addr, instq)
         self.append_worker(decode, instq, opeq, valueq)

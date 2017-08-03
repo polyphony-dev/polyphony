@@ -353,6 +353,11 @@ def _find_vars(dic, namespace_names):
             _vars = _find_vars(cls.__dict__, namespace_names)
             if _vars:
                 vars[name] = _vars
+            if cls.__module__ in namespace_names and cls.__module__ not in dic:
+                mod = inspect.getmodule(cls)
+                _vars = _find_vars_in_libs(mod.__name__, mod.__dict__, namespace_names)
+                if _vars:
+                    vars[cls.__module__] = _vars
         elif inspect.ismodule(obj) and obj.__name__ in namespace_names:
             _vars = _find_vars_in_libs(obj.__name__, obj.__dict__, namespace_names)
             if _vars:

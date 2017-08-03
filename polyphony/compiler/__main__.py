@@ -555,6 +555,7 @@ def setup(src_file, options):
         translator.translate(read_source(package_file), package_name)
     env.set_current_filename(src_file)
     g = Scope.create(None, env.global_scope_name, {'global', 'namespace'}, lineno=1)
+    env.push_outermost_scope(g)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
 

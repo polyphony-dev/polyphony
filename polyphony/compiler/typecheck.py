@@ -715,7 +715,7 @@ class TypeChecker(IRVisitor):
 
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
+        if ir.func_scope.is_module() and not ir.func_scope.parent.is_namespace():
             fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
         if self.scope.is_global() and not ir.func_scope.is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)

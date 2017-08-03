@@ -114,6 +114,8 @@ def try_get_constant(qsym):
         return None
     vars = env.runtime_info.global_vars
     names = [sym.name for sym in qsym]
+    if qsym[0].scope.is_namespace() and not qsym[0].scope.is_global():
+        names = [qsym[0].scope.name] + names
     v = find_value(vars, names)
     if isinstance(v, dict) and not v:
         return None
@@ -432,7 +434,7 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
+        if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol())
             if c:
                 return c
@@ -466,7 +468,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         super().__init__()
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
+        if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol())
             if c:
                 return c

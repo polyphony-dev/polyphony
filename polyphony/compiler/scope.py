@@ -366,7 +366,9 @@ class Scope(Tagged):
                         break
                 else:
                     # otherwise, look-up from global
-                    found = self.global_scope().find_sym(name)
+                    found = env.outermost_scope().find_sym(name)
+                    if not found:
+                        found = self.global_scope().find_sym(name)
             else:
                 found = self.parent.find_sym(name)
             return found
