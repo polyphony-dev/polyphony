@@ -54,8 +54,12 @@ class ImportVisitor(ast.NodeVisitor):
         cur_filename = env.current_filename
         env.set_current_filename(filename)
         namespace = Scope.create_namespace(None, name, set())
+        env.push_outermost_scope(namespace)
+        for sym in builtin_symbols.values():
+            namespace.import_sym(sym)
         translator = IRTranslator()
         translator.translate(read_source(filename), '', top=namespace)
+        env.pop_outermost_scope()
         env.set_current_filename(cur_filename)
         return True
 
@@ -232,6 +236,8 @@ class FunctionVisitor(ast.NodeVisitor):
         elif self.current_scope.is_pure():
             if self.current_scope.is_method() and not self.current_scope.parent.is_module():
                 fail((outer_scope, node.lineno), Errors.PURE_CTOR_MUST_BE_MODULE)
+            pass
+        elif self.current_scope.is_testbench() and outer_scope is not Scope.global_scope():
             pass
         else:
             for stm in node.body:
@@ -434,6 +440,8 @@ class CodeVisitor(ast.NodeVisitor):
         if self.current_scope.is_pure():
             PureScopeVisitor(self.current_scope, self.type_comments).visit(node)
             self._leave_scope(*context)
+            return
+        if self.current_scope.is_testbench() and env.outermost_scope() is not Scope.global_scope():
             return
         for stm in node.body:
             self.visit(stm)
@@ -1077,12 +1085,15 @@ class CodeVisitor(ast.NodeVisitor):
             scope = value.symbol().typ.get_scope()
             attr = None
             if scope:
-                attr = scope.find_sym(node.attr)
-            if not attr:
                 if ctx == Ctx.STORE:
-                    attr = scope.add_sym(node.attr)
+                    if scope.has_sym(node.attr):
+                        attr = scope.find_sym(node.attr)
+                    else:
+                        attr = scope.add_sym(node.attr)
                 else:
-                    attr = node.attr
+                    attr = scope.find_sym(node.attr)
+            if not attr:
+                attr = node.attr
         else:
             attr = node.attr
         irattr = ATTR(value, attr, ctx)
@@ -1386,7 +1397,6 @@ class IRTranslator(object):
             logger.debug(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
             logger.debug('ignore packages')
             logger.debug(ignore_packages)
-
         type_comments = self._extract_type_comment(source)
         FunctionVisitor(top_scope).visit(tree)
         CompareTransformer().visit(tree)

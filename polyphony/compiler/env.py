@@ -44,6 +44,7 @@ class Env(object):
         self.testbenches = []
         self.config = Config()
         self.runtime_info = None
+        self.outermost_scope_stack = []
 
     def set_current_filename(self, filename):
         self.current_filename = filename
@@ -64,6 +65,15 @@ class Env(object):
 
     def append_testbench(self, testbench):
         self.testbenches.append(testbench)
+
+    def push_outermost_scope(self, scope):
+        self.outermost_scope_stack.append(scope)
+
+    def pop_outermost_scope(self):
+        self.outermost_scope_stack.pop()
+
+    def outermost_scope(self):
+        return self.outermost_scope_stack[-1]
 
 
 env = Env()

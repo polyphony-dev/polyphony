@@ -145,7 +145,7 @@ class PortConverter(IRTransformer):
                 port_typ.set_port_kind('internal')
                 port_typ.set_direction('inout')
             elif di != direction:
-                if sym.ancestor.scope is not sym.scope:
+                if sym.ancestor and sym.ancestor.scope is not sym.scope:
                     # the port has been accessed as opposite direction
                     # by a module includes original owner module
                     port_typ.set_port_kind('internal')

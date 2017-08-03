@@ -110,6 +110,9 @@ class EarlyModuleInstantiator(object):
 
     def _instantiate_module(self, inst_name, instance):
         scope_name = '{}.{}'.format(env.global_scope_name, instance.__class__.__qualname__)
+        if scope_name not in env.scopes:
+            scope_name = '{}.{}'.format(instance.__module__, instance.__class__.__qualname__)
+        assert scope_name in env.scopes
         module = env.scopes[scope_name]
         module.inst_name = ''
         ctor = module.find_ctor()
