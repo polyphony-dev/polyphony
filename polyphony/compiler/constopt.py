@@ -521,8 +521,6 @@ class GlobalConstantOpt(ConstantOptBase):
     def process(self, scope):
         assert scope.is_namespace() or scope.is_class()
         self.scope = scope
-        if scope.block_count > 1:
-            raise RuntimeError('A control statement in the global scope is not allowed')
         super().process(scope)
         self._remove_dead_code()
 

@@ -62,6 +62,7 @@ def _do_interpret(source, file_name, objs):
     th = threading.current_thread()
     th.exc_info = None
     try:
+        objs['__name__'] = '__main__'
         exec(code, objs)
     except Exception:
         th.exc_info = sys.exc_info()
