@@ -222,6 +222,8 @@ class TypePropagation(IRVisitor):
                        [repr(ir)])
 
     def visit_TEMP(self, ir):
+        if ir.sym.typ.is_undef() and ir.sym.ancestor:
+            ir.sym.typ = ir.sym.ancestor.typ
         return ir.sym.typ
 
     def visit_ATTR(self, ir):

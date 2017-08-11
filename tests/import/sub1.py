@@ -2,6 +2,9 @@ from polyphony import testbench
 import sub3
 
 
+SUB1_GLOBAL = 111
+
+
 def func1(x):
     return x + 1
 
