@@ -1,6 +1,9 @@
 from polyphony import testbench
 
 
+SUB3_GLOBAL = 333
+
+
 def func1(x):
     return x + 100
 
