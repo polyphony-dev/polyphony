@@ -26,13 +26,20 @@ class AliasVarDetector(IRVisitor):
             return
         elif ir.src.is_a(MREF):
             memnode = ir.src.mem.symbol().typ.get_memnode()
-            if memnode.is_immutable() or not memnode.is_writable():
+            if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
                 stms = self.usedef.get_stms_defining(sym)
-                if len(stms) == 1:
+                if len(stms) == 1 and not sym.is_induction() and not sym.is_alias():
+                    # if the symbol is used in a condition variable definition
+                    # the symbol cannot be alias.
+                    # bacause a condition variable is used any state,
+                    # so a condition might be change when the memory destination symbol is alias
+                    for usestm in self.usedef.get_stms_using(sym):
+                        defsyms = self.usedef.get_syms_defined_at(usestm)
+                        for defsym in defsyms:
+                            if defsym.is_condition():
+                                return
                     sym.add_tag('alias')
-                    return
-            else:
-                return
+            return
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
             return

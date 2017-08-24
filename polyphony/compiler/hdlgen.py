@@ -354,6 +354,13 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
 
         self._add_roms(scope)
         self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
+
+        local_readers = self.module_info.local_readers.values()
+        local_writers = self.module_info.local_writers.values()
+        accs = set(list(local_readers) + list(local_writers))
+        for acc in accs:
+            for stm in acc.reset_stms():
+                self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
         for d in defs:
             if d.is_reg():
                 clear_var = AHDL_MOVE(AHDL_VAR(d, Ctx.STORE), AHDL_CONST(0))
