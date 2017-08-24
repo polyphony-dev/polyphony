@@ -1,6 +1,7 @@
 from collections import deque
 from .block import Block
 from .dominator import DominatorTreeBuilder
+from .env import env
 from .ir import *
 from .usedef import UseDefDetector
 from .utils import remove_except_one, replace_item
@@ -388,9 +389,14 @@ class HyperBlockBuilder(object):
             return False
 
     def _has_mem_access(self, stm):
-        if stm.is_a(MOVE):
-            if stm.src.is_a([MREF, MSTORE]):
-                return True
+        if stm.is_a(MOVE) and stm.src.is_a([MREF, MSTORE]):
+            if stm.src.mem.symbol().typ.has_length():
+                l = stm.src.mem.symbol().typ.get_length()
+                w = stm.src.mem.symbol().typ.get_element().get_width()
+                # TODO:
+                if w * l < env.config.internal_ram_threshold_size:
+                    return False
+            return True
         return False
 
     def _emigrate_to_diamond_head(self, head, blk):

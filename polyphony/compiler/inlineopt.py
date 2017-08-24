@@ -284,6 +284,14 @@ class SymbolReplacer(IRVisitor):
         if ir.attr in self.sym_map:
             ir.attr = self.sym_map[ir.attr]
 
+    def visit_ARRAY(self, ir):
+        self.visit(ir.repeat)
+        for item in ir.items:
+            self.visit(item)
+        if ir.sym in self.sym_map:
+            rep = self.sym_map[ir.sym]
+            ir.sym = rep
+
 
 class AliasReplacer(CopyOpt):
     def _new_collector(self, copies):

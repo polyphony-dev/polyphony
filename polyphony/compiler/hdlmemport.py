@@ -1,4 +1,4 @@
-﻿from collections import OrderedDict
+﻿from collections import defaultdict, OrderedDict
 from .hdlmoduleinfo import RAMModuleInfo
 from .env import env
 from .ir import Ctx
@@ -25,6 +25,8 @@ class HDLMemPortMaker(object):
             self.length = memnode.length
             self.width  = memnode.data_width()
             self.addr_width = memnode.addr_width()
+            if self.memnode.can_be_reg():
+                continue
             self._make_port()
 
     def _make_ram_accessor(self, node):
@@ -73,7 +75,8 @@ class HDLMemPortMaker(object):
         param_map['ADDR_WIDTH'] = self.addr_width
         param_map['RAM_LENGTH'] = self.length
         spram_info = RAMModuleInfo(self.name, self.width, self.addr_width)
-        connections = [(spram_info.ramif, spram_info.ramif.accessor(self.name))]
+        connections = defaultdict(list)
+        connections[''] = [(spram_info.ramif, spram_info.ramif.accessor(self.name))]
         self.module_info.add_sub_module(self.name, spram_info, connections, param_map=param_map)
         return spram_info
 
@@ -211,7 +214,7 @@ class HDLMemPortMaker(object):
                                    cs_name=cs_name)
 
 
-class HDLRegArrayPortMaker(object):
+class HDLTuplePortMaker(object):
     def __init__(self, memnode, scope, module_info):
         self.memnode = memnode
         self.name = memnode.name()
@@ -290,6 +293,161 @@ class HDLRegArrayPortMaker(object):
                     ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)),
                                               AHDL_SUBSCRIPT(src_mem, AHDL_CONST(i)))
                     self.module_info.add_static_assignment(ahdl_assign)
+            elif isinstance(succ, MemParamNode):
+                for inst in self.mrg.param_node_instances[succ]:
+                    src_sig = self.scope.gen_sig(pred.name(), pred.data_width())
+                    src_mem = AHDL_MEMVAR(src_sig, pred, Ctx.LOAD)
+                    for i in range(self.length):
+                        sig_name = '{}_{}{}'.format(inst, succ.name(), i)
+                        ref_sig = self.scope.gen_sig(sig_name, succ.data_width())
+                        ref_var = AHDL_VAR(ref_sig, Ctx.LOAD)
+                        ahdl_assign = AHDL_ASSIGN(ref_var, AHDL_SUBSCRIPT(src_mem, AHDL_CONST(i)))
+                        self.module_info.add_static_assignment(ahdl_assign)
+
+
+class HDLRegArrayPortMaker(object):
+    def __init__(self, memnode, scope, module_info):
+        self.memnode = memnode
+        self.name = memnode.name()
+        self.scope = scope
+        self.mrg = env.memref_graph
+        self.module_info = module_info
+        self.length = memnode.length
+        self.width  = memnode.data_width()
+
+    def make_port(self):
+        assert self.memnode.is_writable()
+        #assert self.memnode.is_immutable()
+        # this function makes the node connection for to the successor node
+        if isinstance(self.memnode, MemRefNode) or isinstance(self.memnode, MemParamNode):
+            if self.memnode.is_source():
+                self._make_source_node_connection()
+            elif self.memnode.is_param():
+                self._make_param_node_connection()
+            elif self.memnode.is_sink():
+                pass
+            else:
+                assert False
+        elif isinstance(self.memnode, N2OneMemNode):
+            self._make_n2one_node_connection()
+        elif isinstance(self.memnode, One2NMemNode):
+            self._make_one2n_node_connection()
+
+    def _make_source_node_connection(self):
+        sig = self.scope.gen_sig(self.name, self.width)
+        self.module_info.add_internal_reg_array(sig, self.length)
+        return
+        # direct connect
+        if isinstance(self.memnode.succs[0], MemRefNode):
+            assert len(self.memnode.succs) == 1
+            succ = self.memnode.succs[0]
+            assert succ.is_sink()
+
+            src_sig = sig
+            ref_sig = self.scope.gen_sig(succ.name(), succ.data_width())
+            self.module_info.add_internal_reg_array(ref_sig, succ.length)
+            src_mem = AHDL_MEMVAR(src_sig, self.memnode, Ctx.LOAD)
+            ref_mem = AHDL_MEMVAR(ref_sig, succ, Ctx.LOAD)
+            for i in range(self.length):
+                ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)),
+                                          AHDL_SUBSCRIPT(src_mem, AHDL_CONST(i)))
+                self.module_info.add_static_assignment(ahdl_assign)
+
+    def _make_param_node_connection(self):
+        for sink in self.memnode.sinks():
+            ref_sig = self.scope.gen_sig(sink.name(), sink.data_width())
+            self.module_info.add_internal_reg_array(ref_sig, self.memnode.length)
+            ref_mem = AHDL_MEMVAR(ref_sig, sink, Ctx.LOAD)
+            for i in range(self.memnode.length):
+                sig_name = '{}_out_{}{}'.format(
+                    self.module_info.name,
+                    self.memnode.name()[len('in_'):],
+                    i
+                )
+                dst_sig = self.scope.gen_sig(sig_name, self.memnode.data_width())
+                dst_var = AHDL_VAR(dst_sig, Ctx.LOAD)
+                ahdl_assign = AHDL_ASSIGN(dst_var, AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)))
+                self.module_info.add_static_assignment(ahdl_assign)
+
+    def _make_ram_accessor(self, inst_name, memnode):
+        ramif = RegArrayAccessor(memnode.name(), '', memnode.data_width(), memnode.addr_width())
+        acc = ramif.accessor(inst_name)
+        return acc
+
+    def _make_n2one_node_connection(self):
+        assert len(self.memnode.preds) > 1
+        assert len(self.memnode.succs) == 1
+        succ = self.memnode.succs[0]
+
+        callee_name = list(succ.scopes)[0].orig_name
+        if isinstance(succ, MemParamNode):
+            for inst in self.mrg.param_node_instances[succ]:
+                pred_ramaccs = []
+                preds = [p for p in self.memnode.preds if self.scope in p.scopes]
+                for i, pred in enumerate(self.memnode.preds):
+                    if pred not in preds:
+                        continue
+                    if isinstance(pred, One2NMemNode):
+                        assert len(pred.preds) == 1
+                        src = pred.preds[0]
+                        acc = RegArrayInterface(src.name(),
+                                                self.module_info.name,
+                                                src.data_width(),
+                                                src.length, '', True).accessor()
+                        acc.ports.ports = acc.ports.flipped()
+                        pred_ramaccs.append(acc)
+                    else:
+                        assert False
+                succ_ramacc = RegArrayInterface(succ.name(),
+                                                callee_name,
+                                                succ.data_width(),
+                                                succ.length).accessor(inst)
+                succ_ramacc.ports.ports = succ_ramacc.ports.flipped()
+                cs_name = inst + '_' + self.memnode.orig_succs[0].name()
+                self._add_interconnect(succ_ramacc.acc_name,
+                                       pred_ramaccs,
+                                       [succ_ramacc],
+                                       cs_name)
+        elif isinstance(succ, MemRefNode):
+            ref_sig = self.scope.gen_sig(succ.name(), succ.data_width())
+            self.module_info.add_internal_reg_array(ref_sig, self.memnode.length)
+            ref_len_sig = self.scope.gen_sig('{}_len'.format(succ.name()), succ.addr_width())
+            self.module_info.add_internal_reg(ref_len_sig)
+
+    def _add_interconnect(self, name, pred_ifs, succ_ifs, cs_name=''):
+        if cs_name:
+            interconnect = Interconnect(name, pred_ifs, succ_ifs, cs_name=cs_name)
+        else:
+            interconnect = Interconnect(name, pred_ifs, succ_ifs)
+        self.module_info.add_interconnect(interconnect)
+
+
+    def _make_one2n_node_connection(self):
+        assert len(self.memnode.preds) == 1
+        assert len(self.memnode.succs) > 1
+        pred = self.memnode.preds[0]
+        for succ in self.memnode.succs:
+            if succ.is_sink():
+                if not isinstance(pred, N2OneMemNode):
+                    src_sig = self.scope.gen_sig(pred.name(), pred.data_width())
+                    ref_sig = self.scope.gen_sig(succ.name(), succ.data_width())
+                    self.module_info.add_internal_net_array(ref_sig, succ.length)
+                    src_mem = AHDL_MEMVAR(src_sig, pred, Ctx.LOAD)
+                    ref_mem = AHDL_MEMVAR(ref_sig, succ, Ctx.LOAD)
+                    for i in range(self.length):
+                        ahdl_assign = AHDL_ASSIGN(AHDL_SUBSCRIPT(ref_mem, AHDL_CONST(i)),
+                                                  AHDL_SUBSCRIPT(src_mem, AHDL_CONST(i)))
+                        self.module_info.add_static_assignment(ahdl_assign)
+                    ref_len_sig = self.scope.gen_sig('{}_len'.format(succ.name()), succ.addr_width())
+                    self.module_info.add_internal_net(ref_len_sig)
+                    ahdl_assign = AHDL_ASSIGN(AHDL_VAR(ref_len_sig, Ctx.STORE),
+                                              AHDL_CONST(self.length))
+                    self.module_info.add_static_assignment(ahdl_assign)
+                else:
+                    ref_sig = self.scope.gen_sig(succ.name(), succ.data_width())
+                    self.module_info.add_internal_reg_array(ref_sig, succ.length)
+                    ref_len_sig = self.scope.gen_sig('{}_len'.format(succ.name()), succ.addr_width())
+                    self.module_info.add_internal_reg(ref_len_sig)
             elif isinstance(succ, MemParamNode):
                 for inst in self.mrg.param_node_instances[succ]:
                     src_sig = self.scope.gen_sig(pred.name(), pred.data_width())

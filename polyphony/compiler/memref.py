@@ -278,6 +278,18 @@ class MemTrait(object):
     def addr_width(self):
         return (self.length - 1).bit_length() + 1  # +1 means sign bit
 
+    def can_be_reg(self):
+        if self.length == -1:
+            src = self.single_source()
+            if src:
+                self.length = src.length
+        assert self.length > 0
+        if not self.is_writable():
+            return False
+        if self.is_immutable():
+            return False
+        return (self.data_width() * self.length) < env.config.internal_ram_threshold_size
+
 
 class MemRefNode(RefNode, MemTrait):
     def __init__(self, sym, scope):
@@ -520,7 +532,10 @@ class MemRefGraph(object):
                 yield node
 
     def collect_readonly_sink(self, scope):
-        for node in self.scope_nodes(scope):
+        nodes = list(self.scope_nodes(scope))
+        top_nodes = list(self.scope_nodes(Scope.global_scope()))
+        nodes.extend(top_nodes)
+        for node in nodes:
             if isinstance(node, MemRefNode) and not node.is_writable() and node.is_sink():
                 yield node
 

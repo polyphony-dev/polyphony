@@ -21,10 +21,17 @@ class FIFO:
 
 def fifo_test():
     fifo = FIFO(SIZE)
+    fifo2 = FIFO(SIZE*2)
     fifo.push(0)
     fifo.push(1)
     fifo.push(2)
     fifo.push(3)
+
+    fifo2.push(5)
+    fifo2.push(6)
+    fifo2.push(7)
+    fifo2.push(8)
+
     assert 0 == fifo.pop()
     assert 1 == fifo.pop()
     assert 2 == fifo.pop()

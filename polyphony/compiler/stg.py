@@ -312,11 +312,14 @@ class STGBuilder(object):
 
     def emit_call_sequence(self, ahdl_call, dst, node, sched_time):
         assert ahdl_call.is_a(AHDL_MODULECALL)
+        ahdl_call.returns = []
+        for arg in ahdl_call.args:
+            if arg.is_a(AHDL_MEMVAR) and arg.memnode.can_be_reg():
+                ahdl_call.returns.append(arg)
         # TODO:
         if dst:
-            ahdl_call.returns = [dst]
-        else:
-            ahdl_call.returns = []
+            ahdl_call.returns.append(dst)
+
         step_n = node.latency()
         for i in range(step_n):
             self.emit(AHDL_SEQ(ahdl_call, i, step_n), sched_time + i)
@@ -537,6 +540,12 @@ class AHDLTranslator(object):
             return AHDL_FUNCALL(AHDL_SYMBOL(memvar.name()), [offset])
         elif memvar.memnode.is_immutable():
             return AHDL_SUBSCRIPT(memvar, offset)
+        elif memvar.memnode.can_be_reg():
+            arraynode = memvar.memnode.single_source()
+            if arraynode and list(arraynode.scopes)[0] is self.scope:
+                sig = self.scope.signal(arraynode.name())
+                return AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, ir.ctx), offset)
+            return AHDL_SUBSCRIPT(memvar, offset)
         else:
             assert isinstance(node.tag, MOVE)
             dst = self.visit(node.tag.dst, node)
@@ -548,10 +557,19 @@ class AHDLTranslator(object):
         memvar = self.visit(ir.mem, node)
         memvar.ctx = Ctx.STORE
         assert memvar.memnode.is_writable()
+        if memvar.memnode.can_be_reg():
+            arraynode = memvar.memnode.single_source()
+            if arraynode and list(arraynode.scopes)[0] is self.scope:
+                sig = self.scope.signal(arraynode.name())
+                dst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, Ctx.STORE), offset)
+            else:
+                dst = AHDL_SUBSCRIPT(memvar, offset)
+            self._emit(AHDL_MOVE(dst, exp), self.sched_time)
+            return None
         return AHDL_STORE(memvar, exp, offset)
 
     def _build_mem_initialize_seq(self, array, memvar, node):
-        if array.is_mutable:
+        if array.is_mutable and not memvar.memnode.can_be_reg():
             sched_time = self.sched_time
             for i, item in enumerate(array.items):
                 if not(isinstance(item, CONST) and item.value is None):
@@ -560,13 +578,15 @@ class AHDLTranslator(object):
                     self.host.emit_memstore_sequence(ahdl, sched_time)
                     sched_time += 1
         else:
-            sig = self.scope.gen_sig(array.sym.hdl_name(), 1, {'memif'})
+            arraynode = array.sym.typ.get_memnode()
+            sig = self.scope.gen_sig(arraynode.name(), 1, {'memif'})
             for i, item in enumerate(array.items):
-                idx = AHDL_CONST(i)
-                memvar = AHDL_MEMVAR(sig, array.sym.typ.get_memnode(), Ctx.STORE)
-                ahdl_item = self.visit(item, node)
-                ahdl_move = AHDL_MOVE(AHDL_SUBSCRIPT(memvar, idx), ahdl_item)
-                self._emit(ahdl_move, self.sched_time)
+                if not(isinstance(item, CONST) and item.value is None):
+                    idx = AHDL_CONST(i)
+                    memvar = AHDL_MEMVAR(sig, arraynode, Ctx.STORE)
+                    ahdl_item = self.visit(item, node)
+                    ahdl_move = AHDL_MOVE(AHDL_SUBSCRIPT(memvar, idx), ahdl_item)
+                    self._emit(ahdl_move, self.sched_time)
 
     def visit_ARRAY(self, ir, node):
         # array expansion
@@ -786,7 +806,13 @@ class AHDLTranslator(object):
             memnode = dst.memnode
             assert memnode
             if ir.src.sym.is_param():
-                return
+                if memnode.can_be_reg():
+                    for i in range(memnode.length):
+                        src_name = '{}{}'.format(src.sig.name, i)
+                        self._emit(AHDL_MOVE(AHDL_SUBSCRIPT(dst, AHDL_CONST(i)), AHDL_SYMBOL(src_name)), self.sched_time)
+                    return
+                else:
+                    return
             elif memnode.is_immutable():
                 return
             elif memnode.is_joinable():
@@ -797,7 +823,11 @@ class AHDLTranslator(object):
     def visit_PHI(self, ir, node):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
         if ir.var.symbol().typ.is_seq():
-            self._emit_mem_mux(ir, node)
+            memnode = ir.var.symbol().typ.get_memnode()
+            if memnode.can_be_reg():
+                self._emit_reg_array_mux(ir, node)
+            else:
+                self._emit_mem_mux(ir, node)
         else:
             self._emit_scalar_mux(ir, node)
 
@@ -827,6 +857,59 @@ class AHDLTranslator(object):
             rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
         for arg, p in arg_p[-2::-1]:
             lexp = self.visit(arg, node)
+            cond = self.visit(p, node)
+            if_exp = AHDL_IF_EXP(cond, lexp, rexp)
+            rexp = if_exp
+        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
+
+    def _emit_reg_array_mux(self, ir, node):
+        memnode = ir.var.symbol().typ.get_memnode()
+        ahdl_var = self.visit(ir.var, node)
+        arg_p = list(zip(ir.args, ir.ps))
+        for i in range(memnode.length):
+            rexp, cond = arg_p[-1]
+            cond = self.visit(cond, node)
+            ahdl_dst = AHDL_SUBSCRIPT(ahdl_var, AHDL_CONST(i))
+            if cond.is_a(CONST) and cond.value:
+                rexp_var = self.visit(rexp, node)
+                if i >= rexp_var.memnode.length:
+                    rexp = AHDL_SYMBOL("'bz")
+                else:
+                    rexp = AHDL_SUBSCRIPT(rexp_var, AHDL_CONST(i))
+            else:
+                lexp_var = self.visit(rexp, node)
+                if i >= lexp_var.memnode.length:
+                    rexp = AHDL_SYMBOL("'bz")
+                else:
+                    lexp = AHDL_SUBSCRIPT(lexp_var, AHDL_CONST(i))
+                    rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
+            for arg, p in arg_p[-2::-1]:
+                lexp_var = self.visit(arg, node)
+                if i >= lexp_var.memnode.length:
+                    if_exp = rexp
+                else:
+                    lexp = AHDL_SUBSCRIPT(lexp_var, AHDL_CONST(i))
+                    cond = self.visit(p, node)
+                    if_exp = AHDL_IF_EXP(cond, lexp, rexp)
+                rexp = if_exp
+            self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
+
+        var_len = '{}_len'.format(ir.var.symbol().hdl_name())
+        vlen = AHDL_SYMBOL(var_len)
+
+        rexp, cond = arg_p[-1]
+        cond = self.visit(cond, node)
+        ahdl_dst = vlen
+        if cond.is_a(CONST) and cond.value:
+            rexp_str = '{}_len'.format(rexp.symbol().hdl_name())
+            rexp = AHDL_SYMBOL(rexp_str)
+        else:
+            lexp_str = '{}_len'.format(rexp.symbol().hdl_name())
+            lexp = AHDL_SYMBOL(lexp_str)
+            rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
+        for arg, p in arg_p[-2::-1]:
+            lexp_str = '{}_len'.format(arg.symbol().hdl_name())
+            lexp = AHDL_SYMBOL(lexp_str)
             cond = self.visit(p, node)
             if_exp = AHDL_IF_EXP(cond, lexp, rexp)
             rexp = if_exp

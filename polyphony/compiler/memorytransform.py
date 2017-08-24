@@ -192,6 +192,9 @@ class RomDetector(object):
     def _propagate_writable_flag(self):
         for node in self.mrg.collect_top_module_nodes():
             node.set_writable()
+            src = node.single_source()
+            if src:
+                src.set_writable()
         worklist = deque()
         for source in self.mrg.collect_sources():
             if source.is_writable():

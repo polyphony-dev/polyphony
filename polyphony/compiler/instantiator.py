@@ -307,13 +307,20 @@ class MemnodeReplacer(IRVisitor):
         self.node_map = node_map
         self.replaced = set()
 
-    def visit_TEMP(self, ir):
-        typ = ir.symbol().typ
+    def _replace_typ_memnode(self, typ):
         if typ.is_seq() and typ not in self.replaced:
             memnode = typ.get_memnode()
             new_memnode = self.node_map[memnode]
             typ.set_memnode(new_memnode)
             self.replaced.add(typ)
+
+    def visit_TEMP(self, ir):
+        typ = ir.symbol().typ
+        self._replace_typ_memnode(typ)
+
+    def visit_ARRAY(self, ir):
+        typ = ir.sym.typ
+        self._replace_typ_memnode(typ)
 
 
 class CallCollector(IRVisitor):

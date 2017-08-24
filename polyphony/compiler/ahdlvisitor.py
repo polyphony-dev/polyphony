@@ -29,6 +29,11 @@ class AHDLVisitor(object):
         for var in ahdl.varlist:
             self.visit(var)
 
+    def visit_AHDL_SLICE(self, ahdl):
+        self.visit(ahdl.var)
+        self.visit(ahdl.hi)
+        self.visit(ahdl.lo)
+
     def visit_AHDL_NOP(self, ahdl):
         pass
 

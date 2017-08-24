@@ -143,6 +143,20 @@ class AHDL_CONCAT(AHDL_EXP):
         return 'AHDL_CONCAT({}, {})'.format(repr(self.varlist), repr(self.op))
 
 
+class AHDL_SLICE(AHDL_EXP):
+    def __init__(self, var, hi, lo):
+        super().__init__()
+        self.var = var
+        self.hi = hi
+        self.lo = lo
+
+    def __str__(self):
+        return '{}[{}:{}]'.format(self.var, self.hi, self.lo)
+
+    def __repr__(self):
+        return 'AHDL_SLICE({}, {}, {})'.format(repr(self.var), repr(self.hi), repr(self.lo))
+
+
 class AHDL_STM(AHDL):
     pass
 
@@ -505,24 +519,26 @@ class AHDL_FUNCTION(AHDL_DECL):
 
 
 class AHDL_MUX(AHDL_DECL):
-    def __init__(self, name, selector, inputs, output):
+    def __init__(self, name, selector, inputs, output, defval):
         super().__init__(name)
         assert isinstance(output, Signal)
         self.selector = selector
         self.inputs = inputs
         self.output = output
+        self.defval = defval
 
     def __str__(self):
         return 'MUX {}'.format(self.name)
 
 
 class AHDL_DEMUX(AHDL_DECL):
-    def __init__(self, name, selector, input, outputs):
+    def __init__(self, name, selector, input, outputs, defval):
         super().__init__(name)
         assert isinstance(input, Signal)
         self.selector = selector
         self.input = input
         self.outputs = outputs
+        self.defval = defval
 
     def __str__(self):
         return 'DEMUX {}'.format(self.name)

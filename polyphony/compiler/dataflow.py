@@ -555,7 +555,8 @@ class DFGBuilder(object):
                             mem_group = arg.symbol()
                             node_groups[mem_group].append(node)
         for group, nodes in node_groups.items():
-            if group.typ.get_memnode().is_immutable():
+            memnode = group.typ.get_memnode()
+            if memnode.is_immutable() or memnode.can_be_reg():
                 continue
             sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
             for i in range(len(sorted_nodes) - 1):

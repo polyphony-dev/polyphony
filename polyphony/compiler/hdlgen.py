@@ -1,10 +1,10 @@
-﻿from collections import deque
+﻿from collections import defaultdict, deque
 from .env import env
 from .ir import Ctx, CONST
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .hdlmoduleinfo import HDLModuleInfo, FIFOModuleInfo
-from .hdlmemport import HDLMemPortMaker, HDLRegArrayPortMaker
+from .hdlmemport import HDLMemPortMaker, HDLTuplePortMaker, HDLRegArrayPortMaker
 from .hdlinterface import *
 from .memref import *
 from logging import getLogger
@@ -77,10 +77,14 @@ class HDLModuleBuilder(object):
                 continue
             info = callee_scope.module_info
             for inst_name in inst_names:
-                connections = []
+                connections = defaultdict(list)
                 for inf in info.interfaces.values():
                     acc = inf.accessor(inst_name)
-                    connections.append((inf, acc))
+                    connections[''].append((inf, acc))
+                    self.module_info.add_accessor(acc.acc_name, acc)
+                for inf in info.ret_interfaces.values():
+                    acc = inf.accessor(inst_name)
+                    connections['ret'].append((inf, acc))
                     self.module_info.add_accessor(acc.acc_name, acc)
                 self.module_info.add_sub_module(inst_name, info, connections)
 
@@ -161,24 +165,26 @@ class HDLModuleBuilder(object):
         if signal.is_fifo_port():
             if signal.is_input():
                 inf = FIFOReadInterface(signal)
+                self.module_info.add_interface(inf.if_name, inf)
             elif signal.is_output():
                 inf = FIFOWriteInterface(signal)
+                self.module_info.add_ret_interface(inf.if_name, inf)
             else:
                 # internal fifo
                 return
         else:
             assert False
-        self.module_info.add_interface(inf.if_name, inf)
 
     def _add_single_port_interface(self, signal):
         if signal.is_input():
             inf = SingleReadInterface(signal)
+            self.module_info.add_interface(inf.if_name, inf)
         elif signal.is_output():
             inf = SingleWriteInterface(signal)
+            self.module_info.add_ret_interface(inf.if_name, inf)
         else:
             # internal single port
             return
-        self.module_info.add_interface(inf.if_name, inf)
 
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
@@ -205,7 +211,10 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         for memnode in mrg.collect_immutable(scope):
             if not memnode.is_writable():
                 continue
-            HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
+            HDLTuplePortMaker(memnode, scope, self.module_info).make_port()
+        for memnode in mrg.collect_ram(scope):
+            if memnode.can_be_reg():
+                HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
 
         self._add_submodules(scope)
         self._add_roms(scope)
@@ -216,23 +225,17 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         for inf in self.module_info.interfaces.values():
             for stm in inf.reset_stms():
                 self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-        for sig in uses:
-            if sig not in defs:
-                local_accessors = self.module_info.local_readers.values()
-                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-                for acc in accs:
-                    for stm in acc.reset_stms():
-                        self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+        for inf in self.module_info.ret_interfaces.values():
+            for stm in inf.reset_stms():
+                self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+        local_readers = self.module_info.local_readers.values()
+        local_writers = self.module_info.local_writers.values()
+        accs = set(list(local_readers) + list(local_writers))
+        for acc in accs:
+            for stm in acc.reset_stms():
+                self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
         for sig in defs:
-            # reset internal ports
-            if sig.is_memif():
-                local_accessors = self.module_info.local_writers.values()
-                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-                for acc in accs:
-                    for stm in acc.reset_stms():
-                        self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-            # reset internal regs
-            elif sig.is_reg():
+            if sig.is_reg():
                 if sig.is_initializable():
                     v = AHDL_CONST(sig.init_value)
                 else:
@@ -246,24 +249,37 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             params = scope.params[1:]
         else:
             params = scope.params
-        for i, (sym, _, _) in enumerate(params):
+        for i, (sym, copy, _) in enumerate(params):
             if sym.typ.is_int() or sym.typ.is_bool():
                 sig_name = '{}_{}'.format(scope.orig_name, sym.hdl_name())
                 sig = scope.signal(sig_name)
                 inf = SingleReadInterface(sig, sym.hdl_name(), scope.orig_name)
             elif sym.typ.is_list():
                 memnode = sym.typ.get_memnode()
-                inf = RAMBridgeInterface(memnode.name(),
-                                         self.module_info.name,
-                                         memnode.data_width(),
-                                         memnode.addr_width())
-                self.module_info.node2if[memnode] = inf
+                if memnode.can_be_reg():
+                    inf = RegArrayInterface(memnode.name(),
+                                            self.module_info.name,
+                                            memnode.data_width(),
+                                            memnode.length, 'in')
+                    self.module_info.add_interface(inf.if_name, inf)
+                    inf = RegArrayInterface('out_{}'.format(copy.name),
+                                            self.module_info.name,
+                                            memnode.data_width(),
+                                            memnode.length, 'out')
+                    self.module_info.add_ret_interface(inf.if_name, inf)
+                    continue
+                else:
+                    inf = RAMBridgeInterface(memnode.name(),
+                                             self.module_info.name,
+                                             memnode.data_width(),
+                                             memnode.addr_width())
+                    self.module_info.node2if[memnode] = inf
             elif sym.typ.is_tuple():
                 memnode = sym.typ.get_memnode()
-                inf = RegArrayInterface(memnode.name(),
-                                        self.module_info.name,
-                                        memnode.data_width(),
-                                        memnode.length)
+                inf = TupleInterface(memnode.name(),
+                                     self.module_info.name,
+                                     memnode.data_width(),
+                                     memnode.length)
             else:
                 assert False
             self.module_info.add_interface(inf.if_name, inf)
@@ -273,7 +289,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             sig_name = '{}_out_0'.format(scope.orig_name)
             sig = scope.signal(sig_name)
             inf = SingleWriteInterface(sig, 'out_0', scope.orig_name)
-            self.module_info.add_interface(inf.if_name, inf)
+            self.module_info.add_ret_interface(inf.if_name, inf)
         elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')
 
@@ -302,27 +318,37 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         for memnode in mrg.collect_immutable(scope):
             if not memnode.is_writable():
                 continue
-            HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
+            HDLTuplePortMaker(memnode, scope, self.module_info).make_port()
+        for memnode in mrg.collect_ram(scope):
+            if memnode.can_be_reg():
+                HDLRegArrayPortMaker(memnode, scope, self.module_info).make_port()
 
         self._add_submodules(scope)
         for sym, cp, _ in scope.params:
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
                 mod_scope = sym.typ.get_scope()
                 info = mod_scope.module_info
-                connections = []
+                connections = defaultdict(list)
                 for inf in info.interfaces.values():
                     accessor = inf.accessor(cp.name)
-                    connections.append((inf, accessor))
+                    connections[''].append((inf, accessor))
+                    self.module_info.add_accessor(accessor.acc_name, accessor)
+                for inf in info.ret_interfaces.values():
+                    accessor = inf.accessor(cp.name)
+                    connections['ret'].append((inf, accessor))
                     self.module_info.add_accessor(accessor.acc_name, accessor)
                 self.module_info.add_sub_module(cp.name, info, connections)
         for acc in self.module_info.accessors.values():
             acc_mod = accessor2module(acc)
             if acc_mod:
-                connections = []
+                connections = defaultdict(list)
                 for inf in acc_mod.interfaces.values():
                     inf_acc = inf.accessor(acc.inst_name)
-                    connections.append((inf, inf_acc))
-                    self.module_info.add_sub_module(inf_acc.acc_name, acc_mod, connections, acc_mod.param_map)
+                    connections[''].append((inf, inf_acc))
+                for inf in acc_mod.ret_interfaces.values():
+                    inf_acc = inf.accessor(acc.inst_name)
+                    connections['ret'].append((inf, inf_acc))
+                self.module_info.add_sub_module(inf_acc.acc_name, acc_mod, connections, acc_mod.param_map)
             for stm in acc.reset_stms():
                 self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
 
@@ -377,7 +403,8 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             self.module_info.add_local_writer(writer.acc_name, writer)
             acc = mod.inf.accessor('')
             self.module_info.add_accessor(acc.acc_name, acc)
-            connections = [(mod.inf, acc)]
+            connections = defaultdict(list)
+            connections[''] = [(mod.inf, acc)]
             self.module_info.add_sub_module(signal.name, mod, connections, mod.param_map)
             ports = reader.ports.all() + writer.ports.all()
             for p in ports:
@@ -400,6 +427,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         self._add_submodules(worker)
         HDLMemPortMaker(mrg.collect_ram(worker), worker, self.module_info).make_port_all()
 
+        for memnode in mrg.collect_ram(worker):
+            if memnode.can_be_reg():
+                HDLRegArrayPortMaker(memnode, worker, self.module_info).make_port()
+
         self._add_roms(worker)
         self.module_info.add_fsm_stg(worker.orig_name, worker.stgs)
         self._add_reset_stms_for_worker(worker, defs, uses, outputs)
@@ -411,6 +442,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         for sig in outputs:
             # reset output ports
             infs = [inf for inf in self.module_info.interfaces.values() if inf.signal is sig]
+            for inf in infs:
+                for stm in inf.reset_stms():
+                    self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
+            infs = [inf for inf in self.module_info.ret_interfaces.values() if inf.signal is sig]
             for inf in infs:
                 for stm in inf.reset_stms():
                     self.module_info.add_fsm_reset_stm(worker.orig_name, stm)

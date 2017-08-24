@@ -457,7 +457,7 @@ class MSTORE(IRExp):
         self.exp = exp
 
     def __str__(self):
-        return '{}[{}] = {}'.format(self.mem, self.offset, self.exp)
+        return 'mstore({}[{}], {})'.format(self.mem, self.offset, self.exp)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MSTORE):
@@ -919,10 +919,14 @@ def expr2ir(expr, name=None, scope=None):
         return CONST(expr)
     elif isinstance(expr, list):
         items = [expr2ir(e) for e in expr]
-        return ARRAY(items)
+        ar = ARRAY(items)
+        ar.sym = scope.add_temp('@array')
+        return ar
     elif isinstance(expr, tuple):
         items = [expr2ir(e) for e in expr]
-        return ARRAY(items, is_mutable=False)
+        ar = ARRAY(items, is_mutable=False)
+        ar.sym = scope.add_temp('@array')
+        return ar
     else:
         if inspect.isclass(expr):
             if expr.__module__ == 'polyphony.typing':

@@ -680,7 +680,7 @@ class PureFuncExecutor(ConstantOptBase):
         assert ir.func_scope in env.runtime_info.pyfuncs
         pyfunc = env.runtime_info.pyfuncs[ir.func_scope]
         expr = pyfunc(*args)
-        return expr2ir(expr)
+        return expr2ir(expr, scope=self.scope)
 
     def visit_SYSCALL(self, ir):
         return super().visit_CALL(ir)
@@ -695,3 +695,12 @@ class PureFuncExecutor(ConstantOptBase):
             source = memnode.single_source()
             if source.is_pure() and not source.initstm:  # and not memnode.preds:
                 source.initstm = ir
+                if ir.src.items[0].is_a(CONST):
+                    item_t = Type.from_expr(ir.src.items[0].value, self.scope)
+                else:
+                    assert False
+                if ir.src.is_mutable:
+                    t = Type.list(item_t, source)
+                else:
+                    t = Type.tuple(item_t, source, len(ir.src.items))
+                ir.src.sym.set_type(t)

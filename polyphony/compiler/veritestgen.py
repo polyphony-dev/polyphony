@@ -93,12 +93,17 @@ class VerilogTestGen(VerilogCodeGen):
         formats = []
         args = ['$time']
 
-        for name, info, connections, _, in self.module_info.sub_modules.values():
+        for name, info, _, _, in self.module_info.sub_modules.values():
             if isinstance(info, RAMModuleInfo):
                 continue
             if not info.interfaces:
                 continue
             for inf in info.interfaces.values():
+                if isinstance(inf, SinglePortInterface):
+                    accessor = inf.accessor(name)
+                    ports = accessor.ports.all()
+                    add_ports(ports)
+            for inf in info.ret_interfaces.values():
                 if isinstance(inf, SinglePortInterface):
                     accessor = inf.accessor(name)
                     ports = accessor.ports.all()

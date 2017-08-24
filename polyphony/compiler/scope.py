@@ -408,7 +408,7 @@ class Scope(Tagged):
             new_sym = self.symbols[new_name]
         else:
             new_sym = self.add_sym(new_name, set(orig_sym.tags))
-            new_sym.typ = orig_sym.typ
+            new_sym.typ = orig_sym.typ.clone()
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:
@@ -576,6 +576,13 @@ class SymbolReplacer(IRVisitor):
             ir.attr = self.sym_map[ir.attr]
         else:
             logger.debug('WARNING: not found {}'.format(ir.attr))
+
+    def visit_ARRAY(self, ir):
+        if ir.sym in self.sym_map:
+            ir.sym = self.sym_map[ir.sym]
+        for item in ir.items:
+            self.visit(item)
+        self.visit(ir.repeat)
 
 
 def write_dot(scope, tag):
