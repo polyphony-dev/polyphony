@@ -118,7 +118,7 @@ class ImportVisitor(ast.NodeVisitor):
         for nm in node.names:
             if nm.name == '*':
                 for imp_name in from_scope.all_imports:
-                    imp_sym = from_scope.find_sym(nm.name)
+                    imp_sym = from_scope.find_sym(imp_name)
                     import_to_scope(imp_sym)
                 break
             else:
@@ -526,7 +526,7 @@ class CodeVisitor(ast.NodeVisitor):
                         if not (item.is_a(CONST) and isinstance(item.value, str)):
                             fail((self.current_scope, node.lineno),
                                  Errors.MUST_BE_X, ['string literal'])
-                        imp_name = self.current_scope.name + '.' + item.value
+                        imp_name = item.value
                         self.current_scope.all_imports.append(imp_name)
                 else:
                     fail((self.current_scope, node.lineno),

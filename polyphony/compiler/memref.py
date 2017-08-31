@@ -663,7 +663,7 @@ class MemRefGraphBuilder(IRVisitor):
                 worklist.extend(list(uses))
             # collect the access to a global list variable
             for sym in usedef.get_all_use_syms():
-                if (sym.scope.is_global() or sym.scope.is_class()) and sym.typ.is_seq():
+                if (sym.scope.is_namespace() or sym.scope.is_class()) and sym.typ.is_seq():
                     uses = usedef.get_stms_using(sym)
                     worklist.extend(list(uses))
 
@@ -806,7 +806,7 @@ class MemRefGraphBuilder(IRVisitor):
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
         if memsym.typ.is_seq():
-            if memsym.scope.is_global() or (ir.mem.is_a(ATTR) and ir.mem.tail().typ.is_class()):
+            if memsym.scope.is_namespace() or (ir.mem.is_a(ATTR) and ir.mem.tail().typ.is_class()):
                 memsym = self.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)

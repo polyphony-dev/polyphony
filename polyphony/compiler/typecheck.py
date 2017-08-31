@@ -282,7 +282,7 @@ class TypePropagation(IRVisitor):
         item_typs = [self.visit(item) for item in ir.items]
 
         if item_typs and all([Type.is_same(item_typs[0], item_t) for item_t in item_typs]):
-            if item_typs[0].is_scalar():
+            if item_typs[0].is_scalar() and not item_typs[0].is_str():
                 maxwidth = max([item_t.get_width() for item_t in item_typs])
                 signed = any([item_t.get_signed() for item_t in item_typs])
                 item_t = Type.int(maxwidth, signed)
@@ -642,6 +642,8 @@ class TypeChecker(IRVisitor):
         return mem_t
 
     def visit_ARRAY(self, ir):
+        if self.current_stm.dst.is_a(TEMP) and self.current_stm.dst.symbol().name == '__all__':
+            return ir.sym.typ
         for item in ir.items:
             item_type = self.visit(item)
             if not item_type.is_int():

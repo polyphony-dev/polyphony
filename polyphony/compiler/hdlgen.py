@@ -14,7 +14,7 @@ logger = getLogger(__name__)
 class HDLModuleBuilder(object):
     @classmethod
     def create(cls, scope):
-        if scope.is_global():
+        if scope.is_namespace():
             return None
         elif scope.is_module():
             return HDLTopModuleBuilder()

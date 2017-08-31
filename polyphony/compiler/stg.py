@@ -128,7 +128,7 @@ class STGBuilder(object):
         self.mrg = env.memref_graph
 
     def process(self, scope):
-        if scope.is_global() or scope.is_class() or scope.is_lib():
+        if scope.is_namespace() or scope.is_class() or scope.is_lib():
             return
         self.scope = scope
         self.scope.blk2state = {}

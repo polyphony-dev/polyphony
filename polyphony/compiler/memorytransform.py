@@ -42,7 +42,7 @@ class MemoryRenamer(object):
                 block.stms.remove(phi)
 
     def process(self, scope):
-        if scope.is_global():
+        if scope.is_namespace():
             return
         self.scope = scope
         usedef = scope.usedef

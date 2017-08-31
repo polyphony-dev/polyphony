@@ -103,7 +103,7 @@ class PortConverter(IRTransformer):
             for w, args in m.workers:
                 typeprop.process(w)
             for caller in env.call_graph.preds(m):
-                if caller.is_global():
+                if caller.is_namespace():
                     continue
                 typeprop.process(caller)
 

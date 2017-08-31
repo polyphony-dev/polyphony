@@ -17,7 +17,7 @@ class SSATransformerBase(object):
         pass
 
     def process(self, scope):
-        if scope.is_class() or scope.is_global():
+        if scope.is_class() or scope.is_namespace():
             return
         self.scope = scope
         self.dominance_frontier = {}
@@ -119,7 +119,7 @@ class SSATransformerBase(object):
             if self._need_rename(var.symbol(), var.qualified_symbol()):
                 new_name = var.symbol().name + '#' + str(version)
                 var_sym = var.symbol()
-                new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
+                new_sym = self.scope.inherit_sym(var_sym, new_name)
                 logger.debug(str(new_sym) + ' ancestor is ' + str(var.symbol()))
                 var.set_symbol(new_sym)
 
@@ -346,7 +346,7 @@ class TupleSSATransformer(SSATransformerBase):
         super().__init__()
 
     def process(self, scope):
-        if scope.is_class() or scope.is_global():
+        if scope.is_class() or scope.is_namespace():
             return
         super().process(scope)
         UseDefDetector().process(scope)
@@ -393,6 +393,8 @@ class TupleSSATransformer(SSATransformerBase):
         pass
 
     def _need_rename(self, sym, qsym):
+        if sym.scope.is_namespace() or sym.scope.is_class():
+            return False
         return sym.typ.is_tuple() and not sym.is_param()
 
 
@@ -401,7 +403,7 @@ class ObjectSSATransformer(SSATransformerBase):
         super().__init__()
 
     def process(self, scope):
-        if scope.is_class() or scope.is_global():
+        if scope.is_class() or scope.is_namespace():
             return
         super().process(scope)
         self._process_use_phi()
@@ -445,7 +447,7 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.name == env.self_name:
             return False
-        if sym.scope.is_module() or sym.scope.is_global():
+        if sym.scope.is_module() or sym.scope.is_namespace():
             return False
         if sym.is_param():
             return False
