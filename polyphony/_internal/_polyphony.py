@@ -1,4 +1,4 @@
-__version__ = '0.3.1'  # type: str
+__version__ = '0.3.2'  # type: str
 __all__ = [
     'testbench',
     'pure',
