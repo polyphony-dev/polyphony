@@ -157,7 +157,7 @@ class RefNode(object):
 
     def clone(self, orig_scope, new_scope):
         assert self.sym.scope is orig_scope
-        new_sym = new_scope.clone_symbols[self.sym]
+        new_sym = new_scope.cloned_symbols[self.sym]
         new_node = self.__class__(new_sym, new_scope)
         new_node.preds = self.preds[:]
         new_node.succs = self.succs[:]
@@ -277,6 +277,18 @@ class MemTrait(object):
 
     def addr_width(self):
         return (self.length - 1).bit_length() + 1  # +1 means sign bit
+
+    def can_be_reg(self):
+        if self.length == -1:
+            src = self.single_source()
+            if src:
+                self.length = src.length
+        assert self.length > 0
+        if not self.is_writable():
+            return False
+        if self.is_immutable():
+            return False
+        return (self.data_width() * self.length) < env.config.internal_ram_threshold_size
 
 
 class MemRefNode(RefNode, MemTrait):
@@ -520,7 +532,10 @@ class MemRefGraph(object):
                 yield node
 
     def collect_readonly_sink(self, scope):
-        for node in self.scope_nodes(scope):
+        nodes = list(self.scope_nodes(scope))
+        top_nodes = list(self.scope_nodes(Scope.global_scope()))
+        nodes.extend(top_nodes)
+        for node in nodes:
             if isinstance(node, MemRefNode) and not node.is_writable() and node.is_sink():
                 yield node
 
@@ -552,7 +567,7 @@ class MemRefGraph(object):
         return node.sym in self.nodes
 
     def clone_subgraph(self, orig, new):
-        assert new.clone_symbols
+        #assert new.cloned_symbols
         new_nodes = []
         node_map = {}
         for node in self.scope_nodes(orig):
@@ -567,7 +582,7 @@ class MemRefGraph(object):
                 node_map[node] = node
         for new_node in new_nodes:
             if new_node.initstm:
-                new_node.initstm = new.clone_stms[new_node.initstm]
+                new_node.initstm = new.cloned_stms[new_node.initstm]
             self.add_node(new_node)
             succs = new_node.succs[:]
             new_node.succs = []
@@ -615,7 +630,7 @@ class MemRefGraphBuilder(IRVisitor):
                             stm.dst.symbol().typ.is_seq() and
                             stm not in stms):
                         stms.append(stm)
-                elif stm.is_a(PHI):
+                elif stm.is_a(PHIBase):
                     if stm.var.is_a(TEMP) and stm.var.sym.typ.is_seq():
                         stms.append(stm)
         return stms
@@ -631,6 +646,8 @@ class MemRefGraphBuilder(IRVisitor):
                     pass
 
             usedef = s.usedef
+            if not usedef:
+                continue
             # collect the access to a local list variable
             stms = self._collect_def_mem_stms(s)
             worklist.extend(stms)
@@ -638,7 +655,7 @@ class MemRefGraphBuilder(IRVisitor):
                 logger.debug('!!! mem def stm ' + str(stm))
                 if stm.is_a(MOVE):
                     memsym = stm.dst.symbol()
-                elif stm.is_a(PHI):
+                elif stm.is_a(PHIBase):
                     memsym = stm.var.sym
 
                 uses = usedef.get_stms_using(memsym)
@@ -646,7 +663,7 @@ class MemRefGraphBuilder(IRVisitor):
                 worklist.extend(list(uses))
             # collect the access to a global list variable
             for sym in usedef.get_all_use_syms():
-                if (sym.scope.is_global() or sym.scope.is_class()) and sym.typ.is_seq():
+                if (sym.scope.is_namespace() or sym.scope.is_class()) and sym.typ.is_seq():
                     uses = usedef.get_stms_using(sym)
                     worklist.extend(list(uses))
 
@@ -789,7 +806,7 @@ class MemRefGraphBuilder(IRVisitor):
     def visit_MREF(self, ir):
         memsym = ir.mem.symbol()
         if memsym.typ.is_seq():
-            if memsym.scope.is_global() or (ir.mem.is_a(ATTR) and ir.mem.tail().typ.is_class()):
+            if memsym.scope.is_namespace() or (ir.mem.is_a(ATTR) and ir.mem.tail().typ.is_class()):
                 memsym = self.scope.inherit_sym(memsym, memsym.orig_name() + '#0')
                 self.mrg.add_node(MemRefNode(memsym, self.scope))
                 self._append_edge(memsym.ancestor, memsym)
@@ -869,6 +886,13 @@ class MemRefGraphBuilder(IRVisitor):
             else:
                 mem_t = Type.tuple(elem_t, memnode, ir.var.sym.typ.get_length())
             self._set_type(ir.var.sym, mem_t)
+
+    def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
+
+    def visit_LPHI(self, ir):
+        self.visit_PHI(ir)
+
 
 class MemInstanceGraphBuilder(object):
     def __init__(self):

@@ -515,7 +515,7 @@ class RAMAccessor(Accessor):
                 return (AHDL_MOVE(req, AHDL_CONST(0)), )
 
 
-class RegArrayInterface(Interface):
+class TupleInterface(Interface):
     def __init__(self, name, owner_name, data_width, length):
         super().__init__(name, owner_name)
         self.data_width = data_width
@@ -525,7 +525,7 @@ class RegArrayInterface(Interface):
             self.ports.append(Port(pname, data_width, 'in', True))
 
     def accessor(self, inst_name=''):
-        return RegArrayAccessor(self, inst_name)
+        return TupleAccessor(self, inst_name)
 
     def port_name(self, port):
         return '{}_{}{}'.format(self.if_owner_name, self.if_name, port.name)
@@ -534,7 +534,7 @@ class RegArrayInterface(Interface):
         return []
 
 
-class RegArrayAccessor(IOAccessor):
+class TupleAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
         self.ports = inf.ports.clone()
@@ -550,6 +550,69 @@ class RegArrayAccessor(IOAccessor):
 
     def reset_stms(self):
         return []
+
+class RegArrayInterface(Interface):
+    def __init__(self, name, owner_name, data_width, length, direction='in', subscript=False):
+        super().__init__(name, owner_name)
+        self.data_width = data_width
+        self.length = length
+        self.subscript = subscript
+        for i in range(length):
+            pname = '{}'.format(i)
+            self.ports.append(Port(pname, data_width, direction, True))
+
+    def accessor(self, inst_name=''):
+        return RegArrayAccessor(self, inst_name)
+
+    def port_name(self, port):
+        if self.subscript:
+            return '{}_{}[{}]'.format(self.if_owner_name, self.if_name, port.name)
+        else:
+            return '{}_{}{}'.format(self.if_owner_name, self.if_name, port.name)
+
+    def reset_stms(self):
+        return []
+
+    def regs(self):
+        return []
+
+    def nets(self):
+        return self.ports.all()
+
+class RegArrayAccessor(IOAccessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf, inst_name)
+        self.ports = inf.ports.clone()
+
+    def port_name(self, port):
+        if self.inf.subscript:
+            return '{}[{}]'.format(self.acc_name, port.name)
+        else:
+            return '{}{}'.format(self.acc_name, port.name)
+
+    def regs(self):
+        return []
+
+    def nets(self):
+        return self.ports.all()
+
+    def reset_stms(self):
+        return []
+
+    def read_sequence(self, step, dst):
+        assert dst.is_a(AHDL_MEMVAR)
+        memnode = dst.memnode.single_source()
+        sig = list(memnode.scopes)[0].signal(memnode.name())
+        moves = []
+        for i, p in enumerate(self.ports.outports()):
+            src = AHDL_SYMBOL('{}{}'.format(self.acc_name, p.name))
+            idst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, memnode, Ctx.STORE), AHDL_CONST(i))
+            mv = AHDL_MOVE(idst, src)
+            moves.append(mv)
+        return moves
+
+    def write_sequence(self, step, src):
+        assert src.is_a(AHDL_MEMVAR)
 
 
 def fifo_read_seq(inf, step, dst):

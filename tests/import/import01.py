@@ -4,12 +4,16 @@ import polyphony.timing
 import polyphony.typing
 
 
+def import01():
+    return (polyphony.__name__ == 'polyphony' and
+            polyphony.io.__name__ == 'polyphony.io' and
+            polyphony.timing.__name__ == 'polyphony.timing' and
+            polyphony.typing.__name__ == 'polyphony.typing')
+
+
 @polyphony.testbench
 def test():
-    assert polyphony.__name__ == 'polyphony'
-    assert polyphony.io.__name__ == 'polyphony.io'
-    assert polyphony.timing.__name__ == 'polyphony.timing'
-    assert polyphony.typing.__name__ == 'polyphony.typing'
+    assert True == import01()
 
 
 test()

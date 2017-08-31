@@ -1,74 +1,66 @@
-﻿from .ir import *
-from .irvisitor import IRVisitor
+﻿from .env import env
+from .graph import Graph
+from .ir import *
 from logging import getLogger
 logger = getLogger(__name__)
 
 
 class PHICondResolver(object):
-    def __init__(self):
-        self.count = 0
-
     def process(self, scope):
         self.scope = scope
-
         self._collect_phi()
-        phis = self.phis[:]
-        for phi in phis:
-            self._divide_phi_to_mv(phi)
+        for phis in self.phis.values():
+            if len(phis) > 1:
+                phis = self._sort_phis(phis)
+            if not phis:
+                assert False  # TODO:
+            for phi in phis:
+                if phi.is_a(PHI):
+                    # TODO:
+                    #self._divide_phi_to_mv(phi)
+                    continue
+                elif phi.is_a(LPHI):
+                    self._divide_phi_to_mv(phi)
+                    continue
 
     def _collect_phi(self):
-        self.phis = []
+        self.phis = {}
         for b in self.scope.traverse_blocks():
-            for stm in b.stms:
-                if stm.is_a(PHI):
-                    #if stm.var.sym.is_memory():
-                    #    continue
-                    self.phis.append(stm)
+            phis = b.collect_stms([PHI, LPHI])
+            if phis:
+                self.phis[b] = phis
+
+    def _sort_phis(self, phis):
+        interference_graph = Graph()
+        for phi in phis:
+            interference_graph.add_node(phi)
+            phi_set = set(phis)
+            phi_set.discard(phi)
+            usestms = self.scope.usedef.get_stms_using(phi.var.symbol())
+            usephis = usestms & phi_set
+            if usephis:
+                for stm in usephis:
+                    interference_graph.add_edge(stm, phi)
+        sorted_phis = []
+        for n in interference_graph.bfs_ordered_nodes():
+            sorted_phis.append(n)
+        return sorted_phis
 
     def _divide_phi_to_mv(self, phi):
-        usedef = self.scope.usedef
-        for i, (arg, blk) in enumerate(zip(phi.args, phi.defblks)):
+        for arg, blk, pred in zip(phi.args, phi.defblks, phi.block.preds):
             if not blk:
+                self._insert_mv(phi.var.clone(), arg, pred)
                 continue
             if phi.var.symbol().typ.is_object():
                 continue
-            pred = blk
-            mv = MOVE(phi.var.clone(), arg)
-            mv.lineno = arg.lineno
-            mv.iorder = arg.iorder
-            mv.dst.lineno = arg.lineno
-            assert mv.lineno > 0
-            idx = self._find_stm_insetion_index(pred, mv)
-            pred.insert_stm(idx, mv)
-            logger.debug('PHI divide into ' + str(mv))
-            #update usedef table
-            if arg.is_a(TEMP):
-                usedef.remove_var_use(arg, phi)
-                usedef.add_var_use(mv.src, mv)
-            elif arg.is_a(CONST):
-                usedef.remove_const_use(arg, phi)
-                usedef.add_const_use(mv.src, mv)
-
-            usedef.add_var_def(mv.dst, mv)
-
-        usedef.remove_var_def(phi.var, phi)
+            self._insert_mv(phi.var.clone(), arg, blk)
         phi.block.stms.remove(phi)
-        self.phis.remove(phi)
-        #assert len(usedef.get_def_stms_by_sym(phi.var.sym)) == len(phi.argv())
 
-    def _find_stm_insetion_index(self, block, target_stm):
-        for i, stm in enumerate(block.stms):
-            if stm.iorder > target_stm.iorder:
-                return i
-        return -1
+    def _insert_mv(self, var, arg, blk):
+        mv = MOVE(var, arg)
+        mv.lineno = arg.lineno
+        mv.dst.lineno = arg.lineno
+        assert mv.lineno > 0
+        blk.insert_stm(-1, mv)
+        logger.debug('PHI divide into ' + str(mv) + ' ' + blk.name)
 
-
-class StmOrdering(IRVisitor):
-    def visit(self, ir):
-        method = 'visit_' + ir.__class__.__name__
-        visitor = getattr(self, method, None)
-        if ir.is_a(IRStm):
-            ir.iorder = ir.block.stms.index(ir)
-        else:
-            ir.iorder = self.current_stm.iorder
-        visitor(ir)

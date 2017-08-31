@@ -18,10 +18,13 @@ class IOTransformer(AHDLVisitor):
 
     def visit_AHDL_MODULECALL_SEQ(self, ahdl, step, step_n):
         _, sub_info, connections, _ = self.module_info.sub_modules[ahdl.instance_name]
-        assert len(connections) >= 1 + len(ahdl.args) + len(ahdl.returns)
-        callacc = connections[0][1]
-        argaccs = [acc for inf, acc in connections[1:len(ahdl.args) + 1]]
-        retaccs = [acc for inf, acc in connections[len(ahdl.args) + 1:]]
+        assert len(connections['']) + len(connections['ret']) >= 1 + len(ahdl.args) + len(ahdl.returns)
+        conns = connections['']
+        callacc = conns[0][1]
+        argaccs = []
+        argaccs = [acc for inf, acc in conns[1:]]
+        ret_conns = connections['ret']
+        retaccs = [acc for inf, acc in ret_conns]
         return callacc.call_sequence(step, step_n, argaccs, retaccs, ahdl, self.module_info.scope)
 
     def visit_AHDL_CALLEE_PROLOG_SEQ(self, ahdl, step, step_n):
@@ -34,7 +37,7 @@ class IOTransformer(AHDLVisitor):
 
     def visit_AHDL_IO_READ_SEQ(self, ahdl, step, step_n):
         if ahdl.is_self:
-            io = self.module_info.interfaces[ahdl.io.sig.name]
+            io = self.module_info.find_interface(ahdl.io.sig.name)
         elif ahdl.io.sig.is_extport():
             io = self.module_info.accessors[ahdl.io.sig.name]
         else:
@@ -43,7 +46,7 @@ class IOTransformer(AHDLVisitor):
 
     def visit_AHDL_IO_WRITE_SEQ(self, ahdl, step, step_n):
         if ahdl.is_self:
-            io = self.module_info.interfaces[ahdl.io.sig.name]
+            io = self.module_info.find_interface(ahdl.io.sig.name)
         elif ahdl.io.sig.is_extport():
             io = self.module_info.accessors[ahdl.io.sig.name]
         else:
@@ -94,7 +97,7 @@ class IOTransformer(AHDLVisitor):
                     assert False
         self.current_parent.codes = list(seq) + self.current_parent.codes
 
-    def visit_AHDL_TRANSITION_IF(self, ahdl):
+    def visit_AHDL_IF(self, ahdl):
         for cond in ahdl.conds:
             if cond:
                 self.visit(cond)

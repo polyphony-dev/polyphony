@@ -3,31 +3,36 @@ import os
 import sys
 from .ahdlusedef import AHDLUseDefDetector
 from .bitwidth import BitwidthReducer
-from .block import BlockReducer, PathExpTracer
 from .builtin import builtin_symbols
 from .callgraph import CallGraphBuilder
+from .cfgopt import BlockReducer, PathExpTracer
+from .cfgopt import HyperBlockBuilder
 from .common import read_source
 from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
+from .deadcode import DeadCodeEliminator
 from .driver import Driver
 from .env import env
 from .errors import CompileError, InterpretError
 from .hdlgen import HDLModuleBuilder
 from .iftransform import IfTransformer
-from .inlineopt import InlineOpt, FlattenFieldAccess, AliasReplacer, ObjectHierarchyCopier
+from .inlineopt import InlineOpt
+from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
+from .inlineopt import AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
-from .instantiator import EarlyModuleInstantiator
+from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
 from .iotransformer import IOTransformer
 from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
 from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
-from .phiresolve import PHICondResolver, StmOrdering
+from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
 from .pure import interpret, PureCtorBuilder, PureFuncExecutor
-from .quadruplet import QuadrupleMaker
+from .quadruplet import EarlyQuadrupleMaker
+from .quadruplet import LateQuadrupleMaker
 from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
 from .scheduler import Scheduler
@@ -77,7 +82,7 @@ def preprocess_global(driver):
 def callgraph(driver):
     unused_scopes = CallGraphBuilder().process_all()
     for s in unused_scopes:
-        if Scope.is_unremovable(s):
+        if env.compile_phase < env.PHASE_3 and Scope.is_unremovable(s):
             continue
         driver.remove_scope(s)
         Scope.destroy(s)
@@ -95,7 +100,15 @@ def pathexp(driver, scope):
     PathExpTracer().process(scope)
 
 
-def buildpurector(driver, scope):
+def hyperblock(driver, scope):
+    if not env.enable_hyperblock:
+        return
+    if scope.is_testbench():
+        return
+    HyperBlockBuilder().process(scope)
+
+
+def buildpurector(driver):
     new_ctors = PureCtorBuilder().process_all()
     for ctor in new_ctors:
         assert ctor.name in env.scopes
@@ -114,8 +127,12 @@ def convport(driver):
     PortConverter().process_all()
 
 
-def quadruple(driver, scope):
-    QuadrupleMaker().process(scope)
+def earlyquadruple(driver, scope):
+    EarlyQuadrupleMaker().process(scope)
+
+
+def latequadruple(driver, scope):
+    LateQuadrupleMaker().process(scope)
 
 
 def usedef(driver, scope):
@@ -124,10 +141,6 @@ def usedef(driver, scope):
 
 def scalarssa(driver, scope):
     ScalarSSATransformer().process(scope)
-
-
-def stmordering(driver, scope):
-    StmOrdering().process(scope)
 
 
 def phi(driver, scope):
@@ -190,6 +203,23 @@ def earlyinstantiate(driver):
         driver.insert_scope(module)
         assert module.is_module()
 
+    new_workers, orig_workers = EarlyWorkerInstantiator().process_all()
+    for worker in new_workers:
+        assert worker.name in env.scopes
+        driver.insert_scope(worker)
+        assert worker.is_worker()
+    for orig_worker in orig_workers:
+        driver.remove_scope(orig_worker)
+        Scope.destroy(orig_worker)
+    modules = [scope for scope in env.scopes.values() if scope.is_module()]
+    for m in modules:
+        if m.find_ctor().is_pure() and not m.is_instantiated():
+            for child in m.children:
+                driver.remove_scope(child)
+                Scope.destroy(child)
+            driver.remove_scope(m)
+            Scope.destroy(m)
+
 
 def instantiate(driver):
     new_modules = ModuleInstantiator().process_all()
@@ -204,6 +234,7 @@ def instantiate(driver):
                 continue
             if not (child.is_ctor() or child.is_worker()):
                 continue
+            usedef(driver, child)
             execpure(driver, child)
             constopt(driver, child)
 
@@ -216,6 +247,7 @@ def instantiate(driver):
         driver.insert_scope(worker)
 
         assert worker.is_worker()
+        usedef(driver, worker)
         execpure(driver, worker)
         constopt(driver, worker)
     callgraph(driver)
@@ -234,6 +266,10 @@ def inlineopt(driver):
     callgraph(driver)
 
 
+def flattenmodule(driver, scope):
+    FlattenModule(driver).process(scope)
+
+
 def scalarize(driver, scope):
     TupleSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
@@ -241,6 +277,8 @@ def scalarize(driver, scope):
     ObjectSSATransformer().process(scope)
     usedef(driver, scope)
     AliasReplacer().process(scope)
+
+    FlattenObjectArgs().process(scope)
     FlattenFieldAccess().process(scope)
 
 
@@ -262,6 +300,10 @@ def copyopt(driver, scope):
 
 def loop(driver, scope):
     LoopDetector().process(scope)
+
+
+def deadcode(driver, scope):
+    DeadCodeEliminator().process(scope)
 
 
 def dfg(driver, scope):
@@ -324,6 +366,12 @@ def dumpscope(driver, scope):
     driver.logger.debug(str(scope))
 
 
+def dumpcfgimg(driver, scope):
+    from .scope import write_dot
+    if scope.is_function_module() or scope.is_method() or scope.is_module():
+        write_dot(scope, driver.stage)
+
+
 def dumpmrg(driver, scope):
     driver.logger.debug(str(env.memref_graph))
 
@@ -354,6 +402,12 @@ def dumphdl(driver, scope):
     logger.debug(driver.result(scope))
 
 
+def printresouces(driver, scope):
+    if (scope.is_function_module() or scope.is_module()):
+        resources = scope.module_info.resources()
+        print(resources)
+
+
 def compile_plan():
     def dbg(proc):
         return proc if env.dev_debug_mode else None
@@ -369,11 +423,13 @@ def compile_plan():
         iftrans,
         reduceblk,
         dbg(dumpscope),
-        quadruple,
+        earlyquadruple,
+        dbg(dumpscope),
         earlytypeprop,
         dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
+        latequadruple,
         callgraph,
         typecheck,
         flattenport,
@@ -383,18 +439,23 @@ def compile_plan():
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
+        dbg(dumpscope),
         reduceblk,
         pathexp,
         dbg(dumpscope),
         phase(env.PHASE_2),
-        stmordering,
         usedef,
+        flattenmodule,
         scalarize,
         dbg(dumpscope),
         usedef,
         scalarssa,
         dbg(dumpscope),
         usedef,
+        hyperblock,
+        dbg(dumpscope),
+        reduceblk,
+        dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
         usedef,
@@ -415,22 +476,28 @@ def compile_plan():
         constopt,
         dbg(dumpscope),
         execpure,
+        phase(env.PHASE_3),
         instantiate,
         modulecheck,
         dbg(dumpscope),
         convport,
-        dbg(dumpscope),
         usedef,
+        copyopt,
+        usedef,
+        deadcode,
+        dbg(dumpscope),
+        reduceblk,
+        usedef,
+        dbg(dumpscope),
         phi,
         usedef,
         dbg(dumpscope),
-        reduceblk,
         pathexp,
         dbg(dumpscope),
-        phase(env.PHASE_3),
+        phase(env.PHASE_4),
         usedef,
         loop,
-        phase(env.PHASE_4),
+        phase(env.PHASE_5),
         usedef,
         aliasvar,
         dbg(dumpscope),
@@ -455,6 +522,7 @@ def compile_plan():
         dbg(dumpmodule),
         genhdl,
         dbg(dumphdl),
+        dbg(printresouces),
     ]
     plan = [p for p in plan if p is not None]
     return plan
@@ -486,7 +554,8 @@ def setup(src_file, options):
         env.set_current_filename(package_file)
         translator.translate(read_source(package_file), package_name)
     env.set_current_filename(src_file)
-    g = Scope.create(None, env.global_scope_name, {'global', 'namespace'}, lineno=1)
+    g = Scope.create_namespace(None, env.global_scope_name, {'global'})
+    env.push_outermost_scope(g)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
 
@@ -516,7 +585,7 @@ def output_individual(compile_results, output_name, output_dir):
 
     scopes = Scope.get_scopes(with_class=True)
     scopes = [scope for scope in scopes
-              if (scope.is_testbench() or scope.is_module() or scope.is_function_module())]
+              if (scope.is_testbench() or (scope.is_module() and scope.is_instantiated()) or scope.is_function_module())]
     if output_name.endswith('.v'):
         output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:

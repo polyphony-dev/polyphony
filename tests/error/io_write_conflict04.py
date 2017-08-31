@@ -6,7 +6,7 @@ from polyphony.io import Queue
 @module
 class io_write_conflict04:
     def __init__(self):
-        p = Queue(int)
+        p = Queue(int, 'out')
         self.append_worker(self.w, p)
         self.append_worker(self.w, p)
 

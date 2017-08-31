@@ -1,7 +1,5 @@
-﻿from collections import deque
-from .ir import *
-from .dominator import DominatorTreeBuilder
-from .utils import replace_item
+﻿from .ir import *
+from .utils import replace_item, remove_except_one
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -32,6 +30,8 @@ class Block(object):
         self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
         self.path_exp = None
         self.synth_params = self.scope.synth_params.copy()
+        self.parent = None
+        self.is_hyperblock = False
 
     def _str_connection(self):
         s = ''
@@ -73,16 +73,14 @@ class Block(object):
         return self.name
 
     def __lt__(self, other):
-        return int(self.order) < int(other.order)
+        return self.order < other.order
 
     def connect(self, next_block):
         self.succs.append(next_block)
         next_block.preds.append(self)
 
     def connect_loop(self, next_block):
-        self.succs.append(next_block)
-        next_block.preds.append(self)
-
+        self.connect(next_block)
         self.succs_loop.append(next_block)
         next_block.preds_loop.append(self)
 
@@ -105,7 +103,7 @@ class Block(object):
             return None
 
     def replace_succ(self, old, new):
-        replace_item(self.succs, old, new)
+        replace_item(self.succs, old, new, all=True)
         if isinstance(new, CompositBlock):
             return
         if self.stms:
@@ -125,13 +123,13 @@ class Block(object):
                 self._convert_if_unidirectional(jmp)
 
     def replace_succ_loop(self, old, new):
-        replace_item(self.succs_loop, old, new)
+        replace_item(self.succs_loop, old, new, all=True)
 
     def replace_pred(self, old, new):
-        replace_item(self.preds, old, new)
+        replace_item(self.preds, old, new, all=True)
 
     def replace_pred_loop(self, old, new):
-        replace_item(self.preds_loop, old, new)
+        replace_item(self.preds_loop, old, new, all=True)
 
     def remove_pred(self, pred):
         assert pred in self.preds
@@ -174,6 +172,7 @@ class Block(object):
         b.preds      = list(self.preds)
         b.preds_loop = list(self.preds_loop)
         b.synth_params = self.synth_params.copy()
+        b.is_hyperblock = self.is_hyperblock
         return b
 
     def reconnect(self, blk_map):
@@ -206,12 +205,17 @@ class Block(object):
             newjmp.block = self
             self.stms[-1] = newjmp
             self.succs = [targets[0]]
-            targets[0].path_exp = None
+            targets[0].preds = remove_except_one(targets[0].preds, self)
+            targets[0].path_exp = self.path_exp
         else:
             return
 
+        if self.is_hyperblock:
+            return
         usedef = self.scope.usedef
         for cond in conds:
+            if cond.is_a(CONST):
+                continue
             defstms = usedef.get_stms_defining(cond.symbol())
             assert len(defstms) == 1
             stm = defstms.pop()
@@ -238,6 +242,9 @@ class CompositBlock(Block):
         self.outer_uses = None
         self.inner_defs = None
         self.inner_uses = None
+        head.parent = self
+        for body in bodies:
+            body.parent = self
 
     def __str__(self):
         s = 'CompositBlock: (' + str(self.order) + ') ' + str(self.name) + '\n'
@@ -320,183 +327,3 @@ class CompositBlock(Block):
             self.succs[i] = blk_map[succ]
         for i, pred in enumerate(self.preds):
             self.preds[i] = blk_map[pred]
-
-
-def can_merge_synth_params(params1, params2):
-    # TODO
-    return params1 == params2
-
-
-class BlockReducer(object):
-    def process(self, scope):
-        if scope.is_class():
-            return
-        self.removed_blks = []
-        self._merge_unidirectional_block(scope)
-        self._remove_empty_block(scope)
-        self._replace_cjump(scope)
-        for blk in scope.traverse_blocks():
-            blk.order = -1
-        Block.set_order(scope.entry_block, 0)
-
-        # update scope's paths
-        if self.removed_blks:
-            for r in self.removed_blks:
-                for p in scope.paths:
-                    if r in p:
-                        p.remove(r)
-
-    def _replace_cjump(self, scope):
-        for block in scope.traverse_blocks():
-            for stm in block.stms:
-                if stm.is_a(CJUMP) and stm.true is stm.false:
-                    idx = block.stms.index(stm)
-                    block.stms[idx] = JUMP(stm.true)
-                    block.succs = [stm.true]
-
-    def _merge_unidirectional_block(self, scope):
-        for block in scope.traverse_blocks():
-            #check unidirectional
-            # TODO: any jump.typ
-            if (len(block.preds) == 1 and
-                    len(block.preds[0].succs) == 1 and
-                    not block.preds[0].stms[-1].typ == 'C' and
-                    can_merge_synth_params(block.synth_params, block.preds[0].synth_params)):
-                pred = block.preds[0]
-                assert pred.stms[-1].is_a(JUMP)
-                assert pred.succs[0] is block
-                assert not pred.succs_loop
-
-                pred.stms.pop()  # remove useless jump
-                # merge stms
-                for stm in block.stms:
-                    pred.append_stm(stm)
-
-                #deal with block links
-                for succ in block.succs:
-                    succ.replace_pred(block, pred)
-                    succ.replace_pred_loop(block, pred)
-                pred.succs = block.succs
-                pred.succs_loop = block.succs_loop
-                if block is scope.exit_block:
-                    scope.exit_block = pred
-
-                self.removed_blks.append(block)
-
-    def _remove_empty_block(self, scope):
-        for block in scope.traverse_blocks():
-            if len(block.stms) > 1:
-                continue
-            if block is scope.entry_block:
-                continue
-            if block.stms and block.stms[0].is_a(JUMP):
-                assert len(block.succs) == 1
-                succ = block.succs[0]
-                if succ in block.succs_loop:
-                    if len(block.preds) > 1:
-                        # do not remove a convergence loopback block
-                        continue
-                else:
-                    succ.remove_pred(block)
-                    for pred in block.preds:
-                        pred.replace_succ(block, succ)
-                        pred.replace_succ_loop(block, succ)
-                        if pred not in succ.preds:
-                            succ.preds.append(pred)
-                        if pred in block.preds_loop and pred not in succ.preds_loop:
-                            succ.preds_loop.append(pred)
-
-                logger.debug('remove empty block ' + block.name)
-                if block is scope.entry_block:
-                    scope.entry_block = succ
-                self.removed_blks.append(block)
-
-
-class PathExpTracer(object):
-    def process(self, scope):
-        self.scope = scope
-        tree = DominatorTreeBuilder(scope).process()
-        tree.dump()
-        self.tree = tree
-        self.worklist = deque()
-        self.worklist.append(scope.entry_block)
-        while self.worklist:
-            blk = self.worklist.popleft()
-            self.traverse_dtree(blk)
-
-    def traverse_dtree(self, blk):
-        if not blk.stms:
-            return
-        children = self.tree.get_children_of(blk)
-        jump = blk.stms[-1]
-        if jump.is_a(JUMP):
-            if blk.path_exp:
-                for c in children:
-                    c.path_exp = blk.path_exp
-            # Unlike other jump instructions,
-            # the target of JUMP may be a confluence node
-            if jump.target.path_exp:
-                parent_blk = self.tree.get_parent_of(blk)
-                jump.target.path_exp = parent_blk.path_exp
-            elif jump.target in blk.succs_loop:
-                pass
-            else:
-                jump.target.path_exp = blk.path_exp
-        elif jump.is_a(CJUMP):
-            if blk.path_exp:
-                for c in children:
-                    if c is jump.true:
-                        exp = self.reduce_And_exp(blk.path_exp, jump.exp)
-                        if exp:
-                            c.path_exp = exp
-                        else:
-                            c.path_exp = RELOP('And', blk.path_exp, jump.exp)
-                    elif c is jump.false:
-                        exp = self.reduce_And_exp(blk.path_exp, UNOP('Not', jump.exp))
-                        if exp:
-                            c.path_exp = exp
-                        else:
-                            c.path_exp = RELOP('And', blk.path_exp, UNOP('Not', jump.exp))
-                    else:
-                        c.path_exp = blk.path_exp
-            else:
-                jump.true.path_exp = jump.exp
-                if jump.exp.is_a(CONST):
-                    if jump.exp.value != 0:
-                        jump.false.path_exp = CONST(0)
-                    else:
-                        jump.false.path_exp = CONST(1)
-                else:
-                    jump.false.path_exp = UNOP('Not', jump.exp)
-        elif jump.is_a(MCJUMP):
-            if blk.path_exp:
-                for c in children:
-                    if c in jump.targets:
-                        idx = jump.targets.index(c)
-                        exp = self.reduce_And_exp(blk.path_exp, jump.conds[idx])
-                        if exp:
-                            c.path_exp = exp
-                        else:
-                            c.path_exp = RELOP('And', blk.path_exp, jump.conds[idx])
-                    else:
-                        c.path_exp = blk.path_exp
-            else:
-                for t, cond in zip(jump.targets, jump.conds):
-                    t.path_exp = cond
-        for child in children:
-            self.traverse_dtree(child)
-
-    def reduce_And_exp(self, exp1, exp2):
-        if exp1.is_a(CONST):
-            if exp1.value != 0 or exp1.value is True:
-                return exp2
-            else:
-                return exp1
-        elif exp2.is_a(CONST):
-            if exp2.value != 0 or exp2.value is True:
-                return exp1
-            else:
-                return exp2
-        if exp1.is_a(TEMP) and exp2.is_a(UNOP) and exp2.op == 'Not' and exp1.sym is exp2.exp.sym:
-            return CONST(0)
-        return None

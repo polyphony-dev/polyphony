@@ -7,14 +7,14 @@ from polyphony.typing import uint8
 
 class Inf_A:
     def __init__(self, t):
-        self.i = Port(t)
-        self.o = Port(t)
+        self.i = Port(t, 'in')
+        self.o = Port(t, 'out')
 
 
 class Inf_B:
     def __init__(self, t):
-        self.i = Port(t)
-        self.o = Port(t)
+        self.i = Port(t, 'in')
+        self.o = Port(t, 'out')
 
 
 class Interfaces:

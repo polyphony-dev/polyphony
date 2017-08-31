@@ -24,6 +24,7 @@ class HDLModuleInfo(object):
         self.name = name
         self.qualified_name = qualified_name
         self.interfaces = OrderedDict()
+        self.ret_interfaces = OrderedDict()
         self.interconnects = []
         self.accessors = {}
         self.local_readers = {}
@@ -66,6 +67,9 @@ class HDLModuleInfo(object):
 
     def add_interface(self, name, interface):
         self.interfaces[name] = interface
+
+    def add_ret_interface(self, name, interface):
+        self.ret_interfaces[name] = interface
 
     def add_interconnect(self, interconnect):
         self.interconnects.append(interconnect)
@@ -167,8 +171,9 @@ class HDLModuleInfo(object):
     def add_sub_module(self, name, module_info, connections, param_map=None):
         assert isinstance(name, str)
         sub_infs = {}
-        for interface, accessor in connections:
-            sub_infs[interface.if_name] = accessor
+        for conns in connections.values():
+            for interface, accessor in conns:
+                sub_infs[interface.if_name] = accessor
         self.sub_modules[name] = (name, module_info, connections, param_map)
 
     def add_function(self, func, tag=''):
@@ -197,6 +202,48 @@ class HDLModuleInfo(object):
 
     def add_edge_detector(self, sig, old, new):
         self.edge_detectors.add((sig, old, new))
+
+    def find_interface(self, name):
+        if name in self.interfaces:
+            return self.interfaces[name]
+        if name in self.ret_interfaces:
+            return self.ret_interfaces[name]
+        assert False
+
+    def resources(self):
+        num_of_regs = 0
+        num_of_nets = 0
+        internal_rams = 0
+        for inf in self.interfaces.values():
+            for r in inf.regs():
+                num_of_regs += r.width
+            for n in inf.nets():
+                num_of_nets += n.width
+        for inf in self.ret_interfaces.values():
+            for r in inf.regs():
+                num_of_regs += r.width
+            for n in inf.nets():
+                num_of_nets += n.width
+        for _, decls in self.decls.items():
+            for decl in decls:
+                if decl.is_a(AHDL_SIGNAL_DECL):
+                    if decl.sig.is_reg():
+                        num_of_regs += decl.sig.width
+                    elif decl.sig.is_net():
+                        num_of_nets += decl.sig.width
+                elif decl.is_a(AHDL_SIGNAL_ARRAY_DECL):
+                    if decl.sig.is_reg():
+                        num_of_regs += decl.sig.width * decl.size.value
+                    elif decl.sig.is_net():
+                        num_of_nets += decl.sig.width * decl.size.value
+                elif decl.is_a(AHDL_ASSIGN):
+                    decl.src
+
+        num_of_states = 0
+        for _, fsm in self.fsms.items():
+            for stg in fsm.stgs:
+                num_of_states += len(stg.states)
+        return num_of_regs, num_of_nets, num_of_states
 
 
 class RAMModuleInfo(HDLModuleInfo):

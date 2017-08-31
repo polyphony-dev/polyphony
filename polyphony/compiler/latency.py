@@ -1,5 +1,6 @@
 ﻿from .ir import *
 from .dataflow import DataFlowGraph
+from .env import env
 
 UNIT_STEP = 1
 CALL_MINIMUM_STEP = 5
@@ -58,17 +59,32 @@ def get_latency(tag):
         elif tag.dst.is_a(ATTR):
             return UNIT_STEP * 2
         elif tag.src.is_a(ARRAY):
-            return UNIT_STEP * len(tag.src.items * tag.src.repeat.value)
+            memnode = tag.src.sym.typ.get_memnode()
+            if memnode.can_be_reg():
+                return 1
+            else:
+                return UNIT_STEP * len(tag.src.items * tag.src.repeat.value)
         elif tag.src.is_a(MREF):
             memnode = tag.src.mem.symbol().typ.get_memnode()
-            if memnode.is_immutable() or not memnode.is_writable():
-                return UNIT_STEP
+            if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
+                return 1
             return UNIT_STEP * 3
         elif tag.src.is_a(MSTORE):
+            memnode = tag.src.mem.symbol().typ.get_memnode()
+            if memnode.can_be_reg():
+                return 1
             return UNIT_STEP * 1
+        if tag.dst.symbol().is_alias():
+            return 0
     elif tag.is_a(EXPR):
         if tag.exp.is_a(CALL):
             return get_call_latency(tag.exp)
         elif tag.exp.is_a(SYSCALL):
             return get_syscall_latency(tag.exp)
+    elif tag.is_a(PHI):
+        if tag.var.symbol().is_alias():
+            return 0
+    elif tag.is_a(UPHI):
+        if tag.var.symbol().is_alias():
+            return 0
     return UNIT_STEP

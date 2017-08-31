@@ -21,7 +21,6 @@ class Ctx(IntEnum):
 class IR(object):
     def __init__(self):
         self.lineno = -1
-        self.iorder = -1
 
     def __repr__(self):
         return self.__str__()
@@ -57,14 +56,14 @@ class IR(object):
                 if ir.is_a([CALL, SYSCALL, NEW]):
                     return ir.replace(old, new)
                 for k, v in ir.__dict__.items():
-                    if v is old:
+                    if v == old:
                         ir.__dict__[k] = new
                         return True
                     elif replace_rec(v, old, new):
                         return True
             elif isinstance(ir, list):
                 for i, elm in enumerate(ir):
-                    if elm is old:
+                    if elm == old:
                         ir[i] = new
                         return True
                     elif replace_rec(elm, old, new):
@@ -131,7 +130,7 @@ class UNOP(IRExp):
         return '{}{}'.format(op2sym_map[self.op], self.exp)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(UNOP):
+        if other is None or not isinstance(other, UNOP):
             return False
         return self.op == other.op and self.exp == other.exp
 
@@ -158,7 +157,7 @@ class BINOP(IRExp):
         return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(BINOP):
+        if other is None or not isinstance(other, BINOP):
             return False
         return (self.op == other.op and self.left == other.left and self.right == other.right)
 
@@ -185,7 +184,7 @@ class RELOP(IRExp):
         return '({} {} {})'.format(self.left, op2sym_map[self.op], self.right)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(RELOP):
+        if other is None or not isinstance(other, RELOP):
             return False
         return (self.op == other.op and self.left == other.left and self.right == other.right)
 
@@ -207,7 +206,7 @@ class CONDOP(IRExp):
         return '({} ? {} : {})'.format(self.cond, self.left, self.right)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(CONDOP):
+        if other is None or not isinstance(other, CONDOP):
             return False
         return (self.cond == other.cond and self.left == other.left and self.right == other.right)
 
@@ -255,13 +254,14 @@ class CALL(IRExp):
         self.func_scope = None
 
     def __str__(self):
-        s = '(CALL {}, '.format(self.func)
-        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s = '{}('.format(self.func)
+        #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s += ', '.join(['{}'.format(arg) for name, arg in self.args])
         s += ")"
         return s
 
     def __eq__(self, other):
-        if other is None or not other.is_a(CALL):
+        if other is None or not isinstance(other, CALL):
             return False
         return (self.func == other.func and
                 len(self.args) == len(other.args) and
@@ -316,13 +316,14 @@ class SYSCALL(IRExp):
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '(SYSCALL {}, '.format(self.sym)
-        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s = '{}('.format(self.sym)
+        #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        s += ', '.join(['{}'.format(arg) for name, arg in self.args])
         s += ")"
         return s
 
     def __eq__(self, other):
-        if other is None or not other.is_a(SYSCALL):
+        if other is None or not isinstance(other, SYSCALL):
             return False
         return (self.sym is other.sym and
                 len(self.args) == len(other.args) and
@@ -362,13 +363,13 @@ class NEW(IRExp):
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '(NEW {}, '.format(self.func_scope.orig_name)
+        s = '{}('.format(self.func_scope.orig_name)
         s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ")"
         return s
 
     def __eq__(self, other):
-        if other is None or not other.is_a(NEW):
+        if other is None or not isinstance(other, NEW):
             return False
         return (self.func_scope is other.func_scope and
                 len(self.args) == len(other.args) and
@@ -414,7 +415,7 @@ class CONST(IRExp):
             return repr(self.value)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(CONST):
+        if other is None or not isinstance(other, CONST):
             return False
         return self.value == other.value
 
@@ -434,10 +435,10 @@ class MREF(IRExp):
         self.ctx = ctx
 
     def __str__(self):
-        return '(MREF {}, {})'.format(self.mem, self.offset)
+        return '{}[{}]'.format(self.mem, self.offset)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(MREF):
+        if other is None or not isinstance(other, MREF):
             return False
         return (self.mem == other.mem and self.offset == other.offset and self.ctx == other.ctx)
 
@@ -456,10 +457,10 @@ class MSTORE(IRExp):
         self.exp = exp
 
     def __str__(self):
-        return '(MSTORE {}, {}, {})'.format(self.mem, self.offset, self.exp)
+        return 'mstore({}[{}], {})'.format(self.mem, self.offset, self.exp)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(MSTORE):
+        if other is None or not isinstance(other, MSTORE):
             return False
         return (self.mem == other.mem and self.offset == other.offset and self.exp == other.exp)
 
@@ -479,8 +480,7 @@ class ARRAY(IRExp):
         self.is_mutable = is_mutable
 
     def __str__(self):
-        s = "(ARRAY "
-        s += '[' if self.is_mutable else '('
+        s = '[' if self.is_mutable else '('
         if len(self.items) > 8:
             s += ', '.join(map(str, self.items[:10]))
             s += '...'
@@ -489,11 +489,10 @@ class ARRAY(IRExp):
         s += ']' if self.is_mutable else ')'
         if not (self.repeat.is_a(CONST) and self.repeat.value == 1):
             s += ' * ' + str(self.repeat)
-        s += ")"
         return s
 
     def __eq__(self, other):
-        if other is None or not other.is_a(ARRAY):
+        if other is None or not isinstance(other, ARRAY):
             return False
         return (len(self.items) == len(other.items) and
                 all([item == other_item for item, other_item in zip(self.items, other.items)]) and
@@ -528,7 +527,7 @@ class TEMP(IRExp):
         return str(self.sym)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(TEMP):
+        if other is None or not isinstance(other, TEMP):
             return False
         return (self.sym is other.sym and self.ctx == other.ctx)
 
@@ -561,7 +560,7 @@ class ATTR(IRExp):
         return '{}.{}'.format(self.exp, self.attr)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(ATTR):
+        if other is None or not isinstance(other, ATTR):
             return False
         return (self.exp == other.exp and
                 self.attr is other.attr and
@@ -620,10 +619,10 @@ class EXPR(IRStm):
         self.exp = exp
 
     def __str__(self):
-        return '(EXPR {})'.format(self.exp)
+        return '{}'.format(self.exp)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(EXPR):
+        if other is None or not isinstance(other, EXPR):
             return False
         return self.exp == other.exp
 
@@ -643,10 +642,10 @@ class CJUMP(IRStm):
         self.loop_branch = False
 
     def __str__(self):
-        return '(CJUMP {}, {}, {})'.format(self.exp, self.true.name, self.false.name)
+        return 'cjump {} ? {}, {}'.format(self.exp, self.true.name, self.false.name)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(CJUMP):
+        if other is None or not isinstance(other, CJUMP):
             return False
         return self.exp == other.exp and self.true is other.true and self.false is other.false
 
@@ -665,12 +664,12 @@ class MCJUMP(IRStm):
         assert len(self.conds) == len(self.targets)
         items = []
         for cond, target in zip(self.conds, self.targets):
-            items.append('({}) => {}'.format(cond, target.name))
+            items.append('{} ? {}'.format(cond, target.name))
 
-        return '(MCJUMP \n        {})'.format(', \n        '.join([item for item in items]))
+        return 'mcjump(\n        {})'.format(', \n        '.join([item for item in items]))
 
     def __eq__(self, other):
-        if other is None or not other.is_a(MCJUMP):
+        if other is None or not isinstance(other, MCJUMP):
             return False
         return (len(self.conds) == len(other.conds) and
                 all([cond == other_cond for cond, other_cond in zip(self.conds, other.conds)]) and
@@ -687,10 +686,10 @@ class JUMP(IRStm):
         self.typ = typ  # 'B': break, 'C': continue, 'L': loop-back, 'S': specific
 
     def __str__(self):
-        return "(JUMP {} '{}')".format(self.target.name, self.typ)
+        return "jump {} '{}'".format(self.target.name, self.typ)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(JUMP):
+        if other is None or not isinstance(other, JUMP):
             return False
         return self.target is other.target
 
@@ -704,10 +703,10 @@ class RET(IRStm):
         self.exp = exp
 
     def __str__(self):
-        return "(RET {})".format(self.exp)
+        return "return {}".format(self.exp)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(RET):
+        if other is None or not isinstance(other, RET):
             return False
         return self.exp == other.exp
 
@@ -725,10 +724,10 @@ class MOVE(IRStm):
         self.src = src
 
     def __str__(self):
-        return '(MOVE {}, {})'.format(self.dst, self.src)
+        return '{} = {}'.format(self.dst, self.src)
 
     def __eq__(self, other):
-        if other is None or not other.is_a(MOVE):
+        if other is None or not isinstance(other, MOVE):
             return False
         return self.dst == other.dst and self.src == other.src
 
@@ -737,6 +736,48 @@ class MOVE(IRStm):
 
     def kids(self):
         return self.dst.kids() + self.src.kids()
+
+
+class CEXPR(EXPR):
+    def __init__(self, cond, exp):
+        super().__init__(exp)
+        assert isinstance(cond, IRExp)
+        self.cond = cond
+
+    def __str__(self):
+        return "{} ? {}".format(self.cond, super().__str__())
+
+    def __eq__(self, other):
+        if other is None or not isinstance(other, CEXPR):
+            return False
+        return self.cond == other.cond and super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def kids(self):
+        return self.cond.kids() + super().kids()
+
+
+class CMOVE(MOVE):
+    def __init__(self, cond, dst, src):
+        super().__init__(dst, src)
+        assert isinstance(cond, IRExp)
+        self.cond = cond
+
+    def __str__(self):
+        return "{} ? {}".format(self.cond, super().__str__())
+
+    def __eq__(self, other):
+        if other is None or not isinstance(other, CEXPR):
+            return False
+        return self.cond == other.cond and super().__eq__(other)
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def kids(self):
+        return self.cond.kids() + super().kids()
 
 
 def conds2str(conds):
@@ -759,15 +800,22 @@ class PHIBase(IRStm):
         self.defblks = []
         self.ps = []
 
-    def _str_args(self):
+    def _str_args(self, with_p=True):
         str_args = []
-        if self.ps:
+        if self.ps and with_p:
             #assert len(self.ps) == len(self.args)
-            for arg, p in zip(self.args, self.ps):
-                if arg:
-                    str_args.append('{}?{}'.format(p, arg))
-                else:
-                    str_args.append('_')
+            if self.defblks:
+                for arg, p, blk in zip(self.args, self.ps, self.defblks):
+                    if arg:
+                        str_args.append('{} ? {}({})'.format(p, arg, blk.name))
+                    else:
+                        str_args.append('_')
+            else:
+                for arg, p in zip(self.args, self.ps):
+                    if arg:
+                        str_args.append('{} ? {}'.format(p, arg))
+                    else:
+                        str_args.append('_')
         else:
             for arg in self.args:
                 if arg:
@@ -777,7 +825,7 @@ class PHIBase(IRStm):
         return str_args
 
     def __eq__(self, other):
-        if other is None or not other.is_a(PHIBase):
+        if other is None or not isinstance(other, PHIBase):
             return False
         return self.var == other.var
 
@@ -798,13 +846,33 @@ class PHIBase(IRStm):
         self.args.pop(idx)
         self.defblks.pop(idx)
 
+    def reorder_args(self, indices):
+        defblks = []
+        args = []
+        ps = []
+        for idx in indices:
+            assert 0 <= idx < len(self.args)
+            defblks.append(self.defblks[idx])
+            args.append(self.args[idx])
+            ps.append(self.ps[idx])
+        self.defblks = defblks
+        self.args = args
+        self.ps = ps
+
 
 class PHI(PHIBase):
     def __init__(self, var):
         super().__init__(var)
 
     def __str__(self):
-        s = "(PHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        if len(self.args) >= 2:
+            delim = ',\n        '
+        else:
+            delim = ', '
+        if self.block.is_hyperblock:
+            s = "{} = psi({})".format(self.var, delim.join(self._str_args()))
+        else:
+            s = "{} = phi({})".format(self.var, delim.join(self._str_args()))
         return s
 
 
@@ -813,8 +881,26 @@ class UPHI(PHIBase):
         super().__init__(var)
 
     def __str__(self):
-        s = "(UPHI '{}' <- phi[{}])".format(self.var, ", ".join(self._str_args()))
+        s = "{} = uphi({})".format(self.var, ", ".join(self._str_args()))
         return s
+
+
+class LPHI(PHIBase):
+    def __init__(self, var):
+        super().__init__(var)
+
+    def __str__(self):
+        s = "{} = lphi({})".format(self.var, ", ".join(self._str_args()))
+        return s
+
+    @classmethod
+    def from_phi(cls, phi):
+        lphi = LPHI(phi.var.clone())
+        lphi.args = phi.args[:]
+        lphi.defblks = phi.defblks[:]
+        lphi.ps = [CONST(1)] * len(phi.ps)
+        lphi.block = phi.block
+        return lphi
 
 
 def op2str(op):
@@ -833,10 +919,14 @@ def expr2ir(expr, name=None, scope=None):
         return CONST(expr)
     elif isinstance(expr, list):
         items = [expr2ir(e) for e in expr]
-        return ARRAY(items)
+        ar = ARRAY(items)
+        ar.sym = scope.add_temp('@array')
+        return ar
     elif isinstance(expr, tuple):
         items = [expr2ir(e) for e in expr]
-        return ARRAY(items, is_mutable=False)
+        ar = ARRAY(items, is_mutable=False)
+        ar.sym = scope.add_temp('@array')
+        return ar
     else:
         if inspect.isclass(expr):
             if expr.__module__ == 'polyphony.typing':
@@ -863,3 +953,63 @@ def expr2ir(expr, name=None, scope=None):
             assert fsym.typ.is_function()
             return TEMP(fsym, Ctx.LOAD)
         assert False
+
+
+def reduce_relexp(exp):
+    if exp.is_a(RELOP):
+        if exp.op == 'And':
+            exp.left = reduce_relexp(exp.left)
+            exp.right = reduce_relexp(exp.right)
+            if exp.left.is_a(CONST):
+                if exp.left.value:
+                    return exp.right
+                else:
+                    return CONST(0)
+            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
+                if exp.left.exp.value:
+                    return CONST(0)
+                else:
+                    return exp.right
+            elif exp.right.is_a(CONST):
+                if exp.right.value:
+                    return exp.left
+                else:
+                    return CONST(0)
+            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
+                if exp.right.exp.value:
+                    return CONST(0)
+                else:
+                    return exp.left
+        elif exp.op == 'Or':
+            exp.left = reduce_relexp(exp.left)
+            exp.right = reduce_relexp(exp.right)
+            if exp.left.is_a(CONST):
+                if exp.left.value:
+                    return CONST(1)
+                else:
+                    return exp.right
+            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
+                if exp.left.exp.value:
+                    return exp.right
+                else:
+                    return CONST(1)
+            elif exp.right.is_a(CONST):
+                if exp.right.value:
+                    return CONST(1)
+                else:
+                    return exp.left
+            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
+                if exp.right.exp.value:
+                    return exp.left
+                else:
+                    return CONST(1)
+    elif exp.is_a(UNOP) and exp.op == 'Not':
+        nexp = reduce_relexp(exp.exp)
+        if nexp.is_a(CONST):
+            if nexp.value:
+                return CONST(0)
+            else:
+                return CONST(1)
+        else:
+            return UNOP('Not', nexp)
+    return exp

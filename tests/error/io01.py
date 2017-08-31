@@ -4,7 +4,7 @@ from polyphony.io import Port
 
 
 def io01():
-    p = Port(bool)
+    p = Port(bool, 'any')
     p.wr(0)
 
 

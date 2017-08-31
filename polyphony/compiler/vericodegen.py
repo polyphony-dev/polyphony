@@ -136,6 +136,8 @@ class VerilogCodeGen(AHDLVisitor):
             ports.append('input wire rst')
         for interface in self.module_info.interfaces.values():
             ports.extend(self._get_io_names_from(interface))
+        for interface in self.module_info.ret_interfaces.values():
+            ports.extend(self._get_io_names_from(interface))
         self.emit((',\n' + self.tab()).join(ports))
 
     def _generate_signal(self, sig):
@@ -236,10 +238,14 @@ class VerilogCodeGen(AHDLVisitor):
             ports = []
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
-            for inf, acc in sorted(connections, key=lambda c: str(c)):
+            conns = connections['']
+            for inf, acc in sorted(conns, key=lambda c: str(c)):
                 for p in inf.ports.all():
                     ports.append(self._to_sub_module_connect(name, inf, acc, p))
-
+            conns = connections['ret']
+            for inf, acc in sorted(conns, key=lambda c: str(c)):
+                for p in inf.ports.all():
+                    ports.append(self._to_sub_module_connect(name, inf, acc, p))
             self.emit('//{} instance'.format(name))
             #for port, signal in port_map.items():
             #    ports.append('.{}({})'.format(port, signal))
@@ -356,6 +362,12 @@ class VerilogCodeGen(AHDLVisitor):
         else:
             exp = self.visit(ahdl.args[0])
             return '{}{}'.format(pyop2verilogop(ahdl.op), exp)
+
+    def visit_AHDL_SLICE(self, ahdl):
+        v = self.visit(ahdl.var)
+        hi = self.visit(ahdl.hi)
+        lo= self.visit(ahdl.lo)
+        return '{}[{}:{}]'.format(v, hi, lo)
 
     def visit_AHDL_NOP(self, ahdl):
         if isinstance(ahdl.info, AHDL):
@@ -515,6 +527,47 @@ class VerilogCodeGen(AHDLVisitor):
         self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
                              AHDL_SYMBOL('\'b' + one_hot_mask)))
 
+    def visit_MEM_MUX(self, ahdl):
+        prefix = ahdl.args[0]
+        dst_node = ahdl.args[1]
+        src_nodes = ahdl.args[2]
+        conds = ahdl.args[3]
+        n2o = dst_node.pred_branch()
+        assert isinstance(n2o, N2OneMemNode)
+        for p in n2o.preds:
+            assert isinstance(p, One2NMemNode)
+
+        preds = [p for p in n2o.preds if self.scope in p.scopes]
+        width = len(preds)
+        if width < 2:
+            return
+        orig_preds = [p for p in n2o.orig_preds if self.scope in p.scopes]
+        cs_name = dst_node.name()
+        if prefix:
+            cs = self.scope.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
+        else:
+            cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
+        args = []
+        for src_node in src_nodes:
+            assert isinstance(src_node.preds[0], One2NMemNode)
+            assert src_node in n2o.orig_preds
+            idx = orig_preds.index(src_node)
+            one_hot_mask = format(1 << idx, '#0{}b'.format(width + 2))[2:]
+            args.append(AHDL_SYMBOL('\'b' + one_hot_mask))
+
+        arg_p = list(zip(args, conds))
+        rexp, cond = arg_p[-1]
+        if cond.is_a(AHDL_CONST) and cond.value:
+            pass
+        else:
+            rexp = AHDL_IF_EXP(cond, rexp, AHDL_SYMBOL("'bz"))
+        for arg, p in arg_p[-2::-1]:
+            lexp = arg
+            if_exp = AHDL_IF_EXP(p, lexp, rexp)
+            rexp = if_exp
+        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
+                             if_exp))
+
     def visit_AHDL_META(self, ahdl):
         method = 'visit_' + ahdl.metaid
         visitor = getattr(self, method, None)
@@ -542,7 +595,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.visit(ahdl_if)
 
     def visit_WAIT_VALUE(self, ahdl):
-        eqs = [AHDL_OP('Eq', value, port) for value, port in ahdl.args]
+        eqs = [AHDL_OP('Eq', port, value) for value, port in ahdl.args]
         cond = functools.reduce(lambda a, b: AHDL_OP('And', a, b), eqs)
         conds = [cond]
         if ahdl.codes:
@@ -592,7 +645,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit("{}:".format(ahdl.val), newline=False)
         self.visit(ahdl.stm)
 
-    def visit_AHDL_MUX(self, ahdl):
+    def visit_AHDL_MUX__unused(self, ahdl):
         self.emit('function [{}:0] {} ('.format(ahdl.output.width - 1, ahdl.name))
         self.set_indent(2)
         self.emit('input [{}:0] {},'.format(ahdl.selector.sig.width - 1, self.visit(ahdl.selector)))
@@ -626,21 +679,56 @@ class VerilogCodeGen(AHDLVisitor):
         params += ', '.join([input.name for input in ahdl.inputs])
         self.emit('assign {} = {}({});'.format(ahdl.output.name, ahdl.name, params))
 
+    def visit_AHDL_MUX(self, ahdl):
+        if len(ahdl.inputs) > 1:
+            if isinstance(ahdl.output, Signal):
+                output_name = ahdl.output.name
+            elif isinstance(ahdl.output, int):
+                output_name = ahdl.output
+            head = 'assign {} = '.format(output_name)
+            terms = [head]
+            for i, input in enumerate(ahdl.inputs):
+                if i == 0:
+                    indent = ''
+                else:
+                    indent = (len(head) + self.indent) * ' '
+                if i < len(ahdl.inputs) - 1:
+                    term = indent + '1\'b1 == {}[{}] ? {}:\n'.format(ahdl.selector.sig.name,
+                                                                     i,
+                                                                     input.name)
+                else:
+                    if ahdl.defval is None:
+                        defval = '{}\'bz'.format(input.width)
+                    else:
+                        defval = ahdl.defval
+                    term = indent + '1\'b1 == {}[{}] ? {}:{};'.format(ahdl.selector.sig.name,
+                                                                      i,
+                                                                      input.name,
+                                                                      defval)
+                terms.append(term)
+            self.emit(''.join(terms))
+        else:
+            self.emit('assign {} = {};'.format(ahdl.output.name, ahdl.inputs[0].name))
+
     def visit_AHDL_DEMUX(self, ahdl):
         if len(ahdl.outputs) > 1:
+            if isinstance(ahdl.input, Signal):
+                input_name = ahdl.input.name
+                input_width = ahdl.input.width
+            elif isinstance(ahdl.input, int):
+                input_name = ahdl.input
+                input_width = ahdl.width
             for i, output in enumerate(ahdl.outputs):
-                if isinstance(ahdl.input, Signal):
-                    input_name = ahdl.input.name
-                    input_width = ahdl.input.width
-                elif isinstance(ahdl.input, int):
-                    input_name = ahdl.input
-                    input_width = ahdl.width
-                self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{}\'bz;'
+                if ahdl.defval is None:
+                    defval = '{}\'bz'.format(input_width)
+                else:
+                    defval = ahdl.defval
+                self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{};'
                           .format(output.name,
                                   ahdl.selector.sig.name,
                                   i,
                                   input_name,
-                                  input_width))
+                                  defval))
         else:
             self.emit('assign {} = {};'.format(ahdl.outputs[0].name, ahdl.input.name))
 

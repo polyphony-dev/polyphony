@@ -31,13 +31,16 @@ class PortTypeProp(TypePropagation):
 
             assert len(ir.func_scope.type_args) == 1
             attrs['dtype'] = ir.func_scope.type_args[0]
-            if 'direction' not in attrs or attrs['direction'] == 'any':
+            if 'direction' not in attrs or attrs['direction'] == 'auto':
                 attrs['direction'] = '?'
             attrs['root_symbol'] = self.current_stm.dst.symbol()
             if self.current_stm.is_a(MOVE) and self.current_stm.dst.is_a(TEMP):
                 attrs['port_kind'] = 'internal'
             else:
-                attrs['port_kind'] = 'external'
+                if attrs['direction'] == 'input' or attrs['direction'] == 'output':
+                    attrs['port_kind'] = 'external'
+                else:
+                    attrs['port_kind'] = 'internal'
             if 'protocol' not in attrs:
                 attrs['protocol'] = 'none'
             if 'init' not in attrs or attrs['init'] is None:
@@ -56,7 +59,29 @@ class PortTypeProp(TypePropagation):
             return 'input'
         elif di == 'out' or di == 'output' or di == 'o':
             return 'output'
+        elif di == 'any':
+            return 'any'
         return '?'
+
+    def visit_CALL(self, ir):
+        if ir.func_scope.is_method() and ir.func_scope.parent.is_port():
+            sym = ir.func.tail()
+            assert sym.typ.is_port()
+            kind = sym.typ.get_port_kind()
+            root = sym.typ.get_root_symbol()
+            port_owner = root.scope
+            # if port is a local variable, we modify the port owner its parent
+            if port_owner.is_method():
+                port_owner = port_owner.parent
+            if self.scope.is_worker():
+                scope = self.scope.worker_owner
+            elif self.scope.is_method():
+                scope = self.scope.parent
+            else:
+                scope = self.scope
+            if not scope.is_subclassof(port_owner) and kind == 'internal':
+                fail(self.current_stm, Errors.PORT_ACCESS_IS_NOT_ALLOWED)
+        return super().visit_CALL(ir)
 
 
 class PortConverter(IRTransformer):
@@ -78,7 +103,7 @@ class PortConverter(IRTransformer):
             for w, args in m.workers:
                 typeprop.process(w)
             for caller in env.call_graph.preds(m):
-                if caller.is_global():
+                if caller.is_namespace():
                     continue
                 typeprop.process(caller)
 
@@ -89,6 +114,8 @@ class PortConverter(IRTransformer):
 
             for field in m.class_fields().values():
                 if field.typ.is_port() and field.typ.get_direction() == '?':
+                    if not env.call_graph.preds(m):
+                        continue
                     assert ctor.usedef
                     stm = ctor.usedef.get_stms_defining(field).pop()
                     fail(stm, Errors.PORT_IS_NOT_USED,
@@ -114,9 +141,18 @@ class PortConverter(IRTransformer):
             if di == '?':
                 port_typ.set_direction(direction)
                 port_typ.freeze()
+            elif di == 'any':
+                port_typ.set_port_kind('internal')
+                port_typ.set_direction('inout')
             elif di != direction:
-                fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
-                     [sym.orig_name()])
+                if sym.ancestor and sym.ancestor.scope is not sym.scope:
+                    # the port has been accessed as opposite direction
+                    # by a module includes original owner module
+                    port_typ.set_port_kind('internal')
+                    port_typ.set_direction('inout')
+                else:
+                    fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
+                         [sym.orig_name()])
         elif kind == 'internal':
             port_typ.set_direction('inout')
 

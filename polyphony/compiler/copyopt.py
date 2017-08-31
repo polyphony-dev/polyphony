@@ -1,4 +1,5 @@
-﻿from .ir import *
+﻿from collections import deque
+from .ir import *
 from .irvisitor import IRVisitor
 from .type import Type
 from logging import getLogger
@@ -20,11 +21,14 @@ class CopyOpt(IRVisitor):
         copies = []
         collector = self._new_collector(copies)
         collector.process(scope)
-        for cp in copies:
-            uses = list(scope.usedef.get_stms_using(cp.dst.qualified_symbol()))
+        worklist = deque(copies)
+        while worklist:
+            cp = worklist.popleft()
+            dst_qsym = cp.dst.qualified_symbol()
+            uses = list(scope.usedef.get_stms_using(dst_qsym))
             orig = self._find_root_def(cp.src.qualified_symbol())
             for u in uses:
-                olds = self._find_old_use(u, cp.dst.qualified_symbol())
+                olds = self._find_old_use(u, dst_qsym)
                 for old in olds:
                     if orig:
                         new = orig.clone()
@@ -38,8 +42,23 @@ class CopyOpt(IRVisitor):
                     logger.debug('replace TO ' + str(u))
                     scope.usedef.remove_use(old, u)
                     scope.usedef.add_use(new, u)
+                if u.is_a(PHIBase):
+                    syms = [arg.qualified_symbol() for arg in u.args if arg.is_a([TEMP, ATTR])]
+                    if syms and len(u.args) == len(syms) and all(syms[0] == s for s in syms):
+                        mv = MOVE(u.var, u.args[0])
+                        idx = u.block.stms.index(u)
+                        u.block.stms[idx] = mv
+                        mv.block = u.block
+                        mv.lineno = u.lineno
+                        scope.usedef.remove_stm(u)
+                        scope.usedef.add_var_def(mv.dst, mv)
+                        scope.usedef.add_use(mv.src, mv)
+                        if mv.src.is_a([TEMP, ATTR]):
+                            worklist.append(mv)
+                            copies.append(mv)
+
         for cp in copies:
-            if cp in cp.block.stms:
+            if cp in cp.block.stms and cp.dst.is_a(TEMP):
                 cp.block.stms.remove(cp)
 
     def _find_root_def(self, qsym) -> IR:
@@ -71,14 +90,12 @@ class CopyCollector(IRVisitor):
         self.copies = copies
 
     def visit_MOVE(self, ir):
-        if not ir.dst.is_a(TEMP):
-            return
-        if ir.dst.sym.is_return():
+        if ir.dst.symbol().is_return():
             return
         if ir.src.is_a(TEMP):
             if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
-            if not Type.is_strict_same(ir.dst.sym.typ, ir.src.sym.typ):
+            if not Type.is_strict_same(ir.dst.symbol().typ, ir.src.sym.typ):
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):

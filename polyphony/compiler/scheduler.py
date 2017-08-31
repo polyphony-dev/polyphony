@@ -40,10 +40,9 @@ class Scheduler(object):
                 if succs:
                     succs = unique(succs)
                     worklist.append((succs, nextprio))
-        nodes = dfg.get_highest_priority_nodes()
-        latency = self._list_schedule(dfg, nodes)
-        if latency > CALL_MINIMUM_STEP:
-            scope.asap_latency = latency
+        longest_latency = self._list_schedule_with_block(dfg)
+        if longest_latency > CALL_MINIMUM_STEP:
+            scope.asap_latency = longest_latency
         else:
             scope.asap_latency = CALL_MINIMUM_STEP
 
@@ -62,12 +61,8 @@ class Scheduler(object):
             seq_preds = dfg.preds_typ_without_back(node, 'Seq')
             sched_times = []
             if seq_preds:
-                earliest_node = min(seq_preds, key=lambda p: p.begin)
                 latest_node = max(seq_preds, key=lambda p: p.end)
-                if earliest_node.begin == latest_node.end:
-                    sched_times.append(latest_node.end + 1)
-                else:
-                    sched_times.append(latest_node.end)
+                sched_times.append(latest_node.end)
             if defuse_preds:
                 latest_node = max(defuse_preds, key=lambda p: p.end)
                 sched_times.append(latest_node.end)
@@ -85,9 +80,20 @@ class Scheduler(object):
             scheduled_time = 0
         return scheduled_time
 
+    def _list_schedule_with_block(self, dfg):
+        block_nodes = defaultdict(list)
+        longest_latency = 0
+        for node in dfg.get_priority_ordered_nodes():
+            block_nodes[node.tag.block].append(node)
+        for block, nodes in block_nodes.items():
+            latency = self._list_schedule(dfg, nodes)
+            if longest_latency < latency:
+                longest_latency = latency
+        return longest_latency
+
     def _list_schedule(self, dfg, nodes):
         next_candidates = set()
-        last_latency = 0
+        latency = 0
         for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
             scheduled_time = self._node_sched(dfg, n)
             latency = get_latency(n.tag)
@@ -98,11 +104,11 @@ class Scheduler(object):
             #logger.debug('## SCHEDULED ## ' + str(n))
             succs = dfg.succs_without_back(n)
             next_candidates = next_candidates.union(succs)
-            last_latency = n.end
+            latency = n.end
         if next_candidates:
             return self._list_schedule(dfg, next_candidates)
         else:
-            return last_latency
+            return latency
 
     def _is_resource_full(self, res, scheduled_resources):
         # TODO:
@@ -179,10 +185,12 @@ class ResourceExtractor(IRVisitor):
     def visit_RELOP(self, ir):
         self.visit(ir.left)
         self.visit(ir.right)
-        self.results.append(ir.op)
+        #TODO:
+        #self.results.append(ir.op)
 
     def visit_CONDOP(self, ir):
-        self.visit(ir.cond)
+        #TODO:
+        #self.visit(ir.cond)
         self.visit(ir.left)
         self.visit(ir.right)
 

@@ -16,7 +16,7 @@ from .errors import Errors
 # -  goto bb
 
 
-class QuadrupleMaker(IRTransformer):
+class EarlyQuadrupleMaker(IRTransformer):
     def __init__(self):
         super().__init__()
         self.suppress_converting = False
@@ -144,10 +144,6 @@ class QuadrupleMaker(IRTransformer):
 
     def visit_ATTR(self, ir):
         ir.exp = self.visit(ir.exp)
-        if ir.exp.is_a(TEMP) and ir.exp.sym.typ.is_namespace():
-            ir_ = TEMP(ir.attr, ir.ctx)
-            ir_.lineno = ir.lineno
-            ir = ir_
         return ir
 
     def visit_EXPR(self, ir):
@@ -201,3 +197,16 @@ class QuadrupleMaker(IRTransformer):
             ir.src.lineno = ir.lineno
             ir.dst.lineno = ir.lineno
         self.new_stms.append(ir)
+
+
+class LateQuadrupleMaker(IRTransformer):
+    def visit_ATTR(self, ir):
+        receiver = ir.tail()
+        if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
+            return ir
+        ir.exp = self.visit(ir.exp)
+        if ir.exp.is_a(TEMP) and ir.exp.sym.typ.is_namespace():
+            ir_ = TEMP(ir.attr, ir.ctx)
+            ir_.lineno = ir.lineno
+            ir = ir_
+        return ir

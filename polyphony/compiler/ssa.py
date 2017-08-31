@@ -1,10 +1,12 @@
 ﻿from collections import defaultdict, deque
+from .cfgopt import merge_path_exp, rel_and_exp
 from .dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from .env import env
 from .symbol import Symbol
 from .ir import *
 from .tuple import TupleTransformer
 from .usedef import UseDefDetector
+from .utils import replace_item
 from .varreplacer import VarReplacer
 from logging import getLogger
 logger = getLogger(__name__)
@@ -15,7 +17,7 @@ class SSATransformerBase(object):
         pass
 
     def process(self, scope):
-        if scope.is_class() or scope.is_global():
+        if scope.is_class() or scope.is_namespace():
             return
         self.scope = scope
         self.dominance_frontier = {}
@@ -28,7 +30,8 @@ class SSATransformerBase(object):
 
         self._remove_useless_phi()
         self._insert_predicate()
-        self._cleanup_phi()
+        self._find_loop_phi()
+        self._deal_with_return_phi()
 
     def _sort_phi(self, blk):
         phis = blk.collect_stms(PHI)
@@ -80,12 +83,10 @@ class SSATransformerBase(object):
     def _new_phi(self, var, df):
         phi = PHI(var)
         phi.block = df
-        phi.args = [var] * len(df.preds)
+        phi.args = [None] * len(df.preds)
         phi.defblks = [None] * len(df.preds)
         phi.lineno = 1
         var.lineno = 1
-        phi.iorder = 0
-        var.iorder = 0
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
@@ -118,7 +119,7 @@ class SSATransformerBase(object):
             if self._need_rename(var.symbol(), var.qualified_symbol()):
                 new_name = var.symbol().name + '#' + str(version)
                 var_sym = var.symbol()
-                new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
+                new_sym = self.scope.inherit_sym(var_sym, new_name)
                 logger.debug(str(new_sym) + ' ancestor is ' + str(var.symbol()))
                 var.set_symbol(new_sym)
 
@@ -140,7 +141,6 @@ class SSATransformerBase(object):
                     logger.debug('count up ' + str(d) + ' ' + str(stm))
                     count[key] += 1
                 i = count[key]
-                assert d.iorder >= 0
                 stack[key].append((i, d))
                 self._add_new_sym(d, i)
                 if stm.is_a(PHI) and d.is_a(ATTR):
@@ -168,11 +168,18 @@ class SSATransformerBase(object):
                 var = var.clone()
                 var.ctx = Ctx.LOAD
                 var.lineno = v.lineno
-                var.iorder = v.iorder
-                idx = phi.block.preds.index(block)
-                phi.args[idx] = var
-                phi.defblks[idx] = block
-                self._add_new_sym(var, i)
+                if 1 == phi.block.preds.count(block):
+                    idx = phi.block.preds.index(block)
+                    phi.args[idx] = var
+                    phi.defblks[idx] = block
+                    self._add_new_sym(var, i)
+                else:
+                    for idx, pred in enumerate(phi.block.preds):
+                        if pred is not block:
+                            continue
+                        phi.args[idx] = var
+                        phi.defblks[idx] = block
+                        self._add_new_sym(var, i)
         else:
             self._add_new_sym(var, i)
 
@@ -222,69 +229,100 @@ class SSATransformerBase(object):
         usedef = self.scope.usedef
 
         def get_sym_if_having_only_1(phi):
-            syms = [arg.symbol() for arg in phi.args if arg.is_a([TEMP, ATTR]) and arg.symbol() is not phi.var.symbol()]
-            if syms and all(syms[0] is s for s in syms):
+            syms = [arg.symbol() for arg in phi.args if arg and arg.is_a([TEMP, ATTR]) and arg.symbol() is not phi.var.symbol()]
+            if syms and all(syms[0] == s for s in syms):
                 return syms[0]
             else:
                 return None
         worklist = deque()
         for blk in self.scope.traverse_blocks():
-            worklist.extend(blk.collect_stms(PHI))
+            worklist.extend(blk.collect_stms(PHIBase))
         while worklist:
             phi = worklist.popleft()
             if not phi.args:
-                #assert False
-                logger.debug('remove ' + str(phi))
-                phi.block.stms.remove(phi)
-                #pass
-            else:
-                sym = get_sym_if_having_only_1(phi)
-                if sym:
-                    logger.debug('remove ' + str(phi))
-                    if phi in phi.block.stms:
-                        phi.block.stms.remove(phi)
-                        for a in phi.args:
-                            usedef.remove_var_use(a, phi)
-                        usedef.remove_var_def(phi.var, phi)
-                    replace_var = phi.var.clone()
-                    replace_var.set_symbol(sym)
-                    replace_var.ctx = Ctx.LOAD
-                    replaces = VarReplacer.replace_uses(phi.var, replace_var, usedef)
-                    for rep in replaces:
-                        if rep.is_a(PHI):
-                            worklist.append(rep)
+                self._remove_phi(phi, usedef)
+                continue
+            usestms = usedef.get_stms_using(phi.var.symbol())
+            if not usestms:
+                self._remove_phi(phi, usedef)
+                continue
 
-    def _cleanup_phi(self):
-        for blk in self.scope.traverse_blocks():
-            for phi in blk.collect_stms(PHI):
-                remove_args = [arg for arg in phi.args if arg.is_a(TEMP) and arg.symbol() is phi.var.symbol()]
-                for arg in remove_args:
-                    phi.remove_arg(arg)
+            sym = get_sym_if_having_only_1(phi)
+            if sym:
+                self._remove_phi(phi, usedef)
+                replace_var = phi.var.clone()
+                replace_var.set_symbol(sym)
+                replace_var.ctx = Ctx.LOAD
+                replaces = VarReplacer.replace_uses(phi.var, replace_var, usedef)
+                for rep in replaces:
+                    if rep.is_a(PHI):
+                        worklist.append(rep)
+                    usedef.remove_use(phi.var, rep)
+                    usedef.add_use(replace_var, rep)
 
-    def _concat_predicates(self, predicates, op):
-        if not predicates:
-            return None
-        concat = predicates[0]
-        for p in predicates[1:]:
-            concat = BINOP(op, concat, p)
-        return concat
-
-    def _idom_path(self, blk, path):
-        path.append(blk)
-        idom = self.tree.get_parent_of(blk)
-        if not idom:
-            return
-        self._idom_path(idom, path)
+    def _remove_phi(self, phi, usedef):
+        logger.debug('remove ' + str(phi))
+        if phi in phi.block.stms:
+            phi.block.stms.remove(phi)
+            for a in phi.args:
+                if a:
+                    usedef.remove_use(a, phi)
+            usedef.remove_var_def(phi.var, phi)
 
     def _insert_predicate(self):
         for blk in self.scope.traverse_blocks():
             phis = blk.collect_stms(PHI)
             if not phis:
                 continue
-            phi_predicates = [pred.path_exp if pred.path_exp else CONST(1) for pred in blk.preds]
+            phi_predicates = []
+            dup_counts = defaultdict(int)
+            for pred in blk.preds:
+                if len(pred.succs) == 1:
+                    p = pred.path_exp if pred.path_exp else CONST(1)
+                else:
+                    if pred.succs.count(blk) == 1:
+                        p = merge_path_exp(pred, blk)
+                    else:
+                        dup_count = dup_counts[pred]
+                        dup_counts[pred] += 1
+                        jump = pred.stms[-1]
+                        targets = [(idx, target) for idx, target in enumerate(jump.targets)
+                                   if target is blk]
+                        for idx, target in targets:
+                            if dup_count == 0:
+                                p = rel_and_exp(pred.path_exp, jump.conds[idx])
+                                break
+                            else:
+                                dup_count -= 1
+                phi_predicates.append(p)
+
             for phi in phis:
                 phi.ps = phi_predicates[:]
                 assert len(phi.ps) == len(phi.args)
+
+    def _find_loop_phi(self):
+        for blk in self.scope.traverse_blocks():
+            phis = blk.collect_stms(PHI)
+            if not phis:
+                continue
+            if not blk.preds_loop:
+                continue
+            for phi in phis:
+                #if phi.ps[0].is_a(CONST) and phi.ps[0].value:
+                lphi = LPHI.from_phi(phi)
+                replace_item(blk.stms, phi, lphi)
+
+    def _deal_with_return_phi(self):
+        for blk in self.scope.traverse_blocks():
+            phis = blk.collect_stms(PHI)
+            for phi in phis:
+                if phi.var.symbol().is_return():
+                    for a in phi.args:
+                        a.symbol().del_tag('return')
+                        new_name = 'ret' + a.symbol().name.split('#')[1]
+                        while new_name in self.scope.symbols:
+                            new_name = '_' + new_name
+                        a.symbol().name = new_name
 
 
 class ScalarSSATransformer(SSATransformerBase):
@@ -292,11 +330,15 @@ class ScalarSSATransformer(SSATransformerBase):
         super().__init__()
 
     def _need_rename(self, sym, qsym):
-        return not (sym.is_condition() or
-                    sym.is_param() or
-                    sym.is_return() or
-                    sym.is_static() or
-                    sym.typ.name in ['function', 'class', 'object', 'tuple', 'port'])
+        if (sym.is_condition() or
+                sym.is_param() or
+                sym.is_static() or
+                sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
+            return False
+        defstms = self.usedef.get_stms_defining(qsym)
+        if len(defstms) <= 1:
+            return False
+        return True
 
 
 class TupleSSATransformer(SSATransformerBase):
@@ -304,7 +346,7 @@ class TupleSSATransformer(SSATransformerBase):
         super().__init__()
 
     def process(self, scope):
-        if scope.is_class() or scope.is_global():
+        if scope.is_class() or scope.is_namespace():
             return
         super().process(scope)
         UseDefDetector().process(scope)
@@ -336,15 +378,12 @@ class TupleSSATransformer(SSATransformerBase):
                                                          mref.mem.symbol().orig_name()))
                 var = TEMP(tmp, Ctx.STORE)
                 var.lineno = use_stm.lineno
-                var.iorder = use_stm.iorder
                 uphi = UPHI(var)
                 uphi.lineno = use_stm.lineno
-                uphi.iorder = use_stm.iorder
                 uphi.ps = phi.ps[:]
                 for arg in phi.args:
                     argmref = mref.clone()
                     argmref.lineno = use_stm.lineno
-                    argmref.iorder = use_stm.iorder
                     argmref.mem = arg.clone()
                     uphi.args.append(argmref)
                 use_stm.block.insert_stm(insert_idx, uphi)
@@ -354,6 +393,8 @@ class TupleSSATransformer(SSATransformerBase):
         pass
 
     def _need_rename(self, sym, qsym):
+        if sym.scope.is_namespace() or sym.scope.is_class():
+            return False
         return sym.typ.is_tuple() and not sym.is_param()
 
 
@@ -362,7 +403,7 @@ class ObjectSSATransformer(SSATransformerBase):
         super().__init__()
 
     def process(self, scope):
-        if scope.is_class() or scope.is_global():
+        if scope.is_class() or scope.is_namespace():
             return
         super().process(scope)
         self._process_use_phi()
@@ -393,12 +434,10 @@ class ObjectSSATransformer(SSATransformerBase):
             if use_attr.exp.qualified_symbol() == qsym:
                 uphi = UPHI(use_attr.clone())
                 uphi.lineno = use_stm.lineno
-                uphi.iorder = use_stm.iorder
                 uphi.ps = phi.ps[:]
                 for arg in phi.args:
                     uarg = use_attr.clone()
                     uarg.lineno = use_stm.lineno
-                    uarg.iorder = use_stm.iorder
                     replace_attr(uarg, qsym, arg.clone())
                     uphi.args.append(uarg)
                 use_stm.block.insert_stm(insert_idx, uphi)
@@ -408,9 +447,11 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.name == env.self_name:
             return False
-        if sym.scope.is_module() or sym.scope.is_global():
+        if sym.scope.is_module() or sym.scope.is_namespace():
             return False
         if sym.is_param():
+            return False
+        if sym in [copy for _, copy, _ in self.scope.params]:
             return False
         idx = qsym.index(sym)
         if idx > 0:

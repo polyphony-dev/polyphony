@@ -1,6 +1,7 @@
 '''
 The class defined in polyphony.io provides the function for passing data between the module's I / O ports or workers.
 The following classes are provided. In Polyphony these classes are called Port classes.
+
     - polyphony.io.Port
     - polyphony.io.Queue
 '''
@@ -25,6 +26,7 @@ def _init_io():
 _events = []
 _conds = []
 _io_enabled = False
+_monitoring_ports = {}
 
 
 def _create_event():
@@ -118,6 +120,7 @@ class Port(object):
         dtype : an immutable type class
             A data type of the port.
             which of the below can be used.
+
                 - int
                 - bool
                 - polyphony.typing.bit
@@ -143,7 +146,7 @@ class Port(object):
                 self.din = Port(int16, direction='in', protocol='valid')
                 self.dout = Port(int32, direction='out', init=0, protocol='ready_valid')
     '''
-    def __init__(self, dtype, direction='any', init=None, protocol='none'):
+    def __init__(self, dtype, direction, init=None, protocol='none'):
         self._dtype = dtype
         self.__pytype = _pytype_from_dtype(dtype)
         if init:
@@ -246,6 +249,7 @@ class Queue(object):
         dtype : an immutable type class
             A data type of the queue port.
             which of the below can be used.
+
                 - int
                 - bool
                 - polyphony.typing.bit
@@ -293,6 +297,9 @@ class Queue(object):
         self.__ev_get.set()
         if not isinstance(d, self.__pytype):
             raise TypeError("Incompatible value type, got {} expected {}".format(type(self.__v), self._dtype))
+
+        if self in _monitoring_ports:
+            print(_monitoring_ports[self], 'rd', d)
         return d
 
     @_portmethod
@@ -311,6 +318,8 @@ class Queue(object):
             #time.sleep(0.001)
         self.__q.put(v, block=False)
         self.__ev_put.set()
+        if self in _monitoring_ports:
+            print(_monitoring_ports[self], 'wr', v)
 
     def __call__(self, v=None):
         if v is None:
@@ -328,6 +337,10 @@ class Queue(object):
     @_portmethod
     def full(self):
         return self.__q.full()
+
+
+def add_port_monitor(name, obj):
+    _monitoring_ports[obj] = name
 
 
 _init_io()

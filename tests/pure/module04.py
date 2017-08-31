@@ -7,10 +7,10 @@ from polyphony.typing import bit
 
 class Interface:
     def __init__(self):
-        self.i0 = Port(bit)
-        self.i1 = Port(bit)
-        self.o0 = Port(bit)
-        self.o1 = Port(bit)
+        self.i0 = Port(bit, 'in')
+        self.i1 = Port(bit, 'in')
+        self.o0 = Port(bit, 'out')
+        self.o1 = Port(bit, 'out')
 
 
 @module

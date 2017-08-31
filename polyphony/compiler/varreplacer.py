@@ -16,13 +16,14 @@ class VarReplacer(object):
             replacer.visit(use)
         return replacer.replaces
 
-    def __init__(self, dst, src, usedef):
+    def __init__(self, dst, src, usedef, enable_dst=False):
         super().__init__()
         self.replaces = []
         self.replace_dst = dst
         self.replace_src = src
         self.usedef = usedef
         self.replaced = False
+        self.enable_dst_replacing = enable_dst
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
@@ -45,14 +46,17 @@ class VarReplacer(object):
         return ir
 
     def visit_CALL(self, ir):
+        ir.func = self.visit(ir.func)
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 
     def visit_SYSCALL(self, ir):
-        return self.visit_CALL(ir)
+        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
+        return ir
 
     def visit_NEW(self, ir):
-        return self.visit_CALL(ir)
+        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
+        return ir
 
     def visit_CONST(self, ir):
         return ir
@@ -121,11 +125,25 @@ class VarReplacer(object):
     def visit_MOVE(self, ir):
         self.replaced = False
         ir.src = self.visit(ir.src)
+        if self.enable_dst_replacing:
+            ir.dst = self.visit(ir.dst)
         if self.replaced:
             self.replaces.append(ir)
 
+    def visit_CEXPR(self, ir):
+        self.replaced = False
+        ir.cond = self.visit(ir.cond)
+        self.visit_EXPR(ir)
+
+    def visit_CMOVE(self, ir):
+        self.replaced = False
+        ir.cond = self.visit(ir.cond)
+        self.visit_MOVE(ir)
+
     def visit_PHI(self, ir):
         self.replaced = False
+        if self.enable_dst_replacing:
+            ir.var = self.visit(ir.var)
         ir.args = [self.visit(arg) for arg in ir.args]
         ir.ps = [self.visit(p) for p in ir.ps]
         if self.replaced:
@@ -134,7 +152,13 @@ class VarReplacer(object):
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
 
+    def visit_LPHI(self, ir):
+        self.visit_PHI(ir)
+
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
-        return visitor(ir)
+        if visitor:
+            return visitor(ir)
+        else:
+            return None

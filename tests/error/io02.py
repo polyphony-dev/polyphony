@@ -5,7 +5,7 @@ from polyphony.io import Port
 
 class C:
     def __init__(self):
-        self.p = Port(bool)
+        self.p = Port(bool, 'any')
 
 
 def io02():

@@ -94,6 +94,11 @@ class UseDefTable(object):
         for v in vs:
             self.remove_use(v, stm)
 
+    def remove_stm(self, stm):
+        self.remove_uses(list(self.get_vars_used_at(stm)), stm)
+        for v in list(self.get_vars_defined_at(stm)):
+            self.remove_var_def(v, stm)
+
     def get_stms_defining(self, key):
         if isinstance(key, Symbol):
             return self._def_sym2stm[key]
@@ -194,22 +199,6 @@ class UseDefDetector(IRVisitor):
     def _process_scope_done(self, scope):
         scope.usedef = self.table
 
-    def visit_UNOP(self, ir):
-        self.visit(ir.exp)
-
-    def visit_BINOP(self, ir):
-        self.visit(ir.left)
-        self.visit(ir.right)
-
-    def visit_RELOP(self, ir):
-        self.visit(ir.left)
-        self.visit(ir.right)
-
-    def visit_CONDOP(self, ir):
-        self.visit(ir.cond)
-        self.visit(ir.left)
-        self.visit(ir.right)
-
     def _visit_args(self, ir):
         for _, arg in ir.args:
             self.visit(arg)
@@ -236,20 +225,6 @@ class UseDefDetector(IRVisitor):
     def visit_CONST(self, ir):
         self.table.add_const_use(ir, self.current_stm)
 
-    def visit_MREF(self, ir):
-        self.visit(ir.mem)
-        self.visit(ir.offset)
-
-    def visit_MSTORE(self, ir):
-        self.visit(ir.mem)
-        self.visit(ir.offset)
-        self.visit(ir.exp)
-
-    def visit_ARRAY(self, ir):
-        self.visit(ir.repeat)
-        for item in ir.items:
-            self.visit(item)
-
     def visit_TEMP(self, ir):
         if ir.ctx & Ctx.LOAD:
             self.table.add_var_use(ir, self.current_stm)
@@ -263,32 +238,3 @@ class UseDefDetector(IRVisitor):
             self.table.add_var_def(ir, self.current_stm)
         self.visit(ir.exp)
 
-    def visit_EXPR(self, ir):
-        self.visit(ir.exp)
-
-    def visit_CJUMP(self, ir):
-        self.visit(ir.exp)
-
-    def visit_MCJUMP(self, ir):
-        for cond in ir.conds:
-            self.visit(cond)
-
-    def visit_JUMP(self, ir):
-        pass
-
-    def visit_RET(self, ir):
-        self.visit(ir.exp)
-
-    def visit_MOVE(self, ir):
-        self.visit(ir.src)
-        self.visit(ir.dst)
-
-    def visit_PHI(self, ir):
-        self.visit(ir.var)
-        [self.visit(arg) for arg in ir.args if arg]
-        [self.visit(p) for p in ir.ps if p]
-
-    def visit_UPHI(self, ir):
-        self.visit(ir.var)
-        [self.visit(arg) for arg in ir.args if arg]
-        [self.visit(p) for p in ir.ps if p]

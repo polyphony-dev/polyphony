@@ -114,30 +114,37 @@ def is_worker_running():
 
     *Notes:*
         This function is provided to stop the worker function in the simulation with Python interpreter.
-        In the course of compiling to HDL, this function is always replaced with True.
+        While compiling to HDL, this function is always replaced with True.
     '''
     return _is_worker_running
 
 
-def _module_start(self):
+def _module_start(self, reentrance=False):
     global _is_worker_running
-    if _is_worker_running:
-        return
-    _is_worker_running = True
-    io._enable()
+    if not reentrance:
+        if _is_worker_running:
+            return
+        _is_worker_running = True
+        io._enable()
     for w in self._workers:
         w.start()
+    for sub in self._submodules:
+        sub._start(True)
     time.sleep(0.001)
 
 
-def _module_stop(self):
+def _module_stop(self, reentrance=False):
     global _is_worker_running
-    if not _is_worker_running:
-        return
-    _is_worker_running = False
+    if not reentrance:
+        if not _is_worker_running:
+            return
+        _is_worker_running = False
     for w in self._workers:
         w.prejoin()
-    io._disable()
+    for sub in self._submodules:
+        sub._stop()
+    if not reentrance:
+        io._disable()
     for w in self._workers:
         w.join()
 
@@ -169,9 +176,13 @@ class _ModuleDecorator(object):
             instance._module_decorator = self
             io._enable()
             setattr(instance, '_workers', [])
+            setattr(instance, '_submodules', [])
             instance.__init__(*args, **kwargs)
             io._disable()
             self.module_instances[cls.__name__].append(instance)
+            for name, obj in instance.__dict__.items():
+                if obj in self.module_instances[obj.__class__.__name__]:
+                    instance._submodules.append(obj)
             return instance
         _module_decorator.__dict__ = cls.__dict__.copy()
         _module_decorator.cls = cls

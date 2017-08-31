@@ -7,7 +7,7 @@ from polyphony.timing import wait_rising
 @module
 class wait_output02:
     def __init__(self):
-        self.p = Port(bool)
+        self.p = Port(bool, 'in')
         self.append_worker(self.w, self.p)
 
     def w(self, p):

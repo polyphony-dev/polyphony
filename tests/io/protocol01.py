@@ -6,8 +6,8 @@ from polyphony.typing import int8
 @module
 class Protocol01:
     def __init__(self):
-        self.i = Port(int8, init=0, protocol='valid')
-        self.o = Port(int8, init=0, protocol='ready_valid')
+        self.i = Port(int8, 'in', init=0, protocol='valid')
+        self.o = Port(int8, 'out', init=0, protocol='ready_valid')
         self.append_worker(self.main)
 
     def main(self):

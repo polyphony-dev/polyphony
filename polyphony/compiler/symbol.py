@@ -11,8 +11,8 @@ class Symbol(Tagged):
 
     TAGS = {
         'temp', 'param', 'return', 'condition', 'induction', 'alias',
-        'self', 'static',
-        'builtin'
+        'self', 'static', 'subobject',
+        'builtin', 'flattened'
     }
 
     @classmethod
@@ -75,8 +75,8 @@ class Symbol(Tagged):
             return self
 
     def hdl_name(self):
-        if self.typ.is_port() and self.ancestor:
-            return self.ancestor.hdl_name()
+        if self.typ.is_port():
+            name = self.name[:]
         elif self.typ.is_object() and self.typ.get_scope().is_module() and self.ancestor:
             return self.ancestor.hdl_name()
         elif self.name[0] == '@' or self.name[0] == '!':

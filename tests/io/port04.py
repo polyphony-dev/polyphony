@@ -5,9 +5,9 @@ from polyphony.typing import int8
 @module
 class Port04:
     def __init__(self):
-        self.in_q = Queue(int8, maxsize=2)
-        self.out_q = Queue(int8, maxsize=2)
-        tmp_q = Queue(int8, maxsize=2)
+        self.in_q = Queue(int8, 'in', maxsize=2)
+        self.out_q = Queue(int8, 'out', maxsize=2)
+        tmp_q = Queue(int8, 'any', maxsize=2)
         self.append_worker(self.main, self.in_q, tmp_q)
         self.append_worker(self.main, tmp_q, self.out_q)
 

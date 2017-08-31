@@ -91,18 +91,24 @@ class SelectorBuilder(object):
                     self.module_info.add_static_assignment(assign, tag)
 
             else:
+                if p.width == 1:
+                    defval = 0
+                else:
+                    defval = None
                 if p.dir == 'in':
                     selector = AHDL_MUX('{}_{}_selector'.format(name, port_name),
                                         switch_var,
                                         branches[port_name],
-                                        trunk[port_name])
+                                        trunk[port_name],
+                                        defval=defval)
                     self.module_info.add_mux(selector, tag)
 
                 else:
                     selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name),
                                           switch_var,
                                           trunk[port_name],
-                                          branches[port_name])
+                                          branches[port_name],
+                                          defval=defval)
                     self.module_info.add_demux(selector, tag)
 
     def _to_n2one_interconnect(self, name, inifs, outif, cs_name):
@@ -110,10 +116,10 @@ class SelectorBuilder(object):
         trunk = {}
         branches = defaultdict(list)
         for p in outif.ports.all():
-            trunk[p.name] = self.scope.gen_sig(outif.acc_name + '_' + p.name, p.width)
+            trunk[p.name] = self.scope.gen_sig(outif.port_name(p), p.width)
         for iif in inifs:
             for p in iif.ports.all():
-                n2o_in_sig = self.scope.gen_sig(iif.acc_name + '_' + p.name, p.width)
+                n2o_in_sig = self.scope.gen_sig(iif.port_name(p), p.width)
                 branches[p.name].append(n2o_in_sig)
 
         # assign switch = cs
@@ -133,30 +139,37 @@ class SelectorBuilder(object):
         # make interconnect
         for p in outif.ports.all():
             port_name = p.name
+            if p.width == 1:
+                defval = 0
+            else:
+                defval = None
             if p.dir == 'in':
                 selector = AHDL_DEMUX('{}_{}_selector'.format(name, port_name),
                                       switch_var,
                                       trunk[port_name],
-                                      branches[port_name])
+                                      branches[port_name],
+                                      defval=defval)
                 self.module_info.add_demux(selector, tag)
             else:
                 selector = AHDL_MUX('{}_{}_selector'.format(name, port_name),
                                     switch_var,
                                     branches[port_name],
-                                    trunk[port_name])
+                                    trunk[port_name],
+                                    defval=defval)
                 self.module_info.add_mux(selector, tag)
 
     def _add_sub_module_accessors(self, connections):
-        for inf, acc in connections:
-            tag = inf.if_name
-            for p in acc.regs():
-                int_name = acc.port_name(p)
-                sig = self.scope.gen_sig(int_name, p.width)
-                self.module_info.add_internal_reg(sig, tag)
-            for p in acc.nets():
-                int_name = acc.port_name(p)
-                sig = self.scope.gen_sig(int_name, p.width)
-                self.module_info.add_internal_net(sig, tag)
+        for conns in connections.values():
+            for inf, acc in conns:
+                tag = inf.if_name
+                for p in acc.regs():
+                    int_name = acc.port_name(p)
+                    sig = self.scope.gen_sig(int_name, p.width)
+                    self.module_info.add_internal_reg(sig, tag)
+                for p in acc.nets():
+                    int_name = acc.port_name(p)
+                    sig = self.scope.gen_sig(int_name, p.width)
+                    self.module_info.add_internal_net(sig, tag)
 
     def _build_sub_module_selectors(self):
         for name, info, connections, param_map in self.module_info.sub_modules.values():

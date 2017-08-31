@@ -11,8 +11,8 @@ def initialize_1(m):
     for i in range(10):
         inp = 'i' + str(i)
         outp = 'o' + str(i)
-        m.__dict__[inp] = Port(bit)
-        m.__dict__[outp] = Port(bit)
+        m.__dict__[inp] = Port(bit, 'in')
+        m.__dict__[outp] = Port(bit, 'out')
     initialize_2(m)
 
 
@@ -21,7 +21,7 @@ def initialize_2(m):
     for i in range(10):
         inp = 'i' + str(i)
         outp = 'o' + str(i)
-        tmp = Port(bit)
+        tmp = Port(bit, 'any')
         m.append_worker(m.worker, 'front' + str(i), m.__dict__[inp], tmp)
         m.append_worker(m.worker, 'back' + str(i), tmp, m.__dict__[outp])
 

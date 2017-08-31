@@ -13,7 +13,8 @@ class Env(object):
     PHASE_2 = 2
     PHASE_3 = 3
     PHASE_4 = 4
-    PHASE_GEN_HDL = 5
+    PHASE_5 = 5
+    PHASE_GEN_HDL = 6
 
     QUIET_WARN = 1
     QUIET_ERROR = 2
@@ -23,9 +24,10 @@ class Env(object):
     ctor_name = '__init__'
     self_name = 'self'
     callop_name = '__call__'
-    enable_ahdl_opt = False
+    enable_ahdl_opt = True
     global_scope_name = '@top'
     enable_pure = True
+    enable_hyperblock = False
     verbose_level = 0
     quiet_level = 0
 
@@ -42,6 +44,7 @@ class Env(object):
         self.testbenches = []
         self.config = Config()
         self.runtime_info = None
+        self.outermost_scope_stack = []
 
     def set_current_filename(self, filename):
         self.current_filename = filename
@@ -62,6 +65,15 @@ class Env(object):
 
     def append_testbench(self, testbench):
         self.testbenches.append(testbench)
+
+    def push_outermost_scope(self, scope):
+        self.outermost_scope_stack.append(scope)
+
+    def pop_outermost_scope(self):
+        self.outermost_scope_stack.pop()
+
+    def outermost_scope(self):
+        return self.outermost_scope_stack[-1]
 
 
 env = Env()

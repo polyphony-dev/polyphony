@@ -2,9 +2,13 @@ import polyphony
 import sub1 as sub
 
 
+def import03():
+    return sub.__name__ == 'sub1'
+
+
 @polyphony.testbench
 def test():
-    sub.__name__ == 'sub1'
+    assert True == import03()
 
 
 test()

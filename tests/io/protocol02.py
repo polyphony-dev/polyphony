@@ -6,8 +6,8 @@ from polyphony.timing import clkfence
 @module
 class Protocol02:
     def __init__(self):
-        self.i = Port(int8, init=0, protocol='ready_valid')
-        self.o = Port(int8, init=0, protocol='ready_valid')
+        self.i = Port(int8, 'in', init=0, protocol='ready_valid')
+        self.o = Port(int8, 'out', init=0, protocol='ready_valid')
         self.append_worker(self.main)
 
     def main(self):

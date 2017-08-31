@@ -7,7 +7,7 @@ from .env import env
 from .symbol import Symbol
 from .type import Type
 from .irvisitor import IRVisitor
-from .ir import JUMP, CJUMP, MCJUMP, PHI
+from .ir import JUMP, CJUMP, MCJUMP, PHIBase
 from .signal import Signal
 
 from logging import getLogger
@@ -109,7 +109,7 @@ class Scope(Tagged):
 
     @classmethod
     def is_unremovable(cls, s):
-        return s.is_global() or s.is_class() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
+        return s.is_namespace() or s.is_class() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
 
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(tags)
@@ -129,6 +129,7 @@ class Scope(Tagged):
         self.exit_block = None
         self.children = []
         self.bases = []
+        self.subs = []
         self.usedef = None
         self.loop_nest_tree = None
         self.callee_instances = defaultdict(set)
@@ -137,7 +138,6 @@ class Scope(Tagged):
         self.module_info = None
         self.signals = {}
         self.block_count = 0
-        self.paths = []
         self.workers = []
         self.worker_owner = None
         self.asap_latency = -1
@@ -207,8 +207,8 @@ class Scope(Tagged):
                 stm.false = block_map[stm.false]
             elif stm.is_a(MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
-            elif stm.is_a(PHI):
-                stm.defblks = [block_map[blk] for blk in stm.defblks]
+            elif stm.is_a(PHIBase):
+                stm.defblks = [block_map[blk] for blk in stm.defblks if blk in block_map]
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None):
@@ -227,6 +227,7 @@ class Scope(Tagged):
         #    child.parent = s
 
         s.bases = list(self.bases)
+        s.subs = list(self.subs)
         s.type_args = list(self.type_args)
 
         symbol_map = self.clone_symbols(s)
@@ -256,9 +257,9 @@ class Scope(Tagged):
 
         #s.parent.append_child(s)
         #env.append_scope(s)
-        s.clone_symbols = symbol_map
-        s.clone_blocks = block_map
-        s.clone_stms = stm_map
+        s.cloned_symbols = symbol_map
+        s.cloned_blocks = block_map
+        s.cloned_stms = stm_map
         return s
 
     def inherit(self, name, overrides):
@@ -270,6 +271,7 @@ class Scope(Tagged):
         sub.exit_block = sub.entry_block = Block(sub)
         sub.add_tag('inherited')
         #env.append_scope(sub)
+        self.subs.append(sub)
 
         for method in overrides:
             sub.children.remove(method)
@@ -333,6 +335,10 @@ class Scope(Tagged):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
         return self.add_sym(name, ['param'])
 
+    def find_param_sym(self, param_name):
+        name = '{}_{}'.format(Symbol.param_prefix, param_name)
+        return self.find_sym(name)
+
     def add_return_sym(self):
         return self.add_sym(Symbol.return_prefix, ['return'])
 
@@ -360,7 +366,9 @@ class Scope(Tagged):
                         break
                 else:
                     # otherwise, look-up from global
-                    found = self.global_scope().find_sym(name)
+                    found = env.outermost_scope().find_sym(name)
+                    if not found:
+                        found = self.global_scope().find_sym(name)
             else:
                 found = self.parent.find_sym(name)
             return found
@@ -400,7 +408,7 @@ class Scope(Tagged):
             new_sym = self.symbols[new_name]
         else:
             new_sym = self.add_sym(new_name, set(orig_sym.tags))
-            new_sym.typ = orig_sym.typ
+            new_sym.typ = orig_sym.typ.clone()
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:
@@ -543,8 +551,11 @@ class Scope(Tagged):
         return class_fields
 
     def register_worker(self, worker_scope, worker_args):
+        for i, (w, _) in enumerate(self.workers[:]):
+            if w is worker_scope:
+                self.workers.pop(i)
         self.workers.append((worker_scope, worker_args))
-        assert worker_scope.worker_owner is None
+        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
 
 
@@ -565,3 +576,46 @@ class SymbolReplacer(IRVisitor):
             ir.attr = self.sym_map[ir.attr]
         else:
             logger.debug('WARNING: not found {}'.format(ir.attr))
+
+    def visit_ARRAY(self, ir):
+        if ir.sym in self.sym_map:
+            ir.sym = self.sym_map[ir.sym]
+        for item in ir.items:
+            self.visit(item)
+        self.visit(ir.repeat)
+
+
+def write_dot(scope, tag):
+    try:
+        import pydot
+    except ImportError:
+        raise
+    name = scope.orig_name + '_' + str(tag)
+    g = pydot.Dot(name, graph_type='digraph')
+
+    def get_text(blk):
+        s = blk.name + '\n'
+        for stm in blk.stms:
+            s += str(stm).replace('\n', '\l') + '\l'
+        s = s.replace(':', '_')
+        return s
+
+    blk_map = {blk: pydot.Node(get_text(blk), shape='box') for blk in scope.traverse_blocks()}
+    for n in blk_map.values():
+        g.add_node(n)
+
+    for blk in blk_map.keys():
+        from_node = blk_map[blk]
+        for succ in blk.succs:
+            to_node = blk_map[succ]
+            if succ in blk.succs_loop:
+                g.add_edge(pydot.Edge(from_node, to_node, color='red'))
+            else:
+                g.add_edge(pydot.Edge(from_node, to_node))
+        #for pred in blk.preds:
+        #    to_node = blk_map[pred]
+        #    if pred in blk.preds_loop:
+        #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed', color='red'))
+        #    else:
+        #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed'))
+    g.write_png('.tmp/' + name + '.png')

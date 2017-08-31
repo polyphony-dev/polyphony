@@ -117,12 +117,12 @@ class TypePropagation(IRVisitor):
                 ir.func_scope = scope
             else:
                 if not self.check_error:
-                    raise RejectPropagation(str(ir))
+                    raise RejectPropagation(ir)
                 type_error(self.current_stm, Errors.IS_NOT_CALLABLE,
                            [func_name])
         elif ir.func.is_a(ATTR):
             if not ir.func.attr_scope:
-                raise RejectPropagation(str(ir))
+                raise RejectPropagation(ir)
             func_name = ir.func.symbol().orig_name()
             t = ir.func.symbol().typ
             if t.is_object() or t.is_port():
@@ -132,7 +132,7 @@ class TypePropagation(IRVisitor):
                 if func_sym.typ.is_function():
                     ir.func_scope = func_sym.typ.get_scope()
             if not ir.func_scope:
-                raise RejectPropagation(str(ir))
+                raise RejectPropagation(ir)
             #assert ir.func_scope.is_method()
             if ir.func_scope.is_mutable():
                 pass  # ir.func.exp.ctx |= Ctx.STORE
@@ -141,7 +141,7 @@ class TypePropagation(IRVisitor):
 
         if not ir.func_scope:
             # we cannot specify the callee because it has not been evaluated yet.
-            raise RejectPropagation(str(ir))
+            raise RejectPropagation(ir)
 
         if ir.func_scope.is_pure():
             if not env.enable_pure:
@@ -162,7 +162,7 @@ class TypePropagation(IRVisitor):
         ir.args = self._normalize_args(ir.func_scope.orig_name, params, ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if any([atype.is_undef() for atype in arg_types]):
-            raise RejectPropagation(str(ir))
+            raise RejectPropagation(ir)
 
         ret_t = ir.func_scope.return_type
         if ir.func_scope.is_class():
@@ -222,6 +222,8 @@ class TypePropagation(IRVisitor):
                        [repr(ir)])
 
     def visit_TEMP(self, ir):
+        if ir.sym.typ.is_undef() and ir.sym.ancestor:
+            ir.sym.typ = ir.sym.ancestor.typ
         return ir.sym.typ
 
     def visit_ATTR(self, ir):
@@ -238,9 +240,13 @@ class TypePropagation(IRVisitor):
                                [ir.attr])
                 ir.attr = ir.attr_scope.find_sym(ir.attr)
 
+            if ir.attr.typ.is_object():
+                ir.attr.add_tag('subobject')
+            if ir.exp.symbol().typ.is_object() and ir.exp.symbol().name != env.self_name and self.scope.is_worker():
+                ir.exp.symbol().add_tag('subobject')
             return ir.attr.typ
 
-        raise RejectPropagation(str(ir))
+        raise RejectPropagation(ir)
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
@@ -276,7 +282,7 @@ class TypePropagation(IRVisitor):
         item_typs = [self.visit(item) for item in ir.items]
 
         if item_typs and all([Type.is_same(item_typs[0], item_t) for item_t in item_typs]):
-            if item_typs[0].is_scalar():
+            if item_typs[0].is_scalar() and not item_typs[0].is_str():
                 maxwidth = max([item_t.get_width() for item_t in item_typs])
                 signed = any([item_t.get_signed() for item_t in item_typs])
                 item_t = Type.int(maxwidth, signed)
@@ -360,13 +366,13 @@ class TypePropagation(IRVisitor):
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
         if src_typ is Type.undef_t:
-            raise RejectPropagation(str(ir))
+            raise RejectPropagation(ir)
         dst_typ = self.visit(ir.dst)
 
         if ir.dst.is_a([TEMP, ATTR]):
             if not isinstance(ir.dst.symbol(), Symbol):
                 # the type of object has not inferenced yet
-                raise RejectPropagation(str(ir))
+                raise RejectPropagation(ir)
             self._set_type(ir.dst.symbol(), src_typ)
             if self.scope.is_method() and ir.dst.is_a(ATTR):
                 receiver = ir.dst.tail()
@@ -381,9 +387,9 @@ class TypePropagation(IRVisitor):
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet
-                raise RejectPropagation(str(ir))
+                raise RejectPropagation(ir)
             if not src_typ.is_tuple() or not dst_typ.is_tuple():
-                raise RejectPropagation(str(ir))
+                raise RejectPropagation(ir)
             elem_t = src_typ.get_element()
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR])
@@ -407,6 +413,9 @@ class TypePropagation(IRVisitor):
                 break
 
     def visit_UPHI(self, ir):
+        self.visit_PHI(ir)
+
+    def visit_LPHI(self, ir):
         self.visit_PHI(ir)
 
     def _normalize_args(self, func_name, params, args, kwargs):
@@ -633,6 +642,8 @@ class TypeChecker(IRVisitor):
         return mem_t
 
     def visit_ARRAY(self, ir):
+        if self.current_stm.dst.is_a(TEMP) and self.current_stm.dst.symbol().name == '__all__':
+            return ir.sym.typ
         for item in ir.items:
             item_type = self.visit(item)
             if not item_type.is_int():
@@ -708,7 +719,7 @@ class TypeChecker(IRVisitor):
 
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_module() and not ir.func_scope.parent.is_global():
+        if ir.func_scope.is_module() and not ir.func_scope.parent.is_namespace():
             fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
         if self.scope.is_global() and not ir.func_scope.is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)

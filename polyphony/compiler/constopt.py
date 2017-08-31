@@ -99,7 +99,7 @@ def _try_get_constant(sym, scope):
     return defstm.src
 
 
-def try_get_constant(qsym):
+def try_get_constant(qsym, scope):
     def find_value(vars, names):
         if len(names) > 1:
             head = names[0]
@@ -114,11 +114,13 @@ def try_get_constant(qsym):
         return None
     vars = env.runtime_info.global_vars
     names = [sym.name for sym in qsym]
+    if qsym[0].scope.is_namespace() and not qsym[0].scope.is_global():
+        names = [qsym[0].scope.name] + names
     v = find_value(vars, names)
     if isinstance(v, dict) and not v:
         return None
     if v is not None:
-        return expr2ir(v)
+        return expr2ir(v, scope=scope)
     return None
 
 
@@ -131,7 +133,6 @@ class ConstantOptBase(IRVisitor):
         if ir.exp.is_a(CONST):
             c = CONST(eval_unop(ir, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -141,7 +142,6 @@ class ConstantOptBase(IRVisitor):
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
             c = CONST(eval_binop(ir, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -151,7 +151,6 @@ class ConstantOptBase(IRVisitor):
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
             c = CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
             const, var = (ir.left.value, ir.right) if ir.left.is_a(CONST) else (ir.right.value, ir.left)
@@ -161,13 +160,11 @@ class ConstantOptBase(IRVisitor):
                 else:
                     c = CONST(False)
                     c.lineno = ir.lineno
-                    c.iorder = ir.iorder
                     return c
             elif ir.op == 'Or':
                 if const:
                     c = CONST(True)
                     c.lineno = ir.lineno
-                    c.iorder = ir.iorder
                     return c
                 else:
                     return var
@@ -176,7 +173,6 @@ class ConstantOptBase(IRVisitor):
                 and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
             c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id, self))
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -199,7 +195,6 @@ class ConstantOptBase(IRVisitor):
                 and ir.func.symbol().name == 'is_worker_running'):
             c = CONST(True)
             c.lineno = ir.lineno
-            c.iorder = ir.iorder
             return c
         return ir
 
@@ -249,9 +244,16 @@ class ConstantOptBase(IRVisitor):
     def visit_MOVE(self, ir):
         ir.src = self.visit(ir.src)
 
+    def visit_CEXPR(self, ir):
+        ir.cond = self.visit(ir.cond)
+        self.visit_EXPR(ir)
+
+    def visit_CMOVE(self, ir):
+        ir.cond = self.visit(ir.cond)
+        self.visit_MOVE(ir)
+
     def visit_PHI(self, ir):
         # TODO: loop-phi
-        #ir.ps = [self.visit(p) for p in ir.ps]
         pass
 
 
@@ -274,67 +276,121 @@ class ConstantOpt(ConstantOptBase):
             stm = worklist.popleft()
             self.current_stm = stm
             self.visit(stm)
-            if stm.is_a(PHI):
+            if stm.is_a(PHIBase):
                 for i, p in enumerate(stm.ps[:]):
-                    if p.is_a(CONST) and not p.value:
-                        stm.ps.pop(i)
-                        stm.args.pop(i)
-                        stm.defblks.pop(i)
-                if len(stm.args) == 1:
+                    stm.ps[i] = reduce_relexp(p)
+                is_move = False
+                for p in stm.ps[:]:
+                    if not stm.is_a(LPHI) and p.is_a(CONST) and p.value and stm.ps.index(p) != (len(stm.ps) - 1):
+                        is_move = True
+                        idx = stm.ps.index(p)
+                        mv = MOVE(stm.var, stm.args[idx])
+                        blk = stm.block
+                        blk.insert_stm(blk.stms.index(stm), mv)
+                        scope.usedef.add_use(mv.src, mv)
+                        scope.usedef.add_var_def(mv.dst, mv)
+                        scope.usedef.remove_var_def(stm.var, stm)
+                        worklist.append(mv)
+                        dead_stms.append(stm)
+                        if stm in worklist:
+                            worklist.remove(stm)
+                            assert stm not in worklist
+                        break
+                    if (p.is_a(CONST) and not p.value or
+                            p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
+                        idx = stm.ps.index(p)
+                        stm.ps.pop(idx)
+                        stm.args.pop(idx)
+                        stm.defblks.pop(idx)
+                if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
-                    blk = stm.defblks[0]
+                    blk = stm.block
                     mv = MOVE(stm.var, arg)
-                    blk.insert_stm(-1, mv)
+                    blk.insert_stm(blk.stms.index(stm), mv)
+                    scope.usedef.add_use(mv.src, mv)
+                    scope.usedef.add_var_def(mv.dst, mv)
+                    scope.usedef.remove_var_def(stm.var, stm)
                     worklist.append(mv)
                     dead_stms.append(stm)
                     if stm in worklist:
                         worklist.remove(stm)
-            if (stm.is_a(MOVE)
+                        assert stm not in worklist
+            elif stm.is_a([CMOVE, CEXPR]):
+                stm.cond = reduce_relexp(stm.cond)
+                if stm.cond.is_a(CONST):
+                    if stm.cond.value:
+                        if stm.is_a(CMOVE):
+                            new_stm = MOVE(stm.dst, stm.src)
+                            scope.usedef.add_use(new_stm.src, new_stm)
+                            scope.usedef.add_var_def(new_stm.dst, new_stm)
+                        else:
+                            new_stm = EXPR(stm.exp)
+                        blk.insert_stm(blk.stms.index(stm), new_stm)
+                    dead_stms.append(stm)
+                    if stm in worklist:
+                        worklist.remove(stm)
+                        assert stm not in worklist
+            elif (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(TEMP)
-                    and not stm.dst.sym.is_return()):
+                    and not stm.dst.symbol().is_return()):
                 #sanity check
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 assert len(defstms) <= 1
 
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
-                worklist.extend(replaces)
+                for rep in replaces:
+                    if rep not in dead_stms:
+                        worklist.append(rep)
                 worklist = deque(unique(worklist))
                 scope.usedef.remove_var_def(stm.dst, stm)
                 scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
                 if stm in worklist:
                     worklist.remove(stm)
+                    assert stm not in worklist
+            elif (stm.is_a(MOVE)
+                    and stm.src.is_a(CONST)
+                    and stm.dst.is_a(ATTR)
+                    and not stm.dst.symbol().is_return()):
+                #sanity check
+                defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
+                assert len(defstms) <= 1
+
+                replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
+                for rep in replaces:
+                    if rep not in dead_stms:
+                        worklist.append(rep)
+                worklist = deque(unique(worklist))
+                if stm in worklist:
+                    worklist.remove(stm)
+                    assert stm not in worklist
             elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
                 self._process_unconditional_cjump(stm, worklist)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
 
-    #def _propagate_const(self, dst, const):
-
     def _process_unconditional_cjump(self, cjump, worklist):
         def remove_dominated_branch(blk):
-            if not blk.preds:
-                return
             blk.preds = []  # mark as garbage block
             remove_from_list(worklist, blk.stms)
             for succ in blk.succs:
-                succ.remove_pred(blk)
+                if blk in succ.preds:
+                    succ.remove_pred(blk)
             for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
                 if self.dtree.is_child(blk, succ):
                     remove_dominated_branch(succ)
 
         blk = cjump.block
         if cjump.exp.value:
-            true_blk = blk.succs[0]
-            false_blk = blk.succs[1]
+            true_blk = cjump.true
+            false_blk = cjump.false
         else:
-            true_blk = blk.succs[1]
-            false_blk = blk.succs[0]
+            true_blk = cjump.false
+            false_blk = cjump.true
         jump = JUMP(true_blk)
         jump.lineno = cjump.lineno
-        jump.iorder = cjump.iorder
 
         if true_blk is not false_blk:
             false_blk.remove_pred(blk)
@@ -343,7 +399,6 @@ class ConstantOpt(ConstantOptBase):
                 self.scope.exit_block = blk
             if not false_blk.preds and self.dtree.is_child(blk, false_blk):
                 remove_dominated_branch(false_blk)
-
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
             worklist.remove(cjump)
@@ -361,7 +416,6 @@ class ConstantOpt(ConstantOptBase):
                 assert lens[0] > 0
                 c = CONST(lens[0])
                 c.lineno = ir.lineno
-                c.iorder = ir.iorder
                 return c
         return self.visit_CALL(ir)
 
@@ -380,8 +434,8 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
-            c = try_get_constant(ir.qualified_symbol())
+        if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
+            c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
                 return c
             else:
@@ -391,7 +445,7 @@ class ConstantOpt(ConstantOptBase):
     def visit_ATTR(self, ir):
         receiver = ir.tail()
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
-            c = try_get_constant(ir.qualified_symbol())
+            c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
                 return c
             else:
@@ -400,7 +454,7 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_PHI(self, ir):
         super().visit_PHI(ir)
-        if len(ir.block.preds) != len(ir.args):
+        if not ir.block.is_hyperblock and len(ir.block.preds) != len(ir.args):
             remove_args = []
             for arg, blk in zip(ir.args, ir.defblks):
                 if blk and blk is not self.scope.entry_block and not blk.preds:
@@ -414,8 +468,8 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         super().__init__()
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_global() and ir.sym.typ.is_scalar():
-            c = try_get_constant(ir.qualified_symbol())
+        if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
+            c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
                 return c
             else:
@@ -425,11 +479,21 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
     def visit_ATTR(self, ir):
         receiver = ir.tail()
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
-            c = try_get_constant(ir.qualified_symbol())
+            c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
+        if receiver.typ.is_object() and ir.attr.typ.is_scalar():
+            objscope = receiver.typ.get_scope()
+            if objscope.is_class():
+                classsym = objscope.parent.find_sym(objscope.orig_name)
+                if not classsym and objscope.is_instantiated():
+                    objscope = objscope.bases[0]
+                    classsym = objscope.parent.find_sym(objscope.orig_name)
+                c = try_get_constant((classsym, ir.attr), self.scope)
+                if c:
+                    return c
         return ir
 
 
@@ -457,8 +521,6 @@ class GlobalConstantOpt(ConstantOptBase):
     def process(self, scope):
         assert scope.is_namespace() or scope.is_class()
         self.scope = scope
-        if scope.block_count > 1:
-            raise RuntimeError('A control statement in the global scope is not allowed')
         super().process(scope)
         self._remove_dead_code()
 
@@ -495,14 +557,14 @@ class GlobalConstantOpt(ConstantOptBase):
             qsym = (class_sym, ) + ir.qualified_symbol()
         else:
             qsym = ir.qualified_symbol()
-        c = try_get_constant(qsym)
+        c = try_get_constant(qsym, self.scope)
         if c:
             return c
         return ir
 
     def visit_ATTR(self, ir):
         if ir.tail().typ.is_class():
-            c = try_get_constant(ir.qualified_symbol())
+            c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
                 return c
         return ir
