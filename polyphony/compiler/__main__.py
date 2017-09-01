@@ -24,6 +24,7 @@ from .inlineopt import AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
 from .iotransformer import IOTransformer
+from .iotransformer import WaitTransformer
 from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
 from .memorytransform import MemoryRenamer, RomDetector
@@ -326,6 +327,10 @@ def transformio(driver, scope):
     IOTransformer().process(scope)
 
 
+def transformwait(driver, scope):
+    WaitTransformer().process(scope)
+
+
 def reducereg(driver, scope):
     RegReducer().process(scope)
 
@@ -517,6 +522,7 @@ def compile_plan():
         #ahdlopt(reducereg),
         dbg(dumpmodule),
         transformio,
+        transformwait,
         dbg(dumpmodule),
         reducestate,
         dbg(dumpmodule),

@@ -288,7 +288,7 @@ class DataFlowGraph(object):
         g = pydot.Dot(name, graph_type='digraph')
 
         def get_node_tag_text(node):
-            s = hex(node.__hash__())[-5:-1] + '_' + str(node.tag)
+            s = hex(node.__hash__())[-4:] + '_' + str(node.tag)
             if len(s) > 50:
                 return s[0:50]
             else:
@@ -634,6 +634,7 @@ class DFGBuilder(object):
         else:
             return False
         if call.is_a(SYSCALL):
+            # TODO: parallel scheduling for wait functions
             wait_funcs = [
                 'polyphony.timing.clksleep',
                 'polyphony.timing.wait_rising',
@@ -644,12 +645,14 @@ class DFGBuilder(object):
             return call.sym.name in wait_funcs
         elif call.is_a(CALL):
             if call.func_scope.is_method() and call.func_scope.parent.is_port():
-                port_sym = call.func.qualified_symbol()[-2]
-                assert port_sym.typ.is_port()
-                if port_sym.typ.get_scope().name.startswith('polyphony.io.Queue'):
-                    return True
-                else:
-                    return False
+                # TODO: parallel scheduling for port access
+                return True
+                # port_sym = call.func.qualified_symbol()[-2]
+                # assert port_sym.typ.is_port()
+                # if port_sym.typ.get_scope().name.startswith('polyphony.io.Queue'):
+                #     return True
+                # else:
+                #     return False
             return False
 
     def _add_timinglib_seq_edges(self, blocks, dfg):

@@ -366,7 +366,7 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_SLICE(self, ahdl):
         v = self.visit(ahdl.var)
         hi = self.visit(ahdl.hi)
-        lo= self.visit(ahdl.lo)
+        lo = self.visit(ahdl.lo)
         return '{}[{}:{}]'.format(v, hi, lo)
 
     def visit_AHDL_NOP(self, ahdl):

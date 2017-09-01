@@ -133,20 +133,19 @@ def single_read_seq(inf, signal, step, dst):
         valid = port2ahdl(inf, 'valid')
         if signal.is_ready_valid_protocol():
             ready = port2ahdl(inf, 'ready')
-
-        if step == 0:
-            if signal.is_ready_valid_protocol():
-                expects = [(AHDL_CONST(1), valid), (AHDL_CONST(1), ready)]
-                return (AHDL_MOVE(ready, AHDL_CONST(1)),
-                        AHDL_META_WAIT('WAIT_VALUE', *expects))
-            else:
+            if step == 0:
+                return (AHDL_MOVE(ready, AHDL_CONST(1)), )
+            elif step == 1:
                 expects = [(AHDL_CONST(1), valid)]
                 return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
-        elif step == 1:
-            if signal.is_ready_valid_protocol():
+            elif step == 2:
                 return (AHDL_MOVE(dst, data),
                         AHDL_MOVE(ready, AHDL_CONST(0)))
-            else:
+        else:
+            if step == 0:
+                expects = [(AHDL_CONST(1), valid)]
+                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+            elif step == 1:
                 return (AHDL_MOVE(dst, data), )
     else:
         if step == 0:
@@ -160,17 +159,20 @@ def single_write_seq(inf, signal, step, src):
         valid = port2ahdl(inf, 'valid')
         if signal.is_ready_valid_protocol():
             ready = port2ahdl(inf, 'ready')
-        if step == 0:
-            if signal.is_ready_valid_protocol():
-                expects = [(AHDL_CONST(1), valid), (AHDL_CONST(1), ready)]
-                return (AHDL_MOVE(data, src),
-                        AHDL_MOVE(valid, AHDL_CONST(1)),
-                        AHDL_META_WAIT('WAIT_VALUE', *expects))
-            else:
+            if step == 0:
                 return (AHDL_MOVE(data, src),
                         AHDL_MOVE(valid, AHDL_CONST(1)))
-        elif step == 1:
-            return (AHDL_MOVE(valid, AHDL_CONST(0)), )
+            elif step == 1:
+                expects = [(AHDL_CONST(1), ready)]
+                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+            elif step == 2:
+                return (AHDL_MOVE(valid, AHDL_CONST(0)), )
+        else:
+            if step == 0:
+                return (AHDL_MOVE(data, src),
+                        AHDL_MOVE(valid, AHDL_CONST(1)))
+            elif step == 1:
+                return (AHDL_MOVE(valid, AHDL_CONST(0)), )
     else:
         if step == 0:
             return (AHDL_MOVE(data, src), )

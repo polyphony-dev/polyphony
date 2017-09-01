@@ -87,7 +87,7 @@ class IfForwarder(AHDLVisitor):
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
         for i, codes in enumerate(ahdl.codes_list):
-            assert len(codes) == 1
-            transition = codes[0]
+            transition = codes[-1]
+            codes.pop()
             assert transition.is_a(AHDL_TRANSITION)
-            ahdl.codes_list[i] = transition.target.codes[:]
+            ahdl.codes_list[i].extend(transition.target.codes[:])

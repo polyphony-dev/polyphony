@@ -130,6 +130,12 @@ class AHDLVisitor(object):
         if visitor:
             return visitor(ahdl)
 
+    def visit_AHDL_META_MULTI_WAIT(self, ahdl):
+        for w in ahdl.waits:
+            self.visit(w)
+        if ahdl.transition:
+            self.visit(ahdl.transition)
+
     def visit_AHDL_TRANSITION(self, ahdl):
         pass
 

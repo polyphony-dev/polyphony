@@ -4,6 +4,9 @@ from .utils import find_only_one_in
 
 
 class IOTransformer(AHDLVisitor):
+    def __init__(self):
+        self.removes = []
+
     def process(self, scope):
         if not scope.module_info:
             return
@@ -15,6 +18,12 @@ class IOTransformer(AHDLVisitor):
                     # we should use copy of codes because it might be changed
                     for code in state.codes[:]:
                         self.visit(code)
+        self.post_process()
+
+    def post_process(self):
+        for state, code in self.removes:
+            if code in state.codes:
+                state.codes.remove(code)
 
     def visit_AHDL_MODULECALL_SEQ(self, ahdl, step, step_n):
         _, sub_info, connections, _ = self.module_info.sub_modules[ahdl.instance_name]
@@ -84,17 +93,12 @@ class IOTransformer(AHDLVisitor):
             trans = self.current_parent.codes[-1]
             if trans.is_a(AHDL_TRANSITION):
                 meta_wait.transition = trans
-                self.current_parent.codes.remove(trans)
+                self.removes.append((self.current_parent, trans))
             else:
                 meta_wait_ = find_only_one_in(AHDL_META_WAIT, self.current_parent.codes)
                 assert meta_wait_
-                if meta_wait_.metaid == 'WAIT_VALUE':
-                    meta_wait_.args.extend(meta_wait.args)
-                    seq = list(seq)
-                    seq.remove(meta_wait)
-                else:
-                    # TODO:
-                    assert False
+                meta_wait.transition = meta_wait_.transition
+
         self.current_parent.codes = list(seq) + self.current_parent.codes
 
     def visit_AHDL_IF(self, ahdl):
@@ -111,3 +115,38 @@ class IOTransformer(AHDLVisitor):
                 self.visit(code)
             self.current_parent = last_parent
             ahdl.codes_list[i] = temp_parent.codes
+
+
+class WaitTransformer(AHDLVisitor):
+    def __init__(self):
+        self.count = 0
+
+    def process(self, scope):
+        if not scope.module_info:
+            return
+        self.module_info = scope.module_info
+        for fsm in self.module_info.fsms.values():
+            for stg in fsm.stgs:
+                for state in stg.states:
+                    self.current_parent = state
+                    self.transform_meta_wait(state.codes)
+
+    def transform_meta_wait(self, codes):
+        meta_waits = [c for c in codes if c.is_a(AHDL_META_WAIT)]
+        if len(meta_waits) <= 1:
+            return
+
+        multi_wait = AHDL_META_MULTI_WAIT(self.count)
+        self.count += 1
+        multi_wait.transition = meta_waits[0].transition
+        for w in meta_waits:
+            w.transition = None
+            multi_wait.append(w)
+            codes.remove(w)
+        codes.append(multi_wait)
+
+        multi_wait.build_transition()
+        for i in range(len(meta_waits)):
+            ahdl_var = multi_wait.latch_var(i)
+            sig = self.module_info.scope.gen_sig(ahdl_var.name, 1)
+            self.module_info.add_internal_reg(sig)

@@ -481,7 +481,7 @@ class AHDL_META_WAIT(AHDL_STM):
         super().__init__()
         self.metaid = args[0]
         self.args = list(args[1:])
-        self.codes = None
+        self.codes = []
         self.transition = None
 
     def __str__(self):
@@ -497,6 +497,47 @@ class AHDL_META_WAIT(AHDL_STM):
     def __repr__(self):
         args = [repr(self.metaid)] + [repr(a) for a in self.args]
         return 'AHDL_META_WAIT({})'.format(', '.join(args))
+
+
+class AHDL_META_MULTI_WAIT(AHDL_STM):
+    def __init__(self, id):
+        super().__init__()
+        self.id = id
+        self.waits = []
+        self.transition = None
+
+    def __str__(self):
+        s = 'AHDL_META_MULTI_WAIT({})'.format(', '.join([str(w) for w in self.waits]))
+        if self.transition:
+            s += '\n'
+            s += '  {}'.format(self.transition)
+        return s
+
+    def __repr__(self):
+        args = [repr(w) for w in self.waits]
+        return 'AHDL_META_MULTI_WAIT({})'.format(', '.join(args))
+
+    def append(self, wait):
+        assert isinstance(wait, AHDL_META_WAIT)
+        idx = len(self.waits)
+        var = self.latch_var(idx)
+        set_latch = AHDL_MOVE(var, AHDL_CONST(1))
+        wait.codes.append(set_latch)
+        wait.transition = None
+        self.waits.append(wait)
+
+    def latch_var(self, idx):
+        return AHDL_SYMBOL('wait_latch_{}_{}'.format(self.id, idx))
+
+    def build_transition(self):
+        conds = []
+        clears = []
+        for i in range(0, len(self.waits)):
+            conds.append(AHDL_OP('Eq', self.latch_var(i), AHDL_CONST(1)))
+            clears.append(AHDL_MOVE(self.latch_var(i), AHDL_CONST(0)))
+        cond = AHDL_OP('And', *conds)
+        codes = clears + [self.transition]
+        self.transition = AHDL_TRANSITION_IF([cond], [codes])
 
 
 class AHDL_FUNCTION(AHDL_DECL):
