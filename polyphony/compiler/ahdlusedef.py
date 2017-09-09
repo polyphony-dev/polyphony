@@ -75,18 +75,24 @@ class UseDefTable(object):
         if isinstance(stm, AHDL_STM):
             return self._use_stm2var[stm]
 
-    def __str__(self):
-        s = '### ahdl statements that has signal defs\n'
-        for sig, stms in self._def_sig2stm.items():
-            s += str(sig) + '\n'
-            for stm in stms:
-                s += '    ' + str(stm) + '\n'
+    def get_all_def_sigs(self):
+        return self._def_sig2stm.keys()
 
-        s += '### ahdl statements that has signal uses\n'
-        for sig, stms in self._use_sig2stm.items():
-            s += str(sig) + '\n'
-            for stm in stms:
-                s += '    ' + str(stm) + '\n'
+    def __str__(self):
+        s = ''
+        keys = set(self._def_sig2stm.keys()) | set(self._use_sig2stm.keys())
+        for key in sorted(keys):
+            s += str(key) + '\n'
+            s += '  defs\n'
+            if key in self._def_sig2stm:
+                stms = self._def_sig2stm[key]
+                for stm in stms:
+                    s += '    ' + str(stm) + '\n'
+            s += '  uses\n'
+            if key in self._use_sig2stm:
+                stms = self._use_sig2stm[key]
+                for stm in stms:
+                    s += '    ' + str(stm) + '\n'
         return s
 
 
@@ -94,6 +100,8 @@ class AHDLUseDefDetector(AHDLVisitor):
     def __init__(self):
         super().__init__()
         self.table = UseDefTable()
+        self.enable_use = True
+        self.enable_def = True
 
     def process(self, scope):
         if not scope.module_info:
@@ -102,12 +110,37 @@ class AHDLUseDefDetector(AHDLVisitor):
             for stg in fsm.stgs:
                 for state in stg.states:
                     self.current_state = state
-                    for code in state.codes:
+                    for code in state.traverse():
                         self.visit(code)
         scope.ahdlusedef = self.table
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.ctx & Ctx.STORE:
-            self.table.add_var_def(ahdl, self.current_stm, self.current_state)
+            if self.enable_def:
+                self.table.add_var_def(ahdl, self.current_stm, self.current_state)
         else:
-            self.table.add_var_use(ahdl, self.current_stm, self.current_state)
+            if self.enable_use:
+                self.table.add_var_use(ahdl, self.current_stm, self.current_state)
+
+    def visit_AHDL_SEQ(self, ahdl):
+        if ahdl.factor.is_a(AHDL_LOAD):
+            if ahdl.step == 0:
+                # only first item can be valid 'use' in load sequence
+                self.enable_def = False
+            elif ahdl.step == ahdl.step_n - 1:
+                # only last item can be valid 'def' in load sequence
+                self.enable_use = False
+            else:
+                self.enable_def = False
+                self.enable_use = False
+        elif ahdl.factor.is_a(AHDL_STORE):
+            if ahdl.step == 0:
+                # only first item can be valid 'use' in store sequence
+                pass
+            else:
+                self.enable_use = False
+        method = 'visit_{}'.format(ahdl.factor.__class__.__name__)
+        visitor = getattr(self, method, None)
+        ret = visitor(ahdl.factor)
+        self.enable_use = True
+        self.enable_def = True

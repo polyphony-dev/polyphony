@@ -17,6 +17,12 @@ logger = getLogger(__name__)
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 
 
+def default_synth_params():
+    di = defaultdict(str)
+    di['scheduling'] = 'parallel'
+    return di
+
+
 class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
@@ -142,7 +148,7 @@ class Scope(Tagged):
         self.worker_owner = None
         self.asap_latency = -1
         self.type_args = []
-        self.synth_params = {}
+        self.synth_params = default_synth_params()
 
     def __str__(self):
         s = '\n================================\n'
@@ -590,6 +596,10 @@ def write_dot(scope, tag):
         import pydot
     except ImportError:
         raise
+    # force disable debug mode to simplify the caption
+    debug_mode = env.dev_debug_mode
+    env.dev_debug_mode = False
+
     name = scope.orig_name + '_' + str(tag)
     g = pydot.Dot(name, graph_type='digraph')
 
@@ -619,3 +629,4 @@ def write_dot(scope, tag):
         #    else:
         #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed'))
     g.write_png('.tmp/' + name + '.png')
+    env.dev_debug_mode = debug_mode

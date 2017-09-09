@@ -242,6 +242,7 @@ class CompositBlock(Block):
         self.outer_uses = None
         self.inner_defs = None
         self.inner_uses = None
+        self.synth_params['scheduling'] = head.synth_params['scheduling']
         head.parent = self
         for body in bodies:
             body.parent = self

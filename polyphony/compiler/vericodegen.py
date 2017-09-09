@@ -7,6 +7,7 @@ from .ahdlvisitor import AHDLVisitor
 from .env import env
 from .hdlinterface import *
 from .memref import One2NMemNode, N2OneMemNode
+from .stg import State, PipelineState
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -311,9 +312,15 @@ class VerilogCodeGen(AHDLVisitor):
             self.emit('$display("%8d:STATE:{}  {}", $time);'.
                       format(self.scope.orig_name,
                              state.name))
-
-        for code in state.codes:
-            self.visit(code)
+        # this is workaround
+        if isinstance(state, PipelineState):
+            for stage in state.stages:
+                self.emit('/*** {} ***/'.format(stage.name))
+                for code in stage.codes:
+                    self.visit(code)
+        elif isinstance(state, State):
+            for code in state.codes:
+                self.visit(code)
 
         self.set_indent(-2)
         self.emit('end')

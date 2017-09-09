@@ -13,6 +13,7 @@ class Signal(Tagged):
         'single_port', 'seq_port', 'fifo_port',
         'initializable',
         'induction',
+        'pipeline_valid'
     }
 
     def __init__(self, name, width, tags, sym=None):
@@ -27,6 +28,9 @@ class Signal(Tagged):
 
     def __eq__(self, other):
         return self.name == other.name
+
+    def __lt__(self, other):
+        return self.name < other.name
 
     def __hash__(self):
         return hash(self.name)

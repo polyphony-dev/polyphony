@@ -285,7 +285,7 @@ class _Rule(object):
 
         def __call__(self, func):
             def wrapper(*args, **kwargs):
-                func(*args, **kwargs)
+                return func(*args, **kwargs)
             print('decorator rules=', self.rules)
             return wrapper
 

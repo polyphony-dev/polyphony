@@ -141,7 +141,7 @@ class HDLModuleBuilder(object):
         collector = AHDLVarCollector(self.module_info, defs, uses, outputs)
         for stg in scope.stgs:
             for state in stg.states:
-                for code in state.codes:
+                for code in state.traverse():
                     collector.visit(code)
         return defs, uses, outputs
 
@@ -150,7 +150,7 @@ class HDLModuleBuilder(object):
         collector = AHDLSpecialDeclCollector(edge_detectors)
         for stg in scope.stgs:
             for state in stg.states:
-                for code in state.codes:
+                for code in state.traverse():
                     collector.visit(code)
         return edge_detectors
 
@@ -158,7 +158,7 @@ class HDLModuleBuilder(object):
         moves = []
         for stg in scope.stgs:
             for state in stg.states:
-                moves.extend([code for code in state.codes if code.is_a(AHDL_MOVE)])
+                moves.extend([code for code in state.traverse() if code.is_a(AHDL_MOVE)])
         return moves
 
     def _add_seq_interface(self, signal):
@@ -559,6 +559,5 @@ class AHDLSpecialDeclCollector(AHDLVisitor):
         old, new = ahdl.args[0], ahdl.args[1]
         for var in ahdl.args[2:]:
             self.edge_detectors.add((var.sig, old, new))
-            if ahdl.codes:
-                for code in ahdl.codes:
-                    self.visit(code)
+            for code in ahdl.codes:
+                self.visit(code)

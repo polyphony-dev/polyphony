@@ -15,7 +15,7 @@ class BitwidthReducer(AHDLVisitor):
         for fsm in scope.module_info.fsms.values():
             for stg in fsm.stgs:
                 for state in stg.states:
-                    for code in state.codes:
+                    for code in state.traverse():
                         self.visit(code)
 
     def visit_AHDL_CONST(self, ahdl):

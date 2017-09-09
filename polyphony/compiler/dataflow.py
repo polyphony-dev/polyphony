@@ -2,6 +2,7 @@
 from .block import CompositBlock
 from .ir import *
 from .env import env
+from . import utils
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -52,6 +53,8 @@ class DFNode(object):
         return str(self)
 
     def __lt__(self, other):
+        if self.priority == other.priority:
+            return self.begin < other.begin
         return self.priority < other.priority
 
     def latency(self):
@@ -59,8 +62,9 @@ class DFNode(object):
 
 
 class DataFlowGraph(object):
-    def __init__(self, name, blocks):
+    def __init__(self, name, main_block, blocks):
         self.name = name
+        self.main_block = main_block
         self.blocks = blocks
         self.nodes = []
         self.edges = set()
@@ -69,11 +73,12 @@ class DataFlowGraph(object):
         self.preds_without_back_cache = {}
         self.parent = None
         self.children = []
+        self.synth_params = defaultdict(str)
 
     def __str__(self):
         s = 'DFG all nodes ==============\n'
         sources = self.find_src()
-        for n in self.traverse_nodes(sources, []):
+        for n in sorted(self.traverse_nodes(sources, [])):
             s += '  ' + str(n)
             s += '\n'
         s += 'DFG all edges ==============\n'
@@ -251,8 +256,8 @@ class DataFlowGraph(object):
             yield n
 
         for n in nodes:
-            for succ in self.traverse_nodes(self.succs(n), visited):
-                yield succ
+            succs = utils.unique(self.succs(n))
+            yield from self.traverse_nodes(succs, visited)
 
     def traverse_nodes_without_back(self, siblings):
         for n in siblings:
@@ -285,14 +290,20 @@ class DataFlowGraph(object):
             import pydot
         except ImportError:
             return
+        # force disable debug mode to simplify the caption
+        debug_mode = env.dev_debug_mode
+        env.dev_debug_mode = False
+
         g = pydot.Dot(name, graph_type='digraph')
 
         def get_node_tag_text(node):
-            s = hex(node.__hash__())[-4:] + '_' + str(node.tag)
-            if len(s) > 50:
-                return s[0:50]
-            else:
-                return s
+            s = str(node.tag)
+            s = s.replace('\n', '\l') + '\l'
+            s = s.replace(':', '_')
+            #if len(s) > 50:
+            #    return s[0:50]
+            #else:
+            return s
 
         node_map = {n: pydot.Node(get_node_tag_text(n), shape='box') for n in self.nodes}
         for n in node_map.values():
@@ -315,6 +326,7 @@ class DataFlowGraph(object):
             g.write_png('.tmp/' + name + '.png')
             #g.write_svg(name+'.svg')
             #g.write(name+'.dot')
+        env.dev_debug_mode = debug_mode
 
     def write_dot_pygraphviz(self, name):
         try:
@@ -376,6 +388,7 @@ class DFGBuilder(object):
             dfg = self._make_graph(blk, blocks)
         for child in children:
             dfg.set_child(child)
+        dfg.synth_params = blk.synth_params
         return dfg
 
     def _dump_dfg(self, dfg):
@@ -403,7 +416,7 @@ class DFGBuilder(object):
     def _make_graph(self, main_block, blocks):
         name = main_block.name
         logger.debug('make graph ' + name)
-        dfg = DataFlowGraph(name, blocks)
+        dfg = DataFlowGraph(name, main_block, blocks)
         usedef = self.scope.usedef
 
         for b in blocks:
@@ -429,8 +442,7 @@ class DFGBuilder(object):
                         if defstm.block not in blocks:
                             continue
                         defnode = dfg.add_stm_node(defstm)
-                        if defnode.tag.block is usenode.tag.block:
-                            dfg.add_defuse_edge(defnode, usenode)
+                        dfg.add_defuse_edge(defnode, usenode)
 
                 # add use-def edges
                 defnode = usenode
@@ -445,8 +457,7 @@ class DFGBuilder(object):
                         if usestm.block is not stm.block:
                             continue
                         usenode = dfg.add_stm_node(usestm)
-                        if defnode.tag.block is usenode.tag.block:
-                            dfg.add_usedef_edge(usenode, defnode)
+                        dfg.add_usedef_edge(usenode, defnode)
 
         if self.scope.is_testbench():
             # Test need to call functions sequentially
@@ -619,7 +630,7 @@ class DFGBuilder(object):
     def _add_special_seq_edges(self, dfg):
         for node in dfg.nodes:
             stm = node.tag
-            if stm.is_a([JUMP, CJUMP, MCJUMP]):
+            if stm.is_a([CJUMP, MCJUMP]):
                 #assert len(stm.block.stms) > 1
                 assert stm.block.stms[-1] is stm
                 for prev_stm in stm.block.stms[:-1]:

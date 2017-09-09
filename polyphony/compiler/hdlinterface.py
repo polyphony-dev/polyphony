@@ -480,38 +480,48 @@ class RAMAccessor(Accessor):
                                   AHDL_CONST(0)))
         return stms
 
-    def read_sequence(self, step, offset, dst, is_continuous):
+    def read_sequence(self, step, offset, dst, is_continuous, pipeline_valid=None):
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
         q = port2ahdl(self, 'q')
 
         if step == 0:
+            if pipeline_valid:
+                req_stm = AHDL_MOVE(req, pipeline_valid)
+            else:
+                req_stm = AHDL_MOVE(req, AHDL_CONST(1))
             return (AHDL_MOVE(addr, offset),
                     AHDL_MOVE(we, AHDL_CONST(0)),
-                    AHDL_MOVE(req, AHDL_CONST(1)))
+                    req_stm)
         elif step == 1:
             return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
         elif step == 2:
-            if is_continuous:
+            if is_continuous or pipeline_valid:
                 return (AHDL_MOVE(dst, q), )
             else:
                 return (AHDL_MOVE(dst, q),
                         AHDL_MOVE(req, AHDL_CONST(0)))
 
-    def write_sequence(self, step, offset, src, is_continuous):
+    def write_sequence(self, step, offset, src, is_continuous, pipeline_valid=None):
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
         d = port2ahdl(self, 'd')
 
         if step == 0:
+            if pipeline_valid:
+                we_stm = AHDL_MOVE(we, pipeline_valid)
+                req_stm = AHDL_MOVE(req, pipeline_valid)
+            else:
+                we_stm = AHDL_MOVE(we, AHDL_CONST(1))
+                req_stm = AHDL_MOVE(req, AHDL_CONST(1))
             return (AHDL_MOVE(addr, offset),
-                    AHDL_MOVE(we, AHDL_CONST(1)),
-                    AHDL_MOVE(req, AHDL_CONST(1)),
+                    we_stm,
+                    req_stm,
                     AHDL_MOVE(d, src))
         elif step == 1:
-            if is_continuous:
+            if is_continuous or pipeline_valid:
                 return tuple()
             else:
                 return (AHDL_MOVE(req, AHDL_CONST(0)), )

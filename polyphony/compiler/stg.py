@@ -1,6 +1,8 @@
 ﻿import sys
 from collections import OrderedDict, defaultdict
 import functools
+from .ahdlusedef import AHDLUseDefDetector
+from .ahdlvisitor import AHDLVisitor
 from .block import Block
 from .ir import *
 from .ahdl import *
@@ -12,21 +14,21 @@ logger = getLogger(__name__)
 
 
 class State(object):
-    def __init__(self, name, step, codes, stg):
+    def __init__(self, name, step, codes, stg, parent_state=None):
         assert isinstance(name, str)
         self.name = name
         self.step = step
         self.codes = codes
         self.stg = stg
+        self.parent_state = parent_state
 
     def __str__(self):
         s = '---------------------------------\n'
         s += '{}:{}\n'.format(self.name, self.step)
         if self.codes:
-            if self.codes:
-                strcodes = ''.join(['{}\n'.format(code) for code in self.codes])
-                lines = strcodes.split('\n')
-                s += '\n'.join(['  {}'.format(line) for line in lines])
+            strcodes = ''.join(['{}\n'.format(code) for code in self.codes])
+            lines = strcodes.split('\n')
+            s += '\n'.join(['  {}'.format(line) for line in lines])
         else:
             pass
         s += '\n'
@@ -35,14 +37,18 @@ class State(object):
     def __repr__(self):
         return self.name
 
-    def resolve_transition(self, next_state):
+    def traverse(self):
+        for c in self.codes:
+            yield c
+
+    def resolve_transition(self, next_state, blk2states):
         code = self.codes[-1]
         if code.is_a(AHDL_TRANSITION):
             if code.target is None:
                 code.target = next_state
             else:
                 assert isinstance(code.target, Block)
-                code.target = self.stg.scope.blk2state[code.target][0]
+                code.target = blk2states[self.stg.scope][code.target][0]
             transition = code
         elif code.is_a(AHDL_TRANSITION_IF):
             for i, codes in enumerate(code.codes_list):
@@ -50,7 +56,7 @@ class State(object):
                 transition = codes[0]
                 assert transition.is_a(AHDL_TRANSITION)
                 assert isinstance(transition.target, Block)
-                target_state = self.stg.scope.blk2state[transition.target][0]
+                target_state = blk2states[self.stg.scope][transition.target][0]
                 transition.target = target_state
             transition = code
         else:
@@ -69,6 +75,77 @@ class State(object):
         return next_state
 
 
+class PipelineState(State):
+    def __init__(self, name, stages, first_valid_signal, stg):
+        assert isinstance(name, str)
+        self.name = name
+        self.stages = stages
+        self.valid_signals = {0:first_valid_signal}
+        self.stg = stg
+
+    def __str__(self):
+        s = '---------------------------------\n'
+        s += '{}\n'.format(self.name)
+
+        if self.stages:
+            for stage in self.stages:
+                lines = ['---{}---'.format(stage.name)]
+                strcodes = '\n'.join(['{}'.format(code) for code in stage.codes])
+                lines += strcodes.split('\n')
+                s += '\n'.join(['  {}'.format(line) for line in lines])
+                s += '\n'
+        else:
+            pass
+        s += '\n'
+        return s
+
+    def valid_signal(self, idx):
+        if idx not in self.valid_signals:
+            stage_name = self.name + '_{}'.format(idx)
+            name = '{}_valid'.format(stage_name)
+            new_valid = self.stg.scope.gen_sig(name, 1, {'reg', 'pipeline_valid'})
+            self.valid_signals[idx] = new_valid
+        return self.valid_signals[idx]
+
+    def new_stage(self, step, codes):
+        name = self.name + '_{}'.format(step)
+        s = State(name, step, codes, self.stg, parent_state=self)
+        self.stages.append(s)
+        assert len(self.stages) == step + 1
+        return s
+
+    def traverse(self):
+        for s in self.stages:
+            for c in s.codes:
+                yield c
+
+    def resolve_transition(self, next_state, blk2states):
+        end_stage = self.stages[-1]
+        code = end_stage.codes[-1]
+        assert code.is_a(AHDL_TRANSITION_IF)
+        for i, codes in enumerate(code.codes_list):
+            assert len(codes) == 1
+            transition = codes[0]
+            assert transition.is_a(AHDL_TRANSITION)
+            assert isinstance(transition.target, Block)
+            target_state = blk2states[self.stg.scope][transition.target][0]
+            transition.target = target_state
+        transition = code
+
+        move_transition = False
+        for s in self.stages:
+            for code in s.codes:
+                if code.is_a(AHDL_META_WAIT):
+                    if transition:
+                        code.transition = transition
+                        move_transition = True
+                    else:
+                        code.transition = AHDL_TRANSITION(next_state)
+            if move_transition:
+                s.codes.pop()
+        return next_state
+
+
 class STG(object):
     "State Transition Graph"
     def __init__(self, name, parent, states, scope):
@@ -81,6 +158,7 @@ class STG(object):
         self.scope = scope
         self.init_state = None
         self.finish_state = None
+        self.scheduling = ''
 
     def __str__(self):
         s = ''
@@ -125,13 +203,13 @@ class ScheduledItemQueue(object):
 class STGBuilder(object):
     def __init__(self):
         self.dfg2stg = {}
-        self.mrg = env.memref_graph
+        self.blk2states = {}
 
     def process(self, scope):
         if scope.is_namespace() or scope.is_class() or scope.is_lib():
             return
         self.scope = scope
-        self.scope.blk2state = {}
+        self.blk2states[scope] = {}
         stgs = []
         dfgs = scope.dfgs(bottom_up=False)
         for i, dfg in enumerate(dfgs):
@@ -140,28 +218,19 @@ class STGBuilder(object):
             self.dfg2stg[dfg] = stg
 
         main_stg = stgs[0]
-        functools.reduce(lambda s1, s2: s1.resolve_transition(s2), main_stg.states)
+        functools.reduce(lambda s1, s2: s1.resolve_transition(s2, self.blk2states), main_stg.states)
         if scope.is_worker() or scope.is_testbench():
-            main_stg.states[-1].resolve_transition(main_stg.states[-1])
+            main_stg.states[-1].resolve_transition(main_stg.states[-1], self.blk2states)
         else:
-            main_stg.states[-1].resolve_transition(main_stg.states[0])
+            main_stg.states[-1].resolve_transition(main_stg.states[0], self.blk2states)
         for stg in stgs[1:]:
-            functools.reduce(lambda s1, s2: s1.resolve_transition(s2), stg.states)
-            stg.states[-1].resolve_transition(stg.states[0])
+            functools.reduce(lambda s1, s2: s1.resolve_transition(s2, self.blk2states), stg.states)
+            stg.states[-1].resolve_transition(stg.states[0], self.blk2states)
 
         scope.stgs = stgs
 
     def _get_parent_stg(self, dfg):
         return self.dfg2stg[dfg.parent]
-
-    def _get_block_nodes_map(self, dfg):
-        blk_nodes_map = defaultdict(list)
-        for n in dfg.get_scheduled_nodes():
-            if n.begin < 0:
-                continue
-            blk = n.tag.block
-            blk_nodes_map[blk].append(n)
-        return blk_nodes_map
 
     def _process_dfg(self, index, dfg):
         is_main = index == 0
@@ -177,30 +246,33 @@ class STGBuilder(object):
                 stg_name = '{}_L{}'.format(self.scope.orig_name, index)
             if self.scope.is_method():
                 stg_name = self.scope.parent.orig_name + '_' + stg_name
-        self.translator = AHDLTranslator(stg_name, self, self.scope)
 
         parent_stg = self._get_parent_stg(dfg) if not is_main else None
-        self.stg = STG(stg_name, parent_stg, None, self.scope)
+        stg = STG(stg_name, parent_stg, None, self.scope)
+        stg.scheduling = dfg.synth_params['scheduling']
+        if stg.scheduling == 'parallel':
+            builder = StateBuilder(self.scope, stg, self.blk2states)
+        elif stg.scheduling == 'pipeline':
+            builder = PipelineStageBuilder(self.scope, stg, self.blk2states)
+        builder.build(dfg, is_main)
+        return stg
 
-        blk_nodes_map = self._get_block_nodes_map(dfg)
-        for i, blk in enumerate(dfg.blocks):
-            blk_name = blk.nametag + str(blk.num)
-            state_prefix = stg_name + '_' + blk_name
-            logger.debug('# BLOCK ' + state_prefix + ' #')
-            is_first = True if i == 0 else False
-            is_last = True if i == len(dfg.blocks) - 1 else False
 
-            self.scheduled_items = ScheduledItemQueue()
-            if blk in blk_nodes_map:
-                nodes = blk_nodes_map[blk]
-                self._build_scheduled_items(nodes)
-            states = self._build_states(state_prefix, blk, is_main, is_first, is_last)
-            assert states
+class STGItemBuilder(object):
+    def __init__(self, scope, stg, blk2states):
+        self.scope = scope
+        self.stg = stg
+        self.blk2states = blk2states
+        self.translator = AHDLTranslator(stg.name, self, scope)
 
-            self.stg.states.extend(states)
-            self.scope.blk2state[blk] = states
-
-        return self.stg
+    def _get_block_nodes_map(self, dfg):
+        blk_nodes_map = defaultdict(list)
+        for n in dfg.get_scheduled_nodes():
+            if n.begin < 0:
+                continue
+            blk = n.tag.block
+            blk_nodes_map[blk].append(n)
+        return blk_nodes_map
 
     def _build_scheduled_items(self, nodes):
         scheduled_node_map = OrderedDict()
@@ -226,7 +298,101 @@ class STGBuilder(object):
         for node in nodes:
             self.translator.visit(node.tag, node)
 
-    def _build_states(self, state_prefix, blk, is_main, is_first, is_last):
+    def gen_sig(self, prefix, postfix, width, tag=None):
+        sig = self.scope.gen_sig('{}_{}'.format(prefix, postfix), width, tag)
+        return sig
+
+    def _new_state(self, name, step, codes):
+        return self.stg.new_state(name, step, codes)
+
+    def emit_call_sequence(self, ahdl_call, dst, node, sched_time):
+        assert ahdl_call.is_a(AHDL_MODULECALL)
+        ahdl_call.returns = []
+        for arg in ahdl_call.args:
+            if arg.is_a(AHDL_MEMVAR) and arg.memnode.can_be_reg():
+                ahdl_call.returns.append(arg)
+        # TODO:
+        if dst:
+            ahdl_call.returns.append(dst)
+
+        step_n = node.latency()
+        for i in range(step_n):
+            self.emit(AHDL_SEQ(ahdl_call, i, step_n), sched_time + i)
+
+    def emit_memload_sequence(self, ahdl_load, sched_time):
+        assert ahdl_load.is_a(AHDL_LOAD)
+        step_n = 3  # TODO : It should calculate from a memory type
+        for i in range(step_n):
+            self.emit(AHDL_SEQ(ahdl_load, i, step_n), sched_time + i)
+
+    def emit_memstore_sequence(self, ahdl_store, sched_time):
+        assert ahdl_store.is_a(AHDL_STORE)
+        step_n = 2  # TODO : It should calculate from a memory type
+        for i in range(step_n):
+            self.emit(AHDL_SEQ(ahdl_store, i, step_n), sched_time + i)
+
+    def emit(self, item, sched_time, tag=''):
+        logger.debug('emit ' + str(item) + ' at ' + str(sched_time))
+        self.scheduled_items.push(sched_time, item, tag)
+
+    def get_signal_prefix(self, ir, node):
+        if ir.func_scope.is_class():
+            stm = node.tag
+            return '{}_{}'.format(stm.dst.sym.name, env.ctor_name)
+        elif ir.func_scope.is_method():
+            assert ir.func.is_a(ATTR)
+            instance_name = self.make_instance_name(ir.func)
+            return '{}_{}'.format(instance_name, ir.func.attr.name)
+        else:
+            assert ir.func.is_a(TEMP)
+            return '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)
+
+    def make_instance_name(self, ir):
+        assert ir.is_a(ATTR)
+
+        def make_instance_name_rec(ir):
+            assert ir.is_a(ATTR)
+            if ir.exp.is_a(TEMP):
+                if ir.exp.sym.name == env.self_name:
+                    if self.scope.is_ctor():
+                        return self.scope.parent.orig_name
+                    else:
+                        return self.scope.orig_name
+                elif ir.exp.sym.typ.is_class():
+                    return ir.exp.sym.typ.get_scope().orig_name
+                else:
+                    return ir.exp.sym.hdl_name()
+            else:
+                instance_name = '{}_{}'.format(make_instance_name_rec(ir.exp), ir.exp.attr.name)
+            return instance_name
+        return make_instance_name_rec(ir)
+
+
+class StateBuilder(STGItemBuilder):
+    def __init__(self, scope, stg, blk2states):
+        super().__init__(scope, stg, blk2states)
+
+    def build(self, dfg, is_main):
+        blk_nodes_map = self._get_block_nodes_map(dfg)
+        for i, blk in enumerate(dfg.blocks):
+            self.scheduled_items = ScheduledItemQueue()
+            if blk in blk_nodes_map:
+                nodes = blk_nodes_map[blk]
+                self._build_scheduled_items(nodes)
+
+            blk_name = blk.nametag + str(blk.num)
+            prefix = self.stg.name + '_' + blk_name
+            logger.debug('# BLOCK ' + prefix + ' #')
+
+            is_first = True if i == 0 else False
+            is_last = True if i == len(dfg.blocks) - 1 else False
+            states = self._build_states_for_block(prefix, blk, is_main, is_first, is_last)
+
+            assert states
+            self.stg.states.extend(states)
+            self.blk2states[self.scope][blk] = states
+
+    def _build_states_for_block(self, state_prefix, blk, is_main, is_first, is_last):
         states = []
         for step, items in self.scheduled_items.pop():
             codes = []
@@ -303,74 +469,143 @@ class STGBuilder(object):
                 self.stg.finish_state = finish_state
         return states
 
-    def gen_sig(self, prefix, postfix, width, tag=None):
-        sig = self.scope.gen_sig('{}_{}'.format(prefix, postfix), width, tag)
-        return sig
 
-    def _new_state(self, name, step, codes):
-        return self.stg.new_state(name, step, codes)
+class PipelineStageBuilder(STGItemBuilder):
+    def __init__(self, scope, stg, blk2states):
+        super().__init__(scope, stg, blk2states)
 
-    def emit_call_sequence(self, ahdl_call, dst, node, sched_time):
-        assert ahdl_call.is_a(AHDL_MODULECALL)
-        ahdl_call.returns = []
-        for arg in ahdl_call.args:
-            if arg.is_a(AHDL_MEMVAR) and arg.memnode.can_be_reg():
-                ahdl_call.returns.append(arg)
-        # TODO:
-        if dst:
-            ahdl_call.returns.append(dst)
+    def build(self, dfg, is_main):
+        blk_nodes_map = self._get_block_nodes_map(dfg)
 
-        step_n = node.latency()
-        for i in range(step_n):
-            self.emit(AHDL_SEQ(ahdl_call, i, step_n), sched_time + i)
+        blk_name = dfg.main_block.nametag + str(dfg.main_block.num)
+        prefix = self.stg.name + '_' + blk_name + '_P'
+        pipeline_valid = self.translator._sym_2_sig(dfg.main_block.loop_info.cond, Ctx.LOAD)
+        pstate = PipelineState(prefix, [], pipeline_valid, self.stg)
 
-    def emit_memload_sequence(self, ahdl_load, sched_time):
-        assert ahdl_load.is_a(AHDL_LOAD)
-        step_n = 3  # TODO : It should calculate from a memory type
-        for i in range(step_n):
-            self.emit(AHDL_SEQ(ahdl_load, i, step_n), sched_time + i)
+        # remove cjump in the loop head
+        head_nodes = blk_nodes_map[dfg.main_block.head]
+        nodes = [n for n in head_nodes if not n.tag.is_a(CJUMP)]
+        for blk in dfg.main_block.bodies:
+            if blk in blk_nodes_map:
+                nodes.extend(blk_nodes_map[blk])
+        self.scheduled_items = ScheduledItemQueue()
+        self._build_scheduled_items(nodes)
+        self._build_pipeline_stages(prefix, pstate, is_main)
 
-    def emit_memstore_sequence(self, ahdl_store, sched_time):
-        assert ahdl_store.is_a(AHDL_STORE)
-        step_n = 2  # TODO : It should calculate from a memory type
-        for i in range(step_n):
-            self.emit(AHDL_SEQ(ahdl_store, i, step_n), sched_time + i)
+        for blk in dfg.main_block.region:
+            self.blk2states[self.scope][blk] = [pstate]
 
-    def emit(self, item, sched_time, tag=''):
-        logger.debug('emit ' + str(item) + ' at ' + str(sched_time))
-        self.scheduled_items.push(sched_time, item, tag)
+        # make a exit condition of pipeline
+        stage_n = len(pstate.stages) - 1
+        stage_valid = pstate.valid_signal(stage_n)
+        stage_valid_d = pstate.valid_signal(stage_n + 1)
+        exp1 = AHDL_OP('Eq', AHDL_VAR(stage_valid, Ctx.LOAD), AHDL_CONST(0))
+        exp2 = AHDL_OP('Eq', AHDL_VAR(stage_valid_d, Ctx.LOAD), AHDL_CONST(1))
+        pipe_end_cond = AHDL_OP('And', exp1, exp2)
+        conds = [pipe_end_cond]
+        codes_list = [[AHDL_TRANSITION(dfg.main_block.loop_info.exit)]]
+        pipe_end_stm = AHDL_TRANSITION_IF(conds, codes_list)
+        pstate.stages[-1].codes.append(pipe_end_stm)
+        self.stg.states.append(pstate)
 
-    def get_signal_prefix(self, ir, node):
-        if ir.func_scope.is_class():
-            stm = node.tag
-            return '{}_{}'.format(stm.dst.sym.name, env.ctor_name)
-        elif ir.func_scope.is_method():
-            assert ir.func.is_a(ATTR)
-            instance_name = self.make_instance_name(ir.func)
-            return '{}_{}'.format(instance_name, ir.func.attr.name)
-        else:
-            assert ir.func.is_a(TEMP)
-            return '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)
+    def _build_pipeline_stages(self, prefix, pstate, is_main):
+        prev_stage = None
+        for idx, (step, items) in enumerate(sorted(self.scheduled_items.queue.items())):
+            codes = []
+            for item, _ in items:
+                assert isinstance(item, AHDL)
+                codes.append(item)
+            stage = pstate.new_stage(step, codes)
+            self._make_stage(stage, prev_stage, idx)
+            prev_stage = stage
 
-    def make_instance_name(self, ir):
-        assert ir.is_a(ATTR)
+        # analysis and inserting register slices between pileline stages
+        stm2stage_num = self._make_stm2stage_num(pstate)
+        detector = AHDLUseDefDetector()
+        for stage in pstate.stages:
+            detector.current_state = stage
+            for code in stage.traverse():
+                detector.visit(code)
+        usedef = detector.table
+        for sig in usedef.get_all_def_sigs():
+            defs = usedef.get_stms_defining(sig)
+            d = list(defs)[0]
+            d_stage_n = stm2stage_num[d]
+            uses = usedef.get_stms_using(sig)
+            use_max_distances = defaultdict(int)
+            for u in uses:
+                u_stage_n = stm2stage_num[u]
+                distance = u_stage_n - d_stage_n
+                assert 0 <= distance
+                if use_max_distances[sig] < distance:
+                    use_max_distances[sig] = distance
+            for sig, distance in use_max_distances.items():
+                if 1 < distance:
+                    self._insert_register_slices(sig, pstate.stages,
+                                                 d_stage_n, d_stage_n + distance,
+                                                 usedef, stm2stage_num)
 
-        def make_instance_name_rec(ir):
-            assert ir.is_a(ATTR)
-            if ir.exp.is_a(TEMP):
-                if ir.exp.sym.name == env.self_name:
-                    if self.scope.is_ctor():
-                        return self.scope.parent.orig_name
-                    else:
-                        return self.scope.orig_name
-                elif ir.exp.sym.typ.is_class():
-                    return ir.exp.sym.typ.get_scope().orig_name
-                else:
-                    return ir.exp.sym.hdl_name()
+    def _insert_register_slices(self, sig, stages, start_n, end_n, usedef, stm2stage_num):
+        replacer = AHDLVarReplacer()
+        defs = usedef.get_stms_defining(sig)
+        assert len(defs) == 1
+        d = list(defs)[0]
+        d_num = stm2stage_num[d]
+        for u in usedef.get_stms_using(sig):
+            num = stm2stage_num[u]
+            if num == d_num:
+                continue
+            new_name = sig.name + '_{}'.format(num)  # use previous stage variable
+            new_sig = self.scope.gen_sig(new_name, sig.width, sig.tags)
+            replacer.replace(u, sig, new_sig)
+        for i, s in enumerate(stages[start_n:end_n]):
+            num = i + start_n
+            # first slice uses original
+            if i == 0:
+                prev_sig = sig
             else:
-                instance_name = '{}_{}'.format(make_instance_name_rec(ir.exp), ir.exp.attr.name)
-            return instance_name
-        return make_instance_name_rec(ir)
+                prev_name = sig.name + '_{}'.format(num)
+                prev_sig = self.scope.gen_sig(prev_name, sig.width, sig.tags)
+            cur_name = sig.name + '_{}'.format(num + 1)
+            cur_sig = self.scope.gen_sig(cur_name, sig.width, sig.tags)
+            codes = s.codes
+            slice_stm = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
+                                  AHDL_VAR(prev_sig, Ctx.LOAD))
+            codes.append(slice_stm)
+
+    def _make_stage(self, stage, prev_stage, stage_n):
+        is_last = stage_n == len(self.scheduled_items.queue.items()) - 1
+        pstate = stage.parent_state
+        v0 = pstate.valid_signal(stage_n)
+        for i, c in enumerate(stage.codes):
+            c = self._guard_for_pipeline_if_needed(c, v0)
+            stage.codes[i] = c
+        v1 = pstate.valid_signal(stage_n + 1)
+        set_valid = AHDL_MOVE(AHDL_VAR(v1, Ctx.STORE),
+                              AHDL_VAR(v0, Ctx.LOAD))
+        stage.codes.insert(0, set_valid)
+        if is_last:
+            v2 = pstate.valid_signal(stage_n + 2)
+            set_valid = AHDL_MOVE(AHDL_VAR(v2, Ctx.STORE),
+                                  AHDL_VAR(v1, Ctx.LOAD))
+            stage.codes.insert(1, set_valid)
+
+    def _make_stm2stage_num(self, pstate):
+        stm2stage_num = {}
+        for i, s in enumerate(pstate.stages):
+            for c in s.codes:
+                stm2stage_num[c] = i
+                if c.is_a(AHDL_IF):
+                    for codes in c.codes_list:
+                        for cc in codes:
+                            stm2stage_num[cc] = i
+        return stm2stage_num
+
+    def _guard_for_pipeline_if_needed(self, ahdl, cond_sig):
+        if ahdl.is_a(AHDL_PROCCALL):
+            codes = [ahdl]
+            return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
+        return ahdl
 
 
 class AHDLTranslator(object):
@@ -1073,3 +1308,14 @@ class AHDLTranslator(object):
 
     def _is_module_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_module()
+
+
+class AHDLVarReplacer(AHDLVisitor):
+    def replace(self, ahdl, old, new):
+        self.old = old
+        self.new = new
+        self.visit(ahdl)
+
+    def visit_AHDL_VAR(self, ahdl):
+        if ahdl.sig == self.old:
+            ahdl.sig = self.new

@@ -40,7 +40,10 @@ class Scheduler(object):
                 if succs:
                     succs = unique(succs)
                     worklist.append((succs, nextprio))
-        longest_latency = self._list_schedule_with_block(dfg)
+        if 'scheduling' in dfg.synth_params and dfg.synth_params['scheduling'] == 'pipeline':
+            longest_latency = self._schedule_for_pipeline(dfg)
+        else:
+            longest_latency = self._list_schedule_with_block(dfg)
         if longest_latency > CALL_MINIMUM_STEP:
             scope.asap_latency = longest_latency
         else:
@@ -99,6 +102,35 @@ class Scheduler(object):
             latency = get_latency(n.tag)
             #detect resource conflict
             scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
+            n.begin = scheduled_time
+            n.end = n.begin + latency
+            #logger.debug('## SCHEDULED ## ' + str(n))
+            succs = dfg.succs_without_back(n)
+            next_candidates = next_candidates.union(succs)
+            latency = n.end
+        if next_candidates:
+            return self._list_schedule(dfg, next_candidates)
+        else:
+            return latency
+
+    def _schedule_for_pipeline(self, dfg):
+        block_nodes = defaultdict(list)
+        longest_latency = 0
+        for node in dfg.get_priority_ordered_nodes():
+            block_nodes[node.tag.block].append(node)
+        for block, nodes in block_nodes.items():
+            latency = self._list_schedule_for_pipeline(dfg, nodes)
+            if longest_latency < latency:
+                longest_latency = latency
+        return longest_latency
+
+    def _list_schedule_for_pipeline(self, dfg, nodes):
+        next_candidates = set()
+        latency = 0
+        for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
+            scheduled_time = self._node_sched(dfg, n)
+            latency = get_latency(n.tag)
+            #detect resource conflict
             n.begin = scheduled_time
             n.end = n.begin + latency
             #logger.debug('## SCHEDULED ## ' + str(n))

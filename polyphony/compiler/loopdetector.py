@@ -1,4 +1,5 @@
-﻿from .ir import CONST, BINOP, RELOP, TEMP, ATTR, MOVE, JUMP, CJUMP
+﻿from collections import namedtuple
+from .ir import CONST, BINOP, RELOP, TEMP, ATTR, MOVE, JUMP, CJUMP
 from .irvisitor import IRVisitor
 from .graph import Graph
 from .varreplacer import VarReplacer
@@ -6,6 +7,8 @@ from .usedef import UseDefDetector
 from .block import Block, CompositBlock
 from logging import getLogger
 logger = getLogger(__name__)
+
+LoopInfo = namedtuple('LoopInfo', ('counter', 'cond', 'exit'))
 
 
 class LoopNestTree(Graph):
@@ -52,6 +55,48 @@ class LoopDetector(object):
         LoopVariableDetector().process(scope)
         #lbd = LoopBlockDestructor()
         #lbd.process(scope)
+        for lblk in lblks:
+            if lblk.synth_params['scheduling'] == 'pipeline':
+                self._set_loop_info(lblk)
+
+    def _set_loop_info(self, loop_block):
+        cjump = loop_block.head.stms[-1]
+        assert cjump.is_a(CJUMP)
+        cond_var = cjump.exp
+        assert cond_var.is_a(TEMP)
+        defs = self.scope.usedef.get_stms_defining(cond_var.symbol())
+        assert len(defs) == 1
+        cond_stm = list(defs)[0]
+        assert cond_stm.is_a(MOVE)
+        assert cond_stm.src.is_a(RELOP)
+        loop_relexp = cond_stm.src
+
+        if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol().is_induction():
+            assert loop_relexp.right.is_a([CONST, TEMP])
+            loop_counter = loop_relexp.left.symbol()
+        elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol().is_induction():
+            assert loop_relexp.left.is_a([CONST, TEMP])
+            loop_counter = loop_relexp.right.symbol()
+        else:
+            assert False
+
+        defs = self.scope.usedef.get_stms_defining(loop_counter)
+        for d in defs:
+            if d.block in loop_block.region:
+                loop_inc = d
+                break
+        else:
+            assert False
+        assert loop_inc.is_a(MOVE)
+        if loop_inc.src.is_a(TEMP):
+            defs = self.scope.usedef.get_stms_defining(loop_inc.src.symbol())
+            assert len(defs) == 1
+            inc_stm = list(defs)[0]
+            if inc_stm.is_a(MOVE):
+                inc_stm.dst.symbol().add_tag('alias')
+        loop_exit = loop_block.succs[0]
+        assert len(loop_block.succs) == 1
+        loop_block.loop_info = LoopInfo(loop_counter, cond_var.symbol(), loop_exit)
 
     def _make_loop_block(self, head, loop_region):
         lblks, blks = self._make_loop_block_bodies(loop_region)
@@ -140,7 +185,7 @@ class LoopVariableDetector(IRVisitor):
                 return
         if self._has_depend_cycle(ir, sym):
             sym.add_tag('induction')
-            #print('induction', sym, ir)
+            logger.debug('induction {} {}'.format(sym, ir))
 
     def visit_PHI(self, ir):
         assert ir.var.is_a([TEMP, ATTR])
@@ -149,7 +194,7 @@ class LoopVariableDetector(IRVisitor):
             return
         if self._has_depend_cycle(ir, sym):
             sym.add_tag('induction')
-            #print('induction', sym, ir)
+            logger.debug('induction {} {}'.format(sym, ir))
 
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
