@@ -946,11 +946,15 @@ class CodeVisitor(ast.NodeVisitor):
         pass
 
     def visit_Break(self, node):
+        if self.current_block.synth_params['scheduling'] == 'pipeline':
+            fail((self.current_scope, node.lineno), Errors.RULE_BREAK_IN_PIPELINE_LOOP)
         end_block = self.loop_end_blocks[-1]
         self.emit(JUMP(end_block, 'B'), node)
         self.current_block.connect(end_block)
 
     def visit_Continue(self, node):
+        if self.current_block.synth_params['scheduling'] == 'pipeline':
+            fail((self.current_scope, node.lineno), Errors.RULE_CONTINUE_IN_PIPELINE_LOOP)
         bridge_block = self.loop_bridge_blocks[-1]
         self.emit(JUMP(bridge_block, 'C'), node)
         self.current_block.connect(bridge_block)

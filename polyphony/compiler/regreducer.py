@@ -52,13 +52,13 @@ class AliasVarDetector(IRVisitor):
 
     def visit_PHI(self, ir):
         sym = ir.var.symbol()
-        if sym.typ.is_seq() or sym.is_induction() or sym.is_return() or sym.typ.is_port():
+        if sym.typ.is_seq() or sym.is_return() or sym.typ.is_port():
             return
         sym.add_tag('alias')
 
     def visit_UPHI(self, ir):
         sym = ir.var.symbol()
-        if sym.typ.is_seq() or sym.is_induction() or sym.is_return() or sym.typ.is_port():
+        if sym.typ.is_seq() or sym.is_return() or sym.typ.is_port():
             return
         sym.add_tag('alias')
 

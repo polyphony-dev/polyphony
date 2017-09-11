@@ -77,6 +77,9 @@ class Errors(Enum):
     PURE_CTOR_MUST_BE_MODULE = 934
     PURE_RETURN_NO_SAME_TYPE = 935
 
+    RULE_BREAK_IN_PIPELINE_LOOP = 950
+    RULE_CONTINUE_IN_PIPELINE_LOOP = 951
+
     def __str__(self):
         return ERROR_MESSAGES[self]
 
@@ -149,6 +152,9 @@ ERROR_MESSAGES = {
     Errors.PURE_IS_DISABLED: "@pure Python execution is disabled",
     Errors.PURE_CTOR_MUST_BE_MODULE: "Classes other than @module class can not use @pure decorator",
     Errors.PURE_RETURN_NO_SAME_TYPE: "@pure function must return the same type values",
+
+    Errors.RULE_BREAK_IN_PIPELINE_LOOP: "Cannot use 'break' statement in the pipeline loop",
+    Errors.RULE_CONTINUE_IN_PIPELINE_LOOP: "Cannot use 'continue' statement in the pipeline loop",
 }
 
 

@@ -8,7 +8,7 @@ from .block import Block, CompositBlock
 from logging import getLogger
 logger = getLogger(__name__)
 
-LoopInfo = namedtuple('LoopInfo', ('counter', 'cond', 'exit'))
+LoopInfo = namedtuple('LoopInfo', ('counter', 'init', 'cond', 'exit'))
 
 
 class LoopNestTree(Graph):
@@ -49,15 +49,19 @@ class LoopDetector(object):
         lblks, blks = self._make_loop_block_bodies(ordered_blks)
 
         self._add_loop_tree_entry(head, lblks)
-        self.scope.loop_nest_tree.set_root(head)
+        scope.loop_nest_tree.set_root(head)
 
         LoopDependencyDetector().process(scope)
         LoopVariableDetector().process(scope)
         #lbd = LoopBlockDestructor()
         #lbd.process(scope)
-        for lblk in lblks:
-            if lblk.synth_params['scheduling'] == 'pipeline':
-                self._set_loop_info(lblk)
+        self._set_loop_info_rec(head)
+
+    def _set_loop_info_rec(self, blk):
+        if blk is not self.scope.entry_block and blk.synth_params['scheduling'] == 'pipeline':
+            self._set_loop_info(blk)
+        for c in self.scope.loop_nest_tree.get_children_of(blk):
+            self._set_loop_info_rec(c)
 
     def _set_loop_info(self, loop_block):
         cjump = loop_block.head.stms[-1]
@@ -84,9 +88,10 @@ class LoopDetector(object):
         for d in defs:
             if d.block in loop_block.region:
                 loop_inc = d
-                break
-        else:
-            assert False
+            else:
+                loop_init = d
+        assert loop_inc
+        assert loop_init
         assert loop_inc.is_a(MOVE)
         if loop_inc.src.is_a(TEMP):
             defs = self.scope.usedef.get_stms_defining(loop_inc.src.symbol())
@@ -96,7 +101,7 @@ class LoopDetector(object):
                 inc_stm.dst.symbol().add_tag('alias')
         loop_exit = loop_block.succs[0]
         assert len(loop_block.succs) == 1
-        loop_block.loop_info = LoopInfo(loop_counter, cond_var.symbol(), loop_exit)
+        loop_block.loop_info = LoopInfo(loop_counter, loop_init, cond_var.symbol(), loop_exit)
 
     def _make_loop_block(self, head, loop_region):
         lblks, blks = self._make_loop_block_bodies(loop_region)

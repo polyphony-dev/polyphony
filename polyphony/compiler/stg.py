@@ -253,7 +253,11 @@ class STGBuilder(object):
         if stg.scheduling == 'parallel':
             builder = StateBuilder(self.scope, stg, self.blk2states)
         elif stg.scheduling == 'pipeline':
-            builder = PipelineStageBuilder(self.scope, stg, self.blk2states)
+            if is_main:
+                # TODO: NIY
+                assert False
+            else:
+                builder = LoopPipelineStageBuilder(self.scope, stg, self.blk2states)
         builder.build(dfg, is_main)
         return stg
 
@@ -470,7 +474,7 @@ class StateBuilder(STGItemBuilder):
         return states
 
 
-class PipelineStageBuilder(STGItemBuilder):
+class LoopPipelineStageBuilder(STGItemBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
 
@@ -480,6 +484,7 @@ class PipelineStageBuilder(STGItemBuilder):
         blk_name = dfg.main_block.nametag + str(dfg.main_block.num)
         prefix = self.stg.name + '_' + blk_name + '_P'
         pipeline_valid = self.translator._sym_2_sig(dfg.main_block.loop_info.cond, Ctx.LOAD)
+        loop_cnt = self.translator._sym_2_sig(dfg.main_block.loop_info.counter, Ctx.LOAD)
         pstate = PipelineState(prefix, [], pipeline_valid, self.stg)
 
         # remove cjump in the loop head
@@ -487,13 +492,30 @@ class PipelineStageBuilder(STGItemBuilder):
         nodes = [n for n in head_nodes if not n.tag.is_a(CJUMP)]
         for blk in dfg.main_block.bodies:
             if blk in blk_nodes_map:
-                nodes.extend(blk_nodes_map[blk])
+                blk_nodes = blk_nodes_map[blk]
+                nodes.extend(blk_nodes)
         self.scheduled_items = ScheduledItemQueue()
         self._build_scheduled_items(nodes)
         self._build_pipeline_stages(prefix, pstate, is_main)
 
+        self.blk2states[self.scope][dfg.main_block] = [pstate]
         for blk in dfg.main_block.region:
             self.blk2states[self.scope][blk] = [pstate]
+
+        loop_init_stm = dfg.main_block.loop_info.init
+        loop_init = self.translator.visit(loop_init_stm.src, None)
+
+        cond_defs = self.scope.usedef.get_stms_defining(dfg.main_block.loop_info.cond)
+        assert len(cond_defs) == 1
+        cond_def = list(cond_defs)[0]
+        loop_cond = self.translator.visit(cond_def.src, None)
+        args = []
+        for i, a in enumerate(loop_cond.args):
+            if a.is_a(AHDL_VAR) and a.sig == loop_cnt:
+                args.append(loop_init)
+            else:
+                args.append(a)
+        loop_cond.args = tuple(args)
 
         # make a exit condition of pipeline
         stage_n = len(pstate.stages) - 1
@@ -501,7 +523,9 @@ class PipelineStageBuilder(STGItemBuilder):
         stage_valid_d = pstate.valid_signal(stage_n + 1)
         exp1 = AHDL_OP('Eq', AHDL_VAR(stage_valid, Ctx.LOAD), AHDL_CONST(0))
         exp2 = AHDL_OP('Eq', AHDL_VAR(stage_valid_d, Ctx.LOAD), AHDL_CONST(1))
-        pipe_end_cond = AHDL_OP('And', exp1, exp2)
+        pipe_end_cond1 = AHDL_OP('And', exp1, exp2)
+        pipe_end_cond2 = AHDL_OP('Not', loop_cond)
+        pipe_end_cond = AHDL_OP('Or', pipe_end_cond1, pipe_end_cond2)
         conds = [pipe_end_cond]
         codes_list = [[AHDL_TRANSITION(dfg.main_block.loop_info.exit)]]
         pipe_end_stm = AHDL_TRANSITION_IF(conds, codes_list)
@@ -603,6 +627,9 @@ class PipelineStageBuilder(STGItemBuilder):
 
     def _guard_for_pipeline_if_needed(self, ahdl, cond_sig):
         if ahdl.is_a(AHDL_PROCCALL):
+            codes = [ahdl]
+            return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
+        elif ahdl.is_a(AHDL_MOVE) and ahdl.dst.sig.is_reg():
             codes = [ahdl]
             return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
         return ahdl
