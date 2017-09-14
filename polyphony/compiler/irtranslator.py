@@ -839,7 +839,7 @@ class CodeVisitor(ast.NodeVisitor):
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(continue_block, 'C'), node)
+            self.emit(JUMP(continue_block), node)
             self.current_block.connect(continue_block)
 
         #continue part
@@ -956,7 +956,7 @@ class CodeVisitor(ast.NodeVisitor):
         if self.current_block.synth_params['scheduling'] == 'pipeline':
             fail((self.current_scope, node.lineno), Errors.RULE_CONTINUE_IN_PIPELINE_LOOP)
         bridge_block = self.loop_bridge_blocks[-1]
-        self.emit(JUMP(bridge_block, 'C'), node)
+        self.emit(JUMP(bridge_block), node)
         self.current_block.connect(bridge_block)
 
     #--------------------------------------------------------------------------

@@ -188,6 +188,8 @@ class LoopVariableDetector(IRVisitor):
             src_sym = ir.src.symbol()
             if src_sym.is_param() or src_sym.typ.is_port():
                 return
+        if sym.typ.is_seq():
+            return
         if self._has_depend_cycle(ir, sym):
             sym.add_tag('induction')
             logger.debug('induction {} {}'.format(sym, ir))

@@ -1,4 +1,6 @@
 ﻿from collections import defaultdict, deque
+from .common import fail, warn
+from .errors import Errors, Warnings
 from .latency import get_latency
 from .irvisitor import IRVisitor
 from .ir import *
@@ -18,14 +20,22 @@ class Scheduler(object):
 
     def schedule(self, scope):
         self.scope = scope
-        self._node_sched = self._node_sched_default
         for dfg in self.scope.dfgs(bottom_up=True):
             self.res_tables = {}
-            self._schedule(scope, dfg)
+            if 'scheduling' in dfg.synth_params and dfg.synth_params['scheduling'] == 'pipeline':
+                scheduler_impl = PipelineScheduler(self.res_tables)
+            else:
+                scheduler_impl = BlockBoundedListScheduler(self.res_tables)
+            scheduler_impl.schedule(scope, dfg)
+            #dfg.write_dot(dfg.name)
 
-    def _schedule(self, scope, dfg):
+
+class SchedulerImpl(object):
+    def __init__(self, res_tables):
+        self.res_tables = res_tables
+
+    def schedule(self, scope, dfg):
         logger.log(0, '_schedule dfg')
-        dfg.create_edge_cache()
         sources = dfg.find_src()
         for src in sources:
             src.priority = -1
@@ -40,10 +50,7 @@ class Scheduler(object):
                 if succs:
                     succs = unique(succs)
                     worklist.append((succs, nextprio))
-        if 'scheduling' in dfg.synth_params and dfg.synth_params['scheduling'] == 'pipeline':
-            longest_latency = self._schedule_for_pipeline(dfg)
-        else:
-            longest_latency = self._list_schedule_with_block(dfg)
+        longest_latency = self._schedule(dfg)
         if longest_latency > CALL_MINIMUM_STEP:
             scope.asap_latency = longest_latency
         else:
@@ -70,7 +77,8 @@ class Scheduler(object):
                 latest_node = max(defuse_preds, key=lambda p: p.end)
                 sched_times.append(latest_node.end)
             if usedef_preds:
-                latest_node = max(usedef_preds, key=lambda p: p.end)
+                preds = usedef_preds
+                latest_node = max(preds, key=lambda p: p.end)
                 sched_times.append(latest_node.begin)
             if not sched_times:
                 latest_node = max(preds, key=lambda p: p.begin)
@@ -83,64 +91,20 @@ class Scheduler(object):
             scheduled_time = 0
         return scheduled_time
 
-    def _list_schedule_with_block(self, dfg):
-        block_nodes = defaultdict(list)
-        longest_latency = 0
-        for node in dfg.get_priority_ordered_nodes():
-            block_nodes[node.tag.block].append(node)
-        for block, nodes in block_nodes.items():
-            latency = self._list_schedule(dfg, nodes)
-            if longest_latency < latency:
-                longest_latency = latency
-        return longest_latency
-
-    def _list_schedule(self, dfg, nodes):
-        next_candidates = set()
-        latency = 0
-        for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
-            scheduled_time = self._node_sched(dfg, n)
-            latency = get_latency(n.tag)
-            #detect resource conflict
-            scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
-            n.begin = scheduled_time
-            n.end = n.begin + latency
-            #logger.debug('## SCHEDULED ## ' + str(n))
-            succs = dfg.succs_without_back(n)
-            next_candidates = next_candidates.union(succs)
-            latency = n.end
-        if next_candidates:
-            return self._list_schedule(dfg, next_candidates)
+    def _find_latest_alias(self, dfg, node):
+        stm = node.tag
+        if not stm.is_a([MOVE, PHI]):
+            return node
+        if stm.is_a(MOVE):
+            var = stm.dst
         else:
-            return latency
-
-    def _schedule_for_pipeline(self, dfg):
-        block_nodes = defaultdict(list)
-        longest_latency = 0
-        for node in dfg.get_priority_ordered_nodes():
-            block_nodes[node.tag.block].append(node)
-        for block, nodes in block_nodes.items():
-            latency = self._list_schedule_for_pipeline(dfg, nodes)
-            if longest_latency < latency:
-                longest_latency = latency
-        return longest_latency
-
-    def _list_schedule_for_pipeline(self, dfg, nodes):
-        next_candidates = set()
-        latency = 0
-        for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
-            scheduled_time = self._node_sched(dfg, n)
-            latency = get_latency(n.tag)
-            #detect resource conflict
-            n.begin = scheduled_time
-            n.end = n.begin + latency
-            #logger.debug('## SCHEDULED ## ' + str(n))
-            succs = dfg.succs_without_back(n)
-            next_candidates = next_candidates.union(succs)
-            latency = n.end
-        if next_candidates:
-            return self._list_schedule(dfg, next_candidates)
-        else:
-            return latency
+            var = stm.var
+        if not var.symbol().is_alias():
+            return node
+        succs = dfg.succs_typ_without_back(node, 'DefUse')
+        nodes = [self._find_latest_alias(dfg, s) for s in succs]
+        latest_node = max(nodes, key=lambda p: p.end)
+        return latest_node
 
     def _is_resource_full(self, res, scheduled_resources):
         # TODO:
@@ -190,13 +154,250 @@ class Scheduler(object):
             for i in range(n):
                 scheduled_resources = table[time + i]
                 scheduled_resources.append(node)
-
         return time
 
     def _get_needed_resources(self, stm):
         res_extractor = ResourceExtractor()
         res_extractor.visit(stm)
         return res_extractor.results
+
+
+class BlockBoundedListScheduler(SchedulerImpl):
+    def __init__(self, res_tables):
+        super().__init__(res_tables)
+
+    def _schedule(self, dfg):
+        block_nodes = defaultdict(list)
+        longest_latency = 0
+        for node in dfg.get_priority_ordered_nodes():
+            block_nodes[node.tag.block].append(node)
+        for block, nodes in block_nodes.items():
+            #latency = self._list_schedule(dfg, nodes)
+            latency = self._list_schedule_with_block_bound(dfg, nodes, block)
+            if longest_latency < latency:
+                longest_latency = latency
+        return longest_latency
+
+    def _list_schedule(self, dfg, nodes):
+        next_candidates = set()
+        latency = 0
+        for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
+            scheduled_time = self._node_sched(dfg, n)
+            latency = get_latency(n.tag)
+            #detect resource conflict
+            scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
+            n.begin = scheduled_time
+            n.end = n.begin + latency
+            #logger.debug('## SCHEDULED ## ' + str(n))
+            succs = dfg.succs_without_back(n)
+            next_candidates = next_candidates.union(succs)
+            latency = n.end
+        if next_candidates:
+            return self._list_schedule(dfg, next_candidates)
+        else:
+            return latency
+
+    def _list_schedule_with_block_bound(self, dfg, nodes, block):
+        next_candidates = set()
+        latency = 0
+        for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
+            if n.tag.block is not block:
+                continue
+            scheduled_time = self._node_sched_with_block_bound(dfg, n, block)
+            latency = get_latency(n.tag)
+            #detect resource conflict
+            scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
+            n.begin = scheduled_time
+            n.end = n.begin + latency
+            #logger.debug('## SCHEDULED ## ' + str(n))
+            succs = dfg.succs_without_back(n)
+            next_candidates = next_candidates.union(succs)
+            latency = n.end
+        if next_candidates:
+            return self._list_schedule_with_block_bound(dfg, next_candidates, block)
+        else:
+            return latency
+
+    def _node_sched_with_block_bound(self, dfg, node, block):
+        preds = dfg.preds_without_back(node)
+        preds = [p for p in preds if p.tag.block is block]
+        if preds:
+            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
+            defuse_preds = [p for p in defuse_preds if p.tag.block is block]
+            usedef_preds = dfg.preds_typ_without_back(node, 'UseDef')
+            usedef_preds = [p for p in usedef_preds if p.tag.block is block]
+            seq_preds = dfg.preds_typ_without_back(node, 'Seq')
+            seq_preds = [p for p in seq_preds if p.tag.block is block]
+            sched_times = []
+            if seq_preds:
+                latest_node = max(seq_preds, key=lambda p: p.end)
+                sched_times.append(latest_node.end)
+            if defuse_preds:
+                latest_node = max(defuse_preds, key=lambda p: p.end)
+                sched_times.append(latest_node.end)
+            if usedef_preds:
+                preds = [self._find_latest_alias(dfg, pred) for pred in usedef_preds]
+                latest_node = max(preds, key=lambda p: p.end)
+                sched_times.append(latest_node.begin)
+            if not sched_times:
+                latest_node = max(preds, key=lambda p: p.begin)
+                sched_times.append(latest_node.begin)
+            scheduled_time = max(sched_times)
+            if scheduled_time < 0:
+                scheduled_time = 0
+        else:
+            # source node
+            scheduled_time = 0
+        return scheduled_time
+
+
+class PipelineScheduler(SchedulerImpl):
+    def __init__(self, res_tables):
+        super().__init__(res_tables)
+        self.node_latency_map = {}  # {node:(max, min, actual)}
+
+    def _schedule(self, dfg):
+        block_nodes = defaultdict(list)
+        longest_latency = 0
+        for node in dfg.get_priority_ordered_nodes():
+            block_nodes[node.tag.block].append(node)
+        self._calc_latency(dfg)
+        self.all_paths = []
+        for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, 'DefUse')):
+            self.all_paths.append(path)
+        extected_latency = 8  # TODO:
+        initiation_interval = 1  # TODO:
+        if not self._adjust_latency(self.all_paths, extected_latency):
+            assert False, 'scheduling has failed'
+        induction_paths = self._find_induction_paths(self.all_paths)
+        if not self._adjust_latency(induction_paths, initiation_interval):
+            assert False, 'scheduling of II has failed'
+        self._remove_alias_if_needed(dfg)
+        for block, nodes in block_nodes.items():
+            latency = self._list_schedule_for_pipeline(dfg, nodes)
+            if longest_latency < latency:
+                longest_latency = latency
+        return longest_latency
+
+    def _calc_latency(self, dfg):
+        for node in dfg.get_priority_ordered_nodes():
+            l = get_latency(node.tag)
+            if l == 0:
+                assert node.tag.is_a([MOVE, PHI])
+                assert len(node.defs) == 1
+                if node.defs[0].is_condition():
+                    self.node_latency_map[node] = (0, 0, 0)
+                else:
+                    self.node_latency_map[node] = (1, 0, 1)
+            else:
+                self.node_latency_map[node] = (l, l, l)
+
+    def _adjust_latency(self, paths, expected):
+        for path in paths:
+            path_latencies = []
+            for n in path:
+                m, _, _ = self.node_latency_map[n]
+                path_latencies.append(m)
+            path_latency = sum(path_latencies)
+            if expected > path_latency:
+                # we don't have to adjust latency
+                continue
+            diff = path_latency - expected
+            fixed = set()
+            succeeded = True
+            # try to reduce latency
+            while diff:
+                for i, n in enumerate(path):
+                    if n in fixed:
+                        continue
+                    max_l, min_l, _ = self.node_latency_map[n]
+                    if min_l < path_latencies[i]:
+                        path_latencies[i] -= 1
+                        self.node_latency_map[n] = (max_l, min_l, path_latencies[i])
+                        diff -= 1
+                    else:
+                        fixed.add(n)
+                if len(fixed) == len(path):
+                    # scheduling has failed
+                    succeeded = False
+                    break
+            if not succeeded:
+                return False
+        return True
+
+    def _find_induction_paths(self, paths):
+        induction_paths = []
+        for path in paths:
+            last_node = path[-1]
+            if not last_node.defs:
+                continue
+            d = last_node.defs[0]
+            if not d.is_induction():
+                continue
+            for i, p in enumerate(path):
+                if d in p.uses:
+                    induction_paths.append(path[i:])
+                    break
+        return induction_paths
+
+    def _remove_alias_if_needed(self, dfg):
+        for n in dfg.nodes:
+            if n not in self.node_latency_map:
+                continue
+            _, min_l, actual = self.node_latency_map[n]
+            if min_l == 0 and actual > 0:
+                for d in n.defs:
+                    if d.is_alias():
+                        d.del_tag('alias')
+
+    def _list_schedule_for_pipeline(self, dfg, nodes):
+        next_candidates = set()
+        latency = 0
+        for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
+            scheduled_time = self._node_sched_pipeline(dfg, n)
+            _, _, latency = self.node_latency_map[n]
+            #detect resource conflict
+            n.begin = scheduled_time
+            n.end = n.begin + latency
+            #logger.debug('## SCHEDULED ## ' + str(n))
+            succs = dfg.succs_without_back(n)
+            next_candidates = next_candidates.union(succs)
+            latency = n.end
+        if next_candidates:
+            return self._list_schedule_for_pipeline(dfg, next_candidates)
+        else:
+            return latency
+
+    def _node_sched_pipeline(self, dfg, node):
+        preds = dfg.preds_without_back(node)
+        if preds:
+            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
+            usedef_preds = dfg.preds_typ_without_back(node, 'UseDef')
+            seq_preds = dfg.preds_typ_without_back(node, 'Seq')
+            sched_times = []
+            if seq_preds:
+                latest_node = max(seq_preds, key=lambda p: p.end)
+                sched_times.append(latest_node.end)
+            if defuse_preds:
+                latest_node = max(defuse_preds, key=lambda p: p.end)
+                sched_times.append(latest_node.end)
+            if usedef_preds:
+                if any([d.is_induction() for d in node.defs]):
+                    pass
+                else:
+                    preds = usedef_preds
+                    latest_node = max(preds, key=lambda p: p.end)
+                    sched_times.append(latest_node.begin)
+            if not sched_times:
+                latest_node = max(preds, key=lambda p: p.begin)
+                sched_times.append(latest_node.begin)
+            scheduled_time = max(sched_times)
+            if scheduled_time < 0:
+                scheduled_time = 0
+        else:
+            # source node
+            scheduled_time = 0
+        return scheduled_time
 
 
 class ResourceExtractor(IRVisitor):

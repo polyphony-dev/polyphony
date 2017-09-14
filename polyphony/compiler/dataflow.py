@@ -19,6 +19,8 @@ class DFNode(object):
         else:
             self.stm_index = 0
         self.instance_num = 0
+        self.uses = []
+        self.defs = []
 
     def __str__(self):
         if self.typ == 'Stm':
@@ -67,22 +69,22 @@ class DataFlowGraph(object):
         self.main_block = main_block
         self.blocks = blocks
         self.nodes = []
-        self.edges = set()
+        self.edges = {}
+        self.succ_edges = defaultdict(set)
+        self.pred_edges = defaultdict(set)
         self.src_nodes = set()
-        self.succs_without_back_cache = {}
-        self.preds_without_back_cache = {}
         self.parent = None
         self.children = []
-        self.synth_params = defaultdict(str)
+        self.synth_params = main_block.synth_params
 
     def __str__(self):
         s = 'DFG all nodes ==============\n'
         sources = self.find_src()
-        for n in sorted(self.traverse_nodes(sources, [])):
+        for n in sorted(self.traverse_nodes(self.succs, sources, [])):
             s += '  ' + str(n)
             s += '\n'
         s += 'DFG all edges ==============\n'
-        for n1, n2, typ, back in self.edges:
+        for (n1, n2), (typ, back) in self.edges.items():
             back_edge = "(back) " if back else ''
             if typ == 'DefUse':
                 prefix1 = 'def '
@@ -90,9 +92,6 @@ class DataFlowGraph(object):
             elif typ == 'UseDef':
                 prefix1 = 'use '
                 prefix2 = '  -> def '
-            elif typ == 'Branch':
-                prefix1 = 'pred blk '
-                prefix2 = '  -> succ blk '
             elif typ == 'Seq':
                 prefix1 = 'pred '
                 prefix2 = '  -> succ '
@@ -126,32 +125,35 @@ class DataFlowGraph(object):
     def add_seq_edge(self, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
-        edge = (n1, n2, 'Seq', False)
-        if edge not in self.edges:
-            self.edges.add(edge)
-
-    def add_sync_edge(self, n1, n2):
-        assert n1 and n2 and n1.tag and n2.tag
-        assert n1 is not n2
-        edge = (n1, n2, 'Sync', False)
-        if edge not in self.edges:
-            self.edges.add(edge)
+        if (n1, n2) not in self.edges:
+            self.edges[(n1, n2)] = ('Seq', False)
+            edge = (n1, n2, 'Seq', False)
+            self.succ_edges[n1].add(edge)
+            self.pred_edges[n2].add(edge)
 
     def add_edge(self, typ, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
         back = self._is_back_edge(n1, n2)
-        edge = (n1, n2, typ, back)
-        if edge not in self.edges:
-            self.edges.add(edge)
+        if (n1, n2) not in self.edges:
+            self.edges[(n1, n2)] = (typ, back)
+            edge = (n1, n2, typ, back)
+            self.succ_edges[n1].add(edge)
+            self.pred_edges[n2].add(edge)
+        else:
+            _typ, _back = self.edges[(n1, n2)]
+            assert back is _back
+            if typ == _typ or _typ == 'DefUse':
+                return
+            if typ == 'DefUse':
+                self.edges[(n1, n2)] = (typ, back)
 
     def remove_edge(self, n1, n2):
-        removes = []
-        for edge in self.edges:
-            if n1 is edge[0] and n2 is edge[1]:
-                removes.append(edge)
-        for rem in removes:
-            self.edges.remove(rem)
+        typ, back = self.edges[n1, n2]
+        del self.edges[(n1, n2)]
+        edge = (n1, n2, typ, back)
+        self.succ_edges[n1].remove(edge)
+        self.pred_edges[n2].remove(edge)
 
     def _is_back_edge(self, n1, n2):
         return self._stm_order_gt(n1.tag, n2.tag)
@@ -167,67 +169,57 @@ class DataFlowGraph(object):
 
     def succs(self, node):
         succs = []
-        for n1, n2, _, _ in self.edges:
-            if n1 is node:
-                succs.append(n2)
+        for n1, n2, _, _ in self.succ_edges[node]:
+            succs.append(n2)
         return succs
 
     def succs_without_back(self, node):
-        if node in self.succs_without_back_cache:
-            return self.succs_without_back_cache[node]
-
         succs = []
-        for n1, n2, _, back in self.edges:
-            if n1 is node and not back:
+        for n1, n2, _, back in self.succ_edges[node]:
+            if not back:
                 succs.append(n2)
         return sorted(succs)
 
     def succs_typ(self, node, typ):
         succs = []
-        for n1, n2, t, _ in self.edges:
-            if (typ == t) and (n1 is node):
+        for n1, n2, t, _ in self.succ_edges[node]:
+            if typ == t:
+                succs.append(n2)
+        return succs
+
+    def succs_typ_without_back(self, node, typ):
+        succs = []
+        for n1, n2, t, back in self.succ_edges[node]:
+            if (typ == t) and (not back):
                 succs.append(n2)
         return succs
 
     def preds(self, node):
         preds = []
-        for n1, n2, _, _ in self.edges:
-            if n2 is node:
-                preds.append(n1)
+        for n1, n2, _, _ in self.pred_edges[node]:
+            preds.append(n1)
         return preds
 
     def preds_without_back(self, node):
-        if node in self.preds_without_back_cache:
-            return self.preds_without_back_cache[node]
-
         preds = []
-        for n1, n2, _, back in self.edges:
-            if n2 is node and not back:
+        for n1, n2, _, back in self.pred_edges[node]:
+            if not back:
                 preds.append(n1)
         return preds
 
     def preds_typ(self, node, typ):
         preds = []
-        for n1, n2, t, _ in self.edges:
-            if (typ == t) and (n2 is node):
+        for n1, n2, t, _ in self.pred_edges[node]:
+            if typ == t:
                 preds.append(n1)
         return preds
 
     def preds_typ_without_back(self, node, typ):
         preds = []
-        for n1, n2, t, back in self.edges:
-            if (typ == t) and (n2 is node) and (not back):
+        for n1, n2, t, back in self.pred_edges[node]:
+            if (typ == t) and (not back):
                 preds.append(n1)
         return preds
-
-    def create_edge_cache(self):
-        self.succs_without_back_cache = {}
-        self.preds_without_back_cache = {}
-        for n in self.nodes:
-            succs = self.succs_without_back(n)
-            self.succs_without_back_cache[n] = succs
-            preds = self.preds_without_back(n)
-            self.preds_without_back_cache[n] = preds
 
     def find_node(self, stm):
         for node in self.nodes:
@@ -245,30 +237,37 @@ class DataFlowGraph(object):
                 sink_nodes.append(node)
         return sink_nodes
 
+    def trace_all_paths(self, trace_func):
+        sources = [n for n in self.get_priority_ordered_nodes() if n.priority == 0]
+        for src in sources:
+            yield from self._trace_path(src, [], trace_func)
+
+    def _trace_path(self, node, path, trace_func):
+        path.append(node)
+        next_nodes = utils.unique(trace_func(node))
+        if not next_nodes:
+            yield path
+            return
+        for nx in next_nodes:
+            cur_path = path[:]
+            yield from self._trace_path(nx, path, trace_func)
+            path = cur_path
+
     def remove_unconnected_node(self):
         pass
         #self.nodes = list(filter(lambda n: n.succs or n.preds, self.nodes))
 
-    def traverse_nodes(self, siblings, visited):
-        nodes = [n for n in siblings if n not in visited]
+    def traverse_nodes(self, traverse_func, nodes, visited):
+        if visited is not None:
+            nodes = [n for n in nodes if n not in visited]
         for n in nodes:
-            visited.append(n)
+            if visited is not None:
+                visited.append(n)
             yield n
 
         for n in nodes:
-            succs = utils.unique(self.succs(n))
-            yield from self.traverse_nodes(succs, visited)
-
-    def traverse_nodes_without_back(self, siblings):
-        for n in siblings:
-            yield n
-
-        for n in siblings:
-            succs = self.succs_without_back(n)
-            if n in succs:
-                succs.remove(n)
-            for succ in self.traverse_nodes_without_back(succs):
-                yield succ
+            next_nodes = utils.unique(traverse_func(n))
+            yield from self.traverse_nodes(traverse_func, next_nodes, visited)
 
     def get_priority_ordered_nodes(self):
         return sorted(self.nodes, key=lambda n: n.priority)
@@ -280,7 +279,13 @@ class DataFlowGraph(object):
         return max(lambda n: n.end, self.nodes)
 
     def get_scheduled_nodes(self):
-        return sorted(self.nodes, key=lambda n: n.begin)
+        node_dict = defaultdict(list)
+        for n in self.nodes:
+            node_dict[n.tag.block.num].append(n)
+        result = []
+        for ns in node_dict.values():
+            result.extend(sorted(ns, key=lambda n: n.begin))
+        return result
 
     def get_loop_nodes(self):
         return filter(lambda n: n.typ == 'Loop', self.nodes)
@@ -309,19 +314,26 @@ class DataFlowGraph(object):
         for n in node_map.values():
             g.add_node(n)
 
-        for n1, n2, typ, back in self.edges:
+        for (n1, n2), (typ, back) in self.edges.items():
             dotn1 = node_map[n1]
             dotn2 = node_map[n2]
             if typ == "DefUse":
                 if back:
-                    g.add_edge(pydot.Edge(dotn1, dotn2, color='red'))
+                    latency = n1.end - n1.begin
+                    g.add_edge(pydot.Edge(dotn1, dotn2, color='red', label=latency))
                 else:
-                    g.add_edge(pydot.Edge(dotn1, dotn2))
+                    latency = n2.begin - n1.begin
+                    g.add_edge(pydot.Edge(dotn1, dotn2, label=latency))
+            elif typ == "UseDef":
+                if back:
+                    g.add_edge(pydot.Edge(dotn1, dotn2, color='orange'))
+                else:
+                    g.add_edge(pydot.Edge(dotn1, dotn2, color='blue'))
             elif typ == "Seq":
                 if back:
                     g.add_edge(pydot.Edge(dotn1, dotn2, style='dashed', color='red'))
                 else:
-                    g.add_edge(pydot.Edge(dotn1, dotn2, style='dashed', color='blue'))
+                    g.add_edge(pydot.Edge(dotn1, dotn2, style='dashed'))
         if self.edges:
             g.write_png('.tmp/' + name + '.png')
             #g.write_svg(name+'.svg')
@@ -345,7 +357,7 @@ class DataFlowGraph(object):
         for n in self.nodes:
             logger.debug('#### ' + str(n.tag))
             G.add_node(get_node_tag_text(n), shape='box')
-        for n1, n2, typ, back in self.edges:
+        for (n1, n2), (typ, back) in self.edges.items():
             if typ == "DefUse":
                 if back:
                     G.add_edge(get_node_tag_text(n1), get_node_tag_text(n2), color='red')
@@ -388,7 +400,6 @@ class DFGBuilder(object):
             dfg = self._make_graph(blk, blocks)
         for child in children:
             dfg.set_child(child)
-        dfg.synth_params = blk.synth_params
         return dfg
 
     def _dump_dfg(self, dfg):
@@ -423,42 +434,12 @@ class DFGBuilder(object):
             for stm in b.stms:
                 logger.log(0, 'loop head ' + name + ' :: ' + str(stm))
                 usenode = dfg.add_stm_node(stm)
-
                 # collect source nodes
                 self._add_source_node(usenode, dfg, usedef, blocks)
-
                 # add def-use edges
-                for v in usedef.get_vars_used_at(stm):
-                    defstms = usedef.get_stms_defining(v.symbol())
-                    logger.log(0, v.symbol().name + ' defstms ')
-                    for defstm in defstms:
-                        logger.log(0, str(defstm))
-
-                        if stm is defstm:
-                            continue
-                        if len(defstms) > 1 and (stm.program_order() <= defstm.program_order()):
-                            continue
-                        # this definition stm is in the out of the section
-                        if defstm.block not in blocks:
-                            continue
-                        defnode = dfg.add_stm_node(defstm)
-                        dfg.add_defuse_edge(defnode, usenode)
-
+                self._add_defuse_edges(stm, usenode, dfg, usedef, blocks)
                 # add use-def edges
-                defnode = usenode
-                for v in usedef.get_vars_defined_at(stm):
-                    usestms = usedef.get_stms_using(v.symbol())
-                    for usestm in usestms:
-                        if stm is usestm:
-                            continue
-                        if stm.program_order() <= usestm.program_order():
-                            continue
-                        # this definition stm is in the out of the section
-                        if usestm.block is not stm.block:
-                            continue
-                        usenode = dfg.add_stm_node(usestm)
-                        dfg.add_usedef_edge(usenode, defnode)
-
+                self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)
         if self.scope.is_testbench():
             # Test need to call functions sequentially
             self._add_edges_between_func_modules(blocks, dfg)
@@ -467,7 +448,7 @@ class DFGBuilder(object):
         self._add_io_seq_edges(blocks, dfg)
         self._add_mem_edges(dfg)
         self._add_special_seq_edges(dfg)
-        #dfg.write_dot(name)
+        self._remove_alias_cycle(dfg)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -513,6 +494,39 @@ class DFGBuilder(object):
             if len(call.args) == 0 or has_mem_arg(call.args):
                 dfg.src_nodes.add(node)
 
+    def _add_defuse_edges(self, stm, usenode, dfg, usedef, blocks):
+        for v in usedef.get_vars_used_at(stm):
+            usenode.uses.append(v.symbol())
+            defstms = usedef.get_stms_defining(v.symbol())
+            logger.log(0, v.symbol().name + ' defstms ')
+            for defstm in defstms:
+                logger.log(0, str(defstm))
+
+                if stm is defstm:
+                    continue
+                if len(defstms) > 1 and (stm.program_order() <= defstm.program_order()):
+                    continue
+                # this definition stm is in the out of the section
+                if defstm.block not in blocks:
+                    continue
+                defnode = dfg.add_stm_node(defstm)
+                dfg.add_defuse_edge(defnode, usenode)
+
+    def _add_usedef_edges(self, stm, defnode, dfg, usedef, blocks):
+        for v in usedef.get_vars_defined_at(stm):
+            defnode.defs.append(v.symbol())
+            usestms = usedef.get_stms_using(v.symbol())
+            for usestm in usestms:
+                if stm is usestm:
+                    continue
+                if stm.program_order() <= usestm.program_order():
+                    continue
+                # this definition stm is in the out of the section
+                if usestm.block is not stm.block:
+                    continue
+                usenode = dfg.add_stm_node(usestm)
+                dfg.add_usedef_edge(usenode, defnode)
+
     def _is_constant_stm(self, stm):
         if stm.is_a(PHIBase):
             return True
@@ -543,37 +557,47 @@ class DFGBuilder(object):
         return all_stms_in_section
 
     def _node_order_by_ctrl(self, node):
-        return (node.tag.block.order, node.tag.block.stms.index(node.tag))
+        return (node.tag.block.order, node.tag.block.num, node.tag.block.stms.index(node.tag))
 
     def _add_mem_edges(self, dfg):
-        node_groups = defaultdict(list)
+        '''
+        add the memory-to-memory edges
+        if both of them are in the same block
+        '''
+        # grouping by memory
+        node_groups_by_mem = defaultdict(list)
         for node in dfg.nodes:
             if node.tag.is_a(MOVE):
                 mv = node.tag
                 if mv.src.is_a([MREF, MSTORE]):
                     mem_group = mv.src.mem.symbol()
-                    node_groups[mem_group].append(node)
+                    node_groups_by_mem[mem_group].append(node)
                 elif mv.src.is_a(CALL):
                     for _, arg in mv.src.args:
                         if arg.is_a(TEMP) and arg.symbol().typ.is_list():
                             mem_group = arg.symbol()
-                            node_groups[mem_group].append(node)
+                            node_groups_by_mem[mem_group].append(node)
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
                     for _, arg in expr.exp.args:
                         if arg.is_a(TEMP) and arg.symbol().typ.is_list():
                             mem_group = arg.symbol()
-                            node_groups[mem_group].append(node)
-        for group, nodes in node_groups.items():
+                            node_groups_by_mem[mem_group].append(node)
+        for group, nodes in node_groups_by_mem.items():
             memnode = group.typ.get_memnode()
             if memnode.is_immutable() or memnode.can_be_reg():
                 continue
-            sorted_nodes = sorted(nodes, key=self._node_order_by_ctrl)
-            for i in range(len(sorted_nodes) - 1):
-                n1 = sorted_nodes[i]
-                n2 = sorted_nodes[i + 1]
-                dfg.add_seq_edge(n1, n2)
+            node_groups_by_blk = defaultdict(list)
+            # grouping by block
+            for n in nodes:
+                node_groups_by_blk[n.tag.block].append(n)
+            for ns in node_groups_by_blk.values():
+                sorted_nodes = sorted(ns, key=self._node_order_by_ctrl)
+                for i in range(len(sorted_nodes) - 1):
+                    n1 = sorted_nodes[i]
+                    n2 = sorted_nodes[i + 1]
+                    dfg.add_seq_edge(n1, n2)
 
     def _add_edges_between_func_modules(self, blocks, dfg):
         """this function is used for testbench only"""
@@ -708,3 +732,26 @@ class DFGBuilder(object):
                         # update last node
                         ports[port_sym] = node
 
+    def _remove_alias_cycle(self, dfg):
+        backs = []
+        for (n1, n2), (_, back) in dfg.edges.items():
+            if back and n1.tag.is_a([MOVE, PHI]) and n1.defs[0].is_alias():
+                backs.append((n1, n2))
+        dones = set()
+        for end, start in backs:
+            if end in dones:
+                continue
+            self._remove_alias_cycle_rec(dfg, start, end, dones)
+
+    def _remove_alias_cycle_rec(self, dfg, node, end, dones):
+        if node is end:
+            if end not in dones and end.defs[0].is_alias():
+                end.defs[0].del_tag('alias')
+                dones.add(end)
+            return
+        if node.tag.is_a([MOVE, PHI]) and node.defs[0].is_alias():
+            succs = dfg.succs_typ_without_back(node, 'DefUse')
+            for s in succs:
+                self._remove_alias_cycle_rec(dfg, s, end, dones)
+        else:
+            return

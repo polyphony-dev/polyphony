@@ -560,7 +560,7 @@ class LoopPipelineStageBuilder(STGItemBuilder):
             for u in uses:
                 u_stage_n = stm2stage_num[u]
                 distance = u_stage_n - d_stage_n
-                assert 0 <= distance
+                assert 0 <= distance, '{} {}'.format(d, u)
                 if use_max_distances[sig] < distance:
                     use_max_distances[sig] = distance
             for sig, distance in use_max_distances.items():
@@ -629,7 +629,7 @@ class LoopPipelineStageBuilder(STGItemBuilder):
         if ahdl.is_a(AHDL_PROCCALL):
             codes = [ahdl]
             return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
-        elif ahdl.is_a(AHDL_MOVE) and ahdl.dst.sig.is_reg():
+        elif ahdl.is_a(AHDL_MOVE) and ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_reg():
             codes = [ahdl]
             return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
         return ahdl
