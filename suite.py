@@ -29,24 +29,39 @@ DIRS = (
     'pure',
 )
 
+FILES = (
+    TEST_DIR + '/apps/ad7091r.py',
+    TEST_DIR + '/apps/fib.py',
+    TEST_DIR + '/apps/fifo.py',
+    TEST_DIR + '/apps/fir.py',
+    TEST_DIR + '/apps/minivm.py',
+    TEST_DIR + '/apps/minivm2.py',
+    TEST_DIR + '/apps/odd_even_sort.py',
+    TEST_DIR + '/apps/pipe.py',
+    TEST_DIR + '/apps/shellsort.py',
+    TEST_DIR + '/apps/stack.py',
+    TEST_DIR + '/chstone/mips/mips.py',
+    TEST_DIR + '/chstone/jpeg/chenidct.py',
+)
+
 
 def suite(compile_only, *cases):
     suite_results = {}
+    tests = []
     if cases[0]:
         ds = cases
     else:
         ds = DIRS
     for d in ds:
-        suite_cases = {}
-        suite_results[d] = suite_cases
-        for t in sorted(glob.glob('{1}{0}{2}{0}*.py'.format(os.path.sep, TEST_DIR, d))):
-            print(t)
-            finishes = simu.exec_test(t, output=False, compile_only=compile_only)
-            filename = os.path.basename(t)
-            if finishes:
-                suite_cases[filename] = ','.join(finishes)
-            else:
-                suite_cases[filename] = 'FAIL'
+        tests.extend(sorted(glob.glob('{1}{0}{2}{0}*.py'.format(os.path.sep, TEST_DIR, d))))
+    tests.extend(FILES)
+    for t in tests:
+        print(t)
+        finishes = simu.exec_test(t, output=False, compile_only=compile_only)
+        if finishes:
+            suite_results[t] = ','.join(finishes)
+        else:
+            suite_results[t] = 'FAIL'
     with open('suite.json', 'w') as f:
         f.write(json.dumps(suite_results, sort_keys=True, indent=4))
 
