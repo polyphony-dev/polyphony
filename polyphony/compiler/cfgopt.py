@@ -303,7 +303,10 @@ class HyperBlockBuilder(object):
 
     def _do_phi_reduction(self, head, tail, branches):
         new_tail = Block(self.scope)
-        new_tail.path_exp = head.path_exp
+        if head.path_exp:
+            new_tail.path_exp = head.path_exp
+        else:
+            new_tail.path_exp = CONST(1)
         removes = []
         indices = []
         for path in branches:

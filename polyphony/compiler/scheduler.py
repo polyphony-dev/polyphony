@@ -33,6 +33,8 @@ class Scheduler(object):
 class SchedulerImpl(object):
     def __init__(self, res_tables):
         self.res_tables = res_tables
+        self.node_latency_map = {}  # {node:(max, min, actual)}
+        self.all_paths = []
 
     def schedule(self, scope, dfg):
         logger.log(0, '_schedule dfg')
@@ -78,7 +80,7 @@ class SchedulerImpl(object):
                 sched_times.append(latest_node.end)
             if usedef_preds:
                 preds = usedef_preds
-                latest_node = max(preds, key=lambda p: p.end)
+                latest_node = max(preds, key=lambda p: p.begin)
                 sched_times.append(latest_node.begin)
             if not sched_times:
                 latest_node = max(preds, key=lambda p: p.begin)
@@ -93,13 +95,10 @@ class SchedulerImpl(object):
 
     def _find_latest_alias(self, dfg, node):
         stm = node.tag
-        if not stm.is_a([MOVE, PHI]):
+        if not stm.is_a([MOVE, PHIBase]):
             return node
-        if stm.is_a(MOVE):
-            var = stm.dst
-        else:
-            var = stm.var
-        if not var.symbol().is_alias():
+        var = node.tag.dst.symbol() if node.tag.is_a(MOVE) else node.tag.var.symbol()
+        if not var.is_alias():
             return node
         succs = dfg.succs_typ_without_back(node, 'DefUse')
         nodes = [self._find_latest_alias(dfg, s) for s in succs]
@@ -161,16 +160,105 @@ class SchedulerImpl(object):
         res_extractor.visit(stm)
         return res_extractor.results
 
+    def _calc_latency(self, dfg):
+        is_minimum = dfg.synth_params['cycle'] == 'minimum'
+        for node in dfg.get_priority_ordered_nodes():
+            l = get_latency(node.tag)
+            if l == 0:
+                if is_minimum:
+                    self.node_latency_map[node] = (0, 0, 0)
+                else:
+                    if node.tag.is_a([MOVE, PHIBase]):
+                        var = node.tag.dst.symbol() if node.tag.is_a(MOVE) else node.tag.var.symbol()
+                        if var.is_condition():
+                            self.node_latency_map[node] = (0, 0, 0)
+                        else:
+                            self.node_latency_map[node] = (1, 0, 1)
+                    else:
+                        self.node_latency_map[node] = (0, 0, 0)
+            else:
+                self.node_latency_map[node] = (l, l, l)
+
+    def _adjust_latency(self, paths, expected):
+        for path in paths:
+            path_latencies = []
+            for n in path:
+                m, _, _ = self.node_latency_map[n]
+                path_latencies.append(m)
+            path_latency = sum(path_latencies)
+            if expected > path_latency:
+                # we don't have to adjust latency
+                continue
+            diff = path_latency - expected
+            fixed = set()
+            succeeded = True
+            # try to reduce latency
+            while diff:
+                for i, n in enumerate(path):
+                    if n in fixed:
+                        continue
+                    max_l, min_l, _ = self.node_latency_map[n]
+                    if min_l < path_latencies[i]:
+                        path_latencies[i] -= 1
+                        self.node_latency_map[n] = (max_l, min_l, path_latencies[i])
+                        diff -= 1
+                    else:
+                        fixed.add(n)
+                if len(fixed) == len(path):
+                    # scheduling has failed
+                    succeeded = False
+                    break
+            if not succeeded:
+                return False, expected + diff
+        return True, expected
+
+    def _try_adjust_latency(self, dfg, expected):
+        for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, 'DefUse')):
+            self.all_paths.append(path)
+        ret, actual = self._adjust_latency(self.all_paths, expected)
+        if not ret:
+            assert False, 'scheduling has failed. the cycle must be greater equal {}'.format(actual)
+
+    def _remove_alias_if_needed(self, dfg):
+        for n in dfg.nodes:
+            if n not in self.node_latency_map:
+                continue
+            _, min_l, actual = self.node_latency_map[n]
+            if min_l == 0 and actual > 0:
+                for d in n.defs:
+                    if d.is_alias():
+                        d.del_tag('alias')
+
+    def _group_nodes_by_block(self, dfg):
+        block_nodes = defaultdict(list)
+        for node in dfg.get_priority_ordered_nodes():
+            block_nodes[node.tag.block].append(node)
+        return block_nodes
+
+    def _schedule_cycles(self, dfg):
+        self._calc_latency(dfg)
+        synth_cycle = dfg.synth_params['cycle']
+        if synth_cycle == 'any' or synth_cycle == 'minimum':
+            pass
+        elif synth_cycle.startswith('less:'):
+            extected_latency = int(synth_cycle[len('less:'):])
+            self._try_adjust_latency(dfg, extected_latency)
+        elif synth_cycle.startswith('greater:'):
+            assert False, 'Not Implement Yet'
+        else:
+            assert False
+
 
 class BlockBoundedListScheduler(SchedulerImpl):
     def __init__(self, res_tables):
         super().__init__(res_tables)
 
     def _schedule(self, dfg):
-        block_nodes = defaultdict(list)
+        self._schedule_cycles(dfg)
+        self._remove_alias_if_needed(dfg)
+
+        block_nodes = self._group_nodes_by_block(dfg)
         longest_latency = 0
-        for node in dfg.get_priority_ordered_nodes():
-            block_nodes[node.tag.block].append(node)
         for block, nodes in block_nodes.items():
             #latency = self._list_schedule(dfg, nodes)
             latency = self._list_schedule_with_block_bound(dfg, nodes, block)
@@ -204,7 +292,7 @@ class BlockBoundedListScheduler(SchedulerImpl):
             if n.tag.block is not block:
                 continue
             scheduled_time = self._node_sched_with_block_bound(dfg, n, block)
-            latency = get_latency(n.tag)
+            _, _, latency = self.node_latency_map[n]
             #detect resource conflict
             scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
             n.begin = scheduled_time
@@ -254,76 +342,29 @@ class BlockBoundedListScheduler(SchedulerImpl):
 class PipelineScheduler(SchedulerImpl):
     def __init__(self, res_tables):
         super().__init__(res_tables)
-        self.node_latency_map = {}  # {node:(max, min, actual)}
 
     def _schedule(self, dfg):
-        block_nodes = defaultdict(list)
-        longest_latency = 0
-        for node in dfg.get_priority_ordered_nodes():
-            block_nodes[node.tag.block].append(node)
-        self._calc_latency(dfg)
-        self.all_paths = []
-        for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, 'DefUse')):
-            self.all_paths.append(path)
-        extected_latency = 8  # TODO:
-        initiation_interval = 1  # TODO:
-        if not self._adjust_latency(self.all_paths, extected_latency):
-            assert False, 'scheduling has failed'
-        induction_paths = self._find_induction_paths(self.all_paths)
-        if not self._adjust_latency(induction_paths, initiation_interval):
-            assert False, 'scheduling of II has failed'
+        self._schedule_cycles(dfg)
+        self._schedule_ii(dfg)
         self._remove_alias_if_needed(dfg)
+
+        block_nodes = self._group_nodes_by_block(dfg)
+        longest_latency = 0
         for block, nodes in block_nodes.items():
             latency = self._list_schedule_for_pipeline(dfg, nodes)
             if longest_latency < latency:
                 longest_latency = latency
         return longest_latency
 
-    def _calc_latency(self, dfg):
-        for node in dfg.get_priority_ordered_nodes():
-            l = get_latency(node.tag)
-            if l == 0:
-                assert node.tag.is_a([MOVE, PHI])
-                assert len(node.defs) == 1
-                if node.defs[0].is_condition():
-                    self.node_latency_map[node] = (0, 0, 0)
-                else:
-                    self.node_latency_map[node] = (1, 0, 1)
-            else:
-                self.node_latency_map[node] = (l, l, l)
-
-    def _adjust_latency(self, paths, expected):
-        for path in paths:
-            path_latencies = []
-            for n in path:
-                m, _, _ = self.node_latency_map[n]
-                path_latencies.append(m)
-            path_latency = sum(path_latencies)
-            if expected > path_latency:
-                # we don't have to adjust latency
-                continue
-            diff = path_latency - expected
-            fixed = set()
-            succeeded = True
-            # try to reduce latency
-            while diff:
-                for i, n in enumerate(path):
-                    if n in fixed:
-                        continue
-                    max_l, min_l, _ = self.node_latency_map[n]
-                    if min_l < path_latencies[i]:
-                        path_latencies[i] -= 1
-                        self.node_latency_map[n] = (max_l, min_l, path_latencies[i])
-                        diff -= 1
-                    else:
-                        fixed.add(n)
-                if len(fixed) == len(path):
-                    # scheduling has failed
-                    succeeded = False
-                    break
-            if not succeeded:
-                return False
-        return True
+    def _schedule_ii(self, dfg):
+        initiation_interval = int(dfg.synth_params['ii'])
+        if not self.all_paths:
+            for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, 'DefUse')):
+                self.all_paths.append(path)
+        induction_paths = self._find_induction_paths(self.all_paths)
+        ret, actual = self._adjust_latency(induction_paths, initiation_interval)
+        if not ret:
+            assert False, 'scheduling of II has failed'
 
     def _find_induction_paths(self, paths):
         induction_paths = []
@@ -339,16 +380,6 @@ class PipelineScheduler(SchedulerImpl):
                     induction_paths.append(path[i:])
                     break
         return induction_paths
-
-    def _remove_alias_if_needed(self, dfg):
-        for n in dfg.nodes:
-            if n not in self.node_latency_map:
-                continue
-            _, min_l, actual = self.node_latency_map[n]
-            if min_l == 0 and actual > 0:
-                for d in n.defs:
-                    if d.is_alias():
-                        d.del_tag('alias')
 
     def _list_schedule_for_pipeline(self, dfg, nodes):
         next_candidates = set()

@@ -440,9 +440,8 @@ class DFGBuilder(object):
                 self._add_defuse_edges(stm, usenode, dfg, usedef, blocks)
                 # add use-def edges
                 self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)
-        if self.scope.is_testbench():
-            # Test need to call functions sequentially
-            self._add_edges_between_func_modules(blocks, dfg)
+        if self.scope.synth_params['scheduling'] == 'sequential':
+            self._add_seq_edges(blocks, dfg)
         self._add_edges_between_objects(blocks, dfg)
         self._add_timinglib_seq_edges(blocks, dfg)
         self._add_io_seq_edges(blocks, dfg)
@@ -615,6 +614,15 @@ class DFGBuilder(object):
                         dfg.add_seq_edge(prev_node, node)
                 prev_node = node
 
+    def _add_seq_edges(self, blocks, dfg):
+        for blk in blocks:
+            prev_node = None
+            for stm in blk.stms:
+                node = dfg.add_stm_node(stm)
+                if prev_node:
+                    dfg.add_seq_edge(prev_node, node)
+                prev_node = node
+
     def _is_same_block_node(self, n0, n1):
         return n0.tag.block is n1.tag.block
 
@@ -735,8 +743,10 @@ class DFGBuilder(object):
     def _remove_alias_cycle(self, dfg):
         backs = []
         for (n1, n2), (_, back) in dfg.edges.items():
-            if back and n1.tag.is_a([MOVE, PHI]) and n1.defs[0].is_alias():
-                backs.append((n1, n2))
+            if back and n1.tag.is_a([MOVE, PHIBase]):
+                var = n1.tag.dst.symbol() if n1.tag.is_a(MOVE) else n1.tag.var.symbol()
+                if var.is_alias():
+                    backs.append((n1, n2))
         dones = set()
         for end, start in backs:
             if end in dones:
@@ -749,9 +759,9 @@ class DFGBuilder(object):
                 end.defs[0].del_tag('alias')
                 dones.add(end)
             return
-        if node.tag.is_a([MOVE, PHI]) and node.defs[0].is_alias():
-            succs = dfg.succs_typ_without_back(node, 'DefUse')
-            for s in succs:
-                self._remove_alias_cycle_rec(dfg, s, end, dones)
-        else:
-            return
+        if node.tag.is_a([MOVE, PHIBase]) and node.defs[0].is_alias():
+            var = node.tag.dst.symbol() if node.tag.is_a(MOVE) else node.tag.var.symbol()
+            if var.is_alias():
+                succs = dfg.succs_typ_without_back(node, 'DefUse')
+                for s in succs:
+                    self._remove_alias_cycle_rec(dfg, s, end, dones)

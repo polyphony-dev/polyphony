@@ -250,14 +250,10 @@ class STGBuilder(object):
         parent_stg = self._get_parent_stg(dfg) if not is_main else None
         stg = STG(stg_name, parent_stg, None, self.scope)
         stg.scheduling = dfg.synth_params['scheduling']
-        if stg.scheduling == 'parallel':
+        if stg.scheduling == 'pipeline' and not is_main:
+            builder = LoopPipelineStageBuilder(self.scope, stg, self.blk2states)
+        else:
             builder = StateBuilder(self.scope, stg, self.blk2states)
-        elif stg.scheduling == 'pipeline':
-            if is_main:
-                # TODO: NIY
-                assert False
-            else:
-                builder = LoopPipelineStageBuilder(self.scope, stg, self.blk2states)
         builder.build(dfg, is_main)
         return stg
 

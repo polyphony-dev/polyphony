@@ -17,9 +17,15 @@ logger = getLogger(__name__)
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 
 
-def default_synth_params():
+def default_synth_params(scope):
     di = defaultdict(str)
-    di['scheduling'] = 'parallel'
+    if scope.is_testbench():
+        di['scheduling'] = 'sequential'
+        di['cycle'] = 'any'
+    else:
+        di['scheduling'] = 'parallel'
+        di['cycle'] = 'minimum'
+    di['ii'] = 1
     return di
 
 
@@ -148,7 +154,7 @@ class Scope(Tagged):
         self.worker_owner = None
         self.asap_latency = -1
         self.type_args = []
-        self.synth_params = default_synth_params()
+        self.synth_params = default_synth_params(self)
 
     def __str__(self):
         s = '\n================================\n'

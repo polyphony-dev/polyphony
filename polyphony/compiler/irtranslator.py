@@ -387,6 +387,7 @@ class CodeVisitor(ast.NodeVisitor):
         new_block = self._new_block(self.current_scope)
         self.current_scope.set_entry_block(new_block)
         self.current_block = new_block
+        self.current_param_stms = []
 
         return (outer_scope, last_block)
 
@@ -426,6 +427,7 @@ class CodeVisitor(ast.NodeVisitor):
             mv = MOVE(TEMP(param.copy, Ctx.STORE),
                       TEMP(param.sym, Ctx.LOAD))
             self.emit(mv, node)
+            self.current_param_stms.append(mv)
         skip = len(node.args.args) - len(node.args.defaults)
         for idx, (param, defval) in enumerate(zip(self.current_scope.params[skip:],
                                                   node.args.defaults)):
@@ -460,7 +462,7 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.set_exit_block(self.function_exit)
         else:
             self.current_scope.set_exit_block(self.current_block)
-        # self.function_exit.synth_params.update(self.current_synth_params)
+        self.function_exit.synth_params.update(self.current_synth_params)
         self.function_exit = outer_function_exit
         self._leave_scope(*context)
 
@@ -866,8 +868,11 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_AyncFor(self, node):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])
 
+    def _is_empty_entry(self):
+        return all([stm in self.current_param_stms for stm in self.current_scope.entry_block.stms])
+
     def visit_With(self, node):
-        is_empty_entry = self.current_block is self.current_scope.entry_block and not self.current_block.stms
+        is_empty_entry = self.current_block is self.current_scope.entry_block and self._is_empty_entry()
         if not is_empty_entry:
             with_block = self._new_block(self.current_scope, 'with')
             self.emit(JUMP(with_block), node)
@@ -883,6 +888,8 @@ class CodeVisitor(ast.NodeVisitor):
                     old_synth_params = self.current_synth_params
                     self.current_synth_params = self.current_synth_params.copy()
                     self.current_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
+                    if is_empty_entry:
+                        old_synth_params = self.current_synth_params
                     if len(node.items) != 1:
                         assert False  # TODO: use fail()
                     if expr.args:

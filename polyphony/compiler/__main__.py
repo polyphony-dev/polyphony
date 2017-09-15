@@ -104,7 +104,7 @@ def pathexp(driver, scope):
 def hyperblock(driver, scope):
     if not env.enable_hyperblock:
         return
-    if scope.is_testbench():
+    if scope.synth_params['scheduling'] == 'sequential':
         return
     HyperBlockBuilder().process(scope)
 
