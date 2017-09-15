@@ -54,7 +54,8 @@ def suite(compile_only, *cases):
         ds = DIRS
     for d in ds:
         tests.extend(sorted(glob.glob('{1}{0}{2}{0}*.py'.format(os.path.sep, TEST_DIR, d))))
-    tests.extend(FILES)
+    if not cases[0]:
+        tests.extend(FILES)
     for t in tests:
         print(t)
         finishes = simu.exec_test(t, output=False, compile_only=compile_only)
