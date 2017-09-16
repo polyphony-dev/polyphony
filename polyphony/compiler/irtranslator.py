@@ -347,6 +347,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.annotation_visitor = AnnotationVisitor(self)
         self.lazy_defs = []
         self.current_synth_params = {}
+        self.last_synth_params = None
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -462,7 +463,8 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.set_exit_block(self.function_exit)
         else:
             self.current_scope.set_exit_block(self.current_block)
-        self.function_exit.synth_params.update(self.current_synth_params)
+        if self.last_synth_params:
+            self.function_exit.synth_params.update(self.last_synth_params)
         self.function_exit = outer_function_exit
         self._leave_scope(*context)
 
@@ -889,7 +891,7 @@ class CodeVisitor(ast.NodeVisitor):
                     self.current_synth_params = self.current_synth_params.copy()
                     self.current_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
                     if is_empty_entry:
-                        old_synth_params = self.current_synth_params
+                        self.last_synth_params = self.current_synth_params
                     if len(node.items) != 1:
                         assert False  # TODO: use fail()
                     if expr.args:

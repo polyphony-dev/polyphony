@@ -44,9 +44,6 @@ class HDLModuleBuilder(object):
             sig = scope.gen_sig(sig.name, sig.width, sig.tags)
             if sig.is_memif() or sig.is_ctrl() or sig.is_extport():
                 continue
-            elif sig.is_condition():
-                self.module_info.add_internal_net(sig)
-                nets.append(sig)
             else:
                 assert ((sig.is_net() and not sig.is_reg()) or
                         (not sig.is_net() and sig.is_reg()) or

@@ -560,7 +560,7 @@ class LoopPipelineStageBuilder(STGItemBuilder):
                 if use_max_distances[sig] < distance:
                     use_max_distances[sig] = distance
             for sig, distance in use_max_distances.items():
-                if 1 < distance:
+                if 1 < distance or ((sig.is_induction() or sig.is_net()) and 0 < distance):
                     self._insert_register_slices(sig, pstate.stages,
                                                  d_stage_n, d_stage_n + distance,
                                                  usedef, stm2stage_num)
@@ -576,7 +576,11 @@ class LoopPipelineStageBuilder(STGItemBuilder):
             if num == d_num:
                 continue
             new_name = sig.name + '_{}'.format(num)  # use previous stage variable
-            new_sig = self.scope.gen_sig(new_name, sig.width, sig.tags)
+            tags = sig.tags.copy()
+            if 'net' in tags:
+                tags.remove('net')
+                tags.add('reg')
+            new_sig = self.scope.gen_sig(new_name, sig.width, tags)
             replacer.replace(u, sig, new_sig)
         for i, s in enumerate(stages[start_n:end_n]):
             num = i + start_n
@@ -585,9 +589,9 @@ class LoopPipelineStageBuilder(STGItemBuilder):
                 prev_sig = sig
             else:
                 prev_name = sig.name + '_{}'.format(num)
-                prev_sig = self.scope.gen_sig(prev_name, sig.width, sig.tags)
+                prev_sig = self.scope.signal(prev_name)
             cur_name = sig.name + '_{}'.format(num + 1)
-            cur_sig = self.scope.gen_sig(cur_name, sig.width, sig.tags)
+            cur_sig = self.scope.signal(cur_name)
             codes = s.codes
             slice_stm = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
                                   AHDL_VAR(prev_sig, Ctx.LOAD))
@@ -625,9 +629,13 @@ class LoopPipelineStageBuilder(STGItemBuilder):
         if ahdl.is_a(AHDL_PROCCALL):
             codes = [ahdl]
             return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
-        elif ahdl.is_a(AHDL_MOVE) and ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_reg():
-            codes = [ahdl]
-            return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
+        elif ahdl.is_a(AHDL_MOVE):
+            if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_reg():
+                codes = [ahdl]
+                return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
+            elif ahdl.dst.is_a(AHDL_SUBSCRIPT):
+                codes = [ahdl]
+                return AHDL_IF([AHDL_VAR(cond_sig, Ctx.LOAD)], [codes])
         return ahdl
 
 

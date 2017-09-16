@@ -22,7 +22,7 @@ class Scheduler(object):
         self.scope = scope
         for dfg in self.scope.dfgs(bottom_up=True):
             self.res_tables = {}
-            if 'scheduling' in dfg.synth_params and dfg.synth_params['scheduling'] == 'pipeline':
+            if dfg.parent and dfg.synth_params['scheduling'] == 'pipeline':
                 scheduler_impl = PipelineScheduler(self.res_tables)
             else:
                 scheduler_impl = BlockBoundedListScheduler(self.res_tables)

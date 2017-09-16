@@ -388,7 +388,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit(ahdl.code + ';')
 
     def visit_AHDL_MOVE(self, ahdl):
-        if ahdl.dst.is_a(AHDL_VAR) and (ahdl.dst.sig.is_condition() or ahdl.dst.sig.is_net()):
+        if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_net():
             self.module_info.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
             self.emit('/* {} <= {}; */'.format(self.visit(ahdl.dst), self.visit(ahdl.src)))
         elif ahdl.dst.is_a(AHDL_MEMVAR) and ahdl.src.is_a(AHDL_MEMVAR):
