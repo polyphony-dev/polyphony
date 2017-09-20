@@ -525,6 +525,7 @@ class DFGBuilder(object):
                     continue
                 usenode = dfg.add_stm_node(usestm)
                 dfg.add_usedef_edge(usenode, defnode)
+                self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef)
 
     def _is_constant_stm(self, stm):
         if stm.is_a(PHIBase):
@@ -738,6 +739,30 @@ class DFGBuilder(object):
                                 dfg.add_seq_edge(prev_port_node, node)
                         # update last node
                         ports[port_sym] = node
+
+    def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef):
+        stm = usenode.tag
+        if stm.is_a(MOVE):
+            var = stm.dst
+        elif stm.is_a(PHIBase):
+            var = stm.var
+        else:
+            return
+        if not var.symbol().is_alias():
+            return
+        for u in usedef.get_stms_using(var.symbol()):
+            if u is defnode.tag:
+                continue
+            if defnode.tag.program_order() <= u.program_order():
+                continue
+            if u.block is not defnode.tag.block:
+                continue
+            unode = dfg.add_stm_node(u)
+            if self._has_timing_function(u):
+                dfg.add_seq_edge(unode, defnode)
+            else:
+                dfg.add_usedef_edge(unode, defnode)
+            self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef)
 
     def _remove_alias_cycle(self, dfg):
         backs = []

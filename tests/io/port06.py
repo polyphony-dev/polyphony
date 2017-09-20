@@ -1,4 +1,4 @@
-from polyphony import testbench, module, is_worker_running
+from polyphony import testbench, module, is_worker_running, rule
 from polyphony.io import Port
 from polyphony.timing import clksleep
 
@@ -21,6 +21,7 @@ class Port06:
 
 
 @testbench
+@rule(scheduling='parallel')
 def test(p06):
     for i in range(8):
         x1_1 = p06.out1.rd()

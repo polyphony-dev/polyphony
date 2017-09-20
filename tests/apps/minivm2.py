@@ -2,6 +2,7 @@ import polyphony
 from polyphony.io import Port, Queue
 from polyphony.typing import int8, uint8, uint16
 
+
 @polyphony.module
 class MiniVM:
     LOAD0 = 0
@@ -11,7 +12,7 @@ class MiniVM:
     MUL = 4
     HALT = 0xFF
 
-    def __init__(self, start_addr):
+    def __init__(self, start_addr, end_addr):
         # define i/o
         self.dout = Port(int8, 'out', protocol='ready_valid')
 
@@ -20,18 +21,18 @@ class MiniVM:
         opeq = Queue(uint8, 'any',  maxsize=2)
         valueq = Queue(uint8, 'any',  maxsize=2)
 
-        self.append_worker(fetch, start_addr, instq)
+        self.append_worker(fetch, start_addr, end_addr, instq)
         self.append_worker(decode, instq, opeq, valueq)
         self.append_worker(execute, opeq, valueq, self.dout)
 
 
-def fetch(start_addr, instq):
+def fetch(start_addr, end_addr, instq):
     pc = start_addr
     program = [0x0001, 0x0102, 0x0200, 0x0103, 0x0200, 0xFF00,  # 1 + 2 + 3
                0x0002, 0x0103, 0x0400, 0x0104, 0x0400, 0xFF00]  # 2 * 3 * 4
 
     while polyphony.is_worker_running():
-        if len(program) <= pc:
+        if end_addr < pc:
             break
         instruction = program[pc]
         pc += 1
@@ -82,8 +83,8 @@ def vm1_test(vm1):
 
 
 # instantiate synthesizing module
-vm0 = MiniVM(0)
-vm1 = MiniVM(6)
+vm0 = MiniVM(0, 5)
+vm1 = MiniVM(6, 11)
 
 vm0_test(vm0)
 vm1_test(vm1)

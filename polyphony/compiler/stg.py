@@ -571,8 +571,8 @@ class LoopPipelineStageBuilder(STGItemBuilder):
         assert len(defs) == 1
         d = list(defs)[0]
         d_num = stm2stage_num[d]
-        for u in usedef.get_stms_using(sig):
-            num = stm2stage_num[u]
+
+        for num in range(start_n, end_n + 1):
             if num == d_num:
                 continue
             new_name = sig.name + '_{}'.format(num)  # use previous stage variable
@@ -580,7 +580,13 @@ class LoopPipelineStageBuilder(STGItemBuilder):
             if 'net' in tags:
                 tags.remove('net')
                 tags.add('reg')
-            new_sig = self.scope.gen_sig(new_name, sig.width, tags)
+            self.scope.gen_sig(new_name, sig.width, tags)
+        for u in usedef.get_stms_using(sig):
+            num = stm2stage_num[u]
+            if num == d_num:
+                continue
+            new_name = sig.name + '_{}'.format(num)
+            new_sig = self.scope.signal(new_name)
             replacer.replace(u, sig, new_sig)
         for i, s in enumerate(stages[start_n:end_n]):
             num = i + start_n
