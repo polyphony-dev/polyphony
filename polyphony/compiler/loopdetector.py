@@ -181,6 +181,8 @@ class LoopVariableDetector(IRVisitor):
 
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
+        if ir.block.parent is None:
+            return
         sym = ir.dst.symbol()
         if sym.is_temp() or sym.is_return() or sym.typ.is_port():
             return
@@ -216,6 +218,8 @@ class LoopVariableDetector(IRVisitor):
                 return True
             for stm in stms:
                 if stm in visited:
+                    continue
+                if start_stm.block.parent is not stm.block.parent:
                     continue
                 visited.add(stm)
                 defsyms = self.usedef.get_syms_defined_at(stm)
