@@ -440,7 +440,7 @@ class DFGBuilder(object):
                 self._add_defuse_edges(stm, usenode, dfg, usedef, blocks)
                 # add use-def edges
                 self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)
-        if self.scope.synth_params['scheduling'] == 'sequential':
+        if main_block.synth_params['scheduling'] == 'sequential':
             self._add_seq_edges(blocks, dfg)
         self._add_edges_between_objects(blocks, dfg)
         self._add_timinglib_seq_edges(blocks, dfg)
@@ -689,13 +689,12 @@ class DFGBuilder(object):
         elif call.is_a(CALL):
             if call.func_scope.is_method() and call.func_scope.parent.is_port():
                 # TODO: parallel scheduling for port access
-                return True
-                # port_sym = call.func.qualified_symbol()[-2]
-                # assert port_sym.typ.is_port()
-                # if port_sym.typ.get_scope().name.startswith('polyphony.io.Queue'):
-                #     return True
-                # else:
-                #     return False
+                port_sym = call.func.qualified_symbol()[-2]
+                assert port_sym.typ.is_port()
+                if port_sym.typ.get_scope().name.startswith('polyphony.io.Queue'):
+                    return True
+                else:
+                    return stm.block.synth_params['scheduling'] == 'sequential'
             return False
 
     def _add_timinglib_seq_edges(self, blocks, dfg):

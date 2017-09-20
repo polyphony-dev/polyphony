@@ -43,12 +43,15 @@ class AD7091R_SPIC:
 
             for i in range(16):
                 self.sclk.wr(0)
+                clkfence()
                 sdi_tmp = 1 if (self.din() & (1 << (15 - i))) else 0
                 self.sdi.wr(sdi_tmp)
                 clksleep(1)
-
                 self.sclk.wr(1)
-                sdo_tmp = sdo_tmp << 1 | self.sdo.rd()
+                clkfence()
+                sdo_d = self.sdo.rd()
+                sdo_tmp = sdo_tmp << 1 | sdo_d
+                #print('sdo read!', i, sdo_d)
 
             self.sclk.wr(0)
             self.dout.wr(sdo_tmp & 0x0fff)
@@ -59,25 +62,27 @@ class AD7091R_SPIC:
 
 
 @polyphony.testbench
+@polyphony.rule(scheduling='parallel')
 def test(spic):
     datas = (0xdead, 0xbeef, 0xffff, 0x0000, 0x800)
     for data in datas:
-        print(data)
+        #print('!!', data)
         wait_falling(spic.convst_n)
-        print('convst_n fall', spic.convst_n())
+        #print('convst_n fall', spic.convst_n())
         wait_rising(spic.convst_n)
-        print('convst_n rise', spic.convst_n())
+        #print('convst_n rise', spic.convst_n())
         wait_falling(spic.cs_n)
-        print('cs_n fall', spic.cs_n())
+        #print('cs_n fall', spic.cs_n())
         spic.din.wr(0b1111000011110000)
         for i in range(16):
             databit = 1 if data & (1 << (15 - i)) else 0
+            #print('sdo write from test', i, databit)
             spic.sdo.wr(databit)
             wait_rising(spic.sclk)
-
         wait_rising(spic.cs_n)
         wait_rising(spic.data_ready)
         clksleep(1)
+        #print(spic.dout())
         assert spic.dout() == data & 0x0fff
         assert spic.chout() == (data & 0x7000) >> 12
 

@@ -36,12 +36,11 @@ class Driver(object):
                     print_progress(proc, (i + 1) * 100 // len(self.procs))
 
                 self.stage = i
-                args, _, _, _ = inspect.getargspec(proc)
                 Scope.reorder_scopes()
                 self.scopes.sort(key=lambda s: s.order)
                 scopes = self.scopes[:]
 
-                if 'scope' not in args:
+                if 'scope' not in inspect.signature(proc).parameters:
                     for s in scopes:
                         self.start_logging(proc, s)
                     proc(self)
