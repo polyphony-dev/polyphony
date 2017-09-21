@@ -192,18 +192,14 @@ class LoopVariableDetector(IRVisitor):
                 return
         if sym.typ.is_seq():
             return
-        if self._has_depend_cycle(ir, sym):
-            sym.add_tag('induction')
-            logger.debug('induction {} {}'.format(sym, ir))
-
-    def visit_PHI(self, ir):
-        assert ir.var.is_a([TEMP, ATTR])
-        sym = ir.var.symbol()
-        if sym.is_temp() or sym.is_return() or sym.typ.is_port():
+        stms = self.usedef.get_stms_defining(sym)
+        if len(stms) == 1:
             return
         if self._has_depend_cycle(ir, sym):
             sym.add_tag('induction')
-            logger.debug('induction {} {}'.format(sym, ir))
+
+    def visit_PHI(self, ir):
+        return
 
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
@@ -212,23 +208,29 @@ class LoopVariableDetector(IRVisitor):
         self.visit_PHI(ir)
 
     def _has_depend_cycle(self, start_stm, sym):
-        def _has_depend_cycle_r(start_stm, sym, visited):
+        def _has_depend_cycle_r(start_stm, sym, visited, chain):
+            chain.append(sym)
             stms = self.usedef.get_stms_using(sym)
             if start_stm in stms:
                 return True
             for stm in stms:
-                if stm in visited:
+                if not start_stm.block.is_in_same_loop_region(stm.block):
                     continue
-                if start_stm.block.parent is not stm.block.parent:
+                if stm in visited:
                     continue
                 visited.add(stm)
                 defsyms = self.usedef.get_syms_defined_at(stm)
                 for defsym in defsyms:
-                    if _has_depend_cycle_r(start_stm, defsym, visited):
+                    if _has_depend_cycle_r(start_stm, defsym, visited, chain):
                         return True
+            chain.pop()
             return False
         visited = set()
-        return _has_depend_cycle_r(start_stm, sym, visited)
+        chain = []
+        ret = _has_depend_cycle_r(start_stm, sym, visited, chain)
+        if ret:
+            logger.debug('induction {} {} {}'.format(sym, start_stm, chain))
+        return ret
 
 
 # hierarchize

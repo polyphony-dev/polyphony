@@ -224,6 +224,20 @@ class Block(object):
                 continue
             stm.block.stms.remove(stm)
 
+    def is_in_same_loop_region(self, other):
+        if not self.parent:
+            return False
+        if self.parent is other.parent:
+            return True
+        parents = [self.parent]
+        p = self.parent
+        while p.parent:
+            parents.append(p.parent)
+            p = p.parent
+        if other.parent in parents:
+            return True
+        return False
+
 
 class CompositBlock(Block):
     def __init__(self, scope, head, bodies, region):
