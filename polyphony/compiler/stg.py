@@ -552,18 +552,18 @@ class LoopPipelineStageBuilder(STGItemBuilder):
             d = list(defs)[0]
             d_stage_n = stm2stage_num[d]
             uses = usedef.get_stms_using(sig)
-            use_max_distances = defaultdict(int)
+            use_max_distances = 0
             for u in uses:
                 u_stage_n = stm2stage_num[u]
                 distance = u_stage_n - d_stage_n
                 assert 0 <= distance, '{} {}'.format(d, u)
-                if use_max_distances[sig] < distance:
-                    use_max_distances[sig] = distance
-            for sig, distance in use_max_distances.items():
-                if 1 < distance or ((sig.is_induction() or sig.is_net()) and 0 < distance):
-                    self._insert_register_slices(sig, pstate.stages,
-                                                 d_stage_n, d_stage_n + distance,
-                                                 usedef, stm2stage_num)
+                if use_max_distances < distance:
+                    use_max_distances = distance
+            if (1 < use_max_distances or
+                    ((sig.is_induction() or sig.is_net()) and 0 < use_max_distances)):
+                self._insert_register_slices(sig, pstate.stages,
+                                             d_stage_n, d_stage_n + use_max_distances,
+                                             usedef, stm2stage_num)
 
     def _insert_register_slices(self, sig, stages, start_n, end_n, usedef, stm2stage_num):
         replacer = AHDLVarReplacer()
@@ -571,9 +571,13 @@ class LoopPipelineStageBuilder(STGItemBuilder):
         assert len(defs) == 1
         d = list(defs)[0]
         d_num = stm2stage_num[d]
-
+        is_normal_reg = True if sig.is_reg() and not sig.is_induction() else False
+        if is_normal_reg:
+            start_n += 1
         for num in range(start_n, end_n + 1):
             if num == d_num:
+                continue
+            if is_normal_reg and (num - d_num) == 1:
                 continue
             new_name = sig.name + '_{}'.format(num)  # use previous stage variable
             tags = sig.tags.copy()
@@ -585,20 +589,21 @@ class LoopPipelineStageBuilder(STGItemBuilder):
             num = stm2stage_num[u]
             if num == d_num:
                 continue
+            if is_normal_reg and (num - d_num) == 1:
+                continue
             new_name = sig.name + '_{}'.format(num)
             new_sig = self.scope.signal(new_name)
             replacer.replace(u, sig, new_sig)
-        for i, s in enumerate(stages[start_n:end_n]):
-            num = i + start_n
+        for num in range(start_n, end_n):
             # first slice uses original
-            if i == 0:
+            if num == start_n:
                 prev_sig = sig
             else:
                 prev_name = sig.name + '_{}'.format(num)
                 prev_sig = self.scope.signal(prev_name)
             cur_name = sig.name + '_{}'.format(num + 1)
             cur_sig = self.scope.signal(cur_name)
-            codes = s.codes
+            codes = stages[num].codes
             slice_stm = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
                                   AHDL_VAR(prev_sig, Ctx.LOAD))
             codes.append(slice_stm)
