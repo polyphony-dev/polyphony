@@ -126,27 +126,32 @@ class DataFlowGraph(object):
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
         if (n1, n2) not in self.edges:
-            self.edges[(n1, n2)] = ('Seq', False)
-            edge = (n1, n2, 'Seq', False)
-            self.succ_edges[n1].add(edge)
-            self.pred_edges[n2].add(edge)
+            self._add_edge(n1, n2, 'Seq', False)
+        else:
+            _typ, _ = self.edges[(n1, n2)]
+            if _typ != 'DefUse':
+                # overwrite if existing edge type is 'UseDef'
+                self._add_edge(n1, n2, 'Seq', False)
 
     def add_edge(self, typ, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
         back = self._is_back_edge(n1, n2)
         if (n1, n2) not in self.edges:
-            self.edges[(n1, n2)] = (typ, back)
-            edge = (n1, n2, typ, back)
-            self.succ_edges[n1].add(edge)
-            self.pred_edges[n2].add(edge)
+            self._add_edge(n1, n2, typ, back)
         else:
             _typ, _back = self.edges[(n1, n2)]
             assert back is _back
             if typ == _typ or _typ == 'DefUse':
                 return
             if typ == 'DefUse':
-                self.edges[(n1, n2)] = (typ, back)
+                self._add_edge(n1, n2, typ, back)
+
+    def _add_edge(self, n1, n2, typ, back):
+        self.edges[(n1, n2)] = (typ, back)
+        edge = (n1, n2, typ, back)
+        self.succ_edges[n1].add(edge)
+        self.pred_edges[n2].add(edge)
 
     def remove_edge(self, n1, n2):
         typ, back = self.edges[n1, n2]
