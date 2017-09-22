@@ -1,4 +1,5 @@
 ﻿from collections import deque
+from .block import Block
 from .common import fail
 from .errors import Errors
 from .irvisitor import IRVisitor
@@ -128,6 +129,11 @@ class ConstantOptBase(IRVisitor):
     def __init__(self):
         super().__init__()
 
+    def process(self, scope):
+        Block.set_order(scope.entry_block, 0)
+        self.dtree = DominatorTreeBuilder(scope).process()
+        super().process(scope)
+
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
@@ -231,6 +237,8 @@ class ConstantOptBase(IRVisitor):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
+        if ir.exp.is_a(CONST):
+            self._process_unconditional_cjump(ir, [])
 
     def visit_MCJUMP(self, ir):
         ir.conds = [self.visit(cond) for cond in ir.conds]
@@ -256,6 +264,38 @@ class ConstantOptBase(IRVisitor):
         # TODO: loop-phi
         pass
 
+    def _process_unconditional_cjump(self, cjump, worklist):
+        def remove_dominated_branch(blk):
+            blk.preds = []  # mark as garbage block
+            remove_from_list(worklist, blk.stms)
+            for succ in blk.succs:
+                if blk in succ.preds:
+                    succ.remove_pred(blk)
+            for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
+                if self.dtree.is_child(blk, succ):
+                    remove_dominated_branch(succ)
+
+        blk = cjump.block
+        if cjump.exp.value:
+            true_blk = cjump.true
+            false_blk = cjump.false
+        else:
+            true_blk = cjump.false
+            false_blk = cjump.true
+        jump = JUMP(true_blk)
+        jump.lineno = cjump.lineno
+
+        if true_blk is not false_blk:
+            false_blk.remove_pred(blk)
+            blk.remove_succ(false_blk)
+            if self.scope.exit_block is false_blk:
+                self.scope.exit_block = blk
+            if not false_blk.preds and self.dtree.is_child(blk, false_blk):
+                remove_dominated_branch(false_blk)
+        blk.replace_stm(cjump, jump)
+        if cjump in worklist:
+            worklist.remove(cjump)
+
 
 class ConstantOpt(ConstantOptBase):
     def __init__(self):
@@ -266,8 +306,7 @@ class ConstantOpt(ConstantOptBase):
         if scope.is_class():
             return
         self.scope = scope
-        self.dtree = DominatorTreeBuilder(self.scope).process()
-
+        self.dtree = DominatorTreeBuilder(scope).process()
         dead_stms = []
         worklist = deque()
         for blk in scope.traverse_blocks():
@@ -365,43 +404,9 @@ class ConstantOpt(ConstantOptBase):
                 if stm in worklist:
                     worklist.remove(stm)
                     assert stm not in worklist
-            elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
-                self._process_unconditional_cjump(stm, worklist)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
-
-    def _process_unconditional_cjump(self, cjump, worklist):
-        def remove_dominated_branch(blk):
-            blk.preds = []  # mark as garbage block
-            remove_from_list(worklist, blk.stms)
-            for succ in blk.succs:
-                if blk in succ.preds:
-                    succ.remove_pred(blk)
-            for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
-                if self.dtree.is_child(blk, succ):
-                    remove_dominated_branch(succ)
-
-        blk = cjump.block
-        if cjump.exp.value:
-            true_blk = cjump.true
-            false_blk = cjump.false
-        else:
-            true_blk = cjump.false
-            false_blk = cjump.true
-        jump = JUMP(true_blk)
-        jump.lineno = cjump.lineno
-
-        if true_blk is not false_blk:
-            false_blk.remove_pred(blk)
-            blk.remove_succ(false_blk)
-            if self.scope.exit_block is false_blk:
-                self.scope.exit_block = blk
-            if not false_blk.preds and self.dtree.is_child(blk, false_blk):
-                remove_dominated_branch(false_blk)
-        blk.replace_stm(cjump, jump)
-        if cjump in worklist:
-            worklist.remove(cjump)
 
     def visit_SYSCALL(self, ir):
         if ir.sym.name == 'len':
@@ -581,3 +586,4 @@ class GlobalConstantOpt(ConstantOptBase):
 
     def visit_PHI(self, ir):
         assert False
+
