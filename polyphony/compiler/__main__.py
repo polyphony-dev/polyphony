@@ -44,9 +44,11 @@ from .specfunc import SpecializedFunctionMaker
 from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .statereducer import StateReducer
 from .stg import STGBuilder
+from .synth import DefaultSynthParamSetter
 from .typecheck import TypePropagation, InstanceTypePropagation
 from .typecheck import TypeChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
 from .typecheck import AssertionChecker
+from .typecheck import SynthesisParamChecker
 from .usedef import UseDefDetector
 from .vericodegen import VerilogCodeGen
 from .veritestgen import VerilogTestGen
@@ -193,6 +195,10 @@ def assertioncheck(driver, scope):
     AssertionChecker().process(scope)
 
 
+def synthcheck(driver, scope):
+    SynthesisParamChecker().process(scope)
+
+
 def detectrom(driver):
     RomDetector().process_all()
 
@@ -265,6 +271,10 @@ def specfunc(driver):
 def inlineopt(driver):
     InlineOpt().process_all()
     callgraph(driver)
+
+
+def setsynthparams(driver, scope):
+    DefaultSynthParamSetter().process(scope)
 
 
 def flattenmodule(driver, scope):
@@ -444,6 +454,7 @@ def compile_plan():
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
+        setsynthparams,
         dbg(dumpscope),
         reduceblk,
         pathexp,
@@ -507,6 +518,7 @@ def compile_plan():
         aliasvar,
         dbg(dumpscope),
         dfg,
+        synthcheck,
         dbg(dumpdfg),
         schedule,
         dbg(dumpsched),

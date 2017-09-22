@@ -1,4 +1,6 @@
-﻿from .ir import *
+﻿from collections import defaultdict
+from .ir import *
+from .synth import make_synth_params
 from .utils import replace_item, remove_except_one
 from logging import getLogger
 logger = getLogger(__name__)
@@ -29,7 +31,7 @@ class Block(object):
         self.num = scope.block_count
         self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
         self.path_exp = None
-        self.synth_params = self.scope.synth_params.copy()
+        self.synth_params = make_synth_params()
         self.parent = None
         self.is_hyperblock = False
 
@@ -256,7 +258,7 @@ class CompositBlock(Block):
         self.outer_uses = None
         self.inner_defs = None
         self.inner_uses = None
-        self.synth_params['scheduling'] = head.synth_params['scheduling']
+        self.synth_params = head.synth_params.copy()
         head.parent = self
         for body in bodies:
             body.parent = self

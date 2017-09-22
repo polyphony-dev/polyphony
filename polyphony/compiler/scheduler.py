@@ -19,6 +19,8 @@ class Scheduler(object):
         self.res_tables = {}
 
     def schedule(self, scope):
+        if scope.is_namespace() or scope.is_class() or scope.is_lib():
+            return
         self.scope = scope
         for dfg in self.scope.dfgs(bottom_up=True):
             self.res_tables = {}
@@ -101,6 +103,8 @@ class SchedulerImpl(object):
         if not var.is_alias():
             return node
         succs = dfg.succs_typ_without_back(node, 'DefUse')
+        if not succs:
+            return node
         nodes = [self._find_latest_alias(dfg, s) for s in succs]
         latest_node = max(nodes, key=lambda p: p.end)
         return latest_node

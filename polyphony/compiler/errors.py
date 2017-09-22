@@ -79,6 +79,7 @@ class Errors(Enum):
 
     RULE_BREAK_IN_PIPELINE_LOOP = 950
     RULE_CONTINUE_IN_PIPELINE_LOOP = 951
+    RULE_FUNCTION_CANNOT_BE_PIPELINED = 952
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -155,6 +156,7 @@ ERROR_MESSAGES = {
 
     Errors.RULE_BREAK_IN_PIPELINE_LOOP: "Cannot use 'break' statement in the pipeline loop",
     Errors.RULE_CONTINUE_IN_PIPELINE_LOOP: "Cannot use 'continue' statement in the pipeline loop",
+    Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED: "Normal function cannot be pipelined",
 }
 
 

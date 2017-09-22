@@ -5,6 +5,7 @@ from .ir import Ctx, IR, CONST, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
+from .synth import merge_synth_params
 from .type import Type
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
@@ -200,14 +201,10 @@ class InlineOpt(object):
         self._merge_synth_params(early_call_blk.synth_params, late_call_blk, callee_entry_blk, callee_exit_blk)
 
     def _merge_synth_params(self, synth_params, late_call_blk, callee_entry_blk, callee_exit_blk):
-        if not synth_params:
-            return
+        assert synth_params
         visited = set([late_call_blk])
         for blk in callee_entry_blk.traverse(visited):
-            if blk.synth_params:
-                continue
-            else:
-                blk.synth_params = synth_params.copy()
+            merge_synth_params(blk.synth_params, synth_params)
 
     def _reduce_useless_move(self, scope):
         for block in scope.traverse_blocks():

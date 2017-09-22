@@ -803,3 +803,9 @@ class AssertionChecker(IRVisitor):
         _, arg = ir.args[0]
         if arg.is_a(CONST) and not arg.value:
             warn(self.current_stm, Warnings.ASSERTION_FAILED)
+
+
+class SynthesisParamChecker(object):
+    def process(self, scope):
+        if scope.synth_params['scheduling'] == 'pipeline' and not scope.is_worker():
+            fail((scope, scope.lineno), Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)

@@ -5,6 +5,7 @@ from .common import Tagged, fail
 from .errors import Errors
 from .env import env
 from .symbol import Symbol
+from .synth import make_synth_params
 from .type import Type
 from .irvisitor import IRVisitor
 from .ir import JUMP, CJUMP, MCJUMP, PHIBase
@@ -154,7 +155,7 @@ class Scope(Tagged):
         self.worker_owner = None
         self.asap_latency = -1
         self.type_args = []
-        self.synth_params = default_synth_params(self)
+        self.synth_params = make_synth_params()
 
     def __str__(self):
         s = '\n================================\n'
@@ -179,6 +180,7 @@ class Scope(Tagged):
             s += '{}\n'.format(repr(self.return_type))
         else:
             s += 'None\n'
+        s += 'Synthesis\n{}\n'.format(self.synth_params)
         s += '================================\n'
         for blk in self.traverse_blocks(longitude=True):
             s += str(blk)

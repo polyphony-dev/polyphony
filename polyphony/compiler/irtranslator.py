@@ -907,14 +907,15 @@ class CodeVisitor(ast.NodeVisitor):
 
         for body in node.body:
             self.visit(body)
-        if old_synth_params is not None:
-            self.current_synth_params = old_synth_params
-
+        
         if self._needJUMP(self.current_block):
             new_block = self._new_block(self.current_scope)
             self.emit(JUMP(new_block), node)
             self.current_block.connect(new_block)
             self.current_block = new_block
+
+        if old_synth_params is not None:
+            self.current_synth_params = old_synth_params
 
     def visit_withitem(self, node):
         expr = self.visit(node.context_expr)
