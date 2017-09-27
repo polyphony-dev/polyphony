@@ -142,6 +142,9 @@ class AHDLVisitor(object):
     def visit_AHDL_TRANSITION_IF(self, ahdl):
         self.visit_AHDL_IF(ahdl)
 
+    def visit_AHDL_PIPELINE_GUARD(self, ahdl):
+        self.visit_AHDL_IF(ahdl)
+
     def visit(self, ahdl):
         method = 'visit_' + ahdl.__class__.__name__
         visitor = getattr(self, method, None)

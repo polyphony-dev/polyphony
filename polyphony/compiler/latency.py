@@ -6,10 +6,14 @@ UNIT_STEP = 1
 CALL_MINIMUM_STEP = 5
 
 
-def get_call_latency(call):
+def get_call_latency(call, stm):
     if call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.rd'):
+        if stm.block.synth_params['scheduling'] == 'pipeline':
+            return UNIT_STEP * 2
         return UNIT_STEP * 3
     elif call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.wr'):
+        if stm.block.synth_params['scheduling'] == 'pipeline':
+            return UNIT_STEP * 1
         return UNIT_STEP * 3
     elif call.func_scope.is_method() and call.func_scope.parent.is_port():
         receiver = call.func.tail()
@@ -49,7 +53,7 @@ def get_latency(tag):
     assert isinstance(tag, IR)
     if tag.is_a(MOVE):
         if tag.src.is_a(CALL):
-            return get_call_latency(tag.src)
+            return get_call_latency(tag.src, tag)
         elif tag.src.is_a(NEW):
             return 0
         elif tag.src.is_a(TEMP) and tag.src.sym.typ.is_port():
@@ -78,7 +82,7 @@ def get_latency(tag):
             return 0
     elif tag.is_a(EXPR):
         if tag.exp.is_a(CALL):
-            return get_call_latency(tag.exp)
+            return get_call_latency(tag.exp, tag)
         elif tag.exp.is_a(SYSCALL):
             return get_syscall_latency(tag.exp)
     elif tag.is_a(PHI):

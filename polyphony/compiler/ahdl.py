@@ -60,6 +60,9 @@ class AHDL_OP(AHDL_EXP):
     def is_relop(self):
         return self.op in ('And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE')
 
+    def is_unop(self):
+        return self.op in ('USub', 'UAdd', 'Not', 'Invert')
+
 
 class AHDL_VAR(AHDL_EXP):
     def __init__(self, sig, ctx):
@@ -631,3 +634,11 @@ class AHDL_TRANSITION_IF(AHDL_IF):
 
     def __repr__(self):
         return 'AHDL_TRANSITION_IF({}, {})'.format(repr(self.conds), repr(self.codes_list))
+
+
+class AHDL_PIPELINE_GUARD(AHDL_IF):
+    def __init__(self, cond, codes):
+        super().__init__([cond], [codes])
+
+    def __repr__(self):
+        return 'AHDL_PIPELINE_GUARD({}, {})'.format(repr(self.conds), repr(self.codes_list))

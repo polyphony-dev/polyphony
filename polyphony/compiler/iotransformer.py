@@ -1,6 +1,6 @@
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
-from .stg import State, PipelineState
+from .stg import State, PipelineState, PipelineStage
 from .utils import find_only_one_in
 
 
@@ -59,7 +59,11 @@ class IOTransformer(AHDLVisitor):
             io = self.module_info.accessors[ahdl.io.sig.name]
         else:
             io = self.module_info.local_readers[ahdl.io.sig.name]
-        return io.read_sequence(step, ahdl.dst)
+        if isinstance(self.current_parent, PipelineStage):
+            stage = self.current_parent
+            return io.pipelined(stage).read_sequence(step, step_n, ahdl.dst)
+        else:
+            return io.read_sequence(step, step_n, ahdl.dst)
 
     def visit_AHDL_IO_WRITE_SEQ(self, ahdl, step, step_n):
         if ahdl.is_self:
@@ -68,7 +72,11 @@ class IOTransformer(AHDLVisitor):
             io = self.module_info.accessors[ahdl.io.sig.name]
         else:
             io = self.module_info.local_writers[ahdl.io.sig.name]
-        return io.write_sequence(step, ahdl.src)
+        if isinstance(self.current_parent, PipelineStage):
+            stage = self.current_parent
+            return io.pipelined(stage).write_sequence(step, step_n, ahdl.src)
+        else:
+            return io.write_sequence(step, step_n, ahdl.src)
 
     def _is_continuous_access_to_mem(self, ahdl):
         other_memnodes = [c.factor.mem.memnode for c in self.current_parent.codes
@@ -82,31 +90,21 @@ class IOTransformer(AHDLVisitor):
 
     def visit_AHDL_LOAD_SEQ(self, ahdl, step, step_n):
         is_continuous = self._is_continuous_access_to_mem(ahdl)
-        if self.current_parent.parent_state:
-            pipeline_state = self.current_parent.parent_state
-            assert isinstance(pipeline_state, PipelineState)
-            offs = pipeline_state.stages.index(self.current_parent)
-            pipeline_valids = [AHDL_VAR(pipeline_state.valid_signal(offs + i), Ctx.LOAD)
-                               for i in range(step_n)]
-            pipeline_valid = AHDL_OP('BitOr', *pipeline_valids)
-        else:
-            pipeline_valid = None
         memacc = self.module_info.local_readers[ahdl.mem.sig.name]
-        return memacc.read_sequence(step, ahdl.offset, ahdl.dst, is_continuous, pipeline_valid=pipeline_valid)
+        if isinstance(self.current_parent, PipelineStage):
+            stage = self.current_parent
+            return memacc.pipelined(stage).read_sequence(step, step_n, ahdl.offset, ahdl.dst, is_continuous)
+        else:
+            return memacc.read_sequence(step, step_n, ahdl.offset, ahdl.dst, is_continuous)
 
     def visit_AHDL_STORE_SEQ(self, ahdl, step, step_n):
         is_continuous = self._is_continuous_access_to_mem(ahdl)
-        if self.current_parent.parent_state:
-            pipeline_state = self.current_parent.parent_state
-            assert isinstance(pipeline_state, PipelineState)
-            offs = pipeline_state.stages.index(self.current_parent)
-            pipeline_valids = [AHDL_VAR(pipeline_state.valid_signal(offs + i), Ctx.LOAD)
-                               for i in range(step_n)]
-            pipeline_valid = AHDL_OP('BitOr', *pipeline_valids)
-        else:
-            pipeline_valid = None
         memacc = self.module_info.local_writers[ahdl.mem.sig.name]
-        return memacc.write_sequence(step, ahdl.offset, ahdl.src, is_continuous, pipeline_valid=pipeline_valid)
+        if isinstance(self.current_parent, PipelineStage):
+            stage = self.current_parent
+            return memacc.pipelined(stage).write_sequence(step, step_n, ahdl.offset, ahdl.src, is_continuous)
+        else:
+            return memacc.write_sequence(step, step_n, ahdl.offset, ahdl.src, is_continuous)
 
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
@@ -120,12 +118,18 @@ class IOTransformer(AHDLVisitor):
             if trans.is_a(AHDL_TRANSITION):
                 meta_wait.transition = trans
                 self.removes.append((self.current_parent, trans))
+            elif isinstance(self.current_parent, PipelineStage):
+                pass
             else:
                 meta_wait_ = find_only_one_in(AHDL_META_WAIT, self.current_parent.codes)
                 assert meta_wait_
                 meta_wait.transition = meta_wait_.transition
 
-        self.current_parent.codes = list(seq) + self.current_parent.codes
+        # TODO: workaround
+        if self.current_parent.codes and self.current_parent.codes[0].is_a(AHDL_PIPELINE_GUARD):
+            self.current_parent.codes = self.current_parent.codes[0:1] + list(seq) + self.current_parent.codes[1:]
+        else:
+            self.current_parent.codes = list(seq) + self.current_parent.codes
 
     def visit_AHDL_IF(self, ahdl):
         for cond in ahdl.conds:
@@ -134,7 +138,8 @@ class IOTransformer(AHDLVisitor):
         for i, codes in enumerate(ahdl.codes_list):
             temp_parent = type('temp', (object,), {})
             temp_parent.codes = codes
-            temp_parent.parent_state = self.current_parent.parent_state
+            if isinstance(self.current_parent, PipelineStage):
+                temp_parent.parent_state = self.current_parent.parent_state
             last_parent = self.current_parent
             self.current_parent = temp_parent
             # we should use copy of codes because it might be changed

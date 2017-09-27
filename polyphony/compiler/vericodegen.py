@@ -318,6 +318,7 @@ class VerilogCodeGen(AHDLVisitor):
                 self.emit('/*** {} ***/'.format(stage.name))
                 for code in stage.codes:
                     self.visit(code)
+                self.emit('')
         elif isinstance(state, State):
             for code in state.codes:
                 self.visit(code)
@@ -366,9 +367,12 @@ class VerilogCodeGen(AHDLVisitor):
         if len(ahdl.args) > 1:
             op = ' ' + pyop2verilogop(ahdl.op) + ' '
             return '({})'.format(op.join([self.visit(a) for a in ahdl.args]))
-        else:
+        elif ahdl.is_unop():
             exp = self.visit(ahdl.args[0])
             return '{}{}'.format(pyop2verilogop(ahdl.op), exp)
+        else:
+            exp = self.visit(ahdl.args[0])
+            return '{}'.format(exp)
 
     def visit_AHDL_SLICE(self, ahdl):
         v = self.visit(ahdl.var)
@@ -407,20 +411,19 @@ class VerilogCodeGen(AHDLVisitor):
         return '{}[{}]'.format(name, offset)
 
     def visit_AHDL_IF(self, ahdl):
-        cond0 = self.visit(ahdl.conds[0])
-        if cond0[0] != '(':
-            cond0 = '(' + cond0 + ')'
-        self.emit('if {} begin'.format(cond0))
-        self.set_indent(2)
-        for code in ahdl.codes_list[0]:
-            self.visit(code)
-        self.set_indent(-2)
-        for cond, codes in zip(ahdl.conds[1:], ahdl.codes_list[1:]):
+        blocks = 0
+        for i, (cond, codes) in enumerate(zip(ahdl.conds, ahdl.codes_list)):
+            if not codes:
+                continue
+            blocks += 1
             if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1):
                 cond = self.visit(cond)
                 if cond[0] != '(':
                     cond = '(' + cond + ')'
-                self.emit('end else if {} begin'.format(cond))
+                if i == 0:
+                    self.emit('if {} begin'.format(cond))
+                else:
+                    self.emit('end else if {} begin'.format(cond))
                 self.set_indent(2)
                 for code in codes:
                     self.visit(code)
@@ -431,7 +434,8 @@ class VerilogCodeGen(AHDLVisitor):
                 for code in ahdl.codes_list[-1]:
                     self.visit(code)
                 self.set_indent(-2)
-        self.emit('end')
+        if blocks:
+            self.emit('end')
 
     def visit_AHDL_IF_EXP(self, ahdl):
         cond = self.visit(ahdl.cond)
@@ -745,4 +749,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.visit(AHDL_MOVE(state_var, state))
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
+        self.visit_AHDL_IF(ahdl)
+
+    def visit_AHDL_PIPELINE_GUARD(self, ahdl):
         self.visit_AHDL_IF(ahdl)

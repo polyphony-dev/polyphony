@@ -41,10 +41,16 @@ bidirectional_single_port_ram = """module BidirectionalSinglePortRam #
   output [DATA_WIDTH-1:0] ram_q,
   output [ADDR_WIDTH-1:0] ram_len
 );
-
   reg [DATA_WIDTH-1:0] mem [0:RAM_DEPTH-1];
   reg [ADDR_WIDTH-1:0] read_addr;
 
+  /*
+  integer i;
+  initial begin
+    for (i = 0; i < RAM_DEPTH; i = i + 1)
+      mem[i] = 0;
+  end
+  */
   function [ADDR_WIDTH-1:0] address (
     input [ADDR_WIDTH-1:0] in_addr
   );
@@ -82,7 +88,9 @@ fifo = """module FIFO #
   output full,
   output [DATA_WIDTH - 1 : 0] dout,
   input read,
-  output empty
+  output empty,
+  output will_full,
+  output will_empty
 );
 
 reg [ADDR_WIDTH - 1 : 0] head;
@@ -106,6 +114,8 @@ assign dout = mem[tail];
 
 assign full = count >= LENGTH;
 assign empty = count == 0;
+assign will_full = write && !read && count == LENGTH-1;
+assign will_empty = read && !write && count == 1;
 
 always @(posedge clk) begin
   if (rst == 1) begin

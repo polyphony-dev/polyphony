@@ -65,7 +65,9 @@ class LoopDetector(object):
 
     def _set_loop_info(self, loop_block):
         cjump = loop_block.head.stms[-1]
-        assert cjump.is_a(CJUMP)
+        if not cjump.is_a(CJUMP):
+            # this loop may busy loop
+            return
         cond_var = cjump.exp
         assert cond_var.is_a(TEMP)
         defs = self.scope.usedef.get_stms_defining(cond_var.symbol())
@@ -138,6 +140,9 @@ class LoopDetector(object):
             if len(scc) > 1:
                 # we have to keep the depth-first-search order
                 blks = [b for b in ordered_blks if b in scc]
+                sccs.append(blks)
+            elif len(scc) == 1 and scc[0] in scc[0].preds:
+                blks = scc
                 sccs.append(blks)
         return sccs
 
