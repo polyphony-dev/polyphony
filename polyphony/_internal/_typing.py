@@ -1,5 +1,22 @@
 __all__ = [
     'bit',
+    'bit2', 'bit3', 'bit4', 'bit5', 'bit6', 'bit7', 'bit8',
+    'bit9', 'bit10', 'bit11', 'bit12', 'bit13', 'bit14', 'bit15', 'bit16',
+    'bit17', 'bit18', 'bit19', 'bit20', 'bit21', 'bit22', 'bit23', 'bit24',
+    'bit25', 'bit26', 'bit27', 'bit28', 'bit29', 'bit30', 'bit31', 'bit32',
+    'bit33', 'bit34', 'bit35', 'bit36', 'bit37', 'bit38', 'bit39', 'bit40',
+    'bit41', 'bit42', 'bit43', 'bit44', 'bit45', 'bit46', 'bit47', 'bit48',
+    'bit49', 'bit50', 'bit51', 'bit52', 'bit53', 'bit54', 'bit55', 'bit56',
+    'bit57', 'bit58', 'bit59', 'bit60', 'bit61', 'bit62', 'bit63', 'bit64',
+    'bit65', 'bit66', 'bit67', 'bit68', 'bit69', 'bit70', 'bit71', 'bit72',
+    'bit73', 'bit74', 'bit75', 'bit76', 'bit77', 'bit78', 'bit79', 'bit80',
+    'bit81', 'bit82', 'bit83', 'bit84', 'bit85', 'bit86', 'bit87', 'bit88',
+    'bit89', 'bit90', 'bit91', 'bit92', 'bit93', 'bit94', 'bit95', 'bit96',
+    'bit97', 'bit98', 'bit99', 'bit100', 'bit101', 'bit102', 'bit103', 'bit104',
+    'bit105', 'bit106', 'bit107', 'bit108', 'bit109', 'bit110', 'bit111', 'bit112',
+    'bit113', 'bit114', 'bit115', 'bit116', 'bit117', 'bit118', 'bit119', 'bit120',
+    'bit121', 'bit122', 'bit123', 'bit124', 'bit125', 'bit126', 'bit127', 'bit128',
+
     'int2', 'int3', 'int4', 'int5', 'int6', 'int7', 'int8',
     'int9', 'int10', 'int11', 'int12', 'int13', 'int14', 'int15', 'int16',
     'int17', 'int18', 'int19', 'int20', 'int21', 'int22', 'int23', 'int24',
@@ -38,6 +55,134 @@ __all__ = [
 ]
 
 class bit: pass
+class bit2: pass
+class bit3: pass
+class bit4: pass
+class bit5: pass
+class bit6: pass
+class bit7: pass
+class bit8: pass
+class bit9: pass
+class bit10: pass
+class bit11: pass
+class bit12: pass
+class bit13: pass
+class bit14: pass
+class bit15: pass
+class bit16: pass
+class bit17: pass
+class bit18: pass
+class bit19: pass
+class bit20: pass
+class bit21: pass
+class bit22: pass
+class bit23: pass
+class bit24: pass
+class bit25: pass
+class bit26: pass
+class bit27: pass
+class bit28: pass
+class bit29: pass
+class bit30: pass
+class bit31: pass
+class bit32: pass
+class bit33: pass
+class bit34: pass
+class bit35: pass
+class bit36: pass
+class bit37: pass
+class bit38: pass
+class bit39: pass
+class bit40: pass
+class bit41: pass
+class bit42: pass
+class bit43: pass
+class bit44: pass
+class bit45: pass
+class bit46: pass
+class bit47: pass
+class bit48: pass
+class bit49: pass
+class bit50: pass
+class bit51: pass
+class bit52: pass
+class bit53: pass
+class bit54: pass
+class bit55: pass
+class bit56: pass
+class bit57: pass
+class bit58: pass
+class bit59: pass
+class bit60: pass
+class bit61: pass
+class bit62: pass
+class bit63: pass
+class bit64: pass
+class bit65: pass
+class bit66: pass
+class bit67: pass
+class bit68: pass
+class bit69: pass
+class bit70: pass
+class bit71: pass
+class bit72: pass
+class bit73: pass
+class bit74: pass
+class bit75: pass
+class bit76: pass
+class bit77: pass
+class bit78: pass
+class bit79: pass
+class bit80: pass
+class bit81: pass
+class bit82: pass
+class bit83: pass
+class bit84: pass
+class bit85: pass
+class bit86: pass
+class bit87: pass
+class bit88: pass
+class bit89: pass
+class bit90: pass
+class bit91: pass
+class bit92: pass
+class bit93: pass
+class bit94: pass
+class bit95: pass
+class bit96: pass
+class bit97: pass
+class bit98: pass
+class bit99: pass
+class bit100: pass
+class bit101: pass
+class bit102: pass
+class bit103: pass
+class bit104: pass
+class bit105: pass
+class bit106: pass
+class bit107: pass
+class bit108: pass
+class bit109: pass
+class bit110: pass
+class bit111: pass
+class bit112: pass
+class bit113: pass
+class bit114: pass
+class bit115: pass
+class bit116: pass
+class bit117: pass
+class bit118: pass
+class bit119: pass
+class bit120: pass
+class bit121: pass
+class bit122: pass
+class bit123: pass
+class bit124: pass
+class bit125: pass
+class bit126: pass
+class bit127: pass
+class bit128: pass
+
 class int2: pass
 class int3: pass
 class int4: pass

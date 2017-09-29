@@ -1,9 +1,9 @@
 import polyphony
 from polyphony import testbench
-from polyphony.typing import bit, uint2
+from polyphony.typing import bit, bit2
 
 
-def typing01_a(a:bit, b:polyphony.typing.bit) -> uint2:
+def typing01_a(a:bit, b:polyphony.typing.bit) -> bit2:
     return a + b
 
 

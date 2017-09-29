@@ -116,6 +116,8 @@ class Type(object):
             return Type.int(int(scope.orig_name[3:]))
         elif scope.orig_name.startswith('uint'):
             return Type.int(int(scope.orig_name[4:]), signed=False)
+        elif scope.orig_name.startswith('bit'):
+            return Type.int(int(scope.orig_name[3:]), signed=False)
         elif scope.orig_name == ('List'):
             if elms:
                 assert len(elms) == 1
