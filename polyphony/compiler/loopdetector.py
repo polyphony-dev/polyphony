@@ -84,7 +84,8 @@ class LoopDetector(object):
             assert loop_relexp.left.is_a([CONST, TEMP])
             loop_counter = loop_relexp.right.symbol()
         else:
-            assert False
+            # this loop may busy loop
+            return
 
         defs = self.scope.usedef.get_stms_defining(loop_counter)
         for d in defs:

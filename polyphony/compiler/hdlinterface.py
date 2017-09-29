@@ -696,33 +696,21 @@ def fifo_pipelined_read_seq(inf, step, dst):
     will_empty = port2ahdl(inf, 'will_empty')
     read = port2ahdl(inf, 'read')
     dout = port2ahdl(inf, 'dout')
-
     if step == 0:
-        assert inf.pipeline_state.has_ready
+        assert inf.stage.has_ready
         pready_sig = inf.pipeline_state.ready_signal(inf.stage.step)
         pvalid_sig = inf.pipeline_state.valid_signal(inf.stage.step)
         ready_cond = AHDL_OP('And',
                              AHDL_OP('Eq', empty, AHDL_CONST(0)),
                              AHDL_OP('Eq', will_empty, AHDL_CONST(0)))
-        pready_next_sig = inf.pipeline_state.ready_signal(inf.stage.step + 1)
-        ready_rhs = AHDL_OP('BitAnd',
-                            AHDL_VAR(pready_next_sig, Ctx.LOAD),
-                            ready_cond)
         read_cond = AHDL_OP('And',
-                            AHDL_VAR(pready_sig, Ctx.LOAD),
-                            AHDL_VAR(pvalid_sig, Ctx.LOAD))
+                            AHDL_VAR(pvalid_sig, Ctx.LOAD),
+                            AHDL_VAR(pready_sig, Ctx.LOAD))
         guards = tuple()
-        nonguards = (AHDL_MOVE(AHDL_VAR(pready_sig, Ctx.STORE), ready_rhs),
+        nonguards = (AHDL_MOVE(AHDL_VAR(pready_sig, Ctx.STORE), ready_cond),
                      AHDL_MOVE(read, read_cond), )
     elif step == 1:
-        pready_sig = inf.pipeline_state.ready_signal(inf.stage.step)
-        ready_cond = AHDL_OP('Eq', empty, AHDL_CONST(0))
-        pready_next_sig = inf.pipeline_state.ready_signal(inf.stage.step + 1)
-        ready_rhs = AHDL_OP('BitAnd',
-                            AHDL_VAR(pready_next_sig, Ctx.LOAD),
-                            ready_cond)
         guards = (AHDL_MOVE(dst, dout), )
-        #nonguards = (AHDL_MOVE(AHDL_VAR(pready_sig, Ctx.STORE), ready_rhs), )
         nonguards = tuple()
     guard = inf.stage.codes[0]
     assert guard.is_a(AHDL_PIPELINE_GUARD)
@@ -750,33 +738,16 @@ def fifo_pipelined_write_seq(inf, step, src):
     will_full = port2ahdl(inf, 'will_full')
     write = port2ahdl(inf, 'write')
     din = port2ahdl(inf, 'din')
-
     if step == 0:
-        pready_sig = inf.pipeline_state.ready_signal(inf.stage.step)
+        assert_exp = AHDL_OP('Eq', full, AHDL_CONST(0))
         pvalid_sig = inf.pipeline_state.valid_signal(inf.stage.step)
-        ready_cond = AHDL_OP('And',
-                             AHDL_OP('Eq', full, AHDL_CONST(0)),
-                             AHDL_OP('Eq', will_full, AHDL_CONST(0)))
-        if inf.stage.step + 1 >= len(inf.pipeline_state.stages):
-            pready_next = AHDL_CONST(1)
-        else:
-            pready_next_sig = inf.pipeline_state.ready_signal(inf.stage.step + 1)
-            pready_next = AHDL_VAR(pready_next_sig, Ctx.LOAD)
-        ready_rhs = AHDL_OP('BitAnd',
-                            pready_next,
-                            ready_cond)
-        #ready_cond = AHDL_OP('Eq', full, AHDL_CONST(0))
-        write_cond = AHDL_OP('And',
-                             AHDL_VAR(pready_sig, Ctx.LOAD),
-                             AHDL_VAR(pvalid_sig, Ctx.LOAD))
-        guards = (AHDL_MOVE(din, src), )
-        nonguards = (AHDL_MOVE(AHDL_VAR(pready_sig, Ctx.STORE), ready_rhs),
-                     AHDL_MOVE(write, write_cond), )
+        guards = (AHDL_MOVE(din, src),
+                  AHDL_PROCCALL('!hdl_assert', [assert_exp]))
+        nonguards = (AHDL_MOVE(write, AHDL_VAR(pvalid_sig, Ctx.LOAD)), )
     guard = inf.stage.codes[0]
     assert guard.is_a(AHDL_PIPELINE_GUARD)
     guard.codes_list[0].extend(guards)
     return nonguards
-
 
 
 class FIFOInterface(Interface):

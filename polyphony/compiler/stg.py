@@ -82,7 +82,6 @@ class PipelineState(State):
         self.valid_signals = {0:first_valid_signal}
         self.ready_signals = {}
         self.stg = stg
-        self.has_ready = False
 
     def __str__(self):
         s = '---------------------------------\n'
@@ -164,6 +163,7 @@ class PipelineStage(State):
         super().__init__(name, step, codes, stg)
         self.parent_state = parent_state
         self.is_source = False
+        self.has_ready = False
 
 
 class STG(object):
@@ -272,7 +272,7 @@ class STGBuilder(object):
         stg.scheduling = dfg.synth_params['scheduling']
         if stg.scheduling == 'pipeline':
             if not is_main:
-                if self.scope.is_worker():
+                if self.scope.is_worker() and not dfg.main_block.loop_info:
                     builder = WorkerPipelineStageBuilder(self.scope, stg, self.blk2states)
                 else:
                     builder = LoopPipelineStageBuilder(self.scope, stg, self.blk2states)
@@ -551,54 +551,34 @@ class PipelineStageBuilder(STGItemBuilder):
         for i, c in enumerate(stage.codes[:]):
             if c.is_a(AHDL_SEQ) and c.step == 0:
                 if c.factor.is_a(AHDL_IO_READ):
-                    pstate.has_ready = True
+                    stage.has_ready = True
                     stage.is_source = True
-                elif c.factor.is_a(AHDL_IO_WRITE):
-                    pstate.has_ready = True
             if self._check_guard_need(c):
                 codes.append(c)
                 stage.codes.remove(c)
         guard = AHDL_PIPELINE_GUARD(AHDL_VAR(v0, Ctx.LOAD), codes)
         stage.codes.insert(0, guard)
 
-    def _add_valid_chain(self, pstate, stage, ready=None):
+    def _add_control_chain(self, pstate, stage, need_last_valid=False, ready=None):
         v0 = pstate.valid_signal(stage.step)
         v1 = pstate.valid_signal(stage.step + 1)
+        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
         if ready:
-            guard = stage.codes[0]
-            cond = guard.conds[0]
-            new_cond = AHDL_OP('And', cond, AHDL_VAR(ready, Ctx.LOAD))
-            guard.conds[0] = new_cond
-
-            if stage.is_source:
-                rhs1 = AHDL_VAR(v0, Ctx.LOAD)
-                rhs2 = AHDL_CONST(0)
-            else:
-                rhs1 = AHDL_VAR(v0, Ctx.LOAD)
-                rhs2 = AHDL_VAR(v1, Ctx.LOAD)
-            ready_cond = AHDL_OP('And', AHDL_VAR(ready, Ctx.LOAD))
-            rhs = AHDL_IF_EXP(ready_cond, rhs1, rhs2)
+            assert not is_last
+            rhs = AHDL_OP('And', AHDL_VAR(v0, Ctx.LOAD), AHDL_VAR(ready, Ctx.LOAD))
             set_valid = AHDL_MOVE(AHDL_VAR(v1, Ctx.STORE), rhs)
             stage.codes.append(set_valid)
-
-            if stage.step + 1 >= len(pstate.stages):
-                ready_next = AHDL_CONST(1)
-            else:
-                r1 = pstate.ready_signal(stage.step + 1)
-                ready_next = AHDL_VAR(r1, Ctx.LOAD)
-            set_ready = AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), ready_next)
-            stage.codes.append(set_ready)
+        elif not need_last_valid and is_last:
+            pass
         else:
             rhs = AHDL_VAR(v0, Ctx.LOAD)
             set_valid = AHDL_MOVE(AHDL_VAR(v1, Ctx.STORE), rhs)
             stage.codes.append(set_valid)
-
-        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
-        if is_last:
-            v2 = pstate.valid_signal(stage.step + 2)
-            set_valid = AHDL_MOVE(AHDL_VAR(v2, Ctx.STORE),
-                                  AHDL_VAR(v1, Ctx.LOAD))
-            stage.codes.append(set_valid)
+            if is_last:
+                v2 = pstate.valid_signal(stage.step + 2)
+                set_valid = AHDL_MOVE(AHDL_VAR(v2, Ctx.STORE),
+                                      AHDL_VAR(v1, Ctx.LOAD))
+                stage.codes.append(set_valid)
 
     def _make_stm2stage_num(self, pstate):
         stm2stage_num = {}
@@ -689,7 +669,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             prev_stage = stage
 
         for stage in pstate.stages:
-            self._add_valid_chain(pstate, stage)
+            self._add_control_chain(pstate, stage, need_last_valid=True)
 
         # analysis and inserting register slices between pileline stages
         stm2stage_num = self._make_stm2stage_num(pstate)
@@ -763,11 +743,11 @@ class WorkerPipelineStageBuilder(PipelineStageBuilder):
             prev_stage = stage
 
         for stage in reversed(pstate.stages):
-            if pstate.has_ready:
+            if stage.has_ready:
                 ready = pstate.ready_signal(stage.step)
             else:
                 ready = None
-            self._add_valid_chain(pstate, stage, ready)
+            self._add_control_chain(pstate, stage, ready=ready)
 
         # analysis and inserting register slices between pileline stages
         stm2stage_num = self._make_stm2stage_num(pstate)
@@ -778,8 +758,6 @@ class WorkerPipelineStageBuilder(PipelineStageBuilder):
                 detector.visit(code)
         usedef = detector.table
         for sig in usedef.get_all_def_sigs():
-            if sig.is_pipeline_ready():
-                continue
             defs = usedef.get_stms_defining(sig)
             d = list(defs)[0]
             d_stage_n = stm2stage_num[d]
