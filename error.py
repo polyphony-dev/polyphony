@@ -31,6 +31,8 @@ def error_test(casefile_path, output=True):
     options.verbose_level = 0
     options.quiet_level = 3
     options.debug_mode = output
+    options.verilog_dump = False
+    options.verilog_monitor = False
     try:
         compile_main(casefile_path, options)
     except AssertionError:
