@@ -30,6 +30,8 @@ class Env(object):
     enable_hyperblock = True
     verbose_level = 0
     quiet_level = 0
+    enable_verilog_monitor = False
+    enable_verilog_dump = False
 
     def __init__(self):
         self.call_graph = None

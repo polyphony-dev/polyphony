@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import sys
 import os
 import traceback
@@ -16,7 +17,7 @@ from polyphony.compiler.__main__ import compile_main, logging_setting
 from polyphony.compiler.env import env
 
 
-def exec_test(casefile_path, output=True, compile_only=False):
+def exec_test(casefile_path, output=True, compile_only=False, extra=None):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
     options = types.SimpleNamespace()
@@ -25,6 +26,12 @@ def exec_test(casefile_path, output=True, compile_only=False):
     options.verbose_level = 0
     options.quiet_level = 0
     options.debug_mode = output
+    if extra:
+        options.verilog_dump = extra.verilog_dump
+        options.verilog_monitor = extra.verilog_monitor
+    else:
+        options.verilog_dump = False
+        options.verilog_monitor = False
     try:
         compile_main(casefile_path, options)
     except Exception as e:
@@ -72,7 +79,11 @@ def simulate_verilog(testname, casename, casefile_path, output):
 if __name__ == '__main__':
     if not os.path.exists(TMP_DIR):
         os.mkdir(TMP_DIR)
-    if len(sys.argv) > 1:
-        # import profile
-        # profile.run("exec_test(sys.argv[1])")
-        exec_test(sys.argv[1])
+    parser = argparse.ArgumentParser(prog='simu')
+    parser.add_argument('-vd', '--verilog_dump', dest='verilog_dump',
+                        action='store_true', help='output vcd file in testbench')
+    parser.add_argument('-vm', '--verilog_monitor', dest='verilog_monitor',
+                        action='store_true', help='enable $monitor in testbench')
+    parser.add_argument('source', help='Python source file')
+    options = parser.parse_args()
+    exec_test(options.source, extra=options)

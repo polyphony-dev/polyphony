@@ -1,4 +1,5 @@
 ﻿from .ahdl import *
+from .env import env
 from .vericodegen import VerilogCodeGen
 from .hdlmoduleinfo import RAMModuleInfo
 from .hdlinterface import *
@@ -92,7 +93,6 @@ class VerilogTestGen(VerilogCodeGen):
 
         formats = []
         args = ['$time']
-
         for name, info, _, _, in self.module_info.sub_modules.values():
             if isinstance(info, RAMModuleInfo):
                 continue
@@ -111,8 +111,11 @@ class VerilogTestGen(VerilogCodeGen):
         format_text = '"%5t:' + ', '.join(formats) + '"'
         args_text = ', '.join(args)
 
-        self.emit('$monitor({}, {});'.format(format_text, args_text))
-
+        if env.enable_verilog_monitor:
+            self.emit('$monitor({}, {});'.format(format_text, args_text))
+        if env.enable_verilog_dump:
+            self.emit('$dumpfile("{}.vcd");'.format(self.module_info.name))
+            self.emit('$dumpvars(0, {});'.format(self.module_info.name))
         self.set_indent(-2)
         self.emit('end')
 

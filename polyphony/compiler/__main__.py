@@ -551,6 +551,8 @@ def setup(src_file, options):
     env.dev_debug_mode = options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
     env.quiet_level = options.quiet_level if options.quiet_level else 0
+    env.enable_verilog_dump = options.verilog_dump
+    env.enable_verilog_monitor = options.verilog_monitor
     if env.dev_debug_mode:
         logging.basicConfig(**logging_setting)
 
@@ -642,6 +644,10 @@ def main():
                         action='store_true', help='enable debug mode')
     parser.add_argument('-q', '--quiet', dest='quiet_level',
                         action='count', help='suppress warning/error messages')
+    parser.add_argument('-vd', '--verilog_dump', dest='verilog_dump',
+                        action='store_true', help='output vcd file in testbench')
+    parser.add_argument('-vm', '--verilog_monitor', dest='verilog_monitor',
+                        action='store_true', help='enable $monitor in testbench')
     from .. version import __version__
     parser.add_argument('-V', '--version', action='version',
                         version='%(prog)s ' + __version__,
