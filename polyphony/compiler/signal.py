@@ -13,7 +13,7 @@ class Signal(Tagged):
         'single_port', 'seq_port', 'fifo_port',
         'initializable',
         'induction',
-        'pipeline_valid', 'pipeline_ready'
+        'pipeline_ctrl',
     }
 
     def __init__(self, name, width, tags, sym=None):

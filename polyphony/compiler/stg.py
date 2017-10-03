@@ -79,8 +79,13 @@ class PipelineState(State):
         assert isinstance(name, str)
         self.name = name
         self.stages = stages
-        self.valid_signals = {0:first_valid_signal}
+        if first_valid_signal:
+            self.valid_signals = {0:first_valid_signal}
+        else:
+            self.valid_signals = {}
         self.ready_signals = {}
+        self.enable_signals = {}
+        self.hold_signals = {}
         self.stg = stg
 
     def __str__(self):
@@ -99,21 +104,42 @@ class PipelineState(State):
         s += '\n'
         return s
 
-    def valid_signal(self, idx):
-        if idx not in self.valid_signals:
+    def _pipeline_signal(self, signal_name, signals, idx, is_reg):
+        if idx not in signals:
             stage_name = self.name + '_{}'.format(idx)
-            name = '{}_valid'.format(stage_name)
-            new_valid = self.stg.scope.gen_sig(name, 1, {'reg', 'pipeline_valid'})
-            self.valid_signals[idx] = new_valid
-        return self.valid_signals[idx]
+            name = '{}_{}'.format(stage_name, signal_name)
+            if is_reg:
+                tags = {'reg', 'pipeline_ctrl'}
+            else:
+                tags = {'net', 'pipeline_ctrl'}
+            new_sig = self.stg.scope.gen_sig(name, 1, tags)
+            signals[idx] = new_sig
+        return signals[idx]
+
+    def valid_signal(self, idx):
+        return self._pipeline_signal('valid', self.valid_signals, idx, True)
+
+    def valid_exp(self, idx):
+        ready = self.ready_signal(idx)
+        if idx > 0:
+            hold = self.hold_signal(idx)
+            valid_prev = self.valid_signal(idx - 1)
+            return AHDL_IF_EXP(AHDL_VAR(hold, Ctx.LOAD),
+                               AHDL_VAR(ready, Ctx.LOAD),
+                               AHDL_OP('BitAnd',
+                                       AHDL_VAR(ready, Ctx.LOAD),
+                                       AHDL_VAR(valid_prev, Ctx.LOAD)))
+        else:
+            return AHDL_VAR(ready, Ctx.LOAD)
 
     def ready_signal(self, idx):
-        if idx not in self.ready_signals:
-            stage_name = self.name + '_{}'.format(idx)
-            name = '{}_ready'.format(stage_name)
-            new_ready = self.stg.scope.gen_sig(name, 1, {'net', 'pipeline_ready'})
-            self.ready_signals[idx] = new_ready
-        return self.ready_signals[idx]
+        return self._pipeline_signal('ready', self.ready_signals, idx, False)
+
+    def enable_signal(self, idx):
+        return self._pipeline_signal('enable', self.enable_signals, idx, False)
+
+    def hold_signal(self, idx):
+        return self._pipeline_signal('hold', self.hold_signals, idx, True)
 
     def new_stage(self, step, codes):
         name = self.name + '_{}'.format(step)
@@ -162,8 +188,8 @@ class PipelineStage(State):
     def __init__(self, name, step, codes, stg, parent_state):
         super().__init__(name, step, codes, stg)
         self.parent_state = parent_state
-        self.is_source = False
-        self.has_ready = False
+        self.has_enable = False
+        self.has_hold = False
 
 
 class STG(object):
@@ -541,54 +567,40 @@ class PipelineStageBuilder(STGItemBuilder):
             slice_stm = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
                                   AHDL_VAR(prev_sig, Ctx.LOAD))
             guard = stages[num].codes[0]
-            assert guard.is_a(AHDL_PIPELINE_GUARD)
-            guard.codes_list[0].append(slice_stm)
+            if guard.is_a(AHDL_PIPELINE_GUARD):
+                guard.codes_list[0].append(slice_stm)
+            else:
+                print(slice_stm)
 
     def _make_stage(self, stage, prev_stage):
         pstate = stage.parent_state
-        v0 = pstate.valid_signal(stage.step)
         codes = []
         for i, c in enumerate(stage.codes[:]):
             if c.is_a(AHDL_SEQ) and c.step == 0:
-                if c.factor.is_a(AHDL_IO_READ):
-                    stage.has_ready = True
-                    stage.is_source = True
+                if c.factor.is_a([AHDL_IO_READ, AHDL_IO_WRITE]):
+                    stage.has_enable = True
+            if stage.step > 0:
+                stage.has_hold = True
             if self._check_guard_need(c):
                 codes.append(c)
                 stage.codes.remove(c)
-        guard = AHDL_PIPELINE_GUARD(AHDL_VAR(v0, Ctx.LOAD), codes)
+        if stage.step > 0:
+            v_prev = AHDL_VAR(pstate.valid_signal(stage.step - 1), Ctx.LOAD)
+        else:
+            v_prev = AHDL_CONST(1)
+        guard = AHDL_PIPELINE_GUARD(v_prev, codes)
         stage.codes.insert(0, guard)
 
-    def _add_control_chain(self, pstate, stage, need_last_valid=False, ready=None):
-        v0 = pstate.valid_signal(stage.step)
-        v1 = pstate.valid_signal(stage.step + 1)
-        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
-        if ready:
-            assert not is_last
-            rhs = AHDL_OP('And', AHDL_VAR(v0, Ctx.LOAD), AHDL_VAR(ready, Ctx.LOAD))
-            set_valid = AHDL_MOVE(AHDL_VAR(v1, Ctx.STORE), rhs)
-            stage.codes.append(set_valid)
-        elif not need_last_valid and is_last:
-            pass
-        else:
-            rhs = AHDL_VAR(v0, Ctx.LOAD)
-            set_valid = AHDL_MOVE(AHDL_VAR(v1, Ctx.STORE), rhs)
-            stage.codes.append(set_valid)
-            if is_last:
-                v2 = pstate.valid_signal(stage.step + 2)
-                set_valid = AHDL_MOVE(AHDL_VAR(v2, Ctx.STORE),
-                                      AHDL_VAR(v1, Ctx.LOAD))
-                stage.codes.append(set_valid)
-
     def _make_stm2stage_num(self, pstate):
-        stm2stage_num = {}
-        for i, s in enumerate(pstate.stages):
-            for c in s.codes:
+        def _make_stm2stage_num_rec(codes):
+            for c in codes:
                 stm2stage_num[c] = i
                 if c.is_a(AHDL_IF):
                     for codes in c.codes_list:
-                        for cc in codes:
-                            stm2stage_num[cc] = i
+                        _make_stm2stage_num_rec(codes)
+        stm2stage_num = {}
+        for i, s in enumerate(pstate.stages):
+            _make_stm2stage_num_rec(s.codes)
         return stm2stage_num
 
     def _check_guard_need(self, ahdl):
@@ -597,6 +609,48 @@ class PipelineStageBuilder(STGItemBuilder):
                                            ahdl.dst.is_a(AHDL_SUBSCRIPT)))):
             return True
         return False
+
+    def _build_pipeline_stages(self, prefix, pstate, is_main):
+        prev_stage = None
+        for (step, items) in sorted(self.scheduled_items.queue.items()):
+            codes = []
+            for item, _ in items:
+                assert isinstance(item, AHDL)
+                codes.append(item)
+            stage = pstate.new_stage(step, codes)
+            self._make_stage(stage, prev_stage)
+            prev_stage = stage
+
+        for stage in pstate.stages:
+            self._add_control_chain(pstate, stage)
+
+        # analysis and inserting register slices between pileline stages
+        stm2stage_num = self._make_stm2stage_num(pstate)
+        detector = AHDLUseDefDetector()
+        for stage in pstate.stages:
+            detector.current_state = stage
+            for code in stage.traverse():
+                detector.visit(code)
+        usedef = detector.table
+        for sig in usedef.get_all_def_sigs():
+            if sig.is_net() and sig.is_pipeline_ctrl():
+                continue
+            defs = usedef.get_stms_defining(sig)
+            d = list(defs)[0]
+            d_stage_n = stm2stage_num[d]
+            uses = usedef.get_stms_using(sig)
+            use_max_distances = 0
+            for u in uses:
+                u_stage_n = stm2stage_num[u]
+                distance = u_stage_n - d_stage_n
+                assert 0 <= distance, '{} {}'.format(d, u)
+                if use_max_distances < distance:
+                    use_max_distances = distance
+            if (1 < use_max_distances or
+                    ((sig.is_induction() or sig.is_net()) and 0 < use_max_distances)):
+                self._insert_register_slices(sig, pstate.stages,
+                                             d_stage_n, d_stage_n + use_max_distances,
+                                             usedef, stm2stage_num)
 
 
 class LoopPipelineStageBuilder(PipelineStageBuilder):
@@ -657,45 +711,18 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         pstate.stages[-1].codes.append(pipe_end_stm)
         self.stg.states.append(pstate)
 
-    def _build_pipeline_stages(self, prefix, pstate, is_main):
-        prev_stage = None
-        for (step, items) in sorted(self.scheduled_items.queue.items()):
-            codes = []
-            for item, _ in items:
-                assert isinstance(item, AHDL)
-                codes.append(item)
-            stage = pstate.new_stage(step, codes)
-            self._make_stage(stage, prev_stage)
-            prev_stage = stage
-
-        for stage in pstate.stages:
-            self._add_control_chain(pstate, stage, need_last_valid=True)
-
-        # analysis and inserting register slices between pileline stages
-        stm2stage_num = self._make_stm2stage_num(pstate)
-        detector = AHDLUseDefDetector()
-        for stage in pstate.stages:
-            detector.current_state = stage
-            for code in stage.traverse():
-                detector.visit(code)
-        usedef = detector.table
-        for sig in usedef.get_all_def_sigs():
-            defs = usedef.get_stms_defining(sig)
-            d = list(defs)[0]
-            d_stage_n = stm2stage_num[d]
-            uses = usedef.get_stms_using(sig)
-            use_max_distances = 0
-            for u in uses:
-                u_stage_n = stm2stage_num[u]
-                distance = u_stage_n - d_stage_n
-                assert 0 <= distance, '{} {}'.format(d, u)
-                if use_max_distances < distance:
-                    use_max_distances = distance
-            if (1 < use_max_distances or
-                    ((sig.is_induction() or sig.is_net()) and 0 < use_max_distances)):
-                self._insert_register_slices(sig, pstate.stages,
-                                             d_stage_n, d_stage_n + use_max_distances,
-                                             usedef, stm2stage_num)
+    def _add_control_chain(self, pstate, stage):
+        v0 = pstate.valid_signal(stage.step)
+        v1 = pstate.valid_signal(stage.step + 1)
+        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
+        rhs = AHDL_VAR(v0, Ctx.LOAD)
+        set_valid = AHDL_MOVE(AHDL_VAR(v1, Ctx.STORE), rhs)
+        stage.codes.append(set_valid)
+        if is_last:
+            v2 = pstate.valid_signal(stage.step + 2)
+            set_valid = AHDL_MOVE(AHDL_VAR(v2, Ctx.STORE),
+                                  AHDL_VAR(v1, Ctx.LOAD))
+            stage.codes.append(set_valid)
 
 
 class WorkerPipelineStageBuilder(PipelineStageBuilder):
@@ -707,8 +734,7 @@ class WorkerPipelineStageBuilder(PipelineStageBuilder):
 
         blk_name = dfg.main_block.nametag + str(dfg.main_block.num)
         prefix = self.stg.name + '_' + blk_name + '_P'
-        pipeline_valid = self.scope.gen_sig('{}_valid'.format(prefix), 1, {'net'})
-        pstate = PipelineState(prefix, [], pipeline_valid, self.stg)
+        pstate = PipelineState(prefix, [], None, self.stg)
 
         nodes = []
         for blk in dfg.blocks:
@@ -729,51 +755,46 @@ class WorkerPipelineStageBuilder(PipelineStageBuilder):
         self.stg.states.append(pstate)
         self.stg.init_state = pstate
         self.stg.finish_state = pstate
-        pstate.stages[0].codes.append(AHDL_MOVE(AHDL_VAR(pipeline_valid, Ctx.STORE), AHDL_CONST(1)))
 
-    def _build_pipeline_stages(self, prefix, pstate, is_main):
-        prev_stage = None
-        for (step, items) in sorted(self.scheduled_items.queue.items()):
-            codes = []
-            for item, _ in items:
-                assert isinstance(item, AHDL)
-                codes.append(item)
-            stage = pstate.new_stage(step, codes)
-            self._make_stage(stage, prev_stage)
-            prev_stage = stage
+    def _add_control_chain(self, pstate, stage, need_last_valid=False):
+        if stage.step == 0:
+            v_now = pstate.valid_signal(stage.step)
+            v_prev = None
+        else:
+            v_now = pstate.valid_signal(stage.step)
+            v_prev = pstate.valid_signal(stage.step - 1)
+        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
 
-        for stage in reversed(pstate.stages):
-            if stage.has_ready:
-                ready = pstate.ready_signal(stage.step)
-            else:
-                ready = None
-            self._add_control_chain(pstate, stage, ready=ready)
+        r_now = pstate.ready_signal(stage.step)
+        if not is_last:
+            r_next = AHDL_VAR(pstate.ready_signal(stage.step + 1), Ctx.LOAD)
+        else:
+            r_next = AHDL_CONST(1)
+        if stage.has_enable:
+            en = AHDL_VAR(pstate.enable_signal(stage.step), Ctx.LOAD)
+            ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE),
+                                  AHDL_OP('BitAnd', r_next, en))
+        else:
+            ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE),
+                                  r_next)
+        stage.codes.append(ready_stm)
 
-        # analysis and inserting register slices between pileline stages
-        stm2stage_num = self._make_stm2stage_num(pstate)
-        detector = AHDLUseDefDetector()
-        for stage in pstate.stages:
-            detector.current_state = stage
-            for code in stage.traverse():
-                detector.visit(code)
-        usedef = detector.table
-        for sig in usedef.get_all_def_sigs():
-            defs = usedef.get_stms_defining(sig)
-            d = list(defs)[0]
-            d_stage_n = stm2stage_num[d]
-            uses = usedef.get_stms_using(sig)
-            use_max_distances = 0
-            for u in uses:
-                u_stage_n = stm2stage_num[u]
-                distance = u_stage_n - d_stage_n
-                assert 0 <= distance, '{} {}'.format(d, u)
-                if use_max_distances < distance:
-                    use_max_distances = distance
-            if (1 < use_max_distances or
-                    ((sig.is_induction() or sig.is_net()) and 0 < use_max_distances)):
-                self._insert_register_slices(sig, pstate.stages,
-                                             d_stage_n, d_stage_n + use_max_distances,
-                                             usedef, stm2stage_num)
+        if stage.has_hold:
+            #hold = hold ? (!ready) : (valid & !ready);
+            hold = pstate.hold_signal(stage.step)
+            if_lhs = AHDL_OP('Not', AHDL_VAR(r_now, Ctx.LOAD))
+            if_rhs = AHDL_OP('BitAnd',
+                             AHDL_OP('Not', AHDL_VAR(r_now, Ctx.LOAD)),
+                             AHDL_VAR(v_prev, Ctx.LOAD))
+            hold_rhs = AHDL_IF_EXP(AHDL_VAR(hold, Ctx.LOAD), if_lhs, if_rhs)
+            hold_stm = AHDL_MOVE(AHDL_VAR(hold, Ctx.STORE), hold_rhs)
+            stage.codes.append(hold_stm)
+
+        if not is_last:
+            valid_rhs = pstate.valid_exp(stage.step)
+            set_valid = AHDL_MOVE(AHDL_VAR(v_now, Ctx.STORE),
+                                  valid_rhs)
+            stage.codes.append(set_valid)
 
 
 class AHDLTranslator(object):

@@ -416,7 +416,7 @@ class VerilogCodeGen(AHDLVisitor):
             if not codes:
                 continue
             blocks += 1
-            if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1):
+            if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1) or i == 0:
                 cond = self.visit(cond)
                 if cond[0] != '(':
                     cond = '(' + cond + ')'
