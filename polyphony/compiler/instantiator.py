@@ -18,7 +18,7 @@ def bind_val(scope, i, value):
 class EarlyWorkerInstantiator(object):
     def process_all(self):
         if not env.enable_pure:
-            return []
+            return [], []
         new_workers = set()
         orig_workers = set()
         for name, inst in env.runtime_info.module_instances.items():

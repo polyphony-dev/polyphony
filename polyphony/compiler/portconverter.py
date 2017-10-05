@@ -111,6 +111,10 @@ class PortConverter(IRTransformer):
             self.process(ctor)
             for w, args in m.workers:
                 self.process(w)
+            for caller in env.call_graph.preds(m):
+                if caller.is_namespace():
+                    continue
+                self.process(caller)
 
             for field in m.class_fields().values():
                 if field.typ.is_port() and field.typ.get_direction() == '?':
@@ -131,7 +135,7 @@ class PortConverter(IRTransformer):
                         fail(stms.pop(), Errors.PORT_IS_NOT_USED,
                              [sym.orig_name()])
 
-    def _set_and_check_port_direction(self, direction, sym, ir):
+    def _set_and_check_port_direction(self, expected_di, sym, ir):
         port_typ = sym.typ
         if not port_typ.has_direction():
             port_typ.set_direction('?')
@@ -139,12 +143,12 @@ class PortConverter(IRTransformer):
         kind = port_typ.get_port_kind()
         if kind == 'external':
             if di == '?':
-                port_typ.set_direction(direction)
+                port_typ.set_direction(expected_di)
                 port_typ.freeze()
             elif di == 'any':
                 port_typ.set_port_kind('internal')
                 port_typ.set_direction('inout')
-            elif di != direction:
+            elif di != expected_di:
                 if sym.ancestor and sym.ancestor.scope is not sym.scope:
                     # the port has been accessed as opposite direction
                     # by a module includes original owner module
@@ -156,7 +160,7 @@ class PortConverter(IRTransformer):
         elif kind == 'internal':
             port_typ.set_direction('inout')
 
-        if direction == 'output':
+        if expected_di == 'output':
             # write-write conflict
             if port_typ.has_writer():
                 writer = port_typ.get_writer()
@@ -166,7 +170,7 @@ class PortConverter(IRTransformer):
             else:
                 assert self.scope.is_worker() or self.scope.parent.is_module()
                 port_typ.set_writer(self.scope)
-        elif direction == 'input' and port_typ.get_scope().name.startswith('polyphony.io.Queue'):
+        elif expected_di == 'input' and port_typ.get_scope().name.startswith('polyphony.io.Queue'):
             # read-read conflict
             if port_typ.has_reader():
                 reader = port_typ.get_reader()
@@ -177,6 +181,11 @@ class PortConverter(IRTransformer):
                 assert self.scope.is_worker() or self.scope.parent.is_module()
                 port_typ.set_reader(self.scope)
 
+    def _get_port_owner(self, sym):
+        assert sym.typ.is_port()
+        root = sym.typ.get_root_symbol()
+        return root.scope
+
     def visit_CALL(self, ir):
         if not ir.func_scope.is_lib():
             return ir
@@ -184,14 +193,18 @@ class PortConverter(IRTransformer):
             sym = ir.func.tail()
             assert sym.typ.is_port()
             if ir.func_scope.orig_name == 'wr':
-                direction = 'output'
+                expected_di = 'output'
             else:
-                direction = 'input'
+                expected_di = 'input'
+            port_owner = self._get_port_owner(sym)
+            if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
+                    not self.scope.is_worker()):
+                expected_di = 'output' if expected_di == 'input' else 'input'
             if sym in self.union_ports:
                 for s in self.union_ports[sym]:
-                    self._set_and_check_port_direction(direction, s, ir)
+                    self._set_and_check_port_direction(expected_di, s, ir)
             else:
-                self._set_and_check_port_direction(direction, sym, ir)
+                self._set_and_check_port_direction(expected_di, sym, ir)
         return ir
 
     def visit_SYSCALL(self, ir):

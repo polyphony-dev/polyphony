@@ -262,6 +262,7 @@ class CompositBlock(Block):
         head.parent = self
         for body in bodies:
             body.parent = self
+        self.loop_info = None
 
     def __str__(self):
         s = 'CompositBlock: (' + str(self.order) + ') ' + str(self.name) + '\n'

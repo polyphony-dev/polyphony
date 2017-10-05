@@ -10,24 +10,11 @@ from .type import Type
 from .irvisitor import IRVisitor
 from .ir import JUMP, CJUMP, MCJUMP, PHIBase
 from .signal import Signal
-
 from logging import getLogger
 logger = getLogger(__name__)
 
 
 FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
-
-
-def default_synth_params(scope):
-    di = defaultdict(str)
-    if scope.is_testbench():
-        di['scheduling'] = 'sequential'
-        di['cycle'] = 'any'
-    else:
-        di['scheduling'] = 'parallel'
-        di['cycle'] = 'minimum'
-    di['ii'] = 1
-    return di
 
 
 class Scope(Tagged):
@@ -274,6 +261,8 @@ class Scope(Tagged):
         s.cloned_symbols = symbol_map
         s.cloned_blocks = block_map
         s.cloned_stms = stm_map
+
+        s.synth_params = self.synth_params.copy()
         return s
 
     def inherit(self, name, overrides):

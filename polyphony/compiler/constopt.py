@@ -358,6 +358,7 @@ class ConstantOpt(ConstantOptBase):
                 stm.cond = reduce_relexp(stm.cond)
                 if stm.cond.is_a(CONST):
                     if stm.cond.value:
+                        blk = stm.block
                         if stm.is_a(CMOVE):
                             new_stm = MOVE(stm.dst, stm.src)
                             scope.usedef.add_use(new_stm.src, new_stm)
