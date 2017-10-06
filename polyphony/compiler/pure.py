@@ -229,7 +229,7 @@ class RuntimeInfoBuilder(object):
         default_values = {}
         specials = {
             '_start', '_stop', 'append_worker',
-            '_ctor', '_workers', '_submodules', '_module_decorator',
+            '_ctor', '_workers', '_worker_threads', '_submodules', '_module_decorator',
         }
         for name, v in instance.__dict__.items():
             if name in specials or name.startswith('__'):
