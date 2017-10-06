@@ -536,11 +536,12 @@ class PipelinedRAMAccessor(RAMAccessor):
         q = port2ahdl(self, 'q')
 
         if step == 0:
-            valids = [AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step + i), Ctx.LOAD)
-                      for i in range(step_n)]
-            pvalid = AHDL_OP('BitOr', *valids)
+            req_valids = [AHDL_VAR(self.pipeline_state.ready_signal(0), Ctx.LOAD)]
+            req_valids += [AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step + i), Ctx.LOAD)
+                           for i in range(step_n - 1)]
+            req_rhs = AHDL_OP('BitOr', *req_valids)
             guards = (AHDL_MOVE(addr, offset), AHDL_MOVE(we, AHDL_CONST(0)))
-            nonguards = (AHDL_MOVE(req, pvalid), )
+            nonguards = (AHDL_MOVE(req, req_rhs), )
         elif step == 1:
             guards = (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
             nonguards = tuple()
@@ -560,7 +561,7 @@ class PipelinedRAMAccessor(RAMAccessor):
         d = port2ahdl(self, 'd')
 
         if step == 0:
-            pipeline_valid = AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step), Ctx.LOAD)
+            pipeline_valid = AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step - 1), Ctx.LOAD)
             guards = (AHDL_MOVE(addr, offset),
                       AHDL_MOVE(d, src))
             nonguards = (AHDL_MOVE(we, pipeline_valid),
@@ -738,7 +739,6 @@ def fifo_pipelined_write_seq(inf, step, src):
     din = port2ahdl(inf, 'din')
     if step == 0:
         assert inf.stage.has_enable
-        assert inf.stage.has_hold
         enable_sig = inf.pipeline_state.enable_signal(inf.stage.step)
         enable_cond = AHDL_OP('BitAnd',
                               AHDL_OP('Not', full),

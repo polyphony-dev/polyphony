@@ -596,6 +596,7 @@ def compile_main(src_file, options):
     main_source = read_source(src_file)
     compile_results = compile(compile_plan(), main_source, src_file)
     output_individual(compile_results, options.output_name, options.output_dir)
+    env.destroy()
 
 
 def output_individual(compile_results, output_name, output_dir):

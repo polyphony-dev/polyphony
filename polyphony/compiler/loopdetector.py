@@ -8,7 +8,7 @@ from .block import Block, CompositBlock
 from logging import getLogger
 logger = getLogger(__name__)
 
-LoopInfo = namedtuple('LoopInfo', ('counter', 'init', 'cond', 'exit'))
+LoopInfo = namedtuple('LoopInfo', ('counter', 'init', 'update', 'cond', 'exit'))
 
 
 class LoopNestTree(Graph):
@@ -90,21 +90,21 @@ class LoopDetector(object):
         defs = self.scope.usedef.get_stms_defining(loop_counter)
         for d in defs:
             if d.block in loop_block.region:
-                loop_inc = d
+                loop_update = d
             else:
                 loop_init = d
-        assert loop_inc
+        assert loop_update
         assert loop_init
-        assert loop_inc.is_a(MOVE)
-        if loop_inc.src.is_a(TEMP):
-            defs = self.scope.usedef.get_stms_defining(loop_inc.src.symbol())
+        assert loop_update.is_a(MOVE)
+        # change the updating source symbol of the loop counter to alias
+        if loop_update.src.is_a(TEMP):
+            loop_update.src.symbol().add_tag('alias')
+            # sanity check
+            defs = self.scope.usedef.get_stms_defining(loop_update.src.symbol())
             assert len(defs) == 1
-            inc_stm = list(defs)[0]
-            if inc_stm.is_a(MOVE):
-                inc_stm.dst.symbol().add_tag('alias')
         loop_exit = loop_block.succs[0]
         assert len(loop_block.succs) == 1
-        loop_block.loop_info = LoopInfo(loop_counter, loop_init, cond_var.symbol(), loop_exit)
+        loop_block.loop_info = LoopInfo(loop_counter, loop_init, loop_update, cond_var.symbol(), loop_exit)
 
     def _make_loop_block(self, head, loop_region):
         lblks, blks = self._make_loop_block_bodies(loop_region)

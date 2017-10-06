@@ -64,7 +64,7 @@ class DFNode(object):
 
 
 class DataFlowGraph(object):
-    def __init__(self, name, main_block, blocks):
+    def __init__(self, name, parent, main_block, blocks):
         self.name = name
         self.main_block = main_block
         self.blocks = blocks
@@ -73,7 +73,9 @@ class DataFlowGraph(object):
         self.succ_edges = defaultdict(set)
         self.pred_edges = defaultdict(set)
         self.src_nodes = set()
-        self.parent = None
+        self.parent = parent
+        if parent:
+            parent.set_child(self)
         self.children = []
         self.synth_params = main_block.synth_params
 
@@ -104,7 +106,7 @@ class DataFlowGraph(object):
 
     def set_child(self, child):
         self.children.append(child)
-        child.parent = self
+        assert child.parent is self
 
     def add_stm_node(self, stm):
         n = self.find_node(stm)
@@ -379,7 +381,7 @@ class DFGBuilder(object):
 
     def process(self, scope):
         self.scope = scope
-        self.scope.top_dfg = self._process(scope.entry_block)
+        self.scope.top_dfg = self._process(scope.entry_block, None)
 
     def _root_blocks(self):
         inner_loop_region = set()
@@ -389,22 +391,18 @@ class DFGBuilder(object):
         self.scope.entry_block.collect_basic_blocks(all_blks)
         return all_blks.difference(inner_loop_region)
 
-    def _process(self, blk):
-        children = []
-        for c in self.scope.loop_nest_tree.get_children_of(blk):
-            children.append(self._process(c))
-
+    def _process(self, blk, parent_dfg):
         if blk is self.scope.loop_nest_tree.root:
             blocks = sorted(list(self._root_blocks()), key=lambda b: b.order)
-            dfg = self._make_graph(blk, blocks)
+            dfg = self._make_graph(parent_dfg, blk, blocks)
         else:
             blocks = [blk.head]
             for b in blk.bodies:
                 if not isinstance(b, CompositBlock):
                     blocks.append(b)
-            dfg = self._make_graph(blk, blocks)
-        for child in children:
-            dfg.set_child(child)
+            dfg = self._make_graph(parent_dfg, blk, blocks)
+        for c in self.scope.loop_nest_tree.get_children_of(blk):
+            self._process(c, dfg)
         return dfg
 
     def _dump_dfg(self, dfg):
@@ -429,10 +427,10 @@ class DFGBuilder(object):
             for succ in succs:
                 logger.debug(succ)
 
-    def _make_graph(self, main_block, blocks):
+    def _make_graph(self, parent_dfg, main_block, blocks):
         name = main_block.name
         logger.debug('make graph ' + name)
-        dfg = DataFlowGraph(name, main_block, blocks)
+        dfg = DataFlowGraph(name, parent_dfg, main_block, blocks)
         usedef = self.scope.usedef
 
         for b in blocks:
@@ -447,12 +445,15 @@ class DFGBuilder(object):
                 self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)
         if main_block.synth_params['scheduling'] == 'sequential':
             self._add_seq_edges(blocks, dfg)
-        self._add_edges_between_objects(blocks, dfg)
-        self._add_timinglib_seq_edges(blocks, dfg)
-        self._add_io_seq_edges(blocks, dfg)
+        self._add_seq_edges_for_object(blocks, dfg)
+        self._add_seq_edges_for_function(blocks, dfg)
+        self._add_seq_edges_for_io(blocks, dfg)
+        if main_block.synth_params['scheduling'] != 'pipeline':
+            self._add_seq_edges_for_ctrl_branch(dfg)
         self._add_mem_edges(dfg)
-        self._add_special_seq_edges(dfg)
         self._remove_alias_cycle(dfg)
+        if main_block.synth_params['scheduling'] == 'pipeline' and dfg.parent:
+            self._tweak_loop_var_edges_for_pipeline(dfg)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -649,7 +650,7 @@ class DFGBuilder(object):
                 return receiver
         return None
 
-    def _add_edges_between_objects(self, blocks, dfg):
+    def _add_seq_edges_for_object(self, blocks, dfg):
         for block in blocks:
             prevs = {}
             for stm in block.stms:
@@ -665,7 +666,7 @@ class DFGBuilder(object):
                 prevs[sym] = node
 
     # workaround
-    def _add_special_seq_edges(self, dfg):
+    def _add_seq_edges_for_ctrl_branch(self, dfg):
         for node in dfg.nodes:
             stm = node.tag
             if stm.is_a([CJUMP, MCJUMP]):
@@ -675,7 +676,7 @@ class DFGBuilder(object):
                     prev_node = dfg.find_node(prev_stm)
                     dfg.add_seq_edge(prev_node, node)
 
-    def _has_timing_function(self, stm):
+    def _has_exclusive_function(self, stm):
         if stm.is_a(MOVE):
             call = stm.src
         elif stm.is_a(EXPR):
@@ -690,43 +691,44 @@ class DFGBuilder(object):
                 'polyphony.timing.wait_falling',
                 'polyphony.timing.wait_value',
                 'polyphony.timing.wait_edge',
+                'print',
             ]
             return call.sym.name in wait_funcs
         elif call.is_a(CALL):
             if call.func_scope.is_method() and call.func_scope.parent.is_port():
                 # TODO: parallel scheduling for port access
-                port_sym = call.func.qualified_symbol()[-2]
-                assert port_sym.typ.is_port()
-                if port_sym.typ.get_scope().name.startswith('polyphony.io.Queue'):
+                port = call.func_scope.parent
+                if port.name.startswith('polyphony.io.Queue'):
                     return True
-                else:
-                    return stm.block.synth_params['scheduling'] == 'sequential'
-            return False
+                elif port.name.startswith('polyphony.io.Port'):
+                    assert call.func.tail().typ.is_port()
+                    proto = call.func.tail().typ.get_protocol()
+                    if proto != 'none':
+                        return True
+        return False
 
-    def _add_timinglib_seq_edges(self, blocks, dfg):
-        '''This algorithm is simple but might generates redundant sequence edges'''
+    def _add_seq_edges_for_function(self, blocks, dfg):
+        '''make sequence edges between functions that are executed in an exclusive state'''
         for block in blocks:
-            timing_func_node = None
+            seq_func_node = None
             for stm in block.stms:
                 node = dfg.find_node(stm)
-                if timing_func_node and self._is_same_block_node(timing_func_node, node):
-                    if timing_func_node.tag.block is node.tag.block:
-                        dfg.add_seq_edge(timing_func_node, node)
-                if self._has_timing_function(stm):
-                    timing_func_node = node
-
-            timing_func_node = None
+                if seq_func_node:
+                    dfg.add_seq_edge(seq_func_node, node)
+                if self._has_exclusive_function(stm):
+                    seq_func_node = node
+            seq_func_node = None
             for stm in reversed(block.stms):
                 node = dfg.find_node(stm)
-                if timing_func_node and self._is_same_block_node(timing_func_node, node):
-                    if timing_func_node.tag.block is node.tag.block:
-                        dfg.add_seq_edge(node, timing_func_node)
-                if self._has_timing_function(stm):
-                    timing_func_node = node
+                if seq_func_node:
+                    dfg.add_seq_edge(node, seq_func_node)
+                if self._has_exclusive_function(stm):
+                    seq_func_node = node
 
-    def _add_io_seq_edges(self, blocks, dfg):
+    def _add_seq_edges_for_io(self, blocks, dfg):
+        '''make sequence edges between ports'''
         for block in blocks:
-            ports = {}
+            port_node = None
             for stm in block.stms:
                 if stm.is_a(MOVE):
                     call = stm.src
@@ -737,13 +739,9 @@ class DFGBuilder(object):
                 if call.is_a(CALL):
                     if call.func_scope.is_method() and call.func_scope.parent.is_port():
                         node = dfg.find_node(stm)
-                        port_sym = call.func.tail()
-                        if port_sym in ports:
-                            prev_port_node = ports[port_sym]
-                            if prev_port_node.tag.block is node.tag.block:
-                                dfg.add_seq_edge(prev_port_node, node)
-                        # update last node
-                        ports[port_sym] = node
+                        if port_node:
+                            dfg.add_seq_edge(port_node, node)
+                        port_node = node
 
     def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef):
         stm = usenode.tag
@@ -763,7 +761,7 @@ class DFGBuilder(object):
             if u.block is not defnode.tag.block:
                 continue
             unode = dfg.add_stm_node(u)
-            if self._has_timing_function(u):
+            if self._has_exclusive_function(u):
                 dfg.add_seq_edge(unode, defnode)
             else:
                 dfg.add_usedef_edge(unode, defnode)
@@ -794,3 +792,15 @@ class DFGBuilder(object):
                 succs = dfg.succs_typ_without_back(node, 'DefUse')
                 for s in succs:
                     self._remove_alias_cycle_rec(dfg, s, end, dones)
+
+    def _tweak_loop_var_edges_for_pipeline(self, dfg):
+        def remove_seq_pred(node):
+            for seq_pred in dfg.preds_typ(node, 'Seq'):
+                dfg.remove_edge(seq_pred, node)
+            for defnode in dfg.preds_typ(node, 'DefUse'):
+                remove_seq_pred(defnode)
+        for node in dfg.nodes:
+            stm = node.tag
+            if stm.is_a(MOVE) and stm.dst.symbol().is_induction():
+                node = dfg.find_node(stm)
+                remove_seq_pred(node)

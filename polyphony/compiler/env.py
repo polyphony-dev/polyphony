@@ -59,6 +59,10 @@ class Env(object):
             logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@', ''), 'w')
             self.logfiles[scope] = logfile
 
+    def destroy(self):
+        for logfile in self.logfiles.values():
+            logfile.close()
+
     def remove_scope(self, scope):
         del self.scopes[scope.name]
 
