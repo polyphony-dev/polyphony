@@ -454,6 +454,7 @@ class DFGBuilder(object):
         self._remove_alias_cycle(dfg)
         if main_block.synth_params['scheduling'] == 'pipeline' and dfg.parent:
             self._tweak_loop_var_edges_for_pipeline(dfg)
+            self._tweak_port_edges_for_pipeline(dfg)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -676,6 +677,9 @@ class DFGBuilder(object):
                     prev_node = dfg.find_node(prev_stm)
                     dfg.add_seq_edge(prev_node, node)
 
+    def _is_port_method_call(self, call):
+        return call.is_a(CALL) and call.func_scope.is_method() and call.func_scope.parent.is_port()
+
     def _has_exclusive_function(self, stm):
         if stm.is_a(MOVE):
             call = stm.src
@@ -694,17 +698,16 @@ class DFGBuilder(object):
                 'print',
             ]
             return call.sym.name in wait_funcs
-        elif call.is_a(CALL):
-            if call.func_scope.is_method() and call.func_scope.parent.is_port():
-                # TODO: parallel scheduling for port access
-                port = call.func_scope.parent
-                if port.name.startswith('polyphony.io.Queue'):
+        elif self._is_port_method_call(call):
+            # TODO: parallel scheduling for port access
+            port = call.func_scope.parent
+            if port.name.startswith('polyphony.io.Queue'):
+                return True
+            elif port.name.startswith('polyphony.io.Port'):
+                assert call.func.tail().typ.is_port()
+                proto = call.func.tail().typ.get_protocol()
+                if proto != 'none':
                     return True
-                elif port.name.startswith('polyphony.io.Port'):
-                    assert call.func.tail().typ.is_port()
-                    proto = call.func.tail().typ.get_protocol()
-                    if proto != 'none':
-                        return True
         return False
 
     def _add_seq_edges_for_function(self, blocks, dfg):
@@ -736,12 +739,11 @@ class DFGBuilder(object):
                     call = stm.exp
                 else:
                     continue
-                if call.is_a(CALL):
-                    if call.func_scope.is_method() and call.func_scope.parent.is_port():
-                        node = dfg.find_node(stm)
-                        if port_node:
-                            dfg.add_seq_edge(port_node, node)
-                        port_node = node
+                if self._is_port_method_call(call):
+                    node = dfg.find_node(stm)
+                    if port_node:
+                        dfg.add_seq_edge(port_node, node)
+                    port_node = node
 
     def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef):
         stm = usenode.tag
@@ -802,5 +804,33 @@ class DFGBuilder(object):
         for node in dfg.nodes:
             stm = node.tag
             if stm.is_a(MOVE) and stm.dst.symbol().is_induction():
-                node = dfg.find_node(stm)
                 remove_seq_pred(node)
+
+    def _get_port_sym_from_node(self, node):
+        stm = node.tag
+        if stm.is_a(MOVE):
+            call = stm.src
+        elif stm.is_a(EXPR):
+            call = stm.exp
+        else:
+            return None
+        if not self._is_port_method_call(call):
+            return None
+        return call.func.tail()
+
+    def _tweak_port_edges_for_pipeline(self, dfg):
+        def remove_port_seq_pred(node, port):
+            for seq_pred in dfg.preds_typ(node, 'Seq'):
+                pred = self._get_port_sym_from_node(seq_pred)
+                if pred is None or pred is not port:
+                    dfg.remove_edge(seq_pred, node)
+            for seq_succ in dfg.succs_typ(node, 'Seq'):
+                succ = self._get_port_sym_from_node(seq_succ)
+                if succ is None or succ is not port:
+                    dfg.remove_edge(node, seq_succ)
+
+        for node in dfg.nodes:
+            p = self._get_port_sym_from_node(node)
+            if not p:
+                continue
+            remove_port_seq_pred(node, p)

@@ -358,6 +358,7 @@ class PipelineScheduler(SchedulerImpl):
             latency = self._list_schedule_for_pipeline(dfg, nodes)
             if longest_latency < latency:
                 longest_latency = latency
+            self._schedule_alap(dfg, nodes)
         return longest_latency
 
     def _schedule_ii(self, dfg):
@@ -433,6 +434,15 @@ class PipelineScheduler(SchedulerImpl):
             # source node
             scheduled_time = 0
         return scheduled_time
+
+    def _schedule_alap(self, dfg, nodes):
+        for node in reversed(sorted(nodes, key=lambda n: (n.priority, n.stm_index))):
+            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
+            # for ALAP scheduling
+            for defuse_pred in defuse_preds:
+                gap = node.begin - defuse_pred.end
+                defuse_pred.begin += gap
+                defuse_pred.end += gap
 
 
 class ResourceExtractor(IRVisitor):
