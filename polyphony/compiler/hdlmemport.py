@@ -401,7 +401,7 @@ class HDLRegArrayPortMaker(object):
                 succ_ramacc = RegArrayInterface(succ.name(),
                                                 callee_name,
                                                 succ.data_width(),
-                                                succ.length).accessor(inst)
+                                                succ.length, 'in', False).accessor(inst)
                 succ_ramacc.ports.ports = succ_ramacc.ports.flipped()
                 cs_name = inst + '_' + self.memnode.orig_succs[0].name()
                 self._add_interconnect(succ_ramacc.acc_name,

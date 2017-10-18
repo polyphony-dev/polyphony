@@ -209,12 +209,16 @@ class AHDL_MOVE(AHDL_STM):
 
 
 class AHDL_DECL(AHDL):
+    pass
+
+
+class AHDL_VAR_DECL(AHDL_DECL):
     def __init__(self, name):
         assert isinstance(name, str)
         self.name = name
 
 
-class AHDL_SIGNAL_DECL(AHDL_DECL):
+class AHDL_SIGNAL_DECL(AHDL_VAR_DECL):
     def __init__(self, sig):
         super().__init__(sig.name)
         self.sig = sig
@@ -241,7 +245,7 @@ class AHDL_SIGNAL_ARRAY_DECL(AHDL_SIGNAL_DECL):
         return 'AHDL_SIGNAL_ARRAY_DECL({}, {})'.format(repr(self.sig), repr(self.size))
 
 
-class AHDL_ASSIGN(AHDL_DECL):
+class AHDL_ASSIGN(AHDL_VAR_DECL):
     def __init__(self, dst, src):
         assert dst.is_a(AHDL)
         assert src.is_a(AHDL)
@@ -259,6 +263,21 @@ class AHDL_ASSIGN(AHDL_DECL):
 
     def __repr__(self):
         return 'AHDL_ASSIGN({}, {})'.format(repr(self.dst), repr(self.src))
+
+
+class AHDL_EVENT_TASK(AHDL_DECL):
+    def __init__(self, events, stm):
+        assert isinstance(events, list)
+        assert isinstance(stm, AHDL_STM)
+        self.events = events
+        self.stm = stm
+
+    def __str__(self):
+        events = ', '.join('{} {}'.format(ev, var) for var, ev in self.events)
+        return '({})\n{}'.format(events, self.stm)
+
+    def __repr__(self):
+        return 'AHDL_EVENT_TASK({}, {})'.format(repr(self.events), repr(self.stm))
 
 
 class AHDL_CONNECT(AHDL_STM):
@@ -543,7 +562,7 @@ class AHDL_META_MULTI_WAIT(AHDL_STM):
         self.transition = AHDL_TRANSITION_IF([cond], [codes])
 
 
-class AHDL_FUNCTION(AHDL_DECL):
+class AHDL_FUNCTION(AHDL_VAR_DECL):
     def __init__(self, output, inputs, stms):
         assert isinstance(output, AHDL_VAR)
         super().__init__(output.sig.name)
@@ -562,7 +581,7 @@ class AHDL_FUNCTION(AHDL_DECL):
         )
 
 
-class AHDL_MUX(AHDL_DECL):
+class AHDL_MUX(AHDL_VAR_DECL):
     def __init__(self, name, selector, inputs, output, defval):
         super().__init__(name)
         assert isinstance(output, Signal)
@@ -575,7 +594,7 @@ class AHDL_MUX(AHDL_DECL):
         return 'MUX {}'.format(self.name)
 
 
-class AHDL_DEMUX(AHDL_DECL):
+class AHDL_DEMUX(AHDL_VAR_DECL):
     def __init__(self, name, selector, input, outputs, defval):
         super().__init__(name)
         assert isinstance(input, Signal)
@@ -588,7 +607,7 @@ class AHDL_DEMUX(AHDL_DECL):
         return 'DEMUX {}'.format(self.name)
 
 
-class AHDL_COMB(AHDL_DECL):
+class AHDL_COMB(AHDL_VAR_DECL):
     def __init__(self, name, stms):
         super().__init__(name)
         self.stms = stms

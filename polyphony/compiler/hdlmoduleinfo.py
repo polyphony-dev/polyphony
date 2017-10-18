@@ -24,7 +24,6 @@ class HDLModuleInfo(object):
         self.name = name
         self.qualified_name = qualified_name
         self.interfaces = OrderedDict()
-        self.ret_interfaces = OrderedDict()
         self.interconnects = []
         self.accessors = {}
         self.local_readers = {}
@@ -67,9 +66,6 @@ class HDLModuleInfo(object):
 
     def add_interface(self, name, interface):
         self.interfaces[name] = interface
-
-    def add_ret_interface(self, name, interface):
-        self.ret_interfaces[name] = interface
 
     def add_interconnect(self, interconnect):
         self.interconnects.append(interconnect)
@@ -153,8 +149,9 @@ class HDLModuleInfo(object):
 
     def add_decl(self, tag, decl):
         assert isinstance(decl, AHDL_DECL)
-        if decl.name in (d.name for d in self.decls[tag] if type(d) == type(decl)):
-            return
+        if isinstance(decl, AHDL_VAR_DECL):
+            if decl.name in (d.name for d in self.decls[tag] if type(d) == type(decl)):
+                return
         self.decls[tag].append(decl)
 
     def remove_decl(self, tag, decl):
@@ -206,8 +203,6 @@ class HDLModuleInfo(object):
     def find_interface(self, name):
         if name in self.interfaces:
             return self.interfaces[name]
-        if name in self.ret_interfaces:
-            return self.ret_interfaces[name]
         assert False
 
     def resources(self):
@@ -215,11 +210,6 @@ class HDLModuleInfo(object):
         num_of_nets = 0
         internal_rams = 0
         for inf in self.interfaces.values():
-            for r in inf.regs():
-                num_of_regs += r.width
-            for n in inf.nets():
-                num_of_nets += n.width
-        for inf in self.ret_interfaces.values():
             for r in inf.regs():
                 num_of_regs += r.width
             for n in inf.nets():

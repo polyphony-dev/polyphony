@@ -437,12 +437,16 @@ class PipelineScheduler(SchedulerImpl):
 
     def _schedule_alap(self, dfg, nodes):
         for node in reversed(sorted(nodes, key=lambda n: (n.priority, n.stm_index))):
-            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
-            # for ALAP scheduling
-            for defuse_pred in defuse_preds:
-                gap = node.begin - defuse_pred.end
-                defuse_pred.begin += gap
-                defuse_pred.end += gap
+            succs = dfg.succs_without_back(node)
+            succs = [s for s in succs if s.begin >= 0]
+            if not succs:
+                continue
+            nearest_node = min(succs, key=lambda p: p.begin)
+            sched_time = nearest_node.begin
+            if sched_time > node.end:
+                gap = sched_time - node.end
+                node.begin += gap
+                node.end += gap
 
 
 class ResourceExtractor(IRVisitor):

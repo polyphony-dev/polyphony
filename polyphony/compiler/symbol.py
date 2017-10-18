@@ -12,7 +12,7 @@ class Symbol(Tagged):
     TAGS = {
         'temp', 'param', 'return', 'condition', 'induction', 'alias',
         'self', 'static', 'subobject',
-        'builtin', 'flattened'
+        'builtin', 'flattened', 'pipelined'
     }
 
     @classmethod

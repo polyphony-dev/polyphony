@@ -7,12 +7,13 @@ CALL_MINIMUM_STEP = 5
 
 
 def get_call_latency(call, stm):
+    is_pipelined = stm.block.synth_params['scheduling'] == 'pipeline'
     if call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.rd'):
-        if stm.block.synth_params['scheduling'] == 'pipeline':
+        if is_pipelined:
             return UNIT_STEP * 2
         return UNIT_STEP * 3
     elif call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.wr'):
-        if stm.block.synth_params['scheduling'] == 'pipeline':
+        if is_pipelined:
             return UNIT_STEP * 1
         return UNIT_STEP * 3
     elif call.func_scope.is_method() and call.func_scope.parent.is_port():
@@ -21,14 +22,26 @@ def get_call_latency(call, stm):
         protocol = receiver.typ.get_protocol()
         if call.func_scope.orig_name == 'rd':
             if protocol == 'ready_valid':
-                return UNIT_STEP * 3
+                if is_pipelined:
+                    return UNIT_STEP * 2
+                else:
+                    return UNIT_STEP * 3
             elif protocol == 'valid':
-                return UNIT_STEP * 2
+                if is_pipelined:
+                    return UNIT_STEP * 1
+                else:
+                    return UNIT_STEP * 2
         elif call.func_scope.orig_name == 'wr':
             if protocol == 'ready_valid':
-                return UNIT_STEP * 3
+                if is_pipelined:
+                    return UNIT_STEP * 1
+                else:
+                    return UNIT_STEP * 3
             elif protocol == 'valid':
-                return UNIT_STEP * 2
+                if is_pipelined:
+                    return UNIT_STEP * 1
+                else:
+                    return UNIT_STEP * 2
         return UNIT_STEP
     elif call.func_scope.asap_latency > 0:
         return UNIT_STEP * call.func_scope.asap_latency

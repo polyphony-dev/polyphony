@@ -137,8 +137,6 @@ class VerilogCodeGen(AHDLVisitor):
             ports.append('input wire rst')
         for interface in self.module_info.interfaces.values():
             ports.extend(self._get_io_names_from(interface))
-        for interface in self.module_info.ret_interfaces.values():
-            ports.extend(self._get_io_names_from(interface))
         self.emit((',\n' + self.tab()).join(ports))
 
     def _generate_signal(self, sig):
@@ -318,6 +316,8 @@ class VerilogCodeGen(AHDLVisitor):
                 self.emit('/*** {} ***/'.format(stage.name))
                 for code in stage.codes:
                     self.visit(code)
+                if stage.enable:
+                    self.visit(stage.enable)
                 self.emit('')
         elif isinstance(state, State):
             for code in state.codes:
@@ -389,7 +389,7 @@ class VerilogCodeGen(AHDLVisitor):
             self.emit('/*' + str(ahdl.info) + '*/')
 
     def visit_AHDL_INLINE(self, ahdl):
-        self.emit(ahdl.code + ';')
+        self.emit(ahdl.code)
 
     def visit_AHDL_MOVE(self, ahdl):
         if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_net():
@@ -506,6 +506,24 @@ class VerilogCodeGen(AHDLVisitor):
         src = self.visit(ahdl.src)
         dst = self.visit(ahdl.dst)
         self.emit('assign {} = {};'.format(dst, src))
+
+    def visit_AHDL_EVENT_TASK(self, ahdl):
+        evs = []
+        for v, e in ahdl.events:
+            var = self.visit(v)
+            if e == 'rising':
+                ev = 'posedge '
+            elif e == 'falling':
+                ev = 'negedge '
+            else:
+                ev = ''
+            evs.append('{}{}'.format(ev, var))
+        events = ', '.join(evs)
+        self.emit('always @({}) begin'.format(events))
+        self.set_indent(2)
+        self.visit(ahdl.stm)
+        self.set_indent(-2)
+        self.emit('end')
 
     def visit_AHDL_CONNECT(self, ahdl):
         src = self.visit(ahdl.src)

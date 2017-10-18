@@ -61,7 +61,7 @@ class IOTransformer(AHDLVisitor):
             io = self.module_info.local_readers[ahdl.io.sig.name]
         if isinstance(self.current_parent, PipelineStage):
             stage = self.current_parent
-            return io.pipelined(stage).read_sequence(step, step_n, ahdl.dst)
+            return io.pipelined_read_sequence(step, step_n, ahdl.dst, stage)
         else:
             return io.read_sequence(step, step_n, ahdl.dst)
 
@@ -74,7 +74,7 @@ class IOTransformer(AHDLVisitor):
             io = self.module_info.local_writers[ahdl.io.sig.name]
         if isinstance(self.current_parent, PipelineStage):
             stage = self.current_parent
-            return io.pipelined(stage).write_sequence(step, step_n, ahdl.src)
+            return io.pipelined_write_sequence(step, step_n, ahdl.src, stage)
         else:
             return io.write_sequence(step, step_n, ahdl.src)
 

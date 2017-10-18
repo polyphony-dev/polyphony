@@ -448,13 +448,13 @@ class DFGBuilder(object):
         self._add_seq_edges_for_object(blocks, dfg)
         self._add_seq_edges_for_function(blocks, dfg)
         self._add_seq_edges_for_io(blocks, dfg)
-        if main_block.synth_params['scheduling'] != 'pipeline':
-            self._add_seq_edges_for_ctrl_branch(dfg)
         self._add_mem_edges(dfg)
         self._remove_alias_cycle(dfg)
         if main_block.synth_params['scheduling'] == 'pipeline' and dfg.parent:
             self._tweak_loop_var_edges_for_pipeline(dfg)
             self._tweak_port_edges_for_pipeline(dfg)
+        if main_block.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
+            self._add_seq_edges_for_ctrl_branch(dfg)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -670,12 +670,13 @@ class DFGBuilder(object):
     def _add_seq_edges_for_ctrl_branch(self, dfg):
         for node in dfg.nodes:
             stm = node.tag
-            if stm.is_a([CJUMP, MCJUMP]):
+            if stm.is_a([JUMP, CJUMP, MCJUMP]):
                 #assert len(stm.block.stms) > 1
                 assert stm.block.stms[-1] is stm
                 for prev_stm in stm.block.stms[:-1]:
                     prev_node = dfg.find_node(prev_stm)
-                    dfg.add_seq_edge(prev_node, node)
+                    if all([n.tag.block is not node.tag.block for n in dfg.succs(prev_node)]):
+                        dfg.add_seq_edge(prev_node, node)
 
     def _is_port_method_call(self, call):
         return call.is_a(CALL) and call.func_scope.is_method() and call.func_scope.parent.is_port()
@@ -715,6 +716,8 @@ class DFGBuilder(object):
         for block in blocks:
             seq_func_node = None
             for stm in block.stms:
+                if stm.is_a([JUMP, CJUMP, MCJUMP]):
+                    continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
                     dfg.add_seq_edge(seq_func_node, node)
@@ -722,6 +725,8 @@ class DFGBuilder(object):
                     seq_func_node = node
             seq_func_node = None
             for stm in reversed(block.stms):
+                if stm.is_a([JUMP, CJUMP, MCJUMP]):
+                    continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
                     dfg.add_seq_edge(node, seq_func_node)
@@ -822,11 +827,11 @@ class DFGBuilder(object):
         def remove_port_seq_pred(node, port):
             for seq_pred in dfg.preds_typ(node, 'Seq'):
                 pred = self._get_port_sym_from_node(seq_pred)
-                if pred is None or pred is not port:
+                if pred is None:  # or pred is not port:
                     dfg.remove_edge(seq_pred, node)
             for seq_succ in dfg.succs_typ(node, 'Seq'):
                 succ = self._get_port_sym_from_node(seq_succ)
-                if succ is None or succ is not port:
+                if succ is None:  # or succ is not port:
                     dfg.remove_edge(node, seq_succ)
 
         for node in dfg.nodes:

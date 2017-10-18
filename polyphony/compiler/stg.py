@@ -150,7 +150,7 @@ class PipelineState(State):
         name = self.name + '_{}'.format(step)
         s = PipelineStage(name, step, codes, self.stg, self)
         self.stages.append(s)
-        assert len(self.stages) == step + 1
+        assert len(self.stages) == step + 1, 'stages {} step {}'.format(len(self.stages), step)
         return s
 
     def traverse(self):
@@ -194,6 +194,7 @@ class PipelineStage(State):
         super().__init__(name, step, codes, stg)
         self.parent_state = parent_state
         self.has_enable = False
+        self.enable = None
         self.has_hold = False
 
 
@@ -353,6 +354,8 @@ class STGItemBuilder(object):
         '''translates IR to AHDL or Transition, and emit to scheduled_items'''
         self.translator.reset(self.cur_sched_time)
         for node in nodes:
+            if node.priority < 0:
+                continue
             self.translator.visit(node.tag, node)
 
     def gen_sig(self, prefix, postfix, width, tag=None):
@@ -497,8 +500,8 @@ class StateBuilder(STGItemBuilder):
                     codes = [AHDL_TRANSITION(None)]
                 elif self.scope.is_testbench():
                     codes = [
-                        AHDL_INLINE('$display("%5t:finish", $time)'),
-                        AHDL_INLINE('$finish()')
+                        AHDL_INLINE('$display("%5t:finish", $time);'),
+                        AHDL_INLINE('$finish();')
                     ]
                 finish_state = self._new_state('{}_FINISH'.format(state_prefix),
                                                last_state.step + 1,
@@ -611,12 +614,13 @@ class PipelineStageBuilder(STGItemBuilder):
                 guarded_codes.append(c)
                 stage.codes.remove(c)
 
-        if stage.step > 0:
-            v_prev = AHDL_VAR(pstate.valid_signal(stage.step - 1), Ctx.LOAD)
-        elif stage.has_enable:
-            v_prev = AHDL_VAR(pstate.ready_signal(0), Ctx.LOAD)
+        if stage.step == 0:
+            if stage.has_enable:
+                v_prev = AHDL_VAR(pstate.ready_signal(0), Ctx.LOAD)
+            else:
+                v_prev = AHDL_CONST(1)
         else:
-            v_prev = AHDL_CONST(1)
+            v_prev = AHDL_VAR(pstate.valid_signal(stage.step - 1), Ctx.LOAD)
         guard = AHDL_PIPELINE_GUARD(v_prev, guarded_codes)
         stage.codes.insert(0, guard)
 
@@ -646,9 +650,9 @@ class PipelineStageBuilder(STGItemBuilder):
         if stage.has_hold:
             #hold = hold ? (!ready) : (valid & !ready);
             hold = pstate.hold_signal(stage.step)
-            if_lhs = AHDL_OP('Not', AHDL_VAR(r_now, Ctx.LOAD))
+            if_lhs = AHDL_OP('Invert', AHDL_VAR(r_now, Ctx.LOAD))
             if_rhs = AHDL_OP('BitAnd',
-                             AHDL_OP('Not', AHDL_VAR(r_now, Ctx.LOAD)),
+                             AHDL_OP('Invert', AHDL_VAR(r_now, Ctx.LOAD)),
                              AHDL_VAR(v_prev, Ctx.LOAD))
             hold_rhs = AHDL_IF_EXP(AHDL_VAR(hold, Ctx.LOAD), if_lhs, if_rhs)
             hold_stm = AHDL_MOVE(AHDL_VAR(hold, Ctx.STORE), hold_rhs)
@@ -753,7 +757,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         enable0 = pstate.enable_signal(0)
         loop_enable = AHDL_MOVE(AHDL_VAR(enable0, Ctx.STORE),
                                 loop_cond)
-        pstate.stages[0].codes.append(loop_enable)
+        pstate.stages[0].enable = loop_enable
 
         # make a condition for unexecutable loop
         loop_init_stm = dfg.main_block.loop_info.init
@@ -774,7 +778,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         else:
             last = pstate.last_signal(stage.step)
             pipe_end_cond1 = AHDL_VAR(last, Ctx.LOAD)
-        pipe_end_cond2 = AHDL_OP('Not', loop_cond)
+        pipe_end_cond2 = AHDL_OP('Invert', loop_cond)
         pipe_end_cond = AHDL_OP('Or', pipe_end_cond1, pipe_end_cond2)
         conds = [pipe_end_cond]
         codes_list = [[AHDL_TRANSITION(dfg.main_block.loop_info.exit)]]
@@ -805,7 +809,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             l_rhs = AHDL_IF_EXP(AHDL_VAR(last, Ctx.LOAD),
                                 AHDL_CONST(0),
                                 AHDL_OP('BitAnd',
-                                        AHDL_OP('Not', cond_fwd),
+                                        AHDL_OP('Invert', cond_fwd),
                                         AHDL_VAR(ready, Ctx.LOAD))
                                 )
             set_last = AHDL_MOVE(l_lhs, l_rhs)
@@ -1200,8 +1204,7 @@ class AHDLTranslator(object):
             self._emit(AHDL_TRANSITION_IF(cond_list, codes_list), self.sched_time)
 
     def visit_JUMP(self, ir, node):
-        pass
-        #self._emit(AHDL_TRANSITION(ir.target), self.sched_time)
+        self._emit(AHDL_TRANSITION(ir.target), self.sched_time)
 
     def visit_MCJUMP(self, ir, node):
         for c, target in zip(ir.conds[:-1], ir.targets[:-1]):
@@ -1484,6 +1487,20 @@ class AHDLTranslator(object):
                 tags.add('net')
             else:
                 assert False
+        if root_sym.is_pipelined():
+            tags.add('pipelined_port')
+            if 'single_port' in tags and protocol == 'ready_valid':
+                if kind == 'internal':
+                    tags.remove('single_port')
+                    tags.remove('reg')
+                    tags.add('fifo_port')
+                    tags.add('seq_port')
+                    port_sym.typ.set_maxsize(3)  # TODO:
+                elif kind == 'external':
+                    tags.add('adaptered')
+                    name = port_name + '_adapter_fifo'
+                    adapter_sig = self.scope.gen_sig(name, width, {'fifo_port', 'seq_port'})
+                    adapter_sig.maxsize = 4
 
         if protocol != 'none':
             tags.add(protocol + '_protocol')
@@ -1503,6 +1520,8 @@ class AHDLTranslator(object):
             port_sig.init_value = port_sym.typ.get_init()
         if port_sym.typ.has_maxsize():
             port_sig.maxsize = port_sym.typ.get_maxsize()
+        if port_sig.is_adaptered():
+            port_sig.adapter_sig = adapter_sig
         return port_sig
 
     def _make_port_access(self, call, target, node):

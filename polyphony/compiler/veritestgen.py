@@ -103,11 +103,6 @@ class VerilogTestGen(VerilogCodeGen):
                     accessor = inf.accessor(name)
                     ports = accessor.ports.all()
                     add_ports(ports)
-            for inf in info.ret_interfaces.values():
-                if isinstance(inf, SinglePortInterface):
-                    accessor = inf.accessor(name)
-                    ports = accessor.ports.all()
-                    add_ports(ports)
         format_text = '"%5t:' + ', '.join(formats) + '"'
         args_text = ', '.join(args)
 

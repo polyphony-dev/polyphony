@@ -6,7 +6,7 @@ from polyphony.io import Queue
 @module
 class io_read_conflict01:
     def __init__(self):
-        p = Queue(int)
+        p = Queue(int, 'in')
         self.append_worker(self.w, p)
         self.append_worker(self.w, p)
 

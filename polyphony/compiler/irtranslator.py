@@ -347,7 +347,6 @@ class CodeVisitor(ast.NodeVisitor):
         self.annotation_visitor = AnnotationVisitor(self)
         self.lazy_defs = []
         self.current_synth_params = {}
-        self.last_synth_params = None
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -378,6 +377,8 @@ class CodeVisitor(ast.NodeVisitor):
         blk = Block(scope, nametag)
         if self.current_synth_params:
             blk.synth_params.update(self.current_synth_params)
+        else:
+            blk.synth_params.update(scope.synth_params)
         return blk
 
     def _enter_scope(self, name):
@@ -463,8 +464,6 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.set_exit_block(self.function_exit)
         else:
             self.current_scope.set_exit_block(self.current_block)
-        if self.last_synth_params:
-            self.function_exit.synth_params.update(self.last_synth_params)
         self.function_exit = outer_function_exit
         self._leave_scope(*context)
 
@@ -890,8 +889,6 @@ class CodeVisitor(ast.NodeVisitor):
                     old_synth_params = self.current_synth_params
                     self.current_synth_params = self.current_synth_params.copy()
                     self.current_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
-                    if is_empty_entry:
-                        self.last_synth_params = self.current_synth_params
                     if len(node.items) != 1:
                         assert False  # TODO: use fail()
                     if expr.args:
@@ -908,14 +905,14 @@ class CodeVisitor(ast.NodeVisitor):
         for body in node.body:
             self.visit(body)
         
+        if old_synth_params is not None:
+            self.current_synth_params = old_synth_params
+
         if self._needJUMP(self.current_block):
             new_block = self._new_block(self.current_scope)
             self.emit(JUMP(new_block), node)
             self.current_block.connect(new_block)
             self.current_block = new_block
-
-        if old_synth_params is not None:
-            self.current_synth_params = old_synth_params
 
     def visit_withitem(self, node):
         expr = self.visit(node.context_expr)

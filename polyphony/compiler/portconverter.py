@@ -135,7 +135,7 @@ class PortConverter(IRTransformer):
                         fail(stms.pop(), Errors.PORT_IS_NOT_USED,
                              [sym.orig_name()])
 
-    def _set_and_check_port_direction(self, expected_di, sym, ir):
+    def _set_and_check_port_direction(self, expected_di, sym):
         port_typ = sym.typ
         if not port_typ.has_direction():
             port_typ.set_direction('?')
@@ -184,7 +184,25 @@ class PortConverter(IRTransformer):
     def _get_port_owner(self, sym):
         assert sym.typ.is_port()
         root = sym.typ.get_root_symbol()
-        return root.scope
+        if root.scope.is_ctor():
+            return root.scope.parent
+        else:
+            return root.scope
+
+    def _check_port_direction(self, sym, func_scope):
+        if func_scope.orig_name == 'wr':
+            expected_di = 'output'
+        else:
+            expected_di = 'input'
+        port_owner = self._get_port_owner(sym)
+        if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
+                not self.scope.is_worker()):
+            expected_di = 'output' if expected_di == 'input' else 'input'
+        if sym in self.union_ports:
+            for s in self.union_ports[sym]:
+                self._set_and_check_port_direction(expected_di, s)
+        else:
+            self._set_and_check_port_direction(expected_di, sym)
 
     def visit_CALL(self, ir):
         if not ir.func_scope.is_lib():
@@ -192,19 +210,10 @@ class PortConverter(IRTransformer):
         if ir.func_scope.is_method() and ir.func_scope.parent.is_port():
             sym = ir.func.tail()
             assert sym.typ.is_port()
-            if ir.func_scope.orig_name == 'wr':
-                expected_di = 'output'
-            else:
-                expected_di = 'input'
-            port_owner = self._get_port_owner(sym)
-            if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
-                    not self.scope.is_worker()):
-                expected_di = 'output' if expected_di == 'input' else 'input'
-            if sym in self.union_ports:
-                for s in self.union_ports[sym]:
-                    self._set_and_check_port_direction(expected_di, s, ir)
-            else:
-                self._set_and_check_port_direction(expected_di, sym, ir)
+            self._check_port_direction(sym, ir.func_scope)
+            if self.current_stm.block.synth_params['scheduling'] == 'pipeline' and self.current_stm.block.parent:
+                root_sym = sym.typ.get_root_symbol()
+                root_sym.add_tag('pipelined')
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -222,11 +231,17 @@ class PortConverter(IRTransformer):
                 di = port.get_direction()
                 kind = port.get_port_kind()
                 if kind == 'external':
-                    if di == 'output':
-                        fail(self.current_stm, Errors.CANNOT_WAIT_OUTPUT)
-                    elif di == '?':
-                        port.set_direction('input')
-                        port.freeze()
+                    port_owner = self._get_port_owner(p.symbol())
+                    assert di != '?'
+                    #port.set_direction('input')
+                    #port.freeze()
+                    if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
+                            not self.scope.is_worker()):
+                        if di == 'input':
+                            fail(self.current_stm, Errors.CANNOT_WAIT_INPUT)
+                    else:
+                        if di == 'output':
+                            fail(self.current_stm, Errors.CANNOT_WAIT_OUTPUT)
         return ir
 
     def visit_PHI(self, ir):

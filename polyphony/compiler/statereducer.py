@@ -2,7 +2,7 @@ from collections import deque
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .graph import Graph
-from .stg import PipelineState
+from .stg import PipelineState, State
 from .utils import find_only_one_in
 
 
@@ -47,6 +47,7 @@ class StateGraphBuilder(AHDLVisitor):
         return self.graph
 
     def visit_AHDL_TRANSITION(self, ahdl):
+        assert isinstance(ahdl.target, State)
         self.next_states.append(ahdl.target)
 
 
@@ -71,7 +72,9 @@ class WaitForwarder(AHDLVisitor):
             wait_func.codes.extend(wait_func.transition.target.codes)
         else:
             wait_func.codes = wait_func.transition.target.codes
-        wait_func.transition.target.codes = []
+        # we don't remove the target codes
+        # because the target might be reached from an another state
+        #wait_func.transition.target.codes = []
         wait_func.transition = None
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
@@ -93,8 +96,8 @@ class IfForwarder(AHDLVisitor):
     def visit_AHDL_TRANSITION_IF(self, ahdl):
         for i, codes in enumerate(ahdl.codes_list):
             transition = codes[-1]
+            assert transition.is_a(AHDL_TRANSITION)
             if isinstance(transition.target, PipelineState):
                 continue
             codes.pop()
-            assert transition.is_a(AHDL_TRANSITION)
             ahdl.codes_list[i].extend(transition.target.codes[:])
