@@ -547,15 +547,16 @@ class PipelineStageBuilder(STGItemBuilder):
         for blk in dfg.blocks:
             self.blk2states[self.scope][blk] = [pstate]
 
-        pipe_end_stm = AHDL_TRANSITION(pstate)
-        pstate.stages[-1].codes.append(pipe_end_stm)
-
         self.stg.states.append(pstate)
         self.stg.init_state = pstate
         self.stg.finish_state = pstate
 
         # customize point
         self.post_build(dfg, is_main, pstate)
+
+        if not pstate.stages[-1].codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
+            pipe_end_stm = AHDL_TRANSITION(pstate)
+            pstate.stages[-1].codes.append(pipe_end_stm)
 
     def post_build(self, dfg, is_main, pstate):
         pass

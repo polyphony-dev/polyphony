@@ -358,7 +358,7 @@ class PipelineScheduler(SchedulerImpl):
             latency = self._list_schedule_for_pipeline(dfg, nodes)
             if longest_latency < latency:
                 longest_latency = latency
-            self._schedule_alap(dfg, nodes)
+            self._fill_defuse_gap(dfg, nodes)
         return longest_latency
 
     def _schedule_ii(self, dfg):
@@ -435,7 +435,7 @@ class PipelineScheduler(SchedulerImpl):
             scheduled_time = 0
         return scheduled_time
 
-    def _schedule_alap(self, dfg, nodes):
+    def _fill_defuse_gap(self, dfg, nodes):
         for node in reversed(sorted(nodes, key=lambda n: (n.priority, n.stm_index))):
             succs = dfg.succs_without_back(node)
             succs = [s for s in succs if s.begin >= 0]

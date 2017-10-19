@@ -239,11 +239,11 @@ class VerilogCodeGen(AHDLVisitor):
             ports.append('.rst(rst)')
             conns = connections['']
             for inf, acc in sorted(conns, key=lambda c: str(c)):
-                for p in inf.ports.all():
+                for p in inf.ports:
                     ports.append(self._to_sub_module_connect(name, inf, acc, p))
             conns = connections['ret']
             for inf, acc in sorted(conns, key=lambda c: str(c)):
-                for p in inf.ports.all():
+                for p in inf.ports:
                     ports.append(self._to_sub_module_connect(name, inf, acc, p))
             self.emit('//{} instance'.format(name))
             #for port, signal in port_map.items():

@@ -6,8 +6,11 @@ Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
 
 
 class Ports(object):
-    def __init__(self):
-        self.ports = []
+    def __init__(self, ports=None):
+        if ports:
+            self.ports = ports
+        else:
+            self.ports = []
 
     def __str__(self):
         return ', '.join(['<{}:{}:{}>'.format(p.name, p.width, p.dir)
@@ -22,19 +25,37 @@ class Ports(object):
     def __contains__(self, key):
         return key in [p.name for p in self.ports]
 
+    def __iter__(self):
+        self.i = 0
+        return self
+
+    def __next__(self):
+        if self.i < len(self.ports):
+            p = self.ports[self.i]
+            self.i += 1
+            return p
+        else:
+            raise StopIteration
+
+    def __add__(self, other):
+        return Ports(self.ports + other.ports)
+
     def append(self, port):
         self.ports.append(port)
 
     def flipped(self):
         def flip(d):
             return 'in' if d == 'out' else 'out'
-        return [Port(p.name, p.width, flip(p.dir), p.signed) for p in self.ports]
+        return Ports([Port(p.name, p.width, flip(p.dir), p.signed) for p in self.ports])
+
+    def renamed(self, rename_func):
+        return Ports([Port(rename_func(p.name), p.width, p.dir, p.signed) for p in self.ports])
 
     def inports(self):
-        return [p for p in self.ports if p.dir == 'in']
+        return Ports([p for p in self.ports if p.dir == 'in'])
 
     def outports(self):
-        return [p for p in self.ports if p.dir == 'out']
+        return Ports([p for p in self.ports if p.dir == 'out'])
 
     def all(self):
         return self.ports
@@ -380,21 +401,41 @@ class SingleReadAccessor(SinglePortAccessor):
 
 
 class PipelinedSingleReadAccessor(SingleReadAccessor):
+    def _adapter(self):
+        adapter_inst_name = self.inst_name
+        assert self.inf.signal.is_adaptered()
+        adapter = PipelinedFIFOWriteInterface(self.inf.signal.adapter_sig).accessor(adapter_inst_name)
+        return adapter
+
     def pipelined_read_sequence(self, step, step_n, dst, stage):
         if self.inf.signal.is_ready_valid_protocol():
-            assert self.inf.signal.is_adaptered()
-            bridge = PipelinedFIFOReadAccessor(self.inf.signal.adapter_sig)
-            return bridge.pipelined_read_sequence(step, step_n, dst, stage)
+            return self._adapter().pipelined_read_sequence(step, step_n, dst, stage)
         else:
             return single_pipelined_read_seq(self, self.inf.signal, step, dst, stage)
 
     def reset_stms(self):
         stms = super().reset_stms()
         if self.inf.signal.is_ready_valid_protocol():
-            assert self.inf.signal.is_adaptered()
-            bridge = PipelinedFIFOReadAccessor(self.inf.signal.adapter_sig)
-            stms.extend(bridge.reset_stms())
+            stms.extend(self._adapter().reset_stms())
         return stms
+
+    def regs(self):
+        rs = super().regs()
+        if self.inf.signal.is_ready_valid_protocol():
+            adapter = self._adapter()
+            adapter_regs = adapter.regs()
+            adapter_regs = adapter_regs.renamed(lambda pname: 'adapter_fifo_' + pname)
+            rs = rs + adapter_regs
+        return rs
+
+    def nets(self):
+        ns = super().nets()
+        if self.inf.signal.is_ready_valid_protocol():
+            adapter = self._adapter()
+            adapter_nets = adapter.nets()
+            adapter_nets = adapter_nets.renamed(lambda pname: 'adapter_fifo_' + pname)
+            ns = ns + adapter_nets
+        return ns
 
 
 class SingleWriteAccessor(SinglePortAccessor):
@@ -417,21 +458,43 @@ class SingleWriteAccessor(SinglePortAccessor):
 
 
 class PipelinedSingleWriteAccessor(SingleWriteAccessor):
+    def _adapter(self):
+        adapter_inst_name = self.inst_name
+        assert self.inf.signal.is_adaptered()
+        adapter = PipelinedFIFOReadInterface(self.inf.signal.adapter_sig).accessor(adapter_inst_name)
+        return adapter
+
     def pipelined_write_sequence(self, step, step_n, src, stage):
         if self.inf.signal.is_ready_valid_protocol():
-            assert self.inf.signal.is_adaptered()
-            bridge = PipelinedFIFOWriteAccessor(self.inf.signal.adapter_sig)
-            return bridge.pipelined_write_sequence(step, step_n, src, stage)
+            adapter = self._adapter()
+            return adapter.pipelined_write_sequence(step, step_n, src, stage)
         else:
             return single_pipelined_write_seq(self, self.inf.signal, step, src, stage)
 
     def reset_stms(self):
         stms = super().reset_stms()
         if self.inf.signal.is_ready_valid_protocol():
-            assert self.inf.signal.is_adaptered()
-            bridge = PipelinedFIFOWriteAccessor(self.inf.signal.adapter_sig)
-            stms.extend(bridge.reset_stms())
+            adapter = self._adapter()
+            stms.extend(adapter.reset_stms())
         return stms
+
+    def regs(self):
+        rs = super().regs()
+        if self.inf.signal.is_ready_valid_protocol():
+            adapter = self._adapter()
+            adapter_regs = adapter.regs()
+            adapter_regs = adapter_regs.renamed(lambda pname: 'adapter_fifo_' + pname)
+            rs = rs + adapter_regs
+        return rs
+
+    def nets(self):
+        ns = super().nets()
+        if self.inf.signal.is_ready_valid_protocol():
+            adapter = self._adapter()
+            adapter_nets = adapter.nets()
+            adapter_nets = adapter_nets.renamed(lambda pname: 'adapter_fifo_' + pname)
+            ns = ns + adapter_nets
+        return ns
 
 
 class CallInterface(Interface):
@@ -537,10 +600,10 @@ class RAMModuleAccessor(IOAccessor):
         self.ports = inf.ports.clone()
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
 
 class RAMBridgeInterface(Interface):
@@ -559,7 +622,7 @@ class RAMBridgeInterface(Interface):
         return RAMBridgeAccessor(self, inst_name)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
         return self.ports.flipped()
@@ -580,10 +643,10 @@ class RAMBridgeAccessor(IOAccessor):
             return self.inf.port_name(port)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
     def reset_stms(self):
         return []
@@ -608,13 +671,13 @@ class RAMAccessor(Accessor):
         if self.is_sink:
             return self.ports.inports()
         else:
-            return []
+            return Ports()
 
     def nets(self):
         if self.is_sink:
             return self.ports.outports()
         else:
-            return self.ports.all()
+            return self.ports
 
     def reset_stms(self):
         stms = []
@@ -746,10 +809,10 @@ class TupleAccessor(IOAccessor):
         return '{}{}'.format(self.acc_name, port.name)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
     def reset_stms(self):
         return []
@@ -778,10 +841,10 @@ class RegArrayInterface(Interface):
         return []
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
 
 class RegArrayReadInterface(RegArrayInterface):
@@ -806,10 +869,10 @@ class RegArrayAccessor(IOAccessor):
             return '{}{}'.format(self.acc_name, port.name)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
     def reset_stms(self):
         return []
@@ -1044,7 +1107,7 @@ class FIFOReadAccessor(FIFOAccessor):
         self.ports.append(Port('will_empty', 1, 'out', False))
 
     def nets(self):
-        ports = list(self.ports.outports())
+        ports = self.ports.outports()
         # nets for fifo write interface
         ports.append(Port('din', self.inf.data_width, 'out', True))
         ports.append(Port('write', 1, 'out', False))
@@ -1073,7 +1136,7 @@ class FIFOWriteAccessor(FIFOAccessor):
         # nets for fifo write interface
 
     def nets(self):
-        ports = list(self.ports.outports())
+        ports = self.ports.outports()
         # nets for fifo write interface
         ports.append(Port('dout', self.inf.data_width, 'out', True))
         ports.append(Port('read', 1, 'out', False))

@@ -200,7 +200,7 @@ class HDLModuleBuilder(object):
         self.module_info.add_local_reader(reader.acc_name, reader)
         self.module_info.add_local_writer(writer.acc_name, writer)
         self._add_internal_fifo(signal)
-        ports = reader.ports.all() + writer.ports.all()
+        ports = reader.ports + writer.ports
         for p in ports:
             name = reader.port_name(p)
             sig = self.module_info.scope.gen_sig(name, p.width)
