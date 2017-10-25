@@ -44,6 +44,24 @@ class HDLModuleInfo(object):
     def __str__(self):
         s = '---------------------------------\n'
         s += 'ModuleInfo {}\n'.format(self.name)
+        s += '  -- interfaces --\n'
+        for inf in self.interfaces.values():
+            s += '{}\n'.format(inf)
+        s += '  -- accessors --\n'
+        for acc in self.accessors.values():
+            s += '{}\n'.format(acc)
+        s += '  -- local readers --\n'
+        for acc in self.local_readers.values():
+            s += '{}\n'.format(acc)
+        s += '  -- local writers --\n'
+        for acc in self.local_writers.values():
+            s += '{}\n'.format(acc)
+        s += '  -- sub modules --\n'
+        for name, module_info, connections, param_map in self.sub_modules.values():
+            s += '{} \n'.format(name)
+            for conns in connections.values():
+                for inf, acc in conns:
+                    s += '    connection : .{}({}) \n'.format(inf.if_name, acc.acc_name)
         s += '  -- declarations --\n'
         for tag, decls in self.decls.items():
             s += 'tag : {}\n'.format(tag)

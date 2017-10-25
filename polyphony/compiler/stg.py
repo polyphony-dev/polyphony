@@ -124,6 +124,7 @@ class PipelineState(State):
     def valid_exp(self, idx):
         ready = self.ready_signal(idx)
         if idx > 0:
+            # hold ? ready : ready & prev_valid
             hold = self.hold_signal(idx)
             valid_prev = self.valid_signal(idx - 1)
             return AHDL_IF_EXP(AHDL_VAR(hold, Ctx.LOAD),
@@ -196,6 +197,7 @@ class PipelineStage(State):
         self.has_enable = False
         self.enable = None
         self.has_hold = False
+        self.is_source = False
 
 
 class STG(object):
@@ -356,6 +358,7 @@ class STGItemBuilder(object):
         for node in nodes:
             if node.priority < 0:
                 continue
+            self.current_node = node
             self.translator.visit(node.tag, node)
 
     def gen_sig(self, prefix, postfix, width, tag=None):
@@ -581,7 +584,7 @@ class PipelineStageBuilder(STGItemBuilder):
                 detector.visit(code)
         usedef = detector.table
         for sig in usedef.get_all_def_sigs():
-            if sig.is_net() and sig.is_pipeline_ctrl():
+            if sig.is_pipeline_ctrl():
                 continue
             defs = usedef.get_stms_defining(sig)
             d = list(defs)[0]
@@ -609,6 +612,8 @@ class PipelineStageBuilder(STGItemBuilder):
             if c.is_a(AHDL_SEQ) and c.step == 0:
                 if c.factor.is_a([AHDL_IO_READ, AHDL_IO_WRITE]):
                     stage.has_enable = True
+                    if c.factor.is_a(AHDL_IO_WRITE):
+                        stage.is_source = True
             if stage.step > 0:
                 stage.has_hold = True
             if self._check_guard_need(c):
@@ -617,18 +622,21 @@ class PipelineStageBuilder(STGItemBuilder):
 
         if stage.step == 0:
             if stage.has_enable:
-                v_prev = AHDL_VAR(pstate.ready_signal(0), Ctx.LOAD)
+                guard_cond = AHDL_VAR(pstate.ready_signal(0), Ctx.LOAD)
             else:
-                v_prev = AHDL_CONST(1)
+                guard_cond = AHDL_CONST(1)
         else:
-            v_prev = AHDL_VAR(pstate.valid_signal(stage.step - 1), Ctx.LOAD)
-        guard = AHDL_PIPELINE_GUARD(v_prev, guarded_codes)
+            guard_cond = AHDL_VAR(pstate.valid_signal(stage.step - 1), Ctx.LOAD)
+        guard = AHDL_PIPELINE_GUARD(guard_cond, guarded_codes)
         stage.codes.insert(0, guard)
 
     def _add_control_chain(self, pstate, stage):
         if stage.step == 0:
             v_now = pstate.valid_signal(stage.step)
-            v_prev = None
+            if stage.has_enable:
+                v_prev = pstate.enable_signal(stage.step)
+            else:
+                v_prev = None
         else:
             v_now = pstate.valid_signal(stage.step)
             v_prev = pstate.valid_signal(stage.step - 1)
@@ -641,11 +649,19 @@ class PipelineStageBuilder(STGItemBuilder):
             r_next = AHDL_CONST(1)
         if stage.has_enable:
             en = AHDL_VAR(pstate.enable_signal(stage.step), Ctx.LOAD)
-            ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE),
-                                  AHDL_OP('BitAnd', r_next, en))
+            if stage.is_source:
+                if len(pstate.stages) > (stage.step + 1):
+                    # ~next_hold & enable
+                    inv_next_hold = AHDL_OP('Invert',
+                                            AHDL_VAR(pstate.hold_signal(stage.step + 1), Ctx.LOAD))
+                    ready_rhs = AHDL_OP('BitAnd', inv_next_hold, en)
+                else:
+                    ready_rhs = en
+            else:
+                ready_rhs = AHDL_OP('BitAnd', r_next, en)
         else:
-            ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE),
-                                  r_next)
+            ready_rhs = r_next
+        ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE), ready_rhs)
         stage.codes.append(ready_stm)
 
         if stage.has_hold:
@@ -678,8 +694,8 @@ class PipelineStageBuilder(STGItemBuilder):
         return stm2stage_num
 
     def _check_guard_need(self, ahdl):
-        # TODO:
         if (ahdl.is_a(AHDL_PROCCALL) or
+                ahdl.is_a(AHDL_IF) or
                 (ahdl.is_a(AHDL_MOVE) and ((ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_reg()) or
                                            ahdl.dst.is_a(AHDL_SUBSCRIPT)))):
             return True
@@ -704,7 +720,7 @@ class PipelineStageBuilder(STGItemBuilder):
             if 'net' in tags:
                 tags.remove('net')
                 tags.add('reg')
-            self.scope.gen_sig(new_name, sig.width, tags)
+            self.scope.gen_sig(new_name, sig.width, tags, sig.sym)
         for u in usedef.get_stms_using(sig):
             num = stm2stage_num[u]
             if num == d_num:
@@ -937,7 +953,7 @@ class AHDLTranslator(object):
         for source in memnode.sources():
             lens.append(source.length)
         if any(lens[0] != len for len in lens):
-            memlensig = self.scope.gen_sig('{}_len'.format(memnode.sym.hdl_name()), -1, ['memif'])
+            memlensig = self.scope.gen_sig('{}_len'.format(memnode.sym.hdl_name()), -1, ['memif'], mem.sym)
             return AHDL_VAR(memlensig, Ctx.LOAD)
         else:
             assert False  # len() must be constant value
@@ -1062,7 +1078,7 @@ class AHDLTranslator(object):
                     sched_time += 1
         else:
             arraynode = array.sym.typ.get_memnode()
-            sig = self.scope.gen_sig(arraynode.name(), 1, {'memif'})
+            sig = self.scope.gen_sig(arraynode.name(), 1, {'memif'}, array.sym)
             for i, item in enumerate(array.items):
                 if not(isinstance(item, CONST) and item.value is None):
                     idx = AHDL_CONST(i)
@@ -1163,7 +1179,7 @@ class AHDLTranslator(object):
             sym = ir.symbol() #ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
             signame = sym.hdl_name()
             width = self._signal_width(sym)
-            sig = self.scope.gen_sig(signame, width, sig_tags)
+            sig = self.scope.gen_sig(signame, width, sig_tags, sym)
         elif self.scope.is_method() and self.scope.parent is ir.attr_scope:
             # internal access to the field
             width = self._signal_width(ir.attr)
@@ -1488,7 +1504,8 @@ class AHDLTranslator(object):
                 tags.add('net')
             else:
                 assert False
-        if root_sym.is_pipelined():
+        is_pipeline_access = self.host.current_node.tag.block.synth_params['scheduling'] == 'pipeline'
+        if root_sym.is_pipelined() and is_pipeline_access:
             tags.add('pipelined_port')
             if 'single_port' in tags and protocol == 'ready_valid':
                 if kind == 'internal':
@@ -1501,12 +1518,12 @@ class AHDLTranslator(object):
                     tags.add('adaptered')
                     name = port_name + '_adapter_fifo'
                     adapter_sig = self.scope.gen_sig(name, width, {'fifo_port', 'seq_port'})
-                    adapter_sig.maxsize = 4
+                    adapter_sig.maxsize = 3
 
         if protocol != 'none':
             tags.add(protocol + '_protocol')
         if 'extport' in tags:
-            port_sig = self.scope.gen_sig(port_name, width, tags)
+            port_sig = self.scope.gen_sig(port_name, width, tags, port_sym)
         else:
             if root_sym.scope.is_module():
                 module_scope = root_sym.scope
@@ -1514,7 +1531,7 @@ class AHDLTranslator(object):
                 module_scope = root_sym.scope.parent
             else:
                 assert False
-            port_sig = module_scope.gen_sig(port_name, width, tags)
+            port_sig = module_scope.gen_sig(port_name, width, tags, port_sym)
 
         if port_sym.typ.has_init():
             tags.add('initializable')

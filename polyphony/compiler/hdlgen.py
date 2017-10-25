@@ -72,17 +72,41 @@ class HDLModuleBuilder(object):
             # TODO: add primitive function hook here
             if inst_scope_name == 'print':
                 continue
-            info = callee_scope.module_info
-            for inst_name in inst_names:
-                connections = defaultdict(list)
-                for inf in info.interfaces.values():
-                    acc = inf.accessor(inst_name)
-                    if isinstance(inf, WriteInterface):
-                        connections['ret'].append((inf, acc))
-                    else:
-                        connections[''].append((inf, acc))
-                    self.module_info.add_accessor(acc.acc_name, acc)
-                self.module_info.add_sub_module(inst_name, info, connections)
+            self._add_submodule_instances(callee_scope.module_info, inst_names, {})
+
+    def _add_submodule_instances(self, sub_module_info, inst_names, param_map, is_internal=False):
+        for inst_name in inst_names:
+            connections = defaultdict(list)
+            for sub_module_inf in sub_module_info.interfaces.values():
+                if is_internal:
+                    acc = sub_module_inf.accessor('')
+                else:
+                    acc = sub_module_inf.accessor(inst_name)
+                    self._add_external_accessor_for_submodule(sub_module_inf, acc)
+                if isinstance(sub_module_inf, WriteInterface):
+                    connections['ret'].append((sub_module_inf, acc))
+                else:
+                    connections[''].append((sub_module_inf, acc))
+            self.module_info.add_sub_module(inst_name, sub_module_info, connections, param_map=param_map)
+
+    def _add_external_accessor_for_submodule(self, sub_module_inf, acc):
+        if acc.acc_name not in self.module_info.scope.signals:
+            # we have never accessed this interface
+            return
+        self.module_info.add_accessor(acc.acc_name, acc)
+        # deal with pipelined single port
+        if sub_module_inf.signal and sub_module_inf.signal.is_single_port():
+            acc_signal = self.module_info.scope.signals[acc.acc_name]
+            # we should check acc_signal for the context of caller (it is accessed in pipeline or not)
+            if acc_signal.is_pipelined_port() and sub_module_inf.signal.is_adaptered():
+                adapter_name = '{}_{}'.format(acc.inst_name, sub_module_inf.signal.adapter_sig.name)
+                adapter_sig = self.module_info.scope.gen_sig(adapter_name, sub_module_inf.signal.width)
+                self._add_fifo_channel(adapter_sig)
+                if sub_module_inf.signal.is_input():
+                    item = single_output_port_fifo_adapter(sub_module_inf.signal, acc.inst_name)
+                else:
+                    item = single_input_port_fifo_adapter(sub_module_inf.signal, acc.inst_name)
+                self.module_info.add_decl('', item)
 
     def _add_roms(self, scope):
         mrg = env.memref_graph
@@ -176,14 +200,13 @@ class HDLModuleBuilder(object):
 
     def _add_internal_fifo(self, signal):
         if signal.is_fifo_port():
-            mod = FIFOModuleInfo(signal)
+            fifo_module = FIFOModuleInfo(signal)
         else:
             assert False
-        acc = mod.inf.accessor('')
-        self.module_info.add_accessor(acc.acc_name, acc)
-        connections = defaultdict(list)
-        connections[''] = [(mod.inf, acc)]
-        self.module_info.add_sub_module(signal.name, mod, connections, mod.param_map)
+        self._add_submodule_instances(fifo_module,
+                                      [signal.name],
+                                      fifo_module.param_map,
+                                      is_internal=True)
 
     def _add_single_port_channel(self, signal):
         reader, writer = create_local_accessor(signal)
@@ -208,6 +231,42 @@ class HDLModuleBuilder(object):
                 self.module_info.add_internal_reg(sig)
             else:
                 self.module_info.add_internal_net(sig)
+
+    def _add_reset_stms(self, scope, defs, uses, outputs):
+        for acc in self.module_info.accessors.values():
+            if acc.inf.signal and acc.inf.signal.is_adaptered():
+                continue
+            for stm in acc.reset_stms():
+                self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
+        for sig in outputs:
+            # reset output ports
+            infs = [inf for inf in self.module_info.interfaces.values() if inf.signal is sig]
+            for inf in infs:
+                for stm in inf.reset_stms():
+                    self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
+        for sig in uses:
+            if sig.is_seq_port() or sig.is_single_port():
+                local_accessors = self.module_info.local_readers.values()
+                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
+                for acc in accs:
+                    for stm in acc.reset_stms():
+                        self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
+        for sig in defs:
+            # reset internal ports
+            if sig.is_seq_port() or sig.is_single_port():
+                local_accessors = self.module_info.local_writers.values()
+                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
+                for acc in accs:
+                    for stm in acc.reset_stms():
+                        self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
+            # reset internal regs
+            elif sig.is_reg():
+                if sig.is_initializable():
+                    v = AHDL_CONST(sig.init_value)
+                else:
+                    v = AHDL_CONST(0)
+                mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
+                self.module_info.add_fsm_reset_stm(scope.orig_name, mv)
 
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
@@ -242,26 +301,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_submodules(scope)
         self._add_roms(scope)
         self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
-        self._add_reset_stms_for_func(scope, defs, uses, outputs)
-
-    def _add_reset_stms_for_func(self, worker, defs, uses, outputs):
-        for inf in self.module_info.interfaces.values():
-            for stm in inf.reset_stms():
-                self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-        local_readers = self.module_info.local_readers.values()
-        local_writers = self.module_info.local_writers.values()
-        accs = set(list(local_readers) + list(local_writers))
-        for acc in accs:
-            for stm in acc.reset_stms():
-                self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-        for sig in defs:
-            if sig.is_reg():
-                if sig.is_initializable():
-                    v = AHDL_CONST(sig.init_value)
-                else:
-                    v = AHDL_CONST(0)
-                mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
-                self.module_info.add_fsm_reset_stm(worker.orig_name, mv)
+        self._add_reset_stms(scope, defs, uses, outputs)
 
     def _add_input_interfaces(self, scope):
         if scope.is_method():
@@ -347,16 +387,9 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         for sym, cp, _ in scope.params:
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
                 mod_scope = sym.typ.get_scope()
-                info = mod_scope.module_info
-                connections = defaultdict(list)
-                for inf in info.interfaces.values():
-                    accessor = inf.accessor(cp.name)
-                    if isinstance(inf, WriteInterface):
-                        connections['ret'].append((inf, accessor))
-                    else:
-                        connections[''].append((inf, accessor))
-                    self.module_info.add_accessor(accessor.acc_name, accessor)
-                self.module_info.add_sub_module(cp.name, info, connections)
+                sub_module_info = mod_scope.module_info
+                self._add_submodule_instances(sub_module_info, [cp.name], param_map={})
+
         for acc in self.module_info.accessors.values():
             acc_mod = accessor2module(acc)
             if acc_mod:
@@ -368,23 +401,10 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                     else:
                         connections[''].append((inf, inf_acc))
                 self.module_info.add_sub_module(inf_acc.acc_name, acc_mod, connections, acc_mod.param_map)
-            for stm in acc.reset_stms():
-                self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
 
         self._add_roms(scope)
         self.module_info.add_fsm_stg(scope.orig_name, scope.stgs)
-
-        local_readers = self.module_info.local_readers.values()
-        local_writers = self.module_info.local_writers.values()
-        accs = set(list(local_readers) + list(local_writers))
-        for acc in accs:
-            for stm in acc.reset_stms():
-                self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
-        for d in defs:
-            if d.is_reg():
-                clear_var = AHDL_MOVE(AHDL_VAR(d, Ctx.STORE), AHDL_CONST(0))
-                self.module_info.add_fsm_reset_stm(scope.orig_name, clear_var)
-
+        self._add_reset_stms(scope, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(scope)
         for sig, old, new in edge_detectors:
             self.module_info.add_edge_detector(sig, old, new)
@@ -427,41 +447,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
         self._add_roms(worker)
         self.module_info.add_fsm_stg(worker.orig_name, worker.stgs)
-        self._add_reset_stms_for_worker(worker, defs, uses, outputs)
+        self._add_reset_stms(worker, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(worker)
         for sig, old, new in edge_detectors:
             self.module_info.add_edge_detector(sig, old, new)
-
-    def _add_reset_stms_for_worker(self, worker, defs, uses, outputs):
-        for sig in outputs:
-            # reset output ports
-            infs = [inf for inf in self.module_info.interfaces.values() if inf.signal is sig]
-            for inf in infs:
-                for stm in inf.reset_stms():
-                    self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-        for sig in uses:
-            if sig.is_seq_port() or sig.is_single_port():
-                local_accessors = self.module_info.local_readers.values()
-                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-                for acc in accs:
-                    for stm in acc.reset_stms():
-                        self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-        for sig in defs:
-            # reset internal ports
-            if sig.is_seq_port() or sig.is_single_port():
-                local_accessors = self.module_info.local_writers.values()
-                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-                for acc in accs:
-                    for stm in acc.reset_stms():
-                        self.module_info.add_fsm_reset_stm(worker.orig_name, stm)
-            # reset internal regs
-            elif sig.is_reg():
-                if sig.is_initializable():
-                    v = AHDL_CONST(sig.init_value)
-                else:
-                    v = AHDL_CONST(0)
-                mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
-                self.module_info.add_fsm_reset_stm(worker.orig_name, mv)
 
     def _build_module(self, scope):
         assert scope.is_module()
@@ -518,8 +507,6 @@ class AHDLVarCollector(AHDLVisitor):
             pass
         elif ahdl.sig.is_field():
             pass
-        elif ahdl.sig.is_extport():
-            pass
         elif ahdl.sig.is_input():
             if ahdl.sig.is_seq_port():
                 self.output_temps.add(ahdl.sig)
@@ -528,6 +515,11 @@ class AHDLVarCollector(AHDLVisitor):
         elif ahdl.sig.is_output():
             self.output_temps.add(ahdl.sig)
         else:
+            if ahdl.sig.is_adaptered():
+                if ahdl.ctx & Ctx.STORE:
+                    self.local_defs.add(ahdl.sig.adapter_sig)
+                else:
+                    self.local_uses.add(ahdl.sig.adapter_sig)
             if ahdl.ctx & Ctx.STORE:
                 self.local_defs.add(ahdl.sig)
             else:
