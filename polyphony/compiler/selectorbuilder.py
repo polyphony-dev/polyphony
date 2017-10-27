@@ -1,6 +1,7 @@
 from collections import defaultdict
 from .ir import Ctx
 from .ahdl import *
+from .ahdlvisitor import AHDLCollector
 from .hdlinterface import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -25,6 +26,7 @@ class SelectorBuilder(object):
                     self._to_one2n_interconnect(ic.name, ic.ins[0], ic.outs)
                 elif len(ic.outs) == 1:
                     self._to_n2one_interconnect(ic.name, ic.ins, ic.outs[0], ic.cs_name)
+        self._convert_mem_switch_to_mem_mux()
 
     def _to_direct_connect(self, name, inif, outif):
         tag = name
@@ -129,7 +131,7 @@ class SelectorBuilder(object):
 
         cs_width = len(inifs)
         cs_sig = self.scope.gen_sig('{}_cs'.format(cs_name), cs_width)
-        self.module_info.add_internal_reg(cs_sig, tag)
+        self.module_info.add_internal_net(cs_sig, tag)
 
         cs_var = AHDL_VAR(cs_sig, Ctx.LOAD)
         assign = AHDL_ASSIGN(switch_var, cs_var)
@@ -189,3 +191,30 @@ class SelectorBuilder(object):
                 self.emit('end')
                 self.emit('end')
                 self.emit('')
+
+    def _convert_mem_switch_to_mem_mux(self):
+        collector = AHDLCollector(AHDL_META)
+        collector.process(self.module_info)
+        switches = defaultdict(list)
+        for state, codes in collector.results.items():
+            for ahdl in codes:
+                if ahdl.metaid == 'MEM_SWITCH':
+                    dst_node = ahdl.args[1]
+                    src_node = ahdl.args[2]
+                    switches[dst_node].append((state, src_node, ahdl))
+        for dst_node, srcs in switches.items():
+            dst_sig = self.scope.gen_sig(dst_node.name(), dst_node.data_width(), {'memif'}, dst_node.sym)
+            dst_var = AHDL_MEMVAR(dst_sig, dst_node, Ctx.STORE)
+            src_vars = []
+            conds = []
+            for state, src_node, memsw in srcs:
+                fsm = state.stg.fsm
+                state_var = AHDL_VAR(fsm.state_var, Ctx.LOAD)
+                cond = AHDL_OP('Eq', state_var, AHDL_SYMBOL(state.name))
+                src_sig = self.scope.gen_sig(src_node.name(), src_node.data_width(), {'memif'}, src_node.sym)
+                src_var = AHDL_MEMVAR(src_sig, src_node, Ctx.LOAD)
+                conds.append(cond)
+                src_vars.append(src_var)
+                state.codes.remove(memsw)
+            memmux = AHDL_META('MEM_MUX', memsw.args[0], dst_var, src_vars, conds)
+            state.codes.insert(0, memmux)

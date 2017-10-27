@@ -208,6 +208,8 @@ class HDLModuleInfo(object):
 
     def add_fsm_stg(self, fsm_name, stgs):
         self.fsms[fsm_name].stgs = stgs
+        for stg in stgs:
+            stg.fsm = self.fsms[fsm_name]
 
     def add_fsm_output(self, fsm_name, output_sig):
         self.fsms[fsm_name].outputs.add(output_sig)

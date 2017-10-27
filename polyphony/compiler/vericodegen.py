@@ -530,32 +530,6 @@ class VerilogCodeGen(AHDLVisitor):
         dst = self.visit(ahdl.dst)
         self.emit('{} = {};'.format(dst, src))
 
-    def visit_MEM_SWITCH(self, ahdl):
-        prefix = ahdl.args[0]
-        dst_node = ahdl.args[1]
-        src_node = ahdl.args[2]
-        n2o = dst_node.pred_branch()
-        assert isinstance(n2o, N2OneMemNode)
-        for p in n2o.preds:
-            assert isinstance(p, One2NMemNode)
-        assert isinstance(src_node.preds[0], One2NMemNode)
-        assert src_node in n2o.orig_preds
-
-        preds = [p for p in n2o.preds if self.scope in p.scopes]
-        width = len(preds)
-        if width < 2:
-            return
-        orig_preds = [p for p in n2o.orig_preds if self.scope in p.scopes]
-        idx = orig_preds.index(src_node)
-        cs_name = dst_node.name()
-        if prefix:
-            cs = self.scope.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
-        else:
-            cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
-        one_hot_mask = bin(1 << idx)[2:]
-        self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
-                             AHDL_SYMBOL('\'b' + one_hot_mask)))
-
     def visit_MEM_MUX(self, ahdl):
         prefix = ahdl.args[0]
         dst = ahdl.args[1]
@@ -589,7 +563,9 @@ class VerilogCodeGen(AHDLVisitor):
         if cond.is_a(AHDL_CONST) and cond.value:
             pass
         else:
-            rexp = AHDL_IF_EXP(cond, rexp, AHDL_SYMBOL("'bz"))
+            rexp = AHDL_IF_EXP(cond, rexp,
+                               AHDL_VAR(cs, Ctx.LOAD))
+                               #AHDL_SYMBOL("'bz"))
         for arg, p in arg_p[-2::-1]:
             lexp = arg
             if_exp = AHDL_IF_EXP(p, lexp, rexp)

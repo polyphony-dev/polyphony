@@ -99,7 +99,7 @@ def get_latency(tag):
         elif tag.exp.is_a(SYSCALL):
             return get_syscall_latency(tag.exp)
     elif tag.is_a(PHI):
-        if tag.var.symbol().is_alias():
+        if tag.var.symbol().is_alias() or tag.var.symbol().typ.is_seq():
             return 0
     elif tag.is_a(UPHI):
         if tag.var.symbol().is_alias():

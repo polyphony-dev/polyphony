@@ -213,6 +213,7 @@ class STG(object):
         self.init_state = None
         self.finish_state = None
         self.scheduling = ''
+        self.fsm = None
 
     def __str__(self):
         s = ''

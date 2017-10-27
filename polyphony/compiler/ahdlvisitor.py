@@ -1,9 +1,31 @@
+from collections import defaultdict
 from .ahdl import AHDL_STM
 
 
 class AHDLVisitor(object):
     def __init__(self):
-        pass
+        self.current_fsm = None
+        self.current_stg = None
+        self.current_state = None
+
+    def process(self, module_info):
+        for fsm in module_info.fsms.values():
+            self.process_fsm(fsm)
+
+    def process_fsm(self, fsm):
+        self.current_fsm = fsm
+        for stg in fsm.stgs:
+            self.process_stg(stg)
+
+    def process_stg(self, stg):
+        self.current_stg = stg
+        for state in stg.states:
+            self.process_state(state)
+
+    def process_state(self, state):
+        self.current_state = state
+        for code in state.traverse():
+            self.visit(code)
 
     def visit_AHDL_CONST(self, ahdl):
         pass
@@ -162,3 +184,15 @@ class AHDLVisitor(object):
         if ahdl.is_a(AHDL_STM):
             self.current_stm = ahdl
         return visitor(ahdl)
+
+
+class AHDLCollector(AHDLVisitor):
+    def __init__(self, ahdl_cls):
+        super().__init__()
+        self.ahdl_cls = ahdl_cls
+        self.results = defaultdict(list)
+
+    def visit(self, ahdl):
+        if ahdl.__class__ is self.ahdl_cls:
+            self.results[self.current_state].append(ahdl)
+        super().visit(ahdl)
