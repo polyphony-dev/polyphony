@@ -558,10 +558,10 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_MEM_MUX(self, ahdl):
         prefix = ahdl.args[0]
-        dst_node = ahdl.args[1]
-        src_nodes = ahdl.args[2]
+        dst = ahdl.args[1]
+        srcs = ahdl.args[2]
         conds = ahdl.args[3]
-        n2o = dst_node.pred_branch()
+        n2o = dst.memnode.pred_branch()
         assert isinstance(n2o, N2OneMemNode)
         for p in n2o.preds:
             assert isinstance(p, One2NMemNode)
@@ -571,16 +571,16 @@ class VerilogCodeGen(AHDLVisitor):
         if width < 2:
             return
         orig_preds = [p for p in n2o.orig_preds if self.scope in p.scopes]
-        cs_name = dst_node.name()
+        cs_name = dst.memnode.name()
         if prefix:
             cs = self.scope.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
         else:
             cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
         args = []
-        for src_node in src_nodes:
-            assert isinstance(src_node.preds[0], One2NMemNode)
-            assert src_node in n2o.orig_preds
-            idx = orig_preds.index(src_node)
+        for src in srcs:
+            assert isinstance(src.memnode.preds[0], One2NMemNode)
+            assert src.memnode in n2o.orig_preds
+            idx = orig_preds.index(src.memnode)
             one_hot_mask = format(1 << idx, '#0{}b'.format(width + 2))[2:]
             args.append(AHDL_SYMBOL('\'b' + one_hot_mask))
 

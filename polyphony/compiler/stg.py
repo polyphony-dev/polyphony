@@ -1341,9 +1341,9 @@ class AHDLTranslator(object):
             ahdl_src = self.visit(arg, node)
             ahdl_cond = self.visit(p, node)
             assert ahdl_src.is_a(AHDL_MEMVAR)
-            src_nodes.append(ahdl_src.memnode)
+            src_nodes.append(ahdl_src)
             conds.append(ahdl_cond)
-        self._emit(AHDL_META('MEM_MUX', '', ahdl_dst.memnode, src_nodes, conds), self.sched_time)
+        self._emit(AHDL_META('MEM_MUX', '', ahdl_dst, src_nodes, conds), self.sched_time)
 
     def _emit_scalar_mux(self, ir, node):
         ahdl_dst = self.visit(ir.var, node)

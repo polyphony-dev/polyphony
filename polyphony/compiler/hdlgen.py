@@ -238,12 +238,13 @@ class HDLModuleBuilder(object):
                 continue
             for stm in acc.reset_stms():
                 self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
+        # reset output ports
         for sig in outputs:
-            # reset output ports
             infs = [inf for inf in self.module_info.interfaces.values() if inf.signal is sig]
             for inf in infs:
                 for stm in inf.reset_stms():
                     self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
+        # reset local ports
         for sig in uses:
             if sig.is_seq_port() or sig.is_single_port():
                 local_accessors = self.module_info.local_readers.values()
@@ -267,6 +268,14 @@ class HDLModuleBuilder(object):
                     v = AHDL_CONST(0)
                 mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
                 self.module_info.add_fsm_reset_stm(scope.orig_name, mv)
+        local_readers = self.module_info.local_readers.values()
+        local_writers = self.module_info.local_writers.values()
+        accs = set(list(local_readers) + list(local_writers))
+        for acc in accs:
+            # reset local (SinglePort)RAM ports
+            if acc.inf.signal.is_memif():
+                for stm in acc.reset_stms():
+                    self.module_info.add_fsm_reset_stm(scope.orig_name, stm)
 
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):

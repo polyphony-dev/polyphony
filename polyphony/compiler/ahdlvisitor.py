@@ -105,6 +105,17 @@ class AHDLVisitor(object):
         if visitor:
             return visitor(ahdl)
 
+    def visit_MEM_MUX(self, ahdl):
+        prefix = ahdl.args[0]
+        dst = ahdl.args[1]
+        srcs = ahdl.args[2]
+        conds = ahdl.args[3]
+        self.visit(dst)
+        for s in srcs:
+            self.visit(s)
+        for c in conds:
+            self.visit(c)
+
     def visit_WAIT_EDGE(self, ahdl):
         for var in ahdl.args[2:]:
             self.visit(var)
