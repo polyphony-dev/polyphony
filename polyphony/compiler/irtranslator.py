@@ -738,7 +738,6 @@ class CodeVisitor(ast.NodeVisitor):
             start = make_temp_if_needed(start, init_parts)
             end = make_temp_if_needed(end, init_parts)
             step = make_temp_if_needed(step, init_parts)
-            var.sym.add_tag('induction')
             init_parts += [
                 MOVE(TEMP(var.sym, Ctx.STORE), start)
             ]

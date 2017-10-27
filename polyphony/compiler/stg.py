@@ -467,8 +467,6 @@ class StateBuilder(STGItemBuilder):
                     assert False
             if not codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF, AHDL_META_WAIT]):
                 codes.append(AHDL_TRANSITION(None))
-            if len(codes) == 1 and codes[0].is_a(AHDL_TRANSITION):
-                continue
             name = '{}_S{}'.format(state_prefix, step)
             state = self._new_state(name, step + 1, codes)
             states.append(state)

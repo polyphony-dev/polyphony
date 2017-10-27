@@ -1,6 +1,6 @@
 from collections import deque
 from .ahdl import *
-from .ahdlvisitor import AHDLVisitor
+from .ahdlvisitor import AHDLVisitor, AHDLCollector
 from .graph import Graph
 from .stg import PipelineState, State
 from .utils import find_only_one_in
@@ -14,6 +14,7 @@ class StateReducer(object):
         IfForwarder().process(scope)
         graph = StateGraphBuilder().process(scope)
         self._remove_unreached_state(scope, graph)
+        self._remove_empty_state(scope, graph)
 
     def _remove_unreached_state(self, scope, graph):
         for stg in scope.stgs:
@@ -21,6 +22,22 @@ class StateReducer(object):
                 continue
             for state in stg.states[:]:
                 if not graph.has_node(state):
+                    stg.states.remove(state)
+
+    def _remove_empty_state(self, scope, graph):
+        transition_collector = AHDLCollector(AHDL_TRANSITION)
+        for stg in scope.stgs:
+            for state in stg.states[:]:
+                if (not isinstance(state, PipelineState) and
+                        len(state.codes) == 1 and
+                        len(graph.preds(state)) == 1 and
+                        state.codes[0].is_a(AHDL_TRANSITION)):
+                    pred = list(graph.preds(state))[0]
+                    transition_collector.process_state(pred)
+                    for _, codes in transition_collector.results.items():
+                        for c in codes:
+                            if c.target is state:
+                                c.target = state.codes[0].target
                     stg.states.remove(state)
 
 
