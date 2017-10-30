@@ -342,7 +342,7 @@ class DataFlowGraph(object):
                 else:
                     g.add_edge(pydot.Edge(dotn1, dotn2, style='dashed'))
         if self.edges:
-            g.write_png('.tmp/' + name + '.png')
+            g.write_png('{}/{}.png'.format(env.debug_output_dir, name))
             #g.write_svg(name+'.svg')
             #g.write(name+'.dot')
         env.dev_debug_mode = debug_mode

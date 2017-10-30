@@ -57,7 +57,7 @@ logger = logging.getLogger()
 
 logging_setting = {
     'level': logging.DEBUG,
-    'filename': '.tmp/debug_log',
+    'filename': '{}/debug_log'.format(env.debug_output_dir),
     'filemode': 'w'
 }
 

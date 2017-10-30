@@ -21,6 +21,7 @@ class Env(object):
 
     dev_debug_mode = False
     hdl_debug_mode = False
+    debug_output_dir = '.tmp'
     ctor_name = '__init__'
     self_name = 'self'
     callop_name = '__call__'
@@ -56,7 +57,7 @@ class Env(object):
         self.scopes[scope.name] = scope
         self.all_scopes[scope.name] = scope
         if self.dev_debug_mode and (not scope.is_lib() and not scope.is_inlinelib()):
-            logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@', ''), 'w')
+            logfile = logging.FileHandler('{}/debug_log.{}'.format(env.debug_output_dir, scope.name.replace('@', '')) , 'w')
             self.logfiles[scope] = logfile
 
     def destroy(self):

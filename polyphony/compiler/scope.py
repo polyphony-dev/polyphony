@@ -625,5 +625,5 @@ def write_dot(scope, tag):
         #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed', color='red'))
         #    else:
         #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed'))
-    g.write_png('.tmp/' + name + '.png')
+    g.write_png('{}/{}.png'.format(env.debug_output_dir, name))
     env.dev_debug_mode = debug_mode
