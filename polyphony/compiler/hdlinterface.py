@@ -171,18 +171,26 @@ def single_read_seq(inf, signal, step, dst):
                 expects = [(AHDL_CONST(1), valid)]
                 return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
             elif step == 2:
-                return (AHDL_MOVE(dst, data),
-                        AHDL_MOVE(ready, AHDL_CONST(0)))
+                if dst:
+                    return (AHDL_MOVE(dst, data),
+                            AHDL_MOVE(ready, AHDL_CONST(0)))
+                else:
+                    return (AHDL_MOVE(ready, AHDL_CONST(0)),)
         else:
             if step == 0:
                 expects = [(AHDL_CONST(1), valid)]
                 return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
             elif step == 1:
-                return (AHDL_MOVE(dst, data), )
+                if dst:
+                    return (AHDL_MOVE(dst, data), )
+                else:
+                    return tuple()
     else:
         if step == 0:
             if dst:
                 return (AHDL_MOVE(dst, data), )
+            else:
+                return tuple()
 
 
 def single_pipelined_read_seq(inf, signal, step, dst, stage):
@@ -645,10 +653,16 @@ class RAMAccessor(Accessor):
             return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
         elif step == 2:
             if is_continuous:
-                return (AHDL_MOVE(dst, q), )
+                if dst:
+                    return (AHDL_MOVE(dst, q), )
+                else:
+                    return tuple()
             else:
-                return (AHDL_MOVE(dst, q),
-                        AHDL_MOVE(req, AHDL_CONST(0)))
+                if dst:
+                    return (AHDL_MOVE(dst, q),
+                            AHDL_MOVE(req, AHDL_CONST(0)))
+                else:
+                    return (AHDL_MOVE(req, AHDL_CONST(0)), )
 
     def write_sequence(self, step, step_n, offset, src, is_continuous):
         addr = port2ahdl(self, 'addr')
@@ -694,7 +708,10 @@ class PipelinedRAMAccessor(RAMAccessor):
             guards = (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
             nonguards = tuple()
         elif step == 2:
-            guards = (AHDL_MOVE(dst, q), )
+            if dst:
+                guards = (AHDL_MOVE(dst, q), )
+            else:
+                guards = tuple()
             nonguards = tuple()
 
         guard = self.stage.codes[0]
@@ -846,8 +863,11 @@ def fifo_read_seq(inf, step, dst):
     elif step == 1:
         return (AHDL_MOVE(read, AHDL_CONST(1)), )
     elif step == 2:
-        return (AHDL_MOVE(read, AHDL_CONST(0)),
-                AHDL_MOVE(dst, dout))
+        if dst:
+            return (AHDL_MOVE(read, AHDL_CONST(0)),
+                    AHDL_MOVE(dst, dout))
+        else:
+            return (AHDL_MOVE(read, AHDL_CONST(0)),)
 
 
 def fifo_pipelined_read_seq(inf, step, dst, stage):
@@ -872,7 +892,10 @@ def fifo_pipelined_read_seq(inf, step, dst, stage):
         nonguards = (AHDL_MOVE(read, read_rhs),
                      )
     elif step == 1:
-        guards = (AHDL_MOVE(dst, dout), )
+        if dst:
+            guards = (AHDL_MOVE(dst, dout), )
+        else:
+            guards = tuple()
         nonguards = tuple()
     guard = stage.codes[0]
     assert guard.is_a(AHDL_PIPELINE_GUARD)

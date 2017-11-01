@@ -7,6 +7,7 @@ CALL_MINIMUM_STEP = 5
 
 
 def get_call_latency(call, stm):
+    # FIXME: It is better to ask HDLInterface the I/O latency
     is_pipelined = stm.block.synth_params['scheduling'] == 'pipeline'
     if call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.rd'):
         if is_pipelined:
@@ -21,6 +22,7 @@ def get_call_latency(call, stm):
         assert receiver.typ.is_port()
         protocol = receiver.typ.get_protocol()
         if call.func_scope.orig_name == 'rd':
+            dummy_read = stm.is_a(EXPR)
             if protocol == 'ready_valid':
                 if is_pipelined:
                     return UNIT_STEP * 2
@@ -29,8 +31,15 @@ def get_call_latency(call, stm):
             elif protocol == 'valid':
                 if is_pipelined:
                     return UNIT_STEP * 1
+                elif dummy_read:
+                    return UNIT_STEP * 1
                 else:
                     return UNIT_STEP * 2
+            else:
+                if dummy_read:
+                    return 0
+                else:
+                    return UNIT_STEP * 1
         elif call.func_scope.orig_name == 'wr':
             if protocol == 'ready_valid':
                 if is_pipelined:
@@ -73,6 +82,10 @@ def get_latency(tag):
             return 0
         elif tag.dst.is_a(TEMP) and tag.dst.sym.is_alias():
             return 0
+        elif tag.dst.is_a(TEMP) and tag.dst.symbol().typ.is_seq() and tag.src.is_a(TEMP) and tag.src.symbol().is_param():
+            memnode = tag.dst.symbol().typ.get_memnode()
+            if not memnode.can_be_reg():
+                return 0
         elif tag.dst.is_a(ATTR):
             return UNIT_STEP * 2
         elif tag.src.is_a(ARRAY):
