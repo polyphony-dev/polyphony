@@ -387,8 +387,7 @@ class DFGBuilder(object):
         inner_loop_region = set()
         for c in self.scope.loop_nest_tree.get_children_of(self.scope.entry_block):
             inner_loop_region = inner_loop_region.union(set(c.region))
-        all_blks = set()
-        self.scope.entry_block.collect_basic_blocks(all_blks)
+        all_blks = set(self.scope.traverse_blocks(full=False))
         return all_blks.difference(inner_loop_region)
 
     def _process(self, blk, parent_dfg):

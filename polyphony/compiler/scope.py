@@ -169,7 +169,7 @@ class Scope(Tagged):
             s += 'None\n'
         s += 'Synthesis\n{}\n'.format(self.synth_params)
         s += '================================\n'
-        for blk in self.traverse_blocks(longitude=True):
+        for blk in self.traverse_blocks(top_level_only=True):
             s += str(blk)
         s += '================================\n'
         return s
@@ -433,10 +433,10 @@ class Scope(Tagged):
         assert self.exit_block is None
         self.exit_block = blk
 
-    def traverse_blocks(self, full=False, longitude=False):
+    def traverse_blocks(self, full=False, top_level_only=False):
         assert len(self.entry_block.preds) == 0
         visited = set()
-        yield from self.entry_block.traverse(visited, full, longitude)
+        yield from self.entry_block.traverse(visited, full, top_level_only)
 
     def append_child(self, child_scope):
         if child_scope not in self.children:

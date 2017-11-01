@@ -177,8 +177,7 @@ class LoopDetector(object):
 # hierarchize
 class LoopDependencyDetector(object):
     def process(self, scope):
-        all_blks = set()
-        scope.entry_block.collect_basic_blocks(all_blks)
+        all_blks = set([b for b in scope.traverse_blocks(full=False)])
         for lb in scope.loop_nest_tree.traverse():
             if lb is scope.loop_nest_tree.root:
                 break
@@ -198,28 +197,29 @@ class LoopDependencyDetector(object):
         outer_uses = set()
         inner_defs = set()
         inner_uses = set()
-        blocks = [lb.head] + lb.bodies
+        blocks = [lb.head] + [b for b in lb.bodies if not isinstance(b, CompositBlock)]
+        usesyms = set()
+        defsyms = set()
         for blk in blocks:
-            usesyms = usedef.get_syms_used_at(blk)
-            for sym in usesyms:
-                defblks = usedef.get_blks_defining(sym)
-                # Is this symbol used in the out of the loop?
-                intersect = outer_region.intersection(defblks)
-                if intersect:
-                    outer_defs.add(sym)
-                intersect = inner_region.intersection(defblks)
-                if intersect:
-                    inner_defs.add(sym)
-
-            defsyms = usedef.get_syms_defined_at(blk)
-            for sym in defsyms:
-                useblks = usedef.get_blks_using(sym)
-                # Is this symbol used in the out of the loop?
-                intersect = outer_region.intersection(useblks)
-                if intersect:
-                    outer_uses.add(sym)
-                intersect = inner_region.intersection(useblks)
-                if intersect:
-                    inner_uses.add(sym)
+            usesyms |= usedef.get_syms_used_at(blk)
+            defsyms |= usedef.get_syms_defined_at(blk)
+        for sym in usesyms:
+            defblks = usedef.get_blks_defining(sym)
+            # Is this symbol used in the out of the loop?
+            intersect = outer_region.intersection(defblks)
+            if intersect:
+                outer_defs.add(sym)
+            intersect = inner_region.intersection(defblks)
+            if intersect:
+                inner_defs.add(sym)
+        for sym in defsyms:
+            useblks = usedef.get_blks_using(sym)
+            # Is this symbol used in the out of the loop?
+            intersect = outer_region.intersection(useblks)
+            if intersect:
+                outer_uses.add(sym)
+            intersect = inner_region.intersection(useblks)
+            if intersect:
+                inner_uses.add(sym)
 
         return (outer_defs, outer_uses, inner_defs, inner_uses)

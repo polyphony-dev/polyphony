@@ -147,21 +147,14 @@ class Block(object):
         if succ in self.succs_loop:
             self.succs_loop.remove(succ)
 
-    def collect_basic_blocks(self, blocks):
-        if self in blocks:
-            return
-        blocks.add(self)
-        for succ in [succ for succ in self.succs]:
-            succ.collect_basic_blocks(blocks)
-
-    def traverse(self, visited, full=False, longitude=False):
+    def traverse(self, visited, full=False, top_level_only=False):
         if self in visited:
             return
         if self not in visited:
             visited.add(self)
             yield self
         for succ in [succ for succ in self.succs if succ not in self.succs_loop]:
-            yield from succ.traverse(visited, full, longitude)
+            yield from succ.traverse(visited, full, top_level_only)
 
     def clone(self, scope, stm_map, nametag=None):
         if nametag:
@@ -307,28 +300,18 @@ class CompositBlock(Block):
                     succs.append(succ)
         return succs
 
-    def collect_basic_blocks(self, blocks):
-        for blk in self.region:
-            blocks.add(blk)
-        for succ in self.succs:
-            succ.collect_basic_blocks(blocks)
-
-    def traverse(self, visited, full=False, longitude=False):
-        if longitude:
-            yield from super().traverse(visited, full, longitude)
+    def traverse(self, visited, full=False, top_level_only=False):
+        if top_level_only:
+            yield from super().traverse(visited, full, top_level_only)
         else:
             if full:
                 if self not in visited:
                     visited.add(self)
                     yield self
-            yield from self.head.traverse(visited, full, longitude)
+            yield from self.head.traverse(visited, full, top_level_only)
 
     def collect_basic_head_bodies(self):
-        blocks = [self.head]
-        for b in self.bodies:
-            if not isinstance(b, CompositBlock):
-                blocks.append(b)
-        return blocks
+        return [self.head] + [b for b in self.bodies if not isinstance(b, CompositBlock)]
 
     def clone(self, scope, stm_map):
         b = CompositBlock(scope, self.nametag)
@@ -350,3 +333,23 @@ class CompositBlock(Block):
             self.succs[i] = blk_map[succ]
         for i, pred in enumerate(self.preds):
             self.preds[i] = blk_map[pred]
+
+    def usesyms(self, usedef, with_inner_loop=True):
+        if with_inner_loop:
+            blocks = self.region
+        else:
+            blocks = self.collect_basic_head_bodies()
+        usesyms = set()
+        for blk in blocks:
+            usesyms |= usedef.get_syms_used_at(blk)
+        return usesyms
+
+    def defsyms(self, usedef, with_inner_loop=True):
+        if with_inner_loop:
+            blocks = self.region
+        else:
+            blocks = self.collect_basic_head_bodies()
+        defsyms = set()
+        for blk in blocks:
+            defsyms |= usedef.get_syms_defined_at(blk)
+        return defsyms

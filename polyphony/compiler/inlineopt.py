@@ -239,10 +239,10 @@ class SymbolReplacer(IRVisitor):
         self.attr_map = attr_map
         self.inst_name = inst_name
 
-    def traverse_blocks(self, entry_block, full=False, longitude=False):
+    def traverse_blocks(self, entry_block, full=False):
         assert len(entry_block.preds) == 0
         visited = set()
-        yield from entry_block.traverse(visited, full=False, longitude=False)
+        yield from entry_block.traverse(visited, full=False)
 
     def process(self, scope, entry_block):
         self.scope = scope
