@@ -273,7 +273,7 @@ class TypePropagation(IRVisitor):
         elm_t = mem_t.get_element()
         if exp_t.is_scalar() and elm_t.is_scalar():
             if exp_t.get_width() > elm_t.get_width():
-                self._set_type(ir.dst.mem.symbol(), Type.list(exp_t, None))
+                self._set_type(ir.mem.symbol(), Type.list(exp_t, None))
         return mem_t
 
     def visit_ARRAY(self, ir):
