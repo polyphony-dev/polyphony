@@ -441,8 +441,7 @@ class PipelinedSingleWriteAccessor(SingleWriteAccessor):
 
     def pipelined_write_sequence(self, step, step_n, src, stage):
         if self.inf.signal.is_ready_valid_protocol():
-            adapter = self._adapter()
-            return adapter.pipelined_write_sequence(step, step_n, src, stage)
+            return self._adapter().pipelined_write_sequence(step, step_n, src, stage)
         else:
             return single_pipelined_write_seq(self, self.inf.signal, step, src, stage)
 
@@ -726,11 +725,16 @@ class PipelinedRAMAccessor(RAMAccessor):
         d = port2ahdl(self, 'd')
 
         if step == 0:
-            pipeline_valid = AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step - 1), Ctx.LOAD)
+            if self.stage.step == 0:
+                pready = self.pipeline_state.ready_signal(0)
+                valid_rhs = AHDL_VAR(pready, Ctx.LOAD)
+            else:
+                pvalid = self.pipeline_state.valid_signal(self.stage.step - 1)
+                valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
             guards = (AHDL_MOVE(addr, offset),
                       AHDL_MOVE(d, src))
-            nonguards = (AHDL_MOVE(we, pipeline_valid),
-                         AHDL_MOVE(req, pipeline_valid))
+            nonguards = (AHDL_MOVE(we, valid_rhs),
+                         AHDL_MOVE(req, valid_rhs))
         elif step == 1:
             guards = tuple()
             nonguards = tuple()

@@ -107,6 +107,7 @@ class PipelineState(State):
         return s
 
     def _pipeline_signal(self, signal_name, signals, idx, is_reg):
+        assert idx >= 0
         if idx not in signals:
             stage_name = self.name + '_{}'.format(idx)
             name = '{}_{}'.format(stage_name, signal_name)
@@ -1460,23 +1461,31 @@ class AHDLTranslator(object):
         if port_prefixes[0].name == env.self_name:
             port_prefixes = port_prefixes[1:]
         port_name = '_'.join([pfx.hdl_name() for pfx in port_prefixes])
-
+        port_sig = port_sym.scope.signal(port_name)
+        if port_sig:
+            tags = port_sig.tags
+        else:
+            tags = set()
         dtype = port_sym.typ.get_dtype()
         width = dtype.get_width()
         port_scope = port_sym.typ.get_scope()
-        tags = set()
+        direction = port_sym.typ.get_direction()
+        assert direction != '?'
+        protocol = port_sym.typ.get_protocol()
+        kind = port_sym.typ.get_port_kind()
+
         if port_scope.orig_name.startswith('Port'):
-            tags.add('single_port')
+            if 'pipelined_port' in tags and protocol == 'ready_valid':
+                # this port is already replaced to seq_port
+                pass
+            else:
+                tags.add('single_port')
             if dtype.has_signed() and dtype.get_signed():
                 tags.add('int')
         elif port_scope.orig_name.startswith('Queue'):
             # TODO
             tags.add('fifo_port')
             tags.add('seq_port')
-        direction = port_sym.typ.get_direction()
-        assert direction != '?'
-        protocol = port_sym.typ.get_protocol()
-        kind = port_sym.typ.get_port_kind()
 
         if kind == 'internal':
             if 'seq_port' in tags:
@@ -1499,6 +1508,7 @@ class AHDLTranslator(object):
             else:
                 assert False
         is_pipeline_access = self.host.current_node.tag.block.synth_params['scheduling'] == 'pipeline'
+        adapter_sig = None
         if root_sym.is_pipelined() and is_pipeline_access:
             tags.add('pipelined_port')
             if 'single_port' in tags and protocol == 'ready_valid':
@@ -1527,13 +1537,12 @@ class AHDLTranslator(object):
             else:
                 assert False
             port_sig = module_scope.gen_sig(port_name, width, tags, port_sym)
-
         if port_sym.typ.has_init():
             tags.add('initializable')
             port_sig.init_value = port_sym.typ.get_init()
         if port_sym.typ.has_maxsize():
             port_sig.maxsize = port_sym.typ.get_maxsize()
-        if port_sig.is_adaptered():
+        if port_sig.is_adaptered() and adapter_sig:
             port_sig.adapter_sig = adapter_sig
         return port_sig
 
