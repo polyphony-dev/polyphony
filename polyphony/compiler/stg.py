@@ -1461,10 +1461,6 @@ class AHDLTranslator(object):
             port_prefixes = port_prefixes[1:]
         port_name = '_'.join([pfx.hdl_name() for pfx in port_prefixes])
 
-        port_sig = port_sym.scope.signal(port_name)
-        if port_sig:
-            return port_sig
-
         dtype = port_sym.typ.get_dtype()
         width = dtype.get_width()
         port_scope = port_sym.typ.get_scope()
@@ -1520,6 +1516,7 @@ class AHDLTranslator(object):
 
         if protocol != 'none':
             tags.add(protocol + '_protocol')
+
         if 'extport' in tags:
             port_sig = self.scope.gen_sig(port_name, width, tags, port_sym)
         else:
@@ -1570,7 +1567,6 @@ class AHDLTranslator(object):
             dst = self.visit(target, node)
         else:
             dst = None
-            step_n -= 1
         ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
                            dst,
                            port_sig.is_input())
