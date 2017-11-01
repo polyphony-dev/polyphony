@@ -321,7 +321,7 @@ class CompositBlock(Block):
                 if self not in visited:
                     visited.add(self)
                     yield self
-            yield from self.head.traverse(visited, longitude)
+            yield from self.head.traverse(visited, full, longitude)
 
     def collect_basic_head_bodies(self):
         blocks = [self.head]

@@ -121,6 +121,9 @@ class LoopDetector(object):
             # re-connect
             for p in lb.preds:
                 p.replace_succ(lb.head, lb)
+                if isinstance(p, CompositBlock):
+                    for r in p.region:
+                        r.replace_succ(lb.head, lb)
             for s in lb.succs:
                 s.replace_pred([lb.head] + lb.bodies, lb)
 
