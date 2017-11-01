@@ -1,5 +1,5 @@
 from collections import deque
-from .block import Block
+from .block import Block, CompositBlock
 from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
@@ -59,6 +59,7 @@ class BlockReducer(object):
             #check unidirectional
             # TODO: any jump.typ
             if (len(block.preds) == 1 and
+                    not isinstance(block.preds[0], CompositBlock) and
                     len(block.preds[0].succs) == 1 and
                     not block.preds[0].stms[-1].typ == 'C' and
                     can_merge_synth_params(block.synth_params, block.preds[0].synth_params)):
@@ -82,7 +83,7 @@ class BlockReducer(object):
                 if block is scope.exit_block:
                     scope.exit_block = pred
 
-                self.removed_blks.append(block)
+                self._remove_block(block)
                 if not pred.is_hyperblock:
                     pred.is_hyperblock = block.is_hyperblock
 
@@ -124,7 +125,13 @@ class BlockReducer(object):
     def _remove_empty_blocks(self, scope):
         for block in scope.traverse_blocks():
             if self.remove_empty_block(block):
-                self.removed_blks.append(block)
+                self._remove_block(block)
+
+    def _remove_block(self, blk):
+        self.removed_blks.append(blk)
+        if blk.parent:
+            assert isinstance(blk.parent, CompositBlock)
+            blk.parent.bodies.remove(blk)
 
 
 class PathExpTracer(object):

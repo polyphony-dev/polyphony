@@ -761,7 +761,7 @@ class CodeVisitor(ast.NodeVisitor):
             start = CONST(0)
             end  = SYSCALL(builtin_symbols['len'], [('seq', it.clone())], {})
             counter_name = Symbol.unique_name('@counter')
-            counter = self.current_scope.add_sym(counter_name, {'induction'})
+            counter = self.current_scope.add_sym(counter_name)
             init_parts = [
                 MOVE(TEMP(counter, Ctx.STORE),
                      start)
@@ -785,7 +785,7 @@ class CodeVisitor(ast.NodeVisitor):
             start = CONST(0)
             end  = SYSCALL(builtin_symbols['len'], [('seq', TEMP(unnamed_array, Ctx.LOAD))], {})
             counter_name = Symbol.unique_name('@counter')
-            counter = self.current_scope.add_sym(counter_name, {'induction'})
+            counter = self.current_scope.add_sym(counter_name)
             init_parts = [
                 MOVE(TEMP(unnamed_array, Ctx.STORE),
                      it),

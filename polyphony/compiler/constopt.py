@@ -2,7 +2,7 @@
 from .block import Block
 from .common import fail
 from .errors import Errors
-from .irvisitor import IRVisitor
+from .irvisitor import IRVisitor, IRTransformer
 from .ir import *
 from .env import env
 from .usedef import UseDefDetector
@@ -588,3 +588,92 @@ class GlobalConstantOpt(ConstantOptBase):
     def visit_PHI(self, ir):
         assert False
 
+
+class PolyadConstantFolding(object):
+    def process(self, scope):
+        self.BinInlining().process(scope)
+        self.Bin2Poly().process(scope)
+        self.Poly2Bin().process(scope)
+
+    class BinInlining(IRTransformer):
+        @staticmethod
+        def _can_inlining(usestm, ir):
+            return (usestm.is_a(MOVE) and
+                    usestm.src.is_a(BINOP) and
+                    usestm.src.op == ir.src.op and
+                    (usestm.src.left.is_a(CONST) or usestm.src.right.is_a(CONST)))
+
+        def visit_MOVE(self, ir):
+            self.new_stms.append(ir)
+            if not ir.src.is_a(BINOP):
+                return
+            if not (ir.src.left.is_a(CONST) or ir.src.right.is_a(CONST)):
+                return
+            if ir.src.op not in ('Add', 'Sub', 'Mult'):
+                return
+            defstms = self.scope.usedef.get_stms_defining(ir.dst.symbol())
+            if len(defstms) != 1:
+                return
+            usestms = self.scope.usedef.get_stms_using(ir.dst.symbol())
+            for usestm in usestms:
+                if self._can_inlining(usestm, ir):
+                    usestm.replace(TEMP(ir.dst.symbol(), Ctx.LOAD), ir.src)
+
+    class Bin2Poly(IRTransformer):
+        def visit_BINOP(self, ir):
+            ir.left = self.visit(ir.left)
+            ir.right = self.visit(ir.right)
+            assert ir.left and ir.right
+            if ir.op in ('Add', 'Sub', 'Mult'):
+                newop = POLYOP(ir.op)
+                newop.lineno = ir.lineno
+                l = ir.left
+                if l.is_a([BINOP, POLYOP]):
+                    assert l.op == ir.op
+                    newop.values.extend([e for e in l.kids()])
+                else:
+                    newop.values.append(l)
+
+                r = ir.right
+                if r.is_a([BINOP, POLYOP]):
+                    assert l.op == ir.op
+                    newop.values.extend([e for e in r.kids()])
+                else:
+                    newop.values.append(r)
+                if len(newop.values) > 2:
+                    return newop
+            return ir
+
+        def visit_POLYOP(self, ir):
+            return ir
+
+    class Poly2Bin(IRTransformer):
+        @staticmethod
+        def _fold(plural):
+            vars = []
+            consts = []
+            for e in plural.values:
+                if e.is_a(CONST):
+                    consts.append(e)
+                else:
+                    vars.append(e)
+            if plural.op == 'Add':
+                const_result = 0
+                for c in consts:
+                    const_result += c.value
+            elif plural.op == 'Sub':
+                const_result = 0
+                for c in consts:
+                    const_result -= c.value
+            elif plural.op == 'Mult':
+                const_result = 1
+                for c in consts:
+                    const_result *= c.value
+            plural.values = vars + [CONST(const_result)]
+
+        def visit_POLYOP(self, ir):
+            self._fold(ir)
+            assert len(ir.values) == 2
+            binop = BINOP(ir.op, ir.values[0], ir.values[1])
+            binop.lineno = ir.lineno
+            return binop

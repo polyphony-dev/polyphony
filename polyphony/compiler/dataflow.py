@@ -455,6 +455,7 @@ class DFGBuilder(object):
             self._tweak_port_edges_for_pipeline(dfg)
         if main_block.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
             self._add_seq_edges_for_ctrl_branch(dfg)
+        RegArrayParallelizer().process(self.scope, dfg)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -839,3 +840,106 @@ class DFGBuilder(object):
             if not p:
                 continue
             remove_port_seq_pred(node, p)
+
+
+class RegArrayParallelizer(object):
+    def process(self, scope, dfg):
+        self.scope = scope
+        removes = []
+        for (n1, n2), (typ, back) in dfg.edges.items():
+            if typ != 'DefUse':
+                continue
+            if not n1.tag.is_a(MOVE):
+                continue
+            if not n1.tag.dst.symbol().typ.is_seq():
+                continue
+            # we focus on register array in the process
+            memnode = n1.tag.dst.symbol().typ.get_memnode()
+            if not memnode.can_be_reg():
+                continue
+            msym = n1.tag.dst.symbol()
+            def_offs = self.offset_expr(n1.tag, msym)
+            use_offs = self.offset_expr(n2.tag, msym)
+            if self.is_inequality_value(def_offs, use_offs):
+                removes.append((n1, n2))
+        for n1, n2 in removes:
+            dfg.remove_edge(n1, n2)
+
+    @staticmethod
+    def offset_expr(stm, msym):
+        if stm.is_a(MOVE):
+            if stm.src.is_a([MREF, MSTORE]):
+                assert msym is stm.src.mem.symbol()
+                return stm.src.offset
+        return None
+
+    @staticmethod
+    def _get_const(binop):
+        assert binop.is_a(BINOP)
+        if binop.left.is_a(CONST):
+            return binop.left
+        elif binop.right.is_a(CONST):
+            return binop.right
+        return None
+
+    def _has_other_var_and_difference(self, v1, v2_stm):
+        # We try to find v1 in the rhs of v2_stm.
+        # And also we try to find a constant value in the rhs of v2_stm.
+        # If both of them are found, we can detect that v2_stm.dst is different from v1
+        # e.g.
+        # v1 = ...
+        # v2 = v1 + 1
+        if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
+                return False
+        rhs_syms = [e.symbol() for e in v2_stm.src.kids() if e.is_a(TEMP)]
+        if len(rhs_syms) != 1:
+            return False
+        rhs_const = self._get_const(v2_stm.src)
+        if v1 is rhs_syms[0] and rhs_const:
+            if ((v2_stm.src.op == 'Add' and rhs_const.value != 0) or
+                    (v2_stm.src.op == 'Sub' and rhs_const.value != 0) or
+                    (v2_stm.src.op == 'Mult' and rhs_const.value != 1)):
+                return True
+        return False
+
+    def _has_same_var_and_difference(self, v1_stm, v2_stm):
+        # We try to find the same var in the v2_stm.src and v1_stm.src.
+        # And also we try to find a constant value in the v2_stm.src and v1_stm.src.
+        # If both of them are found, we can detect that v1_stm.dst is different from v2_stm.dst
+        # e.g.
+        # v1 = x + 1
+        # v2 = x + 2
+        if not (v1_stm.is_a(MOVE) and v1_stm.src.is_a(BINOP)):
+            return False
+        if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
+            return False
+        v1_rhs_syms = set([e.symbol() for e in v1_stm.src.kids() if e.is_a(TEMP)])
+        v2_rhs_syms = set([e.symbol() for e in v2_stm.src.kids() if e.is_a(TEMP)])
+        common_syms = v1_rhs_syms.intersection(v2_rhs_syms)
+        if not common_syms:
+            return False
+        v1_rhs_const = self._get_const(v1_stm.src)
+        v2_rhs_const = self._get_const(v2_stm.src)
+        return v1_stm.src.op == v2_stm.src.op and v1_rhs_const.value != v2_rhs_const.value
+
+    def is_inequality_value(self, def_offs, use_offs):
+        if not def_offs or not use_offs:
+            return False
+        if def_offs.is_a(CONST) and use_offs.is_a(CONST) and def_offs.value != use_offs.value:
+            return True
+        elif def_offs.is_a(TEMP) and use_offs.is_a(TEMP):
+            def_offs_defstms = self.scope.usedef.get_stms_defining(def_offs.symbol())
+            use_offs_defstms = self.scope.usedef.get_stms_defining(use_offs.symbol())
+            if len(def_offs_defstms) != 1 and len(use_offs_defstms) != 1:
+                return False
+            use_offs_stm = list(use_offs_defstms)[0]
+            def_offs_stm = list(def_offs_defstms)[0]
+            if len(use_offs_defstms) == 1:
+                if self._has_other_var_and_difference(def_offs.symbol(), use_offs_stm):
+                    return True
+            if len(def_offs_defstms) == 1:
+                if self._has_other_var_and_difference(use_offs.symbol(), def_offs_stm):
+                    return True
+            if len(use_offs_defstms) == 1 and len(def_offs_defstms) == 1:
+                return self._has_same_var_and_difference(use_offs_stm, def_offs_stm)
+        return False

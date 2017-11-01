@@ -10,6 +10,7 @@ from .cfgopt import HyperBlockBuilder
 from .common import read_source
 from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
+from .constopt import PolyadConstantFolding
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
 from .deadcode import DeadCodeEliminator
@@ -49,6 +50,7 @@ from .typecheck import TypePropagation, InstanceTypePropagation
 from .typecheck import TypeChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
 from .typecheck import AssertionChecker
 from .typecheck import SynthesisParamChecker
+from .unroll import LoopUnroller
 from .usedef import UseDefDetector
 from .vericodegen import VerilogCodeGen
 from .veritestgen import VerilogTestGen
@@ -313,6 +315,20 @@ def loop(driver, scope):
     LoopDetector().process(scope)
 
 
+def unroll(driver, scope):
+    if LoopUnroller().process(scope):
+        dumpscope(driver, scope)
+        usedef(driver, scope)
+        reduceblk(driver, scope)
+        PolyadConstantFolding().process(scope)
+        pathexp(driver, scope)
+        dumpscope(driver, scope)
+        usedef(driver, scope)
+        constopt(driver, scope)
+        copyopt(driver, scope)
+        deadcode(driver, scope)
+
+
 def deadcode(driver, scope):
     DeadCodeEliminator().process(scope)
 
@@ -385,6 +401,12 @@ def dumpcfgimg(driver, scope):
     from .scope import write_dot
     if scope.is_function_module() or scope.is_method() or scope.is_module():
         write_dot(scope, driver.stage)
+
+
+def dumpdfgimg(driver, scope):
+    if scope.is_function_module() or scope.is_method() or scope.is_module():
+        for dfg in scope.dfgs():
+            dfg.write_dot(dfg.name)
 
 
 def dumpmrg(driver, scope):
@@ -466,6 +488,7 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         scalarssa,
+        #dumpcfgimg,
         dbg(dumpscope),
         usedef,
         hyperblock,
@@ -502,16 +525,18 @@ def compile_plan():
         deadcode,
         dbg(dumpscope),
         reduceblk,
+        pathexp,
         usedef,
+        loop,
         dbg(dumpscope),
+        unroll,
+        dbg(dumpscope),
+        usedef,
         phi,
         usedef,
         dbg(dumpscope),
-        pathexp,
-        dbg(dumpscope),
         phase(env.PHASE_4),
         usedef,
-        loop,
         convport,
         phase(env.PHASE_5),
         usedef,
@@ -521,6 +546,7 @@ def compile_plan():
         synthcheck,
         dbg(dumpdfg),
         schedule,
+        #dumpdfgimg,
         dbg(dumpsched),
         meminstgraph,
         dbg(dumpmrg),

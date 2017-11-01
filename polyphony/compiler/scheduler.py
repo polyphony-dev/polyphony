@@ -29,7 +29,6 @@ class Scheduler(object):
             else:
                 scheduler_impl = BlockBoundedListScheduler(self.res_tables)
             scheduler_impl.schedule(scope, dfg)
-            #dfg.write_dot(dfg.name)
 
 
 class SchedulerImpl(object):

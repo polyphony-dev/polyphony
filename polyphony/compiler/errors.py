@@ -77,9 +77,13 @@ class Errors(Enum):
     PURE_CTOR_MUST_BE_MODULE = 934
     PURE_RETURN_NO_SAME_TYPE = 935
 
-    RULE_BREAK_IN_PIPELINE_LOOP = 950
-    RULE_CONTINUE_IN_PIPELINE_LOOP = 951
-    RULE_FUNCTION_CANNOT_BE_PIPELINED = 952
+    RULE_BREAK_IN_PIPELINE_LOOP = 1100
+    RULE_CONTINUE_IN_PIPELINE_LOOP = 1101
+    RULE_FUNCTION_CANNOT_BE_PIPELINED = 1102
+
+    RULE_UNROLL_NESTED_LOOP = 1151
+    RULE_UNROLL_UNFIXED_LOOP = 1152
+    RULE_UNROLL_CONTROL_BRANCH = 1153
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -157,6 +161,10 @@ ERROR_MESSAGES = {
     Errors.RULE_BREAK_IN_PIPELINE_LOOP: "Cannot use 'break' statement in the pipeline loop",
     Errors.RULE_CONTINUE_IN_PIPELINE_LOOP: "Cannot use 'continue' statement in the pipeline loop",
     Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED: "Normal function cannot be pipelined",
+
+    Errors.RULE_UNROLL_NESTED_LOOP: "Cannot unroll nested loop",
+    Errors.RULE_UNROLL_UNFIXED_LOOP: "Cannot unroll unfixed loop",
+    Errors.RULE_UNROLL_CONTROL_BRANCH: "Cannot unroll loop that having control branches",
 }
 
 

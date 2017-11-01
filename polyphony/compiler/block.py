@@ -17,6 +17,8 @@ class Block(object):
             succs = [succ for succ in block.succs if succ not in block.succs_loop]
             for succ in succs:
                 cls.set_order(succ, order)
+                if isinstance(succ, CompositBlock):
+                    cls.set_order(succ.head, order)
 
     def __init__(self, scope, nametag='b'):
         self.nametag = nametag
@@ -115,7 +117,7 @@ class Block(object):
             elif jmp.is_a(CJUMP):
                 if jmp.true is old:
                     jmp.true = new
-                else:
+                elif jmp.false is old:
                     jmp.false = new
                 self._convert_if_unidirectional(jmp)
             elif jmp.is_a(MCJUMP):
@@ -161,8 +163,11 @@ class Block(object):
         for succ in [succ for succ in self.succs if succ not in self.succs_loop]:
             yield from succ.traverse(visited, full, longitude)
 
-    def clone(self, scope, stm_map):
-        b = Block(scope, self.nametag)
+    def clone(self, scope, stm_map, nametag=None):
+        if nametag:
+            b = Block(scope, nametag)
+        else:
+            b = Block(scope, self.nametag)
         for stm in self.stms:
             new_stm = stm.clone()
             new_stm.block = b

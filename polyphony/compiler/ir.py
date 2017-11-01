@@ -217,6 +217,20 @@ class CONDOP(IRExp):
         return self.cond.kids() + self.left.kids() + self.right.kids()
 
 
+class POLYOP(IRExp):
+    def __init__(self, op):
+        self.op = op
+        self.values = []
+
+    def __str__(self):
+        values = ', '.join([str(e) for e in self.values])
+        return '({} [{}])'.format(op2sym_map[self.op], values)
+
+    def kids(self):
+        assert all([v.is_a([CONST, TEMP, ATTR]) for v in self.values])
+        return self.values
+
+
 def replace_args(args, old, new):
     for i, (name, arg) in enumerate(args):
         if arg is old:
@@ -900,6 +914,7 @@ class LPHI(PHIBase):
         lphi.defblks = phi.defblks[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
+        lphi.lineno = phi.lineno
         return lphi
 
 

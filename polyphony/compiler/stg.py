@@ -754,10 +754,8 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
 
     def post_build(self, dfg, is_main, pstate):
         loop_cnt = self.translator._sym_2_sig(dfg.main_block.loop_info.counter, Ctx.LOAD)
-        #loop_init_stm = dfg.main_block.loop_info.init
-        loop_update_stm = dfg.main_block.loop_info.update
-        loop_cnt_next = self.translator._sym_2_sig(loop_update_stm.src.sym, Ctx.LOAD)
-        #loop_init = self.translator.visit(loop_init_stm.src, None)
+        loop_update = dfg.main_block.loop_info.update
+        loop_cnt_next = self.translator._sym_2_sig(loop_update.sym, Ctx.LOAD)
         cond_defs = self.scope.usedef.get_stms_defining(dfg.main_block.loop_info.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
@@ -778,8 +776,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         pstate.stages[0].enable = loop_enable
 
         # make a condition for unexecutable loop
-        loop_init_stm = dfg.main_block.loop_info.init
-        loop_init = self.translator.visit(loop_init_stm.src, None)
+        loop_init = self.translator.visit(dfg.main_block.loop_info.init, None)
         loop_cond = self.translator.visit(cond_def.src, None)
         args = []
         for i, a in enumerate(loop_cond.args):

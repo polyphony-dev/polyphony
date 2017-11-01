@@ -311,6 +311,8 @@ class SSATransformerBase(object):
                 #if phi.ps[0].is_a(CONST) and phi.ps[0].value:
                 lphi = LPHI.from_phi(phi)
                 replace_item(blk.stms, phi, lphi)
+                if lphi.var.symbol().typ.is_scalar():
+                    lphi.var.symbol().add_tag('induction')
 
     def _deal_with_return_phi(self):
         for blk in self.scope.traverse_blocks():
