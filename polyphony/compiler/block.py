@@ -173,6 +173,8 @@ class Block(object):
         b.preds_loop = list(self.preds_loop)
         b.synth_params = self.synth_params.copy()
         b.is_hyperblock = self.is_hyperblock
+        if self.path_exp:
+            b.path_exp = self.path_exp.clone()
         return b
 
     def reconnect(self, blk_map):
