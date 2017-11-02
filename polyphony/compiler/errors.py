@@ -80,6 +80,9 @@ class Errors(Enum):
     RULE_BREAK_IN_PIPELINE_LOOP = 1100
     RULE_CONTINUE_IN_PIPELINE_LOOP = 1101
     RULE_FUNCTION_CANNOT_BE_PIPELINED = 1102
+    RULE_PIPELINE_HAS_INNER_LOOP = 1103
+    RULE_PIPELINE_HAS_MEM_READ_CONFLICT = 1130
+    RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT = 1131
 
     RULE_UNROLL_NESTED_LOOP = 1151
     RULE_UNROLL_UNFIXED_LOOP = 1152
@@ -161,6 +164,9 @@ ERROR_MESSAGES = {
     Errors.RULE_BREAK_IN_PIPELINE_LOOP: "Cannot use 'break' statement in the pipeline loop",
     Errors.RULE_CONTINUE_IN_PIPELINE_LOOP: "Cannot use 'continue' statement in the pipeline loop",
     Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED: "Normal function cannot be pipelined",
+    Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "Cannot read '{}' more than once in a pipeline loop",
+    Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "Cannot write '{}' more than once in a pipeline loop",
+    Errors.RULE_PIPELINE_HAS_INNER_LOOP: "Cannot pipelining the loop that has an inner loop",
 
     Errors.RULE_UNROLL_NESTED_LOOP: "Cannot unroll nested loop",
     Errors.RULE_UNROLL_UNFIXED_LOOP: "Cannot unroll unfixed loop",

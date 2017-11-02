@@ -32,7 +32,7 @@ class Scope(Tagged):
     scope_id = 0
 
     @classmethod
-    def create(cls, parent, name, tags, lineno=0):
+    def create(cls, parent, name, tags, lineno=0, origin=None):
         if name is None:
             name = "unnamed_scope" + str(cls.scope_id)
         s = Scope(parent, name, tags, lineno, cls.scope_id)
@@ -40,6 +40,9 @@ class Scope(Tagged):
             env.append_scope(s)
             fail((s, lineno), Errors.REDEFINED_NAME, {name})
         env.append_scope(s)
+        if origin:
+            s.origin = origin
+            env.scope_file_map[s] = env.scope_file_map[origin]
         cls.scope_id += 1
         return s
 
@@ -129,6 +132,7 @@ class Scope(Tagged):
         self.exit_block = None
         self.children = []
         self.bases = []
+        self.origin = None
         self.subs = []
         self.usedef = None
         self.loop_nest_tree = None
@@ -219,7 +223,7 @@ class Scope(Tagged):
         name += self.orig_name
         name = name + '_' + postfix if postfix else name
         parent = self.parent if parent is None else parent
-        s = Scope.create(parent, name, set(self.tags), self.lineno)
+        s = Scope.create(parent, name, set(self.tags), self.lineno, origin=self)
         logger.debug('CLONE {} {}'.format(self.name, s.name))
 
         s.children = list(self.children)
@@ -266,7 +270,7 @@ class Scope(Tagged):
         return s
 
     def inherit(self, name, overrides):
-        sub = Scope.create(self.parent, name, set(self.tags), self.lineno)
+        sub = Scope.create(self.parent, name, set(self.tags), self.lineno, origin=self)
         sub.bases.append(self)
         sub.symbols = copy(self.symbols)
         sub.workers = copy(self.workers)
