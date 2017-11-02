@@ -54,26 +54,12 @@ class InlineOpt(object):
                                                        callee,
                                                        str(self.inline_counts[caller]))
             if callee.is_returnable():
-                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-                result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
-                assert result_sym.is_return()
-                result_sym.del_tag('return')
+                self._make_result_exp(call_stm, call, callee, caller, symbol_map)
 
             block_map, _ = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
             callee_exit_blk = block_map[callee.exit_block]
             assert len(callee_exit_blk.succs) <= 1
-
-            if callee.is_returnable():
-                result = TEMP(result_sym, Ctx.LOAD)
-                result.lineno = call_stm.lineno
-                if call_stm.is_a(MOVE):
-                    assert call_stm.src is call
-                    call_stm.src = result
-                elif call_stm.is_a(EXPR):
-                    assert call_stm.exp is call
-                    call_stm.exp = result
-
             sym_replacer = SymbolReplacer(symbol_map)
             sym_replacer.process(caller, callee_entry_blk)
 
@@ -93,29 +79,12 @@ class InlineOpt(object):
                                                        callee,
                                                        str(self.inline_counts[caller]))
             if callee.is_returnable():
-                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-                result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
-                assert result_sym.is_return()
-                result_sym.del_tag('return')
-
-            block_map, _ = callee.clone_blocks(caller)
-            callee_entry_blk = block_map[callee.entry_block]
-            callee_exit_blk = block_map[callee.exit_block]
-            assert len(callee_exit_blk.succs) <= 1
-
-            if callee.is_returnable():
-                result = TEMP(result_sym, Ctx.LOAD)
-                result.lineno = call_stm.lineno
-                if call_stm.is_a(MOVE):
-                    assert call_stm.src is call
-                    call_stm.src = result
-                elif call_stm.is_a(EXPR):
-                    assert call_stm.exp is call
-                    call_stm.exp = result
+                self._make_result_exp(call_stm, call, callee, caller, symbol_map)
 
             attr_map = {}
             if caller.is_method() and caller.parent is not callee.parent:
                 if callee.is_ctor():
+                    assert not callee.is_returnable()
                     if call_stm.is_a(MOVE):
                         attr_map[callee.symbols[env.self_name]] = call_stm.dst
                 else:
@@ -126,6 +95,7 @@ class InlineOpt(object):
                     symbol_map[callee.symbols[env.self_name]] = object_sym
             else:
                 if callee.is_ctor():
+                    assert not callee.is_returnable()
                     if call_stm.is_a(MOVE):
                         assert call_stm.src is call
                         object_sym = call_stm.dst.qualified_symbol()
@@ -135,6 +105,10 @@ class InlineOpt(object):
                     object_sym = call.func.exp.qualified_symbol()
                 symbol_map[callee.symbols[env.self_name]] = object_sym
 
+            block_map, _ = callee.clone_blocks(caller)
+            callee_entry_blk = block_map[callee.entry_block]
+            callee_exit_blk = block_map[callee.exit_block]
+            assert len(callee_exit_blk.succs) <= 1
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
             sym_replacer.process(caller, callee_entry_blk)
 
@@ -145,6 +119,20 @@ class InlineOpt(object):
                 call_stm.block.stms.remove(call_stm)
             elif call_stm.is_a(EXPR):
                 call_stm.block.stms.remove(call_stm)
+
+    def _make_result_exp(self, call_stm, call, callee, caller, symbol_map):
+        result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
+        result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+        assert result_sym.is_return()
+        result_sym.del_tag('return')
+        result = TEMP(result_sym, Ctx.LOAD)
+        result.lineno = call_stm.lineno
+        if call_stm.is_a(MOVE):
+            assert call_stm.src is call
+            call_stm.src = result
+        elif call_stm.is_a(EXPR):
+            assert call_stm.exp is call
+            call_stm.exp = result
 
     def _make_replace_symbol_map(self, call, caller, callee, inline_id):
         symbol_map = callee.clone_symbols(caller, postfix='_inl' + inline_id)
