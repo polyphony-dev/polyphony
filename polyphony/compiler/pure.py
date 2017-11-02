@@ -4,7 +4,7 @@ import os
 import sys
 import threading
 import traceback
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from .common import fail, warn
 from .constopt import ConstantOptBase
 from .errors import Errors, Warnings, InterpretError
@@ -50,7 +50,9 @@ def interpret(source, file_name=''):
     rtinfo.module_classes = module_classes
     rtinfo.module_instances = instances
     namespace_names = [scp.name for scp in env.scopes.values() if scp.is_namespace() and not scp.is_global()]
-    rtinfo.global_vars = _find_vars(objs, namespace_names)
+    _vars = _find_vars(objs, '__main__', namespace_names)
+    if vars:
+        rtinfo.global_vars = _vars['__main__']
     env.runtime_info = rtinfo
 
 
@@ -337,52 +339,59 @@ def _find_module_instances(objs, classes):
     return instances
 
 
-def _find_vars(dic, namespace_names):
-    vars = {}
+def _find_vars(dic, namespace, namespace_names):
+    '''
+    vars = {
+        'namespace1': {k1:v1, k2:v2, ...},
+        'namespace2': {k1:v1, k2:v2, ...},
+    }
+    '''
+    vars = defaultdict(dict)
     for name, obj in dic.items():
         if name != '__name__' and name != '__version__' and name.startswith('__'):
             continue
         if isinstance(obj, int) or isinstance(obj, str) or isinstance(obj, list) or isinstance(obj, tuple):
-            vars[name] = obj
+            vars[namespace][name] = obj
         elif inspect.isclass(obj):
-            _vars = _find_vars(obj.__dict__, namespace_names)
+            _vars = _find_vars(obj.__dict__, name, namespace_names)
             if _vars:
-                vars[name] = _vars
+                vars[namespace][name] = _vars[name]
         elif inspect.isfunction(obj) and obj.__name__ == '_module_decorator':
             cls = obj.__dict__['cls']
             assert inspect.isclass(cls)
-            _vars = _find_vars(cls.__dict__, namespace_names)
+            _vars = _find_vars(cls.__dict__, name, namespace_names)
             if _vars:
-                vars[name] = _vars
-            if cls.__module__ in namespace_names and cls.__module__ not in dic:
+                vars[namespace][name] = _vars[name]
+            #if cls.__name__ == cls.__module__
+            if cls.__module__ in namespace_names and cls.__module__ not in vars:
                 mod = inspect.getmodule(cls)
                 _vars = _find_vars_in_libs(mod.__name__, mod.__dict__, namespace_names)
                 if _vars:
-                    vars[cls.__module__] = _vars
+                    vars[namespace][mod.__name__] = _vars[mod.__name__]
         elif inspect.ismodule(obj) and obj.__name__ in namespace_names:
-            _vars = _find_vars_in_libs(obj.__name__, obj.__dict__, namespace_names)
+            _vars = _find_vars_in_libs(name, obj.__dict__, namespace_names)
             if _vars:
-                vars[name] = _vars
+                vars[namespace][name] = _vars[name]
     return vars
 
 
 def _find_vars_in_libs(libname, dic, namespace_names):
     if libname == 'polyphony.compiler':
         return None
-    vars = {}
+    vars = defaultdict(dict)
     for name, obj in dic.items():
         if name != '__name__' and name != '__version__' and name.startswith('_'):
             continue
         if isinstance(obj, int) or isinstance(obj, str) or isinstance(obj, list) or isinstance(obj, tuple):
-            vars[name] = obj
+            vars[libname][name] = obj
         elif inspect.isclass(obj):
-            _vars = _find_vars(obj.__dict__, namespace_names)
+            _vars = _find_vars(obj.__dict__, name, namespace_names)
             if _vars:
-                vars[name] = _vars
+                vars[libname][name] = _vars[name]
         elif inspect.ismodule(obj) and obj.__name__ in namespace_names:
-            _vars = _find_vars_in_libs(obj.__name__, obj.__dict__, namespace_names)
+            _vars = _find_vars_in_libs(name, obj.__dict__, namespace_names)
             if _vars:
-                vars[name] = _vars
+                vars[libname][name] = _vars[name]
     return vars
 
 
