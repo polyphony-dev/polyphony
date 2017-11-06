@@ -75,7 +75,7 @@ class State(object):
 
 
 class PipelineState(State):
-    def __init__(self, name, stages, first_valid_signal, stg, is_loop=False):
+    def __init__(self, name, stages, first_valid_signal, stg, is_finite_loop=False):
         assert isinstance(name, str)
         self.name = name
         self.stages = stages
@@ -87,8 +87,9 @@ class PipelineState(State):
         self.enable_signals = {}
         self.hold_signals = {}
         self.last_signals = {}
+        self.exit_signals = {}
         self.stg = stg
-        self.is_loop = is_loop
+        self.is_finite_loop = is_finite_loop
 
     def __str__(self):
         s = '---------------------------------\n'
@@ -148,6 +149,9 @@ class PipelineState(State):
     def last_signal(self, idx):
         return self._pipeline_signal('last', self.last_signals, idx, True)
 
+    def exit_signal(self, idx):
+        return self._pipeline_signal('exit', self.exit_signals, idx, True)
+
     def new_stage(self, step, codes):
         name = self.name + '_{}'.format(step)
         s = PipelineStage(name, step, codes, self.stg, self)
@@ -165,12 +169,13 @@ class PipelineState(State):
         code = end_stage.codes[-1]
         if code.is_a(AHDL_TRANSITION_IF):
             for i, codes in enumerate(code.codes_list):
-                assert len(codes) == 1
-                transition = codes[0]
+                transition = codes[-1]
                 assert transition.is_a(AHDL_TRANSITION)
-                assert isinstance(transition.target, Block)
-                target_state = blk2states[self.stg.scope][transition.target][0]
-                transition.target = target_state
+                if isinstance(transition.target, Block):
+                    target_state = blk2states[self.stg.scope][transition.target][0]
+                    transition.target = target_state
+                else:
+                    pass
         elif code.is_a(AHDL_TRANSITION):
             pass
         else:
@@ -542,7 +547,7 @@ class PipelineStageBuilder(STGItemBuilder):
     def build(self, dfg, is_main):
         blk_name = dfg.main_block.nametag + str(dfg.main_block.num)
         prefix = self.stg.name + '_' + blk_name + '_P'
-        pstate = PipelineState(prefix, [], None, self.stg, is_loop=self.is_loop)
+        pstate = PipelineState(prefix, [], None, self.stg, is_finite_loop=self.is_finite_loop)
 
         self.scheduled_items = ScheduledItemQueue()
         self._build_scheduled_items(dfg)
@@ -608,7 +613,7 @@ class PipelineStageBuilder(STGItemBuilder):
     def _make_stage(self, pstate, step, codes):
         stage = pstate.new_stage(step, codes)
         guarded_codes = []
-        if stage.step == 0 and pstate.is_loop:
+        if stage.step == 0 and pstate.is_finite_loop:
             stage.has_enable = True
         for i, c in enumerate(stage.codes[:]):
             if c.is_a(AHDL_SEQ) and c.step == 0:
@@ -642,7 +647,7 @@ class PipelineStageBuilder(STGItemBuilder):
         else:
             v_now = pstate.valid_signal(stage.step)
             v_prev = pstate.valid_signal(stage.step - 1)
-        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
+        is_last = stage.step == len(pstate.stages) - 1
 
         r_now = pstate.ready_signal(stage.step)
         if not is_last:
@@ -751,23 +756,17 @@ class PipelineStageBuilder(STGItemBuilder):
 class LoopPipelineStageBuilder(PipelineStageBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
-        self.is_loop = True
+        self.is_finite_loop = True
 
     def post_build(self, dfg, is_main, pstate):
         loop_cnt = self.translator._sym_2_sig(dfg.main_block.loop_info.counter, Ctx.LOAD)
-        loop_update = dfg.main_block.loop_info.update
-        loop_cnt_next = self.translator._sym_2_sig(loop_update.sym, Ctx.LOAD)
         cond_defs = self.scope.usedef.get_stms_defining(dfg.main_block.loop_info.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
 
-        #self._move_loop_counter_if_needed()
-
-        loop_cond_fwd = self.translator.visit(cond_def.src, None)
-        assert loop_cond_fwd.args[0].sig is loop_cnt
-        loop_cond_fwd.args[0].sig = loop_cnt_next
+        loop_cond = self.translator.visit(cond_def.src, None)
         for stage in pstate.stages:
-            self._add_last_signal_chain(pstate, stage, loop_cond_fwd)
+            self._add_last_signal_chain(pstate, stage, loop_cond)
 
         # make the start condition of pipeline
         loop_cond = self.translator.visit(cond_def.src, None)
@@ -790,14 +789,37 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         # make the exit condition of pipeline
         if stage.step > 0:
             last = pstate.last_signal(stage.step - 1)
-            pipe_end_cond1 = AHDL_VAR(last, Ctx.LOAD)
+            ready = pstate.ready_signal(stage.step)
+            loop_end_cond1 = AHDL_OP('BitAnd',
+                                     AHDL_VAR(last, Ctx.LOAD),
+                                     AHDL_VAR(ready, Ctx.LOAD))
         else:
             last = pstate.last_signal(stage.step)
-            pipe_end_cond1 = AHDL_VAR(last, Ctx.LOAD)
-        pipe_end_cond2 = AHDL_OP('Invert', loop_cond)
-        pipe_end_cond = AHDL_OP('Or', pipe_end_cond1, pipe_end_cond2)
-        conds = [pipe_end_cond]
-        codes_list = [[AHDL_TRANSITION(dfg.main_block.loop_info.exit)]]
+            loop_end_cond1 = AHDL_VAR(last, Ctx.LOAD)
+        loop_end_cond2 = AHDL_OP('Invert', loop_cond)
+        loop_end_cond = AHDL_OP('Or', loop_end_cond1, loop_end_cond2)
+        conds = [loop_end_cond]
+        exit_signal = pstate.exit_signal(len(pstate.stages) - 1)
+        codes = [AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(1))]
+        codes_list = [codes]
+        loop_end_stm = AHDL_IF(conds, codes_list)
+        pstate.stages[-1].codes.append(loop_end_stm)
+
+        # if (exit)
+        #    exit <= 0
+        #    state <= loop_exit
+        conds = [AHDL_VAR(exit_signal, Ctx.LOAD)]
+        codes = []
+        for i in range(len(pstate.stages)):
+            if i == len(pstate.stages) - 1 and len(pstate.stages) > 1:
+                break
+            l = pstate.last_signal(i)
+            codes.append(AHDL_MOVE(AHDL_VAR(l, Ctx.STORE), AHDL_CONST(0)))
+        codes.extend([
+            AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
+            AHDL_TRANSITION(dfg.main_block.loop_info.exit)
+        ])
+        codes_list = [codes]
         pipe_end_stm = AHDL_TRANSITION_IF(conds, codes_list)
         pstate.stages[-1].codes.append(pipe_end_stm)
 
@@ -815,23 +837,19 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             nodes.append(n)
         super()._build_scheduled_items(nodes)
 
-    def _add_last_signal_chain(self, pstate, stage, cond_fwd):
-        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
+    def _add_last_signal_chain(self, pstate, stage, cond):
+        is_last = stage.step == len(pstate.stages) - 1
         last = pstate.last_signal(stage.step)
-        ready = pstate.ready_signal(stage.step)
         l_lhs = AHDL_VAR(last, Ctx.STORE)
         if stage.step == 0:
-            # last = last ? 0 : !loop_cond & ready
-            l_rhs = AHDL_IF_EXP(AHDL_VAR(last, Ctx.LOAD),
-                                AHDL_CONST(0),
-                                AHDL_OP('BitAnd',
-                                        AHDL_OP('Invert', cond_fwd),
-                                        AHDL_VAR(ready, Ctx.LOAD))
-                                )
+            ready = pstate.ready_signal(stage.step)
+            l_rhs = AHDL_OP('Invert', cond)
             set_last = AHDL_MOVE(l_lhs, l_rhs)
             stage.codes.append(set_last)
         elif not is_last:
-            l_rhs = AHDL_VAR(pstate.last_signal(stage.step - 1), Ctx.LOAD)
+            prev_last = AHDL_VAR(pstate.last_signal(stage.step - 1), Ctx.LOAD)
+            ready = AHDL_VAR(pstate.ready_signal(stage.step), Ctx.LOAD)
+            l_rhs = AHDL_OP('BitAnd', prev_last, ready)
             set_last = AHDL_MOVE(l_lhs, l_rhs)
             stage.codes.append(set_last)
 
@@ -842,7 +860,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         else:
             v_now = pstate.valid_signal(stage.step)
             v_prev = pstate.valid_signal(stage.step - 1)
-        is_last = stage.step == len(self.scheduled_items.queue.items()) - 1
+        is_last = stage.step == len(pstate.stages) - 1
         if stage.step > 0:
             rhs = AHDL_VAR(v_prev, Ctx.LOAD)
         else:
@@ -860,7 +878,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
 class WorkerPipelineStageBuilder(PipelineStageBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
-        self.is_loop = False
+        self.is_finite_loop = False
 
     def _build_scheduled_items(self, dfg):
         nodes = []
