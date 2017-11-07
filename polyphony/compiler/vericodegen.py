@@ -92,7 +92,7 @@ class VerilogCodeGen(AHDLVisitor):
 
         self.emit('case({})'.format(self.current_state_sig.name))
 
-        for stg in fsm.stgs:
+        for stg in sorted(fsm.stgs, key=lambda s: s.name):
             for i, state in enumerate(stg.states):
                 self._process_State(state)
 
@@ -140,8 +140,12 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit((',\n' + self.tab()).join(ports))
 
     def _generate_signal(self, sig):
-        sign = 'signed' if sig.is_int() else ''
-        return '{:<6} [{}:0] {}'.format(sign, sig.width - 1, sig.name)
+        name = self._safe_name(sig)
+        if sig.width == 1:
+            return name
+        else:
+            sign = 'signed' if sig.is_int() else ''
+            return '{:<6} [{}:0] {}'.format(sign, sig.width - 1, name)
 
     def _generate_localparams(self):
         constants = self.module_info.constants + self.module_info.state_constants
@@ -208,6 +212,8 @@ class VerilogCodeGen(AHDLVisitor):
         return in_names + out_names
 
     def _to_io_name(self, width, typ, io, signed, port_name):
+        if is_verilog_keyword(port_name):
+            port_name = port_name + '_'
         if width == 1:
             ioname = '{} {} {}'.format(io, typ, port_name)
         else:
@@ -224,6 +230,8 @@ class VerilogCodeGen(AHDLVisitor):
 
     def _to_sub_module_connect(self, instance_name, inf, acc, port):
         port_name = inf.port_name(port)
+        if is_verilog_keyword(port_name):
+            port_name = port_name + '_'
         accessor_name = acc.port_name(port)
         connection = '.{}({})'.format(port_name, accessor_name)
         return connection
@@ -336,15 +344,18 @@ class VerilogCodeGen(AHDLVisitor):
             return '"' + s[1:-1] + '"'
         return str(ahdl.value)
 
+    def _safe_name(self, sig):
+        if sig.is_reserved():
+            return sig.name
+        if is_verilog_keyword(sig.name):
+            return sig.name + '_'
+        return sig.name
+
     def visit_AHDL_VAR(self, ahdl):
-        if is_verilog_keyword(ahdl.sig.name):
-            return ahdl.sig.name + '_'
-        return ahdl.sig.name
+        return self._safe_name(ahdl.sig)
 
     def visit_AHDL_MEMVAR(self, ahdl):
-        if is_verilog_keyword(ahdl.sig.name):
-            return ahdl.sig.name + '_'
-        return ahdl.sig.name
+        return self._safe_name(ahdl.sig)
 
     def visit_AHDL_SUBSCRIPT(self, ahdl):
         return '{}[{}]'.format(self.visit(ahdl.memvar), self.visit(ahdl.offset))
@@ -483,23 +494,21 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_AHDL_SIGNAL_DECL(self, ahdl):
         nettype = 'reg' if ahdl.sig.is_reg() else 'wire'
-        if ahdl.sig.width == 1:
-            self.emit('{} {};'.format(nettype, ahdl.sig.name))
-        else:
-            self.emit('{} {};'.format(nettype, self._generate_signal(ahdl.sig)))
+        self.emit('{} {};'.format(nettype, self._generate_signal(ahdl.sig)))
 
     def visit_AHDL_SIGNAL_ARRAY_DECL(self, ahdl):
         nettype = 'reg' if ahdl.sig.is_regarray() else 'wire'
+        name = self._safe_name(ahdl.sig)
         if ahdl.sig.width == 1:
             self.emit('{} {}[0:{}];'.format(nettype,
-                                            ahdl.sig.name,
+                                            name,
                                             ahdl.size - 1))
         else:
             sign = 'signed' if ahdl.sig.is_int() else ''
             self.emit('{} {:<6} [{}:0] {} [0:{}];'.format(nettype,
                                                           sign,
                                                           ahdl.sig.width - 1,
-                                                          ahdl.sig.name,
+                                                          name,
                                                           ahdl.size - 1))
 
     def visit_AHDL_ASSIGN(self, ahdl):

@@ -13,8 +13,8 @@ class VerilogTestGen(VerilogCodeGen):
         self.indent = 0
         self.scope = scope
         self.module_info = self.scope.module_info
-        clk = self.scope.gen_sig('clk', 1)
-        rst = self.scope.gen_sig('rst', 1)
+        clk = self.scope.gen_sig('clk', 1, {'reserved'})
+        rst = self.scope.gen_sig('rst', 1, {'reserved'})
         self.module_info.add_internal_reg(clk)
         self.module_info.add_internal_reg(rst)
 
@@ -78,6 +78,9 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('end')
 
     def _generate_monitor_task(self):
+        if not (env.enable_verilog_monitor or env.enable_verilog_dump):
+            return
+
         def add_ports(ports):
             for p in ports:
                 if isinstance(p, tuple):

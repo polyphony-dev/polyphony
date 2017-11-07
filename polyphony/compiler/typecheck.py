@@ -732,8 +732,9 @@ class RestrictionChecker(IRVisitor):
 
 class LateRestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_port() and not (self.scope.is_ctor() and self.scope.parent.is_module()):
-            type_error(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
+        if ir.func_scope.is_port():
+            if not (self.scope.is_ctor() and self.scope.parent.is_module()):
+                type_error(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
 
     def visit_CALL(self, ir):
         if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
@@ -742,6 +743,13 @@ class LateRestrictionChecker(IRVisitor):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
             if not (self.scope.is_method() and self.scope.parent.is_module()):
                 fail(self.current_stm, Errors.CALL_MODULE_METHOD)
+
+    def visit_MOVE(self, ir):
+        super().visit_MOVE(ir)
+        reserved_port_name = ('clk', 'rst')
+        if ir.src.is_a(NEW) and ir.src.func_scope.is_port():
+            if ir.dst.symbol().name in reserved_port_name:
+                fail(self.current_stm, Errors.RESERVED_PORT_NAME, [ir.dst.symbol().name])
 
 
 class ModuleChecker(IRVisitor):

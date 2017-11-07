@@ -12,6 +12,7 @@ PYTHON_OP_2_VERILOG_OP_MAP = {
 def pyop2verilogop(op):
     return PYTHON_OP_2_VERILOG_OP_MAP[op]
 
+
 _keywords = {
     'always', 'assign', 'automatic',
     'begin',
@@ -32,8 +33,11 @@ _keywords = {
     'table', 'task', 'tri', 'tri0', 'tri1', 'triand', 'trior', 'trireg',
     'unsigned', 'use',
     'vectored',
-    'wait', 'wand', 'while', 'wor', 'wire'
+    'wait', 'wand', 'while', 'wor', 'wire',
+    # polyphony specific
+    'clk', 'rst',
 }
+
 
 def is_verilog_keyword(word):
     return word in _keywords

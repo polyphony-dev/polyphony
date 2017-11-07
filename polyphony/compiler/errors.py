@@ -64,6 +64,7 @@ class Errors(Enum):
     PORT_IS_NOT_USED = 909
     WORKER_MUST_BE_METHOD_OF_MODULE = 910
     PORT_ACCESS_IS_NOT_ALLOWED = 911
+    RESERVED_PORT_NAME = 912
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -148,7 +149,7 @@ ERROR_MESSAGES = {
     Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
     Errors.WORKER_MUST_BE_METHOD_OF_MODULE: "The worker must be a method of the module",
     Errors.PORT_ACCESS_IS_NOT_ALLOWED: "'any' port cannot be accessed from outside of the module",
-
+    Errors.RESERVED_PORT_NAME: "The name of Port '{}' is reserved",
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",

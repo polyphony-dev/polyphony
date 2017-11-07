@@ -3,6 +3,7 @@ from .common import Tagged
 
 class Signal(Tagged):
     TAGS = {
+        'reserved',
         'reg', 'net', 'int', 'condition',
         'regarray', 'netarray',
         'input', 'output',

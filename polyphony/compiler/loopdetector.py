@@ -96,6 +96,7 @@ class LoopDetector(object):
         loop_exit = loop_block.succs[0]
         assert len(loop_block.succs) == 1
         loop_block.loop_info = LoopInfo(loop_counter, loop_init, loop_update, cond_var.symbol(), loop_exit)
+        logger.debug(loop_block.loop_info)
 
     def _make_loop_block(self, head, loop_region):
         lblks, blks = self._make_loop_block_bodies(loop_region)

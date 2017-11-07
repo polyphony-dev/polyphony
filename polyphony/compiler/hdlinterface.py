@@ -1172,7 +1172,16 @@ def create_seq_interface(signal):
     return inf
 
 
-def single_input_port_fifo_adapter(signal, inst_name=''):
+def make_event_task(scope, reset_stms, stms):
+    clk = scope.gen_sig('clk', 1, {'reserved'})
+    rst = scope.gen_sig('rst', 1, {'reserved'})
+    codes_list = [reset_stms, stms]
+    reset_if = AHDL_IF([AHDL_VAR(rst, Ctx.LOAD), AHDL_CONST(1)], codes_list)
+    events = [(AHDL_VAR(clk, Ctx.LOAD), 'rising')]
+    return AHDL_EVENT_TASK(events, reset_if)
+
+
+def single_input_port_fifo_adapter(scope, signal, inst_name=''):
     '''
     if (rst) begin
       port_ready <= 0;
@@ -1207,13 +1216,10 @@ def single_input_port_fifo_adapter(signal, inst_name=''):
             AHDL_MOVE(fifo_write, AHDL_OP('BitAnd', port_valid, AHDL_OP('Invert', fifo_full))),
             AHDL_MOVE(fifo_din, port)
             ]
-    codes_list = [reset_stms, stms]
-    reset_if = AHDL_IF([AHDL_SYMBOL('rst'), AHDL_CONST(1)], codes_list)
-    events = [(AHDL_SYMBOL('clk'), 'rising')]
-    return AHDL_EVENT_TASK(events, reset_if)
+    return make_event_task(scope, reset_stms, stms)
 
 
-def single_output_port_fifo_adapter(signal, inst_name=''):
+def single_output_port_fifo_adapter(scope, ignal, inst_name=''):
     '''
     if (rst) begin
       port <= 0;
@@ -1256,10 +1262,7 @@ def single_output_port_fifo_adapter(signal, inst_name=''):
             AHDL_MOVE(port_valid, fifo_read),
             AHDL_MOVE(port, port_rhs),
             ]
-    codes_list = [reset_stms, stms]
-    reset_if = AHDL_IF([AHDL_SYMBOL('rst'), AHDL_CONST(1)], codes_list)
-    events = [(AHDL_SYMBOL('clk'), 'rising')]
-    return AHDL_EVENT_TASK(events, reset_if)
+    return make_event_task(scope, reset_stms, stms)
 
 
 class Interconnect(object):

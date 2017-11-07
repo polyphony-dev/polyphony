@@ -72,7 +72,6 @@ class LoopUnroller(object):
         unroll_remain = initial_trip % factor
 
         origin_body = cblk.bodies[0]
-        template_block, _ = self._clone_block(origin_body, 'unroll_tmp')
         defsyms = self.scope.usedef.get_syms_defined_at(cblk.head)
         origin_ivs = [sym for sym in defsyms if sym.is_induction()]
         new_ivs = self._new_ivs(factor, origin_ivs)
@@ -85,7 +84,7 @@ class LoopUnroller(object):
                                                                     factor,
                                                                     new_ivs)
         defsyms = self.scope.usedef.get_syms_defined_at(origin_body)
-        unroll_blks = self._make_unrolling_blocks(template_block,
+        unroll_blks = self._make_unrolling_blocks(origin_body,
                                                   defsyms,
                                                   new_ivs,
                                                   iv_updates,
@@ -288,12 +287,12 @@ class LoopUnroller(object):
         clone_blk = blk.clone(self.scope, stm_map, nametag)
         return clone_blk, stm_map
 
-    def _make_unrolling_blocks(self, template_block, defsyms, new_ivs, iv_updates, factor, offset, step, head):
+    def _make_unrolling_blocks(self, origin_block, defsyms, new_ivs, iv_updates, factor, offset, step, head):
         pred_blk = head
         assert factor > 0
         new_blks = []
         for i in range(factor):
-            new_blk, stm_map = self._clone_block(template_block, 'unroll_body')
+            new_blk, stm_map = self._clone_block(origin_block, 'unroll_body')
             new_blk.preds_loop = []
             new_blk.succs_loop = []
             replacer = IVReplacer(self.scope, defsyms, new_ivs, iv_updates, i)
