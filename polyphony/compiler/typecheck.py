@@ -720,8 +720,15 @@ class TypeChecker(IRVisitor):
 
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_module() and not ir.func_scope.parent.is_namespace():
-            fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
+        if ir.func_scope.is_module():
+            if not ir.func_scope.parent.is_namespace():
+                fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
+            for i, (_, arg) in enumerate(ir.args):
+                if (arg.is_a([TEMP, ATTR])):
+                    typ = arg.symbol().typ
+                    if typ.is_scalar() or typ.is_class():
+                        continue
+                    fail(self.current_stm, Errors.MODULE_ARG_MUST_BE_X_TYPE, [typ])
         if self.scope.is_global() and not ir.func_scope.is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)
 
@@ -777,7 +784,7 @@ class ModuleChecker(IRVisitor):
                 continue
             if (arg.is_a([TEMP, ATTR])):
                 typ = arg.symbol().typ
-                if typ.is_object() and typ.get_scope().is_port():
+                if typ.is_object() and typ.get_scope().is_port() or typ.is_scalar():
                     continue
             type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
                        [typ])

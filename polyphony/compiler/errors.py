@@ -58,13 +58,14 @@ class Errors(Enum):
     CALL_APPEND_WORKER_IN_CTOR = 903
     CALL_MODULE_METHOD = 904
     UNSUPPORTED_TYPES_IN_FUNC = 905
-    WORKER_ARG_MUST_BE_X_TYPE = 906
-    PORT_MUST_BE_IN_MODULE = 907
-    PORT_PARAM_MUST_BE_CONST = 908
-    PORT_IS_NOT_USED = 909
-    WORKER_MUST_BE_METHOD_OF_MODULE = 910
-    PORT_ACCESS_IS_NOT_ALLOWED = 911
-    RESERVED_PORT_NAME = 912
+    MODULE_ARG_MUST_BE_X_TYPE = 906
+    WORKER_ARG_MUST_BE_X_TYPE = 907
+    PORT_MUST_BE_IN_MODULE = 908
+    PORT_PARAM_MUST_BE_CONST = 909
+    PORT_IS_NOT_USED = 910
+    WORKER_MUST_BE_METHOD_OF_MODULE = 911
+    PORT_ACCESS_IS_NOT_ALLOWED = 912
+    RESERVED_PORT_NAME = 913
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -143,6 +144,7 @@ ERROR_MESSAGES = {
     Errors.CALL_APPEND_WORKER_IN_CTOR: "Calling append_worker method can only at the constructor",
     Errors.CALL_MODULE_METHOD: "Calling a method of the module class can only in the module itself",
     Errors.UNSUPPORTED_TYPES_IN_FUNC: "It is not supported to pass the {} type argument to {}()",
+    Errors.MODULE_ARG_MUST_BE_X_TYPE: "The type of @module class argument must be constant, not {}",
     Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}",
     Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",
     Errors.PORT_PARAM_MUST_BE_CONST: "The port class constructor accepts only constants",

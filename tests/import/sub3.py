@@ -15,4 +15,5 @@ def sub_test():
     assert 100 == func1(0)
 
 
-sub_test()
+if __name__ == '__main__':
+    sub_test()
