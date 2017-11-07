@@ -114,8 +114,10 @@ def try_get_constant(qsym, scope):
                 return vars[name]
         return None
     vars = env.runtime_info.global_vars
-    names = [sym.name for sym in qsym]
-    if qsym[0].scope.is_namespace() and not qsym[0].scope.is_global():
+    names = [sym if isinstance(sym, str) else sym.name for sym in qsym]
+    if qsym[0].scope.is_global():
+        names = ['__main__'] + names
+    elif qsym[0].scope.is_namespace() and not qsym[0].scope.is_global():
         names = [qsym[0].scope.name] + names
     v = find_value(vars, names)
     if isinstance(v, dict) and not v:
@@ -443,6 +445,7 @@ class ConstantOpt(ConstantOptBase):
         if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
+                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -453,6 +456,7 @@ class ConstantOpt(ConstantOptBase):
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
+                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -477,6 +481,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
+                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -487,6 +492,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
+                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -499,6 +505,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
                     classsym = objscope.parent.find_sym(objscope.orig_name)
                 c = try_get_constant((classsym, ir.attr), self.scope)
                 if c:
+                    c.lineno = ir.lineno
                     return c
         return ir
 
@@ -565,6 +572,7 @@ class GlobalConstantOpt(ConstantOptBase):
             qsym = ir.qualified_symbol()
         c = try_get_constant(qsym, self.scope)
         if c:
+            c.lineno = ir.lineno
             return c
         return ir
 
@@ -572,6 +580,7 @@ class GlobalConstantOpt(ConstantOptBase):
         if ir.tail().typ.is_class():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
+                c.lineno = ir.lineno
                 return c
         return ir
 

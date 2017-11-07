@@ -103,9 +103,9 @@ class HDLModuleBuilder(object):
                 adapter_sig = self.module_info.scope.gen_sig(adapter_name, sub_module_inf.signal.width)
                 self._add_fifo_channel(adapter_sig)
                 if sub_module_inf.signal.is_input():
-                    item = single_output_port_fifo_adapter(self.scope, sub_module_inf.signal, acc.inst_name)
+                    item = single_output_port_fifo_adapter(self.module_info.scope, sub_module_inf.signal, acc.inst_name)
                 else:
-                    item = single_input_port_fifo_adapter(self.scope, sub_module_inf.signal, acc.inst_name)
+                    item = single_input_port_fifo_adapter(self.module_info.scope, sub_module_inf.signal, acc.inst_name)
                 self.module_info.add_decl('', item)
 
     def _add_roms(self, scope):

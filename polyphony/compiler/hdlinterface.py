@@ -1219,7 +1219,7 @@ def single_input_port_fifo_adapter(scope, signal, inst_name=''):
     return make_event_task(scope, reset_stms, stms)
 
 
-def single_output_port_fifo_adapter(scope, ignal, inst_name=''):
+def single_output_port_fifo_adapter(scope, signal, inst_name=''):
     '''
     if (rst) begin
       port <= 0;

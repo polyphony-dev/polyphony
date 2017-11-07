@@ -50,9 +50,9 @@ def interpret(source, file_name=''):
     rtinfo.module_classes = module_classes
     rtinfo.module_instances = instances
     namespace_names = [scp.name for scp in env.scopes.values() if scp.is_namespace() and not scp.is_global()]
-    _vars = _find_vars(objs, '__main__', namespace_names)
-    if vars:
-        rtinfo.global_vars = _vars['__main__']
+    _vars, _namespaces = _find_vars('__main__', objs, set(), namespace_names)
+    _namespaces['__main__'] = _vars['__main__']
+    rtinfo.global_vars = _namespaces
     env.runtime_info = rtinfo
 
 
@@ -339,7 +339,7 @@ def _find_module_instances(objs, classes):
     return instances
 
 
-def _find_vars(dic, namespace, namespace_names):
+def _find_vars(namespace, dic, visited, namespace_names):
     '''
     vars = {
         'namespace1': {k1:v1, k2:v2, ...},
@@ -347,52 +347,44 @@ def _find_vars(dic, namespace, namespace_names):
     }
     '''
     vars = defaultdict(dict)
+    namespaces = {}
     for name, obj in dic.items():
         if name != '__name__' and name != '__version__' and name.startswith('__'):
             continue
+        namespace_objs = []
         if isinstance(obj, int) or isinstance(obj, str) or isinstance(obj, list) or isinstance(obj, tuple):
             vars[namespace][name] = obj
         elif inspect.isclass(obj):
-            _vars = _find_vars(obj.__dict__, name, namespace_names)
-            if _vars:
-                vars[namespace][name] = _vars[name]
+            if obj.__module__.startswith('polyphony'):
+                continue
+            namespace_objs.append((name, obj))
+            if obj.__module__ in namespace_names and obj.__module__ not in vars:
+                mod = inspect.getmodule(obj)
+                namespace_objs.append((mod.__name__, mod))
         elif inspect.isfunction(obj) and obj.__name__ == '_module_decorator':
             cls = obj.__dict__['cls']
             assert inspect.isclass(cls)
-            _vars = _find_vars(cls.__dict__, name, namespace_names)
-            if _vars:
-                vars[namespace][name] = _vars[name]
-            #if cls.__name__ == cls.__module__
+            namespace_objs.append((name, cls))
             if cls.__module__ in namespace_names and cls.__module__ not in vars:
                 mod = inspect.getmodule(cls)
-                _vars = _find_vars_in_libs(mod.__name__, mod.__dict__, namespace_names)
-                if _vars:
-                    vars[namespace][mod.__name__] = _vars[mod.__name__]
+                namespace_objs.append((mod.__name__, mod))
         elif inspect.ismodule(obj) and obj.__name__ in namespace_names:
-            _vars = _find_vars_in_libs(name, obj.__dict__, namespace_names)
+            namespace_objs.append((name, obj))
+
+        for name, obj in namespace_objs:
+            if obj.__name__ in visited:
+                continue
+            _vars, _namespaces = _find_vars(name, obj.__dict__, namespaces.keys(), namespace_names)
             if _vars:
                 vars[namespace][name] = _vars[name]
-    return vars
-
-
-def _find_vars_in_libs(libname, dic, namespace_names):
-    if libname == 'polyphony.compiler':
-        return None
-    vars = defaultdict(dict)
-    for name, obj in dic.items():
-        if name != '__name__' and name != '__version__' and name.startswith('_'):
-            continue
-        if isinstance(obj, int) or isinstance(obj, str) or isinstance(obj, list) or isinstance(obj, tuple):
-            vars[libname][name] = obj
-        elif inspect.isclass(obj):
-            _vars = _find_vars(obj.__dict__, name, namespace_names)
-            if _vars:
-                vars[libname][name] = _vars[name]
-        elif inspect.ismodule(obj) and obj.__name__ in namespace_names:
-            _vars = _find_vars_in_libs(name, obj.__dict__, namespace_names)
-            if _vars:
-                vars[libname][name] = _vars[name]
-    return vars
+                if inspect.isclass(obj) and obj.__module__ != '__main__':
+                    qual_name = '{}.{}'.format(obj.__module__, obj.__name__)
+                else:
+                    qual_name = obj.__name__
+                namespaces[qual_name] = _vars[name]  # add as origin name
+            if _namespaces:
+                namespaces.update(_namespaces)
+    return vars, namespaces
 
 
 class PureCtorBuilder(object):
