@@ -103,6 +103,7 @@ class WaitForwarder(AHDLVisitor):
 
 class IfForwarder(AHDLVisitor):
     def process(self, scope):
+        self.forwarded = set()
         for stg in scope.stgs:
             for state in stg.states:
                 if isinstance(state, PipelineState):
@@ -111,6 +112,8 @@ class IfForwarder(AHDLVisitor):
                     self.visit(code)
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
+        if ahdl in self.forwarded:
+            return
         for i, codes in enumerate(ahdl.codes_list):
             transition = codes[-1]
             assert transition.is_a(AHDL_TRANSITION)
@@ -118,3 +121,4 @@ class IfForwarder(AHDLVisitor):
                 continue
             codes.pop()
             ahdl.codes_list[i].extend(transition.target.codes[:])
+        self.forwarded.add(ahdl)
