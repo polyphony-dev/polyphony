@@ -1,4 +1,4 @@
-#The type of @module class argument must be constant, not list[int[32]]
+#The type of @module class argument must be constant, not list
 from polyphony import module
 
 

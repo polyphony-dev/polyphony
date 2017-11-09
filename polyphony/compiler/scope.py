@@ -95,7 +95,8 @@ class Scope(Tagged):
                 set_order(s, order, ordered)
             if env.call_graph:
                 for s in env.call_graph.succs(scope):
-                    set_order(s, order, ordered)
+                    if s not in ordered:
+                        set_order(s, order, ordered)
         top = cls.global_scope()
         top.order = 0
         ordered = set()
@@ -112,7 +113,7 @@ class Scope(Tagged):
 
     @classmethod
     def is_unremovable(cls, s):
-        return s.is_namespace() or s.is_class() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
+        return s.is_instantiated() or (s.parent and s.parent.is_instantiated())
 
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(tags)

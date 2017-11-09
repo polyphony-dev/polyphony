@@ -45,9 +45,6 @@ class CallGraphBuilder(IRVisitor):
     def visit_CALL(self, ir):
         self.visit(ir.func)
         assert ir.func_scope
-        self.call_graph.add_edge(self.scope, ir.func_scope)
-        self.worklist.append(ir.func_scope)
-
         if ir.func_scope.orig_name == 'append_worker':
             _, w = ir.args[0]
             assert w.symbol().typ.is_function()
@@ -58,12 +55,35 @@ class CallGraphBuilder(IRVisitor):
 
     def visit_NEW(self, ir):
         assert ir.func_scope
-        self.call_graph.add_edge(self.scope, ir.func_scope)
-        self.worklist.append(ir.func_scope)
-
         ctor = ir.func_scope.find_ctor()
         self.call_graph.add_edge(ir.func_scope, ctor)
         self.worklist.append(ctor)
+
+    def visit_TEMP(self, ir):
+        if ir.sym.typ.has_scope():
+            receiver_scope = ir.sym.typ.get_scope()
+            if receiver_scope is self.scope.parent:
+                return
+            if receiver_scope.is_lib():
+                return
+            if receiver_scope.is_class():
+                typ = ir.symbol().typ
+                if typ.is_scalar():  # or typ.is_seq():
+                    return
+            self.call_graph.add_edge(self.scope, receiver_scope)
+            self.worklist.append(receiver_scope)
+        elif ir.sym.scope is not self.scope:
+            receiver_scope = ir.sym.ancestor.scope if ir.sym.ancestor else ir.sym.scope
+            if receiver_scope is self.scope.parent:
+                return
+            if receiver_scope.is_lib():
+                return
+            if receiver_scope.is_class() or receiver_scope.is_namespace():
+                typ = ir.symbol().typ
+                if typ.is_scalar():  # or typ.is_seq():
+                    return
+            self.call_graph.add_edge(self.scope, receiver_scope)
+            self.worklist.append(receiver_scope)
 
     def visit_ATTR(self, ir):
         # object referencing is also added as a callee
@@ -81,7 +101,7 @@ class CallGraphBuilder(IRVisitor):
             return
         if receiver_scope.is_class():
             typ = ir.symbol().typ
-            if typ.is_scalar() or typ.is_seq():
+            if typ.is_scalar(): # or typ.is_seq():
                 return
         self.call_graph.add_edge(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)
