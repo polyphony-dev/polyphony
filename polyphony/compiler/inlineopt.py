@@ -71,6 +71,11 @@ class InlineOpt(object):
     def _process_method(self, callee, caller, calls):
         if caller.is_namespace():
             return
+        if callee.is_ctor() and callee.parent.is_module():
+            if caller.is_ctor() and caller.parent.is_module():
+                pass
+            else:
+                return
         for call, call_stm in calls:
             self.inline_counts[caller] += 1
 

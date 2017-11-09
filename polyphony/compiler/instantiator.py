@@ -32,7 +32,7 @@ class EarlyWorkerInstantiator(object):
         modules = [scope for scope in env.scopes.values() if scope.is_module()]
         module = None
         for m in modules:
-            if m.inst_name == name:
+            if hasattr(m, 'inst_name') and m.inst_name == name:
                 module = m
                 break
         if not module:
@@ -168,8 +168,16 @@ class WorkerInstantiator(object):
     def _process_global_module(self):
         new_workers = set()
         collector = CallCollector()
-        g = Scope.global_scope()
-        calls = collector.process(g)
+        #g = Scope.global_scope()
+        #calls = collector.process(g)
+        calls = set()
+        scopes = Scope.get_scopes(bottom_up=False,
+                                  with_global=True,
+                                  with_class=False,
+                                  with_lib=False)
+        for s in scopes:
+            if s.is_global() or s.is_function_module():
+                calls |= collector.process(s)
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope.is_module() and not call.func_scope.find_ctor().is_pure():
                 new_workers = new_workers | self._process_workers(call.func_scope)
@@ -255,8 +263,16 @@ class ModuleInstantiator(object):
     def _process_global_module(self):
         collector = CallCollector()
         new_modules = set()
-        g = Scope.global_scope()
-        calls = collector.process(g)
+        #g = Scope.global_scope()
+        #calls = collector.process(g)
+        calls = set()
+        scopes = Scope.get_scopes(bottom_up=False,
+                                  with_global=True,
+                                  with_class=False,
+                                  with_lib=False)
+        for s in scopes:
+            if s.is_global() or s.is_function_module():
+                calls |= collector.process(s)
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope.is_module() and not call.func_scope.is_instantiated():
                 new_module = self._instantiate_module(call, stm.dst)
@@ -272,7 +288,7 @@ class ModuleInstantiator(object):
             if arg.is_a(CONST):
                 binding.append((bind_val, i, arg.value))
 
-        inst_name = module_var.symbol().name
+        inst_name = module_var.symbol().hdl_name()
         new_module_name = module.orig_name + '_' + inst_name
         if binding:
             overrides = [module.find_ctor()]
