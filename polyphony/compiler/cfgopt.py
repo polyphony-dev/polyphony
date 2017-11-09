@@ -294,6 +294,7 @@ class HyperBlockBuilder(object):
 
     def _convert(self, diamond_nodes):
         reducer = BlockReducer()
+        reducer.scope = self.scope
         while diamond_nodes:
             head, tail, branches = diamond_nodes
             if self.tree.get_parent_of(tail) is head:
