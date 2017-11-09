@@ -66,6 +66,7 @@ class Errors(Enum):
     WORKER_MUST_BE_METHOD_OF_MODULE = 911
     PORT_ACCESS_IS_NOT_ALLOWED = 912
     RESERVED_PORT_NAME = 913
+    MODULE_CANNOT_ACCESS_OBJECT = 914
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -156,6 +157,7 @@ ERROR_MESSAGES = {
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
     Errors.CANNOT_WAIT_OUTPUT: "Cannot wait for the output port",
+    Errors.MODULE_CANNOT_ACCESS_OBJECT: "The module class cannot access an object",
 
     Errors.PURE_ERROR: "@pure Python execution is failed",
     Errors.PURE_MUST_BE_GLOBAL: "@pure function must be in the global scope",

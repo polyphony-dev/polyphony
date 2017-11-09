@@ -282,10 +282,10 @@ class TypePropagation(IRVisitor):
             ir.sym = self.scope.add_temp('@array')
         item_typs = [self.visit(item) for item in ir.items]
 
-        if item_typs and all([Type.is_same(item_typs[0], item_t) for item_t in item_typs]):
+        if item_typs and all([Type.is_assignable(item_typs[0], item_t) for item_t in item_typs]):
             if item_typs[0].is_scalar() and not item_typs[0].is_str():
                 maxwidth = max([item_t.get_width() for item_t in item_typs])
-                signed = any([item_t.get_signed() for item_t in item_typs])
+                signed = any([item_t.has_signed() and item_t.get_signed() for item_t in item_typs])
                 item_t = Type.int(maxwidth, signed)
             else:
                 item_t = item_typs[0]
@@ -647,7 +647,7 @@ class TypeChecker(IRVisitor):
             return ir.sym.typ
         for item in ir.items:
             item_type = self.visit(item)
-            if not item_type.is_int():
+            if not (item_type.is_int() or item_type.is_bool()):
                 type_error(self.current_stm, Errors.SEQ_ITEM_MUST_BE_INT,
                            [item_type])
         if (ir.sym.typ.is_freezed() and
@@ -736,6 +736,61 @@ class RestrictionChecker(IRVisitor):
         if ir.mem.symbol().scope.is_global():
             fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
 
+    def visit_CALL(self, ir):
+        if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
+            if ir.func_scope.orig_name == 'append_worker':
+                self._check_append_worker(ir)
+        elif self.scope.is_method() and self.scope.parent.is_module():
+            if self._is_object_access(ir.func):
+                type_error(self.current_stm, Errors.MODULE_CANNOT_ACCESS_OBJECT)
+
+    def _check_append_worker(self, call):
+        for i, (_, arg) in enumerate(call.args):
+            if i == 0:
+                func = arg
+                assert func.symbol().typ.is_function()
+                worker_scope = func.symbol().typ.get_scope()
+                if worker_scope.is_method():
+                    assert self.scope.is_ctor()
+                    if not self.scope.parent.is_subclassof(worker_scope.parent):
+                        fail(self.current_stm, Errors.WORKER_MUST_BE_METHOD_OF_MODULE)
+                continue
+            if arg.is_a(CONST):
+                continue
+            if (arg.is_a([TEMP, ATTR])):
+                typ = arg.symbol().typ
+                if typ.is_scalar():
+                    continue
+                elif typ.is_object():
+                    continue
+            type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
+                       [typ])
+
+    def _is_object_access(self, ir):
+        if not ir.is_a(ATTR):
+            return False
+        if not ir.head().typ.is_object():
+            return False
+        head_scope = ir.head().typ.get_scope()
+        if head_scope is not self.scope.parent:
+            return False
+        qsym = ir.qualified_symbol()
+        if not qsym[1].typ.is_object():
+            return False
+        if len(qsym) <= 2:
+            return False
+        if qsym[1].typ.get_scope().is_port():
+            return False
+        if qsym[1].typ.get_scope().is_module():
+            return False
+        return True
+
+    def visit_MOVE(self, ir):
+        super().visit_MOVE(ir)
+        if self.scope.is_method() and self.scope.parent.is_module():
+            if self._is_object_access(ir.src) or self._is_object_access(ir.dst):
+                type_error(self.current_stm, Errors.MODULE_CANNOT_ACCESS_OBJECT)
+
 
 class LateRestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
@@ -768,31 +823,6 @@ class ModuleChecker(IRVisitor):
         if not (scope.parent and scope.parent.is_module()):
             return
         super().process(scope)
-
-    def _check_append_worker(self, call):
-        for i, (_, arg) in enumerate(call.args):
-            if i == 0:
-                func = arg
-                assert func.symbol().typ.is_function()
-                worker_scope = func.symbol().typ.get_scope()
-                if worker_scope.is_method():
-                    assert self.scope.is_ctor()
-                    if not self.scope.parent.is_subclassof(worker_scope.parent):
-                        fail(self.current_stm, Errors.WORKER_MUST_BE_METHOD_OF_MODULE)
-                continue
-            if arg.is_a(CONST):
-                continue
-            if (arg.is_a([TEMP, ATTR])):
-                typ = arg.symbol().typ
-                if typ.is_object() and typ.get_scope().is_port() or typ.is_scalar():
-                    continue
-            type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
-                       [typ])
-
-    def visit_CALL(self, ir):
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
-            if ir.func_scope.orig_name == 'append_worker':
-                self._check_append_worker(ir)
 
     def visit_MOVE(self, ir):
         if not ir.dst.is_a(ATTR):
