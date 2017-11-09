@@ -168,7 +168,8 @@ class PortConverter(IRTransformer):
                     fail(self.current_stm, Errors.WRITING_IS_CONFLICTED,
                          [sym.orig_name()])
             else:
-                assert self.scope.is_worker() or self.scope.parent.is_module()
+                if kind == 'internal':
+                    assert self.scope.is_worker() or self.scope.parent.is_module()
                 port_typ.set_writer(self.scope)
         elif expected_di == 'input' and port_typ.get_scope().name.startswith('polyphony.io.Queue'):
             # read-read conflict
@@ -178,7 +179,8 @@ class PortConverter(IRTransformer):
                     fail(self.current_stm, Errors.READING_IS_CONFLICTED,
                          [sym.orig_name()])
             else:
-                assert self.scope.is_worker() or self.scope.parent.is_module()
+                if kind == 'internal':
+                    assert self.scope.is_worker() or self.scope.parent.is_module()
                 port_typ.set_reader(self.scope)
 
     def _get_port_owner(self, sym):
