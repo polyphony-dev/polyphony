@@ -28,6 +28,9 @@ from .iotransformer import IOTransformer
 from .iotransformer import WaitTransformer
 from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
+from .loopdetector import LoopInfoSetter
+from .loopdetector import LoopRegionSetter
+from .loopdetector import LoopDependencyDetector
 from .memorytransform import MemoryRenamer, RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiresolve import PHICondResolver
@@ -316,7 +319,7 @@ def loop(driver, scope):
 
 
 def unroll(driver, scope):
-    if LoopUnroller().process(scope):
+    while LoopUnroller().process(scope):
         dumpscope(driver, scope)
         usedef(driver, scope)
         reduceblk(driver, scope)
@@ -325,8 +328,12 @@ def unroll(driver, scope):
         dumpscope(driver, scope)
         usedef(driver, scope)
         constopt(driver, scope)
+        usedef(driver, scope)
         copyopt(driver, scope)
         deadcode(driver, scope)
+        LoopInfoSetter().process(scope)
+        LoopRegionSetter().process(scope)
+        LoopDependencyDetector().process(scope)
 
 
 def deadcode(driver, scope):

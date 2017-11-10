@@ -57,6 +57,27 @@ def eval_binop(ir, ctx):
         fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
 
 
+def reduce_binop(ir):
+    op = ir.op
+    if ir.left.is_a(CONST):
+        const = ir.left.value
+        var = ir.right
+    elif ir.right.is_a(CONST):
+        const = ir.right.value
+        var = ir.left
+    else:
+        assert False
+    if op == 'Add' and const == 0:
+        return var
+    elif op == 'Mult' and const == 1:
+        return var
+    elif op == 'Mult' and const == 0:
+        c = CONST(0)
+        c.lineno = ir.lineno
+        return c
+    return ir
+
+
 def eval_relop(op, lv, rv, ctx):
     if op == 'Eq':
         b = lv == rv
@@ -151,6 +172,8 @@ class ConstantOptBase(IRVisitor):
             c = CONST(eval_binop(ir, self))
             c.lineno = ir.lineno
             return c
+        elif ir.left.is_a(CONST) or ir.right.is_a(CONST):
+            return reduce_binop(ir)
         return ir
 
     def visit_RELOP(self, ir):

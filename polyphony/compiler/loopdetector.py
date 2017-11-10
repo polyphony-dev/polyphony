@@ -50,53 +50,9 @@ class LoopDetector(object):
         self._add_loop_tree_entry(head, lblks)
         scope.loop_nest_tree.set_root(head)
 
+        LoopRegionSetter().process(scope)
+        LoopInfoSetter().process(scope)
         LoopDependencyDetector().process(scope)
-        self._set_loop_info_rec(head)
-
-    def _set_loop_info_rec(self, blk):
-        if (blk is not self.scope.entry_block and
-                (blk.synth_params['scheduling'] == 'pipeline' or blk.synth_params['unroll'])):
-            self._set_loop_info(blk)
-        for c in self.scope.loop_nest_tree.get_children_of(blk):
-            self._set_loop_info_rec(c)
-
-    def _set_loop_info(self, loop_block):
-        cjump = loop_block.head.stms[-1]
-        if not cjump.is_a(CJUMP):
-            # this loop may busy loop
-            return
-        cond_var = cjump.exp
-        assert cond_var.is_a(TEMP)
-        defs = self.scope.usedef.get_stms_defining(cond_var.symbol())
-        assert len(defs) == 1
-        cond_stm = list(defs)[0]
-        assert cond_stm.is_a(MOVE)
-        assert cond_stm.src.is_a(RELOP)
-        loop_relexp = cond_stm.src
-
-        if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol().is_induction():
-            assert loop_relexp.right.is_a([CONST, TEMP])
-            loop_counter = loop_relexp.left.symbol()
-        elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol().is_induction():
-            assert loop_relexp.left.is_a([CONST, TEMP])
-            loop_counter = loop_relexp.right.symbol()
-        else:
-            # this loop may busy loop
-            return
-
-        defs = self.scope.usedef.get_stms_defining(loop_counter)
-        assert len(defs) == 1
-        counter_def = list(defs)[0]
-        counter_def.is_a(PHIBase)
-        assert len(counter_def.args) == 2
-        loop_init = counter_def.args[0]
-        loop_update = counter_def.args[1]
-        assert loop_update
-        assert loop_init
-        loop_exit = loop_block.succs[0]
-        assert len(loop_block.succs) == 1
-        loop_block.loop_info = LoopInfo(loop_counter, loop_init, loop_update, cond_var.symbol(), loop_exit)
-        logger.debug(loop_block.loop_info)
 
     def _make_loop_block(self, head, loop_region):
         lblks, blks = self._make_loop_block_bodies(loop_region)
@@ -173,6 +129,79 @@ class LoopDetector(object):
         self.scope.loop_nest_tree.add_node(parent)
         for child in children:
             self.scope.loop_nest_tree.add_edge(parent, child)
+
+
+class LoopInfoSetter(object):
+    def process(self, scope):
+        self.scope = scope
+        for c in self.scope.loop_nest_tree.get_children_of(scope.entry_block):
+            self._set_loop_info_rec(c)
+
+    def _set_loop_info_rec(self, blk):
+        if (blk.synth_params['scheduling'] == 'pipeline' or
+                blk.synth_params['unroll']):
+            self.set_loop_info(blk)
+        for c in self.scope.loop_nest_tree.get_children_of(blk):
+            self._set_loop_info_rec(c)
+
+    def set_loop_info(self, loop_block):
+        if loop_block.loop_info:
+            return
+        cjump = loop_block.head.stms[-1]
+        if not cjump.is_a(CJUMP):
+            # this loop may busy loop
+            return
+        cond_var = cjump.exp
+        assert cond_var.is_a(TEMP)
+        defs = self.scope.usedef.get_stms_defining(cond_var.symbol())
+        assert len(defs) == 1
+        cond_stm = list(defs)[0]
+        assert cond_stm.is_a(MOVE)
+        assert cond_stm.src.is_a(RELOP)
+        loop_relexp = cond_stm.src
+
+        if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol().is_induction():
+            assert loop_relexp.right.is_a([CONST, TEMP])
+            loop_counter = loop_relexp.left.symbol()
+        elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol().is_induction():
+            assert loop_relexp.left.is_a([CONST, TEMP])
+            loop_counter = loop_relexp.right.symbol()
+        else:
+            # this loop may busy loop
+            return
+
+        defs = self.scope.usedef.get_stms_defining(loop_counter)
+        assert len(defs) == 1
+        counter_def = list(defs)[0]
+        counter_def.is_a(PHIBase)
+        assert len(counter_def.args) == 2
+        loop_init = counter_def.args[0]
+        loop_update = counter_def.args[1]
+        assert loop_update
+        assert loop_init
+        loop_exit = loop_block.succs[0]
+        assert len(loop_block.succs) == 1
+        loop_block.loop_info = LoopInfo(loop_counter, loop_init, loop_update, cond_var.symbol(), loop_exit)
+        logger.debug(loop_block.loop_info)
+
+
+class LoopRegionSetter(object):
+    def process(self, scope):
+        self.scope = scope
+        children = self.scope.loop_nest_tree.get_children_of(scope.entry_block)
+        for c in children:
+            c.region = self._get_region(c)
+
+    def _get_region(self, lb):
+        assert isinstance(lb, CompositBlock)
+        if self.scope.loop_nest_tree.is_leaf(lb):
+            lb.region = [lb.head] + lb.bodies
+        else:
+            children = self.scope.loop_nest_tree.get_children_of(lb)
+            lb.region = [lb.head] + [b for b in lb.bodies if not isinstance(b, CompositBlock)]
+            for c in children:
+                lb.region.extend(self._get_region(c))
+        return lb.region
 
 
 # hierarchize
