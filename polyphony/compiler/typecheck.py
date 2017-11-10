@@ -740,9 +740,6 @@ class RestrictionChecker(IRVisitor):
         if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
             if ir.func_scope.orig_name == 'append_worker':
                 self._check_append_worker(ir)
-        elif self.scope.is_method() and self.scope.parent.is_module():
-            if self._is_object_access(ir.func):
-                type_error(self.current_stm, Errors.MODULE_CANNOT_ACCESS_OBJECT)
 
     def _check_append_worker(self, call):
         for i, (_, arg) in enumerate(call.args):
@@ -765,31 +762,6 @@ class RestrictionChecker(IRVisitor):
                     continue
             type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
                        [typ])
-
-    def _is_object_access(self, ir):
-        if not ir.is_a(ATTR):
-            return False
-        if not ir.head().typ.is_object():
-            return False
-        head_scope = ir.head().typ.get_scope()
-        if head_scope is not self.scope.parent:
-            return False
-        qsym = ir.qualified_symbol()
-        if not qsym[1].typ.is_object():
-            return False
-        if len(qsym) <= 2:
-            return False
-        if qsym[1].typ.get_scope().is_port():
-            return False
-        if qsym[1].typ.get_scope().is_module():
-            return False
-        return True
-
-    def visit_MOVE(self, ir):
-        super().visit_MOVE(ir)
-        if self.scope.is_method() and self.scope.parent.is_module():
-            if self._is_object_access(ir.src) or self._is_object_access(ir.dst):
-                type_error(self.current_stm, Errors.MODULE_CANNOT_ACCESS_OBJECT)
 
 
 class LateRestrictionChecker(IRVisitor):
