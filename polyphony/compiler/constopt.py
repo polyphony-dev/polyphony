@@ -641,7 +641,7 @@ class PolyadConstantFolding(object):
                 return
             if not (ir.src.left.is_a(CONST) or ir.src.right.is_a(CONST)):
                 return
-            if ir.src.op not in ('Add', 'Sub', 'Mult'):
+            if ir.src.op not in ('Add', 'Mult'):
                 return
             defstms = self.scope.usedef.get_stms_defining(ir.dst.symbol())
             if len(defstms) != 1:
@@ -656,24 +656,24 @@ class PolyadConstantFolding(object):
             ir.left = self.visit(ir.left)
             ir.right = self.visit(ir.right)
             assert ir.left and ir.right
-            if ir.op in ('Add', 'Sub', 'Mult'):
-                newop = POLYOP(ir.op)
-                newop.lineno = ir.lineno
+            if ir.op in ('Add', 'Mult'):
+                poly = POLYOP(ir.op)
+                poly.lineno = ir.lineno
                 l = ir.left
                 if l.is_a([BINOP, POLYOP]):
                     assert l.op == ir.op
-                    newop.values.extend([e for e in l.kids()])
+                    poly.values.extend([e for e in l.kids()])
                 else:
-                    newop.values.append(l)
+                    poly.values.append(l)
 
                 r = ir.right
                 if r.is_a([BINOP, POLYOP]):
                     assert l.op == ir.op
-                    newop.values.extend([e for e in r.kids()])
+                    poly.values.extend([e for e in r.kids()])
                 else:
-                    newop.values.append(r)
-                if len(newop.values) > 2:
-                    return newop
+                    poly.values.append(r)
+                if len(poly.values) > 2:
+                    return poly
             return ir
 
         def visit_POLYOP(self, ir):
@@ -681,27 +681,23 @@ class PolyadConstantFolding(object):
 
     class Poly2Bin(IRTransformer):
         @staticmethod
-        def _fold(plural):
+        def _fold(poly):
             vars = []
             consts = []
-            for e in plural.values:
+            for e in poly.values:
                 if e.is_a(CONST):
                     consts.append(e)
                 else:
                     vars.append(e)
-            if plural.op == 'Add':
+            if poly.op == 'Add':
                 const_result = 0
                 for c in consts:
                     const_result += c.value
-            elif plural.op == 'Sub':
-                const_result = 0
-                for c in consts:
-                    const_result -= c.value
-            elif plural.op == 'Mult':
+            elif poly.op == 'Mult':
                 const_result = 1
                 for c in consts:
                     const_result *= c.value
-            plural.values = vars + [CONST(const_result)]
+            poly.values = vars + [CONST(const_result)]
 
         def visit_POLYOP(self, ir):
             self._fold(ir)

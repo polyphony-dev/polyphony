@@ -3,8 +3,10 @@ from .block import Block, CompositBlock
 from .common import fail
 from .errors import Errors
 from .ir import *
-from .irvisitor import IRVisitor
+from .irvisitor import IRVisitor, IRTransformer
 from .loopdetector import LoopInfoSetter, LoopDependencyDetector
+from .scope import SymbolReplacer
+from .type import Type
 from . import utils
 from logging import getLogger
 logger = getLogger(__name__)
@@ -25,7 +27,7 @@ class LoopUnroller(object):
         return False
 
     def _unroll_loop_tree_leaf(self, blk):
-        children = self.scope.loop_nest_tree.get_children_of(blk)
+        children = sorted(self.scope.loop_nest_tree.get_children_of(blk), key=lambda b: b.order)
         for c in children.copy():
             if self.scope.loop_nest_tree.is_leaf(c):
                 if not c.synth_params['unroll']:
@@ -41,7 +43,7 @@ class LoopUnroller(object):
                 if self._unroll_loop_tree_leaf(c):
                     return True
                 if c.synth_params['unroll']:
-                    fail((self.scope, c.head.stms[0].lineno), Errors.RULE_UNROLL_NESTED_LOOP)
+                    fail((self.scope, c.head.stms[-1].lineno), Errors.RULE_UNROLL_NESTED_LOOP)
         return False
 
     def _parse_factor(self, synth_params):
@@ -71,18 +73,18 @@ class LoopUnroller(object):
         if len(cblk.bodies) > 1:
             for b in cblk.bodies:
                 if len(b.succs) > 1:
-                    fail((self.scope, cblk.head.stms[0].lineno), Errors.RULE_UNROLL_CONTROL_BRANCH)
+                    fail((self.scope, cblk.head.stms[-1].lineno), Errors.RULE_UNROLL_CONTROL_BRANCH)
         assert len(cblk.bodies) == 1
         ret = self._find_loop_range(cblk)
         if not ret:
-            fail((self.scope, cblk.head.stms[0].lineno), Errors.RULE_UNROLL_UNFIXED_LOOP)
+            fail((self.scope, cblk.head.stms[-1].lineno), Errors.RULE_UNROLL_UNFIXED_LOOP)
         loop_min, loop_max, loop_step = ret
         initial_trip = ((loop_max + loop_step) - loop_min) // loop_step
         if initial_trip < 1:
             return False
         if factor == -1 or factor > loop_max:
             factor = initial_trip
-        unroll_trip = initial_trip // factor
+        #unroll_trip = initial_trip // factor
         unroll_remain = initial_trip % factor
         is_full_unroll = factor == initial_trip
         origin_body = cblk.bodies[0]
@@ -90,17 +92,22 @@ class LoopUnroller(object):
         origin_ivs = [sym for sym in defsyms if sym.is_induction()]
         new_ivs = self._new_ivs(factor, origin_ivs, is_full_unroll)
         if is_full_unroll:
-            unroll_head, iv_updates = self._make_full_unroll_head(cblk, new_ivs, loop_min)
+            unroll_head, iv_updates, loop_cond = self._make_full_unroll_head(cblk,
+                                                                             new_ivs,
+                                                                             loop_min)
+            sym_map = {}
         else:
-            unroll_head, iv_updates, lphis = self._make_unroll_head(cblk,
-                                                                    loop_max,
-                                                                    factor,
-                                                                    new_ivs)
+            unroll_head, iv_updates, lphis, sym_map = self._make_unroll_head(cblk,
+                                                                             loop_max,
+                                                                             loop_step,
+                                                                             factor,
+                                                                             new_ivs)
         defsyms = self.scope.usedef.get_syms_defined_at(origin_body)
         unroll_blks = self._make_unrolling_blocks(origin_body,
                                                   defsyms,
                                                   new_ivs,
                                                   iv_updates,
+                                                  sym_map,
                                                   factor,
                                                   loop_min,
                                                   loop_step,
@@ -116,11 +123,15 @@ class LoopUnroller(object):
                 for i, ublk in enumerate([unroll_head] + unroll_blks):
                     cblk.parent.bodies.insert(offs + i, ublk)
                     ublk.parent = cblk.parent
+            self._remove_loop_condition(loop_cond)
         else:
+            if unroll_remain:
+                remain_start_blk = Block(self.scope)
+            else:
+                remain_start_blk = None
             new_cblk = CompositBlock(self.scope, unroll_head, unroll_blks, [unroll_head] + unroll_blks)
-            self._reconnect_unroll_blocks(cblk, new_cblk, unroll_head, unroll_blks, lphis)
+            self._reconnect_unroll_blocks(cblk, new_cblk, unroll_head, unroll_blks, lphis, remain_start_blk)
             parent = self.scope.loop_nest_tree.get_parent_of(cblk)
-            self.scope.loop_nest_tree.del_edge(parent, cblk)
             self.scope.loop_nest_tree.add_edge(parent, new_cblk)
             if isinstance(cblk.parent, CompositBlock):
                 utils.replace_item(parent.bodies, cblk, new_cblk)
@@ -130,11 +141,24 @@ class LoopUnroller(object):
                     ublk.parent = new_cblk
             del new_cblk.synth_params['unroll']
             if unroll_remain:
-                # TODO:
-                assert False
-                remain_init = loop_min + (unroll_trip * loop_step * factor)
-                self._make_remain_loop(blk, remain_init)
-            self._replace_outer_uses(cblk, new_ivs, 0)
+                assert cblk.loop_info.counter in new_ivs
+                origin_lphis = {s.var.symbol():s for s in cblk.head.stms if s.is_a(LPHI)}
+                for sym, new_syms in new_ivs.items():
+                    new_sym = new_syms[0]
+                    lphi = origin_lphis[sym]
+                    arg = TEMP(new_sym, Ctx.LOAD)
+                    arg.lineno = lphi.args[0].lineno
+                    lphi.args[0] = arg
+                    lphi.defblks[0] = remain_start_blk
+                remain_start_blk.append_stm(EXPR(CONST(0)))  # guard from reduceblk
+                remain_start_blk.append_stm(JUMP(cblk.head))
+                remain_start_blk.succs = [cblk]
+                cblk.preds = [remain_start_blk]
+                cblk.head.preds[0] = remain_start_blk
+                del cblk.synth_params['unroll']
+            else:
+                self.scope.loop_nest_tree.del_edge(parent, cblk)
+                self._replace_outer_uses(cblk, new_ivs, 0)
         for blk in [unroll_head] + unroll_blks:
             blk.synth_params = cblk.preds[0].synth_params.copy()
         return True
@@ -178,9 +202,12 @@ class LoopUnroller(object):
         jmp.typ = ''
         jmp.target = loop_exit
 
-    def _reconnect_unroll_blocks(self, cblk, new_cblk, unroll_head, unroll_blks, lphis):
+    def _reconnect_unroll_blocks(self, cblk, new_cblk, unroll_head, unroll_blks, lphis, remain_start_blk):
         loop_pred = cblk.head.preds[0]
-        loop_exit = cblk.head.succs[1]
+        if remain_start_blk:
+            loop_exit = remain_start_blk
+        else:
+            loop_exit = cblk.head.succs[1]
 
         # loop_pred -> unroll_head
         loop_pred.replace_succ(cblk, new_cblk)
@@ -203,7 +230,7 @@ class LoopUnroller(object):
         unroll_head.succs = [first_blk, loop_exit]
         new_cblk.succs = [loop_exit]
         assert not unroll_head.succs_loop
-        loop_exit.preds = [unroll_head]
+        loop_exit.preds = [new_cblk]  #[unroll_head]
         cjmp = unroll_head.stms[-1]
         cjmp.true = first_blk
         cjmp.false = loop_exit
@@ -253,13 +280,14 @@ class LoopUnroller(object):
         unroll_head.stms = []
         for stm in head_stms:
             unroll_head.append_stm(stm)
-        return unroll_head, iv_updates
+        return unroll_head, iv_updates, orig_cjump_cond.dst.symbol()
 
-    def _make_unroll_head(self, cblk, loop_max, factor, new_ivs):
+    def _make_unroll_head(self, cblk, loop_max, loop_step, factor, new_ivs):
         unroll_head, stm_map = self._clone_block(cblk.head, 'unroll_head')
         head_stms = []
         iv_updates = {}
         lphis = []
+        sym_map = {}
         # append modified lphi
         #  i#2 = phi(init, i#3)  -> i#2_0 = phi(0, i#2_n)
         #  x#2 = phi(x_init, x#3)  -> x#2_0 = phi(x_init, x#2_n)
@@ -277,12 +305,21 @@ class LoopUnroller(object):
 
         orig_cjump_cond = unroll_head.stms[-2]
         assert orig_cjump_cond.is_a(MOVE) and orig_cjump_cond.src.is_a(RELOP)
-        cond_sym = orig_cjump_cond.dst.symbol()
+        orig_cond_sym = orig_cjump_cond.dst.symbol()
         orig_cjump = unroll_head.stms[-1]
         assert orig_cjump.is_a(CJUMP)
         new_loop_iv = new_ivs[cblk.loop_info.counter][0]
-        cond_rhs = RELOP('Lt', TEMP(new_loop_iv, Ctx.LOAD), CONST(loop_max))
-        #cond_sym = self.scope.add_condition_sym()
+        tmp = self.scope.add_temp()
+        tmp.typ = new_loop_iv.typ.clone()
+        mv = MOVE(TEMP(tmp, Ctx.STORE),
+                  BINOP('Add',
+                        TEMP(new_loop_iv, Ctx.LOAD),
+                        CONST((factor - 1) * loop_step)))
+        head_stms.append(mv)
+        cond_rhs = RELOP('LtE', TEMP(tmp, Ctx.LOAD), CONST(loop_max))
+        cond_sym = self.scope.add_condition_sym()
+        sym_map[orig_cond_sym] = cond_sym
+        cond_sym.typ = Type.bool_t
         cond_lhs = TEMP(cond_sym, Ctx.STORE)
         cond_stm = MOVE(cond_lhs, cond_rhs)
         cond_rhs.lineno = cond_lhs.lineno = cond_stm.lineno = orig_cjump.lineno
@@ -295,14 +332,14 @@ class LoopUnroller(object):
         unroll_head.stms = []
         for stm in head_stms:
             unroll_head.append_stm(stm)
-        return unroll_head, iv_updates, lphis
+        return unroll_head, iv_updates, lphis, sym_map
 
     def _clone_block(self, blk, nametag):
         stm_map = {}
         clone_blk = blk.clone(self.scope, stm_map, nametag)
         return clone_blk, stm_map
 
-    def _make_unrolling_blocks(self, origin_block, defsyms, new_ivs, iv_updates, factor, offset, step, head):
+    def _make_unrolling_blocks(self, origin_block, defsyms, new_ivs, iv_updates, sym_map, factor, offset, step, head):
         pred_blk = head
         assert factor > 0
         new_blks = []
@@ -310,9 +347,11 @@ class LoopUnroller(object):
             new_blk, stm_map = self._clone_block(origin_block, 'unroll_body')
             new_blk.preds_loop = []
             new_blk.succs_loop = []
-            replacer = IVReplacer(self.scope, defsyms, new_ivs, iv_updates, i)
+            ivreplacer = IVReplacer(self.scope, defsyms, new_ivs, iv_updates, i)
+            symreplacer = SymbolReplacer(sym_map)
             for stm in new_blk.stms:
-                replacer.visit(stm)
+                ivreplacer.visit(stm)
+                symreplacer.visit(stm)
             pred_blk.succs = [new_blk]
             jmp = pred_blk.stms[-1]
             jmp.typ = ''
@@ -337,14 +376,15 @@ class LoopUnroller(object):
                     new_iv.del_tag('induction')
         return new_iv_map
 
-    def _make_remain_loop(self, blk, remina_init):
-        pass
-
     def _replace_outer_uses(self, cblk, new_ivs, index):
         for u in cblk.outer_uses:
             usestms = self.scope.usedef.get_stms_using(u)
             for ustm in usestms:
-                ustm.replace(u, new_ivs[u][index])
+                if u in new_ivs:
+                    ustm.replace(u, new_ivs[u][index])
+
+    def _remove_loop_condition(self, cond):
+        PHICondRemover(cond).process(self.scope)
 
     def _find_loop_range(self, blk):
         loop_min = self._find_loop_min(blk.loop_info)
@@ -394,7 +434,8 @@ class LoopUnroller(object):
         update_defs = self.scope.usedef.get_stms_defining(update_sym)
         assert len(update_defs) == 1
         update_stm = list(update_defs)[0]
-        assert update_stm.is_a(MOVE)
+        if not update_stm.is_a(MOVE):
+            fail((self.scope, loop_update.lineno), Errors.RULE_UNROLL_UNKNOWN_STEP)
         update_rhs = update_stm.src
         if update_rhs.is_a(BINOP):
             if update_rhs.op == 'Add':
@@ -407,7 +448,7 @@ class LoopUnroller(object):
                 if may_step.is_a(CONST):
                     return may_step.value
                 return None
-        raise NotImplementedError('others than increasing loop are not supported')
+        fail((self.scope, loop_update.lineno), Errors.RULE_UNROLL_UNKNOWN_STEP)
 
 
 class IVReplacer(IRVisitor):
@@ -434,3 +475,18 @@ class IVReplacer(IRVisitor):
             new_name = '{}_{}'.format(ir.sym.name, self.idx)
             new_sym = self.scope.inherit_sym(ir.sym, new_name)
         ir.set_symbol(new_sym)
+
+
+class PHICondRemover(IRTransformer):
+    def __init__(self, sym):
+        self.sym = sym
+
+    def visit_UNOP(self, ir):
+        if ir.exp.is_a(TEMP) and ir.exp.symbol() is self.sym:
+            return CONST(1)
+        return ir
+
+    def visit_TEMP(self, ir):
+        if ir.ctx & Ctx.STORE == 0 and ir.symbol() is self.sym:
+            return CONST(1)
+        return ir

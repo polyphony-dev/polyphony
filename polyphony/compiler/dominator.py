@@ -1,3 +1,4 @@
+from .block import CompositBlock
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -85,13 +86,25 @@ class DominatorTreeBuilder(object):
         return tree
 
     def _succs(self, blk):
-        return blk.succs
+        succs = []
+        for s in blk.succs:
+            if isinstance(s, CompositBlock):
+                succs.append(s.head)
+            else:
+                succs.append(s)
+        return succs
 
     def _succs_loop(self, blk):
         return blk.succs_loop
 
     def _preds(self, blk):
-        return blk.preds
+        preds = []
+        for s in blk.preds:
+            if isinstance(s, CompositBlock):
+                preds.append(s.head)
+            else:
+                preds.append(s)
+        return preds
 
     def _preds_loop(self, blk):
         return blk.preds_loop

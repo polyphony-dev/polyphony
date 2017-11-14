@@ -78,6 +78,11 @@ class BlockReducer(object):
                     succ.replace_pred(block, pred)
                     succ.replace_pred_loop(block, pred)
                     self._reconstruct_phi(succ, block, pred)
+                    if isinstance(succ, CompositBlock):
+                        head = succ.head
+                        head.replace_pred(block, pred)
+                        head.replace_pred_loop(block, pred)
+                        self._reconstruct_phi(head, block, pred)
                 pred.succs = block.succs
                 pred.succs_loop = block.succs_loop
                 if block is scope.exit_block:
