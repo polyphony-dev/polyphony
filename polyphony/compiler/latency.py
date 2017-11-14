@@ -67,11 +67,7 @@ def get_syscall_latency(call):
     return UNIT_STEP
 
 
-def get_latency(tag):
-    if isinstance(tag, DataFlowGraph):
-        #TODO:
-        return UNIT_STEP * 5
-
+def _get_latency(tag):
     assert isinstance(tag, IR)
     if tag.is_a(MOVE):
         if tag.src.is_a(CALL):
@@ -98,12 +94,12 @@ def get_latency(tag):
             memnode = tag.src.mem.symbol().typ.get_memnode()
             if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
                 return 1
-            return UNIT_STEP * 3
+            return UNIT_STEP * 3, UNIT_STEP * 1
         elif tag.src.is_a(MSTORE):
             memnode = tag.src.mem.symbol().typ.get_memnode()
             if memnode.can_be_reg():
                 return 1
-            return UNIT_STEP * 1
+            return UNIT_STEP * 1, UNIT_STEP * 1
         if tag.dst.symbol().is_alias():
             return 0
     elif tag.is_a(EXPR):
@@ -120,3 +116,11 @@ def get_latency(tag):
         if tag.var.symbol().is_alias():
             return 0
     return UNIT_STEP
+
+
+def get_latency(tag):
+    l = _get_latency(tag)
+    if isinstance(l, tuple):
+        return l[0], l[1]
+    else:
+        return l, l

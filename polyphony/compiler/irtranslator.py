@@ -2,16 +2,17 @@
 import copy
 import os
 import builtins as python_builtins
-from .ir import *
 from .block import Block
+from .builtin import builtin_symbols, append_builtin
+from .builtin import lib_port_type_names
+from .common import fail
+from .env import env
+from .errors import Errors
+from .ir import *
+from .irhelper import op2str
 from .scope import Scope, FunctionParam
 from .symbol import Symbol
 from .type import Type
-from .env import env
-from .common import fail
-from .errors import Errors
-from .builtin import builtin_symbols, append_builtin
-from .builtin import lib_port_type_names, lib_class_names
 from logging import getLogger
 logger = getLogger(__name__)
 

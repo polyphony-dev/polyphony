@@ -1,6 +1,7 @@
 ﻿from collections import defaultdict
 from .block import CompositBlock
 from .ir import *
+from .irhelper import is_port_method_call, has_exclusive_function
 from .env import env
 from . import utils
 from logging import getLogger
@@ -326,11 +327,17 @@ class DataFlowGraph(object):
             dotn2 = node_map[n2]
             if typ == "DefUse":
                 if back:
-                    latency = n1.end - n1.begin
-                    g.add_edge(pydot.Edge(dotn1, dotn2, color='red', label=latency))
+                    if n1.tag.block is n2.tag.block:
+                        latency = n1.end - n1.begin
+                        g.add_edge(pydot.Edge(dotn1, dotn2, color='red', label=latency))
+                    else:
+                        g.add_edge(pydot.Edge(dotn1, dotn2, color='red'))
                 else:
-                    latency = n2.begin - n1.begin
-                    g.add_edge(pydot.Edge(dotn1, dotn2, label=latency))
+                    if n1.tag.block is n2.tag.block:
+                        latency = n2.begin - n1.begin
+                        g.add_edge(pydot.Edge(dotn1, dotn2, label=latency))
+                    else:
+                        g.add_edge(pydot.Edge(dotn1, dotn2))
             elif typ == "UseDef":
                 if back:
                     g.add_edge(pydot.Edge(dotn1, dotn2, color='orange'))
@@ -678,39 +685,6 @@ class DFGBuilder(object):
                     if all([n.tag.block is not node.tag.block for n in dfg.succs(prev_node)]):
                         dfg.add_seq_edge(prev_node, node)
 
-    def _is_port_method_call(self, call):
-        return call.is_a(CALL) and call.func_scope.is_method() and call.func_scope.parent.is_port()
-
-    def _has_exclusive_function(self, stm):
-        if stm.is_a(MOVE):
-            call = stm.src
-        elif stm.is_a(EXPR):
-            call = stm.exp
-        else:
-            return False
-        if call.is_a(SYSCALL):
-            # TODO: parallel scheduling for wait functions
-            wait_funcs = [
-                'polyphony.timing.clksleep',
-                'polyphony.timing.wait_rising',
-                'polyphony.timing.wait_falling',
-                'polyphony.timing.wait_value',
-                'polyphony.timing.wait_edge',
-                'print',
-            ]
-            return call.sym.name in wait_funcs
-        elif self._is_port_method_call(call):
-            # TODO: parallel scheduling for port access
-            port = call.func_scope.parent
-            if port.name.startswith('polyphony.io.Queue'):
-                return True
-            elif port.name.startswith('polyphony.io.Port'):
-                assert call.func.tail().typ.is_port()
-                proto = call.func.tail().typ.get_protocol()
-                if proto != 'none':
-                    return True
-        return False
-
     def _add_seq_edges_for_function(self, blocks, dfg):
         '''make sequence edges between functions that are executed in an exclusive state'''
         for block in blocks:
@@ -721,7 +695,7 @@ class DFGBuilder(object):
                 node = dfg.find_node(stm)
                 if seq_func_node:
                     dfg.add_seq_edge(seq_func_node, node)
-                if self._has_exclusive_function(stm):
+                if has_exclusive_function(stm):
                     seq_func_node = node
             seq_func_node = None
             for stm in reversed(block.stms):
@@ -730,7 +704,7 @@ class DFGBuilder(object):
                 node = dfg.find_node(stm)
                 if seq_func_node:
                     dfg.add_seq_edge(node, seq_func_node)
-                if self._has_exclusive_function(stm):
+                if has_exclusive_function(stm):
                     seq_func_node = node
 
     def _add_seq_edges_for_io(self, blocks, dfg):
@@ -744,7 +718,7 @@ class DFGBuilder(object):
                     call = stm.exp
                 else:
                     continue
-                if self._is_port_method_call(call):
+                if is_port_method_call(call):
                     node = dfg.find_node(stm)
                     if port_node:
                         dfg.add_seq_edge(port_node, node)
@@ -768,7 +742,7 @@ class DFGBuilder(object):
             if u.block is not defnode.tag.block:
                 continue
             unode = dfg.add_stm_node(u)
-            if self._has_exclusive_function(u):
+            if has_exclusive_function(u):
                 dfg.add_seq_edge(unode, defnode)
             else:
                 dfg.add_usedef_edge(unode, defnode)
@@ -819,7 +793,7 @@ class DFGBuilder(object):
             call = stm.exp
         else:
             return None
-        if not self._is_port_method_call(call):
+        if not is_port_method_call(call):
             return None
         return call.func.tail()
 

@@ -4,6 +4,7 @@ from .common import fail
 from .errors import Errors
 from .irvisitor import IRVisitor, IRTransformer
 from .ir import *
+from .irhelper import expr2ir, reduce_relexp
 from .env import env
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer

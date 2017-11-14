@@ -4,6 +4,7 @@ from .errors import Errors, Warnings
 from .latency import get_latency
 from .irvisitor import IRVisitor
 from .ir import *
+from .irhelper import has_exclusive_function
 from .latency import CALL_MINIMUM_STEP
 from .utils import unique
 from .scope import Scope
@@ -35,6 +36,7 @@ class SchedulerImpl(object):
     def __init__(self, res_tables):
         self.res_tables = res_tables
         self.node_latency_map = {}  # {node:(max, min, actual)}
+        self.node_seq_latency_map = {}
         self.all_paths = []
 
     def schedule(self, scope, dfg):
@@ -166,8 +168,8 @@ class SchedulerImpl(object):
     def _calc_latency(self, dfg):
         is_minimum = dfg.synth_params['cycle'] == 'minimum'
         for node in dfg.get_priority_ordered_nodes():
-            l = get_latency(node.tag)
-            if l == 0:
+            def_l, seq_l = get_latency(node.tag)
+            if def_l == 0:
                 if is_minimum:
                     self.node_latency_map[node] = (0, 0, 0)
                 else:
@@ -180,7 +182,8 @@ class SchedulerImpl(object):
                     else:
                         self.node_latency_map[node] = (0, 0, 0)
             else:
-                self.node_latency_map[node] = (l, l, l)
+                self.node_latency_map[node] = (def_l, def_l, def_l)
+            self.node_seq_latency_map[node] = seq_l
 
     def _adjust_latency(self, paths, expected):
         for path in paths:
@@ -322,7 +325,11 @@ class BlockBoundedListScheduler(SchedulerImpl):
             sched_times = []
             if seq_preds:
                 latest_node = max(seq_preds, key=lambda p: p.end)
-                sched_times.append(latest_node.end)
+                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag):
+                    sched_times.append(latest_node.end)
+                else:
+                    seq_latency = self.node_seq_latency_map[latest_node]
+                    sched_times.append(latest_node.begin + seq_latency)
             if defuse_preds:
                 latest_node = max(defuse_preds, key=lambda p: p.end)
                 sched_times.append(latest_node.end)

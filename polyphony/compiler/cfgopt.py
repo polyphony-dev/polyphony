@@ -3,7 +3,7 @@ from .block import Block, CompositBlock
 from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
-from .usedef import UseDefDetector
+from .irhelper import reduce_relexp
 from .utils import remove_except_one, replace_item
 from logging import getLogger
 logger = getLogger(__name__)

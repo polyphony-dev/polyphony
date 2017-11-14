@@ -10,7 +10,8 @@ from .constopt import ConstantOptBase
 from .errors import Errors, Warnings, InterpretError
 from .env import env
 from .graph import Graph
-from .ir import expr2ir, Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
+from .ir import Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
+from .irhelper import expr2ir
 from .scope import Scope
 from .setlineno import LineNumberSetter
 from .type import Type
