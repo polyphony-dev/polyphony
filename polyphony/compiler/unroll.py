@@ -175,8 +175,11 @@ class LoopUnroller(object):
             #assert jmp.target is cblk.head
             jmp.target = unroll_head
         elif jmp.is_a(CJUMP):
-            assert jmp.true is cblk.head
-            jmp.true = unroll_head
+            if jmp.true is cblk.head:
+                jmp.true = unroll_head
+            else:
+                assert jmp.false is cblk.head
+                jmp.false = unroll_head
         else:
             assert False
         unroll_head.preds = [loop_pred]
@@ -196,7 +199,9 @@ class LoopUnroller(object):
         # last_blk -> loop_exit
         last_blk.succs = [loop_exit]
         last_blk.succs_loop = []
-        loop_exit.preds = [last_blk]
+        loop_exit.replace_pred(cblk, last_blk)
+        if isinstance(loop_exit, CompositBlock):
+            loop_exit.head.replace_pred(cblk, last_blk)
         jmp = last_blk.stms[-1]
         assert jmp.is_a(JUMP)
         jmp.typ = ''
@@ -218,8 +223,11 @@ class LoopUnroller(object):
             #assert jmp.target is cblk.head
             jmp.target = unroll_head
         elif jmp.is_a(CJUMP):
-            assert jmp.true is cblk.head
-            jmp.true = unroll_head
+            if jmp.true is cblk.head:
+                jmp.true = unroll_head
+            else:
+                assert jmp.false is cblk.head
+                jmp.false = unroll_head
         else:
             assert False
 
