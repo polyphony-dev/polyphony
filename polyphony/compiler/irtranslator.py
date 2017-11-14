@@ -717,9 +717,37 @@ class CodeVisitor(ast.NodeVisitor):
                 var = TEMP(temp_sym, Ctx.LOAD)
             return var
 
+        def is_iterator_func(ir):
+            return it.is_a(SYSCALL) and it.sym.name in ('polyphony.unroll', 'polyphony.pipelined')
+
         var = self.visit(node.target)
         it = self.visit(node.iter)
 
+        loop_synth_params = {}
+        while is_iterator_func(it):
+            assert len(it.args) >= 1
+            _, seq = it.args[0]
+            if it.sym.name == 'polyphony.unroll':
+                if len(it.args) == 1:
+                    if len(it.kwargs) == 0:
+                        assert it.sym.typ.is_function()
+                        scp = it.sym.typ.get_scope()
+                        factor = scp.params[1].defval
+                    elif len(it.kwargs) == 1 and 'factor' in it.kwargs:
+                        factor = it.kwargs['factor']
+                    else:
+                        kwarg = list(it.kwargs.keys())[0]
+                        fail((self.current_scope, node.lineno),
+                             Errors.GOT_UNEXPECTED_KWARGS, [it.sym.name, kwarg])
+                elif len(it.args) == 2:
+                    _, factor = it.args[1]
+                else:
+                    fail((self.current_scope, node.lineno),
+                         Errors.TAKES_TOOMANY_ARGS, [it.sym.name, '2', len(it.args)])
+                loop_synth_params.update({'unroll':factor.value})
+            elif it.sym.name == 'polyphony.pipelined':
+                loop_synth_params.update({'scheduling':'pipeline'})
+            it = seq
         # In case of range() loop
         if it.is_a(SYSCALL) and it.sym.name == 'range':
             init_parts = []
@@ -756,7 +784,7 @@ class CodeVisitor(ast.NodeVisitor):
                            TEMP(var.sym, Ctx.LOAD),
                            step))
             ]
-            self._build_for_loop_blocks(init_parts, condition, [], continue_parts, node)
+            self._build_for_loop_blocks(init_parts, condition, [], continue_parts, loop_synth_params, node)
         elif it.is_a([TEMP, ATTR]):
             start = CONST(0)
             end  = SYSCALL(builtin_symbols['len'], [('seq', it.clone())], {})
@@ -779,7 +807,7 @@ class CodeVisitor(ast.NodeVisitor):
                            TEMP(counter, Ctx.LOAD),
                            CONST(1)))
             ]
-            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, node)
+            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, loop_synth_params, node)
         elif it.is_a(ARRAY):
             unnamed_array = self.current_scope.add_temp('@unnamed')
             start = CONST(0)
@@ -805,17 +833,22 @@ class CodeVisitor(ast.NodeVisitor):
                            TEMP(counter, Ctx.LOAD),
                            CONST(1)))
             ]
-            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, node)
+            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, loop_synth_params, node)
         else:
             fail((self.current_scope, node.lineno),
                  Errors.UNSUPPORTED_SYNTAX, ['This type of for statement'])
 
-    def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, node):
+    def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, loop_synth_params, node):
+        exit_block = self._new_block(self.current_scope)
+
+        old_synth_params = self.current_synth_params
+        self.current_synth_params = self.current_synth_params.copy()
+        self.current_synth_params.update(loop_synth_params)
+
         loop_check_block = self._new_block(self.current_scope, 'fortest')
         body_block = self._new_block(self.current_scope, 'forbody')
         else_block = self._new_block(self.current_scope, 'forelse')
         continue_block = self._new_block(self.current_scope, 'continue')
-        exit_block = self._new_block(self.current_scope)
 
         # initialize part
         for code in init_parts:
@@ -864,6 +897,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.loop_end_blocks.pop()
 
         self.current_block = exit_block
+        self.current_synth_params = old_synth_params
 
     def visit_AyncFor(self, node):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])

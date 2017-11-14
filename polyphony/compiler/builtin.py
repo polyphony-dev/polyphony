@@ -16,6 +16,8 @@ builtin_mappings = {
     'polyphony.timing.wait_falling': 'polyphony.timing.wait_falling',
     'polyphony.timing.wait_value': 'polyphony.timing.wait_value',
     'polyphony.timing.wait_edge': 'polyphony.timing.wait_edge',
+    'polyphony.unroll': 'polyphony.unroll',
+    'polyphony.pipelined': 'polyphony.pipelined',
 }
 
 builtin_symbols = {}

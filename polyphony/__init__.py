@@ -304,3 +304,11 @@ class _Rule(object):
 
 
 rule = _Rule()
+
+
+def pipelined(seq):
+    return seq
+
+
+def unroll(seq, factor='full'):
+    return seq
