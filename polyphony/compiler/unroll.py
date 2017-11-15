@@ -4,7 +4,6 @@ from .common import fail
 from .errors import Errors
 from .ir import *
 from .irvisitor import IRVisitor, IRTransformer
-from .loopdetector import LoopInfoSetter, LoopDependencyDetector
 from .scope import SymbolReplacer
 from .type import Type
 from . import utils
@@ -114,7 +113,7 @@ class LoopUnroller(object):
                                                   unroll_head)
         if is_full_unroll:
             self._reconnect_full_unroll_blocks(cblk, unroll_head, unroll_blks)
-            self._replace_outer_uses(cblk, new_ivs, factor)
+            self._replace_outer_uses(cblk, new_ivs, factor, {})
             parent = self.scope.loop_nest_tree.get_parent_of(cblk)
             self.scope.loop_nest_tree.del_edge(parent, cblk)
             if isinstance(cblk.parent, CompositBlock):
@@ -158,54 +157,72 @@ class LoopUnroller(object):
                 del cblk.synth_params['unroll']
             else:
                 self.scope.loop_nest_tree.del_edge(parent, cblk)
-                self._replace_outer_uses(cblk, new_ivs, 0)
+                self._replace_outer_uses(cblk, new_ivs, 0, sym_map)
         for blk in [unroll_head] + unroll_blks:
             blk.synth_params = cblk.preds[0].synth_params.copy()
         return True
 
+    def _replace_jump_target(self, block, old, new):
+        if isinstance(block, CompositBlock):
+            jmp = block.head.stms[-1]
+        else:
+            jmp = block.stms[-1]
+        if isinstance(new, CompositBlock):
+            new = new.head
+        assert not isinstance(new, CompositBlock)
+        if jmp.is_a(JUMP):
+            jmp.target = new
+        elif jmp.is_a(CJUMP):
+            if jmp.true is old:
+                jmp.true = new
+            else:
+                assert jmp.false is old
+                jmp.false = new
+        elif jmp.is_a(MCJUMP):
+            for i, t in enumerate(jmp.targets):
+                if t is old:
+                    jmp.targets[i] = new
+        else:
+            assert False
+
     def _reconnect_full_unroll_blocks(self, cblk, unroll_head, unroll_blks):
         loop_pred = cblk.head.preds[0]
         loop_exit = cblk.head.succs[1]
-
-        # loop_pred -> unroll_head
-        loop_pred.replace_succ(cblk, unroll_head)
-        assert not loop_pred.succs_loop
-        jmp = loop_pred.stms[-1]
-        if jmp.is_a(JUMP):
-            #assert jmp.target is cblk.head
-            jmp.target = unroll_head
-        elif jmp.is_a(CJUMP):
-            if jmp.true is cblk.head:
-                jmp.true = unroll_head
-            else:
-                assert jmp.false is cblk.head
-                jmp.false = unroll_head
-        else:
-            assert False
-        unroll_head.preds = [loop_pred]
-        unroll_head.preds_loop = []
-
         first_blk = unroll_blks[0]
         last_blk = unroll_blks[-1]
 
-        # unroll_head -> first_blk
-        unroll_head.succs = [first_blk]
+        # loop_pred -> unroll_head
+        loop_pred.replace_succ(cblk, unroll_head)
+        if isinstance(loop_pred, CompositBlock):
+            loop_pred.head.replace_succ(cblk, unroll_head)
+        assert unroll_head.preds[0] is loop_pred
+        assert not loop_pred.succs_loop
+        self._replace_jump_target(loop_pred, cblk.head, unroll_head)
+
+        # unroll_head
+        assert len(unroll_head.succs) == 1 and unroll_head.succs[0] is first_blk
+        assert len(first_blk.preds) == 1 and first_blk.preds[0] is unroll_head
         assert not unroll_head.succs_loop
-        assert unroll_head in first_blk.preds and len(first_blk.preds) == 1
-        jmp = unroll_head.stms[-1]
-        jmp.target = unroll_blks[0]
-        jmp.false = loop_exit
+        # no loop-back path
+        unroll_head.preds = [loop_pred]
+        unroll_head.preds_loop = []
 
         # last_blk -> loop_exit
         last_blk.succs = [loop_exit]
         last_blk.succs_loop = []
+
+        # loop exit
         loop_exit.replace_pred(cblk, last_blk)
         if isinstance(loop_exit, CompositBlock):
             loop_exit.head.replace_pred(cblk, last_blk)
+
         jmp = last_blk.stms[-1]
         assert jmp.is_a(JUMP)
         jmp.typ = ''
-        jmp.target = loop_exit
+        if isinstance(loop_exit, CompositBlock):
+            jmp.target = loop_exit.head
+        else:
+            jmp.target = loop_exit
 
     def _reconnect_unroll_blocks(self, cblk, new_cblk, unroll_head, unroll_blks, lphis, remain_start_blk):
         loop_pred = cblk.head.preds[0]
@@ -213,47 +230,49 @@ class LoopUnroller(object):
             loop_exit = remain_start_blk
         else:
             loop_exit = cblk.head.succs[1]
-
-        # loop_pred -> unroll_head
-        loop_pred.replace_succ(cblk, new_cblk)
-        assert new_cblk.preds[0] is loop_pred
-        assert not loop_pred.succs_loop
-        jmp = loop_pred.stms[-1]
-        if jmp.is_a(JUMP):
-            #assert jmp.target is cblk.head
-            jmp.target = unroll_head
-        elif jmp.is_a(CJUMP):
-            if jmp.true is cblk.head:
-                jmp.true = unroll_head
-            else:
-                assert jmp.false is cblk.head
-                jmp.false = unroll_head
-        else:
-            assert False
-
         first_blk = unroll_blks[0]
         last_blk = unroll_blks[-1]
 
+        # loop_pred -> unroll_head
+        loop_pred.replace_succ(cblk, new_cblk)
+        if isinstance(loop_pred, CompositBlock):
+            loop_pred.head.replace_succ(cblk, new_cblk)
+        assert new_cblk.preds[0] is loop_pred
+        assert not loop_pred.succs_loop
+        self._replace_jump_target(loop_pred, cblk.head, unroll_head)
+
         # unroll_head -> first_blk | loop_exit
-        unroll_head.succs = [first_blk, loop_exit]
-        new_cblk.succs = [loop_exit]
+        assert len(unroll_head.succs) == 1 and unroll_head.succs[0] is first_blk
+        assert len(first_blk.preds) == 1 and first_blk.preds[0] is unroll_head
         assert not unroll_head.succs_loop
-        loop_exit.preds = [new_cblk]  #[unroll_head]
-        cjmp = unroll_head.stms[-1]
-        cjmp.true = first_blk
-        cjmp.false = loop_exit
+        unroll_head.connect(loop_exit)
+        new_cblk.succs = []
+        new_cblk.connect(loop_exit)
+        self._replace_jump_target(unroll_head, None, loop_exit)
+        # add loop-back path from last_blk
+        unroll_head.preds = [loop_pred, last_blk]
+        unroll_head.preds_loop = [last_blk]
 
         # last_blk -> unroll_head
         last_blk.succs = [unroll_head]
         last_blk.succs_loop = [unroll_head]
-        unroll_head.preds = [loop_pred, last_blk]
-        unroll_head.preds_loop = [last_blk]
-        for lphi in lphis:
-            lphi.defblks = [loop_pred, last_blk]
+
+        # loop exit
+        loop_exit.replace_pred(cblk, new_cblk)
+        if isinstance(loop_exit, CompositBlock):
+            loop_exit.head.replace_pred(cblk, new_cblk)
+
         jmp = last_blk.stms[-1]
         assert jmp.is_a(JUMP)
         assert jmp.typ == 'L'
         jmp.target = unroll_head
+
+        if isinstance(loop_pred, CompositBlock):
+            for lphi in lphis:
+                lphi.defblks = [loop_pred.head, last_blk]
+        else:
+            for lphi in lphis:
+                lphi.defblks = [loop_pred, last_blk]
 
     def _make_full_unroll_head(self, cblk, new_ivs, loop_min):
         unroll_head, stm_map = self._clone_block(cblk.head, 'unroll_head')
@@ -384,12 +403,14 @@ class LoopUnroller(object):
                     new_iv.del_tag('induction')
         return new_iv_map
 
-    def _replace_outer_uses(self, cblk, new_ivs, index):
+    def _replace_outer_uses(self, cblk, new_ivs, index, sym_map):
         for u in cblk.outer_uses:
             usestms = self.scope.usedef.get_stms_using(u)
             for ustm in usestms:
                 if u in new_ivs:
                     ustm.replace(u, new_ivs[u][index])
+                if u in sym_map:
+                    ustm.replace(u, sym_map[u])
 
     def _remove_loop_condition(self, cond):
         PHICondRemover(cond).process(self.scope)
