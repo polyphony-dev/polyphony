@@ -1,5 +1,4 @@
 ﻿from collections import defaultdict
-from .block import CompositBlock
 from .common import fail, warn
 from .errors import Errors, Warnings
 from .irvisitor import IRVisitor
@@ -827,15 +826,15 @@ class SynthesisParamChecker(object):
     def process(self, scope):
         if scope.synth_params['scheduling'] == 'pipeline' and not scope.is_worker():
             fail((scope, scope.lineno), Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
-        for blk in scope.traverse_blocks(full=True):
-            if isinstance(blk, CompositBlock):
-                if blk.head.synth_params['scheduling'] == 'pipeline':
-                    if not scope.loop_nest_tree.is_leaf(blk):
-                        fail((scope, blk.head.stms[0].lineno), Errors.RULE_PIPELINE_HAS_INNER_LOOP)
-                    self._check_mem_rw_conflict_in_pipeline(blk, scope)
+        for blk in scope.traverse_blocks():
+            if blk.is_loop_head():
+                if blk.synth_params['scheduling'] == 'pipeline':
+                    loop = scope.find_region(blk)
+                    if not scope.is_leaf_region(loop):
+                        fail((scope, blk.stms[0].lineno), Errors.RULE_PIPELINE_HAS_INNER_LOOP)
+                    self._check_mem_rw_conflict_in_pipeline(loop, scope)
 
-    def _check_mem_rw_conflict_in_pipeline(self, cblk, scope):
-        bodyblocks = cblk.collect_basic_head_bodies()
+    def _check_mem_rw_conflict_in_pipeline(self, loop, scope):
         syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
         for sym in syms:
             if not sym.typ.is_list():
@@ -844,12 +843,12 @@ class SynthesisParamChecker(object):
             if memnode.can_be_reg():
                 continue
             defstms = sorted(scope.usedef.get_stms_defining(sym), key=lambda s: s.program_order())
-            defstms = [stm for stm in defstms if stm.block in bodyblocks]
+            defstms = [stm for stm in defstms if stm.block in loop.blocks()]
             if len(defstms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
                 fail(defstms[1], Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT, [sym])
             usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
-            usestms = [stm for stm in usestms if stm.block in bodyblocks]
+            usestms = [stm for stm in usestms if stm.block in loop.blocks()]
             if len(usestms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
                 fail(usestms[1], Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])

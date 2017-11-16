@@ -313,7 +313,7 @@ class STGBuilder(object):
         stg.scheduling = dfg.synth_params['scheduling']
         if stg.scheduling == 'pipeline':
             if not is_main:
-                if self.scope.is_worker() and not dfg.main_block.loop_info:
+                if self.scope.is_worker() and not dfg.region.counter:
                     builder = WorkerPipelineStageBuilder(self.scope, stg, self.blk2states)
                 else:
                     builder = LoopPipelineStageBuilder(self.scope, stg, self.blk2states)
@@ -444,7 +444,7 @@ class StateBuilder(STGItemBuilder):
 
     def build(self, dfg, is_main):
         blk_nodes_map = self._get_block_nodes_map(dfg)
-        for i, blk in enumerate(dfg.blocks):
+        for i, blk in enumerate(sorted(dfg.region.blocks())):
             self.scheduled_items = ScheduledItemQueue()
             if blk in blk_nodes_map:
                 nodes = blk_nodes_map[blk]
@@ -455,7 +455,7 @@ class StateBuilder(STGItemBuilder):
             logger.debug('# BLOCK ' + prefix + ' #')
 
             is_first = True if i == 0 else False
-            is_last = True if i == len(dfg.blocks) - 1 else False
+            is_last = True if i == len(dfg.region.blocks()) - 1 else False
             states = self._build_states_for_block(prefix, blk, is_main, is_first, is_last)
 
             assert states
@@ -545,7 +545,7 @@ class PipelineStageBuilder(STGItemBuilder):
         super().__init__(scope, stg, blk2states)
 
     def build(self, dfg, is_main):
-        blk_name = dfg.main_block.nametag + str(dfg.main_block.num)
+        blk_name = dfg.region.head.nametag + str(dfg.region.head.num)
         prefix = self.stg.name + '_' + blk_name + '_P'
         pstate = PipelineState(prefix, [], None, self.stg, is_finite_loop=self.is_finite_loop)
 
@@ -553,8 +553,7 @@ class PipelineStageBuilder(STGItemBuilder):
         self._build_scheduled_items(dfg)
         self._build_pipeline_stages(prefix, pstate, is_main)
 
-        self.blk2states[self.scope][dfg.main_block] = [pstate]
-        for blk in dfg.blocks:
+        for blk in dfg.region.blocks():
             self.blk2states[self.scope][blk] = [pstate]
 
         self.stg.states.append(pstate)
@@ -759,8 +758,8 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         self.is_finite_loop = True
 
     def post_build(self, dfg, is_main, pstate):
-        loop_cnt = self.translator._sym_2_sig(dfg.main_block.loop_info.counter, Ctx.LOAD)
-        cond_defs = self.scope.usedef.get_stms_defining(dfg.main_block.loop_info.cond)
+        loop_cnt = self.translator._sym_2_sig(dfg.region.counter, Ctx.LOAD)
+        cond_defs = self.scope.usedef.get_stms_defining(dfg.region.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
 
@@ -776,7 +775,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         pstate.stages[0].enable = loop_enable
 
         # make a condition for unexecutable loop
-        loop_init = self.translator.visit(dfg.main_block.loop_info.init, None)
+        loop_init = self.translator.visit(dfg.region.init, None)
         loop_cond = self.translator.visit(cond_def.src, None)
         args = []
         for i, a in enumerate(loop_cond.args):
@@ -817,7 +816,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             codes.append(AHDL_MOVE(AHDL_VAR(l, Ctx.STORE), AHDL_CONST(0)))
         codes.extend([
             AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
-            AHDL_TRANSITION(dfg.main_block.loop_info.exit)
+            AHDL_TRANSITION(dfg.region.exit)
         ])
         codes_list = [codes]
         pipe_end_stm = AHDL_TRANSITION_IF(conds, codes_list)
@@ -830,7 +829,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
                 continue
             if n.tag.is_a(CJUMP):
                 # remove cjump for the loop
-                if n.tag.exp.symbol() is dfg.main_block.loop_info.cond:
+                if n.tag.exp.symbol() is dfg.region.cond:
                     continue
                 else:
                     assert False

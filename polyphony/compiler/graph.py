@@ -17,6 +17,9 @@ class Graph(object):
             s += '{} --> {}: {}\n'.format(edge.src.__repr__(), edge.dst.__repr__(), edge.flags)
         return s
 
+    def count(self):
+        return len(self.nodes)
+
     def add_node(self, node):
         self.nodes.add(node)
 
@@ -37,16 +40,17 @@ class Graph(object):
         self.edges.add(Edge(src_node, dst_node, flags))
         self.order_map_cache = None
 
-    def del_edge(self, src_node, dst_node):
+    def del_edge(self, src_node, dst_node, auto_del_node=True):
         self.succ_nodes[src_node].remove(dst_node)
         self.pred_nodes[dst_node].remove(src_node)
         edge = self.find_edge(src_node, dst_node)
         assert edge
         self.edges.remove(edge)
-        if not self.succs(src_node) and not self.preds(src_node):
-            self.nodes.remove(src_node)
-        if not self.succs(dst_node) and not self.preds(dst_node):
-            self.nodes.remove(dst_node)
+        if auto_del_node:
+            if not self.succs(src_node) and not self.preds(src_node):
+                self.nodes.remove(src_node)
+            if not self.succs(dst_node) and not self.preds(dst_node):
+                self.nodes.remove(dst_node)
         self.order_map_cache = None
 
     def find_edge(self, src_node, dst_node):

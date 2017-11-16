@@ -4,6 +4,7 @@ from .block import Block
 from .common import Tagged, fail
 from .errors import Errors
 from .env import env
+from .loop import LoopNestTree
 from .symbol import Symbol
 from .synth import make_synth_params
 from .type import Type
@@ -137,6 +138,7 @@ class Scope(Tagged):
         self.subs = []
         self.usedef = None
         self.loop_nest_tree = None
+        self.loop_tree = LoopNestTree()
         self.callee_instances = defaultdict(set)
         self.stgs = []
         self.order = -1
@@ -174,8 +176,11 @@ class Scope(Tagged):
             s += 'None\n'
         s += 'Synthesis\n{}\n'.format(self.synth_params)
         s += '================================\n'
-        for blk in self.traverse_blocks(top_level_only=True):
+        for blk in self.traverse_blocks():
             s += str(blk)
+        s += '================================\n'
+        for r in self.loop_tree.traverse():
+            s += str(r)
         s += '================================\n'
         return s
 
@@ -198,9 +203,9 @@ class Scope(Tagged):
     def clone_blocks(self, scope):
         block_map = {}
         stm_map = {}
-        for b in self.traverse_blocks(full=True):
+        for b in self.traverse_blocks():
             block_map[b] = b.clone(scope, stm_map)
-        for b in self.traverse_blocks(full=True):
+        for b in self.traverse_blocks():
             b_clone = block_map[b]
             b_clone.reconnect(block_map)
 
@@ -268,6 +273,9 @@ class Scope(Tagged):
         s.cloned_stms = stm_map
 
         s.synth_params = self.synth_params.copy()
+        # TODO:
+        #s.loop_tree = None
+
         return s
 
     def inherit(self, name, overrides):
@@ -438,10 +446,10 @@ class Scope(Tagged):
         assert self.exit_block is None
         self.exit_block = blk
 
-    def traverse_blocks(self, full=False, top_level_only=False):
+    def traverse_blocks(self):
         assert len(self.entry_block.preds) == 0
         visited = set()
-        yield from self.entry_block.traverse(visited, full, top_level_only)
+        yield from self.entry_block.traverse(visited)
 
     def append_child(self, child_scope):
         if child_scope not in self.children:
@@ -565,6 +573,49 @@ class Scope(Tagged):
         self.workers.append((worker_scope, worker_args))
         assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
+
+    def top_region(self):
+        return self.loop_tree.root
+
+    def parent_region(self, r):
+        return self.loop_tree.get_parent_of(r)
+
+    def child_regions(self, r):
+        return self.loop_tree.get_children_of(r)
+
+    def set_top_region(self, r):
+        self.loop_tree.root = r
+
+    def append_child_regions(self, parent, children):
+        for child in children:
+            self.loop_tree.add_edge(parent, child)
+
+    def append_sibling_region(self, r, new_r):
+        parent = self.loop_tree.get_parent_of(r)
+        self.loop_tree.add_edge(parent, new_r)
+
+    def remove_region(self, r):
+        parent = self.loop_tree.get_parent_of(r)
+        self.loop_tree.del_edge(parent, r, auto_del_node=False)
+        self.loop_tree.del_node(r)
+
+    def find_region(self, blk):
+        for r in self.loop_tree.traverse():
+            if blk in r.blocks():
+                return r
+        return None
+
+    def remove_block_from_region(self, blk):
+        if not self.loop_tree.root:
+            return
+        r = self.find_region(blk)
+        r.remove_body(blk)
+
+    def is_leaf_region(self, r):
+        return self.loop_tree.is_leaf(r)
+
+    def traverse_regions(self, reverse=False):
+        return self.loop_tree.traverse(reverse)
 
 
 class SymbolReplacer(IRVisitor):

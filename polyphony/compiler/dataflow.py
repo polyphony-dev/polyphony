@@ -1,5 +1,4 @@
 ﻿from collections import defaultdict
-from .block import CompositBlock
 from .ir import *
 from .irhelper import is_port_method_call, has_exclusive_function
 from .env import env
@@ -65,10 +64,10 @@ class DFNode(object):
 
 
 class DataFlowGraph(object):
-    def __init__(self, name, parent, main_block, blocks):
+    def __init__(self, name, parent, region):
         self.name = name
-        self.main_block = main_block
-        self.blocks = blocks
+        self.region = region
+        #self.blocks = blocks
         self.nodes = []
         self.edges = {}
         self.succ_edges = defaultdict(set)
@@ -78,7 +77,7 @@ class DataFlowGraph(object):
         if parent:
             parent.set_child(self)
         self.children = []
-        self.synth_params = main_block.synth_params
+        self.synth_params = region.head.synth_params
 
     def __str__(self):
         s = 'DFG all nodes ==============\n'
@@ -388,26 +387,11 @@ class DFGBuilder(object):
 
     def process(self, scope):
         self.scope = scope
-        self.scope.top_dfg = self._process(scope.entry_block, None)
+        self.scope.top_dfg = self._process(scope.top_region(), None)
 
-    def _root_blocks(self):
-        inner_loop_region = set()
-        for c in self.scope.loop_nest_tree.get_children_of(self.scope.entry_block):
-            inner_loop_region = inner_loop_region.union(set(c.region))
-        all_blks = set(self.scope.traverse_blocks(full=False))
-        return all_blks.difference(inner_loop_region)
-
-    def _process(self, blk, parent_dfg):
-        if blk is self.scope.loop_nest_tree.root:
-            blocks = sorted(list(self._root_blocks()), key=lambda b: b.order)
-            dfg = self._make_graph(parent_dfg, blk, blocks)
-        else:
-            blocks = [blk.head]
-            for b in blk.bodies:
-                if not isinstance(b, CompositBlock):
-                    blocks.append(b)
-            dfg = self._make_graph(parent_dfg, blk, blocks)
-        for c in self.scope.loop_nest_tree.get_children_of(blk):
+    def _process(self, region, parent_dfg):
+        dfg = self._make_graph(parent_dfg, region)
+        for c in self.scope.loop_tree.get_children_of(region):
             self._process(c, dfg)
         return dfg
 
@@ -433,15 +417,15 @@ class DFGBuilder(object):
             for succ in succs:
                 logger.debug(succ)
 
-    def _make_graph(self, parent_dfg, main_block, blocks):
-        name = main_block.name
-        logger.debug('make graph ' + name)
-        dfg = DataFlowGraph(name, parent_dfg, main_block, blocks)
+    def _make_graph(self, parent_dfg, region):
+        logger.debug('make graph ' + region.name)
+        dfg = DataFlowGraph(region.name, parent_dfg, region)
         usedef = self.scope.usedef
 
+        blocks = region.blocks()
         for b in blocks:
             for stm in b.stms:
-                logger.log(0, 'loop head ' + name + ' :: ' + str(stm))
+                logger.log(0, 'loop head ' + region.name + ' :: ' + str(stm))
                 usenode = dfg.add_stm_node(stm)
                 # collect source nodes
                 self._add_source_node(usenode, dfg, usedef, blocks)
@@ -449,17 +433,17 @@ class DFGBuilder(object):
                 self._add_defuse_edges(stm, usenode, dfg, usedef, blocks)
                 # add use-def edges
                 self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)
-        if main_block.synth_params['scheduling'] == 'sequential':
+        if region.head.synth_params['scheduling'] == 'sequential':
             self._add_seq_edges(blocks, dfg)
         self._add_seq_edges_for_object(blocks, dfg)
         self._add_seq_edges_for_function(blocks, dfg)
         self._add_seq_edges_for_io(blocks, dfg)
         self._add_mem_edges(dfg)
         self._remove_alias_cycle(dfg)
-        if main_block.synth_params['scheduling'] == 'pipeline' and dfg.parent:
+        if region.head.synth_params['scheduling'] == 'pipeline' and dfg.parent:
             self._tweak_loop_var_edges_for_pipeline(dfg)
             self._tweak_port_edges_for_pipeline(dfg)
-        if main_block.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
+        if region.head.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
             self._add_seq_edges_for_ctrl_branch(dfg)
         RegArrayParallelizer().process(self.scope, dfg)
         return dfg

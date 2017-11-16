@@ -17,8 +17,6 @@ class Block(object):
             succs = [succ for succ in block.succs if succ not in block.succs_loop]
             for succ in succs:
                 cls.set_order(succ, order)
-                if isinstance(succ, CompositBlock):
-                    cls.set_order(succ.head, order)
 
     def __init__(self, scope, nametag='b'):
         self.nametag = nametag
@@ -34,7 +32,6 @@ class Block(object):
         self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
         self.path_exp = None
         self.synth_params = make_synth_params()
-        self.parent = None
         self.is_hyperblock = False
 
     def _str_connection(self):
@@ -108,8 +105,6 @@ class Block(object):
 
     def replace_succ(self, old, new):
         replace_item(self.succs, old, new, all=True)
-        if isinstance(new, CompositBlock):
-            return
         if self.stms:
             jmp = self.stms[-1]
             if jmp.is_a(JUMP):
@@ -147,14 +142,14 @@ class Block(object):
         if succ in self.succs_loop:
             self.succs_loop.remove(succ)
 
-    def traverse(self, visited, full=False, top_level_only=False):
+    def traverse(self, visited):
         if self in visited:
             return
         if self not in visited:
             visited.add(self)
             yield self
         for succ in [succ for succ in self.succs if succ not in self.succs_loop]:
-            yield from succ.traverse(visited, full, top_level_only)
+            yield from succ.traverse(visited)
 
     def clone(self, scope, stm_map, nametag=None):
         if nametag:
@@ -226,132 +221,6 @@ class Block(object):
                 continue
             stm.block.stms.remove(stm)
 
-    def is_in_same_loop_region(self, other):
-        if not self.parent:
-            return False
-        if self.parent is other.parent:
-            return True
-        parents = [self.parent]
-        p = self.parent
-        while p.parent:
-            parents.append(p.parent)
-            p = p.parent
-        if other.parent in parents:
-            return True
-        return False
-
-
-class CompositBlock(Block):
-    def __init__(self, scope, head, bodies, region):
-        super().__init__(scope, 'composit')
-        assert all([head.order < b.order for b in bodies])
-        assert head.preds_loop
-        self.head = head
-        self.bodies = bodies
-        self.region = region
-        self.preds = [p for p in head.preds if p not in head.preds_loop]
-        self.succs = self._find_succs([head] + bodies)
-        self.order = head.order
-        self.num = head.num
-        self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
-        self.outer_defs = None
-        self.outer_uses = None
-        self.inner_defs = None
-        self.inner_uses = None
-        self.synth_params = head.synth_params.copy()
-        head.parent = self
-        for body in bodies:
-            body.parent = self
-        self.loop_info = None
-
-    def __str__(self):
-        s = 'CompositBlock: (' + str(self.order) + ') ' + str(self.name) + '\n'
-        s += self._str_connection()
-
-        s += ' # head: ' + self.head.name + '\n'
-        s += ' # bodies: {'
-        s += ', '.join([blk.name for blk in self.bodies])
-        s += '}\n'
-        if self.outer_defs:
-            s += ' # outer_defs: {'
-            s += ', '.join([str(d) for d in self.outer_defs])
-            s += '}\n'
-        if self.outer_uses:
-            s += ' # outer_uses: {'
-            s += ', '.join([str(u) for u in self.outer_uses])
-            s += '}\n'
-        if self.inner_defs:
-            s += ' # inner_defs: {'
-            s += ', '.join([str(d) for d in self.inner_defs])
-            s += '}\n'
-        if self.inner_uses:
-            s += ' # inner_uses: {'
-            s += ', '.join([str(u) for u in self.inner_uses])
-            s += '}\n'
-        bs = str(self.head)
-        bs += ''.join([str(b) for b in self.bodies])
-        bs = '    ' + bs.replace('\n', '\n    ')
-        bs = bs[:-4]  # remove last indent
-        return s + bs
-
-    def _find_succs(self, region):
-        succs = []
-        for b in region:
-            for succ in b.succs:
-                if succ not in region:
-                    succs.append(succ)
-        return succs
-
-    def traverse(self, visited, full=False, top_level_only=False):
-        if top_level_only:
-            yield from super().traverse(visited, full, top_level_only)
-        else:
-            if full:
-                if self not in visited:
-                    visited.add(self)
-                    yield self
-            yield from self.head.traverse(visited, full, top_level_only)
-
-    def collect_basic_head_bodies(self):
-        return [self.head] + [b for b in self.bodies if not isinstance(b, CompositBlock)]
-
-    def clone(self, scope, stm_map):
-        b = CompositBlock(scope, self.nametag)
-        b.order = self.order
-        b.succs = list(self.succs)
-        b.preds = list(self.succs)
-        b.head = self.head
-        b.bodies = list(self.bodies)
-        b.region = list(self.region)
-        return b
-
-    def reconnect(self, blk_map):
-        self.head = blk_map[self.head]
-        for i, b in enumerate(self.bodies):
-            self.bodies[i] = blk_map[b]
-        for i, b in enumerate(self.region):
-            self.region[i] = blk_map[b]
-        for i, succ in enumerate(self.succs):
-            self.succs[i] = blk_map[succ]
-        for i, pred in enumerate(self.preds):
-            self.preds[i] = blk_map[pred]
-
-    def usesyms(self, usedef, with_inner_loop=True):
-        if with_inner_loop:
-            blocks = self.region
-        else:
-            blocks = self.collect_basic_head_bodies()
-        usesyms = set()
-        for blk in blocks:
-            usesyms |= usedef.get_syms_used_at(blk)
-        return usesyms
-
-    def defsyms(self, usedef, with_inner_loop=True):
-        if with_inner_loop:
-            blocks = self.region
-        else:
-            blocks = self.collect_basic_head_bodies()
-        defsyms = set()
-        for blk in blocks:
-            defsyms |= usedef.get_syms_defined_at(blk)
-        return defsyms
+    def is_loop_head(self):
+        r = self.scope.find_region(self)
+        return r and r is not self.scope.top_region() and r.head is self

@@ -1,5 +1,4 @@
-﻿from .env import env
-from .graph import Graph
+﻿from .graph import Graph
 from .ir import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -63,4 +62,3 @@ class PHICondResolver(object):
         assert mv.lineno > 0
         blk.insert_stm(-1, mv)
         logger.debug('PHI divide into ' + str(mv) + ' ' + blk.name)
-

@@ -314,7 +314,7 @@ class ConstantOptBase(IRVisitor):
         if true_blk is not false_blk:
             false_blk.remove_pred(blk)
             blk.remove_succ(false_blk)
-            if self.scope.exit_block is false_blk:
+            if self.scope.exit_block is false_blk and not false_blk.preds:
                 self.scope.exit_block = blk
             if not false_blk.preds and self.dtree.is_child(blk, false_blk):
                 remove_dominated_branch(false_blk)

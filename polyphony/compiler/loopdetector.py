@@ -1,34 +1,7 @@
-﻿from collections import namedtuple
-from .ir import CONST, RELOP, TEMP, MOVE, CJUMP, PHIBase
-from .graph import Graph
-from .block import CompositBlock
+﻿from .ir import CONST, RELOP, TEMP, MOVE, CJUMP, PHIBase
+from .loop import Region, Loop
 from logging import getLogger
 logger = getLogger(__name__)
-
-LoopInfo = namedtuple('LoopInfo', ('counter', 'init', 'update', 'cond', 'exit'))
-
-
-class LoopNestTree(Graph):
-    def set_root(self, n):
-        self.add_node(n)
-        self.root = n
-
-    def traverse(self):
-        return reversed(self.bfs_ordered_nodes())
-
-    def is_child(self, loop_head1, loop_head2):
-        return loop_head2 in self.succs(loop_head1)
-
-    def is_leaf(self, loop_head):
-        return not self.succs(loop_head)
-
-    def get_children_of(self, loop_head):
-        return self.succs(loop_head)
-
-    def get_parent_of(self, loop_head):
-        preds = self.preds(loop_head)
-        assert len(preds) == 1
-        return list(preds)[0]
 
 
 class LoopDetector(object):
@@ -37,7 +10,6 @@ class LoopDetector(object):
 
     def process(self, scope):
         self.scope = scope
-        scope.loop_nest_tree = LoopNestTree()
 
         ordered_blks = []
         visited = []
@@ -45,46 +17,37 @@ class LoopDetector(object):
         self._process_walk(head, ordered_blks, visited)
         assert head is ordered_blks[-1]
 
-        lblks, blks = self._make_loop_block_bodies(ordered_blks)
-
-        self._add_loop_tree_entry(head, lblks)
-        scope.loop_nest_tree.set_root(head)
+        regions, bodies = self._make_loop_bodies(ordered_blks)
+        bodies.remove(head)
+        top_region = Region(head, bodies, ordered_blks)
+        self.scope.append_child_regions(top_region, regions)
+        scope.set_top_region(top_region)
 
         LoopRegionSetter().process(scope)
         LoopInfoSetter().process(scope)
         LoopDependencyDetector().process(scope)
 
-    def _make_loop_block(self, head, loop_region):
-        lblks, blks = self._make_loop_block_bodies(loop_region)
-        bodies = sorted(lblks + blks, key=lambda b: b.order)
-        lb = CompositBlock(self.scope, head, bodies, [head] + loop_region)
-        self._add_loop_tree_entry(lb, lblks)
-        return lb
+    def _make_loop_region(self, head, loop_inner_blks):
+        regions, bodies = self._make_loop_bodies(loop_inner_blks)
+        loop = Loop(head, bodies, [head] + loop_inner_blks)
+        self.scope.append_child_regions(loop, regions)
+        return loop
 
-    def _make_loop_block_bodies(self, blks):
+    def _make_loop_bodies(self, blks):
         sccs = self._extract_sccs(blks)
-        lblks = []
+        regions = []
         for scc in sccs:
             head = scc.pop()
-            loop_region = scc
+            loop_inner_blks = scc
 
             # shrink blocks
-            blks = [b for b in blks if b is not head and b not in loop_region]
+            blks = [b for b in blks if b is not head and b not in loop_inner_blks]
             assert blks
 
-            lb = self._make_loop_block(head, loop_region)
-            lblks.append(lb)
-
-            # re-connect
-            for p in lb.preds:
-                p.replace_succ(lb.head, lb)
-                if isinstance(p, CompositBlock):
-                    for r in p.region:
-                        r.replace_succ(lb.head, lb)
-            for s in lb.succs:
-                s.replace_pred([lb.head] + lb.bodies, lb)
-
-        return lblks, blks
+            r = self._make_loop_region(head, loop_inner_blks)
+            regions.append(r)
+        blks = sorted(blks, key=lambda b: b.order)
+        return regions, blks
 
     def _extract_sccs(self, ordered_blks):
         sccs = []
@@ -125,33 +88,30 @@ class LoopDetector(object):
             if pred not in visited and pred in blks:
                 self._process_back_walk(pred, blks, visited, scc)
 
-    def _add_loop_tree_entry(self, parent, children):
-        self.scope.loop_nest_tree.add_node(parent)
-        for child in children:
-            self.scope.loop_nest_tree.add_edge(parent, child)
-
 
 class LoopInfoSetter(object):
     def process(self, scope):
         self.scope = scope
-        for c in self.scope.loop_nest_tree.get_children_of(scope.entry_block):
-            self._set_loop_info_rec(c)
+        for loop in self.scope.child_regions(self.scope.top_region()):
+            self._set_loop_info_rec(loop)
 
-    def _set_loop_info_rec(self, blk):
-        if (blk.synth_params['scheduling'] == 'pipeline' or
-                blk.synth_params['unroll']):
-            self.set_loop_info(blk)
-        for c in self.scope.loop_nest_tree.get_children_of(blk):
-            self._set_loop_info_rec(c)
+    def _set_loop_info_rec(self, loop):
+        if (loop.head.synth_params['scheduling'] == 'pipeline' or
+                loop.head.synth_params['unroll']):
+            self.set_loop_info(loop)
+        for child in self.scope.child_regions(loop):
+            self._set_loop_info_rec(child)
 
-    def set_loop_info(self, loop_block):
-        if loop_block.loop_info:
+    def set_loop_info(self, loop):
+        assert isinstance(loop, Loop)
+        if loop.counter:
             return
-        cjump = loop_block.head.stms[-1]
+        cjump = loop.head.stms[-1]
         if not cjump.is_a(CJUMP):
             # this loop may busy loop
             return
         cond_var = cjump.exp
+        loop.cond = cond_var.symbol()
         assert cond_var.is_a(TEMP)
         defs = self.scope.usedef.get_stms_defining(cond_var.symbol())
         assert len(defs) == 1
@@ -162,72 +122,72 @@ class LoopInfoSetter(object):
 
         if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol().is_induction():
             assert loop_relexp.right.is_a([CONST, TEMP])
-            loop_counter = loop_relexp.left.symbol()
+            loop.counter = loop_relexp.left.symbol()
         elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol().is_induction():
             assert loop_relexp.left.is_a([CONST, TEMP])
-            loop_counter = loop_relexp.right.symbol()
+            loop.counter = loop_relexp.right.symbol()
         else:
             # this loop may busy loop
             return
 
-        defs = self.scope.usedef.get_stms_defining(loop_counter)
+        defs = self.scope.usedef.get_stms_defining(loop.counter)
         assert len(defs) == 1
         counter_def = list(defs)[0]
         counter_def.is_a(PHIBase)
         assert len(counter_def.args) == 2
-        loop_init = counter_def.args[0]
-        loop_update = counter_def.args[1]
-        assert loop_update
-        assert loop_init
-        loop_exit = loop_block.succs[0]
-        assert len(loop_block.succs) == 1
-        loop_block.loop_info = LoopInfo(loop_counter, loop_init, loop_update, cond_var.symbol(), loop_exit)
-        logger.debug(loop_block.loop_info)
+        loop.init = counter_def.args[0]
+        loop.update = counter_def.args[1]
+        loop.exit = loop.head.succs[1]
+        assert loop.update
+        assert loop.init
+        logger.debug(loop)
 
 
 class LoopRegionSetter(object):
     def process(self, scope):
         self.scope = scope
-        children = self.scope.loop_nest_tree.get_children_of(scope.entry_block)
+        top = self.scope.top_region()
+        children = self.scope.child_regions(top)
         for c in children:
-            c.region = self._get_region(c)
+            c.inner_blocks = self._get_region_blks(c)
+        top.inner_blocks = list(self.scope.traverse_blocks())
 
-    def _get_region(self, lb):
-        assert isinstance(lb, CompositBlock)
-        if self.scope.loop_nest_tree.is_leaf(lb):
-            lb.region = [lb.head] + lb.bodies
+    def _get_region_blks(self, loop):
+        assert isinstance(loop, Loop)
+        if self.scope.is_leaf_region(loop):
+            loop.inner_blocks = loop.blocks()
         else:
-            children = self.scope.loop_nest_tree.get_children_of(lb)
-            lb.region = [lb.head] + [b for b in lb.bodies if not isinstance(b, CompositBlock)]
+            loop.inner_blocks = loop.blocks()
+            children = self.scope.child_regions(loop)
             for c in children:
-                lb.region.extend(self._get_region(c))
-        return lb.region
+                loop.inner_blocks.extend(self._get_region_blks(c))
+        return loop.inner_blocks
 
 
 # hierarchize
 class LoopDependencyDetector(object):
     def process(self, scope):
-        all_blks = set([b for b in scope.traverse_blocks(full=False)])
-        for lb in scope.loop_nest_tree.traverse():
-            if lb is scope.loop_nest_tree.root:
+        all_blks = set([b for b in scope.traverse_blocks()])
+        for loop in scope.traverse_regions(reverse=True):
+            if loop is scope.top_region():
                 break
-            outer_region = all_blks.difference(set(lb.region))
-            inner_region = set(lb.region).difference(set([lb.head])).difference(set(lb.bodies))
+            outer_region = all_blks.difference(set(loop.inner_blocks))
+            inner_region = set(loop.inner_blocks) - (set(loop.blocks()))
             od, ou, id, iu = self._get_loop_block_dependency(scope.usedef,
-                                                             lb,
+                                                             loop,
                                                              outer_region,
                                                              inner_region)
-            lb.outer_defs = od
-            lb.outer_uses = ou
-            lb.inner_defs = id
-            lb.inner_uses = iu
+            loop.outer_defs = od
+            loop.outer_uses = ou
+            loop.inner_defs = id
+            loop.inner_uses = iu
 
-    def _get_loop_block_dependency(self, usedef, lb, outer_region, inner_region):
+    def _get_loop_block_dependency(self, usedef, loop, outer_region, inner_region):
         outer_defs = set()
         outer_uses = set()
         inner_defs = set()
         inner_uses = set()
-        blocks = [lb.head] + [b for b in lb.bodies if not isinstance(b, CompositBlock)]
+        blocks = loop.blocks()
         usesyms = set()
         defsyms = set()
         for blk in blocks:

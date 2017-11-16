@@ -98,6 +98,7 @@ class InlineOpt(object):
                     elif call_stm.is_a(EXPR):
                         object_sym = call.func.exp.qualified_symbol()
                     symbol_map[callee.symbols[env.self_name]] = object_sym
+                    object_sym[0].add_tag('inlined')
             else:
                 if callee.is_ctor():
                     assert not callee.is_returnable()
@@ -109,7 +110,7 @@ class InlineOpt(object):
                 else:
                     object_sym = call.func.exp.qualified_symbol()
                 symbol_map[callee.symbols[env.self_name]] = object_sym
-
+                object_sym[0].add_tag('inlined')
             block_map, _ = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
             callee_exit_blk = block_map[callee.exit_block]
@@ -232,10 +233,10 @@ class SymbolReplacer(IRVisitor):
         self.attr_map = attr_map
         self.inst_name = inst_name
 
-    def traverse_blocks(self, entry_block, full=False):
+    def traverse_blocks(self, entry_block):
         assert len(entry_block.preds) == 0
         visited = set()
-        yield from entry_block.traverse(visited, full=False)
+        yield from entry_block.traverse(visited)
 
     def process(self, scope, entry_block):
         self.scope = scope

@@ -287,7 +287,6 @@ class _Rule(object):
             self.rules = kwargs
 
         def __enter__(self):
-            print('with rules=', self.rules)
             return self
 
         def __exit__(self, exc_type, exc_value, traceback):
@@ -296,7 +295,6 @@ class _Rule(object):
         def __call__(self, func):
             def wrapper(*args, **kwargs):
                 return func(*args, **kwargs)
-            print('decorator rules=', self.rules)
             return wrapper
 
     def __call__(self, **kwargs):

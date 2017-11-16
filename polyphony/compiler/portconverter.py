@@ -213,7 +213,8 @@ class PortConverter(IRTransformer):
             sym = ir.func.tail()
             assert sym.typ.is_port()
             self._check_port_direction(sym, ir.func_scope)
-            if self.current_stm.block.synth_params['scheduling'] == 'pipeline' and self.current_stm.block.parent:
+            if (self.current_stm.block.synth_params['scheduling'] == 'pipeline' and
+                    self.scope.find_region(self.current_stm.block) is not self.scope.top_region()):
                 root_sym = sym.typ.get_root_symbol()
                 root_sym.add_tag('pipelined')
         return ir
