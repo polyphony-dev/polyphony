@@ -278,8 +278,13 @@ class HyperBlockBuilder(object):
             head.succs.remove(br)
             br.replace_pred(head, new_head)
             new_head.succs.append(br)
-        old_mj.conds.append(CONST(1))
-        old_mj.targets.append(new_head)
+        if len(old_mj.targets) == 1:
+            cj = CJUMP(old_mj.conds[0], old_mj.targets[0], new_head)
+            cj.lineno = old_mj.lineno
+            head.stms[-1] = cj
+        else:
+            old_mj.conds.append(CONST(1))
+            old_mj.targets.append(new_head)
         head.succs.append(new_head)
         new_head.append_stm(mj)
         new_head.preds = [head]

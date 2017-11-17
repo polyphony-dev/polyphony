@@ -389,6 +389,7 @@ class CodeVisitor(ast.NodeVisitor):
         last_block = self.current_block
         new_block = self._new_block(self.current_scope)
         self.current_scope.set_entry_block(new_block)
+        self.current_scope.set_exit_block(new_block)
         self.current_block = new_block
         self.current_param_stms = []
 

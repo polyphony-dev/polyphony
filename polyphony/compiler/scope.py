@@ -443,7 +443,6 @@ class Scope(Tagged):
         self.entry_block = blk
 
     def set_exit_block(self, blk):
-        assert self.exit_block is None
         self.exit_block = blk
 
     def traverse_blocks(self):

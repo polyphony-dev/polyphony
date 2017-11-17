@@ -14,6 +14,7 @@ from .constopt import PolyadConstantFolding
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
 from .deadcode import DeadCodeEliminator
+from .diagnostic import CFGChecker
 from .driver import Driver
 from .env import env
 from .errors import CompileError, InterpretError
@@ -102,6 +103,7 @@ def iftrans(driver, scope):
 
 def reduceblk(driver, scope):
     BlockReducer().process(scope)
+    checkcfg(driver, scope)
 
 
 def pathexp(driver, scope):
@@ -114,6 +116,7 @@ def hyperblock(driver, scope):
     if scope.synth_params['scheduling'] == 'sequential':
         return
     HyperBlockBuilder().process(scope)
+    checkcfg(driver, scope)
 
 
 def buildpurector(driver):
@@ -249,7 +252,7 @@ def instantiate(driver):
             usedef(driver, child)
             execpure(driver, child)
             constopt(driver, child)
-
+            checkcfg(driver, child)
     if new_modules:
         InstanceTypePropagation().process_all()
 
@@ -262,6 +265,7 @@ def instantiate(driver):
         usedef(driver, worker)
         execpure(driver, worker)
         constopt(driver, worker)
+        checkcfg(driver, worker)
     callgraph(driver)
     detectrom(driver)
 
@@ -296,32 +300,43 @@ def scalarize(driver, scope):
 
     FlattenObjectArgs().process(scope)
     FlattenFieldAccess().process(scope)
+    checkcfg(driver, scope)
 
 
 def earlyconstopt_nonssa(driver, scope):
     EarlyConstantOptNonSSA().process(scope)
+    checkcfg(driver, scope)
 
 
 def constopt_pre_detectrom(driver, scope):
     ConstantOptPreDetectROM().process(scope)
+    checkcfg(driver, scope)
 
 
 def constopt(driver, scope):
     ConstantOpt().process(scope)
+    checkcfg(driver, scope)
 
 
 def copyopt(driver, scope):
     CopyOpt().process(scope)
 
 
+def checkcfg(driver, scope):
+    if env.dev_debug_mode:
+        CFGChecker().process(scope)
+
+
 def loop(driver, scope):
     LoopDetector().process(scope)
+    checkcfg(driver, scope)
 
 
 def unroll(driver, scope):
     while LoopUnroller().process(scope):
         dumpscope(driver, scope)
         usedef(driver, scope)
+        checkcfg(driver, scope)
         reduceblk(driver, scope)
         PolyadConstantFolding().process(scope)
         pathexp(driver, scope)
