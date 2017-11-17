@@ -102,9 +102,13 @@ class CFGChecker(object):
                 assert not diffs, '{} is defined in an inaccesible block'.format(sym)
 
     def _is_undefined_sym(self, sym):
-                return (sym.is_param() or sym.is_static() or
-                        sym.is_self() or sym.is_inlined() or sym.is_return() or
-                        sym.typ.is_function())
+                return (sym.is_predefined() or
+                        sym.is_param() or sym.is_static() or
+                        sym.is_self() or sym.is_return() or
+                        sym.typ.is_function() or
+                        # TODO:
+                        sym.is_inlined() or
+                        (sym.is_subobject() and sym.is_flattened()))
 
     def _check_path_exp(self, blk):
         pass

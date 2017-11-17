@@ -612,7 +612,7 @@ class PureCtorBuilder(object):
                 typ = Type.from_expr(port_obj, ctor)
                 sym.set_type(typ)
 
-                dst = TEMP(sym, Ctx.LOAD)
+                dst = TEMP(sym, Ctx.STORE)
                 stm = self._build_move_stm(dst, port_obj, module)
                 assert stm
                 stm.lineno = ctor.lineno

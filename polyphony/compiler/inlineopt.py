@@ -374,7 +374,10 @@ class FlattenFieldAccess(IRTransformer):
             if scope.has_sym(flatname):
                 flatsym = scope.find_sym(flatname)
             else:
-                flatsym = scope.add_sym(flatname, ir.attr.tags)
+                tags = set()
+                for sym in ir.qualified_symbol():
+                    tags |= sym.tags
+                flatsym = scope.add_sym(flatname, tags)
                 flatsym.typ = ancestor.typ
                 flatsym.ancestor = ancestor
                 flatsym.add_tag('flattened')

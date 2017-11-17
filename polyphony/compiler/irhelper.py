@@ -18,12 +18,12 @@ def expr2ir(expr, name=None, scope=None):
     elif isinstance(expr, list):
         items = [expr2ir(e) for e in expr]
         ar = ARRAY(items)
-        ar.sym = scope.add_temp('@array')
+        ar.sym = scope.add_temp('@array', {'predefined'})
         return ar
     elif isinstance(expr, tuple):
         items = [expr2ir(e) for e in expr]
         ar = ARRAY(items, is_mutable=False)
-        ar.sym = scope.add_temp('@array')
+        ar.sym = scope.add_temp('@array', {'predefined'})
         return ar
     else:
         if inspect.isclass(expr):
@@ -31,13 +31,13 @@ def expr2ir(expr, name=None, scope=None):
                 klass_name = expr.__module__ + '.' + expr.__name__
                 klass_scope = env.scopes[klass_name]
                 t = Type.klass(klass_scope)
-                sym = scope.add_temp('@dtype')
+                sym = scope.add_temp('@dtype', {'predefined'})
                 sym.set_type(t)
             elif expr.__module__ == 'builtins':
                 klass_name = '__builtin__.' + expr.__name__
                 klass_scope = env.scopes[klass_name]
                 t = Type.klass(klass_scope)
-                sym = scope.add_temp('@dtype')
+                sym = scope.add_temp('@dtype', {'predefined'})
                 sym.set_type(t)
             else:
                 assert False
