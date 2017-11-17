@@ -219,8 +219,8 @@ class LoopUnroller(object):
         assert len(unroll_head.succs) == 1 and unroll_head.succs[0] is first_blk
         assert len(first_blk.preds) == 1 and first_blk.preds[0] is unroll_head
         assert not unroll_head.succs_loop
-        loop_exit.preds = []
-        unroll_head.connect(loop_exit)
+        loop_exit.replace_pred(loop.head, unroll_head)
+        unroll_head.succs.append(loop_exit)
         cjmp = unroll_head.stms[-1]
         assert cjmp.is_a(CJUMP)
         assert cjmp.false is None
