@@ -114,7 +114,7 @@ def reduce_relexp(exp):
 
 
 def is_port_method_call(call):
-    return call.is_a(CALL) and call.func_scope.is_method() and call.func_scope.parent.is_port()
+    return call.is_a(CALL) and call.func_scope().is_method() and call.func_scope().parent.is_port()
 
 
 def has_exclusive_function(stm):
@@ -137,7 +137,7 @@ def has_exclusive_function(stm):
         return call.sym.name in wait_funcs
     elif is_port_method_call(call):
         # TODO: parallel scheduling for port access
-        port = call.func_scope.parent
+        port = call.func_scope().parent
         if port.name.startswith('polyphony.io.Queue'):
             return True
         elif port.name.startswith('polyphony.io.Port'):

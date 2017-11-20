@@ -771,10 +771,10 @@ class MemRefGraphBuilder(IRVisitor):
     def visit_CALL(self, ir):
         for i, (_, arg) in enumerate(ir.args):
             if arg.is_a(TEMP) and arg.sym.typ.is_seq():
-                p, _, _ = ir.func_scope.params[i]
+                p, _, _ = ir.func_scope().params[i]
                 self._append_edge(arg.sym, p)
-                if ir.func_scope.is_pure():
-                    purenode = MemParamNode(p, ir.func_scope)
+                if ir.func_scope().is_pure():
+                    purenode = MemParamNode(p, ir.func_scope())
                     self.mrg.add_node(purenode)
                     purenode.set_pure()
 
@@ -861,8 +861,8 @@ class MemRefGraphBuilder(IRVisitor):
             elif ir.src.is_a(ATTR) and ir.src.attr.typ.is_seq():
                 assert 0
 
-            if ir.src.is_a(CALL) and ir.src.func_scope.is_pure():
-                ret_sym = ir.src.func_scope.add_temp('@pure_return')
+            if ir.src.is_a(CALL) and ir.src.func_scope().is_pure():
+                ret_sym = ir.src.func_scope().add_temp('@pure_return')
                 ret_sym.set_type(memsym.typ)
                 self._append_edge(ret_sym, ir.dst.symbol())
                 # this node is for inlining sequence values
@@ -911,7 +911,7 @@ class MemInstanceGraphBuilder(object):
         for i, (_, arg) in enumerate(ir.args):
             assert arg.is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
             if arg.is_a(TEMP) and arg.sym.typ.is_seq():
-                p, _, _ = ir.func_scope.params[i]
+                p, _, _ = ir.func_scope().params[i]
                 assert p.typ.is_seq()
                 param_node = p.typ.get_memnode()
                 # param memnode might be removed in the rom elimination of ConstantFolding

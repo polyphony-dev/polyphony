@@ -12,10 +12,10 @@ from .typecheck import TypePropagation
 
 class PortTypeProp(TypePropagation):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_port():
+        if ir.func_scope().is_port():
             assert self.scope.is_ctor() and self.scope.parent.is_module()
             attrs = {}
-            ctor = ir.func_scope.find_ctor()
+            ctor = ir.func_scope().find_ctor()
             for (_, a), p in zip(ir.args, ctor.params[1:]):
                 if a.is_a(CONST):
                     if p.copy.name == 'direction':
@@ -29,8 +29,8 @@ class PortTypeProp(TypePropagation):
                     print(error_info(self.scope, ir.lineno))
                     raise RuntimeError('')
 
-            assert len(ir.func_scope.type_args) == 1
-            attrs['dtype'] = ir.func_scope.type_args[0]
+            assert len(ir.func_scope().type_args) == 1
+            attrs['dtype'] = ir.func_scope().type_args[0]
             if 'direction' not in attrs or attrs['direction'] == 'auto':
                 attrs['direction'] = '?'
             attrs['root_symbol'] = self.current_stm.dst.symbol()
@@ -45,10 +45,10 @@ class PortTypeProp(TypePropagation):
                 attrs['protocol'] = 'none'
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
-            port_typ = Type.port(ir.func_scope, attrs)
+            port_typ = Type.port(ir.func_scope(), attrs)
             #port_typ.freeze()
-            ir.func_scope.return_type = port_typ
-        return ir.func_scope.return_type
+            ir.func_scope().return_type = port_typ
+        return ir.func_scope().return_type
 
     def _set_type(self, sym, typ):
         if sym.typ.is_object() and sym.typ.get_scope().is_port() and typ.is_port():
@@ -64,7 +64,7 @@ class PortTypeProp(TypePropagation):
         return '?'
 
     def visit_CALL(self, ir):
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_port():
+        if ir.func_scope().is_method() and ir.func_scope().parent.is_port():
             sym = ir.func.tail()
             assert sym.typ.is_port()
             kind = sym.typ.get_port_kind()
@@ -207,12 +207,12 @@ class PortConverter(IRTransformer):
             self._set_and_check_port_direction(expected_di, sym)
 
     def visit_CALL(self, ir):
-        if not ir.func_scope.is_lib():
+        if not ir.func_scope().is_lib():
             return ir
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_port():
+        if ir.func_scope().is_method() and ir.func_scope().parent.is_port():
             sym = ir.func.tail()
             assert sym.typ.is_port()
-            self._check_port_direction(sym, ir.func_scope)
+            self._check_port_direction(sym, ir.func_scope())
             if (self.current_stm.block.synth_params['scheduling'] == 'pipeline' and
                     self.scope.find_region(self.current_stm.block) is not self.scope.top_region()):
                 root_sym = sym.typ.get_root_symbol()

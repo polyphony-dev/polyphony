@@ -406,16 +406,16 @@ class STGItemBuilder(object):
         self.scheduled_items.push(sched_time, item, tag)
 
     def get_signal_prefix(self, ir, node):
-        if ir.func_scope.is_class():
+        if ir.func_scope().is_class():
             stm = node.tag
             return '{}_{}'.format(stm.dst.sym.name, env.ctor_name)
-        elif ir.func_scope.is_method():
+        elif ir.func_scope().is_method():
             assert ir.func.is_a(ATTR)
             instance_name = self.make_instance_name(ir.func)
             return '{}_{}'.format(instance_name, ir.func.attr.name)
         else:
             assert ir.func.is_a(TEMP)
-            return '{}_{}'.format(ir.func_scope.orig_name, node.instance_num)
+            return '{}_{}'.format(ir.func_scope().orig_name, node.instance_num)
 
     def make_instance_name(self, ir):
         assert ir.is_a(ATTR)
@@ -930,18 +930,18 @@ class AHDLTranslator(object):
         return callargs
 
     def visit_CALL(self, ir, node):
-        if ir.func_scope.is_method():
+        if ir.func_scope().is_method():
             instance_name = self.host.make_instance_name(ir.func)
         else:
-            instance_name = '{}_{}'.format(ir.func_scope.qualified_name(), node.instance_num)
+            instance_name = '{}_{}'.format(ir.func_scope().qualified_name(), node.instance_num)
         signal_prefix = self.host.get_signal_prefix(ir, node)
 
         callargs = self._visit_args(ir, node)
 
-        if not ir.func_scope.is_method():
-            self.scope.append_callee_instance(ir.func_scope, instance_name)
+        if not ir.func_scope().is_method():
+            self.scope.append_callee_instance(ir.func_scope(), instance_name)
 
-        ahdl_call = AHDL_MODULECALL(ir.func_scope, callargs, instance_name, signal_prefix)
+        ahdl_call = AHDL_MODULECALL(ir.func_scope(), callargs, instance_name, signal_prefix)
         return ahdl_call
 
     def visit_NEW(self, ir, node):
@@ -956,9 +956,9 @@ class AHDLTranslator(object):
 
         callargs = self._visit_args(ir, node)
 
-        self.scope.append_callee_instance(ir.func_scope, instance_name)
+        self.scope.append_callee_instance(ir.func_scope(), instance_name)
 
-        ahdl_call = AHDL_MODULECALL(ir.func_scope, callargs, instance_name, signal_prefix)
+        ahdl_call = AHDL_MODULECALL(ir.func_scope(), callargs, instance_name, signal_prefix)
         return ahdl_call
 
     def translate_builtin_len(self, syscall):
@@ -1268,7 +1268,7 @@ class AHDLTranslator(object):
             dst = self.visit(ir.dst, node)
         else:
             dst = None
-        if ir.is_a(MOVE) and ir.src.is_a([NEW, CALL]) and ir.src.func_scope.is_module():
+        if ir.is_a(MOVE) and ir.src.is_a([NEW, CALL]) and ir.src.func_scope().is_module():
             return
         self.host.emit_call_sequence(ahdl_call, dst, node, self.sched_time)
 
@@ -1464,10 +1464,10 @@ class AHDLTranslator(object):
         return visitor(ir, node)
 
     def _is_port_method(self, ir):
-        return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_port()
+        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_port()
 
     def _is_port_ctor(self, ir):
-        return ir.is_a(NEW) and ir.func_scope.is_port()
+        return ir.is_a(NEW) and ir.func_scope().is_port()
 
     def _port_sig(self, port_qsym):
         assert port_qsym[-1].typ.is_port()
@@ -1568,9 +1568,9 @@ class AHDLTranslator(object):
         port_qsym = call.func.qualified_symbol()[:-1]
         port_sig = self._port_sig(port_qsym)
 
-        if call.func_scope.orig_name == 'wr':
+        if call.func_scope().orig_name == 'wr':
             self._make_port_write_seq(call, port_sig, node)
-        elif call.func_scope.orig_name == 'rd':
+        elif call.func_scope().orig_name == 'rd':
             self._make_port_read_seq(target, port_sig, node)
         else:
             assert False
@@ -1600,14 +1600,14 @@ class AHDLTranslator(object):
             self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
 
     def _make_port_init(self, new, target, node):
-        assert new.func_scope.is_port()
+        assert new.func_scope().is_port()
         port = target.symbol().typ
         assert port.is_port()
         # make port signal
         self._port_sig(target.qualified_symbol())
 
     def _is_module_method(self, ir):
-        return ir.is_a(CALL) and ir.func_scope.is_method() and ir.func_scope.parent.is_module()
+        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_module()
 
 
 class AHDLVarReplacer(AHDLVisitor):

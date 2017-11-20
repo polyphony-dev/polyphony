@@ -442,6 +442,8 @@ class PureCtorBuilder(object):
                 if klass_scope.find_ctor().is_pure():
                     klass_scope, _ = env.runtime_info.inst2module[v]
                     typ.set_scope(klass_scope)
+                klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.orig_name)
+                klass_scope_sym.set_type(Type.klass(klass_scope))
                 sym = module.add_sym(name)
                 sym.set_type(typ)
                 orig_obj = instance.__dict__[name]
@@ -452,7 +454,7 @@ class PureCtorBuilder(object):
                         for arg_name, arg, in cargs:
                             ir = expr2ir(arg, arg_name, ctor)
                             args.append((arg_name, ir))
-                        new = NEW(klass_scope, args, {})
+                        new = NEW(klass_scope_sym, args, {})
                         dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
                         stm = MOVE(dst, new)
                         stm.lineno = ctor.lineno
@@ -554,7 +556,9 @@ class PureCtorBuilder(object):
         args = [(pname, expr2ir(pvalue, None, module)) for pname, pvalue in port_args]
         port_qualname = port.__module__ + '.' + port.__class__.__name__
         port_scope = env.scopes[port_qualname]
-        return NEW(port_scope, args, kwargs={})
+        port_scope_sym = port_scope.parent.gen_sym(port_scope.orig_name)
+        port_scope_sym.typ = Type.klass(port_scope)
+        return NEW(port_scope_sym, args, kwargs={})
 
     def _port2ir(self, port_obj, instance, module, ctor):
         def port_qsym(scope, di, obj):
@@ -628,9 +632,9 @@ class PureFuncTypeInferrer(object):
 
     def infer_type(self, call, scope):
         assert call.is_a(CALL)
-        assert call.func_scope.is_pure()
-        if not call.func_scope.return_type:
-            call.func_scope.return_type = Type.any_t
+        assert call.func_scope().is_pure()
+        if not call.func_scope().return_type:
+            call.func_scope().return_type = Type.any_t
 
         for node in env.runtime_info.pure_nodes:
             if node.caller_lineno != call.lineno:
@@ -671,16 +675,16 @@ class PureFuncExecutor(ConstantOptBase):
         return tuple(values)
 
     def visit_CALL(self, ir):
-        if not ir.func_scope.is_pure():
+        if not ir.func_scope().is_pure():
             return ir
         assert env.enable_pure
-        assert ir.func_scope.parent.is_global()
+        assert ir.func_scope().parent.is_global()
         args = self._args2tuple([arg for _, arg in ir.args])
         if args is None:
             fail(self.current_stm, Errors.PURE_ARGS_MUST_BE_CONST)
 
-        assert ir.func_scope in env.runtime_info.pyfuncs
-        pyfunc = env.runtime_info.pyfuncs[ir.func_scope]
+        assert ir.func_scope() in env.runtime_info.pyfuncs
+        pyfunc = env.runtime_info.pyfuncs[ir.func_scope()]
         expr = pyfunc(*args)
         return expr2ir(expr, scope=self.scope)
 

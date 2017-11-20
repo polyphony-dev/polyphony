@@ -9,19 +9,19 @@ CALL_MINIMUM_STEP = 5
 def get_call_latency(call, stm):
     # FIXME: It is better to ask HDLInterface the I/O latency
     is_pipelined = stm.block.synth_params['scheduling'] == 'pipeline'
-    if call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.rd'):
+    if call.func_scope().name.startswith('polyphony.io.Queue') and call.func_scope().name.endswith('.rd'):
         if is_pipelined:
             return UNIT_STEP * 2
         return UNIT_STEP * 3
-    elif call.func_scope.name.startswith('polyphony.io.Queue') and call.func_scope.name.endswith('.wr'):
+    elif call.func_scope().name.startswith('polyphony.io.Queue') and call.func_scope().name.endswith('.wr'):
         if is_pipelined:
             return UNIT_STEP * 1
         return UNIT_STEP * 3
-    elif call.func_scope.is_method() and call.func_scope.parent.is_port():
+    elif call.func_scope().is_method() and call.func_scope().parent.is_port():
         receiver = call.func.tail()
         assert receiver.typ.is_port()
         protocol = receiver.typ.get_protocol()
-        if call.func_scope.orig_name == 'rd':
+        if call.func_scope().orig_name == 'rd':
             dummy_read = stm.is_a(EXPR)
             if protocol == 'ready_valid':
                 if is_pipelined:
@@ -40,7 +40,7 @@ def get_call_latency(call, stm):
                     return 0
                 else:
                     return UNIT_STEP * 1
-        elif call.func_scope.orig_name == 'wr':
+        elif call.func_scope().orig_name == 'wr':
             if protocol == 'ready_valid':
                 if is_pipelined:
                     return UNIT_STEP * 1
@@ -52,8 +52,8 @@ def get_call_latency(call, stm):
                 else:
                     return UNIT_STEP * 2
         return UNIT_STEP
-    elif call.func_scope.asap_latency > 0:
-        return UNIT_STEP * call.func_scope.asap_latency
+    elif call.func_scope().asap_latency > 0:
+        return UNIT_STEP * call.func_scope().asap_latency
     return UNIT_STEP * CALL_MINIMUM_STEP
 
 

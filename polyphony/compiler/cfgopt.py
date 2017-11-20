@@ -281,7 +281,7 @@ class HyperBlockBuilder(object):
         if len(old_mj.targets) == 1:
             cj = CJUMP(old_mj.conds[0], old_mj.targets[0], new_head)
             cj.lineno = old_mj.lineno
-            head.stms[-1] = cj
+            head.replace_stm(head.stms[-1], cj)
         else:
             old_mj.conds.append(CONST(1))
             old_mj.targets.append(new_head)
@@ -397,7 +397,7 @@ class HyperBlockBuilder(object):
             ]
             return call.sym.name in wait_funcs
         elif call.is_a(CALL):
-            if call.func_scope.is_method() and call.func_scope.parent.is_port():
+            if call.func_scope().is_method() and call.func_scope().parent.is_port():
                 return True
             return False
 

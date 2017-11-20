@@ -1078,7 +1078,7 @@ class CodeVisitor(ast.NodeVisitor):
 
         if func.is_a(TEMP):
             if func.symbol().typ.is_class():
-                return NEW(func.symbol().typ.get_scope(), args, kwargs)
+                return NEW(func.symbol(), args, kwargs)
             sym = self.current_scope.find_sym(func.symbol().name)
             func_scope = sym.typ.get_scope() if sym.typ.has_scope() else None
             #assert func_scope
@@ -1098,7 +1098,7 @@ class CodeVisitor(ast.NodeVisitor):
                     builtin_sym = builtin_symbols[func.attr.typ.get_scope().name]
                     return SYSCALL(builtin_sym, args, kwargs)
                 elif func.attr.typ.is_class():
-                    return NEW(func.attr.typ.get_scope(), args, kwargs)
+                    return NEW(func.attr, args, kwargs)
             else:
                 scope_sym = func.tail()
                 if isinstance(scope_sym, Symbol):
@@ -1106,8 +1106,7 @@ class CodeVisitor(ast.NodeVisitor):
                         receiver = scope_sym.typ.get_scope()
                         attr_sym = receiver.find_sym(func.attr)
                         if attr_sym.typ.is_class():
-                            attr_scope = attr_sym.typ.get_scope()
-                            return NEW(attr_scope, args, kwargs)
+                            return NEW(attr_sym, args, kwargs)
         return CALL(func, args, kwargs)
 
     def visit_Num(self, node):

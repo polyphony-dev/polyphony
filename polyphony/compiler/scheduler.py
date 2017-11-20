@@ -399,6 +399,8 @@ class PipelineScheduler(SchedulerImpl):
             scheduled_time = self._node_sched_pipeline(dfg, n)
             _, _, latency = self.node_latency_map[n]
             #detect resource conflict
+            # TODO:
+            #scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
             n.begin = scheduled_time
             n.end = n.begin + latency
             #logger.debug('## SCHEDULED ## ' + str(n))
@@ -487,7 +489,7 @@ class ResourceExtractor(IRVisitor):
             self.visit(arg)
 
     def visit_CALL(self, ir):
-        self.results.append(ir.func_scope)
+        self.results.append(ir.func_scope())
         self.visit_args(ir.args)
 
     def visit_SYSCALL(self, ir):

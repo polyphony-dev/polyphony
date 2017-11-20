@@ -44,8 +44,8 @@ class CallGraphBuilder(IRVisitor):
 
     def visit_CALL(self, ir):
         self.visit(ir.func)
-        assert ir.func_scope
-        if ir.func_scope.orig_name == 'append_worker':
+        assert ir.func_scope()
+        if ir.func_scope().orig_name == 'append_worker':
             _, w = ir.args[0]
             assert w.symbol().typ.is_function()
             assert w.symbol().typ.get_scope().is_worker()
@@ -54,9 +54,9 @@ class CallGraphBuilder(IRVisitor):
             self.worklist.append(worker)
 
     def visit_NEW(self, ir):
-        assert ir.func_scope
-        ctor = ir.func_scope.find_ctor()
-        self.call_graph.add_edge(ir.func_scope, ctor)
+        assert ir.func_scope()
+        ctor = ir.func_scope().find_ctor()
+        self.call_graph.add_edge(ir.func_scope(), ctor)
         self.worklist.append(ctor)
 
     def visit_TEMP(self, ir):

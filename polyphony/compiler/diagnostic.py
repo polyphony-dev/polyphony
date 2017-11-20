@@ -22,6 +22,7 @@ class CFGChecker(object):
                 assert False
 
     def _check_blk(self, blk):
+        self._check_stms(blk)
         self._check_preds(blk)
         self._check_succs(blk)
         self._check_jump(blk)
@@ -29,6 +30,11 @@ class CFGChecker(object):
             self._check_vars(blk)
             self._check_path_exp(blk)
             self._check_phi(blk)
+
+    def _check_stms(self, blk):
+        for stm in blk.stms:
+            assert stm.is_a(IRStm)
+            assert stm.block is blk
 
     def _check_preds(self, blk):
         if blk is self.scope.entry_block:
@@ -46,10 +52,8 @@ class CFGChecker(object):
         if blk is self.scope.exit_block:
             if self.scope.is_worker():
                 # when worker has infinite loop, the exit block must be the loop head block
-                if len(blk.succs) == 1:
-                    assert len(blk.preds_loop) == 1
-                else:
-                    assert len(blk.succs) == 0
+                if len(blk.succs):
+                    assert len(blk.preds_loop)
             else:
                 assert len(blk.succs) == 0
             return

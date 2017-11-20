@@ -47,7 +47,7 @@ class InlineOpt(object):
             return
         for call, call_stm in calls:
             self.inline_counts[caller] += 1
-            assert callee is call.func_scope
+            assert callee is call.func_scope()
 
             symbol_map = self._make_replace_symbol_map(call,
                                                        caller,
@@ -217,11 +217,11 @@ class CallCollector(IRVisitor):
         self.calls = calls
 
     def visit_CALL(self, ir):
-        self.calls[ir.func_scope].append((ir, self.current_stm))
+        self.calls[ir.func_scope()].append((ir, self.current_stm))
 
     def visit_NEW(self, ir):
-        assert ir.func_scope.is_class()
-        ctor = ir.func_scope.find_ctor()
+        assert ir.func_scope().is_class()
+        ctor = ir.func_scope().find_ctor()
         assert ctor
         self.calls[ctor].append((ir, self.current_stm))
 
@@ -416,9 +416,9 @@ class FlattenObjectArgs(IRTransformer):
         self.params_modified_scopes = set()
 
     def visit_EXPR(self, ir):
-        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
-                ir.exp.func_scope.parent.is_module()):
-            if ir.exp.func_scope.orig_name == 'append_worker':
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
+                ir.exp.func_scope().parent.is_module()):
+            if ir.exp.func_scope().orig_name == 'append_worker':
                 self._flatten_args(ir.exp)
         self.new_stms.append(ir)
 
@@ -500,9 +500,9 @@ class FlattenModule(IRTransformer):
         self.driver = driver
 
     def visit_EXPR(self, ir):
-        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
-                ir.exp.func_scope.parent.is_module() and
-                ir.exp.func_scope.orig_name == 'append_worker' and
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
+                ir.exp.func_scope().parent.is_module() and
+                ir.exp.func_scope().orig_name == 'append_worker' and
                 ir.exp.func.head().name == env.self_name and
                 len(ir.exp.func.qualified_symbol()) > 2):
             call = ir.exp

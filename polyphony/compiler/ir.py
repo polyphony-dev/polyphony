@@ -1,6 +1,6 @@
 ﻿from enum import IntEnum
 from .utils import is_a
-from .symbol import Symbol
+
 
 op2sym_map = {
     'And': 'and', 'Or': 'or',
@@ -265,7 +265,6 @@ class CALL(IRExp):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.func_scope = None
 
     def __str__(self):
         s = '{}('.format(self.func)
@@ -296,7 +295,6 @@ class CALL(IRExp):
         func = self.func.clone()
         args = [(name, arg.clone()) for name, arg in self.args]
         clone = CALL(func, args, {})
-        clone.func_scope = self.func_scope
         clone.lineno = self.lineno
         return clone
 
@@ -320,11 +318,14 @@ class CALL(IRExp):
         irs.extend(find_irs_args(self.args, typ))
         return irs
 
+    def func_scope(self):
+        assert self.func.symbol().typ.has_scope()
+        return self.func.symbol().typ.get_scope()
+
 
 class SYSCALL(IRExp):
     def __init__(self, sym, args, kwargs):
         super().__init__()
-        assert isinstance(sym, Symbol)
         self.sym = sym
         self.args = args
         self.kwargs = kwargs
@@ -368,16 +369,20 @@ class SYSCALL(IRExp):
     def find_irs(self, typ):
         return find_irs_args(self.args, typ)
 
+    def func_scope(self):
+        assert self.sym.typ.has_scope()
+        return self.sym.typ.get_scope()
+
 
 class NEW(IRExp):
-    def __init__(self, scope, args, kwargs):
+    def __init__(self, sym, args, kwargs):
         super().__init__()
-        self.func_scope = scope
+        self.sym = sym
         self.args = args
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '{}('.format(self.func_scope.orig_name)
+        s = '{}('.format(self.func_scope().orig_name)
         s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ")"
         return s
@@ -385,7 +390,7 @@ class NEW(IRExp):
     def __eq__(self, other):
         if other is None or not isinstance(other, NEW):
             return False
-        return (self.func_scope is other.func_scope and
+        return (self.func_scope() is other.func_scope() and
                 len(self.args) == len(other.args) and
                 all([name == other_name and a == other_a
                      for (name, a), (other_name, other_a) in zip(self.args, other.args)]))
@@ -401,7 +406,7 @@ class NEW(IRExp):
 
     def clone(self):
         args = [(name, arg.clone()) for name, arg in self.args]
-        clone = NEW(self.func_scope, args, {})
+        clone = NEW(self.sym, args, {})
         clone.lineno = self.lineno
         return clone
 
@@ -413,6 +418,10 @@ class NEW(IRExp):
 
     def find_irs(self, typ):
         return find_irs_args(self.args, typ)
+
+    def func_scope(self):
+        assert self.sym.typ.has_scope()
+        return self.sym.typ.get_scope()
 
 
 class CONST(IRExp):
@@ -601,7 +610,6 @@ class ATTR(IRExp):
 
     def tail(self):
         if self.exp.is_a(ATTR):
-            #assert isinstance(self.exp.attr, Symbol)
             return self.exp.attr
         return self.exp.sym
 

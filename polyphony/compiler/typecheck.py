@@ -99,7 +99,6 @@ class TypePropagation(IRVisitor):
                 fun_name = env.callop_name
             func_sym = clazz.find_sym(fun_name)
             assert func_sym.typ.is_function()
-            ir.func_scope = func_sym.typ.get_scope()
             ir.func = ATTR(ir.func, clazz.symbols[fun_name], Ctx.LOAD)
             ir.func.attr_scope = clazz
 
@@ -113,8 +112,6 @@ class TypePropagation(IRVisitor):
                 self._convert_call(ir)
             elif t.is_function():
                 assert t.has_scope()
-                scope = t.get_scope()
-                ir.func_scope = scope
             else:
                 if not self.check_error:
                     raise RejectPropagation(ir)
@@ -127,58 +124,53 @@ class TypePropagation(IRVisitor):
             t = ir.func.symbol().typ
             if t.is_object() or t.is_port():
                 self._convert_call(ir)
-            else:
-                func_sym = ir.func.attr_scope.find_sym(func_name)
-                if func_sym.typ.is_function():
-                    ir.func_scope = func_sym.typ.get_scope()
-            if not ir.func_scope:
+            if t.is_undef():
                 raise RejectPropagation(ir)
-            #assert ir.func_scope.is_method()
-            if ir.func_scope.is_mutable():
+            if ir.func_scope().is_mutable():
                 pass  # ir.func.exp.ctx |= Ctx.STORE
         else:
             assert False
 
-        if not ir.func_scope:
+        if not ir.func_scope():
             # we cannot specify the callee because it has not been evaluated yet.
             raise RejectPropagation(ir)
 
-        if ir.func_scope.is_pure():
+        if ir.func_scope().is_pure():
             if not env.enable_pure:
                 fail(self.current_stm, Errors.PURE_IS_DISABLED)
-            if not ir.func_scope.parent.is_global():
+            if not ir.func_scope().parent.is_global():
                 fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)
-            if ir.func_scope.return_type and not ir.func_scope.return_type.is_undef() and not ir.func_scope.return_type.is_any():
-                return ir.func_scope.return_type
+            if ir.func_scope().return_type and not ir.func_scope().return_type.is_undef() and not ir.func_scope().return_type.is_any():
+                return ir.func_scope().return_type
             ret, type_or_error = self.pure_type_inferrer.infer_type(ir, self.scope)
             if ret:
                 return type_or_error
             else:
                 fail(self.current_stm, type_or_error)
-        elif ir.func_scope.is_method():
-            params = ir.func_scope.params[1:]
+        elif ir.func_scope().is_method():
+            params = ir.func_scope().params[1:]
         else:
-            params = ir.func_scope.params[:]
-        ir.args = self._normalize_args(ir.func_scope.orig_name, params, ir.args, ir.kwargs)
+            params = ir.func_scope().params[:]
+        ir.args = self._normalize_args(ir.func_scope().orig_name, params, ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if any([atype.is_undef() for atype in arg_types]):
             raise RejectPropagation(ir)
 
-        ret_t = ir.func_scope.return_type
-        if ir.func_scope.is_class():
+        ret_t = ir.func_scope().return_type
+        if ir.func_scope().is_class():
             assert False
         else:
             for i, param in enumerate(params):
                 if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
                     self._set_type(param.sym, arg_types[i])
-            funct = Type.function(ir.func_scope,
+            funct = Type.function(ir.func_scope(),
                                   ret_t,
-                                  tuple([param.sym.typ for param in ir.func_scope.params]))
+                                  tuple([param.sym.typ for param in ir.func_scope().params]))
         self._set_type(ir.func.symbol(), funct)
 
         if (self.scope.is_testbench() and
-                ir.func_scope.is_function() and not ir.func_scope.is_inlinelib()):
-            ir.func_scope.add_tag('function_module')
+                ir.func_scope().is_function() and not ir.func_scope().is_inlinelib()):
+            ir.func_scope().add_tag('function_module')
 
         return ret_t
 
@@ -190,20 +182,22 @@ class TypePropagation(IRVisitor):
         return ir.sym.typ.get_return_type()
 
     def visit_NEW(self, ir):
-        ret_t = Type.object(ir.func_scope)
-        ir.func_scope.return_type = ret_t
-        ctor = ir.func_scope.find_ctor()
-        ir.args = self._normalize_args(ir.func_scope.orig_name, ctor.params[1:], ir.args, ir.kwargs)
+        ret_t = Type.object(ir.func_scope())
+        ir.func_scope().return_type = ret_t
+        ctor = ir.func_scope().find_ctor()
+        ir.args = self._normalize_args(ir.func_scope().orig_name, ctor.params[1:], ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
                 self._set_type(param.sym, arg_types[i])
             elif param.sym.typ.is_generic():
-                new_scope = self._new_scope_with_type(ir.func_scope, arg_types[i], i + 1)
+                new_scope = self._new_scope_with_type(ir.func_scope(), arg_types[i], i + 1)
                 if not new_scope:
                     raise RejectPropagation(ir)
                 ir.args.pop(i)
-                ir.func_scope = new_scope
+                new_scope_sym = ir.sym.scope.gen_sym(new_scope.orig_name)
+                new_scope_sym.typ = Type.klass(new_scope)
+                ir.sym = new_scope_sym
                 self.new_scopes.add(new_scope)
                 return self.visit_NEW(ir)
         return ret_t
@@ -239,7 +233,8 @@ class TypePropagation(IRVisitor):
                     type_error(self.current_stm, Errors.UNKNOWN_ATTRIBUTE,
                                [ir.attr])
                 ir.attr = ir.attr_scope.find_sym(ir.attr)
-
+            elif ir.attr_scope is not ir.attr.scope:
+                ir.attr = ir.attr_scope.find_sym(ir.attr.name)
             if ir.attr.typ.is_object():
                 ir.attr.add_tag('subobject')
             if ir.exp.symbol().typ.is_object() and ir.exp.symbol().name != env.self_name and self.scope.is_worker():
@@ -300,7 +295,7 @@ class TypePropagation(IRVisitor):
     def _propagate_worker_arg_types(self, call):
         if len(call.args) == 0:
             type_error(self.current_stm, Errors.MISSING_REQUIRED_ARG,
-                       [call.func_scope.orig_name])
+                       [call.func_scope().orig_name])
         _, func = call.args[0]
         if not func.symbol().typ.is_function():
             type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
@@ -338,9 +333,9 @@ class TypePropagation(IRVisitor):
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
 
-        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
-                ir.exp.func_scope.parent.is_module()):
-            if ir.exp.func_scope.orig_name == 'append_worker':
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
+                ir.exp.func_scope().parent.is_module()):
+            if ir.exp.func_scope().orig_name == 'append_worker':
                 self._propagate_worker_arg_types(ir.exp)
 
     def visit_CJUMP(self, ir):
@@ -365,7 +360,7 @@ class TypePropagation(IRVisitor):
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
-        if src_typ is Type.undef_t:
+        if src_typ in (Type.undef_t, Type.generic_t):
             raise RejectPropagation(ir)
         dst_typ = self.visit(ir.dst)
 
@@ -539,23 +534,23 @@ class TypeChecker(IRVisitor):
     def visit_CALL(self, ir):
         func_sym = ir.func.symbol()
         arg_len = len(ir.args)
-        if ir.func_scope.is_lib():
-            return ir.func_scope.return_type
-        assert ir.func_scope
-        if ir.func_scope.is_pure():
+        if ir.func_scope().is_lib():
+            return ir.func_scope().return_type
+        assert ir.func_scope()
+        if ir.func_scope().is_pure():
             return Type.any_t
-        elif ir.func_scope.is_method():
-            param_len = len(ir.func_scope.params) - 1
+        elif ir.func_scope().is_method():
+            param_len = len(ir.func_scope().params) - 1
             param_typs = tuple(func_sym.typ.get_param_types()[1:])
         else:
-            param_len = len(ir.func_scope.params)
+            param_len = len(ir.func_scope().params)
             param_typs = tuple(func_sym.typ.get_param_types())
 
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
-        self._check_param_type(param_typs, ir, ir.func_scope.orig_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_type(param_typs, ir, ir.func_scope().orig_name, with_vararg)
 
-        return ir.func_scope.return_type
+        return ir.func_scope().return_type
 
     def visit_SYSCALL(self, ir):
         if ir.sym.name == 'len':
@@ -581,17 +576,17 @@ class TypeChecker(IRVisitor):
     def visit_NEW(self, ir):
         arg_len = len(ir.args)
 
-        ctor = ir.func_scope.find_ctor()
+        ctor = ir.func_scope().find_ctor()
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
-                       [ir.func_scope.orig_name, 0, arg_len])
+                       [ir.func_scope().orig_name, 0, arg_len])
         param_len = len(ctor.params) - 1
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
-        self._check_param_type(param_typs, ir, ir.func_scope.orig_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_type(param_typs, ir, ir.func_scope().orig_name, with_vararg)
 
-        return Type.object(ir.func_scope)
+        return Type.object(ir.func_scope())
 
     def visit_CONST(self, ir):
         if isinstance(ir.value, bool):
@@ -660,7 +655,7 @@ class TypeChecker(IRVisitor):
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
         if ir.exp.is_a(CALL):
-            if ir.exp.func_scope.return_type is Type.none_t:
+            if ir.exp.func_scope().return_type is Type.none_t:
                 #TODO: warning
                 pass
 
@@ -719,8 +714,8 @@ class TypeChecker(IRVisitor):
 
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_module():
-            if not ir.func_scope.parent.is_namespace():
+        if ir.func_scope().is_module():
+            if not ir.func_scope().parent.is_namespace():
                 fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
             for i, (_, arg) in enumerate(ir.args):
                 if (arg.is_a([TEMP, ATTR])):
@@ -728,7 +723,7 @@ class RestrictionChecker(IRVisitor):
                     if typ.is_scalar() or typ.is_class():
                         continue
                     fail(self.current_stm, Errors.MODULE_ARG_MUST_BE_X_TYPE, [typ])
-        if self.scope.is_global() and not ir.func_scope.is_module():
+        if self.scope.is_global() and not ir.func_scope().is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)
 
     def visit_MSTORE(self, ir):
@@ -736,8 +731,8 @@ class RestrictionChecker(IRVisitor):
             fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
 
     def visit_CALL(self, ir):
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
-            if ir.func_scope.orig_name == 'append_worker':
+        if ir.func_scope().is_method() and ir.func_scope().parent.is_module():
+            if ir.func_scope().orig_name == 'append_worker':
                 self._check_append_worker(ir)
 
     def _check_append_worker(self, call):
@@ -765,13 +760,13 @@ class RestrictionChecker(IRVisitor):
 
 class LateRestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_port():
+        if ir.func_scope().is_port():
             if not (self.scope.is_ctor() and self.scope.parent.is_module()):
                 type_error(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
 
     def visit_CALL(self, ir):
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
-            if ir.func_scope.orig_name == 'append_worker':
+        if ir.func_scope().is_method() and ir.func_scope().parent.is_module():
+            if ir.func_scope().orig_name == 'append_worker':
                 if not (self.scope.is_ctor() and self.scope.parent.is_module()):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
             if not (self.scope.is_method() and self.scope.parent.is_module()):
@@ -780,7 +775,7 @@ class LateRestrictionChecker(IRVisitor):
     def visit_MOVE(self, ir):
         super().visit_MOVE(ir)
         reserved_port_name = ('clk', 'rst')
-        if ir.src.is_a(NEW) and ir.src.func_scope.is_port():
+        if ir.src.is_a(NEW) and ir.src.func_scope().is_port():
             if ir.dst.symbol().name in reserved_port_name:
                 fail(self.current_stm, Errors.RESERVED_PORT_NAME, [ir.dst.symbol().name])
 

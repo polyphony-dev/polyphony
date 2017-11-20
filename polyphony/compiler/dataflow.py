@@ -603,9 +603,9 @@ class DFGBuilder(object):
         prev_node = None
         for stm in all_stms_in_section:
             node = None
-            if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func_scope.is_function_module():
+            if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func_scope().is_function_module():
                 node = dfg.add_stm_node(stm)
-            elif stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func_scope.is_function_module():
+            elif stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func_scope().is_function_module():
                 node = dfg.add_stm_node(stm)
             if node:
                 if prev_node:
@@ -638,7 +638,7 @@ class DFGBuilder(object):
             return None
         receiver = call.func.tail()
         if receiver.typ.is_object() or receiver.typ.is_port():
-            if call.func_scope.is_mutable():
+            if call.func_scope().is_mutable():
                 return receiver
         return None
 

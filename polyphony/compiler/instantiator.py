@@ -154,10 +154,10 @@ class EarlyModuleInstantiator(object):
         collector = CallCollector()
         calls = collector.process(caller_scope)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope is module and caller_lineno == call.lineno:
+            if call.is_a(NEW) and call.func_scope() is module and caller_lineno == call.lineno:
                 obj_name = inst_name.split('.')[-1]
                 if stm.dst.symbol().name.endswith(obj_name):
-                    call.func_scope = new_module
+                    call.sym.typ.set_scope(new_module)
 
 
 class WorkerInstantiator(object):
@@ -179,8 +179,8 @@ class WorkerInstantiator(object):
             if s.is_global() or s.is_function_module():
                 calls |= collector.process(s)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope.is_module() and not call.func_scope.find_ctor().is_pure():
-                new_workers = new_workers | self._process_workers(call.func_scope)
+            if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().find_ctor().is_pure():
+                new_workers = new_workers | self._process_workers(call.func_scope())
         return new_workers
 
     def _process_workers(self, module):
@@ -189,7 +189,7 @@ class WorkerInstantiator(object):
         ctor = module.find_ctor()
         calls = collector.process(ctor)
         for stm, call in calls:
-            if call.is_a(CALL) and call.func_scope.orig_name == 'append_worker':
+            if call.is_a(CALL) and call.func_scope().orig_name == 'append_worker':
                 new_worker, is_created = self._instantiate_worker(call, ctor, module)
                 module.register_worker(new_worker, call.args)
                 if not is_created:
@@ -274,15 +274,14 @@ class ModuleInstantiator(object):
             if s.is_global() or s.is_function_module():
                 calls |= collector.process(s)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope.is_module() and not call.func_scope.is_instantiated():
+            if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().is_instantiated():
                 new_module = self._instantiate_module(call, stm.dst)
                 new_modules.add(new_module)
                 stm.dst.symbol().set_type(Type.object(new_module))
-                call.func_scope = new_module
         return new_modules
 
     def _instantiate_module(self, new, module_var):
-        module = new.func_scope
+        module = new.func_scope()
         binding = []
         for i, (_, arg) in enumerate(new.args):
             if arg.is_a(CONST):
@@ -300,12 +299,14 @@ class ModuleInstantiator(object):
                 f(new_module_ctor, i + 1, a)
             for _, i, _ in reversed(binding):
                 new_module_ctor.params.pop(i + 1)
-            new.func_scope = new_module
+            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module_name)
+            new.sym = new_module_sym
             for _, i, _ in reversed(binding):
                 new.args.pop(i)
         else:
             overrides = [module.find_ctor()]
             new_module = module.inherit(new_module_name, overrides)
+        new.sym.typ.set_scope(new_module)
         _instantiate_memnode(module.find_ctor(), new_module.find_ctor())
         new_module.inst_name = inst_name
         new_module.add_tag('instantiated')
