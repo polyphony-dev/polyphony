@@ -68,10 +68,10 @@ def unroll13_d(v0, v1, v2, v3):
 
 @testbench
 def test():
-    print(unroll13_a(1, 2, 1, 4))
-    print(unroll13_b(1, 2, 1, 4))
-    print(unroll13_c(1, 2, 1, 4))
-    print(unroll13_d(1, 2, 1, 4))
+    assert 40 == unroll13_a(1, 2, 1, 4)
+    assert 40 == unroll13_b(1, 2, 1, 4)
+    assert 40 == unroll13_c(1, 2, 1, 4)
+    assert 40 == unroll13_d(1, 2, 1, 4)
 
 
 test()

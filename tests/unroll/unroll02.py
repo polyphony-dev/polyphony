@@ -20,7 +20,7 @@ def unroll02_b():
 
 @testbench
 def test():
-    #assert 100 == unroll02_a()
+    assert 100 == unroll02_a()
     assert 100 == unroll02_b()
 
 

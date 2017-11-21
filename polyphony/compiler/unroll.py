@@ -80,22 +80,29 @@ class LoopUnroller(object):
             fail((self.scope, loop.head.stms[-1].lineno),
                  Errors.RULE_UNROLL_UNFIXED_LOOP)
         loop_min, loop_max, loop_step = ret
-        initial_trip = ((loop_max + loop_step) - loop_min) // loop_step
-        if initial_trip < 1:
-            return False
-        if factor == -1 or factor > loop_max:
-            factor = initial_trip
+        if loop_max.is_a(CONST) and loop_min.is_a(CONST):
+            initial_trip = (((loop_max.value - 1) + loop_step) - loop_min.value) // loop_step
+            if initial_trip < 1:
+                return False
+            if factor == -1 or factor >= loop_max.value:
+                factor = initial_trip
+            has_unroll_remain = True if initial_trip % factor else False
+            is_full_unroll = factor == initial_trip
+        else:
+            initial_trip = -1
+            if factor == -1:
+                fail((self.scope, loop.head.stms[-1].lineno),
+                     Errors.RULE_UNROLL_UNFIXED_LOOP)
+            has_unroll_remain = True
+            is_full_unroll = False
         #unroll_trip = initial_trip // factor
-        unroll_remain = initial_trip % factor
-        is_full_unroll = factor == initial_trip
         origin_body = loop.bodies[0]
         defsyms = self.scope.usedef.get_syms_defined_at(loop.head)
         origin_ivs = [sym for sym in defsyms if sym.is_induction()]
         new_ivs = self._new_ivs(factor, origin_ivs, is_full_unroll)
         if is_full_unroll:
             unroll_head, iv_updates, loop_cond = self._make_full_unroll_head(loop,
-                                                                             new_ivs,
-                                                                             loop_min)
+                                                                             new_ivs)
             sym_map = {}
         else:
             unroll_head, iv_updates, lphis, sym_map = self._make_unroll_head(loop,
@@ -110,8 +117,6 @@ class LoopUnroller(object):
                                                   iv_updates,
                                                   sym_map,
                                                   factor,
-                                                  loop_min,
-                                                  loop_step,
                                                   unroll_head)
         if is_full_unroll:
             self._reconnect_full_unroll_blocks(loop, unroll_head, unroll_blks)
@@ -123,14 +128,14 @@ class LoopUnroller(object):
             self.scope.remove_region(loop)
             self._remove_loop_condition(loop_cond)
         else:
-            if unroll_remain:
+            if has_unroll_remain:
                 remain_start_blk = Block(self.scope)
             else:
                 remain_start_blk = None
             new_loop = Loop(unroll_head, unroll_blks, [unroll_head] + unroll_blks)
             self._reconnect_unroll_blocks(loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk)
             self.scope.append_sibling_region(loop, new_loop)
-            if unroll_remain:
+            if has_unroll_remain:
                 assert loop.counter in new_ivs
                 origin_lphis = {s.var.symbol():s for s in loop.head.stms if s.is_a(LPHI)}
                 for sym, new_syms in new_ivs.items():
@@ -206,8 +211,10 @@ class LoopUnroller(object):
         loop_pred = loop.head.preds[0]
         if remain_start_blk:
             loop_exit = remain_start_blk
+            loop_exit.preds = [unroll_head]
         else:
             loop_exit = loop.head.succs[1]
+            loop_exit.replace_pred(loop.head, unroll_head)
         first_blk = unroll_blks[0]
         last_blk = unroll_blks[-1]
 
@@ -219,7 +226,7 @@ class LoopUnroller(object):
         assert len(unroll_head.succs) == 1 and unroll_head.succs[0] is first_blk
         assert len(first_blk.preds) == 1 and first_blk.preds[0] is unroll_head
         assert not unroll_head.succs_loop
-        loop_exit.replace_pred(loop.head, unroll_head)
+
         unroll_head.succs.append(loop_exit)
         cjmp = unroll_head.stms[-1]
         assert cjmp.is_a(CJUMP)
@@ -242,7 +249,7 @@ class LoopUnroller(object):
         for lphi in lphis:
             lphi.defblks = [loop_pred, last_blk]
 
-    def _make_full_unroll_head(self, loop, new_ivs, loop_min):
+    def _make_full_unroll_head(self, loop, new_ivs):
         unroll_head, stm_map = self._clone_block(loop.head, 'unroll_head')
         head_stms = []
         iv_updates = {}
@@ -311,7 +318,7 @@ class LoopUnroller(object):
                         TEMP(new_loop_iv, Ctx.LOAD),
                         CONST((factor - 1) * loop_step)))
         head_stms.append(mv)
-        cond_rhs = RELOP('LtE', TEMP(tmp, Ctx.LOAD), CONST(loop_max))
+        cond_rhs = RELOP('Lt', TEMP(tmp, Ctx.LOAD), loop_max)
         cond_sym = self.scope.add_condition_sym()
         sym_map[orig_cond_sym] = cond_sym
         cond_sym.typ = Type.bool_t
@@ -334,7 +341,7 @@ class LoopUnroller(object):
         clone_blk = blk.clone(self.scope, stm_map, nametag)
         return clone_blk, stm_map
 
-    def _make_unrolling_blocks(self, origin_block, defsyms, new_ivs, iv_updates, sym_map, factor, offset, step, head):
+    def _make_unrolling_blocks(self, origin_block, defsyms, new_ivs, iv_updates, sym_map, factor, head):
         pred_blk = head
         assert factor > 0
         new_blks = []
@@ -385,10 +392,10 @@ class LoopUnroller(object):
 
     def _find_loop_range(self, loop):
         loop_min = self._find_loop_min(loop)
-        if not isinstance(loop_min, int):
+        if loop_min is None:
             return None
         loop_max = self._find_loop_max(loop)
-        if not isinstance(loop_max, int):
+        if loop_max is None:
             return None
         loop_step = self._find_loop_step(loop)
         if not isinstance(loop_step, int):
@@ -397,8 +404,10 @@ class LoopUnroller(object):
 
     def _find_loop_min(self, loop):
         if loop.init.is_a(CONST):
-            return loop.init.value
-        return None
+            return loop.init
+        elif loop.init.is_a(TEMP):
+            return loop.init
+        raise NotImplementedError('unsupported loop')
 
     def _find_loop_max(self, loop):
         loop_cond_sym = loop.cond
@@ -409,20 +418,14 @@ class LoopUnroller(object):
         loop_cond_rhs = loop_cond_stm.src
         if loop_cond_rhs.is_a(RELOP):
             # We focus on simple increasing loops
-            if loop_cond_rhs.op in ('Lt', 'LtE'):
+            if loop_cond_rhs.op in ('Lt'):
                 if loop_cond_rhs.left.symbol() is loop.counter:
                     may_max = loop_cond_rhs.right
-                elif loop_cond_rhs.right.symbol() is loop.counter:
-                    may_max = loop_cond_rhs.left
-                else:
-                    return None
-                if may_max.is_a(CONST):
-                    if loop_cond_rhs.op == 'Lt':
-                        return may_max.value - 1
-                    else:
-                        return may_max.value
-                return None
-        raise NotImplementedError('others than increasing loop are not supported')
+                    if may_max.is_a(CONST):
+                        return may_max
+                    elif may_max.is_a(TEMP):
+                        return may_max
+        raise NotImplementedError('unsupported loop')
 
     def _find_loop_step(self, loop):
         loop_update = loop.update
@@ -438,13 +441,10 @@ class LoopUnroller(object):
             if update_rhs.op == 'Add':
                 if update_rhs.left.symbol() is loop.counter:
                     may_step = update_rhs.right
-                elif update_rhs.right.symbol() is loop.counter:
-                    may_step = update_rhs.left
-                else:
-                    return None
-                if may_step.is_a(CONST):
-                    return may_step.value
-                return None
+                    if may_step.is_a(CONST):
+                        return may_step.value
+                    else:
+                        fail((self.scope, loop_update.lineno), Errors.RULE_UNROLL_VARIABLE_STEP)
         fail((self.scope, loop_update.lineno), Errors.RULE_UNROLL_UNKNOWN_STEP)
 
 

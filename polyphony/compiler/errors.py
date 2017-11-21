@@ -92,6 +92,7 @@ class Errors(Enum):
     RULE_UNROLL_UNFIXED_LOOP = 1152
     RULE_UNROLL_CONTROL_BRANCH = 1153
     RULE_UNROLL_UNKNOWN_STEP = 1154
+    RULE_UNROLL_VARIABLE_STEP = 1155
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -179,7 +180,8 @@ ERROR_MESSAGES = {
     Errors.RULE_UNROLL_NESTED_LOOP: "Cannot unroll nested loop",
     Errors.RULE_UNROLL_UNFIXED_LOOP: "Cannot full unroll unfixed loop",
     Errors.RULE_UNROLL_CONTROL_BRANCH: "Cannot unroll loop that having control branches",
-    Errors.RULE_UNROLL_UNKNOWN_STEP: "Cannot find the step value of the loop"
+    Errors.RULE_UNROLL_UNKNOWN_STEP: "Cannot find the step value of the loop",
+    Errors.RULE_UNROLL_VARIABLE_STEP: "The step value must be a constant",
 }
 
 

@@ -347,7 +347,8 @@ class CodeVisitor(ast.NodeVisitor):
 
         self.annotation_visitor = AnnotationVisitor(self)
         self.lazy_defs = []
-        self.current_synth_params = {}
+        self.current_with_blk_synth_params = {}
+        self.current_loop_synth_params = {}
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -376,10 +377,9 @@ class CodeVisitor(ast.NodeVisitor):
 
     def _new_block(self, scope, nametag='b'):
         blk = Block(scope, nametag)
-        if self.current_synth_params:
-            blk.synth_params.update(self.current_synth_params)
-        else:
-            blk.synth_params.update(scope.synth_params)
+        blk.synth_params.update(scope.synth_params)
+        blk.synth_params.update(self.current_with_blk_synth_params)
+        blk.synth_params.update(self.current_loop_synth_params)
         return blk
 
     def _enter_scope(self, name):
@@ -750,6 +750,7 @@ class CodeVisitor(ast.NodeVisitor):
             elif it.sym.name == 'polyphony.pipelined':
                 loop_synth_params.update({'scheduling':'pipeline'})
             it = seq
+
         # In case of range() loop
         if it.is_a(SYSCALL) and it.sym.name == 'range':
             init_parts = []
@@ -843,10 +844,8 @@ class CodeVisitor(ast.NodeVisitor):
     def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, loop_synth_params, node):
         exit_block = self._new_block(self.current_scope)
 
-        old_synth_params = self.current_synth_params
-        self.current_synth_params = self.current_synth_params.copy()
-        self.current_synth_params.update(loop_synth_params)
-
+        old_loop_synth_params = self.current_loop_synth_params
+        self.current_loop_synth_params = loop_synth_params
         loop_check_block = self._new_block(self.current_scope, 'fortest')
         body_block = self._new_block(self.current_scope, 'forbody')
         else_block = self._new_block(self.current_scope, 'forelse')
@@ -899,7 +898,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.loop_end_blocks.pop()
 
         self.current_block = exit_block
-        self.current_synth_params = old_synth_params
+        self.current_loop_synth_params = old_loop_synth_params
 
     def visit_AyncFor(self, node):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])
@@ -915,15 +914,15 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_block.connect(with_block)
             self.current_block = with_block
         # TODO: __enter__ and __exit__ calls
-        old_synth_params = None
+        old_with_blk_synth_params = None
         for item in node.items:
             expr, var = self.visit(item)
             if expr.is_a(CALL):
                 if expr.func.symbol().typ.get_scope().name == 'polyphony.rule':
                     # merge nested params
-                    old_synth_params = self.current_synth_params
-                    self.current_synth_params = self.current_synth_params.copy()
-                    self.current_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
+                    old_with_blk_synth_params = self.current_with_blk_synth_params
+                    self.current_with_blk_synth_params = self.current_with_blk_synth_params.copy()
+                    self.current_with_blk_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
                     if len(node.items) != 1:
                         assert False  # TODO: use fail()
                     if expr.args:
@@ -935,13 +934,13 @@ class CodeVisitor(ast.NodeVisitor):
                     self.emit(EXPR(expr), node)
             else:
                 raise NotImplementedError()
-        self.current_block.synth_params.update(self.current_synth_params)
+        self.current_block.synth_params.update(self.current_with_blk_synth_params)
 
         for body in node.body:
             self.visit(body)
         
-        if old_synth_params is not None:
-            self.current_synth_params = old_synth_params
+        if old_with_blk_synth_params is not None:
+            self.current_with_blk_synth_params = old_with_blk_synth_params
 
         if self._needJUMP(self.current_block):
             new_block = self._new_block(self.current_scope)
