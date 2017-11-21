@@ -832,13 +832,13 @@ class SynthesisParamChecker(object):
             memnode = sym.typ.get_memnode()
             if memnode.can_be_reg():
                 continue
-            defstms = sorted(scope.usedef.get_stms_defining(sym), key=lambda s: s.program_order())
-            defstms = [stm for stm in defstms if stm.block in loop.blocks()]
-            if len(defstms) > 1:
-                sym = sym.ancestor if sym.ancestor else sym
-                fail(defstms[1], Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT, [sym])
             usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
             usestms = [stm for stm in usestms if stm.block in loop.blocks()]
-            if len(usestms) > 1:
+            readstms = [stm for stm in usestms if stm.is_a(MOVE) and stm.src.is_a(MREF)]
+            writestms = [stm for stm in usestms if stm.is_a(EXPR) and stm.exp.is_a(MSTORE)]
+            if len(readstms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
-                fail(usestms[1], Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])
+                fail(readstms[1], Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])
+            if len(writestms) > 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(writestms[1], Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT, [sym])
