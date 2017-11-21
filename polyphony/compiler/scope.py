@@ -137,7 +137,6 @@ class Scope(Tagged):
         self.origin = None
         self.subs = []
         self.usedef = None
-        self.loop_nest_tree = None
         self.loop_tree = LoopNestTree()
         self.callee_instances = defaultdict(set)
         self.stgs = []
@@ -573,6 +572,9 @@ class Scope(Tagged):
         assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
 
+    def reset_loop_tree(self):
+        self.loop_tree = LoopNestTree()
+
     def top_region(self):
         return self.loop_tree.root
 
@@ -584,6 +586,7 @@ class Scope(Tagged):
 
     def set_top_region(self, r):
         self.loop_tree.root = r
+        self.loop_tree.add_node(r)
 
     def append_child_regions(self, parent, children):
         for child in children:

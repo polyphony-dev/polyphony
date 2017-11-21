@@ -32,7 +32,7 @@ from .loopdetector import LoopDetector
 from .loopdetector import LoopInfoSetter
 from .loopdetector import LoopRegionSetter
 from .loopdetector import LoopDependencyDetector
-from .memorytransform import MemoryRenamer, RomDetector
+from .memorytransform import RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
@@ -106,8 +106,16 @@ def reduceblk(driver, scope):
     checkcfg(driver, scope)
 
 
+def earlypathexp(driver, scope):
+    LoopDetector().process(scope)
+    PathExpTracer().process(scope)
+    checkcfg(driver, scope)
+    scope.reset_loop_tree()
+
+
 def pathexp(driver, scope):
     PathExpTracer().process(scope)
+    checkcfg(driver, scope)
 
 
 def hyperblock(driver, scope):
@@ -164,10 +172,6 @@ def memrefgraph(driver):
 
 def meminstgraph(driver, scope):
     MemInstanceGraphBuilder().process(scope)
-
-
-def memrename(driver, scope):
-    MemoryRenamer().process(scope)
 
 
 def earlytypeprop(driver):
@@ -329,6 +333,9 @@ def checkcfg(driver, scope):
 
 def loop(driver, scope):
     LoopDetector().process(scope)
+    LoopRegionSetter().process(scope)
+    LoopInfoSetter().process(scope)
+    LoopDependencyDetector().process(scope)
     checkcfg(driver, scope)
 
 
@@ -501,7 +508,7 @@ def compile_plan():
         setsynthparams,
         dbg(dumpscope),
         reduceblk,
-        pathexp,
+        earlypathexp,
         dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
@@ -523,7 +530,6 @@ def compile_plan():
         copyopt,
         dbg(dumpscope),
         usedef,
-        memrename,
         dbg(dumpscope),
         usedef,
         memrefgraph,
@@ -547,12 +553,12 @@ def compile_plan():
         deadcode,
         dbg(dumpscope),
         reduceblk,
-        pathexp,
         usedef,
         loop,
         dbg(dumpscope),
         unroll,
         dbg(dumpscope),
+        pathexp,
         usedef,
         phi,
         usedef,

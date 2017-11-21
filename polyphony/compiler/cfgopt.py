@@ -149,7 +149,13 @@ class PathExpTracer(object):
     def make_path_exp(self, blk, parent):
         blk.path_exp = parent.path_exp
         if len(parent.succs) > 1 and len(blk.preds) == 1:
-            blk.path_exp = merge_path_exp(parent, blk)
+            r = self.scope.find_region(parent)
+            if r.head is parent and r is not self.scope.top_region() and blk not in r.bodies:
+                # do not merge path expression for the loop exit
+                if parent.path_exp:
+                    blk.path_exp = parent.path_exp.clone()
+            else:
+                blk.path_exp = merge_path_exp(parent, blk)
 
     def traverse_dtree(self, blk):
         if not blk.stms:
@@ -288,6 +294,8 @@ class HyperBlockBuilder(object):
         head.succs.append(new_head)
         new_head.append_stm(mj)
         new_head.preds = [head]
+        if head.path_exp:
+            new_head.path_exp = head.path_exp.clone()
         Block.set_order(new_head, head.order + 1)
         self._update_domtree()
         sub_branches = [branches[idx] for idx in indices]
@@ -402,15 +410,19 @@ class HyperBlockBuilder(object):
             return False
 
     def _has_mem_access(self, stm):
-        if stm.is_a(MOVE) and stm.src.is_a([MREF, MSTORE]):
-            if stm.src.mem.symbol().typ.has_length():
-                l = stm.src.mem.symbol().typ.get_length()
-                w = stm.src.mem.symbol().typ.get_element().get_width()
-                # TODO:
-                if w * l < env.config.internal_ram_threshold_size:
-                    return False
-            return True
-        return False
+        if stm.is_a(MOVE) and stm.src.is_a(MREF):
+            mem = stm.src.mem
+        elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
+            mem = stm.exp.mem
+        else:
+            return False
+        if mem.symbol().typ.has_length():
+            l = mem.symbol().typ.get_length()
+            w = mem.symbol().typ.get_element().get_width()
+            # TODO:
+            if w * l < env.config.internal_ram_threshold_size:
+                return False
+        return True
 
     def _emigrate_to_diamond_head(self, head, blk):
         unmoves = set()

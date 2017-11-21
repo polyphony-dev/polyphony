@@ -353,11 +353,6 @@ class TypePropagation(IRVisitor):
         if self.scope.return_type.is_undef() and not typ.is_undef():
             self.scope.return_type = typ
 
-    def _is_valid_list_type_source(self, src):
-        return (src.is_a([ARRAY,  MSTORE])
-                or src.is_a(BINOP) and src.left.is_a(ARRAY) and src.op == 'Mult'
-                or src.is_a(TEMP) and src.sym.is_param())
-
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
         if src_typ in (Type.undef_t, Type.generic_t):

@@ -11,6 +11,8 @@ from .varreplacer import VarReplacer
 from .dominator import DominatorTreeBuilder
 from .scope import Scope
 from .utils import *
+from logging import getLogger
+logger = getLogger(__name__)
 
 
 def eval_unop(ir, ctx):
@@ -296,12 +298,19 @@ class ConstantOptBase(IRVisitor):
             remove_from_list(worklist, blk.stms)
             for succ in blk.succs:
                 if blk in succ.preds:
+                    idx = succ.preds.index(blk)
                     succ.remove_pred(blk)
+                    if succ.preds:
+                        phis = succ.collect_stms([PHI, LPHI])
+                        for phi in phis:
+                            arg = phi.args[idx]
+                            phi.remove_arg(arg)
             for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
                 if self.dtree.is_child(blk, succ):
                     remove_dominated_branch(succ)
 
         blk = cjump.block
+        logger.debug('unconditional block {}'.format(blk.name))
         if cjump.exp.value:
             true_blk = cjump.true
             false_blk = cjump.false
@@ -361,12 +370,7 @@ class ConstantOpt(ConstantOptBase):
                             worklist.remove(stm)
                             assert stm not in worklist
                         break
-                    if (p.is_a(CONST) and not p.value or
-                            p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
-                        idx = stm.ps.index(p)
-                        stm.ps.pop(idx)
-                        stm.args.pop(idx)
-                        stm.defblks.pop(idx)
+
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.block

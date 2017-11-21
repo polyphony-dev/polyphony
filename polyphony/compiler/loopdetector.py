@@ -10,7 +10,7 @@ class LoopDetector(object):
 
     def process(self, scope):
         self.scope = scope
-
+        self.scope.reset_loop_tree()
         ordered_blks = []
         visited = []
         head = scope.entry_block
@@ -22,10 +22,6 @@ class LoopDetector(object):
         top_region = Region(head, bodies, ordered_blks)
         self.scope.append_child_regions(top_region, regions)
         scope.set_top_region(top_region)
-
-        LoopRegionSetter().process(scope)
-        LoopInfoSetter().process(scope)
-        LoopDependencyDetector().process(scope)
 
     def _make_loop_region(self, head, loop_inner_blks):
         regions, bodies = self._make_loop_bodies(loop_inner_blks)

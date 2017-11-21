@@ -95,11 +95,6 @@ def _get_latency(tag):
             if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
                 return 1
             return UNIT_STEP * 3, UNIT_STEP * 1
-        elif tag.src.is_a(MSTORE):
-            memnode = tag.src.mem.symbol().typ.get_memnode()
-            if memnode.can_be_reg():
-                return 1
-            return UNIT_STEP * 1, UNIT_STEP * 1
         if tag.dst.symbol().is_alias():
             return 0
     elif tag.is_a(EXPR):
@@ -107,6 +102,11 @@ def _get_latency(tag):
             return get_call_latency(tag.exp, tag)
         elif tag.exp.is_a(SYSCALL):
             return get_syscall_latency(tag.exp)
+        elif tag.exp.is_a(MSTORE):
+            memnode = tag.exp.mem.symbol().typ.get_memnode()
+            if memnode.can_be_reg():
+                return 1
+            return UNIT_STEP * 1, UNIT_STEP * 1
     elif tag.is_a(PHI):
         if tag.var.symbol().is_alias():
             return 0

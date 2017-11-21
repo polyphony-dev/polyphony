@@ -531,8 +531,6 @@ class DFGBuilder(object):
         elif stm.is_a(MOVE):
             if stm.src.is_a([CONST, ARRAY, CALL]):
                 return True
-            elif stm.src.is_a(MSTORE) and stm.src.offset.is_a(CONST) and stm.src.exp.is_a(CONST):
-                return True
             elif stm.src.is_a(MREF) and stm.src.offset.is_a(CONST):
                 return True
             elif stm.src.is_a(NEW):
@@ -541,6 +539,8 @@ class DFGBuilder(object):
             if stm.exp.is_a([CALL, SYSCALL]):
                 call = stm.exp
                 return all(a.is_a(CONST) for _, a in call.args)
+            elif stm.exp.is_a(MSTORE) and stm.exp.offset.is_a(CONST) and stm.exp.exp.is_a(CONST):
+                return True
         elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
             return True
         elif stm.is_a(MCJUMP):
@@ -567,7 +567,7 @@ class DFGBuilder(object):
         for node in dfg.nodes:
             if node.tag.is_a(MOVE):
                 mv = node.tag
-                if mv.src.is_a([MREF, MSTORE]):
+                if mv.src.is_a(MREF):
                     mem_group = mv.src.mem.symbol()
                     node_groups_by_mem[mem_group].append(node)
                 elif mv.src.is_a(CALL):
@@ -582,6 +582,9 @@ class DFGBuilder(object):
                         if arg.is_a(TEMP) and arg.symbol().typ.is_list():
                             mem_group = arg.symbol()
                             node_groups_by_mem[mem_group].append(node)
+                elif expr.exp.is_a(MSTORE):
+                    mem_group = expr.exp.mem.symbol()
+                    node_groups_by_mem[mem_group].append(node)
         for group, nodes in node_groups_by_mem.items():
             memnode = group.typ.get_memnode()
             if memnode.is_immutable() or memnode.can_be_reg():
@@ -824,11 +827,14 @@ class RegArrayParallelizer(object):
 
     @staticmethod
     def offset_expr(stm, msym):
-        if stm.is_a(MOVE):
-            if stm.src.is_a([MREF, MSTORE]):
-                assert msym is stm.src.mem.symbol()
-                return stm.src.offset
-        return None
+        if stm.is_a(MOVE) and stm.src.is_a(MREF):
+            m = stm.src
+        elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
+            m = stm.exp
+        else:
+            return None
+        assert msym is m.mem.symbol()
+        return m.offset
 
     @staticmethod
     def _get_const(binop):
