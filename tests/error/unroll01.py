@@ -1,15 +1,13 @@
 #Cannot unroll nested loop
 from polyphony import testbench
-from polyphony import rule
+from polyphony import unroll
 
 
 def unroll01(x):
     sum = 0
-    with rule(unroll='2'):
-        for i in range(4):
-            with rule(unroll='1'):
-                for j in range(4):
-                    sum += (i * j * x)
+    for i in unroll(range(4), 2):
+        for j in range(4):
+            sum += (i * j * x)
     return sum
 
 

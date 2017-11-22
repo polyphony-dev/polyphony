@@ -445,7 +445,6 @@ class DFGBuilder(object):
             self._tweak_port_edges_for_pipeline(dfg)
         if region.head.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
             self._add_seq_edges_for_ctrl_branch(dfg)
-        RegArrayParallelizer().process(self.scope, dfg)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -585,20 +584,36 @@ class DFGBuilder(object):
                 elif expr.exp.is_a(MSTORE):
                     mem_group = expr.exp.mem.symbol()
                     node_groups_by_mem[mem_group].append(node)
+        parallelizer = RegArrayParallelizer(self.scope)
         for group, nodes in node_groups_by_mem.items():
             memnode = group.typ.get_memnode()
-            if memnode.is_immutable() or memnode.can_be_reg():
+            if memnode.is_immutable():  # or memnode.can_be_reg():
                 continue
+            is_reg_array = memnode.can_be_reg()
             node_groups_by_blk = defaultdict(list)
             # grouping by block
             for n in nodes:
                 node_groups_by_blk[n.tag.block].append(n)
             for ns in node_groups_by_blk.values():
                 sorted_nodes = sorted(ns, key=self._node_order_by_ctrl)
-                for i in range(len(sorted_nodes) - 1):
-                    n1 = sorted_nodes[i]
-                    n2 = sorted_nodes[i + 1]
-                    dfg.add_seq_edge(n1, n2)
+                if is_reg_array:
+                    for i in range(len(sorted_nodes) - 1):
+                        n1 = sorted_nodes[i]
+                        for k in range(i + 1, len(sorted_nodes)):
+                            n2 = sorted_nodes[k]
+                            if parallelizer.can_be_parallel(group, n1, n2):
+                                continue
+                            if n1.tag.is_mem_read():
+                                if n2.tag.is_mem_write():
+                                    dfg.add_usedef_edge(n1, n2)
+                                continue
+                            dfg.add_seq_edge(n1, n2)
+
+                else:
+                    for i in range(len(sorted_nodes) - 1):
+                        n1 = sorted_nodes[i]
+                        n2 = sorted_nodes[i + 1]
+                        dfg.add_seq_edge(n1, n2)
 
     def _add_edges_between_func_modules(self, blocks, dfg):
         """this function is used for testbench only"""
@@ -803,33 +818,19 @@ class DFGBuilder(object):
 
 
 class RegArrayParallelizer(object):
-    def process(self, scope, dfg):
+    def __init__(self, scope):
         self.scope = scope
-        removes = []
-        for (n1, n2), (typ, back) in dfg.edges.items():
-            if typ != 'DefUse':
-                continue
-            if not n1.tag.is_a(MOVE):
-                continue
-            if not n1.tag.dst.symbol().typ.is_seq():
-                continue
-            # we focus on register array in the process
-            memnode = n1.tag.dst.symbol().typ.get_memnode()
-            if not memnode.can_be_reg():
-                continue
-            msym = n1.tag.dst.symbol()
-            def_offs = self.offset_expr(n1.tag, msym)
-            use_offs = self.offset_expr(n2.tag, msym)
-            if self.is_inequality_value(def_offs, use_offs):
-                removes.append((n1, n2))
-        for n1, n2 in removes:
-            dfg.remove_edge(n1, n2)
+
+    def can_be_parallel(self, msym, n1, n2):
+        n1_offs = self.offset_expr(n1.tag, msym)
+        n2_offs = self.offset_expr(n2.tag, msym)
+        return self.is_inequality_value(n1_offs, n2_offs)
 
     @staticmethod
     def offset_expr(stm, msym):
-        if stm.is_a(MOVE) and stm.src.is_a(MREF):
+        if stm.is_mem_read():
             m = stm.src
-        elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
+        elif stm.is_mem_write():
             m = stm.exp
         else:
             return None
@@ -885,24 +886,24 @@ class RegArrayParallelizer(object):
         v2_rhs_const = self._get_const(v2_stm.src)
         return v1_stm.src.op == v2_stm.src.op and v1_rhs_const.value != v2_rhs_const.value
 
-    def is_inequality_value(self, def_offs, use_offs):
-        if not def_offs or not use_offs:
+    def is_inequality_value(self, offs1, offs2):
+        if not offs1 or not offs2:
             return False
-        if def_offs.is_a(CONST) and use_offs.is_a(CONST) and def_offs.value != use_offs.value:
+        if offs1.is_a(CONST) and offs2.is_a(CONST) and offs1.value != offs2.value:
             return True
-        elif def_offs.is_a(TEMP) and use_offs.is_a(TEMP):
-            def_offs_defstms = self.scope.usedef.get_stms_defining(def_offs.symbol())
-            use_offs_defstms = self.scope.usedef.get_stms_defining(use_offs.symbol())
-            if len(def_offs_defstms) != 1 and len(use_offs_defstms) != 1:
+        elif offs1.is_a(TEMP) and offs2.is_a(TEMP):
+            offs1_defstms = self.scope.usedef.get_stms_defining(offs1.symbol())
+            offs2_defstms = self.scope.usedef.get_stms_defining(offs2.symbol())
+            if len(offs1_defstms) != 1 and len(offs2_defstms) != 1:
                 return False
-            use_offs_stm = list(use_offs_defstms)[0]
-            def_offs_stm = list(def_offs_defstms)[0]
-            if len(use_offs_defstms) == 1:
-                if self._has_other_var_and_difference(def_offs.symbol(), use_offs_stm):
+            offs2_stm = list(offs2_defstms)[0]
+            offs1_stm = list(offs1_defstms)[0]
+            if len(offs2_defstms) == 1:
+                if self._has_other_var_and_difference(offs1.symbol(), offs2_stm):
                     return True
-            if len(def_offs_defstms) == 1:
-                if self._has_other_var_and_difference(use_offs.symbol(), def_offs_stm):
+            if len(offs1_defstms) == 1:
+                if self._has_other_var_and_difference(offs2.symbol(), offs1_stm):
                     return True
-            if len(use_offs_defstms) == 1 and len(def_offs_defstms) == 1:
-                return self._has_same_var_and_difference(use_offs_stm, def_offs_stm)
+            if len(offs2_defstms) == 1 and len(offs1_defstms) == 1:
+                return self._has_same_var_and_difference(offs2_stm, offs1_stm)
         return False

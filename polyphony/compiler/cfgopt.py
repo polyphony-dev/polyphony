@@ -60,7 +60,6 @@ class BlockReducer(object):
             # TODO: any jump.typ
             if (len(block.preds) == 1 and
                     len(block.preds[0].succs) == 1 and
-                    not block.preds[0].stms[-1].typ == 'C' and
                     can_merge_synth_params(block.synth_params, block.preds[0].synth_params)):
                 pred = block.preds[0]
                 assert pred.stms[-1].is_a(JUMP)

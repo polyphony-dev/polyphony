@@ -1198,8 +1198,9 @@ class AHDLTranslator(object):
             self._call_proc(ir, node)
         elif ir.exp.is_a(MSTORE):
             exp = self.visit(ir.exp, node)
-            assert exp.is_a(AHDL_STORE)
-            self._emit_memstore_sequence(exp, self.sched_time)
+            if exp:
+                assert exp.is_a(AHDL_STORE)
+                self._emit_memstore_sequence(exp, self.sched_time)
         else:
             exp = self.visit(ir.exp, node)
             if exp:

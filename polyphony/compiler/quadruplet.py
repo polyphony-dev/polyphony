@@ -184,6 +184,7 @@ class EarlyQuadrupleMaker(IRTransformer):
 
         if ir.dst.is_a(MREF):
             mref = ir.dst
+            # the memory store is not a variable definition, so the context should be LOAD
             mref.mem.ctx = Ctx.LOAD
             ms = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
             ms.lineno = ir.lineno

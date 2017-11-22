@@ -634,6 +634,12 @@ class IRStm(IR):
     def kids(self):
         return []
 
+    def is_mem_read(self):
+        return self.is_a(MOVE) and self.src.is_a(MREF)
+
+    def is_mem_write(self):
+        return self.is_a(EXPR) and self.exp.is_a(MSTORE)
+
 
 class EXPR(IRStm):
     def __init__(self, exp):
