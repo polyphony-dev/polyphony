@@ -8,7 +8,7 @@ class CFGChecker(object):
     def process(self, scope):
         if scope.is_namespace() or scope.is_class():
             return
-        if env.compile_phase >= env.PHASE_1:
+        if env.compile_phase > env.PHASE_1:
             UseDefDetector().process(scope)
         self.scope = scope
         self.accessibles = set()
@@ -26,7 +26,7 @@ class CFGChecker(object):
         self._check_preds(blk)
         self._check_succs(blk)
         self._check_jump(blk)
-        if env.compile_phase >= env.PHASE_1:
+        if env.compile_phase > env.PHASE_1:
             self._check_vars(blk)
             self._check_path_exp(blk)
             self._check_phi(blk)

@@ -51,7 +51,8 @@ from .statereducer import StateReducer
 from .stg import STGBuilder
 from .synth import DefaultSynthParamSetter
 from .typecheck import TypePropagation, InstanceTypePropagation
-from .typecheck import TypeChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
+from .typecheck import TypeChecker
+from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
 from .typecheck import AssertionChecker
 from .typecheck import SynthesisParamChecker
 from .unroll import LoopUnroller
@@ -194,12 +195,19 @@ def typecheck(driver, scope):
     TypeChecker().process(scope)
 
 
+def earlyrestrictioncheck(driver, scope):
+    EarlyRestrictionChecker().process(scope)
+
+
 def restrictioncheck(driver, scope):
     RestrictionChecker().process(scope)
 
 
-def modulecheck(driver, scope):
+def laterestrictioncheck(driver, scope):
     LateRestrictionChecker().process(scope)
+
+
+def modulecheck(driver, scope):
     ModuleChecker().process(scope)
 
 
@@ -333,7 +341,7 @@ def checkcfg(driver, scope):
 
 def loop(driver, scope):
     LoopDetector().process(scope)
-    LoopRegionSetter().process(scope)
+    #LoopRegionSetter().process(scope)
     LoopInfoSetter().process(scope)
     LoopDependencyDetector().process(scope)
     checkcfg(driver, scope)
@@ -497,6 +505,7 @@ def compile_plan():
         dbg(dumpscope),
         latequadruple,
         callgraph,
+        earlyrestrictioncheck,
         typecheck,
         flattenport,
         typeprop,
@@ -555,6 +564,7 @@ def compile_plan():
         reduceblk,
         usedef,
         loop,
+        laterestrictioncheck,
         dbg(dumpscope),
         unroll,
         dbg(dumpscope),

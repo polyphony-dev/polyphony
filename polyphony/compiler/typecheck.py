@@ -707,6 +707,12 @@ class TypeChecker(IRVisitor):
                            [arg, scope_name])
 
 
+class EarlyRestrictionChecker(IRVisitor):
+    def visit_SYSCALL(self, ir):
+        if ir.sym.name in ('range', 'polyphony.unroll', 'polyphony.pipelined'):
+            fail(self.current_stm, Errors.USE_OUTSIDE_FOR, [ir.sym.name])
+
+
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
         if ir.func_scope().is_module():
@@ -757,7 +763,7 @@ class LateRestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
         if ir.func_scope().is_port():
             if not (self.scope.is_ctor() and self.scope.parent.is_module()):
-                type_error(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
+                fail(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
 
     def visit_CALL(self, ir):
         if ir.func_scope().is_method() and ir.func_scope().parent.is_module():

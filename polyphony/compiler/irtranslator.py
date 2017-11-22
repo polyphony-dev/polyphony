@@ -730,6 +730,9 @@ class CodeVisitor(ast.NodeVisitor):
             assert len(it.args) >= 1
             _, seq = it.args[0]
             if it.sym.name == 'polyphony.unroll':
+                if is_iterator_func(seq) and seq.sym.name in ('polyphony.unroll', 'polyphony.pipelined'):
+                    fail((self.current_scope, node.lineno),
+                         Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.sym.name, it.sym.name])
                 if len(it.args) == 1:
                     if len(it.kwargs) == 0:
                         assert it.sym.typ.is_function()
@@ -749,6 +752,10 @@ class CodeVisitor(ast.NodeVisitor):
                 loop_synth_params.update({'unroll':factor.value})
             elif it.sym.name == 'polyphony.pipelined':
                 loop_synth_params.update({'scheduling':'pipeline'})
+                if is_iterator_func(seq):
+                    if seq.sym.name == 'polyphony.pipelined':
+                        fail((self.current_scope, node.lineno),
+                             Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.sym.name, it.sym.name])
             it = seq
 
         # In case of range() loop
