@@ -127,6 +127,8 @@ class LoopUnroller(object):
                 parent.append_body(b)
             self.scope.remove_region(loop)
             self._remove_loop_condition(loop_cond)
+            for blk in [unroll_head] + unroll_blks:
+                blk.synth_params = unroll_head.preds[0].synth_params.copy()
         else:
             if has_unroll_remain:
                 remain_start_blk = Block(self.scope)
@@ -155,8 +157,8 @@ class LoopUnroller(object):
             else:
                 self.scope.remove_region(loop)
                 self._replace_outer_uses(loop, new_ivs, 0, sym_map)
-        for blk in [unroll_head] + unroll_blks:
-            blk.synth_params = unroll_head.preds[0].synth_params.copy()
+            for blk in [unroll_head] + unroll_blks:
+                del blk.synth_params['unroll']
         return True
 
     def _replace_jump_target(self, block, old, new):
