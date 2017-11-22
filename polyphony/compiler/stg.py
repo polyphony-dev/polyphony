@@ -788,9 +788,10 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
                 break
             l = pstate.last_signal(i)
             codes.append(AHDL_MOVE(AHDL_VAR(l, Ctx.STORE), AHDL_CONST(0)))
+        assert len(dfg.region.exits) == 1
         codes.extend([
             AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
-            AHDL_TRANSITION(dfg.region.exit)
+            AHDL_TRANSITION(dfg.region.exits[0])
         ])
         codes_list = [codes]
         pipe_end_stm = AHDL_TRANSITION_IF(conds, codes_list)

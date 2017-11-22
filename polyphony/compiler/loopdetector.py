@@ -1,4 +1,4 @@
-﻿from .ir import CONST, RELOP, TEMP, MOVE, CJUMP, PHIBase
+﻿from .ir import CONST, RELOP, TEMP, MOVE, CJUMP, PHIBase, LPHI
 from .loop import Region, Loop
 from logging import getLogger
 logger = getLogger(__name__)
@@ -92,9 +92,7 @@ class LoopInfoSetter(object):
             self._set_loop_info_rec(loop)
 
     def _set_loop_info_rec(self, loop):
-        if (loop.head.synth_params['scheduling'] == 'pipeline' or
-                loop.head.synth_params['unroll']):
-            self.set_loop_info(loop)
+        self.set_loop_info(loop)
         for child in self.scope.child_regions(loop):
             self._set_loop_info_rec(child)
 
@@ -113,19 +111,27 @@ class LoopInfoSetter(object):
         assert len(defs) == 1
         cond_stm = list(defs)[0]
         assert cond_stm.is_a(MOVE)
-        assert cond_stm.src.is_a(RELOP)
+        if not cond_stm.src.is_a(RELOP):
+            return
         loop_relexp = cond_stm.src
 
         if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol().is_induction():
             assert loop_relexp.right.is_a([CONST, TEMP])
             loop.counter = loop_relexp.left.symbol()
+            loop.counter.add_tag('loop_counter')
         elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol().is_induction():
             assert loop_relexp.left.is_a([CONST, TEMP])
             loop.counter = loop_relexp.right.symbol()
+            loop.counter.add_tag('loop_counter')
         else:
-            # this loop may busy loop
-            return
-
+            lphis = loop.head.collect_stms(LPHI)
+            for lphi in lphis:
+                if lphi.var.symbol().is_loop_counter():
+                    loop.counter = lphi.var.symbol()
+                    break
+            else:
+                # this loop may busy loop
+                return
         defs = self.scope.usedef.get_stms_defining(loop.counter)
         assert len(defs) == 1
         counter_def = list(defs)[0]
@@ -133,7 +139,11 @@ class LoopInfoSetter(object):
         assert len(counter_def.args) == 2
         loop.init = counter_def.args[0]
         loop.update = counter_def.args[1]
-        loop.exit = loop.head.succs[1]
+        loop.exits = []
+        for blk in loop.inner_blocks:
+            for s in blk.succs:
+                if s not in loop.inner_blocks:
+                    loop.exits.append(s)
         assert loop.update
         assert loop.init
         logger.debug(loop)

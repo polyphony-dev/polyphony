@@ -66,7 +66,7 @@ class Loop(Region):
         self.init = None  # IRExp
         self.update = None  # IRExp
         self.cond = None  # Symbol
-        self.exit = None  # Block
+        self.exits = None  # Block
         self.outer_defs = None
         self.outer_uses = None
         self.inner_defs = None
@@ -78,6 +78,18 @@ class Loop(Region):
         s += ' # bodies: {'
         s += ', '.join([blk.name for blk in self.bodies])
         s += '}\n'
+        if self.exits:
+            s += ' # exits: {'
+            s += ', '.join([blk.name for blk in self.exits])
+            s += '}\n'
+        if self.counter:
+            s += ' # counter: {}\n'.format(self.counter)
+        if self.init:
+            s += ' # init: {}\n'.format(self.init)
+        if self.update:
+            s += ' # update: {}\n'.format(self.update)
+        if self.cond:
+            s += ' # cond: {}\n'.format(self.cond)
         if self.outer_defs:
             s += ' # outer_defs: {'
             s += ', '.join([str(d) for d in self.outer_defs])
