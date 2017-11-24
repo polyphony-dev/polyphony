@@ -349,6 +349,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.lazy_defs = []
         self.current_with_blk_synth_params = {}
         self.current_loop_synth_params = {}
+        self.invisible_symbols = set()
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -392,6 +393,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_scope.set_exit_block(new_block)
         self.current_block = new_block
         self.current_param_stms = []
+        self.invisible_symbols.clear()
 
         return (outer_scope, last_block)
 
@@ -776,6 +778,7 @@ class CodeVisitor(ast.NodeVisitor):
             start = make_temp_if_needed(start, init_parts)
             end = make_temp_if_needed(end, init_parts)
             step = make_temp_if_needed(step, init_parts)
+            counter = var.sym
             init_parts += [
                 MOVE(TEMP(var.sym, Ctx.STORE), start)
             ]
@@ -847,6 +850,7 @@ class CodeVisitor(ast.NodeVisitor):
         else:
             fail((self.current_scope, node.lineno),
                  Errors.UNSUPPORTED_SYNTAX, ['This type of for statement'])
+        self.invisible_symbols.add(counter)
 
     def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, loop_synth_params, node):
         exit_block = self._new_block(self.current_scope)
@@ -945,7 +949,7 @@ class CodeVisitor(ast.NodeVisitor):
 
         for body in node.body:
             self.visit(body)
-        
+
         if old_with_blk_synth_params is not None:
             self.current_with_blk_synth_params = old_with_blk_synth_params
 
@@ -1177,6 +1181,7 @@ class CodeVisitor(ast.NodeVisitor):
         elif node.id == 'None':
             return CONST(None)
 
+        ctx = self._nodectx2irctx(node)
         sym = self.current_scope.find_sym(node.id)
         if not sym:
             parent_scope = self.current_scope.find_parent_scope(node.id)
@@ -1184,7 +1189,7 @@ class CodeVisitor(ast.NodeVisitor):
                 scope_sym = parent_scope.find_sym(node.id)
                 return TEMP(scope_sym, self._nodectx2irctx(node))
 
-        if isinstance(node.ctx, ast.Load) or isinstance(node.ctx, ast.AugLoad):
+        if ctx == Ctx.LOAD:
             if sym is None:
                 fail((self.current_scope, node.lineno), Errors.UNDEFINED_NAME, [node.id])
         else:
@@ -1192,9 +1197,13 @@ class CodeVisitor(ast.NodeVisitor):
                 sym = self.current_scope.add_sym(node.id)
                 if self.current_scope.is_global() or self.current_scope.is_class():
                     sym.add_tag('static')
-
+        if sym in self.invisible_symbols:
+            if ctx == Ctx.LOAD:
+                fail((self.current_scope, node.lineno), Errors.NAME_SCOPE_RESTRICTION, [node.id])
+            else:
+                self.invisible_symbols.remove(sym)
         assert sym is not None
-        return TEMP(sym, self._nodectx2irctx(node))
+        return TEMP(sym, ctx)
 
     #     | List(expr* elts, expr_context ctx)
     def visit_List(self, node):
