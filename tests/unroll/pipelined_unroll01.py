@@ -1,10 +1,10 @@
 from polyphony import testbench
-from polyphony import unroll
+from polyphony import unroll, pipelined
 
 
-def unroll01(xs, ys):
+def pipelined_unroll01(xs, ys):
     s = 0
-    for i in range(8):  # synth: unroll
+    for i in pipelined(unroll(range(8), 2)):
         x = xs[i] + 1
         if x < 0:
             s = s + x
@@ -19,7 +19,7 @@ def unroll01(xs, ys):
 def test():
     data = [1, 2, 3, 4, 5, 6, 7, 8]
     out_data = [0] * 8
-    s = unroll01(data, out_data)
+    s = pipelined_unroll01(data, out_data)
     print(s)
     assert -44 == s
     assert 2 == out_data[0]
