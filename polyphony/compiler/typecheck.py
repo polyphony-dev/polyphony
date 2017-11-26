@@ -26,12 +26,12 @@ class TypePropagation(IRVisitor):
         self.check_error = True
         self.new_scopes = set()
 
-    def process_all(self):
+    def process_all(self, driver):
         self.check_error = False
-        scopes = Scope.get_scopes(bottom_up=False,
-                                  with_global=True,
-                                  with_class=True,
-                                  with_lib=False)
+        scopes = driver.get_scopes(bottom_up=False,
+                                   with_global=True,
+                                   with_class=True,
+                                   with_lib=False)
         for s in scopes:
             if s.return_type is None:
                 s.return_type = Type.undef_t

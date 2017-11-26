@@ -496,8 +496,15 @@ class FlattenObjectArgs(IRTransformer):
 
 
 class FlattenModule(IRTransformer):
+    '''
+    self.sub.append_worker(self.sub.worker, ...)  =>  self.append_worker(self.worker, ...)
+    '''
     def __init__(self, driver):
         self.driver = driver
+
+    def process(self, scope):
+        if scope.parent and scope.parent.is_module() and scope is scope.parent.find_ctor():
+            super().process(scope)
 
     def visit_EXPR(self, ir):
         if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and

@@ -47,7 +47,7 @@ class State(object):
                 code.target = next_state
             else:
                 assert isinstance(code.target, Block)
-                code.target = blk2states[self.stg.scope][code.target][0]
+                code.target = blk2states[code.target][0]
             transition = code
         elif code.is_a(AHDL_TRANSITION_IF):
             for i, codes in enumerate(code.codes_list):
@@ -55,7 +55,7 @@ class State(object):
                 transition = codes[0]
                 assert transition.is_a(AHDL_TRANSITION)
                 assert isinstance(transition.target, Block)
-                target_state = blk2states[self.stg.scope][transition.target][0]
+                target_state = blk2states[transition.target][0]
                 transition.target = target_state
             transition = code
         else:
@@ -116,7 +116,7 @@ class PipelineState(State):
                 tags = {'reg', 'pipeline_ctrl'}
             else:
                 tags = {'net', 'pipeline_ctrl'}
-            new_sig = self.stg.scope.gen_sig(name, 1, tags)
+            new_sig = self.stg.hdlmodule.gen_sig(name, 1, tags)
             signals[idx] = new_sig
         return signals[idx]
 
@@ -172,7 +172,7 @@ class PipelineState(State):
                 transition = codes[-1]
                 assert transition.is_a(AHDL_TRANSITION)
                 if isinstance(transition.target, Block):
-                    target_state = blk2states[self.stg.scope][transition.target][0]
+                    target_state = blk2states[transition.target][0]
                     transition.target = target_state
                 else:
                     pass
@@ -208,14 +208,14 @@ class PipelineStage(State):
 
 class STG(object):
     "State Transition Graph"
-    def __init__(self, name, parent, states, scope):
+    def __init__(self, name, parent, states, hdlmodule):
         self.name = name
         logger.debug('#### stg ' + name)
         self.parent = parent
         if parent:
             logger.debug('#### parent stg ' + parent.name)
         self.states = []
-        self.scope = scope
+        self.hdlmodule = hdlmodule
         self.init_state = None
         self.finish_state = None
         self.scheduling = ''
@@ -266,11 +266,28 @@ class STGBuilder(object):
         self.dfg2stg = {}
         self.blk2states = {}
 
-    def process(self, scope):
-        if scope.is_namespace() or scope.is_class() or scope.is_lib():
-            return
+    def process(self, hdlmodule):
+        self.hdlmodule = hdlmodule
+        self.blk2states = {}
+        if hdlmodule.scope.is_module():
+            for w, _ in hdlmodule.scope.workers:
+                stgs = self._process_scope(w)
+                fsm_name = w.orig_name
+                self.hdlmodule.add_fsm(fsm_name, w)
+                self.hdlmodule.add_fsm_stg(fsm_name, stgs)
+            ctor = hdlmodule.scope.find_ctor()
+            stgs = self._process_scope(ctor)
+            fsm_name = stgs[0].name
+            self.hdlmodule.add_fsm(fsm_name, ctor)
+            self.hdlmodule.add_fsm_stg(fsm_name, stgs)
+        else:
+            stgs = self._process_scope(hdlmodule.scope)
+            fsm_name = stgs[0].name
+            self.hdlmodule.add_fsm(fsm_name, hdlmodule.scope)
+            self.hdlmodule.add_fsm_stg(fsm_name, stgs)
+
+    def _process_scope(self, scope):
         self.scope = scope
-        self.blk2states[scope] = {}
         stgs = []
         dfgs = scope.dfgs(bottom_up=False)
         for i, dfg in enumerate(dfgs):
@@ -288,7 +305,7 @@ class STGBuilder(object):
             functools.reduce(lambda s1, s2: s1.resolve_transition(s2, self.blk2states), stg.states)
             stg.states[-1].resolve_transition(stg.states[0], self.blk2states)
 
-        scope.stgs = stgs
+        return stgs
 
     def _get_parent_stg(self, dfg):
         return self.dfg2stg[dfg.parent]
@@ -309,7 +326,7 @@ class STGBuilder(object):
                 stg_name = self.scope.parent.orig_name + '_' + stg_name
 
         parent_stg = self._get_parent_stg(dfg) if not is_main else None
-        stg = STG(stg_name, parent_stg, None, self.scope)
+        stg = STG(stg_name, parent_stg, None, self.hdlmodule)
         stg.scheduling = dfg.synth_params['scheduling']
         if stg.scheduling == 'pipeline':
             if not is_main:
@@ -328,6 +345,7 @@ class STGBuilder(object):
 class STGItemBuilder(object):
     def __init__(self, scope, stg, blk2states):
         self.scope = scope
+        self.hdlmodule = env.hdlmodule(scope)
         self.stg = stg
         self.blk2states = blk2states
         self.translator = AHDLTranslator(stg.name, self, scope)
@@ -369,7 +387,7 @@ class STGItemBuilder(object):
             self.translator.visit(node.tag, node)
 
     def gen_sig(self, prefix, postfix, width, tag=None):
-        sig = self.scope.gen_sig('{}_{}'.format(prefix, postfix), width, tag)
+        sig = self.hdlmodule.gen_sig('{}_{}'.format(prefix, postfix), width, tag)
         return sig
 
     def _new_state(self, name, step, codes):
@@ -434,7 +452,7 @@ class StateBuilder(STGItemBuilder):
 
             assert states
             self.stg.states.extend(states)
-            self.blk2states[self.scope][blk] = states
+            self.blk2states[blk] = states
 
     def _build_states_for_block(self, state_prefix, blk, is_main, is_first, is_last):
         states = []
@@ -528,7 +546,7 @@ class PipelineStageBuilder(STGItemBuilder):
         self._build_pipeline_stages(prefix, pstate, is_main)
 
         for blk in dfg.region.blocks():
-            self.blk2states[self.scope][blk] = [pstate]
+            self.blk2states[blk] = [pstate]
 
         self.stg.states.append(pstate)
         self.stg.init_state = pstate
@@ -700,7 +718,7 @@ class PipelineStageBuilder(STGItemBuilder):
             if 'net' in tags:
                 tags.remove('net')
                 tags.add('reg')
-            self.scope.gen_sig(new_name, sig.width, tags, sig.sym)
+            self.hdlmodule.gen_sig(new_name, sig.width, tags, sig.sym)
         for u in usedef.get_stms_using(sig):
             num = stm2stage_num[u]
             if num == d_num:
@@ -708,7 +726,7 @@ class PipelineStageBuilder(STGItemBuilder):
             if is_normal_reg and (num - d_num) == 1:
                 continue
             new_name = sig.name + '_{}'.format(num)
-            new_sig = self.scope.signal(new_name)
+            new_sig = self.hdlmodule.signal(new_name)
             replacer.replace(u, sig, new_sig)
         for num in range(start_n, end_n):
             # first slice uses original
@@ -716,9 +734,9 @@ class PipelineStageBuilder(STGItemBuilder):
                 prev_sig = sig
             else:
                 prev_name = sig.name + '_{}'.format(num)
-                prev_sig = self.scope.signal(prev_name)
+                prev_sig = self.hdlmodule.signal(prev_name)
             cur_name = sig.name + '_{}'.format(num + 1)
-            cur_sig = self.scope.signal(cur_name)
+            cur_sig = self.hdlmodule.signal(cur_name)
             slice_stm = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
                                   AHDL_VAR(prev_sig, Ctx.LOAD))
             guard = stages[num].codes[0]
@@ -869,6 +887,7 @@ class AHDLTranslator(object):
         self.name = name
         self.host = host
         self.scope = scope
+        self.hdlmodule = env.hdlmodule(scope)
         self.mrg = env.memref_graph
 
     def reset(self, sched_time):
@@ -944,7 +963,7 @@ class AHDLTranslator(object):
         for source in memnode.sources():
             lens.append(source.length)
         if any(lens[0] != len for len in lens):
-            memlensig = self.scope.gen_sig('{}_len'.format(memnode.sym.hdl_name()), -1, ['memif'], mem.sym)
+            memlensig = self.hdlmodule.gen_sig('{}_len'.format(memnode.sym.hdl_name()), -1, ['memif'], mem.sym)
             return AHDL_VAR(memlensig, Ctx.LOAD)
         else:
             assert False  # len() must be constant value
@@ -1033,7 +1052,7 @@ class AHDLTranslator(object):
         elif memvar.memnode.can_be_reg():
             arraynode = memvar.memnode.single_source()
             if arraynode and list(arraynode.scopes)[0] is self.scope:
-                sig = self.scope.signal(arraynode.name())
+                sig = self.hdlmodule.signal(arraynode.name())
                 return AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, ir.ctx), offset)
             return AHDL_SUBSCRIPT(memvar, offset)
         else:
@@ -1050,7 +1069,7 @@ class AHDLTranslator(object):
         if memvar.memnode.can_be_reg():
             arraynode = memvar.memnode.single_source()
             if arraynode and list(arraynode.scopes)[0] is self.scope:
-                sig = self.scope.signal(arraynode.name())
+                sig = self.hdlmodule.signal(arraynode.name())
                 dst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, Ctx.STORE), offset)
             else:
                 dst = AHDL_SUBSCRIPT(memvar, offset)
@@ -1069,7 +1088,7 @@ class AHDLTranslator(object):
                     sched_time += 1
         else:
             arraynode = array.sym.typ.get_memnode()
-            sig = self.scope.gen_sig(arraynode.name(), 1, {'memif'}, array.sym)
+            sig = self.hdlmodule.gen_sig(arraynode.name(), 1, {'memif'}, array.sym)
             for i, item in enumerate(array.items):
                 if not(isinstance(item, CONST) and item.value is None):
                     idx = AHDL_CONST(i)
@@ -1150,7 +1169,7 @@ class AHDLTranslator(object):
             sig_name = sym.hdl_name()
 
         width = self._signal_width(sym)
-        sig = self.scope.gen_sig(sig_name, width, tags, sym)
+        sig = self.hdlmodule.gen_sig(sig_name, width, tags, sym)
         return sig
 
     def visit_TEMP(self, ir, node):
@@ -1170,7 +1189,7 @@ class AHDLTranslator(object):
             sym = ir.symbol() #ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
             signame = sym.hdl_name()
             width = self._signal_width(sym)
-            sig = self.scope.gen_sig(signame, width, sig_tags, sym)
+            sig = self.hdlmodule.gen_sig(signame, width, sig_tags, sym)
         elif self.scope.is_method() and self.scope.parent is ir.attr_scope:
             # internal access to the field
             width = self._signal_width(ir.attr)
@@ -1483,7 +1502,7 @@ class AHDLTranslator(object):
         if port_prefixes[0].name == env.self_name:
             port_prefixes = port_prefixes[1:]
         port_name = '_'.join([pfx.hdl_name() for pfx in port_prefixes])
-        port_sig = port_sym.scope.signal(port_name)
+        port_sig = env.hdlmodule(port_sym.scope).signal(port_name)
         if port_sig:
             tags = port_sig.tags
         else:
@@ -1543,14 +1562,14 @@ class AHDLTranslator(object):
                 elif kind == 'external':
                     tags.add('adaptered')
                     name = port_name + '_adapter_fifo'
-                    adapter_sig = self.scope.gen_sig(name, width, {'fifo_port', 'seq_port'})
+                    adapter_sig = self.hdlmodule.gen_sig(name, width, {'fifo_port', 'seq_port'})
                     adapter_sig.maxsize = 3
 
         if protocol != 'none':
             tags.add(protocol + '_protocol')
 
         if 'extport' in tags:
-            port_sig = self.scope.gen_sig(port_name, width, tags, port_sym)
+            port_sig = self.hdlmodule.gen_sig(port_name, width, tags, port_sym)
         else:
             if root_sym.scope.is_module():
                 module_scope = root_sym.scope
@@ -1558,7 +1577,7 @@ class AHDLTranslator(object):
                 module_scope = root_sym.scope.parent
             else:
                 assert False
-            port_sig = module_scope.gen_sig(port_name, width, tags, port_sym)
+            port_sig = env.hdlmodule(module_scope).gen_sig(port_name, width, tags, port_sym)
         if port_sym.typ.has_init():
             tags.add('initializable')
             port_sig.init_value = port_sym.typ.get_init()

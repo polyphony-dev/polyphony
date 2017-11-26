@@ -9,6 +9,7 @@ class Driver(object):
     def __init__(self, procs, scopes):
         self.procs = procs
         self.scopes = scopes[:]
+        self.disable_scopes = []
         self.logger = logging.getLogger()  # root logger
         self.codes = {}
 
@@ -18,6 +19,24 @@ class Driver(object):
     def remove_scope(self, scope):
         if scope in self.scopes:
             self.scopes.remove(scope)
+
+    def enable_scope(self, scope):
+        if scope in self.disable_scopes:
+            self.scopes.append(scope)
+            self.disable_scopes.remove(scope)
+        else:
+            assert scope in self.scopes
+
+    def disable_scope(self, scope):
+        if scope in self.scopes:
+            self.disable_scopes.append(scope)
+            self.scopes.remove(scope)
+        else:
+            assert scope in self.disable_scopes
+
+    def get_scopes(self, bottom_up=True, with_global=False, with_class=False, with_lib=False):
+        scopes = Scope.get_scopes(bottom_up, with_global, with_class, with_lib)
+        return [s for s in scopes if s in self.scopes]
 
     def start_logging(self, proc, scope):
         if env.dev_debug_mode and scope in env.logfiles:

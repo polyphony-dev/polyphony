@@ -1,5 +1,6 @@
 ﻿from collections import namedtuple
 from .ahdl import *
+from .env import env
 
 
 Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
@@ -501,7 +502,7 @@ class CallAccessor(IOAccessor):
                                   AHDL_CONST(0)))
         return stms
 
-    def call_sequence(self, step, step_n, argaccs, retaccs, ahdl_call, scope):
+    def call_sequence(self, step, step_n, argaccs, retaccs, ahdl_call):
         seq = []
         valid = port2ahdl(self, 'valid')
         ready = port2ahdl(self, 'ready')
@@ -843,7 +844,9 @@ class RegArrayAccessor(IOAccessor):
     def read_sequence(self, step, step_n, dst):
         assert dst.is_a(AHDL_MEMVAR)
         memnode = dst.memnode.single_source()
-        sig = list(memnode.scopes)[0].signal(memnode.name())
+        mem_scope = list(memnode.scopes)[0]
+        hdlmodule = env.hdlmodule(mem_scope)
+        sig = hdlmodule.signal(memnode.name())
         moves = []
         for i, p in enumerate(self.ports.outports()):
             src = AHDL_SYMBOL('{}{}'.format(self.acc_name, p.name))
@@ -1172,16 +1175,16 @@ def create_seq_interface(signal):
     return inf
 
 
-def make_event_task(scope, reset_stms, stms):
-    clk = scope.gen_sig('clk', 1, {'reserved'})
-    rst = scope.gen_sig('rst', 1, {'reserved'})
+def make_event_task(hdlmodule, reset_stms, stms):
+    clk = hdlmodule.gen_sig('clk', 1, {'reserved'})
+    rst = hdlmodule.gen_sig('rst', 1, {'reserved'})
     codes_list = [reset_stms, stms]
     reset_if = AHDL_IF([AHDL_VAR(rst, Ctx.LOAD), AHDL_CONST(1)], codes_list)
     events = [(AHDL_VAR(clk, Ctx.LOAD), 'rising')]
     return AHDL_EVENT_TASK(events, reset_if)
 
 
-def single_input_port_fifo_adapter(scope, signal, inst_name=''):
+def single_input_port_fifo_adapter(hdlmodule, signal, inst_name=''):
     '''
     if (rst) begin
       port_ready <= 0;
@@ -1216,10 +1219,10 @@ def single_input_port_fifo_adapter(scope, signal, inst_name=''):
             AHDL_MOVE(fifo_write, AHDL_OP('BitAnd', port_valid, AHDL_OP('Invert', fifo_full))),
             AHDL_MOVE(fifo_din, port)
             ]
-    return make_event_task(scope, reset_stms, stms)
+    return make_event_task(hdlmodule, reset_stms, stms)
 
 
-def single_output_port_fifo_adapter(scope, signal, inst_name=''):
+def single_output_port_fifo_adapter(hdlmodule, signal, inst_name=''):
     '''
     if (rst) begin
       port <= 0;
@@ -1262,7 +1265,7 @@ def single_output_port_fifo_adapter(scope, signal, inst_name=''):
             AHDL_MOVE(port_valid, fifo_read),
             AHDL_MOVE(port, port_rhs),
             ]
-    return make_event_task(scope, reset_stms, stms)
+    return make_event_task(hdlmodule, reset_stms, stms)
 
 
 class Interconnect(object):

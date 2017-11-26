@@ -19,6 +19,7 @@ from .driver import Driver
 from .env import env
 from .errors import CompileError, InterpretError
 from .hdlgen import HDLModuleBuilder
+from .hdlmodule import HDLModule
 from .iftransform import IfTransformer
 from .inlineopt import InlineOpt
 from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
@@ -73,6 +74,27 @@ def phase(phase):
     def setphase(driver):
         env.compile_phase = phase
     return setphase
+
+
+def filter_scope(fn):
+    def select_scope(driver, scope):
+        if fn(scope):
+            driver.enable_scope(scope)
+        else:
+            driver.disable_scope(scope)
+    return select_scope
+
+
+def is_static_scope(scope):
+    return scope.is_namespace() or scope.is_class()
+
+
+def is_not_static_scope(scope):
+    return not is_static_scope(scope)
+
+
+def is_hdlmodule_scope(scope):
+    return (scope.is_module() and scope.is_instantiated()) or scope.is_function_module() or scope.is_testbench()
 
 
 def preprocess_global(driver):
@@ -168,7 +190,7 @@ def phi(driver, scope):
 
 
 def memrefgraph(driver):
-    MemRefGraphBuilder().process_all()
+    MemRefGraphBuilder().process_all(driver)
 
 
 def meminstgraph(driver, scope):
@@ -176,7 +198,7 @@ def meminstgraph(driver, scope):
 
 
 def earlytypeprop(driver):
-    typed_scopes = TypePropagation().process_all()
+    typed_scopes = TypePropagation().process_all(driver)
     for s in typed_scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
@@ -262,7 +284,8 @@ def instantiate(driver):
             if not (child.is_ctor() or child.is_worker()):
                 continue
             usedef(driver, child)
-            execpure(driver, child)
+            if env.enable_pure:
+                execpure(driver, child)
             constopt(driver, child)
             checkcfg(driver, child)
     if new_modules:
@@ -275,7 +298,8 @@ def instantiate(driver):
 
         assert worker.is_worker()
         usedef(driver, worker)
-        execpure(driver, worker)
+        if env.enable_pure:
+            execpure(driver, worker)
         constopt(driver, worker)
         checkcfg(driver, worker)
     callgraph(driver)
@@ -370,6 +394,10 @@ def deadcode(driver, scope):
     DeadCodeEliminator().process(scope)
 
 
+def aliasvar(driver, scope):
+    AliasVarDetector().process(scope)
+
+
 def dfg(driver, scope):
     DFGBuilder().process(scope)
 
@@ -378,56 +406,68 @@ def schedule(driver, scope):
     Scheduler().schedule(scope)
 
 
+def createhdlmodule(driver, scope):
+    assert is_hdlmodule_scope(scope)
+    hdlmodule = HDLModule(scope, scope.orig_name, scope.qualified_name())
+    env.append_hdlmodule(hdlmodule)
+    if scope.is_instantiated():
+        for b in scope.bases:
+            if env.hdlmodule(b) is None:
+                basemodule = HDLModule(b, b.orig_name, b.qualified_name())
+                env.append_hdlmodule(basemodule)
+
+
 def stg(driver, scope):
-    STGBuilder().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    STGBuilder().process(hdlmodule)
 
 
 def reducestate(driver, scope):
-    StateReducer().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    StateReducer().process(hdlmodule)
 
 
 def transformio(driver, scope):
-    IOTransformer().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    IOTransformer().process(hdlmodule)
 
 
 def transformwait(driver, scope):
-    WaitTransformer().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    WaitTransformer().process(hdlmodule)
 
 
 def reducereg(driver, scope):
-    RegReducer().process(scope)
-
-
-def aliasvar(driver, scope):
-    AliasVarDetector().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    RegReducer().process(hdlmodule)
 
 
 def reducebits(driver, scope):
-    BitwidthReducer().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    BitwidthReducer().process(hdlmodule)
 
 
 def buildmodule(driver, scope):
-    modulebuilder = HDLModuleBuilder.create(scope)
-    if modulebuilder:
-        modulebuilder.process(scope)
-        SelectorBuilder().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    modulebuilder = HDLModuleBuilder.create(hdlmodule)
+    assert modulebuilder
+    modulebuilder.process(hdlmodule)
+    SelectorBuilder().process(hdlmodule)
 
 
 def ahdlusedef(driver, scope):
-    if not scope.module_info:
-        return
-    AHDLUseDefDetector().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    AHDLUseDefDetector().process(hdlmodule)
 
 
 def genhdl(driver, scope):
-    if not scope.module_info:
-        return
-    if not scope.is_testbench():
-        vcodegen = VerilogCodeGen(scope)
+    hdlmodule = env.hdlmodule(scope)
+    if not hdlmodule.scope.is_testbench():
+        vcodegen = VerilogCodeGen(hdlmodule)
     else:
-        vcodegen = VerilogTestGen(scope)
+        vcodegen = VerilogTestGen(hdlmodule)
     vcodegen.generate()
-    driver.set_result(scope, vcodegen.result())
+    driver.set_result(hdlmodule.scope, vcodegen.result())
 
 
 def dumpscope(driver, scope):
@@ -463,13 +503,15 @@ def dumpsched(driver, scope):
 
 
 def dumpstg(driver, scope):
-    for stg in scope.stgs:
-        driver.logger.debug(str(stg))
+    hdlmodule = env.hdlmodule(scope)
+    for fsm in hdlmodule.fsms.values():
+        for stg in fsm.stgs:
+            driver.logger.debug(str(stg))
 
 
 def dumpmodule(driver, scope):
-    if scope.module_info:
-        logger.debug(str(scope.module_info))
+    hdlmodule = env.hdlmodule(scope)
+    logger.debug(str(hdlmodule))
 
 
 def dumphdl(driver, scope):
@@ -477,8 +519,9 @@ def dumphdl(driver, scope):
 
 
 def printresouces(driver, scope):
+    hdlmodule = env.hdlmodule(scope)
     if (scope.is_function_module() or scope.is_module()):
-        resources = scope.module_info.resources()
+        resources = hdlmodule.resources()
         print(resources)
 
 
@@ -489,11 +532,14 @@ def compile_plan():
     def ahdlopt(proc):
         return proc if env.enable_ahdl_opt else None
 
+    def pure(proc):
+        return proc if env.enable_pure else None
+
     plan = [
         preprocess_global,
         dbg(dumpscope),
-        earlyinstantiate,
-        buildpurector,
+        pure(earlyinstantiate),
+        pure(buildpurector),
         iftrans,
         reduceblk,
         dbg(dumpscope),
@@ -551,7 +597,7 @@ def compile_plan():
         usedef,
         constopt,
         dbg(dumpscope),
-        execpure,
+        pure(execpure),
         phase(env.PHASE_3),
         instantiate,
         modulecheck,
@@ -589,9 +635,11 @@ def compile_plan():
         meminstgraph,
         dbg(dumpmrg),
         assertioncheck,
+        filter_scope(is_hdlmodule_scope),
+        phase(env.PHASE_GEN_HDL),
+        createhdlmodule,
         stg,
         dbg(dumpstg),
-        phase(env.PHASE_GEN_HDL),
         buildmodule,
         ahdlopt(ahdlusedef),
         ahdlopt(reducebits),

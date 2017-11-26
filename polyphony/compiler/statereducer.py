@@ -7,26 +7,25 @@ from .utils import find_only_one_in
 
 
 class StateReducer(object):
-    def process(self, scope):
-        if not scope.stgs:
-            return
-        WaitForwarder().process(scope)
-        IfForwarder().process(scope)
-        graph = StateGraphBuilder().process(scope)
-        self._remove_unreached_state(scope, graph)
-        self._remove_empty_state(scope, graph)
+    def process(self, hdlmodule):
+        for fsm in hdlmodule.fsms.values():
+            WaitForwarder().process(fsm)
+            IfForwarder().process(fsm)
+            graph = StateGraphBuilder().process(fsm)
+            self._remove_unreached_state(fsm, graph)
+            self._remove_empty_state(fsm, graph)
 
-    def _remove_unreached_state(self, scope, graph):
-        for stg in scope.stgs:
+    def _remove_unreached_state(self, fsm, graph):
+        for stg in fsm.stgs:
             if len(stg.states) == 1:
                 continue
             for state in stg.states[:]:
                 if not graph.has_node(state):
                     stg.states.remove(state)
 
-    def _remove_empty_state(self, scope, graph):
+    def _remove_empty_state(self, fsm, graph):
         transition_collector = AHDLCollector(AHDL_TRANSITION)
-        for stg in scope.stgs:
+        for stg in fsm.stgs:
             for state in stg.states[:]:
                 if (not isinstance(state, PipelineState) and
                         len(state.codes) == 1 and
@@ -46,9 +45,9 @@ class StateGraph(Graph):
 
 
 class StateGraphBuilder(AHDLVisitor):
-    def process(self, scope):
+    def process(self, fsm):
         self.graph = StateGraph()
-        init_state = scope.stgs[0].init_state
+        init_state = fsm.stgs[0].init_state
         nexts = deque([init_state])
         visited = set()
         while nexts:
@@ -69,8 +68,8 @@ class StateGraphBuilder(AHDLVisitor):
 
 
 class WaitForwarder(AHDLVisitor):
-    def process(self, scope):
-        for stg in scope.stgs:
+    def process(self, fsm):
+        for stg in fsm.stgs:
             for state in stg.states:
                 if isinstance(state, PipelineState):
                     continue
@@ -102,9 +101,9 @@ class WaitForwarder(AHDLVisitor):
 
 
 class IfForwarder(AHDLVisitor):
-    def process(self, scope):
+    def process(self, fsm):
         self.forwarded = set()
-        for stg in scope.stgs:
+        for stg in fsm.stgs:
             for state in stg.states:
                 if isinstance(state, PipelineState):
                     continue

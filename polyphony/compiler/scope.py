@@ -139,10 +139,8 @@ class Scope(Tagged):
         self.usedef = None
         self.loop_tree = LoopNestTree()
         self.callee_instances = defaultdict(set)
-        self.stgs = []
+        #self.stgs = []
         self.order = -1
-        self.module_info = None
-        self.signals = {}
         self.block_count = 0
         self.workers = []
         self.worker_owner = None
@@ -504,55 +502,6 @@ class Scope(Tagged):
             if base.is_subclassof(clazz):
                 return True
         return False
-
-    def find_stg(self, name):
-        assert self.stgs
-        for stg in self.stgs:
-            if stg.name == name:
-                return stg
-        return None
-
-    def get_main_stg(self):
-        assert self.stgs
-        for stg in self.stgs:
-            if stg.is_main():
-                return stg
-        return None
-
-    def gen_sig(self, name, width, tag=None, sym=None):
-        if name in self.signals:
-            sig = self.signals[name]
-            sig.width = width
-            if tag:
-                sig.add_tag(tag)
-            return sig
-        sig = Signal(name, width, tag, sym)
-        self.signals[name] = sig
-        return sig
-
-    def signal(self, name):
-        if name in self.signals:
-            return self.signals[name]
-        for base in self.bases:
-            found = base.signal(name)
-            if found:
-                return found
-        return None
-
-    def get_signals(self):
-        signals_ = {}
-        for base in self.bases:
-            signals_.update(base.get_signals())
-        signals_.update(self.signals)
-        return signals_
-
-    def rename_sig(self, old, new):
-        assert old in self.signals
-        sig = self.signals[old]
-        del self.signals[old]
-        sig.name = new
-        self.signals[new] = sig
-        return sig
 
     def class_fields(self):
         assert self.is_class()

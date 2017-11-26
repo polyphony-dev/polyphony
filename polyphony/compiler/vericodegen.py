@@ -13,11 +13,10 @@ logger = getLogger(__name__)
 
 
 class VerilogCodeGen(AHDLVisitor):
-    def __init__(self, scope):
+    def __init__(self, hdlmodule):
         self.codes = []
         self.indent = 0
-        self.scope = scope
-        self.module_info = self.scope.module_info
+        self.hdlmodule = hdlmodule
 
     def result(self):
         return ''.join(self.codes)
@@ -51,7 +50,7 @@ class VerilogCodeGen(AHDLVisitor):
         """
 
         self.set_indent(2)
-        for fsm in self.module_info.fsms.values():
+        for fsm in self.hdlmodule.fsms.values():
             self._generate_process(fsm)
         self.set_indent(-2)
         main_code = self.result()
@@ -118,7 +117,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.set_indent(-2)
 
     def _generate_module_header(self):
-        self.emit('module {}'.format(self.module_info.qualified_name))
+        self.emit('module {}'.format(self.hdlmodule.qualified_name))
 
         self.set_indent(2)
         self.emit('(')
@@ -132,10 +131,10 @@ class VerilogCodeGen(AHDLVisitor):
 
     def _generate_io_port(self):
         ports = []
-        if self.scope.is_module() or self.scope.is_function_module():
+        if self.hdlmodule.scope.is_module() or self.hdlmodule.scope.is_function_module():
             ports.append('input wire clk')
             ports.append('input wire rst')
-        for interface in self.module_info.interfaces.values():
+        for interface in self.hdlmodule.interfaces.values():
             ports.extend(self._get_io_names_from(interface))
         self.emit((',\n' + self.tab()).join(ports))
 
@@ -148,7 +147,7 @@ class VerilogCodeGen(AHDLVisitor):
             return '{:<6} [{}:0] {}'.format(sign, sig.width - 1, name)
 
     def _generate_localparams(self):
-        constants = self.module_info.constants + self.module_info.state_constants
+        constants = self.hdlmodule.constants + self.hdlmodule.state_constants
         if not constants:
             return
         self.emit('//localparams')
@@ -157,19 +156,19 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('')
 
     def _generate_net_monitor(self):
-        if env.hdl_debug_mode and not self.scope.is_testbench():
+        if env.hdl_debug_mode and not self.hdlmodule.scope.is_testbench():
             self.emit('always @(posedge clk) begin')
             self.emit('if (rst==0 && {}!={}) begin'.format(self.current_state_sig.name, 0))
-            for tag, nets in self.module_info.get_net_decls(with_array=False):
+            for tag, nets in self.hdlmodule.get_net_decls(with_array=False):
                 for net in nets:
                     if net.sig.is_onehot():
                         self.emit(
                             '$display("%8d:WIRE  :{}      {} = 0b%b", $time, {});'.
-                            format(self.scope.orig_name, net.sig, net.sig))
+                            format(self.hdlmodule.name, net.sig, net.sig))
                     else:
                         self.emit(
                             '$display("%8d:WIRE  :{}      {} = 0x%2h (%1d)", $time, {}, {});'.
-                            format(self.scope.orig_name, net.sig, net.sig, net.sig))
+                            format(self.hdlmodule.name, net.sig, net.sig, net.sig))
             self.emit('end')
             self.emit('end')
             self.emit('')
@@ -177,13 +176,13 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('')
 
     def _generate_decls(self):
-        for tag, decls in sorted(self.module_info.decls.items(), key=lambda t: str(t)):
+        for tag, decls in sorted(self.hdlmodule.decls.items(), key=lambda t: str(t)):
             decls = [decl for decl in decls if isinstance(decl, AHDL_SIGNAL_DECL)]
             if decls:
                 self.emit('//signals: {}'.format(tag))
                 for decl in sorted(decls, key=lambda d: str(d)):
                     self.visit(decl)
-        for tag, decls in sorted(self.module_info.decls.items()):
+        for tag, decls in sorted(self.hdlmodule.decls.items()):
             decls = [decl for decl in decls if not isinstance(decl, AHDL_SIGNAL_DECL)]
             if decls:
                 self.emit('//combinations: {}'.format(tag))
@@ -237,10 +236,10 @@ class VerilogCodeGen(AHDLVisitor):
         return connection
 
     def _generate_sub_module_instances(self):
-        if not self.module_info.sub_modules:
+        if not self.hdlmodule.sub_modules:
             return
         self.emit('//sub modules')
-        for name, info, connections, param_map in sorted(self.module_info.sub_modules.values(),
+        for name, sub_module, connections, param_map in sorted(self.hdlmodule.sub_modules.values(),
                                                          key=lambda n: str(n)):
             ports = []
             ports.append('.clk(clk)')
@@ -261,7 +260,7 @@ class VerilogCodeGen(AHDLVisitor):
                 for param_name, value in param_map.items():
                     params.append('.{}({})'.format(param_name, value))
 
-                self.emit('{}#('.format(info.qualified_name))
+                self.emit('{}#('.format(sub_module.qualified_name))
                 self.set_indent(2)
                 self.emit('{}'.format((',\n' + self.tab()).join(params)))
                 self.emit(')')
@@ -272,7 +271,7 @@ class VerilogCodeGen(AHDLVisitor):
                 self.emit(');')
                 self.set_indent(-2)
             else:
-                self.emit('{} {}('.format(info.qualified_name, name))
+                self.emit('{} {}('.format(sub_module.qualified_name, name))
                 self.set_indent(2)
                 self.emit('{}'.format((',\n' + self.tab()).join(ports)))
                 self.set_indent(-2)
@@ -280,9 +279,9 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('')
 
     def _generate_edge_detector(self):
-        if not self.module_info.edge_detectors:
+        if not self.hdlmodule.edge_detectors:
             return
-        regs = set([sig for sig, _, _ in self.module_info.edge_detectors])
+        regs = set([sig for sig, _, _ in self.hdlmodule.edge_detectors])
         self.emit('//edge detectors')
         for sig in regs:
             delayed_name = '{}_d'.format(sig.name)
@@ -295,7 +294,7 @@ class VerilogCodeGen(AHDLVisitor):
             #self.emit('')
 
         detect_var_names = set()
-        for sig, old, new in self.module_info.edge_detectors:
+        for sig, old, new in self.hdlmodule.edge_detectors:
             delayed_name = '{}_d'.format(sig.name)
             detect_var_name = 'is_{}_change_{}_to_{}'.format(sig.name, old, new)
             if detect_var_name in detect_var_names:
@@ -316,7 +315,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.set_indent(2)
         if env.hdl_debug_mode:
             self.emit('$display("%8d:STATE:{}  {}", $time);'.
-                      format(self.scope.orig_name,
+                      format(self.hdlmodule.name,
                              state.name))
         # this is workaround
         if isinstance(state, PipelineState):
@@ -404,7 +403,7 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_AHDL_MOVE(self, ahdl):
         if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_net():
-            self.module_info.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
+            self.hdlmodule.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
             self.emit('/* {} <= {}; */'.format(self.visit(ahdl.dst), self.visit(ahdl.src)))
         elif ahdl.dst.is_a(AHDL_MEMVAR) and ahdl.src.is_a(AHDL_MEMVAR):
             assert False
@@ -413,7 +412,7 @@ class VerilogCodeGen(AHDLVisitor):
             dst = self.visit(ahdl.dst)
             if env.hdl_debug_mode:
                 self.emit('$display("%8d:REG  :{}      {} <= 0x%2h (%1d)", $time, {}, {});'.
-                          format(self.scope.orig_name, dst, src, src))
+                          format(self.hdlmodule.name, dst, src, src))
             self.emit('{} <= {};'.format(dst, src))
 
     def visit_AHDL_MEM(self, ahdl):
@@ -475,14 +474,14 @@ class VerilogCodeGen(AHDLVisitor):
             exp = args[0]
             if exp.startswith('cond'):
                 remove_assign = []
-                for tag, assign in self.module_info.get_static_assignment():
+                for tag, assign in self.hdlmodule.get_static_assignment():
                     if assign.dst.is_a(AHDL_VAR) and assign.dst.sig.name == exp:
                         remove_assign.append((tag, assign))
-                        expsig = self.scope.gen_sig(exp, 1)
-                        self.module_info.remove_internal_net(expsig)
+                        expsig = self.hdlmodule.gen_sig(exp, 1)
+                        self.hdlmodule.remove_internal_net(expsig)
                         exp = self.visit(assign.src)
                 for tag, assign in remove_assign:
-                    self.module_info.remove_decl(tag, assign)
+                    self.hdlmodule.remove_decl(tag, assign)
             exp = exp.replace('==', '===').replace('!=', '!==')
             code = 'if (!{}) begin'.format(exp)
             self.emit(code)
@@ -549,16 +548,16 @@ class VerilogCodeGen(AHDLVisitor):
         for p in n2o.preds:
             assert isinstance(p, One2NMemNode)
 
-        preds = [p for p in n2o.preds if self.scope in p.scopes]
+        preds = [p for p in n2o.preds if self.hdlmodule.scope in p.scopes]
         width = len(preds)
         if width < 2:
             return
-        orig_preds = [p for p in n2o.orig_preds if self.scope in p.scopes]
+        orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope in p.scopes]
         cs_name = dst.memnode.name()
         if prefix:
-            cs = self.scope.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
+            cs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
         else:
-            cs = self.scope.gen_sig('{}_cs'.format(cs_name), width)
+            cs = self.hdlmodule.gen_sig('{}_cs'.format(cs_name), width)
         args = []
         for src in srcs:
             assert isinstance(src.memnode.preds[0], One2NMemNode)

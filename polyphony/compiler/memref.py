@@ -606,7 +606,9 @@ class MemRefGraph(object):
 class MemRefGraphBuilder(IRVisitor):
     def __init__(self):
         super().__init__()
-        self.mrg = env.memref_graph = MemRefGraph()
+        if env.memref_graph is None:
+            env.memref_graph = MemRefGraph()
+        self.mrg = env.memref_graph
         self.edges = []
         self.edge_srcs = defaultdict(set)
 
@@ -635,8 +637,8 @@ class MemRefGraphBuilder(IRVisitor):
                         stms.append(stm)
         return stms
 
-    def process_all(self):
-        scopes = Scope.get_scopes(bottom_up=True, with_global=True, with_class=True)
+    def process_all(self, driver):
+        scopes = driver.get_scopes(bottom_up=True, with_global=True, with_class=True)
         worklist = deque()
         #usedefs = [s.usedef for s in scopes]
         for s in scopes:

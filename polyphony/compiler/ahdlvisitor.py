@@ -8,8 +8,8 @@ class AHDLVisitor(object):
         self.current_stg = None
         self.current_state = None
 
-    def process(self, module_info):
-        for fsm in module_info.fsms.values():
+    def process(self, hdlmodule):
+        for fsm in hdlmodule.fsms.values():
             self.process_fsm(fsm)
 
     def process_fsm(self, fsm):

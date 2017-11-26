@@ -103,16 +103,14 @@ class AHDLUseDefDetector(AHDLVisitor):
         self.enable_use = True
         self.enable_def = True
 
-    def process(self, scope):
-        if not scope.module_info:
-            return
-        for fsm in scope.module_info.fsms.values():
+    def process(self, hdlmodule):
+        for fsm in hdlmodule.fsms.values():
             for stg in fsm.stgs:
                 for state in stg.states:
                     self.current_state = state
                     for code in state.traverse():
                         self.visit(code)
-        scope.ahdlusedef = self.table
+            fsm.usedef = self.table
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.ctx & Ctx.STORE:

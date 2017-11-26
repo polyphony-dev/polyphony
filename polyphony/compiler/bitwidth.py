@@ -7,12 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 class BitwidthReducer(AHDLVisitor):
-    def process(self, scope):
-        if not scope.module_info:
-            return
-        self.usedef = scope.ahdlusedef
-        #print(self.usedef)
-        for fsm in scope.module_info.fsms.values():
+    def process(self, hdlmodule):
+        for fsm in hdlmodule.fsms.values():
+            self.usedef = fsm.usedef
             for stg in fsm.stgs:
                 for state in stg.states:
                     for code in state.traverse():

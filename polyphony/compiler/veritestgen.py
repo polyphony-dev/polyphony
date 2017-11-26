@@ -1,22 +1,21 @@
 ﻿from .ahdl import *
 from .env import env
 from .vericodegen import VerilogCodeGen
-from .hdlmoduleinfo import RAMModuleInfo
+from .hdlmodule import RAMModule
 from .hdlinterface import *
 from logging import getLogger
 logger = getLogger(__name__)
 
 
 class VerilogTestGen(VerilogCodeGen):
-    def __init__(self, scope):
+    def __init__(self, hdlmodule):
         self.codes = []
         self.indent = 0
-        self.scope = scope
-        self.module_info = self.scope.module_info
-        clk = self.scope.gen_sig('clk', 1, {'reserved'})
-        rst = self.scope.gen_sig('rst', 1, {'reserved'})
-        self.module_info.add_internal_reg(clk)
-        self.module_info.add_internal_reg(rst)
+        self.hdlmodule = hdlmodule
+        clk = self.hdlmodule.gen_sig('clk', 1, {'reserved'})
+        rst = self.hdlmodule.gen_sig('rst', 1, {'reserved'})
+        self.hdlmodule.add_internal_reg(clk)
+        self.hdlmodule.add_internal_reg(rst)
 
     def generate(self):
         """output verilog module format:
@@ -33,9 +32,9 @@ class VerilogTestGen(VerilogCodeGen):
         """
 
         clk_period = 10
-        self.module_info.add_constant('CLK_PERIOD', clk_period)
-        self.module_info.add_constant('CLK_HALF_PERIOD', int(clk_period / 2))
-        self.module_info.add_constant('INITIAL_RESET_SPAN', clk_period * 10)
+        self.hdlmodule.add_constant('CLK_PERIOD', clk_period)
+        self.hdlmodule.add_constant('CLK_HALF_PERIOD', int(clk_period / 2))
+        self.hdlmodule.add_constant('INITIAL_RESET_SPAN', clk_period * 10)
 
         self.set_indent(2)
         self._generate_main()
@@ -56,7 +55,7 @@ class VerilogTestGen(VerilogCodeGen):
         self._generate_reset_task()
         self.emit('\n')
         #self._generate_test_main()
-        for fsm in self.module_info.fsms.values():
+        for fsm in self.hdlmodule.fsms.values():
             self._generate_process(fsm)
 
     def _generate_clock_task(self):
@@ -96,12 +95,12 @@ class VerilogTestGen(VerilogCodeGen):
 
         formats = []
         args = ['$time']
-        for name, info, _, _, in self.module_info.sub_modules.values():
-            if isinstance(info, RAMModuleInfo):
+        for name, sub_module, _, _, in self.hdlmodule.sub_modules.values():
+            if isinstance(sub_module, RAMModule):
                 continue
-            if not info.interfaces:
+            if not sub_module.interfaces:
                 continue
-            for inf in info.interfaces.values():
+            for inf in sub_module.interfaces.values():
                 if isinstance(inf, SinglePortInterface):
                     accessor = inf.accessor(name)
                     add_ports(accessor.ports)
@@ -111,8 +110,8 @@ class VerilogTestGen(VerilogCodeGen):
         if env.enable_verilog_monitor:
             self.emit('$monitor({}, {});'.format(format_text, args_text))
         if env.enable_verilog_dump:
-            self.emit('$dumpfile("{}.vcd");'.format(self.module_info.name))
-            self.emit('$dumpvars(0, {});'.format(self.module_info.name))
+            self.emit('$dumpfile("{}.vcd");'.format(self.hdlmodule.name))
+            self.emit('$dumpvars(0, {});'.format(self.hdlmodule.name))
         self.set_indent(-2)
         self.emit('end')
 
