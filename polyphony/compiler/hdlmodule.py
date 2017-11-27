@@ -212,17 +212,21 @@ class HDLModule(object):
         self.fsms[fsm_name] = FSM(fsm_name, scope)
 
     def add_fsm_state_var(self, fsm_name, var):
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].state_var = var
 
     def add_fsm_stg(self, fsm_name, stgs):
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].stgs = stgs
         for stg in stgs:
             stg.fsm = self.fsms[fsm_name]
 
     def add_fsm_output(self, fsm_name, output_sig):
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].outputs.add(output_sig)
 
     def add_fsm_reset_stm(self, fsm_name, ahdl_stm):
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].reset_stms.append(ahdl_stm)
 
     def add_edge_detector(self, sig, old, new):
