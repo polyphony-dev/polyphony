@@ -107,24 +107,16 @@ def eval_relop(op, lv, rv, ctx):
     return 1 if b else 0
 
 
-def _try_get_constant(sym, scope):
-    assert scope.usedef
+def _try_get_constant(qsym, scope):
+    sym = qsym[-1]
     if sym.ancestor:
         sym = sym.ancestor
-    defstms = scope.usedef.get_stms_defining(sym)
-    if not defstms:
-        defstms = sym.scope.usedef.get_stms_defining(sym)
-        if not defstms:
-            return None
-    defstm = sorted(defstms, key=lambda s: s.program_order())[-1]
-    if not defstm.is_a(MOVE):
-        return None
-    if not defstm.src.is_a(CONST):
-        return None
-    return defstm.src
+    if sym in sym.scope.constants:
+        return sym.scope.constants[sym]
+    return None
 
 
-def try_get_constant(qsym, scope):
+def _try_get_constant_pure(qsym, scope):
     def find_value(vars, names):
         if len(names) > 1:
             head = names[0]
@@ -149,6 +141,13 @@ def try_get_constant(qsym, scope):
     if v is not None:
         return expr2ir(v, scope=scope)
     return None
+
+
+def try_get_constant(qsym, scope):
+    if env.enable_pure:
+        return _try_get_constant_pure(qsym, scope)
+    else:
+        return _try_get_constant(qsym, scope)
 
 
 class ConstantOptBase(IRVisitor):
@@ -717,3 +716,59 @@ class PolyadConstantFolding(object):
             binop = BINOP(ir.op, ir.values[0], ir.values[1])
             binop.lineno = ir.lineno
             return binop
+
+
+class NamespaceConstOpt(ConstantOptBase):
+    def __init__(self):
+        self.constant_table = {}
+        self.constant_array_table = {}
+
+    def process_all(self, driver):
+        scopes = driver.get_scopes(bottom_up=True,
+                                   with_global=True,
+                                   with_class=True,
+                                   with_lib=False)
+        stms = []
+        for s in scopes:
+            stms.extend(self.collect_stms(s))
+        stms = sorted(stms, key=lambda s: s.lineno)
+        for stm in stms:
+            self.current_stm = stm
+            self.scope = stm.block.scope
+            self.visit(stm)
+        for sym, c in self.constant_table.items():
+            sym.scope.constants[sym] = c
+        for sym, c in self.constant_array_table.items():
+            sym.scope.constants[sym] = c
+
+    def collect_stms(self, scope):
+        stms = []
+        for blk in scope.traverse_blocks():
+            stms.extend(blk.stms)
+        return stms
+
+    def visit_TEMP(self, ir):
+        if ir.sym in self.constant_table:
+            return self.constant_table[ir.sym]
+        return ir
+
+    def visit_ATTR(self, ir):
+        if ir.attr in self.constant_table:
+            return self.constant_table[ir.attr]
+        return ir
+
+    def visit_MREF(self, ir):
+        offs = self.visit(ir.offset)
+        if ir.mem.symbol() in self.constant_array_table:
+            array = self.constant_array_table[ir.mem.symbol()]
+            return array.items[offs.value]
+        return ir
+
+    def visit_MOVE(self, ir):
+        src = self.visit(ir.src)
+        if ir.dst.is_a(TEMP):
+            if src.is_a(CONST):
+                self.constant_table[ir.dst.sym] = src
+            elif src.is_a(ARRAY):
+                self.constant_array_table[ir.dst.sym] = src
+        ir.src = src

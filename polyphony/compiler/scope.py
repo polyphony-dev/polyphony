@@ -147,6 +147,7 @@ class Scope(Tagged):
         self.asap_latency = -1
         self.type_args = []
         self.synth_params = make_synth_params()
+        self.constants = {}
 
     def __str__(self):
         s = '\n================================\n'
@@ -272,7 +273,7 @@ class Scope(Tagged):
         s.synth_params = self.synth_params.copy()
         # TODO:
         #s.loop_tree = None
-
+        #s.constants
         return s
 
     def inherit(self, name, overrides):

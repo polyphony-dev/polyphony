@@ -275,6 +275,9 @@ class TypePropagation(IRVisitor):
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
         item_typs = [self.visit(item) for item in ir.items]
+        if self.current_stm.src == ir:
+            if any([t is Type.undef_t for t in item_typs]):
+                raise RejectPropagation(ir)
 
         if item_typs and all([Type.is_assignable(item_typs[0], item_t) for item_t in item_typs]):
             if item_typs[0].is_scalar() and not item_typs[0].is_str():
@@ -284,7 +287,7 @@ class TypePropagation(IRVisitor):
             else:
                 item_t = item_typs[0]
         else:
-            assert False  # TODO
+            assert False  # TODO:
         if ir.is_mutable:
             t = Type.list(item_t, None)
         else:

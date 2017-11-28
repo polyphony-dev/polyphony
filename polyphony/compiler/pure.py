@@ -649,6 +649,11 @@ class PureFuncTypeInferrer(object):
 
 
 class PureFuncExecutor(ConstantOptBase):
+    def process_all(self, driver):
+        scopes = Scope.get_scopes(bottom_up=True, with_global=True, with_class=True)
+        for scope in scopes:
+            self.process(scope)
+
     def _args2tuple(self, args):
         def arg2expr(arg):
             if arg.is_a(CONST):

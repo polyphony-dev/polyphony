@@ -27,7 +27,7 @@ class Env(object):
     callop_name = '__call__'
     enable_ahdl_opt = True
     global_scope_name = '@top'
-    enable_pure = True
+    enable_pure = False
     enable_hyperblock = True
     verbose_level = 0
     quiet_level = 0

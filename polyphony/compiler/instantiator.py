@@ -155,7 +155,9 @@ class EarlyModuleInstantiator(object):
             if call.is_a(NEW) and call.func_scope() is module and caller_lineno == call.lineno:
                 obj_name = inst_name.split('.')[-1]
                 if stm.dst.symbol().name.endswith(obj_name):
-                    call.sym.typ.set_scope(new_module)
+                    new_module_sym = call.sym.scope.gen_sym(new_module.orig_name)
+                    new_module_sym.typ = Type.klass(new_module)
+                    call.sym = new_module_sym
 
 
 class WorkerInstantiator(object):

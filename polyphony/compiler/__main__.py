@@ -11,6 +11,7 @@ from .common import read_source
 from .constopt import ConstantOpt, GlobalConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .constopt import PolyadConstantFolding
+from .constopt import NamespaceConstOpt
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
 from .deadcode import DeadCodeEliminator
@@ -77,11 +78,12 @@ def phase(phase):
 
 
 def filter_scope(fn):
-    def select_scope(driver, scope):
-        if fn(scope):
-            driver.enable_scope(scope)
-        else:
-            driver.disable_scope(scope)
+    def select_scope(driver):
+        for s in driver.all_scopes():
+            if fn(s):
+                driver.enable_scope(s)
+            else:
+                driver.disable_scope(s)
     return select_scope
 
 
@@ -106,16 +108,10 @@ def preprocess_global(driver):
         lineno.process(s)
         src_dump.process(s)
 
-    scopes = Scope.get_scopes(with_global=True, with_class=True, with_lib=True)
-    for s in (s for s in scopes if s.is_namespace() or (s.is_class() and not s.is_lib())):
-        GlobalConstantOpt().process(s)
-
 
 def callgraph(driver):
     unused_scopes = CallGraphBuilder().process_all()
     for s in unused_scopes:
-        if env.compile_phase < env.PHASE_3 and Scope.is_unremovable(s):
-            continue
         driver.remove_scope(s)
         Scope.destroy(s)
 
@@ -159,6 +155,10 @@ def buildpurector(driver):
 
 def execpure(driver, scope):
     PureFuncExecutor().process(scope)
+
+
+def execpureall(driver):
+    PureFuncExecutor().process_all(driver)
 
 
 def flattenport(driver, scope):
@@ -337,6 +337,10 @@ def scalarize(driver, scope):
     FlattenObjectArgs().process(scope)
     FlattenFieldAccess().process(scope)
     checkcfg(driver, scope)
+
+
+def namespaceconstopt(driver):
+    NamespaceConstOpt().process_all(driver)
 
 
 def earlyconstopt_nonssa(driver, scope):
@@ -537,9 +541,21 @@ def compile_plan():
 
     plan = [
         preprocess_global,
-        dbg(dumpscope),
         pure(earlyinstantiate),
         pure(buildpurector),
+
+        filter_scope(is_static_scope),
+        earlyquadruple,
+        earlytypeprop,
+        latequadruple,
+        earlyrestrictioncheck,
+        namespaceconstopt,
+        typeprop,
+        dbg(dumpscope),
+        typecheck,
+        restrictioncheck,
+        usedef,
+        filter_scope(is_not_static_scope),
         iftrans,
         reduceblk,
         dbg(dumpscope),
@@ -585,8 +601,6 @@ def compile_plan():
         copyopt,
         dbg(dumpscope),
         usedef,
-        dbg(dumpscope),
-        usedef,
         memrefgraph,
         dbg(dumpmrg),
         dbg(dumpscope),
@@ -597,7 +611,7 @@ def compile_plan():
         usedef,
         constopt,
         dbg(dumpscope),
-        pure(execpure),
+        pure(execpureall),
         phase(env.PHASE_3),
         instantiate,
         modulecheck,

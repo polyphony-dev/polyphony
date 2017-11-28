@@ -638,7 +638,7 @@ class MemRefGraphBuilder(IRVisitor):
         return stms
 
     def process_all(self, driver):
-        scopes = driver.get_scopes(bottom_up=True, with_global=True, with_class=True)
+        scopes = Scope.get_scopes(bottom_up=True, with_global=True, with_class=True)
         worklist = deque()
         #usedefs = [s.usedef for s in scopes]
         for s in scopes:

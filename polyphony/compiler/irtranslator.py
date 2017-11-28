@@ -182,6 +182,10 @@ class FunctionVisitor(ast.NodeVisitor):
             if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
                 if sym.typ.get_scope().name == 'polyphony.rule':
                     synth_params = deco_kwargs
+                elif sym.typ.get_scope().name == 'polyphony.pure':
+                    if not env.enable_pure:
+                        fail((outer_scope, node.lineno), Errors.PURE_IS_DISABLED)
+                    tags.add(sym.typ.get_scope().orig_name)
                 else:
                     tags.add(sym.typ.get_scope().orig_name)
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
@@ -1462,4 +1466,10 @@ class IRTranslator(object):
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
         CodeVisitor(top_scope, type_comments).visit(tree)
+        assert top_scope.has_sym('__name__')
+        namesym = top_scope.symbols['__name__']
+        if top_scope.is_global():
+            top_scope.constants[namesym] = CONST('__main__')
+        else:
+            top_scope.constants[namesym] = CONST(top_scope.name)
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
