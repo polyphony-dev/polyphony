@@ -561,77 +561,6 @@ class ConstantOptPreDetectROM(ConstantOpt):
             ir.args[i] = self.visit(arg)
 
 
-class GlobalConstantOpt(ConstantOptBase):
-    def __init__(self):
-        super().__init__()
-
-    def process(self, scope):
-        assert scope.is_namespace() or scope.is_class()
-        self.scope = scope
-        super().process(scope)
-        self._remove_dead_code()
-
-    def _remove_dead_code(self):
-        dead_stms = []
-        udd = UseDefDetector()
-        udd.process(self.scope)
-
-        for sym in self.scope.symbols.values():
-            defstms = self.scope.usedef.get_stms_defining(sym)
-            if len(defstms) > 1:
-                defstms = sorted(defstms, key=lambda s: s.program_order())
-                for i in range(len(defstms) - 1):
-                    dead_stms.append(defstms[i])
-        for stm in dead_stms:
-            if stm in stm.block.stms:
-                stm.block.stms.remove(stm)
-                self.scope.usedef.remove_var_def(stm.dst, stm)
-
-    def visit_MREF(self, ir):
-        ir.offset = self.visit(ir.offset)
-        if ir.offset.is_a(CONST):
-            array = self.visit(ir.mem)
-            if array.is_a(ARRAY):
-                return array.items[ir.offset.value]
-            else:
-                fail(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE, [ir.mem])
-        return ir
-
-    def visit_TEMP(self, ir):
-        g = Scope.global_scope()
-        if ir.sym.scope.is_class():
-            class_sym = g.find_sym(ir.sym.scope.orig_name)
-            qsym = (class_sym, ) + ir.qualified_symbol()
-        else:
-            qsym = ir.qualified_symbol()
-        c = try_get_constant(qsym, self.scope)
-        if c:
-            c.lineno = ir.lineno
-            return c
-        return ir
-
-    def visit_ATTR(self, ir):
-        if ir.tail().typ.is_class():
-            c = try_get_constant(ir.qualified_symbol(), self.scope)
-            if c:
-                c.lineno = ir.lineno
-                return c
-        return ir
-
-    def visit_EXPR(self, ir):
-        pass
-
-    def visit_RET(self, ir):
-        print(error_info(self.scope, ir.lineno))
-        raise RuntimeError('A return statement in the global scope is not allowed')
-
-    def visit_MOVE(self, ir):
-        ir.src = self.visit(ir.src)
-
-    def visit_PHI(self, ir):
-        assert False
-
-
 class PolyadConstantFolding(object):
     def process(self, scope):
         self.BinInlining().process(scope)
@@ -718,7 +647,7 @@ class PolyadConstantFolding(object):
             return binop
 
 
-class NamespaceConstOpt(ConstantOptBase):
+class StaticConstOpt(ConstantOptBase):
     def __init__(self):
         self.constant_table = {}
         self.constant_array_table = {}

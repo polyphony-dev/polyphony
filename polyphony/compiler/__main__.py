@@ -8,10 +8,10 @@ from .callgraph import CallGraphBuilder
 from .cfgopt import BlockReducer, PathExpTracer
 from .cfgopt import HyperBlockBuilder
 from .common import read_source
-from .constopt import ConstantOpt, GlobalConstantOpt
+from .constopt import ConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .constopt import PolyadConstantFolding
-from .constopt import NamespaceConstOpt
+from .constopt import StaticConstOpt
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
 from .deadcode import DeadCodeEliminator
@@ -339,8 +339,8 @@ def scalarize(driver, scope):
     checkcfg(driver, scope)
 
 
-def namespaceconstopt(driver):
-    NamespaceConstOpt().process_all(driver)
+def staticconstopt(driver):
+    StaticConstOpt().process_all(driver)
 
 
 def earlyconstopt_nonssa(driver, scope):
@@ -549,7 +549,7 @@ def compile_plan():
         earlytypeprop,
         latequadruple,
         earlyrestrictioncheck,
-        namespaceconstopt,
+        staticconstopt,
         typeprop,
         dbg(dumpscope),
         typecheck,
