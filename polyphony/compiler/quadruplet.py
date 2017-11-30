@@ -52,7 +52,10 @@ class EarlyQuadrupleMaker(IRTransformer):
         if ir.left.is_a(ARRAY):
             if ir.op == 'Mult':
                 array = ir.left
-                array.repeat = ir.right
+                if array.repeat.is_a(CONST) and array.repeat.value == 1:
+                    array.repeat = ir.right
+                else:
+                    array.repeat = BINOP('Mult', array.repeat, ir.right)
                 return array
             else:
                 fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
