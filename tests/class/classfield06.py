@@ -1,11 +1,15 @@
 from polyphony import testbench
 
 
+V1 = 1
+V2 = 1 + V1 + 0
+
 class C:
     class D:
-        i = (1, 2, 3)
+        class E:
+            V3 = V1 + V2
+        i = (V1, V2, E.V3)
     i = [D.i[2], D.i[2], D.i[0]]
-
 
 def classfield06(x):
     return C.i[x]

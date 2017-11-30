@@ -19,7 +19,8 @@ class HDLMemPortMaker(object):
         self.joint_count = 0
 
     def make_port_all(self):
-        for memnode in sorted(self.memnodes):
+        memnodes = sorted(self.memnodes)
+        for memnode in memnodes:
             self.memnode = memnode
             self.name = memnode.name()
             self.length = memnode.length
@@ -129,8 +130,8 @@ class HDLMemPortMaker(object):
 
     def _make_param_node_connection(self):
         assert self.memnode in self.hdlmodule.node2if
+        assert len(self.memnode.succs) == 1
         ramif = self.hdlmodule.node2if[self.memnode]
-
         # direct connect
         if isinstance(self.memnode.succs[0], MemRefNode):
             ramacc = ramif.accessor()
@@ -142,13 +143,20 @@ class HDLMemPortMaker(object):
             assert succ.is_sink()
             succ_ramacc = self._make_ram_accessor(succ)
             self._add_interconnect(self.memnode.name(), [ramacc], [succ_ramacc])
+        elif isinstance(self.memnode.succs[0], One2NMemNode):
+            ramacc = ramif.accessor()
+            assert ramacc not in self.mrg.node2acc
+            self.mrg.node2acc[self.memnode] = ramacc
+            # do not make succ_ramacc here
+        else:
+            assert False
 
     def _make_one2n_node_connection(self):
         assert len(self.memnode.preds) == 1
         assert len(self.memnode.succs) > 1
 
         pred = self.memnode.preds[0]
-        if pred.is_source():
+        if pred.is_source() or isinstance(pred, MemParamNode):
             pred_ramacc = self._make_ram_accessor(pred)
         else:
             pred_ramacc = self._make_ram_accessor((pred, self.memnode))
@@ -428,7 +436,13 @@ class HDLRegArrayPortMaker(object):
         pred = self.memnode.preds[0]
         for succ in self.memnode.succs:
             if succ.is_sink():
-                if not isinstance(pred, N2OneMemNode):
+                if isinstance(pred, MemParamNode):
+                    ref_len_sig = self.hdlmodule.gen_sig('{}_len'.format(succ.name()), succ.addr_width())
+                    self.hdlmodule.add_internal_net(ref_len_sig)
+                    ahdl_assign = AHDL_ASSIGN(AHDL_VAR(ref_len_sig, Ctx.STORE),
+                                              AHDL_CONST(self.length))
+                    self.hdlmodule.add_static_assignment(ahdl_assign)
+                elif not isinstance(pred, N2OneMemNode):
                     src_sig = self.hdlmodule.gen_sig(pred.name(), pred.data_width())
                     ref_sig = self.hdlmodule.gen_sig(succ.name(), succ.data_width())
                     self.hdlmodule.add_internal_net_array(ref_sig, succ.length)
