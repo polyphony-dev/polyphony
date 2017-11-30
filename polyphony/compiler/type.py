@@ -56,7 +56,12 @@ class Type(object):
             elif ann == '...':
                 t = Type.ellipsis_t
             else:
-                sym = scope.find_sym(ann)
+                while scope:
+                    sym = scope.find_sym(ann)
+                    if sym:
+                        break
+                    else:
+                        scope = scope.parent
                 if sym and sym.typ.has_scope():
                     sym_scope = sym.typ.get_scope()
                     if sym_scope.is_typeclass():

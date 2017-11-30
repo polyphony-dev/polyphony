@@ -153,7 +153,7 @@ class FunctionVisitor(ast.NodeVisitor):
             if arg.annotation:
                 ann = self.annotation_visitor.visit(arg.annotation)
                 is_lib = self.current_scope.is_lib()
-                param_t = Type.from_annotation(ann, self.current_scope.parent, is_lib)
+                param_t = Type.from_annotation(ann, self.current_scope, is_lib)
                 if not param_t:
                     fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
             else:
@@ -215,7 +215,7 @@ class FunctionVisitor(ast.NodeVisitor):
         if node.returns:
             ann = self.annotation_visitor.visit(node.returns)
             is_lib = self.current_scope.is_lib()
-            t = Type.from_annotation(ann, self.current_scope.parent, is_lib)
+            t = Type.from_annotation(ann, self.current_scope, is_lib)
             if t:
                 self.current_scope.return_type = t
                 if t is not Type.none_t:
@@ -546,7 +546,7 @@ class CodeVisitor(ast.NodeVisitor):
                 hint = self.type_comments[tail_lineno]
                 mod = ast.parse(hint)
                 ann = self.annotation_visitor.visit(mod.body[0])
-                t = Type.from_annotation(ann, self.current_scope.parent)
+                t = Type.from_annotation(ann, self.current_scope)
                 if t:
                     left.symbol().set_type(t)
                 else:
@@ -562,7 +562,7 @@ class CodeVisitor(ast.NodeVisitor):
         if node.value:
             src = self.visit(node.value)
         dst = self.visit(node.target)
-        typ = Type.from_annotation(ann, self.current_scope.parent)
+        typ = Type.from_annotation(ann, self.current_scope)
         if not typ:
             fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if dst.is_a(TEMP):
@@ -1349,7 +1349,7 @@ class PureScopeVisitor(ast.NodeVisitor):
                 hint = self.type_comments[tail_lineno]
                 mod = ast.parse(hint)
                 ann = self.annotation_visitor.visit(mod.body[0])
-                typ = Type.from_annotation(ann, self.scope.parent)
+                typ = Type.from_annotation(ann, self.scope)
                 if typ:
                     self._add_local_type_hint(self.scope.local_type_hints, left, typ)
                 else:
@@ -1358,7 +1358,7 @@ class PureScopeVisitor(ast.NodeVisitor):
     def visit_AnnAssign(self, node):
         ann = self.annotation_visitor.visit(node.annotation)
         left = self.visit(node.target)
-        typ = Type.from_annotation(ann, self.scope.parent)
+        typ = Type.from_annotation(ann, self.scope)
         if not typ:
             fail((self.scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if left:
