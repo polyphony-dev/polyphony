@@ -86,6 +86,10 @@ class CallGraphBuilder(IRVisitor):
             self.worklist.append(receiver_scope)
 
     def visit_ATTR(self, ir):
+        if ir.attr.typ.has_scope():
+            attr_scope = ir.attr.typ.get_scope()
+            self.call_graph.add_edge(self.scope, attr_scope)
+            self.worklist.append(attr_scope)
         # object referencing is also added as a callee
         self.visit(ir.exp)
         receiver = ir.tail()
