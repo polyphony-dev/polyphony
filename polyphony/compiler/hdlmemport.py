@@ -186,7 +186,7 @@ class HDLMemPortMaker(object):
         if isinstance(succ, MemParamNode):
             for inst in self.mrg.param_node_instances[succ]:
                 pred_ramaccs = []
-                preds = [p for p in self.memnode.preds if self.scope in p.scopes]
+                preds = [p for p in self.memnode.preds if self.scope is p.scope]
                 for i, pred in enumerate(self.memnode.preds):
                     if pred not in preds:
                         continue
@@ -388,11 +388,11 @@ class HDLRegArrayPortMaker(object):
         assert len(self.memnode.succs) == 1
         succ = self.memnode.succs[0]
 
-        callee_name = list(succ.scopes)[0].orig_name
+        callee_name = succ.scope.orig_name
         if isinstance(succ, MemParamNode):
             for inst in self.mrg.param_node_instances[succ]:
                 pred_ramaccs = []
-                preds = [p for p in self.memnode.preds if self.scope in p.scopes]
+                preds = [p for p in self.memnode.preds if self.scope is p.scope]
                 for i, pred in enumerate(self.memnode.preds):
                     if pred not in preds:
                         continue

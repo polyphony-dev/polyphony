@@ -1051,7 +1051,7 @@ class AHDLTranslator(object):
             return AHDL_SUBSCRIPT(memvar, offset)
         elif memvar.memnode.can_be_reg():
             arraynode = memvar.memnode.single_source()
-            if arraynode and list(arraynode.scopes)[0] is self.scope:
+            if arraynode and arraynode.scope is self.scope:
                 sig = self.hdlmodule.signal(arraynode.name())
                 return AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, ir.ctx), offset)
             return AHDL_SUBSCRIPT(memvar, offset)
@@ -1068,7 +1068,7 @@ class AHDLTranslator(object):
         assert memvar.memnode.is_writable()
         if memvar.memnode.can_be_reg():
             arraynode = memvar.memnode.single_source()
-            if arraynode and list(arraynode.scopes)[0] is self.scope:
+            if arraynode and arraynode.scope is self.scope:
                 sig = self.hdlmodule.signal(arraynode.name())
                 dst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, Ctx.STORE), offset)
             else:

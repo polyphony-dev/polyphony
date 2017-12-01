@@ -25,7 +25,7 @@ class SelectorBuilder(object):
                     self._to_one2n_interconnect(ic.name, ic.ins[0], ic.outs)
                 elif len(ic.outs) == 1:
                     self._to_n2one_interconnect(ic.name, ic.ins, ic.outs[0], ic.cs_name)
-        self._convert_mem_switch_to_mem_mux()
+        #self._convert_mem_switch_to_mem_mux()
 
     def _to_direct_connect(self, name, inif, outif):
         tag = name
@@ -214,6 +214,21 @@ class SelectorBuilder(object):
                 src_var = AHDL_MEMVAR(src_sig, src_node, Ctx.LOAD)
                 conds.append(cond)
                 src_vars.append(src_var)
-                state.codes.remove(memsw)
+                self._remove_code(state, memsw)
             memmux = AHDL_META('MEM_MUX', memsw.args[0], dst_var, src_vars, conds)
             state.codes.insert(0, memmux)
+
+    def _remove_code(self, state, code):
+        if code in state.codes:
+            state.codes.remove(code)
+            return True
+        for c in state.codes:
+            if hasattr(c, 'codes'):
+                if self._remove_code(c, code):
+                    return True
+            elif hasattr(c, 'codes_list'):
+                for codes in c.codes_list:
+                    if code in codes:
+                        codes.remove(code)
+                        return True
+        return False

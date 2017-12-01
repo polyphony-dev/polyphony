@@ -117,7 +117,7 @@ class HDLModuleBuilder(object):
                 hdl_name = '{}_{}'.format(scope.orig_name, hdl_name)
             source = memnode.single_source()
             if source:
-                source_scope = list(source.scopes)[0]
+                source_scope = source.scope
                 if source_scope.is_class():  # class field rom
                     hdl_name = source_scope.orig_name + '_field_' + hdl_name
             output_sig = self.hdlmodule.gen_sig(hdl_name, memnode.data_width())  # TODO
@@ -138,7 +138,7 @@ class HDLModuleBuilder(object):
                 n2o = memnode.pred_branch()
                 for i, pred in enumerate(n2o.orig_preds):
                     assert pred.is_sink()
-                    if scope not in pred.scopes:
+                    if scope is not pred.scope:
                         roms.append(pred)
                     rom_func_name = pred.sym.hdl_name()
                     call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])

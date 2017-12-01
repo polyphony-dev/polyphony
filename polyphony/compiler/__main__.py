@@ -456,6 +456,10 @@ def buildmodule(driver, scope):
     modulebuilder = HDLModuleBuilder.create(hdlmodule)
     assert modulebuilder
     modulebuilder.process(hdlmodule)
+
+
+def buildselector(driver, scope):
+    hdlmodule = env.hdlmodule(scope)
     SelectorBuilder().process(hdlmodule)
 
 
@@ -664,6 +668,7 @@ def compile_plan():
         dbg(dumpmodule),
         reducestate,
         dbg(dumpmodule),
+        buildselector,
         genhdl,
         dbg(dumphdl),
         dbg(printresouces),

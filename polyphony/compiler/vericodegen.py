@@ -538,6 +538,42 @@ class VerilogCodeGen(AHDLVisitor):
         dst = self.visit(ahdl.dst)
         self.emit('{} = {};'.format(dst, src))
 
+    def visit_MEM_SWITCH(self, ahdl):
+        prefix = ahdl.args[0]
+        dst_node = ahdl.args[1]
+        src_node = ahdl.args[2]
+        n2o = dst_node.pred_branch()
+        assert isinstance(n2o, N2OneMemNode)
+        for p in n2o.preds:
+            assert isinstance(p, One2NMemNode)
+
+        preds = [p for p in n2o.preds if self.hdlmodule.scope is p.scope]
+        width = len(preds)
+        if width < 2:
+            return
+        orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope is p.scope]
+        cs_name = dst_node.name()
+        if prefix:
+            cs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, cs_name), width, {'reg'})
+        else:
+            cs = self.hdlmodule.gen_sig('{}_cs'.format(cs_name), width, {'reg'})
+        cs.del_tag('net')
+        if isinstance(src_node.preds[0], One2NMemNode):
+            assert src_node in n2o.orig_preds
+            idx = orig_preds.index(src_node)
+            one_hot_mask = bin(1 << idx)[2:]
+            self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
+                                 AHDL_SYMBOL('\'b' + one_hot_mask)))
+        elif src_node.is_alias():
+            srccs_name = src_node.name()
+            if prefix:
+                srccs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, srccs_name), width, {'reg'})
+            else:
+                srccs = self.hdlmodule.gen_sig('{}_cs'.format(srccs_name), width, {'reg'})
+            srccs.del_tag('net')
+            self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
+                                 AHDL_VAR(srccs, Ctx.LOAD)))
+
     def visit_MEM_MUX(self, ahdl):
         prefix = ahdl.args[0]
         dst = ahdl.args[1]
@@ -548,11 +584,11 @@ class VerilogCodeGen(AHDLVisitor):
         for p in n2o.preds:
             assert isinstance(p, One2NMemNode)
 
-        preds = [p for p in n2o.preds if self.hdlmodule.scope in p.scopes]
+        preds = [p for p in n2o.preds if self.hdlmodule.scope is p.scope]
         width = len(preds)
         if width < 2:
             return
-        orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope in p.scopes]
+        orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope is p.scope]
         cs_name = dst.memnode.name()
         if prefix:
             cs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
@@ -560,11 +596,19 @@ class VerilogCodeGen(AHDLVisitor):
             cs = self.hdlmodule.gen_sig('{}_cs'.format(cs_name), width)
         args = []
         for src in srcs:
-            assert isinstance(src.memnode.preds[0], One2NMemNode)
-            assert src.memnode in n2o.orig_preds
-            idx = orig_preds.index(src.memnode)
-            one_hot_mask = format(1 << idx, '#0{}b'.format(width + 2))[2:]
-            args.append(AHDL_SYMBOL('\'b' + one_hot_mask))
+            if isinstance(src.memnode.preds[0], One2NMemNode):
+                assert isinstance(src.memnode.preds[0], One2NMemNode)
+                assert src.memnode in n2o.orig_preds
+                idx = orig_preds.index(src.memnode)
+                one_hot_mask = format(1 << idx, '#0{}b'.format(width + 2))[2:]
+                args.append(AHDL_SYMBOL('\'b' + one_hot_mask))
+            elif src.memnode.is_alias():
+                srccs_name = src.memnode.name()
+                if prefix:
+                    srccs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, srccs_name), width)
+                else:
+                    srccs = self.hdlmodule.gen_sig('{}_cs'.format(srccs_name), width)
+                args.append(AHDL_MEMVAR(srccs, src.memnode, Ctx.LOAD))
 
         arg_p = list(zip(args, conds))
         rexp, cond = arg_p[-1]

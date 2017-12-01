@@ -43,9 +43,21 @@ class CopyOpt(IRVisitor):
                     scope.usedef.remove_use(old, u)
                     scope.usedef.add_use(new, u)
                 if u.is_a(PHIBase):
-                    syms = [arg.qualified_symbol() for arg in u.args if arg.is_a([TEMP, ATTR])]
-                    if syms and len(u.args) == len(syms) and all(syms[0] == s for s in syms):
-                        mv = MOVE(u.var, u.args[0])
+                    syms = [arg.qualified_symbol() for arg in u.args
+                            if arg.is_a([TEMP, ATTR]) and arg.symbol() is not u.var.symbol()]
+                    if syms:
+                        if len(u.args) == len(syms) and all(syms[0] == s for s in syms):
+                            src = u.args[0]
+                        elif len(syms) == 1 and len([arg for arg in u.args if arg.is_a([TEMP, ATTR])]) > 1:
+                            for arg in u.args:
+                                if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol() == syms[0]:
+                                    src = arg
+                                    break
+                            else:
+                                assert False
+                        else:
+                            continue
+                        mv = MOVE(u.var, src)
                         idx = u.block.stms.index(u)
                         u.block.stms[idx] = mv
                         mv.block = u.block
