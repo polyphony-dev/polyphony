@@ -800,3 +800,7 @@ def main():
         print(e)
     except Exception as e:
         raise
+
+
+if __name__ == "__main__":
+    main()
