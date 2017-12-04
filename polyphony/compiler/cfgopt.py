@@ -354,15 +354,23 @@ class HyperBlockBuilder(object):
                         old_args.append(stm.args[idx])
                         old_defblks.append(stm.defblks[idx])
                         old_ps.append(stm.ps[idx])
-                new_phi = stm.clone()
-                new_phi.args = new_args
-                new_phi.defblks = new_defblks
-                new_phi.ps = new_ps
-                newsym = self.scope.add_temp()
-                newsym.set_type(stm.var.symbol().typ)
-                new_phi.var = TEMP(newsym, Ctx.STORE)
-                new_phi.var.lineno = stm.var.lineno
-                new_tail.append_stm(new_phi)
+                if all([new_args[0].symbol() is arg.symbol() for arg in new_args[1:]]):
+                    newsym = self.scope.add_temp()
+                    newsym.set_type(stm.var.symbol().typ)
+                    dst = TEMP(newsym, Ctx.STORE)
+                    mv = MOVE(dst, new_args[0])
+                    mv.lineno = dst.lineno = stm.var.lineno
+                    new_tail.append_stm(mv)
+                else:
+                    new_phi = stm.clone()
+                    new_phi.args = new_args
+                    new_phi.defblks = new_defblks
+                    new_phi.ps = new_ps
+                    newsym = self.scope.add_temp()
+                    newsym.set_type(stm.var.symbol().typ)
+                    new_phi.var = TEMP(newsym, Ctx.STORE)
+                    new_phi.var.lineno = stm.var.lineno
+                    new_tail.append_stm(new_phi)
 
                 arg = TEMP(newsym, Ctx.LOAD)
                 arg.lineno = stm.var.lineno
