@@ -162,7 +162,7 @@ class TypePropagation(IRVisitor):
         else:
             for i, param in enumerate(params):
                 if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
-                    self._set_type(param.sym, arg_types[i])
+                    self._set_type(param.sym, arg_types[i].clone())
             funct = Type.function(ir.func_scope(),
                                   ret_t,
                                   tuple([param.sym.typ for param in ir.func_scope().params]))

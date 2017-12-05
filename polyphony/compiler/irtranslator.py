@@ -98,11 +98,9 @@ class ImportVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         def import_to_scope(imp_sym, asname=None):
             if asname:
-                sym = self.target_scope.gen_sym(asname)
+                sym = self.target_scope.inherit_sym(imp_sym, asname)
             else:
-                sym = self.target_scope.gen_sym(imp_sym.name)
-            sym.set_type(imp_sym.typ)
-            sym.ancestor = imp_sym
+                sym = self.target_scope.inherit_sym(imp_sym, imp_sym.name)
 
         if node.module not in BUILTIN_PACKAGES:
             if self._load_subfile(node.module):
@@ -1199,7 +1197,7 @@ class CodeVisitor(ast.NodeVisitor):
         else:
             if sym is None or sym.scope is not self.current_scope:
                 sym = self.current_scope.add_sym(node.id)
-                if self.current_scope.is_global() or self.current_scope.is_class():
+                if self.current_scope.is_namespace() or self.current_scope.is_class():
                     sym.add_tag('static')
         if sym in self.invisible_symbols:
             if ctx == Ctx.LOAD:

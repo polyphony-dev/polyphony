@@ -131,19 +131,17 @@ class HDLMemPortMaker(object):
     def _make_param_node_connection(self):
         assert self.memnode in self.hdlmodule.node2if
         assert len(self.memnode.succs) == 1
+        succ = self.memnode.succs[0]
         ramif = self.hdlmodule.node2if[self.memnode]
         # direct connect
-        if isinstance(self.memnode.succs[0], MemRefNode):
+        if isinstance(succ, MemRefNode):
             ramacc = ramif.accessor()
             assert ramacc not in self.mrg.node2acc
             self.mrg.node2acc[self.memnode] = ramacc
-
-            assert len(self.memnode.succs) == 1
-            succ = self.memnode.succs[0]
             assert succ.is_sink()
             succ_ramacc = self._make_ram_accessor(succ)
             self._add_interconnect(self.memnode.name(), [ramacc], [succ_ramacc])
-        elif isinstance(self.memnode.succs[0], One2NMemNode):
+        elif isinstance(succ, (One2NMemNode, N2OneMemNode)):
             ramacc = ramif.accessor()
             assert ramacc not in self.mrg.node2acc
             self.mrg.node2acc[self.memnode] = ramacc
@@ -204,6 +202,9 @@ class HDLMemPortMaker(object):
             for i, pred in enumerate(self.memnode.preds):
                 if isinstance(pred, One2NMemNode):
                     ramacc = self._make_ram_accessor((pred, self.memnode))
+                    pred_ramaccs.append(ramacc)
+                elif isinstance(pred, MemParamNode):
+                    ramacc = self._make_ram_accessor(pred)
                     pred_ramaccs.append(ramacc)
                 else:
                     assert False

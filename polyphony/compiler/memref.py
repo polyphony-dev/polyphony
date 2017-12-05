@@ -260,10 +260,11 @@ class One2NNode(JointNode):
 
 
 class MemTrait(object):
-    WR   = 0x00010000
-    IM   = 0x00020000
-    PURE = 0x00040000
-    ALIAS = 0x00080000
+    WR      = 0x00010000
+    IM      = 0x00020000
+    PURE    = 0x00040000
+    ALIAS   = 0x00080000
+    USELESS = 0x00100000
 
     def __init__(self):
         self.length = -1
@@ -280,6 +281,9 @@ class MemTrait(object):
     def set_alias(self):
         self.flags |= MemTrait.ALIAS
 
+    def set_useless(self):
+        self.flags |= MemTrait.USELESS
+
     def set_length(self, length):
         self.length = length
 
@@ -294,6 +298,9 @@ class MemTrait(object):
 
     def is_alias(self):
         return self.flags & MemTrait.ALIAS
+
+    def is_useless(self):
+        return self.flags & MemTrait.USELESS
 
     def data_width(self):
         if self.sym.typ.has_element():
@@ -310,6 +317,8 @@ class MemTrait(object):
             src = self.single_source()
             if src:
                 self.length = src.length
+        if self.is_useless():
+            return False
         assert self.length > 0
         if not self.is_writable():
             return False
@@ -327,6 +336,8 @@ class MemRefNode(RefNode, MemTrait):
     def _str_properties(self):
         s = ' <{}>[{}] '.format(self.data_width(), self.length)
         s += 'wr ' if self.is_writable() else 'ro '
+        s += 'alias ' if self.is_alias() else ''
+        s += 'useless ' if self.is_useless() else ''
         if self.initstm:
             s += 'initstm={} '.format(self.initstm)
         return s
@@ -536,8 +547,20 @@ class MemRefGraph(object):
             logger.debug('remove_node ' + str(node.sym))
             for pred in node.preds:
                 pred.succs.remove(node)
+                if not pred.succs:
+                    self.remove_node(pred)
+                elif isinstance(pred, One2NMemNode) and len(pred.succs) == 1:
+                    pred.preds[0].succs.append(pred.succs[0])
+                    pred.succs[0].preds.append(pred.preds[0])
+                    self.remove_node(pred)
             for succ in node.succs:
                 succ.preds.remove(node)
+                if not succ.preds:
+                    self.remove_node(suc)
+                elif isinstance(succ, N2OneMemNode) and len(succ.preds) == 1:
+                    succ.preds[0].succs.append(succ.succs[0])
+                    succ.succs[0].preds.append(succ.preds[0])
+                    self.remove_node(pred)
             del self.nodes[node.sym]
 
     def collect_sources(self):
@@ -649,7 +672,6 @@ class MemRefGraphBuilder(IRVisitor):
                           stm.src.sym.is_param() and
                           stm.src.sym.typ.is_seq()):
                         stms.append(stm)
-
         for block in scope.traverse_blocks():
             for stm in block.stms:
                 # phi is always
@@ -745,6 +767,9 @@ class MemRefGraphBuilder(IRVisitor):
                         replace_item(n2one.preds, src, one2n)
                         self.mrg.add_node(n2one)
                         self.mrg.add_node(one2n)
+        self._mark_useless_node()
+        self._reduce_useless_node()
+
         # do a ref-to-ref node branching
         self._do_ref_2_ref_node_branching()
 
@@ -786,15 +811,52 @@ class MemRefGraphBuilder(IRVisitor):
             else:
                 break
 
+    def _mark_useless_node(self):
+        for node in self.mrg.sorted_nodes():
+            if not isinstance(node, MemRefNode):
+                continue
+            if node.is_source():
+                continue
+            if len(node.preds) == 1 and node.preds[0].is_source():
+                continue
+            if len(node.preds) == 1 and isinstance(node.preds[0], MemParamNode):
+                continue
+            if node.sym.is_static():
+                continue
+            defstms = node.scope.usedef.get_stms_defining(node.sym)
+            assert len(defstms) == 1
+            defstm = list(defstms)[0]
+            if defstm.is_a(PHI):
+                continue
+            usestms = node.scope.usedef.get_stms_using(node.sym)
+            for usestm in usestms:
+                if usestm.is_mem_read() or usestm.is_mem_write():
+                    break
+                if usestm.is_a(MOVE) and usestm.src.is_a(SYSCALL) and usestm.src.sym.name == 'len':
+                    break
+            else:
+                node.set_useless()
+
+    def _reduce_useless_node(self):
+        for node in self.mrg.sorted_nodes():
+            if node.is_useless():
+                for p in node.preds:
+                    p.succs.extend(node.succs)
+                for s in node.succs:
+                    s.preds.extend(node.preds)
+                self.mrg.remove_node(node)
+
     def _do_ref_2_ref_node_branching(self):
         new_nodes = []
         for node in self.mrg.sorted_nodes():
             if (isinstance(node, MemRefNode) and
                     not node.is_source() and
                     not node.is_param() and
+                    not node.is_useless() and
                     node.succs):
                 assert len(node.preds) == 1
                 assert len(node.succs) == 1
+
                 if isinstance(node.succs[0], One2NMemNode):
                     o2n = node.succs[0]
                     o2n.add_succ(node)
@@ -944,6 +1006,7 @@ class MemRefGraphBuilder(IRVisitor):
         if ir.var.sym.typ.is_seq():
             self.mrg.add_node(MemRefNode(ir.var.sym, self.scope))
             for arg in ir.args:
+                self.visit(arg)
                 self._append_edge(arg.sym, ir.var.sym)
             memnode = self.mrg.node(ir.var.sym)
             memnode.set_alias()

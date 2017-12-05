@@ -434,6 +434,11 @@ class ConstantOpt(ConstantOptBase):
                 assert len(defstms) <= 1
 
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
+                receiver = stm.dst.tail()
+                if receiver.typ.is_object() and receiver.typ.get_scope().is_module():
+                    module_scope = receiver.typ.get_scope()
+                    assert self.scope.parent is module_scope
+                    module_scope.constants[stm.dst.symbol()] = stm.src
                 for rep in replaces:
                     if rep not in dead_stms:
                         worklist.append(rep)
@@ -494,6 +499,17 @@ class ConstantOpt(ConstantOptBase):
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
+        if receiver.typ.is_object() and ir.attr.typ.is_scalar():
+            objscope = receiver.typ.get_scope()
+            if objscope.is_class():
+                classsym = objscope.parent.find_sym(objscope.orig_name)
+                if not classsym and objscope.is_instantiated():
+                    objscope = objscope.bases[0]
+                    classsym = objscope.parent.find_sym(objscope.orig_name)
+                c = try_get_constant((classsym, ir.attr), self.scope)
+                if c:
+                    c.lineno = ir.lineno
+                    return c
         return ir
 
     def visit_PHI(self, ir):
@@ -510,6 +526,15 @@ class ConstantOpt(ConstantOptBase):
 class EarlyConstantOptNonSSA(ConstantOptBase):
     def __init__(self):
         super().__init__()
+
+    def visit_CJUMP(self, ir):
+        ir.exp = self.visit(ir.exp)
+        expdefs = self.scope.usedef.get_stms_defining(ir.exp.symbol())
+        assert len(expdefs) == 1
+        expdef = list(expdefs)[0]
+        if expdef.src.is_a(CONST):
+            ir.exp = expdef.src
+            self._process_unconditional_cjump(ir, [])
 
     def visit_TEMP(self, ir):
         if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():

@@ -36,6 +36,7 @@ from .loopdetector import LoopRegionSetter
 from .loopdetector import LoopDependencyDetector
 from .memorytransform import RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
+from .phiopt import PHIInlining
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
 from .pure import interpret, PureCtorBuilder, PureFuncExecutor
@@ -362,6 +363,10 @@ def copyopt(driver, scope):
     CopyOpt().process(scope)
 
 
+def phiopt(dfiver, scope):
+    PHIInlining().process(scope)
+
+
 def checkcfg(driver, scope):
     if env.dev_debug_mode:
         CFGChecker().process(scope)
@@ -577,6 +582,7 @@ def compile_plan():
         typeprop,
         restrictioncheck,
         phase(env.PHASE_1),
+        usedef,
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
@@ -603,6 +609,7 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         copyopt,
+        phiopt,
         dbg(dumpscope),
         usedef,
         memrefgraph,

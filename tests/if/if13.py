@@ -3,7 +3,7 @@ from polyphony import testbench
 def if13(x):
     i = 1
     if x < 10:
-        if x ==  0:
+        if x == 0:
             pass
         elif x == 1:
             i = 2
