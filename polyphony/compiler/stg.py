@@ -1283,10 +1283,11 @@ class AHDLTranslator(object):
                 assert len(param_memnode.preds) == 1
                 is_joinable_param = isinstance(param_memnode.preds[0], N2OneMemNode)
                 if is_joinable_param and param_memnode.is_writable():
-                    self._emit(AHDL_META('MEM_SWITCH',
-                                         ahdl_call.instance_name,
-                                         param_memnode,
-                                         arg.memnode), self.sched_time)
+                    memsw = AHDL_META('MEM_SWITCH',
+                                      ahdl_call.instance_name,
+                                      param_memnode,
+                                      arg.memnode)
+                    self._emit(memsw, self.sched_time)
 
     def visit_MOVE(self, ir, node):
         if ir.src.is_a([CALL, NEW]):
@@ -1328,7 +1329,8 @@ class AHDLTranslator(object):
             elif memnode.is_immutable():
                 return
             elif memnode.is_joinable():
-                self._emit(AHDL_META('MEM_SWITCH', '', dst.memnode, src.memnode), self.sched_time)
+                memsw = AHDL_META('MEM_SWITCH', '', dst.memnode, src.memnode)
+                self._emit(memsw, self.sched_time)
                 return
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
 

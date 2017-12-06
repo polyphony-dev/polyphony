@@ -763,6 +763,11 @@ class RestrictionChecker(IRVisitor):
 
 
 class LateRestrictionChecker(IRVisitor):
+    def visit_MSTORE(self, ir):
+        memnode = ir.mem.symbol().typ.get_memnode()
+        if memnode.is_alias() and memnode.can_be_reg():
+            fail(self.current_stm, Errors.WRITING_ALIAS_REGARRAY)
+
     def visit_NEW(self, ir):
         if ir.func_scope().is_port():
             if not (self.scope.is_ctor() and self.scope.parent.is_module()):

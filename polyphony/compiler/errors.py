@@ -96,6 +96,9 @@ class Errors(Enum):
     RULE_UNROLL_UNKNOWN_STEP = 1154
     RULE_UNROLL_VARIABLE_STEP = 1155
 
+    # not supported yet
+    WRITING_ALIAS_REGARRAY = 9000
+
     def __str__(self):
         return ERROR_MESSAGES[self]
 
@@ -186,6 +189,8 @@ ERROR_MESSAGES = {
     Errors.RULE_UNROLL_CONTROL_BRANCH: "Cannot unroll loop that having control branches",
     Errors.RULE_UNROLL_UNKNOWN_STEP: "Cannot find the step value of the loop",
     Errors.RULE_UNROLL_VARIABLE_STEP: "The step value must be a constant",
+
+    Errors.WRITING_ALIAS_REGARRAY: "Writing to alias register array is not supported yet",
 }
 
 

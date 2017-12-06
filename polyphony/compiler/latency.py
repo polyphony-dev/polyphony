@@ -78,23 +78,24 @@ def _get_latency(tag):
             return 0
         elif tag.dst.is_a(TEMP) and tag.dst.sym.is_alias():
             return 0
-        elif tag.dst.is_a(TEMP) and tag.dst.symbol().typ.is_seq() and tag.src.is_a(TEMP) and tag.src.symbol().is_param():
-            memnode = tag.dst.symbol().typ.get_memnode()
-            if not memnode.can_be_reg():
-                return 0
         elif tag.dst.is_a(ATTR):
             return UNIT_STEP * 2
-        elif tag.src.is_a(ARRAY):
-            memnode = tag.src.sym.typ.get_memnode()
-            if memnode.can_be_reg():
-                return 1
-            else:
-                return UNIT_STEP * len(tag.src.items * tag.src.repeat.value)
         elif tag.src.is_a(MREF):
             memnode = tag.src.mem.symbol().typ.get_memnode()
             if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
                 return 1
             return UNIT_STEP * 3, UNIT_STEP * 1
+        elif tag.dst.is_a(TEMP) and tag.dst.symbol().typ.is_seq():
+            memnode = tag.dst.symbol().typ.get_memnode()
+            if tag.src.is_a(ARRAY):
+                if memnode.can_be_reg():
+                    return 1
+                else:
+                    return UNIT_STEP * len(tag.src.items * tag.src.repeat.value)
+            if tag.src.is_a(TEMP) and tag.src.symbol().typ.is_seq():  #is_param():
+            #if tag.src.is_a(TEMP) and tag.src.symbol().is_param():
+                if not memnode.can_be_reg():
+                    return 0, 0
         if tag.dst.symbol().is_alias():
             return 0
     elif tag.is_a(EXPR):
@@ -105,12 +106,12 @@ def _get_latency(tag):
         elif tag.exp.is_a(MSTORE):
             memnode = tag.exp.mem.symbol().typ.get_memnode()
             if memnode.can_be_reg():
-                return 1
+                return UNIT_STEP * 1
             return UNIT_STEP * 1, UNIT_STEP * 1
     elif tag.is_a(PHI):
-        if tag.var.symbol().is_alias():
+        if tag.var.symbol().typ.is_seq() and not tag.var.symbol().typ.get_memnode().can_be_reg():
             return 0
-        elif tag.var.symbol().typ.is_seq() and not tag.var.symbol().typ.get_memnode().can_be_reg():
+        if tag.var.symbol().is_alias():
             return 0
     elif tag.is_a(UPHI):
         if tag.var.symbol().is_alias():

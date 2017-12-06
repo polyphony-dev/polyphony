@@ -129,8 +129,8 @@ class SelectorBuilder(object):
         self.hdlmodule.add_internal_net(switch, tag)
 
         cs_width = len(inifs)
-        cs_sig = self.hdlmodule.gen_sig('{}_cs'.format(cs_name), cs_width)
-        self.hdlmodule.add_internal_net(cs_sig, tag)
+        cs_sig = self.hdlmodule.gen_sig('{}_cs'.format(cs_name), cs_width, {'reg'})
+        self.hdlmodule.add_internal_reg(cs_sig, tag)
 
         cs_var = AHDL_VAR(cs_sig, Ctx.LOAD)
         assign = AHDL_ASSIGN(switch_var, cs_var)

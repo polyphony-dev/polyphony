@@ -552,12 +552,15 @@ class VerilogCodeGen(AHDLVisitor):
         if width < 2:
             return
         orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope is p.scope]
-        cs_name = dst_node.name()
+        orig_preds = sorted(orig_preds)
         if prefix:
-            cs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, cs_name), width, {'reg'})
+            cs_name = '{}_{}_cs'.format(prefix, dst_node.name())
         else:
-            cs = self.hdlmodule.gen_sig('{}_cs'.format(cs_name), width, {'reg'})
-        cs.del_tag('net')
+            cs_name = '{}_cs'.format(dst_node.name())
+        cs = self.hdlmodule.signal(cs_name)
+        if not cs:
+            cs = self.hdlmodule.gen_sig(cs_name, width, {'reg'})
+            self.hdlmodule.add_internal_reg(cs)
         if isinstance(src_node.preds[0], One2NMemNode):
             assert src_node in n2o.orig_preds
             idx = orig_preds.index(src_node)
@@ -569,8 +572,7 @@ class VerilogCodeGen(AHDLVisitor):
             if prefix:
                 srccs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, srccs_name), width, {'reg'})
             else:
-                srccs = self.hdlmodule.gen_sig('{}_cs'.format(srccs_name), width, {'reg'})
-            srccs.del_tag('net')
+                srccs = self.hdlmodule.gen_sig('{}_cs'.format(srccs_name), width)
             self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
                                  AHDL_VAR(srccs, Ctx.LOAD)))
 
@@ -589,11 +591,17 @@ class VerilogCodeGen(AHDLVisitor):
         if width < 2:
             return
         orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope is p.scope]
-        cs_name = dst.memnode.name()
         if prefix:
-            cs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, cs_name), width)
+            cs_name = '{}_{}_cs'.format(prefix, dst.memnode.name())
         else:
-            cs = self.hdlmodule.gen_sig('{}_cs'.format(cs_name), width)
+            cs_name = '{}_cs'.format(dst.memnode.name())
+        cs = self.hdlmodule.signal(cs_name)
+        if not cs:
+            cs = self.hdlmodule.gen_sig(cs_name, width, {'net'})
+            self.hdlmodule.add_internal_net(cs)
+        else:
+            cs.del_tag('reg')
+            cs.add_tag('net')
         args = []
         for src in srcs:
             if isinstance(src.memnode.preds[0], One2NMemNode):

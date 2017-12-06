@@ -29,6 +29,10 @@ class RefNode(object):
         s += '\tpreds\n'
         s += '\t\t' + ', '.join(['{}'.format(pred.sym) for pred in self.preds])
         s += '\n'
+        if hasattr(self, 'orig_preds'):
+            s += '\torig_preds\n'
+            s += '\t\t' + ', '.join(['{}'.format(pred.sym) for pred in self.orig_preds])
+            s += '\n'
         s += '\tsuccs\n'
         s += '\t\t' + ', '.join(['{}'.format(succ.sym) for succ in self.succs])
         s += '\n'
@@ -540,6 +544,8 @@ class MemRefGraph(object):
         self.param_node_instances[param_node].add(inst_name)
 
     def remove_node(self, node):
+        if node.sym not in self.nodes:
+            return
         if isinstance(node, list):
             for n in node:
                 self.remove_node(n)
@@ -767,13 +773,11 @@ class MemRefGraphBuilder(IRVisitor):
                         replace_item(n2one.preds, src, one2n)
                         self.mrg.add_node(n2one)
                         self.mrg.add_node(one2n)
+        self._propagate_info()
         self._mark_useless_node()
         self._reduce_useless_node()
-
         # do a ref-to-ref node branching
         self._do_ref_2_ref_node_branching()
-
-        self._propagate_info()
         self.mrg.verify_nodes()
 
     def _make_n2o(self, succ):
@@ -822,11 +826,6 @@ class MemRefGraphBuilder(IRVisitor):
             if len(node.preds) == 1 and isinstance(node.preds[0], MemParamNode):
                 continue
             if node.sym.is_static():
-                continue
-            defstms = node.scope.usedef.get_stms_defining(node.sym)
-            assert len(defstms) == 1
-            defstm = list(defstms)[0]
-            if defstm.is_a(PHI):
                 continue
             usestms = node.scope.usedef.get_stms_using(node.sym)
             for usestm in usestms:
