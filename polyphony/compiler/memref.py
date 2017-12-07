@@ -19,6 +19,7 @@ class RefNode(object):
         self.succs = []
         self.order = -1
         self.flags = 0
+        self.ancestor = None
 
     def __str__(self):
         scope_name = self.scope.name
@@ -43,6 +44,14 @@ class RefNode(object):
 
     def __lt__(self, other):
         return self.sym < other.sym
+
+    def __eq__(self, other):
+        if self is other:
+            return True
+        return self.is_clone_of(other) or other.is_clone_of(self)
+
+    def __hash__(self):
+        return super().__hash__()
 
     def name(self):
         if self.scope.is_worker() or self.scope.is_method():
@@ -133,6 +142,9 @@ class RefNode(object):
     def is_in_scope(self, scope):
         return scope is self.scope
 
+    def is_clone_of(self, node):
+        return self.ancestor is node
+
     def sources(self):
         if not self.preds:
             yield self
@@ -162,6 +174,7 @@ class RefNode(object):
         new_sym = new_scope.cloned_symbols[self.sym]
         new_node = self.__class__(new_sym, new_scope)
         self._clone_data(new_node)
+        new_node.ancestor = self
         return new_node
 
     def _clone_data(self, new_node):
@@ -176,6 +189,9 @@ class JointNode(RefNode):
         super().__init__(sym, scope)
         self.orig_preds = []
         self.orig_succs = []
+
+    def __hash__(self):
+        return super().__hash__()
 
     def add_pred(self, pred):
         if pred not in self.preds:
@@ -220,6 +236,9 @@ class N2OneNode(JointNode):
             self.succs = [succ]
             self.orig_succs = [succ]
 
+    def __hash__(self):
+        return super().__hash__()
+
     def pred_ref_nodes(self):
         assert len(self.preds) > 1
         return super().pred_ref_nodes()
@@ -237,6 +256,7 @@ class N2OneNode(JointNode):
         new_sym = new_scope.cloned_symbols[self.sym]
         new_node = self.__class__(new_sym, None)
         self._clone_data(new_node)
+        new_node.ancestor = self
         return new_node
 
 
@@ -246,6 +266,9 @@ class One2NNode(JointNode):
         if pred:
             self.preds = [pred]
             self.orig_preds = [pred]
+
+    def __hash__(self):
+        return super().__hash__()
 
     def pred_ref_nodes(self):
         assert len(self.preds) == 1
@@ -260,6 +283,7 @@ class One2NNode(JointNode):
         new_sym = new_scope.cloned_symbols[self.sym]
         new_node = self.__class__(new_sym, None)
         self._clone_data(new_node)
+        new_node.ancestor = self
         return new_node
 
 
@@ -269,6 +293,7 @@ class MemTrait(object):
     PURE    = 0x00040000
     ALIAS   = 0x00080000
     USELESS = 0x00100000
+    SWITCH  = 0x00200000
 
     def __init__(self):
         self.length = -1
@@ -288,6 +313,9 @@ class MemTrait(object):
     def set_useless(self):
         self.flags |= MemTrait.USELESS
 
+    def set_switch(self):
+        self.flags |= MemTrait.SWITCH
+
     def set_length(self, length):
         self.length = length
 
@@ -305,6 +333,9 @@ class MemTrait(object):
 
     def is_useless(self):
         return self.flags & MemTrait.USELESS
+
+    def is_switch(self):
+        return self.flags & MemTrait.SWITCH
 
     def data_width(self):
         if self.sym.typ.has_element():
@@ -336,6 +367,9 @@ class MemRefNode(RefNode, MemTrait):
         RefNode.__init__(self, sym, scope)
         MemTrait.__init__(self)
         self.initstm = None
+
+    def __hash__(self):
+        return super().__hash__()
 
     def _str_properties(self):
         s = ' <{}>[{}] '.format(self.data_width(), self.length)
@@ -405,6 +439,9 @@ class MemParamNode(RefNode, MemTrait):
         RefNode.__init__(self, sym, scope)
         MemTrait.__init__(self)
 
+    def __hash__(self):
+        return super().__hash__()
+
     def _str_properties(self):
         s = ' <{}>[{}] '.format(self.data_width(), self.length)
         s += 'wr ' if self.is_writable() else 'ro '
@@ -454,6 +491,9 @@ class N2OneMemNode(N2OneNode, MemTrait):
         N2OneNode.__init__(self, sym, succ)
         MemTrait.__init__(self)
 
+    def __hash__(self):
+        return super().__hash__()
+
     def _str_properties(self):
         s = ' <{}>[{}] '.format(self.data_width(), self.length)
         s += 'wr ' if self.is_writable() else 'ro '
@@ -472,6 +512,9 @@ class One2NMemNode(One2NNode, MemTrait):
     def __init__(self, sym, pred):
         One2NNode.__init__(self, sym, pred)
         MemTrait.__init__(self)
+
+    def __hash__(self):
+        return super().__hash__()
 
     def _str_properties(self):
         s = ' <{}>[{}] '.format(self.data_width(), self.length)
@@ -494,6 +537,7 @@ class MemRefGraph(object):
         self.nodes = {}
         self.edges = {}
         self.param_node_instances = defaultdict(set)
+        self.removed_nodes = {}
 
     def __str__(self):
         s = 'MemRefGraph\n'
@@ -544,7 +588,7 @@ class MemRefGraph(object):
         self.param_node_instances[param_node].add(inst_name)
 
     def remove_node(self, node):
-        if node.sym not in self.nodes:
+        if node.sym in self.removed_nodes:
             return
         if isinstance(node, list):
             for n in node:
@@ -568,6 +612,7 @@ class MemRefGraph(object):
                     succ.succs[0].preds.append(succ.preds[0])
                     self.remove_node(pred)
             del self.nodes[node.sym]
+            self.removed_nodes[node.sym] = node
 
     def collect_sources(self):
         for node in self.nodes.values():
@@ -578,6 +623,10 @@ class MemRefGraph(object):
 
     def scope_nodes(self, scope):
         return filter(lambda n: n.is_in_scope(scope), self.nodes.values())
+
+    def scope_nodes_with_removed(self, scope):
+        nodes = set(self.nodes.values()) | set(self.removed_nodes.values())
+        return filter(lambda n: n.is_in_scope(scope), nodes)
 
     def collect_ram(self, scope):
         for node in self.scope_nodes(scope):
@@ -624,6 +673,18 @@ class MemRefGraph(object):
         return node.sym in self.nodes
 
     def clone_subgraph(self, orig, new):
+        def replace_connection(new_node, nodes, node_map, with_edge, is_succ=True):
+            for i, n in enumerate(nodes.copy()):
+                if n in node_map:
+                    new_n = node_map[n]
+                    nodes[i] = new_n
+                    n = new_n
+                if with_edge:
+                    if is_succ:
+                        self.edges[(new_node.sym, n.sym)] = (new_node, n)
+                    else:
+                        self.edges[(n.sym, new_node.sym)] = (n, new_node)
+
         #assert new.cloned_symbols
         new_nodes = []
         node_map = {}
@@ -641,20 +702,11 @@ class MemRefGraph(object):
             if isinstance(new_node, MemRefNode) and new_node.initstm:
                 new_node.initstm = new.cloned_stms[new_node.initstm]
             self.add_node(new_node)
-            for i, succ in enumerate(new_node.succs[:]):
-                if succ in node_map:
-                    new_succ = node_map[succ]
-                    new_node.succs[i] = new_succ
-                    self.edges[(new_node.sym, new_succ.sym)] = (new_node, new_succ)
-                else:
-                    self.edges[(new_node.sym, succ.sym)] = (new_node, succ)
-            for i, pred in enumerate(new_node.preds[:]):
-                if pred in node_map:
-                    new_pred = node_map[pred]
-                    new_node.preds[i] = new_pred
-                    self.edges[(new_pred.sym, new_node.sym)] = (new_pred, new_node)
-                else:
-                    self.edges[(pred.sym, new_node.sym)] = (pred, new_node)
+            replace_connection(new_node, new_node.succs, node_map, True, is_succ=True)
+            replace_connection(new_node, new_node.preds, node_map, True, is_succ=False)
+            if isinstance(new_node, JointNode):
+                replace_connection(new_node, new_node.orig_succs, node_map, False)
+                replace_connection(new_node, new_node.orig_preds, node_map, False)
         return node_map
 
 
@@ -789,6 +841,8 @@ class MemRefGraphBuilder(IRVisitor):
         return One2NMemNode(sym, pred)
 
     def _reconnect_alias_edge(self):
+        # TODO: fix alias reference cycle
+        prev_new_edges = []
         while True:
             dst2src_map = defaultdict(list)
             for src, dst in self.edges:
@@ -807,11 +861,15 @@ class MemRefGraphBuilder(IRVisitor):
                 for srcsrc in srcsrcs:
                     if srcsrc is dst:
                         continue
+                    srcsrc_node = self.mrg.node(srcsrc)
+                    if isinstance(srcsrc_node, MemRefNode) and srcsrc_node.is_alias():
+                        continue
                     new_edges.append((srcsrc, dst))
             for i in reversed(removed_indices):
                 self.edges.pop(i)
-            if new_edges:
+            if new_edges and (set(new_edges) - set(prev_new_edges)):
                 self.edges = list(set(self.edges) | set(new_edges))
+                prev_new_edges = new_edges.copy()
             else:
                 break
 
@@ -909,6 +967,7 @@ class MemRefGraphBuilder(IRVisitor):
                 memsym = ir.sym
                 self.mrg.add_node(MemParamNode(memsym, self.scope))
                 memnode = self.mrg.node(memsym)
+                memnode.set_switch()
                 elm_t = ir.sym.typ.get_element()
                 if ir.sym.typ.is_list():
                     mem_t = Type.list(elm_t, memnode)
@@ -980,6 +1039,7 @@ class MemRefGraphBuilder(IRVisitor):
                 self._append_edge(ir.src.sym, memsym)
                 if not ir.src.sym.is_param():
                     memnode.set_alias()
+                    memnode.set_switch()
             elif ir.src.is_a(ARRAY):
                 self._append_edge(ir.src.sym, memsym)
             elif ir.src.is_a(CONDOP):
@@ -1021,6 +1081,8 @@ class MemRefGraphBuilder(IRVisitor):
 
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
+        memnode = self.mrg.node(ir.var.sym)
+        memnode.set_switch()
 
 
 class MemInstanceGraphBuilder(object):

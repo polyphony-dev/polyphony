@@ -321,19 +321,21 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             elif sym.typ.is_list():
                 memnode = sym.typ.get_memnode()
                 if memnode.can_be_reg():
-                    inf = RegArrayReadInterface(memnode.name(),
+                    sig = self.hdlmodule.gen_sig(memnode.name(), memnode.data_width(), sym=memnode.sym)
+                    inf = RegArrayReadInterface(sig, memnode.name(),
                                                 self.hdlmodule.name,
                                                 memnode.data_width(),
                                                 memnode.length)
                     self.hdlmodule.add_interface(inf.if_name, inf)
-                    inf = RegArrayWriteInterface('out_{}'.format(copy.name),
+                    inf = RegArrayWriteInterface(sig, 'out_{}'.format(copy.name),
                                                  self.hdlmodule.name,
                                                  memnode.data_width(),
                                                  memnode.length)
                     self.hdlmodule.add_interface(inf.if_name, inf)
                     continue
                 else:
-                    inf = RAMBridgeInterface(memnode.name(),
+                    sig = self.hdlmodule.gen_sig(memnode.name(), memnode.data_width(), sym=memnode.sym)
+                    inf = RAMBridgeInterface(sig, memnode.name(),
                                              self.hdlmodule.name,
                                              memnode.data_width(),
                                              memnode.addr_width())

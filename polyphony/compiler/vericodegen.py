@@ -547,11 +547,18 @@ class VerilogCodeGen(AHDLVisitor):
         for p in n2o.preds:
             assert isinstance(p, One2NMemNode)
 
-        preds = [p for p in n2o.preds if self.hdlmodule.scope is p.scope]
+        preds = []
+        orig_preds = []
+        for p, op in zip(n2o.preds, n2o.orig_preds):
+            if self.hdlmodule.scope is p.scope:
+                preds.append(p)
+                orig_preds.append(op)
+            elif p.scope.is_worker() and self.hdlmodule.scope.is_subclassof(p.scope.parent):
+                preds.append(p)
+                orig_preds.append(op)
         width = len(preds)
         if width < 2:
             return
-        orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope is p.scope]
         orig_preds = sorted(orig_preds)
         if prefix:
             cs_name = '{}_{}_cs'.format(prefix, dst_node.name())
@@ -561,6 +568,7 @@ class VerilogCodeGen(AHDLVisitor):
         if not cs:
             cs = self.hdlmodule.gen_sig(cs_name, width, {'reg'})
             self.hdlmodule.add_internal_reg(cs)
+        assert cs.is_reg() and not cs.is_net()
         if isinstance(src_node.preds[0], One2NMemNode):
             assert src_node in n2o.orig_preds
             idx = orig_preds.index(src_node)
@@ -572,7 +580,10 @@ class VerilogCodeGen(AHDLVisitor):
             if prefix:
                 srccs = self.hdlmodule.gen_sig('{}_{}_cs'.format(prefix, srccs_name), width, {'reg'})
             else:
-                srccs = self.hdlmodule.gen_sig('{}_cs'.format(srccs_name), width)
+                srccs_name = '{}_cs'.format(srccs_name)
+                srccs = self.hdlmodule.signal(srccs_name)
+                assert srccs
+                #srccs = self.hdlmodule.gen_sig('{}_cs'.format(srccs_name), width)
             self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
                                  AHDL_VAR(srccs, Ctx.LOAD)))
 
@@ -583,14 +594,20 @@ class VerilogCodeGen(AHDLVisitor):
         conds = ahdl.args[3]
         n2o = dst.memnode.pred_branch()
         assert isinstance(n2o, N2OneMemNode)
-        for p in n2o.preds:
-            assert isinstance(p, One2NMemNode)
 
-        preds = [p for p in n2o.preds if self.hdlmodule.scope is p.scope]
+        preds = []
+        orig_preds = []
+        for p, op in zip(n2o.preds, n2o.orig_preds):
+            if self.hdlmodule.scope is p.scope:
+                preds.append(p)
+                orig_preds.append(op)
+            elif p.scope.is_worker() and self.hdlmodule.scope.is_subclassof(p.scope.parent):
+                preds.append(p)
+                orig_preds.append(op)
         width = len(preds)
         if width < 2:
             return
-        orig_preds = [p for p in n2o.orig_preds if self.hdlmodule.scope is p.scope]
+        orig_preds = sorted(orig_preds)
         if prefix:
             cs_name = '{}_{}_cs'.format(prefix, dst.memnode.name())
         else:
@@ -599,9 +616,7 @@ class VerilogCodeGen(AHDLVisitor):
         if not cs:
             cs = self.hdlmodule.gen_sig(cs_name, width, {'net'})
             self.hdlmodule.add_internal_net(cs)
-        else:
-            cs.del_tag('reg')
-            cs.add_tag('net')
+        assert cs.is_net() and not cs.is_reg()
         args = []
         for src in srcs:
             if isinstance(src.memnode.preds[0], One2NMemNode):
@@ -624,8 +639,7 @@ class VerilogCodeGen(AHDLVisitor):
             pass
         else:
             rexp = AHDL_IF_EXP(cond, rexp,
-                               AHDL_VAR(cs, Ctx.LOAD))
-                               #AHDL_SYMBOL("'bz"))
+                               AHDL_SYMBOL("{}'b0".format(width)))
         for arg, p in arg_p[-2::-1]:
             lexp = arg
             if_exp = AHDL_IF_EXP(p, lexp, rexp)

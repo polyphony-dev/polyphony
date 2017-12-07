@@ -557,8 +557,9 @@ class RAMModuleAccessor(IOAccessor):
 
 
 class RAMBridgeInterface(Interface):
-    def __init__(self, name, owner_name, data_width, addr_width):
+    def __init__(self, signal, name, owner_name, data_width, addr_width):
         super().__init__(name, owner_name)
+        self.signal = signal
         self.data_width = data_width
         self.addr_width = addr_width
         self.ports.append(Port('addr', addr_width, 'in', True))
@@ -783,8 +784,9 @@ class TupleAccessor(IOAccessor):
 
 
 class RegArrayInterface(Interface):
-    def __init__(self, name, owner_name, data_width, length, direction, subscript):
+    def __init__(self, signal, name, owner_name, data_width, length, direction, subscript):
         super().__init__(name, owner_name)
+        self.signal = signal
         self.data_width = data_width
         self.length = length
         self.subscript = subscript
@@ -812,13 +814,13 @@ class RegArrayInterface(Interface):
 
 
 class RegArrayReadInterface(RegArrayInterface):
-    def __init__(self, name, owner_name, data_width, length, subscript=False):
-        super().__init__(name, owner_name, data_width, length, 'in', subscript)
+    def __init__(self, signal, name, owner_name, data_width, length, subscript=False):
+        super().__init__(signal, name, owner_name, data_width, length, 'in', subscript)
 
 
 class RegArrayWriteInterface(RegArrayInterface, WriteInterface):
-    def __init__(self, name, owner_name, data_width, length, subscript=False):
-        super().__init__(name, owner_name, data_width, length, 'out', subscript)
+    def __init__(self, signal, name, owner_name, data_width, length, subscript=False):
+        super().__init__(signal, name, owner_name, data_width, length, 'out', subscript)
 
 
 class RegArrayAccessor(IOAccessor):

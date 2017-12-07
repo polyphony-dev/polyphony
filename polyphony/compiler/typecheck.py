@@ -372,11 +372,6 @@ class TypePropagation(IRVisitor):
                 if receiver.typ.is_object():
                     sym = receiver.typ.get_scope().find_sym(ir.dst.symbol().name)
                     self._set_type(sym, src_typ)
-            if ir.src.is_a(ARRAY):
-                if dst_typ.has_element():
-                    elem_t = dst_typ.get_element()
-                    # we have to propagate backward
-                    self._set_type(ir.src.sym, dst_typ)
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet

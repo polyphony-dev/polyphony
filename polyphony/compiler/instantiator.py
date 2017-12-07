@@ -327,8 +327,9 @@ class MemnodeReplacer(IRVisitor):
     def _replace_typ_memnode(self, typ):
         if typ.is_seq() and typ not in self.replaced:
             memnode = typ.get_memnode()
-            new_memnode = self.node_map[memnode]
-            typ.set_memnode(new_memnode)
+            if memnode in self.node_map: # TODO: to be always true
+                new_memnode = self.node_map[memnode]
+                typ.set_memnode(new_memnode)
             self.replaced.add(typ)
 
     def visit_TEMP(self, ir):
