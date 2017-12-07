@@ -491,6 +491,12 @@ class AHDL_META(AHDL_STM):
         self.args = list(args[1:])
 
     def __str__(self):
+        if self.metaid == 'MEM_SWITCH':
+            return '{}({}, {} <= {})'.format(self.metaid, self.args[0], self.args[1].name(), self.args[2].name())
+        elif self.metaid == 'MEM_MUX':
+            _, dst, srcs, conds = self.args
+            items = ['{}?{}'.format(c, s) for c, s in zip(conds, srcs)]
+            return '{}({} = {})'.format(self.metaid, dst, ', '.join(items))
         return '{}({})'.format(self.metaid, ', '.join([str(arg) for arg in self.args]))
 
     def __repr__(self):
@@ -507,7 +513,13 @@ class AHDL_META_WAIT(AHDL_STM):
         self.transition = None
 
     def __str__(self):
-        s = '{}({})'.format(self.metaid, ', '.join([str(arg) for arg in self.args]))
+        items = []
+        for arg in self.args:
+            if isinstance(arg, (list, tuple)):
+                items.append(', '.join([str(a) for a in arg]))
+            else:
+                items.append(str(arg))
+        s = '{}({})'.format(self.metaid, ', '.join(items))
         if self.codes:
             s += '\n'
             s += '\n'.join(['  {}'.format(code) for code in self.codes])
