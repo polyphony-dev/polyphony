@@ -640,8 +640,6 @@ class MemRefGraph(object):
 
     def collect_readonly_sink(self, scope):
         nodes = list(self.scope_nodes(scope))
-        top_nodes = list(self.scope_nodes(Scope.global_scope()))
-        nodes.extend(top_nodes)
         for node in nodes:
             if isinstance(node, MemRefNode) and not node.is_writable() and node.is_sink():
                 yield node
