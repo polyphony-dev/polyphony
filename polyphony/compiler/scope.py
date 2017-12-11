@@ -86,29 +86,25 @@ class Scope(Tagged):
     @classmethod
     def reorder_scopes(cls):
         # hierarchical order
-        def set_h_order(scope, order, orders):
-            if scope not in orders or order > orders[scope][0]:
-                orders[scope] = (order, -1)
+        def set_h_order(scope, order):
+            if order > scope.order[0]:
+                scope.order = (order, -1)
             else:
                 return
             order += 1
             for s in scope.children:
-                set_h_order(s, order, orders)
+                set_h_order(s, order)
 
-        orders = {}
-
-        top = cls.global_scope()
-        orders[top] = (0, 0)
-        for f in top.children:
-            set_h_order(f, 1, orders)
+        for s in env.scopes.values():
+            if s.is_namespace():
+                s.order = (0, 0)
+                for f in s.children:
+                    set_h_order(f, 1)
         if env.depend_graph:
-            for s in orders:
-                nodes = env.depend_graph.bfs_ordered_nodes()
-                if s in nodes:
-                    d_order = nodes.index(s)
-                    orders[s] = (orders[s][0], d_order)
-        for s, (h, d) in orders.items():
-            s.order = (h, d)
+            nodes = env.depend_graph.bfs_ordered_nodes()
+            for s in nodes:
+                d_order = nodes.index(s)
+                s.order = (s.order[0], d_order)
 
     @classmethod
     def get_class_scopes(cls, bottom_up=True):

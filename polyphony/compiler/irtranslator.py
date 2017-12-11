@@ -1097,7 +1097,7 @@ class CodeVisitor(ast.NodeVisitor):
             if not func_scope:
                 if func.symbol().name in dir(python_builtins):
                     raise NameError("The name \'{}\' is reserved as the name of the built-in function.".
-                                    format(node.id))
+                                    format(node.func.id))
             else:
                 if func.symbol().name in builtin_symbols:
                     return SYSCALL(builtin_symbols[func.symbol().name], args, kwargs)

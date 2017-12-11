@@ -115,6 +115,8 @@ def scopegraph(driver):
     uncalled_scopes = CallGraphBuilder().process_all()
     unused_scopes = DependencyGraphBuilder().process_all()
     for s in unused_scopes:
+        if s.is_namespace():
+            continue
         driver.remove_scope(s)
         Scope.destroy(s)
 
