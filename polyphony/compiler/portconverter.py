@@ -102,7 +102,7 @@ class PortConverter(IRTransformer):
             typeprop.process(ctor)
             for w, args in m.workers:
                 typeprop.process(w)
-            for caller in env.call_graph.preds(m):
+            for caller in env.depend_graph.preds(m):
                 if caller.is_namespace():
                     continue
                 typeprop.process(caller)
@@ -111,14 +111,14 @@ class PortConverter(IRTransformer):
             self.process(ctor)
             for w, args in m.workers:
                 self.process(w)
-            for caller in env.call_graph.preds(m):
+            for caller in env.depend_graph.preds(m):
                 if caller.is_namespace():
                     continue
                 self.process(caller)
 
             for field in m.class_fields().values():
                 if field.typ.is_port() and field.typ.get_direction() == '?':
-                    if not env.call_graph.preds(m):
+                    if not env.depend_graph.preds(m):
                         continue
                     assert ctor.usedef
                     stm = ctor.usedef.get_stms_defining(field).pop()

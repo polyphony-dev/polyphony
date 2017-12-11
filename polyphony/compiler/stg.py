@@ -1347,7 +1347,6 @@ class AHDLTranslator(object):
 
     def _emit_call_sequence(self, ahdl_call, dst, node, sched_time):
         assert ahdl_call.is_a(AHDL_MODULECALL)
-        ahdl_call.returns = []
         for arg in ahdl_call.args:
             if arg.is_a(AHDL_MEMVAR) and arg.memnode.can_be_reg():
                 ahdl_call.returns.append(arg)

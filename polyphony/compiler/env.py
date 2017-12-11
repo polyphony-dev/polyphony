@@ -36,6 +36,7 @@ class Env(object):
 
     def __init__(self):
         self.call_graph = None
+        self.depend_graph = None
         self.scopes = {}
         self.all_scopes = {}
         self.compile_phase = 0

@@ -429,6 +429,7 @@ class AHDL_MODULECALL(AHDL_STM):
         self.args = args
         self.instance_name = instance_name
         self.prefix = prefix
+        self.returns = []
 
     def __str__(self):
         return '{}({})'.format(self.instance_name, ', '.join([str(arg) for arg in self.args]))

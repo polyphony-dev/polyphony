@@ -4,7 +4,6 @@ import sys
 from .ahdlusedef import AHDLUseDefDetector
 from .bitwidth import BitwidthReducer
 from .builtin import builtin_symbols
-from .callgraph import CallGraphBuilder
 from .cfgopt import BlockReducer, PathExpTracer
 from .cfgopt import HyperBlockBuilder
 from .common import read_source
@@ -46,6 +45,8 @@ from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
 from .scheduler import Scheduler
 from .scope import Scope
+from .scopegraph import CallGraphBuilder
+from .scopegraph import DependencyGraphBuilder
 from .selectorbuilder import SelectorBuilder
 from .setlineno import LineNumberSetter, SourceDump
 from .specfunc import SpecializedFunctionMaker
@@ -110,8 +111,9 @@ def preprocess_global(driver):
         src_dump.process(s)
 
 
-def callgraph(driver):
-    unused_scopes = CallGraphBuilder().process_all()
+def scopegraph(driver):
+    uncalled_scopes = CallGraphBuilder().process_all()
+    unused_scopes = DependencyGraphBuilder().process_all()
     for s in unused_scopes:
         driver.remove_scope(s)
         Scope.destroy(s)
@@ -303,7 +305,7 @@ def instantiate(driver):
             execpure(driver, worker)
         constopt(driver, worker)
         checkcfg(driver, worker)
-    callgraph(driver)
+    scopegraph(driver)
     detectrom(driver)
 
 
@@ -315,8 +317,8 @@ def specfunc(driver):
 
 
 def inlineopt(driver):
-    InlineOpt().process_all()
-    callgraph(driver)
+    InlineOpt().process_all(driver)
+    scopegraph(driver)
 
 
 def setsynthparams(driver, scope):
@@ -575,7 +577,7 @@ def compile_plan():
         typeprop,
         dbg(dumpscope),
         latequadruple,
-        callgraph,
+        scopegraph,
         earlyrestrictioncheck,
         typecheck,
         flattenport,

@@ -85,24 +85,30 @@ class Scope(Tagged):
 
     @classmethod
     def reorder_scopes(cls):
-        def set_order(scope, order, ordered):
-            if order > scope.order:
-                scope.order = order
-                ordered.add(scope)
-            elif scope in ordered:
+        # hierarchical order
+        def set_h_order(scope, order, orders):
+            if scope not in orders or order > orders[scope][0]:
+                orders[scope] = (order, -1)
+            else:
                 return
             order += 1
             for s in scope.children:
-                set_order(s, order, ordered)
-            if env.call_graph:
-                for s in env.call_graph.succs(scope):
-                    if s not in ordered:
-                        set_order(s, order, ordered)
+                set_h_order(s, order, orders)
+
+        orders = {}
+
         top = cls.global_scope()
-        top.order = 0
-        ordered = set()
+        orders[top] = (0, 0)
         for f in top.children:
-            set_order(f, 1, ordered)
+            set_h_order(f, 1, orders)
+        if env.depend_graph:
+            for s in orders:
+                nodes = env.depend_graph.bfs_ordered_nodes()
+                if s in nodes:
+                    d_order = nodes.index(s)
+                    orders[s] = (orders[s][0], d_order)
+        for s, (h, d) in orders.items():
+            s.order = (h, d)
 
     @classmethod
     def get_class_scopes(cls, bottom_up=True):
@@ -140,7 +146,7 @@ class Scope(Tagged):
         self.loop_tree = LoopNestTree()
         self.callee_instances = defaultdict(set)
         #self.stgs = []
-        self.order = -1
+        self.order = (-1, -1)
         self.block_count = 0
         self.workers = []
         self.worker_owner = None
@@ -186,7 +192,12 @@ class Scope(Tagged):
         return self.name
 
     def __lt__(self, other):
-        return (self.order, self.lineno) < (other.order, other.lineno)
+        if self.order < other.order:
+            return True
+        elif self.order > other.order:
+            return False
+        elif self.order == other.order:
+            return self.lineno < other.lineno
 
     def clone_symbols(self, scope, postfix=''):
         symbol_map = {}

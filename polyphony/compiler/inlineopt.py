@@ -17,10 +17,11 @@ class InlineOpt(object):
     def __init__(self):
         pass
 
-    def process_all(self):
+    def process_all(self, driver):
         self.dones = set()
         self.inline_counts = defaultdict(int)
-        for scope in env.call_graph.bfs_ordered_nodes():
+        scopes = driver.get_scopes()
+        for scope in scopes:
             if scope not in self.dones:
                 self._process_scope(scope)
 
@@ -550,7 +551,9 @@ class ObjectHierarchyCopier(object):
         pass
 
     def _is_inlining_object(self, ir):
-        return (ir.is_a([TEMP, ATTR]) and ir.symbol().typ.is_object() and
+        return (ir.is_a([TEMP, ATTR]) and
+                not ir.symbol().is_param() and
+                ir.symbol().typ.is_object() and
                 not ir.symbol().typ.get_scope().is_module())
 
     def _is_object_copy(self, mov):
