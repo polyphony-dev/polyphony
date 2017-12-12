@@ -683,12 +683,17 @@ class StaticConstOpt(ConstantOptBase):
                                    with_class=True,
                                    with_lib=False)
         stms = []
+        dtrees = {}
         for s in scopes:
             stms.extend(self.collect_stms(s))
+            Block.set_order(s.entry_block, 0)
+            dtree = DominatorTreeBuilder(s).process()
+            dtrees[s] = dtree
         stms = sorted(stms, key=lambda s: s.lineno)
         for stm in stms:
             self.current_stm = stm
             self.scope = stm.block.scope
+            self.dtree = dtrees[stm.block.scope]
             self.visit(stm)
         for sym, c in self.constant_table.items():
             sym.scope.constants[sym] = c
