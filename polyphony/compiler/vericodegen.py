@@ -471,21 +471,20 @@ class VerilogCodeGen(AHDLVisitor):
             self.emit('$write({});'.format(', '.join(args)))
         elif ahdl.name == '!hdl_assert':
             #expand condtion expression for the assert message
-            exp = args[0]
-            if exp.startswith('cond'):
-                remove_assign = []
+            exp = ahdl.args[0]
+            exp_str = args[0]
+            if exp.is_a(AHDL_VAR) and exp.sig.is_condition():
                 for tag, assign in self.hdlmodule.get_static_assignment():
-                    if assign.dst.is_a(AHDL_VAR) and assign.dst.sig.name == exp:
-                        remove_assign.append((tag, assign))
-                        expsig = self.hdlmodule.gen_sig(exp, 1)
-                        self.hdlmodule.remove_internal_net(expsig)
-                        exp = self.visit(assign.src)
-                for tag, assign in remove_assign:
-                    self.hdlmodule.remove_decl(tag, assign)
-            exp = exp.replace('==', '===').replace('!=', '!==')
-            code = 'if (!{}) begin'.format(exp)
+                    if assign.dst.is_a(AHDL_VAR) and assign.dst.sig == exp.sig:
+                        remove_assign = (tag, assign)
+                        self.hdlmodule.remove_internal_net(exp.sig)
+                        exp_str = self.visit(assign.src)
+                        self.hdlmodule.remove_decl(*remove_assign)
+                        break
+            exp_str = exp_str.replace('==', '===').replace('!=', '!==')
+            code = 'if (!{}) begin'.format(exp_str)
             self.emit(code)
-            code = '  $display("ASSERTION FAILED {}"); $finish;'.format(exp)
+            code = '  $display("ASSERTION FAILED {}"); $finish;'.format(exp_str)
             self.emit(code)
             self.emit('end')
         else:
