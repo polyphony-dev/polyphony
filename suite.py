@@ -26,6 +26,7 @@ DIRS = (
     'import',
     'io',
     'module',
+    'unroll',
     'pure',
 )
 
@@ -37,7 +38,6 @@ FILES = (
     TEST_DIR + '/apps/minivm.py',
     TEST_DIR + '/apps/minivm2.py',
     TEST_DIR + '/apps/odd_even_sort.py',
-    TEST_DIR + '/apps/pipe.py',
     TEST_DIR + '/apps/shellsort.py',
     TEST_DIR + '/apps/stack.py',
     TEST_DIR + '/chstone/mips/mips.py',
