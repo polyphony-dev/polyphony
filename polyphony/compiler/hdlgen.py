@@ -233,7 +233,8 @@ class HDLModuleBuilder(object):
             else:
                 self.hdlmodule.add_internal_net(sig)
 
-    def _add_reset_stms(self, fsm_name, defs, uses, outputs):
+    def _add_reset_stms(self, fsm, defs, uses, outputs):
+        fsm_name = fsm.name
         for acc in self.hdlmodule.accessors.values():
             if acc.inf.signal and acc.inf.signal.is_adaptered():
                 continue
@@ -275,8 +276,9 @@ class HDLModuleBuilder(object):
         for acc in accs:
             # reset local (SinglePort)RAM ports
             if acc.inf.signal.is_memif():
-                for stm in acc.reset_stms():
-                    self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
+                if acc.inf.signal.sym.scope is fsm.scope:
+                    for stm in acc.reset_stms():
+                        self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
 
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
@@ -309,7 +311,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
 
         self._add_submodules(scope)
         self._add_roms(scope)
-        self._add_reset_stms(fsm.name, defs, uses, outputs)
+        self._add_reset_stms(fsm, defs, uses, outputs)
 
     def _add_input_interfaces(self, scope):
         if scope.is_method():
@@ -414,7 +416,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                 self.hdlmodule.add_sub_module(inf_acc.acc_name, acc_mod, connections, acc_mod.param_map)
 
         self._add_roms(scope)
-        self._add_reset_stms(fsm.name, defs, uses, outputs)
+        self._add_reset_stms(fsm, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(fsm)
         for sig, old, new in edge_detectors:
             self.hdlmodule.add_edge_detector(sig, old, new)
@@ -459,7 +461,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
 
         self._add_roms(scope)
-        self._add_reset_stms(fsm.name, defs, uses, outputs)
+        self._add_reset_stms(fsm, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(fsm)
         for sig, old, new in edge_detectors:
             self.hdlmodule.add_edge_detector(sig, old, new)
