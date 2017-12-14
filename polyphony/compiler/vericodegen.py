@@ -776,7 +776,7 @@ class VerilogCodeGen(AHDLVisitor):
                                                                      input.name)
                 else:
                     if ahdl.defval is None:
-                        defval = '{}\'bz'.format(input.width)
+                        defval = output_name
                     else:
                         defval = ahdl.defval
                     term = indent + '1\'b1 == {}[{}] ? {}:{};'.format(ahdl.selector.sig.name,
@@ -792,13 +792,11 @@ class VerilogCodeGen(AHDLVisitor):
         if len(ahdl.outputs) > 1:
             if isinstance(ahdl.input, Signal):
                 input_name = ahdl.input.name
-                input_width = ahdl.input.width
             elif isinstance(ahdl.input, int):
                 input_name = ahdl.input
-                input_width = ahdl.width
             for i, output in enumerate(ahdl.outputs):
                 if ahdl.defval is None:
-                    defval = '{}\'bz'.format(input_width)
+                    defval = output.name
                 else:
                     defval = ahdl.defval
                 self.emit('assign {} = 1\'b1 == {}[{}] ? {}:{};'
