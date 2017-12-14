@@ -1042,11 +1042,26 @@ class AHDLTranslator(object):
         else:
             return AHDL_CONST(ir.value)
 
+    def _make_rom_cs(self, memnode):
+        cs_name = memnode.name() + '_cs'
+        cs_width = len(memnode.pred_ref_nodes())
+        if memnode.is_switch():
+            cs_sig = self.hdlmodule.gen_sig(cs_name, cs_width, {'reg'})
+            self.hdlmodule.add_internal_reg(cs_sig)
+        else:
+            cs_sig = self.hdlmodule.gen_sig(cs_name, cs_width, {'net'})
+            self.hdlmodule.add_internal_net(cs_sig)
+        return AHDL_VAR(cs_sig, Ctx.LOAD)
+
     def visit_MREF(self, ir, node):
         offset = self.visit(ir.offset, node)
         memvar = self.visit(ir.mem, node)
         if not memvar.memnode.is_writable():
-            return AHDL_FUNCALL(AHDL_SYMBOL(memvar.name()), [offset])
+            if memvar.memnode.single_source():
+                return AHDL_FUNCALL(AHDL_SYMBOL(memvar.name()), [offset])
+            else:
+                cs = self._make_rom_cs(memvar.memnode)
+                return AHDL_FUNCALL(AHDL_SYMBOL(memvar.name()), [offset, cs])
         elif memvar.memnode.is_immutable():
             return AHDL_SUBSCRIPT(memvar, offset)
         elif memvar.memnode.can_be_reg():

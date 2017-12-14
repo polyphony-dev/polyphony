@@ -90,6 +90,8 @@ def _get_latency(tag):
             if tag.src.is_a(ARRAY):
                 if memnode.can_be_reg():
                     return 1
+                elif not memnode.is_writable():
+                    return 0
                 else:
                     return UNIT_STEP * len(tag.src.items * tag.src.repeat.value)
             if tag.src.is_a(TEMP) and tag.src.symbol().typ.is_seq():  #is_param():

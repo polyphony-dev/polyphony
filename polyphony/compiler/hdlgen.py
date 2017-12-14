@@ -87,7 +87,7 @@ class HDLModuleBuilder(object):
             self.hdlmodule.add_sub_module(inst_name, sub_hdlmodule, connections, param_map=param_map)
 
     def _add_external_accessor_for_submodule(self, sub_module_inf, acc):
-        if acc.acc_name not in self.hdlmodule.signals:
+        if not isinstance(acc, CallAccessor) and acc.acc_name not in self.hdlmodule.signals:
             # we have never accessed this interface
             return
         self.hdlmodule.add_accessor(acc.acc_name, acc)
@@ -133,7 +133,13 @@ class HDLModuleBuilder(object):
                     connect = AHDL_CONNECT(fname, AHDL_CONST(item.value))
                     case_items.append(AHDL_CASE_ITEM(i, connect))
                 case = AHDL_CASE(input, case_items)
+                rom_func = AHDL_FUNCTION(fname, [input], [case])
             else:
+                cs_name = hdl_name + '_cs'
+                cs_sig = self.hdlmodule.signal(cs_name)
+                assert cs_sig
+                cs = AHDL_VAR(cs_sig, Ctx.LOAD)
+
                 case_items = []
                 n2o = memnode.pred_branch()
                 for i, pred in enumerate(n2o.orig_preds):
@@ -143,12 +149,10 @@ class HDLModuleBuilder(object):
                     rom_func_name = pred.sym.hdl_name()
                     call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])
                     connect = AHDL_CONNECT(fname, call)
-                    case_val = '{}_cs[{}]'.format(hdl_name, i)
+                    case_val = '{}[{}]'.format(cs_name, i)
                     case_items.append(AHDL_CASE_ITEM(case_val, connect))
-                rom_sel_sig = self.hdlmodule.gen_sig(hdl_name + '_cs', len(memnode.pred_ref_nodes()))
                 case = AHDL_CASE(AHDL_SYMBOL('1\'b1'), case_items)
-                self.hdlmodule.add_internal_net(rom_sel_sig)
-            rom_func = AHDL_FUNCTION(fname, [input], [case])
+                rom_func = AHDL_FUNCTION(fname, [input, cs], [case])
             self.hdlmodule.add_function(rom_func)
 
     def _collect_vars(self, fsm):
