@@ -223,8 +223,6 @@ class Scope(Tagged):
                 stm.false = block_map[stm.false]
             elif stm.is_a(MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
-            elif stm.is_a(PHIBase):
-                stm.defblks = [block_map[blk] for blk in stm.defblks if blk in block_map]
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None):

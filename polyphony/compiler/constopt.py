@@ -376,7 +376,6 @@ class ConstantOpt(ConstantOptBase):
                             idx = stm.ps.index(p)
                             stm.ps.pop(idx)
                             stm.args.pop(idx)
-                            stm.defblks.pop(idx)
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.block
@@ -516,7 +515,7 @@ class ConstantOpt(ConstantOptBase):
         super().visit_PHI(ir)
         if not ir.block.is_hyperblock and len(ir.block.preds) != len(ir.args):
             remove_args = []
-            for arg, blk in zip(ir.args, ir.defblks):
+            for arg, blk in zip(ir.args, ir.block.preds):
                 if blk and blk is not self.scope.entry_block and not blk.preds:
                     remove_args.append(arg)
             for arg in remove_args:

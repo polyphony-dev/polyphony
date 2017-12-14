@@ -825,25 +825,17 @@ class PHIBase(IRStm):
         self.var = var
         self.var.ctx = Ctx.STORE
         self.args = []
-        self.defblks = []
         self.ps = []
 
     def _str_args(self, with_p=True):
         str_args = []
         if self.ps and with_p:
             #assert len(self.ps) == len(self.args)
-            if self.defblks:
-                for arg, p, blk in zip(self.args, self.ps, self.defblks):
-                    if arg:
-                        str_args.append('{} ? {}({})'.format(p, arg, blk.name))
-                    else:
-                        str_args.append('_')
-            else:
-                for arg, p in zip(self.args, self.ps):
-                    if arg:
-                        str_args.append('{} ? {}'.format(p, arg))
-                    else:
-                        str_args.append('_')
+            for arg, p in zip(self.args, self.ps):
+                if arg:
+                    str_args.append('{} ? {}'.format(p, arg))
+                else:
+                    str_args.append('_')
         else:
             for arg in self.args:
                 if arg:
@@ -872,18 +864,14 @@ class PHIBase(IRStm):
             assert len(self.args) == len(self.ps)
             self.ps.pop(idx)
         self.args.pop(idx)
-        self.defblks.pop(idx)
 
     def reorder_args(self, indices):
-        defblks = []
         args = []
         ps = []
         for idx in indices:
             assert 0 <= idx < len(self.args)
-            defblks.append(self.defblks[idx])
             args.append(self.args[idx])
             ps.append(self.ps[idx])
-        self.defblks = defblks
         self.args = args
         self.ps = ps
 
@@ -925,10 +913,7 @@ class LPHI(PHIBase):
     def from_phi(cls, phi):
         lphi = LPHI(phi.var.clone())
         lphi.args = phi.args[:]
-        lphi.defblks = phi.defblks[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
         lphi.lineno = phi.lineno
         return lphi
-
-

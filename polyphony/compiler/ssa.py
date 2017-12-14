@@ -84,7 +84,6 @@ class SSATransformerBase(object):
         phi = PHI(var)
         phi.block = df
         phi.args = [None] * len(df.preds)
-        phi.defblks = [None] * len(df.preds)
         phi.lineno = 1
         var.lineno = 1
         return phi
@@ -171,14 +170,12 @@ class SSATransformerBase(object):
                 if 1 == phi.block.preds.count(block):
                     idx = phi.block.preds.index(block)
                     phi.args[idx] = var
-                    phi.defblks[idx] = block
                     self._add_new_sym(var, i)
                 else:
                     for idx, pred in enumerate(phi.block.preds):
                         if pred is not block:
                             continue
                         phi.args[idx] = var
-                        phi.defblks[idx] = block
                         self._add_new_sym(var, i)
         else:
             self._add_new_sym(var, i)

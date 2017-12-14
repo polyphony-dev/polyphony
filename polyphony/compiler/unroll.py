@@ -146,7 +146,6 @@ class LoopUnroller(object):
                     arg = TEMP(new_sym, Ctx.LOAD)
                     arg.lineno = lphi.args[0].lineno
                     lphi.args[0] = arg
-                    lphi.defblks[0] = remain_start_blk
                 remain_start_blk.append_stm(EXPR(CONST(0)))  # guard from reduceblk
                 remain_start_blk.append_stm(JUMP(loop.head))
                 remain_start_blk.succs = [loop.head]
@@ -247,9 +246,6 @@ class LoopUnroller(object):
         assert jmp.is_a(JUMP)
         assert jmp.typ == 'L'
         jmp.target = unroll_head
-
-        for lphi in lphis:
-            lphi.defblks = [loop_pred, last_blk]
 
     def _make_full_unroll_head(self, loop, new_ivs):
         unroll_head, stm_map = self._clone_block(loop.head, 'unroll_head')

@@ -75,7 +75,6 @@ class BlockReducer(object):
                 for succ in block.succs:
                     succ.replace_pred(block, pred)
                     succ.replace_pred_loop(block, pred)
-                    self._reconstruct_phi(succ, block, pred)
                 pred.succs = block.succs
                 pred.succs_loop = block.succs_loop
                 if block is scope.exit_block:
@@ -105,20 +104,12 @@ class BlockReducer(object):
                 idx += 1
                 pred.replace_succ(block, succ)
             if len(block.preds) == 1:
-                self._reconstruct_phi(succ, block, block.preds[0])
+                pass
             elif len(block.preds) > 1:
                 self._order_blocks(self.scope)
-                tree = DominatorTreeBuilder(self.scope).process()
-                dom = tree.get_parent_of(block.preds[0])
-                self._reconstruct_phi(succ, block, dom)
             logger.debug('remove empty block ' + block.name)
             return True
         return False
-
-    def _reconstruct_phi(self, blk, old_blk, new_blk):
-        phis = blk.collect_stms([PHI, LPHI])
-        for phi in phis:
-            replace_item(phi.defblks, old_blk, new_blk, True)
 
     def _remove_empty_blocks(self, scope):
         for block in scope.traverse_blocks():
@@ -340,19 +331,15 @@ class HyperBlockBuilder(object):
         for stm in tail.stms:
             if stm.is_a(PHIBase):
                 new_args = []
-                new_defblks = []
                 new_ps = []
                 old_args = []
-                old_defblks = []
                 old_ps = []
                 for idx in range(len(stm.args)):
                     if idx in indices:
                         new_args.append(stm.args[idx])
-                        new_defblks.append(stm.defblks[idx])
                         new_ps.append(stm.ps[idx])
                     elif stm.args[idx]:
                         old_args.append(stm.args[idx])
-                        old_defblks.append(stm.defblks[idx])
                         old_ps.append(stm.ps[idx])
                 if all([new_args[0].symbol() is arg.symbol() for arg in new_args[1:]]):
                     newsym = self.scope.add_temp()
@@ -364,7 +351,6 @@ class HyperBlockBuilder(object):
                 else:
                     new_phi = stm.clone()
                     new_phi.args = new_args
-                    new_phi.defblks = new_defblks
                     new_phi.ps = new_ps
                     newsym = self.scope.add_temp()
                     newsym.set_type(stm.var.symbol().typ)
@@ -377,9 +363,7 @@ class HyperBlockBuilder(object):
 
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
-                old_defblks.insert(first_idx, new_tail)
                 stm.args = old_args
-                stm.defblks = old_defblks
                 stm.ps = old_ps
 
         for br in removes:
@@ -482,6 +466,3 @@ class HyperBlockBuilder(object):
                     if stm not in unmoves:
                         blk.stms.remove(stm)
         head.is_hyperblock = True
-        for stm in tail.stms[:-1]:
-            if stm.is_a(PHIBase):
-                stm.defblks = [head] * len(stm.defblks)
