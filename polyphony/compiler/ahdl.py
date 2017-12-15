@@ -459,7 +459,6 @@ class AHDL_CALLEE_EPILOG(AHDL_STM):
 
 class AHDL_FUNCALL(AHDL_EXP):
     def __init__(self, name, args):
-        assert isinstance(name, AHDL_SYMBOL)
         super().__init__()
         self.name = name
         self.args = args

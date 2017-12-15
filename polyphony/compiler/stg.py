@@ -1058,10 +1058,10 @@ class AHDLTranslator(object):
         memvar = self.visit(ir.mem, node)
         if not memvar.memnode.is_writable():
             if memvar.memnode.single_source():
-                return AHDL_FUNCALL(AHDL_SYMBOL(memvar.name()), [offset])
+                return AHDL_FUNCALL(memvar, [offset])
             else:
                 cs = self._make_rom_cs(memvar.memnode)
-                return AHDL_FUNCALL(AHDL_SYMBOL(memvar.name()), [offset, cs])
+                return AHDL_FUNCALL(memvar, [offset, cs])
         elif memvar.memnode.is_immutable():
             return AHDL_SUBSCRIPT(memvar, offset)
         elif memvar.memnode.can_be_reg():
@@ -1174,7 +1174,10 @@ class AHDLTranslator(object):
         if sym.is_induction():
             tags.add('induction')
 
-        if self.scope.is_worker() or self.scope.is_method():
+        if sym.scope is not self.scope:
+            sig_name = sym.hdl_name()
+            print(sig_name)
+        elif self.scope.is_worker() or self.scope.is_method():
             sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'input' in tags:
             sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())

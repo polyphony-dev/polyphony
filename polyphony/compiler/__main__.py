@@ -114,11 +114,17 @@ def preprocess_global(driver):
 def scopegraph(driver):
     uncalled_scopes = CallGraphBuilder().process_all()
     unused_scopes = DependencyGraphBuilder().process_all()
-    for s in unused_scopes:
-        if s.is_namespace():
+    for s in uncalled_scopes:
+        if s.is_namespace() or s.is_class() or s.is_worker():
             continue
         driver.remove_scope(s)
         Scope.destroy(s)
+    for s in unused_scopes:
+        if s.is_namespace():
+            continue
+        if s.name in env.scopes:
+            driver.remove_scope(s)
+            Scope.destroy(s)
 
 
 def iftrans(driver, scope):

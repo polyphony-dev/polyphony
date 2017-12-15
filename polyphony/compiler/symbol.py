@@ -92,7 +92,7 @@ class Symbol(Tagged):
             assert False
         self.typ = typ
         if self.ancestor and not self.ancestor.typ.is_freezed():
-            self.ancestor.set_type(typ)
+            self.ancestor.set_type(typ.clone())
 
     def clone(self, scope, postfix=''):
         newsym = Symbol(self.name + postfix,

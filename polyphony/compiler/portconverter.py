@@ -50,10 +50,6 @@ class PortTypeProp(TypePropagation):
             ir.func_scope().return_type = port_typ
         return ir.func_scope().return_type
 
-    def _set_type(self, sym, typ):
-        if sym.typ.is_object() and sym.typ.get_scope().is_port() and typ.is_port():
-            sym.set_type(typ)
-
     def _normalize_direction(self, di):
         if di == 'in' or di == 'input' or di == 'i':
             return 'input'
@@ -87,6 +83,8 @@ class PortTypeProp(TypePropagation):
 class PortConverter(IRTransformer):
     def __init__(self):
         super().__init__()
+        self.writers = defaultdict(set)
+        self.readers = defaultdict(set)
 
     def process_all(self):
         scopes = Scope.get_scopes(with_class=True)
@@ -137,6 +135,7 @@ class PortConverter(IRTransformer):
 
     def _set_and_check_port_direction(self, expected_di, sym):
         port_typ = sym.typ
+        rootsym = port_typ.get_root_symbol()
         if not port_typ.has_direction():
             port_typ.set_direction('?')
         di = port_typ.get_direction()
@@ -162,26 +161,32 @@ class PortConverter(IRTransformer):
 
         if expected_di == 'output':
             # write-write conflict
-            if port_typ.has_writer():
-                writer = port_typ.get_writer()
+            if self.writers[rootsym]:
+                assert len(self.writers[rootsym]) == 1
+                writer = list(self.writers[rootsym])[0]
                 if writer is not self.scope and writer.worker_owner is self.scope.worker_owner:
                     fail(self.current_stm, Errors.WRITING_IS_CONFLICTED,
                          [sym.orig_name()])
             else:
                 if kind == 'internal':
                     assert self.scope.is_worker() or self.scope.parent.is_module()
-                port_typ.set_writer(self.scope)
+                self.writers[rootsym].add(self.scope)
         elif expected_di == 'input' and port_typ.get_scope().name.startswith('polyphony.io.Queue'):
             # read-read conflict
-            if port_typ.has_reader():
-                reader = port_typ.get_reader()
-                if reader is not self.scope and reader.worker_owner is self.scope.worker_owner:
-                    fail(self.current_stm, Errors.READING_IS_CONFLICTED,
-                         [sym.orig_name()])
+            if self.readers[rootsym]:
+                if all([s.is_testbench() for s in self.readers[rootsym]]):
+                    if self.scope.is_testbench():
+                        self.readers[rootsym].add(self.scope)
+                else:
+                    assert len(self.readers[rootsym]) == 1
+                    reader = list(self.readers[rootsym])[0]
+                    if reader is not self.scope and reader.worker_owner is self.scope.worker_owner:
+                        fail(self.current_stm, Errors.READING_IS_CONFLICTED,
+                             [sym.orig_name()])
             else:
                 if kind == 'internal':
                     assert self.scope.is_worker() or self.scope.parent.is_module()
-                port_typ.set_reader(self.scope)
+                self.readers[rootsym].add(self.scope)
 
     def _get_port_owner(self, sym):
         assert sym.typ.is_port()

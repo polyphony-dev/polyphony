@@ -157,7 +157,7 @@ class FunctionVisitor(ast.NodeVisitor):
             else:
                 param_t = Type.int()
             param_in.set_type(param_t)
-            param_copy.set_type(param_t)
+            param_copy.set_type(param_t.clone())
             if is_vararg:
                 param_t.set_vararg(True)
             return param_in, param_copy

@@ -94,7 +94,6 @@ class Scope(Tagged):
             order += 1
             for s in scope.children:
                 set_h_order(s, order)
-
         for s in env.scopes.values():
             if s.is_namespace():
                 s.order = (0, 0)
@@ -104,7 +103,15 @@ class Scope(Tagged):
             nodes = env.depend_graph.bfs_ordered_nodes()
             for s in nodes:
                 d_order = nodes.index(s)
-                s.order = (s.order[0], d_order)
+                preds = env.depend_graph.preds(s)
+                if preds:
+                    preds_max_order = max([nodes.index(p) for p in preds])
+                else:
+                    preds_max_order = 0
+                if d_order < preds_max_order:
+                    s.order = (s.order[0], d_order)
+                else:
+                    s.order = (s.order[0], preds_max_order + 1)
 
     @classmethod
     def get_class_scopes(cls, bottom_up=True):
@@ -427,7 +434,7 @@ class Scope(Tagged):
             new_sym = self.symbols[new_name]
         else:
             new_sym = self.add_sym(new_name, set(orig_sym.tags))
-            new_sym.typ = orig_sym.typ.clone()
+            new_sym.set_type(orig_sym.typ.clone())
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:

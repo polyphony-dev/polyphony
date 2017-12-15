@@ -445,7 +445,7 @@ class PureCtorBuilder(object):
                 klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.orig_name)
                 klass_scope_sym.set_type(Type.klass(klass_scope))
                 sym = module.add_sym(name)
-                sym.set_type(typ)
+                sym.set_type(typ.clone())
                 orig_obj = instance.__dict__[name]
                 calls = env.runtime_info.get_internal_calls(instance)
                 for cname, cself, cargs in calls:
@@ -557,7 +557,7 @@ class PureCtorBuilder(object):
         port_qualname = port.__module__ + '.' + port.__class__.__name__
         port_scope = env.scopes[port_qualname]
         port_scope_sym = port_scope.parent.gen_sym(port_scope.orig_name)
-        port_scope_sym.typ = Type.klass(port_scope)
+        port_scope_sym.set_type(Type.klass(port_scope))
         return NEW(port_scope_sym, args, kwargs={})
 
     def _port2ir(self, port_obj, instance, module, ctor):

@@ -37,7 +37,7 @@ class TypePropagation(IRVisitor):
                 s.return_type = Type.undef_t
             else:
                 ret = s.symbols[Symbol.return_prefix]
-                ret.typ = s.return_type
+                ret.set_type(s.return_type)
         prev_untyped = []
         while True:
             untyped = []
@@ -189,14 +189,14 @@ class TypePropagation(IRVisitor):
         arg_types = [self.visit(arg) for _, arg in ir.args]
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
-                self._set_type(param.sym, arg_types[i])
+                self._set_type(param.sym, arg_types[i].clone())
             elif param.sym.typ.is_generic():
                 new_scope = self._new_scope_with_type(ir.func_scope(), arg_types[i], i + 1)
                 if not new_scope:
                     raise RejectPropagation(ir)
                 ir.args.pop(i)
                 new_scope_sym = ir.sym.scope.gen_sym(new_scope.orig_name)
-                new_scope_sym.typ = Type.klass(new_scope)
+                new_scope_sym.set_type(Type.klass(new_scope))
                 ir.sym = new_scope_sym
                 self.new_scopes.add(new_scope)
                 return self.visit_NEW(ir)
@@ -217,7 +217,7 @@ class TypePropagation(IRVisitor):
 
     def visit_TEMP(self, ir):
         if ir.sym.typ.is_undef() and ir.sym.ancestor:
-            ir.sym.typ = ir.sym.ancestor.typ
+            ir.sym.set_type(ir.sym.ancestor.typ.clone())
         return ir.sym.typ
 
     def visit_ATTR(self, ir):
@@ -268,7 +268,11 @@ class TypePropagation(IRVisitor):
         elm_t = mem_t.get_element()
         if exp_t.is_scalar() and elm_t.is_scalar():
             if exp_t.get_width() > elm_t.get_width():
-                self._set_type(ir.mem.symbol(), Type.list(exp_t, None))
+                if ir.mem.symbol().typ.is_seq():
+                    memnode = ir.mem.symbol().typ.get_memnode()
+                else:
+                    memnode = None
+                self._set_type(ir.mem.symbol(), Type.list(exp_t, memnode))
         return mem_t
 
     def visit_ARRAY(self, ir):
@@ -288,10 +292,14 @@ class TypePropagation(IRVisitor):
                 item_t = item_typs[0]
         else:
             assert False  # TODO:
-        if ir.is_mutable:
-            t = Type.list(item_t, None)
+        if ir.sym.typ.is_seq():
+            memnode = ir.sym.typ.get_memnode()
         else:
-            t = Type.tuple(item_t, None, len(ir.items))
+            memnode = None
+        if ir.is_mutable:
+            t = Type.list(item_t, memnode)
+        else:
+            t = Type.tuple(item_t, memnode, len(ir.items))
         self._set_type(ir.sym, t)
         return t
 
@@ -321,8 +329,10 @@ class TypePropagation(IRVisitor):
         args = self._normalize_args(worker_scope.orig_name, params, args, {})
         arg_types = [self.visit(arg) for _, arg in args]
         for i, param in enumerate(params):
-            self._set_type(param.sym, arg_types[i])
-            self._set_type(param.copy, arg_types[i])
+            # we should not set the same type here.
+            # because the type of 'sym' and 'copy' might be have different objects(e.g. memnode)
+            self._set_type(param.sym, arg_types[i].clone())
+            self._set_type(param.copy, arg_types[i].clone())
 
         funct = Type.function(worker_scope,
                               Type.none_t,
@@ -366,12 +376,12 @@ class TypePropagation(IRVisitor):
             if not isinstance(ir.dst.symbol(), Symbol):
                 # the type of object has not inferenced yet
                 raise RejectPropagation(ir)
-            self._set_type(ir.dst.symbol(), src_typ)
+            self._set_type(ir.dst.symbol(), src_typ.clone())
             if self.scope.is_method() and ir.dst.is_a(ATTR):
                 receiver = ir.dst.tail()
                 if receiver.typ.is_object():
                     sym = receiver.typ.get_scope().find_sym(ir.dst.symbol().name)
-                    self._set_type(sym, src_typ)
+                    self._set_type(sym, src_typ.clone())
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet
@@ -381,7 +391,7 @@ class TypePropagation(IRVisitor):
             elem_t = src_typ.get_element()
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR])
-                self._set_type(item.symbol(), elem_t)
+                self._set_type(item.symbol(), elem_t.clone())
         elif ir.dst.is_a(MREF):
             pass
         else:
@@ -397,7 +407,7 @@ class TypePropagation(IRVisitor):
         # TODO: Union type
         for arg_t in arg_types:
             if not arg_t.is_undef() and not ir.var.symbol().typ.is_freezed():
-                self._set_type(ir.var.symbol(), arg_t)
+                self._set_type(ir.var.symbol(), arg_t.clone())
                 break
 
     def visit_UPHI(self, ir):
@@ -468,12 +478,12 @@ class TypeReplacer(IRVisitor):
 
     def visit_TEMP(self, ir):
         if self.comparator(ir.sym.typ, self.old_t):
-            ir.sym.typ = self.new_t
+            ir.sym.set_type(self.new_t)
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
         if self.comparator(ir.attr.typ, self.old_t):
-            ir.attr.typ = self.new_t
+            ir.attr.set_type(self.new_t)
 
 
 class InstanceTypePropagation(TypePropagation):

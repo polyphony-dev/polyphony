@@ -114,6 +114,7 @@ class AHDLVisitor(object):
         pass
 
     def visit_AHDL_FUNCALL(self, ahdl):
+        self.visit(ahdl.name)
         for arg in ahdl.args:
             self.visit(arg)
 

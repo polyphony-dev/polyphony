@@ -18,6 +18,9 @@ def import11_c(i):
 def import11_d(i):
     return SUB3_GLOBAL_TUPLE[i]
 
+def import11_e():
+    return len(SUB3_GLOBAL_ARRAY)
+
 
 @polyphony.testbench
 def test():
@@ -29,6 +32,7 @@ def test():
     assert 33 == import11_c(2)
     assert 36 == import11_d(1)
     assert 38 == import11_d(3)
+    assert 4 == import11_e()
 
 
 test()

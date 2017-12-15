@@ -105,16 +105,12 @@ class HDLModuleBuilder(object):
                     item = single_input_port_fifo_adapter(self.hdlmodule, sub_module_inf.signal, acc.inst_name)
                 self.hdlmodule.add_decl('', item)
 
-    def _add_roms(self, scope):
+    def _add_roms(self, memnodes):
         mrg = env.memref_graph
-        roms = deque()
-
-        roms.extend(mrg.collect_readonly_sink(scope))
+        roms = [n for n in memnodes if mrg.is_readonly_sink(n)]
         while roms:
             memnode = roms.pop()
-            hdl_name = memnode.sym.hdl_name()
-            if scope.is_worker():
-                hdl_name = '{}_{}'.format(scope.orig_name, hdl_name)
+            hdl_name = memnode.name()
             source = memnode.single_source()
             if source:
                 source_scope = source.scope
@@ -144,8 +140,7 @@ class HDLModuleBuilder(object):
                 n2o = memnode.pred_branch()
                 for i, pred in enumerate(n2o.orig_preds):
                     assert pred.is_sink()
-                    if scope is not pred.scope:
-                        roms.append(pred)
+                    roms.append(pred)
                     rom_func_name = pred.sym.hdl_name()
                     call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])
                     connect = AHDL_CONNECT(fname, call)
@@ -159,12 +154,13 @@ class HDLModuleBuilder(object):
         outputs = set()
         defs = set()
         uses = set()
-        collector = AHDLVarCollector(self.hdlmodule, defs, uses, outputs)
+        memnodes = set()
+        collector = AHDLVarCollector(self.hdlmodule, defs, uses, outputs, memnodes)
         for stg in fsm.stgs:
             for state in stg.states:
                 for code in state.traverse():
                     collector.visit(code)
-        return defs, uses, outputs
+        return defs, uses, outputs, memnodes
 
     def _collect_special_decls(self, fsm):
         edge_detectors = set()
@@ -289,7 +285,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
         self._add_state_constants(fsm)
-        defs, uses, outputs = self._collect_vars(fsm)
+        defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
         module_name = self.hdlmodule.name
         self._add_state_register(fsm)
@@ -310,7 +306,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                 HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
 
         self._add_submodules(scope)
-        self._add_roms(scope)
+        self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
 
     def _add_input_interfaces(self, scope):
@@ -379,7 +375,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
         self._add_state_constants(fsm)
-        defs, uses, outputs = self._collect_vars(fsm)
+        defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
 
         module_name = self.hdlmodule.name
@@ -415,7 +411,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                         connections[''].append((inf, inf_acc))
                 self.hdlmodule.add_sub_module(inf_acc.acc_name, acc_mod, connections, acc_mod.param_map)
 
-        self._add_roms(scope)
+        self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(fsm)
         for sig, old, new in edge_detectors:
@@ -448,7 +444,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         scope = fsm.scope
 
         #self._add_state_constants(worker)
-        defs, uses, outputs = self._collect_vars(fsm)
+        defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
         regs, nets = self._add_internal_ports(locals)
         self._add_state_register(fsm)
@@ -460,7 +456,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             if memnode.can_be_reg():
                 HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
 
-        self._add_roms(scope)
+        self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(fsm)
         for sig, old, new in edge_detectors:
@@ -506,11 +502,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
 class AHDLVarCollector(AHDLVisitor):
     '''this class collects inputs and outputs and locals'''
-    def __init__(self, hdlmodule, local_defs, local_uses, output_temps):
+    def __init__(self, hdlmodule, local_defs, local_uses, output_temps, memnodes):
         self.local_defs = local_defs
         self.local_uses = local_uses
         self.output_temps = output_temps
         self.module_constants = [c for c, _ in hdlmodule.state_constants]
+        self.memnodes = memnodes
 
     def visit_AHDL_CONST(self, ahdl):
         pass
@@ -520,6 +517,7 @@ class AHDLVarCollector(AHDLVisitor):
             self.local_defs.add(ahdl.sig)
         else:
             self.local_uses.add(ahdl.sig)
+        self.memnodes.add(ahdl.memnode)
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.sig.is_ctrl() or ahdl.sig.name in self.module_constants:

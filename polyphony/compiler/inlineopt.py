@@ -379,7 +379,7 @@ class FlattenFieldAccess(IRTransformer):
                 for sym in ir.qualified_symbol():
                     tags |= sym.tags
                 flatsym = scope.add_sym(flatname, tags)
-                flatsym.typ = ancestor.typ
+                flatsym.set_type(ancestor.typ.clone())
                 flatsym.ancestor = ancestor
                 flatsym.add_tag('flattened')
             return head + (flatsym, ) + tail
@@ -450,7 +450,7 @@ class FlattenObjectArgs(IRTransformer):
                 new_sym = module_scope.find_sym(new_name)
                 if not new_sym:
                     new_sym = module_scope.add_sym(new_name)
-                    new_sym.set_type(fsym.typ)
+                    new_sym.set_type(fsym.typ.clone())
                 new_arg = arg.clone()
                 new_arg.set_symbol(new_sym)
                 args.append((new_name, new_arg))
@@ -469,11 +469,11 @@ class FlattenObjectArgs(IRTransformer):
             param_in = worker_scope.find_param_sym(new_name)
             if not param_in:
                 param_in = worker_scope.add_param_sym(new_name)
-                param_in.set_type(sym.typ)
+                param_in.set_type(sym.typ.clone())
             param_copy = worker_scope.find_sym(new_name)
             if not param_copy:
                 param_copy = worker_scope.add_sym(new_name)
-                param_in.set_type(sym.typ)
+                param_in.set_type(sym.typ.clone())
             flatten_params.append((param_in, param_copy))
         new_params = []
         for idx, (sym, copy, defval) in enumerate(worker_scope.params):
