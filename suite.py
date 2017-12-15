@@ -7,6 +7,7 @@ import simu
 import error
 import json
 
+
 ROOT_DIR = '.' + os.path.sep
 TEST_DIR = ROOT_DIR + 'tests'
 TMP_DIR  = ROOT_DIR + '.tmp'
@@ -44,8 +45,13 @@ FILES = (
     TEST_DIR + '/chstone/jpeg/chenidct.py',
 )
 
+ignores = []
+
 
 def suite(compile_only, *cases):
+    if ignores:
+        print('NOTE: these files will be ignored')
+        print(ignores)
     suite_results = {}
     tests = []
     if cases[0]:
@@ -56,6 +62,9 @@ def suite(compile_only, *cases):
         tests.extend(sorted(glob.glob('{1}{0}{2}{0}*.py'.format(os.path.sep, TEST_DIR, d))))
     if not cases[0]:
         tests.extend(FILES)
+    for t in ignores:
+        if t in tests:
+            tests.remove(t)
     for t in tests:
         print(t)
         finishes = simu.exec_test(t, output=False, compile_only=compile_only)
@@ -68,7 +77,11 @@ def suite(compile_only, *cases):
 
 
 def error_test():
-    for t in sorted(glob.glob('{1}{0}error{0}*.py'.format(os.path.sep, TEST_DIR))):
+    tests = sorted(glob.glob('{1}{0}error{0}*.py'.format(os.path.sep, TEST_DIR)))
+    for t in ignores:
+        if t in tests:
+            tests.remove(t)
+    for t in tests:
         print(t)
         error.error_test(t, output=False)
 
@@ -76,6 +89,10 @@ def error_test():
 def suite_main():
     if not os.path.exists(TMP_DIR):
         os.mkdir(TMP_DIR)
+
+    if os.path.exists('.suite_ignores'):
+        with open('.suite_ignores', 'r') as f:
+            ignores.extend(f.read().splitlines())
 
     compile_only = False
     if len(sys.argv) > 1:
