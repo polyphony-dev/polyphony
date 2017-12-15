@@ -81,8 +81,9 @@ class BitwidthReducer(AHDLVisitor):
         srcw = self.visit(ahdl.src)
         if srcw is None:
             return
-        if dst_sig.width > srcw:
-            dst_sig.width = srcw
+        # TODO:
+        #if dst_sig.width > srcw:
+        #    dst_sig.width = srcw
 
     def visit_AHDL_STORE(self, ahdl):
         pass

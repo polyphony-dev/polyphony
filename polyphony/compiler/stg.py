@@ -1176,7 +1176,6 @@ class AHDLTranslator(object):
 
         if sym.scope is not self.scope:
             sig_name = sym.hdl_name()
-            print(sig_name)
         elif self.scope.is_worker() or self.scope.is_method():
             sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'input' in tags:

@@ -278,20 +278,26 @@ class TypePropagation(IRVisitor):
     def visit_ARRAY(self, ir):
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
-        item_typs = [self.visit(item) for item in ir.items]
-        if self.current_stm.src == ir:
-            if any([t is Type.undef_t for t in item_typs]):
-                raise RejectPropagation(ir)
+        item_t = None
+        if self.current_stm.dst.is_a([TEMP, ATTR]):
+            dsttyp = self.current_stm.dst.symbol().typ
+            if dsttyp.is_seq() and dsttyp.get_element().is_freezed():
+                item_t = dsttyp.get_element().clone()
+        if item_t is None:
+            item_typs = [self.visit(item) for item in ir.items]
+            if self.current_stm.src == ir:
+                if any([t is Type.undef_t for t in item_typs]):
+                    raise RejectPropagation(ir)
 
-        if item_typs and all([Type.is_assignable(item_typs[0], item_t) for item_t in item_typs]):
-            if item_typs[0].is_scalar() and not item_typs[0].is_str():
-                maxwidth = max([item_t.get_width() for item_t in item_typs])
-                signed = any([item_t.has_signed() and item_t.get_signed() for item_t in item_typs])
-                item_t = Type.int(maxwidth, signed)
+            if item_typs and all([Type.is_assignable(item_typs[0], item_t) for item_t in item_typs]):
+                if item_typs[0].is_scalar() and not item_typs[0].is_str():
+                    maxwidth = max([item_t.get_width() for item_t in item_typs])
+                    signed = any([item_t.has_signed() and item_t.get_signed() for item_t in item_typs])
+                    item_t = Type.int(maxwidth, signed)
+                else:
+                    item_t = item_typs[0]
             else:
-                item_t = item_typs[0]
-        else:
-            assert False  # TODO:
+                assert False  # TODO:
         if ir.sym.typ.is_seq():
             memnode = ir.sym.typ.get_memnode()
         else:
