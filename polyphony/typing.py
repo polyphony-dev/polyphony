@@ -176,6 +176,9 @@ class bit125(int_base): pass
 class bit126(int_base): pass
 class bit127(int_base): pass
 class bit128(int_base): pass
+class bit256(int_base): pass
+class bit512(int_base): pass
+class bit1024(int_base): pass
 
 class int2(int_base): pass
 class int3(int_base): pass

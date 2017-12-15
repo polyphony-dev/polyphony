@@ -182,6 +182,9 @@ class bit125: pass
 class bit126: pass
 class bit127: pass
 class bit128: pass
+class bit256: pass
+class bit512: pass
+class bit1024: pass
 
 class int2: pass
 class int3: pass
