@@ -460,6 +460,20 @@ class Scope(Tagged):
         visited = set()
         yield from self.entry_block.traverse(visited)
 
+    def replace_block(self, old, new):
+        new.preds = old.preds[:]
+        new.preds_loop = old.preds_loop[:]
+        new.succs = old.succs[:]
+        new.succs_loop = old.succs_loop[:]
+        for blk in self.traverse_blocks():
+            if blk is old:
+                for pred in old.preds:
+                    pred.replace_succ(old, new)
+                    pred.replace_succ_loop(old, new)
+                for succ in old.succs:
+                    succ.replace_pred(old, new)
+                    succ.replace_pred_loop(old, new)
+
     def append_child(self, child_scope):
         if child_scope not in self.children:
             self.children.append(child_scope)

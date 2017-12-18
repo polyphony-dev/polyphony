@@ -347,6 +347,8 @@ class ConstantOpt(ConstantOptBase):
             worklist.extend(blk.stms)
         while worklist:
             stm = worklist.popleft()
+            while stm in worklist:
+                worklist.remove(stm)
             self.current_stm = stm
             self.visit(stm)
             if stm.is_a(PHIBase):
@@ -365,9 +367,6 @@ class ConstantOpt(ConstantOptBase):
                         scope.usedef.remove_var_def(stm.var, stm)
                         worklist.append(mv)
                         dead_stms.append(stm)
-                        if stm in worklist:
-                            worklist.remove(stm)
-                            assert stm not in worklist
                         break
                 if stm.block.is_hyperblock:
                     for p in stm.ps[:]:
@@ -386,9 +385,6 @@ class ConstantOpt(ConstantOptBase):
                     scope.usedef.remove_var_def(stm.var, stm)
                     worklist.append(mv)
                     dead_stms.append(stm)
-                    if stm in worklist:
-                        worklist.remove(stm)
-                        assert stm not in worklist
             elif stm.is_a([CMOVE, CEXPR]):
                 stm.cond = reduce_relexp(stm.cond)
                 if stm.cond.is_a(CONST):
@@ -402,9 +398,6 @@ class ConstantOpt(ConstantOptBase):
                             new_stm = EXPR(stm.exp)
                         blk.insert_stm(blk.stms.index(stm), new_stm)
                     dead_stms.append(stm)
-                    if stm in worklist:
-                        worklist.remove(stm)
-                        assert stm not in worklist
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(TEMP)
@@ -417,13 +410,9 @@ class ConstantOpt(ConstantOptBase):
                 for rep in replaces:
                     if rep not in dead_stms:
                         worklist.append(rep)
-                worklist = deque(unique(worklist))
                 scope.usedef.remove_var_def(stm.dst, stm)
                 scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
-                if stm in worklist:
-                    worklist.remove(stm)
-                    assert stm not in worklist
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(ATTR)
@@ -441,10 +430,6 @@ class ConstantOpt(ConstantOptBase):
                 for rep in replaces:
                     if rep not in dead_stms:
                         worklist.append(rep)
-                worklist = deque(unique(worklist))
-                if stm in worklist:
-                    worklist.remove(stm)
-                    assert stm not in worklist
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)

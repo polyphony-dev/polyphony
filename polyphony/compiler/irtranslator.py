@@ -385,6 +385,9 @@ class CodeVisitor(ast.NodeVisitor):
         blk.synth_params.update(self.current_loop_synth_params)
         return blk
 
+    def _tmp_block(self, scope):
+        return self._new_block(scope, 'tmp')
+
     def _enter_scope(self, name):
         outer_scope = self.current_scope
         self.current_scope = env.scopes[outer_scope.name + '.' + name]
@@ -426,7 +429,7 @@ class CodeVisitor(ast.NodeVisitor):
     def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
         outer_function_exit = self.function_exit
-        self.function_exit = self._new_block(self.current_scope, 'exit')
+        self.function_exit = self._tmp_block(self.current_scope)
         if self.current_scope.is_method():
             params = self.current_scope.params[1:]  # skip 'self'
         else:
@@ -463,11 +466,13 @@ class CodeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(Symbol.return_prefix)
         else:
             sym = self.current_scope.add_return_sym()
-        if self.last_node:
-            self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
-
         if self.function_exit.preds:
+            function_exit = self._new_block(self.current_scope, 'exit')
+            self.current_scope.replace_block(self.function_exit, function_exit)
+            self.function_exit = function_exit
             self.current_scope.set_exit_block(self.function_exit)
+            if self.last_node:
+                self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
         else:
             self.current_scope.set_exit_block(self.current_block)
         self.function_exit = outer_function_exit
@@ -599,16 +604,16 @@ class CodeVisitor(ast.NodeVisitor):
 
         if_head = self.current_block
         if_then = self._new_block(self.current_scope, 'ifthen')
-        if_else = self._new_block(self.current_scope, 'ifelse')
-        if_exit = self._new_block(self.current_scope)
+        if_else_tmp = self._new_block(self.current_scope, 'ifelse')
+        if_exit_tmp = self._new_block(self.current_scope)
 
         condition = self.visit(node.test)
         if not condition.is_a(RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
 
-        self.emit_to(if_head, CJUMP(condition, if_then, if_else), node)
+        self.emit_to(if_head, CJUMP(condition, if_then, if_else_tmp), node)
         if_head.connect(if_then)
-        if_head.connect(if_else)
+        if_head.connect(if_else_tmp)
 
         #if then block
         #if not self.nested_if:
@@ -616,8 +621,8 @@ class CodeVisitor(ast.NodeVisitor):
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(if_exit), node)
-            self.current_block.connect(if_exit)
+            self.emit(JUMP(if_exit_tmp), node)
+            self.current_block.connect(if_exit_tmp)
         #if not self.nested_if:
         #else:
         #    self.nested_if = False
@@ -627,6 +632,8 @@ class CodeVisitor(ast.NodeVisitor):
             self.nested_if = True
 
         #if else block
+        if_else = self._new_block(self.current_scope, 'ifelse')
+        self.current_scope.replace_block(if_else_tmp, if_else)
         self.current_block = if_else
         if node.orelse:
             if isinstance(node.orelse[0], ast.If):
@@ -634,10 +641,12 @@ class CodeVisitor(ast.NodeVisitor):
             for stm in node.orelse:
                 self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(if_exit), node)
-            self.current_block.connect(if_exit)
+            self.emit(JUMP(if_exit_tmp), node)
+            self.current_block.connect(if_exit_tmp)
 
         #if_exit belongs to the outer level
+        if_exit = self._new_block(self.current_scope)
+        self.current_scope.replace_block(if_exit_tmp, if_exit)
         self.current_block = if_exit
 
     def visit_While(self, node):
@@ -656,9 +665,9 @@ class CodeVisitor(ast.NodeVisitor):
 
         while_block = self._new_block(self.current_scope, 'while')
         body_block = self._new_block(self.current_scope, 'whilebody')
-        loop_bridge_block = self._new_block(self.current_scope, 'whilebridge')
-        else_block = self._new_block(self.current_scope, 'whileelse')
-        exit_block = self._new_block(self.current_scope, 'whileexit')
+        loop_bridge_tmp_block = self._tmp_block(self.current_scope)
+        else_tmp_block = self._tmp_block(self.current_scope)
+        exit_tmp_block = self._tmp_block(self.current_scope)
 
         self.emit(JUMP(while_block), node)
         self.current_block.connect(while_block)
@@ -668,40 +677,46 @@ class CodeVisitor(ast.NodeVisitor):
         condition = self.visit(node.test)
         if not condition.is_a(RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
-        cjump = CJUMP(condition, body_block, else_block)
+        cjump = CJUMP(condition, body_block, else_tmp_block)
         cjump.loop_branch = True
         self.emit(cjump, node)
         while_block.connect(body_block)
-        while_block.connect(else_block)
+        while_block.connect(else_tmp_block)
 
         # body part
         self.current_block = body_block
-        self.loop_bridge_blocks.append(loop_bridge_block)  # for 'continue'
-        self.loop_end_blocks.append(exit_block)  # for 'break'
+        self.loop_bridge_blocks.append(loop_bridge_tmp_block)  # for 'continue'
+        self.loop_end_blocks.append(exit_tmp_block)  # for 'break'
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(loop_bridge_block), node)
-            self.current_block.connect(loop_bridge_block)
+            self.emit(JUMP(loop_bridge_tmp_block), node)
+            self.current_block.connect(loop_bridge_tmp_block)
 
         # need loop bridge for branch merging
-        if loop_bridge_block.preds:
+        if loop_bridge_tmp_block.preds:
+            loop_bridge_block = self._new_block(self.current_scope, 'whilebridge')
+            self.current_scope.replace_block(loop_bridge_tmp_block, loop_bridge_block)
             self.current_block = loop_bridge_block
             self.emit(JUMP(while_block, 'L'), node)
             loop_bridge_block.connect_loop(while_block)
 
         # else part
+        else_block = self._new_block(self.current_scope, 'whileelse')
+        self.current_scope.replace_block(else_tmp_block, else_block)
         self.current_block = else_block
         if node.orelse:
             for stm in node.orelse:
                 self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(exit_block), node)
-            self.current_block.connect(exit_block)
+            self.emit(JUMP(exit_tmp_block), node)
+            self.current_block.connect(exit_tmp_block)
 
         self.loop_bridge_blocks.pop()
         self.loop_end_blocks.pop()
 
+        exit_block = self._new_block(self.current_scope, 'whileexit')
+        self.current_scope.replace_block(exit_tmp_block, exit_block)
         self.current_block = exit_block
 
     def visit_For(self, node):
@@ -855,14 +870,14 @@ class CodeVisitor(ast.NodeVisitor):
         self.invisible_symbols.add(counter)
 
     def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, loop_synth_params, node):
-        exit_block = self._new_block(self.current_scope)
+        exit_tmp_block = self._tmp_block(self.current_scope)
 
         old_loop_synth_params = self.current_loop_synth_params
         self.current_loop_synth_params = loop_synth_params
         loop_check_block = self._new_block(self.current_scope, 'fortest')
         body_block = self._new_block(self.current_scope, 'forbody')
-        else_block = self._new_block(self.current_scope, 'forelse')
-        continue_block = self._new_block(self.current_scope, 'continue')
+        else_tmp_block = self._tmp_block(self.current_scope)
+        continue_tmp_block = self._tmp_block(self.current_scope)
 
         # initialize part
         for code in init_parts:
@@ -873,25 +888,27 @@ class CodeVisitor(ast.NodeVisitor):
         # loop check part
         self.current_block = loop_check_block
 
-        cjump = CJUMP(condition, body_block, else_block)
+        cjump = CJUMP(condition, body_block, else_tmp_block)
         cjump.loop_branch = True
         self.emit(cjump, node)
         self.current_block.connect(body_block)
-        self.current_block.connect(else_block)
+        self.current_block.connect(else_tmp_block)
 
         # body part
         self.current_block = body_block
-        self.loop_bridge_blocks.append(continue_block)  # for 'continue'
-        self.loop_end_blocks.append(exit_block)  # for 'break'
+        self.loop_bridge_blocks.append(continue_tmp_block)  # for 'continue'
+        self.loop_end_blocks.append(exit_tmp_block)  # for 'break'
         for code in body_parts:
             self.emit(code, node)
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(continue_block), node)
-            self.current_block.connect(continue_block)
+            self.emit(JUMP(continue_tmp_block), node)
+            self.current_block.connect(continue_tmp_block)
 
         #continue part
+        continue_block = self._new_block(self.current_scope, 'continue')
+        self.current_scope.replace_block(continue_tmp_block, continue_block)
         self.current_block = continue_block
         for code in continue_parts:
             self.emit(code, node)
@@ -899,17 +916,21 @@ class CodeVisitor(ast.NodeVisitor):
         continue_block.connect_loop(loop_check_block)
 
         #else part
+        else_block = self._new_block(self.current_scope, 'forelse')
+        self.current_scope.replace_block(else_tmp_block, else_block)
         self.current_block = else_block
         if node.orelse:
             for stm in node.orelse:
                 self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(exit_block), node)
-            self.current_block.connect(exit_block)
+            self.emit(JUMP(exit_tmp_block), node)
+            self.current_block.connect(exit_tmp_block)
 
         self.loop_bridge_blocks.pop()
         self.loop_end_blocks.pop()
 
+        exit_block = self._new_block(self.current_scope)
+        self.current_scope.replace_block(exit_tmp_block, exit_block)
         self.current_block = exit_block
         self.current_loop_synth_params = old_loop_synth_params
 

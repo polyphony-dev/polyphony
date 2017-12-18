@@ -27,9 +27,13 @@ class Block(object):
         self.preds_loop = []
         self.order = -1
         self.scope = scope
-        scope.block_count += 1
-        self.num = scope.block_count
-        self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
+        if nametag == 'tmp':
+            self.num = -1
+            self.name = '{}_{}'.format(scope.name, self.nametag)
+        else:
+            scope.block_count += 1
+            self.num = scope.block_count
+            self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
         self.path_exp = None
         self.synth_params = make_synth_params()
         self.is_hyperblock = False
