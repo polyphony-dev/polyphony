@@ -242,8 +242,10 @@ class SSATransformerBase(object):
             usestms = usedef.get_stms_using(phi.var.symbol())
             if not usestms:
                 self._remove_phi(phi, usedef)
+                for a in [a for a in phi.args if a and a.is_a(TEMP)]:
+                    for defphi in [defstm for defstm in usedef.get_stms_defining(a.symbol()) if defstm.is_a(PHI)]:
+                        worklist.append(defphi)
                 continue
-
             sym = get_sym_if_having_only_1(phi)
             if sym:
                 self._remove_phi(phi, usedef)
