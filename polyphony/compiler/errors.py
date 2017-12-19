@@ -28,6 +28,7 @@ class Errors(Enum):
     UNKNOWN_TYPE_NAME = 114
     MUST_BE_X = 115
     GOT_UNEXPECTED_KWARGS = 116
+    UNKNOWN_X_IS_SPECIFIED = 117
 
     # semantic errors
     REFERENCED_BEFORE_ASSIGN = 200
@@ -65,11 +66,10 @@ class Errors(Enum):
     WORKER_ARG_MUST_BE_X_TYPE = 907
     PORT_MUST_BE_IN_MODULE = 908
     PORT_PARAM_MUST_BE_CONST = 909
-    PORT_IS_NOT_USED = 910
-    WORKER_MUST_BE_METHOD_OF_MODULE = 911
-    PORT_ACCESS_IS_NOT_ALLOWED = 912
-    RESERVED_PORT_NAME = 913
-    MODULE_CANNOT_ACCESS_OBJECT = 914
+    WORKER_MUST_BE_METHOD_OF_MODULE = 910
+    PORT_ACCESS_IS_NOT_ALLOWED = 911
+    RESERVED_PORT_NAME = 912
+    MODULE_CANNOT_ACCESS_OBJECT = 913
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -119,6 +119,7 @@ ERROR_MESSAGES = {
     Errors.UNKNOWN_TYPE_NAME: "Unknown type name '{}'",
     Errors.MUST_BE_X: "{} is expected",
     Errors.GOT_UNEXPECTED_KWARGS: "{}() got an unexpected keyword argument '{}'",
+    Errors.UNKNOWN_X_IS_SPECIFIED: "Unknown {} '{}' is specified",
 
     Errors.LEN_TAKES_ONE_ARG: "len() takes exactly one argument",
     Errors.LEN_TAKES_SEQ_TYPE: "len() takes sequence type argument",
@@ -161,7 +162,6 @@ ERROR_MESSAGES = {
     Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}",
     Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",
     Errors.PORT_PARAM_MUST_BE_CONST: "The port class constructor accepts only constants",
-    Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
     Errors.WORKER_MUST_BE_METHOD_OF_MODULE: "The worker must be a method of the module",
     Errors.PORT_ACCESS_IS_NOT_ALLOWED: "'any' port cannot be accessed from outside of the module",
     Errors.RESERVED_PORT_NAME: "The name of Port '{}' is reserved",
@@ -201,6 +201,8 @@ class Warnings(Enum):
     ASSERTION_FAILED = 100
     EXCEPTION_RAISED = 101
 
+    PORT_IS_NOT_USED = 1000
+
     def __str__(self):
         return WARNING_MESSAGES[self]
 
@@ -208,4 +210,5 @@ class Warnings(Enum):
 WARNING_MESSAGES = {
     Warnings.ASSERTION_FAILED: "The expression of assert always evaluates to False",
     Warnings.EXCEPTION_RAISED: "An exception occurred while executing the Python interpreter at compile time\n(For more information you can use '--verbose' option)",
+    Warnings.PORT_IS_NOT_USED: "Port '{}' is not used at all",
 }

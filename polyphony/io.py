@@ -274,7 +274,7 @@ class Queue(object):
 
     '''
 
-    def __init__(self, dtype, direction='', maxsize=1):
+    def __init__(self, dtype, direction, maxsize=1):
         self._dtype = dtype
         self.__pytype = _pytype_from_dtype(dtype)
         self._direction = _normalize_direction(direction)

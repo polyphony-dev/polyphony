@@ -20,7 +20,7 @@ class Port:
 
 
 class Queue:
-    def __init__(self, dtype:generic, direction:str='', maxsize:int=1) -> object:
+    def __init__(self, dtype:generic, direction:str, maxsize:int=1) -> object:
         pass
 
     def rd(self) -> generic:
