@@ -302,8 +302,8 @@ class ConstantOptBase(IRVisitor):
                     if succ.preds:
                         phis = succ.collect_stms([PHI, LPHI])
                         for phi in phis:
-                            arg = phi.args[idx]
-                            phi.remove_arg(arg)
+                            phi.args.pop(idx)
+                            phi.ps.pop(idx)
             for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
                 if self.dtree.is_child(blk, succ):
                     remove_dominated_branch(succ)
@@ -320,7 +320,8 @@ class ConstantOptBase(IRVisitor):
         jump.lineno = cjump.lineno
 
         if true_blk is not false_blk:
-            false_blk.remove_pred(blk)
+            if false_blk.preds:
+                false_blk.remove_pred(blk)
             blk.remove_succ(false_blk)
             if self.scope.exit_block is false_blk and not false_blk.preds:
                 self.scope.exit_block = blk
