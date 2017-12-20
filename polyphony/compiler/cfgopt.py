@@ -279,7 +279,12 @@ class HyperBlockBuilder(object):
             cj = CJUMP(old_mj.conds[0], old_mj.targets[0], old_mj.targets[1])
             cj.lineno = old_mj.lineno
             head.replace_stm(head.stms[-1], cj)
-        new_head.append_stm(mj)
+        if len(mj.targets) == 2:
+            cj = CJUMP(mj.conds[0], mj.targets[0], mj.targets[1])
+            cj.lineno = mj.lineno
+            new_head.append_stm(cj)
+        else:
+            new_head.append_stm(mj)
         new_head.preds = [head]
         new_head.path_exp = merge_path_exp(head, new_head)
         Block.set_order(new_head, head.order + 1)
