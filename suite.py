@@ -28,13 +28,15 @@ DIRS = (
     'io',
     'module',
     'unroll',
-    'pure',
+    'issues',
+    #'pure',
 )
 
 FILES = (
     TEST_DIR + '/apps/ad7091r.py',
     TEST_DIR + '/apps/fib.py',
     TEST_DIR + '/apps/fifo.py',
+    TEST_DIR + '/apps/filter_tester.py',
     TEST_DIR + '/apps/fir.py',
     TEST_DIR + '/apps/minivm.py',
     TEST_DIR + '/apps/minivm2.py',
