@@ -94,19 +94,12 @@ class BlockReducer(object):
         if block.stms and block.stms[0].is_a(JUMP):
             assert len(block.succs) == 1
             succ = block.succs[0]
-            phis = block.collect_stms(PHIBase)
-            if phis:
-                return False
             idx = succ.preds.index(block)
             succ.remove_pred(block)
             for pred in block.preds:
                 succ.preds.insert(idx, pred)
                 idx += 1
                 pred.replace_succ(block, succ)
-            if len(block.preds) == 1:
-                pass
-            elif len(block.preds) > 1:
-                self._order_blocks(self.scope)
             logger.debug('remove empty block ' + block.name)
             return True
         return False
@@ -244,7 +237,11 @@ class HyperBlockBuilder(object):
                 for tail in tails:
                     if tails.count(tail) > 1:
                         indices = [idx for idx, path in enumerate(branches) if path[-1] is tail]
-                        return self._duplicate_head(blk, branches, indices)
+                        # We should deal with only continuous indices(adjacent branches)
+                        # to keep mcjump evaluation order
+                        if all([(indices[i + 1] - indices[i]) == 1
+                                for i in range(len(indices) - 1)]):
+                            return self._duplicate_head(blk, branches, indices)
 
         return None
 
@@ -253,7 +250,6 @@ class HyperBlockBuilder(object):
         old_mj = head.stms[-1]
         mj = MCJUMP()
         mj.lineno = old_mj.lineno
-        removes = []
         for idx in indices:
             path = branches[idx]
             br = path[0]
@@ -262,26 +258,27 @@ class HyperBlockBuilder(object):
             cond = old_mj.conds[idx]
             mj.conds.append(cond)
             mj.targets.append(br)
-            removes.append((cond, br))
-        if all([removes[0][1] is br for _, br in removes[1:]]):
+        if all([mj.targets[0] is t for t in mj.targets[1:]]):
             return
-        for cond, target in removes:
-            old_mj.conds.remove(cond)
-            old_mj.targets.remove(target)
         for idx in indices:
             path = branches[idx]
             br = path[0]
-            head.succs.remove(br)
             br.replace_pred(head, new_head)
             new_head.succs.append(br)
-        if len(old_mj.targets) == 1:
-            cj = CJUMP(old_mj.conds[0], old_mj.targets[0], new_head)
+        new_cond = old_mj.conds[indices[0]]
+        for idx in indices[1:]:
+            new_cond = RELOP('Or', new_cond, old_mj.conds[idx])
+        old_mj.conds[indices[0]] = new_cond
+        old_mj.targets[indices[0]] = new_head
+        head.succs[indices[0]] = new_head
+        for idx in reversed(indices[1:]):
+            old_mj.conds.pop(idx)
+            old_mj.targets.pop(idx)
+            head.succs.pop(idx)
+        if len(old_mj.targets) == 2:
+            cj = CJUMP(old_mj.conds[0], old_mj.targets[0], old_mj.targets[1])
             cj.lineno = old_mj.lineno
             head.replace_stm(head.stms[-1], cj)
-        else:
-            old_mj.conds.append(CONST(1))
-            old_mj.targets.append(new_head)
-        head.succs.append(new_head)
         new_head.append_stm(mj)
         new_head.preds = [head]
         if head.path_exp:
@@ -361,8 +358,12 @@ class HyperBlockBuilder(object):
                 arg = TEMP(newsym, Ctx.LOAD)
                 arg.lineno = stm.var.lineno
 
+                #ps = new_ps[0]
+                #for p in new_ps[1:]:
+                #    ps = RELOP('Or', ps, p)
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
+                #old_ps.insert(first_idx, ps)
                 stm.args = old_args
                 stm.ps = old_ps
 
