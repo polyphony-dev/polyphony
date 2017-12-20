@@ -750,7 +750,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         self.is_finite_loop = True
 
     def post_build(self, dfg, is_main, pstate):
-        loop_cnt = self.translator._sym_2_sig(dfg.region.counter, Ctx.LOAD)
+        loop_cnt = self.translator._sym_2_sig(dfg.region.counter)
         cond_defs = self.scope.usedef.get_stms_defining(dfg.region.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
@@ -1144,7 +1144,7 @@ class AHDLTranslator(object):
             width = 1
         return width
 
-    def _sym_2_sig(self, sym, ctx):
+    def _sym_2_sig(self, sym):
         if sym in self.sym2sig_map:
             return self.sym2sig_map[sym]
         tags = set()
@@ -1156,7 +1156,9 @@ class AHDLTranslator(object):
                 tags.add('int')
             else:
                 pass
-            if ctx & Ctx.STORE:
+            if sym.is_alias():
+                tags.add('net')
+            else:
                 tags.add('reg')
         elif sym.typ.is_port():
             di = sym.typ.get_direction()
@@ -1171,9 +1173,6 @@ class AHDLTranslator(object):
         elif sym.is_condition():
             tags.add('condition')
 
-        if sym.is_alias():
-            tags.discard('reg')
-            tags.add('net')
         if sym.is_induction():
             tags.add('induction')
 
@@ -1194,7 +1193,7 @@ class AHDLTranslator(object):
         return sig
 
     def visit_TEMP(self, ir, node):
-        sig = self._sym_2_sig(ir.sym, ir.ctx)
+        sig = self._sym_2_sig(ir.sym)
         if ir.sym.typ.is_seq():
             return AHDL_MEMVAR(sig, ir.sym.typ.get_memnode(), ir.ctx)
         else:
