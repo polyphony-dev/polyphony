@@ -975,14 +975,14 @@ class MemRefGraphBuilder(IRVisitor):
 
     def _visit_seq_var(self, memsym):
         if memsym.is_param():
-            self.mrg.add_node(MemParamNode(memsym, self.scope))
+            self.mrg.add_node(MemParamNode(memsym, memsym.scope))
             memnode = self.mrg.node(memsym)
             memnode.set_switch()
             self._set_memnode(memsym.typ, memnode)
         else:
             memnode = self.mrg.node(memsym)
             if not memnode:
-                memnode = MemRefNode(memsym, self.scope)
+                memnode = MemRefNode(memsym, memsym.scope)
                 self.mrg.add_node(memnode)
                 self._set_memnode(memsym.typ, memnode)
             if memsym.is_static():
@@ -990,13 +990,13 @@ class MemRefGraphBuilder(IRVisitor):
                 if root and root.scope is not memsym.scope:
                     rootnode = self.mrg.node(root)
                     if not rootnode:
-                        rootnode = MemRefNode(root, self.scope)
+                        rootnode = MemRefNode(root, root.scope)
                         self.mrg.add_node(rootnode)
                         self._set_memnode(root.typ, rootnode)
                     self._append_edge(root, memsym)
 
     def visit_ARRAY(self, ir):
-        memnode = MemRefNode(ir.sym, self.scope)
+        memnode = MemRefNode(ir.sym, ir.sym.scope)
         self.mrg.add_node(memnode)
         memnode.set_initstm(self.current_stm)
         if not all(item.is_a(CONST) for item in ir.items):
@@ -1046,7 +1046,7 @@ class MemRefGraphBuilder(IRVisitor):
                 self._append_edge(ret_sym, ir.dst.symbol())
                 # this node is for inlining sequence values
                 # hence the scope must be self.scope
-                purenode = MemRefNode(ret_sym, self.scope)
+                purenode = MemRefNode(ret_sym, ret_sym.scope)
                 self.mrg.add_node(purenode)
                 purenode.set_pure()
                 assert memsym.typ.has_length()
@@ -1057,7 +1057,7 @@ class MemRefGraphBuilder(IRVisitor):
         if ir.var.sym.typ.is_seq():
             memnode = self.mrg.node(ir.var.sym)
             if not memnode:
-                memnode = MemRefNode(ir.var.sym, self.scope)
+                memnode = MemRefNode(ir.var.sym, ir.var.sym.scope)
                 self.mrg.add_node(memnode)
             for arg in ir.args:
                 self.visit(arg)

@@ -3,7 +3,7 @@ from polyphony import testbench
 from polyphony import is_worker_running
 from polyphony.io import Port
 from sub4 import VALUE as Value
-
+from sub3 import SUB3_GLOBAL_ARRAY
 
 @module
 class import13:
@@ -14,12 +14,16 @@ class import13:
 
     def w(self):
         while is_worker_running():
-            self.o.wr(self.x)
+            for i in range(len(SUB3_GLOBAL_ARRAY)):
+                self.o.wr(self.x + SUB3_GLOBAL_ARRAY[i])
 
 
 @testbench
 def test(m):
-    assert Value == m.o.rd()
+    assert Value + SUB3_GLOBAL_ARRAY[0] == m.o.rd()
+    assert Value + SUB3_GLOBAL_ARRAY[1] == m.o.rd()
+    assert Value + SUB3_GLOBAL_ARRAY[2] == m.o.rd()
+    assert Value + SUB3_GLOBAL_ARRAY[3] == m.o.rd()
 
 
 m = import13()
