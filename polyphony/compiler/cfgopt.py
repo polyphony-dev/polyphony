@@ -281,8 +281,7 @@ class HyperBlockBuilder(object):
             head.replace_stm(head.stms[-1], cj)
         new_head.append_stm(mj)
         new_head.preds = [head]
-        if head.path_exp:
-            new_head.path_exp = head.path_exp.clone()
+        new_head.path_exp = merge_path_exp(head, new_head)
         Block.set_order(new_head, head.order + 1)
         self._update_domtree()
         sub_branches = [branches[idx] for idx in indices]
