@@ -154,7 +154,11 @@ class PortConverter(IRTransformer):
                     fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
                          [sym.orig_name()])
         elif kind == 'internal':
-            port_typ.set_direction('inout')
+            if self.scope.is_worker():
+                port_typ.set_direction('inout')
+            else:
+                fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
+                     [sym.orig_name()])
 
         if expected_di == 'output':
             # write-write conflict
