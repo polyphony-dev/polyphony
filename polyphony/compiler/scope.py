@@ -59,9 +59,6 @@ class Scope(Tagged):
     def destroy(cls, scope):
         assert scope.name in env.scopes
         env.remove_scope(scope)
-        if scope.parent:
-            assert scope in scope.parent.children
-            scope.parent.children.remove(scope)
 
     @classmethod
     def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False):
