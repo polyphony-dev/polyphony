@@ -889,6 +889,7 @@ class AHDLTranslator(object):
         self.scope = scope
         self.hdlmodule = env.hdlmodule(scope)
         self.mrg = env.memref_graph
+        self.sym2sig_map = {}
 
     def reset(self, sched_time):
         self.sched_time = sched_time
@@ -1144,6 +1145,8 @@ class AHDLTranslator(object):
         return width
 
     def _sym_2_sig(self, sym, ctx):
+        if sym in self.sym2sig_map:
+            return self.sym2sig_map[sym]
         tags = set()
         if sym.typ.is_seq():
             if sym.typ.is_list():
@@ -1187,6 +1190,7 @@ class AHDLTranslator(object):
 
         width = self._signal_width(sym)
         sig = self.hdlmodule.gen_sig(sig_name, width, tags, sym)
+        self.sym2sig_map[sym] = sig
         return sig
 
     def visit_TEMP(self, ir, node):
