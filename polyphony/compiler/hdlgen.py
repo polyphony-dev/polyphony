@@ -276,11 +276,19 @@ class HDLModuleBuilder(object):
                     for stm in acc.reset_stms():
                         self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
 
+    def _add_mem_connections(self, scope):
+        mrg = env.memref_graph
+        HDLMemPortMaker(mrg.collect_ram(scope), scope, self.hdlmodule).make_port_all()
+        for memnode in mrg.collect_immutable(scope):
+            if memnode.is_writable():
+                HDLTuplePortMaker(memnode, scope, self.hdlmodule).make_port()
+        for memnode in mrg.collect_ram(scope):
+            if memnode.can_be_reg():
+                HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
+
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
     def _build_module(self):
-        mrg = env.memref_graph
-
         assert len(self.hdlmodule.fsms) == 1
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
@@ -294,17 +302,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_input_interfaces(scope)
         self._add_output_interfaces(scope)
         self._add_internal_ports(locals)
-
-        HDLMemPortMaker(mrg.collect_ram(scope), scope, self.hdlmodule).make_port_all()
-
-        for memnode in mrg.collect_immutable(scope):
-            if not memnode.is_writable():
-                continue
-            HDLTuplePortMaker(memnode, scope, self.hdlmodule).make_port()
-        for memnode in mrg.collect_ram(scope):
-            if memnode.can_be_reg():
-                HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
-
+        self._add_mem_connections(scope)
         self._add_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
@@ -370,28 +368,15 @@ def accessor2module(acc):
 
 class HDLTestbenchBuilder(HDLModuleBuilder):
     def _build_module(self):
-        mrg = env.memref_graph
         assert len(self.hdlmodule.fsms) == 1
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
         self._add_state_constants(fsm)
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
-
-        module_name = self.hdlmodule.name
         self._add_state_register(fsm)
         self._add_internal_ports(locals)
-
-        HDLMemPortMaker(mrg.collect_ram(scope), scope, self.hdlmodule).make_port_all()
-
-        for memnode in mrg.collect_immutable(scope):
-            if not memnode.is_writable():
-                continue
-            HDLTuplePortMaker(memnode, scope, self.hdlmodule).make_port()
-        for memnode in mrg.collect_ram(scope):
-            if memnode.can_be_reg():
-                HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
-
+        self._add_mem_connections(scope)
         self._add_submodules(scope)
         for sym, cp, _ in scope.params:
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
@@ -399,6 +384,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                 sub_hdlmodule = env.hdlmodule(mod_scope)
                 self._add_submodule_instances(sub_hdlmodule, [cp.name], param_map={})
 
+        # FIXME: FIFO should be in the @module class
         for acc in self.hdlmodule.accessors.values():
             acc_mod = accessor2module(acc)
             if acc_mod:
@@ -439,23 +425,15 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             elif sig.is_seq_port():
                 self._add_fifo_channel(sig)
 
-    def _process_fsm(self, fsm, reset_stms):
-        mrg = env.memref_graph
+    def _process_fsm(self, fsm):
         scope = fsm.scope
-
         #self._add_state_constants(worker)
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
         regs, nets = self._add_internal_ports(locals)
         self._add_state_register(fsm)
-
+        self._add_mem_connections(scope)
         self._add_submodules(scope)
-        HDLMemPortMaker(mrg.collect_ram(scope), scope, self.hdlmodule).make_port_all()
-
-        for memnode in mrg.collect_ram(scope):
-            if memnode.can_be_reg():
-                HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
-
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(fsm)
@@ -470,24 +448,20 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
         for fsm in self.hdlmodule.fsms.values():
             self._add_state_constants(fsm)
-
-        reset_stms = []
-        for fsm in self.hdlmodule.fsms.values():
-            if fsm.scope.is_ctor():
-                reset_stms.extend(self._collect_module_defs(fsm))
-                del self.hdlmodule.fsms[fsm.name]
-                break
-
         self._process_io(self.hdlmodule)
         self._process_connector_port(self.hdlmodule)
-
         for fsm in self.hdlmodule.fsms.values():
-            self._process_fsm(fsm, reset_stms)
-        for stm in reset_stms:
-            if stm.dst.sig.is_field():
-                assign = AHDL_ASSIGN(stm.dst, stm.src)
-                self.hdlmodule.add_static_assignment(assign, '')
-                self.hdlmodule.add_internal_net(stm.dst.sig, '')
+            self._process_fsm(fsm)
+        # remove ctor fsm and add constant parameter assigns
+        for fsm in self.hdlmodule.fsms.values():
+            if fsm.scope.is_ctor():
+                for stm in self._collect_module_defs(fsm):
+                    if stm.dst.sig.is_field():
+                        assign = AHDL_ASSIGN(stm.dst, stm.src)
+                        self.hdlmodule.add_static_assignment(assign, '')
+                        self.hdlmodule.add_internal_net(stm.dst.sig, '')
+                del self.hdlmodule.fsms[fsm.name]
+                break
 
     def _collect_module_defs(self, fsm):
         moves = self._collect_moves(fsm)
