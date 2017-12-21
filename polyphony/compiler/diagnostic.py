@@ -52,7 +52,7 @@ class CFGChecker(object):
         if blk is self.scope.exit_block:
             if self.scope.is_worker():
                 # when worker has infinite loop, the exit block must be the loop head block
-                if len(blk.succs):
+                if blk.succs and blk.preds:
                     assert len(blk.preds_loop)
             else:
                 assert len(blk.succs) == 0

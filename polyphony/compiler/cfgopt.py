@@ -80,6 +80,7 @@ class BlockReducer(object):
                 if block is scope.exit_block:
                     scope.exit_block = pred
 
+                logger.debug('remove unidirectional block ' + str(block.name))
                 self._remove_block(block)
                 if not pred.is_hyperblock:
                     pred.is_hyperblock = block.is_hyperblock

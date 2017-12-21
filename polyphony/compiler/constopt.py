@@ -295,6 +295,7 @@ class ConstantOptBase(IRVisitor):
         def remove_dominated_branch(blk):
             blk.preds = []  # mark as garbage block
             remove_from_list(worklist, blk.stms)
+            logger.debug('remove block {}'.format(blk.name))
             for succ in blk.succs:
                 if blk in succ.preds:
                     idx = succ.preds.index(blk)
@@ -325,7 +326,8 @@ class ConstantOptBase(IRVisitor):
             blk.remove_succ(false_blk)
             if self.scope.exit_block is false_blk and not false_blk.preds:
                 self.scope.exit_block = blk
-            if not false_blk.preds and self.dtree.is_child(blk, false_blk):
+            if (not [p for p in false_blk.preds if p not in false_blk.preds_loop] and
+                    self.dtree.is_child(blk, false_blk)):
                 remove_dominated_branch(false_blk)
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
