@@ -22,7 +22,7 @@ class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
         'global', 'function', 'class', 'method', 'ctor',
-        'callable', 'returnable', 'mutable', 'inherited',
+        'callable', 'returnable', 'mutable', 'inherited', 'predicate',
         'testbench', 'pure',
         'module', 'worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',

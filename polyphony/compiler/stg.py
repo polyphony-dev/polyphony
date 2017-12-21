@@ -1618,6 +1618,15 @@ class AHDLTranslator(object):
         elif call.func_scope().orig_name == 'rd':
             self._make_port_read_seq(target, port_sig, node)
         else:
+            if port_sig.is_fifo_port():
+                if call.func_scope().orig_name in ('full', 'empty'):
+                    if target:
+                        dst = self.visit(target, node)
+                        sig_name = '{}_{}'.format(port_sig.name, call.func_scope().orig_name)
+                        sig = self.hdlmodule.gen_sig(sig_name, 1)
+                        src = AHDL_VAR(sig, Ctx.LOAD)
+                        self._emit(AHDL_MOVE(dst, src), self.sched_time)
+                    return
             assert False
 
     def _make_port_write_seq(self, call, port_sig, node):

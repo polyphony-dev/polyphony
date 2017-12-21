@@ -23,7 +23,8 @@ class AliasVarDetector(IRVisitor):
             if src_sym.is_param() or src_sym.typ.is_port():
                 return
         elif ir.src.is_a(CALL):
-            return
+            if not ir.src.func_scope().is_predicate():
+                return
         elif ir.src.is_a(MREF):
             memnode = ir.src.mem.symbol().typ.get_memnode()
             if memnode.is_immutable() or not memnode.is_writable():

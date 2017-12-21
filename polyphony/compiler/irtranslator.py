@@ -21,6 +21,7 @@ INTERNAL_FUNCTION_DECORATORS = [
     'inlinelib',
     'builtin',
     'decorator',
+    'predicate',
 ]
 INTERNAL_CLASS_DECORATORS = [
     'builtin',

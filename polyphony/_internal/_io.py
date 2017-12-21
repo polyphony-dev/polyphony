@@ -32,8 +32,10 @@ class Queue:
     def __call__(self, v=None) -> generic:
         pass
 
+    @predicate
     def empty(self) -> bool:
         pass
 
+    @predicate
     def full(self) -> bool:
         pass

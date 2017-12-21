@@ -9,14 +9,15 @@ CALL_MINIMUM_STEP = 5
 def get_call_latency(call, stm):
     # FIXME: It is better to ask HDLInterface the I/O latency
     is_pipelined = stm.block.synth_params['scheduling'] == 'pipeline'
-    if call.func_scope().name.startswith('polyphony.io.Queue') and call.func_scope().name.endswith('.rd'):
-        if is_pipelined:
-            return UNIT_STEP * 2
-        return UNIT_STEP * 3
-    elif call.func_scope().name.startswith('polyphony.io.Queue') and call.func_scope().name.endswith('.wr'):
-        if is_pipelined:
-            return UNIT_STEP * 1
-        return UNIT_STEP * 3
+    if call.func_scope().name.startswith('polyphony.io.Queue'):
+        if call.func_scope().name.endswith('.rd'):
+            if is_pipelined:
+                return UNIT_STEP * 2
+            return UNIT_STEP * 3
+        elif call.func_scope().name.endswith('.wr'):
+            if is_pipelined:
+                return UNIT_STEP * 1
+            return UNIT_STEP * 3
     elif call.func_scope().is_method() and call.func_scope().parent.is_port():
         receiver = call.func.tail()
         assert receiver.typ.is_port()
@@ -70,13 +71,13 @@ def get_syscall_latency(call):
 def _get_latency(tag):
     assert isinstance(tag, IR)
     if tag.is_a(MOVE):
-        if tag.src.is_a(CALL):
+        if tag.dst.is_a(TEMP) and tag.dst.sym.is_alias():
+            return 0
+        elif tag.src.is_a(CALL):
             return get_call_latency(tag.src, tag)
         elif tag.src.is_a(NEW):
             return 0
         elif tag.src.is_a(TEMP) and tag.src.sym.typ.is_port():
-            return 0
-        elif tag.dst.is_a(TEMP) and tag.dst.sym.is_alias():
             return 0
         elif tag.dst.is_a(ATTR):
             return UNIT_STEP * 2

@@ -1,32 +1,44 @@
 from polyphony import testbench, module, is_worker_running
-from polyphony.io import Queue
-from polyphony.typing import int8
+from polyphony.io import Port
+from polyphony.timing import clkfence, wait_value
 
 
 @module
 class Port03:
     def __init__(self):
-        self.in_q = Queue(int8, 'in', maxsize=2)
-        self.out_q = Queue(int8, 'out', maxsize=2)
+        self.in0       = Port(int, 'in')
+        self.in_valid  = Port(bool, 'in')
+        self.out0      = Port(int, 'out')
+        self.out_valid = Port(bool, 'out', init=False)
+        self.start     = Port(bool, 'out', init=False)
         self.append_worker(self.main)
 
     def main(self):
+        self.start(True)
         while is_worker_running():
-            d = self.in_q.rd()
-            self.out_q.wr(d)
+            self.out_valid(False)
+            wait_value(True, self.in_valid)
+
+            i = self.in0()
+            self.out0(i * i)
+            clkfence()
+            self.out_valid(True)
+            break
 
 
 @testbench
-def test(p03):
-    p03.in_q.wr(1)
-    p03.in_q.wr(2)
-    p03.in_q.wr(3)
-    p03.in_q.wr(4)
-    assert 1 == p03.out_q.rd()
-    assert 2 == p03.out_q.rd()
-    assert 3 == p03.out_q.rd()
-    assert 4 == p03.out_q.rd()
+def test(p):
+    wait_value(True, p.start)
+
+    p.in0(2)
+    p.in_valid(True)
+    print('wait out_valid')
+
+    wait_value(True, p.out_valid)
+    assert p.out0() == 4
+    clkfence()
+    print(p.out0())
 
 
-p03 = Port03()
-test(p03)
+p = Port03()
+test(p)

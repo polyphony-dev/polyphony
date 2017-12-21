@@ -200,10 +200,16 @@ class PortConverter(IRTransformer):
             return root.scope
 
     def _check_port_direction(self, sym, func_scope):
-        if func_scope.orig_name == 'wr':
-            expected_di = 'output'
+        if func_scope.name.startswith('polyphony.io.Queue'):
+            if func_scope.orig_name in ('wr', 'full'):
+                expected_di = 'output'
+            else:
+                expected_di = 'input'
         else:
-            expected_di = 'input'
+            if func_scope.orig_name == 'wr':
+                expected_di = 'output'
+            else:
+                expected_di = 'input'
         port_owner = self._get_port_owner(sym)
         if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
                 not self.scope.is_worker()):
