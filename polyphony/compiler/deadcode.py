@@ -6,7 +6,7 @@ logger = getLogger(__name__)
 
 class DeadCodeEliminator(object):
     def process(self, scope):
-        if scope.is_namespace() or scope.is_class() or scope.is_method():
+        if scope.is_namespace() or scope.is_class():
             return
         usedef = scope.usedef
         for blk in scope.traverse_blocks():
