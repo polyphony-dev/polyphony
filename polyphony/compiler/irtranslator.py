@@ -1188,6 +1188,8 @@ class CodeVisitor(ast.NodeVisitor):
         v = self.visit(node.value)
         ctx = self._nodectx2irctx(node)
         v.ctx = ctx
+        if isinstance(node.slice, (ast.Slice, ast.ExtSlice)):
+            fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['slice'])
         s = self.visit(node.slice)
         return MREF(v, s, ctx)
 
@@ -1255,10 +1257,10 @@ class CodeVisitor(ast.NodeVisitor):
             return CONST(None)
 
     def visit_Slice(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['slice'])
+        assert False
 
     def visit_ExtSlice(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ext slice'])
+        assert False
 
     def visit_Index(self, node):
         return self.visit(node.value)
