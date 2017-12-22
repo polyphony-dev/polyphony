@@ -505,25 +505,6 @@ class ResourceExtractor(IRVisitor):
     def visit_NEW(self, ir):
         self.visit_args(ir.args)
 
-    def visit_CONST(self, ir):
-        pass
-
-    def visit_MREF(self, ir):
-        assert ir.mem.is_a(TEMP) or ir.mem.is_a(ATTR)
-        assert ir.offset.is_a([TEMP, CONST, UNOP])
-
-    def visit_MSTORE(self, ir):
-        assert ir.mem.is_a(TEMP) or ir.mem.is_a(ATTR)
-        assert ir.offset.is_a([TEMP, CONST])
-        assert ir.exp.is_a([TEMP, CONST])
-
-    def visit_ARRAY(self, ir):
-        for item in ir.items:
-            assert item.is_a([TEMP, CONST])
-
-    def visit_TEMP(self, ir):
-        pass
-
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
 
@@ -534,15 +515,6 @@ class ResourceExtractor(IRVisitor):
         for cond in ir.conds:
             self.visit(cond)
 
-    def visit_JUMP(self, ir):
-        pass
-
-    def visit_RET(self, ir):
-        pass
-
     def visit_MOVE(self, ir):
         self.visit(ir.src)
         self.visit(ir.dst)
-
-    def visit_PHI(self, ir):
-        pass

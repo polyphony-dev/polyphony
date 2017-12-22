@@ -1,5 +1,4 @@
 from polyphony import testbench
-from polyphony import pipelined
 
 
 def rom09(p, q, zs1, zs2):
@@ -61,5 +60,6 @@ def test():
     assert 11 == zs2[2]
     assert 13 == zs2[3]
     assert 15 == zs2[4]
+
 
 test()

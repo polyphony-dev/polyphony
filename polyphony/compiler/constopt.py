@@ -246,6 +246,7 @@ class ConstantOptBase(IRVisitor):
 
     def visit_MSTORE(self, ir):
         ir.offset = self.visit(ir.offset)
+        ir.exp = self.visit(ir.exp)
         return ir
 
     def visit_ARRAY(self, ir):

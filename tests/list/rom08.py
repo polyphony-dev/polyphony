@@ -1,5 +1,4 @@
 from polyphony import testbench
-from polyphony import pipelined
 
 
 def rom08(zs1, zs2):
