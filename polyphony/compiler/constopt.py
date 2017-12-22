@@ -421,10 +421,9 @@ class ConstantOpt(ConstantOptBase):
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(ATTR)
                     and not stm.dst.symbol().is_return()):
-                #sanity check
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
-                assert len(defstms) <= 1
-
+                if len(defstms) != 1:
+                    continue
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
                 receiver = stm.dst.tail()
                 if receiver.typ.is_object() and receiver.typ.get_scope().is_module():

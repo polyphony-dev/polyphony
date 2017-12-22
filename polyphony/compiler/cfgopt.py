@@ -421,17 +421,21 @@ class HyperBlockBuilder(object):
                 return False
         return True
 
+    def _has_instance_var_modification(self, stm):
+        if stm.is_a(MOVE) and stm.dst.is_a(ATTR):
+            return True
+        return False
+
     def _emigrate_to_diamond_head(self, head, blk):
         unmoves = set()
         # TODO: port access by cexpr
         for stm in blk.stms[:-1]:
             if self._has_timing_function(stm):
                 unmoves.add(stm)
-
-        for stm in blk.stms[:-1]:
-            if self._has_mem_access(stm):
+            elif self._has_mem_access(stm):
                 unmoves.add(stm)
-
+            elif self._has_instance_var_modification(stm):
+                unmoves.add(stm)
         for stm in blk.stms[:-1]:
             if stm in unmoves:
                 continue

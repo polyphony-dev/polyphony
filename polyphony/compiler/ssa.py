@@ -336,6 +336,8 @@ class ScalarSSATransformer(SSATransformerBase):
                 sym.is_static() or
                 sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
             return False
+        if len(qsym) > 1:
+            return False
         defstms = self.usedef.get_stms_defining(qsym)
         if len(defstms) <= 1:
             return False

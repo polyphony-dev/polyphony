@@ -75,9 +75,8 @@ class CopyOpt(IRVisitor):
 
     def _find_root_def(self, qsym) -> IR:
         defs = list(self.scope.usedef.get_stms_defining(qsym))
-        if not defs:
+        if len(defs) != 1:
             return None
-        assert len(defs) == 1
         d = defs[0]
         if d.is_a(MOVE):
             if d.src.is_a(TEMP):

@@ -97,6 +97,14 @@ def is_not_static_scope(scope):
     return not is_static_scope(scope)
 
 
+def is_uninlined_scope(scope):
+    if is_static_scope(scope):
+        return False
+    if scope.is_ctor() and not scope.parent.is_module():
+        return False
+    return True
+
+
 def is_hdlmodule_scope(scope):
     return (scope.is_module() and scope.is_instantiated()) or scope.is_function_module() or scope.is_testbench()
 
@@ -596,6 +604,7 @@ def compile_plan():
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
+        filter_scope(is_uninlined_scope),
         setsynthparams,
         dbg(dumpscope),
         reduceblk,

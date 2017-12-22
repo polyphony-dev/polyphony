@@ -235,6 +235,7 @@ class TypePropagation(IRVisitor):
                 ir.attr = ir.attr_scope.find_sym(ir.attr)
             elif ir.attr_scope is not ir.attr.scope:
                 ir.attr = ir.attr_scope.find_sym(ir.attr.name)
+            assert ir.attr
             if ir.attr.typ.is_object():
                 ir.attr.add_tag('subobject')
             if ir.exp.symbol().typ.is_object() and ir.exp.symbol().name != env.self_name and self.scope.is_worker():
@@ -687,7 +688,6 @@ class TypeChecker(IRVisitor):
     def visit_MOVE(self, ir):
         src_t = self.visit(ir.src)
         dst_t = self.visit(ir.dst)
-
         if not Type.is_assignable(dst_t, src_t):
             type_error(ir, Errors.INCOMPATIBLE_TYPES,
                        [dst_t, src_t])
@@ -819,7 +819,7 @@ class ModuleChecker(IRVisitor):
             type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR)
 
         if irattr.symbol() in self.assigns[class_scope]:
-            type_error(self.current_stm, Errors.MODULE_PORT_MUST_ASSIGN_ONLY_ONCE)
+            type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE)
 
         self.assigns[class_scope].add(irattr.symbol())
 
