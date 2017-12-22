@@ -1,13 +1,13 @@
 ﻿import functools
-from .verilog_common import pyop2verilogop, is_verilog_keyword
-from .ir import Ctx
-from .signal import Signal
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .env import env
 from .hdlinterface import *
+from .ir import Ctx
 from .memref import One2NMemNode, N2OneMemNode
+from .signal import Signal
 from .stg import State, PipelineState
+from .verilog_common import pyop2verilogop, is_verilog_keyword
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -17,6 +17,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.codes = []
         self.indent = 0
         self.hdlmodule = hdlmodule
+        self.mrg = env.memref_graph
 
     def result(self):
         return ''.join(self.codes)
@@ -542,23 +543,21 @@ class VerilogCodeGen(AHDLVisitor):
         dst_node = ahdl.args[1]
         src_node = ahdl.args[2]
         n2o = dst_node.pred_branch()
+        src_root = self.mrg.find_nearest_single_source(src_node)
         assert isinstance(n2o, N2OneMemNode)
         for p in n2o.preds:
             assert isinstance(p, One2NMemNode)
-
         preds = []
-        orig_preds = []
-        for p, op in zip(n2o.preds, n2o.orig_preds):
-            if self.hdlmodule.scope is p.scope:
+        roots = []
+        for p in n2o.preds:
+            if (self.hdlmodule.scope is p.scope or
+                    p.scope.is_worker() and self.hdlmodule.scope.is_subclassof(p.scope.parent)):
                 preds.append(p)
-                orig_preds.append(op)
-            elif p.scope.is_worker() and self.hdlmodule.scope.is_subclassof(p.scope.parent):
-                preds.append(p)
-                orig_preds.append(op)
+                pred_root = self.mrg.find_nearest_single_source(p)
+                roots.append(pred_root)
         width = len(preds)
         if width < 2:
             return
-        orig_preds = sorted(orig_preds)
         if prefix:
             cs_name = '{}_{}_cs'.format(prefix, dst_node.name())
         else:
@@ -569,9 +568,9 @@ class VerilogCodeGen(AHDLVisitor):
             self.hdlmodule.add_internal_reg(cs)
         assert cs.is_reg() and not cs.is_net()
         if isinstance(src_node.preds[0], One2NMemNode):
-            assert src_node in n2o.orig_preds
-            idx = orig_preds.index(src_node)
-            one_hot_mask = bin(1 << idx)[2:]
+            assert src_root in roots
+            idx = roots.index(src_root)
+            one_hot_mask = format(1 << idx, '#0{}b'.format(width + 2))[2:]
             self.visit(AHDL_MOVE(AHDL_VAR(cs, Ctx.STORE),
                                  AHDL_SYMBOL('\'b' + one_hot_mask)))
         elif src_node.is_alias():
@@ -593,20 +592,17 @@ class VerilogCodeGen(AHDLVisitor):
         conds = ahdl.args[3]
         n2o = dst.memnode.pred_branch()
         assert isinstance(n2o, N2OneMemNode)
-
         preds = []
-        orig_preds = []
-        for p, op in zip(n2o.preds, n2o.orig_preds):
-            if self.hdlmodule.scope is p.scope:
+        roots = []
+        for p in n2o.preds:
+            if (self.hdlmodule.scope is p.scope or
+                    p.scope.is_worker() and self.hdlmodule.scope.is_subclassof(p.scope.parent)):
                 preds.append(p)
-                orig_preds.append(op)
-            elif p.scope.is_worker() and self.hdlmodule.scope.is_subclassof(p.scope.parent):
-                preds.append(p)
-                orig_preds.append(op)
+                pred_root = self.mrg.find_nearest_single_source(p)
+                roots.append(pred_root)
         width = len(preds)
         if width < 2:
             return
-        orig_preds = sorted(orig_preds)
         if prefix:
             cs_name = '{}_{}_cs'.format(prefix, dst.memnode.name())
         else:
@@ -620,8 +616,9 @@ class VerilogCodeGen(AHDLVisitor):
         for src in srcs:
             if isinstance(src.memnode.preds[0], One2NMemNode):
                 assert isinstance(src.memnode.preds[0], One2NMemNode)
-                assert src.memnode in n2o.orig_preds
-                idx = orig_preds.index(src.memnode)
+                src_root = self.mrg.find_nearest_single_source(src.memnode)
+                assert src_root in roots
+                idx = roots.index(src_root)
                 one_hot_mask = format(1 << idx, '#0{}b'.format(width + 2))[2:]
                 args.append(AHDL_SYMBOL('\'b' + one_hot_mask))
             elif src.memnode.is_alias():

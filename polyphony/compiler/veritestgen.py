@@ -9,9 +9,7 @@ logger = getLogger(__name__)
 
 class VerilogTestGen(VerilogCodeGen):
     def __init__(self, hdlmodule):
-        self.codes = []
-        self.indent = 0
-        self.hdlmodule = hdlmodule
+        super().__init__(hdlmodule)
         clk = self.hdlmodule.gen_sig('clk', 1, {'reserved'})
         rst = self.hdlmodule.gen_sig('rst', 1, {'reserved'})
         self.hdlmodule.add_internal_reg(clk)

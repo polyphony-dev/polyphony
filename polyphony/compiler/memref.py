@@ -30,10 +30,6 @@ class RefNode(object):
         s += '\tpreds\n'
         s += '\t\t' + ', '.join(['{}'.format(pred.sym) for pred in self.preds])
         s += '\n'
-        if hasattr(self, 'orig_preds'):
-            s += '\torig_preds\n'
-            s += '\t\t' + ', '.join(['{}'.format(pred.sym) for pred in self.orig_preds])
-            s += '\n'
         s += '\tsuccs\n'
         s += '\t\t' + ', '.join(['{}'.format(succ.sym) for succ in self.succs])
         s += '\n'
@@ -86,12 +82,6 @@ class RefNode(object):
     def succ_ref_nodes(self):
         pass
 
-    def sibling_nodes(self):
-        siblings = []
-        for pred in self.preds:
-            siblings.extend([s for s in pred.succs if s is not self])
-        return siblings
-
     def pred_branch(self):
         if not self.preds:
             return None
@@ -99,22 +89,6 @@ class RefNode(object):
             return self
         else:
             return self.preds[0].pred_branch()
-
-    def succ_branch(self):
-        if not self.succs:
-            return None
-        if len(self.succs) > 1:
-            return self
-        else:
-            return self.suucs[0].succ_branch()
-
-    def find_in_preds(self, node):
-        for i, p in enumerate(self.preds):
-            if p is node:
-                return i
-            if p.find_in_preds(node) >= 0:
-                return i
-        return -1
 
     def is_source(self):
         return not self.preds
@@ -187,8 +161,6 @@ class RefNode(object):
 class JointNode(RefNode):
     def __init__(self, sym, scope):
         super().__init__(sym, scope)
-        self.orig_preds = []
-        self.orig_succs = []
 
     def __hash__(self):
         return super().__hash__()
@@ -196,14 +168,10 @@ class JointNode(RefNode):
     def add_pred(self, pred):
         if pred not in self.preds:
             self.preds.append(pred)
-        if pred not in self.orig_preds:
-            self.orig_preds.append(pred)
 
     def add_succ(self, succ):
         if succ not in self.succs:
             self.succs.append(succ)
-        if succ not in self.orig_succs:
-            self.orig_succs.append(succ)
 
     def pred_ref_nodes(self):
         preds = []
@@ -223,18 +191,12 @@ class JointNode(RefNode):
                 succs.append(succ)
         return succs
 
-    def _clone_data(self, new_node):
-        super()._clone_data(new_node)
-        new_node.orig_preds = self.orig_preds[:]
-        new_node.orig_succs = self.orig_succs[:]
-
 
 class N2OneNode(JointNode):
     def __init__(self, sym, succ):
         super().__init__(sym, sym.scope)
         if succ:
             self.succs = [succ]
-            self.orig_succs = [succ]
 
     def __hash__(self):
         return super().__hash__()
@@ -249,7 +211,6 @@ class N2OneNode(JointNode):
 
     def is_in_scope(self, scope):
         return scope in [p.scope for p in self.preds]
-        #return scope is self.scope
 
     def clone(self, orig_scope, new_scope):
         assert self.sym.scope is orig_scope
@@ -265,7 +226,6 @@ class One2NNode(JointNode):
         super().__init__(sym, sym.scope)
         if pred:
             self.preds = [pred]
-            self.orig_preds = [pred]
 
     def __hash__(self):
         return super().__hash__()
@@ -501,8 +461,7 @@ class N2OneMemNode(N2OneNode, MemTrait):
 
     def update(self):
         self.length = max([p.length for p in self.preds])
-        self.preds = sorted(self.preds, key=lambda n:n.sym)
-        self.orig_preds = sorted(self.orig_preds, key=lambda n:n.sym)
+        self.preds = sorted(self.preds)
 
         if self.preds[0].is_immutable():
             self.set_immutable()
@@ -522,8 +481,7 @@ class One2NMemNode(One2NNode, MemTrait):
         return s
 
     def update(self):
-        self.succs = sorted(self.succs, key=lambda n:n.sym)
-        self.orig_succs = sorted(self.orig_succs, key=lambda n:n.sym)
+        self.succs = sorted(self.succs)
 
         if self.preds and self.length < self.preds[0].length:
             self.length = self.preds[0].length
@@ -652,6 +610,17 @@ class MemRefGraph(object):
                 for succ in node.succ_ref_nodes():
                     yield succ
 
+    def find_nearest_single_source(self, node):
+        def _find_pred_single_out(n):
+            if isinstance(n, N2OneNode):
+                return n
+            if len(n.succs) == 1:
+                return n
+            if len(n.preds) == 1:
+                return _find_pred_single_out(n.preds[0])
+            return None
+        return _find_pred_single_out(node)
+
     def verify_nodes(self):
         for node in self.nodes.values():
             assert node.scope
@@ -699,9 +668,6 @@ class MemRefGraph(object):
             self.add_node(new_node)
             replace_connection(new_node, new_node.succs, node_map, True, is_succ=True)
             replace_connection(new_node, new_node.preds, node_map, True, is_succ=False)
-            if isinstance(new_node, JointNode):
-                replace_connection(new_node, new_node.orig_succs, node_map, False)
-                replace_connection(new_node, new_node.orig_preds, node_map, False)
         return node_map
 
 
@@ -826,6 +792,7 @@ class MemRefGraphBuilder(IRVisitor):
         # do a ref-to-ref node branching
         self._do_ref_2_ref_node_branching()
         self.mrg.verify_nodes()
+        self._propagate_info()
 
     def _make_n2o(self, succ):
         sym = succ.scope.add_temp('n2o_' + succ.sym.hdl_name())
@@ -879,6 +846,8 @@ class MemRefGraphBuilder(IRVisitor):
             if len(node.preds) == 1 and isinstance(node.preds[0], MemParamNode):
                 continue
             if node.sym.is_static():
+                continue
+            if node.is_switch():
                 continue
             usestms = node.scope.usedef.get_stms_using(node.sym)
             for usestm in usestms:

@@ -138,10 +138,16 @@ class HDLModuleBuilder(object):
 
                 case_items = []
                 n2o = memnode.pred_branch()
-                for i, pred in enumerate(n2o.orig_preds):
-                    assert pred.is_sink()
-                    roms.append(pred)
-                    rom_func_name = pred.sym.hdl_name()
+                for i, pred in enumerate(n2o.preds):
+                    pred_root = mrg.find_nearest_single_source(pred)
+                    assert len(pred_root.succs) == 1
+                    for romsrc in pred_root.succs[0].succs:
+                        if romsrc.is_sink():
+                            break
+                    else:
+                        assert False
+                    roms.append(romsrc)
+                    rom_func_name = romsrc.sym.hdl_name()
                     call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])
                     connect = AHDL_CONNECT(fname, call)
                     case_val = '{}[{}]'.format(cs_name, i)
