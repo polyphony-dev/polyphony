@@ -688,6 +688,10 @@ class TypeChecker(IRVisitor):
     def visit_MOVE(self, ir):
         src_t = self.visit(ir.src)
         dst_t = self.visit(ir.dst)
+        if ir.dst.is_a(TEMP) and ir.dst.symbol().is_return():
+            if dst_t is not Type.undef_t and not Type.is_same(src_t, dst_t):
+                type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
+                           [dst_t, src_t])
         if not Type.is_assignable(dst_t, src_t):
             type_error(ir, Errors.INCOMPATIBLE_TYPES,
                        [dst_t, src_t])
