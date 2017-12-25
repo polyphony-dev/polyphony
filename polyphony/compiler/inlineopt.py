@@ -528,10 +528,12 @@ class FlattenModule(IRTransformer):
         inst_name = arg.tail().name
         new_worker = worker_scope.clone(inst_name, str(arg.lineno), parent=parent_module)
         UseDefDetector().process(new_worker)
-        self_sym = new_worker.find_sym('self')
-        self_sym.typ.set_scope(parent_module)
-        VarReplacer.replace_uses(TEMP(self_sym, Ctx.LOAD), arg.exp, new_worker.usedef)
-
+        worker_self = new_worker.find_sym('self')
+        worker_self.typ.set_scope(parent_module)
+        new_exp = arg.exp.clone()
+        ctor_self = self.scope.find_sym('self')
+        new_exp.replace(ctor_self, worker_self)
+        VarReplacer.replace_uses(TEMP(worker_self, Ctx.LOAD), new_exp, new_worker.usedef)
         new_worker_sym = parent_module.add_sym(new_worker.orig_name)
         new_worker_sym.set_type(Type.function(new_worker, None, None))
 

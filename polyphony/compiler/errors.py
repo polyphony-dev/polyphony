@@ -54,6 +54,7 @@ class Errors(Enum):
     LOCAL_CLASS_DEFINITION_NOT_ALLOWED = 815
     USE_OUTSIDE_FOR = 816
     NAME_SCOPE_RESTRICTION = 817
+    INVALID_MODULE_OBJECT_ACCESS = 818
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -150,6 +151,7 @@ ERROR_MESSAGES = {
     Errors.LOCAL_CLASS_DEFINITION_NOT_ALLOWED: "Local class definition in the function is not allowed",
     Errors.USE_OUTSIDE_FOR: "Cannot use {}() function outside of for statememt",
     Errors.NAME_SCOPE_RESTRICTION: "Using the variable 'i' is restricted by polyphony's name scope rule",
+    Errors.INVALID_MODULE_OBJECT_ACCESS: "Invalid access to a module class object",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",

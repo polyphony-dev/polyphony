@@ -745,11 +745,8 @@ class RestrictionChecker(IRVisitor):
         if self.scope.is_global() and not ir.func_scope().is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)
 
-    def visit_MSTORE(self, ir):
-        if ir.mem.symbol().scope.is_global():
-            fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
-
     def visit_CALL(self, ir):
+        self.visit(ir.func)
         if ir.func_scope().is_method() and ir.func_scope().parent.is_module():
             if ir.func_scope().orig_name == 'append_worker':
                 if not (self.scope.is_ctor() and self.scope.parent.is_module()):
@@ -780,12 +777,23 @@ class RestrictionChecker(IRVisitor):
             type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
                        [typ])
 
+    def visit_ATTR(self, ir):
+        head = ir.head()
+        if (head.scope is not self.scope and
+                head.typ.is_object() and
+                not self.scope.is_testbench()):
+            scope = head.typ.get_scope()
+            if scope.is_module():
+                fail(self.current_stm, Errors.INVALID_MODULE_OBJECT_ACCESS)
+
 
 class LateRestrictionChecker(IRVisitor):
     def visit_MSTORE(self, ir):
         memnode = ir.mem.symbol().typ.get_memnode()
         if memnode.is_alias() and memnode.can_be_reg():
             fail(self.current_stm, Errors.WRITING_ALIAS_REGARRAY)
+        if memnode.scope.is_global():
+            fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
 
     def visit_NEW(self, ir):
         if ir.func_scope().is_port():
