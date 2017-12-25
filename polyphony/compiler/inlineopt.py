@@ -152,13 +152,8 @@ class InlineOpt(object):
                 _, arg = call.args[i]
             else:
                 arg = defval
-            if arg.is_a(TEMP):
-                symbol_map[p] = arg.sym
-                symbol_map[copy] = arg.sym
-            elif arg.is_a(CONST):
-                symbol_map[p] = arg
-            elif arg.is_a(ATTR):
-                symbol_map[p] = arg
+            if arg.is_a([TEMP, ATTR, CONST]):
+                symbol_map[p] = arg.clone()
             else:
                 assert False
         return symbol_map
