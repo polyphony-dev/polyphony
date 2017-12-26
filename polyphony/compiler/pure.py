@@ -23,7 +23,14 @@ def interpret(source, file_name=''):
     objs = {}
     rtinfo = RuntimeInfo()
     builder = RuntimeInfoBuilder(rtinfo)
-
+    # We have to save the environment to avoid any import side-effect by the interpreter
+    saved_sys_path = sys.path
+    saved_sys_modules = sys.modules
+    sys.path = sys.path.copy()
+    sys.modules = sys.modules.copy()
+    if file_name:
+        dir_name = os.path.dirname(file_name)
+        sys.path.append(dir_name)
     threading.setprofile(builder._profile_func)
     thread = threading.Thread(target=_do_interpret, args=(source, file_name, objs))
     thread.start()
@@ -55,12 +62,11 @@ def interpret(source, file_name=''):
     _namespaces['__main__'] = _vars['__main__']
     rtinfo.global_vars = _namespaces
     env.runtime_info = rtinfo
+    sys.path = saved_sys_path
+    sys.modules = saved_sys_modules
 
 
 def _do_interpret(source, file_name, objs):
-    if file_name:
-        dir_name = os.path.dirname(file_name)
-        sys.path.append(dir_name)
     code = compile(source, file_name, 'exec')
     th = threading.current_thread()
     th.exc_info = None
