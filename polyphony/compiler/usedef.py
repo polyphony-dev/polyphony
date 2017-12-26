@@ -199,6 +199,14 @@ class UseDefDetector(IRVisitor):
     def _process_scope_done(self, scope):
         scope.usedef = self.table
 
+    def _process_block(self, block):
+        for stm in block.stms:
+            self.current_stm = stm
+            self.visit(stm)
+        # Do not access to path_exp on usedef detection
+        #if block.path_exp:
+        #    self.visit(block.path_exp)
+
     def _visit_args(self, ir):
         for _, arg in ir.args:
             self.visit(arg)

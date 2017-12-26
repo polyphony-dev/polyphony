@@ -5,6 +5,7 @@ from .ir import Ctx, IR, CONST, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
+from .synth import merge_synth_params
 from .type import Type
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
@@ -16,10 +17,11 @@ class InlineOpt(object):
     def __init__(self):
         pass
 
-    def process_all(self):
+    def process_all(self, driver):
         self.dones = set()
         self.inline_counts = defaultdict(int)
-        for scope in env.call_graph.bfs_ordered_nodes():
+        scopes = driver.get_scopes()
+        for scope in scopes:
             if scope not in self.dones:
                 self._process_scope(scope)
 
@@ -46,33 +48,19 @@ class InlineOpt(object):
             return
         for call, call_stm in calls:
             self.inline_counts[caller] += 1
-            assert callee is call.func_scope
+            assert callee is call.func_scope()
 
             symbol_map = self._make_replace_symbol_map(call,
                                                        caller,
                                                        callee,
                                                        str(self.inline_counts[caller]))
             if callee.is_returnable():
-                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-                result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
-                assert result_sym.is_return()
-                result_sym.del_tag('return')
+                self._make_result_exp(call_stm, call, callee, caller, symbol_map)
 
             block_map, _ = callee.clone_blocks(caller)
             callee_entry_blk = block_map[callee.entry_block]
             callee_exit_blk = block_map[callee.exit_block]
             assert len(callee_exit_blk.succs) <= 1
-
-            if callee.is_returnable():
-                result = TEMP(result_sym, Ctx.LOAD)
-                result.lineno = call_stm.lineno
-                if call_stm.is_a(MOVE):
-                    assert call_stm.src is call
-                    call_stm.src = result
-                elif call_stm.is_a(EXPR):
-                    assert call_stm.exp is call
-                    call_stm.exp = result
-
             sym_replacer = SymbolReplacer(symbol_map)
             sym_replacer.process(caller, callee_entry_blk)
 
@@ -84,6 +72,11 @@ class InlineOpt(object):
     def _process_method(self, callee, caller, calls):
         if caller.is_namespace():
             return
+        if callee.is_ctor() and callee.parent.is_module():
+            if caller.is_ctor() and caller.parent.is_module():
+                pass
+            else:
+                return
         for call, call_stm in calls:
             self.inline_counts[caller] += 1
 
@@ -92,29 +85,12 @@ class InlineOpt(object):
                                                        callee,
                                                        str(self.inline_counts[caller]))
             if callee.is_returnable():
-                result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-                result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
-                assert result_sym.is_return()
-                result_sym.del_tag('return')
-
-            block_map, _ = callee.clone_blocks(caller)
-            callee_entry_blk = block_map[callee.entry_block]
-            callee_exit_blk = block_map[callee.exit_block]
-            assert len(callee_exit_blk.succs) <= 1
-
-            if callee.is_returnable():
-                result = TEMP(result_sym, Ctx.LOAD)
-                result.lineno = call_stm.lineno
-                if call_stm.is_a(MOVE):
-                    assert call_stm.src is call
-                    call_stm.src = result
-                elif call_stm.is_a(EXPR):
-                    assert call_stm.exp is call
-                    call_stm.exp = result
+                self._make_result_exp(call_stm, call, callee, caller, symbol_map)
 
             attr_map = {}
             if caller.is_method() and caller.parent is not callee.parent:
                 if callee.is_ctor():
+                    assert not callee.is_returnable()
                     if call_stm.is_a(MOVE):
                         attr_map[callee.symbols[env.self_name]] = call_stm.dst
                 else:
@@ -123,8 +99,10 @@ class InlineOpt(object):
                     elif call_stm.is_a(EXPR):
                         object_sym = call.func.exp.qualified_symbol()
                     symbol_map[callee.symbols[env.self_name]] = object_sym
+                    object_sym[0].add_tag('inlined')
             else:
                 if callee.is_ctor():
+                    assert not callee.is_returnable()
                     if call_stm.is_a(MOVE):
                         assert call_stm.src is call
                         object_sym = call_stm.dst.qualified_symbol()
@@ -133,7 +111,11 @@ class InlineOpt(object):
                 else:
                     object_sym = call.func.exp.qualified_symbol()
                 symbol_map[callee.symbols[env.self_name]] = object_sym
-
+                object_sym[0].add_tag('inlined')
+            block_map, _ = callee.clone_blocks(caller)
+            callee_entry_blk = block_map[callee.entry_block]
+            callee_exit_blk = block_map[callee.exit_block]
+            assert len(callee_exit_blk.succs) <= 1
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
             sym_replacer.process(caller, callee_entry_blk)
 
@@ -144,6 +126,20 @@ class InlineOpt(object):
                 call_stm.block.stms.remove(call_stm)
             elif call_stm.is_a(EXPR):
                 call_stm.block.stms.remove(call_stm)
+
+    def _make_result_exp(self, call_stm, call, callee, caller, symbol_map):
+        result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
+        result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+        assert result_sym.is_return()
+        result_sym.del_tag('return')
+        result = TEMP(result_sym, Ctx.LOAD)
+        result.lineno = call_stm.lineno
+        if call_stm.is_a(MOVE):
+            assert call_stm.src is call
+            call_stm.src = result
+        elif call_stm.is_a(EXPR):
+            assert call_stm.exp is call
+            call_stm.exp = result
 
     def _make_replace_symbol_map(self, call, caller, callee, inline_id):
         symbol_map = callee.clone_symbols(caller, postfix='_inl' + inline_id)
@@ -156,13 +152,8 @@ class InlineOpt(object):
                 _, arg = call.args[i]
             else:
                 arg = defval
-            if arg.is_a(TEMP):
-                symbol_map[p] = arg.sym
-                symbol_map[copy] = arg.sym
-            elif arg.is_a(CONST):
-                symbol_map[p] = arg
-            elif arg.is_a(ATTR):
-                symbol_map[p] = arg
+            if arg.is_a([TEMP, ATTR, CONST]):
+                symbol_map[p] = arg.clone()
             else:
                 assert False
         return symbol_map
@@ -200,14 +191,10 @@ class InlineOpt(object):
         self._merge_synth_params(early_call_blk.synth_params, late_call_blk, callee_entry_blk, callee_exit_blk)
 
     def _merge_synth_params(self, synth_params, late_call_blk, callee_entry_blk, callee_exit_blk):
-        if not synth_params:
-            return
+        assert synth_params
         visited = set([late_call_blk])
         for blk in callee_entry_blk.traverse(visited):
-            if blk.synth_params:
-                continue
-            else:
-                blk.synth_params = synth_params.copy()
+            merge_synth_params(blk.synth_params, synth_params)
 
     def _reduce_useless_move(self, scope):
         for block in scope.traverse_blocks():
@@ -226,11 +213,11 @@ class CallCollector(IRVisitor):
         self.calls = calls
 
     def visit_CALL(self, ir):
-        self.calls[ir.func_scope].append((ir, self.current_stm))
+        self.calls[ir.func_scope()].append((ir, self.current_stm))
 
     def visit_NEW(self, ir):
-        assert ir.func_scope.is_class()
-        ctor = ir.func_scope.find_ctor()
+        assert ir.func_scope().is_class()
+        ctor = ir.func_scope().find_ctor()
         assert ctor
         self.calls[ctor].append((ir, self.current_stm))
 
@@ -242,10 +229,10 @@ class SymbolReplacer(IRVisitor):
         self.attr_map = attr_map
         self.inst_name = inst_name
 
-    def traverse_blocks(self, entry_block, full=False, longitude=False):
+    def traverse_blocks(self, entry_block):
         assert len(entry_block.preds) == 0
         visited = set()
-        yield from entry_block.traverse(visited, full=False, longitude=False)
+        yield from entry_block.traverse(visited)
 
     def process(self, scope, entry_block):
         self.scope = scope
@@ -383,8 +370,11 @@ class FlattenFieldAccess(IRTransformer):
             if scope.has_sym(flatname):
                 flatsym = scope.find_sym(flatname)
             else:
-                flatsym = scope.add_sym(flatname, ir.attr.tags)
-                flatsym.typ = ancestor.typ
+                tags = set()
+                for sym in ir.qualified_symbol():
+                    tags |= sym.tags
+                flatsym = scope.add_sym(flatname, tags)
+                flatsym.set_type(ancestor.typ.clone())
                 flatsym.ancestor = ancestor
                 flatsym.add_tag('flattened')
             return head + (flatsym, ) + tail
@@ -422,9 +412,9 @@ class FlattenObjectArgs(IRTransformer):
         self.params_modified_scopes = set()
 
     def visit_EXPR(self, ir):
-        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
-                ir.exp.func_scope.parent.is_module()):
-            if ir.exp.func_scope.orig_name == 'append_worker':
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
+                ir.exp.func_scope().parent.is_module()):
+            if ir.exp.func_scope().orig_name == 'append_worker':
                 self._flatten_args(ir.exp)
         self.new_stms.append(ir)
 
@@ -455,7 +445,7 @@ class FlattenObjectArgs(IRTransformer):
                 new_sym = module_scope.find_sym(new_name)
                 if not new_sym:
                     new_sym = module_scope.add_sym(new_name)
-                    new_sym.set_type(fsym.typ)
+                    new_sym.set_type(fsym.typ.clone())
                 new_arg = arg.clone()
                 new_arg.set_symbol(new_sym)
                 args.append((new_name, new_arg))
@@ -474,11 +464,11 @@ class FlattenObjectArgs(IRTransformer):
             param_in = worker_scope.find_param_sym(new_name)
             if not param_in:
                 param_in = worker_scope.add_param_sym(new_name)
-                param_in.set_type(sym.typ)
+                param_in.set_type(sym.typ.clone())
             param_copy = worker_scope.find_sym(new_name)
             if not param_copy:
                 param_copy = worker_scope.add_sym(new_name)
-                param_in.set_type(sym.typ)
+                param_in.set_type(sym.typ.clone())
             flatten_params.append((param_in, param_copy))
         new_params = []
         for idx, (sym, copy, defval) in enumerate(worker_scope.params):
@@ -502,13 +492,20 @@ class FlattenObjectArgs(IRTransformer):
 
 
 class FlattenModule(IRTransformer):
+    '''
+    self.sub.append_worker(self.sub.worker, ...)  =>  self.append_worker(self.worker, ...)
+    '''
     def __init__(self, driver):
         self.driver = driver
 
+    def process(self, scope):
+        if scope.parent and scope.parent.is_module() and scope is scope.parent.find_ctor():
+            super().process(scope)
+
     def visit_EXPR(self, ir):
-        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
-                ir.exp.func_scope.parent.is_module() and
-                ir.exp.func_scope.orig_name == 'append_worker' and
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
+                ir.exp.func_scope().parent.is_module() and
+                ir.exp.func_scope().orig_name == 'append_worker' and
                 ir.exp.func.head().name == env.self_name and
                 len(ir.exp.func.qualified_symbol()) > 2):
             call = ir.exp
@@ -531,10 +528,12 @@ class FlattenModule(IRTransformer):
         inst_name = arg.tail().name
         new_worker = worker_scope.clone(inst_name, str(arg.lineno), parent=parent_module)
         UseDefDetector().process(new_worker)
-        self_sym = new_worker.find_sym('self')
-        self_sym.typ.set_scope(parent_module)
-        VarReplacer.replace_uses(TEMP(self_sym, Ctx.LOAD), arg.exp, new_worker.usedef)
-
+        worker_self = new_worker.find_sym('self')
+        worker_self.typ.set_scope(parent_module)
+        new_exp = arg.exp.clone()
+        ctor_self = self.scope.find_sym('self')
+        new_exp.replace(ctor_self, worker_self)
+        VarReplacer.replace_uses(TEMP(worker_self, Ctx.LOAD), new_exp, new_worker.usedef)
         new_worker_sym = parent_module.add_sym(new_worker.orig_name)
         new_worker_sym.set_type(Type.function(new_worker, None, None))
 
@@ -549,7 +548,9 @@ class ObjectHierarchyCopier(object):
         pass
 
     def _is_inlining_object(self, ir):
-        return (ir.is_a([TEMP, ATTR]) and ir.symbol().typ.is_object() and
+        return (ir.is_a([TEMP, ATTR]) and
+                not ir.symbol().is_param() and
+                ir.symbol().typ.is_object() and
                 not ir.symbol().typ.get_scope().is_module())
 
     def _is_object_copy(self, mov):

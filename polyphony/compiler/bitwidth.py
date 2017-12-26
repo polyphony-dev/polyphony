@@ -7,15 +7,12 @@ logger = logging.getLogger(__name__)
 
 
 class BitwidthReducer(AHDLVisitor):
-    def process(self, scope):
-        if not scope.module_info:
-            return
-        self.usedef = scope.ahdlusedef
-        #print(self.usedef)
-        for fsm in scope.module_info.fsms.values():
+    def process(self, hdlmodule):
+        for fsm in hdlmodule.fsms.values():
+            self.usedef = fsm.usedef
             for stg in fsm.stgs:
                 for state in stg.states:
-                    for code in state.codes:
+                    for code in state.traverse():
                         self.visit(code)
 
     def visit_AHDL_CONST(self, ahdl):
@@ -52,7 +49,7 @@ class BitwidthReducer(AHDLVisitor):
         elif ahdl.op == 'RShift':
             assert len(ahdl.args) == 2
             width = widths[0]
-            if ahdl.args[1].is_a(AHDL_CONST):
+            if ahdl.args[1].is_a(AHDL_CONST) and ahdl.args[0].is_a(AHDL_VAR) and not ahdl.args[0].sig.is_int():
                 width -= ahdl.args[1].value
         else:
             width = max(widths)
@@ -84,8 +81,9 @@ class BitwidthReducer(AHDLVisitor):
         srcw = self.visit(ahdl.src)
         if srcw is None:
             return
-        if dst_sig.width > srcw:
-            dst_sig.width = srcw
+        # TODO:
+        #if dst_sig.width > srcw:
+        #    dst_sig.width = srcw
 
     def visit_AHDL_STORE(self, ahdl):
         pass

@@ -36,16 +36,28 @@ class CopyOpt(IRVisitor):
                         new = cp.src.clone()
                     # TODO: we need the bit width propagation
                     if not new.symbol().typ.is_freezed():
-                        new.symbol().set_type(old.symbol().typ)
+                        new.symbol().set_type(old.symbol().typ.clone())
                     logger.debug('replace FROM ' + str(u))
                     u.replace(old, new)
                     logger.debug('replace TO ' + str(u))
                     scope.usedef.remove_use(old, u)
                     scope.usedef.add_use(new, u)
                 if u.is_a(PHIBase):
-                    syms = [arg.qualified_symbol() for arg in u.args if arg.is_a([TEMP, ATTR])]
-                    if syms and len(u.args) == len(syms) and all(syms[0] == s for s in syms):
-                        mv = MOVE(u.var, u.args[0])
+                    syms = [arg.qualified_symbol() for arg in u.args
+                            if arg.is_a([TEMP, ATTR]) and arg.symbol() is not u.var.symbol()]
+                    if syms:
+                        if len(u.args) == len(syms) and all(syms[0] == s for s in syms):
+                            src = u.args[0]
+                        elif len(syms) == 1 and len([arg for arg in u.args if arg.is_a([TEMP, ATTR])]) > 1:
+                            for arg in u.args:
+                                if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol() == syms[0]:
+                                    src = arg
+                                    break
+                            else:
+                                assert False
+                        else:
+                            continue
+                        mv = MOVE(u.var, src)
                         idx = u.block.stms.index(u)
                         u.block.stms[idx] = mv
                         mv.block = u.block
@@ -63,9 +75,8 @@ class CopyOpt(IRVisitor):
 
     def _find_root_def(self, qsym) -> IR:
         defs = list(self.scope.usedef.get_stms_defining(qsym))
-        if not defs:
+        if len(defs) != 1:
             return None
-        assert len(defs) == 1
         d = defs[0]
         if d.is_a(MOVE):
             if d.src.is_a(TEMP):

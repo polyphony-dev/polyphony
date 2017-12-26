@@ -27,6 +27,8 @@ class Errors(Enum):
     UNSUPPORTED_ATTRIBUTE_TYPE_HINT = 113
     UNKNOWN_TYPE_NAME = 114
     MUST_BE_X = 115
+    GOT_UNEXPECTED_KWARGS = 116
+    UNKNOWN_X_IS_SPECIFIED = 117
 
     # semantic errors
     REFERENCED_BEFORE_ASSIGN = 200
@@ -50,20 +52,25 @@ class Errors(Enum):
     METHOD_MUST_HAVE_SELF = 813
     REDEFINED_NAME = 814
     LOCAL_CLASS_DEFINITION_NOT_ALLOWED = 815
+    USE_OUTSIDE_FOR = 816
+    NAME_SCOPE_RESTRICTION = 817
+    INVALID_MODULE_OBJECT_ACCESS = 818
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
-    MODULE_PORT_MUST_ASSIGN_ONLY_ONCE = 901
+    MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE = 901
     MODULE_FIELD_MUST_ASSIGN_IN_CTOR = 902
     CALL_APPEND_WORKER_IN_CTOR = 903
     CALL_MODULE_METHOD = 904
     UNSUPPORTED_TYPES_IN_FUNC = 905
-    WORKER_ARG_MUST_BE_X_TYPE = 906
-    PORT_MUST_BE_IN_MODULE = 907
-    PORT_PARAM_MUST_BE_CONST = 908
-    PORT_IS_NOT_USED = 909
+    MODULE_ARG_MUST_BE_X_TYPE = 906
+    WORKER_ARG_MUST_BE_X_TYPE = 907
+    PORT_MUST_BE_IN_MODULE = 908
+    PORT_PARAM_MUST_BE_CONST = 909
     WORKER_MUST_BE_METHOD_OF_MODULE = 910
     PORT_ACCESS_IS_NOT_ALLOWED = 911
+    RESERVED_PORT_NAME = 912
+    MODULE_CANNOT_ACCESS_OBJECT = 913
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -76,6 +83,23 @@ class Errors(Enum):
     PURE_IS_DISABLED = 933
     PURE_CTOR_MUST_BE_MODULE = 934
     PURE_RETURN_NO_SAME_TYPE = 935
+
+    RULE_BREAK_IN_PIPELINE_LOOP = 1100
+    RULE_CONTINUE_IN_PIPELINE_LOOP = 1101
+    RULE_FUNCTION_CANNOT_BE_PIPELINED = 1102
+    RULE_PIPELINE_HAS_INNER_LOOP = 1103
+    RULE_PIPELINE_HAS_MEM_READ_CONFLICT = 1130
+    RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT = 1131
+    RULE_PIPELINE_HAS_MEM_RW_CONFLICT = 1132
+
+    RULE_UNROLL_NESTED_LOOP = 1151
+    RULE_UNROLL_UNFIXED_LOOP = 1152
+    RULE_UNROLL_CONTROL_BRANCH = 1153
+    RULE_UNROLL_UNKNOWN_STEP = 1154
+    RULE_UNROLL_VARIABLE_STEP = 1155
+
+    # not supported yet
+    WRITING_ALIAS_REGARRAY = 9000
 
     def __str__(self):
         return ERROR_MESSAGES[self]
@@ -95,6 +119,8 @@ ERROR_MESSAGES = {
     Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT: "A type hint for other than 'self.*' is not supported",
     Errors.UNKNOWN_TYPE_NAME: "Unknown type name '{}'",
     Errors.MUST_BE_X: "{} is expected",
+    Errors.GOT_UNEXPECTED_KWARGS: "{}() got an unexpected keyword argument '{}'",
+    Errors.UNKNOWN_X_IS_SPECIFIED: "Unknown {} '{}' is specified",
 
     Errors.LEN_TAKES_ONE_ARG: "len() takes exactly one argument",
     Errors.LEN_TAKES_SEQ_TYPE: "len() takes sequence type argument",
@@ -123,25 +149,29 @@ ERROR_MESSAGES = {
     Errors.METHOD_MUST_HAVE_SELF: "Class method must have a 'self' parameter",
     Errors.REDEFINED_NAME: "'{}' has been redefined",
     Errors.LOCAL_CLASS_DEFINITION_NOT_ALLOWED: "Local class definition in the function is not allowed",
+    Errors.USE_OUTSIDE_FOR: "Cannot use {}() function outside of for statememt",
+    Errors.NAME_SCOPE_RESTRICTION: "Using the variable 'i' is restricted by polyphony's name scope rule",
+    Errors.INVALID_MODULE_OBJECT_ACCESS: "Invalid access to a module class object",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",
-    Errors.MODULE_PORT_MUST_ASSIGN_ONLY_ONCE: "Assignment to a module port can only be done once",
+    Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE: "Assignment to a module field can only be done once",
     Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR: "Assignment to a module field can only at the constructor",
     Errors.CALL_APPEND_WORKER_IN_CTOR: "Calling append_worker method can only at the constructor",
     Errors.CALL_MODULE_METHOD: "Calling a method of the module class can only in the module itself",
     Errors.UNSUPPORTED_TYPES_IN_FUNC: "It is not supported to pass the {} type argument to {}()",
+    Errors.MODULE_ARG_MUST_BE_X_TYPE: "The type of @module class argument must be constant, not {}",
     Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}",
     Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",
     Errors.PORT_PARAM_MUST_BE_CONST: "The port class constructor accepts only constants",
-    Errors.PORT_IS_NOT_USED: "Port '{}' is not used at all",
     Errors.WORKER_MUST_BE_METHOD_OF_MODULE: "The worker must be a method of the module",
     Errors.PORT_ACCESS_IS_NOT_ALLOWED: "'any' port cannot be accessed from outside of the module",
-
+    Errors.RESERVED_PORT_NAME: "The name of Port '{}' is reserved",
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
     Errors.CANNOT_WAIT_OUTPUT: "Cannot wait for the output port",
+    Errors.MODULE_CANNOT_ACCESS_OBJECT: "The module class cannot access an object",
 
     Errors.PURE_ERROR: "@pure Python execution is failed",
     Errors.PURE_MUST_BE_GLOBAL: "@pure function must be in the global scope",
@@ -149,6 +179,22 @@ ERROR_MESSAGES = {
     Errors.PURE_IS_DISABLED: "@pure Python execution is disabled",
     Errors.PURE_CTOR_MUST_BE_MODULE: "Classes other than @module class can not use @pure decorator",
     Errors.PURE_RETURN_NO_SAME_TYPE: "@pure function must return the same type values",
+
+    Errors.RULE_BREAK_IN_PIPELINE_LOOP: "Cannot use 'break' statement in the pipeline loop",
+    Errors.RULE_CONTINUE_IN_PIPELINE_LOOP: "Cannot use 'continue' statement in the pipeline loop",
+    Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED: "Normal function cannot be pipelined",
+    Errors.RULE_PIPELINE_HAS_INNER_LOOP: "Cannot pipelining the loop that has an inner loop",
+    Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "Cannot read '{}' more than once in a pipeline loop",
+    Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "Cannot write '{}' more than once in a pipeline loop",
+    Errors.RULE_PIPELINE_HAS_MEM_RW_CONFLICT: "Cannot read and write '{}' in a pipeline loop",
+
+    Errors.RULE_UNROLL_NESTED_LOOP: "Cannot unroll nested loop",
+    Errors.RULE_UNROLL_UNFIXED_LOOP: "Cannot full unroll unfixed loop",
+    Errors.RULE_UNROLL_CONTROL_BRANCH: "Cannot unroll loop that having control branches",
+    Errors.RULE_UNROLL_UNKNOWN_STEP: "Cannot find the step value of the loop",
+    Errors.RULE_UNROLL_VARIABLE_STEP: "The step value must be a constant",
+
+    Errors.WRITING_ALIAS_REGARRAY: "Writing to alias register array is not supported yet",
 }
 
 
@@ -157,6 +203,8 @@ class Warnings(Enum):
     ASSERTION_FAILED = 100
     EXCEPTION_RAISED = 101
 
+    PORT_IS_NOT_USED = 1000
+
     def __str__(self):
         return WARNING_MESSAGES[self]
 
@@ -164,4 +212,5 @@ class Warnings(Enum):
 WARNING_MESSAGES = {
     Warnings.ASSERTION_FAILED: "The expression of assert always evaluates to False",
     Warnings.EXCEPTION_RAISED: "An exception occurred while executing the Python interpreter at compile time\n(For more information you can use '--verbose' option)",
+    Warnings.PORT_IS_NOT_USED: "Port '{}' is not used at all",
 }

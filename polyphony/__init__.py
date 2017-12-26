@@ -127,7 +127,9 @@ def _module_start(self, reentrance=False):
         _is_worker_running = True
         io._enable()
     for w in self._workers:
-        w.start()
+        th = _WorkerThread(w)
+        self._worker_threads.append(th)
+        th.start()
     for sub in self._submodules:
         sub._start(True)
     time.sleep(0.001)
@@ -139,18 +141,19 @@ def _module_stop(self, reentrance=False):
         if not _is_worker_running:
             return
         _is_worker_running = False
-    for w in self._workers:
-        w.prejoin()
+    for th in self._worker_threads:
+        th.prejoin()
     for sub in self._submodules:
         sub._stop()
     if not reentrance:
         io._disable()
-    for w in self._workers:
-        w.join()
+    for th in self._worker_threads:
+        th.join()
+    self._worker_threads.clear()
 
 
 def _module_append_worker(self, fn, *args):
-    self._workers.append(_Worker(fn, *args))
+    self._workers.append(_Worker(fn, args))
 
 
 def _module_deepcopy(self, memo):
@@ -176,6 +179,7 @@ class _ModuleDecorator(object):
             instance._module_decorator = self
             io._enable()
             setattr(instance, '_workers', [])
+            setattr(instance, '_worker_threads', [])
             setattr(instance, '_submodules', [])
             instance.__init__(*args, **kwargs)
             io._disable()
@@ -248,19 +252,25 @@ By creating an instance of Module class in the global scope, that instance will 
 '''
 
 
-class _Worker(threading.Thread):
-    def __init__(self, func, *args):
+class _Worker(object):
+    def __init__(self, func, args):
         super().__init__()
         self.func = func
         self.args = args
+
+
+class _WorkerThread(threading.Thread):
+    def __init__(self, w):
+        super().__init__()
+        self.worker = w
         self.daemon = True
 
     def run(self):
         try:
-            if self.args:
-                self.func(*self.args)
+            if self.worker.args:
+                self.worker.func(*self.worker.args)
             else:
-                self.func()
+                self.worker.func()
         except io.PolyphonyIOException as e:
             module.abort()
         except Exception as e:
@@ -277,7 +287,6 @@ class _Rule(object):
             self.rules = kwargs
 
         def __enter__(self):
-            print('with rules=', self.rules)
             return self
 
         def __exit__(self, exc_type, exc_value, traceback):
@@ -285,8 +294,7 @@ class _Rule(object):
 
         def __call__(self, func):
             def wrapper(*args, **kwargs):
-                func(*args, **kwargs)
-            print('decorator rules=', self.rules)
+                return func(*args, **kwargs)
             return wrapper
 
     def __call__(self, **kwargs):
@@ -294,3 +302,11 @@ class _Rule(object):
 
 
 rule = _Rule()
+
+
+def pipelined(seq):
+    return seq
+
+
+def unroll(seq, factor='full'):
+    return seq

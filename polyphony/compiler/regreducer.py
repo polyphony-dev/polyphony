@@ -23,22 +23,14 @@ class AliasVarDetector(IRVisitor):
             if src_sym.is_param() or src_sym.typ.is_port():
                 return
         elif ir.src.is_a(CALL):
-            return
+            if not ir.src.func_scope().is_predicate():
+                return
         elif ir.src.is_a(MREF):
             memnode = ir.src.mem.symbol().typ.get_memnode()
-            if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
-                stms = self.usedef.get_stms_defining(sym)
-                if len(stms) == 1 and not sym.is_induction() and not sym.is_alias():
-                    # if the symbol is used in a condition variable definition
-                    # the symbol cannot be alias.
-                    # bacause a condition variable is used any state,
-                    # so a condition might be change when the memory destination symbol is alias
-                    for usestm in self.usedef.get_stms_using(sym):
-                        defsyms = self.usedef.get_syms_defined_at(usestm)
-                        for defsym in defsyms:
-                            if defsym.is_condition():
-                                return
-                    sym.add_tag('alias')
+            if memnode.is_immutable() or not memnode.is_writable():
+                sym.add_tag('alias')
+                return
+            # TODO:
             return
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
@@ -52,13 +44,21 @@ class AliasVarDetector(IRVisitor):
 
     def visit_PHI(self, ir):
         sym = ir.var.symbol()
-        if sym.typ.is_seq() or sym.is_induction() or sym.is_return() or sym.typ.is_port():
+        if sym.is_return() or sym.typ.is_port():
+            return
+        if sym.typ.is_seq() and sym.typ.get_memnode().can_be_reg():
+            return
+        if any([sym is a.symbol() for a in ir.args if a.is_a(TEMP)]):
             return
         sym.add_tag('alias')
 
     def visit_UPHI(self, ir):
         sym = ir.var.symbol()
-        if sym.typ.is_seq() or sym.is_induction() or sym.is_return() or sym.typ.is_port():
+        if sym.is_return() or sym.typ.is_port():
+            return
+        if sym.typ.is_seq() and sym.typ.get_memnode().can_be_reg():
+            return
+        if any([sym is a.symbol() for a in ir.args if a.is_a(TEMP)]):
             return
         sym.add_tag('alias')
 

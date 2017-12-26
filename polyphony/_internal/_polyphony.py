@@ -1,4 +1,4 @@
-__version__ = '0.3.2'  # type: str
+__version__ = '0.3.3'  # type: str
 __all__ = [
     'testbench',
     'pure',
@@ -28,4 +28,14 @@ def module() -> None:
 
 @decorator
 def rule(kwargs) -> None:
+    pass
+
+
+@builtin
+def unroll(seq, factor='full') -> list:
+    pass
+
+
+@builtin
+def pipelined(seq) -> list:
     pass

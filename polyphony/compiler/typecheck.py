@@ -26,18 +26,18 @@ class TypePropagation(IRVisitor):
         self.check_error = True
         self.new_scopes = set()
 
-    def process_all(self):
+    def process_all(self, driver):
         self.check_error = False
-        scopes = Scope.get_scopes(bottom_up=False,
-                                  with_global=True,
-                                  with_class=True,
-                                  with_lib=False)
+        scopes = driver.get_scopes(bottom_up=False,
+                                   with_global=True,
+                                   with_class=True,
+                                   with_lib=False)
         for s in scopes:
             if s.return_type is None:
                 s.return_type = Type.undef_t
             else:
                 ret = s.symbols[Symbol.return_prefix]
-                ret.typ = s.return_type
+                ret.set_type(s.return_type)
         prev_untyped = []
         while True:
             untyped = []
@@ -99,7 +99,6 @@ class TypePropagation(IRVisitor):
                 fun_name = env.callop_name
             func_sym = clazz.find_sym(fun_name)
             assert func_sym.typ.is_function()
-            ir.func_scope = func_sym.typ.get_scope()
             ir.func = ATTR(ir.func, clazz.symbols[fun_name], Ctx.LOAD)
             ir.func.attr_scope = clazz
 
@@ -113,8 +112,6 @@ class TypePropagation(IRVisitor):
                 self._convert_call(ir)
             elif t.is_function():
                 assert t.has_scope()
-                scope = t.get_scope()
-                ir.func_scope = scope
             else:
                 if not self.check_error:
                     raise RejectPropagation(ir)
@@ -127,58 +124,53 @@ class TypePropagation(IRVisitor):
             t = ir.func.symbol().typ
             if t.is_object() or t.is_port():
                 self._convert_call(ir)
-            else:
-                func_sym = ir.func.attr_scope.find_sym(func_name)
-                if func_sym.typ.is_function():
-                    ir.func_scope = func_sym.typ.get_scope()
-            if not ir.func_scope:
+            if t.is_undef():
                 raise RejectPropagation(ir)
-            #assert ir.func_scope.is_method()
-            if ir.func_scope.is_mutable():
+            if ir.func_scope().is_mutable():
                 pass  # ir.func.exp.ctx |= Ctx.STORE
         else:
             assert False
 
-        if not ir.func_scope:
+        if not ir.func_scope():
             # we cannot specify the callee because it has not been evaluated yet.
             raise RejectPropagation(ir)
 
-        if ir.func_scope.is_pure():
+        if ir.func_scope().is_pure():
             if not env.enable_pure:
                 fail(self.current_stm, Errors.PURE_IS_DISABLED)
-            if not ir.func_scope.parent.is_global():
+            if not ir.func_scope().parent.is_global():
                 fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)
-            if ir.func_scope.return_type and not ir.func_scope.return_type.is_undef() and not ir.func_scope.return_type.is_any():
-                return ir.func_scope.return_type
+            if ir.func_scope().return_type and not ir.func_scope().return_type.is_undef() and not ir.func_scope().return_type.is_any():
+                return ir.func_scope().return_type
             ret, type_or_error = self.pure_type_inferrer.infer_type(ir, self.scope)
             if ret:
                 return type_or_error
             else:
                 fail(self.current_stm, type_or_error)
-        elif ir.func_scope.is_method():
-            params = ir.func_scope.params[1:]
+        elif ir.func_scope().is_method():
+            params = ir.func_scope().params[1:]
         else:
-            params = ir.func_scope.params[:]
-        ir.args = self._normalize_args(ir.func_scope.orig_name, params, ir.args, ir.kwargs)
+            params = ir.func_scope().params[:]
+        ir.args = self._normalize_args(ir.func_scope().orig_name, params, ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if any([atype.is_undef() for atype in arg_types]):
             raise RejectPropagation(ir)
 
-        ret_t = ir.func_scope.return_type
-        if ir.func_scope.is_class():
+        ret_t = ir.func_scope().return_type
+        if ir.func_scope().is_class():
             assert False
         else:
             for i, param in enumerate(params):
                 if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
-                    self._set_type(param.sym, arg_types[i])
-            funct = Type.function(ir.func_scope,
+                    self._set_type(param.sym, arg_types[i].clone())
+            funct = Type.function(ir.func_scope(),
                                   ret_t,
-                                  tuple([param.sym.typ for param in ir.func_scope.params]))
+                                  tuple([param.sym.typ for param in ir.func_scope().params]))
         self._set_type(ir.func.symbol(), funct)
 
         if (self.scope.is_testbench() and
-                ir.func_scope.is_function() and not ir.func_scope.is_inlinelib()):
-            ir.func_scope.add_tag('function_module')
+                ir.func_scope().is_function() and not ir.func_scope().is_inlinelib()):
+            ir.func_scope().add_tag('function_module')
 
         return ret_t
 
@@ -190,20 +182,22 @@ class TypePropagation(IRVisitor):
         return ir.sym.typ.get_return_type()
 
     def visit_NEW(self, ir):
-        ret_t = Type.object(ir.func_scope)
-        ir.func_scope.return_type = ret_t
-        ctor = ir.func_scope.find_ctor()
-        ir.args = self._normalize_args(ir.func_scope.orig_name, ctor.params[1:], ir.args, ir.kwargs)
+        ret_t = Type.object(ir.func_scope())
+        ir.func_scope().return_type = ret_t
+        ctor = ir.func_scope().find_ctor()
+        ir.args = self._normalize_args(ir.func_scope().orig_name, ctor.params[1:], ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         for i, param in enumerate(ctor.params[1:]):
             if param.sym.typ.is_int() or Type.is_same(param.sym.typ, arg_types[i]):
-                self._set_type(param.sym, arg_types[i])
+                self._set_type(param.sym, arg_types[i].clone())
             elif param.sym.typ.is_generic():
-                new_scope = self._new_scope_with_type(ir.func_scope, arg_types[i], i + 1)
+                new_scope = self._new_scope_with_type(ir.func_scope(), arg_types[i], i + 1)
                 if not new_scope:
                     raise RejectPropagation(ir)
                 ir.args.pop(i)
-                ir.func_scope = new_scope
+                new_scope_sym = ir.sym.scope.gen_sym(new_scope.orig_name)
+                new_scope_sym.set_type(Type.klass(new_scope))
+                ir.sym = new_scope_sym
                 self.new_scopes.add(new_scope)
                 return self.visit_NEW(ir)
         return ret_t
@@ -223,7 +217,7 @@ class TypePropagation(IRVisitor):
 
     def visit_TEMP(self, ir):
         if ir.sym.typ.is_undef() and ir.sym.ancestor:
-            ir.sym.typ = ir.sym.ancestor.typ
+            ir.sym.set_type(ir.sym.ancestor.typ.clone())
         return ir.sym.typ
 
     def visit_ATTR(self, ir):
@@ -239,7 +233,9 @@ class TypePropagation(IRVisitor):
                     type_error(self.current_stm, Errors.UNKNOWN_ATTRIBUTE,
                                [ir.attr])
                 ir.attr = ir.attr_scope.find_sym(ir.attr)
-
+            elif ir.attr_scope is not ir.attr.scope:
+                ir.attr = ir.attr_scope.find_sym(ir.attr.name)
+            assert ir.attr
             if ir.attr.typ.is_object():
                 ir.attr.add_tag('subobject')
             if ir.exp.symbol().typ.is_object() and ir.exp.symbol().name != env.self_name and self.scope.is_worker():
@@ -273,34 +269,51 @@ class TypePropagation(IRVisitor):
         elm_t = mem_t.get_element()
         if exp_t.is_scalar() and elm_t.is_scalar():
             if exp_t.get_width() > elm_t.get_width():
-                self._set_type(ir.dst.mem.symbol(), Type.list(exp_t, None))
+                if ir.mem.symbol().typ.is_seq():
+                    memnode = ir.mem.symbol().typ.get_memnode()
+                else:
+                    memnode = None
+                self._set_type(ir.mem.symbol(), Type.list(exp_t, memnode))
         return mem_t
 
     def visit_ARRAY(self, ir):
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
-        item_typs = [self.visit(item) for item in ir.items]
+        item_t = None
+        if self.current_stm.dst.is_a([TEMP, ATTR]):
+            dsttyp = self.current_stm.dst.symbol().typ
+            if dsttyp.is_seq() and dsttyp.get_element().is_freezed():
+                item_t = dsttyp.get_element().clone()
+        if item_t is None:
+            item_typs = [self.visit(item) for item in ir.items]
+            if self.current_stm.src == ir:
+                if any([t is Type.undef_t for t in item_typs]):
+                    raise RejectPropagation(ir)
 
-        if item_typs and all([Type.is_same(item_typs[0], item_t) for item_t in item_typs]):
-            if item_typs[0].is_scalar() and not item_typs[0].is_str():
-                maxwidth = max([item_t.get_width() for item_t in item_typs])
-                signed = any([item_t.get_signed() for item_t in item_typs])
-                item_t = Type.int(maxwidth, signed)
+            if item_typs and all([Type.is_assignable(item_typs[0], item_t) for item_t in item_typs]):
+                if item_typs[0].is_scalar() and not item_typs[0].is_str():
+                    maxwidth = max([item_t.get_width() for item_t in item_typs])
+                    signed = any([item_t.has_signed() and item_t.get_signed() for item_t in item_typs])
+                    item_t = Type.int(maxwidth, signed)
+                else:
+                    item_t = item_typs[0]
             else:
-                item_t = item_typs[0]
+                assert False  # TODO:
+        if ir.sym.typ.is_seq():
+            memnode = ir.sym.typ.get_memnode()
         else:
-            assert False  # TODO
+            memnode = None
         if ir.is_mutable:
-            t = Type.list(item_t, None)
+            t = Type.list(item_t, memnode)
         else:
-            t = Type.tuple(item_t, None, len(ir.items))
+            t = Type.tuple(item_t, memnode, len(ir.items))
         self._set_type(ir.sym, t)
         return t
 
     def _propagate_worker_arg_types(self, call):
         if len(call.args) == 0:
             type_error(self.current_stm, Errors.MISSING_REQUIRED_ARG,
-                       [call.func_scope.orig_name])
+                       [call.func_scope().orig_name])
         _, func = call.args[0]
         if not func.symbol().typ.is_function():
             type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
@@ -323,8 +336,10 @@ class TypePropagation(IRVisitor):
         args = self._normalize_args(worker_scope.orig_name, params, args, {})
         arg_types = [self.visit(arg) for _, arg in args]
         for i, param in enumerate(params):
-            self._set_type(param.sym, arg_types[i])
-            self._set_type(param.copy, arg_types[i])
+            # we should not set the same type here.
+            # because the type of 'sym' and 'copy' might be have different objects(e.g. memnode)
+            self._set_type(param.sym, arg_types[i].clone())
+            self._set_type(param.copy, arg_types[i].clone())
 
         funct = Type.function(worker_scope,
                               Type.none_t,
@@ -338,9 +353,9 @@ class TypePropagation(IRVisitor):
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
 
-        if (ir.exp.is_a(CALL) and ir.exp.func_scope.is_method() and
-                ir.exp.func_scope.parent.is_module()):
-            if ir.exp.func_scope.orig_name == 'append_worker':
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
+                ir.exp.func_scope().parent.is_module()):
+            if ir.exp.func_scope().orig_name == 'append_worker':
                 self._propagate_worker_arg_types(ir.exp)
 
     def visit_CJUMP(self, ir):
@@ -358,14 +373,9 @@ class TypePropagation(IRVisitor):
         if self.scope.return_type.is_undef() and not typ.is_undef():
             self.scope.return_type = typ
 
-    def _is_valid_list_type_source(self, src):
-        return (src.is_a([ARRAY,  MSTORE])
-                or src.is_a(BINOP) and src.left.is_a(ARRAY) and src.op == 'Mult'
-                or src.is_a(TEMP) and src.sym.is_param())
-
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
-        if src_typ is Type.undef_t:
+        if src_typ in (Type.undef_t, Type.generic_t):
             raise RejectPropagation(ir)
         dst_typ = self.visit(ir.dst)
 
@@ -373,17 +383,12 @@ class TypePropagation(IRVisitor):
             if not isinstance(ir.dst.symbol(), Symbol):
                 # the type of object has not inferenced yet
                 raise RejectPropagation(ir)
-            self._set_type(ir.dst.symbol(), src_typ)
+            self._set_type(ir.dst.symbol(), src_typ.clone())
             if self.scope.is_method() and ir.dst.is_a(ATTR):
                 receiver = ir.dst.tail()
                 if receiver.typ.is_object():
                     sym = receiver.typ.get_scope().find_sym(ir.dst.symbol().name)
-                    self._set_type(sym, src_typ)
-            if ir.src.is_a(ARRAY):
-                if dst_typ.has_element():
-                    elem_t = dst_typ.get_element()
-                    # we have to propagate backward
-                    self._set_type(ir.src.sym, dst_typ)
+                    self._set_type(sym, src_typ.clone())
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet
@@ -393,7 +398,7 @@ class TypePropagation(IRVisitor):
             elem_t = src_typ.get_element()
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR])
-                self._set_type(item.symbol(), elem_t)
+                self._set_type(item.symbol(), elem_t.clone())
         elif ir.dst.is_a(MREF):
             pass
         else:
@@ -409,7 +414,7 @@ class TypePropagation(IRVisitor):
         # TODO: Union type
         for arg_t in arg_types:
             if not arg_t.is_undef() and not ir.var.symbol().typ.is_freezed():
-                self._set_type(ir.var.symbol(), arg_t)
+                self._set_type(ir.var.symbol(), arg_t.clone())
                 break
 
     def visit_UPHI(self, ir):
@@ -480,12 +485,12 @@ class TypeReplacer(IRVisitor):
 
     def visit_TEMP(self, ir):
         if self.comparator(ir.sym.typ, self.old_t):
-            ir.sym.typ = self.new_t
+            ir.sym.set_type(self.new_t)
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
         if self.comparator(ir.attr.typ, self.old_t):
-            ir.attr.typ = self.new_t
+            ir.attr.set_type(self.new_t)
 
 
 class InstanceTypePropagation(TypePropagation):
@@ -539,23 +544,23 @@ class TypeChecker(IRVisitor):
     def visit_CALL(self, ir):
         func_sym = ir.func.symbol()
         arg_len = len(ir.args)
-        if ir.func_scope.is_lib():
-            return ir.func_scope.return_type
-        assert ir.func_scope
-        if ir.func_scope.is_pure():
+        if ir.func_scope().is_lib():
+            return ir.func_scope().return_type
+        assert ir.func_scope()
+        if ir.func_scope().is_pure():
             return Type.any_t
-        elif ir.func_scope.is_method():
-            param_len = len(ir.func_scope.params) - 1
+        elif ir.func_scope().is_method():
+            param_len = len(ir.func_scope().params) - 1
             param_typs = tuple(func_sym.typ.get_param_types()[1:])
         else:
-            param_len = len(ir.func_scope.params)
+            param_len = len(ir.func_scope().params)
             param_typs = tuple(func_sym.typ.get_param_types())
 
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
-        self._check_param_type(param_typs, ir, ir.func_scope.orig_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_type(param_typs, ir, ir.func_scope().orig_name, with_vararg)
 
-        return ir.func_scope.return_type
+        return ir.func_scope().return_type
 
     def visit_SYSCALL(self, ir):
         if ir.sym.name == 'len':
@@ -581,17 +586,17 @@ class TypeChecker(IRVisitor):
     def visit_NEW(self, ir):
         arg_len = len(ir.args)
 
-        ctor = ir.func_scope.find_ctor()
+        ctor = ir.func_scope().find_ctor()
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
-                       [ir.func_scope.orig_name, 0, arg_len])
+                       [ir.func_scope().orig_name, 0, arg_len])
         param_len = len(ctor.params) - 1
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope.orig_name, with_vararg)
-        self._check_param_type(param_typs, ir, ir.func_scope.orig_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_type(param_typs, ir, ir.func_scope().orig_name, with_vararg)
 
-        return Type.object(ir.func_scope)
+        return Type.object(ir.func_scope())
 
     def visit_CONST(self, ir):
         if isinstance(ir.value, bool):
@@ -646,7 +651,7 @@ class TypeChecker(IRVisitor):
             return ir.sym.typ
         for item in ir.items:
             item_type = self.visit(item)
-            if not item_type.is_int():
+            if not (item_type.is_int() or item_type.is_bool()):
                 type_error(self.current_stm, Errors.SEQ_ITEM_MUST_BE_INT,
                            [item_type])
         if (ir.sym.typ.is_freezed() and
@@ -660,7 +665,7 @@ class TypeChecker(IRVisitor):
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
         if ir.exp.is_a(CALL):
-            if ir.exp.func_scope.return_type is Type.none_t:
+            if ir.exp.func_scope().return_type is Type.none_t:
                 #TODO: warning
                 pass
 
@@ -683,7 +688,10 @@ class TypeChecker(IRVisitor):
     def visit_MOVE(self, ir):
         src_t = self.visit(ir.src)
         dst_t = self.visit(ir.dst)
-
+        if ir.dst.is_a(TEMP) and ir.dst.symbol().is_return():
+            if dst_t is not Type.undef_t and not Type.is_same(src_t, dst_t):
+                type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
+                           [dst_t, src_t])
         if not Type.is_assignable(dst_t, src_t):
             type_error(ir, Errors.INCOMPATIBLE_TYPES,
                        [dst_t, src_t])
@@ -717,41 +725,35 @@ class TypeChecker(IRVisitor):
                            [arg, scope_name])
 
 
+class EarlyRestrictionChecker(IRVisitor):
+    def visit_SYSCALL(self, ir):
+        if ir.sym.name in ('range', 'polyphony.unroll', 'polyphony.pipelined'):
+            fail(self.current_stm, Errors.USE_OUTSIDE_FOR, [ir.sym.name])
+
+
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.func_scope.is_module() and not ir.func_scope.parent.is_namespace():
-            fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
-        if self.scope.is_global() and not ir.func_scope.is_module():
+        if ir.func_scope().is_module():
+            if not ir.func_scope().parent.is_namespace():
+                fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
+            for i, (_, arg) in enumerate(ir.args):
+                if (arg.is_a([TEMP, ATTR])):
+                    typ = arg.symbol().typ
+                    if typ.is_scalar() or typ.is_class():
+                        continue
+                    fail(self.current_stm, Errors.MODULE_ARG_MUST_BE_X_TYPE, [typ])
+        if self.scope.is_global() and not ir.func_scope().is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)
 
-    def visit_MSTORE(self, ir):
-        if ir.mem.symbol().scope.is_global():
-            fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
-
-
-class LateRestrictionChecker(IRVisitor):
-    def visit_NEW(self, ir):
-        if ir.func_scope.is_port() and not (self.scope.is_ctor() and self.scope.parent.is_module()):
-            type_error(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
-
     def visit_CALL(self, ir):
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
-            if ir.func_scope.orig_name == 'append_worker':
+        self.visit(ir.func)
+        if ir.func_scope().is_method() and ir.func_scope().parent.is_module():
+            if ir.func_scope().orig_name == 'append_worker':
                 if not (self.scope.is_ctor() and self.scope.parent.is_module()):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
+                self._check_append_worker(ir)
             if not (self.scope.is_method() and self.scope.parent.is_module()):
                 fail(self.current_stm, Errors.CALL_MODULE_METHOD)
-
-
-class ModuleChecker(IRVisitor):
-    def __init__(self):
-        super().__init__()
-        self.assigns = defaultdict(set)
-
-    def process(self, scope):
-        if not (scope.parent and scope.parent.is_module()):
-            return
-        super().process(scope)
 
     def _check_append_worker(self, call):
         for i, (_, arg) in enumerate(call.args):
@@ -768,15 +770,53 @@ class ModuleChecker(IRVisitor):
                 continue
             if (arg.is_a([TEMP, ATTR])):
                 typ = arg.symbol().typ
-                if typ.is_object() and typ.get_scope().is_port():
+                if typ.is_scalar():
+                    continue
+                elif typ.is_object():
                     continue
             type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
                        [typ])
 
-    def visit_CALL(self, ir):
-        if ir.func_scope.is_method() and ir.func_scope.parent.is_module():
-            if ir.func_scope.orig_name == 'append_worker':
-                self._check_append_worker(ir)
+    def visit_ATTR(self, ir):
+        head = ir.head()
+        if (head.scope is not self.scope and
+                head.typ.is_object() and
+                not self.scope.is_testbench()):
+            scope = head.typ.get_scope()
+            if scope.is_module():
+                fail(self.current_stm, Errors.INVALID_MODULE_OBJECT_ACCESS)
+
+
+class LateRestrictionChecker(IRVisitor):
+    def visit_MSTORE(self, ir):
+        memnode = ir.mem.symbol().typ.get_memnode()
+        if memnode.is_alias() and memnode.can_be_reg():
+            fail(self.current_stm, Errors.WRITING_ALIAS_REGARRAY)
+        if memnode.scope.is_global():
+            fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
+
+    def visit_NEW(self, ir):
+        if ir.func_scope().is_port():
+            if not (self.scope.is_ctor() and self.scope.parent.is_module()):
+                fail(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
+
+    def visit_MOVE(self, ir):
+        super().visit_MOVE(ir)
+        reserved_port_name = ('clk', 'rst')
+        if ir.src.is_a(NEW) and ir.src.func_scope().is_port():
+            if ir.dst.symbol().name in reserved_port_name:
+                fail(self.current_stm, Errors.RESERVED_PORT_NAME, [ir.dst.symbol().name])
+
+
+class ModuleChecker(IRVisitor):
+    def __init__(self):
+        super().__init__()
+        self.assigns = defaultdict(set)
+
+    def process(self, scope):
+        if not (scope.parent and scope.parent.is_module()):
+            return
+        super().process(scope)
 
     def visit_MOVE(self, ir):
         if not ir.dst.is_a(ATTR):
@@ -791,7 +831,7 @@ class ModuleChecker(IRVisitor):
             type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR)
 
         if irattr.symbol() in self.assigns[class_scope]:
-            type_error(self.current_stm, Errors.MODULE_PORT_MUST_ASSIGN_ONLY_ONCE)
+            type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE)
 
         self.assigns[class_scope].add(irattr.symbol())
 
@@ -803,3 +843,38 @@ class AssertionChecker(IRVisitor):
         _, arg = ir.args[0]
         if arg.is_a(CONST) and not arg.value:
             warn(self.current_stm, Warnings.ASSERTION_FAILED)
+
+
+class SynthesisParamChecker(object):
+    def process(self, scope):
+        if scope.synth_params['scheduling'] == 'pipeline' and not scope.is_worker():
+            fail((scope, scope.lineno), Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
+        for blk in scope.traverse_blocks():
+            if blk.is_loop_head():
+                if blk.synth_params['scheduling'] == 'pipeline':
+                    loop = scope.find_region(blk)
+                    if not scope.is_leaf_region(loop):
+                        fail((scope, blk.stms[0].lineno), Errors.RULE_PIPELINE_HAS_INNER_LOOP)
+                    self._check_mem_rw_conflict_in_pipeline(loop, scope)
+
+    def _check_mem_rw_conflict_in_pipeline(self, loop, scope):
+        syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
+        for sym in syms:
+            if not sym.typ.is_list():
+                continue
+            memnode = sym.typ.get_memnode()
+            if memnode.can_be_reg():
+                continue
+            usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
+            usestms = [stm for stm in usestms if stm.block in loop.blocks()]
+            readstms = [stm for stm in usestms if stm.is_a(MOVE) and stm.src.is_a(MREF)]
+            writestms = [stm for stm in usestms if stm.is_a(EXPR) and stm.exp.is_a(MSTORE)]
+            if len(readstms) > 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(readstms[1], Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])
+            elif len(writestms) > 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(writestms[1], Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT, [sym])
+            elif len(readstms) >= 1 and len(writestms) >= 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(writestms[0], Errors.RULE_PIPELINE_HAS_MEM_RW_CONFLICT, [sym])

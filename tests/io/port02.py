@@ -12,7 +12,8 @@ def msg(m, v1, v2):
 def other_main(clk1, clk2, out):
     print('other_main')
     while is_worker_running():
-        wait_falling(clk1, clk2)
+        wait_falling(clk1)
+        wait_falling(clk2)
         msg('falling', clk1(), clk2())
         out.wr(1)
 
@@ -30,7 +31,8 @@ class Port02:
     def main(self):
         #print('main')
         while is_worker_running():
-            wait_rising(self.clk1, self.clk2)
+            wait_rising(self.clk1)
+            wait_rising(self.clk2)
             msg('rising', self.clk1(), self.clk2())
             self.out1.wr(1)
 

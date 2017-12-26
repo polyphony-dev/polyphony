@@ -52,7 +52,10 @@ class EarlyQuadrupleMaker(IRTransformer):
         if ir.left.is_a(ARRAY):
             if ir.op == 'Mult':
                 array = ir.left
-                array.repeat = ir.right
+                if array.repeat.is_a(CONST) and array.repeat.value == 1:
+                    array.repeat = ir.right
+                else:
+                    array.repeat = BINOP('Mult', array.repeat, ir.right)
                 return array
             else:
                 fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
@@ -148,7 +151,7 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def visit_EXPR(self, ir):
         #We don't convert outermost CALL
-        if ir.exp.is_a([CALL, SYSCALL]):
+        if ir.exp.is_a([CALL, SYSCALL, MSTORE]):
             self.suppress_converting = True
         ir.exp = self.visit(ir.exp)
         self.new_stms.append(ir)
@@ -178,24 +181,19 @@ class EarlyQuadrupleMaker(IRTransformer):
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
         assert ir.src.is_a([TEMP, ATTR, CONST, UNOP,
-                            BINOP, MREF, MSTORE, CALL,
+                            BINOP, MREF, CALL,
                             NEW, SYSCALL, ARRAY])
         assert ir.dst.is_a([TEMP, ATTR, MREF, ARRAY])
 
         if ir.dst.is_a(MREF):
-            # For the sake of the memory analysis,
-            # the assign to a item of a list is formed
-            # @mem = mstore(@mem, idx, value)
-            # instead of
-            # mref(@mem, index) = value
             mref = ir.dst
+            # the memory store is not a variable definition, so the context should be LOAD
             mref.mem.ctx = Ctx.LOAD
-            ir.src = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
-            ir.dst = mref.mem.clone()
-            ir.dst.ctx = Ctx.STORE
-
-            ir.src.lineno = ir.lineno
-            ir.dst.lineno = ir.lineno
+            ms = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
+            ms.lineno = ir.lineno
+            expr = EXPR(ms)
+            expr.lineno = ir.lineno
+            ir = expr
         self.new_stms.append(ir)
 
 

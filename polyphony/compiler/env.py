@@ -21,18 +21,22 @@ class Env(object):
 
     dev_debug_mode = False
     hdl_debug_mode = False
+    debug_output_dir = '.tmp'
     ctor_name = '__init__'
     self_name = 'self'
     callop_name = '__call__'
     enable_ahdl_opt = True
     global_scope_name = '@top'
-    enable_pure = True
-    enable_hyperblock = False
+    enable_pure = False
+    enable_hyperblock = True
     verbose_level = 0
     quiet_level = 0
+    enable_verilog_monitor = False
+    enable_verilog_dump = False
 
     def __init__(self):
         self.call_graph = None
+        self.depend_graph = None
         self.scopes = {}
         self.all_scopes = {}
         self.compile_phase = 0
@@ -45,6 +49,8 @@ class Env(object):
         self.config = Config()
         self.runtime_info = None
         self.outermost_scope_stack = []
+        self.hdlmodules = []
+        self.scope2module = {}
 
     def set_current_filename(self, filename):
         self.current_filename = filename
@@ -54,8 +60,12 @@ class Env(object):
         self.scopes[scope.name] = scope
         self.all_scopes[scope.name] = scope
         if self.dev_debug_mode and (not scope.is_lib() and not scope.is_inlinelib()):
-            logfile = logging.FileHandler('.tmp/debug_log.' + scope.name.replace('@', ''), 'w')
+            logfile = logging.FileHandler('{}/debug_log.{}'.format(env.debug_output_dir, scope.name.replace('@', '')) , 'w')
             self.logfiles[scope] = logfile
+
+    def destroy(self):
+        for logfile in self.logfiles.values():
+            logfile.close()
 
     def remove_scope(self, scope):
         del self.scopes[scope.name]
@@ -74,6 +84,21 @@ class Env(object):
 
     def outermost_scope(self):
         return self.outermost_scope_stack[-1]
+
+    def append_hdlmodule(self, module):
+        self.hdlmodules.append(module)
+        self.scope2module[module.scope] = module
+        if module.scope.is_module():
+            for w, _ in module.scope.workers:
+                self.scope2module[w] = module
+            ctor = module.scope.find_ctor()
+            if ctor:
+                self.scope2module[ctor] = module
+
+    def hdlmodule(self, scope):
+        if scope in self.scope2module:
+            return self.scope2module[scope]
+        return None
 
 
 env = Env()

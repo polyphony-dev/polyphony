@@ -1,6 +1,6 @@
 ﻿from enum import IntEnum
 from .utils import is_a
-from .symbol import Symbol
+
 
 op2sym_map = {
     'And': 'and', 'Or': 'or',
@@ -217,6 +217,20 @@ class CONDOP(IRExp):
         return self.cond.kids() + self.left.kids() + self.right.kids()
 
 
+class POLYOP(IRExp):
+    def __init__(self, op):
+        self.op = op
+        self.values = []
+
+    def __str__(self):
+        values = ', '.join([str(e) for e in self.values])
+        return '({} [{}])'.format(op2sym_map[self.op], values)
+
+    def kids(self):
+        assert all([v.is_a([CONST, TEMP, ATTR]) for v in self.values])
+        return self.values
+
+
 def replace_args(args, old, new):
     for i, (name, arg) in enumerate(args):
         if arg is old:
@@ -251,7 +265,6 @@ class CALL(IRExp):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.func_scope = None
 
     def __str__(self):
         s = '{}('.format(self.func)
@@ -282,7 +295,6 @@ class CALL(IRExp):
         func = self.func.clone()
         args = [(name, arg.clone()) for name, arg in self.args]
         clone = CALL(func, args, {})
-        clone.func_scope = self.func_scope
         clone.lineno = self.lineno
         return clone
 
@@ -306,11 +318,14 @@ class CALL(IRExp):
         irs.extend(find_irs_args(self.args, typ))
         return irs
 
+    def func_scope(self):
+        assert self.func.symbol().typ.has_scope()
+        return self.func.symbol().typ.get_scope()
+
 
 class SYSCALL(IRExp):
     def __init__(self, sym, args, kwargs):
         super().__init__()
-        assert isinstance(sym, Symbol)
         self.sym = sym
         self.args = args
         self.kwargs = kwargs
@@ -354,16 +369,20 @@ class SYSCALL(IRExp):
     def find_irs(self, typ):
         return find_irs_args(self.args, typ)
 
+    def func_scope(self):
+        assert self.sym.typ.has_scope()
+        return self.sym.typ.get_scope()
+
 
 class NEW(IRExp):
-    def __init__(self, scope, args, kwargs):
+    def __init__(self, sym, args, kwargs):
         super().__init__()
-        self.func_scope = scope
+        self.sym = sym
         self.args = args
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '{}('.format(self.func_scope.orig_name)
+        s = '{}('.format(self.func_scope().orig_name)
         s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ")"
         return s
@@ -371,7 +390,7 @@ class NEW(IRExp):
     def __eq__(self, other):
         if other is None or not isinstance(other, NEW):
             return False
-        return (self.func_scope is other.func_scope and
+        return (self.func_scope() is other.func_scope() and
                 len(self.args) == len(other.args) and
                 all([name == other_name and a == other_a
                      for (name, a), (other_name, other_a) in zip(self.args, other.args)]))
@@ -387,7 +406,7 @@ class NEW(IRExp):
 
     def clone(self):
         args = [(name, arg.clone()) for name, arg in self.args]
-        clone = NEW(self.func_scope, args, {})
+        clone = NEW(self.sym, args, {})
         clone.lineno = self.lineno
         return clone
 
@@ -399,6 +418,10 @@ class NEW(IRExp):
 
     def find_irs(self, typ):
         return find_irs_args(self.args, typ)
+
+    def func_scope(self):
+        assert self.sym.typ.has_scope()
+        return self.sym.typ.get_scope()
 
 
 class CONST(IRExp):
@@ -587,7 +610,6 @@ class ATTR(IRExp):
 
     def tail(self):
         if self.exp.is_a(ATTR):
-            #assert isinstance(self.exp.attr, Symbol)
             return self.exp.attr
         return self.exp.sym
 
@@ -611,6 +633,12 @@ class IRStm(IR):
 
     def kids(self):
         return []
+
+    def is_mem_read(self):
+        return self.is_a(MOVE) and self.src.is_a(MREF)
+
+    def is_mem_write(self):
+        return self.is_a(EXPR) and self.exp.is_a(MSTORE)
 
 
 class EXPR(IRStm):
@@ -797,25 +825,17 @@ class PHIBase(IRStm):
         self.var = var
         self.var.ctx = Ctx.STORE
         self.args = []
-        self.defblks = []
         self.ps = []
 
     def _str_args(self, with_p=True):
         str_args = []
         if self.ps and with_p:
             #assert len(self.ps) == len(self.args)
-            if self.defblks:
-                for arg, p, blk in zip(self.args, self.ps, self.defblks):
-                    if arg:
-                        str_args.append('{} ? {}({})'.format(p, arg, blk.name))
-                    else:
-                        str_args.append('_')
-            else:
-                for arg, p in zip(self.args, self.ps):
-                    if arg:
-                        str_args.append('{} ? {}'.format(p, arg))
-                    else:
-                        str_args.append('_')
+            for arg, p in zip(self.args, self.ps):
+                if arg:
+                    str_args.append('{} ? {}'.format(p, arg))
+                else:
+                    str_args.append('_')
         else:
             for arg in self.args:
                 if arg:
@@ -844,18 +864,14 @@ class PHIBase(IRStm):
             assert len(self.args) == len(self.ps)
             self.ps.pop(idx)
         self.args.pop(idx)
-        self.defblks.pop(idx)
 
     def reorder_args(self, indices):
-        defblks = []
         args = []
         ps = []
         for idx in indices:
             assert 0 <= idx < len(self.args)
-            defblks.append(self.defblks[idx])
             args.append(self.args[idx])
             ps.append(self.ps[idx])
-        self.defblks = defblks
         self.args = args
         self.ps = ps
 
@@ -897,119 +913,7 @@ class LPHI(PHIBase):
     def from_phi(cls, phi):
         lphi = LPHI(phi.var.clone())
         lphi.args = phi.args[:]
-        lphi.defblks = phi.defblks[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
+        lphi.lineno = phi.lineno
         return lphi
-
-
-def op2str(op):
-    return op.__class__.__name__
-
-
-def expr2ir(expr, name=None, scope=None):
-    import inspect
-    from .env import env
-    from .type import Type
-    if expr is None:
-        return CONST(None)
-    elif isinstance(expr, int):
-        return CONST(expr)
-    elif isinstance(expr, str):
-        return CONST(expr)
-    elif isinstance(expr, list):
-        items = [expr2ir(e) for e in expr]
-        ar = ARRAY(items)
-        ar.sym = scope.add_temp('@array')
-        return ar
-    elif isinstance(expr, tuple):
-        items = [expr2ir(e) for e in expr]
-        ar = ARRAY(items, is_mutable=False)
-        ar.sym = scope.add_temp('@array')
-        return ar
-    else:
-        if inspect.isclass(expr):
-            if expr.__module__ == 'polyphony.typing':
-                klass_name = expr.__module__ + '.' + expr.__name__
-                klass_scope = env.scopes[klass_name]
-                t = Type.klass(klass_scope)
-                sym = scope.add_temp('@dtype')
-                sym.set_type(t)
-            elif expr.__module__ == 'builtins':
-                klass_name = '__builtin__.' + expr.__name__
-                klass_scope = env.scopes[klass_name]
-                t = Type.klass(klass_scope)
-                sym = scope.add_temp('@dtype')
-                sym.set_type(t)
-            else:
-                assert False
-            return TEMP(sym, Ctx.LOAD)
-        elif inspect.isfunction(expr):
-            fsym = scope.find_sym(name)
-            assert fsym.typ.is_function()
-            return TEMP(fsym, Ctx.LOAD)
-        elif inspect.ismethod(expr):
-            fsym = scope.find_sym(name)
-            assert fsym.typ.is_function()
-            return TEMP(fsym, Ctx.LOAD)
-        assert False
-
-
-def reduce_relexp(exp):
-    if exp.is_a(RELOP):
-        if exp.op == 'And':
-            exp.left = reduce_relexp(exp.left)
-            exp.right = reduce_relexp(exp.right)
-            if exp.left.is_a(CONST):
-                if exp.left.value:
-                    return exp.right
-                else:
-                    return CONST(0)
-            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
-                if exp.left.exp.value:
-                    return CONST(0)
-                else:
-                    return exp.right
-            elif exp.right.is_a(CONST):
-                if exp.right.value:
-                    return exp.left
-                else:
-                    return CONST(0)
-            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
-                if exp.right.exp.value:
-                    return CONST(0)
-                else:
-                    return exp.left
-        elif exp.op == 'Or':
-            exp.left = reduce_relexp(exp.left)
-            exp.right = reduce_relexp(exp.right)
-            if exp.left.is_a(CONST):
-                if exp.left.value:
-                    return CONST(1)
-                else:
-                    return exp.right
-            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
-                if exp.left.exp.value:
-                    return exp.right
-                else:
-                    return CONST(1)
-            elif exp.right.is_a(CONST):
-                if exp.right.value:
-                    return CONST(1)
-                else:
-                    return exp.left
-            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
-                if exp.right.exp.value:
-                    return exp.left
-                else:
-                    return CONST(1)
-    elif exp.is_a(UNOP) and exp.op == 'Not':
-        nexp = reduce_relexp(exp.exp)
-        if nexp.is_a(CONST):
-            if nexp.value:
-                return CONST(0)
-            else:
-                return CONST(1)
-        else:
-            return UNOP('Not', nexp)
-    return exp

@@ -1,4 +1,4 @@
-#Assignment to a module port can only be done once
+#Assignment to a module field can only be done once
 from polyphony import module
 from polyphony.io import Port
 

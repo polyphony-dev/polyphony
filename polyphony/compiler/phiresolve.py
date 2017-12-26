@@ -1,5 +1,4 @@
-﻿from .env import env
-from .graph import Graph
+﻿from .graph import Graph
 from .ir import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -47,13 +46,10 @@ class PHICondResolver(object):
         return sorted_phis
 
     def _divide_phi_to_mv(self, phi):
-        for arg, blk, pred in zip(phi.args, phi.defblks, phi.block.preds):
-            if not blk:
-                self._insert_mv(phi.var.clone(), arg, pred)
-                continue
+        for arg, pred in zip(phi.args, phi.block.preds):
             if phi.var.symbol().typ.is_object():
                 continue
-            self._insert_mv(phi.var.clone(), arg, blk)
+            self._insert_mv(phi.var.clone(), arg, pred)
         phi.block.stms.remove(phi)
 
     def _insert_mv(self, var, arg, blk):
@@ -63,4 +59,3 @@ class PHICondResolver(object):
         assert mv.lineno > 0
         blk.insert_stm(-1, mv)
         logger.debug('PHI divide into ' + str(mv) + ' ' + blk.name)
-

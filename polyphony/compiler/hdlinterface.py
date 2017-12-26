@@ -1,13 +1,17 @@
 ﻿from collections import namedtuple
 from .ahdl import *
+from .env import env
 
 
 Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
 
 
 class Ports(object):
-    def __init__(self):
-        self.ports = []
+    def __init__(self, ports=None):
+        if ports:
+            self.ports = ports
+        else:
+            self.ports = []
 
     def __str__(self):
         return ', '.join(['<{}:{}:{}>'.format(p.name, p.width, p.dir)
@@ -17,6 +21,25 @@ class Ports(object):
         for p in self.ports:
             if p.name == key:
                 return p
+        raise IndexError()
+
+    def __contains__(self, key):
+        return key in [p.name for p in self.ports]
+
+    def __iter__(self):
+        self.i = 0
+        return self
+
+    def __next__(self):
+        if self.i < len(self.ports):
+            p = self.ports[self.i]
+            self.i += 1
+            return p
+        else:
+            raise StopIteration
+
+    def __add__(self, other):
+        return Ports(self.ports + other.ports)
 
     def append(self, port):
         self.ports.append(port)
@@ -24,13 +47,16 @@ class Ports(object):
     def flipped(self):
         def flip(d):
             return 'in' if d == 'out' else 'out'
-        return [Port(p.name, p.width, flip(p.dir), p.signed) for p in self.ports]
+        return Ports([Port(p.name, p.width, flip(p.dir), p.signed) for p in self.ports])
+
+    def renamed(self, rename_func):
+        return Ports([Port(rename_func(p.name), p.width, p.dir, p.signed) for p in self.ports])
 
     def inports(self):
-        return [p for p in self.ports if p.dir == 'in']
+        return Ports([p for p in self.ports if p.dir == 'in'])
 
     def outports(self):
-        return [p for p in self.ports if p.dir == 'out']
+        return Ports([p for p in self.ports if p.dir == 'out'])
 
     def all(self):
         return self.ports
@@ -89,6 +115,10 @@ class Interface(object):
         return self.ports.inports()
 
 
+class WriteInterface(object):
+    pass
+
+
 class Accessor(object):
     def __init__(self, inf):
         self.acc_name = inf.if_name
@@ -125,6 +155,9 @@ class IOAccessor(Accessor):
         else:
             return self.inf.port_name(port)
 
+    def is_internal(self):
+        return True if self.inst_name else False
+
 
 def single_read_seq(inf, signal, step, dst):
     # blocking if the port is not 'valid'
@@ -133,25 +166,60 @@ def single_read_seq(inf, signal, step, dst):
         valid = port2ahdl(inf, 'valid')
         if signal.is_ready_valid_protocol():
             ready = port2ahdl(inf, 'ready')
-
-        if step == 0:
-            if signal.is_ready_valid_protocol():
-                expects = [(AHDL_CONST(1), valid), (AHDL_CONST(1), ready)]
-                return (AHDL_MOVE(ready, AHDL_CONST(1)),
-                        AHDL_META_WAIT('WAIT_VALUE', *expects))
-            else:
+            if step == 0:
+                return (AHDL_MOVE(ready, AHDL_CONST(1)), )
+            elif step == 1:
                 expects = [(AHDL_CONST(1), valid)]
                 return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
-        elif step == 1:
-            if signal.is_ready_valid_protocol():
-                return (AHDL_MOVE(dst, data),
-                        AHDL_MOVE(ready, AHDL_CONST(0)))
-            else:
-                return (AHDL_MOVE(dst, data), )
+            elif step == 2:
+                if dst:
+                    return (AHDL_MOVE(dst, data),
+                            AHDL_MOVE(ready, AHDL_CONST(0)))
+                else:
+                    return (AHDL_MOVE(ready, AHDL_CONST(0)),)
+        else:
+            if step == 0:
+                expects = [(AHDL_CONST(1), valid)]
+                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+            elif step == 1:
+                if dst:
+                    return (AHDL_MOVE(dst, data), )
+                else:
+                    return tuple()
     else:
         if step == 0:
             if dst:
                 return (AHDL_MOVE(dst, data), )
+            else:
+                return tuple()
+
+
+def single_pipelined_read_seq(inf, signal, step, dst, stage):
+    assert not signal.is_ready_valid_protocol()
+    pipeline_state = stage.parent_state
+    data = port2ahdl(inf, '')
+    if step == 0:
+        assert stage.has_enable
+        if signal.is_valid_protocol():
+            valid = port2ahdl(inf, 'valid')
+            enable_cond = valid
+        else:
+            enable_cond = AHDL_CONST(1)
+        enable_sig = pipeline_state.enable_signal(stage.step)
+        if stage.enable:
+            assert stage.enable.is_a(AHDL_MOVE)
+            enable_cond = AHDL_OP('And', stage.enable.src, enable_cond)
+        stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
+        if dst:
+            guards = (AHDL_MOVE(dst, data), )
+        else:
+            guards = tuple()
+    else:
+        guards = tuple()
+    guard = stage.codes[0]
+    assert guard.is_a(AHDL_PIPELINE_GUARD)
+    guard.codes_list[0].extend(guards)
+    return tuple()
 
 
 def single_write_seq(inf, signal, step, src):
@@ -160,20 +228,56 @@ def single_write_seq(inf, signal, step, src):
         valid = port2ahdl(inf, 'valid')
         if signal.is_ready_valid_protocol():
             ready = port2ahdl(inf, 'ready')
-        if step == 0:
-            if signal.is_ready_valid_protocol():
-                expects = [(AHDL_CONST(1), valid), (AHDL_CONST(1), ready)]
-                return (AHDL_MOVE(data, src),
-                        AHDL_MOVE(valid, AHDL_CONST(1)),
-                        AHDL_META_WAIT('WAIT_VALUE', *expects))
-            else:
+            if step == 0:
                 return (AHDL_MOVE(data, src),
                         AHDL_MOVE(valid, AHDL_CONST(1)))
-        elif step == 1:
-            return (AHDL_MOVE(valid, AHDL_CONST(0)), )
+            elif step == 1:
+                expects = [(AHDL_CONST(1), ready)]
+                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+            elif step == 2:
+                return (AHDL_MOVE(valid, AHDL_CONST(0)), )
+        else:
+            if step == 0:
+                return (AHDL_MOVE(data, src),
+                        AHDL_MOVE(valid, AHDL_CONST(1)))
+            elif step == 1:
+                return (AHDL_MOVE(valid, AHDL_CONST(0)), )
     else:
         if step == 0:
             return (AHDL_MOVE(data, src), )
+
+
+def single_pipelined_write_seq(inf, signal, step, src, stage):
+    assert not signal.is_ready_valid_protocol()
+    pipeline_state = stage.parent_state
+    data = port2ahdl(inf, '')
+    if step == 0:
+        assert stage.has_enable
+        if signal.is_valid_protocol():
+            valid = port2ahdl(inf, 'valid')
+            if stage.step == 0:
+                pready = pipeline_state.ready_signal(0)
+                valid_rhs = AHDL_VAR(pready, Ctx.LOAD)
+            else:
+                pvalid = pipeline_state.valid_signal(stage.step - 1)
+                valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
+            guards = (AHDL_MOVE(data, src),)
+            nonguards = (AHDL_MOVE(valid, valid_rhs),)
+        else:
+            guards = (AHDL_MOVE(data, src), )
+            nonguards = tuple()
+        enable_cond = AHDL_CONST(1)
+        enable_sig = pipeline_state.enable_signal(stage.step)
+        if stage.enable:
+            assert stage.enable.is_a(AHDL_MOVE)
+            enable_cond = AHDL_OP('And', stage.enable.src, enable_cond)
+        stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
+    else:
+        guards = tuple()
+    guard = stage.codes[0]
+    assert guard.is_a(AHDL_PIPELINE_GUARD)
+    guard.codes_list[0].extend(guards)
+    return nonguards
 
 
 class SinglePortInterface(Interface):
@@ -208,11 +312,25 @@ class SingleReadInterface(SinglePortInterface):
             stms.append(AHDL_MOVE(ready, AHDL_CONST(0)))
         return stms
 
-    def read_sequence(self, step, dst):
+    def read_sequence(self, step, step_n, dst):
         return single_read_seq(self, self.signal, step, dst)
 
 
-class SingleWriteInterface(SinglePortInterface):
+class PipelinedSingleReadInterface(SingleReadInterface):
+    def accessor(self, inst_name=''):
+        acc = PipelinedSingleWriteAccessor(self, inst_name)
+        return acc
+
+    def pipelined_read_sequence(self, step, step_n, dst, stage):
+        if self.signal.is_ready_valid_protocol():
+            assert self.signal.is_adaptered()
+            bridge = PipelinedFIFOReadInterface(self.signal.adapter_sig)
+            return bridge.pipelined_read_sequence(step, step_n, dst, stage)
+        else:
+            return single_pipelined_read_seq(self, self.signal, step, dst, stage)
+
+
+class SingleWriteInterface(SinglePortInterface, WriteInterface):
     def __init__(self, signal, if_name='', if_owner_name=''):
         if if_name:
             super().__init__(signal, if_name, if_owner_name)
@@ -244,15 +362,31 @@ class SingleWriteInterface(SinglePortInterface):
             stms.append(AHDL_MOVE(valid, AHDL_CONST(0)))
         return stms
 
-    def write_sequence(self, step, src):
+    def write_sequence(self, step, step_n, src):
         return single_write_seq(self, self.signal, step, src)
 
 
-class SingleReadAccessor(IOAccessor):
+class PipelinedSingleWriteInterface(SingleWriteInterface):
+    def accessor(self, inst_name=''):
+        acc = PipelinedSingleReadAccessor(self, inst_name)
+        return acc
+
+    def pipelined_write_sequence(self, step, step_n, src, stage):
+        if self.signal.is_ready_valid_protocol():
+            assert self.signal.is_adaptered()
+            bridge = PipelinedFIFOWriteInterface(self.signal.adapter_sig)
+            return bridge.pipelined_write_sequence(step, step_n, src, stage)
+        else:
+            return single_pipelined_write_seq(self, self.signal, step, src, stage)
+
+
+class SinglePortAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
         self.ports = inf.ports.clone()
 
+
+class SingleReadAccessor(SinglePortAccessor):
     def reset_stms(self):
         stms = []
         signal = self.inf.signal
@@ -262,15 +396,25 @@ class SingleReadAccessor(IOAccessor):
             stms.append(AHDL_MOVE(ready, AHDL_CONST(0)))
         return stms
 
-    def read_sequence(self, step, dst):
+    def read_sequence(self, step, step_n, dst):
         return single_read_seq(self, self.inf.signal, step, dst)
 
 
-class SingleWriteAccessor(IOAccessor):
-    def __init__(self, inf, inst_name):
-        super().__init__(inf, inst_name)
-        self.ports = inf.ports.clone()
+class PipelinedSingleReadAccessor(SingleReadAccessor):
+    def _adapter(self):
+        adapter_inst_name = self.inst_name
+        assert self.inf.signal.is_adaptered()
+        adapter = PipelinedFIFOWriteInterface(self.inf.signal.adapter_sig).accessor(adapter_inst_name)
+        return adapter
 
+    def pipelined_read_sequence(self, step, step_n, dst, stage):
+        if self.inf.signal.is_ready_valid_protocol():
+            return self._adapter().pipelined_read_sequence(step, step_n, dst, stage)
+        else:
+            return single_pipelined_read_seq(self, self.inf.signal, step, dst, stage)
+
+
+class SingleWriteAccessor(SinglePortAccessor):
     def reset_stms(self):
         stms = []
         signal = self.inf.signal
@@ -285,8 +429,22 @@ class SingleWriteAccessor(IOAccessor):
             stms.append(AHDL_MOVE(valid, AHDL_CONST(0)))
         return stms
 
-    def write_sequence(self, step, src):
+    def write_sequence(self, step, step_n, src):
         return single_write_seq(self, self.inf.signal, step, src)
+
+
+class PipelinedSingleWriteAccessor(SingleWriteAccessor):
+    def _adapter(self):
+        adapter_inst_name = self.inst_name
+        assert self.inf.signal.is_adaptered()
+        adapter = PipelinedFIFOReadInterface(self.inf.signal.adapter_sig).accessor(adapter_inst_name)
+        return adapter
+
+    def pipelined_write_sequence(self, step, step_n, src, stage):
+        if self.inf.signal.is_ready_valid_protocol():
+            return self._adapter().pipelined_write_sequence(step, step_n, src, stage)
+        else:
+            return single_pipelined_write_seq(self, self.inf.signal, step, src, stage)
 
 
 class CallInterface(Interface):
@@ -344,7 +502,7 @@ class CallAccessor(IOAccessor):
                                   AHDL_CONST(0)))
         return stms
 
-    def call_sequence(self, step, step_n, argaccs, retaccs, ahdl_call, scope):
+    def call_sequence(self, step, step_n, argaccs, retaccs, ahdl_call):
         seq = []
         valid = port2ahdl(self, 'valid')
         ready = port2ahdl(self, 'ready')
@@ -355,7 +513,7 @@ class CallAccessor(IOAccessor):
             for acc, arg in zip(argaccs, ahdl_call.args):
                 if arg.is_a(AHDL_MEMVAR):
                     continue
-                seq.extend(acc.write_sequence(0, arg))
+                seq.extend(acc.write_sequence(0, step_n, arg))
         elif step == 1:
             seq = [AHDL_MOVE(ready, AHDL_CONST(0))]
 
@@ -364,7 +522,7 @@ class CallAccessor(IOAccessor):
             seq.append(AHDL_META_WAIT('WAIT_VALUE', *expects))
         elif step == step_n - 2:
             for acc, ret in zip(retaccs, ahdl_call.returns):
-                seq.extend(acc.read_sequence(0, ret))
+                seq.extend(acc.read_sequence(0, step_n, ret))
             seq.append(AHDL_MOVE(accept, AHDL_CONST(1)))
         elif step == step_n - 1:
             seq.append(AHDL_MOVE(accept, AHDL_CONST(0)))
@@ -392,15 +550,16 @@ class RAMModuleAccessor(IOAccessor):
         self.ports = inf.ports.clone()
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
 
 class RAMBridgeInterface(Interface):
-    def __init__(self, name, owner_name, data_width, addr_width):
+    def __init__(self, signal, name, owner_name, data_width, addr_width):
         super().__init__(name, owner_name)
+        self.signal = signal
         self.data_width = data_width
         self.addr_width = addr_width
         self.ports.append(Port('addr', addr_width, 'in', True))
@@ -414,7 +573,7 @@ class RAMBridgeInterface(Interface):
         return RAMBridgeAccessor(self, inst_name)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
         return self.ports.flipped()
@@ -435,10 +594,10 @@ class RAMBridgeAccessor(IOAccessor):
             return self.inf.port_name(port)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
     def reset_stms(self):
         return []
@@ -463,13 +622,13 @@ class RAMAccessor(Accessor):
         if self.is_sink:
             return self.ports.inports()
         else:
-            return []
+            return Ports()
 
     def nets(self):
         if self.is_sink:
             return self.ports.outports()
         else:
-            return self.ports.all()
+            return self.ports
 
     def reset_stms(self):
         stms = []
@@ -478,7 +637,10 @@ class RAMAccessor(Accessor):
                                   AHDL_CONST(0)))
         return stms
 
-    def read_sequence(self, step, offset, dst, is_continuous):
+    def pipelined(self, stage):
+        return PipelinedRAMAccessor(self, stage)
+
+    def read_sequence(self, step, step_n, offset, dst, is_continuous):
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
@@ -492,27 +654,96 @@ class RAMAccessor(Accessor):
             return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
         elif step == 2:
             if is_continuous:
-                return (AHDL_MOVE(dst, q), )
+                if dst:
+                    return (AHDL_MOVE(dst, q), )
+                else:
+                    return tuple()
             else:
-                return (AHDL_MOVE(dst, q),
-                        AHDL_MOVE(req, AHDL_CONST(0)))
+                if dst:
+                    return (AHDL_MOVE(dst, q),
+                            AHDL_MOVE(req, AHDL_CONST(0)))
+                else:
+                    return (AHDL_MOVE(req, AHDL_CONST(0)), )
 
-    def write_sequence(self, step, offset, src, is_continuous):
+    def write_sequence(self, step, step_n, offset, src, is_continuous):
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
         d = port2ahdl(self, 'd')
 
         if step == 0:
+            we_stm = AHDL_MOVE(we, AHDL_CONST(1))
+            req_stm = AHDL_MOVE(req, AHDL_CONST(1))
             return (AHDL_MOVE(addr, offset),
-                    AHDL_MOVE(we, AHDL_CONST(1)),
-                    AHDL_MOVE(req, AHDL_CONST(1)),
+                    we_stm,
+                    req_stm,
                     AHDL_MOVE(d, src))
         elif step == 1:
             if is_continuous:
                 return tuple()
             else:
                 return (AHDL_MOVE(req, AHDL_CONST(0)), )
+
+
+class PipelinedRAMAccessor(RAMAccessor):
+    def __init__(self, host, stage):
+        assert isinstance(host, RAMAccessor)
+        super().__init__(host.inf.signal, host.data_width, host.addr_width, host.is_sink)
+        self.stage = stage
+        self.pipeline_state = stage.parent_state
+
+    def read_sequence(self, step, step_n, offset, dst, is_continuous):
+        addr = port2ahdl(self, 'addr')
+        we = port2ahdl(self, 'we')
+        req = port2ahdl(self, 'req')
+        q = port2ahdl(self, 'q')
+
+        if step == 0:
+            req_valids = [AHDL_VAR(self.pipeline_state.ready_signal(0), Ctx.LOAD)]
+            req_valids += [AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step + i), Ctx.LOAD)
+                           for i in range(step_n - 1)]
+            req_rhs = AHDL_OP('BitOr', *req_valids)
+            guards = (AHDL_MOVE(addr, offset), AHDL_MOVE(we, AHDL_CONST(0)))
+            nonguards = (AHDL_MOVE(req, req_rhs), )
+        elif step == 1:
+            guards = (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
+            nonguards = tuple()
+        elif step == 2:
+            if dst:
+                guards = (AHDL_MOVE(dst, q), )
+            else:
+                guards = tuple()
+            nonguards = tuple()
+
+        guard = self.stage.codes[0]
+        assert guard.is_a(AHDL_PIPELINE_GUARD)
+        guard.codes_list[0].extend(guards)
+        return nonguards
+
+    def write_sequence(self, step, step_n, offset, src, is_continuous):
+        addr = port2ahdl(self, 'addr')
+        we = port2ahdl(self, 'we')
+        req = port2ahdl(self, 'req')
+        d = port2ahdl(self, 'd')
+
+        if step == 0:
+            if self.stage.step == 0:
+                pready = self.pipeline_state.ready_signal(0)
+                valid_rhs = AHDL_VAR(pready, Ctx.LOAD)
+            else:
+                pvalid = self.pipeline_state.valid_signal(self.stage.step - 1)
+                valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
+            guards = (AHDL_MOVE(addr, offset),
+                      AHDL_MOVE(d, src))
+            nonguards = (AHDL_MOVE(we, valid_rhs),
+                         AHDL_MOVE(req, valid_rhs))
+        elif step == 1:
+            guards = tuple()
+            nonguards = tuple()
+        guard = self.stage.codes[0]
+        assert guard.is_a(AHDL_PIPELINE_GUARD)
+        guard.codes_list[0].extend(guards)
+        return nonguards
 
 
 class TupleInterface(Interface):
@@ -543,17 +774,19 @@ class TupleAccessor(IOAccessor):
         return '{}{}'.format(self.acc_name, port.name)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
     def reset_stms(self):
         return []
 
+
 class RegArrayInterface(Interface):
-    def __init__(self, name, owner_name, data_width, length, direction='in', subscript=False):
+    def __init__(self, signal, name, owner_name, data_width, length, direction, subscript):
         super().__init__(name, owner_name)
+        self.signal = signal
         self.data_width = data_width
         self.length = length
         self.subscript = subscript
@@ -574,10 +807,21 @@ class RegArrayInterface(Interface):
         return []
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
+
+
+class RegArrayReadInterface(RegArrayInterface):
+    def __init__(self, signal, name, owner_name, data_width, length, subscript=False):
+        super().__init__(signal, name, owner_name, data_width, length, 'in', subscript)
+
+
+class RegArrayWriteInterface(RegArrayInterface, WriteInterface):
+    def __init__(self, signal, name, owner_name, data_width, length, subscript=False):
+        super().__init__(signal, name, owner_name, data_width, length, 'out', subscript)
+
 
 class RegArrayAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
@@ -591,18 +835,20 @@ class RegArrayAccessor(IOAccessor):
             return '{}{}'.format(self.acc_name, port.name)
 
     def regs(self):
-        return []
+        return Ports()
 
     def nets(self):
-        return self.ports.all()
+        return self.ports
 
     def reset_stms(self):
         return []
 
-    def read_sequence(self, step, dst):
+    def read_sequence(self, step, step_n, dst):
         assert dst.is_a(AHDL_MEMVAR)
         memnode = dst.memnode.single_source()
-        sig = list(memnode.scopes)[0].signal(memnode.name())
+        mem_scope = memnode.scope
+        hdlmodule = env.hdlmodule(mem_scope)
+        sig = hdlmodule.signal(memnode.name())
         moves = []
         for i, p in enumerate(self.ports.outports()):
             src = AHDL_SYMBOL('{}{}'.format(self.acc_name, p.name))
@@ -611,7 +857,7 @@ class RegArrayAccessor(IOAccessor):
             moves.append(mv)
         return moves
 
-    def write_sequence(self, step, src):
+    def write_sequence(self, step, step_n, src):
         assert src.is_a(AHDL_MEMVAR)
 
 
@@ -626,8 +872,44 @@ def fifo_read_seq(inf, step, dst):
     elif step == 1:
         return (AHDL_MOVE(read, AHDL_CONST(1)), )
     elif step == 2:
-        return (AHDL_MOVE(read, AHDL_CONST(0)),
-                AHDL_MOVE(dst, dout))
+        if dst:
+            return (AHDL_MOVE(read, AHDL_CONST(0)),
+                    AHDL_MOVE(dst, dout))
+        else:
+            return (AHDL_MOVE(read, AHDL_CONST(0)),)
+
+
+def fifo_pipelined_read_seq(inf, step, dst, stage):
+    empty = port2ahdl(inf, 'empty')
+    will_empty = port2ahdl(inf, 'will_empty')
+    read = port2ahdl(inf, 'read')
+    dout = port2ahdl(inf, 'dout')
+    pipeline_state = stage.parent_state
+    if step == 0:
+        assert stage.has_enable
+        enable_sig = pipeline_state.enable_signal(stage.step)
+        enable_cond = AHDL_OP('BitAnd',
+                              AHDL_OP('Invert', empty),
+                              AHDL_OP('Invert', will_empty))
+        if stage.enable:
+            assert stage.enable.is_a(AHDL_MOVE)
+            enable_cond = AHDL_OP('And', stage.enable.src, enable_cond)
+        stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
+
+        read_rhs = pipeline_state.valid_exp(stage.step)
+        guards = tuple()
+        nonguards = (AHDL_MOVE(read, read_rhs),
+                     )
+    elif step == 1:
+        if dst:
+            guards = (AHDL_MOVE(dst, dout), )
+        else:
+            guards = tuple()
+        nonguards = tuple()
+    guard = stage.codes[0]
+    assert guard.is_a(AHDL_PIPELINE_GUARD)
+    guard.codes_list[0].extend(guards)
+    return nonguards
 
 
 def fifo_write_seq(inf, step, src):
@@ -645,6 +927,33 @@ def fifo_write_seq(inf, step, src):
         return (AHDL_MOVE(write, AHDL_CONST(0)), )
 
 
+def fifo_pipelined_write_seq(inf, step, src, stage):
+    full = port2ahdl(inf, 'full')
+    will_full = port2ahdl(inf, 'will_full')
+    write = port2ahdl(inf, 'write')
+    din = port2ahdl(inf, 'din')
+    pipeline_state = stage.parent_state
+    if step == 0:
+        assert stage.has_enable
+        enable_sig = pipeline_state.enable_signal(stage.step)
+        enable_cond = AHDL_OP('BitAnd',
+                              AHDL_OP('Invert', full),
+                              AHDL_OP('Invert', will_full),
+                              )
+        if stage.enable:
+            assert stage.enable.is_a(AHDL_MOVE)
+            enable_cond = AHDL_OP('And', stage.enable.src, enable_cond)
+        stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
+        write_rhs = pipeline_state.valid_exp(stage.step)
+        guards = (AHDL_MOVE(din, src), )
+        nonguards = (AHDL_MOVE(write, write_rhs),
+                     )
+    guard = stage.codes[0]
+    assert guard.is_a(AHDL_PIPELINE_GUARD)
+    guard.codes_list[0].extend(guards)
+    return nonguards
+
+
 class FIFOInterface(Interface):
     def __init__(self, signal):
         super().__init__(signal.name, '')
@@ -655,10 +964,10 @@ class FIFOInterface(Interface):
     def port_name(self, port):
         return self._port_name(port)
 
-    def read_sequence(self, step, dst):
+    def read_sequence(self, step, step_n, dst):
         return fifo_read_seq(self, step, dst)
 
-    def write_sequence(self, step, src):
+    def write_sequence(self, step, step_n, src):
         return fifo_write_seq(self, step, src)
 
     def reset_stms(self):
@@ -673,10 +982,10 @@ class FIFOAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
 
-    def read_sequence(self, step, dst):
+    def read_sequence(self, step, step_n, dst):
         return fifo_read_seq(self, step, dst)
 
-    def write_sequence(self, step, src):
+    def write_sequence(self, step, step_n, src):
         return fifo_write_seq(self, step, src)
 
     def reset_stms(self):
@@ -696,6 +1005,8 @@ class FIFOModuleInterface(FIFOInterface):
         self.ports.append(Port('dout', self.data_width, 'out', True))
         self.ports.append(Port('read', 1, 'in', False))
         self.ports.append(Port('empty', 1, 'out', False))
+        self.ports.append(Port('will_full', 1, 'out', False))
+        self.ports.append(Port('will_empty', 1, 'out', False))
 
     def port_name(self, port):
         return port.name
@@ -719,20 +1030,44 @@ class FIFOReadInterface(FIFOInterface):
         self.ports.append(Port('dout', self.data_width, 'in', True))
         self.ports.append(Port('read', 1, 'out', False))
         self.ports.append(Port('empty', 1, 'in', False))
+        self.ports.append(Port('will_empty', 1, 'in', False))
 
     def accessor(self, inst_name=''):
         return FIFOWriteAccessor(self, inst_name)
 
 
-class FIFOWriteInterface(FIFOInterface):
+class PipelinedFIFOReadInterface(FIFOReadInterface):
+    def __init__(self, signal):
+        super().__init__(signal)
+
+    def accessor(self, inst_name=''):
+        return PipelinedFIFOWriteAccessor(self, inst_name)
+
+    def pipelined_read_sequence(self, step, step_n, dst, stage):
+        return fifo_pipelined_read_seq(self, step, dst, stage)
+
+
+class FIFOWriteInterface(FIFOInterface, WriteInterface):
     def __init__(self, signal):
         super().__init__(signal)
         self.ports.append(Port('din', self.data_width, 'out', True))
         self.ports.append(Port('write', 1, 'out', False))
         self.ports.append(Port('full', 1, 'in', False))
+        self.ports.append(Port('will_full', 1, 'in', False))
 
     def accessor(self, inst_name=''):
         return FIFOReadAccessor(self, inst_name)
+
+
+class PipelinedFIFOWriteInterface(FIFOWriteInterface):
+    def __init__(self, signal):
+        super().__init__(signal)
+
+    def accessor(self, inst_name=''):
+        return PipelinedFIFOReadAccessor(self, inst_name)
+
+    def pipelined_write_sequence(self, step, step_n, src, stage):
+        return fifo_pipelined_write_seq(self, step, src, stage)
 
 
 class FIFOReadAccessor(FIFOAccessor):
@@ -743,14 +1078,24 @@ class FIFOReadAccessor(FIFOAccessor):
         self.ports.append(Port('dout', data_width, 'out', True))
         self.ports.append(Port('read', 1, 'in', False))
         self.ports.append(Port('empty', 1, 'out', False))
+        self.ports.append(Port('will_empty', 1, 'out', False))
 
     def nets(self):
-        ports = list(self.ports.outports())
+        ports = self.ports.outports()
         # nets for fifo write interface
         ports.append(Port('din', self.inf.data_width, 'out', True))
         ports.append(Port('write', 1, 'out', False))
         ports.append(Port('full', 1, 'out', False))
+        ports.append(Port('will_full', 1, 'out', False))
         return ports
+
+
+class PipelinedFIFOReadAccessor(FIFOReadAccessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf, inst_name)
+
+    def pipelined_read_sequence(self, step, step_n, dst, stage):
+        return fifo_pipelined_read_seq(self, step, dst, stage)
 
 
 class FIFOWriteAccessor(FIFOAccessor):
@@ -761,15 +1106,168 @@ class FIFOWriteAccessor(FIFOAccessor):
         self.ports.append(Port('din', data_width, 'in', True))
         self.ports.append(Port('write', 1, 'in', False))
         self.ports.append(Port('full', 1, 'out', False))
+        self.ports.append(Port('will_full', 1, 'out', False))
         # nets for fifo write interface
 
     def nets(self):
-        ports = list(self.ports.outports())
+        ports = self.ports.outports()
         # nets for fifo write interface
         ports.append(Port('dout', self.inf.data_width, 'out', True))
         ports.append(Port('read', 1, 'out', False))
         ports.append(Port('empty', 1, 'out', False))
+        ports.append(Port('will_empty', 1, 'out', False))
         return ports
+
+
+class PipelinedFIFOWriteAccessor(FIFOWriteAccessor):
+    def __init__(self, inf, inst_name):
+        super().__init__(inf, inst_name)
+
+    def pipelined_write_sequence(self, step, step_n, dst, stage):
+        return fifo_pipelined_write_seq(self, step, dst, stage)
+
+
+def create_local_accessor(signal):
+    assert not signal.is_input() and not signal.is_output()
+    if signal.is_single_port():
+        if signal.is_pipelined_port():
+            reader = PipelinedSingleWriteInterface(signal).accessor('')
+            writer = PipelinedSingleReadInterface(signal).accessor('')
+        else:
+            reader = SingleWriteInterface(signal).accessor('')
+            writer = SingleReadInterface(signal).accessor('')
+    elif signal.is_fifo_port():
+        if signal.is_pipelined_port():
+            reader = PipelinedFIFOWriteInterface(signal).accessor('')
+            writer = PipelinedFIFOReadInterface(signal).accessor('')
+        else:
+            reader = FIFOWriteInterface(signal).accessor('')
+            writer = FIFOReadInterface(signal).accessor('')
+    return reader, writer
+
+
+def create_single_port_interface(signal):
+    inf = None
+    if signal.is_input():
+        if signal.is_pipelined_port():
+            inf = PipelinedSingleReadInterface(signal)
+        else:
+            inf = SingleReadInterface(signal)
+    elif signal.is_output():
+        if signal.is_pipelined_port():
+            inf = PipelinedSingleWriteInterface(signal)
+        else:
+            inf = SingleWriteInterface(signal)
+    return inf
+
+
+def create_seq_interface(signal):
+    inf = None
+    if signal.is_fifo_port():
+        if signal.is_input():
+            if signal.is_pipelined_port():
+                inf = PipelinedFIFOReadInterface(signal)
+            else:
+                inf = FIFOReadInterface(signal)
+        elif signal.is_output():
+            if signal.is_pipelined_port():
+                inf = PipelinedFIFOWriteInterface(signal)
+            else:
+                inf = FIFOWriteInterface(signal)
+    return inf
+
+
+def make_event_task(hdlmodule, reset_stms, stms):
+    clk = hdlmodule.gen_sig('clk', 1, {'reserved'})
+    rst = hdlmodule.gen_sig('rst', 1, {'reserved'})
+    codes_list = [reset_stms, stms]
+    reset_if = AHDL_IF([AHDL_VAR(rst, Ctx.LOAD), AHDL_CONST(1)], codes_list)
+    events = [(AHDL_VAR(clk, Ctx.LOAD), 'rising')]
+    return AHDL_EVENT_TASK(events, reset_if)
+
+
+def single_input_port_fifo_adapter(hdlmodule, signal, inst_name=''):
+    '''
+    if (rst) begin
+      port_ready <= 0;
+      fifo_write <= 0;
+      fifo_din <= 0;
+    end else begin
+      port_ready <= ~fifo_full;
+      fifo_write <= port_valid & ~fifo_full;
+      fifo_din <= port;
+    end
+    '''
+    assert signal.is_ready_valid_protocol()
+    if inst_name:
+        #assert signal.is_outputput()
+        port_name = '{}_{}'.format(inst_name, signal.name)
+        fifo_name = '{}_{}'.format(inst_name, signal.adapter_sig.name)
+    else:
+        assert signal.is_input()
+        port_name = signal.name
+        fifo_name = signal.adapter_sig.name
+    port = AHDL_SYMBOL(port_name)
+    port_valid = AHDL_SYMBOL(port_name + '_valid')
+    port_ready = AHDL_SYMBOL(port_name + '_ready')
+    fifo_write = AHDL_SYMBOL(fifo_name + '_write')
+    fifo_full = AHDL_SYMBOL(fifo_name + '_full')
+    fifo_din = AHDL_SYMBOL(fifo_name + '_din')
+    reset_stms = [AHDL_MOVE(port_ready, AHDL_CONST(0)),
+                  AHDL_MOVE(fifo_write, AHDL_CONST(0)),
+                  AHDL_MOVE(fifo_din, AHDL_CONST(0)),
+                  ]
+    stms = [AHDL_MOVE(port_ready, AHDL_OP('Invert', fifo_full)),
+            AHDL_MOVE(fifo_write, AHDL_OP('BitAnd', port_valid, AHDL_OP('Invert', fifo_full))),
+            AHDL_MOVE(fifo_din, port)
+            ]
+    return make_event_task(hdlmodule, reset_stms, stms)
+
+
+def single_output_port_fifo_adapter(hdlmodule, signal, inst_name=''):
+    '''
+    if (rst) begin
+      port <= 0;
+      port_valid <= 0;
+      fifo_read <= 0;
+    end else begin
+      fifo_read <= (~fifo_empty & port_ready) ? 1 : 0;
+      port_valid <= fifo_read;
+      port <= fifo_read ? fifo_dout : port;
+    end
+    '''
+    assert signal.is_ready_valid_protocol()
+    if inst_name:
+        #assert signal.is_input()
+        port_name = '{}_{}'.format(inst_name, signal.name)
+        fifo_name = '{}_{}'.format(inst_name, signal.adapter_sig.name)
+    else:
+        assert signal.is_output()
+        port_name = signal.name
+        fifo_name = signal.adapter_sig.name
+    port = AHDL_SYMBOL(port_name)
+    port_valid = AHDL_SYMBOL(port_name + '_valid')
+    port_ready = AHDL_SYMBOL(port_name + '_ready')
+    fifo_read = AHDL_SYMBOL(fifo_name + '_read')
+    fifo_empty = AHDL_SYMBOL(fifo_name + '_empty')
+    fifo_dout = AHDL_SYMBOL(fifo_name + '_dout')
+    reset_stms = [AHDL_MOVE(port, AHDL_CONST(0)),
+                  AHDL_MOVE(port_valid, AHDL_CONST(0)),
+                  AHDL_MOVE(fifo_read, AHDL_CONST(0)),
+                  ]
+    fifo_read_rhs = AHDL_IF_EXP(AHDL_OP('BitAnd',
+                                        AHDL_OP('Invert', fifo_empty),
+                                        port_ready),
+                                AHDL_CONST(1),
+                                AHDL_CONST(0))
+    port_rhs = AHDL_IF_EXP(fifo_read,
+                           fifo_dout,
+                           port)
+    stms = [AHDL_MOVE(fifo_read, fifo_read_rhs),
+            AHDL_MOVE(port_valid, fifo_read),
+            AHDL_MOVE(port, port_rhs),
+            ]
+    return make_event_task(hdlmodule, reset_stms, stms)
 
 
 class Interconnect(object):
@@ -786,3 +1284,4 @@ class Interconnect(object):
         for o in self.outs:
             s += str(o) + '\n'
         return s
+

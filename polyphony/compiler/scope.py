@@ -4,12 +4,13 @@ from .block import Block
 from .common import Tagged, fail
 from .errors import Errors
 from .env import env
+from .loop import LoopNestTree
 from .symbol import Symbol
+from .synth import make_synth_params
 from .type import Type
 from .irvisitor import IRVisitor
 from .ir import JUMP, CJUMP, MCJUMP, PHIBase
 from .signal import Signal
-
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -21,7 +22,7 @@ class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
         'global', 'function', 'class', 'method', 'ctor',
-        'callable', 'returnable', 'mutable', 'inherited',
+        'callable', 'returnable', 'mutable', 'inherited', 'predicate',
         'testbench', 'pure',
         'module', 'worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',
@@ -32,7 +33,7 @@ class Scope(Tagged):
     scope_id = 0
 
     @classmethod
-    def create(cls, parent, name, tags, lineno=0):
+    def create(cls, parent, name, tags, lineno=0, origin=None):
         if name is None:
             name = "unnamed_scope" + str(cls.scope_id)
         s = Scope(parent, name, tags, lineno, cls.scope_id)
@@ -40,6 +41,9 @@ class Scope(Tagged):
             env.append_scope(s)
             fail((s, lineno), Errors.REDEFINED_NAME, {name})
         env.append_scope(s)
+        if origin:
+            s.origin = origin
+            env.scope_file_map[s] = env.scope_file_map[origin]
         cls.scope_id += 1
         return s
 
@@ -55,9 +59,6 @@ class Scope(Tagged):
     def destroy(cls, scope):
         assert scope.name in env.scopes
         env.remove_scope(scope)
-        if scope.parent:
-            assert scope in scope.parent.children
-            scope.parent.children.remove(scope)
 
     @classmethod
     def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False):
@@ -81,23 +82,33 @@ class Scope(Tagged):
 
     @classmethod
     def reorder_scopes(cls):
-        def set_order(scope, order, ordered):
-            if order > scope.order:
-                scope.order = order
-                ordered.add(scope)
-            elif scope in ordered:
+        # hierarchical order
+        def set_h_order(scope, order):
+            if order > scope.order[0]:
+                scope.order = (order, -1)
+            else:
                 return
             order += 1
             for s in scope.children:
-                set_order(s, order, ordered)
-            if env.call_graph:
-                for s in env.call_graph.succs(scope):
-                    set_order(s, order, ordered)
-        top = cls.global_scope()
-        top.order = 0
-        ordered = set()
-        for f in top.children:
-            set_order(f, 1, ordered)
+                set_h_order(s, order)
+        for s in env.scopes.values():
+            if s.is_namespace():
+                s.order = (0, 0)
+                for f in s.children:
+                    set_h_order(f, 1)
+        if env.depend_graph:
+            nodes = env.depend_graph.bfs_ordered_nodes()
+            for s in nodes:
+                d_order = nodes.index(s)
+                preds = env.depend_graph.preds(s)
+                if preds:
+                    preds_max_order = max([nodes.index(p) for p in preds])
+                else:
+                    preds_max_order = 0
+                if d_order < preds_max_order:
+                    s.order = (s.order[0], d_order)
+                else:
+                    s.order = (s.order[0], preds_max_order + 1)
 
     @classmethod
     def get_class_scopes(cls, bottom_up=True):
@@ -109,7 +120,7 @@ class Scope(Tagged):
 
     @classmethod
     def is_unremovable(cls, s):
-        return s.is_namespace() or s.is_class() or s.is_instantiated() or (s.parent and s.parent.is_instantiated())
+        return s.is_instantiated() or (s.parent and s.parent.is_instantiated())
 
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(tags)
@@ -129,20 +140,20 @@ class Scope(Tagged):
         self.exit_block = None
         self.children = []
         self.bases = []
+        self.origin = None
         self.subs = []
         self.usedef = None
-        self.loop_nest_tree = None
+        self.loop_tree = LoopNestTree()
         self.callee_instances = defaultdict(set)
-        self.stgs = []
-        self.order = -1
-        self.module_info = None
-        self.signals = {}
+        #self.stgs = []
+        self.order = (-1, -1)
         self.block_count = 0
         self.workers = []
         self.worker_owner = None
         self.asap_latency = -1
         self.type_args = []
-        self.synth_params = {}
+        self.synth_params = make_synth_params()
+        self.constants = {}
 
     def __str__(self):
         s = '\n================================\n'
@@ -167,9 +178,13 @@ class Scope(Tagged):
             s += '{}\n'.format(repr(self.return_type))
         else:
             s += 'None\n'
+        s += 'Synthesis\n{}\n'.format(self.synth_params)
         s += '================================\n'
-        for blk in self.traverse_blocks(longitude=True):
+        for blk in self.traverse_blocks():
             s += str(blk)
+        s += '================================\n'
+        for r in self.loop_tree.traverse():
+            s += str(r)
         s += '================================\n'
         return s
 
@@ -177,7 +192,12 @@ class Scope(Tagged):
         return self.name
 
     def __lt__(self, other):
-        return (self.order, self.lineno) < (other.order, other.lineno)
+        if self.order < other.order:
+            return True
+        elif self.order > other.order:
+            return False
+        elif self.order == other.order:
+            return self.lineno < other.lineno
 
     def clone_symbols(self, scope, postfix=''):
         symbol_map = {}
@@ -192,9 +212,9 @@ class Scope(Tagged):
     def clone_blocks(self, scope):
         block_map = {}
         stm_map = {}
-        for b in self.traverse_blocks(full=True):
+        for b in self.traverse_blocks():
             block_map[b] = b.clone(scope, stm_map)
-        for b in self.traverse_blocks(full=True):
+        for b in self.traverse_blocks():
             b_clone = block_map[b]
             b_clone.reconnect(block_map)
 
@@ -207,8 +227,6 @@ class Scope(Tagged):
                 stm.false = block_map[stm.false]
             elif stm.is_a(MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
-            elif stm.is_a(PHIBase):
-                stm.defblks = [block_map[blk] for blk in stm.defblks if blk in block_map]
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None):
@@ -218,7 +236,7 @@ class Scope(Tagged):
         name += self.orig_name
         name = name + '_' + postfix if postfix else name
         parent = self.parent if parent is None else parent
-        s = Scope.create(parent, name, set(self.tags), self.lineno)
+        s = Scope.create(parent, name, set(self.tags), self.lineno, origin=self)
         logger.debug('CLONE {} {}'.format(self.name, s.name))
 
         s.children = list(self.children)
@@ -260,10 +278,15 @@ class Scope(Tagged):
         s.cloned_symbols = symbol_map
         s.cloned_blocks = block_map
         s.cloned_stms = stm_map
+
+        s.synth_params = self.synth_params.copy()
+        # TODO:
+        #s.loop_tree = None
+        #s.constants
         return s
 
     def inherit(self, name, overrides):
-        sub = Scope.create(self.parent, name, set(self.tags), self.lineno)
+        sub = Scope.create(self.parent, name, set(self.tags), self.lineno, origin=self)
         sub.bases.append(self)
         sub.symbols = copy(self.symbols)
         sub.workers = copy(self.workers)
@@ -408,7 +431,7 @@ class Scope(Tagged):
             new_sym = self.symbols[new_name]
         else:
             new_sym = self.add_sym(new_name, set(orig_sym.tags))
-            new_sym.typ = orig_sym.typ.clone()
+            new_sym.set_type(orig_sym.typ.clone())
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:
@@ -427,13 +450,26 @@ class Scope(Tagged):
         self.entry_block = blk
 
     def set_exit_block(self, blk):
-        assert self.exit_block is None
         self.exit_block = blk
 
-    def traverse_blocks(self, full=False, longitude=False):
+    def traverse_blocks(self):
         assert len(self.entry_block.preds) == 0
         visited = set()
-        yield from self.entry_block.traverse(visited, full, longitude)
+        yield from self.entry_block.traverse(visited)
+
+    def replace_block(self, old, new):
+        new.preds = old.preds[:]
+        new.preds_loop = old.preds_loop[:]
+        new.succs = old.succs[:]
+        new.succs_loop = old.succs_loop[:]
+        for blk in self.traverse_blocks():
+            if blk is old:
+                for pred in old.preds:
+                    pred.replace_succ(old, new)
+                    pred.replace_succ_loop(old, new)
+                for succ in old.succs:
+                    succ.replace_pred(old, new)
+                    succ.replace_pred_loop(old, new)
 
     def append_child(self, child_scope):
         if child_scope not in self.children:
@@ -491,55 +527,6 @@ class Scope(Tagged):
                 return True
         return False
 
-    def find_stg(self, name):
-        assert self.stgs
-        for stg in self.stgs:
-            if stg.name == name:
-                return stg
-        return None
-
-    def get_main_stg(self):
-        assert self.stgs
-        for stg in self.stgs:
-            if stg.is_main():
-                return stg
-        return None
-
-    def gen_sig(self, name, width, tag=None, sym=None):
-        if name in self.signals:
-            sig = self.signals[name]
-            sig.width = width
-            if tag:
-                sig.add_tag(tag)
-            return sig
-        sig = Signal(name, width, tag, sym)
-        self.signals[name] = sig
-        return sig
-
-    def signal(self, name):
-        if name in self.signals:
-            return self.signals[name]
-        for base in self.bases:
-            found = base.signal(name)
-            if found:
-                return found
-        return None
-
-    def get_signals(self):
-        signals_ = {}
-        for base in self.bases:
-            signals_.update(base.get_signals())
-        signals_.update(self.signals)
-        return signals_
-
-    def rename_sig(self, old, new):
-        assert old in self.signals
-        sig = self.signals[old]
-        del self.signals[old]
-        sig.name = new
-        self.signals[new] = sig
-        return sig
-
     def class_fields(self):
         assert self.is_class()
         class_fields = {}
@@ -557,6 +544,53 @@ class Scope(Tagged):
         self.workers.append((worker_scope, worker_args))
         assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
+
+    def reset_loop_tree(self):
+        self.loop_tree = LoopNestTree()
+
+    def top_region(self):
+        return self.loop_tree.root
+
+    def parent_region(self, r):
+        return self.loop_tree.get_parent_of(r)
+
+    def child_regions(self, r):
+        return self.loop_tree.get_children_of(r)
+
+    def set_top_region(self, r):
+        self.loop_tree.root = r
+        self.loop_tree.add_node(r)
+
+    def append_child_regions(self, parent, children):
+        for child in children:
+            self.loop_tree.add_edge(parent, child)
+
+    def append_sibling_region(self, r, new_r):
+        parent = self.loop_tree.get_parent_of(r)
+        self.loop_tree.add_edge(parent, new_r)
+
+    def remove_region(self, r):
+        parent = self.loop_tree.get_parent_of(r)
+        self.loop_tree.del_edge(parent, r, auto_del_node=False)
+        self.loop_tree.del_node(r)
+
+    def find_region(self, blk):
+        for r in self.loop_tree.traverse():
+            if blk in r.blocks():
+                return r
+        return None
+
+    def remove_block_from_region(self, blk):
+        if not self.loop_tree.root:
+            return
+        r = self.find_region(blk)
+        r.remove_body(blk)
+
+    def is_leaf_region(self, r):
+        return self.loop_tree.is_leaf(r)
+
+    def traverse_regions(self, reverse=False):
+        return self.loop_tree.traverse(reverse)
 
 
 class SymbolReplacer(IRVisitor):
@@ -590,6 +624,10 @@ def write_dot(scope, tag):
         import pydot
     except ImportError:
         raise
+    # force disable debug mode to simplify the caption
+    debug_mode = env.dev_debug_mode
+    env.dev_debug_mode = False
+
     name = scope.orig_name + '_' + str(tag)
     g = pydot.Dot(name, graph_type='digraph')
 
@@ -618,4 +656,5 @@ def write_dot(scope, tag):
         #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed', color='red'))
         #    else:
         #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed'))
-    g.write_png('.tmp/' + name + '.png')
+    g.write_png('{}/{}.png'.format(env.debug_output_dir, name))
+    env.dev_debug_mode = debug_mode

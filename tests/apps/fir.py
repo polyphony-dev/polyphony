@@ -2,16 +2,16 @@
 #  FIR with 32 inputs, 32bit, 16 taps
 #  NOTE: To change INPUTSIZE and TAPS, uncomment the other FIRFilterStreaming function
 #  and comment out the current one. Currently, a loop has been unrolled for better performance.
-
-#include <stdio.h>
-
 from polyphony import testbench
+from polyphony import unroll, pipelined
 
-def fir_filter_streaming(input:int, coeff:list, previous:list) -> int:
-    INPUTSIZE=32
-    TAPS=16
-    EXPECTED_TOTAL=44880
 
+INPUTSIZE = 32
+TAPS = 16
+EXPECTED_TOTAL = 44880
+
+
+def fir_filter_streaming_old(input:int, coeff:list, previous:list) -> int:
     temp = 0
     #UNROLLING THIS IMPROVES PERFROMANCE
     previous[15] = previous[14]
@@ -31,7 +31,7 @@ def fir_filter_streaming(input:int, coeff:list, previous:list) -> int:
     previous[1] = previous[0]
     previous[0] = input
 
-    if previous[TAPS-1] == 0:
+    if previous[TAPS - 1] == 0:
         return 0
     else:
         for j in range(TAPS):
@@ -39,42 +39,42 @@ def fir_filter_streaming(input:int, coeff:list, previous:list) -> int:
 
         return temp
 
-"""
-def fir_filter_streaming(in: int, coeff: list, previous: list) -> int:
-    for j in range(TAPS-1, 0, -1):
-        previous[j] = previous[j-1]
-    previous[0] = in
 
-    if previous[TAPS-1] == 0:
+def fir_filter_streaming(input: int, coeff: list, previous: list) -> int:
+    N = TAPS - 1
+    for j in unroll(range(N)):
+        jj = N - j
+        previous[jj] = previous[jj - 1]
+        #print(jj)
+    previous[0] = input
+
+    if previous[N] == 0:
         return 0
     else:
         temp = 0
-        for j in range(TAPS):
-            temp += previous[TAPS - j - 1] * coeff[j]
+        for j in pipelined(range(TAPS)):
+            temp += previous[N - j] * coeff[j]
         return temp
-"""
+
+
+coeff = [10] * TAPS
+
 
 def fir():
-    INPUTSIZE=32
-    TAPS=16
-    EXPECTED_TOTAL=44880
-
-    previous = [0] * 16
-    coeff = [10] * 16
-    output = [0] * 32
+    previous = [0] * TAPS
+    output = [0] * INPUTSIZE
     total = 0
-    for i in range(1, INPUTSIZE+1):
-        output[i-1] = fir_filter_streaming(i, coeff, previous)
-        total += output[i-1]
+    for i in range(1, INPUTSIZE + 1):
+        output[i - 1] = fir_filter_streaming(i, coeff, previous)
+        #output[i - 1] = fir_filter_streaming_old(i, coeff, previous)
+        total += output[i - 1]
 
-    print(total)
-    if total == EXPECTED_TOTAL:
-        print(111)
-    else:
-        print(100)
     return total
+
 
 @testbench
 def test():
-    assert 44880 == fir()
+    assert EXPECTED_TOTAL == fir()
+
+
 test()

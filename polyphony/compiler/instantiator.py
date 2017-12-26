@@ -17,8 +17,7 @@ def bind_val(scope, i, value):
 
 class EarlyWorkerInstantiator(object):
     def process_all(self):
-        if not env.enable_pure:
-            return []
+        assert env.enable_pure
         new_workers = set()
         orig_workers = set()
         for name, inst in env.runtime_info.module_instances.items():
@@ -32,7 +31,7 @@ class EarlyWorkerInstantiator(object):
         modules = [scope for scope in env.scopes.values() if scope.is_module()]
         module = None
         for m in modules:
-            if m.inst_name == name:
+            if hasattr(m, 'inst_name') and m.inst_name == name:
                 module = m
                 break
         if not module:
@@ -98,8 +97,7 @@ class EarlyWorkerInstantiator(object):
 
 class EarlyModuleInstantiator(object):
     def process_all(self):
-        if not env.enable_pure:
-            return []
+        assert env.enable_pure
         new_modules = set()
         for name, inst in env.runtime_info.module_instances.items():
             new_module, orig_module = self._instantiate_module(name, inst)
@@ -154,10 +152,12 @@ class EarlyModuleInstantiator(object):
         collector = CallCollector()
         calls = collector.process(caller_scope)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope is module and caller_lineno == call.lineno:
+            if call.is_a(NEW) and call.func_scope() is module and caller_lineno == call.lineno:
                 obj_name = inst_name.split('.')[-1]
                 if stm.dst.symbol().name.endswith(obj_name):
-                    call.func_scope = new_module
+                    new_module_sym = call.sym.scope.gen_sym(new_module.orig_name)
+                    new_module_sym.typ = Type.klass(new_module)
+                    call.sym = new_module_sym
 
 
 class WorkerInstantiator(object):
@@ -168,11 +168,19 @@ class WorkerInstantiator(object):
     def _process_global_module(self):
         new_workers = set()
         collector = CallCollector()
-        g = Scope.global_scope()
-        calls = collector.process(g)
+        #g = Scope.global_scope()
+        #calls = collector.process(g)
+        calls = set()
+        scopes = Scope.get_scopes(bottom_up=False,
+                                  with_global=True,
+                                  with_class=False,
+                                  with_lib=False)
+        for s in scopes:
+            if s.is_global() or s.is_function_module():
+                calls |= collector.process(s)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope.is_module() and not call.func_scope.find_ctor().is_pure():
-                new_workers = new_workers | self._process_workers(call.func_scope)
+            if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().find_ctor().is_pure():
+                new_workers = new_workers | self._process_workers(call.func_scope())
         return new_workers
 
     def _process_workers(self, module):
@@ -181,7 +189,7 @@ class WorkerInstantiator(object):
         ctor = module.find_ctor()
         calls = collector.process(ctor)
         for stm, call in calls:
-            if call.is_a(CALL) and call.func_scope.orig_name == 'append_worker':
+            if call.is_a(CALL) and call.func_scope().orig_name == 'append_worker':
                 new_worker, is_created = self._instantiate_worker(call, ctor, module)
                 module.register_worker(new_worker, call.args)
                 if not is_created:
@@ -255,24 +263,31 @@ class ModuleInstantiator(object):
     def _process_global_module(self):
         collector = CallCollector()
         new_modules = set()
-        g = Scope.global_scope()
-        calls = collector.process(g)
+        #g = Scope.global_scope()
+        #calls = collector.process(g)
+        calls = set()
+        scopes = Scope.get_scopes(bottom_up=False,
+                                  with_global=True,
+                                  with_class=False,
+                                  with_lib=False)
+        for s in scopes:
+            if s.is_global() or s.is_function_module():
+                calls |= collector.process(s)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope.is_module() and not call.func_scope.is_instantiated():
+            if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().is_instantiated():
                 new_module = self._instantiate_module(call, stm.dst)
                 new_modules.add(new_module)
                 stm.dst.symbol().set_type(Type.object(new_module))
-                call.func_scope = new_module
         return new_modules
 
     def _instantiate_module(self, new, module_var):
-        module = new.func_scope
+        module = new.func_scope()
         binding = []
         for i, (_, arg) in enumerate(new.args):
             if arg.is_a(CONST):
                 binding.append((bind_val, i, arg.value))
 
-        inst_name = module_var.symbol().name
+        inst_name = module_var.symbol().hdl_name()
         new_module_name = module.orig_name + '_' + inst_name
         if binding:
             overrides = [module.find_ctor()]
@@ -284,12 +299,14 @@ class ModuleInstantiator(object):
                 f(new_module_ctor, i + 1, a)
             for _, i, _ in reversed(binding):
                 new_module_ctor.params.pop(i + 1)
-            new.func_scope = new_module
+            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module_name)
+            new.sym = new_module_sym
             for _, i, _ in reversed(binding):
                 new.args.pop(i)
         else:
             overrides = [module.find_ctor()]
             new_module = module.inherit(new_module_name, overrides)
+        new.sym.typ.set_scope(new_module)
         _instantiate_memnode(module.find_ctor(), new_module.find_ctor())
         new_module.inst_name = inst_name
         new_module.add_tag('instantiated')
@@ -310,8 +327,9 @@ class MemnodeReplacer(IRVisitor):
     def _replace_typ_memnode(self, typ):
         if typ.is_seq() and typ not in self.replaced:
             memnode = typ.get_memnode()
-            new_memnode = self.node_map[memnode]
-            typ.set_memnode(new_memnode)
+            if memnode in self.node_map: # TODO: to be always true
+                new_memnode = self.node_map[memnode]
+                typ.set_memnode(new_memnode)
             self.replaced.add(typ)
 
     def visit_TEMP(self, ir):

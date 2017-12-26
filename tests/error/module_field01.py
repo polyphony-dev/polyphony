@@ -5,11 +5,10 @@ from polyphony import module
 @module
 class module_field01:
     def __init__(self):
-        pass
+        self.append_worker(self.func)
 
     def func(self):
         self.x = 10
 
 
 m = module_field01()
-m.func()

@@ -85,13 +85,19 @@ class DominatorTreeBuilder(object):
         return tree
 
     def _succs(self, blk):
-        return blk.succs
+        succs = []
+        for s in blk.succs:
+            succs.append(s)
+        return succs
 
     def _succs_loop(self, blk):
         return blk.succs_loop
 
     def _preds(self, blk):
-        return blk.preds
+        preds = []
+        for s in blk.preds:
+            preds.append(s)
+        return preds
 
     def _preds_loop(self, blk):
         return blk.preds_loop

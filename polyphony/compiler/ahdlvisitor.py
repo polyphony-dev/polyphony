@@ -1,9 +1,31 @@
+from collections import defaultdict
 from .ahdl import AHDL_STM
 
 
 class AHDLVisitor(object):
     def __init__(self):
-        pass
+        self.current_fsm = None
+        self.current_stg = None
+        self.current_state = None
+
+    def process(self, hdlmodule):
+        for fsm in hdlmodule.fsms.values():
+            self.process_fsm(fsm)
+
+    def process_fsm(self, fsm):
+        self.current_fsm = fsm
+        for stg in fsm.stgs:
+            self.process_stg(stg)
+
+    def process_stg(self, stg):
+        self.current_stg = stg
+        for state in stg.states:
+            self.process_state(state)
+
+    def process_state(self, state):
+        self.current_state = state
+        for code in state.traverse():
+            self.visit(code)
 
     def visit_AHDL_CONST(self, ahdl):
         pass
@@ -92,6 +114,7 @@ class AHDLVisitor(object):
         pass
 
     def visit_AHDL_FUNCALL(self, ahdl):
+        self.visit(ahdl.name)
         for arg in ahdl.args:
             self.visit(arg)
 
@@ -104,6 +127,17 @@ class AHDLVisitor(object):
         visitor = getattr(self, method, None)
         if visitor:
             return visitor(ahdl)
+
+    def visit_MEM_MUX(self, ahdl):
+        prefix = ahdl.args[0]
+        dst = ahdl.args[1]
+        srcs = ahdl.args[2]
+        conds = ahdl.args[3]
+        self.visit(dst)
+        for s in srcs:
+            self.visit(s)
+        for c in conds:
+            self.visit(c)
 
     def visit_WAIT_EDGE(self, ahdl):
         for var in ahdl.args[2:]:
@@ -130,10 +164,19 @@ class AHDLVisitor(object):
         if visitor:
             return visitor(ahdl)
 
+    def visit_AHDL_META_MULTI_WAIT(self, ahdl):
+        for w in ahdl.waits:
+            self.visit(w)
+        if ahdl.transition:
+            self.visit(ahdl.transition)
+
     def visit_AHDL_TRANSITION(self, ahdl):
         pass
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
+        self.visit_AHDL_IF(ahdl)
+
+    def visit_AHDL_PIPELINE_GUARD(self, ahdl):
         self.visit_AHDL_IF(ahdl)
 
     def visit(self, ahdl):
@@ -142,3 +185,15 @@ class AHDLVisitor(object):
         if ahdl.is_a(AHDL_STM):
             self.current_stm = ahdl
         return visitor(ahdl)
+
+
+class AHDLCollector(AHDLVisitor):
+    def __init__(self, ahdl_cls):
+        super().__init__()
+        self.ahdl_cls = ahdl_cls
+        self.results = defaultdict(list)
+
+    def visit(self, ahdl):
+        if ahdl.__class__ is self.ahdl_cls:
+            self.results[self.current_state].append(ahdl)
+        super().visit(ahdl)

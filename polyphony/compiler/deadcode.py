@@ -1,3 +1,4 @@
+from .env import env
 from .ir import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -5,7 +6,7 @@ logger = getLogger(__name__)
 
 class DeadCodeEliminator(object):
     def process(self, scope):
-        if scope.is_namespace() or scope.is_class() or scope.is_method():
+        if scope.is_namespace() or scope.is_class():
             return
         usedef = scope.usedef
         for blk in scope.traverse_blocks():
@@ -28,3 +29,11 @@ class DeadCodeEliminator(object):
             for stm in dead_stms:
                 blk.stms.remove(stm)
                 logger.debug('removed dead code: ' + str(stm))
+
+                if stm.is_a(MOVE):
+                    var = stm.dst
+                elif stm.is_a(PHIBase):
+                    var = stm.var
+                if var.is_a([TEMP, ATTR]) and var.symbol().typ.is_seq():
+                    memnode = var.symbol().typ.get_memnode()
+                    env.memref_graph.remove_node(memnode)

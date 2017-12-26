@@ -56,7 +56,12 @@ class Type(object):
             elif ann == '...':
                 t = Type.ellipsis_t
             else:
-                sym = scope.find_sym(ann)
+                while scope:
+                    sym = scope.find_sym(ann)
+                    if sym:
+                        break
+                    else:
+                        scope = scope.parent
                 if sym and sym.typ.has_scope():
                     sym_scope = sym.typ.get_scope()
                     if sym_scope.is_typeclass():
@@ -116,6 +121,8 @@ class Type(object):
             return Type.int(int(scope.orig_name[3:]))
         elif scope.orig_name.startswith('uint'):
             return Type.int(int(scope.orig_name[4:]), signed=False)
+        elif scope.orig_name.startswith('bit'):
+            return Type.int(int(scope.orig_name[3:]), signed=False)
         elif scope.orig_name == ('List'):
             if elms:
                 assert len(elms) == 1
@@ -179,6 +186,11 @@ class Type(object):
                 return 'list[{}]'.format(self.get_element())
             if self.name == 'port':
                 return 'port[{}, {}]'.format(self.get_dtype(), self.get_direction())
+            if self.name == 'function':
+                if self.get_scope().is_method():
+                    return 'function[{}.{}]'.format(self.get_scope().parent.orig_name, self.get_scope().orig_name)
+                else:
+                    return 'function[{}]'.format(self.get_scope().orig_name)
         return self.name
 
     def __repr__(self):

@@ -4,19 +4,22 @@ import sys
 from .ahdlusedef import AHDLUseDefDetector
 from .bitwidth import BitwidthReducer
 from .builtin import builtin_symbols
-from .callgraph import CallGraphBuilder
 from .cfgopt import BlockReducer, PathExpTracer
 from .cfgopt import HyperBlockBuilder
 from .common import read_source
-from .constopt import ConstantOpt, GlobalConstantOpt
+from .constopt import ConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
+from .constopt import PolyadConstantFolding
+from .constopt import StaticConstOpt
 from .copyopt import CopyOpt
 from .dataflow import DFGBuilder
 from .deadcode import DeadCodeEliminator
+from .diagnostic import CFGChecker
 from .driver import Driver
 from .env import env
 from .errors import CompileError, InterpretError
 from .hdlgen import HDLModuleBuilder
+from .hdlmodule import HDLModule
 from .iftransform import IfTransformer
 from .inlineopt import InlineOpt
 from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
@@ -24,10 +27,15 @@ from .inlineopt import AliasReplacer, ObjectHierarchyCopier
 from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
 from .iotransformer import IOTransformer
+from .iotransformer import WaitTransformer
 from .irtranslator import IRTranslator
 from .loopdetector import LoopDetector
-from .memorytransform import MemoryRenamer, RomDetector
+from .loopdetector import LoopInfoSetter
+from .loopdetector import LoopRegionSetter
+from .loopdetector import LoopDependencyDetector
+from .memorytransform import RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
+from .phiopt import PHIInlining
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
 from .pure import interpret, PureCtorBuilder, PureFuncExecutor
@@ -37,15 +45,21 @@ from .regreducer import RegReducer
 from .regreducer import AliasVarDetector
 from .scheduler import Scheduler
 from .scope import Scope
+from .scopegraph import CallGraphBuilder
+from .scopegraph import DependencyGraphBuilder
 from .selectorbuilder import SelectorBuilder
 from .setlineno import LineNumberSetter, SourceDump
 from .specfunc import SpecializedFunctionMaker
 from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .statereducer import StateReducer
 from .stg import STGBuilder
+from .synth import DefaultSynthParamSetter
 from .typecheck import TypePropagation, InstanceTypePropagation
-from .typecheck import TypeChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
+from .typecheck import TypeChecker
+from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
 from .typecheck import AssertionChecker
+from .typecheck import SynthesisParamChecker
+from .unroll import LoopUnroller
 from .usedef import UseDefDetector
 from .vericodegen import VerilogCodeGen
 from .veritestgen import VerilogTestGen
@@ -54,7 +68,7 @@ logger = logging.getLogger()
 
 logging_setting = {
     'level': logging.DEBUG,
-    'filename': '.tmp/debug_log',
+    'filename': '{}/debug_log'.format(env.debug_output_dir),
     'filemode': 'w'
 }
 
@@ -63,6 +77,36 @@ def phase(phase):
     def setphase(driver):
         env.compile_phase = phase
     return setphase
+
+
+def filter_scope(fn):
+    def select_scope(driver):
+        for s in driver.all_scopes():
+            if fn(s):
+                driver.enable_scope(s)
+            else:
+                driver.disable_scope(s)
+    return select_scope
+
+
+def is_static_scope(scope):
+    return scope.is_namespace() or scope.is_class()
+
+
+def is_not_static_scope(scope):
+    return not is_static_scope(scope)
+
+
+def is_uninlined_scope(scope):
+    if is_static_scope(scope):
+        return False
+    if scope.is_ctor() and not scope.parent.is_module():
+        return False
+    return True
+
+
+def is_hdlmodule_scope(scope):
+    return (scope.is_module() and scope.is_instantiated()) or scope.is_function_module() or scope.is_testbench()
 
 
 def preprocess_global(driver):
@@ -74,18 +118,21 @@ def preprocess_global(driver):
         lineno.process(s)
         src_dump.process(s)
 
-    scopes = Scope.get_scopes(with_global=True, with_class=True, with_lib=True)
-    for s in (s for s in scopes if s.is_namespace() or (s.is_class() and not s.is_lib())):
-        GlobalConstantOpt().process(s)
 
-
-def callgraph(driver):
-    unused_scopes = CallGraphBuilder().process_all()
-    for s in unused_scopes:
-        if env.compile_phase < env.PHASE_3 and Scope.is_unremovable(s):
+def scopegraph(driver):
+    uncalled_scopes = CallGraphBuilder().process_all()
+    unused_scopes = DependencyGraphBuilder().process_all()
+    for s in uncalled_scopes:
+        if s.is_namespace() or s.is_class() or s.is_ctor() or s.is_worker():
             continue
         driver.remove_scope(s)
         Scope.destroy(s)
+    for s in unused_scopes:
+        if s.is_namespace():
+            continue
+        if s.name in env.scopes:
+            driver.remove_scope(s)
+            Scope.destroy(s)
 
 
 def iftrans(driver, scope):
@@ -94,18 +141,28 @@ def iftrans(driver, scope):
 
 def reduceblk(driver, scope):
     BlockReducer().process(scope)
+    checkcfg(driver, scope)
+
+
+def earlypathexp(driver, scope):
+    LoopDetector().process(scope)
+    PathExpTracer().process(scope)
+    checkcfg(driver, scope)
+    scope.reset_loop_tree()
 
 
 def pathexp(driver, scope):
     PathExpTracer().process(scope)
+    checkcfg(driver, scope)
 
 
 def hyperblock(driver, scope):
     if not env.enable_hyperblock:
         return
-    if scope.is_testbench():
+    if scope.synth_params['scheduling'] == 'sequential':
         return
     HyperBlockBuilder().process(scope)
+    checkcfg(driver, scope)
 
 
 def buildpurector(driver):
@@ -117,6 +174,10 @@ def buildpurector(driver):
 
 def execpure(driver, scope):
     PureFuncExecutor().process(scope)
+
+
+def execpureall(driver):
+    PureFuncExecutor().process_all(driver)
 
 
 def flattenport(driver, scope):
@@ -148,19 +209,15 @@ def phi(driver, scope):
 
 
 def memrefgraph(driver):
-    MemRefGraphBuilder().process_all()
+    MemRefGraphBuilder().process_all(driver)
 
 
 def meminstgraph(driver, scope):
     MemInstanceGraphBuilder().process(scope)
 
 
-def memrename(driver, scope):
-    MemoryRenamer().process(scope)
-
-
 def earlytypeprop(driver):
-    typed_scopes = TypePropagation().process_all()
+    typed_scopes = TypePropagation().process_all(driver)
     for s in typed_scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
@@ -179,17 +236,28 @@ def typecheck(driver, scope):
     TypeChecker().process(scope)
 
 
+def earlyrestrictioncheck(driver, scope):
+    EarlyRestrictionChecker().process(scope)
+
+
 def restrictioncheck(driver, scope):
     RestrictionChecker().process(scope)
 
 
-def modulecheck(driver, scope):
+def laterestrictioncheck(driver, scope):
     LateRestrictionChecker().process(scope)
+
+
+def modulecheck(driver, scope):
     ModuleChecker().process(scope)
 
 
 def assertioncheck(driver, scope):
     AssertionChecker().process(scope)
+
+
+def synthcheck(driver, scope):
+    SynthesisParamChecker().process(scope)
 
 
 def detectrom(driver):
@@ -235,9 +303,10 @@ def instantiate(driver):
             if not (child.is_ctor() or child.is_worker()):
                 continue
             usedef(driver, child)
-            execpure(driver, child)
+            if env.enable_pure:
+                execpure(driver, child)
             constopt(driver, child)
-
+            checkcfg(driver, child)
     if new_modules:
         InstanceTypePropagation().process_all()
 
@@ -248,9 +317,11 @@ def instantiate(driver):
 
         assert worker.is_worker()
         usedef(driver, worker)
-        execpure(driver, worker)
+        if env.enable_pure:
+            execpure(driver, worker)
         constopt(driver, worker)
-    callgraph(driver)
+        checkcfg(driver, worker)
+    scopegraph(driver)
     detectrom(driver)
 
 
@@ -262,8 +333,12 @@ def specfunc(driver):
 
 
 def inlineopt(driver):
-    InlineOpt().process_all()
-    callgraph(driver)
+    InlineOpt().process_all(driver)
+    scopegraph(driver)
+
+
+def setsynthparams(driver, scope):
+    DefaultSynthParamSetter().process(scope)
 
 
 def flattenmodule(driver, scope):
@@ -280,30 +355,74 @@ def scalarize(driver, scope):
 
     FlattenObjectArgs().process(scope)
     FlattenFieldAccess().process(scope)
+    checkcfg(driver, scope)
+
+
+def staticconstopt(driver):
+    StaticConstOpt().process_all(driver)
 
 
 def earlyconstopt_nonssa(driver, scope):
     EarlyConstantOptNonSSA().process(scope)
+    checkcfg(driver, scope)
 
 
 def constopt_pre_detectrom(driver, scope):
     ConstantOptPreDetectROM().process(scope)
+    checkcfg(driver, scope)
 
 
 def constopt(driver, scope):
     ConstantOpt().process(scope)
+    checkcfg(driver, scope)
 
 
 def copyopt(driver, scope):
     CopyOpt().process(scope)
 
 
+def phiopt(dfiver, scope):
+    PHIInlining().process(scope)
+
+
+def checkcfg(driver, scope):
+    if env.dev_debug_mode:
+        CFGChecker().process(scope)
+
+
 def loop(driver, scope):
     LoopDetector().process(scope)
+    #LoopRegionSetter().process(scope)
+    LoopInfoSetter().process(scope)
+    LoopDependencyDetector().process(scope)
+    checkcfg(driver, scope)
+
+
+def unroll(driver, scope):
+    while LoopUnroller().process(scope):
+        dumpscope(driver, scope)
+        usedef(driver, scope)
+        checkcfg(driver, scope)
+        reduceblk(driver, scope)
+        PolyadConstantFolding().process(scope)
+        pathexp(driver, scope)
+        dumpscope(driver, scope)
+        usedef(driver, scope)
+        constopt(driver, scope)
+        usedef(driver, scope)
+        copyopt(driver, scope)
+        deadcode(driver, scope)
+        LoopInfoSetter().process(scope)
+        LoopRegionSetter().process(scope)
+        LoopDependencyDetector().process(scope)
 
 
 def deadcode(driver, scope):
     DeadCodeEliminator().process(scope)
+
+
+def aliasvar(driver, scope):
+    AliasVarDetector().process(scope)
 
 
 def dfg(driver, scope):
@@ -314,52 +433,72 @@ def schedule(driver, scope):
     Scheduler().schedule(scope)
 
 
+def createhdlmodule(driver, scope):
+    assert is_hdlmodule_scope(scope)
+    hdlmodule = HDLModule(scope, scope.orig_name, scope.qualified_name())
+    env.append_hdlmodule(hdlmodule)
+    if scope.is_instantiated():
+        for b in scope.bases:
+            if env.hdlmodule(b) is None:
+                basemodule = HDLModule(b, b.orig_name, b.qualified_name())
+                env.append_hdlmodule(basemodule)
+
+
 def stg(driver, scope):
-    STGBuilder().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    STGBuilder().process(hdlmodule)
 
 
 def reducestate(driver, scope):
-    StateReducer().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    StateReducer().process(hdlmodule)
 
 
 def transformio(driver, scope):
-    IOTransformer().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    IOTransformer().process(hdlmodule)
+
+
+def transformwait(driver, scope):
+    hdlmodule = env.hdlmodule(scope)
+    WaitTransformer().process(hdlmodule)
 
 
 def reducereg(driver, scope):
-    RegReducer().process(scope)
-
-
-def aliasvar(driver, scope):
-    AliasVarDetector().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    RegReducer().process(hdlmodule)
 
 
 def reducebits(driver, scope):
-    BitwidthReducer().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    BitwidthReducer().process(hdlmodule)
 
 
 def buildmodule(driver, scope):
-    modulebuilder = HDLModuleBuilder.create(scope)
-    if modulebuilder:
-        modulebuilder.process(scope)
-        SelectorBuilder().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    modulebuilder = HDLModuleBuilder.create(hdlmodule)
+    assert modulebuilder
+    modulebuilder.process(hdlmodule)
+
+
+def buildselector(driver, scope):
+    hdlmodule = env.hdlmodule(scope)
+    SelectorBuilder().process(hdlmodule)
 
 
 def ahdlusedef(driver, scope):
-    if not scope.module_info:
-        return
-    AHDLUseDefDetector().process(scope)
+    hdlmodule = env.hdlmodule(scope)
+    AHDLUseDefDetector().process(hdlmodule)
 
 
 def genhdl(driver, scope):
-    if not scope.module_info:
-        return
-    if not scope.is_testbench():
-        vcodegen = VerilogCodeGen(scope)
+    hdlmodule = env.hdlmodule(scope)
+    if not hdlmodule.scope.is_testbench():
+        vcodegen = VerilogCodeGen(hdlmodule)
     else:
-        vcodegen = VerilogTestGen(scope)
+        vcodegen = VerilogTestGen(hdlmodule)
     vcodegen.generate()
-    driver.set_result(scope, vcodegen.result())
+    driver.set_result(hdlmodule.scope, vcodegen.result())
 
 
 def dumpscope(driver, scope):
@@ -370,6 +509,12 @@ def dumpcfgimg(driver, scope):
     from .scope import write_dot
     if scope.is_function_module() or scope.is_method() or scope.is_module():
         write_dot(scope, driver.stage)
+
+
+def dumpdfgimg(driver, scope):
+    if scope.is_function_module() or scope.is_method() or scope.is_module():
+        for dfg in scope.dfgs():
+            dfg.write_dot(dfg.name)
 
 
 def dumpmrg(driver, scope):
@@ -389,13 +534,15 @@ def dumpsched(driver, scope):
 
 
 def dumpstg(driver, scope):
-    for stg in scope.stgs:
-        driver.logger.debug(str(stg))
+    hdlmodule = env.hdlmodule(scope)
+    for fsm in hdlmodule.fsms.values():
+        for stg in fsm.stgs:
+            driver.logger.debug(str(stg))
 
 
 def dumpmodule(driver, scope):
-    if scope.module_info:
-        logger.debug(str(scope.module_info))
+    hdlmodule = env.hdlmodule(scope)
+    logger.debug(str(hdlmodule))
 
 
 def dumphdl(driver, scope):
@@ -403,8 +550,9 @@ def dumphdl(driver, scope):
 
 
 def printresouces(driver, scope):
+    hdlmodule = env.hdlmodule(scope)
     if (scope.is_function_module() or scope.is_module()):
-        resources = scope.module_info.resources()
+        resources = hdlmodule.resources()
         print(resources)
 
 
@@ -415,11 +563,26 @@ def compile_plan():
     def ahdlopt(proc):
         return proc if env.enable_ahdl_opt else None
 
+    def pure(proc):
+        return proc if env.enable_pure else None
+
     plan = [
         preprocess_global,
+        pure(earlyinstantiate),
+        pure(buildpurector),
+
+        filter_scope(is_static_scope),
+        earlyquadruple,
+        earlytypeprop,
+        latequadruple,
+        earlyrestrictioncheck,
+        staticconstopt,
+        typeprop,
         dbg(dumpscope),
-        earlyinstantiate,
-        buildpurector,
+        typecheck,
+        restrictioncheck,
+        usedef,
+        filter_scope(is_not_static_scope),
         iftrans,
         reduceblk,
         dbg(dumpscope),
@@ -430,18 +593,22 @@ def compile_plan():
         typeprop,
         dbg(dumpscope),
         latequadruple,
-        callgraph,
+        scopegraph,
+        earlyrestrictioncheck,
         typecheck,
         flattenport,
         typeprop,
         restrictioncheck,
         phase(env.PHASE_1),
+        usedef,
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
+        filter_scope(is_uninlined_scope),
+        setsynthparams,
         dbg(dumpscope),
         reduceblk,
-        pathexp,
+        earlypathexp,
         dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
@@ -450,6 +617,7 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         scalarssa,
+        #dumpcfgimg,
         dbg(dumpscope),
         usedef,
         hyperblock,
@@ -460,9 +628,7 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         copyopt,
-        dbg(dumpscope),
-        usedef,
-        memrename,
+        phiopt,
         dbg(dumpscope),
         usedef,
         memrefgraph,
@@ -475,12 +641,11 @@ def compile_plan():
         usedef,
         constopt,
         dbg(dumpscope),
-        execpure,
+        pure(execpureall),
         phase(env.PHASE_3),
         instantiate,
         modulecheck,
         dbg(dumpscope),
-        convport,
         usedef,
         copyopt,
         usedef,
@@ -488,38 +653,48 @@ def compile_plan():
         dbg(dumpscope),
         reduceblk,
         usedef,
+        loop,
+        laterestrictioncheck,
         dbg(dumpscope),
+        unroll,
+        dbg(dumpscope),
+        pathexp,
+        usedef,
         phi,
         usedef,
         dbg(dumpscope),
-        pathexp,
-        dbg(dumpscope),
         phase(env.PHASE_4),
         usedef,
-        loop,
+        convport,
         phase(env.PHASE_5),
         usedef,
         aliasvar,
         dbg(dumpscope),
         dfg,
+        synthcheck,
         dbg(dumpdfg),
         schedule,
+        #dumpdfgimg,
         dbg(dumpsched),
         meminstgraph,
         dbg(dumpmrg),
         assertioncheck,
+        filter_scope(is_hdlmodule_scope),
+        phase(env.PHASE_GEN_HDL),
+        createhdlmodule,
         stg,
         dbg(dumpstg),
-        phase(env.PHASE_GEN_HDL),
         buildmodule,
         ahdlopt(ahdlusedef),
         ahdlopt(reducebits),
         #ahdlopt(reducereg),
         dbg(dumpmodule),
         transformio,
+        transformwait,
         dbg(dumpmodule),
         reducestate,
         dbg(dumpmodule),
+        buildselector,
         genhdl,
         dbg(dumphdl),
         dbg(printresouces),
@@ -533,6 +708,8 @@ def setup(src_file, options):
     env.dev_debug_mode = options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
     env.quiet_level = options.quiet_level if options.quiet_level else 0
+    env.enable_verilog_dump = options.verilog_dump
+    env.enable_verilog_monitor = options.verilog_monitor
     if env.dev_debug_mode:
         logging.basicConfig(**logging_setting)
 
@@ -576,6 +753,7 @@ def compile_main(src_file, options):
     main_source = read_source(src_file)
     compile_results = compile(compile_plan(), main_source, src_file)
     output_individual(compile_results, options.output_name, options.output_dir)
+    env.destroy()
 
 
 def output_individual(compile_results, output_name, output_dir):
@@ -624,6 +802,10 @@ def main():
                         action='store_true', help='enable debug mode')
     parser.add_argument('-q', '--quiet', dest='quiet_level',
                         action='count', help='suppress warning/error messages')
+    parser.add_argument('-vd', '--verilog_dump', dest='verilog_dump',
+                        action='store_true', help='output vcd file in testbench')
+    parser.add_argument('-vm', '--verilog_monitor', dest='verilog_monitor',
+                        action='store_true', help='enable $monitor in testbench')
     from .. version import __version__
     parser.add_argument('-V', '--version', action='version',
                         version='%(prog)s ' + __version__,
@@ -649,3 +831,7 @@ def main():
         print(e)
     except Exception as e:
         raise
+
+
+if __name__ == "__main__":
+    main()

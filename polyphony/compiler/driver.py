@@ -9,6 +9,7 @@ class Driver(object):
     def __init__(self, procs, scopes):
         self.procs = procs
         self.scopes = scopes[:]
+        self.disable_scopes = []
         self.logger = logging.getLogger()  # root logger
         self.codes = {}
 
@@ -18,6 +19,29 @@ class Driver(object):
     def remove_scope(self, scope):
         if scope in self.scopes:
             self.scopes.remove(scope)
+        if scope in self.disable_scopes:
+            self.disable_scopes.remove(scope)
+
+    def enable_scope(self, scope):
+        if scope in self.disable_scopes:
+            self.scopes.append(scope)
+            self.disable_scopes.remove(scope)
+        else:
+            assert scope in self.scopes
+
+    def disable_scope(self, scope):
+        if scope in self.scopes:
+            self.disable_scopes.append(scope)
+            self.scopes.remove(scope)
+        else:
+            assert scope in self.disable_scopes
+
+    def get_scopes(self, bottom_up=True, with_global=False, with_class=False, with_lib=False):
+        scopes = Scope.get_scopes(bottom_up, with_global, with_class, with_lib)
+        return [s for s in scopes if s in self.scopes]
+
+    def all_scopes(self):
+        return self.scopes + self.disable_scopes
 
     def start_logging(self, proc, scope):
         if env.dev_debug_mode and scope in env.logfiles:
@@ -36,12 +60,11 @@ class Driver(object):
                     print_progress(proc, (i + 1) * 100 // len(self.procs))
 
                 self.stage = i
-                args, _, _, _ = inspect.getargspec(proc)
                 Scope.reorder_scopes()
                 self.scopes.sort(key=lambda s: s.order)
                 scopes = self.scopes[:]
 
-                if 'scope' not in args:
+                if 'scope' not in inspect.signature(proc).parameters:
                     for s in scopes:
                         self.start_logging(proc, s)
                     proc(self)

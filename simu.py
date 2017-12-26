@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import sys
 import os
 import traceback
@@ -16,15 +17,45 @@ from polyphony.compiler.__main__ import compile_main, logging_setting
 from polyphony.compiler.env import env
 
 
-def exec_test(casefile_path, output=True, compile_only=False):
+def parse_options():
+    if not os.path.exists(TMP_DIR):
+        os.mkdir(TMP_DIR)
+    parser = argparse.ArgumentParser(prog='simu')
+    parser.add_argument('-vd', '--verilog_dump', dest='verilog_dump',
+                        action='store_true', help='output vcd file in testbench')
+    parser.add_argument('-vm', '--verilog_monitor', dest='verilog_monitor',
+                        action='store_true', help='enable $monitor in testbench')
+    parser.add_argument('source', help='Python source file')
+    return parser.parse_args()
+
+
+def exec_test(casefile_path, output=True, compile_only=False, extra=None):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
+    if exec_compile(casefile_path, casename, output, compile_only, extra):
+        finishes = []
+        for testbench in env.testbenches:
+            result_lines = simulate_verilog(testbench.orig_name, casename, casefile_path, output)
+            if result_lines:
+                finishes.append(result_lines[-2])
+        return finishes
+    else:
+        return None
+
+
+def exec_compile(casefile_path, casename, output, compile_only, extra):
     options = types.SimpleNamespace()
     options.output_name = casename
     options.output_dir = TMP_DIR
     options.verbose_level = 0
     options.quiet_level = 0
     options.debug_mode = output
+    if extra:
+        options.verilog_dump = extra.verilog_dump
+        options.verilog_monitor = extra.verilog_monitor
+    else:
+        options.verilog_dump = False
+        options.verilog_monitor = False
     try:
         compile_main(casefile_path, options)
     except Exception as e:
@@ -32,15 +63,10 @@ def exec_test(casefile_path, output=True, compile_only=False):
         if env.dev_debug_mode:
             traceback.print_exc()
         print(e)
-        return
+        return False
     if compile_only:
-        return
-    finishes = []
-    for testbench in env.testbenches:
-        result_lines = simulate_verilog(testbench.orig_name, casename, casefile_path, output)
-        if result_lines:
-            finishes.append(result_lines[-2])
-    return finishes
+        return False
+    return True
 
 
 def simulate_verilog(testname, casename, casefile_path, output):
@@ -70,9 +96,5 @@ def simulate_verilog(testname, casename, casefile_path, output):
 
 
 if __name__ == '__main__':
-    if not os.path.exists(TMP_DIR):
-        os.mkdir(TMP_DIR)
-    if len(sys.argv) > 1:
-        # import profile
-        # profile.run("exec_test(sys.argv[1])")
-        exec_test(sys.argv[1])
+    options = parse_options()
+    exec_test(options.source, extra=options)

@@ -17,6 +17,8 @@ class IRVisitor(object):
         for stm in block.stms:
             self.current_stm = stm
             self.visit(stm)
+        if block.path_exp:
+            self.visit(block.path_exp)
 
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__
@@ -138,6 +140,8 @@ class IRTransformer(IRVisitor):
         #set the pointer to the block to each stm
         for stm in block.stms:
             stm.block = block
+        if block.path_exp:
+            block.path_exp = self.visit(block.path_exp)
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)

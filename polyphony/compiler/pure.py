@@ -4,13 +4,14 @@ import os
 import sys
 import threading
 import traceback
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from .common import fail, warn
 from .constopt import ConstantOptBase
 from .errors import Errors, Warnings, InterpretError
 from .env import env
 from .graph import Graph
-from .ir import expr2ir, Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
+from .ir import Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
+from .irhelper import expr2ir
 from .scope import Scope
 from .setlineno import LineNumberSetter
 from .type import Type
@@ -22,7 +23,14 @@ def interpret(source, file_name=''):
     objs = {}
     rtinfo = RuntimeInfo()
     builder = RuntimeInfoBuilder(rtinfo)
-
+    # We have to save the environment to avoid any import side-effect by the interpreter
+    saved_sys_path = sys.path
+    saved_sys_modules = sys.modules
+    sys.path = sys.path.copy()
+    sys.modules = sys.modules.copy()
+    if file_name:
+        dir_name = os.path.dirname(file_name)
+        sys.path.append(dir_name)
     threading.setprofile(builder._profile_func)
     thread = threading.Thread(target=_do_interpret, args=(source, file_name, objs))
     thread.start()
@@ -50,14 +58,15 @@ def interpret(source, file_name=''):
     rtinfo.module_classes = module_classes
     rtinfo.module_instances = instances
     namespace_names = [scp.name for scp in env.scopes.values() if scp.is_namespace() and not scp.is_global()]
-    rtinfo.global_vars = _find_vars(objs, namespace_names)
+    _vars, _namespaces = _find_vars('__main__', objs, set(), namespace_names)
+    _namespaces['__main__'] = _vars['__main__']
+    rtinfo.global_vars = _namespaces
     env.runtime_info = rtinfo
+    sys.path = saved_sys_path
+    sys.modules = saved_sys_modules
 
 
 def _do_interpret(source, file_name, objs):
-    if file_name:
-        dir_name = os.path.dirname(file_name)
-        sys.path.append(dir_name)
     code = compile(source, file_name, 'exec')
     th = threading.current_thread()
     th.exc_info = None
@@ -229,7 +238,7 @@ class RuntimeInfoBuilder(object):
         default_values = {}
         specials = {
             '_start', '_stop', 'append_worker',
-            '_ctor', '_workers', '_submodules', '_module_decorator',
+            '_ctor', '_workers', '_worker_threads', '_submodules', '_module_decorator',
         }
         for name, v in instance.__dict__.items():
             if name in specials or name.startswith('__'):
@@ -337,53 +346,52 @@ def _find_module_instances(objs, classes):
     return instances
 
 
-def _find_vars(dic, namespace_names):
-    vars = {}
+def _find_vars(namespace, dic, visited, namespace_names):
+    '''
+    vars = {
+        'namespace1': {k1:v1, k2:v2, ...},
+        'namespace2': {k1:v1, k2:v2, ...},
+    }
+    '''
+    vars = defaultdict(dict)
+    namespaces = {}
     for name, obj in dic.items():
         if name != '__name__' and name != '__version__' and name.startswith('__'):
             continue
+        namespace_objs = []
         if isinstance(obj, int) or isinstance(obj, str) or isinstance(obj, list) or isinstance(obj, tuple):
-            vars[name] = obj
+            vars[namespace][name] = obj
         elif inspect.isclass(obj):
-            _vars = _find_vars(obj.__dict__, namespace_names)
-            if _vars:
-                vars[name] = _vars
+            if obj.__module__.startswith('polyphony'):
+                continue
+            namespace_objs.append((name, obj))
+            if obj.__module__ in namespace_names and obj.__module__ not in vars:
+                mod = inspect.getmodule(obj)
+                namespace_objs.append((mod.__name__, mod))
         elif inspect.isfunction(obj) and obj.__name__ == '_module_decorator':
             cls = obj.__dict__['cls']
             assert inspect.isclass(cls)
-            _vars = _find_vars(cls.__dict__, namespace_names)
-            if _vars:
-                vars[name] = _vars
-            if cls.__module__ in namespace_names and cls.__module__ not in dic:
+            namespace_objs.append((name, cls))
+            if cls.__module__ in namespace_names and cls.__module__ not in vars:
                 mod = inspect.getmodule(cls)
-                _vars = _find_vars_in_libs(mod.__name__, mod.__dict__, namespace_names)
-                if _vars:
-                    vars[cls.__module__] = _vars
+                namespace_objs.append((mod.__name__, mod))
         elif inspect.ismodule(obj) and obj.__name__ in namespace_names:
-            _vars = _find_vars_in_libs(obj.__name__, obj.__dict__, namespace_names)
-            if _vars:
-                vars[name] = _vars
-    return vars
+            namespace_objs.append((name, obj))
 
-
-def _find_vars_in_libs(libname, dic, namespace_names):
-    if libname == 'polyphony.compiler':
-        return None
-    vars = {}
-    for name, obj in dic.items():
-        if name != '__name__' and name != '__version__' and name.startswith('_'):
-            continue
-        if isinstance(obj, int) or isinstance(obj, str) or isinstance(obj, list) or isinstance(obj, tuple):
-            vars[name] = obj
-        elif inspect.isclass(obj):
-            _vars = _find_vars(obj.__dict__, namespace_names)
+        for name, obj in namespace_objs:
+            if obj.__name__ in visited:
+                continue
+            _vars, _namespaces = _find_vars(name, obj.__dict__, namespaces.keys(), namespace_names)
             if _vars:
-                vars[name] = _vars
-        elif inspect.ismodule(obj) and obj.__name__ in namespace_names:
-            _vars = _find_vars_in_libs(obj.__name__, obj.__dict__, namespace_names)
-            if _vars:
-                vars[name] = _vars
-    return vars
+                vars[namespace][name] = _vars[name]
+                if inspect.isclass(obj) and obj.__module__ != '__main__':
+                    qual_name = '{}.{}'.format(obj.__module__, obj.__name__)
+                else:
+                    qual_name = obj.__name__
+                namespaces[qual_name] = _vars[name]  # add as origin name
+            if _namespaces:
+                namespaces.update(_namespaces)
+    return vars, namespaces
 
 
 class PureCtorBuilder(object):
@@ -440,8 +448,10 @@ class PureCtorBuilder(object):
                 if klass_scope.find_ctor().is_pure():
                     klass_scope, _ = env.runtime_info.inst2module[v]
                     typ.set_scope(klass_scope)
+                klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.orig_name)
+                klass_scope_sym.set_type(Type.klass(klass_scope))
                 sym = module.add_sym(name)
-                sym.set_type(typ)
+                sym.set_type(typ.clone())
                 orig_obj = instance.__dict__[name]
                 calls = env.runtime_info.get_internal_calls(instance)
                 for cname, cself, cargs in calls:
@@ -450,7 +460,7 @@ class PureCtorBuilder(object):
                         for arg_name, arg, in cargs:
                             ir = expr2ir(arg, arg_name, ctor)
                             args.append((arg_name, ir))
-                        new = NEW(klass_scope, args, {})
+                        new = NEW(klass_scope_sym, args, {})
                         dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
                         stm = MOVE(dst, new)
                         stm.lineno = ctor.lineno
@@ -552,7 +562,9 @@ class PureCtorBuilder(object):
         args = [(pname, expr2ir(pvalue, None, module)) for pname, pvalue in port_args]
         port_qualname = port.__module__ + '.' + port.__class__.__name__
         port_scope = env.scopes[port_qualname]
-        return NEW(port_scope, args, kwargs={})
+        port_scope_sym = port_scope.parent.gen_sym(port_scope.orig_name)
+        port_scope_sym.set_type(Type.klass(port_scope))
+        return NEW(port_scope_sym, args, kwargs={})
 
     def _port2ir(self, port_obj, instance, module, ctor):
         def port_qsym(scope, di, obj):
@@ -610,7 +622,7 @@ class PureCtorBuilder(object):
                 typ = Type.from_expr(port_obj, ctor)
                 sym.set_type(typ)
 
-                dst = TEMP(sym, Ctx.LOAD)
+                dst = TEMP(sym, Ctx.STORE)
                 stm = self._build_move_stm(dst, port_obj, module)
                 assert stm
                 stm.lineno = ctor.lineno
@@ -626,9 +638,9 @@ class PureFuncTypeInferrer(object):
 
     def infer_type(self, call, scope):
         assert call.is_a(CALL)
-        assert call.func_scope.is_pure()
-        if not call.func_scope.return_type:
-            call.func_scope.return_type = Type.any_t
+        assert call.func_scope().is_pure()
+        if not call.func_scope().return_type:
+            call.func_scope().return_type = Type.any_t
 
         for node in env.runtime_info.pure_nodes:
             if node.caller_lineno != call.lineno:
@@ -643,6 +655,11 @@ class PureFuncTypeInferrer(object):
 
 
 class PureFuncExecutor(ConstantOptBase):
+    def process_all(self, driver):
+        scopes = Scope.get_scopes(bottom_up=True, with_global=True, with_class=True)
+        for scope in scopes:
+            self.process(scope)
+
     def _args2tuple(self, args):
         def arg2expr(arg):
             if arg.is_a(CONST):
@@ -669,16 +686,16 @@ class PureFuncExecutor(ConstantOptBase):
         return tuple(values)
 
     def visit_CALL(self, ir):
-        if not ir.func_scope.is_pure():
+        if not ir.func_scope().is_pure():
             return ir
         assert env.enable_pure
-        assert ir.func_scope.parent.is_global()
+        assert ir.func_scope().parent.is_global()
         args = self._args2tuple([arg for _, arg in ir.args])
         if args is None:
             fail(self.current_stm, Errors.PURE_ARGS_MUST_BE_CONST)
 
-        assert ir.func_scope in env.runtime_info.pyfuncs
-        pyfunc = env.runtime_info.pyfuncs[ir.func_scope]
+        assert ir.func_scope() in env.runtime_info.pyfuncs
+        pyfunc = env.runtime_info.pyfuncs[ir.func_scope()]
         expr = pyfunc(*args)
         return expr2ir(expr, scope=self.scope)
 

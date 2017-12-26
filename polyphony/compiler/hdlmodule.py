@@ -9,22 +9,23 @@ logger = getLogger(__name__)
 
 
 class FSM(object):
-    def __init__(self):
-        self.name = None
+    def __init__(self, name, scope):
+        self.name = name
+        self.scope = scope
         self.state_var = None
         self.stgs = []
         self.outputs = set()
         self.reset_stms = []
 
 
-class HDLModuleInfo(object):
+class HDLModule(object):
     #Port = namedtuple('Port', ['name', 'width'])
     def __init__(self, scope, name, qualified_name):
         self.scope = scope
         self.name = name
         self.qualified_name = qualified_name
+        self.signals = {}
         self.interfaces = OrderedDict()
-        self.ret_interfaces = OrderedDict()
         self.interconnects = []
         self.accessors = {}
         self.local_readers = {}
@@ -38,13 +39,35 @@ class HDLModuleInfo(object):
         self.demuxes = []
         self.decls = defaultdict(list)
         self.internal_field_accesses = {}
-        self.fsms = defaultdict(FSM)
+        self.fsms = {}
         self.node2if = {}
         self.edge_detectors = set()
 
     def __str__(self):
         s = '---------------------------------\n'
-        s += 'ModuleInfo {}\n'.format(self.name)
+        s += 'HDLModule {}\n'.format(self.name)
+        s += '  -- signals --\n'
+        for sig in self.signals.values():
+            s += '{} '.format(sig)
+        s += '\n'
+        s += '  -- interfaces --\n'
+        for inf in self.interfaces.values():
+            s += '{}\n'.format(inf)
+        s += '  -- accessors --\n'
+        for acc in self.accessors.values():
+            s += '{}\n'.format(acc)
+        s += '  -- local readers --\n'
+        for acc in self.local_readers.values():
+            s += '{}\n'.format(acc)
+        s += '  -- local writers --\n'
+        for acc in self.local_writers.values():
+            s += '{}\n'.format(acc)
+        s += '  -- sub modules --\n'
+        for name, hdlmodule, connections, param_map in self.sub_modules.values():
+            s += '{} \n'.format(name)
+            for conns in connections.values():
+                for inf, acc in conns:
+                    s += '    connection : .{}({}) \n'.format(inf.if_name, acc.acc_name)
         s += '  -- declarations --\n'
         for tag, decls in self.decls.items():
             s += 'tag : {}\n'.format(tag)
@@ -67,9 +90,6 @@ class HDLModuleInfo(object):
 
     def add_interface(self, name, interface):
         self.interfaces[name] = interface
-
-    def add_ret_interface(self, name, interface):
-        self.ret_interfaces[name] = interface
 
     def add_interconnect(self, interconnect):
         self.interconnects.append(interconnect)
@@ -153,8 +173,9 @@ class HDLModuleInfo(object):
 
     def add_decl(self, tag, decl):
         assert isinstance(decl, AHDL_DECL)
-        if decl.name in (d.name for d in self.decls[tag] if type(d) == type(decl)):
-            return
+        if isinstance(decl, AHDL_VAR_DECL):
+            if decl.name in (d.name for d in self.decls[tag] if type(d) == type(decl)):
+                return
         self.decls[tag].append(decl)
 
     def remove_decl(self, tag, decl):
@@ -168,13 +189,13 @@ class HDLModuleInfo(object):
                     self.remove_decl(tag, decl)
                     return
 
-    def add_sub_module(self, name, module_info, connections, param_map=None):
+    def add_sub_module(self, name, hdlmodule, connections, param_map=None):
         assert isinstance(name, str)
         sub_infs = {}
         for conns in connections.values():
             for interface, accessor in conns:
                 sub_infs[interface.if_name] = accessor
-        self.sub_modules[name] = (name, module_info, connections, param_map)
+        self.sub_modules[name] = (name, hdlmodule, connections, param_map)
 
     def add_function(self, func, tag=''):
         self.add_decl(tag, func)
@@ -187,17 +208,25 @@ class HDLModuleInfo(object):
         assert isinstance(demux, AHDL_DEMUX)
         self.add_decl(tag, demux)
 
+    def add_fsm(self, fsm_name, scope):
+        self.fsms[fsm_name] = FSM(fsm_name, scope)
+
     def add_fsm_state_var(self, fsm_name, var):
-        self.fsms[fsm_name].name = fsm_name
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].state_var = var
 
     def add_fsm_stg(self, fsm_name, stgs):
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].stgs = stgs
+        for stg in stgs:
+            stg.fsm = self.fsms[fsm_name]
 
     def add_fsm_output(self, fsm_name, output_sig):
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].outputs.add(output_sig)
 
     def add_fsm_reset_stm(self, fsm_name, ahdl_stm):
+        assert fsm_name in self.fsms
         self.fsms[fsm_name].reset_stms.append(ahdl_stm)
 
     def add_edge_detector(self, sig, old, new):
@@ -206,8 +235,6 @@ class HDLModuleInfo(object):
     def find_interface(self, name):
         if name in self.interfaces:
             return self.interfaces[name]
-        if name in self.ret_interfaces:
-            return self.ret_interfaces[name]
         assert False
 
     def resources(self):
@@ -215,11 +242,6 @@ class HDLModuleInfo(object):
         num_of_nets = 0
         internal_rams = 0
         for inf in self.interfaces.values():
-            for r in inf.regs():
-                num_of_regs += r.width
-            for n in inf.nets():
-                num_of_nets += n.width
-        for inf in self.ret_interfaces.values():
             for r in inf.regs():
                 num_of_regs += r.width
             for n in inf.nets():
@@ -245,8 +267,45 @@ class HDLModuleInfo(object):
                 num_of_states += len(stg.states)
         return num_of_regs, num_of_nets, num_of_states
 
+    def gen_sig(self, name, width, tag=None, sym=None):
+        if name in self.signals:
+            sig = self.signals[name]
+            sig.width = width
+            if tag:
+                sig.add_tag(tag)
+            return sig
+        sig = Signal(name, width, tag, sym)
+        self.signals[name] = sig
+        return sig
 
-class RAMModuleInfo(HDLModuleInfo):
+    def signal(self, name):
+        if name in self.signals:
+            return self.signals[name]
+        for base in self.scope.bases:
+            basemodule = env.hdlmodule(base)
+            found = basemodule.signal(name)
+            if found:
+                return found
+        return None
+
+    def get_signals(self):
+        signals_ = {}
+        for base in self.scope.bases:
+            basemodule = env.hdlmodule(base)
+            signals_.update(basemodule.get_signals())
+        signals_.update(self.signals)
+        return signals_
+
+    def rename_sig(self, old, new):
+        assert old in self.signals
+        sig = self.signals[old]
+        del self.signals[old]
+        sig.name = new
+        self.signals[new] = sig
+        return sig
+
+
+class RAMModule(HDLModule):
     def __init__(self, name, data_width, addr_width):
         super().__init__(None, 'ram', 'BidirectionalSinglePortRam')
         self.ramif = RAMModuleInterface('ram', data_width, addr_width)
@@ -254,7 +313,7 @@ class RAMModuleInfo(HDLModuleInfo):
         env.add_using_lib(libs.bidirectional_single_port_ram)
 
 
-class FIFOModuleInfo(HDLModuleInfo):
+class FIFOModule(HDLModule):
     def __init__(self, signal):
         super().__init__(None, 'fifo', 'FIFO')
         self.inf = FIFOModuleInterface(signal)

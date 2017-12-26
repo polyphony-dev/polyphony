@@ -2,16 +2,17 @@
 import copy
 import os
 import builtins as python_builtins
-from .ir import *
 from .block import Block
+from .builtin import builtin_symbols, append_builtin
+from .builtin import lib_port_type_names
+from .common import fail
+from .env import env
+from .errors import Errors
+from .ir import *
+from .irhelper import op2str
 from .scope import Scope, FunctionParam
 from .symbol import Symbol
 from .type import Type
-from .env import env
-from .common import fail
-from .errors import Errors
-from .builtin import builtin_symbols, append_builtin
-from .builtin import lib_port_type_names, lib_class_names
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -20,6 +21,7 @@ INTERNAL_FUNCTION_DECORATORS = [
     'inlinelib',
     'builtin',
     'decorator',
+    'predicate',
 ]
 INTERNAL_CLASS_DECORATORS = [
     'builtin',
@@ -97,11 +99,9 @@ class ImportVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         def import_to_scope(imp_sym, asname=None):
             if asname:
-                sym = self.target_scope.gen_sym(asname)
+                sym = self.target_scope.inherit_sym(imp_sym, asname)
             else:
-                sym = self.target_scope.gen_sym(imp_sym.name)
-            sym.set_type(imp_sym.typ)
-            sym.ancestor = imp_sym
+                sym = self.target_scope.inherit_sym(imp_sym, imp_sym.name)
 
         if node.module not in BUILTIN_PACKAGES:
             if self._load_subfile(node.module):
@@ -152,13 +152,13 @@ class FunctionVisitor(ast.NodeVisitor):
             if arg.annotation:
                 ann = self.annotation_visitor.visit(arg.annotation)
                 is_lib = self.current_scope.is_lib()
-                param_t = Type.from_annotation(ann, self.current_scope.parent, is_lib)
+                param_t = Type.from_annotation(ann, self.current_scope, is_lib)
                 if not param_t:
                     fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
             else:
                 param_t = Type.int()
             param_in.set_type(param_t)
-            param_copy.set_type(param_t)
+            param_copy.set_type(param_t.clone())
             if is_vararg:
                 param_t.set_vararg(True)
             return param_in, param_copy
@@ -181,6 +181,10 @@ class FunctionVisitor(ast.NodeVisitor):
             if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
                 if sym.typ.get_scope().name == 'polyphony.rule':
                     synth_params = deco_kwargs
+                elif sym.typ.get_scope().name == 'polyphony.pure':
+                    if not env.enable_pure:
+                        fail((outer_scope, node.lineno), Errors.PURE_IS_DISABLED)
+                    tags.add(sym.typ.get_scope().orig_name)
                 else:
                     tags.add(sym.typ.get_scope().orig_name)
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
@@ -210,7 +214,7 @@ class FunctionVisitor(ast.NodeVisitor):
         if node.returns:
             ann = self.annotation_visitor.visit(node.returns)
             is_lib = self.current_scope.is_lib()
-            t = Type.from_annotation(ann, self.current_scope.parent, is_lib)
+            t = Type.from_annotation(ann, self.current_scope, is_lib)
             if t:
                 self.current_scope.return_type = t
                 if t is not Type.none_t:
@@ -346,7 +350,9 @@ class CodeVisitor(ast.NodeVisitor):
 
         self.annotation_visitor = AnnotationVisitor(self)
         self.lazy_defs = []
-        self.current_synth_params = {}
+        self.current_with_blk_synth_params = {}
+        self.current_loop_synth_params = {}
+        self.invisible_symbols = set()
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -375,9 +381,13 @@ class CodeVisitor(ast.NodeVisitor):
 
     def _new_block(self, scope, nametag='b'):
         blk = Block(scope, nametag)
-        if self.current_synth_params:
-            blk.synth_params.update(self.current_synth_params)
+        blk.synth_params.update(scope.synth_params)
+        blk.synth_params.update(self.current_with_blk_synth_params)
+        blk.synth_params.update(self.current_loop_synth_params)
         return blk
+
+    def _tmp_block(self, scope):
+        return self._new_block(scope, 'tmp')
 
     def _enter_scope(self, name):
         outer_scope = self.current_scope
@@ -386,7 +396,10 @@ class CodeVisitor(ast.NodeVisitor):
         last_block = self.current_block
         new_block = self._new_block(self.current_scope)
         self.current_scope.set_entry_block(new_block)
+        self.current_scope.set_exit_block(new_block)
         self.current_block = new_block
+        self.current_param_stms = []
+        self.invisible_symbols.clear()
 
         return (outer_scope, last_block)
 
@@ -417,7 +430,7 @@ class CodeVisitor(ast.NodeVisitor):
     def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
         outer_function_exit = self.function_exit
-        self.function_exit = self._new_block(self.current_scope, 'exit')
+        self.function_exit = self._tmp_block(self.current_scope)
         if self.current_scope.is_method():
             params = self.current_scope.params[1:]  # skip 'self'
         else:
@@ -426,6 +439,7 @@ class CodeVisitor(ast.NodeVisitor):
             mv = MOVE(TEMP(param.copy, Ctx.STORE),
                       TEMP(param.sym, Ctx.LOAD))
             self.emit(mv, node)
+            self.current_param_stms.append(mv)
         skip = len(node.args.args) - len(node.args.defaults)
         for idx, (param, defval) in enumerate(zip(self.current_scope.params[skip:],
                                                   node.args.defaults)):
@@ -453,14 +467,15 @@ class CodeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(Symbol.return_prefix)
         else:
             sym = self.current_scope.add_return_sym()
-        if self.last_node:
-            self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
-
         if self.function_exit.preds:
+            function_exit = self._new_block(self.current_scope, 'exit')
+            self.current_scope.replace_block(self.function_exit, function_exit)
+            self.function_exit = function_exit
             self.current_scope.set_exit_block(self.function_exit)
+            if self.last_node:
+                self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
         else:
             self.current_scope.set_exit_block(self.current_block)
-        # self.function_exit.synth_params.update(self.current_synth_params)
         self.function_exit = outer_function_exit
         self._leave_scope(*context)
 
@@ -535,7 +550,7 @@ class CodeVisitor(ast.NodeVisitor):
                 hint = self.type_comments[tail_lineno]
                 mod = ast.parse(hint)
                 ann = self.annotation_visitor.visit(mod.body[0])
-                t = Type.from_annotation(ann, self.current_scope.parent)
+                t = Type.from_annotation(ann, self.current_scope)
                 if t:
                     left.symbol().set_type(t)
                 else:
@@ -551,7 +566,7 @@ class CodeVisitor(ast.NodeVisitor):
         if node.value:
             src = self.visit(node.value)
         dst = self.visit(node.target)
-        typ = Type.from_annotation(ann, self.current_scope.parent)
+        typ = Type.from_annotation(ann, self.current_scope)
         if not typ:
             fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if dst.is_a(TEMP):
@@ -590,16 +605,16 @@ class CodeVisitor(ast.NodeVisitor):
 
         if_head = self.current_block
         if_then = self._new_block(self.current_scope, 'ifthen')
-        if_else = self._new_block(self.current_scope, 'ifelse')
-        if_exit = self._new_block(self.current_scope)
+        if_else_tmp = self._new_block(self.current_scope, 'ifelse')
+        if_exit_tmp = self._new_block(self.current_scope)
 
         condition = self.visit(node.test)
         if not condition.is_a(RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
 
-        self.emit_to(if_head, CJUMP(condition, if_then, if_else), node)
+        self.emit_to(if_head, CJUMP(condition, if_then, if_else_tmp), node)
         if_head.connect(if_then)
-        if_head.connect(if_else)
+        if_head.connect(if_else_tmp)
 
         #if then block
         #if not self.nested_if:
@@ -607,8 +622,8 @@ class CodeVisitor(ast.NodeVisitor):
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(if_exit), node)
-            self.current_block.connect(if_exit)
+            self.emit(JUMP(if_exit_tmp), node)
+            self.current_block.connect(if_exit_tmp)
         #if not self.nested_if:
         #else:
         #    self.nested_if = False
@@ -618,6 +633,8 @@ class CodeVisitor(ast.NodeVisitor):
             self.nested_if = True
 
         #if else block
+        if_else = self._new_block(self.current_scope, 'ifelse')
+        self.current_scope.replace_block(if_else_tmp, if_else)
         self.current_block = if_else
         if node.orelse:
             if isinstance(node.orelse[0], ast.If):
@@ -625,10 +642,12 @@ class CodeVisitor(ast.NodeVisitor):
             for stm in node.orelse:
                 self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(if_exit), node)
-            self.current_block.connect(if_exit)
+            self.emit(JUMP(if_exit_tmp), node)
+            self.current_block.connect(if_exit_tmp)
 
         #if_exit belongs to the outer level
+        if_exit = self._new_block(self.current_scope)
+        self.current_scope.replace_block(if_exit_tmp, if_exit)
         self.current_block = if_exit
 
     def visit_While(self, node):
@@ -647,9 +666,9 @@ class CodeVisitor(ast.NodeVisitor):
 
         while_block = self._new_block(self.current_scope, 'while')
         body_block = self._new_block(self.current_scope, 'whilebody')
-        loop_bridge_block = self._new_block(self.current_scope, 'whilebridge')
-        else_block = self._new_block(self.current_scope, 'whileelse')
-        exit_block = self._new_block(self.current_scope, 'whileexit')
+        loop_bridge_tmp_block = self._tmp_block(self.current_scope)
+        else_tmp_block = self._tmp_block(self.current_scope)
+        exit_tmp_block = self._tmp_block(self.current_scope)
 
         self.emit(JUMP(while_block), node)
         self.current_block.connect(while_block)
@@ -659,40 +678,46 @@ class CodeVisitor(ast.NodeVisitor):
         condition = self.visit(node.test)
         if not condition.is_a(RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
-        cjump = CJUMP(condition, body_block, else_block)
+        cjump = CJUMP(condition, body_block, else_tmp_block)
         cjump.loop_branch = True
         self.emit(cjump, node)
         while_block.connect(body_block)
-        while_block.connect(else_block)
+        while_block.connect(else_tmp_block)
 
         # body part
         self.current_block = body_block
-        self.loop_bridge_blocks.append(loop_bridge_block)  # for 'continue'
-        self.loop_end_blocks.append(exit_block)  # for 'break'
+        self.loop_bridge_blocks.append(loop_bridge_tmp_block)  # for 'continue'
+        self.loop_end_blocks.append(exit_tmp_block)  # for 'break'
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(loop_bridge_block), node)
-            self.current_block.connect(loop_bridge_block)
+            self.emit(JUMP(loop_bridge_tmp_block), node)
+            self.current_block.connect(loop_bridge_tmp_block)
 
         # need loop bridge for branch merging
-        if loop_bridge_block.preds:
+        if loop_bridge_tmp_block.preds:
+            loop_bridge_block = self._new_block(self.current_scope, 'whilebridge')
+            self.current_scope.replace_block(loop_bridge_tmp_block, loop_bridge_block)
             self.current_block = loop_bridge_block
             self.emit(JUMP(while_block, 'L'), node)
             loop_bridge_block.connect_loop(while_block)
 
         # else part
+        else_block = self._new_block(self.current_scope, 'whileelse')
+        self.current_scope.replace_block(else_tmp_block, else_block)
         self.current_block = else_block
         if node.orelse:
             for stm in node.orelse:
                 self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(exit_block), node)
-            self.current_block.connect(exit_block)
+            self.emit(JUMP(exit_tmp_block), node)
+            self.current_block.connect(exit_tmp_block)
 
         self.loop_bridge_blocks.pop()
         self.loop_end_blocks.pop()
 
+        exit_block = self._new_block(self.current_scope, 'whileexit')
+        self.current_scope.replace_block(exit_tmp_block, exit_block)
         self.current_block = exit_block
 
     def visit_For(self, node):
@@ -714,8 +739,44 @@ class CodeVisitor(ast.NodeVisitor):
                 var = TEMP(temp_sym, Ctx.LOAD)
             return var
 
+        def is_iterator_func(ir):
+            return it.is_a(SYSCALL) and it.sym.name in ('polyphony.unroll', 'polyphony.pipelined')
+
         var = self.visit(node.target)
         it = self.visit(node.iter)
+
+        loop_synth_params = {}
+        while is_iterator_func(it):
+            assert len(it.args) >= 1
+            _, seq = it.args[0]
+            if it.sym.name == 'polyphony.unroll':
+                if is_iterator_func(seq) and seq.sym.name in ('polyphony.unroll', 'polyphony.pipelined'):
+                    fail((self.current_scope, node.lineno),
+                         Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.sym.name, it.sym.name])
+                if len(it.args) == 1:
+                    if len(it.kwargs) == 0:
+                        assert it.sym.typ.is_function()
+                        scp = it.sym.typ.get_scope()
+                        factor = scp.params[1].defval
+                    elif len(it.kwargs) == 1 and 'factor' in it.kwargs:
+                        factor = it.kwargs['factor']
+                    else:
+                        kwarg = list(it.kwargs.keys())[0]
+                        fail((self.current_scope, node.lineno),
+                             Errors.GOT_UNEXPECTED_KWARGS, [it.sym.name, kwarg])
+                elif len(it.args) == 2:
+                    _, factor = it.args[1]
+                else:
+                    fail((self.current_scope, node.lineno),
+                         Errors.TAKES_TOOMANY_ARGS, [it.sym.name, '2', len(it.args)])
+                loop_synth_params.update({'unroll':factor.value})
+            elif it.sym.name == 'polyphony.pipelined':
+                loop_synth_params.update({'scheduling':'pipeline'})
+                if is_iterator_func(seq):
+                    if seq.sym.name == 'polyphony.pipelined':
+                        fail((self.current_scope, node.lineno),
+                             Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.sym.name, it.sym.name])
+            it = seq
 
         # In case of range() loop
         if it.is_a(SYSCALL) and it.sym.name == 'range':
@@ -735,7 +796,7 @@ class CodeVisitor(ast.NodeVisitor):
             start = make_temp_if_needed(start, init_parts)
             end = make_temp_if_needed(end, init_parts)
             step = make_temp_if_needed(step, init_parts)
-            var.sym.add_tag('induction')
+            counter = var.sym
             init_parts += [
                 MOVE(TEMP(var.sym, Ctx.STORE), start)
             ]
@@ -754,12 +815,12 @@ class CodeVisitor(ast.NodeVisitor):
                            TEMP(var.sym, Ctx.LOAD),
                            step))
             ]
-            self._build_for_loop_blocks(init_parts, condition, [], continue_parts, node)
+            self._build_for_loop_blocks(init_parts, condition, [], continue_parts, loop_synth_params, node)
         elif it.is_a([TEMP, ATTR]):
             start = CONST(0)
             end  = SYSCALL(builtin_symbols['len'], [('seq', it.clone())], {})
             counter_name = Symbol.unique_name('@counter')
-            counter = self.current_scope.add_sym(counter_name, {'induction'})
+            counter = self.current_scope.add_sym(counter_name)
             init_parts = [
                 MOVE(TEMP(counter, Ctx.STORE),
                      start)
@@ -777,13 +838,13 @@ class CodeVisitor(ast.NodeVisitor):
                            TEMP(counter, Ctx.LOAD),
                            CONST(1)))
             ]
-            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, node)
+            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, loop_synth_params, node)
         elif it.is_a(ARRAY):
             unnamed_array = self.current_scope.add_temp('@unnamed')
             start = CONST(0)
             end  = SYSCALL(builtin_symbols['len'], [('seq', TEMP(unnamed_array, Ctx.LOAD))], {})
             counter_name = Symbol.unique_name('@counter')
-            counter = self.current_scope.add_sym(counter_name, {'induction'})
+            counter = self.current_scope.add_sym(counter_name)
             init_parts = [
                 MOVE(TEMP(unnamed_array, Ctx.STORE),
                      it),
@@ -803,17 +864,21 @@ class CodeVisitor(ast.NodeVisitor):
                            TEMP(counter, Ctx.LOAD),
                            CONST(1)))
             ]
-            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, node)
+            self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, loop_synth_params, node)
         else:
             fail((self.current_scope, node.lineno),
                  Errors.UNSUPPORTED_SYNTAX, ['This type of for statement'])
+        self.invisible_symbols.add(counter)
 
-    def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, node):
+    def _build_for_loop_blocks(self, init_parts, condition, body_parts, continue_parts, loop_synth_params, node):
+        exit_tmp_block = self._tmp_block(self.current_scope)
+
+        old_loop_synth_params = self.current_loop_synth_params
+        self.current_loop_synth_params = loop_synth_params
         loop_check_block = self._new_block(self.current_scope, 'fortest')
         body_block = self._new_block(self.current_scope, 'forbody')
-        else_block = self._new_block(self.current_scope, 'forelse')
-        continue_block = self._new_block(self.current_scope, 'continue')
-        exit_block = self._new_block(self.current_scope)
+        else_tmp_block = self._tmp_block(self.current_scope)
+        continue_tmp_block = self._tmp_block(self.current_scope)
 
         # initialize part
         for code in init_parts:
@@ -824,25 +889,27 @@ class CodeVisitor(ast.NodeVisitor):
         # loop check part
         self.current_block = loop_check_block
 
-        cjump = CJUMP(condition, body_block, else_block)
+        cjump = CJUMP(condition, body_block, else_tmp_block)
         cjump.loop_branch = True
         self.emit(cjump, node)
         self.current_block.connect(body_block)
-        self.current_block.connect(else_block)
+        self.current_block.connect(else_tmp_block)
 
         # body part
         self.current_block = body_block
-        self.loop_bridge_blocks.append(continue_block)  # for 'continue'
-        self.loop_end_blocks.append(exit_block)  # for 'break'
+        self.loop_bridge_blocks.append(continue_tmp_block)  # for 'continue'
+        self.loop_end_blocks.append(exit_tmp_block)  # for 'break'
         for code in body_parts:
             self.emit(code, node)
         for stm in node.body:
             self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(continue_block, 'C'), node)
-            self.current_block.connect(continue_block)
+            self.emit(JUMP(continue_tmp_block), node)
+            self.current_block.connect(continue_tmp_block)
 
         #continue part
+        continue_block = self._new_block(self.current_scope, 'continue')
+        self.current_scope.replace_block(continue_tmp_block, continue_block)
         self.current_block = continue_block
         for code in continue_parts:
             self.emit(code, node)
@@ -850,39 +917,47 @@ class CodeVisitor(ast.NodeVisitor):
         continue_block.connect_loop(loop_check_block)
 
         #else part
+        else_block = self._new_block(self.current_scope, 'forelse')
+        self.current_scope.replace_block(else_tmp_block, else_block)
         self.current_block = else_block
         if node.orelse:
             for stm in node.orelse:
                 self.visit(stm)
         if self._needJUMP(self.current_block):
-            self.emit(JUMP(exit_block), node)
-            self.current_block.connect(exit_block)
+            self.emit(JUMP(exit_tmp_block), node)
+            self.current_block.connect(exit_tmp_block)
 
         self.loop_bridge_blocks.pop()
         self.loop_end_blocks.pop()
 
+        exit_block = self._new_block(self.current_scope)
+        self.current_scope.replace_block(exit_tmp_block, exit_block)
         self.current_block = exit_block
+        self.current_loop_synth_params = old_loop_synth_params
 
     def visit_AyncFor(self, node):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])
 
+    def _is_empty_entry(self):
+        return all([stm in self.current_param_stms for stm in self.current_scope.entry_block.stms])
+
     def visit_With(self, node):
-        is_empty_entry = self.current_block is self.current_scope.entry_block and not self.current_block.stms
+        is_empty_entry = self.current_block is self.current_scope.entry_block and self._is_empty_entry()
         if not is_empty_entry:
             with_block = self._new_block(self.current_scope, 'with')
             self.emit(JUMP(with_block), node)
             self.current_block.connect(with_block)
             self.current_block = with_block
         # TODO: __enter__ and __exit__ calls
-        old_synth_params = None
+        old_with_blk_synth_params = None
         for item in node.items:
             expr, var = self.visit(item)
             if expr.is_a(CALL):
                 if expr.func.symbol().typ.get_scope().name == 'polyphony.rule':
                     # merge nested params
-                    old_synth_params = self.current_synth_params
-                    self.current_synth_params = self.current_synth_params.copy()
-                    self.current_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
+                    old_with_blk_synth_params = self.current_with_blk_synth_params
+                    self.current_with_blk_synth_params = self.current_with_blk_synth_params.copy()
+                    self.current_with_blk_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
                     if len(node.items) != 1:
                         assert False  # TODO: use fail()
                     if expr.args:
@@ -894,12 +969,13 @@ class CodeVisitor(ast.NodeVisitor):
                     self.emit(EXPR(expr), node)
             else:
                 raise NotImplementedError()
-        self.current_block.synth_params.update(self.current_synth_params)
+        self.current_block.synth_params.update(self.current_with_blk_synth_params)
 
         for body in node.body:
             self.visit(body)
-        if old_synth_params is not None:
-            self.current_synth_params = old_synth_params
+
+        if old_with_blk_synth_params is not None:
+            self.current_with_blk_synth_params = old_with_blk_synth_params
 
         if self._needJUMP(self.current_block):
             new_block = self._new_block(self.current_scope)
@@ -946,13 +1022,17 @@ class CodeVisitor(ast.NodeVisitor):
         pass
 
     def visit_Break(self, node):
+        if self.current_block.synth_params['scheduling'] == 'pipeline':
+            fail((self.current_scope, node.lineno), Errors.RULE_BREAK_IN_PIPELINE_LOOP)
         end_block = self.loop_end_blocks[-1]
         self.emit(JUMP(end_block, 'B'), node)
         self.current_block.connect(end_block)
 
     def visit_Continue(self, node):
+        if self.current_block.synth_params['scheduling'] == 'pipeline':
+            fail((self.current_scope, node.lineno), Errors.RULE_CONTINUE_IN_PIPELINE_LOOP)
         bridge_block = self.loop_bridge_blocks[-1]
-        self.emit(JUMP(bridge_block, 'C'), node)
+        self.emit(JUMP(bridge_block), node)
         self.current_block.connect(bridge_block)
 
     #--------------------------------------------------------------------------
@@ -1032,14 +1112,14 @@ class CodeVisitor(ast.NodeVisitor):
 
         if func.is_a(TEMP):
             if func.symbol().typ.is_class():
-                return NEW(func.symbol().typ.get_scope(), args, kwargs)
+                return NEW(func.symbol(), args, kwargs)
             sym = self.current_scope.find_sym(func.symbol().name)
             func_scope = sym.typ.get_scope() if sym.typ.has_scope() else None
             #assert func_scope
             if not func_scope:
                 if func.symbol().name in dir(python_builtins):
                     raise NameError("The name \'{}\' is reserved as the name of the built-in function.".
-                                    format(node.id))
+                                    format(node.func.id))
             else:
                 if func.symbol().name in builtin_symbols:
                     return SYSCALL(builtin_symbols[func.symbol().name], args, kwargs)
@@ -1052,7 +1132,7 @@ class CodeVisitor(ast.NodeVisitor):
                     builtin_sym = builtin_symbols[func.attr.typ.get_scope().name]
                     return SYSCALL(builtin_sym, args, kwargs)
                 elif func.attr.typ.is_class():
-                    return NEW(func.attr.typ.get_scope(), args, kwargs)
+                    return NEW(func.attr, args, kwargs)
             else:
                 scope_sym = func.tail()
                 if isinstance(scope_sym, Symbol):
@@ -1060,8 +1140,7 @@ class CodeVisitor(ast.NodeVisitor):
                         receiver = scope_sym.typ.get_scope()
                         attr_sym = receiver.find_sym(func.attr)
                         if attr_sym.typ.is_class():
-                            attr_scope = attr_sym.typ.get_scope()
-                            return NEW(attr_scope, args, kwargs)
+                            return NEW(attr_sym, args, kwargs)
         return CALL(func, args, kwargs)
 
     def visit_Num(self, node):
@@ -1109,6 +1188,8 @@ class CodeVisitor(ast.NodeVisitor):
         v = self.visit(node.value)
         ctx = self._nodectx2irctx(node)
         v.ctx = ctx
+        if isinstance(node.slice, (ast.Slice, ast.ExtSlice)):
+            fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['slice'])
         s = self.visit(node.slice)
         return MREF(v, s, ctx)
 
@@ -1126,6 +1207,7 @@ class CodeVisitor(ast.NodeVisitor):
         elif node.id == 'None':
             return CONST(None)
 
+        ctx = self._nodectx2irctx(node)
         sym = self.current_scope.find_sym(node.id)
         if not sym:
             parent_scope = self.current_scope.find_parent_scope(node.id)
@@ -1133,17 +1215,21 @@ class CodeVisitor(ast.NodeVisitor):
                 scope_sym = parent_scope.find_sym(node.id)
                 return TEMP(scope_sym, self._nodectx2irctx(node))
 
-        if isinstance(node.ctx, ast.Load) or isinstance(node.ctx, ast.AugLoad):
+        if ctx == Ctx.LOAD:
             if sym is None:
                 fail((self.current_scope, node.lineno), Errors.UNDEFINED_NAME, [node.id])
         else:
             if sym is None or sym.scope is not self.current_scope:
                 sym = self.current_scope.add_sym(node.id)
-                if self.current_scope.is_global() or self.current_scope.is_class():
+                if self.current_scope.is_namespace() or self.current_scope.is_class():
                     sym.add_tag('static')
-
+        if sym in self.invisible_symbols:
+            if ctx == Ctx.LOAD:
+                fail((self.current_scope, node.lineno), Errors.NAME_SCOPE_RESTRICTION, [node.id])
+            else:
+                self.invisible_symbols.remove(sym)
         assert sym is not None
-        return TEMP(sym, self._nodectx2irctx(node))
+        return TEMP(sym, ctx)
 
     #     | List(expr* elts, expr_context ctx)
     def visit_List(self, node):
@@ -1171,10 +1257,10 @@ class CodeVisitor(ast.NodeVisitor):
             return CONST(None)
 
     def visit_Slice(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['slice'])
+        assert False
 
     def visit_ExtSlice(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ext slice'])
+        assert False
 
     def visit_Index(self, node):
         return self.visit(node.value)
@@ -1285,7 +1371,7 @@ class PureScopeVisitor(ast.NodeVisitor):
                 hint = self.type_comments[tail_lineno]
                 mod = ast.parse(hint)
                 ann = self.annotation_visitor.visit(mod.body[0])
-                typ = Type.from_annotation(ann, self.scope.parent)
+                typ = Type.from_annotation(ann, self.scope)
                 if typ:
                     self._add_local_type_hint(self.scope.local_type_hints, left, typ)
                 else:
@@ -1294,7 +1380,7 @@ class PureScopeVisitor(ast.NodeVisitor):
     def visit_AnnAssign(self, node):
         ann = self.annotation_visitor.visit(node.annotation)
         left = self.visit(node.target)
-        typ = Type.from_annotation(ann, self.scope.parent)
+        typ = Type.from_annotation(ann, self.scope)
         if not typ:
             fail((self.scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if left:
@@ -1402,4 +1488,10 @@ class IRTranslator(object):
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
         CodeVisitor(top_scope, type_comments).visit(tree)
+        assert top_scope.has_sym('__name__')
+        namesym = top_scope.symbols['__name__']
+        if top_scope.is_global():
+            top_scope.constants[namesym] = CONST('__main__')
+        else:
+            top_scope.constants[namesym] = CONST(top_scope.name)
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))

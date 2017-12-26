@@ -3,7 +3,7 @@ from .block import Block
 from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
-from .usedef import UseDefDetector
+from .irhelper import reduce_relexp
 from .utils import remove_except_one, replace_item
 from logging import getLogger
 logger = getLogger(__name__)
@@ -60,7 +60,6 @@ class BlockReducer(object):
             # TODO: any jump.typ
             if (len(block.preds) == 1 and
                     len(block.preds[0].succs) == 1 and
-                    not block.preds[0].stms[-1].typ == 'C' and
                     can_merge_synth_params(block.synth_params, block.preds[0].synth_params)):
                 pred = block.preds[0]
                 assert pred.stms[-1].is_a(JUMP)
@@ -76,13 +75,13 @@ class BlockReducer(object):
                 for succ in block.succs:
                     succ.replace_pred(block, pred)
                     succ.replace_pred_loop(block, pred)
-                    self._reconstruct_phi(succ, block, pred)
                 pred.succs = block.succs
                 pred.succs_loop = block.succs_loop
                 if block is scope.exit_block:
                     scope.exit_block = pred
 
-                self.removed_blks.append(block)
+                logger.debug('remove unidirectional block ' + str(block.name))
+                self._remove_block(block)
                 if not pred.is_hyperblock:
                     pred.is_hyperblock = block.is_hyperblock
 
@@ -96,35 +95,24 @@ class BlockReducer(object):
         if block.stms and block.stms[0].is_a(JUMP):
             assert len(block.succs) == 1
             succ = block.succs[0]
-            phis = block.collect_stms(PHIBase)
-            if phis:
-                return False
             idx = succ.preds.index(block)
             succ.remove_pred(block)
             for pred in block.preds:
                 succ.preds.insert(idx, pred)
                 idx += 1
                 pred.replace_succ(block, succ)
-            if len(block.preds) == 1:
-                self._reconstruct_phi(succ, block, block.preds[0])
-            elif len(block.preds) > 1:
-                self._order_blocks(self.scope)
-                tree = DominatorTreeBuilder(self.scope).process()
-                dom = tree.get_parent_of(block.preds[0])
-                self._reconstruct_phi(succ, block, dom)
             logger.debug('remove empty block ' + block.name)
             return True
         return False
 
-    def _reconstruct_phi(self, blk, old_blk, new_blk):
-        phis = blk.collect_stms([PHI, LPHI])
-        for phi in phis:
-            replace_item(phi.defblks, old_blk, new_blk, True)
-
     def _remove_empty_blocks(self, scope):
         for block in scope.traverse_blocks():
             if self.remove_empty_block(block):
-                self.removed_blks.append(block)
+                self._remove_block(block)
+
+    def _remove_block(self, blk):
+        self.removed_blks.append(blk)
+        self.scope.remove_block_from_region(blk)
 
 
 class PathExpTracer(object):
@@ -145,7 +133,13 @@ class PathExpTracer(object):
     def make_path_exp(self, blk, parent):
         blk.path_exp = parent.path_exp
         if len(parent.succs) > 1 and len(blk.preds) == 1:
-            blk.path_exp = merge_path_exp(parent, blk)
+            r = self.scope.find_region(parent)
+            if r.head is parent and r is not self.scope.top_region() and blk not in r.bodies:
+                # do not merge path expression for the loop exit
+                if parent.path_exp:
+                    blk.path_exp = parent.path_exp.clone()
+            else:
+                blk.path_exp = merge_path_exp(parent, blk)
 
     def traverse_dtree(self, blk):
         if not blk.stms:
@@ -244,7 +238,11 @@ class HyperBlockBuilder(object):
                 for tail in tails:
                     if tails.count(tail) > 1:
                         indices = [idx for idx, path in enumerate(branches) if path[-1] is tail]
-                        return self._duplicate_head(blk, branches, indices)
+                        # We should deal with only continuous indices(adjacent branches)
+                        # to keep mcjump evaluation order
+                        if all([(indices[i + 1] - indices[i]) == 1
+                                for i in range(len(indices) - 1)]):
+                            return self._duplicate_head(blk, branches, indices)
 
         return None
 
@@ -253,7 +251,6 @@ class HyperBlockBuilder(object):
         old_mj = head.stms[-1]
         mj = MCJUMP()
         mj.lineno = old_mj.lineno
-        removes = []
         for idx in indices:
             path = branches[idx]
             br = path[0]
@@ -262,23 +259,35 @@ class HyperBlockBuilder(object):
             cond = old_mj.conds[idx]
             mj.conds.append(cond)
             mj.targets.append(br)
-            removes.append((cond, br))
-        if all([removes[0][1] is br for _, br in removes[1:]]):
+        if all([mj.targets[0] is t for t in mj.targets[1:]]):
             return
-        for cond, target in removes:
-            old_mj.conds.remove(cond)
-            old_mj.targets.remove(target)
         for idx in indices:
             path = branches[idx]
             br = path[0]
-            head.succs.remove(br)
             br.replace_pred(head, new_head)
             new_head.succs.append(br)
-        old_mj.conds.append(CONST(1))
-        old_mj.targets.append(new_head)
-        head.succs.append(new_head)
-        new_head.append_stm(mj)
+        new_cond = old_mj.conds[indices[0]]
+        for idx in indices[1:]:
+            new_cond = RELOP('Or', new_cond, old_mj.conds[idx])
+        old_mj.conds[indices[0]] = new_cond
+        old_mj.targets[indices[0]] = new_head
+        head.succs[indices[0]] = new_head
+        for idx in reversed(indices[1:]):
+            old_mj.conds.pop(idx)
+            old_mj.targets.pop(idx)
+            head.succs.pop(idx)
+        if len(old_mj.targets) == 2:
+            cj = CJUMP(old_mj.conds[0], old_mj.targets[0], old_mj.targets[1])
+            cj.lineno = old_mj.lineno
+            head.replace_stm(head.stms[-1], cj)
+        if len(mj.targets) == 2:
+            cj = CJUMP(mj.conds[0], mj.targets[0], mj.targets[1])
+            cj.lineno = mj.lineno
+            new_head.append_stm(cj)
+        else:
+            new_head.append_stm(mj)
         new_head.preds = [head]
+        new_head.path_exp = merge_path_exp(head, new_head)
         Block.set_order(new_head, head.order + 1)
         self._update_domtree()
         sub_branches = [branches[idx] for idx in indices]
@@ -287,6 +296,7 @@ class HyperBlockBuilder(object):
 
     def _convert(self, diamond_nodes):
         reducer = BlockReducer()
+        reducer.scope = self.scope
         while diamond_nodes:
             head, tail, branches = diamond_nodes
             if self.tree.get_parent_of(tail) is head:
@@ -303,7 +313,10 @@ class HyperBlockBuilder(object):
 
     def _do_phi_reduction(self, head, tail, branches):
         new_tail = Block(self.scope)
-        new_tail.path_exp = head.path_exp
+        if head.path_exp:
+            new_tail.path_exp = head.path_exp
+        else:
+            new_tail.path_exp = CONST(1)
         removes = []
         indices = []
         for path in branches:
@@ -320,38 +333,43 @@ class HyperBlockBuilder(object):
         for stm in tail.stms:
             if stm.is_a(PHIBase):
                 new_args = []
-                new_defblks = []
                 new_ps = []
                 old_args = []
-                old_defblks = []
                 old_ps = []
                 for idx in range(len(stm.args)):
                     if idx in indices:
                         new_args.append(stm.args[idx])
-                        new_defblks.append(stm.defblks[idx])
                         new_ps.append(stm.ps[idx])
                     elif stm.args[idx]:
                         old_args.append(stm.args[idx])
-                        old_defblks.append(stm.defblks[idx])
                         old_ps.append(stm.ps[idx])
-                new_phi = stm.clone()
-                new_phi.args = new_args
-                new_phi.defblks = new_defblks
-                new_phi.ps = new_ps
-                newsym = self.scope.add_temp()
-                newsym.set_type(stm.var.symbol().typ)
-                new_phi.var = TEMP(newsym, Ctx.STORE)
-                new_phi.var.lineno = stm.var.lineno
-                new_tail.append_stm(new_phi)
+                if all([new_args[0].symbol() is arg.symbol() for arg in new_args[1:]]):
+                    newsym = self.scope.add_temp()
+                    newsym.set_type(stm.var.symbol().typ.clone())
+                    dst = TEMP(newsym, Ctx.STORE)
+                    mv = MOVE(dst, new_args[0])
+                    mv.lineno = dst.lineno = stm.var.lineno
+                    new_tail.append_stm(mv)
+                else:
+                    new_phi = stm.clone()
+                    new_phi.args = new_args
+                    new_phi.ps = new_ps
+                    newsym = self.scope.add_temp()
+                    newsym.set_type(stm.var.symbol().typ.clone())
+                    new_phi.var = TEMP(newsym, Ctx.STORE)
+                    new_phi.var.lineno = stm.var.lineno
+                    new_tail.append_stm(new_phi)
 
                 arg = TEMP(newsym, Ctx.LOAD)
                 arg.lineno = stm.var.lineno
 
+                #ps = new_ps[0]
+                #for p in new_ps[1:]:
+                #    ps = RELOP('Or', ps, p)
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
-                old_defblks.insert(first_idx, new_tail)
+                #old_ps.insert(first_idx, ps)
                 stm.args = old_args
-                stm.defblks = old_defblks
                 stm.ps = old_ps
 
         for br in removes:
@@ -384,18 +402,27 @@ class HyperBlockBuilder(object):
             ]
             return call.sym.name in wait_funcs
         elif call.is_a(CALL):
-            if call.func_scope.is_method() and call.func_scope.parent.is_port():
+            if call.func_scope().is_method() and call.func_scope().parent.is_port():
                 return True
             return False
 
     def _has_mem_access(self, stm):
-        if stm.is_a(MOVE) and stm.src.is_a([MREF, MSTORE]):
-            if stm.src.mem.symbol().typ.has_length():
-                l = stm.src.mem.symbol().typ.get_length()
-                w = stm.src.mem.symbol().typ.get_element().get_width()
-                # TODO:
-                if w * l < env.config.internal_ram_threshold_size:
-                    return False
+        if stm.is_a(MOVE) and stm.src.is_a(MREF):
+            mem = stm.src.mem
+        elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
+            mem = stm.exp.mem
+        else:
+            return False
+        if mem.symbol().typ.has_length():
+            l = mem.symbol().typ.get_length()
+            w = mem.symbol().typ.get_element().get_width()
+            # TODO:
+            if w * l < env.config.internal_ram_threshold_size:
+                return False
+        return True
+
+    def _has_instance_var_modification(self, stm):
+        if stm.is_a(MOVE) and stm.dst.is_a(ATTR):
             return True
         return False
 
@@ -405,11 +432,10 @@ class HyperBlockBuilder(object):
         for stm in blk.stms[:-1]:
             if self._has_timing_function(stm):
                 unmoves.add(stm)
-
-        for stm in blk.stms[:-1]:
-            if self._has_mem_access(stm):
+            elif self._has_mem_access(stm):
                 unmoves.add(stm)
-
+            elif self._has_instance_var_modification(stm):
+                unmoves.add(stm)
         for stm in blk.stms[:-1]:
             if stm in unmoves:
                 continue
@@ -450,6 +476,3 @@ class HyperBlockBuilder(object):
                     if stm not in unmoves:
                         blk.stms.remove(stm)
         head.is_hyperblock = True
-        for stm in tail.stms[:-1]:
-            if stm.is_a(PHIBase):
-                stm.defblks = [head] * len(stm.defblks)
