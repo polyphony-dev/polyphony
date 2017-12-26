@@ -522,7 +522,8 @@ class DFGBuilder(object):
                     continue
                 usenode = dfg.add_stm_node(usestm)
                 dfg.add_usedef_edge(usenode, defnode)
-                self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef)
+                visited = set()
+                self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
     def _is_constant_stm(self, stm):
         if stm.is_a(PHIBase):
@@ -741,7 +742,10 @@ class DFGBuilder(object):
             return None
         return m.mem.symbol().typ.get_memnode()
 
-    def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef):
+    def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef, visited):
+        if (usenode, defnode) in visited:
+            return
+        visited.add((usenode, defnode))
         stm = usenode.tag
         if stm.is_a(MOVE):
             var = stm.dst
@@ -769,7 +773,7 @@ class DFGBuilder(object):
                     dfg.add_usedef_edge(unode, defnode)
             else:
                 dfg.add_usedef_edge(unode, defnode)
-            self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef)
+            self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef, visited)
 
     def _remove_alias_cycle(self, dfg):
         backs = []
