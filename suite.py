@@ -65,6 +65,7 @@ SUITE_CASES = [
         'config': '{ "internal_ram_threshold_size": 1000000 }',
         "ignores": ('list/list31.py', 'list/list32.py',
                     'apps/filter_tester.py',
+                    'error/pipeline_resource01.py', 'error/pipeline_resource02.py',
                     'pure/*', 'error/pure01.py', 'error/pure02.py')
     },
     #{
@@ -170,7 +171,7 @@ def suite_main():
     elif options.warn_test_only:
         procs = (warn_test,)
     else:
-        procs = (suite, error_test)
+        procs = (suite, error_test, warn_test)
 
     ignores = []
     add_files(ignores, default_ignores)
