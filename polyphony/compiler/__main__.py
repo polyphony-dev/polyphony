@@ -1,4 +1,5 @@
 ﻿import argparse
+import json
 import os
 import sys
 from .ahdlusedef import AHDLUseDefDetector
@@ -303,7 +304,7 @@ def instantiate(driver):
             if not (child.is_ctor() or child.is_worker()):
                 continue
             usedef(driver, child)
-            if env.enable_pure:
+            if env.config.enable_pure:
                 execpure(driver, child)
             constopt(driver, child)
             checkcfg(driver, child)
@@ -317,7 +318,7 @@ def instantiate(driver):
 
         assert worker.is_worker()
         usedef(driver, worker)
-        if env.enable_pure:
+        if env.config.enable_pure:
             execpure(driver, worker)
         constopt(driver, worker)
         checkcfg(driver, worker)
@@ -564,7 +565,7 @@ def compile_plan():
         return proc if env.enable_ahdl_opt else None
 
     def pure(proc):
-        return proc if env.enable_pure else None
+        return proc if env.config.enable_pure else None
 
     plan = [
         preprocess_global,
@@ -710,6 +711,16 @@ def setup(src_file, options):
     env.quiet_level = options.quiet_level if options.quiet_level else 0
     env.enable_verilog_dump = options.verilog_dump
     env.enable_verilog_monitor = options.verilog_monitor
+    if options.config:
+        try:
+            if os.path.exists(options.config):
+                with open(options.config, 'r') as f:
+                    config = json.load(f)
+            else:
+                config = json.loads(options.config)
+            env.load_config(config)
+        except:
+            print('invalid config option', options.config)
     if env.dev_debug_mode:
         logging.basicConfig(**logging_setting)
 
@@ -740,7 +751,7 @@ def setup(src_file, options):
 def compile(plan, source, src_file=''):
     translator = IRTranslator()
     translator.translate(source, '')
-    if env.enable_pure:
+    if env.config.enable_pure:
         interpret(source, src_file)
     scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)
     driver = Driver(plan, scopes)
@@ -796,6 +807,8 @@ def main():
                         metavar='FILE')
     parser.add_argument('-d', '--dir', dest='output_dir',
                         metavar='DIR', help='output directory')
+    parser.add_argument('-c', '--config', dest='config',
+                        metavar='CONFIG', help='set configration(json literal or file)')
     parser.add_argument('-v', '--verbose', dest='verbose_level',
                         action='count', help='verbose output')
     parser.add_argument('-D', '--debug', dest='debug_mode',

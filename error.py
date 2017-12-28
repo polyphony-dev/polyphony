@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import sys
 import os
 import traceback
@@ -16,7 +17,33 @@ from polyphony.compiler.__main__ import compile_main, logging_setting
 from polyphony.compiler.env import env
 
 
-def error_test(casefile_path, output=True):
+def parse_options():
+    if not os.path.exists(TMP_DIR):
+        os.mkdir(TMP_DIR)
+    parser = argparse.ArgumentParser(prog='simu')
+    parser.add_argument('-c', '--config', dest='config',
+                        metavar='CONFIG', help='set configration(json literal or file)')
+    parser.add_argument('-d', '--enable_debug', dest='debug_mode',
+                        action='store_true', help='enable debug mode')
+    parser.add_argument('-w', dest='warn_test', action='store_true')
+    parser.add_argument('source', help='Python source file')
+    return parser.parse_args()
+
+
+def make_compile_options(casename, err_options, quiet_level):
+    options = types.SimpleNamespace()
+    options.config = err_options.config
+    options.output_name = casename
+    options.output_dir = TMP_DIR
+    options.verbose_level = 0
+    options.quiet_level = quiet_level
+    options.debug_mode = err_options.debug_mode
+    options.verilog_dump = False
+    options.verilog_monitor = False
+    return options
+
+
+def error_test(casefile_path, err_options):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
     with open(casefile_path, 'r') as f:
@@ -25,31 +52,25 @@ def error_test(casefile_path, output=True):
             print('The file is not error test file')
             sys.exit(0)
         expected_msg = first_line.split('#')[1].rstrip('\n')
-    options = types.SimpleNamespace()
-    options.output_name = casename
-    options.output_dir = TMP_DIR
-    options.verbose_level = 0
-    options.quiet_level = 3
-    options.debug_mode = output
-    options.verilog_dump = False
-    options.verilog_monitor = False
+    options = make_compile_options(casename, err_options, env.QUIET_ERROR)
     try:
         compile_main(casefile_path, options)
     except AssertionError:
         raise
     except Exception as e:
         if e.args[0] == expected_msg:
-            return
-        if env.dev_debug_mode:
+            return True
+        if err_options.debug_mode:
             traceback.print_exc()
         print(casefile_path)
         print('[ERROR TEST] FAILED: actual "{}", expected "{}"'.format(e.args[0], expected_msg))
-        return
+        return False
     print(casefile_path)
     print('[ERROR TEST] FAILED: No exception was raised')
+    return False
 
 
-def warn_test(casefile_path, output=True):
+def warn_test(casefile_path, err_options):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
     with open(casefile_path, 'r') as f:
@@ -59,13 +80,16 @@ def warn_test(casefile_path, output=True):
             sys.exit(0)
         expected_msg = first_line.split('#')[1].rstrip('\n')
     f = io.StringIO()
+    err_options.debug_mode = False
+    options = make_compile_options(casename, err_options, 0)
     with redirect_stdout(f):
         try:
-            compile_main(casefile_path, casename, TMP_DIR, debug_mode=output)
+            compile_main(casefile_path, options)
         except Exception as e:
             print(casefile_path)
             print('[WARNING TEST] FAILED')
     msg = f.getvalue()
+    #print(msg)
     header = 'Warning: '
     for line in msg.split('\n'):
         if line.startswith(header):
@@ -73,16 +97,15 @@ def warn_test(casefile_path, output=True):
             if actual_msg != expected_msg:
                 print(casefile_path)
                 print('[WARNING TEST] FAILED: actual "{}", expected "{}"'.format(actual_msg, expected_msg))
-            return
+            return True
     print(casefile_path)
     print('[WARNING TEST] FAILED: No warning messages')
+    return False
 
 
 if __name__ == '__main__':
-    if not os.path.exists(TMP_DIR):
-        os.mkdir(TMP_DIR)
-    if len(sys.argv) > 1:
-        if sys.argv[1] == 'w':
-            warn_test(sys.argv[2])
-        else:
-            error_test(sys.argv[1])
+    options = parse_options()
+    if not options.warn_test:
+        error_test(options.source, options)
+    else:
+        warn_test(options.source, options)

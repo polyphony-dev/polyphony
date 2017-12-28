@@ -6,6 +6,16 @@ class Config(object):
     main_clock_frequency = 100000000
     reset_activation_signal = 1
     internal_ram_threshold_size = 512  # width * length
+    enable_pure = False
+
+    def __str__(self):
+        d = {}
+        for k in Config.__dict__:
+            if k.startswith('__'):
+                continue
+            d[k] = Config.__dict__[k]
+        d.update(self.__dict__)
+        return str(d)
 
 
 class Env(object):
@@ -27,7 +37,6 @@ class Env(object):
     callop_name = '__call__'
     enable_ahdl_opt = True
     global_scope_name = '@top'
-    enable_pure = False
     enable_hyperblock = True
     verbose_level = 0
     quiet_level = 0
@@ -51,6 +60,10 @@ class Env(object):
         self.outermost_scope_stack = []
         self.hdlmodules = []
         self.scope2module = {}
+
+    def load_config(self, config):
+        for key, v in config.items():
+            setattr(self.config, key, v)
 
     def set_current_filename(self, filename):
         self.current_filename = filename

@@ -144,7 +144,7 @@ def _try_get_constant_pure(qsym, scope):
 
 
 def try_get_constant(qsym, scope):
-    if env.enable_pure:
+    if env.config.enable_pure:
         return _try_get_constant_pure(qsym, scope)
     else:
         return _try_get_constant(qsym, scope)

@@ -182,7 +182,7 @@ class FunctionVisitor(ast.NodeVisitor):
                 if sym.typ.get_scope().name == 'polyphony.rule':
                     synth_params = deco_kwargs
                 elif sym.typ.get_scope().name == 'polyphony.pure':
-                    if not env.enable_pure:
+                    if not env.config.enable_pure:
                         fail((outer_scope, node.lineno), Errors.PURE_IS_DISABLED)
                     tags.add(sym.typ.get_scope().orig_name)
                 else:

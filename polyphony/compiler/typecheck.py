@@ -136,7 +136,7 @@ class TypePropagation(IRVisitor):
             raise RejectPropagation(ir)
 
         if ir.func_scope().is_pure():
-            if not env.enable_pure:
+            if not env.config.enable_pure:
                 fail(self.current_stm, Errors.PURE_IS_DISABLED)
             if not ir.func_scope().parent.is_global():
                 fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)

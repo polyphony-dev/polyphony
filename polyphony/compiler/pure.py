@@ -688,7 +688,7 @@ class PureFuncExecutor(ConstantOptBase):
     def visit_CALL(self, ir):
         if not ir.func_scope().is_pure():
             return ir
-        assert env.enable_pure
+        assert env.config.enable_pure
         assert ir.func_scope().parent.is_global()
         args = self._args2tuple([arg for _, arg in ir.args])
         if args is None:
