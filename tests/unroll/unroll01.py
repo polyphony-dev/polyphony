@@ -4,7 +4,7 @@ from polyphony import unroll
 
 def unroll01(xs, ys):
     s = 0
-    for i in range(8):  # synth: unroll
+    for i in unroll(range(8)):
         x = xs[i] + 1
         if x < 0:
             s = s + x
