@@ -128,7 +128,7 @@ class ImportVisitor(ast.NodeVisitor):
                 import_to_scope(imp_sym, nm.asname)
 
 
-class FunctionVisitor(ast.NodeVisitor):
+class ScopeVisitor(ast.NodeVisitor):
     def __init__(self, top_scope):
         self.current_scope = top_scope
         self.annotation_visitor = AnnotationVisitor(self)
@@ -1484,14 +1484,8 @@ class IRTranslator(object):
             logger.debug('ignore packages')
             logger.debug(ignore_packages)
         type_comments = self._extract_type_comment(source)
-        FunctionVisitor(top_scope).visit(tree)
+        ScopeVisitor(top_scope).visit(tree)
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
         CodeVisitor(top_scope, type_comments).visit(tree)
-        assert top_scope.has_sym('__name__')
-        namesym = top_scope.symbols['__name__']
-        if top_scope.is_global():
-            top_scope.constants[namesym] = CONST('__main__')
-        else:
-            top_scope.constants[namesym] = CONST(top_scope.name)
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))

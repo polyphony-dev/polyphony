@@ -9,7 +9,7 @@ from .symbol import Symbol
 from .synth import make_synth_params
 from .type import Type
 from .irvisitor import IRVisitor
-from .ir import JUMP, CJUMP, MCJUMP, PHIBase
+from .ir import CONST, JUMP, CJUMP, MCJUMP, PHIBase
 from .signal import Signal
 from logging import getLogger
 logger = getLogger(__name__)
@@ -53,6 +53,10 @@ class Scope(Tagged):
         namespace = Scope.create(parent, name, tags, lineno=1)
         namesym = namespace.add_sym('__name__')
         namesym.set_type(Type.str_t)
+        if namespace.is_global():
+            namespace.constants[namesym] = CONST('__main__')
+        else:
+            namespace.constants[namesym] = CONST(namespace.name)
         return namespace
 
     @classmethod

@@ -664,11 +664,7 @@ class StaticConstOpt(ConstantOptBase):
         self.constant_table = {}
         self.constant_array_table = {}
 
-    def process_all(self, driver):
-        scopes = driver.get_scopes(bottom_up=True,
-                                   with_global=True,
-                                   with_class=True,
-                                   with_lib=False)
+    def process_scopes(self, scopes):
         stms = []
         dtrees = {}
         for s in scopes:

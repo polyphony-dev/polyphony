@@ -360,7 +360,11 @@ def scalarize(driver, scope):
 
 
 def staticconstopt(driver):
-    StaticConstOpt().process_all(driver)
+    scopes = driver.get_scopes(bottom_up=True,
+                               with_global=True,
+                               with_class=True,
+                               with_lib=False)
+    StaticConstOpt().process_scopes(scopes)
 
 
 def earlyconstopt_nonssa(driver, scope):
@@ -705,6 +709,7 @@ def compile_plan():
 
 
 def setup(src_file, options):
+    import glob
     env.__init__()
     env.dev_debug_mode = options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
@@ -729,23 +734,37 @@ def setup(src_file, options):
         os.path.dirname(__file__),
         os.path.sep, os.path.pardir
     )
-    package_file = os.path.abspath(internal_root_dir + '_builtins.py')
-    env.set_current_filename(package_file)
-    translator.translate(read_source(package_file), '__builtin__')
-    package_file = os.path.abspath(internal_root_dir + '_polyphony.py')
-    env.set_current_filename(package_file)
-    translator.translate(read_source(package_file), 'polyphony')
-    for name in ('_typing', '_io', '_timing'):
-        package_file = os.path.abspath(internal_root_dir + name + '.py')
+    internal_root_dir = os.path.abspath(internal_root_dir) + os.path.sep
+
+    builtin_package_file = internal_root_dir + '_builtins.py'
+    env.set_current_filename(builtin_package_file)
+    translator.translate(read_source(builtin_package_file), '__builtin__')
+
+    polyphony_package_file = internal_root_dir + '_polyphony.py'
+    env.set_current_filename(polyphony_package_file)
+    translator.translate(read_source(polyphony_package_file), 'polyphony')
+
+    package_files = glob.glob(f'{internal_root_dir}_[a-z]*')
+    package_files.remove(builtin_package_file)
+    package_files.remove(polyphony_package_file)
+
+    for package_file in package_files:
         package_name = os.path.basename(package_file).split('.')[0]
         package_name = package_name[1:]
         env.set_current_filename(package_file)
         translator.translate(read_source(package_file), package_name)
+
     env.set_current_filename(src_file)
     g = Scope.create_namespace(None, env.global_scope_name, {'global'})
     env.push_outermost_scope(g)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
+
+    scopes = Scope.get_scopes(with_global=False, with_class=True, with_lib=True)
+    static_lib_scopes = [s for s in scopes
+                         if s.name.startswith('polyphony') and
+                         (s.is_namespace() or s.is_class())]
+    StaticConstOpt().process_scopes(static_lib_scopes)
 
 
 def compile(plan, source, src_file=''):
