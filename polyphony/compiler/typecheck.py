@@ -654,12 +654,6 @@ class TypeChecker(IRVisitor):
             if not (item_type.is_int() or item_type.is_bool()):
                 type_error(self.current_stm, Errors.SEQ_ITEM_MUST_BE_INT,
                            [item_type])
-        if (ir.sym.typ.is_freezed() and
-                ir.sym.typ.has_length() and
-                ir.sym.typ.get_length() != Type.ANY_LENGTH):
-            if len(ir.items * ir.repeat.value) > ir.sym.typ.get_length():
-                type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
-                           [])
         return ir.sym.typ
 
     def visit_EXPR(self, ir):
@@ -695,6 +689,13 @@ class TypeChecker(IRVisitor):
         if not Type.is_assignable(dst_t, src_t):
             type_error(ir, Errors.INCOMPATIBLE_TYPES,
                        [dst_t, src_t])
+        if (dst_t.is_seq() and dst_t.is_freezed() and
+                dst_t.has_length() and
+                dst_t.get_length() != Type.ANY_LENGTH):
+            if ir.src.is_a(ARRAY):
+                if len(ir.src.items * ir.src.repeat.value) > dst_t.get_length():
+                    type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
+                               [])
 
     def visit_PHI(self, ir):
         # FIXME
