@@ -84,9 +84,9 @@ class VerilogTestGen(VerilogCodeGen):
                     accessor_name = accessor.port_name(p)
                     args.append(accessor_name)
                     if p.width == 1:
-                        formats.append('{}=%1d'.format(accessor_name))
+                        formats.append(f'{accessor_name}=%1d')
                     else:
-                        formats.append('{}=%4d'.format(accessor_name))
+                        formats.append(f'{accessor_name}=%4d')
 
         self.emit('initial begin')
         self.set_indent(2)
@@ -106,10 +106,9 @@ class VerilogTestGen(VerilogCodeGen):
         args_text = ', '.join(args)
 
         if env.enable_verilog_monitor:
-            self.emit('$monitor({}, {});'.format(format_text, args_text))
+            self.emit(f'$monitor({format_text}, {args_text});')
         if env.enable_verilog_dump:
-            self.emit('$dumpfile("{}.vcd");'.format(self.hdlmodule.name))
-            self.emit('$dumpvars(0, {});'.format(self.hdlmodule.name))
+            self.emit(f'$dumpfile("{self.hdlmodule.name}.vcd");')
+            self.emit(f'$dumpvars(0, {self.hdlmodule.name});')
         self.set_indent(-2)
         self.emit('end')
-
