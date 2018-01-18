@@ -331,7 +331,7 @@ class SYSCALL(IRExp):
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '{}('.format(self.sym)
+        s = '!{}('.format(self.sym)
         #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ', '.join(['{}'.format(arg) for name, arg in self.args])
         s += ")"
