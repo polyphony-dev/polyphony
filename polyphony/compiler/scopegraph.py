@@ -35,8 +35,14 @@ class CallGraphBuilder(IRVisitor):
     def visit_CALL(self, ir):
         func_scope = ir.func_scope()
         assert func_scope
-        self.call_graph.add_edge(self.scope, func_scope)
-        self.worklist.append(func_scope)
+        if func_scope.is_method() and func_scope.parent.is_module() and func_scope.orig_name == 'append_worker':
+            _, w = ir.args[0]
+            if w.symbol().typ.is_function():
+                worker_scope = w.symbol().typ.get_scope()
+                self.worklist.append(worker_scope)
+        else:
+            self.call_graph.add_edge(self.scope, func_scope)
+            self.worklist.append(func_scope)
 
     def visit_NEW(self, ir):
         assert ir.func_scope()

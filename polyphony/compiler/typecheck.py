@@ -569,6 +569,11 @@ class TypeChecker(IRVisitor):
             _, mem = ir.args[0]
             if not mem.is_a([TEMP, ATTR]) or not mem.symbol().typ.is_seq():
                 type_error(self.current_stm, Errors.LEN_TAKES_SEQ_TYPE)
+        elif ir.sym.name == 'print':
+            for _, arg in ir.args:
+                arg_t = self.visit(arg)
+                if not arg_t.is_scalar():
+                    type_error(self.current_stm, Errors.PRINT_TAKES_SCALAR_TYPE)
         elif ir.sym.name in env.all_scopes:
             scope = env.all_scopes[ir.sym.name]
             arg_len = len(ir.args)
