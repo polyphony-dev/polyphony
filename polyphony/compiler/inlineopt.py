@@ -92,7 +92,9 @@ class InlineOpt(object):
                 if callee.is_ctor():
                     assert not callee.is_returnable()
                     if call_stm.is_a(MOVE):
-                        attr_map[callee.symbols[env.self_name]] = call_stm.dst
+                        callee_self = call_stm.dst.clone()
+                        callee_self.ctx = Ctx.LOAD
+                        attr_map[callee.symbols[env.self_name]] = callee_self
                 else:
                     if call_stm.is_a(MOVE):
                         object_sym = call.func.exp.qualified_symbol()
