@@ -103,6 +103,8 @@ class Type(object):
                 if target_scope.is_typeclass():
                     t = Type.from_typeclass(target_scope, elms)
                     t.freeze()
+                    if t.is_seq():
+                        t.set_length(Type.ANY_LENGTH)
                     return t
         elif ann is None:
             return Type.undef_t
