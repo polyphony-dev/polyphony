@@ -4,6 +4,7 @@ import os
 import sys
 from .ahdlusedef import AHDLUseDefDetector
 from .bitwidth import BitwidthReducer
+from .bitwidth import TempVarWidthSetter
 from .builtin import builtin_symbols
 from .cfgopt import BlockReducer, PathExpTracer
 from .cfgopt import HyperBlockBuilder
@@ -430,6 +431,10 @@ def aliasvar(driver, scope):
     AliasVarDetector().process(scope)
 
 
+def tempbit(driver, scope):
+    TempVarWidthSetter().process(scope)
+
+
 def dfg(driver, scope):
     DFGBuilder().process(scope)
 
@@ -674,6 +679,7 @@ def compile_plan():
         phase(env.PHASE_5),
         usedef,
         aliasvar,
+        tempbit,
         dbg(dumpscope),
         dfg,
         synthcheck,
