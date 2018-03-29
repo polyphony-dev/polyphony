@@ -434,13 +434,15 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
     def _process_fsm(self, fsm):
         scope = fsm.scope
         #self._add_state_constants(worker)
-        defs, uses, outputs, memnodes = self._collect_vars(fsm)
+        defs, uses, _, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
         regs, nets = self._add_internal_ports(locals)
         self._add_state_register(fsm)
         self._add_mem_connections(scope)
         self._add_submodules(scope)
         self._add_roms(memnodes)
+        outputs = [inf.signal for inf in self.hdlmodule.interfaces.values()
+                   if inf.signal.is_output()]
         self._add_reset_stms(fsm, defs, uses, outputs)
         edge_detectors = self._collect_special_decls(fsm)
         for sig, old, new in edge_detectors:
