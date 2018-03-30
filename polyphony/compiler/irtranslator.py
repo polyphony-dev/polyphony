@@ -9,7 +9,7 @@ from .common import fail
 from .env import env
 from .errors import Errors
 from .ir import *
-from .irhelper import op2str
+from .irhelper import op2str, eval_unop
 from .scope import Scope, FunctionParam
 from .symbol import Symbol
 from .type import Type
@@ -1053,7 +1053,13 @@ class CodeVisitor(ast.NodeVisitor):
 
     def visit_UnaryOp(self, node):
         exp = self.visit(node.operand)
-        return UNOP(op2str(node.op), exp)
+        unop = UNOP(op2str(node.op), exp)
+        if exp.is_a(CONST):
+            v = eval_unop(unop)
+            if v is None:
+                fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_OPERATOR, [unop.op])
+            return CONST(v)
+        return unop
 
     def visit_Lambda(self, node):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda'])

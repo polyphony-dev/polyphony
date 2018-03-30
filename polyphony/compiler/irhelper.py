@@ -148,7 +148,7 @@ def has_exclusive_function(stm):
     return False
 
 
-def eval_unop(ir, ctx):
+def eval_unop(ir):
     op = ir.op
     v = ir.exp.value
     if op == 'Invert':
@@ -160,10 +160,10 @@ def eval_unop(ir, ctx):
     elif op == 'USub':
         return -v
     else:
-        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
+        return None
 
 
-def eval_binop(ir, ctx):
+def eval_binop(ir):
     op = ir.op
     lv = ir.left.value
     rv = ir.right.value
@@ -190,7 +190,7 @@ def eval_binop(ir, ctx):
     elif op == 'BitAnd':
         return lv & rv
     else:
-        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
+        return None
 
 
 def reduce_binop(ir):
@@ -214,7 +214,7 @@ def reduce_binop(ir):
     return ir
 
 
-def eval_relop(op, lv, rv, ctx):
+def eval_relop(op, lv, rv):
     if op == 'Eq':
         b = lv == rv
     elif op == 'NotEq':
@@ -236,5 +236,5 @@ def eval_relop(op, lv, rv, ctx):
     elif op == 'Or':
         b = lv or rv
     else:
-        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
+        return None
     return 1 if b else 0

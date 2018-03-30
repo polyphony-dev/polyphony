@@ -71,7 +71,10 @@ class ConstantOptBase(IRVisitor):
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            c = CONST(eval_unop(ir, self))
+            v = eval_unop(ir)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         return ir
@@ -80,7 +83,10 @@ class ConstantOptBase(IRVisitor):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            c = CONST(eval_binop(ir, self))
+            v = eval_binop(ir)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         elif ir.left.is_a(CONST) or ir.right.is_a(CONST):
@@ -91,7 +97,10 @@ class ConstantOptBase(IRVisitor):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            c = CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
+            v = eval_relop(ir.op, ir.left.value, ir.right.value)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
@@ -113,7 +122,10 @@ class ConstantOptBase(IRVisitor):
         elif (ir.left.is_a([TEMP, ATTR])
                 and ir.right.is_a([TEMP, ATTR])
                 and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
-            c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id, self))
+            v = eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         return ir
