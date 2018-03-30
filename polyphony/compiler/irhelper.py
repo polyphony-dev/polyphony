@@ -146,3 +146,95 @@ def has_exclusive_function(stm):
             if proto != 'none':
                 return True
     return False
+
+
+def eval_unop(ir, ctx):
+    op = ir.op
+    v = ir.exp.value
+    if op == 'Invert':
+        return ~v
+    elif op == 'Not':
+        return 1 if (not v) is True else 0
+    elif op == 'UAdd':
+        return v
+    elif op == 'USub':
+        return -v
+    else:
+        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
+
+
+def eval_binop(ir, ctx):
+    op = ir.op
+    lv = ir.left.value
+    rv = ir.right.value
+    if op == 'Add':
+        return lv + rv
+    elif op == 'Sub':
+        return lv - rv
+    elif op == 'Mult':
+        return lv * rv
+    elif op == 'FloorDiv':
+        return lv // rv
+    elif op == 'Mod':
+        return lv % rv
+    elif op == 'Mod':
+        return lv % rv
+    elif op == 'LShift':
+        return lv << rv
+    elif op == 'RShift':
+        return lv >> rv
+    elif op == 'BitOr':
+        return lv | rv
+    elif op == 'BitXor':
+        return lv ^ rv
+    elif op == 'BitAnd':
+        return lv & rv
+    else:
+        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
+
+
+def reduce_binop(ir):
+    op = ir.op
+    if ir.left.is_a(CONST):
+        const = ir.left.value
+        var = ir.right
+    elif ir.right.is_a(CONST):
+        const = ir.right.value
+        var = ir.left
+    else:
+        assert False
+    if op == 'Add' and const == 0:
+        return var
+    elif op == 'Mult' and const == 1:
+        return var
+    elif op == 'Mult' and const == 0:
+        c = CONST(0)
+        c.lineno = ir.lineno
+        return c
+    return ir
+
+
+def eval_relop(op, lv, rv, ctx):
+    if op == 'Eq':
+        b = lv == rv
+    elif op == 'NotEq':
+        b = lv != rv
+    elif op == 'Lt':
+        b = lv < rv
+    elif op == 'LtE':
+        b = lv <= rv
+    elif op == 'Gt':
+        b = lv > rv
+    elif op == 'GtE':
+        b = lv >= rv
+    elif op == 'Is':
+        b = lv is rv
+    elif op == 'IsNot':
+        b = lv is not rv
+    elif op == 'And':
+        b = lv and rv
+    elif op == 'Or':
+        b = lv or rv
+    else:
+        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
+    return 1 if b else 0
