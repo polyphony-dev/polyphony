@@ -443,7 +443,7 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_PROCCALL(self, ahdl):
         args = [self.visit(arg) for arg in ahdl.args]
         if ahdl.name == '!hdl_print':
-            fmts = ' '.join(['%s' if a[0] == '"' else '%1x' for a in args])
+            fmts = ' '.join(['%s' if a[0] == '"' else '%1d' for a in args])
             args = ', '.join(args)
             self.emit(f'$display("{fmts}", {args});')
         elif ahdl.name == '!hdl_verilog_display':
@@ -739,9 +739,9 @@ class VerilogCodeGen(AHDLVisitor):
                     term = indent + f"1'b1 == {ahdl.selector.sig.name}[{i}] ? {input.name}:\n"
                 else:
                     if ahdl.defval is None:
-                        defval = output_name
+                        defval = f"{ahdl.output.width}'d0"
                     else:
-                        defval = ahdl.defval
+                        defval = f"{ahdl.output.width}'d{ahdl.defval}"
                     term = indent + f"1'b1 == {ahdl.selector.sig.name}[{i}] ? {input.name}:{defval};"
                 terms.append(term)
             self.emit(''.join(terms))
@@ -756,9 +756,9 @@ class VerilogCodeGen(AHDLVisitor):
                 input_name = ahdl.input
             for i, output in enumerate(ahdl.outputs):
                 if ahdl.defval is None:
-                    defval = output.name
+                    defval = f"{output.width}'d0"
                 else:
-                    defval = ahdl.defval
+                    defval = f"{output.width}'d{ahdl.defval}"
                 self.emit(f"assign {output.name} = 1'b1 == {ahdl.selector.sig.name}[{i}] ? {input_name}:{defval};")
         else:
             self.emit(f'assign {ahdl.outputs[0].name} = {ahdl.input.name};')
