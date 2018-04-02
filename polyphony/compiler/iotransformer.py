@@ -1,6 +1,7 @@
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
-from .stg import State, PipelineState, PipelineStage
+from .stg import State
+from .stg_pipeline import PipelineState, PipelineStage
 from .utils import find_only_one_in
 
 

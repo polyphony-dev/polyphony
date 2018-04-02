@@ -6,7 +6,8 @@ from .hdlinterface import *
 from .ir import Ctx
 from .memref import One2NMemNode, N2OneMemNode
 from .signal import Signal
-from .stg import State, PipelineState
+from .stg import State
+from .stg_pipeline import PipelineState
 from .verilog_common import pyop2verilogop, is_verilog_keyword
 from logging import getLogger
 logger = getLogger(__name__)
