@@ -218,7 +218,7 @@ def single_pipelined_read_seq(inf, signal, step, dst, stage):
         guards = tuple()
     guard = stage.codes[0]
     assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
+    guard.blocks[0].codes.extend(guards)
     return tuple()
 
 
@@ -276,7 +276,7 @@ def single_pipelined_write_seq(inf, signal, step, src, stage):
         guards = tuple()
     guard = stage.codes[0]
     assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
+    guard.blocks[0].codes.extend(guards)
     return nonguards
 
 
@@ -717,7 +717,7 @@ class PipelinedRAMAccessor(RAMAccessor):
 
         guard = self.stage.codes[0]
         assert guard.is_a(AHDL_PIPELINE_GUARD)
-        guard.codes_list[0].extend(guards)
+        guard.blocks[0].codes.extend(guards)
         return nonguards
 
     def write_sequence(self, step, step_n, offset, src, is_continuous):
@@ -742,7 +742,7 @@ class PipelinedRAMAccessor(RAMAccessor):
             nonguards = tuple()
         guard = self.stage.codes[0]
         assert guard.is_a(AHDL_PIPELINE_GUARD)
-        guard.codes_list[0].extend(guards)
+        guard.blocks[0].codes.extend(guards)
         return nonguards
 
 
@@ -908,7 +908,7 @@ def fifo_pipelined_read_seq(inf, step, dst, stage):
         nonguards = tuple()
     guard = stage.codes[0]
     assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
+    guard.blocks[0].codes.extend(guards)
     return nonguards
 
 
@@ -950,7 +950,7 @@ def fifo_pipelined_write_seq(inf, step, src, stage):
                      )
     guard = stage.codes[0]
     assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
+    guard.blocks[0].codes.extend(guards)
     return nonguards
 
 
@@ -1180,8 +1180,8 @@ def create_seq_interface(signal):
 def make_event_task(hdlmodule, reset_stms, stms):
     clk = hdlmodule.gen_sig('clk', 1, {'reserved'})
     rst = hdlmodule.gen_sig('rst', 1, {'reserved'})
-    codes_list = [reset_stms, stms]
-    reset_if = AHDL_IF([AHDL_VAR(rst, Ctx.LOAD), AHDL_CONST(1)], codes_list)
+    blocks = [AHDL_BLOCK('', reset_stms), AHDL_BLOCK('', stms)]
+    reset_if = AHDL_IF([AHDL_VAR(rst, Ctx.LOAD), AHDL_CONST(1)], blocks)
     events = [(AHDL_VAR(clk, Ctx.LOAD), 'rising')]
     return AHDL_EVENT_TASK(events, reset_if)
 

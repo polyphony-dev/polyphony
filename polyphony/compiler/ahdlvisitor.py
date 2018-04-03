@@ -24,8 +24,7 @@ class AHDLVisitor(object):
 
     def process_state(self, state):
         self.current_state = state
-        for code in state.traverse():
-            self.visit(code)
+        self.visit(state)
 
     def visit_AHDL_CONST(self, ahdl):
         pass
@@ -94,9 +93,8 @@ class AHDLVisitor(object):
         for cond in ahdl.conds:
             if cond:
                 self.visit(cond)
-        for codes in ahdl.codes_list:
-            for code in codes:
-                self.visit(code)
+        for ahdlblk in ahdl.blocks:
+            self.visit(ahdlblk)
 
     def visit_AHDL_IF_EXP(self, ahdl):
         self.visit(ahdl.cond)
@@ -179,11 +177,24 @@ class AHDLVisitor(object):
     def visit_AHDL_PIPELINE_GUARD(self, ahdl):
         self.visit_AHDL_IF(ahdl)
 
-    def visit(self, ahdl):
-        method = 'visit_' + ahdl.__class__.__name__
+    def visit_AHDL_BLOCK(self, ahdl):
+        for c in ahdl.codes:
+            self.visit(c)
+
+    def find_visitor(self, cls):
+        method = 'visit_' + cls.__name__
         visitor = getattr(self, method, None)
+        if not visitor:
+            for base in cls.__bases__:
+                visitor = self.find_visitor(base)
+                if visitor:
+                    break
+        return visitor
+
+    def visit(self, ahdl):
         if ahdl.is_a(AHDL_STM):
             self.current_stm = ahdl
+        visitor = self.find_visitor(ahdl.__class__)
         return visitor(ahdl)
 
 

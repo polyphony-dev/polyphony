@@ -7,10 +7,11 @@ from .stg import State, STGItemBuilder, ScheduledItemQueue
 
 
 class PipelineState(State):
-    def __init__(self, name, stages, first_valid_signal, stg, is_finite_loop=False):
+    def __init__(self, name, nstate, first_valid_signal, stg, is_finite_loop=False):
         assert isinstance(name, str)
-        self.name = name
-        self.stages = stages
+        codes = [AHDL_BLOCK('', []) for i in range(nstate)]
+        super().__init__(name, 0, codes, stg)
+        self.stages = []
         if first_valid_signal:
             self.valid_signals = {0:first_valid_signal}
         else:
@@ -22,6 +23,9 @@ class PipelineState(State):
         self.exit_signals = {}
         self.stg = stg
         self.is_finite_loop = is_finite_loop
+        self.nstate = nstate
+        assert self.nstate == 1
+        self.cur_sub_state_idx = 0
 
     def __str__(self):
         s = '---------------------------------\n'
@@ -86,22 +90,20 @@ class PipelineState(State):
 
     def new_stage(self, step, codes):
         name = self.name + '_{}'.format(step)
-        s = PipelineStage(name, step, codes, self.stg, self)
+        s = PipelineStage(name, self.cur_sub_state_idx, step, codes, self.stg, self)
+        blk = self.codes[self.cur_sub_state_idx]
+        blk.codes.append(s)
+        self.cur_sub_state_idx = (self.cur_sub_state_idx + 1) % self.nstate
         self.stages.append(s)
         assert len(self.stages) == step + 1, 'stages {} step {}'.format(len(self.stages), step)
         return s
-
-    def traverse(self):
-        for s in self.stages:
-            for c in s.codes:
-                yield c
 
     def resolve_transition(self, next_state, blk2states):
         end_stage = self.stages[-1]
         code = end_stage.codes[-1]
         if code.is_a(AHDL_TRANSITION_IF):
-            for i, codes in enumerate(code.codes_list):
-                transition = codes[-1]
+            for i, ahdlblk in enumerate(code.blocks):
+                transition = ahdlblk.codes[-1]
                 assert transition.is_a(AHDL_TRANSITION)
                 if isinstance(transition.target, Block):
                     target_state = blk2states[transition.target][0]
@@ -129,8 +131,9 @@ class PipelineState(State):
 
 
 class PipelineStage(State):
-    def __init__(self, name, step, codes, stg, parent_state):
+    def __init__(self, name, state_idx, step, codes, stg, parent_state):
         super().__init__(name, step, codes, stg)
+        self.state_idx = state_idx
         self.parent_state = parent_state
         self.has_enable = False
         self.enable = None
@@ -145,7 +148,7 @@ class PipelineStageBuilder(STGItemBuilder):
     def build(self, dfg, is_main):
         blk_name = dfg.region.head.nametag + str(dfg.region.head.num)
         prefix = self.stg.name + '_' + blk_name + '_P'
-        pstate = PipelineState(prefix, [], None, self.stg, is_finite_loop=self.is_finite_loop)
+        pstate = PipelineState(prefix, 1, None, self.stg, is_finite_loop=self.is_finite_loop)
 
         self.scheduled_items = ScheduledItemQueue()
         self._build_scheduled_items(dfg)
@@ -184,8 +187,7 @@ class PipelineStageBuilder(STGItemBuilder):
         detector = AHDLUseDefDetector()
         for stage in pstate.stages:
             detector.current_state = stage
-            for code in stage.traverse():
-                detector.visit(code)
+            detector.visit(stage)
         usedef = detector.table
         for sig in usedef.get_all_def_sigs():
             if sig.is_pipeline_ctrl():
@@ -290,8 +292,8 @@ class PipelineStageBuilder(STGItemBuilder):
             for c in codes:
                 stm2stage_num[c] = i
                 if c.is_a(AHDL_IF):
-                    for codes in c.codes_list:
-                        _make_stm2stage_num_rec(codes)
+                    for ahdlblk in c.blocks:
+                        _make_stm2stage_num_rec(ahdlblk.codes)
         stm2stage_num = {}
         for i, s in enumerate(pstate.stages):
             _make_stm2stage_num_rec(s.codes)
@@ -347,7 +349,7 @@ class PipelineStageBuilder(STGItemBuilder):
                                   AHDL_VAR(prev_sig, Ctx.LOAD))
             guard = stages[num].codes[0]
             assert guard.is_a(AHDL_PIPELINE_GUARD)
-            guard.codes_list[0].append(slice_stm)
+            guard.blocks[0].codes.append(slice_stm)
 
 
 class LoopPipelineStageBuilder(PipelineStageBuilder):
@@ -398,8 +400,8 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         conds = [loop_end_cond]
         exit_signal = pstate.exit_signal(len(pstate.stages) - 1)
         codes = [AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(1))]
-        codes_list = [codes]
-        loop_end_stm = AHDL_IF(conds, codes_list)
+        blocks = [AHDL_BLOCK('', codes)]
+        loop_end_stm = AHDL_IF(conds, blocks)
         pstate.stages[-1].codes.append(loop_end_stm)
 
         # if (exit)
@@ -417,8 +419,8 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
             AHDL_TRANSITION(dfg.region.exits[0])
         ])
-        codes_list = [codes]
-        pipe_end_stm = AHDL_TRANSITION_IF(conds, codes_list)
+        blocks = [AHDL_BLOCK('', codes)]
+        pipe_end_stm = AHDL_TRANSITION_IF(conds, blocks)
         pstate.stages[-1].codes.append(pipe_end_stm)
 
     def _build_scheduled_items(self, dfg):

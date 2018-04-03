@@ -11,21 +11,18 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-class State(object):
+class State(AHDL_BLOCK):
     def __init__(self, name, step, codes, stg):
         assert isinstance(name, str)
-        self.name = name
+        super().__init__(name, codes)
         self.step = step
-        self.codes = codes
         self.stg = stg
 
     def __str__(self):
         s = '---------------------------------\n'
         s += '{}:{}\n'.format(self.name, self.step)
         if self.codes:
-            strcodes = ''.join(['{}\n'.format(code) for code in self.codes])
-            lines = strcodes.split('\n')
-            s += '\n'.join(['  {}'.format(line) for line in lines])
+            s += '\n'.join(['  {}'.format(code) for code in self.codes])
         else:
             pass
         s += '\n'
@@ -48,9 +45,9 @@ class State(object):
                 code.target = blk2states[code.target][0]
             transition = code
         elif code.is_a(AHDL_TRANSITION_IF):
-            for i, codes in enumerate(code.codes_list):
-                assert len(codes) == 1
-                transition = codes[0]
+            for i, ahdlblk in enumerate(code.blocks):
+                assert len(ahdlblk.codes) == 1
+                transition = ahdlblk.codes[0]
                 assert transition.is_a(AHDL_TRANSITION)
                 assert isinstance(transition.target, Block)
                 target_state = blk2states[transition.target][0]
@@ -771,8 +768,9 @@ class AHDLTranslator(object):
             self._emit(AHDL_TRANSITION(ir.true), self.sched_time)
         else:
             cond_list = [cond, AHDL_CONST(1)]
-            codes_list = [[AHDL_TRANSITION(ir.true)], [AHDL_TRANSITION(ir.false)]]
-            self._emit(AHDL_TRANSITION_IF(cond_list, codes_list), self.sched_time)
+            blocks = [AHDL_BLOCK('', [AHDL_TRANSITION(ir.true)]),
+                      AHDL_BLOCK('', [AHDL_TRANSITION(ir.false)])]
+            self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time)
 
     def visit_JUMP(self, ir, node):
         self._emit(AHDL_TRANSITION(ir.target), self.sched_time)
@@ -785,12 +783,12 @@ class AHDLTranslator(object):
                 return
 
         cond_list = []
-        codes_list = []
+        blocks = []
         for c, target in zip(ir.conds, ir.targets):
             cond = self.visit(c, node)
             cond_list.append(cond)
-            codes_list.append([AHDL_TRANSITION(target)])
-        self._emit(AHDL_TRANSITION_IF(cond_list, codes_list), self.sched_time)
+            blocks.append(AHDL_BLOCK('', [AHDL_TRANSITION(target)]))
+        self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time)
 
     def visit_RET(self, ir, node):
         pass
@@ -1010,7 +1008,7 @@ class AHDLTranslator(object):
         self.visit_EXPR(ir, node)
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
-            self._emit(AHDL_IF([cond], [[ahdl]]), sched_time)
+            self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time)
 
     def visit_CMOVE(self, ir, node):
         cond = self.visit(ir.cond, node)
@@ -1020,7 +1018,7 @@ class AHDLTranslator(object):
         self.visit_MOVE(ir, node)
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
-            self._emit(AHDL_IF([cond], [[ahdl]]), sched_time)
+            self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time)
 
     def visit(self, ir, node):
         method = 'visit_' + ir.__class__.__name__

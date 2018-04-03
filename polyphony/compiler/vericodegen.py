@@ -405,8 +405,8 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_AHDL_IF(self, ahdl):
         blocks = 0
-        for i, (cond, codes) in enumerate(zip(ahdl.conds, ahdl.codes_list)):
-            if not codes:
+        for i, (cond, ahdlblk) in enumerate(zip(ahdl.conds, ahdl.blocks)):
+            if not ahdlblk.codes:
                 continue
             blocks += 1
             if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1) or i == 0:
@@ -418,13 +418,13 @@ class VerilogCodeGen(AHDLVisitor):
                 else:
                     self.emit(f'end else if {cond} begin')
                 self.set_indent(2)
-                for code in codes:
+                for code in ahdlblk.codes:
                     self.visit(code)
                 self.set_indent(-2)
             else:
                 self.emit('end else begin')
                 self.set_indent(2)
-                for code in ahdl.codes_list[-1]:
+                for code in ahdlblk.codes:
                     self.visit(code)
                 self.set_indent(-2)
         if blocks:
@@ -639,7 +639,7 @@ class VerilogCodeGen(AHDLVisitor):
             codes = []
         if ahdl.transition:
             codes.append(ahdl.transition)
-        ahdl_if = AHDL_IF(conds, [codes])
+        ahdl_if = AHDL_IF(conds, [AHDL_BLOCK('', codes)])
         self.visit(ahdl_if)
 
     def visit_WAIT_VALUE(self, ahdl):
@@ -652,7 +652,7 @@ class VerilogCodeGen(AHDLVisitor):
             codes = []
         if ahdl.transition:
             codes.append(ahdl.transition)
-        ahdl_if = AHDL_IF(conds, [codes])
+        ahdl_if = AHDL_IF(conds, [AHDL_BLOCK('', codes)])
         self.visit(ahdl_if)
 
     def visit_AHDL_META_WAIT(self, ahdl):
@@ -774,3 +774,7 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_AHDL_PIPELINE_GUARD(self, ahdl):
         self.visit_AHDL_IF(ahdl)
+
+    def visit_AHDL_BLOCK(self, ahdl):
+        for c in ahdl.codes:
+            self.visit(c)

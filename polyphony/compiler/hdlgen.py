@@ -164,8 +164,7 @@ class HDLModuleBuilder(object):
         collector = AHDLVarCollector(self.hdlmodule, defs, uses, outputs, memnodes)
         for stg in fsm.stgs:
             for state in stg.states:
-                for code in state.traverse():
-                    collector.visit(code)
+                collector.visit(state)
         return defs, uses, outputs, memnodes
 
     def _collect_special_decls(self, fsm):
@@ -173,8 +172,7 @@ class HDLModuleBuilder(object):
         collector = AHDLSpecialDeclCollector(edge_detectors)
         for stg in fsm.stgs:
             for state in stg.states:
-                for code in state.traverse():
-                    collector.visit(code)
+                collector.visit(state)
         return edge_detectors
 
     def _collect_moves(self, fsm):

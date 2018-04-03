@@ -31,8 +31,7 @@ class BitwidthReducer(AHDLVisitor):
             self.usedef = fsm.usedef
             for stg in fsm.stgs:
                 for state in stg.states:
-                    for code in state.traverse():
-                        self.visit(code)
+                    self.visit(state)
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):
