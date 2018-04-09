@@ -7,7 +7,7 @@ from .ir import Ctx
 from .memref import One2NMemNode, N2OneMemNode
 from .signal import Signal
 from .stg import State
-from .stg_pipeline import PipelineState
+from .stg_pipeline import PipelineState, PipelineStage
 from .verilog_common import pyop2verilogop, is_verilog_keyword
 from logging import getLogger
 logger = getLogger(__name__)
@@ -302,21 +302,22 @@ class VerilogCodeGen(AHDLVisitor):
         self.set_indent(2)
         if env.hdl_debug_mode:
             self.emit(f'$display("%8d:STATE:{self.hdlmodule.name}  {state.name}", $time);')
-        # this is workaround
-        if isinstance(state, PipelineState):
-            for stage in state.stages:
-                self.emit(f'/*** {stage.name} ***/')
-                for code in stage.codes:
-                    self.visit(code)
-                if stage.enable:
-                    self.visit(stage.enable)
-                self.emit('')
-        elif isinstance(state, State):
-            for code in state.codes:
-                self.visit(code)
+        self.visit_State(state)
 
         self.set_indent(-2)
         self.emit('end')
+
+    def visit_State(self, state):
+        for code in state.codes:
+            self.visit(code)
+
+    def visit_PipelineStage(self, stage):
+        self.emit(f'/*** {stage.name} ***/')
+        if stage.enable:
+            self.visit(stage.enable)
+        for code in stage.codes:
+            self.visit(code)
+        self.emit('')
 
     def visit_AHDL_CONST(self, ahdl):
         if ahdl.value is None:
@@ -689,8 +690,11 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('endcase')
 
     def visit_AHDL_CASE_ITEM(self, ahdl):
-        self.emit(f'{ahdl.val}:', newline=False)
-        self.visit(ahdl.stm)
+        self.emit(f'{ahdl.val}: begin')
+        self.set_indent(2)
+        self.visit(ahdl.block)
+        self.set_indent(-2)
+        self.emit('end')
 
     def visit_AHDL_MUX__unused(self, ahdl):
         self.emit(f'function [{ahdl.output.width-1}:0] {ahdl.name} (')

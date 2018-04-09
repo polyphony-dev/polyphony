@@ -639,10 +639,10 @@ class AHDL_CASE(AHDL_STM):
 
 
 class AHDL_CASE_ITEM(AHDL_STM):
-    def __init__(self, val, stm):
+    def __init__(self, val, block):
         super().__init__()
         self.val = val
-        self.stm = stm
+        self.block = block
 
     def __str__(self):
         return '{}:{}'.format(self.val, str(self.stm))

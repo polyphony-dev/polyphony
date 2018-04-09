@@ -9,8 +9,15 @@ from .stg import State, STGItemBuilder, ScheduledItemQueue
 class PipelineState(State):
     def __init__(self, name, nstate, first_valid_signal, stg, is_finite_loop=False):
         assert isinstance(name, str)
-        codes = [AHDL_BLOCK('', []) for i in range(nstate)]
+        assert 1 <= nstate
+        subblocks = [AHDL_BLOCK(str(i), []) for i in range(nstate)]
+        caseitems = [AHDL_CASE_ITEM(i, subb) for i, subb in enumerate(subblocks)]
+        self.substate_var = stg.hdlmodule.gen_sig(f'{name}_state',
+                                                  nstate.bit_length(),
+                                                  {'reg', 'pipeline_ctrl'})
+        codes = [AHDL_CASE(AHDL_VAR(self.substate_var, Ctx.LOAD), caseitems)]
         super().__init__(name, 0, codes, stg)
+        self.substates = subblocks[:]
         self.stages = []
         if first_valid_signal:
             self.valid_signals = {0:first_valid_signal}
@@ -24,20 +31,23 @@ class PipelineState(State):
         self.stg = stg
         self.is_finite_loop = is_finite_loop
         self.nstate = nstate
-        assert self.nstate == 1
         self.cur_sub_state_idx = 0
 
     def __str__(self):
         s = '---------------------------------\n'
         s += '{}\n'.format(self.name)
 
-        if self.stages:
-            for stage in self.stages:
-                lines = ['---{}---'.format(stage.name)]
-                strcodes = '\n'.join(['{}'.format(code) for code in stage.codes])
-                lines += strcodes.split('\n')
-                s += '\n'.join(['  {}'.format(line) for line in lines])
-                s += '\n'
+        for subst in self.substates:
+            for c in subst.codes:
+                if isinstance(c, PipelineStage):
+                    stage = c
+                    lines = ['---{}---'.format(stage.name)]
+                    strcodes = '\n'.join(['{}'.format(code) for code in stage.codes])
+                    lines += strcodes.split('\n')
+                    s += '\n'.join(['  {}'.format(line) for line in lines])
+                    s += '\n'
+                else:
+                    s += str(c) + '\n'
         else:
             pass
         s += '\n'
@@ -91,16 +101,15 @@ class PipelineState(State):
     def new_stage(self, step, codes):
         name = self.name + '_{}'.format(step)
         s = PipelineStage(name, self.cur_sub_state_idx, step, codes, self.stg, self)
-        blk = self.codes[self.cur_sub_state_idx]
-        blk.codes.append(s)
-        self.cur_sub_state_idx = (self.cur_sub_state_idx + 1) % self.nstate
+        state = self.substates[self.cur_sub_state_idx]
+        state.codes.append(s)
         self.stages.append(s)
+        self.cur_sub_state_idx = (self.cur_sub_state_idx + 1) % self.nstate
         assert len(self.stages) == step + 1, 'stages {} step {}'.format(len(self.stages), step)
         return s
 
     def resolve_transition(self, next_state, blk2states):
-        end_stage = self.stages[-1]
-        code = end_stage.codes[-1]
+        code = self.codes[-1]
         if code.is_a(AHDL_TRANSITION_IF):
             for i, ahdlblk in enumerate(code.blocks):
                 transition = ahdlblk.codes[-1]
@@ -148,7 +157,7 @@ class PipelineStageBuilder(STGItemBuilder):
     def build(self, dfg, is_main):
         blk_name = dfg.region.head.nametag + str(dfg.region.head.num)
         prefix = self.stg.name + '_' + blk_name + '_P'
-        pstate = PipelineState(prefix, 1, None, self.stg, is_finite_loop=self.is_finite_loop)
+        pstate = PipelineState(prefix, dfg.ii, None, self.stg, is_finite_loop=self.is_finite_loop)
 
         self.scheduled_items = ScheduledItemQueue()
         self._build_scheduled_items(dfg)
@@ -164,9 +173,18 @@ class PipelineStageBuilder(STGItemBuilder):
         # customize point
         self.post_build(dfg, is_main, pstate)
 
-        if not pstate.stages[-1].codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
+        if not pstate.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
             pipe_end_stm = AHDL_TRANSITION(pstate)
-            pstate.stages[-1].codes.append(pipe_end_stm)
+            pstate.codes.append(pipe_end_stm)
+
+        for i, substate in enumerate(pstate.substates):
+            if i == len(pstate.substates) - 1:
+                next = 0
+            else:
+                next = i + 1
+            mv_next_state = AHDL_MOVE(AHDL_VAR(pstate.substate_var, Ctx.STORE),
+                                      AHDL_CONST(next))
+            substate.codes.append(mv_next_state)
 
     def post_build(self, dfg, is_main, pstate):
         pass
@@ -358,7 +376,6 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         self.is_finite_loop = True
 
     def post_build(self, dfg, is_main, pstate):
-        loop_cnt = self.translator._sym_2_sig(dfg.region.counter)
         cond_defs = self.scope.usedef.get_stms_defining(dfg.region.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
@@ -368,16 +385,22 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             self._add_last_signal_chain(pstate, stage, loop_cond)
 
         # make the start condition of pipeline
-        loop_cond = self.translator.visit(cond_def.src, None)
         enable0 = pstate.enable_signal(0)
         loop_enable = AHDL_MOVE(AHDL_VAR(enable0, Ctx.STORE),
                                 loop_cond)
         pstate.stages[0].enable = loop_enable
 
+        exit_signal = pstate.exit_signal(len(pstate.stages) - 1)
+        self.build_exit_detection_block(dfg, pstate, exit_signal,
+                                        cond_def, pstate.stages[-1])
+        self.build_exit_block(dfg, pstate, exit_signal)
+
+    def build_exit_detection_block(self, dfg, pstate, exit_signal, cond_def, last_stage):
         # make a condition for unexecutable loop
         loop_init = self.translator.visit(dfg.region.init, None)
         loop_cond = self.translator.visit(cond_def.src, None)
         args = []
+        loop_cnt = self.translator._sym_2_sig(dfg.region.counter)
         for i, a in enumerate(loop_cond.args):
             if a.is_a(AHDL_VAR) and a.sig == loop_cnt:
                 args.append(loop_init)
@@ -386,24 +409,24 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         loop_cond.args = tuple(args)
 
         # make the exit condition of pipeline
-        if stage.step > 0:
-            last = pstate.last_signal(stage.step - 1)
-            ready = pstate.ready_signal(stage.step)
+        if last_stage.step > 0:
+            last = pstate.last_signal(last_stage.step - 1)
+            ready = pstate.ready_signal(last_stage.step)
             loop_end_cond1 = AHDL_OP('BitAnd',
                                      AHDL_VAR(last, Ctx.LOAD),
                                      AHDL_VAR(ready, Ctx.LOAD))
         else:
-            last = pstate.last_signal(stage.step)
+            last = pstate.last_signal(last_stage.step)
             loop_end_cond1 = AHDL_VAR(last, Ctx.LOAD)
         loop_end_cond2 = AHDL_OP('Invert', loop_cond)
         loop_end_cond = AHDL_OP('Or', loop_end_cond1, loop_end_cond2)
         conds = [loop_end_cond]
-        exit_signal = pstate.exit_signal(len(pstate.stages) - 1)
         codes = [AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(1))]
         blocks = [AHDL_BLOCK('', codes)]
         loop_end_stm = AHDL_IF(conds, blocks)
-        pstate.stages[-1].codes.append(loop_end_stm)
+        last_stage.codes.append(loop_end_stm)
 
+    def build_exit_block(self, dfg, pstate, exit_signal):
         # if (exit)
         #    exit <= 0
         #    state <= loop_exit
@@ -414,6 +437,10 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
                 break
             l = pstate.last_signal(i)
             codes.append(AHDL_MOVE(AHDL_VAR(l, Ctx.STORE), AHDL_CONST(0)))
+
+        state_reg_reset = AHDL_MOVE(AHDL_VAR(pstate.substate_var, Ctx.STORE), AHDL_CONST(0))
+        codes.append(state_reg_reset)
+
         assert len(dfg.region.exits) == 1
         codes.extend([
             AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
@@ -421,7 +448,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         ])
         blocks = [AHDL_BLOCK('', codes)]
         pipe_end_stm = AHDL_TRANSITION_IF(conds, blocks)
-        pstate.stages[-1].codes.append(pipe_end_stm)
+        pstate.codes.append(pipe_end_stm)
 
     def _build_scheduled_items(self, dfg):
         nodes = []

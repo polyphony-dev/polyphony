@@ -126,7 +126,7 @@ class HDLModuleBuilder(object):
                 case_items = []
                 for i, item in enumerate(array.items):
                     assert item.is_a(CONST)
-                    connect = AHDL_CONNECT(fname, AHDL_CONST(item.value))
+                    connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, AHDL_CONST(item.value))])
                     case_items.append(AHDL_CASE_ITEM(i, connect))
                 case = AHDL_CASE(input, case_items)
                 rom_func = AHDL_FUNCTION(fname, [input], [case])
@@ -149,7 +149,7 @@ class HDLModuleBuilder(object):
                     roms.append(romsrc)
                     rom_func_name = romsrc.sym.hdl_name()
                     call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])
-                    connect = AHDL_CONNECT(fname, call)
+                    connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, call)])
                     case_val = '{}[{}]'.format(cs_name, i)
                     case_items.append(AHDL_CASE_ITEM(case_val, connect))
                 case = AHDL_CASE(AHDL_SYMBOL('1\'b1'), case_items)

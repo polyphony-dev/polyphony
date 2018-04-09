@@ -225,6 +225,18 @@ class SchedulerImpl(object):
         if not ret:
             assert False, 'scheduling has failed. the cycle must be greater equal {}'.format(actual)
 
+    def _max_latency(self, paths):
+        max_latency = 0
+        for path in paths:
+            path_latencies = []
+            for n in path:
+                m, _, _ = self.node_latency_map[n]
+                path_latencies.append(m)
+            path_latency = sum(path_latencies)
+            if path_latency > max_latency:
+                max_latency = path_latency
+        return max_latency
+
     def _remove_alias_if_needed(self, dfg):
         for n in dfg.nodes:
             if n not in self.node_latency_map:
@@ -380,9 +392,14 @@ class PipelineScheduler(SchedulerImpl):
             for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, 'DefUse')):
                 self.all_paths.append(path)
         induction_paths = self._find_induction_paths(self.all_paths)
-        ret, actual = self._adjust_latency(induction_paths, initiation_interval)
-        if not ret:
-            assert False, 'scheduling of II has failed'
+        if initiation_interval < 0:
+            latency = self._max_latency(induction_paths)
+            dfg.ii = latency if latency > 0 else 1
+        else:
+            ret, actual = self._adjust_latency(induction_paths, initiation_interval)
+            if not ret:
+                assert False, 'scheduling of II has failed'
+            dfg.ii = actual
 
     def _find_induction_paths(self, paths):
         induction_paths = []

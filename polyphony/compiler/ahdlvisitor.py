@@ -101,6 +101,15 @@ class AHDLVisitor(object):
         self.visit(ahdl.lexp)
         self.visit(ahdl.rexp)
 
+    def visit_AHDL_CASE(self, ahdl):
+        self.visit(ahdl.sel)
+        for item in ahdl.items:
+            self.visit(item)
+
+    def visit_AHDL_CASE_ITEM(self, ahdl):
+        #self.visit(ahdl.val)
+        self.visit(ahdl.block)
+
     def visit_AHDL_MODULECALL(self, ahdl):
         for arg in ahdl.args:
             self.visit(arg)

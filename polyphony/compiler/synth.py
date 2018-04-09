@@ -13,7 +13,7 @@ class DefaultSynthParamSetter(object):
     scope_params = {
         'scheduling':'parallel',
         'cycle':'minimum',
-        'ii':1,
+        'ii':-1,
     }
 
     def process(self, scope):
