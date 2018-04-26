@@ -754,7 +754,7 @@ def setup(src_file, options):
     package_files.remove(builtin_package_file)
     package_files.remove(polyphony_package_file)
 
-    for package_file in package_files:
+    for package_file in sorted(package_files):
         package_name = os.path.basename(package_file).split('.')[0]
         package_name = package_name[1:]
         env.set_current_filename(package_file)
