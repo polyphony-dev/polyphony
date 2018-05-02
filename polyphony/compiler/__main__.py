@@ -750,13 +750,14 @@ def setup(src_file, options):
     env.set_current_filename(polyphony_package_file)
     translator.translate(read_source(polyphony_package_file), 'polyphony')
 
-    package_files = glob.glob(f'{internal_root_dir}_[a-z]*')
-    package_files.remove(builtin_package_file)
-    package_files.remove(polyphony_package_file)
-
-    for package_file in package_files:
-        package_name = os.path.basename(package_file).split('.')[0]
-        package_name = package_name[1:]
+    package_names = [
+        'typing',
+        'io',
+        'timing',
+        'verilog'
+    ]
+    for package_name in package_names:
+        package_file = f'{internal_root_dir}_{package_name}.py'
         env.set_current_filename(package_file)
         translator.translate(read_source(package_file), package_name)
 
