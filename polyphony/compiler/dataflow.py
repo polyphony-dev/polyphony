@@ -690,8 +690,7 @@ class DFGBuilder(object):
                 assert stm.block.stms[-1] is stm
                 for prev_stm in stm.block.stms[:-1]:
                     prev_node = dfg.find_node(prev_stm)
-                    if all([n.tag.block is not node.tag.block for n in dfg.succs(prev_node)]):
-                        dfg.add_seq_edge(prev_node, node)
+                    dfg.add_seq_edge(prev_node, node)
 
     def _add_seq_edges_for_function(self, blocks, dfg):
         '''make sequence edges between functions that are executed in an exclusive state'''

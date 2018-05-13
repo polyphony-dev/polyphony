@@ -6,6 +6,8 @@ class Config(object):
     main_clock_frequency = 100000000
     reset_activation_signal = 1
     internal_ram_threshold_size = 512  # width * length
+    internal_ram_load_latency = 3
+    internal_ram_store_latency = 1
     enable_pure = False
 
     def __str__(self):

@@ -641,6 +641,7 @@ class RAMAccessor(Accessor):
         return PipelinedRAMAccessor(self, stage)
 
     def read_sequence(self, step, step_n, offset, dst, is_continuous):
+        assert step_n > 1
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
@@ -650,9 +651,7 @@ class RAMAccessor(Accessor):
             return (AHDL_MOVE(addr, offset),
                     AHDL_MOVE(we, AHDL_CONST(0)),
                     AHDL_MOVE(req, AHDL_CONST(1)))
-        elif step == 1:
-            return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
-        elif step == 2:
+        elif step == step_n - 1:
             if is_continuous:
                 if dst:
                     return (AHDL_MOVE(dst, q), )
@@ -664,8 +663,11 @@ class RAMAccessor(Accessor):
                             AHDL_MOVE(req, AHDL_CONST(0)))
                 else:
                     return (AHDL_MOVE(req, AHDL_CONST(0)), )
+        else:
+            return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
 
     def write_sequence(self, step, step_n, offset, src, is_continuous):
+        assert step_n > 1
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
@@ -683,6 +685,8 @@ class RAMAccessor(Accessor):
                 return tuple()
             else:
                 return (AHDL_MOVE(req, AHDL_CONST(0)), )
+        else:
+            return (AHDL_NOP('wait for input of {}'.format(self.acc_name)), )
 
 
 class PipelinedRAMAccessor(RAMAccessor):
@@ -693,6 +697,7 @@ class PipelinedRAMAccessor(RAMAccessor):
         self.pipeline_state = stage.parent_state
 
     def read_sequence(self, step, step_n, offset, dst, is_continuous):
+        assert step_n > 1
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
@@ -705,14 +710,14 @@ class PipelinedRAMAccessor(RAMAccessor):
             req_rhs = AHDL_OP('BitOr', *req_valids)
             guards = (AHDL_MOVE(addr, offset), AHDL_MOVE(we, AHDL_CONST(0)))
             nonguards = (AHDL_MOVE(req, req_rhs), )
-        elif step == 1:
-            guards = (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
-            nonguards = tuple()
-        elif step == 2:
+        elif step == step_n - 1:
             if dst:
                 guards = (AHDL_MOVE(dst, q), )
             else:
                 guards = tuple()
+            nonguards = tuple()
+        else:
+            guards = (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
             nonguards = tuple()
 
         guard = self.stage.codes[0]
@@ -721,6 +726,7 @@ class PipelinedRAMAccessor(RAMAccessor):
         return nonguards
 
     def write_sequence(self, step, step_n, offset, src, is_continuous):
+        assert step_n > 1
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
@@ -737,7 +743,7 @@ class PipelinedRAMAccessor(RAMAccessor):
                       AHDL_MOVE(d, src))
             nonguards = (AHDL_MOVE(we, valid_rhs),
                          AHDL_MOVE(req, valid_rhs))
-        elif step == 1:
+        else:
             guards = tuple()
             nonguards = tuple()
         guard = self.stage.codes[0]

@@ -279,7 +279,7 @@ class BlockBoundedListScheduler(SchedulerImpl):
         longest_latency = 0
         for block, nodes in block_nodes.items():
             #latency = self._list_schedule(dfg, nodes)
-            latency = self._list_schedule_with_block_bound(dfg, nodes, block)
+            latency = self._list_schedule_with_block_bound(dfg, nodes, block, 0)
             if longest_latency < latency:
                 longest_latency = latency
         return longest_latency
@@ -303,9 +303,8 @@ class BlockBoundedListScheduler(SchedulerImpl):
         else:
             return latency
 
-    def _list_schedule_with_block_bound(self, dfg, nodes, block):
+    def _list_schedule_with_block_bound(self, dfg, nodes, block, longest_latency):
         next_candidates = set()
-        latency = 0
         for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
             if n.tag.block is not block:
                 continue
@@ -318,11 +317,13 @@ class BlockBoundedListScheduler(SchedulerImpl):
             #logger.debug('## SCHEDULED ## ' + str(n))
             succs = dfg.succs_without_back(n)
             next_candidates = next_candidates.union(succs)
-            latency = n.end
+            if longest_latency < n.end:
+                longest_latency = n.end
         if next_candidates:
-            return self._list_schedule_with_block_bound(dfg, next_candidates, block)
+            return self._list_schedule_with_block_bound(dfg, next_candidates, block,
+                                                        longest_latency)
         else:
-            return latency
+            return longest_latency
 
     def _node_sched_with_block_bound(self, dfg, node, block):
         preds = dfg.preds_without_back(node)

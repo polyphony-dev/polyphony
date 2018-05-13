@@ -897,13 +897,18 @@ class AHDLTranslator(object):
 
     def _emit_memload_sequence(self, ahdl_load, sched_time):
         assert ahdl_load.is_a(AHDL_LOAD)
-        step_n = 3  # TODO : It should calculate from a memory type
+        # TODO : step_n should be calculated from a memory type
+        step_n = env.config.internal_ram_load_latency
         for i in range(step_n):
             self._emit(AHDL_SEQ(ahdl_load, i, step_n), sched_time + i)
 
     def _emit_memstore_sequence(self, ahdl_store, sched_time):
         assert ahdl_store.is_a(AHDL_STORE)
-        step_n = 2  # TODO : It should calculate from a memory type
+        # TODO : step_n should be calculated from a memory type
+        if env.config.internal_ram_store_latency < 2:
+            step_n = 2
+        else:
+            step_n = env.config.internal_ram_store_latency
         for i in range(step_n):
             self._emit(AHDL_SEQ(ahdl_store, i, step_n), sched_time + i)
 
