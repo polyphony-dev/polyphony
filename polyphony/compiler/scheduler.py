@@ -17,24 +17,22 @@ MAX_FUNC_UNIT = 10
 class Scheduler(object):
     def __init__(self):
         self.done_blocks = []
-        self.res_tables = {}
 
     def schedule(self, scope):
         if scope.is_namespace() or scope.is_class() or scope.is_lib():
             return
         self.scope = scope
         for dfg in self.scope.dfgs(bottom_up=True):
-            self.res_tables = {}
             if dfg.parent and dfg.synth_params['scheduling'] == 'pipeline':
-                scheduler_impl = PipelineScheduler(self.res_tables)
+                scheduler_impl = PipelineScheduler()
             else:
-                scheduler_impl = BlockBoundedListScheduler(self.res_tables)
+                scheduler_impl = BlockBoundedListScheduler()
             scheduler_impl.schedule(scope, dfg)
 
 
 class SchedulerImpl(object):
-    def __init__(self, res_tables):
-        self.res_tables = res_tables
+    def __init__(self):
+        self.res_tables = {}
         self.node_latency_map = {}  # {node:(max, min, actual)}
         self.node_seq_latency_map = {}
         self.all_paths = []
@@ -44,6 +42,11 @@ class SchedulerImpl(object):
         sources = dfg.find_src()
         for src in sources:
             src.priority = -1
+
+        self.res_extractor = ResourceExtractor()
+        for node in sorted(dfg.traverse_nodes(dfg.succs, sources, [])):
+            self.res_extractor.current_stm = node.tag
+            self.res_extractor.visit(node.tag)
 
         worklist = deque()
         worklist.append((sources, 0))
@@ -131,7 +134,7 @@ class SchedulerImpl(object):
         #logger.debug(resources)
         assert len(resources) <= 1
         if resources:
-            res = resources[0]
+            res = list(resources)[0]
             if res not in self.res_tables:
                 table = defaultdict(list)
                 self.res_tables[res] = table
@@ -161,9 +164,7 @@ class SchedulerImpl(object):
         return time
 
     def _get_needed_resources(self, stm):
-        res_extractor = ResourceExtractor()
-        res_extractor.visit(stm)
-        return res_extractor.results
+        return self.res_extractor.ops[stm].keys()
 
     def _calc_latency(self, dfg):
         is_minimum = dfg.synth_params['cycle'] == 'minimum'
@@ -268,9 +269,6 @@ class SchedulerImpl(object):
 
 
 class BlockBoundedListScheduler(SchedulerImpl):
-    def __init__(self, res_tables):
-        super().__init__(res_tables)
-
     def _schedule(self, dfg):
         self._schedule_cycles(dfg)
         self._remove_alias_if_needed(dfg)
@@ -370,9 +368,6 @@ class BlockBoundedListScheduler(SchedulerImpl):
 
 
 class PipelineScheduler(SchedulerImpl):
-    def __init__(self, res_tables):
-        super().__init__(res_tables)
-
     def _schedule(self, dfg):
         self._schedule_cycles(dfg)
         self._schedule_ii(dfg)
@@ -486,53 +481,27 @@ class ResourceExtractor(IRVisitor):
     def __init__(self):
         super().__init__()
         self.results = []
-
-    def visit_UNOP(self, ir):
-        self.visit(ir.exp)
-        #TODO:
-        #self.results.append(ir.op)
+        self.ops = defaultdict(lambda: defaultdict(int))
+        self.mems = defaultdict(list)
+        self.ports = defaultdict(list)
 
     def visit_BINOP(self, ir):
-        self.visit(ir.left)
-        self.visit(ir.right)
-        self.results.append(ir.op)
-
-    def visit_RELOP(self, ir):
-        self.visit(ir.left)
-        self.visit(ir.right)
-        #TODO:
-        #self.results.append(ir.op)
-
-    def visit_CONDOP(self, ir):
-        #TODO:
-        #self.visit(ir.cond)
-        self.visit(ir.left)
-        self.visit(ir.right)
-
-    def visit_args(self, args):
-        for _, arg in args:
-            self.visit(arg)
+        self.ops[self.current_stm][ir.op] += 1
+        super().visit_BINOP(ir)
 
     def visit_CALL(self, ir):
-        self.results.append(ir.func_scope())
-        self.visit_args(ir.args)
+        self.ops[self.current_stm][ir.func_scope()] += 1
+        func_name = ir.func_scope().name
+        if (func_name.startswith('polyphony.io.Port') or
+                func_name.startswith('polyphony.io.Queue')):
+            inst_ = ir.func.tail()
+            self.ports[self.current_stm].append(inst_)
+        super().visit_CALL(ir)
 
-    def visit_SYSCALL(self, ir):
-        self.visit_args(ir.args)
+    def visit_MREF(self, ir):
+        self.mems[self.current_stm].append(ir.mem.symbol())
+        super().visit_MREF(ir)
 
-    def visit_NEW(self, ir):
-        self.visit_args(ir.args)
-
-    def visit_EXPR(self, ir):
-        self.visit(ir.exp)
-
-    def visit_CJUMP(self, ir):
-        self.visit(ir.exp)
-
-    def visit_MCJUMP(self, ir):
-        for cond in ir.conds:
-            self.visit(cond)
-
-    def visit_MOVE(self, ir):
-        self.visit(ir.src)
-        self.visit(ir.dst)
+    def visit_MSTORE(self, ir):
+        self.mems[self.current_stm].append(ir.mem.symbol())
+        super().visit_MSTORE(ir)
