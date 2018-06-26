@@ -449,16 +449,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         assert self.hdlmodule.scope.is_class()
         if not self.hdlmodule.scope.is_instantiated():
             return
-
-        for fsm in self.hdlmodule.fsms.values():
-            self._add_state_constants(fsm)
         self._process_io(self.hdlmodule)
         self._process_connector_port(self.hdlmodule)
-        for fsm in self.hdlmodule.fsms.values():
-            self._process_fsm(fsm)
-        # remove ctor fsm and add constant parameter assigns
+
         for fsm in self.hdlmodule.fsms.values():
             if fsm.scope.is_ctor():
+                # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):
                     if stm.dst.sig.is_field():
                         assign = AHDL_ASSIGN(stm.dst, stm.src)
@@ -466,6 +462,9 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                         self.hdlmodule.add_internal_net(stm.dst.sig, '')
                 del self.hdlmodule.fsms[fsm.name]
                 break
+            else:
+                self._add_state_constants(fsm)
+                self._process_fsm(fsm)
 
     def _collect_module_defs(self, fsm):
         moves = self._collect_moves(fsm)
