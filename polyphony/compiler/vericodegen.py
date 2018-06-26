@@ -197,6 +197,9 @@ class VerilogCodeGen(AHDLVisitor):
             else:
                 io_name = self._to_io_name(port.width, 'reg', 'output', port.signed,
                                            interface.port_name(port))
+                if (isinstance(interface, SinglePortInterface) and
+                        interface.signal.is_initializable()):
+                    io_name += f' = {int(interface.signal.init_value)}'
                 out_names.append(io_name)
         for port in interface.nets():
             if port.dir == 'in':
