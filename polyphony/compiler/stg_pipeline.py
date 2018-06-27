@@ -15,7 +15,9 @@ class PipelineState(State):
         self.substate_var = stg.hdlmodule.gen_sig(f'{name}_state',
                                                   nstate.bit_length(),
                                                   {'reg', 'pipeline_ctrl'})
-        codes = [AHDL_CASE(AHDL_VAR(self.substate_var, Ctx.LOAD), caseitems)]
+        self.whole_moves = []
+        whole_moves_blk = AHDL_BLOCK('', self.whole_moves)
+        codes = [whole_moves_blk, AHDL_CASE(AHDL_VAR(self.substate_var, Ctx.LOAD), caseitems)]
         super().__init__(name, 0, codes, stg)
         self.substates = subblocks[:]
         self.stages = []
@@ -32,6 +34,7 @@ class PipelineState(State):
         self.is_finite_loop = is_finite_loop
         self.nstate = nstate
         self.cur_sub_state_idx = 0
+        self.moves = {}
 
     def __str__(self):
         s = '---------------------------------\n'
@@ -138,6 +141,14 @@ class PipelineState(State):
                 s.codes.pop()
         return next_state
 
+    def add_global_move(self, sym, mv):
+        if sym in self.moves:
+            mv_ = self.moves[sym]
+            mv_.src = AHDL_OP('BitOr', mv_.src, mv.src)
+        else:
+            self.moves[sym] = mv
+            self.whole_moves.append(mv)
+
 
 class PipelineStage(State):
     def __init__(self, name, state_idx, step, codes, stg, parent_state):
@@ -190,11 +201,15 @@ class PipelineStageBuilder(STGItemBuilder):
         pass
 
     def _build_pipeline_stages(self, prefix, pstate, is_main):
-        for (step, items) in sorted(self.scheduled_items.queue.items()):
-            codes = []
-            for item, _ in items:
-                assert isinstance(item, AHDL)
-                codes.append(item)
+        maxstep = max([step for (step, _) in self.scheduled_items.queue.items()])
+        for step in range(maxstep + 1):
+            if step in self.scheduled_items.queue:
+                codes = []
+                for item, _ in self.scheduled_items.queue[step]:
+                    assert isinstance(item, AHDL)
+                    codes.append(item)
+            else:
+                codes = [AHDL_NOP('empty stage')]
             self._make_stage(pstate, step, codes)
 
         for stage in pstate.stages:

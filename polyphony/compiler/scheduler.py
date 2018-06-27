@@ -36,8 +36,10 @@ class SchedulerImpl(object):
         self.node_latency_map = {}  # {node:(max, min, actual)}
         self.node_seq_latency_map = {}
         self.all_paths = []
+        self.res_extractor = None
 
     def schedule(self, scope, dfg):
+        self.scope = scope
         logger.log(0, '_schedule dfg')
         sources = dfg.find_src()
         for src in sources:
@@ -45,7 +47,7 @@ class SchedulerImpl(object):
 
         self.res_extractor = ResourceExtractor()
         for node in sorted(dfg.traverse_nodes(dfg.succs, sources, [])):
-            self.res_extractor.current_stm = node.tag
+            self.res_extractor.current_node = node
             self.res_extractor.visit(node.tag)
 
         worklist = deque()
@@ -128,7 +130,7 @@ class SchedulerImpl(object):
             return res.name
 
     def _get_earliest_res_free_time(self, node, time, latency):
-        resources = self._get_needed_resources(node.tag)
+        resources = self.res_extractor.ops[node].keys()
         #TODO operator chaining?
         #logger.debug(node)
         #logger.debug(resources)
@@ -162,9 +164,6 @@ class SchedulerImpl(object):
                 scheduled_resources = table[time + i]
                 scheduled_resources.append(node)
         return time
-
-    def _get_needed_resources(self, stm):
-        return self.res_extractor.ops[stm].keys()
 
     def _calc_latency(self, dfg):
         is_minimum = dfg.synth_params['cycle'] == 'minimum'
@@ -373,10 +372,29 @@ class PipelineScheduler(SchedulerImpl):
         self._schedule_ii(dfg)
         self._remove_alias_if_needed(dfg)
 
+        conflict_res_table = defaultdict(list)
+        for node, mems in self.res_extractor.mems.items():
+            for m in mems:
+                conflict_res_table[m].append(node)
+        for node, ports in self.res_extractor.ports.items():
+            for p in ports:
+                conflict_res_table[p].append(node)
+        if conflict_res_table.values():
+            max_node_n = max([len(nodes) for nodes in conflict_res_table.values()])
+            request_ii = int(dfg.synth_params['ii'])
+            if request_ii == -1:
+                dfg.ii = max(dfg.ii, max_node_n)
+            elif request_ii < max_node_n:
+                fail((self.scope, dfg.region.head.stms[0].lineno),
+                     Errors.RULE_INVALID_II, [request_ii, max_node_n])
+        node2state = {}
         block_nodes = self._group_nodes_by_block(dfg)
         longest_latency = 0
         for block, nodes in block_nodes.items():
-            latency = self._list_schedule_for_pipeline(dfg, nodes)
+            latency = self._list_schedule_for_pipeline(dfg,
+                                                       nodes,
+                                                       conflict_res_table,
+                                                       node2state)
             if longest_latency < latency:
                 longest_latency = latency
             self._fill_defuse_gap(dfg, nodes)
@@ -412,7 +430,30 @@ class PipelineScheduler(SchedulerImpl):
                     break
         return induction_paths
 
-    def _list_schedule_for_pipeline(self, dfg, nodes):
+    def _get_using_resources(self, node):
+        res = []
+        if node in self.res_extractor.mems:
+            res.extend(self.res_extractor.mems[node])
+        if node in self.res_extractor.ports:
+            res.extend(self.res_extractor.ports[node])
+        return res
+
+    def _shift_sched_time_for_conflict(self, scheduled_time, n, state_n, conflict_res_table, node2state):
+        conflict_node_states = set()
+        for r in self._get_using_resources(n):
+            conflict_nodes = conflict_res_table[r]
+            assert n in conflict_nodes
+            for cn in conflict_nodes:
+                if cn is not n and cn in node2state:
+                    conflict_node_states.add(node2state[cn])
+        assert len(conflict_node_states) <= state_n
+        node_state = scheduled_time % state_n
+        while node_state in conflict_node_states:
+            scheduled_time += 1
+            node_state = scheduled_time % state_n
+        return scheduled_time
+
+    def _list_schedule_for_pipeline(self, dfg, nodes, conflict_res_table, node2state):
         next_candidates = set()
         latency = 0
         for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
@@ -421,14 +462,24 @@ class PipelineScheduler(SchedulerImpl):
             #detect resource conflict
             # TODO:
             #scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
+            scheduled_time = self._shift_sched_time_for_conflict(scheduled_time, n,
+                                                                 dfg.ii,
+                                                                 conflict_res_table,
+                                                                 node2state)
             n.begin = scheduled_time
             n.end = n.begin + latency
+            node_state = n.begin % dfg.ii
+            node2state[n] = node_state
             #logger.debug('## SCHEDULED ## ' + str(n))
+            #print(node2state[n], n)
             succs = dfg.succs_without_back(n)
             next_candidates = next_candidates.union(succs)
             latency = n.end
         if next_candidates:
-            return self._list_schedule_for_pipeline(dfg, next_candidates)
+            return self._list_schedule_for_pipeline(dfg,
+                                                    next_candidates,
+                                                    conflict_res_table,
+                                                    node2state)
         else:
             return latency
 
@@ -441,7 +492,13 @@ class PipelineScheduler(SchedulerImpl):
             sched_times = []
             if seq_preds:
                 latest_node = max(seq_preds, key=lambda p: p.end)
-                sched_times.append(latest_node.end)
+                logger.debug('latest_node of seq_preds ' + str(latest_node))
+                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag):
+                    sched_times.append(latest_node.end)
+                else:
+                    seq_latency = self.node_seq_latency_map[latest_node]
+                    sched_times.append(latest_node.begin + seq_latency)
+                    logger.debug('schedtime ' + str(latest_node.begin + seq_latency))
             if defuse_preds:
                 latest_node = max(defuse_preds, key=lambda p: p.end)
                 sched_times.append(latest_node.end)
@@ -469,6 +526,8 @@ class PipelineScheduler(SchedulerImpl):
             succs = [s for s in succs if s.begin >= 0]
             if not succs:
                 continue
+            if self._get_using_resources(node):
+                continue
             nearest_node = min(succs, key=lambda p: p.begin)
             sched_time = nearest_node.begin
             if sched_time > node.end:
@@ -486,22 +545,24 @@ class ResourceExtractor(IRVisitor):
         self.ports = defaultdict(list)
 
     def visit_BINOP(self, ir):
-        self.ops[self.current_stm][ir.op] += 1
+        self.ops[self.current_node][ir.op] += 1
         super().visit_BINOP(ir)
 
     def visit_CALL(self, ir):
-        self.ops[self.current_stm][ir.func_scope()] += 1
+        self.ops[self.current_node][ir.func_scope()] += 1
         func_name = ir.func_scope().name
         if (func_name.startswith('polyphony.io.Port') or
                 func_name.startswith('polyphony.io.Queue')):
             inst_ = ir.func.tail()
-            self.ports[self.current_stm].append(inst_)
+            self.ports[self.current_node].append(inst_)
         super().visit_CALL(ir)
 
     def visit_MREF(self, ir):
-        self.mems[self.current_stm].append(ir.mem.symbol())
+        if not ir.mem.symbol().typ.get_memnode().can_be_reg():
+            self.mems[self.current_node].append(ir.mem.symbol())
         super().visit_MREF(ir)
 
     def visit_MSTORE(self, ir):
-        self.mems[self.current_stm].append(ir.mem.symbol())
+        if not ir.mem.symbol().typ.get_memnode().can_be_reg():
+            self.mems[self.current_node].append(ir.mem.symbol())
         super().visit_MSTORE(ir)

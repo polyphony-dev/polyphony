@@ -877,10 +877,10 @@ class SynthesisParamChecker(object):
             writestms = [stm for stm in usestms if stm.is_a(EXPR) and stm.exp.is_a(MSTORE)]
             if len(readstms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
-                fail(readstms[1], Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])
-            elif len(writestms) > 1:
+                warn(readstms[1], Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])
+            if len(writestms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
-                fail(writestms[1], Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT, [sym])
-            elif len(readstms) >= 1 and len(writestms) >= 1:
+                warn(writestms[1], Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT, [sym])
+            if len(readstms) >= 1 and len(writestms) >= 1:
                 sym = sym.ancestor if sym.ancestor else sym
-                fail(writestms[0], Errors.RULE_PIPELINE_HAS_MEM_RW_CONFLICT, [sym])
+                warn(writestms[0], Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT, [sym])

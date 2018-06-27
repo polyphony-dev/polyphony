@@ -709,7 +709,9 @@ class PipelinedRAMAccessor(RAMAccessor):
                            for i in range(step_n - 1)]
             req_rhs = AHDL_OP('BitOr', *req_valids)
             guards = (AHDL_MOVE(addr, offset), AHDL_MOVE(we, AHDL_CONST(0)))
-            nonguards = (AHDL_MOVE(req, req_rhs), )
+            nonguards = tuple()
+            self.pipeline_state.add_global_move(req.name,
+                                                AHDL_MOVE(req, req_rhs))
         elif step == step_n - 1:
             if dst:
                 guards = (AHDL_MOVE(dst, q), )
@@ -741,8 +743,9 @@ class PipelinedRAMAccessor(RAMAccessor):
                 valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
             guards = (AHDL_MOVE(addr, offset),
                       AHDL_MOVE(d, src))
-            nonguards = (AHDL_MOVE(we, valid_rhs),
-                         AHDL_MOVE(req, valid_rhs))
+            nonguards = (AHDL_MOVE(we, valid_rhs),)
+            self.pipeline_state.add_global_move(req.name,
+                                                AHDL_MOVE(req, valid_rhs))
         else:
             guards = tuple()
             nonguards = tuple()
