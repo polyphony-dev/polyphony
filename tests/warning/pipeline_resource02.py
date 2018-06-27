@@ -1,4 +1,4 @@
-#Cannot write 'ys' more than once in a pipeline loop
+#There is a write conflict at 'ys' in a pipeline
 from polyphony import testbench
 from polyphony import rule
 

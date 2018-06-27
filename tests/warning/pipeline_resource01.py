@@ -1,4 +1,4 @@
-#Cannot read 'xs' more than once in a pipeline loop
+#There is a read conflict at 'xs' in a pipeline
 from polyphony import testbench
 from polyphony import rule
 
