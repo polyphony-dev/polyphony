@@ -65,8 +65,8 @@ SUITE_CASES = [
         'config': '{ "internal_ram_threshold_size": 1000000 }',
         "ignores": ('list/list31.py', 'list/list32.py',
                     'apps/filter_tester.py',
-                    'error/pipeline_resource01.py', 'error/pipeline_resource02.py',
-                    'pure/*', 'error/pure01.py', 'error/pure02.py')
+                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+                    'pure/*', 'error/pure01.py', 'error/pure02.py',)
     },
     #{
     #    'config': '{ "enable_pure": true, \
