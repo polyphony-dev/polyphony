@@ -1,4 +1,4 @@
-#There is a read conflict at 'xs' in a pipeline
+#There is a read conflict at 'xs' in a pipeline, II will be adjusted
 from polyphony import testbench
 from polyphony import rule
 

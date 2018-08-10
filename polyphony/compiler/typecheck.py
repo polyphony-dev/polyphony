@@ -862,6 +862,7 @@ class SynthesisParamChecker(object):
                     if not scope.is_leaf_region(loop):
                         fail((scope, blk.stms[0].lineno), Errors.RULE_PIPELINE_HAS_INNER_LOOP)
                     self._check_mem_rw_conflict_in_pipeline(loop, scope)
+                    self._check_port_conflict_in_pipeline(loop, scope)
 
     def _check_mem_rw_conflict_in_pipeline(self, loop, scope):
         syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
@@ -884,3 +885,29 @@ class SynthesisParamChecker(object):
             if len(readstms) >= 1 and len(writestms) >= 1:
                 sym = sym.ancestor if sym.ancestor else sym
                 warn(writestms[0], Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT, [sym])
+
+    def _check_port_conflict_in_pipeline(self, loop, scope):
+        syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
+        for sym in syms:
+            if not sym.typ.is_port():
+                continue
+            if sym.typ.get_scope().orig_name.startswith('Port') and sym.typ.get_protocol() == 'none':
+                continue
+            usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
+            usestms = [stm for stm in usestms if stm.block in loop.blocks()]
+            readstms = []
+            for stm in usestms:
+                if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func.symbol().orig_name() == 'rd':
+                    readstms.append(stm)
+            writestms = []
+            for stm in usestms:
+                if stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func.symbol().orig_name() == 'wr':
+                    writestms.append(stm)
+            if len(readstms) > 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(readstms[1], Errors.RULE_READING_PIPELINE_IS_CONFLICTED, [sym])
+            if len(writestms) > 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(writestms[1], Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED, [sym])
+            if len(readstms) >= 1 and len(writestms) >= 1:
+                assert False

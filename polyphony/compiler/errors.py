@@ -90,6 +90,8 @@ class Errors(Enum):
     RULE_FUNCTION_CANNOT_BE_PIPELINED = 1102
     RULE_PIPELINE_HAS_INNER_LOOP = 1103
     RULE_INVALID_II = 1104
+    RULE_READING_PIPELINE_IS_CONFLICTED = 1105
+    RULE_WRITING_PIPELINE_IS_CONFLICTED = 1106
 
     RULE_UNROLL_NESTED_LOOP = 1151
     RULE_UNROLL_UNFIXED_LOOP = 1152
@@ -185,6 +187,8 @@ ERROR_MESSAGES = {
     Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED: "Normal function cannot be pipelined",
     Errors.RULE_PIPELINE_HAS_INNER_LOOP: "Cannot pipelining the loop that has an inner loop",
     Errors.RULE_INVALID_II: "Cannot schedule with ii = {}, you must set ii >= {}",
+    Errors.RULE_READING_PIPELINE_IS_CONFLICTED: "Reading from '{}' is conflicted in a pipeline",
+    Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED: "Writing to '{}' is conflicted in a pipeline",
 
     Errors.RULE_UNROLL_NESTED_LOOP: "Cannot unroll nested loop",
     Errors.RULE_UNROLL_UNFIXED_LOOP: "Cannot full unroll unfixed loop",
@@ -215,8 +219,8 @@ WARNING_MESSAGES = {
     Warnings.ASSERTION_FAILED: "The expression of assert always evaluates to False",
     Warnings.EXCEPTION_RAISED: "An exception occurred while executing the Python interpreter at compile time\n(For more information you can use '--verbose' option)",
     Warnings.PORT_IS_NOT_USED: "Port '{}' is not used at all",
-    Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "There is a read conflict at '{}' in a pipeline",
-    Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "There is a write conflict at '{}' in a pipeline",
-    Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT: "There is a read/write conflict at '{}' in a pipeline",
+    Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "There is a read conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "There is a write conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT: "There is a read/write conflict at '{}' in a pipeline, II will be adjusted",
 
 }

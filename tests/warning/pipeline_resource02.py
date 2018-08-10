@@ -1,4 +1,4 @@
-#There is a write conflict at 'ys' in a pipeline
+#There is a write conflict at 'ys' in a pipeline, II will be adjusted
 from polyphony import testbench
 from polyphony import rule
 

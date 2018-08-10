@@ -29,6 +29,7 @@ DIRS = (
     'io',
     'module',
     'unroll',
+    'pipeline',
     'issues',
     'pure',
 )
