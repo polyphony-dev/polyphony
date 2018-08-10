@@ -777,6 +777,23 @@ class CodeVisitor(ast.NodeVisitor):
                     if seq.sym.name == 'polyphony.pipelined':
                         fail((self.current_scope, node.lineno),
                              Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.sym.name, it.sym.name])
+                if len(it.args) == 1:
+                    if len(it.kwargs) == 0:
+                        assert it.sym.typ.is_function()
+                        scp = it.sym.typ.get_scope()
+                        ii = scp.params[1].defval
+                    elif len(it.kwargs) == 1 and 'ii' in it.kwargs:
+                        ii = it.kwargs['ii']
+                    else:
+                        kwarg = list(it.kwargs.keys())[0]
+                        fail((self.current_scope, node.lineno),
+                             Errors.GOT_UNEXPECTED_KWARGS, [it.sym.name, kwarg])
+                elif len(it.args) == 2:
+                    _, ii = it.args[1]
+                else:
+                    fail((self.current_scope, node.lineno),
+                         Errors.TAKES_TOOMANY_ARGS, [it.sym.name, '2', len(it.args)])
+                loop_synth_params.update({'ii':ii.value})
             it = seq
 
         # In case of range() loop

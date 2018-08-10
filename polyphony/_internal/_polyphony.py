@@ -37,5 +37,5 @@ def unroll(seq, factor='full') -> list:
 
 
 @builtin
-def pipelined(seq) -> list:
+def pipelined(seq, ii=-1) -> list:
     pass
