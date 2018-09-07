@@ -258,9 +258,10 @@ class STGItemBuilder(object):
     def _new_state(self, name, step, codes):
         return self.stg.new_state(name, step, codes)
 
-    def emit(self, item, sched_time, tag=''):
+    def emit(self, item, sched_time, node, tag=''):
         logger.debug('emit ' + str(item) + ' at ' + str(sched_time))
         self.scheduled_items.push(sched_time, item, tag)
+        self.hdlmodule.ahdl2dfgnode[item] = node
 
     def get_signal_prefix(self, ir, node):
         if ir.func_scope().is_class():
@@ -410,8 +411,8 @@ class AHDLTranslator(object):
     def reset(self, sched_time):
         self.sched_time = sched_time
 
-    def _emit(self, item, sched_time):
-        self.host.emit(item, sched_time)
+    def _emit(self, item, sched_time, node):
+        self.host.emit(item, sched_time, node)
 
     def visit_UNOP(self, ir, node):
         exp = self.visit(ir.exp, node)
@@ -502,7 +503,8 @@ class AHDLTranslator(object):
             _, cycle = ir.args[0]
             assert cycle.is_a(CONST)
             for i in range(cycle.value):
-                self._emit(AHDL_NOP('wait a cycle'), self.sched_time + i)
+                self._emit(AHDL_NOP('wait a cycle'),
+                           self.sched_time + i, node)
             return
         elif ir.sym.name == 'polyphony.timing.wait_rising':
             ports = []
@@ -510,7 +512,8 @@ class AHDLTranslator(object):
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(0), AHDL_CONST(1), *ports), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(0), AHDL_CONST(1), *ports),
+                       self.sched_time, node)
             return
         elif ir.sym.name == 'polyphony.timing.wait_falling':
             ports = []
@@ -518,7 +521,8 @@ class AHDLTranslator(object):
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(1), AHDL_CONST(0), *ports), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(1), AHDL_CONST(0), *ports),
+                       self.sched_time, node)
             return
         elif ir.sym.name == 'polyphony.timing.wait_edge':
             ports = []
@@ -530,7 +534,8 @@ class AHDLTranslator(object):
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', old, new, *ports), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_EDGE', old, new, *ports),
+                       self.sched_time, node)
             return
         elif ir.sym.name == 'polyphony.timing.wait_value':
             ports = []
@@ -542,7 +547,8 @@ class AHDLTranslator(object):
                 port_sig = self._port_sig(a.qualified_symbol())
                 p = AHDL_VAR(port_sig, Ctx.LOAD)
                 expects.append((value, p))
-            self._emit(AHDL_META_WAIT('WAIT_VALUE', *expects), self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_VALUE', *expects),
+                       self.sched_time, node)
             return
         else:
             # TODO: user-defined builtins
@@ -605,7 +611,7 @@ class AHDLTranslator(object):
                 dst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, Ctx.STORE), offset)
             else:
                 dst = AHDL_SUBSCRIPT(memvar, offset)
-            self._emit(AHDL_MOVE(dst, exp), self.sched_time)
+            self._emit(AHDL_MOVE(dst, exp), self.sched_time, node)
             return None
         return AHDL_STORE(memvar, exp, offset)
 
@@ -616,7 +622,7 @@ class AHDLTranslator(object):
                 if not(isinstance(item, CONST) and item.value is None):
                     store = MSTORE(node.tag.dst, CONST(i), item)
                     ahdl = self.visit(store, node)
-                    self._emit_memstore_sequence(ahdl, sched_time)
+                    self._emit_memstore_sequence(ahdl, sched_time, node)
                     sched_time += 1
         else:
             arraynode = array.sym.typ.get_memnode()
@@ -627,7 +633,7 @@ class AHDLTranslator(object):
                     memvar = AHDL_MEMVAR(sig, arraynode, Ctx.STORE)
                     ahdl_item = self.visit(item, node)
                     ahdl_move = AHDL_MOVE(AHDL_SUBSCRIPT(memvar, idx), ahdl_item)
-                    self._emit(ahdl_move, self.sched_time)
+                    self._emit(ahdl_move, self.sched_time, node)
 
     def visit_ARRAY(self, ir, node):
         # array expansion
@@ -756,30 +762,30 @@ class AHDLTranslator(object):
             exp = self.visit(ir.exp, node)
             if exp:
                 assert exp.is_a(AHDL_STORE)
-                self._emit_memstore_sequence(exp, self.sched_time)
+                self._emit_memstore_sequence(exp, self.sched_time, node)
         else:
             exp = self.visit(ir.exp, node)
             if exp:
-                self._emit(exp, self.sched_time)
+                self._emit(exp, self.sched_time, node)
 
     def visit_CJUMP(self, ir, node):
         cond = self.visit(ir.exp, node)
         if cond.is_a(AHDL_CONST) and cond.value == 1:
-            self._emit(AHDL_TRANSITION(ir.true), self.sched_time)
+            self._emit(AHDL_TRANSITION(ir.true), self.sched_time, node)
         else:
             cond_list = [cond, AHDL_CONST(1)]
             blocks = [AHDL_BLOCK('', [AHDL_TRANSITION(ir.true)]),
                       AHDL_BLOCK('', [AHDL_TRANSITION(ir.false)])]
-            self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time)
+            self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time, node)
 
     def visit_JUMP(self, ir, node):
-        self._emit(AHDL_TRANSITION(ir.target), self.sched_time)
+        self._emit(AHDL_TRANSITION(ir.target), self.sched_time, node)
 
     def visit_MCJUMP(self, ir, node):
         for c, target in zip(ir.conds[:-1], ir.targets[:-1]):
             if c.is_a(CONST) and c.value == 1:
                 cond = self.visit(c, node)
-                self._emit(AHDL_TRANSITION(target), self.sched_time)
+                self._emit(AHDL_TRANSITION(target), self.sched_time, node)
                 return
 
         cond_list = []
@@ -788,7 +794,7 @@ class AHDLTranslator(object):
             cond = self.visit(c, node)
             cond_list.append(cond)
             blocks.append(AHDL_BLOCK('', [AHDL_TRANSITION(target)]))
-        self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time)
+        self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time, node)
 
     def visit_RET(self, ir, node):
         pass
@@ -806,7 +812,7 @@ class AHDLTranslator(object):
             dst = None
         if ir.is_a(MOVE) and ir.src.is_a([NEW, CALL]) and ir.src.func_scope().is_module():
             return
-        self._emit_call_sequence(ahdl_call, dst, node, self.sched_time)
+        self._emit_call_sequence(ahdl_call, dst, self.sched_time, node)
 
         params = ahdl_call.scope.params
         for arg, param in zip(ahdl_call.args, params):
@@ -824,7 +830,7 @@ class AHDLTranslator(object):
                                       ahdl_call.instance_name,
                                       param_memnode,
                                       arg.memnode)
-                    self._emit(memsw, self.sched_time)
+                    self._emit(memsw, self.sched_time, node)
 
     def visit_MOVE(self, ir, node):
         if ir.src.is_a([CALL, NEW]):
@@ -850,7 +856,7 @@ class AHDLTranslator(object):
         elif src.is_a(AHDL_VAR) and dst.is_a(AHDL_VAR) and src.sig == dst.sig:
             return
         elif src.is_a(AHDL_LOAD):
-            self._emit_memload_sequence(src, self.sched_time)
+            self._emit_memload_sequence(src, self.sched_time, node)
             return
         elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
             memnode = dst.memnode
@@ -859,7 +865,9 @@ class AHDLTranslator(object):
                 if memnode.can_be_reg():
                     for i in range(memnode.length):
                         src_name = '{}{}'.format(src.sig.name, i)
-                        self._emit(AHDL_MOVE(AHDL_SUBSCRIPT(dst, AHDL_CONST(i)), AHDL_SYMBOL(src_name)), self.sched_time)
+                        self._emit(AHDL_MOVE(AHDL_SUBSCRIPT(dst, AHDL_CONST(i)),
+                                             AHDL_SYMBOL(src_name)),
+                                   self.sched_time, node)
                     return
                 else:
                     return
@@ -867,9 +875,9 @@ class AHDLTranslator(object):
                 return
             elif memnode.is_joinable():
                 memsw = AHDL_META('MEM_SWITCH', '', dst.memnode, src.memnode)
-                self._emit(memsw, self.sched_time)
+                self._emit(memsw, self.sched_time, node)
                 return
-        self._emit(AHDL_MOVE(dst, src), self.sched_time)
+        self._emit(AHDL_MOVE(dst, src), self.sched_time, node)
 
     def visit_PHI(self, ir, node):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
@@ -882,7 +890,7 @@ class AHDLTranslator(object):
         else:
             self._emit_scalar_mux(ir, node)
 
-    def _emit_call_sequence(self, ahdl_call, dst, node, sched_time):
+    def _emit_call_sequence(self, ahdl_call, dst, sched_time, node):
         assert ahdl_call.is_a(AHDL_MODULECALL)
         for arg in ahdl_call.args:
             if arg.is_a(AHDL_MEMVAR) and arg.memnode.can_be_reg():
@@ -893,16 +901,16 @@ class AHDLTranslator(object):
 
         step_n = node.latency()
         for i in range(step_n):
-            self._emit(AHDL_SEQ(ahdl_call, i, step_n), sched_time + i)
+            self._emit(AHDL_SEQ(ahdl_call, i, step_n), sched_time + i, node)
 
-    def _emit_memload_sequence(self, ahdl_load, sched_time):
+    def _emit_memload_sequence(self, ahdl_load, sched_time, node):
         assert ahdl_load.is_a(AHDL_LOAD)
         # TODO : step_n should be calculated from a memory type
         step_n = env.config.internal_ram_load_latency
         for i in range(step_n):
-            self._emit(AHDL_SEQ(ahdl_load, i, step_n), sched_time + i)
+            self._emit(AHDL_SEQ(ahdl_load, i, step_n), sched_time + i, node)
 
-    def _emit_memstore_sequence(self, ahdl_store, sched_time):
+    def _emit_memstore_sequence(self, ahdl_store, sched_time, node):
         assert ahdl_store.is_a(AHDL_STORE)
         # TODO : step_n should be calculated from a memory type
         if env.config.internal_ram_store_latency < 2:
@@ -910,7 +918,7 @@ class AHDLTranslator(object):
         else:
             step_n = env.config.internal_ram_store_latency
         for i in range(step_n):
-            self._emit(AHDL_SEQ(ahdl_store, i, step_n), sched_time + i)
+            self._emit(AHDL_SEQ(ahdl_store, i, step_n), sched_time + i, node)
 
     def _emit_mem_mux(self, ir, node):
         ahdl_dst = self.visit(ir.var, node)
@@ -924,7 +932,7 @@ class AHDLTranslator(object):
             assert ahdl_src.is_a(AHDL_MEMVAR)
             src_nodes.append(ahdl_src)
             conds.append(ahdl_cond)
-        self._emit(AHDL_META('MEM_MUX', '', ahdl_dst, src_nodes, conds), self.sched_time)
+        self._emit(AHDL_META('MEM_MUX', '', ahdl_dst, src_nodes, conds), self.sched_time, node)
 
     def _emit_scalar_mux(self, ir, node):
         ahdl_dst = self.visit(ir.var, node)
@@ -941,7 +949,7 @@ class AHDLTranslator(object):
             cond = self.visit(p, node)
             if_exp = AHDL_IF_EXP(cond, lexp, rexp)
             rexp = if_exp
-        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
+        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time, node)
 
     def _emit_reg_array_mux(self, ir, node):
         memnode = ir.var.symbol().typ.get_memnode()
@@ -973,7 +981,7 @@ class AHDLTranslator(object):
                     cond = self.visit(p, node)
                     if_exp = AHDL_IF_EXP(cond, lexp, rexp)
                 rexp = if_exp
-            self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
+            self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time, node)
 
         var_len = '{}_len'.format(ir.var.symbol().hdl_name())
         vlen = AHDL_SYMBOL(var_len)
@@ -994,7 +1002,7 @@ class AHDLTranslator(object):
             cond = self.visit(p, node)
             if_exp = AHDL_IF_EXP(cond, lexp, rexp)
             rexp = if_exp
-        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
+        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time, node)
 
     def visit_UPHI(self, ir, node):
         self.visit_PHI(ir, node)
@@ -1002,7 +1010,7 @@ class AHDLTranslator(object):
     def visit_LPHI(self, ir, node):
         self.visit_PHI(ir, node)
 
-    def _hooked_emit(self, ahdl, sched_time):
+    def _hooked_emit(self, ahdl, sched_time, node):
         self.hooked.append((ahdl, sched_time))
 
     def visit_CEXPR(self, ir, node):
@@ -1013,7 +1021,7 @@ class AHDLTranslator(object):
         self.visit_EXPR(ir, node)
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
-            self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time)
+            self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time, node)
 
     def visit_CMOVE(self, ir, node):
         cond = self.visit(ir.cond, node)
@@ -1023,7 +1031,7 @@ class AHDLTranslator(object):
         self.visit_MOVE(ir, node)
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
-            self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time)
+            self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time, node)
 
     def visit(self, ir, node):
         method = 'visit_' + ir.__class__.__name__
@@ -1147,7 +1155,7 @@ class AHDLTranslator(object):
                         sig_name = '{}_{}'.format(port_sig.name, call.func_scope().orig_name)
                         sig = self.hdlmodule.gen_sig(sig_name, 1)
                         src = AHDL_VAR(sig, Ctx.LOAD)
-                        self._emit(AHDL_MOVE(dst, src), self.sched_time)
+                        self._emit(AHDL_MOVE(dst, src), self.sched_time, node)
                     return
             assert False
 
@@ -1160,7 +1168,7 @@ class AHDLTranslator(object):
                             port_sig.is_output())
         step_n = node.latency()
         for i in range(step_n):
-            self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i)
+            self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i, node)
         return
 
     def _make_port_read_seq(self, target, port_sig, node):
@@ -1173,7 +1181,7 @@ class AHDLTranslator(object):
                            dst,
                            port_sig.is_input())
         for i in range(step_n):
-            self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
+            self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i, node)
 
     def _make_port_init(self, new, target, node):
         assert new.func_scope().is_port()
