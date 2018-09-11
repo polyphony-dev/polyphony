@@ -22,7 +22,7 @@ from .env import env
 from .errors import CompileError, InterpretError
 from .hdlgen import HDLModuleBuilder
 from .hdlmodule import HDLModule
-from .iftransform import IfTransformer
+from .iftransform import IfTransformer, IfCondTransformer
 from .inlineopt import InlineOpt
 from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
 from .inlineopt import AliasReplacer, ObjectHierarchyCopier
@@ -139,6 +139,10 @@ def scopegraph(driver):
 
 def iftrans(driver, scope):
     IfTransformer().process(scope)
+
+
+def ifcondtrans(driver, scope):
+    IfCondTransformer().process(scope)
 
 
 def reduceblk(driver, scope):
@@ -517,8 +521,8 @@ def dumpscope(driver, scope):
 
 def dumpcfgimg(driver, scope):
     from .scope import write_dot
-    if scope.is_function_module() or scope.is_method() or scope.is_module():
-        write_dot(scope, driver.stage)
+    if scope.is_function() or scope.is_function_module() or scope.is_method() or scope.is_module():
+        write_dot(scope, f'{driver.stage - 1}_{driver.procs[driver.stage - 1].__name__}')
 
 
 def dumpdfgimg(driver, scope):
@@ -603,6 +607,8 @@ def compile_plan():
         typeprop,
         dbg(dumpscope),
         latequadruple,
+        ifcondtrans,
+        dbg(dumpscope),
         scopegraph,
         earlyrestrictioncheck,
         typecheck,

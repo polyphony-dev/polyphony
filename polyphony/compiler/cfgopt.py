@@ -153,13 +153,6 @@ class PathExpTracer(object):
             self.traverse_dtree(child)
 
 
-def make_else_cond(conds):
-    exp = conds[0]
-    for cond in conds[1:]:
-        exp = RELOP('Or', exp, cond)
-    return UNOP('Not', exp)
-
-
 def merge_path_exp(pred, blk, idx_hint=-1):
     jump = pred.stms[-1]
     exp = None
@@ -176,11 +169,7 @@ def merge_path_exp(pred, blk, idx_hint=-1):
                 idx = idx_hint
             else:
                 assert False
-            if idx == len(jump.targets) - 1 and jump.conds[idx].is_a(CONST) and jump.conds[idx].value:
-                else_cond = make_else_cond(jump.conds[:-1])
-                exp = rel_and_exp(pred.path_exp, else_cond)
-            else:
-                exp = rel_and_exp(pred.path_exp, jump.conds[idx])
+            exp = rel_and_exp(pred.path_exp, jump.conds[idx])
     return exp
 
 
@@ -470,47 +459,7 @@ class HyperBlockBuilder(object):
         return remains
 
     def _move_to_diamond_head_for_remains(self, head, path_exps, path_remain_stms):
-        # if-elif-else conditions (path expressions) are converted as follows
-        #
-        # if p0:   ...
-        # elif p1: ...
-        # elif p2: ...
-        # else:    ...
-        #
-        # if p0:   ...
-        # if !p0 and p1: ...
-        # if !p0 and !p1 and p2: ...
-        # if !p0 and !p1 and !p2: ...
-        predicates = []
-        prevs = []
-        new_predicates = []
-        for p in path_exps:
-            if p.is_a(TEMP):
-                predicates.append(p)
-            else:
-                new_sym = self.scope.add_condition_sym()
-                new_sym.typ = Type.bool_t
-                mv = MOVE(TEMP(new_sym, Ctx.STORE), p)
-                mv.lineno = p.lineno
-                head.insert_stm(-1, mv)
-                predicates.append(TEMP(new_sym, Ctx.LOAD))
-        for p in predicates:
-            new_p = None
-            for pp in prevs:
-                if new_p:
-                    new_p = RELOP('And', new_p, UNOP('Not', pp))
-                else:
-                    new_p = UNOP('Not', pp)
-                new_p.lineno = p.lineno
-            if new_p:
-                new_p = RELOP('And', new_p, p)
-                new_p.lineno = p.lineno
-            else:
-                new_p = p
-            new_predicates.append(new_p)
-            prevs.append(p)
-        # And the statement becomes a conditional statement and moves to the head block
-        for p, stms in zip(new_predicates, path_remain_stms):
+        for p, stms in zip(path_exps, path_remain_stms):
             for stm in stms:
                 if stm.is_a(CMOVE) or stm.is_a(CEXPR):
                     cstm = stm
