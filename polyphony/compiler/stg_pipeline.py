@@ -326,7 +326,10 @@ class PipelineStageBuilder(STGItemBuilder):
                 stm2stage_num[c] = i
                 if c.is_a(AHDL_IF):
                     for ahdlblk in c.blocks:
-                        _make_stm2stage_num_rec(ahdlblk.codes)
+                        if ahdlblk.is_a(AHDL_BLOCK):
+                            _make_stm2stage_num_rec(ahdlblk.codes)
+                        else:
+                            _make_stm2stage_num_rec([ahdlblk])
         stm2stage_num = {}
         for i, s in enumerate(pstate.stages):
             _make_stm2stage_num_rec(s.codes)
@@ -336,7 +339,8 @@ class PipelineStageBuilder(STGItemBuilder):
         if (ahdl.is_a(AHDL_PROCCALL) or
                 ahdl.is_a(AHDL_IF) or
                 (ahdl.is_a(AHDL_MOVE) and ((ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_reg()) or
-                                           ahdl.dst.is_a(AHDL_SUBSCRIPT)))):
+                                           ahdl.dst.is_a(AHDL_SUBSCRIPT))) or
+                ahdl.is_a(AHDL_SEQ)):
             return True
         return False
 

@@ -1014,23 +1014,23 @@ class AHDLTranslator(object):
         self.hooked.append((ahdl, sched_time))
 
     def visit_CEXPR(self, ir, node):
-        cond = self.visit(ir.cond, node)
         orig_emit_func = self._emit
         self._emit = self._hooked_emit
         self.hooked = []
         self.visit_EXPR(ir, node)
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
+            cond = self.visit(ir.cond, node)
             self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time, node)
 
     def visit_CMOVE(self, ir, node):
-        cond = self.visit(ir.cond, node)
         orig_emit_func = self._emit
         self._emit = self._hooked_emit
         self.hooked = []
         self.visit_MOVE(ir, node)
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
+            cond = self.visit(ir.cond, node)
             self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time, node)
 
     def visit(self, ir, node):

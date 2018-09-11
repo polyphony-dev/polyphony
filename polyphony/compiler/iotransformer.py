@@ -7,15 +7,14 @@ from .utils import find_only_one_in
 
 class IOTransformer(AHDLVisitor):
     def __init__(self):
+        super().__init__()
         self.removes = []
 
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
         self.current_block = None
-        for fsm in self.hdlmodule.fsms.values():
-            for stg in fsm.stgs:
-                for state in stg.states:
-                    self.visit(state)
+        self.current_stage = None
+        super().process(hdlmodule)
         self.post_process()
 
     def post_process(self):
@@ -49,9 +48,12 @@ class IOTransformer(AHDLVisitor):
             io = self.hdlmodule.accessors[ahdl.io.sig.name]
         else:
             io = self.hdlmodule.local_readers[ahdl.io.sig.name]
-        if isinstance(self.current_block, PipelineStage):
-            stage = self.current_block
-            return io.pipelined_read_sequence(step, step_n, ahdl.dst, stage)
+        if isinstance(self.current_state, PipelineState):
+            assert isinstance(self.current_stage, PipelineStage)
+            local_stms, stage_stms = io.pipelined_read_sequence(step, step_n, ahdl.dst,
+                                                                self.current_stage)
+            self.current_stage.codes.extend(stage_stms)
+            return local_stms
         else:
             return io.read_sequence(step, step_n, ahdl.dst)
 
@@ -62,9 +64,12 @@ class IOTransformer(AHDLVisitor):
             io = self.hdlmodule.accessors[ahdl.io.sig.name]
         else:
             io = self.hdlmodule.local_writers[ahdl.io.sig.name]
-        if isinstance(self.current_block, PipelineStage):
-            stage = self.current_block
-            return io.pipelined_write_sequence(step, step_n, ahdl.src, stage)
+        if isinstance(self.current_state, PipelineState):
+            assert isinstance(self.current_stage, PipelineStage)
+            local_stms, stage_stms = io.pipelined_write_sequence(step, step_n, ahdl.src,
+                                                                 self.current_stage)
+            self.current_stage.codes.extend(stage_stms)
+            return local_stms
         else:
             return io.write_sequence(step, step_n, ahdl.src)
 
@@ -81,18 +86,28 @@ class IOTransformer(AHDLVisitor):
     def visit_AHDL_LOAD_SEQ(self, ahdl, step, step_n):
         is_continuous = self._is_continuous_access_to_mem(ahdl)
         memacc = self.hdlmodule.local_readers[ahdl.mem.sig.name]
-        if isinstance(self.current_block, PipelineStage):
-            stage = self.current_block
-            return memacc.pipelined(stage).read_sequence(step, step_n, ahdl.offset, ahdl.dst, is_continuous)
+        if isinstance(self.current_state, PipelineState):
+            assert isinstance(self.current_stage, PipelineStage)
+            pmemacc = memacc.pipelined(self.current_stage)
+            local_stms, stage_stms = pmemacc.read_sequence(step, step_n,
+                                                           ahdl.offset, ahdl.dst,
+                                                           is_continuous)
+            self.current_stage.codes.extend(stage_stms)
+            return local_stms
         else:
             return memacc.read_sequence(step, step_n, ahdl.offset, ahdl.dst, is_continuous)
 
     def visit_AHDL_STORE_SEQ(self, ahdl, step, step_n):
         is_continuous = self._is_continuous_access_to_mem(ahdl)
         memacc = self.hdlmodule.local_writers[ahdl.mem.sig.name]
-        if isinstance(self.current_block, PipelineStage):
-            stage = self.current_block
-            return memacc.pipelined(stage).write_sequence(step, step_n, ahdl.offset, ahdl.src, is_continuous)
+        if isinstance(self.current_state, PipelineState):
+            assert isinstance(self.current_stage, PipelineStage)
+            pmemacc = memacc.pipelined(self.current_stage)
+            local_stms, stage_stms = pmemacc.write_sequence(step, step_n,
+                                                            ahdl.offset, ahdl.src,
+                                                            is_continuous)
+            self.current_stage.codes.extend(stage_stms)
+            return local_stms
         else:
             return memacc.write_sequence(step, step_n, ahdl.offset, ahdl.src, is_continuous)
 
@@ -114,12 +129,7 @@ class IOTransformer(AHDLVisitor):
                 meta_wait_ = find_only_one_in(AHDL_META_WAIT, self.current_block.codes)
                 assert meta_wait_
                 meta_wait.transition = meta_wait_.transition
-
-        # TODO: workaround
-        if self.current_block.codes and self.current_block.codes[0].is_a(AHDL_PIPELINE_GUARD):
-            self.current_block.codes = self.current_block.codes[0:1] + list(seq) + self.current_block.codes[1:]
-        else:
-            self.current_block.codes = list(seq) + self.current_block.codes
+        self.current_block.codes = list(seq) + self.current_block.codes
 
     def visit_AHDL_IF(self, ahdl):
         for cond in ahdl.conds:
@@ -135,6 +145,10 @@ class IOTransformer(AHDLVisitor):
         for code in ahdl.codes[:]:
             self.visit(code)
         self.current_block = old_block
+
+    def visit_PipelineStage(self, ahdl):
+        self.current_stage = ahdl
+        self.visit_AHDL_BLOCK(ahdl)
 
 
 class WaitTransformer(AHDLVisitor):

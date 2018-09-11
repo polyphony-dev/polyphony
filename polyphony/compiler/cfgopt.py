@@ -3,8 +3,9 @@ from .block import Block
 from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
-from .irhelper import reduce_relexp
-from .utils import remove_except_one, replace_item
+from .irhelper import reduce_relexp, is_port_method_call
+from .type import Type
+from .utils import remove_except_one
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -159,7 +160,7 @@ def make_else_cond(conds):
     return UNOP('Not', exp)
 
 
-def merge_path_exp(pred, blk):
+def merge_path_exp(pred, blk, idx_hint=-1):
     jump = pred.stms[-1]
     exp = None
     if jump.is_a(CJUMP):
@@ -169,8 +170,12 @@ def merge_path_exp(pred, blk):
             exp = rel_and_exp(pred.path_exp, UNOP('Not', jump.exp))
     elif jump.is_a(MCJUMP):
         if blk in jump.targets:
-            assert 1 == jump.targets.count(blk)
-            idx = jump.targets.index(blk)
+            if 1 == jump.targets.count(blk):
+                idx = jump.targets.index(blk)
+            elif idx_hint >= 0:
+                idx = idx_hint
+            else:
+                assert False
             if idx == len(jump.targets) - 1 and jump.conds[idx].is_a(CONST) and jump.conds[idx].value:
                 else_cond = make_else_cond(jump.conds[:-1])
                 exp = rel_and_exp(pred.path_exp, else_cond)
@@ -406,12 +411,25 @@ class HyperBlockBuilder(object):
                 return True
             return False
 
-    def _has_mem_access(self, stm):
+    def _try_get_mem(self, stm):
         if stm.is_a(MOVE) and stm.src.is_a(MREF):
-            mem = stm.src.mem
+            return stm.src.mem
         elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
-            mem = stm.exp.mem
+            return stm.exp.mem
         else:
+            return None
+
+    def _try_get_port(self, stm):
+        if stm.is_a(MOVE) and is_port_method_call(stm.src):
+            return stm.src.func.tail()
+        elif stm.is_a(EXPR) and is_port_method_call(stm.exp):
+            return stm.src.func.tail()
+        else:
+            return None
+
+    def _has_mem_access(self, stm):
+        mem = self._try_get_mem(stm)
+        if mem is None:
             return False
         if mem.symbol().typ.has_length():
             l = mem.symbol().typ.get_length()
@@ -426,53 +444,108 @@ class HyperBlockBuilder(object):
             return True
         return False
 
-    def _emigrate_to_diamond_head(self, head, blk):
-        unmoves = set()
-        # TODO: port access by cexpr
+    def _move_to_diamond_head(self, head, blk):
+        remains = []
+        # We need to ignore the statement accessing the resource
         for stm in blk.stms[:-1]:
-            if self._has_timing_function(stm):
-                unmoves.add(stm)
-            elif self._has_mem_access(stm):
-                unmoves.add(stm)
-            elif self._has_instance_var_modification(stm):
-                unmoves.add(stm)
-        for stm in blk.stms[:-1]:
-            if stm in unmoves:
+            if (stm.is_a(EXPR) or
+                    self._has_timing_function(stm) or
+                    self._has_mem_access(stm) or
+                    self._has_instance_var_modification(stm)):
+                remains.append(stm)
                 continue
-            skip = False
-            usesyms = self.scope.usedef.get_syms_used_at(stm)
-            for sym in usesyms:
-                defstms = self.scope.usedef.get_stms_defining(sym)
-                intersection = defstms & unmoves
-                if intersection:
-                    unmoves.add(stm)
-                    skip = True
-                    break
-            if skip:
-                continue
-            if stm.is_a(MOVE):
-                head.insert_stm(-1, stm)
-            elif stm.is_a(EXPR) and not stm.is_a(CEXPR):
-                cexpr = CEXPR(blk.path_exp.clone(), stm.exp.clone())
-                cexpr.lineno = stm.lineno
-                head.insert_stm(-1, cexpr)
             else:
-                head.insert_stm(-1, stm)
-        return unmoves
+                skip = False
+                usesyms = self.scope.usedef.get_syms_used_at(stm)
+                for sym in usesyms:
+                    defstms = self.scope.usedef.get_stms_defining(sym)
+                    intersection = defstms & set(remains)
+                    if intersection:
+                        remains.append(stm)
+                        skip = True
+                        break
+                if skip:
+                    continue
+            head.insert_stm(-1, stm)
+        return remains
+
+    def _move_to_diamond_head_for_remains(self, head, path_exps, path_remain_stms):
+        # if-elif-else conditions (path expressions) are converted as follows
+        #
+        # if p0:   ...
+        # elif p1: ...
+        # elif p2: ...
+        # else:    ...
+        #
+        # if p0:   ...
+        # if !p0 and p1: ...
+        # if !p0 and !p1 and p2: ...
+        # if !p0 and !p1 and !p2: ...
+        predicates = []
+        prevs = []
+        new_predicates = []
+        for p in path_exps:
+            if p.is_a(TEMP):
+                predicates.append(p)
+            else:
+                new_sym = self.scope.add_condition_sym()
+                new_sym.typ = Type.bool_t
+                mv = MOVE(TEMP(new_sym, Ctx.STORE), p)
+                mv.lineno = p.lineno
+                head.insert_stm(-1, mv)
+                predicates.append(TEMP(new_sym, Ctx.LOAD))
+        for p in predicates:
+            new_p = None
+            for pp in prevs:
+                if new_p:
+                    new_p = RELOP('And', new_p, UNOP('Not', pp))
+                else:
+                    new_p = UNOP('Not', pp)
+                new_p.lineno = p.lineno
+            if new_p:
+                new_p = RELOP('And', new_p, p)
+                new_p.lineno = p.lineno
+            else:
+                new_p = p
+            new_predicates.append(new_p)
+            prevs.append(p)
+        # And the statement becomes a conditional statement and moves to the head block
+        for p, stms in zip(new_predicates, path_remain_stms):
+            for stm in stms:
+                if stm.is_a(CMOVE) or stm.is_a(CEXPR):
+                    cstm = stm
+                elif stm.is_a(MOVE):
+                    cstm = CMOVE(p, stm.dst.clone(), stm.src.clone())
+                elif stm.is_a(EXPR):
+                    cstm = CEXPR(p, stm.exp.clone())
+                else:
+                    assert False
+                stm.block.stms.remove(stm)
+                cstm.lineno = stm.lineno
+                head.insert_stm(-1, cstm)
 
     def _merge_diamond_blocks(self, head, tail, branches):
         visited_path = set()
-        for path in branches:
+        path_exps = []
+        path_remain_stms = []
+        for idx, path in enumerate(branches):
             if path[0] in visited_path:
                 continue
             else:
-                visited_path.add(path[0])
+                visited_path.update(set(path))
             assert tail is path[-1]
+            remains = []
             for blk in path[:-1]:
                 assert len(blk.succs) == 1
-                unmoves = self._emigrate_to_diamond_head(head, blk)
-
+                remains_ = self._move_to_diamond_head(head, blk)
+                remains.extend(remains_)
                 for stm in blk.stms[:-1]:
-                    if stm not in unmoves:
-                        blk.stms.remove(stm)
+                    if stm in remains:
+                        continue
+                    blk.stms.remove(stm)
+            path_exp = merge_path_exp(head, path[0], idx)
+            path_exps.append(path_exp)
+            path_remain_stms.append(remains)
+        if head.synth_params['scheduling'] == 'pipeline':
+            self._move_to_diamond_head_for_remains(head, path_exps, path_remain_stms)
         head.is_hyperblock = True

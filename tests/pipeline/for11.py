@@ -1,12 +1,13 @@
 from polyphony import testbench
 from polyphony import pipelined
-from polyphony import rule
+
 
 def pipe11(xs, ys):
     for i in pipelined(range(len(xs) - 1), ii=2):
         v = xs[i] + xs[i + 1]
         v >>= 1
         ys[i] = v
+
 
 @testbench
 def test():
