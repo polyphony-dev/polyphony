@@ -22,6 +22,24 @@ class AHDL(object):
     def is_a(self, cls):
         return is_a(self, cls)
 
+    def find_ahdls(self, typ):
+        ahdls = []
+
+        def find_ahdls_rec(ahdl, typ, ahdls):
+            #print(ahdl)
+            if ahdl.is_a(typ):
+                ahdls.append(ahdl)
+            for k, v in ahdl.__dict__.items():
+                if isinstance(v, AHDL):
+                    if v is self:
+                        continue
+                    find_ahdls_rec(v, typ, ahdls)
+                elif isinstance(v, list) or isinstance(v, tuple):
+                    for elm in filter(lambda w:isinstance(w, AHDL),  v):
+                        find_ahdls_rec(elm, typ, ahdls)
+        find_ahdls_rec(self, typ, ahdls)
+        return ahdls
+
 
 class AHDL_EXP(AHDL):
     pass
@@ -645,7 +663,7 @@ class AHDL_CASE_ITEM(AHDL_STM):
         self.block = block
 
     def __str__(self):
-        return '{}:{}'.format(self.val, str(self.stm))
+        return '{}:{}'.format(self.val, str(self.block))
 
 
 class AHDL_TRANSITION(AHDL_STM):

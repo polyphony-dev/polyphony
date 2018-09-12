@@ -735,7 +735,9 @@ class PipelinedRAMAccessor(RAMAccessor):
                 valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
             local_stms = (AHDL_MOVE(addr, offset),
                           AHDL_MOVE(d, src))
-            stage_stms = (AHDL_MOVE(we, valid_rhs),)
+            stage_stms = tuple()
+            self.pipeline_state.add_global_move(we.name,
+                                                AHDL_MOVE(we, valid_rhs))
             self.pipeline_state.add_global_move(req.name,
                                                 AHDL_MOVE(req, valid_rhs))
         else:

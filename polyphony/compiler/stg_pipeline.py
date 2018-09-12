@@ -247,14 +247,17 @@ class PipelineStageBuilder(STGItemBuilder):
         guarded_codes = []
         if stage.step == 0 and pstate.is_finite_loop:
             stage.has_enable = True
-        for i, c in enumerate(stage.codes[:]):
-            if c.is_a(AHDL_SEQ) and c.step == 0:
-                if c.factor.is_a([AHDL_IO_READ, AHDL_IO_WRITE]):
-                    stage.has_enable = True
-                    if c.factor.is_a(AHDL_IO_WRITE):
-                        stage.is_source = True
-            if stage.step > 0:
-                stage.has_hold = True
+        if stage.step > 0:
+            stage.has_hold = True
+        for c in stage.codes:
+            for seq in c.find_ahdls(AHDL_SEQ):
+                if seq.step == 0:
+                    ahdl_io = seq.find_ahdls([AHDL_IO_READ, AHDL_IO_WRITE])
+                    if ahdl_io:
+                        stage.has_enable = True
+                        if any([a.is_a(AHDL_IO_WRITE) for a in ahdl_io]):
+                            stage.is_source = True
+        for c in stage.codes[:]:
             if self._check_guard_need(c):
                 guarded_codes.append(c)
                 stage.codes.remove(c)
