@@ -853,6 +853,7 @@ class AssertionChecker(IRVisitor):
 
 class SynthesisParamChecker(object):
     def process(self, scope):
+        self.scope = scope
         if scope.synth_params['scheduling'] == 'pipeline' and not scope.is_worker():
             fail((scope, scope.lineno), Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
         for blk in scope.traverse_blocks():
@@ -876,6 +877,8 @@ class SynthesisParamChecker(object):
             usestms = [stm for stm in usestms if stm.block in loop.blocks()]
             readstms = [stm for stm in usestms if stm.is_a(MOVE) and stm.src.is_a(MREF)]
             writestms = [stm for stm in usestms if stm.is_a(EXPR) and stm.exp.is_a(MSTORE)]
+            readstms = self._filter_by_parallel_hint(readstms)
+            writestms = self._filter_by_parallel_hint(writestms)
             if len(readstms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
                 warn(readstms[1], Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])
@@ -885,6 +888,16 @@ class SynthesisParamChecker(object):
             if len(readstms) >= 1 and len(writestms) >= 1:
                 sym = sym.ancestor if sym.ancestor else sym
                 warn(writestms[0], Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT, [sym])
+
+    def _filter_by_parallel_hint(self, stms):
+        new_stms = []
+        for stm in stms:
+            hints = self.scope.flattened_parallel_hints(stm)
+            if set(hints) & set(stms):
+                pass
+            else:
+                new_stms.append(stm)
+        return new_stms
 
     def _check_port_conflict_in_pipeline(self, loop, scope):
         syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()

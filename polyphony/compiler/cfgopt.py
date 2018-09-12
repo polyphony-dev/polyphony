@@ -459,7 +459,9 @@ class HyperBlockBuilder(object):
         return remains
 
     def _move_to_diamond_head_for_remains(self, head, path_exps, path_remain_stms):
+        path_cstms = []
         for p, stms in zip(path_exps, path_remain_stms):
+            cstms = []
             for stm in stms:
                 if stm.is_a(CMOVE) or stm.is_a(CEXPR):
                     cstm = stm
@@ -472,6 +474,13 @@ class HyperBlockBuilder(object):
                 stm.block.stms.remove(stm)
                 cstm.lineno = stm.lineno
                 head.insert_stm(-1, cstm)
+                cstms.append(cstm)
+            path_cstms.append(cstms)
+        if len(path_cstms) > 1:
+            for i, cstms in enumerate(path_cstms):
+                nested_other_cstms = path_cstms[:i] + path_cstms[i + 1:]
+                for cstm in cstms:
+                    self.scope.add_parallel_hint(cstm, nested_other_cstms)
 
     def _merge_diamond_blocks(self, head, tail, branches):
         visited_path = set()
@@ -492,9 +501,10 @@ class HyperBlockBuilder(object):
                     if stm in remains:
                         continue
                     blk.stms.remove(stm)
-            path_exp = merge_path_exp(head, path[0], idx)
-            path_exps.append(path_exp)
-            path_remain_stms.append(remains)
+            if remains:
+                path_exp = merge_path_exp(head, path[0], idx)
+                path_exps.append(path_exp)
+                path_remain_stms.append(remains)
         if head.synth_params['scheduling'] == 'pipeline':
             self._move_to_diamond_head_for_remains(head, path_exps, path_remain_stms)
         head.is_hyperblock = True

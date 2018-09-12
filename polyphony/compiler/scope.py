@@ -1,4 +1,5 @@
-﻿from collections import defaultdict, namedtuple
+﻿import itertools
+from collections import defaultdict, namedtuple
 from copy import copy
 from .block import Block
 from .common import Tagged, fail
@@ -158,6 +159,7 @@ class Scope(Tagged):
         self.type_args = []
         self.synth_params = make_synth_params()
         self.constants = {}
+        self.parallel_hints = {}
 
     def __str__(self):
         s = '\n================================\n'
@@ -596,6 +598,19 @@ class Scope(Tagged):
     def traverse_regions(self, reverse=False):
         return self.loop_tree.traverse(reverse)
 
+    def add_parallel_hint(self, k, v):
+        if k in self.parallel_hints:
+            assert False
+        assert isinstance(v, list)
+        self.parallel_hints[k] = v
+
+    def flattened_parallel_hints(self, k):
+        if k in self.parallel_hints:
+            hints = self.parallel_hints[k]
+            flatten_hints = [stm for stm in itertools.chain(*hints)]
+            return flatten_hints
+        else:
+            return []
 
 class SymbolReplacer(IRVisitor):
     def __init__(self, sym_map):

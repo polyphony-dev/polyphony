@@ -619,6 +619,9 @@ class DFGBuilder(object):
                     for i in range(len(sorted_nodes) - 1):
                         n1 = sorted_nodes[i]
                         n2 = sorted_nodes[i + 1]
+                        hints = self.scope.flattened_parallel_hints(n1.tag)
+                        if n2.tag in hints:
+                            continue
                         dfg.add_seq_edge(n1, n2)
 
     def _add_edges_between_func_modules(self, blocks, dfg):

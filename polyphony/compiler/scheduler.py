@@ -370,23 +370,9 @@ class PipelineScheduler(SchedulerImpl):
     def _schedule(self, dfg):
         self._schedule_cycles(dfg)
         self._schedule_ii(dfg)
+        conflict_res_table = self._make_conflict_res_table()
+        self._schedule_ii_for_conflict(dfg, conflict_res_table)
         self._remove_alias_if_needed(dfg)
-
-        conflict_res_table = defaultdict(list)
-        for node, mems in self.res_extractor.mems.items():
-            for m in mems:
-                conflict_res_table[m].append(node)
-        for node, ports in self.res_extractor.ports.items():
-            for p in ports:
-                conflict_res_table[p].append(node)
-        if conflict_res_table.values():
-            max_node_n = max([len(nodes) for nodes in conflict_res_table.values()])
-            request_ii = int(dfg.synth_params['ii'])
-            if request_ii == -1:
-                dfg.ii = max(dfg.ii, max_node_n)
-            elif request_ii < max_node_n:
-                fail((self.scope, dfg.region.head.stms[0].lineno),
-                     Errors.RULE_INVALID_II, [request_ii, max_node_n])
         node2state = {}
         block_nodes = self._group_nodes_by_block(dfg)
         longest_latency = 0
@@ -395,10 +381,23 @@ class PipelineScheduler(SchedulerImpl):
                                                        nodes,
                                                        conflict_res_table,
                                                        node2state)
+            if conflict_res_table:
+                latency = self._parallelize_branch_conflict(dfg, conflict_res_table, node2state)
             if longest_latency < latency:
                 longest_latency = latency
             self._fill_defuse_gap(dfg, nodes)
         return longest_latency
+
+    def _make_conflict_res_table(self):
+        conflict_res_table = defaultdict(list)
+        self._extend_conflict_res_table(conflict_res_table, self.res_extractor.mems)
+        self._extend_conflict_res_table(conflict_res_table, self.res_extractor.ports)
+        return conflict_res_table
+
+    def _extend_conflict_res_table(self, table, node_res_map):
+        for node, res in node_res_map.items():
+            for r in res:
+                table[r].append(node)
 
     def _schedule_ii(self, dfg):
         initiation_interval = int(dfg.synth_params['ii'])
@@ -438,15 +437,42 @@ class PipelineScheduler(SchedulerImpl):
             res.extend(self.res_extractor.ports[node])
         return res
 
+    def _schedule_ii_for_conflict(self, dfg, conflict_res_table):
+        if conflict_res_table.values():
+            max_conflict_n = 0
+            for nodes in conflict_res_table.values():
+                if len(nodes) == 1:
+                    continue
+                stms = [n.tag for n in nodes]
+                for stm in stms:
+                    parallel_stms = self.scope.flattened_parallel_hints(stm)
+                    if parallel_stms:
+                        conflict_n = len(set(stms) - set(parallel_stms))
+                        max_conflict_n = max(max_conflict_n, conflict_n)
+                    else:
+                        max_conflict_n = max(max_conflict_n, len(nodes))
+            request_ii = int(dfg.synth_params['ii'])
+            if request_ii == -1:
+                dfg.ii = max(dfg.ii, max_conflict_n)
+            elif request_ii < max_conflict_n:
+                fail((self.scope, dfg.region.head.stms[0].lineno),
+                     Errors.RULE_INVALID_II, [request_ii, max_conflict_n])
+
     def _shift_sched_time_for_conflict(self, scheduled_time, n, state_n, conflict_res_table, node2state):
         conflict_node_states = set()
         for r in self._get_using_resources(n):
-            conflict_nodes = conflict_res_table[r]
-            assert n in conflict_nodes
-            for cn in conflict_nodes:
-                if cn is not n and cn in node2state:
-                    conflict_node_states.add(node2state[cn])
-        assert len(conflict_node_states) <= state_n
+            if r in conflict_res_table:
+                conflict_nodes = list(conflict_res_table[r])
+                parallel_stms = self.scope.flattened_parallel_hints(n.tag)
+                if parallel_stms:
+                    for cn in conflict_nodes[:]:
+                        if cn.tag in parallel_stms:
+                            conflict_nodes.remove(cn)
+                assert n in conflict_nodes
+                for cn in conflict_nodes:
+                    if cn is not n and cn in node2state:
+                        conflict_node_states.add(node2state[cn])
+        assert len(conflict_node_states) < state_n
         node_state = scheduled_time % state_n
         while node_state in conflict_node_states:
             scheduled_time += 1
@@ -482,6 +508,39 @@ class PipelineScheduler(SchedulerImpl):
                                                     node2state)
         else:
             return latency
+
+    def _parallelize_branch_conflict(self, dfg, conflict_res_table, node2state):
+        next_candidates = set()
+        for conflict_nodes in conflict_res_table.values():
+            state2node = defaultdict(list)
+            for n in conflict_nodes:
+                state = node2state[n]
+                state2node[state].append(n)
+            for n in sorted(conflict_nodes, key=lambda n:n.begin):
+                # We search an node that in the same state and also in different stages
+                state = node2state[n]
+                same_state_nodes = state2node[state]
+                diff_stages = [nn.begin for nn in same_state_nodes if nn.begin != n.begin]
+                if not diff_stages:
+                    # non conflict node
+                    continue
+                if n.tag in self.scope.parallel_hints:
+                    hints_list = self.scope.parallel_hints[n.tag]
+                    nearests = []
+                    for hints in hints_list:
+                        if hints:
+                            hint_nodes = set([dfg.find_node(h) for h in hints])
+                            xnodes = set(conflict_nodes) & set(hint_nodes)
+                            xnodes = sorted(xnodes, key=lambda n:n.begin)
+                            nearests.append(xnodes[0])
+                    late_nearests = sorted(nearests, key=lambda n:n.begin)[-1]
+                    n.begin = late_nearests.begin
+                    succs = dfg.succs_without_back(n)
+                    next_candidates = next_candidates.union(succs)
+        return self._list_schedule_for_pipeline(dfg,
+                                                next_candidates,
+                                                conflict_res_table,
+                                                node2state)
 
     def _node_sched_pipeline(self, dfg, node):
         preds = dfg.preds_without_back(node)
