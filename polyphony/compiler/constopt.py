@@ -293,13 +293,12 @@ class ConstantOpt(ConstantOptBase):
                         worklist.append(mv)
                         dead_stms.append(stm)
                         break
-                if stm.block.is_hyperblock:
-                    for p in stm.ps[:]:
-                        if (p.is_a(CONST) and not p.value or
-                                p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
-                            idx = stm.ps.index(p)
-                            stm.ps.pop(idx)
-                            stm.args.pop(idx)
+                for p in stm.ps[:]:
+                    if (p.is_a(CONST) and not p.value or
+                            p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
+                        idx = stm.ps.index(p)
+                        stm.ps.pop(idx)
+                        stm.args.pop(idx)
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.block
