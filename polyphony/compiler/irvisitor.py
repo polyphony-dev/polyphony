@@ -1,3 +1,6 @@
+from .ir import IRStm
+
+
 class IRVisitor(object):
     def __init__(self):
         pass
@@ -15,7 +18,6 @@ class IRVisitor(object):
 
     def _process_block(self, block):
         for stm in block.stms:
-            self.current_stm = stm
             self.visit(stm)
         if block.path_exp:
             self.visit(block.path_exp)
@@ -23,6 +25,8 @@ class IRVisitor(object):
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
+        if ir.is_a(IRStm):
+            self.current_stm = ir
         if visitor:
             return visitor(ir)
         else:
@@ -134,7 +138,6 @@ class IRTransformer(IRVisitor):
     def _process_block(self, block):
         self.new_stms = []
         for stm in block.stms:
-            self.current_stm = stm
             self.visit(stm)
         block.stms = self.new_stms
         #set the pointer to the block to each stm

@@ -64,7 +64,8 @@ class DFNode(object):
 
 
 class DataFlowGraph(object):
-    def __init__(self, name, parent, region):
+    def __init__(self, scope, name, parent, region):
+        self.scope = scope
         self.name = name
         self.region = region
         #self.blocks = blocks
@@ -127,6 +128,8 @@ class DataFlowGraph(object):
     def add_seq_edge(self, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
+        #assert not self.scope.has_branch_edge(n1.tag, n2.tag)
+
         if (n1, n2) not in self.edges:
             self._add_edge(n1, n2, 'Seq', False)
         else:
@@ -291,7 +294,7 @@ class DataFlowGraph(object):
             node_dict[n.tag.block.num].append(n)
         result = []
         for ns in node_dict.values():
-            result.extend(sorted(ns, key=lambda n: n.begin))
+            result.extend(sorted(ns, key=lambda n: (n.begin, n.end)))
         return result
 
     def get_loop_nodes(self):
@@ -419,7 +422,7 @@ class DFGBuilder(object):
 
     def _make_graph(self, parent_dfg, region):
         logger.debug('make graph ' + region.name)
-        dfg = DataFlowGraph(region.name, parent_dfg, region)
+        dfg = DataFlowGraph(self.scope, region.name, parent_dfg, region)
         usedef = self.scope.usedef
 
         blocks = region.blocks()
@@ -613,16 +616,18 @@ class DFGBuilder(object):
                                 if n2.tag.is_mem_write():
                                     dfg.add_usedef_edge(n1, n2)
                                 continue
+                            if self.scope.has_branch_edge(n1.tag, n2.tag):
+                                continue
                             dfg.add_seq_edge(n1, n2)
 
                 else:
                     for i in range(len(sorted_nodes) - 1):
                         n1 = sorted_nodes[i]
-                        n2 = sorted_nodes[i + 1]
-                        hints = self.scope.flattened_parallel_hints(n1.tag)
-                        if n2.tag in hints:
-                            continue
-                        dfg.add_seq_edge(n1, n2)
+                        for j in range(i + 1, len(sorted_nodes)):
+                            n2 = sorted_nodes[j]
+                            if self.scope.has_branch_edge(n1.tag, n2.tag):
+                                continue
+                            dfg.add_seq_edge(n1, n2)
 
     def _add_edges_between_func_modules(self, blocks, dfg):
         """this function is used for testbench only"""

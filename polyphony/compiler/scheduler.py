@@ -1,6 +1,7 @@
 ﻿from collections import defaultdict, deque
 from .common import fail, warn
 from .errors import Errors, Warnings
+from .graph import Graph
 from .latency import get_latency
 from .irvisitor import IRVisitor
 from .ir import *
@@ -370,34 +371,47 @@ class PipelineScheduler(SchedulerImpl):
     def _schedule(self, dfg):
         self._schedule_cycles(dfg)
         self._schedule_ii(dfg)
-        conflict_res_table = self._make_conflict_res_table()
-        self._schedule_ii_for_conflict(dfg, conflict_res_table)
         self._remove_alias_if_needed(dfg)
-        node2state = {}
         block_nodes = self._group_nodes_by_block(dfg)
         longest_latency = 0
         for block, nodes in block_nodes.items():
-            latency = self._list_schedule_for_pipeline(dfg,
-                                                       nodes,
-                                                       conflict_res_table,
-                                                       node2state)
+            latency = self._list_schedule_for_pipeline(dfg, nodes)
+            conflict_res_table = self._make_conflict_res_table(nodes)
             if conflict_res_table:
-                latency = self._parallelize_branch_conflict(dfg, conflict_res_table, node2state)
+                logger.debug('before rescheduling')
+                for n in dfg.get_scheduled_nodes():
+                    logger.debug(n)
+                latency = self._reschedule_for_conflict(dfg, conflict_res_table)
             if longest_latency < latency:
                 longest_latency = latency
             self._fill_defuse_gap(dfg, nodes)
         return longest_latency
 
-    def _make_conflict_res_table(self):
+    def _make_conflict_res_table(self, nodes):
         conflict_res_table = defaultdict(list)
-        self._extend_conflict_res_table(conflict_res_table, self.res_extractor.mems)
-        self._extend_conflict_res_table(conflict_res_table, self.res_extractor.ports)
+        self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.mems)
+        self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.ports)
+        self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.regarrays)
         return conflict_res_table
 
-    def _extend_conflict_res_table(self, table, node_res_map):
+    def _extend_conflict_res_table(self, table, target_nodes, node_res_map):
         for node, res in node_res_map.items():
+            if node not in target_nodes:
+                continue
             for r in res:
                 table[r].append(node)
+
+    def max_cnode_num(self, cgraphs):
+        if len(cgraphs) == 0:
+            return 0, None
+        max_cnode = (0, 0)
+        max_cnode_res = None
+        for res, graph in cgraphs.items():
+            if graph is not None:
+                if max_cnode < (len(graph.get_nodes()), -res.id):
+                    max_cnode = (len(graph.get_nodes()), -res.id)
+                    max_cnode_res = res
+        return max_cnode[0], max_cnode_res
 
     def _schedule_ii(self, dfg):
         initiation_interval = int(dfg.synth_params['ii'])
@@ -435,51 +449,21 @@ class PipelineScheduler(SchedulerImpl):
             res.extend(self.res_extractor.mems[node])
         if node in self.res_extractor.ports:
             res.extend(self.res_extractor.ports[node])
+        if node in self.res_extractor.regarrays:
+            res.extend(self.res_extractor.regarrays[node])
         return res
 
-    def _schedule_ii_for_conflict(self, dfg, conflict_res_table):
-        if conflict_res_table.values():
-            max_conflict_n = 0
-            for nodes in conflict_res_table.values():
-                if len(nodes) == 1:
-                    continue
-                stms = [n.tag for n in nodes]
-                for stm in stms:
-                    parallel_stms = self.scope.flattened_parallel_hints(stm)
-                    if parallel_stms:
-                        conflict_n = len(set(stms) - set(parallel_stms))
-                        max_conflict_n = max(max_conflict_n, conflict_n)
-                    else:
-                        max_conflict_n = max(max_conflict_n, len(nodes))
-            request_ii = int(dfg.synth_params['ii'])
-            if request_ii == -1:
-                dfg.ii = max(dfg.ii, max_conflict_n)
-            elif request_ii < max_conflict_n:
-                fail((self.scope, dfg.region.head.stms[0].lineno),
-                     Errors.RULE_INVALID_II, [request_ii, max_conflict_n])
+    def find_cnode(self, cgraph, stm):
+        for cnode in cgraph.get_nodes():
+            if isinstance(cnode, ConflictNode):
+                if stm in cnode.items:
+                    return cnode
+            else:
+                if stm is cnode:
+                    return cnode
+        return None
 
-    def _shift_sched_time_for_conflict(self, scheduled_time, n, state_n, conflict_res_table, node2state):
-        conflict_node_states = set()
-        for r in self._get_using_resources(n):
-            if r in conflict_res_table:
-                conflict_nodes = list(conflict_res_table[r])
-                parallel_stms = self.scope.flattened_parallel_hints(n.tag)
-                if parallel_stms:
-                    for cn in conflict_nodes[:]:
-                        if cn.tag in parallel_stms:
-                            conflict_nodes.remove(cn)
-                assert n in conflict_nodes
-                for cn in conflict_nodes:
-                    if cn is not n and cn in node2state:
-                        conflict_node_states.add(node2state[cn])
-        assert len(conflict_node_states) < state_n
-        node_state = scheduled_time % state_n
-        while node_state in conflict_node_states:
-            scheduled_time += 1
-            node_state = scheduled_time % state_n
-        return scheduled_time
-
-    def _list_schedule_for_pipeline(self, dfg, nodes, conflict_res_table, node2state):
+    def _list_schedule_for_pipeline(self, dfg, nodes):
         next_candidates = set()
         latency = 0
         for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
@@ -488,14 +472,9 @@ class PipelineScheduler(SchedulerImpl):
             #detect resource conflict
             # TODO:
             #scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
-            scheduled_time = self._shift_sched_time_for_conflict(scheduled_time, n,
-                                                                 dfg.ii,
-                                                                 conflict_res_table,
-                                                                 node2state)
-            n.begin = scheduled_time
+            if scheduled_time > n.begin:
+                n.begin = scheduled_time
             n.end = n.begin + latency
-            node_state = n.begin % dfg.ii
-            node2state[n] = node_state
             #logger.debug('## SCHEDULED ## ' + str(n))
             #print(node2state[n], n)
             succs = dfg.succs_without_back(n)
@@ -503,44 +482,49 @@ class PipelineScheduler(SchedulerImpl):
             latency = n.end
         if next_candidates:
             return self._list_schedule_for_pipeline(dfg,
-                                                    next_candidates,
-                                                    conflict_res_table,
-                                                    node2state)
+                                                    next_candidates)
         else:
             return latency
 
-    def _parallelize_branch_conflict(self, dfg, conflict_res_table, node2state):
+    def _reschedule_for_conflict(self, dfg, conflict_res_table):
+        self.cgraphs = ConflictGraphBuilder(self.scope, conflict_res_table).build()
+        conflict_n, conflict_res = self.max_cnode_num(self.cgraphs)
+        request_ii = int(dfg.synth_params['ii'])
+        if request_ii == -1:
+            if dfg.ii < conflict_n:
+                # TODO: show warnings
+                dfg.ii = conflict_n
+        elif request_ii < conflict_n:
+            fail((self.scope, dfg.region.head.stms[0].lineno),
+                 Errors.RULE_INVALID_II, [request_ii, conflict_n])
+        # sync stms in a cnode
+        for res, graph in self.cgraphs.items():
+            for cnode in graph.get_nodes():
+                cnode_begin = max([dnode.begin for dnode in cnode.items])
+                for dnode in cnode.items:
+                    delta = cnode_begin - dnode.begin
+                    dnode.begin += delta
+                    dnode.end += delta
+        # alignment the scheduling value of the node
+        ii = dfg.ii
+        for res, graph in self.cgraphs.items():
+            if len(graph.nodes) == 1:
+                continue
+            for state, cnode in enumerate(sorted(graph.get_nodes(), key=lambda cn:cn.items[0].begin)):
+                cnode_begin = cnode.items[0].begin
+                offs = ii - (state + 1)
+                shifted_begin = (cnode_begin + offs) // ii * ii + state
+                for dnode in cnode.items:
+                    delta = shifted_begin - dnode.begin
+                    dnode.begin += delta
+                    dnode.end += delta
         next_candidates = set()
-        for conflict_nodes in conflict_res_table.values():
-            state2node = defaultdict(list)
-            for n in conflict_nodes:
-                state = node2state[n]
-                state2node[state].append(n)
-            for n in sorted(conflict_nodes, key=lambda n:n.begin):
-                # We search an node that in the same state and also in different stages
-                state = node2state[n]
-                same_state_nodes = state2node[state]
-                diff_stages = [nn.begin for nn in same_state_nodes if nn.begin != n.begin]
-                if not diff_stages:
-                    # non conflict node
-                    continue
-                if n.tag in self.scope.parallel_hints:
-                    hints_list = self.scope.parallel_hints[n.tag]
-                    nearests = []
-                    for hints in hints_list:
-                        if hints:
-                            hint_nodes = set([dfg.find_node(h) for h in hints])
-                            xnodes = set(conflict_nodes) & set(hint_nodes)
-                            xnodes = sorted(xnodes, key=lambda n:n.begin)
-                            nearests.append(xnodes[0])
-                    late_nearests = sorted(nearests, key=lambda n:n.begin)[-1]
-                    n.begin = late_nearests.begin
-                    succs = dfg.succs_without_back(n)
-                    next_candidates = next_candidates.union(succs)
-        return self._list_schedule_for_pipeline(dfg,
-                                                next_candidates,
-                                                conflict_res_table,
-                                                node2state)
+        for _, graph in self.cgraphs.items():
+            for cnode in graph.get_nodes():
+                for dnode in cnode.items:
+                    next_candidates.add(dnode)
+        return self._list_schedule_for_pipeline(dfg, next_candidates)
+
 
     def _node_sched_pipeline(self, dfg, node):
         preds = dfg.preds_without_back(node)
@@ -602,6 +586,7 @@ class ResourceExtractor(IRVisitor):
         self.ops = defaultdict(lambda: defaultdict(int))
         self.mems = defaultdict(list)
         self.ports = defaultdict(list)
+        self.regarrays = defaultdict(list)
 
     def visit_BINOP(self, ir):
         self.ops[self.current_node][ir.op] += 1
@@ -617,11 +602,90 @@ class ResourceExtractor(IRVisitor):
         super().visit_CALL(ir)
 
     def visit_MREF(self, ir):
-        if not ir.mem.symbol().typ.get_memnode().can_be_reg():
+        if ir.mem.symbol().typ.get_memnode().can_be_reg():
+            self.regarrays[self.current_node].append(ir.mem.symbol())
+        else:
             self.mems[self.current_node].append(ir.mem.symbol())
         super().visit_MREF(ir)
 
     def visit_MSTORE(self, ir):
-        if not ir.mem.symbol().typ.get_memnode().can_be_reg():
+        if ir.mem.symbol().typ.get_memnode().can_be_reg():
+            self.regarrays[self.current_node].append(ir.mem.symbol())
+        else:
             self.mems[self.current_node].append(ir.mem.symbol())
         super().visit_MSTORE(ir)
+
+
+class ConflictNode(object):
+    READ = 0
+    WRITE = 1
+
+    def __init__(self, access, items):
+        self.access = access
+        self.items = items
+
+    @classmethod
+    def create(self, item):
+        # TODO: READ or WRITE
+        return ConflictNode(ConflictNode.READ, [item])
+
+    @classmethod
+    def create_merge_node(self, n0, n1):
+        assert isinstance(n0, ConflictNode)
+        assert isinstance(n1, ConflictNode)
+        return ConflictNode(n0.access | n1.access, n0.items + n1.items)
+
+    def __str__(self):
+        return '||'.join([str(i) for i in self.items])
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class ConflictGraphBuilder(object):
+    def __init__(self, scope, conflict_res_table):
+        self.scope = scope
+        self.conflict_res_table = conflict_res_table
+
+    def build(self):
+        return self._build_conflict_graphs()
+
+    def _build_conflict_graphs(self):
+        cgraphs = {}
+        for res, nodes in self.conflict_res_table.items():
+            if len(nodes) == 1:
+                continue
+            cgraph = self._build_conflict_graph_per_res(res, nodes)
+            cgraphs[res] = cgraph
+        return cgraphs
+
+    def _build_conflict_graph_per_res(self, res, conflict_nodes):
+        graph = Graph()
+        conflict_stms = [n.tag for n in conflict_nodes]
+        stm2cnode = {n.tag:ConflictNode.create(n) for n in conflict_nodes}
+        for dn in conflict_nodes:
+            graph.add_node(stm2cnode[dn.tag])
+        for n0, n1, _ in self.scope.branch_graph.edges:
+            if n0 in conflict_stms and n1 in conflict_stms:
+                graph.add_edge(stm2cnode[n0], stm2cnode[n1])
+
+        def edge_order(e):
+            distance = abs(e.src.items[0].begin - e.dst.items[0].begin)
+            begin = min(e.src.items[0].begin, e.dst.items[0].begin)
+            return (distance, begin)
+
+        while graph.edges:
+            edges = sorted(graph.edges.orders(), key=edge_order)
+            n0, n1, _ = edges[0]
+            cnode = ConflictNode.create_merge_node(n0, n1)
+            living_nodes = set()
+            for n in graph.nodes:
+                node_edges = graph.succs(n).union(graph.preds(n))
+                if n0 in node_edges and n1 in node_edges:
+                    living_nodes.add(n)
+            graph.add_node(cnode)
+            graph.del_node(n0)
+            graph.del_node(n1)
+            for n in living_nodes:
+                graph.add_edge(cnode, n)
+        return graph

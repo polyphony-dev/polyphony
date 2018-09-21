@@ -4,7 +4,7 @@ from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
 from .irhelper import reduce_relexp, is_port_method_call
-from .type import Type
+from .usedef import UseDefDetector
 from .utils import remove_except_one
 from logging import getLogger
 logger = getLogger(__name__)
@@ -186,6 +186,8 @@ def rel_and_exp(exp1, exp2):
 class HyperBlockBuilder(object):
     def process(self, scope):
         self.scope = scope
+        self.uddetector = UseDefDetector()
+        self.uddetector.table = scope.usedef
         self.diamond_nodes = deque()
         self._visited_heads = set()
         diamond_nodes = self._find_diamond_nodes()
@@ -433,36 +435,39 @@ class HyperBlockBuilder(object):
             return True
         return False
 
-    def _move_to_diamond_head(self, head, blk):
+    def _select_stms_for_speculation(self, head, blk):
+        moves = []
         remains = []
         # We need to ignore the statement accessing the resource
-        for stm in blk.stms[:-1]:
+        for idx, stm in enumerate(blk.stms[:-1]):
             if (stm.is_a(EXPR) or
                     self._has_timing_function(stm) or
                     self._has_mem_access(stm) or
                     self._has_instance_var_modification(stm)):
-                remains.append(stm)
+                remains.append((idx, stm))
                 continue
             else:
                 skip = False
                 usesyms = self.scope.usedef.get_syms_used_at(stm)
                 for sym in usesyms:
                     defstms = self.scope.usedef.get_stms_defining(sym)
-                    intersection = defstms & set(remains)
+                    remains_ = [s for _, s in remains]
+                    intersection = defstms & set(remains_)
                     if intersection:
-                        remains.append(stm)
+                        remains.append((idx, stm))
                         skip = True
                         break
                 if skip:
                     continue
-            head.insert_stm(-1, stm)
-        return remains
+            moves.append((idx, stm))
+        return moves, remains
 
-    def _move_to_diamond_head_for_remains(self, head, path_exps, path_remain_stms):
+    def _transform_special_stms_for_speculation(self, head, path_exps, path_remain_stms):
+        all_cstms = []
         path_cstms = []
         for p, stms in zip(path_exps, path_remain_stms):
             cstms = []
-            for stm in stms:
+            for idx, stm in stms:
                 if stm.is_a(CMOVE) or stm.is_a(CEXPR):
                     cstm = stm
                 elif stm.is_a(MOVE):
@@ -472,20 +477,25 @@ class HyperBlockBuilder(object):
                 else:
                     assert False
                 stm.block.stms.remove(stm)
+                self.scope.usedef.remove_stm(stm)
                 cstm.lineno = stm.lineno
-                head.insert_stm(-1, cstm)
                 cstms.append(cstm)
+                all_cstms.append((idx, cstm))
+                self.uddetector.visit(cstm)
             path_cstms.append(cstms)
         if len(path_cstms) > 1:
             for i, cstms in enumerate(path_cstms):
                 nested_other_cstms = path_cstms[:i] + path_cstms[i + 1:]
                 for cstm in cstms:
-                    self.scope.add_parallel_hint(cstm, nested_other_cstms)
+                    self.scope.add_branch_graph_edge(cstm, nested_other_cstms)
+
+        return all_cstms
 
     def _merge_diamond_blocks(self, head, tail, branches):
         visited_path = set()
         path_exps = []
         path_remain_stms = []
+        head_stms = []
         for idx, path in enumerate(branches):
             if path[0] in visited_path:
                 continue
@@ -495,16 +505,19 @@ class HyperBlockBuilder(object):
             remains = []
             for blk in path[:-1]:
                 assert len(blk.succs) == 1
-                remains_ = self._move_to_diamond_head(head, blk)
+                stms_, remains_ = self._select_stms_for_speculation(head, blk)
+                head_stms.extend(stms_)
                 remains.extend(remains_)
-                for stm in blk.stms[:-1]:
-                    if stm in remains:
-                        continue
+                for _, stm in stms_:
                     blk.stms.remove(stm)
             if remains:
                 path_exp = merge_path_exp(head, path[0], idx)
                 path_exps.append(path_exp)
                 path_remain_stms.append(remains)
         if head.synth_params['scheduling'] == 'pipeline':
-            self._move_to_diamond_head_for_remains(head, path_exps, path_remain_stms)
+            cstms_ = self._transform_special_stms_for_speculation(head, path_exps, path_remain_stms)
+            head_stms.extend(cstms_)
+        head_stms = set(head_stms)
+        for _, stm in sorted(head_stms, key=lambda _: _[0]):
+            head.insert_stm(-1, stm)
         head.is_hyperblock = True

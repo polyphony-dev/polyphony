@@ -739,7 +739,6 @@ class MemRefGraphBuilder(IRVisitor):
         while worklist:
             stm = worklist.popleft()
             self.scope = stm.block.scope
-            self.current_stm = stm
             self.visit(stm)
 
         self._reconnect_alias_edge()

@@ -5,6 +5,7 @@ from .block import Block
 from .common import Tagged, fail
 from .errors import Errors
 from .env import env
+from .graph import Graph
 from .loop import LoopNestTree
 from .symbol import Symbol
 from .synth import make_synth_params
@@ -159,7 +160,7 @@ class Scope(Tagged):
         self.type_args = []
         self.synth_params = make_synth_params()
         self.constants = {}
-        self.parallel_hints = {}
+        self.branch_graph = Graph()
 
     def __str__(self):
         s = '\n================================\n'
@@ -267,6 +268,19 @@ class Scope(Tagged):
         s.exit_block = block_map[self.exit_block]
 
         s.usedef = None
+
+        for n in self.branch_graph.nodes:
+            if n in stm_map:
+                new_n = stm_map[n]
+                s.branch_graph.add_node(new_n)
+        for n0, n1, _ in self.branch_graph.edges:
+            if n0 in stm_map and n1 in stm_map:
+                new_n0 = stm_map[n0]
+                new_n1 = stm_map[n1]
+                if new_n0 < new_n1:
+                    s.branch_graph.add_edge(new_n0, new_n1)
+                else:
+                    s.branch_graph.add_edge(new_n1, new_n0)
 
         if self.is_function_module():
             new_callee_instances = defaultdict(set)
@@ -598,19 +612,21 @@ class Scope(Tagged):
     def traverse_regions(self, reverse=False):
         return self.loop_tree.traverse(reverse)
 
-    def add_parallel_hint(self, k, v):
-        if k in self.parallel_hints:
-            assert False
-        assert isinstance(v, list)
-        self.parallel_hints[k] = v
+    def add_branch_graph_edge(self, k, vs):
+        assert isinstance(vs, list)
+        self.branch_graph.add_node(k)
+        for v in itertools.chain(*vs):
+            if k < v:
+                self.branch_graph.add_edge(k, v)
+            else:
+                self.branch_graph.add_edge(v, k)
 
-    def flattened_parallel_hints(self, k):
-        if k in self.parallel_hints:
-            hints = self.parallel_hints[k]
-            flatten_hints = [stm for stm in itertools.chain(*hints)]
-            return flatten_hints
+    def has_branch_edge(self, stm0, stm1):
+        if stm0 < stm1:
+            return self.branch_graph.find_edge(stm0, stm1) is not None
         else:
-            return []
+            return self.branch_graph.find_edge(stm1, stm0) is not None
+
 
 class SymbolReplacer(IRVisitor):
     def __init__(self, sym_map):

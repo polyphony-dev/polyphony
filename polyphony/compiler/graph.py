@@ -41,6 +41,15 @@ class SimpleOrderedSet(object):
         self.__items.discard(key)
         return key
 
+    def union(self, other):
+        return SimpleOrderedSet(self.__orders + other.orders())
+
+    def items(self):
+        return self.__items.copy()
+
+    def orders(self):
+        return self.__orders.copy()
+
     def __repr__(self):
         if not self:
             return '{}()'.format(self.__class__.__name__,)
@@ -82,6 +91,9 @@ class Graph(object):
 
     def has_node(self, node):
         return node in self.nodes
+
+    def get_nodes(self):
+        return self.nodes.orders()
 
     def add_edge(self, src_node, dst_node, flags=0):
         self.add_node(src_node)
