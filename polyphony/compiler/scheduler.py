@@ -336,14 +336,16 @@ class BlockBoundedListScheduler(SchedulerImpl):
             seq_preds = [p for p in seq_preds if p.tag.block is block]
             sched_times = []
             if seq_preds:
-                latest_node = max(seq_preds, key=lambda p: p.end)
-                logger.debug('latest_node of seq_preds ' + str(latest_node))
                 if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag):
-                    sched_times.append(latest_node.end)
+                    latest_node = max(seq_preds, key=lambda p: p.end)
+                    sched_time = latest_node.end
                 else:
+                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end))
                     seq_latency = self.node_seq_latency_map[latest_node]
-                    sched_times.append(latest_node.begin + seq_latency)
-                    logger.debug('schedtime ' + str(latest_node.begin + seq_latency))
+                    sched_time = latest_node.begin + seq_latency
+                sched_times.append(sched_time)
+                logger.debug('latest_node of seq_preds ' + str(latest_node))
+                logger.debug('schedtime ' + str(sched_time))
             if defuse_preds:
                 latest_node = max(defuse_preds, key=lambda p: p.end)
                 logger.debug('latest_node of defuse_preds ' + str(latest_node))
@@ -534,14 +536,15 @@ class PipelineScheduler(SchedulerImpl):
             seq_preds = dfg.preds_typ_without_back(node, 'Seq')
             sched_times = []
             if seq_preds:
-                latest_node = max(seq_preds, key=lambda p: p.end)
-                logger.debug('latest_node of seq_preds ' + str(latest_node))
                 if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag):
+                    latest_node = max(seq_preds, key=lambda p: p.end)
                     sched_times.append(latest_node.end)
                 else:
+                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end))
                     seq_latency = self.node_seq_latency_map[latest_node]
                     sched_times.append(latest_node.begin + seq_latency)
-                    logger.debug('schedtime ' + str(latest_node.begin + seq_latency))
+                logger.debug('latest_node of seq_preds ' + str(latest_node))
+                logger.debug('schedtime ' + str(latest_node.begin + seq_latency))
             if defuse_preds:
                 latest_node = max(defuse_preds, key=lambda p: p.end)
                 sched_times.append(latest_node.end)
