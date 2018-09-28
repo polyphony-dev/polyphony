@@ -24,14 +24,15 @@ class DFNode(object):
 
     def __str__(self):
         if self.typ == 'Stm':
-            s = 'Node {} {} {}:{} {} {}'.format(
+            s = '<{}> ({}) {} {}:{} {}'.format(
                 hex(self.__hash__())[-4:],
+                self.tag.lineno,
                 self.priority,
                 self.begin,
                 self.end,
-                self.tag,
-                self.tag.block.name
+                self.tag
             )
+            #s += ' ' + self.tag.block.name
         elif self.typ == 'Loop':
             s = 'Node {} {} {}:{} Loop {}'.format(
                 hex(self.__hash__())[-4:],
@@ -128,7 +129,7 @@ class DataFlowGraph(object):
     def add_seq_edge(self, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
-        #assert not self.scope.has_branch_edge(n1.tag, n2.tag)
+        assert not self.scope.has_branch_edge(n1.tag, n2.tag)
 
         if (n1, n2) not in self.edges:
             self._add_edge(n1, n2, 'Seq', False)
@@ -299,6 +300,20 @@ class DataFlowGraph(object):
 
     def get_loop_nodes(self):
         return filter(lambda n: n.typ == 'Loop', self.nodes)
+
+    def collect_all_preds(self, node):
+        def collect_preds_rec(n, visited, results):
+            preds = self.preds_without_back(n)
+            for p in preds:
+                if p in visited:
+                    continue
+                visited.add(p)
+                results.append(p)
+                collect_preds_rec(p, visited, results)
+        visited = set()
+        results = []
+        collect_preds_rec(node, visited, results)
+        return results
 
     def write_dot(self, name):
         try:
@@ -709,6 +724,8 @@ class DFGBuilder(object):
                     continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
+                    if self.scope.has_branch_edge(seq_func_node.tag, node.tag):
+                        continue
                     dfg.add_seq_edge(seq_func_node, node)
                 if has_exclusive_function(stm):
                     seq_func_node = node
@@ -718,6 +735,8 @@ class DFGBuilder(object):
                     continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
+                    if self.scope.has_branch_edge(node.tag, seq_func_node.tag):
+                        continue
                     dfg.add_seq_edge(node, seq_func_node)
                 if has_exclusive_function(stm):
                     seq_func_node = node

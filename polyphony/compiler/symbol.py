@@ -36,7 +36,7 @@ class Symbol(Tagged):
             logger.debug(s)
 
     return_prefix = '@function_return'
-    condition_prefix = '@cond'
+    condition_prefix = '@c'
     temp_prefix = '@t'
     param_prefix = '@in'
 

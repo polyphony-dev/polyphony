@@ -1,5 +1,7 @@
-﻿from collections import defaultdict, deque
+﻿import itertools
+from collections import defaultdict, deque
 from .common import fail, warn
+from .dataflow import DFNode
 from .errors import Errors, Warnings
 from .graph import Graph
 from .latency import get_latency
@@ -375,13 +377,13 @@ class PipelineScheduler(SchedulerImpl):
         block_nodes = self._group_nodes_by_block(dfg)
         longest_latency = 0
         for block, nodes in block_nodes.items():
-            latency = self._list_schedule_for_pipeline(dfg, nodes)
+            latency = self._list_schedule_for_pipeline(dfg, nodes, 0)
             conflict_res_table = self._make_conflict_res_table(nodes)
             if conflict_res_table:
                 logger.debug('before rescheduling')
                 for n in dfg.get_scheduled_nodes():
                     logger.debug(n)
-                latency = self._reschedule_for_conflict(dfg, conflict_res_table)
+                latency = self._reschedule_for_conflict(dfg, conflict_res_table, latency)
             if longest_latency < latency:
                 longest_latency = latency
             self._fill_defuse_gap(dfg, nodes)
@@ -463,9 +465,8 @@ class PipelineScheduler(SchedulerImpl):
                     return cnode
         return None
 
-    def _list_schedule_for_pipeline(self, dfg, nodes):
+    def _list_schedule_for_pipeline(self, dfg, nodes, longest_latency):
         next_candidates = set()
-        latency = 0
         for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
             scheduled_time = self._node_sched_pipeline(dfg, n)
             _, _, latency = self.node_latency_map[n]
@@ -476,18 +477,19 @@ class PipelineScheduler(SchedulerImpl):
                 n.begin = scheduled_time
             n.end = n.begin + latency
             #logger.debug('## SCHEDULED ## ' + str(n))
-            #print(node2state[n], n)
             succs = dfg.succs_without_back(n)
             next_candidates = next_candidates.union(succs)
-            latency = n.end
+            if longest_latency < n.end:
+                longest_latency = n.end
         if next_candidates:
             return self._list_schedule_for_pipeline(dfg,
-                                                    next_candidates)
+                                                    next_candidates,
+                                                    longest_latency)
         else:
-            return latency
+            return longest_latency
 
-    def _reschedule_for_conflict(self, dfg, conflict_res_table):
-        self.cgraphs = ConflictGraphBuilder(self.scope, conflict_res_table).build()
+    def _reschedule_for_conflict(self, dfg, conflict_res_table, longest_latency):
+        self.cgraphs = ConflictGraphBuilder(self.scope, dfg).build(conflict_res_table)
         conflict_n, conflict_res = self.max_cnode_num(self.cgraphs)
         request_ii = int(dfg.synth_params['ii'])
         if request_ii == -1:
@@ -497,34 +499,105 @@ class PipelineScheduler(SchedulerImpl):
         elif request_ii < conflict_n:
             fail((self.scope, dfg.region.head.stms[0].lineno),
                  Errors.RULE_INVALID_II, [request_ii, conflict_n])
-        # sync stms in a cnode
-        for res, graph in self.cgraphs.items():
-            for cnode in graph.get_nodes():
-                cnode_begin = max([dnode.begin for dnode in cnode.items])
-                for dnode in cnode.items:
-                    delta = cnode_begin - dnode.begin
-                    dnode.begin += delta
-                    dnode.end += delta
-        # alignment the scheduling value of the node
-        ii = dfg.ii
-        for res, graph in self.cgraphs.items():
-            if len(graph.nodes) == 1:
-                continue
-            for state, cnode in enumerate(sorted(graph.get_nodes(), key=lambda cn:cn.items[0].begin)):
-                cnode_begin = cnode.items[0].begin
-                offs = ii - (state + 1)
-                shifted_begin = (cnode_begin + offs) // ii * ii + state
-                for dnode in cnode.items:
-                    delta = shifted_begin - dnode.begin
-                    dnode.begin += delta
-                    dnode.end += delta
-        next_candidates = set()
-        for _, graph in self.cgraphs.items():
-            for cnode in graph.get_nodes():
-                for dnode in cnode.items:
-                    next_candidates.add(dnode)
-        return self._list_schedule_for_pipeline(dfg, next_candidates)
+        while True:
+            next_candidates = set()
+            # sync stms in a cnode
+            for res, graph in self.cgraphs.items():
+                for cnode in graph.get_nodes():
+                    cnode_begin = max([dnode.begin for dnode in cnode.items])
+                    for dnode in cnode.items:
+                        delta = cnode_begin - dnode.begin
+                        dnode.begin += delta
+                        dnode.end += delta
+                        if delta:
+                            next_candidates.add(dnode)
+            # alignment the scheduling value of the node
+            ii = dfg.ii
+            for res, graph in self.cgraphs.items():
+                if len(graph.nodes) == 1:
+                    continue
+                # find best state mapping
+                best_state_pattern = None
+                cnodes = sorted(graph.get_nodes(), key=lambda cn:cn.items[0].begin)
+                while True:
+                    min_delta_sum = 1000000
+                    assert len(cnodes) <= ii
+                    for state_pattern in itertools.permutations(range(ii)):
+                        delta_sum = 0
+                        max_begin = 0
+                        for state, cnode in zip(state_pattern, cnodes):
+                            if cnode is None:
+                                break
+                            begin = cnode.items[0].begin
+                            offs = ii - (state + 1)
+                            shifted = (begin + offs) // ii * ii + state
+                            delta = shifted - begin
+                            delta_sum += delta
+                            max_begin = max(max_begin, shifted)
+                        if delta_sum <= min_delta_sum:
+                            min_delta_sum = delta_sum
+                            if self._check_state_pattern(ii, cnodes, res, state_pattern):
+                                best_state_pattern = state_pattern
+                    if best_state_pattern:
+                        break
+                    else:
+                        ii += 1
+                        cnodes.append(None)
+                #print(graph)
+                for state, cnode in zip(best_state_pattern, cnodes):
+                    if cnode is None:
+                        break
+                    cnode_begin = cnode.items[0].begin
+                    offs = ii - (state + 1)
+                    shifted_begin = (cnode_begin + offs) // ii * ii + state
+                    for dnode in cnode.items:
+                        delta = shifted_begin - dnode.begin
+                        dnode.begin += delta
+                        dnode.end += delta
+                        if delta:
+                            next_candidates.add(dnode)
+            dfg.ii = ii
+            if next_candidates:
+                longest_latency = self._list_schedule_for_pipeline(dfg,
+                                                                   next_candidates,
+                                                                   longest_latency)
+                # TODO
+                break
+            else:
+                break
+        return longest_latency
 
+    def _check_state_pattern(self, ii, cnodes, res, state_pattern):
+        for i in range(len(cnodes) - 1):
+            prv = cnodes[i]
+            if prv is None:
+                break
+            prv_s = state_pattern[i]
+            prv_begin = prv.items[0].begin
+            offs = ii - (prv_s + 1)
+            prv_new_begin = (prv_begin + offs) // ii * ii + prv_s
+            for j in range(1, len(cnodes)):
+                nxt = cnodes[j]
+                if nxt is None:
+                    break
+                nxt_s = state_pattern[j]
+                nxt_begin = nxt.items[0].begin
+                if prv_begin > nxt_begin:
+                    break
+                offs = ii - (nxt_s + 1)
+                nxt_new_begin = (nxt_begin + offs) // ii * ii + nxt_s
+                distance = abs(prv_new_begin - nxt_new_begin)
+                if prv.access & ConflictNode.READ:
+                    if nxt.access & ConflictNode.WRITE:
+                        #assert distance < ii
+                        if distance >= ii:
+                            return False
+                if prv.access & ConflictNode.WRITE:
+                    if nxt.access & ConflictNode.READ or nxt.access & ConflictNode.WRITE:
+                        #assert distance < ii
+                        if distance >= ii:
+                            return False
+        return True
 
     def _node_sched_pipeline(self, dfg, node):
         preds = dfg.preds_without_back(node)
@@ -617,17 +690,18 @@ class ResourceExtractor(IRVisitor):
 
 
 class ConflictNode(object):
-    READ = 0
-    WRITE = 1
+    READ = 1
+    WRITE = 2
 
     def __init__(self, access, items):
         self.access = access
         self.items = items
 
     @classmethod
-    def create(self, item):
-        # TODO: READ or WRITE
-        return ConflictNode(ConflictNode.READ, [item])
+    def create(self, dn):
+        assert isinstance(dn, DFNode)
+        access = ConflictNode.READ if dn.defs else ConflictNode.WRITE
+        return ConflictNode(access, [dn])
 
     @classmethod
     def create_merge_node(self, n0, n1):
@@ -635,24 +709,50 @@ class ConflictNode(object):
         assert isinstance(n1, ConflictNode)
         return ConflictNode(n0.access | n1.access, n0.items + n1.items)
 
+    @classmethod
+    def create_split_node(self, n, items):
+        assert isinstance(n, ConflictNode)
+        assert set(items) & set(n.items) == set(items)
+        for dn in n.items[:]:
+            if dn in items:
+                n.items.remove(dn)
+        n.access = 0
+        for dn in n.items:
+            n.access |= ConflictNode.READ if dn.defs else ConflictNode.WRITE
+        access = 0
+        for dn in items:
+            access |= ConflictNode.READ if dn.defs else ConflictNode.WRITE
+        return ConflictNode(access, list(items))
+
     def __str__(self):
-        return '||'.join([str(i) for i in self.items])
+        access_str = ''
+        if self.access & ConflictNode.READ:
+            access_str += 'R'
+        if self.access & ConflictNode.WRITE:
+            access_str += 'W'
+        s = '---- {}, {}\n'.format(len(self.items), access_str)
+        s += '\n'.join(['  ' + str(i) for i in self.items])
+        return s
 
     def __repr__(self):
         return self.__str__()
 
 
 class ConflictGraphBuilder(object):
-    def __init__(self, scope, conflict_res_table):
+    def __init__(self, scope, dfg):
         self.scope = scope
-        self.conflict_res_table = conflict_res_table
+        self.dfg = dfg
 
-    def build(self):
-        return self._build_conflict_graphs()
+    def build(self, conflict_res_table):
+        cgraphs = self._build_conflict_graphs(conflict_res_table)
+        self._resolve_cross_edge_between_subgraphs(cgraphs)
+        #for res, graph in cgraphs.items():
+        #    print(graph)
+        return cgraphs
 
-    def _build_conflict_graphs(self):
+    def _build_conflict_graphs(self, conflict_res_table):
         cgraphs = {}
-        for res, nodes in self.conflict_res_table.items():
+        for res, nodes in conflict_res_table.items():
             if len(nodes) == 1:
                 continue
             cgraph = self._build_conflict_graph_per_res(res, nodes)
@@ -662,30 +762,117 @@ class ConflictGraphBuilder(object):
     def _build_conflict_graph_per_res(self, res, conflict_nodes):
         graph = Graph()
         conflict_stms = [n.tag for n in conflict_nodes]
-        stm2cnode = {n.tag:ConflictNode.create(n) for n in conflict_nodes}
+        stm2cnode = {}
+        for n in conflict_nodes:
+            stm2cnode[n.tag] = ConflictNode.create(n) 
         for dn in conflict_nodes:
             graph.add_node(stm2cnode[dn.tag])
         for n0, n1, _ in self.scope.branch_graph.edges:
             if n0 in conflict_stms and n1 in conflict_stms:
                 graph.add_edge(stm2cnode[n0], stm2cnode[n1])
 
-        def edge_order(e):
-            distance = abs(e.src.items[0].begin - e.dst.items[0].begin)
-            begin = min(e.src.items[0].begin, e.dst.items[0].begin)
-            return (distance, begin)
+        self._merge_same_branch_nodes(graph, conflict_nodes, stm2cnode)
 
+        logger.debug(str(graph))
+
+        def edge_order(e):
+            begin0 = max([item.begin for item in e.src.items])
+            begin1 = max([item.begin for item in e.dst.items])
+            begin = (begin0, begin1) if begin0 <= begin1 else (begin1, begin0)
+            distance = (begin1 - begin0) if begin0 <= begin1 else (begin0 - begin1)
+            lineno0 = min([item.tag.lineno for item in e.src.items])
+            lineno1 = min([item.tag.lineno for item in e.dst.items])
+            lineno = (lineno0, lineno1) if lineno0 <= lineno1 else (lineno1, lineno0)
+            # In order to avoid crossover edge, 'begin' must be given priority
+            return (distance, begin, lineno)
+
+        logger.debug('merging ...')
         while graph.edges:
             edges = sorted(graph.edges.orders(), key=edge_order)
             n0, n1, _ = edges[0]
+            logger.debug('merge node')
+            logger.debug(str(n0.items))
+            logger.debug(str(n1.items))
+            logger.debug(str(edges))
             cnode = ConflictNode.create_merge_node(n0, n1)
             living_nodes = set()
             for n in graph.nodes:
-                node_edges = graph.succs(n).union(graph.preds(n))
-                if n0 in node_edges and n1 in node_edges:
+                adjacents = graph.succs(n).union(graph.preds(n))
+                if n0 in adjacents and n1 in adjacents:
                     living_nodes.add(n)
             graph.add_node(cnode)
             graph.del_node(n0)
             graph.del_node(n1)
             for n in living_nodes:
                 graph.add_edge(cnode, n)
+        logger.debug('after merging')
+        logger.debug(str(graph))
         return graph
+
+    def _merge_same_branch_nodes(self, graph, conflict_nodes, stm2cnode):
+        conflict_nodes = sorted(conflict_nodes, key=lambda dn:dn.begin)
+        for begin, dnodes in itertools.groupby(conflict_nodes, key=lambda dn:dn.begin):
+            merge_cnodes = defaultdict(set)
+            for dn0, dn1 in itertools.permutations(dnodes, 2):
+                stm0 = dn0.tag
+                stm1 = dn1.tag
+                if stm0 > stm1:
+                    continue
+                cn0 = stm2cnode[stm0]
+                cn1 = stm2cnode[stm1]
+                e = graph.find_edge(cn0, cn1)
+                if e is not None:
+                    continue
+                if ((stm0.is_a(CMOVE) or stm0.is_a(CEXPR)) and
+                        (stm1.is_a(CMOVE) or stm1.is_a(CEXPR))):
+                    if stm0.cond == stm1.cond:
+                        vs = stm0.cond.find_irs(TEMP)
+                        syms = tuple(sorted([v.sym for v in vs]))
+                        merge_cnodes[syms].add(cn0)
+                        merge_cnodes[syms].add(cn1)
+            for cnodes in merge_cnodes.values():
+                cnodes = sorted(list(cnodes), key=lambda cn: cn.items[0].tag)
+                cn0 = cnodes[0]
+                for cn1 in cnodes[1:]:
+                    assert cn0.items[0].tag < cn1.items[0].tag
+                    mn = ConflictNode.create_merge_node(cn0, cn1)
+                    graph.add_node(mn)
+                    succs0 = graph.succs(cn0)
+                    preds0 = graph.preds(cn0)
+                    adjs0 = succs0.union(preds0)
+                    succs1 = graph.succs(cn1)
+                    preds1 = graph.preds(cn1)
+                    adjs1 = succs1.union(preds1)
+                    adjs = adjs0.intersection(adjs1)
+
+                    graph.del_node(cn0)
+                    graph.del_node(cn1)
+                    for adj in adjs:
+                        graph.add_edge(mn, adj)
+                    cn0 = mn
+
+    def _resolve_cross_edge_between_subgraphs(self, cgraphs):
+        all_cnodes = []
+        for res, graph in cgraphs.items():
+            all_cnodes.extend(graph.get_nodes())
+
+        cn_order = {}
+        for cn in all_cnodes:
+            begins = [dn.begin for dn in cn.items]
+            cn_order[cn] = (min(begins), max(begins) - min(begins))
+
+        all_cnodes = sorted(all_cnodes, key=lambda cn:cn_order[cn])
+        for i, cn0 in enumerate(all_cnodes[:-1]):
+            for dn0 in cn0.items:
+                preds = self.dfg.collect_all_preds(dn0)
+                if not preds:
+                    continue
+                for cn1 in all_cnodes[i + 1:]:
+                    dnodes = set(preds) & set(cn1.items)
+                    if dnodes:
+                        logger.debug('CROSS EDGE')
+                        logger.debug('--- ' + str(dn0))
+                        logger.debug('--- ' + str(dnodes))
+                        cn2 = ConflictNode.create_split_node(cn1, dnodes)
+                        cn1.g.add_node(cn2)
+        return cgraphs

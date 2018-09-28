@@ -4,6 +4,7 @@ from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
 from .irhelper import reduce_relexp, is_port_method_call
+from .type import Type
 from .usedef import UseDefDetector
 from .utils import remove_except_one
 from logging import getLogger
@@ -180,7 +181,9 @@ def rel_and_exp(exp1, exp2):
         return exp1
     exp1 = reduce_relexp(exp1)
     exp2 = reduce_relexp(exp2)
-    return RELOP('And', exp1, exp2)
+    exp = RELOP('And', exp1, exp2)
+    exp.lineno = exp1.lineno
+    return exp
 
 
 class HyperBlockBuilder(object):
@@ -471,9 +474,9 @@ class HyperBlockBuilder(object):
                 if stm.is_a(CMOVE) or stm.is_a(CEXPR):
                     cstm = stm
                 elif stm.is_a(MOVE):
-                    cstm = CMOVE(p, stm.dst.clone(), stm.src.clone())
+                    cstm = CMOVE(p.clone(), stm.dst.clone(), stm.src.clone())
                 elif stm.is_a(EXPR):
-                    cstm = CEXPR(p, stm.exp.clone())
+                    cstm = CEXPR(p.clone(), stm.exp.clone())
                 else:
                     assert False
                 stm.block.stms.remove(stm)
