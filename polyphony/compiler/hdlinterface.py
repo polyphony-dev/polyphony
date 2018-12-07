@@ -691,19 +691,20 @@ class PipelinedRAMAccessor(RAMAccessor):
         self.stage = stage
         self.pipeline_state = stage.parent_state
 
-    def read_sequence(self, step, step_n, offset, dst, is_continuous):
+    def read_sequence(self, step, step_n, ahdl_load, is_continuous):
         assert step_n > 1
+        assert ahdl_load.is_a(AHDL_LOAD)
         addr = port2ahdl(self, 'addr')
-        we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
         q = port2ahdl(self, 'q')
-
+        offset = ahdl_load.offset
+        dst = ahdl_load.dst
         if step == 0:
             req_valids = [AHDL_VAR(self.pipeline_state.ready_signal(0), Ctx.LOAD)]
             req_valids += [AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step + i), Ctx.LOAD)
                            for i in range(step_n - 1)]
             req_rhs = AHDL_OP('BitOr', *req_valids)
-            local_stms = (AHDL_MOVE(addr, offset), AHDL_MOVE(we, AHDL_CONST(0)))
+            local_stms = (AHDL_MOVE(addr, offset),)
             stage_stms = tuple()
             self.pipeline_state.add_global_move(req.name,
                                                 AHDL_MOVE(req, req_rhs))
@@ -719,13 +720,15 @@ class PipelinedRAMAccessor(RAMAccessor):
 
         return local_stms, stage_stms
 
-    def write_sequence(self, step, step_n, offset, src, is_continuous):
+    def write_sequence(self, step, step_n, ahdl_store, is_continuous):
         assert step_n > 1
+        assert ahdl_store.is_a(AHDL_STORE)
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
         d = port2ahdl(self, 'd')
-
+        offset = ahdl_store.offset
+        src = ahdl_store.src
         if step == 0:
             if self.stage.step == 0:
                 pready = self.pipeline_state.ready_signal(0)
@@ -734,10 +737,18 @@ class PipelinedRAMAccessor(RAMAccessor):
                 pvalid = self.pipeline_state.valid_signal(self.stage.step - 1)
                 valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
             local_stms = (AHDL_MOVE(addr, offset),
-                          AHDL_MOVE(d, src))
+                          AHDL_MOVE(d, src),)
             stage_stms = tuple()
+            we_conds = [
+                valid_rhs,
+                AHDL_OP('Eq',
+                        AHDL_CONST(self.stage.state_idx),
+                        AHDL_VAR(self.pipeline_state.substate_var, Ctx.LOAD))
+            ]
+            if ahdl_store.guard_cond:
+                we_conds.append(ahdl_store.guard_cond)
             self.pipeline_state.add_global_move(we.name,
-                                                AHDL_MOVE(we, valid_rhs))
+                                                AHDL_MOVE(we, AHDL_OP('And', *we_conds)))
             self.pipeline_state.add_global_move(req.name,
                                                 AHDL_MOVE(req, valid_rhs))
         else:

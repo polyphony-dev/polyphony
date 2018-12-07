@@ -47,6 +47,7 @@ FILES = (
     '/apps/shellsort.py',
     '/apps/stack.py',
     '/chstone/mips/mips.py',
+    '/chstone/mips/pipelined_mips.py',
     '/chstone/jpeg/chenidct.py',
 )
 
@@ -55,19 +56,28 @@ SUITE_CASES = [
     {
         'config': '{ "internal_ram_threshold_size": 512 }',
         "ignores": ('apps/filter_tester.py',
-                    'pure/*', 'error/pure01.py', 'error/pure02.py')
+                    'pure/*',
+                    'chstone/mips/pipelined_mips.py',
+                    'error/pure01.py', 'error/pure02.py',
+                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+                    )
     },
     {
         'config': '{ "internal_ram_threshold_size": 0 }',
         "ignores": ('unroll/pipelined_unroll01.py',
-                    'pure/*', 'error/pure01.py', 'error/pure02.py')
+                    'pure/*',
+                    'chstone/mips/pipelined_mips.py',
+                    'error/pure01.py', 'error/pure02.py',
+                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+                    )
     },
     {
         'config': '{ "internal_ram_threshold_size": 1000000 }',
         "ignores": ('list/list31.py', 'list/list32.py',
                     'apps/filter_tester.py',
+                    'pure/*', 'error/pure01.py', 'error/pure02.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
-                    'pure/*', 'error/pure01.py', 'error/pure02.py',)
+                    )
     },
     #{
     #    'config': '{ "enable_pure": true, \
@@ -125,7 +135,8 @@ def suite(options, ignores):
         else:
             suite_results[t] = 'FAIL'
             fails += 1
-    suite_results['-config'] = json.loads(options.config)
+    if options.config:
+        suite_results['-config'] = json.loads(options.config)
     global_suite_results.append(suite_results)
     return fails
 
@@ -179,17 +190,21 @@ def suite_main():
 
     fails = 0
     if options.full:
-        cases = SUITE_CASES
+        for case in SUITE_CASES:
+            if not options.silent:
+                pprint(case)
+            add_files(ignores, case['ignores'])
+            if ignores and not options.silent:
+                print('NOTE: these files will be ignored')
+                print(ignores)
+            options.config = case['config']
+            results = [p(options, ignores) for p in procs]
+            fails += sum(results)
     else:
-        cases = SUITE_CASES[0:1]
-    for case in cases:
-        if not options.silent:
-            pprint(case)
-        add_files(ignores, case['ignores'])
         if ignores and not options.silent:
             print('NOTE: these files will be ignored')
             print(ignores)
-        options.config = case['config']
+        options.config = None
         results = [p(options, ignores) for p in procs]
         fails += sum(results)
 

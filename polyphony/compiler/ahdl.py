@@ -179,7 +179,8 @@ class AHDL_SLICE(AHDL_EXP):
 
 
 class AHDL_STM(AHDL):
-    pass
+    def __init__(self):
+        self.guard_cond = None
 
 
 class AHDL_NOP(AHDL_STM):

@@ -90,7 +90,7 @@ class IOTransformer(AHDLVisitor):
             assert isinstance(self.current_stage, PipelineStage)
             pmemacc = memacc.pipelined(self.current_stage)
             local_stms, stage_stms = pmemacc.read_sequence(step, step_n,
-                                                           ahdl.offset, ahdl.dst,
+                                                           ahdl,
                                                            is_continuous)
             self.current_stage.codes.extend(stage_stms)
             return local_stms
@@ -104,7 +104,7 @@ class IOTransformer(AHDLVisitor):
             assert isinstance(self.current_stage, PipelineStage)
             pmemacc = memacc.pipelined(self.current_stage)
             local_stms, stage_stms = pmemacc.write_sequence(step, step_n,
-                                                            ahdl.offset, ahdl.src,
+                                                            ahdl,
                                                             is_continuous)
             self.current_stage.codes.extend(stage_stms)
             return local_stms

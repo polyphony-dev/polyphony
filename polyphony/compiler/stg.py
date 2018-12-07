@@ -1021,6 +1021,9 @@ class AHDLTranslator(object):
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
             cond = self.visit(ir.cond, node)
+            ahdl.guard_cond = cond
+            if ahdl.is_a(AHDL_SEQ) and ahdl.step == 0:
+                ahdl.factor.guard_cond = cond
             self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time, node)
 
     def visit_CMOVE(self, ir, node):
@@ -1031,6 +1034,9 @@ class AHDLTranslator(object):
         self._emit = orig_emit_func
         for ahdl, sched_time in self.hooked:
             cond = self.visit(ir.cond, node)
+            ahdl.guard_cond = cond
+            if ahdl.is_a(AHDL_SEQ) and ahdl.step == 0:
+                ahdl.factor.guard_cond = cond
             self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time, node)
 
     def visit(self, ir, node):
