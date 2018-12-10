@@ -723,19 +723,26 @@ class ConflictGraphBuilder(object):
         master_cgraph = Graph()
         for res, graph in cgraphs.items():
             assert not graph.edges
+            accs = []
             for cnode in graph.get_nodes():
                 cnode.res = res
                 master_cgraph.add_node(cnode)
-        for cnode in master_cgraph.get_nodes():
-            for dnode in cnode.items:
-                preds = self.dfg.collect_all_preds(dnode)
-                if not preds:
-                    continue
-                for cnode2 in master_cgraph.get_nodes():
-                    if cnode is cnode2:
-                        continue
-                    if set(preds).intersection(set(cnode2.items)):
-                        master_cgraph.add_edge(cnode2, cnode)
+                accs.append(cnode.access)
+            if accs.count(accs[0]) == len(accs) and (accs[0] == ConflictNode.READ or accs[0] == ConflictNode.WRITE):
+                pass
+            else:
+                warn(cnode.items[0].tag,
+                     Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM, [res])
+        # for cnode in master_cgraph.get_nodes():
+        #     for dnode in cnode.items:
+        #         preds = self.dfg.collect_all_preds(dnode)
+        #         if not preds:
+        #             continue
+        #         for cnode2 in master_cgraph.get_nodes():
+        #             if cnode is cnode2:
+        #                 continue
+        #             if set(preds).intersection(set(cnode2.items)):
+        #                 master_cgraph.add_edge(cnode2, cnode)
         logger.debug(master_cgraph.nodes)
         return master_cgraph
 

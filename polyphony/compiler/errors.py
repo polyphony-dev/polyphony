@@ -210,6 +210,7 @@ class Warnings(Enum):
     RULE_PIPELINE_HAS_MEM_READ_CONFLICT = 1130
     RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT = 1131
     RULE_PIPELINE_HAS_MEM_RW_CONFLICT = 1132
+    RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM = 1133
 
     def __str__(self):
         return WARNING_MESSAGES[self]
@@ -222,5 +223,5 @@ WARNING_MESSAGES = {
     Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "There is a read conflict at '{}' in a pipeline, II will be adjusted",
     Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "There is a write conflict at '{}' in a pipeline, II will be adjusted",
     Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT: "There is a read/write conflict at '{}' in a pipeline, II will be adjusted",
-
+    Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM: "The pipeline may not work correctly if there is both read and write access to the same memory '{}'"
 }
