@@ -200,8 +200,19 @@ class PipelineStageBuilder(STGItemBuilder):
     def post_build(self, dfg, is_main, pstate):
         pass
 
+    def _is_stall_free(self):
+        for items in self.scheduled_items.queue.values():
+            for item, _ in items:
+                assert isinstance(item, AHDL)
+                # FIXME: should check the use of wait function
+                for seq in item.find_ahdls(AHDL_SEQ):
+                    if seq.find_ahdls([AHDL_IO_READ, AHDL_IO_WRITE]):
+                        return False
+        return True
+
     def _build_pipeline_stages(self, prefix, pstate, is_main):
         maxstep = max([step for (step, _) in self.scheduled_items.queue.items()])
+        is_stall_free = self._is_stall_free()
         for step in range(maxstep + 1):
             if step in self.scheduled_items.queue:
                 codes = []
@@ -210,10 +221,13 @@ class PipelineStageBuilder(STGItemBuilder):
                     codes.append(item)
             else:
                 codes = [AHDL_NOP('empty stage')]
-            self._make_stage(pstate, step, codes)
-
-        for stage in pstate.stages:
-            self._add_control_chain(pstate, stage)
+            self._make_stage(pstate, step, codes, is_stall_free)
+        if is_stall_free:
+            for stage in pstate.stages:
+                self._add_control_chain_no_stall(pstate, stage)
+        else:
+            for stage in pstate.stages:
+                self._add_control_chain(pstate, stage)
 
         # analysis and inserting register slices between pileline stages
         stm2stage_num = self._make_stm2stage_num(pstate)
@@ -242,13 +256,13 @@ class PipelineStageBuilder(STGItemBuilder):
                                              d_stage_n, d_stage_n + use_max_distances,
                                              usedef, stm2stage_num)
 
-    def _make_stage(self, pstate, step, codes):
+    def _make_stage(self, pstate, step, codes, is_stall_free):
         stage = pstate.new_stage(step, codes)
         guarded_codes = []
         if stage.step == 0 and pstate.is_finite_loop:
             stage.has_enable = True
         if stage.step > 0:
-            stage.has_hold = True
+            stage.has_hold = not is_stall_free
         for c in stage.codes:
             for seq in c.find_ahdls(AHDL_SEQ):
                 if seq.step == 0:
@@ -502,25 +516,34 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             set_last = AHDL_MOVE(l_lhs, l_rhs)
             stage.codes.append(set_last)
 
-    def _add_control_chain__no_stall(self, pstate, stage):
+    def _add_control_chain_no_stall(self, pstate, stage):
         if stage.step == 0:
             v_now = pstate.valid_signal(stage.step)
-            v_prev = None
+            if stage.has_enable:
+                v_prev = pstate.enable_signal(stage.step)
+            else:
+                v_prev = None
         else:
             v_now = pstate.valid_signal(stage.step)
             v_prev = pstate.valid_signal(stage.step - 1)
         is_last = stage.step == len(pstate.stages) - 1
-        if stage.step > 0:
-            rhs = AHDL_VAR(v_prev, Ctx.LOAD)
-        else:
-            rhs = AHDL_CONST(1)
-        set_valid = AHDL_MOVE(AHDL_VAR(v_now, Ctx.STORE), rhs)
-        stage.codes.append(set_valid)
 
-        if is_last:
-            v_next = pstate.valid_signal(stage.step + 1)
-            set_valid = AHDL_MOVE(AHDL_VAR(v_next, Ctx.STORE),
-                                  AHDL_VAR(v_now, Ctx.LOAD))
+        r_now = pstate.ready_signal(stage.step)
+        if not is_last:
+            r_next = AHDL_VAR(pstate.ready_signal(stage.step + 1), Ctx.LOAD)
+        else:
+            r_next = AHDL_CONST(1)
+        if stage.has_enable:
+            en = AHDL_VAR(pstate.enable_signal(stage.step), Ctx.LOAD)
+            ready_rhs = AHDL_OP('BitAnd', r_next, en)
+        else:
+            ready_rhs = r_next
+        ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE), ready_rhs)
+        stage.codes.append(ready_stm)
+
+        if not is_last:
+            rhs = AHDL_VAR(v_prev, Ctx.LOAD)
+            set_valid = AHDL_MOVE(AHDL_VAR(v_now, Ctx.STORE), rhs)
             stage.codes.append(set_valid)
 
 
