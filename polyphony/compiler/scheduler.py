@@ -530,7 +530,7 @@ class PipelineScheduler(SchedulerImpl):
                     next_candidates.add(dnode)
         logger.debug('sync dnodes in cnode')
         logger.debug(self.cgraph.nodes)
-        cnodes = sorted(self.cgraph.get_nodes(), key=lambda cn:cn.items[0].begin)
+        cnodes = sorted(self.cgraph.get_nodes(), key=lambda cn:(cn.items[0].begin, cn.items[0].priority))
         cnode_map = defaultdict(list)
         for cnode in cnodes:
             cnode_map[cnode.res].append(cnode)
@@ -561,6 +561,7 @@ class PipelineScheduler(SchedulerImpl):
                 longest_latency = self._list_schedule_for_pipeline(dfg,
                                                                    next_candidates,
                                                                    longest_latency)
+                logger.debug(self.cgraph.nodes)
                 next_candidates.clear()
             else:
                 break
