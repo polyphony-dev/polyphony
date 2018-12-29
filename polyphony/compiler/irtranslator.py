@@ -138,18 +138,15 @@ class ScopeVisitor(ast.NodeVisitor):
     def _leave_scope(self, outer_scope):
         # override it if already exists
         outer_scope.del_sym(self.current_scope.orig_name)
-        scopesym = outer_scope.add_sym(self.current_scope.orig_name)
         if self.current_scope.is_class():
             t = Type.klass(self.current_scope)
         else:
             t = Type.function(self.current_scope, None, None)
-        scopesym.set_type(t)
+        outer_scope.add_sym(self.current_scope.orig_name, typ=t)
         self.current_scope = outer_scope
 
     def visit_FunctionDef(self, node):
         def _make_param_symbol(arg, is_vararg=False):
-            param_in = self.current_scope.add_param_sym(arg.arg)
-            param_copy = self.current_scope.add_sym(arg.arg)
             if arg.annotation:
                 ann = self.annotation_visitor.visit(arg.annotation)
                 is_lib = self.current_scope.is_lib()
@@ -158,8 +155,8 @@ class ScopeVisitor(ast.NodeVisitor):
                     fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
             else:
                 param_t = Type.int()
-            param_in.set_type(param_t)
-            param_copy.set_type(param_t.clone())
+            param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
+            param_copy = self.current_scope.add_sym(arg.arg, typ=param_t.clone())
             if is_vararg:
                 param_t.set_vararg(True)
             return param_in, param_copy
@@ -287,9 +284,8 @@ class ScopeVisitor(ast.NodeVisitor):
 
         if self.current_scope.is_module():
             for m in ['append_worker']:
-                sym = self.current_scope.add_sym(m)
                 scope = Scope.create(self.current_scope, m, {'method', 'lib'}, node.lineno)
-                sym.set_type(Type.function(scope, None, None))
+                sym = self.current_scope.add_sym(m, typ=Type.function(scope, None, None))
                 blk = Block(scope)
                 scope.set_entry_block(blk)
                 scope.set_exit_block(blk)
@@ -497,11 +493,9 @@ class CodeVisitor(ast.NodeVisitor):
                 tags |= {'lib'}
             ctor = Scope.create(self.current_scope, '__init__', tags, node.lineno)
             # add 'self' parameter
-            param_in = ctor.add_param_sym(env.self_name)
-            param_copy = ctor.add_sym(env.self_name)
             param_t = Type.object(self.current_scope)
-            param_in.set_type(param_t)
-            param_copy.set_type(param_t)
+            param_in = ctor.add_param_sym(env.self_name, typ=param_t)
+            param_copy = ctor.add_sym(env.self_name, typ=param_t)
             ctor.add_param(param_in, param_copy, None)
             # add empty block
             blk = self._new_block(ctor)
@@ -1496,8 +1490,7 @@ class IRTranslator(object):
             else:
                 lib_root = env.scopes['polyphony']
                 top_scope = Scope.create_namespace(lib_root, lib_name, {'lib'})
-                sym = lib_root.add_sym(lib_name)
-                sym.set_type(Type.namespace(top_scope))
+                sym = lib_root.add_sym(lib_name, typ=Type.namespace(top_scope))
         else:
             if top:
                 top_scope = top

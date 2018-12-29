@@ -53,8 +53,7 @@ class Scope(Tagged):
     def create_namespace(cls, parent, name, tags):
         tags |= {'namespace'}
         namespace = Scope.create(parent, name, tags, lineno=1)
-        namesym = namespace.add_sym('__name__')
-        namesym.set_type(Type.str_t)
+        namesym = namespace.add_sym('__name__', typ=Type.str_t)
         if namespace.is_global():
             namespace.constants[namesym] = CONST('__main__')
         else:
@@ -356,27 +355,27 @@ class Scope(Tagged):
             return self.parent.find_scope(name)
         return None
 
-    def add_sym(self, name, tags=None):
+    def add_sym(self, name, tags=None, typ=Type.undef_t):
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
-        sym = Symbol(name, self, tags)
+        sym = Symbol(name, self, tags, typ)
         self.symbols[name] = sym
         return sym
 
-    def add_temp(self, temp_name=None, tags=None):
+    def add_temp(self, temp_name=None, tags=None, typ=Type.undef_t):
         name = Symbol.unique_name(temp_name)
         if tags:
             tags.add('temp')
         else:
             tags = {'temp'}
-        return self.add_sym(name, tags)
+        return self.add_sym(name, tags, typ)
 
     def add_condition_sym(self):
-        return self.add_temp(Symbol.condition_prefix, {'condition'})
+        return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool_t)
 
-    def add_param_sym(self, param_name):
+    def add_param_sym(self, param_name, typ=Type.undef_t):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
-        return self.add_sym(name, ['param'])
+        return self.add_sym(name, {'param'}, typ)
 
     def find_param_sym(self, param_name):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
@@ -450,8 +449,7 @@ class Scope(Tagged):
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
-            new_sym = self.add_sym(new_name, set(orig_sym.tags))
-            new_sym.set_type(orig_sym.typ.clone())
+            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym.typ.clone())
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:

@@ -375,8 +375,7 @@ class FlattenFieldAccess(IRTransformer):
                 tags = set()
                 for sym in ir.qualified_symbol():
                     tags |= sym.tags
-                flatsym = scope.add_sym(flatname, tags)
-                flatsym.set_type(ancestor.typ.clone())
+                flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ.clone())
                 flatsym.ancestor = ancestor
                 flatsym.add_tag('flattened')
             return head + (flatsym, ) + tail
@@ -446,8 +445,7 @@ class FlattenObjectArgs(IRTransformer):
                 new_name = '{}_{}'.format(base_name, fname)
                 new_sym = module_scope.find_sym(new_name)
                 if not new_sym:
-                    new_sym = module_scope.add_sym(new_name)
-                    new_sym.set_type(fsym.typ.clone())
+                    new_sym = module_scope.add_sym(new_name, typ=fsym.typ.clone())
                 new_arg = arg.clone()
                 new_arg.set_symbol(new_sym)
                 args.append((new_name, new_arg))
@@ -465,12 +463,10 @@ class FlattenObjectArgs(IRTransformer):
             new_name = '{}_{}'.format(base_name, name)
             param_in = worker_scope.find_param_sym(new_name)
             if not param_in:
-                param_in = worker_scope.add_param_sym(new_name)
-                param_in.set_type(sym.typ.clone())
+                param_in = worker_scope.add_param_sym(new_name, typ=sym.typ.clone())
             param_copy = worker_scope.find_sym(new_name)
             if not param_copy:
-                param_copy = worker_scope.add_sym(new_name)
-                param_in.set_type(sym.typ.clone())
+                param_copy = worker_scope.add_sym(new_name, typ=sym.typ.clone())
             flatten_params.append((param_in, param_copy))
         new_params = []
         for idx, (sym, copy, defval) in enumerate(worker_scope.params):
@@ -536,9 +532,8 @@ class FlattenModule(IRTransformer):
         ctor_self = self.scope.find_sym('self')
         new_exp.replace(ctor_self, worker_self)
         VarReplacer.replace_uses(TEMP(worker_self, Ctx.LOAD), new_exp, new_worker.usedef)
-        new_worker_sym = parent_module.add_sym(new_worker.orig_name)
-        new_worker_sym.set_type(Type.function(new_worker, None, None))
-
+        new_worker_sym = parent_module.add_sym(new_worker.orig_name,
+                                               typ=Type.function(new_worker, None, None))
         arg.exp = arg.exp.exp
         arg.attr = new_worker_sym
         self.driver.insert_scope(new_worker)
