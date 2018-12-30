@@ -541,6 +541,8 @@ class DFGBuilder(object):
                 usenode = dfg.add_stm_node(usestm)
                 dfg.add_usedef_edge(usenode, defnode)
                 visited = set()
+                if v.symbol().typ.is_scalar() and not v.symbol().is_induction():
+                    continue
                 self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
     def _is_constant_stm(self, stm):
@@ -828,15 +830,19 @@ class DFGBuilder(object):
                     self._remove_alias_cycle_rec(dfg, s, end, dones)
 
     def _tweak_loop_var_edges_for_pipeline(self, dfg):
-        def remove_seq_pred(node):
+        def remove_seq_pred(node, visited):
+            if node in visited:
+                return
+            visited.add(node)
             for seq_pred in dfg.preds_typ(node, 'Seq'):
                 dfg.remove_edge(seq_pred, node)
             for defnode in dfg.preds_typ(node, 'DefUse'):
-                remove_seq_pred(defnode)
+                remove_seq_pred(defnode, visited)
         for node in dfg.nodes:
             stm = node.tag
-            if stm.is_a(MOVE) and stm.dst.symbol().is_induction():
-                remove_seq_pred(node)
+            if (stm.is_a(MOVE) and stm.dst.symbol().is_induction() or
+                    stm.is_a(PHIBase) and stm.var.symbol().is_induction()):
+                remove_seq_pred(node, set())
 
     def _get_port_sym_from_node(self, node):
         stm = node.tag

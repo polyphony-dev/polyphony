@@ -1,4 +1,5 @@
 ﻿from enum import IntEnum
+from .symbol import Symbol
 from .utils import is_a
 
 
@@ -425,8 +426,8 @@ class NEW(IRExp):
 
 
 class CONST(IRExp):
-    def __init__(self, value, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, value):
+        super().__init__(lineno=0)
         self.value = value
 
     def __str__(self):
@@ -544,6 +545,7 @@ class TEMP(IRExp):
         super().__init__(lineno)
         self.sym = sym
         self.ctx = ctx
+        assert isinstance(sym, Symbol)
         assert isinstance(ctx, int)
 
     def __str__(self):
@@ -911,9 +913,11 @@ class LPHI(PHIBase):
 
     @classmethod
     def from_phi(cls, phi):
+        assert len(phi.args) == 2
         lphi = LPHI(phi.var.clone())
         lphi.args = phi.args[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
-        lphi.lineno = phi.lineno
+        lphi.var.lineno = phi.args[1].lineno
+        lphi.lineno = phi.args[1].lineno
         return lphi
