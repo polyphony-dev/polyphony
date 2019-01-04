@@ -860,8 +860,6 @@ class SynthesisParamChecker(object):
             if blk.is_loop_head():
                 if blk.synth_params['scheduling'] == 'pipeline':
                     loop = scope.find_region(blk)
-                    if not scope.is_leaf_region(loop):
-                        fail((scope, blk.stms[0].lineno), Errors.RULE_PIPELINE_HAS_INNER_LOOP)
                     self._check_port_conflict_in_pipeline(loop, scope)
 
     def _check_port_conflict_in_pipeline(self, loop, scope):

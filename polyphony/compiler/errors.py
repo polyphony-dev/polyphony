@@ -92,6 +92,7 @@ class Errors(Enum):
     RULE_INVALID_II = 1104
     RULE_READING_PIPELINE_IS_CONFLICTED = 1105
     RULE_WRITING_PIPELINE_IS_CONFLICTED = 1106
+    RULE_PIPELINE_CANNNOT_FLATTEN = 1107
 
     RULE_UNROLL_NESTED_LOOP = 1151
     RULE_UNROLL_UNFIXED_LOOP = 1152
@@ -189,6 +190,7 @@ ERROR_MESSAGES = {
     Errors.RULE_INVALID_II: "Cannot schedule with ii = {}, you must set ii >= {}",
     Errors.RULE_READING_PIPELINE_IS_CONFLICTED: "Reading from '{}' is conflicted in a pipeline",
     Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED: "Writing to '{}' is conflicted in a pipeline",
+    Errors.RULE_PIPELINE_CANNNOT_FLATTEN: "Flattening of multiple inner loops in a pipeline loop is not supported",
 
     Errors.RULE_UNROLL_NESTED_LOOP: "Cannot unroll nested loop",
     Errors.RULE_UNROLL_UNFIXED_LOOP: "Cannot full unroll unfixed loop",

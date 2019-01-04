@@ -465,27 +465,26 @@ class HyperBlockBuilder(object):
             moves.append((idx, stm))
         return moves, remains
 
-    def _transform_special_stms_for_speculation(self, head, path_exps, path_remain_stms):
+    def _transform_special_stms_for_speculation(self, head, path_exp, path_remain_stms):
         all_cstms = []
         path_cstms = []
-        for p, stms in zip(path_exps, path_remain_stms):
-            cstms = []
-            for idx, stm in stms:
-                if stm.is_a(CMOVE) or stm.is_a(CEXPR):
-                    cstm = stm
-                elif stm.is_a(MOVE):
-                    cstm = CMOVE(p.clone(), stm.dst.clone(), stm.src.clone())
-                elif stm.is_a(EXPR):
-                    cstm = CEXPR(p.clone(), stm.exp.clone())
-                else:
-                    assert False
-                stm.block.stms.remove(stm)
-                self.scope.usedef.remove_stm(stm)
-                cstm.lineno = stm.lineno
-                cstms.append(cstm)
-                all_cstms.append((idx, cstm))
-                self.uddetector.visit(cstm)
-            path_cstms.append(cstms)
+        cstms = []
+        for idx, stm in path_remain_stms:
+            if stm.is_a(CMOVE) or stm.is_a(CEXPR):
+                cstm = stm
+            elif stm.is_a(MOVE):
+                cstm = CMOVE(path_exp.clone(), stm.dst.clone(), stm.src.clone())
+            elif stm.is_a(EXPR):
+                cstm = CEXPR(path_exp.clone(), stm.exp.clone())
+            else:
+                assert False
+            stm.block.stms.remove(stm)
+            self.scope.usedef.remove_stm(stm)
+            cstm.lineno = stm.lineno
+            cstms.append(cstm)
+            all_cstms.append((idx, cstm))
+            self.uddetector.visit(cstm)
+        path_cstms.append(cstms)
         if len(path_cstms) > 1:
             for i, cstms in enumerate(path_cstms):
                 nested_other_cstms = path_cstms[:i] + path_cstms[i + 1:]
@@ -496,31 +495,22 @@ class HyperBlockBuilder(object):
 
     def _merge_diamond_blocks(self, head, tail, branches):
         visited_path = set()
-        path_exps = []
-        path_remain_stms = []
-        head_stms = []
         for idx, path in enumerate(branches):
             if path[0] in visited_path:
                 continue
             else:
                 visited_path.update(set(path))
             assert tail is path[-1]
-            remains = []
             for blk in path[:-1]:
                 assert len(blk.succs) == 1
                 stms_, remains_ = self._select_stms_for_speculation(head, blk)
-                head_stms.extend(stms_)
-                remains.extend(remains_)
+                for _, stm in sorted(stms_, key=lambda _: _[0]):
+                    head.insert_stm(-1, stm)
                 for _, stm in stms_:
                     blk.stms.remove(stm)
-            if remains:
-                path_exp = merge_path_exp(head, path[0], idx)
-                path_exps.append(path_exp)
-                path_remain_stms.append(remains)
-        if head.synth_params['scheduling'] == 'pipeline':
-            cstms_ = self._transform_special_stms_for_speculation(head, path_exps, path_remain_stms)
-            head_stms.extend(cstms_)
-        head_stms = set(head_stms)
-        for _, stm in sorted(head_stms, key=lambda _: _[0]):
-            head.insert_stm(-1, stm)
+                if remains_ and head.synth_params['scheduling'] == 'pipeline':
+                    path_exp = merge_path_exp(head, path[0], idx)
+                    cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
+                    for _, stm in sorted(cstms_, key=lambda _: _[0]):
+                        head.insert_stm(-1, stm)
         head.is_hyperblock = True

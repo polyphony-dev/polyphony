@@ -56,9 +56,9 @@ class DFNode(object):
         return str(self)
 
     def __lt__(self, other):
-        if self.priority == other.priority:
-            return self.begin < other.begin
-        return self.priority < other.priority
+        if self.begin == other.begin:
+            return self.priority < other.priority
+        return self.begin < other.begin
 
     def latency(self):
         return self.end - self.begin
@@ -295,7 +295,7 @@ class DataFlowGraph(object):
             node_dict[n.tag.block.num].append(n)
         result = []
         for ns in node_dict.values():
-            result.extend(sorted(ns, key=lambda n: (n.begin, n.end)))
+            result.extend(sorted(ns))
         return result
 
     def get_loop_nodes(self):
@@ -840,8 +840,7 @@ class DFGBuilder(object):
                 remove_seq_pred(defnode, visited)
         for node in dfg.nodes:
             stm = node.tag
-            if (stm.is_a(MOVE) and stm.dst.symbol().is_induction() or
-                    stm.is_a(PHIBase) and stm.var.symbol().is_induction()):
+            if stm.is_a(MOVE) and stm.dst.symbol().is_induction():
                 remove_seq_pred(node, set())
 
     def _get_port_sym_from_node(self, node):

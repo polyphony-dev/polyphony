@@ -35,6 +35,7 @@ from .loopdetector import LoopDetector
 from .loopdetector import LoopInfoSetter
 from .loopdetector import LoopRegionSetter
 from .loopdetector import LoopDependencyDetector
+from .looptransformer import LoopFlatten
 from .memorytransform import RomDetector
 from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiopt import PHIInlining
@@ -408,6 +409,14 @@ def loop(driver, scope):
     checkcfg(driver, scope)
 
 
+def looptrans(driver, scope):
+    if LoopFlatten().process(scope):
+        usedef(driver, scope)
+        hyperblock(driver, scope)
+        loop(driver, scope)
+        reduceblk(driver, scope)
+
+
 def unroll(driver, scope):
     while LoopUnroller().process(scope):
         dumpscope(driver, scope)
@@ -670,6 +679,7 @@ def compile_plan():
         reduceblk,
         usedef,
         loop,
+        looptrans,
         laterestrictioncheck,
         dbg(dumpscope),
         unroll,
