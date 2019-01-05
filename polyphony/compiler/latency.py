@@ -85,7 +85,7 @@ def _get_latency(tag):
             memnode = tag.src.mem.symbol().typ.get_memnode()
             if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
                 return 1
-            return UNIT_STEP * 3, UNIT_STEP * 1
+            return UNIT_STEP * env.config.internal_ram_load_latency, UNIT_STEP * 1
         elif tag.dst.is_a(TEMP) and tag.dst.symbol().typ.is_seq():
             memnode = tag.dst.symbol().typ.get_memnode()
             if tag.src.is_a(ARRAY):
@@ -110,7 +110,7 @@ def _get_latency(tag):
             memnode = tag.exp.mem.symbol().typ.get_memnode()
             if memnode.can_be_reg():
                 return UNIT_STEP * 1
-            return UNIT_STEP * 1, UNIT_STEP * 1
+            return UNIT_STEP * env.config.internal_ram_store_latency, UNIT_STEP * 1
     elif tag.is_a(PHI):
         if tag.var.symbol().typ.is_seq() and not tag.var.symbol().typ.get_memnode().can_be_reg():
             return 0

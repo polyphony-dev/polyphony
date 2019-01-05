@@ -211,15 +211,12 @@ def single_pipelined_read_seq(inf, signal, step, dst, stage):
             enable_cond = AHDL_OP('And', stage.enable.src, enable_cond)
         stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
         if dst:
-            guards = (AHDL_MOVE(dst, data), )
+            local_stms = (AHDL_MOVE(dst, data), )
         else:
-            guards = tuple()
+            local_stms = tuple()
     else:
-        guards = tuple()
-    guard = stage.codes[0]
-    assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
-    return tuple()
+        local_stms = tuple()
+    return local_stms, tuple()
 
 
 def single_write_seq(inf, signal, step, src):
@@ -261,11 +258,11 @@ def single_pipelined_write_seq(inf, signal, step, src, stage):
             else:
                 pvalid = pipeline_state.valid_signal(stage.step - 1)
                 valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
-            guards = (AHDL_MOVE(data, src),)
-            nonguards = (AHDL_MOVE(valid, valid_rhs),)
+            local_stms = (AHDL_MOVE(data, src),)
+            stage_stms = (AHDL_MOVE(valid, valid_rhs),)
         else:
-            guards = (AHDL_MOVE(data, src), )
-            nonguards = tuple()
+            local_stms = (AHDL_MOVE(data, src), )
+            stage_stms = tuple()
         enable_cond = AHDL_CONST(1)
         enable_sig = pipeline_state.enable_signal(stage.step)
         if stage.enable:
@@ -273,11 +270,9 @@ def single_pipelined_write_seq(inf, signal, step, src, stage):
             enable_cond = AHDL_OP('And', stage.enable.src, enable_cond)
         stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
     else:
-        guards = tuple()
-    guard = stage.codes[0]
-    assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
-    return nonguards
+        local_stms = tuple()
+        stage_stms = tuple()
+    return local_stms, stage_stms
 
 
 class SinglePortInterface(Interface):
@@ -641,6 +636,7 @@ class RAMAccessor(Accessor):
         return PipelinedRAMAccessor(self, stage)
 
     def read_sequence(self, step, step_n, offset, dst, is_continuous):
+        assert step_n > 1
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
@@ -650,9 +646,7 @@ class RAMAccessor(Accessor):
             return (AHDL_MOVE(addr, offset),
                     AHDL_MOVE(we, AHDL_CONST(0)),
                     AHDL_MOVE(req, AHDL_CONST(1)))
-        elif step == 1:
-            return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
-        elif step == 2:
+        elif step == step_n - 1:
             if is_continuous:
                 if dst:
                     return (AHDL_MOVE(dst, q), )
@@ -664,8 +658,11 @@ class RAMAccessor(Accessor):
                             AHDL_MOVE(req, AHDL_CONST(0)))
                 else:
                     return (AHDL_MOVE(req, AHDL_CONST(0)), )
+        else:
+            return (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
 
     def write_sequence(self, step, step_n, offset, src, is_continuous):
+        assert step_n > 1
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
@@ -683,6 +680,8 @@ class RAMAccessor(Accessor):
                 return tuple()
             else:
                 return (AHDL_MOVE(req, AHDL_CONST(0)), )
+        else:
+            return (AHDL_NOP('wait for input of {}'.format(self.acc_name)), )
 
 
 class PipelinedRAMAccessor(RAMAccessor):
@@ -692,40 +691,44 @@ class PipelinedRAMAccessor(RAMAccessor):
         self.stage = stage
         self.pipeline_state = stage.parent_state
 
-    def read_sequence(self, step, step_n, offset, dst, is_continuous):
+    def read_sequence(self, step, step_n, ahdl_load, is_continuous):
+        assert step_n > 1
+        assert ahdl_load.is_a(AHDL_LOAD)
         addr = port2ahdl(self, 'addr')
-        we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
         q = port2ahdl(self, 'q')
-
+        offset = ahdl_load.offset
+        dst = ahdl_load.dst
         if step == 0:
             req_valids = [AHDL_VAR(self.pipeline_state.ready_signal(0), Ctx.LOAD)]
             req_valids += [AHDL_VAR(self.pipeline_state.valid_signal(self.stage.step + i), Ctx.LOAD)
                            for i in range(step_n - 1)]
             req_rhs = AHDL_OP('BitOr', *req_valids)
-            guards = (AHDL_MOVE(addr, offset), AHDL_MOVE(we, AHDL_CONST(0)))
-            nonguards = (AHDL_MOVE(req, req_rhs), )
-        elif step == 1:
-            guards = (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
-            nonguards = tuple()
-        elif step == 2:
+            local_stms = (AHDL_MOVE(addr, offset),)
+            stage_stms = tuple()
+            self.pipeline_state.add_global_move(req.name,
+                                                AHDL_MOVE(req, req_rhs))
+        elif step == step_n - 1:
             if dst:
-                guards = (AHDL_MOVE(dst, q), )
+                local_stms = (AHDL_MOVE(dst, q), )
             else:
-                guards = tuple()
-            nonguards = tuple()
+                local_stms = tuple()
+            stage_stms = tuple()
+        else:
+            local_stms = (AHDL_NOP('wait for output of {}'.format(self.acc_name)), )
+            stage_stms = tuple()
 
-        guard = self.stage.codes[0]
-        assert guard.is_a(AHDL_PIPELINE_GUARD)
-        guard.codes_list[0].extend(guards)
-        return nonguards
+        return local_stms, stage_stms
 
-    def write_sequence(self, step, step_n, offset, src, is_continuous):
+    def write_sequence(self, step, step_n, ahdl_store, is_continuous):
+        assert step_n > 1
+        assert ahdl_store.is_a(AHDL_STORE)
         addr = port2ahdl(self, 'addr')
         we = port2ahdl(self, 'we')
         req = port2ahdl(self, 'req')
         d = port2ahdl(self, 'd')
-
+        offset = ahdl_store.offset
+        src = ahdl_store.src
         if step == 0:
             if self.stage.step == 0:
                 pready = self.pipeline_state.ready_signal(0)
@@ -733,17 +736,25 @@ class PipelinedRAMAccessor(RAMAccessor):
             else:
                 pvalid = self.pipeline_state.valid_signal(self.stage.step - 1)
                 valid_rhs = AHDL_VAR(pvalid, Ctx.LOAD)
-            guards = (AHDL_MOVE(addr, offset),
-                      AHDL_MOVE(d, src))
-            nonguards = (AHDL_MOVE(we, valid_rhs),
-                         AHDL_MOVE(req, valid_rhs))
-        elif step == 1:
-            guards = tuple()
-            nonguards = tuple()
-        guard = self.stage.codes[0]
-        assert guard.is_a(AHDL_PIPELINE_GUARD)
-        guard.codes_list[0].extend(guards)
-        return nonguards
+            local_stms = (AHDL_MOVE(addr, offset),
+                          AHDL_MOVE(d, src),)
+            stage_stms = tuple()
+            we_conds = [
+                valid_rhs,
+                AHDL_OP('Eq',
+                        AHDL_CONST(self.stage.state_idx),
+                        AHDL_VAR(self.pipeline_state.substate_var, Ctx.LOAD))
+            ]
+            if ahdl_store.guard_cond:
+                we_conds.append(ahdl_store.guard_cond)
+            self.pipeline_state.add_global_move(we.name,
+                                                AHDL_MOVE(we, AHDL_OP('And', *we_conds)))
+            self.pipeline_state.add_global_move(req.name,
+                                                AHDL_MOVE(req, valid_rhs))
+        else:
+            local_stms = tuple()
+            stage_stms = tuple()
+        return local_stms, stage_stms
 
 
 class TupleInterface(Interface):
@@ -897,19 +908,16 @@ def fifo_pipelined_read_seq(inf, step, dst, stage):
         stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
 
         read_rhs = pipeline_state.valid_exp(stage.step)
-        guards = tuple()
-        nonguards = (AHDL_MOVE(read, read_rhs),
+        local_stms = tuple()
+        stage_stms = (AHDL_MOVE(read, read_rhs),
                      )
     elif step == 1:
         if dst:
-            guards = (AHDL_MOVE(dst, dout), )
+            local_stms = (AHDL_MOVE(dst, dout), )
         else:
-            guards = tuple()
-        nonguards = tuple()
-    guard = stage.codes[0]
-    assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
-    return nonguards
+            local_stms = tuple()
+        stage_stms = tuple()
+    return local_stms, stage_stms
 
 
 def fifo_write_seq(inf, step, src):
@@ -945,13 +953,10 @@ def fifo_pipelined_write_seq(inf, step, src, stage):
             enable_cond = AHDL_OP('And', stage.enable.src, enable_cond)
         stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
         write_rhs = pipeline_state.valid_exp(stage.step)
-        guards = (AHDL_MOVE(din, src), )
-        nonguards = (AHDL_MOVE(write, write_rhs),
+        local_stms = (AHDL_MOVE(din, src), )
+        stage_stms = (AHDL_MOVE(write, write_rhs),
                      )
-    guard = stage.codes[0]
-    assert guard.is_a(AHDL_PIPELINE_GUARD)
-    guard.codes_list[0].extend(guards)
-    return nonguards
+    return local_stms, stage_stms
 
 
 class FIFOInterface(Interface):
@@ -1180,8 +1185,8 @@ def create_seq_interface(signal):
 def make_event_task(hdlmodule, reset_stms, stms):
     clk = hdlmodule.gen_sig('clk', 1, {'reserved'})
     rst = hdlmodule.gen_sig('rst', 1, {'reserved'})
-    codes_list = [reset_stms, stms]
-    reset_if = AHDL_IF([AHDL_VAR(rst, Ctx.LOAD), AHDL_CONST(1)], codes_list)
+    blocks = [AHDL_BLOCK('', reset_stms), AHDL_BLOCK('', stms)]
+    reset_if = AHDL_IF([AHDL_VAR(rst, Ctx.LOAD), AHDL_CONST(1)], blocks)
     events = [(AHDL_VAR(clk, Ctx.LOAD), 'rising')]
     return AHDL_EVENT_TASK(events, reset_if)
 

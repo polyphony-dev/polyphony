@@ -3,8 +3,10 @@ from .block import Block
 from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
-from .irhelper import reduce_relexp
-from .utils import remove_except_one, replace_item
+from .irhelper import reduce_relexp, is_port_method_call
+from .type import Type
+from .usedef import UseDefDetector
+from .utils import remove_except_one
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -152,14 +154,7 @@ class PathExpTracer(object):
             self.traverse_dtree(child)
 
 
-def make_else_cond(conds):
-    exp = conds[0]
-    for cond in conds[1:]:
-        exp = RELOP('Or', exp, cond)
-    return UNOP('Not', exp)
-
-
-def merge_path_exp(pred, blk):
+def merge_path_exp(pred, blk, idx_hint=-1):
     jump = pred.stms[-1]
     exp = None
     if jump.is_a(CJUMP):
@@ -169,13 +164,13 @@ def merge_path_exp(pred, blk):
             exp = rel_and_exp(pred.path_exp, UNOP('Not', jump.exp))
     elif jump.is_a(MCJUMP):
         if blk in jump.targets:
-            assert 1 == jump.targets.count(blk)
-            idx = jump.targets.index(blk)
-            if idx == len(jump.targets) - 1 and jump.conds[idx].is_a(CONST) and jump.conds[idx].value:
-                else_cond = make_else_cond(jump.conds[:-1])
-                exp = rel_and_exp(pred.path_exp, else_cond)
+            if 1 == jump.targets.count(blk):
+                idx = jump.targets.index(blk)
+            elif idx_hint >= 0:
+                idx = idx_hint
             else:
-                exp = rel_and_exp(pred.path_exp, jump.conds[idx])
+                assert False
+            exp = rel_and_exp(pred.path_exp, jump.conds[idx])
     return exp
 
 
@@ -186,12 +181,16 @@ def rel_and_exp(exp1, exp2):
         return exp1
     exp1 = reduce_relexp(exp1)
     exp2 = reduce_relexp(exp2)
-    return RELOP('And', exp1, exp2)
+    exp = RELOP('And', exp1, exp2)
+    exp.lineno = exp1.lineno
+    return exp
 
 
 class HyperBlockBuilder(object):
     def process(self, scope):
         self.scope = scope
+        self.uddetector = UseDefDetector()
+        self.uddetector.table = scope.usedef
         self.diamond_nodes = deque()
         self._visited_heads = set()
         diamond_nodes = self._find_diamond_nodes()
@@ -406,12 +405,25 @@ class HyperBlockBuilder(object):
                 return True
             return False
 
-    def _has_mem_access(self, stm):
+    def _try_get_mem(self, stm):
         if stm.is_a(MOVE) and stm.src.is_a(MREF):
-            mem = stm.src.mem
+            return stm.src.mem
         elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
-            mem = stm.exp.mem
+            return stm.exp.mem
         else:
+            return None
+
+    def _try_get_port(self, stm):
+        if stm.is_a(MOVE) and is_port_method_call(stm.src):
+            return stm.src.func.tail()
+        elif stm.is_a(EXPR) and is_port_method_call(stm.exp):
+            return stm.src.func.tail()
+        else:
+            return None
+
+    def _has_mem_access(self, stm):
+        mem = self._try_get_mem(stm)
+        if mem is None:
             return False
         if mem.symbol().typ.has_length():
             l = mem.symbol().typ.get_length()
@@ -426,53 +438,79 @@ class HyperBlockBuilder(object):
             return True
         return False
 
-    def _emigrate_to_diamond_head(self, head, blk):
-        unmoves = set()
-        # TODO: port access by cexpr
-        for stm in blk.stms[:-1]:
-            if self._has_timing_function(stm):
-                unmoves.add(stm)
-            elif self._has_mem_access(stm):
-                unmoves.add(stm)
-            elif self._has_instance_var_modification(stm):
-                unmoves.add(stm)
-        for stm in blk.stms[:-1]:
-            if stm in unmoves:
+    def _select_stms_for_speculation(self, head, blk):
+        moves = []
+        remains = []
+        # We need to ignore the statement accessing the resource
+        for idx, stm in enumerate(blk.stms[:-1]):
+            if (stm.is_a(EXPR) or
+                    self._has_timing_function(stm) or
+                    self._has_mem_access(stm) or
+                    self._has_instance_var_modification(stm)):
+                remains.append((idx, stm))
                 continue
-            skip = False
-            usesyms = self.scope.usedef.get_syms_used_at(stm)
-            for sym in usesyms:
-                defstms = self.scope.usedef.get_stms_defining(sym)
-                intersection = defstms & unmoves
-                if intersection:
-                    unmoves.add(stm)
-                    skip = True
-                    break
-            if skip:
-                continue
-            if stm.is_a(MOVE):
-                head.insert_stm(-1, stm)
-            elif stm.is_a(EXPR) and not stm.is_a(CEXPR):
-                cexpr = CEXPR(blk.path_exp.clone(), stm.exp.clone())
-                cexpr.lineno = stm.lineno
-                head.insert_stm(-1, cexpr)
             else:
-                head.insert_stm(-1, stm)
-        return unmoves
+                skip = False
+                usesyms = self.scope.usedef.get_syms_used_at(stm)
+                for sym in usesyms:
+                    defstms = self.scope.usedef.get_stms_defining(sym)
+                    remains_ = [s for _, s in remains]
+                    intersection = defstms & set(remains_)
+                    if intersection:
+                        remains.append((idx, stm))
+                        skip = True
+                        break
+                if skip:
+                    continue
+            moves.append((idx, stm))
+        return moves, remains
+
+    def _transform_special_stms_for_speculation(self, head, path_exp, path_remain_stms):
+        all_cstms = []
+        path_cstms = []
+        cstms = []
+        for idx, stm in path_remain_stms:
+            if stm.is_a(CMOVE) or stm.is_a(CEXPR):
+                cstm = stm
+            elif stm.is_a(MOVE):
+                cstm = CMOVE(path_exp.clone(), stm.dst.clone(), stm.src.clone())
+            elif stm.is_a(EXPR):
+                cstm = CEXPR(path_exp.clone(), stm.exp.clone())
+            else:
+                assert False
+            stm.block.stms.remove(stm)
+            self.scope.usedef.remove_stm(stm)
+            cstm.lineno = stm.lineno
+            cstms.append(cstm)
+            all_cstms.append((idx, cstm))
+            self.uddetector.visit(cstm)
+        path_cstms.append(cstms)
+        if len(path_cstms) > 1:
+            for i, cstms in enumerate(path_cstms):
+                nested_other_cstms = path_cstms[:i] + path_cstms[i + 1:]
+                for cstm in cstms:
+                    self.scope.add_branch_graph_edge(cstm, nested_other_cstms)
+
+        return all_cstms
 
     def _merge_diamond_blocks(self, head, tail, branches):
         visited_path = set()
-        for path in branches:
+        for idx, path in enumerate(branches):
             if path[0] in visited_path:
                 continue
             else:
-                visited_path.add(path[0])
+                visited_path.update(set(path))
             assert tail is path[-1]
             for blk in path[:-1]:
                 assert len(blk.succs) == 1
-                unmoves = self._emigrate_to_diamond_head(head, blk)
-
-                for stm in blk.stms[:-1]:
-                    if stm not in unmoves:
-                        blk.stms.remove(stm)
+                stms_, remains_ = self._select_stms_for_speculation(head, blk)
+                for _, stm in sorted(stms_, key=lambda _: _[0]):
+                    head.insert_stm(-1, stm)
+                for _, stm in stms_:
+                    blk.stms.remove(stm)
+                if remains_ and head.synth_params['scheduling'] == 'pipeline':
+                    path_exp = merge_path_exp(head, path[0], idx)
+                    cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
+                    for _, stm in sorted(cstms_, key=lambda _: _[0]):
+                        head.insert_stm(-1, stm)
         head.is_hyperblock = True

@@ -17,7 +17,7 @@ def bind_val(scope, i, value):
 
 class EarlyWorkerInstantiator(object):
     def process_all(self):
-        assert env.enable_pure
+        assert env.config.enable_pure
         new_workers = set()
         orig_workers = set()
         for name, inst in env.runtime_info.module_instances.items():
@@ -89,15 +89,14 @@ class EarlyWorkerInstantiator(object):
         if inspect.ismethod(worker.func):
             self_sym = new_worker.find_sym(env.self_name)
             self_sym.typ.set_scope(module)
-        worker_sym = parent.add_sym(new_worker.orig_name)
-        worker_sym.set_type(Type.function(new_worker, None, None))
+        worker_sym = parent.add_sym(new_worker.orig_name, typ=Type.function(new_worker, None, None))
         env.runtime_info.inst2worker[worker] = (new_worker, worker_scope)
         return new_worker, worker_scope
 
 
 class EarlyModuleInstantiator(object):
     def process_all(self):
-        assert env.enable_pure
+        assert env.config.enable_pure
         new_modules = set()
         for name, inst in env.runtime_info.module_instances.items():
             new_module, orig_module = self._instantiate_module(name, inst)
@@ -195,8 +194,8 @@ class WorkerInstantiator(object):
                 if not is_created:
                     continue
                 new_workers.add(new_worker)
-                new_worker_sym = module.add_sym(new_worker.orig_name)
-                new_worker_sym.set_type(Type.function(new_worker, None, None))
+                new_worker_sym = module.add_sym(new_worker.orig_name,
+                                                typ=Type.function(new_worker, None, None))
                 _, w = call.args[0]
                 w.set_symbol(new_worker_sym)
         return new_workers

@@ -2,7 +2,8 @@ from collections import deque
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor, AHDLCollector
 from .graph import Graph
-from .stg import PipelineState, State
+from .stg import State
+from .stg_pipeline import PipelineState
 from .utils import find_only_one_in
 
 
@@ -54,8 +55,7 @@ class StateGraphBuilder(AHDLVisitor):
             state = nexts.popleft()
             visited.add(state)
             self.next_states = []
-            for code in state.traverse():
-                self.visit(code)
+            self.visit(state)
             for next in self.next_states:
                 self.graph.add_edge(state, next)
                 if next not in visited:
@@ -77,8 +77,7 @@ class WaitForwarder(AHDLVisitor):
                 if wait and wait.transition.target is not state:
                     self.merge_wait_function(wait)
                 else:
-                    for code in state.traverse():
-                        self.visit(code)
+                    self.visit(state)
 
     def merge_wait_function(self, wait_func):
         next_state_codes = wait_func.transition.target.codes
@@ -94,8 +93,8 @@ class WaitForwarder(AHDLVisitor):
         wait_func.transition = None
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
-        for codes in ahdl.codes_list:
-            wait = find_only_one_in(AHDL_META_WAIT, codes)
+        for ahdlblk in ahdl.blocks:
+            wait = find_only_one_in(AHDL_META_WAIT, ahdlblk.codes)
             if wait:
                 self.merge_wait_function(wait)
 
@@ -107,17 +106,16 @@ class IfForwarder(AHDLVisitor):
             for state in stg.states:
                 if isinstance(state, PipelineState):
                     continue
-                for code in state.traverse():
-                    self.visit(code)
+                self.visit(state)
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
         if ahdl in self.forwarded:
             return
-        for i, codes in enumerate(ahdl.codes_list):
-            transition = codes[-1]
+        for i, ahdlblk in enumerate(ahdl.blocks):
+            transition = ahdlblk.codes[-1]
             assert transition.is_a(AHDL_TRANSITION)
             if isinstance(transition.target, PipelineState):
                 continue
-            codes.pop()
-            ahdl.codes_list[i].extend(transition.target.codes[:])
+            ahdlblk.codes.pop()
+            ahdl.blocks[i].codes.extend(transition.target.codes[:])
         self.forwarded.add(ahdl)

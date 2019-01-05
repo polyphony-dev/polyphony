@@ -108,8 +108,7 @@ class AHDLUseDefDetector(AHDLVisitor):
             for stg in fsm.stgs:
                 for state in stg.states:
                     self.current_state = state
-                    for code in state.traverse():
-                        self.visit(code)
+                    self.visit(state)
             fsm.usedef = self.table
 
     def visit_AHDL_VAR(self, ahdl):

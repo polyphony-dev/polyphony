@@ -41,6 +41,24 @@ class SimpleOrderedSet(object):
         self.__items.discard(key)
         return key
 
+    def union(self, other):
+        return SimpleOrderedSet(self.__orders + other.orders())
+
+    def intersection(self, other):
+        items = []
+        for item0 in self.__orders:
+            for item1 in other.orders():
+                if item0 is item1:
+                    items.append(item0)
+                    break
+        return SimpleOrderedSet(items)
+
+    def items(self):
+        return self.__items.copy()
+
+    def orders(self):
+        return self.__orders.copy()
+
     def __repr__(self):
         if not self:
             return '{}()'.format(self.__class__.__name__,)
@@ -63,7 +81,10 @@ class Graph(object):
         self.is_dag_cache = None
 
     def __str__(self):
-        s = ''
+        s = 'Nodes\n'
+        for node in self.get_nodes():
+            s += '{}\n'.format(node.__repr__())
+        s += 'Edges\n'
         for edge in self.ordered_edges():
             s += '{} --> {}: {}\n'.format(edge.src.__repr__(), edge.dst.__repr__(), edge.flags)
         return s
@@ -72,16 +93,20 @@ class Graph(object):
         return len(self.nodes)
 
     def add_node(self, node):
+        node.g = self
         self.nodes.add(node)
 
     def del_node(self, node):
         self.nodes.discard(node)
         for edge in set(self.edges):
             if edge.src is node or edge.dst is node:
-                self.edges.discard(edge)
+                self.del_edge(edge.src, edge.dst, auto_del_node=False)
 
     def has_node(self, node):
         return node in self.nodes
+
+    def get_nodes(self):
+        return self.nodes.orders()
 
     def add_edge(self, src_node, dst_node, flags=0):
         self.add_node(src_node)

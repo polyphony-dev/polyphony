@@ -126,7 +126,7 @@ class HDLModuleBuilder(object):
                 case_items = []
                 for i, item in enumerate(array.items):
                     assert item.is_a(CONST)
-                    connect = AHDL_CONNECT(fname, AHDL_CONST(item.value))
+                    connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, AHDL_CONST(item.value))])
                     case_items.append(AHDL_CASE_ITEM(i, connect))
                 case = AHDL_CASE(input, case_items)
                 rom_func = AHDL_FUNCTION(fname, [input], [case])
@@ -149,7 +149,7 @@ class HDLModuleBuilder(object):
                     roms.append(romsrc)
                     rom_func_name = romsrc.sym.hdl_name()
                     call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])
-                    connect = AHDL_CONNECT(fname, call)
+                    connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, call)])
                     case_val = '{}[{}]'.format(cs_name, i)
                     case_items.append(AHDL_CASE_ITEM(case_val, connect))
                 case = AHDL_CASE(AHDL_SYMBOL('1\'b1'), case_items)
@@ -164,8 +164,7 @@ class HDLModuleBuilder(object):
         collector = AHDLVarCollector(self.hdlmodule, defs, uses, outputs, memnodes)
         for stg in fsm.stgs:
             for state in stg.states:
-                for code in state.traverse():
-                    collector.visit(code)
+                collector.visit(state)
         return defs, uses, outputs, memnodes
 
     def _collect_special_decls(self, fsm):
@@ -173,8 +172,7 @@ class HDLModuleBuilder(object):
         collector = AHDLSpecialDeclCollector(edge_detectors)
         for stg in fsm.stgs:
             for state in stg.states:
-                for code in state.traverse():
-                    collector.visit(code)
+                collector.visit(state)
         return edge_detectors
 
     def _collect_moves(self, fsm):
@@ -451,16 +449,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         assert self.hdlmodule.scope.is_class()
         if not self.hdlmodule.scope.is_instantiated():
             return
-
-        for fsm in self.hdlmodule.fsms.values():
-            self._add_state_constants(fsm)
         self._process_io(self.hdlmodule)
         self._process_connector_port(self.hdlmodule)
-        for fsm in self.hdlmodule.fsms.values():
-            self._process_fsm(fsm)
-        # remove ctor fsm and add constant parameter assigns
+
         for fsm in self.hdlmodule.fsms.values():
             if fsm.scope.is_ctor():
+                # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):
                     if stm.dst.sig.is_field():
                         assign = AHDL_ASSIGN(stm.dst, stm.src)
@@ -468,6 +462,9 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                         self.hdlmodule.add_internal_net(stm.dst.sig, '')
                 del self.hdlmodule.fsms[fsm.name]
                 break
+            else:
+                self._add_state_constants(fsm)
+                self._process_fsm(fsm)
 
     def _collect_module_defs(self, fsm):
         moves = self._collect_moves(fsm)

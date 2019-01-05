@@ -136,7 +136,7 @@ class TypePropagation(IRVisitor):
             raise RejectPropagation(ir)
 
         if ir.func_scope().is_pure():
-            if not env.enable_pure:
+            if not env.config.enable_pure:
                 fail(self.current_stm, Errors.PURE_IS_DISABLED)
             if not ir.func_scope().parent.is_global():
                 fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)
@@ -569,6 +569,11 @@ class TypeChecker(IRVisitor):
             _, mem = ir.args[0]
             if not mem.is_a([TEMP, ATTR]) or not mem.symbol().typ.is_seq():
                 type_error(self.current_stm, Errors.LEN_TAKES_SEQ_TYPE)
+        elif ir.sym.name == 'print':
+            for _, arg in ir.args:
+                arg_t = self.visit(arg)
+                if not arg_t.is_scalar():
+                    type_error(self.current_stm, Errors.PRINT_TAKES_SCALAR_TYPE)
         elif ir.sym.name in env.all_scopes:
             scope = env.all_scopes[ir.sym.name]
             arg_len = len(ir.args)
@@ -654,12 +659,6 @@ class TypeChecker(IRVisitor):
             if not (item_type.is_int() or item_type.is_bool()):
                 type_error(self.current_stm, Errors.SEQ_ITEM_MUST_BE_INT,
                            [item_type])
-        if (ir.sym.typ.is_freezed() and
-                ir.sym.typ.has_length() and
-                ir.sym.typ.get_length() != Type.ANY_LENGTH):
-            if len(ir.items * ir.repeat.value) > ir.sym.typ.get_length():
-                type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
-                           [])
         return ir.sym.typ
 
     def visit_EXPR(self, ir):
@@ -695,6 +694,13 @@ class TypeChecker(IRVisitor):
         if not Type.is_assignable(dst_t, src_t):
             type_error(ir, Errors.INCOMPATIBLE_TYPES,
                        [dst_t, src_t])
+        if (dst_t.is_seq() and dst_t.is_freezed() and
+                dst_t.has_length() and
+                dst_t.get_length() != Type.ANY_LENGTH):
+            if ir.src.is_a(ARRAY):
+                if len(ir.src.items * ir.src.repeat.value) > dst_t.get_length():
+                    type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
+                               [])
 
     def visit_PHI(self, ir):
         # FIXME
@@ -847,34 +853,37 @@ class AssertionChecker(IRVisitor):
 
 class SynthesisParamChecker(object):
     def process(self, scope):
+        self.scope = scope
         if scope.synth_params['scheduling'] == 'pipeline' and not scope.is_worker():
             fail((scope, scope.lineno), Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
         for blk in scope.traverse_blocks():
             if blk.is_loop_head():
                 if blk.synth_params['scheduling'] == 'pipeline':
                     loop = scope.find_region(blk)
-                    if not scope.is_leaf_region(loop):
-                        fail((scope, blk.stms[0].lineno), Errors.RULE_PIPELINE_HAS_INNER_LOOP)
-                    self._check_mem_rw_conflict_in_pipeline(loop, scope)
+                    self._check_port_conflict_in_pipeline(loop, scope)
 
-    def _check_mem_rw_conflict_in_pipeline(self, loop, scope):
+    def _check_port_conflict_in_pipeline(self, loop, scope):
         syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
         for sym in syms:
-            if not sym.typ.is_list():
+            if not sym.typ.is_port():
                 continue
-            memnode = sym.typ.get_memnode()
-            if memnode.can_be_reg():
+            if sym.typ.get_scope().orig_name.startswith('Port') and sym.typ.get_protocol() == 'none':
                 continue
             usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
             usestms = [stm for stm in usestms if stm.block in loop.blocks()]
-            readstms = [stm for stm in usestms if stm.is_a(MOVE) and stm.src.is_a(MREF)]
-            writestms = [stm for stm in usestms if stm.is_a(EXPR) and stm.exp.is_a(MSTORE)]
+            readstms = []
+            for stm in usestms:
+                if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func.symbol().orig_name() == 'rd':
+                    readstms.append(stm)
+            writestms = []
+            for stm in usestms:
+                if stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func.symbol().orig_name() == 'wr':
+                    writestms.append(stm)
             if len(readstms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
-                fail(readstms[1], Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT, [sym])
-            elif len(writestms) > 1:
+                fail(readstms[1], Errors.RULE_READING_PIPELINE_IS_CONFLICTED, [sym])
+            if len(writestms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym
-                fail(writestms[1], Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT, [sym])
-            elif len(readstms) >= 1 and len(writestms) >= 1:
-                sym = sym.ancestor if sym.ancestor else sym
-                fail(writestms[0], Errors.RULE_PIPELINE_HAS_MEM_RW_CONFLICT, [sym])
+                fail(writestms[1], Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED, [sym])
+            if len(readstms) >= 1 and len(writestms) >= 1:
+                assert False

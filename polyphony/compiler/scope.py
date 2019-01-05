@@ -1,15 +1,17 @@
-﻿from collections import defaultdict, namedtuple
+﻿import itertools
+from collections import defaultdict, namedtuple
 from copy import copy
 from .block import Block
 from .common import Tagged, fail
 from .errors import Errors
 from .env import env
+from .graph import Graph
 from .loop import LoopNestTree
 from .symbol import Symbol
 from .synth import make_synth_params
 from .type import Type
 from .irvisitor import IRVisitor
-from .ir import JUMP, CJUMP, MCJUMP, PHIBase
+from .ir import CONST, JUMP, CJUMP, MCJUMP, PHIBase
 from .signal import Signal
 from logging import getLogger
 logger = getLogger(__name__)
@@ -51,8 +53,11 @@ class Scope(Tagged):
     def create_namespace(cls, parent, name, tags):
         tags |= {'namespace'}
         namespace = Scope.create(parent, name, tags, lineno=1)
-        namesym = namespace.add_sym('__name__')
-        namesym.set_type(Type.str_t)
+        namesym = namespace.add_sym('__name__', typ=Type.str_t)
+        if namespace.is_global():
+            namespace.constants[namesym] = CONST('__main__')
+        else:
+            namespace.constants[namesym] = CONST(namespace.name)
         return namespace
 
     @classmethod
@@ -154,6 +159,7 @@ class Scope(Tagged):
         self.type_args = []
         self.synth_params = make_synth_params()
         self.constants = {}
+        self.branch_graph = Graph()
 
     def __str__(self):
         s = '\n================================\n'
@@ -262,6 +268,19 @@ class Scope(Tagged):
 
         s.usedef = None
 
+        for n in self.branch_graph.nodes:
+            if n in stm_map:
+                new_n = stm_map[n]
+                s.branch_graph.add_node(new_n)
+        for n0, n1, _ in self.branch_graph.edges:
+            if n0 in stm_map and n1 in stm_map:
+                new_n0 = stm_map[n0]
+                new_n1 = stm_map[n1]
+                if new_n0 < new_n1:
+                    s.branch_graph.add_edge(new_n0, new_n1)
+                else:
+                    s.branch_graph.add_edge(new_n1, new_n0)
+
         if self.is_function_module():
             new_callee_instances = defaultdict(set)
             for func_sym, inst_names in self.callee_instances.items():
@@ -336,27 +355,27 @@ class Scope(Tagged):
             return self.parent.find_scope(name)
         return None
 
-    def add_sym(self, name, tags=None):
+    def add_sym(self, name, tags=None, typ=Type.undef_t):
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
-        sym = Symbol(name, self, tags)
+        sym = Symbol(name, self, tags, typ)
         self.symbols[name] = sym
         return sym
 
-    def add_temp(self, temp_name=None, tags=None):
+    def add_temp(self, temp_name=None, tags=None, typ=Type.undef_t):
         name = Symbol.unique_name(temp_name)
         if tags:
             tags.add('temp')
         else:
             tags = {'temp'}
-        return self.add_sym(name, tags)
+        return self.add_sym(name, tags, typ)
 
     def add_condition_sym(self):
-        return self.add_temp(Symbol.condition_prefix, {'condition'})
+        return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool_t)
 
-    def add_param_sym(self, param_name):
+    def add_param_sym(self, param_name, typ=Type.undef_t):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
-        return self.add_sym(name, ['param'])
+        return self.add_sym(name, {'param'}, typ)
 
     def find_param_sym(self, param_name):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
@@ -430,8 +449,7 @@ class Scope(Tagged):
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
-            new_sym = self.add_sym(new_name, set(orig_sym.tags))
-            new_sym.set_type(orig_sym.typ.clone())
+            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym.typ.clone())
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:
@@ -591,6 +609,21 @@ class Scope(Tagged):
 
     def traverse_regions(self, reverse=False):
         return self.loop_tree.traverse(reverse)
+
+    def add_branch_graph_edge(self, k, vs):
+        assert isinstance(vs, list)
+        self.branch_graph.add_node(k)
+        for v in itertools.chain(*vs):
+            if k < v:
+                self.branch_graph.add_edge(k, v)
+            else:
+                self.branch_graph.add_edge(v, k)
+
+    def has_branch_edge(self, stm0, stm1):
+        if stm0 < stm1:
+            return self.branch_graph.find_edge(stm0, stm1) is not None
+        else:
+            return self.branch_graph.find_edge(stm1, stm0) is not None
 
 
 class SymbolReplacer(IRVisitor):

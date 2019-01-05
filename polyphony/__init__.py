@@ -304,7 +304,7 @@ class _Rule(object):
 rule = _Rule()
 
 
-def pipelined(seq):
+def pipelined(seq, ii=-1):
     return seq
 
 

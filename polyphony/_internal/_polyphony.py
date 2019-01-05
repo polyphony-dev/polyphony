@@ -1,4 +1,4 @@
-__version__ = '0.3.3'  # type: str
+__version__ = '0.3.4'  # type: str
 __all__ = [
     'testbench',
     'pure',
@@ -37,5 +37,5 @@ def unroll(seq, factor='full') -> list:
 
 
 @builtin
-def pipelined(seq) -> list:
+def pipelined(seq, ii=-1) -> list:
     pass

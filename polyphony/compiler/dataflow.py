@@ -24,14 +24,15 @@ class DFNode(object):
 
     def __str__(self):
         if self.typ == 'Stm':
-            s = 'Node {} {} {}:{} {} {}'.format(
+            s = '<{}> ({}) {} {}:{} {}'.format(
                 hex(self.__hash__())[-4:],
+                self.tag.lineno,
                 self.priority,
                 self.begin,
                 self.end,
-                self.tag,
-                self.tag.block.name
+                self.tag
             )
+            #s += ' ' + self.tag.block.name
         elif self.typ == 'Loop':
             s = 'Node {} {} {}:{} Loop {}'.format(
                 hex(self.__hash__())[-4:],
@@ -55,16 +56,17 @@ class DFNode(object):
         return str(self)
 
     def __lt__(self, other):
-        if self.priority == other.priority:
-            return self.begin < other.begin
-        return self.priority < other.priority
+        if self.begin == other.begin:
+            return self.priority < other.priority
+        return self.begin < other.begin
 
     def latency(self):
         return self.end - self.begin
 
 
 class DataFlowGraph(object):
-    def __init__(self, name, parent, region):
+    def __init__(self, scope, name, parent, region):
+        self.scope = scope
         self.name = name
         self.region = region
         #self.blocks = blocks
@@ -127,6 +129,8 @@ class DataFlowGraph(object):
     def add_seq_edge(self, n1, n2):
         assert n1 and n2 and n1.tag and n2.tag
         assert n1 is not n2
+        assert not self.scope.has_branch_edge(n1.tag, n2.tag)
+
         if (n1, n2) not in self.edges:
             self._add_edge(n1, n2, 'Seq', False)
         else:
@@ -291,11 +295,25 @@ class DataFlowGraph(object):
             node_dict[n.tag.block.num].append(n)
         result = []
         for ns in node_dict.values():
-            result.extend(sorted(ns, key=lambda n: n.begin))
+            result.extend(sorted(ns))
         return result
 
     def get_loop_nodes(self):
         return filter(lambda n: n.typ == 'Loop', self.nodes)
+
+    def collect_all_preds(self, node):
+        def collect_preds_rec(n, visited, results):
+            preds = self.preds_without_back(n)
+            for p in preds:
+                if p in visited:
+                    continue
+                visited.add(p)
+                results.append(p)
+                collect_preds_rec(p, visited, results)
+        visited = set()
+        results = []
+        collect_preds_rec(node, visited, results)
+        return results
 
     def write_dot(self, name):
         try:
@@ -419,7 +437,7 @@ class DFGBuilder(object):
 
     def _make_graph(self, parent_dfg, region):
         logger.debug('make graph ' + region.name)
-        dfg = DataFlowGraph(region.name, parent_dfg, region)
+        dfg = DataFlowGraph(self.scope, region.name, parent_dfg, region)
         usedef = self.scope.usedef
 
         blocks = region.blocks()
@@ -522,7 +540,10 @@ class DFGBuilder(object):
                     continue
                 usenode = dfg.add_stm_node(usestm)
                 dfg.add_usedef_edge(usenode, defnode)
-                self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef)
+                visited = set()
+                if v.symbol().typ.is_scalar() and not v.symbol().is_induction():
+                    continue
+                self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
     def _is_constant_stm(self, stm):
         if stm.is_a(PHIBase):
@@ -612,13 +633,18 @@ class DFGBuilder(object):
                                 if n2.tag.is_mem_write():
                                     dfg.add_usedef_edge(n1, n2)
                                 continue
+                            if self.scope.has_branch_edge(n1.tag, n2.tag):
+                                continue
                             dfg.add_seq_edge(n1, n2)
 
                 else:
                     for i in range(len(sorted_nodes) - 1):
                         n1 = sorted_nodes[i]
-                        n2 = sorted_nodes[i + 1]
-                        dfg.add_seq_edge(n1, n2)
+                        for j in range(i + 1, len(sorted_nodes)):
+                            n2 = sorted_nodes[j]
+                            if self.scope.has_branch_edge(n1.tag, n2.tag):
+                                continue
+                            dfg.add_seq_edge(n1, n2)
 
     def _add_edges_between_func_modules(self, blocks, dfg):
         """this function is used for testbench only"""
@@ -689,8 +715,7 @@ class DFGBuilder(object):
                 assert stm.block.stms[-1] is stm
                 for prev_stm in stm.block.stms[:-1]:
                     prev_node = dfg.find_node(prev_stm)
-                    if all([n.tag.block is not node.tag.block for n in dfg.succs(prev_node)]):
-                        dfg.add_seq_edge(prev_node, node)
+                    dfg.add_seq_edge(prev_node, node)
 
     def _add_seq_edges_for_function(self, blocks, dfg):
         '''make sequence edges between functions that are executed in an exclusive state'''
@@ -701,6 +726,8 @@ class DFGBuilder(object):
                     continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
+                    if self.scope.has_branch_edge(seq_func_node.tag, node.tag):
+                        continue
                     dfg.add_seq_edge(seq_func_node, node)
                 if has_exclusive_function(stm):
                     seq_func_node = node
@@ -710,6 +737,8 @@ class DFGBuilder(object):
                     continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
+                    if self.scope.has_branch_edge(node.tag, seq_func_node.tag):
+                        continue
                     dfg.add_seq_edge(node, seq_func_node)
                 if has_exclusive_function(stm):
                     seq_func_node = node
@@ -741,7 +770,10 @@ class DFGBuilder(object):
             return None
         return m.mem.symbol().typ.get_memnode()
 
-    def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef):
+    def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef, visited):
+        if (usenode, defnode) in visited:
+            return
+        visited.add((usenode, defnode))
         stm = usenode.tag
         if stm.is_a(MOVE):
             var = stm.dst
@@ -769,7 +801,7 @@ class DFGBuilder(object):
                     dfg.add_usedef_edge(unode, defnode)
             else:
                 dfg.add_usedef_edge(unode, defnode)
-            self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef)
+            self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef, visited)
 
     def _remove_alias_cycle(self, dfg):
         backs = []
@@ -798,15 +830,18 @@ class DFGBuilder(object):
                     self._remove_alias_cycle_rec(dfg, s, end, dones)
 
     def _tweak_loop_var_edges_for_pipeline(self, dfg):
-        def remove_seq_pred(node):
+        def remove_seq_pred(node, visited):
+            if node in visited:
+                return
+            visited.add(node)
             for seq_pred in dfg.preds_typ(node, 'Seq'):
                 dfg.remove_edge(seq_pred, node)
             for defnode in dfg.preds_typ(node, 'DefUse'):
-                remove_seq_pred(defnode)
+                remove_seq_pred(defnode, visited)
         for node in dfg.nodes:
             stm = node.tag
             if stm.is_a(MOVE) and stm.dst.symbol().is_induction():
-                remove_seq_pred(node)
+                remove_seq_pred(node, set())
 
     def _get_port_sym_from_node(self, node):
         stm = node.tag

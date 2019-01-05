@@ -239,9 +239,8 @@ class SelectorBuilder(object):
             if hasattr(c, 'codes'):
                 if self._remove_code(c, code):
                     return True
-            elif hasattr(c, 'codes_list'):
-                for codes in c.codes_list:
-                    if code in codes:
-                        codes.remove(code)
+            elif hasattr(c, 'blocks'):
+                for blk in c.blocks:
+                    if self._remove_code(c, code):
                         return True
         return False

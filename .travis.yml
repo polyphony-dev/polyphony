@@ -1,0 +1,13 @@
+language: python
+sudo: false
+python:
+  - "3.6"
+  - "nightly"
+addons:
+  apt:
+    packages:
+    - iverilog
+install: 
+  - pip install -r requirements.txt
+script:
+  - python suite.py -j -f

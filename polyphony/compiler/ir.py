@@ -1,4 +1,5 @@
 ﻿from enum import IntEnum
+from .symbol import Symbol
 from .utils import is_a
 
 
@@ -19,8 +20,8 @@ class Ctx(IntEnum):
 
 
 class IR(object):
-    def __init__(self):
-        self.lineno = -1
+    def __init__(self, lineno=-1):
+        self.lineno = lineno
 
     def __repr__(self):
         return self.__str__()
@@ -115,13 +116,13 @@ class IR(object):
 
 
 class IRExp(IR):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, lineno=-1):
+        super().__init__(lineno)
 
 
 class UNOP(IRExp):
-    def __init__(self, op, exp):
-        super().__init__()
+    def __init__(self, op, exp, lineno=-1):
+        super().__init__(lineno)
         self.op = op
         self.exp = exp
         assert op in {'USub', 'UAdd', 'Not', 'Invert'}
@@ -142,8 +143,8 @@ class UNOP(IRExp):
 
 
 class BINOP(IRExp):
-    def __init__(self, op, left, right):
-        super().__init__()
+    def __init__(self, op, left, right, lineno=-1):
+        super().__init__(lineno)
         self.op = op
         self.left = left
         self.right = right
@@ -169,8 +170,8 @@ class BINOP(IRExp):
 
 
 class RELOP(IRExp):
-    def __init__(self, op, left, right):
-        super().__init__()
+    def __init__(self, op, left, right, lineno=-1):
+        super().__init__(lineno)
         self.op = op
         self.left = left
         self.right = right
@@ -196,8 +197,8 @@ class RELOP(IRExp):
 
 
 class CONDOP(IRExp):
-    def __init__(self, cond, left, right):
-        super().__init__()
+    def __init__(self, cond, left, right, lineno=-1):
+        super().__init__(lineno)
         self.cond = cond
         self.left = left
         self.right = right
@@ -260,8 +261,8 @@ def find_irs_args(args, typ):
 
 
 class CALL(IRExp):
-    def __init__(self, func, args, kwargs):
-        super().__init__()
+    def __init__(self, func, args, kwargs, lineno=-1):
+        super().__init__(lineno)
         self.func = func
         self.args = args
         self.kwargs = kwargs
@@ -324,14 +325,14 @@ class CALL(IRExp):
 
 
 class SYSCALL(IRExp):
-    def __init__(self, sym, args, kwargs):
-        super().__init__()
+    def __init__(self, sym, args, kwargs, lineno=-1):
+        super().__init__(lineno)
         self.sym = sym
         self.args = args
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '{}('.format(self.sym)
+        s = '!{}('.format(self.sym)
         #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ', '.join(['{}'.format(arg) for name, arg in self.args])
         s += ")"
@@ -375,8 +376,8 @@ class SYSCALL(IRExp):
 
 
 class NEW(IRExp):
-    def __init__(self, sym, args, kwargs):
-        super().__init__()
+    def __init__(self, sym, args, kwargs, lineno=-1):
+        super().__init__(lineno)
         self.sym = sym
         self.args = args
         self.kwargs = kwargs
@@ -426,7 +427,7 @@ class NEW(IRExp):
 
 class CONST(IRExp):
     def __init__(self, value):
-        super().__init__()
+        super().__init__(lineno=0)
         self.value = value
 
     def __str__(self):
@@ -450,8 +451,8 @@ class CONST(IRExp):
 
 
 class MREF(IRExp):
-    def __init__(self, mem, offset, ctx):
-        super().__init__()
+    def __init__(self, mem, offset, ctx, lineno=-1):
+        super().__init__(lineno)
         assert mem.is_a([TEMP, ATTR])
         self.mem = mem
         self.offset = offset
@@ -473,8 +474,8 @@ class MREF(IRExp):
 
 
 class MSTORE(IRExp):
-    def __init__(self, mem, offset, exp):
-        super().__init__()
+    def __init__(self, mem, offset, exp, lineno=-1):
+        super().__init__(lineno)
         self.mem = mem
         self.offset = offset
         self.exp = exp
@@ -495,8 +496,8 @@ class MSTORE(IRExp):
 
 
 class ARRAY(IRExp):
-    def __init__(self, items, is_mutable=True):
-        super().__init__()
+    def __init__(self, items, is_mutable=True, lineno=-1):
+        super().__init__(lineno)
         self.items = items
         self.sym = None
         self.repeat = CONST(1)
@@ -540,10 +541,11 @@ class ARRAY(IRExp):
 
 
 class TEMP(IRExp):
-    def __init__(self, sym, ctx):
-        super().__init__()
+    def __init__(self, sym, ctx, lineno=-1):
+        super().__init__(lineno)
         self.sym = sym
         self.ctx = ctx
+        assert isinstance(sym, Symbol)
         assert isinstance(ctx, int)
 
     def __str__(self):
@@ -571,8 +573,8 @@ class TEMP(IRExp):
 
 
 class ATTR(IRExp):
-    def __init__(self, exp, attr, ctx, attr_scope=None):
-        super().__init__()
+    def __init__(self, exp, attr, ctx, attr_scope=None, lineno=-1):
+        super().__init__(lineno)
         self.exp = exp
         self.attr = attr
         self.ctx = ctx
@@ -624,8 +626,8 @@ class ATTR(IRExp):
 
 
 class IRStm(IR):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, lineno=-1):
+        super().__init__(lineno)
         self.block = None
 
     def program_order(self):
@@ -642,8 +644,8 @@ class IRStm(IR):
 
 
 class EXPR(IRStm):
-    def __init__(self, exp):
-        super().__init__()
+    def __init__(self, exp, lineno=-1):
+        super().__init__(lineno)
         self.exp = exp
 
     def __str__(self):
@@ -662,8 +664,8 @@ class EXPR(IRStm):
 
 
 class CJUMP(IRStm):
-    def __init__(self, exp, true, false):
-        super().__init__()
+    def __init__(self, exp, true, false, lineno=-1):
+        super().__init__(lineno)
         self.exp = exp
         self.true = true
         self.false = false
@@ -682,8 +684,8 @@ class CJUMP(IRStm):
 
 
 class MCJUMP(IRStm):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, lineno=-1):
+        super().__init__(lineno)
         self.conds = []
         self.targets = []
         self.loop_branch = False
@@ -708,8 +710,8 @@ class MCJUMP(IRStm):
 
 
 class JUMP(IRStm):
-    def __init__(self, target, typ=''):
-        super().__init__()
+    def __init__(self, target, typ='', lineno=-1):
+        super().__init__(lineno)
         self.target = target
         self.typ = typ  # 'B': break, 'C': continue, 'L': loop-back, 'S': specific
 
@@ -726,8 +728,8 @@ class JUMP(IRStm):
 
 
 class RET(IRStm):
-    def __init__(self, exp):
-        super().__init__()
+    def __init__(self, exp, lineno=-1):
+        super().__init__(lineno)
         self.exp = exp
 
     def __str__(self):
@@ -746,8 +748,8 @@ class RET(IRStm):
 
 
 class MOVE(IRStm):
-    def __init__(self, dst, src):
-        super().__init__()
+    def __init__(self, dst, src, lineno=-1):
+        super().__init__(lineno)
         self.dst = dst
         self.src = src
 
@@ -767,8 +769,8 @@ class MOVE(IRStm):
 
 
 class CEXPR(EXPR):
-    def __init__(self, cond, exp):
-        super().__init__(exp)
+    def __init__(self, cond, exp, lineno=-1):
+        super().__init__(exp, lineno)
         assert isinstance(cond, IRExp)
         self.cond = cond
 
@@ -788,8 +790,8 @@ class CEXPR(EXPR):
 
 
 class CMOVE(MOVE):
-    def __init__(self, cond, dst, src):
-        super().__init__(dst, src)
+    def __init__(self, cond, dst, src, lineno=-1):
+        super().__init__(dst, src, lineno)
         assert isinstance(cond, IRExp)
         self.cond = cond
 
@@ -819,8 +821,8 @@ def conds2str(conds):
 
 
 class PHIBase(IRStm):
-    def __init__(self, var):
-        super().__init__()
+    def __init__(self, var, lineno=-1):
+        super().__init__(lineno)
         assert var.is_a([TEMP, ATTR])
         self.var = var
         self.var.ctx = Ctx.STORE
@@ -877,8 +879,8 @@ class PHIBase(IRStm):
 
 
 class PHI(PHIBase):
-    def __init__(self, var):
-        super().__init__(var)
+    def __init__(self, var, lineno=-1):
+        super().__init__(var, lineno)
 
     def __str__(self):
         if len(self.args) >= 2:
@@ -893,8 +895,8 @@ class PHI(PHIBase):
 
 
 class UPHI(PHIBase):
-    def __init__(self, var):
-        super().__init__(var)
+    def __init__(self, var, lineno=-1):
+        super().__init__(var, lineno)
 
     def __str__(self):
         s = "{} = uphi({})".format(self.var, ", ".join(self._str_args()))
@@ -902,8 +904,8 @@ class UPHI(PHIBase):
 
 
 class LPHI(PHIBase):
-    def __init__(self, var):
-        super().__init__(var)
+    def __init__(self, var, lineno=-1):
+        super().__init__(var, lineno)
 
     def __str__(self):
         s = "{} = lphi({})".format(self.var, ", ".join(self._str_args()))
@@ -911,9 +913,11 @@ class LPHI(PHIBase):
 
     @classmethod
     def from_phi(cls, phi):
+        assert len(phi.args) == 2
         lphi = LPHI(phi.var.clone())
         lphi.args = phi.args[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
-        lphi.lineno = phi.lineno
+        lphi.var.lineno = phi.args[1].lineno
+        lphi.lineno = phi.args[1].lineno
         return lphi

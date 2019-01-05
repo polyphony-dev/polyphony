@@ -22,6 +22,24 @@ class AHDL(object):
     def is_a(self, cls):
         return is_a(self, cls)
 
+    def find_ahdls(self, typ):
+        ahdls = []
+
+        def find_ahdls_rec(ahdl, typ, ahdls):
+            #print(ahdl)
+            if ahdl.is_a(typ):
+                ahdls.append(ahdl)
+            for k, v in ahdl.__dict__.items():
+                if isinstance(v, AHDL):
+                    if v is self:
+                        continue
+                    find_ahdls_rec(v, typ, ahdls)
+                elif isinstance(v, list) or isinstance(v, tuple):
+                    for elm in filter(lambda w:isinstance(w, AHDL),  v):
+                        find_ahdls_rec(elm, typ, ahdls)
+        find_ahdls_rec(self, typ, ahdls)
+        return ahdls
+
 
 class AHDL_EXP(AHDL):
     pass
@@ -161,7 +179,8 @@ class AHDL_SLICE(AHDL_EXP):
 
 
 class AHDL_STM(AHDL):
-    pass
+    def __init__(self):
+        self.guard_cond = None
 
 
 class AHDL_NOP(AHDL_STM):
@@ -378,30 +397,30 @@ class AHDL_SEQ(AHDL_STM):
 class AHDL_IF(AHDL_STM):
     # ([cond], [code]) => if (cond) code
     # ([cond, None], [code1, code2]) => if (cond) code1 else code2
-    def __init__(self, conds, codes_list):
+    def __init__(self, conds, blocks):
         super().__init__()
         self.conds = conds
-        self.codes_list = codes_list
-        assert len(conds) == len(codes_list)
+        self.blocks = blocks
+        assert len(conds) == len(blocks)
         assert conds[0]
 
     def __str__(self):
         s = 'if {}\n'.format(self.conds[0])
-        for code in self.codes_list[0]:
+        for code in self.blocks[0].codes:
             s += '    {}\n'.format(code)
-        for cond, codes in zip(self.conds[1:], self.codes_list[1:]):
+        for cond, ahdlblk in zip(self.conds[1:], self.blocks[1:]):
             if cond:
                 s += '  elif {}\n'.format(cond)
-                for code in codes:
+                for code in ahdlblk.codes:
                     s += '    {}\n'.format(code)
             else:
                 s += '  else\n'
-                for code in self.codes_list[-1]:
+                for code in ahdlblk.codes:
                     s += '    {}'.format(code)
         return s
 
     def __repr__(self):
-        return 'AHDL_IF({}, {})'.format(repr(self.conds), repr(self.codes_list))
+        return 'AHDL_IF({}, {})'.format(repr(self.conds), repr(self.blocks))
 
 
 class AHDL_IF_EXP(AHDL_EXP):
@@ -639,13 +658,13 @@ class AHDL_CASE(AHDL_STM):
 
 
 class AHDL_CASE_ITEM(AHDL_STM):
-    def __init__(self, val, stm):
+    def __init__(self, val, block):
         super().__init__()
         self.val = val
-        self.stm = stm
+        self.block = block
 
     def __str__(self):
-        return '{}:{}'.format(self.val, str(self.stm))
+        return '{}:{}'.format(self.val, str(self.block))
 
 
 class AHDL_TRANSITION(AHDL_STM):
@@ -660,16 +679,37 @@ class AHDL_TRANSITION(AHDL_STM):
 
 
 class AHDL_TRANSITION_IF(AHDL_IF):
-    def __init__(self, conds, codes_list):
-        super().__init__(conds, codes_list)
+    def __init__(self, conds, blocks):
+        super().__init__(conds, blocks)
 
     def __repr__(self):
-        return 'AHDL_TRANSITION_IF({}, {})'.format(repr(self.conds), repr(self.codes_list))
+        return 'AHDL_TRANSITION_IF({}, {})'.format(repr(self.conds), repr(self.blocks))
 
 
 class AHDL_PIPELINE_GUARD(AHDL_IF):
     def __init__(self, cond, codes):
-        super().__init__([cond], [codes])
+        super().__init__([cond], [AHDL_BLOCK('', codes)])
 
     def __repr__(self):
-        return 'AHDL_PIPELINE_GUARD({}, {})'.format(repr(self.conds), repr(self.codes_list))
+        return 'AHDL_PIPELINE_GUARD({}, {})'.format(repr(self.conds), repr(self.blocks))
+
+
+class AHDL_BLOCK(AHDL):
+    def __init__(self, name, codes):
+        self.name = name
+        self.codes = codes
+
+    def __str__(self):
+        return 'AHDL_BLOCK begin\n' + ('\n'.join([str(c) for c in self.codes])) + 'AHDL_BLOCK end'
+
+    def __repr__(self):
+        return 'AHDL_BLOCK({})'.format(', '.join([repr(c) for c in self.codes]))
+
+    def traverse(self):
+        codes = []
+        for c in self.codes:
+            if c.is_a(AHDL_BLOCK):
+                codes.extend(c.traverse())
+            else:
+                codes.append(c)
+        return codes

@@ -5,6 +5,7 @@ from .errors import Errors
 from .irvisitor import IRVisitor, IRTransformer
 from .ir import *
 from .irhelper import expr2ir, reduce_relexp
+from .irhelper import eval_unop, eval_binop, reduce_binop, eval_relop
 from .env import env
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
@@ -13,98 +14,6 @@ from .scope import Scope
 from .utils import *
 from logging import getLogger
 logger = getLogger(__name__)
-
-
-def eval_unop(ir, ctx):
-    op = ir.op
-    v = ir.exp.value
-    if op == 'Invert':
-        return ~v
-    elif op == 'Not':
-        return 1 if (not v) is True else 0
-    elif op == 'UAdd':
-        return v
-    elif op == 'USub':
-        return -v
-    else:
-        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
-
-
-def eval_binop(ir, ctx):
-    op = ir.op
-    lv = ir.left.value
-    rv = ir.right.value
-    if op == 'Add':
-        return lv + rv
-    elif op == 'Sub':
-        return lv - rv
-    elif op == 'Mult':
-        return lv * rv
-    elif op == 'FloorDiv':
-        return lv // rv
-    elif op == 'Mod':
-        return lv % rv
-    elif op == 'Mod':
-        return lv % rv
-    elif op == 'LShift':
-        return lv << rv
-    elif op == 'RShift':
-        return lv >> rv
-    elif op == 'BitOr':
-        return lv | rv
-    elif op == 'BitXor':
-        return lv ^ rv
-    elif op == 'BitAnd':
-        return lv & rv
-    else:
-        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
-
-
-def reduce_binop(ir):
-    op = ir.op
-    if ir.left.is_a(CONST):
-        const = ir.left.value
-        var = ir.right
-    elif ir.right.is_a(CONST):
-        const = ir.right.value
-        var = ir.left
-    else:
-        assert False
-    if op == 'Add' and const == 0:
-        return var
-    elif op == 'Mult' and const == 1:
-        return var
-    elif op == 'Mult' and const == 0:
-        c = CONST(0)
-        c.lineno = ir.lineno
-        return c
-    return ir
-
-
-def eval_relop(op, lv, rv, ctx):
-    if op == 'Eq':
-        b = lv == rv
-    elif op == 'NotEq':
-        b = lv != rv
-    elif op == 'Lt':
-        b = lv < rv
-    elif op == 'LtE':
-        b = lv <= rv
-    elif op == 'Gt':
-        b = lv > rv
-    elif op == 'GtE':
-        b = lv >= rv
-    elif op == 'Is':
-        b = lv is rv
-    elif op == 'IsNot':
-        b = lv is not rv
-    elif op == 'And':
-        b = lv and rv
-    elif op == 'Or':
-        b = lv or rv
-    else:
-        fail(ctx.current_stm, Errors.UNSUPPORTED_OPERATOR, [op])
-    return 1 if b else 0
 
 
 def _try_get_constant(qsym, scope):
@@ -144,7 +53,7 @@ def _try_get_constant_pure(qsym, scope):
 
 
 def try_get_constant(qsym, scope):
-    if env.enable_pure:
+    if env.config.enable_pure:
         return _try_get_constant_pure(qsym, scope)
     else:
         return _try_get_constant(qsym, scope)
@@ -162,7 +71,10 @@ class ConstantOptBase(IRVisitor):
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            c = CONST(eval_unop(ir, self))
+            v = eval_unop(ir)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         return ir
@@ -171,7 +83,10 @@ class ConstantOptBase(IRVisitor):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            c = CONST(eval_binop(ir, self))
+            v = eval_binop(ir)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         elif ir.left.is_a(CONST) or ir.right.is_a(CONST):
@@ -182,7 +97,10 @@ class ConstantOptBase(IRVisitor):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            c = CONST(eval_relop(ir.op, ir.left.value, ir.right.value, self))
+            v = eval_relop(ir.op, ir.left.value, ir.right.value)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
@@ -204,7 +122,10 @@ class ConstantOptBase(IRVisitor):
         elif (ir.left.is_a([TEMP, ATTR])
                 and ir.right.is_a([TEMP, ATTR])
                 and ir.left.qualified_symbol() == ir.right.qualified_symbol()):
-            c = CONST(eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id, self))
+            v = eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id)
+            if v is None:
+                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
+            c = CONST(v)
             c.lineno = ir.lineno
             return c
         return ir
@@ -372,13 +293,12 @@ class ConstantOpt(ConstantOptBase):
                         worklist.append(mv)
                         dead_stms.append(stm)
                         break
-                if stm.block.is_hyperblock:
-                    for p in stm.ps[:]:
-                        if (p.is_a(CONST) and not p.value or
-                                p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
-                            idx = stm.ps.index(p)
-                            stm.ps.pop(idx)
-                            stm.args.pop(idx)
+                for p in stm.ps[:]:
+                    if (p.is_a(CONST) and not p.value or
+                            p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
+                        idx = stm.ps.index(p)
+                        stm.ps.pop(idx)
+                        stm.args.pop(idx)
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.block
@@ -664,11 +584,7 @@ class StaticConstOpt(ConstantOptBase):
         self.constant_table = {}
         self.constant_array_table = {}
 
-    def process_all(self, driver):
-        scopes = driver.get_scopes(bottom_up=True,
-                                   with_global=True,
-                                   with_class=True,
-                                   with_lib=False)
+    def process_scopes(self, scopes):
         stms = []
         dtrees = {}
         for s in scopes:

@@ -55,6 +55,7 @@ class Errors(Enum):
     USE_OUTSIDE_FOR = 816
     NAME_SCOPE_RESTRICTION = 817
     INVALID_MODULE_OBJECT_ACCESS = 818
+    PRINT_TAKES_SCALAR_TYPE = 819
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -88,9 +89,10 @@ class Errors(Enum):
     RULE_CONTINUE_IN_PIPELINE_LOOP = 1101
     RULE_FUNCTION_CANNOT_BE_PIPELINED = 1102
     RULE_PIPELINE_HAS_INNER_LOOP = 1103
-    RULE_PIPELINE_HAS_MEM_READ_CONFLICT = 1130
-    RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT = 1131
-    RULE_PIPELINE_HAS_MEM_RW_CONFLICT = 1132
+    RULE_INVALID_II = 1104
+    RULE_READING_PIPELINE_IS_CONFLICTED = 1105
+    RULE_WRITING_PIPELINE_IS_CONFLICTED = 1106
+    RULE_PIPELINE_CANNNOT_FLATTEN = 1107
 
     RULE_UNROLL_NESTED_LOOP = 1151
     RULE_UNROLL_UNFIXED_LOOP = 1152
@@ -152,6 +154,7 @@ ERROR_MESSAGES = {
     Errors.USE_OUTSIDE_FOR: "Cannot use {}() function outside of for statememt",
     Errors.NAME_SCOPE_RESTRICTION: "Using the variable 'i' is restricted by polyphony's name scope rule",
     Errors.INVALID_MODULE_OBJECT_ACCESS: "Invalid access to a module class object",
+    Errors.PRINT_TAKES_SCALAR_TYPE: "print() takes only scalar type (e.g. int, str, ...) argument",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",
@@ -184,9 +187,10 @@ ERROR_MESSAGES = {
     Errors.RULE_CONTINUE_IN_PIPELINE_LOOP: "Cannot use 'continue' statement in the pipeline loop",
     Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED: "Normal function cannot be pipelined",
     Errors.RULE_PIPELINE_HAS_INNER_LOOP: "Cannot pipelining the loop that has an inner loop",
-    Errors.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "Cannot read '{}' more than once in a pipeline loop",
-    Errors.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "Cannot write '{}' more than once in a pipeline loop",
-    Errors.RULE_PIPELINE_HAS_MEM_RW_CONFLICT: "Cannot read and write '{}' in a pipeline loop",
+    Errors.RULE_INVALID_II: "Cannot schedule with ii = {}, you must set ii >= {}",
+    Errors.RULE_READING_PIPELINE_IS_CONFLICTED: "Reading from '{}' is conflicted in a pipeline",
+    Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED: "Writing to '{}' is conflicted in a pipeline",
+    Errors.RULE_PIPELINE_CANNNOT_FLATTEN: "Flattening of multiple inner loops in a pipeline loop is not supported",
 
     Errors.RULE_UNROLL_NESTED_LOOP: "Cannot unroll nested loop",
     Errors.RULE_UNROLL_UNFIXED_LOOP: "Cannot full unroll unfixed loop",
@@ -205,6 +209,11 @@ class Warnings(Enum):
 
     PORT_IS_NOT_USED = 1000
 
+    RULE_PIPELINE_HAS_MEM_READ_CONFLICT = 1130
+    RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT = 1131
+    RULE_PIPELINE_HAS_MEM_RW_CONFLICT = 1132
+    RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM = 1133
+
     def __str__(self):
         return WARNING_MESSAGES[self]
 
@@ -213,4 +222,8 @@ WARNING_MESSAGES = {
     Warnings.ASSERTION_FAILED: "The expression of assert always evaluates to False",
     Warnings.EXCEPTION_RAISED: "An exception occurred while executing the Python interpreter at compile time\n(For more information you can use '--verbose' option)",
     Warnings.PORT_IS_NOT_USED: "Port '{}' is not used at all",
+    Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "There is a read conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "There is a write conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT: "There is a read/write conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM: "The pipeline may not work correctly if there is both read and write access to the same memory '{}'"
 }

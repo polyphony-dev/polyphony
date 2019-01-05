@@ -42,6 +42,7 @@ class HDLModule(object):
         self.fsms = {}
         self.node2if = {}
         self.edge_detectors = set()
+        self.ahdl2dfgnode = {}
 
     def __str__(self):
         s = '---------------------------------\n'

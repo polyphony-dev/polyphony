@@ -1,21 +1,21 @@
-#Cannot read 'xs' more than once in a pipeline loop
+#There is a write conflict at 'ys' in a pipeline, II will be adjusted
 from polyphony import testbench
 from polyphony import rule
 
 
-def pipeline_resource01(xs, ys):
+def pipeline_resource02(xs, ys):
     with rule(scheduling='pipeline'):
         for i in range(4):
             a = xs[i]
-            b = xs[i + 1]
-            ys[i] = (a + b) >> 1
+            ys[i] = a
+            ys[i + 1] = a << 1
     return
 
 
 @testbench
 def test():
     out = [None] * 400
-    pipeline_resource01([1, 2, 3, 4] * 100, out)
+    pipeline_resource02([1, 2, 3, 4] * 100, out)
 
 
 test()

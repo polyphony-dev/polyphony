@@ -201,7 +201,6 @@ class UseDefDetector(IRVisitor):
 
     def _process_block(self, block):
         for stm in block.stms:
-            self.current_stm = stm
             self.visit(stm)
         # Do not access to path_exp on usedef detection
         #if block.path_exp:

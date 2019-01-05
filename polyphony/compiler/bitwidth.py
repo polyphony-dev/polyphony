@@ -2,8 +2,27 @@ from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .env import env
 from .ir import *
+from .irvisitor import IRVisitor
 import logging
 logger = logging.getLogger(__name__)
+
+
+class TempVarWidthSetter(IRVisitor):
+    def visit_TEMP(self, ir):
+        if ir.sym.typ.is_int():
+            self.int_types.append(ir.sym.typ)
+            # only append an int type temp
+            if ir.sym.is_temp():
+                self.temps.append(ir.sym)
+
+    def visit_MOVE(self, ir):
+        self.temps = []
+        self.int_types = []
+        super().visit_MOVE(ir)
+        if self.temps:
+            max_width = max([t.get_width() for t in self.int_types])
+            for t in self.temps:
+                t.typ.set_width(max_width)
 
 
 class BitwidthReducer(AHDLVisitor):
@@ -12,8 +31,7 @@ class BitwidthReducer(AHDLVisitor):
             self.usedef = fsm.usedef
             for stg in fsm.stgs:
                 for state in stg.states:
-                    for code in state.traverse():
-                        self.visit(code)
+                    self.visit(state)
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):

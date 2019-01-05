@@ -450,8 +450,7 @@ class PureCtorBuilder(object):
                     typ.set_scope(klass_scope)
                 klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.orig_name)
                 klass_scope_sym.set_type(Type.klass(klass_scope))
-                sym = module.add_sym(name)
-                sym.set_type(typ.clone())
+                sym = module.add_sym(name, typ=typ.clone())
                 orig_obj = instance.__dict__[name]
                 calls = env.runtime_info.get_internal_calls(instance)
                 for cname, cself, cargs in calls:
@@ -476,11 +475,10 @@ class PureCtorBuilder(object):
                 if sym.typ.is_seq() and all([isinstance(item, (Port, Queue)) for item in v]):
                     elem_t = None
                     for i, item in enumerate(v):
-                        portsym = module.add_sym(name + '_' + str(i))
                         typ = Type.from_expr(item, module)
                         if elem_t is None:
                             elem_t = typ
-                        portsym.set_type(typ)
+                        portsym = module.add_sym(name + '_' + str(i), typ=typ)
                         dst = ATTR(TEMP(self_sym, Ctx.STORE), portsym, Ctx.STORE, attr_scope=module)
                         stm = self._build_move_stm(dst, item, module)
                         assert stm
@@ -688,7 +686,7 @@ class PureFuncExecutor(ConstantOptBase):
     def visit_CALL(self, ir):
         if not ir.func_scope().is_pure():
             return ir
-        assert env.enable_pure
+        assert env.config.enable_pure
         assert ir.func_scope().parent.is_global()
         args = self._args2tuple([arg for _, arg in ir.args])
         if args is None:

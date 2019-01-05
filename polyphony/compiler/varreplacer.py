@@ -12,7 +12,6 @@ class VarReplacer(object):
         replacer = VarReplacer(dst, src, usedef)
         uses = list(usedef.get_stms_using(dst.qualified_symbol()))
         for use in uses:
-            replacer.current_stm = use
             replacer.visit(use)
         return replacer.replaces
 
