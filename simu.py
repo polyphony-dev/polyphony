@@ -80,7 +80,7 @@ def exec_compile(casefile_path, casename, simu_options):
 def simulate_verilog(testname, casename, casefile_path, options):
     hdl_files = ['{}{}{}.v'.format(TMP_DIR, os.path.sep, casename), '{}{}{}.v'.format(TMP_DIR, os.path.sep, testname)]
     exec_name = '{}{}{}'.format(TMP_DIR, os.path.sep, testname)
-    args = ('{} -I {} -W all -o {} -s {}'.format(IVERILOG_PATH, TMP_DIR, exec_name, testname)).split(' ')
+    args = ('{} -I {} -W all -Wno-implicit-dimensions -o {} -s {}'.format(IVERILOG_PATH, TMP_DIR, exec_name, testname)).split(' ')
     args += hdl_files
     try:
         subprocess.check_call(args)
