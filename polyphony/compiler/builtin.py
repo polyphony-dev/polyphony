@@ -12,6 +12,7 @@ builtin_mappings = {
     'polyphony.verilog.write': 'polyphony.verilog.write',
     'polyphony.verilog.display': 'polyphony.verilog.display',
     'polyphony.timing.clksleep': 'polyphony.timing.clksleep',
+    'polyphony.timing.clkrange': 'polyphony.timing.clkrange',
     'polyphony.timing.wait_rising': 'polyphony.timing.wait_rising',
     'polyphony.timing.wait_falling': 'polyphony.timing.wait_falling',
     'polyphony.timing.wait_value': 'polyphony.timing.wait_value',

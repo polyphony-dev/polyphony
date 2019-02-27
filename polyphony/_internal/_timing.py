@@ -18,6 +18,11 @@ def clkfence() -> None:
 
 
 @builtin
+def clkrange(clk_cycles:int) -> None:
+    pass
+
+
+@builtin
 def wait_edge(old:int, new:int, *ports:polyphony.io.Port) -> None:
     pass
 
