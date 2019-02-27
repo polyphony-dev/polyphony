@@ -28,6 +28,8 @@ class Scheduler(object):
         for dfg in self.scope.dfgs(bottom_up=True):
             if dfg.parent and dfg.synth_params['scheduling'] == 'pipeline':
                 scheduler_impl = PipelineScheduler()
+            elif dfg.synth_params['scheduling'] == 'timed':
+                scheduler_impl = TimedScheduler()
             else:
                 scheduler_impl = BlockBoundedListScheduler()
             scheduler_impl.schedule(scope, dfg)
@@ -761,7 +763,7 @@ class ConflictGraphBuilder(object):
         conflict_stms = [n.tag for n in conflict_nodes]
         stm2cnode = {}
         for n in conflict_nodes:
-            stm2cnode[n.tag] = ConflictNode.create(n) 
+            stm2cnode[n.tag] = ConflictNode.create(n)
         for dn in conflict_nodes:
             graph.add_node(stm2cnode[dn.tag])
         for n0, n1, _ in self.scope.branch_graph.edges:
@@ -850,3 +852,41 @@ class ConflictGraphBuilder(object):
                     for adj in adjs:
                         graph.add_edge(mn, adj)
                     cn0 = mn
+
+
+class TimedScheduler:
+    def schedule(self, scope, dfg):
+        self.scope = scope
+        blkstms = defaultdict(list)
+        for n in dfg.nodes:
+            blkstms[n.tag.block].append(n)
+        for blk, dnodes in blkstms.items():
+            dnodes = sorted(dnodes, key=lambda dnode:self.stm_idx(dnode.tag))
+            cycle = 0
+            for i, dnode in enumerate(dnodes):
+                dnode.priority = i
+                dnode.begin = cycle
+                def_l, seq_l = get_latency(dnode.tag)
+                dnode.end = dnode.begin + def_l
+                logger.debug(f'{cycle}, {i}, {dnode}')
+                n = self.get_clk_increment(dnode.tag)
+                cycle += n
+
+    def stm_idx(self, stm):
+        for idx, s in enumerate(stm.block.stms):
+            if s is stm:
+                return idx
+        return None
+
+    def get_clk_increment(self, stm):
+        if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL)):
+            if stm.exp.sym.name == 'polyphony.timing.clksleep':
+                assert len(stm.exp.args) == 1
+                assert stm.exp.args[0][1].is_a(CONST)
+                return stm.exp.args[0][1].value + 1
+            elif stm.exp.sym.name in ['polyphony.timing.wait_value',
+                                      'polyphony.timing.wait_edge',
+                                      'polyphony.timing.wait_rising',
+                                      'polyphony.timing.wait_falling']:
+                return 1
+        return 0

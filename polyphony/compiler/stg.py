@@ -502,7 +502,7 @@ class AHDLTranslator(object):
         elif ir.sym.name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
             assert cycle.is_a(CONST)
-            for i in range(cycle.value):
+            for i in range(cycle.value + 1):
                 self._emit(AHDL_NOP('wait a cycle'),
                            self.sched_time + i, node)
             return
@@ -1186,6 +1186,8 @@ class AHDLTranslator(object):
         ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
                            dst,
                            port_sig.is_input())
+        if step_n == 0:
+            step_n = 1
         for i in range(step_n):
             self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i, node)
 

@@ -23,7 +23,25 @@ class AliasVarDetector(IRVisitor):
             if src_sym.is_param() or src_sym.typ.is_port():
                 return
         elif ir.src.is_a(CALL):
-            if not ir.src.func_scope().is_predicate():
+            if ir.src.func_scope().is_predicate():
+                pass
+            elif ir.src.func_scope().is_method() and ir.src.func_scope().parent.is_port():
+                WORKAROUND = True
+                if WORKAROUND:
+                    if ir.src.func_scope().parent.name.startswith('polyphony.io.Queue'):
+                        return
+                    port_sym = ir.src.func.tail()
+                    protocol = port_sym.typ.get_protocol()
+                    if protocol == 'none' and ir.src.func.attr.name == 'rd':
+                        pass
+                    else:
+                        return
+                else:
+                    if ir.src.func.attr.name == 'rd':
+                        pass
+                    else:
+                        return
+            else:
                 return
         elif ir.src.is_a(MREF):
             memnode = ir.src.mem.symbol().typ.get_memnode()

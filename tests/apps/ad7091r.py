@@ -1,13 +1,13 @@
 import polyphony
 from polyphony.io import Port
 from polyphony.typing import bit, uint3, uint12, uint16
-from polyphony.timing import clksleep, clkfence, wait_rising, wait_falling
+from polyphony.timing import clksleep, clkfence, clkrange, wait_rising, wait_falling
 
 
 CONVST_PULSE_CYCLE = 10
 CONVERSION_CYCLE = 40
 
-
+@polyphony.timed
 @polyphony.module
 class AD7091R_SPIC:
     def __init__(self):
@@ -24,6 +24,7 @@ class AD7091R_SPIC:
         self.append_worker(self.main)
 
     def main(self):
+        clkfence()
         while polyphony.is_worker_running():
             self.convst_n.wr(1)
             self.cs_n.wr(1)
@@ -44,7 +45,7 @@ class AD7091R_SPIC:
             for i in range(16):
                 self.sclk.wr(0)
                 clkfence()
-                sdi_tmp = 1 if (self.din() & (1 << (15 - i))) else 0
+                sdi_tmp = 1 if (self.din.rd() & (1 << (15 - i))) else 0
                 self.sdi.wr(sdi_tmp)
                 clksleep(1)
                 self.sclk.wr(1)
@@ -59,10 +60,10 @@ class AD7091R_SPIC:
             self.cs_n.wr(1)
             clkfence()
             self.data_ready.wr(1)
+            clkfence()
 
-
+@polyphony.timed
 @polyphony.testbench
-@polyphony.rule(scheduling='parallel')
 def test(spic):
     datas = (0xdead, 0xbeef, 0xffff, 0x0000, 0x800)
     for data in datas:
@@ -74,7 +75,7 @@ def test(spic):
         wait_falling(spic.cs_n)
         #print('cs_n fall', spic.cs_n())
         spic.din.wr(0b1111000011110000)
-        for i in range(16):
+        for i in clkrange(16):
             databit = 1 if data & (1 << (15 - i)) else 0
             #print('sdo write from test', i, databit)
             spic.sdo.wr(databit)
@@ -82,9 +83,9 @@ def test(spic):
         wait_rising(spic.cs_n)
         wait_rising(spic.data_ready)
         clksleep(1)
-        #print(spic.dout())
-        assert spic.dout() == data & 0x0fff
-        assert spic.chout() == (data & 0x7000) >> 12
+        print(spic.dout.rd())
+        assert spic.dout.rd() == data & 0x0fff
+        assert spic.chout.rd() == (data & 0x7000) >> 12
 
 
 spic = AD7091R_SPIC()

@@ -163,7 +163,7 @@ class ScopeVisitor(ast.NodeVisitor):
 
         outer_scope = self.current_scope
 
-        synth_params = None
+        synth_params = {}
         tags = set()
         for deco in node.decorator_list:
             deco_info = self.decorator_visitor.visit(deco)
@@ -178,11 +178,13 @@ class ScopeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(deco_name)
             if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
                 if sym.typ.get_scope().name == 'polyphony.rule':
-                    synth_params = deco_kwargs
+                    synth_params.update(deco_kwargs)
                 elif sym.typ.get_scope().name == 'polyphony.pure':
                     if not env.config.enable_pure:
                         fail((outer_scope, node.lineno), Errors.PURE_IS_DISABLED)
                     tags.add(sym.typ.get_scope().orig_name)
+                elif sym.typ.get_scope().name == 'polyphony.timed':
+                    synth_params.update({'scheduling':'timed'})
                 else:
                     tags.add(sym.typ.get_scope().orig_name)
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
@@ -201,8 +203,9 @@ class ScopeVisitor(ast.NodeVisitor):
             tags.add('lib')
 
         self.current_scope = Scope.create(outer_scope, node.name, tags, node.lineno)
-        if synth_params:
-            self.current_scope.synth_params.update(synth_params)
+        self.current_scope.synth_params.update(synth_params)
+        if self.current_scope.parent.synth_params['scheduling'] == 'timed':
+            self.current_scope.synth_params.update({'scheduling':'timed'})
         for arg in node.args.args:
             param_in, param_copy = _make_param_symbol(arg)
             self.current_scope.add_param(param_in, param_copy, None)
@@ -261,6 +264,11 @@ class ScopeVisitor(ast.NodeVisitor):
                 tags.add(deco_name)
             else:
                 fail((outer_scope, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
+        synth_params = {}
+        if 'timed' in tags:
+            tags.remove('timed')
+            synth_params.update({'scheduling':'timed'})
+
         scope_qualified_name = (outer_scope.name + '.' + node.name)
         if scope_qualified_name in lib_port_type_names:
             tags |= {'port', 'lib'}
@@ -272,7 +280,9 @@ class ScopeVisitor(ast.NodeVisitor):
                                           node.name,
                                           tags | {'class'},
                                           node.lineno)
-
+        self.current_scope.synth_params.update(synth_params)
+        if self.current_scope.parent.synth_params['scheduling'] == 'timed':
+            self.current_scope.synth_params.update({'scheduling':'timed'})
         for base in node.bases:
             base_name = self.visit(base)
             base_sym = outer_scope.find_sym(base_name)
@@ -828,6 +838,28 @@ class CodeVisitor(ast.NodeVisitor):
                            step))
             ]
             self._build_for_loop_blocks(init_parts, condition, [], continue_parts, loop_synth_params, node)
+        elif it.is_a(SYSCALL) and it.sym.name == 'polyphony.timing.clkrange':
+            init_parts = []
+            assert len(it.args) == 1
+            start = CONST(0)
+            end = it.args[0][1]
+            step = CONST(1)
+            start = make_temp_if_needed(start, init_parts)
+            end = make_temp_if_needed(end, init_parts)
+            step = make_temp_if_needed(step, init_parts)
+            counter = var.sym
+            init_parts += [
+                MOVE(TEMP(var.sym, Ctx.STORE), start)
+            ]
+            condition = RELOP('Lt', TEMP(var.sym, Ctx.LOAD), end)
+            continue_parts = [
+                MOVE(TEMP(var.sym, Ctx.STORE),
+                     BINOP('Add',
+                           TEMP(var.sym, Ctx.LOAD),
+                           step))
+            ]
+            self._build_for_loop_blocks(init_parts, condition, [], continue_parts,
+                                        loop_synth_params, node)
         elif it.is_a([TEMP, ATTR]):
             start = CONST(0)
             end  = SYSCALL(builtin_symbols['len'], [('seq', it.clone())], {})
