@@ -23,14 +23,10 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def _new_temp_move(self, ir, tmpsym):
         t = TEMP(tmpsym, Ctx.STORE)
-        t.lineno = ir.lineno
-        mv = MOVE(t, ir)
-        mv.lineno = ir.lineno
-        assert mv.lineno >= 0
+        assert self.current_stm.lineno > 0
+        mv = MOVE(t, ir, lineno=self.current_stm.lineno)
         self.new_stms.append(mv)
-        t = TEMP(tmpsym, Ctx.LOAD)
-        t.lineno = ir.lineno
-        return t
+        return TEMP(tmpsym, Ctx.LOAD)
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
@@ -190,7 +186,6 @@ class EarlyQuadrupleMaker(IRTransformer):
             # the memory store is not a variable definition, so the context should be LOAD
             mref.mem.ctx = Ctx.LOAD
             ms = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
-            ms.lineno = ir.lineno
             expr = EXPR(ms)
             expr.lineno = ir.lineno
             ir = expr
@@ -205,6 +200,5 @@ class LateQuadrupleMaker(IRTransformer):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(TEMP) and ir.exp.sym.typ.is_namespace():
             ir_ = TEMP(ir.attr, ir.ctx)
-            ir_.lineno = ir.lineno
             ir = ir_
         return ir

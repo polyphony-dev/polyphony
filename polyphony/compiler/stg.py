@@ -637,9 +637,7 @@ class AHDLTranslator(object):
 
     def visit_ARRAY(self, ir, node):
         # array expansion
-        if not ir.repeat.is_a(CONST):
-            print(error_info(self.scope, ir.lineno))
-            raise RuntimeError('multiplier for the sequence must be a constant')
+        assert ir.repeat.is_a(CONST)
         ir.items = [item.clone() for item in ir.items * ir.repeat.value]
 
         assert isinstance(node.tag, MOVE)

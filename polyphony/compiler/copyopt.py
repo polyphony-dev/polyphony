@@ -62,7 +62,6 @@ class CopyOpt(IRVisitor):
                         idx = u.block.stms.index(u)
                         u.block.stms[idx] = mv
                         mv.block = u.block
-                        mv.lineno = u.lineno
                         scope.usedef.remove_stm(u)
                         scope.usedef.add_var_def(mv.dst, mv)
                         scope.usedef.add_use(mv.src, mv)
