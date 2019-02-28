@@ -49,9 +49,10 @@ class timed02:
     @rule(scheduling='timed')
     def w(self):
         x = self.i.rd()
+        assert 3 == x
         clkfence()
         # 2
-        print(x)
+        #print(x) # error
         clkfence()
         # 3
         self.o.wr(10)
@@ -76,10 +77,10 @@ def test(m):
     # 2
     clkfence()
     # 3
-    print(m.o.rd())
+    assert 10 == m.o.rd()
     clkfence()
     # 4
-    print(m.o.rd())
+    assert 20 == m.o.rd()
     clkfence()
     # 5
     clkfence()

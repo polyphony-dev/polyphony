@@ -103,8 +103,7 @@ class Port(object):
             if _is_called_from_owner():
                 raise RuntimeError("Writing to 'in' Port is not allowed")
         if self.__wrote:
-            raise RuntimeError("It is not allowed to write to the port more than once \
-                               in the same clock cycle")
+            raise RuntimeError("It is not allowed to write to the port more than once in the same clock cycle")
         self.__new_v = v
         self.__wrote = True
 
@@ -160,6 +159,29 @@ class Port(object):
 
     def _clear_change_flag(self):
         self._changed = False
+
+
+class Reg(object):
+    instances = []
+
+    def __init__(self):
+        Reg.instances.append(self)
+        object.__setattr__(self, '_new_v', 0)
+        object.__setattr__(self, '_wrote', False)
+        object.__setattr__(self, 'v', 0)
+
+    def __setattr__(self, k, v):
+        if k == 'v':
+            if self._wrote:
+                raise RuntimeError("It is not allowed to write to the register more than once in the same clock cycle")
+            self._new_v = v
+            self._wrote = True
+        else:
+            object.__setattr__(self, k, v)
+
+    def _update(self):
+        object.__setattr__(self, 'v', self._new_v)
+        self._wrote = False
 
 
 class In(Port):

@@ -342,8 +342,7 @@ class Channel(object):
         d = self.__q.popleft()
         self._changed = True
         if not isinstance(d, self.__pytype):
-            raise TypeError(f"Incompatible value type, got {type(self.__v)} \
-                              expected {self._dtype}")
+            raise TypeError(f"Incompatible value type, got {type(self.__v)} expected {self._dtype}")
         return d
 
     def put(self, v):
@@ -351,8 +350,7 @@ class Channel(object):
         Write the value to the channel.
         '''
         if not isinstance(v, self.__pytype):
-            raise TypeError(f"Incompatible value type, got {type(v)} \
-                              expected {self._dtype}")
+            raise TypeError(f"Incompatible value type, got {type(v)} expected {self._dtype}")
         while self.full():
             timing.clkfence()
         self.__q.append(v)
@@ -454,6 +452,10 @@ class Simulator(object):
                 print('Port value is not stable')
                 break
 
+    def _update_regs(self):
+        for r in io.Reg.instances:
+            r._update()
+
     def run(self):
         for test_fn, modules, args, trace_ports in self._tests:
             self._setup(modules)
@@ -483,6 +485,7 @@ class Simulator(object):
 
                 assert all([w.cycle == cycle + 1 for w in workers])
                 self._update_ports()
+                self._update_regs()
                 self._update_assigned_ports()
                 self._trace(cycle)
                 for p in io.Port.instances:
@@ -492,3 +495,7 @@ class Simulator(object):
             self._teardown()
             if any([w.exception for w in self._workers]):
                 break
+
+
+class TimedRestrictChecker(object):
+    pass

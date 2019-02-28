@@ -9,7 +9,7 @@ from polyphony.timing import clkfence
 class timed01:
     def __init__(self):
         self.i = Port(int, 'in')
-        self.o = Port(int, 'out')
+        self.o = Port(int, 'out', -1)
         self.append_worker(self.w)
 
     def w(self):
@@ -17,9 +17,10 @@ class timed01:
         clkfence()
         # 1
         x = self.i.rd()
+        assert 3 == x
         clkfence()
         # 2
-        print(x)
+        #print(x)  # error
         clkfence()
         # 3
         self.o.wr(10)
@@ -36,23 +37,26 @@ class timed01:
 @timed
 @testbench
 def test(m):
-    #0
+    # 0
     m.i.wr(3)
     clkfence()
     # 1
+    m.i.wr(6)
     clkfence()
     # 2
     clkfence()
     # 3
-    print(m.o.rd())
+    x = m.o.rd()
+    assert x == -1
     clkfence()
     # 4
-    print(m.o.rd())
+    x = m.o.rd()
+    assert x == 10
     clkfence()
     # 5
     clkfence()
     # 6
-    print(m.o.rd())
+    assert 20 == m.o.rd()
     clkfence()
 
 
