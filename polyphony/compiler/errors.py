@@ -99,6 +99,7 @@ class Errors(Enum):
     RULE_UNROLL_CONTROL_BRANCH = 1153
     RULE_UNROLL_UNKNOWN_STEP = 1154
     RULE_UNROLL_VARIABLE_STEP = 1155
+    RULE_UNROLL_VARIABLE_FACTOR = 1156
 
     # not supported yet
     WRITING_ALIAS_REGARRAY = 9000
@@ -152,7 +153,7 @@ ERROR_MESSAGES = {
     Errors.REDEFINED_NAME: "'{}' has been redefined",
     Errors.LOCAL_CLASS_DEFINITION_NOT_ALLOWED: "Local class definition in the function is not allowed",
     Errors.USE_OUTSIDE_FOR: "Cannot use {}() function outside of for statememt",
-    Errors.NAME_SCOPE_RESTRICTION: "Using the variable 'i' is restricted by polyphony's name scope rule",
+    Errors.NAME_SCOPE_RESTRICTION: "Using the variable '{}' is restricted by polyphony's name scope rule",
     Errors.INVALID_MODULE_OBJECT_ACCESS: "Invalid access to a module class object",
     Errors.PRINT_TAKES_SCALAR_TYPE: "print() takes only scalar type (e.g. int, str, ...) argument",
 
@@ -197,6 +198,7 @@ ERROR_MESSAGES = {
     Errors.RULE_UNROLL_CONTROL_BRANCH: "Cannot unroll loop that having control branches",
     Errors.RULE_UNROLL_UNKNOWN_STEP: "Cannot find the step value of the loop",
     Errors.RULE_UNROLL_VARIABLE_STEP: "The step value must be a constant",
+    Errors.RULE_UNROLL_VARIABLE_FACTOR: "The unroll factor value must be a constant",
 
     Errors.WRITING_ALIAS_REGARRAY: "Writing to alias register array is not supported yet",
 }
