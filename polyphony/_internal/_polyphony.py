@@ -44,3 +44,9 @@ def unroll(seq, factor='full') -> list:
 @builtin
 def pipelined(seq, ii=-1) -> list:
     pass
+
+
+@inlinelib
+class Reg:
+    def __init__(self) -> object:
+        self.v = 0  # meta: symbol=register

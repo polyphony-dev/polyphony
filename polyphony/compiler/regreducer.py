@@ -13,6 +13,8 @@ class AliasVarDetector(IRVisitor):
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
         sym = ir.dst.symbol()
+        if sym.is_register():
+            return
         if sym.is_condition():
             sym.add_tag('alias')
             return

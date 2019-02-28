@@ -25,7 +25,7 @@ class Scope(Tagged):
     TAGS = {
         'global', 'function', 'class', 'method', 'ctor',
         'callable', 'returnable', 'mutable', 'inherited', 'predicate',
-        'testbench', 'pure',
+        'testbench', 'pure', 'timed',
         'module', 'worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass',

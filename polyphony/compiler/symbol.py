@@ -13,7 +13,7 @@ class Symbol(Tagged):
         'temp', 'param', 'return', 'condition', 'induction', 'alias',
         'self', 'static', 'subobject',
         'builtin', 'inlined', 'flattened', 'pipelined', 'predefined',
-        'loop_counter'
+        'loop_counter', 'register'
     }
 
     @classmethod

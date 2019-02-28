@@ -26,6 +26,7 @@ INTERNAL_FUNCTION_DECORATORS = [
 INTERNAL_CLASS_DECORATORS = [
     'builtin',
     'typeclass',
+    'inlinelib',
 ]
 BUILTIN_PACKAGES = (
     'polyphony',
@@ -218,7 +219,7 @@ class ScopeVisitor(ast.NodeVisitor):
             t = Type.from_annotation(ann, self.current_scope, is_lib)
             if t:
                 self.current_scope.return_type = t
-                if t is not Type.none_t:
+                if t is not Type.none_t and not self.current_scope.is_ctor():
                     self.current_scope.add_tag('returnable')
             else:
                 fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
@@ -266,7 +267,6 @@ class ScopeVisitor(ast.NodeVisitor):
                 fail((outer_scope, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
         synth_params = {}
         if 'timed' in tags:
-            tags.remove('timed')
             synth_params.update({'scheduling':'timed'})
 
         scope_qualified_name = (outer_scope.name + '.' + node.name)
@@ -338,9 +338,10 @@ class AugAssignTransformer(ast.NodeTransformer):
 
 
 class CodeVisitor(ast.NodeVisitor):
-    def __init__(self, top_scope, type_comments):
+    def __init__(self, top_scope, type_comments, meta_comments):
         self.current_scope = top_scope
         self.type_comments = type_comments
+        self.meta_comments = meta_comments
 
         self.current_block = Block(self.current_scope)
         if self.current_scope.entry_block is None:
@@ -425,6 +426,12 @@ class CodeVisitor(ast.NodeVisitor):
                 self._visit_lazy_FunctionDef(lazy_def)
             elif isinstance(lazy_def, ast.ClassDef):
                 self._visit_lazy_ClassDef(lazy_def)
+
+    def _set_meta_for_move(self, mv, metainfo):
+        for entry in metainfo.split(','):
+            key, value = entry.strip().split('=')
+            if key == 'symbol':
+                mv.dst.symbol().add_tag(value)
 
     def visit_Module(self, node):
         for stm in node.body:
@@ -560,7 +567,11 @@ class CodeVisitor(ast.NodeVisitor):
                     left.symbol().set_type(t)
                 else:
                     fail((self.current_scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
-            self.emit(MOVE(left, right), node)
+            mv = MOVE(left, right)
+            if tail_lineno in self.meta_comments:
+                metainfo = self.meta_comments[tail_lineno].strip()
+                self._set_meta_for_move(mv, metainfo)
+            self.emit(mv, node)
 
     def visit_AugAssign(self, node):
         assert 0
@@ -1497,20 +1508,20 @@ class IRTranslator(object):
     def __init__(self):
         pass
 
-    def _extract_type_comment(self, source):
+    def _extract_comment(self, source, ident):
         lines = source.split('\n')
-        type_comments = {}
+        comments = {}
         for i, line in enumerate(lines):
             idx = line.find('#')
             if idx == -1:
                 continue
             comment = line[idx:]
-            idx = comment.find('type:')
+            idx = comment.find(ident)
             if idx == -1:
                 continue
-            type_hint = comment[idx + len('type:'):].strip()
-            type_comments[i + 1] = type_hint
-        return type_comments
+            info = comment[idx + len(ident):].strip()
+            comments[i + 1] = info
+        return comments
 
     def translate(self, source, lib_name, top=None):
         tree = ast.parse(source)
@@ -1534,9 +1545,10 @@ class IRTranslator(object):
             logger.debug(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
             logger.debug('ignore packages')
             logger.debug(ignore_packages)
-        type_comments = self._extract_type_comment(source)
+        type_comments = self._extract_comment(source, 'type:')
+        meta_comments = self._extract_comment(source, 'meta:')
         ScopeVisitor(top_scope).visit(tree)
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
-        CodeVisitor(top_scope, type_comments).visit(tree)
+        CodeVisitor(top_scope, type_comments, meta_comments).visit(tree)
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))

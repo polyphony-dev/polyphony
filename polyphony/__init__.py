@@ -453,7 +453,7 @@ class Simulator(object):
                 break
 
     def _update_regs(self):
-        for r in io.Reg.instances:
+        for r in Reg.instances:
             r._update()
 
     def run(self):
@@ -495,6 +495,29 @@ class Simulator(object):
             self._teardown()
             if any([w.exception for w in self._workers]):
                 break
+
+
+class Reg(object):
+    instances = []
+
+    def __init__(self):
+        Reg.instances.append(self)
+        object.__setattr__(self, '_new_v', 0)
+        object.__setattr__(self, '_wrote', False)
+        object.__setattr__(self, 'v', 0)
+
+    def __setattr__(self, k, v):
+        if k == 'v':
+            if self._wrote:
+                raise RuntimeError("It is not allowed to write to the register more than once in the same clock cycle")
+            self._new_v = v
+            self._wrote = True
+        else:
+            object.__setattr__(self, k, v)
+
+    def _update(self):
+        object.__setattr__(self, 'v', self._new_v)
+        self._wrote = False
 
 
 class TimedRestrictChecker(object):
