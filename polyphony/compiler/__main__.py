@@ -51,7 +51,7 @@ from .scope import Scope
 from .scopegraph import CallGraphBuilder
 from .scopegraph import DependencyGraphBuilder
 from .selectorbuilder import SelectorBuilder
-from .setlineno import LineNumberSetter, SourceDump
+from .setlineno import SourceDump
 from .specfunc import SpecializedFunctionMaker
 from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .statereducer import StateReducer
@@ -114,11 +114,8 @@ def is_hdlmodule_scope(scope):
 
 def preprocess_global(driver):
     scopes = Scope.get_scopes(with_global=True, with_class=True)
-    lineno = LineNumberSetter()
     src_dump = SourceDump()
-
     for s in scopes:
-        lineno.process(s)
         src_dump.process(s)
 
 

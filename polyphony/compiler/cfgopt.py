@@ -175,16 +175,16 @@ class PathExpTracer(object):
                     named = self._insert_named_exp(e, blk, i)
                     if named is not e:
                         i += 1
-                    exp = RELOP('Or', exp, named, lineno=e.lineno)
+                    exp = RELOP('Or', exp, named)
                 blk.path_exp = exp
 
     def _insert_named_exp(self, exp, blk, insert_pos):
         if exp.is_a(TEMP):
             return exp
         csym = self.scope.add_condition_sym()
-        mv = MOVE(TEMP(csym, Ctx.STORE, lineno=exp.lineno), exp, lineno=exp.lineno)
+        mv = MOVE(TEMP(csym, Ctx.STORE), exp)
         blk.insert_stm(insert_pos, mv)
-        return TEMP(mv.dst.symbol(), Ctx.LOAD, lineno=exp.lineno)
+        return TEMP(mv.dst.symbol(), Ctx.LOAD)
 
 
 def merge_path_exp(pred, blk, idx_hint=-1):
@@ -207,8 +207,7 @@ def merge_path_exp(pred, blk, idx_hint=-1):
                 exp = rel_and_exp(pred.path_exp, jump.conds[indices[0]])
                 for idx in indices[1:]:
                     rexp = rel_and_exp(pred.path_exp, jump.conds[idx])
-                    exp = RELOP('Or', exp, rexp, lineno=jump.lineno)
-    exp.lineno = jump.lineno
+                    exp = RELOP('Or', exp, rexp)
     return exp
 
 
@@ -225,7 +224,6 @@ def rel_and_exp(exp1, exp2):
         exp = exp1
     else:
         exp = RELOP('And', exp1, exp2)
-    exp.lineno = exp1.lineno
     return exp
 
 
@@ -397,7 +395,6 @@ class HyperBlockBuilder(object):
                     newsym.set_type(stm.var.symbol().typ.clone())
                     dst = TEMP(newsym, Ctx.STORE)
                     mv = MOVE(dst, new_args[0])
-                    mv.lineno = dst.lineno = stm.var.lineno
                     new_tail.append_stm(mv)
                 else:
                     new_phi = stm.clone()
@@ -406,11 +403,9 @@ class HyperBlockBuilder(object):
                     newsym = self.scope.add_temp()
                     newsym.set_type(stm.var.symbol().typ.clone())
                     new_phi.var = TEMP(newsym, Ctx.STORE)
-                    new_phi.var.lineno = stm.var.lineno
                     new_tail.append_stm(new_phi)
 
                 arg = TEMP(newsym, Ctx.LOAD)
-                arg.lineno = stm.var.lineno
 
                 #ps = new_ps[0]
                 #for p in new_ps[1:]:

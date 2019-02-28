@@ -208,9 +208,7 @@ def reduce_binop(ir):
     elif op == 'Mult' and const == 1:
         return var
     elif op == 'Mult' and const == 0:
-        c = CONST(0)
-        c.lineno = ir.lineno
-        return c
+        return CONST(0)
     return ir
 
 

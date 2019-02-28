@@ -74,9 +74,7 @@ class ConstantOptBase(IRVisitor):
             v = eval_unop(ir)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            c = CONST(v)
-            c.lineno = ir.lineno
-            return c
+            return CONST(v)
         return ir
 
     def visit_BINOP(self, ir):
@@ -86,9 +84,7 @@ class ConstantOptBase(IRVisitor):
             v = eval_binop(ir)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            c = CONST(v)
-            c.lineno = ir.lineno
-            return c
+            return CONST(v)
         elif ir.left.is_a(CONST) or ir.right.is_a(CONST):
             return reduce_binop(ir)
         return ir
@@ -100,23 +96,17 @@ class ConstantOptBase(IRVisitor):
             v = eval_relop(ir.op, ir.left.value, ir.right.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            c = CONST(v)
-            c.lineno = ir.lineno
-            return c
+            return CONST(v)
         elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
             const, var = (ir.left.value, ir.right) if ir.left.is_a(CONST) else (ir.right.value, ir.left)
             if ir.op == 'And':
                 if const:
                     return var
                 else:
-                    c = CONST(False)
-                    c.lineno = ir.lineno
-                    return c
+                    return CONST(False)
             elif ir.op == 'Or':
                 if const:
-                    c = CONST(True)
-                    c.lineno = ir.lineno
-                    return c
+                    return CONST(True)
                 else:
                     return var
         elif (ir.left.is_a([TEMP, ATTR])
@@ -125,9 +115,7 @@ class ConstantOptBase(IRVisitor):
             v = eval_relop(ir.op, ir.left.symbol().id, ir.right.symbol().id)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            c = CONST(v)
-            c.lineno = ir.lineno
-            return c
+            return CONST(v)
         return ir
 
     def visit_CONDOP(self, ir):
@@ -147,9 +135,7 @@ class ConstantOptBase(IRVisitor):
                 and ir.func.symbol().typ.is_function()
                 and ir.func.symbol().typ.get_scope().is_lib()
                 and ir.func.symbol().name == 'is_worker_running'):
-            c = CONST(True)
-            c.lineno = ir.lineno
-            return c
+            return CONST(True)
         return ir
 
     def visit_SYSCALL(self, ir):
@@ -368,9 +354,7 @@ class ConstantOpt(ConstantOptBase):
                 lens.append(source.length)
             if len(lens) <= 1 or all(lens[0] == len for len in lens):
                 assert lens[0] > 0
-                c = CONST(lens[0])
-                c.lineno = ir.lineno
-                return c
+                return CONST(lens[0])
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):
@@ -382,7 +366,7 @@ class ConstantOpt(ConstantOptBase):
             if source:
                 assert source.initstm
                 if not source.initstm.src.repeat.is_a(CONST):
-                    fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
+                    fail(source.initstm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
                 items = source.initstm.src.items * source.initstm.src.repeat.value
                 return items[ir.offset.value]
         return ir
@@ -391,7 +375,6 @@ class ConstantOpt(ConstantOptBase):
         if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
-                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -402,7 +385,6 @@ class ConstantOpt(ConstantOptBase):
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
-                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -415,7 +397,6 @@ class ConstantOpt(ConstantOptBase):
                     classsym = objscope.parent.find_sym(objscope.orig_name)
                 c = try_get_constant((classsym, ir.attr), self.scope)
                 if c:
-                    c.lineno = ir.lineno
                     return c
         return ir
 
@@ -447,7 +428,6 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
-                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -458,7 +438,6 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
-                c.lineno = ir.lineno
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
@@ -471,7 +450,6 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
                     classsym = objscope.parent.find_sym(objscope.orig_name)
                 c = try_get_constant((classsym, ir.attr), self.scope)
                 if c:
-                    c.lineno = ir.lineno
                     return c
         return ir
 
@@ -530,7 +508,6 @@ class PolyadConstantFolding(object):
             assert ir.left and ir.right
             if ir.op in ('Add', 'Mult'):
                 poly = POLYOP(ir.op)
-                poly.lineno = ir.lineno
                 l = ir.left
                 if l.is_a([BINOP, POLYOP]):
                     assert l.op == ir.op
@@ -574,9 +551,7 @@ class PolyadConstantFolding(object):
         def visit_POLYOP(self, ir):
             self._fold(ir)
             assert len(ir.values) == 2
-            binop = BINOP(ir.op, ir.values[0], ir.values[1])
-            binop.lineno = ir.lineno
-            return binop
+            return BINOP(ir.op, ir.values[0], ir.values[1])
 
 
 class StaticConstOpt(ConstantOptBase):
@@ -592,6 +567,8 @@ class StaticConstOpt(ConstantOptBase):
             Block.set_order(s.entry_block, 0)
             dtree = DominatorTreeBuilder(s).process()
             dtrees[s] = dtree
+        # FIXME: Since lineno is not essential information for IR,
+        #        It should not be used as sort key
         stms = sorted(stms, key=lambda s: s.lineno)
         for stm in stms:
             self.current_stm = stm

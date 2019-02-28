@@ -54,8 +54,5 @@ class PHICondResolver(object):
 
     def _insert_mv(self, var, arg, blk):
         mv = MOVE(var, arg)
-        mv.lineno = arg.lineno
-        mv.dst.lineno = arg.lineno
-        assert mv.lineno >= 0
         blk.insert_stm(-1, mv)
         logger.debug('PHI divide into ' + str(mv) + ' ' + blk.name)

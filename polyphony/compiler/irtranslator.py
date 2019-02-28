@@ -764,6 +764,8 @@ class CodeVisitor(ast.NodeVisitor):
                 else:
                     fail((self.current_scope, node.lineno),
                          Errors.TAKES_TOOMANY_ARGS, [it.sym.name, '2', len(it.args)])
+                if not factor.is_a(CONST):
+                    fail((self.current_scope, node.lineno), Errors.RULE_UNROLL_VARIABLE_FACTOR)
                 loop_synth_params.update({'unroll':factor.value})
             elif it.sym.name == 'polyphony.pipelined':
                 loop_synth_params.update({'scheduling':'pipeline'})

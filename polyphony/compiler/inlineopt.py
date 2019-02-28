@@ -135,7 +135,6 @@ class InlineOpt(object):
         assert result_sym.is_return()
         result_sym.del_tag('return')
         result = TEMP(result_sym, Ctx.LOAD)
-        result.lineno = call_stm.lineno
         if call_stm.is_a(MOVE):
             assert call_stm.src is call
             call_stm.src = result
@@ -258,9 +257,7 @@ class SymbolReplacer(IRVisitor):
                 ir.sym = rep
                 return ir
             elif isinstance(rep, tuple):  # qualified_symbol
-                var = self._qsym_to_var(rep, ir.ctx)
-                var.lineno = ir.lineno
-                return var
+                return self._qsym_to_var(rep, ir.ctx)
             else:
                 self.current_stm.replace(ir, rep)
                 return rep
@@ -384,10 +381,8 @@ class FlattenFieldAccess(IRTransformer):
 
     def _make_new_ATTR(self, qsym, ir):
         newir = TEMP(qsym[0], Ctx.LOAD)
-        newir.lineno = ir.lineno
         for sym in qsym[1:]:
             newir = ATTR(newir, sym, Ctx.LOAD)
-            newir.lineno = ir.lineno
         newir.ctx = ir.ctx
         return newir
 
@@ -403,7 +398,6 @@ class FlattenFieldAccess(IRTransformer):
             return ir
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
-        newattr.lineno = ir.lineno
         newattr.attr_scope = ir.attr_scope
         return newattr
 
@@ -484,7 +478,7 @@ class FlattenObjectArgs(IRTransformer):
                 worker_scope.entry_block.stms.remove(stm)
                 for new_sym, new_copy in flatten_params:
                     mv = MOVE(TEMP(new_copy, Ctx.STORE), TEMP(new_sym, Ctx.LOAD))
-                    mv.lineno = mv.dst.lineno = mv.src.lineno = stm.lineno
+                    mv.lineno = stm.lineno
                     worker_scope.entry_block.insert_stm(insert_idx, mv)
                 break
 
@@ -508,23 +502,22 @@ class FlattenModule(IRTransformer):
                 len(ir.exp.func.qualified_symbol()) > 2):
             call = ir.exp
             _, arg = call.args[0]
-            new_arg = self._make_new_worker(arg)
+            new_arg = self._make_new_worker(arg, ir.lineno)
             assert self.scope.parent.is_module()
             append_worker_sym = self.scope.parent.find_sym('append_worker')
             assert append_worker_sym
             self_var = TEMP(call.func.head(), Ctx.LOAD)
             new_func = ATTR(self_var, append_worker_sym, Ctx.LOAD)
             new_func.attr_scope = append_worker_sym.scope
-            self_var.lineno = new_func.lineno = call.func.lineno
             call.func = new_func
             call.args[0] = (None, new_arg)
         self.new_stms.append(ir)
 
-    def _make_new_worker(self, arg):
+    def _make_new_worker(self, arg, lineno):
         parent_module = self.scope.parent
         worker_scope = arg.attr.typ.get_scope()
         inst_name = arg.tail().name
-        new_worker = worker_scope.clone(inst_name, str(arg.lineno), parent=parent_module)
+        new_worker = worker_scope.clone(inst_name, str(lineno), parent=parent_module)
         UseDefDetector().process(new_worker)
         worker_self = new_worker.find_sym('self')
         worker_self.typ.set_scope(parent_module)
@@ -574,7 +567,7 @@ class ObjectHierarchyCopier(object):
                 new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
                 new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
                 new_cp = MOVE(new_dst, new_src)
-                new_cp.lineno = new_src.lineno = new_dst.lineno = cp.lineno
+                new_cp.lineno = cp.lineno
                 cp_idx = cp.block.stms.index(cp)
                 cp.block.insert_stm(cp_idx + 1, new_cp)
                 if sym.typ.is_object():

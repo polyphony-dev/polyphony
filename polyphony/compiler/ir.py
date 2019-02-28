@@ -20,8 +20,8 @@ class Ctx(IntEnum):
 
 
 class IR(object):
-    def __init__(self, lineno=-1):
-        self.lineno = lineno
+    def __init__(self):
+        pass
 
     def __repr__(self):
         return self.__str__()
@@ -116,13 +116,13 @@ class IR(object):
 
 
 class IRExp(IR):
-    def __init__(self, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self):
+        super().__init__()
 
 
 class UNOP(IRExp):
-    def __init__(self, op, exp, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, op, exp):
+        super().__init__()
         self.op = op
         self.exp = exp
         assert op in {'USub', 'UAdd', 'Not', 'Invert'}
@@ -143,8 +143,8 @@ class UNOP(IRExp):
 
 
 class BINOP(IRExp):
-    def __init__(self, op, left, right, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, op, left, right):
+        super().__init__()
         self.op = op
         self.left = left
         self.right = right
@@ -170,8 +170,8 @@ class BINOP(IRExp):
 
 
 class RELOP(IRExp):
-    def __init__(self, op, left, right, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, op, left, right):
+        super().__init__()
         self.op = op
         self.left = left
         self.right = right
@@ -197,8 +197,8 @@ class RELOP(IRExp):
 
 
 class CONDOP(IRExp):
-    def __init__(self, cond, left, right, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, cond, left, right):
+        super().__init__()
         self.cond = cond
         self.left = left
         self.right = right
@@ -261,8 +261,8 @@ def find_irs_args(args, typ):
 
 
 class CALL(IRExp):
-    def __init__(self, func, args, kwargs, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, func, args, kwargs):
+        super().__init__()
         self.func = func
         self.args = args
         self.kwargs = kwargs
@@ -296,7 +296,6 @@ class CALL(IRExp):
         func = self.func.clone()
         args = [(name, arg.clone()) for name, arg in self.args]
         clone = CALL(func, args, {})
-        clone.lineno = self.lineno
         return clone
 
     def replace(self, old, new):
@@ -325,8 +324,8 @@ class CALL(IRExp):
 
 
 class SYSCALL(IRExp):
-    def __init__(self, sym, args, kwargs, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, sym, args, kwargs):
+        super().__init__()
         self.sym = sym
         self.args = args
         self.kwargs = kwargs
@@ -358,7 +357,6 @@ class SYSCALL(IRExp):
     def clone(self):
         args = [(name, arg.clone()) for name, arg in self.args]
         clone = SYSCALL(self.sym, args, {})
-        clone.lineno = self.lineno
         return clone
 
     def replace(self, old, new):
@@ -376,8 +374,8 @@ class SYSCALL(IRExp):
 
 
 class NEW(IRExp):
-    def __init__(self, sym, args, kwargs, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, sym, args, kwargs):
+        super().__init__()
         self.sym = sym
         self.args = args
         self.kwargs = kwargs
@@ -408,7 +406,6 @@ class NEW(IRExp):
     def clone(self):
         args = [(name, arg.clone()) for name, arg in self.args]
         clone = NEW(self.sym, args, {})
-        clone.lineno = self.lineno
         return clone
 
     def replace(self, old, new):
@@ -427,7 +424,7 @@ class NEW(IRExp):
 
 class CONST(IRExp):
     def __init__(self, value):
-        super().__init__(lineno=0)
+        super().__init__()
         self.value = value
 
     def __str__(self):
@@ -451,8 +448,8 @@ class CONST(IRExp):
 
 
 class MREF(IRExp):
-    def __init__(self, mem, offset, ctx, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, mem, offset, ctx):
+        super().__init__()
         assert mem.is_a([TEMP, ATTR])
         self.mem = mem
         self.offset = offset
@@ -474,8 +471,8 @@ class MREF(IRExp):
 
 
 class MSTORE(IRExp):
-    def __init__(self, mem, offset, exp, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, mem, offset, exp):
+        super().__init__()
         self.mem = mem
         self.offset = offset
         self.exp = exp
@@ -496,8 +493,8 @@ class MSTORE(IRExp):
 
 
 class ARRAY(IRExp):
-    def __init__(self, items, is_mutable=True, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, items, is_mutable=True):
+        super().__init__()
         self.items = items
         self.sym = None
         self.repeat = CONST(1)
@@ -541,8 +538,8 @@ class ARRAY(IRExp):
 
 
 class TEMP(IRExp):
-    def __init__(self, sym, ctx, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, sym, ctx):
+        super().__init__()
         self.sym = sym
         self.ctx = ctx
         assert isinstance(sym, Symbol)
@@ -573,8 +570,8 @@ class TEMP(IRExp):
 
 
 class ATTR(IRExp):
-    def __init__(self, exp, attr, ctx, attr_scope=None, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, exp, attr, ctx, attr_scope=None):
+        super().__init__()
         self.exp = exp
         self.attr = attr
         self.ctx = ctx
@@ -627,7 +624,8 @@ class ATTR(IRExp):
 
 class IRStm(IR):
     def __init__(self, lineno=-1):
-        super().__init__(lineno)
+        super().__init__()
+        self.lineno = lineno
         self.block = None
 
     def program_order(self):
@@ -821,8 +819,8 @@ def conds2str(conds):
 
 
 class PHIBase(IRStm):
-    def __init__(self, var, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, var):
+        super().__init__(lineno=0)
         assert var.is_a([TEMP, ATTR])
         self.var = var
         self.var.ctx = Ctx.STORE
@@ -879,8 +877,8 @@ class PHIBase(IRStm):
 
 
 class PHI(PHIBase):
-    def __init__(self, var, lineno=-1):
-        super().__init__(var, lineno)
+    def __init__(self, var):
+        super().__init__(var)
 
     def __str__(self):
         if len(self.args) >= 2:
@@ -895,8 +893,8 @@ class PHI(PHIBase):
 
 
 class UPHI(PHIBase):
-    def __init__(self, var, lineno=-1):
-        super().__init__(var, lineno)
+    def __init__(self, var):
+        super().__init__(var)
 
     def __str__(self):
         s = "{} = uphi({})".format(self.var, ", ".join(self._str_args()))
@@ -904,8 +902,8 @@ class UPHI(PHIBase):
 
 
 class LPHI(PHIBase):
-    def __init__(self, var, lineno=-1):
-        super().__init__(var, lineno)
+    def __init__(self, var):
+        super().__init__(var)
 
     def __str__(self):
         s = "{} = lphi({})".format(self.var, ", ".join(self._str_args()))
@@ -918,6 +916,4 @@ class LPHI(PHIBase):
         lphi.args = phi.args[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
-        lphi.var.lineno = phi.args[1].lineno
-        lphi.lineno = phi.args[1].lineno
         return lphi
