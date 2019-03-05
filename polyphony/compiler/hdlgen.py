@@ -306,6 +306,35 @@ class HDLModuleBuilder(object):
         for sig, old, new in edge_detectors:
             self.hdlmodule.add_edge_detector(sig, old, new)
 
+    def _add_sub_module_accessors(self):
+        def is_acc_connected(sub, acc, hdlmodule):
+            if sub_module.name == 'ram' or sub_module.name == 'fifo':
+                return True
+            elif sub_module.scope.is_function_module():
+                return True
+            elif acc.acc_name in hdlmodule.accessors:
+                return True
+            return False
+
+        for name, sub_module, connections, param_map in self.hdlmodule.sub_modules.values():
+            # TODO
+            if sub_module.name == 'fifo':
+                continue
+            for conns in connections.values():
+                for inf, acc in conns:
+                    if not is_acc_connected(sub_module, acc, self.hdlmodule):
+                        acc.connected = False
+                        continue
+                    tag = inf.if_name
+                    for p in acc.regs():
+                        int_name = acc.port_name(p)
+                        sig = self.hdlmodule.gen_sig(int_name, p.width)
+                        self.hdlmodule.add_internal_reg(sig, tag)
+                    for p in acc.nets():
+                        int_name = acc.port_name(p)
+                        sig = self.hdlmodule.gen_sig(int_name, p.width)
+                        self.hdlmodule.add_internal_net(sig, tag)
+
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
     def _build_module(self):
@@ -326,6 +355,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
+        self._add_sub_module_accessors()
 
     def _add_input_interfaces(self, scope):
         if scope.is_method():
@@ -426,6 +456,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
         self._add_edge_detectors(fsm)
+        self._add_sub_module_accessors()
 
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
@@ -483,6 +514,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             else:
                 self._add_state_constants(fsm)
                 self._process_fsm(fsm)
+        self._add_sub_module_accessors()
 
     def _collect_module_defs(self, fsm):
         moves = self._collect_moves(fsm)
