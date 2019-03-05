@@ -3,7 +3,7 @@ from .ahdl import *
 from .env import env
 
 
-Port = namedtuple('Port', ('name', 'width', 'dir', 'signed'))
+Port = namedtuple('Port', ('name', 'width', 'dir', 'signed', 'default'))
 
 
 class Ports(object):
@@ -47,10 +47,10 @@ class Ports(object):
     def flipped(self):
         def flip(d):
             return 'in' if d == 'out' else 'out'
-        return Ports([Port(p.name, p.width, flip(p.dir), p.signed) for p in self.ports])
+        return Ports([Port(p.name, p.width, flip(p.dir), p.signed, p.default) for p in self.ports])
 
     def renamed(self, rename_func):
-        return Ports([Port(rename_func(p.name), p.width, p.dir, p.signed) for p in self.ports])
+        return Ports([Port(rename_func(p.name), p.width, p.dir, p.signed, p.default) for p in self.ports])
 
     def inports(self):
         return Ports([p for p in self.ports if p.dir == 'in'])
@@ -124,6 +124,7 @@ class Accessor(object):
         self.acc_name = inf.if_name
         self.inf = inf
         self.ports = Ports()
+        self.connected = True
 
     def __str__(self):
         return self.acc_name + str(self.ports)
@@ -289,12 +290,12 @@ class SingleReadInterface(SinglePortInterface):
         else:
             super().__init__(signal, signal.name, if_owner_name)
         signed = True if signal.is_int() else False
-        self.ports.append(Port('', self.data_width, 'in', signed))
+        self.ports.append(Port('', self.data_width, 'in', signed, signal.init_value))
         if signal.is_valid_protocol():
-            self.ports.append(Port('valid', 1, 'in', False))
+            self.ports.append(Port('valid', 1, 'in', False, 0))
         elif signal.is_ready_valid_protocol():
-            self.ports.append(Port('valid', 1, 'in', False))
-            self.ports.append(Port('ready', 1, 'out', False))
+            self.ports.append(Port('valid', 1, 'in', False, 0))
+            self.ports.append(Port('ready', 1, 'out', False, 0))
 
     def accessor(self, inst_name=''):
         acc = SingleWriteAccessor(self, inst_name)
@@ -333,12 +334,12 @@ class SingleWriteInterface(SinglePortInterface, WriteInterface):
             super().__init__(signal, signal.name, if_owner_name)
         #assert signal.is_output()
         signed = True if signal.is_int() else False
-        self.ports.append(Port('', self.data_width, 'out', signed))
+        self.ports.append(Port('', self.data_width, 'out', signed, signal.init_value))
         if signal.is_valid_protocol():
-            self.ports.append(Port('valid', 1, 'out', False))
+            self.ports.append(Port('valid', 1, 'out', False, 0))
         elif signal.is_ready_valid_protocol():
-            self.ports.append(Port('valid', 1, 'out', False))
-            self.ports.append(Port('ready', 1, 'in', False))
+            self.ports.append(Port('valid', 1, 'out', False, 0))
+            self.ports.append(Port('ready', 1, 'in', False, 0))
 
     def accessor(self, inst_name=''):
         acc = SingleReadAccessor(self, inst_name)
@@ -445,9 +446,9 @@ class PipelinedSingleWriteAccessor(SingleWriteAccessor):
 class CallInterface(Interface):
     def __init__(self, name, owner_name=''):
         super().__init__(name, owner_name)
-        self.ports.append(Port('ready', 1, 'in', False))
-        self.ports.append(Port('accept', 1, 'in', False))
-        self.ports.append(Port('valid', 1, 'out', False))
+        self.ports.append(Port('ready', 1, 'in', False, 0))
+        self.ports.append(Port('accept', 1, 'in', False, 0))
+        self.ports.append(Port('valid', 1, 'out', False, 0))
 
     def accessor(self, inst_name=''):
         acc = CallAccessor(self, inst_name)
@@ -529,11 +530,11 @@ class RAMModuleInterface(Interface):
         super().__init__(name, '')
         self.data_width = data_width
         self.addr_width = addr_width
-        self.ports.append(Port('addr', addr_width, 'in', True))
-        self.ports.append(Port('d',    data_width, 'in', True))
-        self.ports.append(Port('we',   1,          'in', False))
-        self.ports.append(Port('q',    data_width, 'out', True))
-        self.ports.append(Port('len',  addr_width, 'out', False))
+        self.ports.append(Port('addr', addr_width, 'in', True, 0))
+        self.ports.append(Port('d',    data_width, 'in', True, 0))
+        self.ports.append(Port('we',   1,          'in', False, 0))
+        self.ports.append(Port('q',    data_width, 'out', True, 0))
+        self.ports.append(Port('len',  addr_width, 'out', False, 0))
 
     def accessor(self, inst_name=''):
         return RAMModuleAccessor(self, inst_name)
@@ -557,12 +558,12 @@ class RAMBridgeInterface(Interface):
         self.signal = signal
         self.data_width = data_width
         self.addr_width = addr_width
-        self.ports.append(Port('addr', addr_width, 'in', True))
-        self.ports.append(Port('d',    data_width, 'in', True))
-        self.ports.append(Port('we',   1,          'in', False))
-        self.ports.append(Port('q',    data_width, 'out', True))
-        self.ports.append(Port('len',  addr_width, 'out', False))
-        self.ports.append(Port('req',  1,          'in', False))
+        self.ports.append(Port('addr', addr_width, 'in', True, 0))
+        self.ports.append(Port('d',    data_width, 'in', True, 0))
+        self.ports.append(Port('we',   1,          'in', False, 0))
+        self.ports.append(Port('q',    data_width, 'out', True, 0))
+        self.ports.append(Port('len',  addr_width, 'out', False, 0))
+        self.ports.append(Port('req',  1,          'in', False, 0))
 
     def accessor(self, inst_name=''):
         return RAMBridgeAccessor(self, inst_name)
@@ -606,12 +607,12 @@ class RAMAccessor(Accessor):
         self.data_width = data_width
         self.addr_width = addr_width
         self.is_sink = is_sink
-        self.ports.append(Port('addr', addr_width, 'in', True))
-        self.ports.append(Port('d',    data_width, 'in', True))
-        self.ports.append(Port('we',   1,          'in', False))
-        self.ports.append(Port('q',    data_width, 'out', True))
-        self.ports.append(Port('len',  addr_width, 'out', False))
-        self.ports.append(Port('req',  1,          'in', False))
+        self.ports.append(Port('addr', addr_width, 'in', True, 0))
+        self.ports.append(Port('d',    data_width, 'in', True, 0))
+        self.ports.append(Port('we',   1,          'in', False, 0))
+        self.ports.append(Port('q',    data_width, 'out', True, 0))
+        self.ports.append(Port('len',  addr_width, 'out', False, 0))
+        self.ports.append(Port('req',  1,          'in', False, 0))
 
     def regs(self):
         if self.is_sink:
@@ -764,7 +765,7 @@ class TupleInterface(Interface):
         self.length = length
         for i in range(length):
             pname = '{}'.format(i)
-            self.ports.append(Port(pname, data_width, 'in', True))
+            self.ports.append(Port(pname, data_width, 'in', True, 0))
 
     def accessor(self, inst_name=''):
         return TupleAccessor(self, inst_name)
@@ -803,7 +804,7 @@ class RegArrayInterface(Interface):
         self.subscript = subscript
         for i in range(length):
             pname = '{}'.format(i)
-            self.ports.append(Port(pname, data_width, direction, True))
+            self.ports.append(Port(pname, data_width, direction, True, 0))
 
     def accessor(self, inst_name=''):
         return RegArrayAccessor(self, inst_name)
@@ -1004,14 +1005,14 @@ class FIFOAccessor(IOAccessor):
 class FIFOModuleInterface(FIFOInterface):
     def __init__(self, signal):
         super().__init__(signal)
-        self.ports.append(Port('din', self.data_width, 'in', True))
-        self.ports.append(Port('write', 1, 'in', False))
-        self.ports.append(Port('full', 1, 'out', False))
-        self.ports.append(Port('dout', self.data_width, 'out', True))
-        self.ports.append(Port('read', 1, 'in', False))
-        self.ports.append(Port('empty', 1, 'out', False))
-        self.ports.append(Port('will_full', 1, 'out', False))
-        self.ports.append(Port('will_empty', 1, 'out', False))
+        self.ports.append(Port('din', self.data_width, 'in', True, 0))
+        self.ports.append(Port('write', 1, 'in', False, 0))
+        self.ports.append(Port('full', 1, 'out', False, 0))
+        self.ports.append(Port('dout', self.data_width, 'out', True, 0))
+        self.ports.append(Port('read', 1, 'in', False, 0))
+        self.ports.append(Port('empty', 1, 'out', False, 1))
+        self.ports.append(Port('will_full', 1, 'out', False, 0))
+        self.ports.append(Port('will_empty', 1, 'out', False, 0))
 
     def port_name(self, port):
         return port.name
@@ -1032,10 +1033,10 @@ class FIFOModuleAccessor(FIFOAccessor):
 class FIFOReadInterface(FIFOInterface):
     def __init__(self, signal):
         super().__init__(signal)
-        self.ports.append(Port('dout', self.data_width, 'in', True))
-        self.ports.append(Port('read', 1, 'out', False))
-        self.ports.append(Port('empty', 1, 'in', False))
-        self.ports.append(Port('will_empty', 1, 'in', False))
+        self.ports.append(Port('dout', self.data_width, 'in', True, 0))
+        self.ports.append(Port('read', 1, 'out', False, 0))
+        self.ports.append(Port('empty', 1, 'in', False, 1))
+        self.ports.append(Port('will_empty', 1, 'in', False, 0))
 
     def accessor(self, inst_name=''):
         return FIFOWriteAccessor(self, inst_name)
@@ -1055,10 +1056,10 @@ class PipelinedFIFOReadInterface(FIFOReadInterface):
 class FIFOWriteInterface(FIFOInterface, WriteInterface):
     def __init__(self, signal):
         super().__init__(signal)
-        self.ports.append(Port('din', self.data_width, 'out', True))
-        self.ports.append(Port('write', 1, 'out', False))
-        self.ports.append(Port('full', 1, 'in', False))
-        self.ports.append(Port('will_full', 1, 'in', False))
+        self.ports.append(Port('din', self.data_width, 'out', True, 0))
+        self.ports.append(Port('write', 1, 'out', False, 0))
+        self.ports.append(Port('full', 1, 'in', False, 0))
+        self.ports.append(Port('will_full', 1, 'in', False, 0))
 
     def accessor(self, inst_name=''):
         return FIFOReadAccessor(self, inst_name)
@@ -1080,18 +1081,18 @@ class FIFOReadAccessor(FIFOAccessor):
         super().__init__(inf, inst_name)
         data_width = self.inf.data_width
         # reading ports for fifo module interface
-        self.ports.append(Port('dout', data_width, 'out', True))
-        self.ports.append(Port('read', 1, 'in', False))
-        self.ports.append(Port('empty', 1, 'out', False))
-        self.ports.append(Port('will_empty', 1, 'out', False))
+        self.ports.append(Port('dout', data_width, 'out', True, 0))
+        self.ports.append(Port('read', 1, 'in', False, 0))
+        self.ports.append(Port('empty', 1, 'out', False, 1))
+        self.ports.append(Port('will_empty', 1, 'out', False, 0))
 
     def nets(self):
         ports = self.ports.outports()
         # nets for fifo write interface
-        ports.append(Port('din', self.inf.data_width, 'out', True))
-        ports.append(Port('write', 1, 'out', False))
-        ports.append(Port('full', 1, 'out', False))
-        ports.append(Port('will_full', 1, 'out', False))
+        ports.append(Port('din', self.inf.data_width, 'out', True, 0))
+        ports.append(Port('write', 1, 'out', False, 0))
+        ports.append(Port('full', 1, 'out', False, 0))
+        ports.append(Port('will_full', 1, 'out', False, 0))
         return ports
 
 
@@ -1108,19 +1109,19 @@ class FIFOWriteAccessor(FIFOAccessor):
         super().__init__(inf, inst_name)
         data_width = self.inf.data_width
         # writingg ports for fifo module interface
-        self.ports.append(Port('din', data_width, 'in', True))
-        self.ports.append(Port('write', 1, 'in', False))
-        self.ports.append(Port('full', 1, 'out', False))
-        self.ports.append(Port('will_full', 1, 'out', False))
+        self.ports.append(Port('din', data_width, 'in', True, 0))
+        self.ports.append(Port('write', 1, 'in', False, 0))
+        self.ports.append(Port('full', 1, 'out', False, 0))
+        self.ports.append(Port('will_full', 1, 'out', False, 0))
         # nets for fifo write interface
 
     def nets(self):
         ports = self.ports.outports()
         # nets for fifo write interface
-        ports.append(Port('dout', self.inf.data_width, 'out', True))
-        ports.append(Port('read', 1, 'out', False))
-        ports.append(Port('empty', 1, 'out', False))
-        ports.append(Port('will_empty', 1, 'out', False))
+        ports.append(Port('dout', self.inf.data_width, 'out', True, 0))
+        ports.append(Port('read', 1, 'out', False, 0))
+        ports.append(Port('empty', 1, 'out', False, 1))
+        ports.append(Port('will_empty', 1, 'out', False, 0))
         return ports
 
 

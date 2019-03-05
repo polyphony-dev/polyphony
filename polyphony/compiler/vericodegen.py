@@ -232,6 +232,13 @@ class VerilogCodeGen(AHDLVisitor):
         connection = f'.{port_name}({accessor_name})'
         return connection
 
+    def _to_sub_module_connect_default(self, instance_name, inf, port):
+        port_name = inf.port_name(port)
+        if is_verilog_keyword(port_name):
+            port_name = port_name + '_'
+        connection = f'.{port_name}({port.width}\'d{port.default})'
+        return connection
+
     def _generate_sub_module_instances(self):
         if not self.hdlmodule.sub_modules:
             return
@@ -243,12 +250,26 @@ class VerilogCodeGen(AHDLVisitor):
             ports.append('.rst(rst)')
             conns = connections['']
             for inf, acc in sorted(conns, key=lambda c: str(c)):
-                for p in inf.ports:
-                    ports.append(self._to_sub_module_connect(name, inf, acc, p))
+                if acc.connected:
+                    for p in inf.ports:
+                        ports.append(self._to_sub_module_connect(name, inf, acc, p))
+                else:
+                    for p in inf.ports:
+                        if p.dir == 'in':
+                            ports.append(self._to_sub_module_connect_default(name, inf, p))
+                        else:
+                            pass
             conns = connections['ret']
             for inf, acc in sorted(conns, key=lambda c: str(c)):
-                for p in inf.ports:
-                    ports.append(self._to_sub_module_connect(name, inf, acc, p))
+                if acc.connected:
+                    for p in inf.ports:
+                        ports.append(self._to_sub_module_connect(name, inf, acc, p))
+                else:
+                    for p in inf.ports:
+                        if p.dir == 'in':
+                            ports.append(self._to_sub_module_connect_default(name, inf, p))
+                        else:
+                            pass
             self.emit(f'//{name} instance')
             if param_map:
                 params = []

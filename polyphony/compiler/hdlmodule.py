@@ -68,7 +68,10 @@ class HDLModule(object):
             s += '{} \n'.format(name)
             for conns in connections.values():
                 for inf, acc in conns:
-                    s += '    connection : .{}({}) \n'.format(inf.if_name, acc.acc_name)
+                    if acc.connected:
+                        s += '    connection : .{}({}) \n'.format(inf.if_name, acc.acc_name)
+                    else:
+                        s += '    connection : .{}(---) \n'.format(inf.if_name)
         s += '  -- declarations --\n'
         for tag, decls in self.decls.items():
             s += 'tag : {}\n'.format(tag)
@@ -192,10 +195,6 @@ class HDLModule(object):
 
     def add_sub_module(self, name, hdlmodule, connections, param_map=None):
         assert isinstance(name, str)
-        sub_infs = {}
-        for conns in connections.values():
-            for interface, accessor in conns:
-                sub_infs[interface.if_name] = accessor
         self.sub_modules[name] = (name, hdlmodule, connections, param_map)
 
     def add_function(self, func, tag=''):

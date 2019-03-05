@@ -1,4 +1,4 @@
-﻿from collections import defaultdict, deque
+﻿from collections import defaultdict
 from .env import env
 from .ir import Ctx, CONST
 from .ahdl import *
@@ -55,11 +55,13 @@ class HDLModuleBuilder(object):
 
     def _add_state_register(self, fsm):
         states_n = sum([len(stg.states) for stg in fsm.stgs])
-        state_sig = self.hdlmodule.gen_sig(fsm.name + '_state', states_n.bit_length(), ['statevar'])
+        state_sig = self.hdlmodule.gen_sig(fsm.name + '_state',
+                                           states_n.bit_length(),
+                                           ['statevar'])
         self.hdlmodule.add_fsm_state_var(fsm.name, state_sig)
         self.hdlmodule.add_internal_reg(state_sig)
 
-    def _add_submodules(self, scope):
+    def _add_callee_submodules(self, scope):
         for callee_scope, inst_names in scope.callee_instances.items():
             if callee_scope.is_port():
                 continue
@@ -84,7 +86,10 @@ class HDLModuleBuilder(object):
                     connections['ret'].append((sub_module_inf, acc))
                 else:
                     connections[''].append((sub_module_inf, acc))
-            self.hdlmodule.add_sub_module(inst_name, sub_hdlmodule, connections, param_map=param_map)
+            self.hdlmodule.add_sub_module(inst_name,
+                                          sub_hdlmodule,
+                                          connections,
+                                          param_map=param_map)
 
     def _add_external_accessor_for_submodule(self, sub_module_inf, acc):
         if not isinstance(acc, CallAccessor) and acc.acc_name not in self.hdlmodule.signals:
@@ -94,15 +99,21 @@ class HDLModuleBuilder(object):
         # deal with pipelined single port
         if sub_module_inf.signal and sub_module_inf.signal.is_single_port():
             acc_signal = self.hdlmodule.signals[acc.acc_name]
-            # we should check acc_signal for the context of caller (it is accessed in pipeline or not)
+            # we should check acc_signal for the context of caller
+            # (it is accessed in pipeline or not)
             if acc_signal.is_pipelined_port() and sub_module_inf.signal.is_adaptered():
-                adapter_name = '{}_{}'.format(acc.inst_name, sub_module_inf.signal.adapter_sig.name)
+                adapter_name = '{}_{}'.format(acc.inst_name,
+                                              sub_module_inf.signal.adapter_sig.name)
                 adapter_sig = self.hdlmodule.gen_sig(adapter_name, sub_module_inf.signal.width)
                 self._add_fifo_channel(adapter_sig)
                 if sub_module_inf.signal.is_input():
-                    item = single_output_port_fifo_adapter(self.hdlmodule, sub_module_inf.signal, acc.inst_name)
+                    item = single_output_port_fifo_adapter(self.hdlmodule,
+                                                           sub_module_inf.signal,
+                                                           acc.inst_name)
                 else:
-                    item = single_input_port_fifo_adapter(self.hdlmodule, sub_module_inf.signal, acc.inst_name)
+                    item = single_input_port_fifo_adapter(self.hdlmodule,
+                                                          sub_module_inf.signal,
+                                                          acc.inst_name)
                 self.hdlmodule.add_decl('', item)
 
     def _add_roms(self, memnodes):
@@ -290,6 +301,40 @@ class HDLModuleBuilder(object):
             if memnode.can_be_reg():
                 HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
 
+    def _add_edge_detectors(self, fsm):
+        edge_detectors = self._collect_special_decls(fsm)
+        for sig, old, new in edge_detectors:
+            self.hdlmodule.add_edge_detector(sig, old, new)
+
+    def _add_sub_module_accessors(self):
+        def is_acc_connected(sub, acc, hdlmodule):
+            if sub_module.name == 'ram' or sub_module.name == 'fifo':
+                return True
+            elif sub_module.scope.is_function_module():
+                return True
+            elif acc.acc_name in hdlmodule.accessors:
+                return True
+            return False
+
+        for name, sub_module, connections, param_map in self.hdlmodule.sub_modules.values():
+            # TODO
+            if sub_module.name == 'fifo':
+                continue
+            for conns in connections.values():
+                for inf, acc in conns:
+                    if not is_acc_connected(sub_module, acc, self.hdlmodule):
+                        acc.connected = False
+                        continue
+                    tag = inf.if_name
+                    for p in acc.regs():
+                        int_name = acc.port_name(p)
+                        sig = self.hdlmodule.gen_sig(int_name, p.width)
+                        self.hdlmodule.add_internal_reg(sig, tag)
+                    for p in acc.nets():
+                        int_name = acc.port_name(p)
+                        sig = self.hdlmodule.gen_sig(int_name, p.width)
+                        self.hdlmodule.add_internal_net(sig, tag)
+
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
     def _build_module(self):
@@ -307,9 +352,10 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_output_interfaces(scope)
         self._add_internal_ports(locals)
         self._add_mem_connections(scope)
-        self._add_submodules(scope)
+        self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
+        self._add_sub_module_accessors()
 
     def _add_input_interfaces(self, scope):
         if scope.is_method():
@@ -325,7 +371,9 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             elif sym.typ.is_list():
                 memnode = sym.typ.get_memnode()
                 if memnode.can_be_reg():
-                    sig = self.hdlmodule.gen_sig(memnode.name(), memnode.data_width(), sym=memnode.sym)
+                    sig = self.hdlmodule.gen_sig(memnode.name(),
+                                                 memnode.data_width(),
+                                                 sym=memnode.sym)
                     inf = RegArrayReadInterface(sig, memnode.name(),
                                                 self.hdlmodule.name,
                                                 memnode.data_width(),
@@ -338,7 +386,9 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                     self.hdlmodule.add_interface(inf.if_name, inf)
                     continue
                 else:
-                    sig = self.hdlmodule.gen_sig(memnode.name(), memnode.data_width(), sym=memnode.sym)
+                    sig = self.hdlmodule.gen_sig(memnode.name(),
+                                                 memnode.data_width(),
+                                                 sym=memnode.sym)
                     inf = RAMBridgeInterface(sig, memnode.name(),
                                              self.hdlmodule.name,
                                              memnode.data_width(),
@@ -381,7 +431,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         self._add_state_register(fsm)
         self._add_internal_ports(locals)
         self._add_mem_connections(scope)
-        self._add_submodules(scope)
+        self._add_callee_submodules(scope)
         for sym, cp, _ in scope.params:
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
                 mod_scope = sym.typ.get_scope()
@@ -399,13 +449,14 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                         connections['ret'].append((inf, inf_acc))
                     else:
                         connections[''].append((inf, inf_acc))
-                self.hdlmodule.add_sub_module(inf_acc.acc_name, acc_mod, connections, acc_mod.param_map)
-
+                self.hdlmodule.add_sub_module(inf_acc.acc_name,
+                                              acc_mod,
+                                              connections,
+                                              acc_mod.param_map)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
-        edge_detectors = self._collect_special_decls(fsm)
-        for sig, old, new in edge_detectors:
-            self.hdlmodule.add_edge_detector(sig, old, new)
+        self._add_edge_detectors(fsm)
+        self._add_sub_module_accessors()
 
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
@@ -437,12 +488,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         regs, nets = self._add_internal_ports(locals)
         self._add_state_register(fsm)
         self._add_mem_connections(scope)
-        self._add_submodules(scope)
+        self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
-        edge_detectors = self._collect_special_decls(fsm)
-        for sig, old, new in edge_detectors:
-            self.hdlmodule.add_edge_detector(sig, old, new)
+        self._add_edge_detectors(fsm)
 
     def _build_module(self):
         assert self.hdlmodule.scope.is_module()
@@ -465,6 +514,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             else:
                 self._add_state_constants(fsm)
                 self._process_fsm(fsm)
+        self._add_sub_module_accessors()
 
     def _collect_module_defs(self, fsm):
         moves = self._collect_moves(fsm)
