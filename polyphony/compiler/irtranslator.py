@@ -577,10 +577,7 @@ class CodeVisitor(ast.NodeVisitor):
                     attr_sym = self.current_scope.parent.find_sym(dst.attr)
                 if attr_sym.typ.is_freezed():
                     fail((self.current_scope, node.lineno), Errors.CONFLICT_TYPE_HINT)
-                if self.current_scope.parent.is_module():
-                    attr_sym.set_type(Type.port(typ))
-                else:
-                    attr_sym.set_type(typ)
+                attr_sym.set_type(typ)
                 dst.attr = attr_sym
             else:
                 fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT)
