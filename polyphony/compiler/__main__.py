@@ -749,30 +749,15 @@ def setup(src_file, options):
         logging.basicConfig(**logging_setting)
 
     translator = IRTranslator()
-    internal_root_dir = '{0}{1}{2}{1}_internal{1}'.format(
+    root_dir = '{0}{1}{2}{1}'.format(
         os.path.dirname(__file__),
         os.path.sep, os.path.pardir
     )
-    internal_root_dir = os.path.abspath(internal_root_dir) + os.path.sep
-
-    builtin_package_file = internal_root_dir + '_builtins.py'
+    env.root_dir = os.path.abspath(root_dir)
+    internal_dir = f'{env.root_dir}{os.path.sep}_internal'
+    builtin_package_file = f'{internal_dir}{os.sep}_builtins.py'
     env.set_current_filename(builtin_package_file)
     translator.translate(read_source(builtin_package_file), '__builtin__')
-
-    polyphony_package_file = internal_root_dir + '_polyphony.py'
-    env.set_current_filename(polyphony_package_file)
-    translator.translate(read_source(polyphony_package_file), 'polyphony')
-
-    package_names = [
-        'typing',
-        'io',
-        'timing',
-        'verilog'
-    ]
-    for package_name in package_names:
-        package_file = f'{internal_root_dir}_{package_name}.py'
-        env.set_current_filename(package_file)
-        translator.translate(read_source(package_file), package_name)
 
     env.set_current_filename(src_file)
     g = Scope.create_namespace(None, env.global_scope_name, {'global'})
