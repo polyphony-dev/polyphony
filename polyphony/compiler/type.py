@@ -30,8 +30,12 @@ class Type(object):
     def from_annotation(cls, ann, scope, is_lib=False):
         if isinstance(ann, str):
             t = None
-            if is_lib and ann in env.all_scopes:
-                t = Type.object(env.all_scopes[ann])
+            if ann in env.all_scopes:
+                scope = env.all_scopes[ann]
+                if scope.is_typeclass():
+                    t = Type.from_typeclass(scope)
+                else:
+                    t = Type.object(scope)
                 t.freeze()
             elif ann == 'int':
                 t = Type.int()
