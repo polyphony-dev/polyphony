@@ -2,7 +2,7 @@
 from polyphony import testbench
 from polyphony import module
 from polyphony.io import Port
-from .sub import Sub
+from sub import Sub
 
 
 @module
