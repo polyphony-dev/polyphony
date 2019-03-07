@@ -31,6 +31,7 @@ class Scope(Tagged):
         'port', 'typeclass',
         'function_module',
         'inlinelib',
+        'package', 'directory'
     }
     scope_id = 0
 
@@ -70,6 +71,14 @@ class Scope(Tagged):
         def ret_helper():
             scopes = cls.ordered_scopes[:]
             scopes = [s for s in scopes if not s.is_pure()]
+            # Exclude an no code scope
+            scopes = [s for s in scopes
+                      if not (s.is_lib() and s.is_function())
+                      and not (s.is_lib() and s.is_method())
+                      and not s.is_builtin()
+                      and not s.is_decorator()
+                      and not s.is_typeclass()
+                      and not s.is_directory()]
             if not with_global:
                 scopes.remove(Scope.global_scope())
             if not with_class:

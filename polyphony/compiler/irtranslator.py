@@ -72,6 +72,8 @@ class ImportVisitor(ast.NodeVisitor):
         tags = set()
         if path.startswith(env.root_dir):
             tags.add('lib')
+        if os.path.basename(path) == '__init__.py':
+            tags.add('package')
         namespace = Scope.create_namespace(None, name, tags)
         env.push_outermost_scope(namespace)
         for sym in builtin_symbols.values():
@@ -92,7 +94,7 @@ class ImportVisitor(ast.NodeVisitor):
         else:
             # the name is a directory and is not a package
             if name not in env.scopes:
-                Scope.create_namespace(None, name, {'lib'})
+                Scope.create_namespace(None, name, {'directory'})
         return True
 
     def _import(self, module_name, asname):
@@ -270,6 +272,10 @@ class ScopeVisitor(ast.NodeVisitor):
                 tags.add('callable')
         else:
             tags.add('function')
+        if outer_scope.is_builtin():
+            tags.add('builtin')
+        if outer_scope.is_inlinelib():
+            tags.add('inlinelib')
         if outer_scope.is_lib() and 'inlinelib' not in tags:
             tags.add('lib')
 
@@ -305,7 +311,7 @@ class ScopeVisitor(ast.NodeVisitor):
             first_param.copy.add_tag('self')
             first_param.sym.add_tag('self')
 
-        if self.current_scope.is_builtin():
+        if self.current_scope.is_builtin() and not self.current_scope.is_method():
             append_builtin(outer_scope, self.current_scope)
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
@@ -344,6 +350,10 @@ class ScopeVisitor(ast.NodeVisitor):
             tags |= {'port', 'lib'}
         if outer_scope.name == 'polyphony.typing':
             tags |= {'typeclass', 'lib'}
+        if outer_scope.is_builtin():
+            tags.add('builtin')
+        if outer_scope.is_inlinelib():
+            tags.add('inlinelib')
         if outer_scope.is_lib() and 'inlinelib' not in tags:
             tags.add('lib')
         self.current_scope = Scope.create(outer_scope,

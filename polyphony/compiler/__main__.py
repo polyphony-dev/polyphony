@@ -366,7 +366,7 @@ def staticconstopt(driver):
     scopes = driver.get_scopes(bottom_up=True,
                                with_global=True,
                                with_class=True,
-                               with_lib=False)
+                               with_lib=True)
     StaticConstOpt().process_scopes(scopes)
 
 
@@ -765,19 +765,16 @@ def setup(src_file, options):
     for sym in builtin_symbols.values():
         g.import_sym(sym)
 
-    scopes = Scope.get_scopes(with_global=False, with_class=True, with_lib=True)
-    static_lib_scopes = [s for s in scopes
-                         if s.name.startswith('polyphony') and
-                         (s.is_namespace() or s.is_class())]
-    StaticConstOpt().process_scopes(static_lib_scopes)
-
 
 def compile(plan, source, src_file=''):
     translator = IRTranslator()
     translator.translate(source, '')
     if env.config.enable_pure:
         interpret(source, src_file)
-    scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)
+    scopes = Scope.get_scopes(bottom_up=False,
+                              with_global=True,
+                              with_class=True,
+                              with_lib=True)
     driver = Driver(plan, scopes)
     driver.run()
     return driver.codes
