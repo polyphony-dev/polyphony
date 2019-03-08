@@ -54,18 +54,19 @@ class ImportVisitor(ast.NodeVisitor):
             return None, None
         if not spec.has_location:
             return spec.name, None
-        internal = spec.origin.startswith(env.root_dir)
-        if internal:
-            dirname, filename = os.path.split(spec.origin)
+        abspath = os.path.abspath(spec.origin)
+        if abspath.startswith(env.root_dir):
+            dirname, filename = os.path.split(abspath)
             if filename == '__init__.py':
                 return spec.name, f'{dirname}{os.path.sep}_internal{os.path.sep}{filename}'
             else:
                 return spec.name, f'{dirname}{os.path.sep}_internal{os.path.sep}_{filename}'
         else:
-            return spec.name, spec.origin
+            return spec.name, abspath
 
     def _load_file(self, name, path):
         from .common import read_source
+        logger.debug(f'load file {path}')
         assert name not in env.scopes
         cur_filename = env.current_filename
         env.set_current_filename(path)
@@ -74,7 +75,7 @@ class ImportVisitor(ast.NodeVisitor):
             tags.add('lib')
         if os.path.basename(path) == '__init__.py':
             tags.add('package')
-        namespace = Scope.create_namespace(None, name, tags)
+        namespace = Scope.create_namespace(None, name, tags, path)
         env.push_outermost_scope(namespace)
         for sym in builtin_symbols.values():
             namespace.import_sym(sym)
@@ -94,11 +95,12 @@ class ImportVisitor(ast.NodeVisitor):
         else:
             # the name is a directory and is not a package
             if name not in env.scopes:
-                Scope.create_namespace(None, name, {'directory'})
+                Scope.create_namespace(None, name, {'directory'}, path)
         return True
 
-    def _import(self, module_name, asname):
+    def _find_and_set_hierarchy(self, module_name):
         names = module_name.split('.')
+        namespace = None
         parent_namespace = None
         for name in names:
             if parent_namespace:
@@ -116,6 +118,10 @@ class ImportVisitor(ast.NodeVisitor):
                     # TODO: error check
                     pass
             parent_namespace = namespace
+        return namespace
+
+    def _import(self, module_name, asname):
+        namespace = self._find_and_set_hierarchy(module_name)
         if asname:
             if not self.target_scope.has_sym(asname):
                 self.target_scope.add_sym(asname, typ=Type.namespace(namespace))
@@ -123,11 +129,12 @@ class ImportVisitor(ast.NodeVisitor):
                 return False
         else:
             # import top level name only
-            if not self.target_scope.has_sym(names[0]):
-                self.target_scope.add_sym(names[0], typ=Type.namespace(env.scopes[names[0]]))
+            top_name = module_name.split('.', 1)[0]
+            if not self.target_scope.has_sym(top_name):
+                self.target_scope.add_sym(top_name, typ=Type.namespace(env.scopes[top_name]))
             else:
-                sym = self.target_scope.find_sym(names[0])
-                sym.set_type(Type.namespace(env.scopes[names[0]]))
+                sym = self.target_scope.find_sym(top_name)
+                sym.set_type(Type.namespace(env.scopes[top_name]))
         return True
 
     def visit_Import(self, node):
@@ -144,27 +151,27 @@ class ImportVisitor(ast.NodeVisitor):
         if node.level == 0:
             assert node.module
             full_name = node.module
-            if not self._load_module(full_name):
-                fail((self.target_scope, node.lineno), Errors.CANNOT_IMPORT, [node.module])
+            self._find_and_set_hierarchy(full_name)
         elif node.level == 1:
             if node.module:
                 # load as a relative path
-                pkg = self._current_package()
+                _, pkg = self._current_package()
                 full_name = f'{pkg}.{node.module}'
-                if not self._load_module(full_name):
-                    fail((self.target_scope, node.lineno), Errors.CANNOT_IMPORT, [node.module])
+                self._find_and_set_hierarchy(full_name)
             else:
                 # from . import
-                full_name = self._current_package()
+                _, full_name = self._current_package()
         elif node.level == 2:
             if node.module:
-                self._add_package_location_to_search_path()
-                pkg = self._current_package()
-                full_name = node.module
-                if not self._load_module(full_name):
-                    fail((self.target_scope, node.lineno), Errors.CANNOT_IMPORT, [node.module])
+                location, pkg = self._current_package()
+                full_name = f'{os.path.basename(location)}.{node.module}'
+                self._find_and_set_hierarchy(full_name)
             else:
-                pass
+                # from .. import
+                location, pkg = self._current_package()
+                full_name = os.path.basename(location)
+        else:
+            assert False
         from_scope = env.scopes[full_name]
         for nm in node.names:
             if nm.name == '*':
@@ -187,19 +194,8 @@ class ImportVisitor(ast.NodeVisitor):
     def _current_package(self):
         curdir = os.path.dirname(env.current_filename)
         if curdir == f'{env.root_dir}{os.path.sep}_internal':
-            package = 'polyphony'
-        else:
-            _, package = os.path.split(curdir)
-        return package
-
-    def _add_package_location_to_search_path(self):
-        curdir = os.path.dirname(env.current_filename)
-        if curdir == f'{env.root_dir}{os.path.sep}_internal':
             curdir, _ = os.path.split(curdir)
-            package_location, _ = os.path.split(curdir)
-        else:
-            package_location, _ = os.path.split(curdir)
-        sys.path.append(package_location)
+        return os.path.split(curdir)
 
 
 class ScopeVisitor(ast.NodeVisitor):
@@ -207,6 +203,7 @@ class ScopeVisitor(ast.NodeVisitor):
         self.current_scope = top_scope
         self.annotation_visitor = AnnotationVisitor(self)
         self.decorator_visitor = DecoratorVisitor(self)
+        self.import_visitor = ImportVisitor(top_scope)
 
     def _leave_scope(self, outer_scope):
         # override it if already exists
@@ -217,6 +214,12 @@ class ScopeVisitor(ast.NodeVisitor):
             t = Type.function(self.current_scope, None, None)
         outer_scope.add_sym(self.current_scope.orig_name, typ=t)
         self.current_scope = outer_scope
+
+    def visit_Import(self, node):
+        self.import_visitor.visit_Import(node)
+
+    def visit_ImportFrom(self, node):
+        self.import_visitor.visit_ImportFrom(node)
 
     def visit_FunctionDef(self, node):
         def _make_param_symbol(arg, is_vararg=False):
@@ -1612,8 +1615,6 @@ class IRTranslator(object):
                 top_scope = top
             else:
                 top_scope = Scope.global_scope()
-            ImportVisitor(top_scope).visit(tree)
-            logger.debug(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
         type_comments = self._extract_comment(source, 'type:')
         meta_comments = self._extract_comment(source, 'meta:')
         ScopeVisitor(top_scope).visit(tree)

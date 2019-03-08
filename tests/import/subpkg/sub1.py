@@ -1,4 +1,4 @@
-from .subsubpkg.subsub1 import func2 as sub_f2
+from .subsubpkg.subsub1 import func1 as sub_f1
 
 SUB1_GLOBAL = 111
 SUB1_GLOBAL_ARRAY = [1, 2, 3, 4]
@@ -10,7 +10,7 @@ def func1(x):
 
 
 def func2(x):
-    return sub_f2(x)
+    return sub_f1(x)
 
 
 def get_v(c):

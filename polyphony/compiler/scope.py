@@ -51,7 +51,7 @@ class Scope(Tagged):
         return s
 
     @classmethod
-    def create_namespace(cls, parent, name, tags):
+    def create_namespace(cls, parent, name, tags, path=None):
         tags |= {'namespace'}
         namespace = Scope.create(parent, name, tags, lineno=1)
         namesym = namespace.add_sym('__name__', typ=Type.str_t)
@@ -59,6 +59,9 @@ class Scope(Tagged):
             namespace.constants[namesym] = CONST('__main__')
         else:
             namespace.constants[namesym] = CONST(namespace.name)
+        if path:
+            filesym = namespace.add_sym('__file__', typ=Type.str_t)
+            namespace.constants[filesym] = CONST(path)
         return namespace
 
     @classmethod

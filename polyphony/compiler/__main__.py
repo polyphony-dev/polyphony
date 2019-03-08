@@ -760,7 +760,7 @@ def setup(src_file, options):
     translator.translate(read_source(builtin_package_file), '__builtin__')
 
     env.set_current_filename(src_file)
-    g = Scope.create_namespace(None, env.global_scope_name, {'global'})
+    g = Scope.create_namespace(None, env.global_scope_name, {'global'}, src_file)
     env.push_outermost_scope(g)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
