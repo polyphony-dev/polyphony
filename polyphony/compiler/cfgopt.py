@@ -4,9 +4,8 @@ from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
 from .irhelper import reduce_relexp, is_port_method_call
-from .type import Type
 from .usedef import UseDefDetector
-from .utils import remove_except_one
+from .utils import remove_except_one, unique
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -123,14 +122,21 @@ class PathExpTracer(object):
         for blk in scope.traverse_blocks():
             blk.order = -1
         Block.set_order(scope.entry_block, 0)
-        tree = DominatorTreeBuilder(scope).process()
-        tree.dump()
-        self.tree = tree
+        self.tree_builder = DominatorTreeBuilder(scope)
+        self.tree = self.tree_builder.process()
+        self.tree.dump()
         self.worklist = deque()
-        self.worklist.append(scope.entry_block)
+        self.worklist.extend(sorted([blk for blk in self.scope.traverse_blocks()]))
         while self.worklist:
             blk = self.worklist.popleft()
-            self.traverse_dtree(blk)
+
+            if not blk.stms:
+                continue
+            if not blk.preds or not blk.succs:
+                blk.path_exp = CONST(1)
+                continue
+            parent = self.tree.get_parent_of(blk)
+            self.make_path_exp(blk, parent)
 
     def make_path_exp(self, blk, parent):
         blk.path_exp = parent.path_exp
@@ -141,22 +147,49 @@ class PathExpTracer(object):
                 if parent.path_exp:
                     blk.path_exp = parent.path_exp.clone()
             else:
-                blk.path_exp = merge_path_exp(parent, blk)
+                assert parent is blk.preds[0]
+                exp = merge_path_exp(parent, blk)
+                blk.path_exp = self._insert_named_exp(exp, blk, 0)
+        else:
+            r = self.scope.find_region(blk)
+            if r is not self.scope.top_region():
+                assert len(r.head.preds_loop) == 1
+                exit_block = r.head.preds_loop[0]
+            else:
+                exit_block = self.scope.exit_block
+            if blk in self.tree_builder.dominators[exit_block]:
+                # This block will always be passed through
+                pass
+            elif len(blk.preds) > 1:
+                exps = []
+                for pred in unique(blk.preds):
+                    e = merge_path_exp(pred, blk)
+                    if not e:
+                        self.worklist.append(blk)
+                        return
+                    else:
+                        exps.append(e)
+                exp = self._insert_named_exp(exps[0], blk, 0)
+                i = 1
+                for e in exps[1:]:
+                    named = self._insert_named_exp(e, blk, i)
+                    if named is not e:
+                        i += 1
+                    exp = RELOP('Or', exp, named)
+                blk.path_exp = exp
 
-    def traverse_dtree(self, blk):
-        if not blk.stms:
-            return
-        parent = self.tree.get_parent_of(blk)
-        if parent:
-            self.make_path_exp(blk, parent)
-        children = self.tree.get_children_of(blk)
-        for child in children:
-            self.traverse_dtree(child)
+    def _insert_named_exp(self, exp, blk, insert_pos):
+        if exp.is_a(TEMP):
+            return exp
+        csym = self.scope.add_condition_sym()
+        mv = MOVE(TEMP(csym, Ctx.STORE), exp)
+        blk.insert_stm(insert_pos, mv)
+        return TEMP(mv.dst.symbol(), Ctx.LOAD)
 
 
 def merge_path_exp(pred, blk, idx_hint=-1):
     jump = pred.stms[-1]
-    exp = None
+    exp = pred.path_exp
     if jump.is_a(CJUMP):
         if blk is jump.true:
             exp = rel_and_exp(pred.path_exp, jump.exp)
@@ -166,11 +199,15 @@ def merge_path_exp(pred, blk, idx_hint=-1):
         if blk in jump.targets:
             if 1 == jump.targets.count(blk):
                 idx = jump.targets.index(blk)
+                exp = rel_and_exp(pred.path_exp, jump.conds[idx])
             elif idx_hint >= 0:
-                idx = idx_hint
+                exp = rel_and_exp(pred.path_exp, jump.conds[idx_hint])
             else:
-                assert False
-            exp = rel_and_exp(pred.path_exp, jump.conds[idx])
+                indices = [i for i, t in enumerate(jump.targets) if t is blk]
+                exp = rel_and_exp(pred.path_exp, jump.conds[indices[0]])
+                for idx in indices[1:]:
+                    rexp = rel_and_exp(pred.path_exp, jump.conds[idx])
+                    exp = RELOP('Or', exp, rexp)
     return exp
 
 
@@ -181,8 +218,12 @@ def rel_and_exp(exp1, exp2):
         return exp1
     exp1 = reduce_relexp(exp1)
     exp2 = reduce_relexp(exp2)
-    exp = RELOP('And', exp1, exp2)
-    exp.lineno = exp1.lineno
+    if exp1.is_a(CONST) and exp1.value:
+        exp = exp2
+    elif exp2.is_a(CONST) and exp2.value:
+        exp = exp1
+    else:
+        exp = RELOP('And', exp1, exp2)
     return exp
 
 
@@ -213,6 +254,19 @@ class HyperBlockBuilder(object):
                 return False
             b = b.succs[0]
 
+    def _find_branch_paths(self, blk):
+        tails = []
+        branches = []
+        for succ in blk.succs:
+            path = []
+            to_convergence = self._walk_to_convergence(succ, path)
+            if not to_convergence:
+                #continue
+                return None, None
+            tails.append(path[-1])
+            branches.append(path)
+        return branches, tails
+
     def _find_diamond_nodes(self):
         self._update_domtree()
         for blk in self.scope.traverse_blocks():
@@ -220,15 +274,9 @@ class HyperBlockBuilder(object):
                 continue
             if blk in self._visited_heads:
                 continue
-            tails = []
-            branches = []
-            for succ in blk.succs:
-                path = []
-                to_convergence = self._walk_to_convergence(succ, path)
-                if not to_convergence:
-                    continue
-                tails.append(path[-1])
-                branches.append(path)
+            branches, tails = self._find_branch_paths(blk)
+            if not branches:
+                continue
             if all([tails[0] is b for b in tails[1:]]):
                 # perfect diamond-nodes
                 if len(blk.succs) == len(tails):
@@ -347,7 +395,6 @@ class HyperBlockBuilder(object):
                     newsym.set_type(stm.var.symbol().typ.clone())
                     dst = TEMP(newsym, Ctx.STORE)
                     mv = MOVE(dst, new_args[0])
-                    mv.lineno = dst.lineno = stm.var.lineno
                     new_tail.append_stm(mv)
                 else:
                     new_phi = stm.clone()
@@ -356,11 +403,9 @@ class HyperBlockBuilder(object):
                     newsym = self.scope.add_temp()
                     newsym.set_type(stm.var.symbol().typ.clone())
                     new_phi.var = TEMP(newsym, Ctx.STORE)
-                    new_phi.var.lineno = stm.var.lineno
                     new_tail.append_stm(new_phi)
 
                 arg = TEMP(newsym, Ctx.LOAD)
-                arg.lineno = stm.var.lineno
 
                 #ps = new_ps[0]
                 #for p in new_ps[1:]:

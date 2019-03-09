@@ -51,7 +51,7 @@ from .scope import Scope
 from .scopegraph import CallGraphBuilder
 from .scopegraph import DependencyGraphBuilder
 from .selectorbuilder import SelectorBuilder
-from .setlineno import LineNumberSetter, SourceDump
+from .setlineno import SourceDump
 from .specfunc import SpecializedFunctionMaker
 from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .statereducer import StateReducer
@@ -114,11 +114,8 @@ def is_hdlmodule_scope(scope):
 
 def preprocess_global(driver):
     scopes = Scope.get_scopes(with_global=True, with_class=True)
-    lineno = LineNumberSetter()
     src_dump = SourceDump()
-
     for s in scopes:
-        lineno.process(s)
         src_dump.process(s)
 
 
@@ -369,7 +366,7 @@ def staticconstopt(driver):
     scopes = driver.get_scopes(bottom_up=True,
                                with_global=True,
                                with_class=True,
-                               with_lib=False)
+                               with_lib=True)
     StaticConstOpt().process_scopes(scopes)
 
 
@@ -752,42 +749,21 @@ def setup(src_file, options):
         logging.basicConfig(**logging_setting)
 
     translator = IRTranslator()
-    internal_root_dir = '{0}{1}{2}{1}_internal{1}'.format(
+    root_dir = '{0}{1}{2}{1}'.format(
         os.path.dirname(__file__),
         os.path.sep, os.path.pardir
     )
-    internal_root_dir = os.path.abspath(internal_root_dir) + os.path.sep
-
-    builtin_package_file = internal_root_dir + '_builtins.py'
+    env.root_dir = os.path.abspath(root_dir)
+    internal_dir = f'{env.root_dir}{os.path.sep}_internal'
+    builtin_package_file = f'{internal_dir}{os.sep}_builtins.py'
     env.set_current_filename(builtin_package_file)
     translator.translate(read_source(builtin_package_file), '__builtin__')
 
-    polyphony_package_file = internal_root_dir + '_polyphony.py'
-    env.set_current_filename(polyphony_package_file)
-    translator.translate(read_source(polyphony_package_file), 'polyphony')
-
-    package_names = [
-        'typing',
-        'io',
-        'timing',
-        'verilog'
-    ]
-    for package_name in package_names:
-        package_file = f'{internal_root_dir}_{package_name}.py'
-        env.set_current_filename(package_file)
-        translator.translate(read_source(package_file), package_name)
-
     env.set_current_filename(src_file)
-    g = Scope.create_namespace(None, env.global_scope_name, {'global'})
+    g = Scope.create_namespace(None, env.global_scope_name, {'global'}, src_file)
     env.push_outermost_scope(g)
     for sym in builtin_symbols.values():
         g.import_sym(sym)
-
-    scopes = Scope.get_scopes(with_global=False, with_class=True, with_lib=True)
-    static_lib_scopes = [s for s in scopes
-                         if s.name.startswith('polyphony') and
-                         (s.is_namespace() or s.is_class())]
-    StaticConstOpt().process_scopes(static_lib_scopes)
 
 
 def compile(plan, source, src_file=''):
@@ -795,7 +771,10 @@ def compile(plan, source, src_file=''):
     translator.translate(source, '')
     if env.config.enable_pure:
         interpret(source, src_file)
-    scopes = Scope.get_scopes(bottom_up=False, with_global=True, with_class=True)
+    scopes = Scope.get_scopes(bottom_up=False,
+                              with_global=True,
+                              with_class=True,
+                              with_lib=True)
     driver = Driver(plan, scopes)
     driver.run()
     return driver.codes

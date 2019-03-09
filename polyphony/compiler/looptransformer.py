@@ -37,8 +37,7 @@ class LoopFlatten(object):
         outer_cond = subloop_exit.path_exp
         subloop_body_else.path_exp = RELOP('And',
                                            outer_cond.clone(),
-                                           UNOP('Not', TEMP(subloop.cond, Ctx.LOAD, lineno=0), lineno=0),
-                                           lineno=0)
+                                           UNOP('Not', TEMP(subloop.cond, Ctx.LOAD)))
         subloop.head.remove_pred(sub_continue)
         subloop.head.replace_succ(subloop_exit, subloop_body_else)
         sub_continue.replace_succ(subloop.head, subloop_exit)
@@ -53,16 +52,16 @@ class LoopFlatten(object):
     def _insert_init_flag(self, loop, body_cond, else_cond):
         init_sym = self.scope.add_temp('init', {'induction'}, typ=Type.bool_t)
         init_update_sym = self.scope.add_temp('init_update', typ=Type.bool_t)
-        init_lphi = LPHI(TEMP(init_sym, Ctx.STORE, lineno=0), lineno=0)
+        init_lphi = LPHI(TEMP(init_sym, Ctx.STORE))
         init_lphi.args = [
             CONST(True),
-            TEMP(init_update_sym, Ctx.LOAD, lineno=0)
+            TEMP(init_update_sym, Ctx.LOAD)
         ]
         init_lphi.ps = [CONST(1)] * 2
         loop.head.insert_stm(-1, init_lphi)
 
         loop_continue = loop.head.preds_loop[0]
-        update_phi = PHI(TEMP(init_update_sym, Ctx.STORE, lineno=0), lineno=0)
+        update_phi = PHI(TEMP(init_update_sym, Ctx.STORE))
         update_phi.args = [
             CONST(False),
             CONST(True)
@@ -75,11 +74,11 @@ class LoopFlatten(object):
         return init_sym, init_lphi
 
     def _lphi_to_psi(self, lphi, cond):
-        psi = PHI(lphi.var, lineno=lphi.lineno)
+        psi = PHI(lphi.var)
         psi.args = lphi.args[:]
         psi.ps = [
-            TEMP(cond, Ctx.LOAD, lineno=0),
-            UNOP('Not', TEMP(cond, Ctx.LOAD, lineno=0), lineno=0)
+            TEMP(cond, Ctx.LOAD),
+            UNOP('Not', TEMP(cond, Ctx.LOAD))
         ]
         idx = lphi.block.stms.index(lphi)
         lphi.block.stms.remove(lphi)
@@ -94,17 +93,17 @@ class LoopFlatten(object):
         outer_phi_ps = []
         subloops = self.scope.child_regions(loop)
         if len(subloops) > 1:
-            fail((self.scope, subloops.orders()[1].update.lineno), Errors.RULE_PIPELINE_CANNNOT_FLATTEN)
+            fail((self.scope, subloops.orders()[1].head.stms[-1].lineno),
+                 Errors.RULE_PIPELINE_CANNNOT_FLATTEN)
 
         subloop = subloops.orders()[0]
         if not self.scope.is_leaf_region(subloop):
             self._flatten(subloop)
         assert len(subloop.exits) == 1
-        loop_lineno = subloop.update.lineno
         subloop_body, subloop_body_else, subloop_exit = self._build_diamond_block(loop, subloop)
 
         # setup else block
-        subloop_body_else.append_stm(JUMP(subloop_exit, lineno=0))
+        subloop_body_else.append_stm(JUMP(subloop_exit))
         self._move_stms(subloop_exit, subloop_body_else)
         subloop_exit.stms = [subloop_exit.stms[-1]]
         if master_continue in subloop_exit.succs:
@@ -112,12 +111,10 @@ class LoopFlatten(object):
         outer_cond = subloop_exit.path_exp
         body_cond = RELOP('And',
                           outer_cond.clone(),
-                          TEMP(subloop.cond, Ctx.LOAD, lineno=loop_lineno),
-                          lineno=loop_lineno)
+                          TEMP(subloop.cond, Ctx.LOAD))
         else_cond = RELOP('And',
                           outer_cond.clone(),
-                          UNOP('Not', TEMP(subloop.cond, Ctx.LOAD, lineno=loop_lineno), lineno=loop_lineno),
-                          lineno=loop_lineno)
+                          UNOP('Not', TEMP(subloop.cond, Ctx.LOAD)))
         init_flag, init_lphi = self._insert_init_flag(loop, body_cond, else_cond)
 
         # deal with phi for induction variables
@@ -125,16 +122,16 @@ class LoopFlatten(object):
             assert lphi.args[1].is_a(TEMP)
             var_t = lphi.var.symbol().typ
             psi_sym = self.scope.add_temp(typ=var_t)
-            psi = PHI(TEMP(psi_sym, Ctx.STORE, lineno=lphi.lineno), lineno=lphi.lineno)
+            psi = PHI(TEMP(psi_sym, Ctx.STORE))
             psi.args = [
                 lphi.args[1].clone(),
-                TEMP(lphi.var.symbol(), Ctx.LOAD, lineno=lphi.lineno)
+                TEMP(lphi.var.symbol(), Ctx.LOAD)
             ]
             psi.ps = [
                 body_cond,
                 else_cond
             ]
-            lphi.args[1] = TEMP(psi_sym, Ctx.LOAD, lineno=lphi.lineno)
+            lphi.args[1] = TEMP(psi_sym, Ctx.LOAD)
             subloop_exit.insert_stm(-1, psi)
             self._lphi_to_psi(lphi, init_flag)
         # TODO
@@ -153,13 +150,13 @@ class LoopFlatten(object):
             if lphi is init_lphi:
                 continue
             psi_sym = self.scope.add_temp(typ=lphi.var.symbol().typ)
-            psi = PHI(TEMP(psi_sym, Ctx.STORE, lineno=lphi.lineno), lineno=lphi.lineno)
+            psi = PHI(TEMP(psi_sym, Ctx.STORE))
             psi.args = [
-                TEMP(lphi.var.symbol(), Ctx.LOAD, lineno=lphi.lineno),
+                TEMP(lphi.var.symbol(), Ctx.LOAD),
                 lphi.args[1].clone()
             ]
             psi.ps = outer_phi_ps
-            lphi.args[1] = TEMP(psi_sym, Ctx.LOAD, lineno=lphi.lineno)
+            lphi.args[1] = TEMP(psi_sym, Ctx.LOAD)
             loop.head.preds[1].insert_stm(-1, psi)
         logger.debug(str(self.scope))
 

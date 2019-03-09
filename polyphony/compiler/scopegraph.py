@@ -78,6 +78,8 @@ class DependencyGraphBuilder(IRVisitor):
                         self.worklist.append(w)
             if scope.is_lib():
                 continue
+            if scope.is_directory():
+                continue
             if scope in visited:
                 continue
             visited.add(scope)

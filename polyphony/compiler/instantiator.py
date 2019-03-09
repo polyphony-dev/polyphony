@@ -151,7 +151,7 @@ class EarlyModuleInstantiator(object):
         collector = CallCollector()
         calls = collector.process(caller_scope)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope() is module and caller_lineno == call.lineno:
+            if call.is_a(NEW) and call.func_scope() is module and caller_lineno == stm.lineno:
                 obj_name = inst_name.split('.')[-1]
                 if stm.dst.symbol().name.endswith(obj_name):
                     new_module_sym = call.sym.scope.gen_sym(new_module.orig_name)

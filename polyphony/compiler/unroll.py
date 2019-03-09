@@ -144,7 +144,6 @@ class LoopUnroller(object):
                     new_sym = new_syms[0]
                     lphi = origin_lphis[sym]
                     arg = TEMP(new_sym, Ctx.LOAD)
-                    arg.lineno = lphi.args[0].lineno
                     lphi.args[0] = arg
                 remain_start_blk.append_stm(EXPR(CONST(0)))  # guard from reduceblk
                 remain_start_blk.append_stm(JUMP(loop.head))
@@ -263,18 +262,16 @@ class LoopUnroller(object):
                 src = stm.args[0]
                 iv_updates[stm.args[1].symbol()] = new_ivs[orig_sym]
                 mv = MOVE(dst, src)
-                mv.lineno = dst.lineno = src.lineno = stm.args[0].lineno
                 head_stms.append(mv)
         orig_cjump_cond = unroll_head.stms[-2]
         assert orig_cjump_cond.is_a(MOVE) and orig_cjump_cond.src.is_a(RELOP)
         src = CONST(1)
         mv = MOVE(orig_cjump_cond.dst.clone(), src)
-        mv.lineno = src.lineno = orig_cjump_cond.lineno
         head_stms.append(mv)
         orig_cjump = unroll_head.stms[-1]
         assert orig_cjump.is_a(CJUMP)
         jump = JUMP(None)
-        jump.lineno = orig_cjump
+        jump.lineno = orig_cjump.lineno
         head_stms.append(jump)
 
         unroll_head.stms = []
@@ -322,11 +319,10 @@ class LoopUnroller(object):
         cond_sym.typ = Type.bool_t
         cond_lhs = TEMP(cond_sym, Ctx.STORE)
         cond_stm = MOVE(cond_lhs, cond_rhs)
-        cond_rhs.lineno = cond_lhs.lineno = cond_stm.lineno = orig_cjump.lineno
         head_stms.append(cond_stm)
         cond_exp = TEMP(cond_sym, Ctx.LOAD)
         cjump = CJUMP(cond_exp, None, None)
-        cjump.lineno = cond_exp.lineno = orig_cjump
+        cjump.lineno = orig_cjump.lineno
         head_stms.append(cjump)
 
         unroll_head.stms = []
@@ -432,8 +428,7 @@ class LoopUnroller(object):
         update_defs = self.scope.usedef.get_stms_defining(update_sym)
         assert len(update_defs) == 1
         update_stm = list(update_defs)[0]
-        if not update_stm.is_a(MOVE):
-            fail((self.scope, loop_update.lineno), Errors.RULE_UNROLL_UNKNOWN_STEP)
+        assert update_stm.is_a(MOVE)
         update_rhs = update_stm.src
         if update_rhs.is_a(BINOP):
             if update_rhs.op == 'Add':
@@ -442,8 +437,8 @@ class LoopUnroller(object):
                     if may_step.is_a(CONST):
                         return may_step.value
                     else:
-                        fail((self.scope, loop_update.lineno), Errors.RULE_UNROLL_VARIABLE_STEP)
-        fail((self.scope, loop_update.lineno), Errors.RULE_UNROLL_UNKNOWN_STEP)
+                        fail((self.scope, update_stm.lineno), Errors.RULE_UNROLL_VARIABLE_STEP)
+        fail((self.scope, update_stm.lineno), Errors.RULE_UNROLL_UNKNOWN_STEP)
 
 
 class IVReplacer(IRVisitor):

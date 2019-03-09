@@ -36,9 +36,7 @@ class IfTransformer(object):
             mj.conds.append(else_cj.exp)
             mj.targets.append(else_cj.true)
             if not self._merge_else_cj(else_cj, mj):
-                c = CONST(1)
-                c.lineno = cj.lineno
-                mj.conds.append(c)
+                mj.conds.append(CONST(1))
                 mj.targets.append(else_cj.false)
             return True
         return False
@@ -93,14 +91,12 @@ class IfCondTransformer(object):
                         new_c = RELOP('And', new_c, UNOP('Not', prev_c))
                     else:
                         new_c = UNOP('Not', prev_c)
-                    new_c.lineno = c.lineno
                 if new_c:
                     if c.is_a(CONST):
                         assert c.value == 1
                         pass
                     else:
                         new_c = RELOP('And', new_c, c)
-                    new_c.lineno = c.lineno
                 else:
                     new_c = c
                 new_cond_exps.append(new_c)
@@ -114,11 +110,8 @@ class IfCondTransformer(object):
                     new_sym = self.scope.add_condition_sym()
                     new_sym.typ = Type.bool_t
                     new_c = TEMP(new_sym, Ctx.STORE)
-                    new_c.lineno = c.lineno
                     mv = MOVE(new_c, c)
-                    mv.lineno = c.lineno
                     block.insert_stm(-1, mv)
                     new_c = TEMP(new_sym, Ctx.LOAD)
-                    new_c.lineno = c.lineno
                     new_conds.append(new_c)
             mj.conds = new_conds

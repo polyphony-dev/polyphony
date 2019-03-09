@@ -1,9 +1,3 @@
-__all__ = [
-    'Port',
-    'Queue',
-]
-
-
 class Port:
     def __init__(self, dtype:generic, direction:str, init=None, protocol:str='none') -> object:
         pass

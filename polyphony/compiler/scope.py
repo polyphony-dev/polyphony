@@ -31,6 +31,7 @@ class Scope(Tagged):
         'port', 'typeclass',
         'function_module',
         'inlinelib',
+        'package', 'directory'
     }
     scope_id = 0
 
@@ -50,7 +51,7 @@ class Scope(Tagged):
         return s
 
     @classmethod
-    def create_namespace(cls, parent, name, tags):
+    def create_namespace(cls, parent, name, tags, path=None):
         tags |= {'namespace'}
         namespace = Scope.create(parent, name, tags, lineno=1)
         namesym = namespace.add_sym('__name__', typ=Type.str_t)
@@ -58,6 +59,9 @@ class Scope(Tagged):
             namespace.constants[namesym] = CONST('__main__')
         else:
             namespace.constants[namesym] = CONST(namespace.name)
+        if path:
+            filesym = namespace.add_sym('__file__', typ=Type.str_t)
+            namespace.constants[filesym] = CONST(path)
         return namespace
 
     @classmethod
@@ -70,6 +74,14 @@ class Scope(Tagged):
         def ret_helper():
             scopes = cls.ordered_scopes[:]
             scopes = [s for s in scopes if not s.is_pure()]
+            # Exclude an no code scope
+            scopes = [s for s in scopes
+                      if not (s.is_lib() and s.is_function())
+                      and not (s.is_lib() and s.is_method())
+                      and not s.is_builtin()
+                      and not s.is_decorator()
+                      and not s.is_typeclass()
+                      and not s.is_directory()]
             if not with_global:
                 scopes.remove(Scope.global_scope())
             if not with_class:

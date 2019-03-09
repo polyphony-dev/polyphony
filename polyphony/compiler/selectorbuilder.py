@@ -13,7 +13,6 @@ class SelectorBuilder(object):
 
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
-        self._build_sub_module_selectors()
         self._build_memory_selectors()
 
     def _build_memory_selectors(self):
@@ -171,38 +170,6 @@ class SelectorBuilder(object):
                                     trunk[port_name],
                                     defval=defval)
                 self.hdlmodule.add_mux(selector, tag)
-
-    def _add_sub_module_accessors(self, connections):
-        for conns in connections.values():
-            for inf, acc in conns:
-                tag = inf.if_name
-                for p in acc.regs():
-                    int_name = acc.port_name(p)
-                    sig = self.hdlmodule.gen_sig(int_name, p.width)
-                    self.hdlmodule.add_internal_reg(sig, tag)
-                for p in acc.nets():
-                    int_name = acc.port_name(p)
-                    sig = self.hdlmodule.gen_sig(int_name, p.width)
-                    self.hdlmodule.add_internal_net(sig, tag)
-
-    def _build_sub_module_selectors(self):
-        for name, sub_module, connections, param_map in self.hdlmodule.sub_modules.values():
-            # TODO
-            if sub_module.name == 'fifo':
-                continue
-            if connections:
-                self._add_sub_module_accessors(connections)
-                continue
-            if False:  # env.hdl_debug_mode and not self.scope.is_testbench():
-                self.emit('always @(posedge clk) begin')
-                self.emit('if (rst==0 && {}!={}) begin'.format(self.current_state_sig.name, 0))
-                for a in accessors:
-                    for p in a.ports.all():
-                        aname = a.port_name(p)
-                        self.emit('$display("%8d:ACCESSOR :{}      {} = 0x%2h (%1d)", $time, {}, {});'.format(self.hdlmodule.name, aname, aname, aname))
-                self.emit('end')
-                self.emit('end')
-                self.emit('')
 
     def _convert_mem_switch_to_mem_mux(self):
         collector = AHDLCollector(AHDL_META)
