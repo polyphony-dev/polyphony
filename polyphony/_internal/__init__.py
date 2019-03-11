@@ -25,11 +25,6 @@ def rule(kwargs) -> None:
     pass
 
 
-@decorator
-def timed() -> None:
-    pass
-
-
 @builtin
 def unroll(seq, factor='full') -> list:
     pass

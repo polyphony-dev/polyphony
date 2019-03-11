@@ -8,13 +8,6 @@ from . import timing
 from . import base
 
 __version__ = version.__version__
-__all__ = [
-    'testbench',
-    'module',
-    'pure',
-    'timed',
-    'is_worker_running',
-]
 
 
 # @testbench decorator
@@ -286,14 +279,6 @@ def pipelined(seq, ii=-1):
 
 def unroll(seq, factor='full'):
     return seq
-
-
-# @timed decorator
-def timed(func):
-    # TODO: error check
-    def _timed_decorator(*args, **kwargs):
-        return func(*args, **kwargs)
-    return _timed_decorator
 
 
 class Channel(object):

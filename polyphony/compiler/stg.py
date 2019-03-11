@@ -1140,6 +1140,10 @@ class AHDLTranslator(object):
             port_sig.maxsize = port_sym.typ.get_maxsize()
         if port_sig.is_adaptered() and adapter_sig:
             port_sig.adapter_sig = adapter_sig
+        # TODO: get_rewritable to be always available
+        if 'single_port' in tags and protocol == 'none':
+            if port_sym.typ.get_rewritable():
+                tags.add('rewritable')
         return port_sig
 
     def _make_port_access(self, call, target, node):
@@ -1170,13 +1174,15 @@ class AHDLTranslator(object):
         iow = AHDL_IO_WRITE(AHDL_VAR(port_sig, Ctx.STORE),
                             src,
                             port_sig.is_output())
-        step_n = node.latency()
-        for i in range(step_n):
-            self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i, node)
-        return
+        # TODO: Do not use AHDL_SEQ
+        if port_sig.is_single_port() and port_sig.sym.typ.get_protocol() == 'none':
+            self._emit(iow, self.sched_time, node)
+        else:
+            step_n = node.latency()
+            for i in range(step_n):
+                self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i, node)
 
     def _make_port_read_seq(self, target, port_sig, node):
-        step_n = node.latency()
         if target:
             dst = self.visit(target, node)
         else:
@@ -1184,10 +1190,15 @@ class AHDLTranslator(object):
         ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
                            dst,
                            port_sig.is_input())
-        if step_n == 0:
-            step_n = 1
-        for i in range(step_n):
-            self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i, node)
+        # TODO: Do not use AHDL_SEQ
+        if port_sig.is_single_port() and port_sig.sym.typ.get_protocol() == 'none':
+            self._emit(ior, self.sched_time, node)
+        else:
+            step_n = node.latency()
+            if step_n == 0:
+                step_n = 1
+            for i in range(step_n):
+                self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i, node)
 
     def _make_port_init(self, new, target, node):
         assert new.func_scope().is_port()

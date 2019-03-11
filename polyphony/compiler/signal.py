@@ -16,6 +16,7 @@ class Signal(Tagged):
         'induction',
         'pipeline_ctrl',
         'adaptered',
+        'rewritable',
     }
 
     def __init__(self, name, width, tags, sym=None):

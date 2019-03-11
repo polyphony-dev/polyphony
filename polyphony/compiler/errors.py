@@ -101,6 +101,8 @@ class Errors(Enum):
     RULE_UNROLL_VARIABLE_STEP = 1155
     RULE_UNROLL_VARIABLE_FACTOR = 1156
 
+    RULE_TIMED_PORT_IS_OVERWRITTEN = 1200
+
     # not supported yet
     WRITING_ALIAS_REGARRAY = 9000
 
@@ -200,6 +202,7 @@ ERROR_MESSAGES = {
     Errors.RULE_UNROLL_VARIABLE_STEP: "The step value must be a constant",
     Errors.RULE_UNROLL_VARIABLE_FACTOR: "The unroll factor value must be a constant",
 
+    Errors.RULE_TIMED_PORT_IS_OVERWRITTEN: "The port '{}' will be overwritten in the same clock cycle",
     Errors.WRITING_ALIAS_REGARRAY: "Writing to alias register array is not supported yet",
 }
 

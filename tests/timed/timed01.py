@@ -1,7 +1,7 @@
-from polyphony import module, timed
+from polyphony import module
 from polyphony import testbench
 from polyphony.io import Port
-from polyphony.timing import clkfence
+from polyphony.timing import timed, clkfence
 
 
 @timed

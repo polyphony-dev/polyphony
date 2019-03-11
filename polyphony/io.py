@@ -8,9 +8,6 @@ The following classes are provided. In Polyphony these classes are called Port c
 from . import base
 from . import timing
 
-__all__ = [
-    'Port',
-]
 
 _io_enabled = False
 
@@ -70,7 +67,7 @@ class Port(object):
     In = 0
     Out = ~In
 
-    def __init__(self, dtype, direction, init=None):
+    def __init__(self, dtype, direction, init=None, **kwargs):
         self._dtype = dtype
         self.__pytype = base._pytype_from_dtype(dtype)
         self._direction = direction
@@ -81,6 +78,9 @@ class Port(object):
             self._init = base._pyvalue_from_dtype(dtype)
         self._reset()
         Port.instances.append(self)
+        self._rewritable = False
+        if 'rewritable' in kwargs:
+            self._rewritable = kwargs['rewritable']
 
     def rd(self):
         '''
@@ -102,10 +102,10 @@ class Port(object):
         if self._direction == 'in':
             if _is_called_from_owner():
                 raise RuntimeError("Writing to 'in' Port is not allowed")
-        if self.__wrote:
+        if not self._rewritable and self.__written:
             raise RuntimeError("It is not allowed to write to the port more than once in the same clock cycle")
         self.__new_v = v
-        self.__wrote = True
+        self.__written = True
 
     def edge(self, old_v, new_v):
         if self._exp:
@@ -131,7 +131,7 @@ class Port(object):
         self.__v = self._init
         self.__new_v = self._init
         self.__old_v = self._init
-        self.__wrote = False
+        self.__written = False
         self._changed = False
 
     def _update(self):
@@ -143,7 +143,7 @@ class Port(object):
             self._changed = False
         self.__old_v = self.__v
         self.__v = self.__new_v
-        self.__wrote = False
+        self.__written = False
 
     def _update_assigned(self):
         if not self._exp:
@@ -171,15 +171,16 @@ class Out(Port):
         super().__init__(dtype, 'out', init)
 
 
-class Handshake(object):
+@timing.timed
+class Handshake:
     def __init__(self, dtype, direction, init=None):
         self.data = Port(dtype, direction, init)
         if direction == 'in':
-            self.ready = Port(bool, 'out', 0)
-            self.valid = Port(bool, 'in')
+            self.ready = Port(bool, 'out', 0, rewritable=True)
+            self.valid = Port(bool, 'in', rewritable=True)
         else:
-            self.ready = Port(bool, 'in')
-            self.valid = Port(bool, 'out', 0)
+            self.ready = Port(bool, 'in', rewritable=True)
+            self.valid = Port(bool, 'out', 0, rewritable=True)
 
     def rd(self):
         '''
@@ -187,7 +188,8 @@ class Handshake(object):
         '''
         self.ready.wr(True)
         timing.clkfence()
-        timing.wait_value(True, self.valid)
+        while self.valid.rd() is not True:
+            timing.clkfence()
         self.ready.wr(False)
         return self.data.rd()
 
@@ -198,7 +200,8 @@ class Handshake(object):
         self.data.wr(v)
         self.valid.wr(True)
         timing.clkfence()
-        timing.wait_value(True, self.ready)
+        while self.ready.rd() is not True:
+            timing.clkfence()
         self.valid.wr(False)
 
 

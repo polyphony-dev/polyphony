@@ -6,14 +6,13 @@ from . import base
 from . import io
 from . import typing
 
-__all__ = [
-    'clksleep',
-    'clkfence',
-    'wait_edge',
-    'wait_rising',
-    'wait_falling',
-    'wait_value',
-]
+
+# @timed decorator
+def timed(func):
+    # TODO: error check
+    def _timed_decorator(*args, **kwargs):
+        return func(*args, **kwargs)
+    return _timed_decorator
 
 
 def _wait_cycle():

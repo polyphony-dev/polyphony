@@ -1,4 +1,6 @@
-from .io import Port
+@decorator
+def timed() -> None:
+    pass
 
 
 @builtin
@@ -14,6 +16,9 @@ def clkfence() -> None:
 @builtin
 def clkrange(clk_cycles:int) -> None:
     pass
+
+
+from .io import Port
 
 
 @builtin

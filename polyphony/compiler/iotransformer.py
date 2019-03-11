@@ -1,6 +1,8 @@
+from collections import defaultdict
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
-from .stg import State
+from .common import fail
+from .errors import Errors
 from .stg_pipeline import PipelineState, PipelineStage
 from .utils import find_only_one_in
 
@@ -16,6 +18,10 @@ class IOTransformer(AHDLVisitor):
         self.current_stage = None
         super().process(hdlmodule)
         self.post_process()
+
+    def process_state(self, state):
+        self.reduce_rewrite(state)
+        super().process_state(state)
 
     def post_process(self):
         for state, code in self.removes:
@@ -131,6 +137,18 @@ class IOTransformer(AHDLVisitor):
                 meta_wait.transition = meta_wait_.transition
         self.current_block.codes = list(seq) + self.current_block.codes
 
+    def visit_AHDL_IO_READ(self, ahdl):
+        mv = AHDL_MOVE(ahdl.dst, ahdl.io)
+        idx = self.current_block.codes.index(ahdl)
+        self.current_block.codes.remove(ahdl)
+        self.current_block.codes.insert(idx, mv)
+
+    def visit_AHDL_IO_WRITE(self, ahdl):
+        mv = AHDL_MOVE(ahdl.io, ahdl.src)
+        idx = self.current_block.codes.index(ahdl)
+        self.current_block.codes.remove(ahdl)
+        self.current_block.codes.insert(idx, mv)
+
     def visit_AHDL_IF(self, ahdl):
         for cond in ahdl.conds:
             if cond:
@@ -149,6 +167,20 @@ class IOTransformer(AHDLVisitor):
     def visit_PipelineStage(self, ahdl):
         self.current_stage = ahdl
         self.visit_AHDL_BLOCK(ahdl)
+
+    def reduce_rewrite(self, state):
+        iowrites = defaultdict(list)
+        for c in state.codes:
+            if c.is_a(AHDL_IO_WRITE):
+                iowrites[c.io.sig].append(c)
+        for sig, ios in iowrites.items():
+            if len(ios) >= 2:
+                if sig.is_rewritable():
+                    for io in ios[:-1]:
+                        state.codes.remove(io)
+                else:
+                    node = self.hdlmodule.ahdl2dfgnode[ios[1]]
+                    fail(node.tag, Errors.RULE_TIMED_PORT_IS_OVERWRITTEN, [sig.sym.ancestor])
 
 
 class WaitTransformer(AHDLVisitor):

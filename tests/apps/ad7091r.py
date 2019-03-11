@@ -1,13 +1,13 @@
 import polyphony
 from polyphony.io import Port
 from polyphony.typing import bit, uint3, uint12, uint16
-from polyphony.timing import clksleep, clkfence, clkrange, wait_rising, wait_falling
+from polyphony.timing import timed, clksleep, clkfence, clkrange, wait_rising, wait_falling
 
 
 CONVST_PULSE_CYCLE = 10
 CONVERSION_CYCLE = 40
 
-@polyphony.timed
+@timed
 @polyphony.module
 class AD7091R_SPIC:
     def __init__(self):
@@ -62,7 +62,7 @@ class AD7091R_SPIC:
             self.data_ready.wr(1)
             clkfence()
 
-@polyphony.timed
+@timed
 @polyphony.testbench
 def test(spic):
     datas = (0xdead, 0xbeef, 0xffff, 0x0000, 0x800)

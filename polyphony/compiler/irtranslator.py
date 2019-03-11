@@ -259,7 +259,7 @@ class ScopeVisitor(ast.NodeVisitor):
                     if not env.config.enable_pure:
                         fail((outer_scope, node.lineno), Errors.PURE_IS_DISABLED)
                     tags.add(sym.typ.get_scope().orig_name)
-                elif sym.typ.get_scope().name == 'polyphony.timed':
+                elif sym.typ.get_scope().name == 'polyphony.timing.timed':
                     synth_params.update({'scheduling':'timed'})
                 else:
                     tags.add(sym.typ.get_scope().orig_name)

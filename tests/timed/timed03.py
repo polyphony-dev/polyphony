@@ -1,8 +1,8 @@
-from polyphony import module, timed
+from polyphony import module
 from polyphony import testbench
 from polyphony import Reg
 from polyphony.io import Port
-from polyphony.timing import clkfence
+from polyphony.timing import timed, clkfence
 
 
 @timed
@@ -24,10 +24,12 @@ class timed03:
         clkfence()
 
         y.v = self.i.rd()
+        assert self.i.rd() == 4
         assert y.v == 0
         clkfence()
 
         z.v = self.i.rd()
+        assert self.i.rd() == 5
         assert z.v == 0
         clkfence()
 
@@ -35,8 +37,9 @@ class timed03:
         clkfence()
 
 
-@timed
+
 @testbench
+@timed
 def test(m):
     m.i.wr(3)
     clkfence()
@@ -53,7 +56,7 @@ def test(m):
     # m write to o
     clkfence()
 
-    #print(m.o.rd())
+    print(m.o.rd())
     assert 4 + 5 == m.o.rd()
 
 

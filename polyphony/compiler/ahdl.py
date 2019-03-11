@@ -358,7 +358,7 @@ class AHDL_IO_READ(AHDL_STM):
         self.is_self = is_self
 
     def __str__(self):
-        return '{} <= {}.read()'.format(self.dst, self.io)
+        return '{} <= {}.rd()'.format(self.dst, self.io)
 
     def __repr__(self):
         return 'AHDL_IO_READ({}, {})'.format(repr(self.io),
@@ -373,7 +373,7 @@ class AHDL_IO_WRITE(AHDL_STM):
         self.is_self = is_self
 
     def __str__(self):
-        return '{}.write({})'.format(self.io, self.src)
+        return '{}.wr({})'.format(self.io, self.src)
 
     def __repr__(self):
         return 'AHDL_IO_WRITE({}, {})'.format(repr(self.io),
