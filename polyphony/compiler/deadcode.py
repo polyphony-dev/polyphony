@@ -27,7 +27,7 @@ class DeadCodeEliminator(object):
                     else:
                         dead_stms.append(stm)
                 elif stm.is_a(EXPR):
-                    if not stm.exp.is_a([CALL, SYSCALL]):
+                    if not stm.exp.is_a([CALL, SYSCALL, MSTORE]):
                         dead_stms.append(stm)
             for stm in dead_stms:
                 blk.stms.remove(stm)
