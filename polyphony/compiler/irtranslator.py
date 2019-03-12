@@ -1607,7 +1607,7 @@ class IRTranslator(object):
         tree = ast.parse(source)
         if lib_name:
             if lib_name == '__builtin__':
-                top_scope = Scope.create_namespace(None, lib_name, {'lib'})
+                top_scope = Scope.create_namespace(None, lib_name, {'lib', 'builtin'})
             else:
                 assert False
         else:
