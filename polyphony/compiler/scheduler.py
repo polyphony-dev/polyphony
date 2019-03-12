@@ -883,7 +883,7 @@ class TimedScheduler:
             if stm.exp.sym.name == 'polyphony.timing.clksleep':
                 assert len(stm.exp.args) == 1
                 assert stm.exp.args[0][1].is_a(CONST)
-                return stm.exp.args[0][1].value + 1
+                return stm.exp.args[0][1].value
             elif stm.exp.sym.name in ['polyphony.timing.wait_value',
                                       'polyphony.timing.wait_edge',
                                       'polyphony.timing.wait_rising',

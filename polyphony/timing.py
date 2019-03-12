@@ -31,7 +31,7 @@ def _wait_cycle():
 
 
 def clksleep(clk_cycles):
-    for i in range(clk_cycles + 1):
+    for i in range(clk_cycles):
         _wait_cycle()
 
 

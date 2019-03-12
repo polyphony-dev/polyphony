@@ -10,7 +10,7 @@ def clksleep(clk_cycles:int) -> None:
 
 @inlinelib
 def clkfence() -> None:
-    clksleep(0)
+    clksleep(1)
 
 
 @builtin
