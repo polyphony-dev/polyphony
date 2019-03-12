@@ -30,7 +30,7 @@ class Scope(Tagged):
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass',
         'function_module',
-        'inlinelib',
+        'inlinelib', 'unflatten',
         'package', 'directory'
     }
     scope_id = 0

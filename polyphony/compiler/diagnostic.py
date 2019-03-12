@@ -1,6 +1,7 @@
 from .block import Block
 from .env import env
 from .ir import *
+from .type import Type
 from .usedef import UseDefDetector
 
 
@@ -112,7 +113,9 @@ class CFGChecker(object):
                         sym.typ.is_function() or
                         # TODO:
                         sym.is_inlined() or
-                        (sym.is_subobject() and sym.is_flattened()))
+                        (sym.is_subobject() and sym.is_flattened()) or
+                        sym.typ.has_scope() and sym.typ.get_scope().is_unflatten()
+                        )
 
     def _check_path_exp(self, blk):
         pass

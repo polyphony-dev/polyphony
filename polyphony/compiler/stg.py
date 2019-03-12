@@ -667,9 +667,7 @@ class AHDLTranslator(object):
             width = 1
         return width
 
-    def _sym_2_sig(self, sym):
-        if sym in self.sym2sig_map:
-            return self.sym2sig_map[sym]
+    def _tags_from_sym(self, sym):
         tags = set()
         if sym.typ.is_seq():
             if sym.typ.is_list():
@@ -698,7 +696,12 @@ class AHDLTranslator(object):
 
         if sym.is_induction():
             tags.add('induction')
+        return tags
 
+    def _sym_2_sig(self, sym):
+        if sym in self.sym2sig_map:
+            return self.sym2sig_map[sym]
+        tags = self._tags_from_sym(sym)
         if sym.scope is not self.scope:
             sig_name = sym.hdl_name()
         elif self.scope.is_worker() or self.scope.is_method():
@@ -728,7 +731,15 @@ class AHDLTranslator(object):
         else:
             sig_tags = {'field', 'int'}
         attr = ir.attr.hdl_name()
-        if self.scope.parent.is_module():
+        if ir.attr_scope.is_unflatten():
+            qsym = ir.qualified_symbol()
+            qnames = [sym.hdl_name() for sym in qsym]
+            signame = '_'.join(qnames)
+            width = self._signal_width(ir.attr)
+            tags = self._tags_from_sym(ir.attr)
+            sig = self.hdlmodule.gen_sig(signame, width, tags, ir.attr)
+            self.hdlmodule.add_internal_reg(sig)
+        elif self.scope.parent.is_module():
             sym = ir.symbol() #ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
             signame = sym.hdl_name()
             width = self._signal_width(sym)

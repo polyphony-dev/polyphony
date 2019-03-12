@@ -35,7 +35,8 @@ def pipelined(seq, ii=-1) -> list:
     pass
 
 
-@inlinelib
+@unflatten
 class Reg:
+    @inlinelib
     def __init__(self) -> object:
         self.v = 0  # meta: symbol=register

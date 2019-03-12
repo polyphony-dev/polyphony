@@ -80,7 +80,9 @@ def _get_latency(tag):
         elif tag.src.is_a(TEMP) and tag.src.sym.typ.is_port():
             return 0
         elif tag.dst.is_a(ATTR):
-            return UNIT_STEP * 2
+            if tag.dst.symbol().is_alias():
+                return 0
+            return UNIT_STEP * 1
         elif tag.src.is_a(MREF):
             memnode = tag.src.mem.symbol().typ.get_memnode()
             if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
