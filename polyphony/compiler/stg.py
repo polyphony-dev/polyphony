@@ -506,6 +506,9 @@ class AHDLTranslator(object):
                 self._emit(AHDL_NOP('wait a cycle'),
                            self.sched_time + i, node)
             return
+        elif ir.sym.name == 'polyphony.timing.clktime':
+            self.hdlmodule.use_clock_time()
+            return AHDL_VAR(self.hdlmodule.clock_signal, Ctx.LOAD)
         elif ir.sym.name == 'polyphony.timing.wait_rising':
             ports = []
             for _, a in ir.args:

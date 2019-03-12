@@ -43,6 +43,7 @@ class HDLModule(object):
         self.node2if = {}
         self.edge_detectors = set()
         self.ahdl2dfgnode = {}
+        self.clock_signal = None
 
     def __str__(self):
         s = '---------------------------------\n'
@@ -303,6 +304,10 @@ class HDLModule(object):
         sig.name = new
         self.signals[new] = sig
         return sig
+
+    def use_clock_time(self):
+        if self.clock_signal is None:
+            self.clock_signal = self.gen_sig(f'{self.name}_clktime', 64)
 
 
 class RAMModule(HDLModule):

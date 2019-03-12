@@ -2,6 +2,7 @@ import threading
 
 _worker_map = {}
 _ident_map = {}
+_simulation_time = 0
 
 
 class Serializer:

@@ -39,17 +39,17 @@ def testbench(func):
         test(m)
     '''
     def _testbench_decorator(module_instance=None):
+        sim = Simulator()
         if module_instance:
             if module_instance.__class__.__name__ not in module.module_instances:
                 print(inspect.getsourcelines(func)[0][1])
                 raise RuntimeError(
                     'The argument of testbench must be an instance of the module class'
                 )
-            sim = Simulator()
             sim.append_test(func, module_instance)
-            sim.run()
         else:
-            func()
+            sim.append_test(func, [])
+        sim.run()
     return _testbench_decorator
 
 
@@ -477,6 +477,7 @@ class Simulator(object):
                     p._clear_change_flag()
                 #print('CYCLE', cycle)
                 cycle += 1
+                base._simulation_time = cycle
             self._teardown()
             if any([w.exception for w in self._workers]):
                 break

@@ -18,6 +18,11 @@ def clkrange(clk_cycles:int) -> None:
     pass
 
 
+@builtin
+def clktime() -> int:
+    pass
+
+
 from .io import Port
 
 

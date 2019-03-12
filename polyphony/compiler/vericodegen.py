@@ -115,6 +115,7 @@ class VerilogCodeGen(AHDLVisitor):
         self._generate_decls()
         self._generate_sub_module_instances()
         self._generate_edge_detector()
+        self._generate_clock_counter()
         self._generate_net_monitor()
         self.set_indent(-2)
 
@@ -318,6 +319,15 @@ class VerilogCodeGen(AHDLVisitor):
             detect_var_names.add(detect_var_name)
             self.emit(f'wire {detect_var_name};')
             self.emit(f'assign {detect_var_name} = ({delayed_name}=={old} && {sig.name}=={new});')
+
+    def _generate_clock_counter(self):
+        if not self.hdlmodule.clock_signal:
+            return
+        name = self.hdlmodule.clock_signal.name
+        width = self.hdlmodule.clock_signal.width
+        self.emit('//clock counter')
+        self.emit(f'reg [{width-1}:0] {name};')
+        self.emit(f'always @(posedge clk) if (rst) {name} <= 0; else {name} <= {name} + 1;')
 
     def _process_State(self, state):
         self.current_state = state

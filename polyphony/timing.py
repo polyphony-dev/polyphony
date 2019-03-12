@@ -45,6 +45,10 @@ def clkrange(cycles):
         yield i
 
 
+def clktime():
+    return base._simulation_time
+
+
 def wait_edge(old, new, *ports):
     '''
     Wait until the signal of the specified port changes from 'old' to 'new'.
