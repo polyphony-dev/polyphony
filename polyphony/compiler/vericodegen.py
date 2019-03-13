@@ -120,7 +120,14 @@ class VerilogCodeGen(AHDLVisitor):
 
     def _generate_module_header(self):
         self.emit(f'module {self.hdlmodule.qualified_name}')
-
+        if self.hdlmodule.parameters:
+            self.set_indent(2)
+            self.emit('#(')
+            self.set_indent(2)
+            self._generate_parameter_decls(self.hdlmodule.parameters)
+            self.set_indent(-2)
+            self.emit(')')
+            self.set_indent(-2)
         self.set_indent(2)
         self.emit('(')
         self.set_indent(2)
@@ -130,6 +137,15 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit(');')
         self.set_indent(-2)
         self.emit('')
+
+    def _generate_parameter_decls(self, parameters):
+        params = []
+        for sig, val in parameters:
+            if sig.is_int():
+                params.append(f'parameter signed [{sig.width-1}:0] {sig.name} = {val}')
+            else:
+                params.append(f'parameter [{sig.width-1}:0] {sig.name} = {val}')
+        self.emit((',\n' + self.tab()).join(params))
 
     def _generate_io_port(self):
         ports = []

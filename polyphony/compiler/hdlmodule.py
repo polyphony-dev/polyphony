@@ -43,6 +43,8 @@ class HDLModule(object):
         self.node2if = {}
         self.edge_detectors = set()
         self.ahdl2dfgnode = {}
+        self.sig2sym = {}
+        self.sym2sig = {}
 
     def __str__(self):
         s = '---------------------------------\n'
@@ -276,6 +278,9 @@ class HDLModule(object):
             return sig
         sig = Signal(name, width, tag, sym)
         self.signals[name] = sig
+        if sym:
+            self.sig2sym[sig] = sym
+            self.sym2sig[sym] = sig
         return sig
 
     def signal(self, name):
