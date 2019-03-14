@@ -684,6 +684,10 @@ class CodeVisitor(ast.NodeVisitor):
         if_exit_tmp = self._new_block(self.current_scope)
 
         condition = self.visit(node.test)
+        skip_then = skip_else = False
+        if condition.is_a(CONST):
+            skip_then = not condition.value
+            skip_else = condition.value
         if not condition.is_a(RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
 
@@ -694,8 +698,9 @@ class CodeVisitor(ast.NodeVisitor):
         #if then block
         #if not self.nested_if:
         self.current_block = if_then
-        for stm in node.body:
-            self.visit(stm)
+        if not skip_then:
+            for stm in node.body:
+                self.visit(stm)
         if self._needJUMP(self.current_block):
             self.emit(JUMP(if_exit_tmp), node)
             self.current_block.connect(if_exit_tmp)
@@ -712,10 +717,9 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_scope.replace_block(if_else_tmp, if_else)
         self.current_block = if_else
         if node.orelse:
-            if isinstance(node.orelse[0], ast.If):
-                pass  # assert False
-            for stm in node.orelse:
-                self.visit(stm)
+            if not skip_else:
+                for stm in node.orelse:
+                    self.visit(stm)
         if self._needJUMP(self.current_block):
             self.emit(JUMP(if_exit_tmp), node)
             self.current_block.connect(if_exit_tmp)
@@ -1329,6 +1333,8 @@ class CodeVisitor(ast.NodeVisitor):
             else:
                 self.invisible_symbols.remove(sym)
         assert sym is not None
+        if sym.name == '__python__' and sym.ancestor and sym.ancestor.scope.name == 'polyphony':
+            return CONST(False)
         return TEMP(sym, ctx)
 
     #     | List(expr* elts, expr_context ctx)
