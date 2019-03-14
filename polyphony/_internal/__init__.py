@@ -1,4 +1,5 @@
 __version__ = '0.3.5'  # type: str
+__python__ = False
 
 
 @decorator
