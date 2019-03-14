@@ -8,6 +8,7 @@ from . import timing
 from . import base
 
 __version__ = version.__version__
+__python__ = True
 
 
 # @testbench decorator

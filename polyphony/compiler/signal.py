@@ -6,7 +6,7 @@ class Signal(Tagged):
         'reserved',
         'reg', 'net', 'int', 'condition',
         'regarray', 'netarray',
-        'input', 'output',
+        'input', 'output', 'parameter',
         'extport',
         'valid_protocol', 'ready_valid_protocol',
         'statevar',

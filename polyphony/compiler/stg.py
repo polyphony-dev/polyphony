@@ -705,7 +705,16 @@ class AHDLTranslator(object):
         if sym.scope is not self.scope:
             sig_name = sym.hdl_name()
         elif self.scope.is_worker() or self.scope.is_method():
-            sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
+            is_param = False
+            if self.scope.is_ctor() and self.scope.parent.is_module() and self.scope.parent.module_params:
+                is_param = any((sym is copy for _, copy, _ in self.scope.parent.module_params))
+            if is_param:
+                sig_name = '{}'.format(sym.hdl_name())
+                tags.update({'parameter'})
+                if 'reg' in tags:
+                    tags.remove('reg')
+            else:
+                sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'input' in tags:
             sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'output' in tags:
