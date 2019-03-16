@@ -117,10 +117,6 @@ def _module_append_worker(self, fn, *args):
     self._workers.append(w)
 
 
-def _module_deepcopy(self, memo):
-    return self
-
-
 class _ModuleDecorator(object):
     def __init__(self):
         self.module_instances = defaultdict(list)
@@ -130,7 +126,6 @@ class _ModuleDecorator(object):
             if threading.get_ident() in base._worker_map:
                 raise TypeError('Cannot instatiate module class in a worker thread')
             instance = object.__new__(cls)
-            instance.__deepcopy__ = types.MethodType(_module_deepcopy, instance)
             if instance.__init__.__name__ == '_pure_decorator':
                 ctor = types.MethodType(instance.__init__.func, instance)
             else:
@@ -140,7 +135,6 @@ class _ModuleDecorator(object):
             instance._module_decorator = self
             io._enable()
             setattr(instance, '_workers', [])
-            #setattr(instance, '_worker_threads', [])
             setattr(instance, '_submodules', [])
             instance.__init__(*args, **kwargs)
             io._disable()
@@ -396,12 +390,12 @@ class Simulator(object):
             self._trace_ports = []
 
     def _trace(self, cycle):
-        for p, name in self._trace_ports:
+        for name, p in self._trace_ports:
             if 'on_clock' in self._trace_callbacks:
-                self._trace_callbacks['on_clock'](cycle, p, name)
+                self._trace_callbacks['on_clock'](cycle, name, p)
             if p._changed:
                 if 'on_change' in self._trace_callbacks:
-                    self._trace_callbacks['on_change'](cycle, p, name)
+                    self._trace_callbacks['on_change'](cycle, name, p)
 
     def set_trace_callback(self, **kwargs):
         for k, v in kwargs.items():

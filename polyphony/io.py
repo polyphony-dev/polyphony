@@ -1,10 +1,7 @@
 '''
-The class defined in polyphony.io provides the function for passing data between the module's I / O ports or workers.
-The following classes are provided. In Polyphony these classes are called Port classes.
-
-    - polyphony.io.Port
-    - polyphony.io.Queue
+The class defined in polyphony.io provides the function for passing data between the module's I / O ports.
 '''
+import copy
 from . import base
 from . import timing
 
@@ -33,6 +30,85 @@ class PolyphonyIOException(PolyphonyException):
 def _is_called_from_owner():
     # TODO:
     return False
+
+
+def flipped(obj):
+    def dflip(d):
+        return 'in' if d == 'out' else 'out'
+
+    if isinstance(obj, Port):
+        return Port(obj._dtype, dflip(obj._direction), init=obj._init, rewritable=obj._rewritable)
+    if not hasattr(obj, '__dict__') or not obj.__dict__:
+        return obj
+    if type(obj).__module__ == 'builtins':
+        return obj
+    _obj = copy.copy(obj)
+    vs = vars(_obj)
+    for k, v in vs.items():
+        vs[k] = flipped(v)
+    return _obj
+
+
+def _connect_port(p0, p1):
+    if p0._dtype != p1._dtype:
+        raise TypeError(f"Incompatible port type, {p0._dtype} and {p1._dtype}")
+    if p0._direction == 'in':
+        assert p1._direction == 'out'
+        p0.assign(lambda:p1.rd())
+    else:
+        assert p1._direction == 'in'
+        p1.assign(lambda:p0.rd())
+
+
+def connect(p0, p1):
+    assert _ports(p0) == _ports(flipped(p1))
+    assert type(p0) == type(p1)
+    if isinstance(p0, Port):
+        _connect_port(p0, p1)
+        return
+    for _p0, _p1 in zip(_ports(p0), _ports(p1)):
+        _connect_port(_p0, _p1)
+
+
+def _thru_port(parent, child):
+    if parent._direction == 'in':
+        assert child._direction == 'in'
+        child.assign(lambda:parent.rd())
+    else:
+        assert child._direction == 'out'
+        parent.assign(lambda:child.rd())
+
+
+def thru(parent, child):
+    assert _ports(parent) == _ports(child)
+    assert type(parent) == type(child)
+    if isinstance(parent, Port):
+        _thru_port(parent, child)
+        return
+    for p, c in zip(_ports(parent), _ports(child)):
+        _thru_port(p, c)
+
+
+def _ports(obj):
+    if isinstance(obj, Port):
+        return [obj]
+    if not hasattr(obj, '__dict__'):
+        return []
+    results = []
+    for v in vars(obj).values():
+        results.extend(_ports(v))
+    return results
+
+
+def ports(name, obj):
+    if isinstance(obj, Port):
+        return [(name, obj)]
+    if not hasattr(obj, '__dict__'):
+        return []
+    results = []
+    for k, v in vars(obj).items():
+        results.extend(ports(f'{name}.{k}', v))
+    return results
 
 
 class Port(object):
@@ -127,6 +203,12 @@ class Port(object):
         else:
             raise RuntimeError("The operator '>>' must be used like 'out >> in'")
 
+    def __eq__(self, other):
+        return (self._dtype == other._dtype and
+                self._direction == other._direction and
+                self._init == other._init and
+                self._rewritable == other._rewritable)
+
     def _reset(self):
         self.__v = self._init
         self.__new_v = self._init
@@ -204,32 +286,3 @@ class Handshake:
             timing.clkfence()
         self.valid.wr(False)
 
-
-class FIFOPort:
-    def __init__(self, dtype, direction):
-        self._dtype = dtype
-        self._direction = direction
-        if direction == 'in':
-            self.dout = Port(dtype, 'in')
-            self.empty = Port(bool, 'in')
-            self.read = Port(bool, 'out', False)
-        else:
-            self.din = Port(dtype, 'out', 0)
-            self.full = Port(bool, 'in')
-            self.write = Port(bool, 'out', False)
-
-    def rd(self):
-        timing.wait_value(False, self.empty)
-        self.read.wr(True)
-        timing.clkfence()
-        self.read.wr(False)
-        timing.clkfence()
-        return self.dout.rd()
-
-    def wr(self, v):
-        timing.wait_value(False, self.full)
-        self.write.wr(True)
-        self.din.wr(v)
-        timing.clkfence()
-        self.write.wr(False)
-        timing.clkfence()
