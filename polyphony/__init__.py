@@ -356,13 +356,14 @@ class Simulator(object):
         self._worker_threads = []
         self._tests = []
         self._trace_callbacks = {}
+        self._vcd_writer = None
 
-    def append_test(self, fn, modules, args=None, trace_ports=None):
+    def append_test(self, fn, modules, args=None, trace_ports=None, vcd_file=None):
         if not isinstance(modules, (list, tuple)):
             modules = (modules,)
         if args and not isinstance(args, (list, tuple)):
             args = (args,)
-        self._tests.append((fn, modules, args, trace_ports))
+        self._tests.append((fn, modules, args, trace_ports, vcd_file))
 
     def _setup(self, modules):
         def collect_worker(modules):
@@ -396,10 +397,30 @@ class Simulator(object):
             if p._changed:
                 if 'on_change' in self._trace_callbacks:
                     self._trace_callbacks['on_change'](cycle, name, p)
+                if self._vcd_writer:
+                    self._vcd_writer.change(self._name2vcdsym[name], cycle, p.rd())
 
     def set_trace_callback(self, **kwargs):
         for k, v in kwargs.items():
             self._trace_callbacks[k] = v
+
+    def _setup_vcd(self, vcd_file, trace_ports):
+        if not vcd_file:
+            return None
+        try:
+            import vcd
+            vcdobj = open(vcd_file, 'w')
+            self._vcd_writer = vcd.VCDWriter(vcdobj, timescale='1 ns', date='today')
+        except Exception as e:
+            print("pyvcd is required to use 'vcd_file' option, Please run 'pip install pyvcd'\n")
+            raise e
+        self._name2vcdsym = {}
+        for name, port in trace_ports:
+            mod_name, port_name = name.rsplit('.', 1)
+            sym = self._vcd_writer.register_var(mod_name, port_name, 'integer', size=32)
+            self._vcd_writer.change(sym, 0, port._init)
+            self._name2vcdsym[name] = sym
+        return vcdobj
 
     def _start_all(self):
         for w in self._workers:
@@ -437,9 +458,10 @@ class Simulator(object):
             r._update()
 
     def run(self):
-        for test_fn, modules, args, trace_ports in self._tests:
+        for test_fn, modules, args, trace_ports, vcd_file in self._tests:
             self._setup(modules)
             self._setup_trace(trace_ports)
+            vcdobj = self._setup_vcd(vcd_file, trace_ports)
             if args:
                 test_worker = _Worker(test_fn, modules + args)
             else:
@@ -474,6 +496,10 @@ class Simulator(object):
                 cycle += 1
                 base._simulation_time = cycle
             self._teardown()
+            if self._vcd_writer:
+                self._vcd_writer.close()
+                self._vcd_writer = None
+                vcdobj.close()
             if any([w.exception for w in self._workers]):
                 break
 
