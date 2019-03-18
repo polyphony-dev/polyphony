@@ -1,3 +1,4 @@
+import datetime
 import types
 import threading
 import inspect
@@ -51,6 +52,7 @@ def testbench(func):
         else:
             sim.append_test(func, [])
         sim.run()
+    _testbench_decorator.func = func
     return _testbench_decorator
 
 
@@ -259,6 +261,7 @@ class _Rule(object):
         def __call__(self, func):
             def wrapper(*args, **kwargs):
                 return func(*args, **kwargs)
+            wrapper.func = func
             return wrapper
 
     def __call__(self, **kwargs):
@@ -350,6 +353,21 @@ class Channel(object):
         self._changed = False
 
 
+def ptype2vcdtype(typ):
+    if typ.__module__ == 'polyphony.typing':
+        if typ.__name__.startswith('int'):
+            return 'integer', int(typ.__name__[3:])
+        elif typ.__name__.startswith('uint'):
+            return 'integer', int(typ.__name__[4:])
+        elif typ.__name__.startswith('bit'):
+            return 'reg', int(typ.__name__[3:])
+    if typ is int:
+        return 'integer', 32
+    elif typ is bool:
+        return 'reg', 1
+    return 'integer', 32
+
+
 class Simulator(object):
     def __init__(self):
         self._workers = []
@@ -358,12 +376,19 @@ class Simulator(object):
         self._trace_callbacks = {}
         self._vcd_writer = None
 
-    def append_test(self, fn, modules, args=None, trace_ports=None, vcd_file=None):
+    def append_test(self, fn, modules, args=None, **kwargs):
         if not isinstance(modules, (list, tuple)):
             modules = (modules,)
         if args and not isinstance(args, (list, tuple)):
             args = (args,)
-        self._tests.append((fn, modules, args, trace_ports, vcd_file))
+        while True:
+            if fn.__name__ == 'wrapper' and hasattr(fn, 'func'):
+                fn = fn.func
+            elif fn.__name__ == '_testbench_decorator' and hasattr(fn, 'func'):
+                fn = fn.func
+            else:
+                break
+        self._tests.append((fn, modules, args, kwargs))
 
     def _setup(self, modules):
         def collect_worker(modules):
@@ -397,8 +422,12 @@ class Simulator(object):
             if p._changed:
                 if 'on_change' in self._trace_callbacks:
                     self._trace_callbacks['on_change'](cycle, name, p)
-                if self._vcd_writer:
-                    self._vcd_writer.change(self._name2vcdsym[name], cycle, p.rd())
+        if self._vcd_writer:
+            self._vcd_writer.change(self._name2vcdsym['clk'], cycle * 2, 1)
+            for name, p in self._trace_ports:
+                if p._changed:
+                    self._vcd_writer.change(self._name2vcdsym[name], cycle * 2, p.rd())
+            self._vcd_writer.change(self._name2vcdsym['clk'], cycle * 2 + 1, 0)
 
     def set_trace_callback(self, **kwargs):
         for k, v in kwargs.items():
@@ -410,14 +439,16 @@ class Simulator(object):
         try:
             import vcd
             vcdobj = open(vcd_file, 'w')
-            self._vcd_writer = vcd.VCDWriter(vcdobj, timescale='1 ns', date='today')
+            self._vcd_writer = vcd.VCDWriter(vcdobj, timescale='1 ns')
         except Exception as e:
             print("pyvcd is required to use 'vcd_file' option, Please run 'pip install pyvcd'\n")
             raise e
         self._name2vcdsym = {}
+        self._name2vcdsym['clk'] = self._vcd_writer.register_var('', 'clk', 'reg', size=1)
         for name, port in trace_ports:
             mod_name, port_name = name.rsplit('.', 1)
-            sym = self._vcd_writer.register_var(mod_name, port_name, 'integer', size=32)
+            vcd_t, sz = ptype2vcdtype(port._dtype)
+            sym = self._vcd_writer.register_var(mod_name, port_name, vcd_t, size=sz)
             self._vcd_writer.change(sym, 0, port._init)
             self._name2vcdsym[name] = sym
         return vcdobj
@@ -458,10 +489,12 @@ class Simulator(object):
             r._update()
 
     def run(self):
-        for test_fn, modules, args, trace_ports, vcd_file in self._tests:
+        for test_fn, modules, args, kwargs in self._tests:
             self._setup(modules)
-            self._setup_trace(trace_ports)
-            vcdobj = self._setup_vcd(vcd_file, trace_ports)
+            if 'trace_ports' in kwargs:
+                self._setup_trace(kwargs['trace_ports'])
+                if 'vcd_file' in kwargs:
+                    vcdobj = self._setup_vcd(kwargs['vcd_file'], kwargs['trace_ports'])
             if args:
                 test_worker = _Worker(test_fn, modules + args)
             else:
@@ -492,7 +525,6 @@ class Simulator(object):
                 self._trace(cycle)
                 for p in io.Port.instances:
                     p._clear_change_flag()
-                #print('CYCLE', cycle)
                 cycle += 1
                 base._simulation_time = cycle
             self._teardown()
