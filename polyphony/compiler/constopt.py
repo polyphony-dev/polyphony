@@ -71,7 +71,7 @@ class ConstantOptBase(IRVisitor):
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            v = eval_unop(ir)
+            v = eval_unop(ir.op, ir.exp.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return CONST(v)
@@ -81,7 +81,7 @@ class ConstantOptBase(IRVisitor):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            v = eval_binop(ir)
+            v = eval_binop(ir.op, ir.left.value, ir.right.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return CONST(v)
