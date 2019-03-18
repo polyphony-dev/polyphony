@@ -11,7 +11,7 @@ from .common import fail
 from .env import env
 from .errors import Errors
 from .ir import *
-from .irhelper import op2str, eval_unop
+from .irhelper import op2str, eval_unop, eval_binop, eval_relop
 from .scope import Scope, FunctionParam
 from .symbol import Symbol
 from .type import Type
@@ -1146,17 +1146,18 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_BinOp(self, node):
         left = self.visit(node.left)
         right = self.visit(node.right)
+        if left.is_a(CONST) and right.is_a(CONST):
+            return CONST(eval_binop(op2str(node.op), left.value, right.value))
         return BINOP(op2str(node.op), left, right)
 
     def visit_UnaryOp(self, node):
         exp = self.visit(node.operand)
-        unop = UNOP(op2str(node.op), exp)
         if exp.is_a(CONST):
-            v = eval_unop(unop)
+            v = eval_unop(op2str(node.op), exp.value)
             if v is None:
                 fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_OPERATOR, [unop.op])
             return CONST(v)
-        return unop
+        return UNOP(op2str(node.op), exp)
 
     def visit_Lambda(self, node):
         fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda'])
@@ -1196,6 +1197,8 @@ class CodeVisitor(ast.NodeVisitor):
         left = self.visit(node.left)
         op = node.ops[0]
         right = self.visit(node.comparators[0])
+        if left.is_a(CONST) and right.is_a(CONST):
+            return CONST(eval_relop(op2str(op), left.value, right.value))
         return RELOP(op2str(op), left, right)
 
     def visit_Call(self, node):
@@ -1279,6 +1282,11 @@ class CodeVisitor(ast.NodeVisitor):
                 attr = node.attr
         else:
             attr = node.attr
+        if (value.sym.typ.is_namespace() and
+                value.sym.typ.get_scope().orig_name == 'polyphony' and
+                isinstance(attr, Symbol) and
+                attr.name == '__python__'):
+            return CONST(False)
         irattr = ATTR(value, attr, ctx)
 
         if irattr.head() and irattr.head().name == env.self_name and isinstance(attr, str):
@@ -1333,7 +1341,9 @@ class CodeVisitor(ast.NodeVisitor):
             else:
                 self.invisible_symbols.remove(sym)
         assert sym is not None
-        if sym.name == '__python__' and sym.ancestor and sym.ancestor.scope.name == 'polyphony':
+        if (sym.ancestor and
+                sym.ancestor.scope.name == 'polyphony' and
+                sym.ancestor.name == '__python__'):
             return CONST(False)
         return TEMP(sym, ctx)
 

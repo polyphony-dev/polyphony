@@ -148,9 +148,7 @@ def has_exclusive_function(stm):
     return False
 
 
-def eval_unop(ir):
-    op = ir.op
-    v = ir.exp.value
+def eval_unop(op, v):
     if op == 'Invert':
         return ~v
     elif op == 'Not':
@@ -163,10 +161,7 @@ def eval_unop(ir):
         return None
 
 
-def eval_binop(ir):
-    op = ir.op
-    lv = ir.left.value
-    rv = ir.right.value
+def eval_binop(op, lv, rv):
     if op == 'Add':
         return lv + rv
     elif op == 'Sub':
