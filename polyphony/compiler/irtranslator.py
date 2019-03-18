@@ -220,6 +220,73 @@ class ScopeVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         self.import_visitor.visit_ImportFrom(node)
 
+    def visit_Num(self, node):
+        return node.n
+
+    def visit_Name(self, node):
+        if self.current_scope.orig_name == 'polyphony':
+            return
+        #ctx = self._nodectx2irctx(node)
+        sym = self.current_scope.find_sym(node.id)
+        if not sym:
+            return None
+        if (sym.ancestor and
+                sym.ancestor.scope.name == 'polyphony' and
+                sym.ancestor.name == '__python__'):
+            return False
+        return None
+
+    def visit_NameConstant(self, node):
+        return node.value
+
+    def visit_BinOp(self, node):
+        left = self.visit(node.left)
+        right = self.visit(node.right)
+        if left is not None and right is not None:
+            return eval_binop(op2str(node.op), left, right)
+        return None
+
+    def visit_UnaryOp(self, node):
+        exp = self.visit(node.operand)
+        if exp is not None:
+            return eval_unop(op2str(node.op), exp)
+        return None
+
+    def visit_Compare(self, node):
+        assert len(node.ops) == 1
+        left = self.visit(node.left)
+        op = node.ops[0]
+        right = self.visit(node.comparators[0])
+        if left is not None and right is not None:
+            return eval_relop(op2str(op), left, right)
+        return None
+
+    def visit_BoolOp(self, node):
+        values = list(node.values)
+        v0 = self.visit(values[0])
+        for val in values[1:]:
+            v1 = self.visit(val)
+            if v0 is not None and v1 is not None:
+                v0 = eval_relop(op2str(node.op), v0, v1)
+            else:
+                return None
+        return v0
+
+    def visit_If(self, node):
+        condition = self.visit(node.test)
+        skip_then = skip_else = False
+        if condition is not None:
+            skip_then = not condition
+            skip_else = condition
+
+        if not skip_then:
+            for stm in node.body:
+                self.visit(stm)
+        if node.orelse:
+            if not skip_else:
+                for stm in node.orelse:
+                    self.visit(stm)
+
     def visit_FunctionDef(self, node):
         def _make_param_symbol(arg, is_vararg=False):
             if arg.annotation:
@@ -1282,7 +1349,8 @@ class CodeVisitor(ast.NodeVisitor):
                 attr = node.attr
         else:
             attr = node.attr
-        if (value.sym.typ.is_namespace() and
+        if (value.is_a(TEMP) and
+                value.sym.typ.is_namespace() and
                 value.sym.typ.get_scope().orig_name == 'polyphony' and
                 isinstance(attr, Symbol) and
                 attr.name == '__python__'):
@@ -1589,8 +1657,8 @@ class IRTranslator(object):
             else:
                 top_scope = Scope.global_scope()
         type_comments = self._extract_type_comment(source)
-        ScopeVisitor(top_scope).visit(tree)
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
+        ScopeVisitor(top_scope).visit(tree)
         CodeVisitor(top_scope, type_comments).visit(tree)
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
