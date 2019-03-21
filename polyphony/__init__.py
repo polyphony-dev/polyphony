@@ -409,14 +409,8 @@ class Simulator(object):
         for p in io.Port.instances:
             p._reset()
 
-    def _setup_trace(self, trace_ports):
-        if trace_ports:
-            self._trace_ports = trace_ports
-        else:
-            self._trace_ports = []
-
-    def _trace(self, cycle):
-        for name, p in self._trace_ports:
+    def _trace(self, cycle, trace_ports):
+        for name, p in trace_ports:
             if 'on_clock' in self._trace_callbacks:
                 self._trace_callbacks['on_clock'](cycle, name, p)
             if p._changed:
@@ -424,7 +418,7 @@ class Simulator(object):
                     self._trace_callbacks['on_change'](cycle, name, p)
         if self._vcd_writer:
             self._vcd_writer.change(self._name2vcdsym['clk'], cycle * 2, 1)
-            for name, p in self._trace_ports:
+            for name, p in trace_ports:
                 if p._changed:
                     self._vcd_writer.change(self._name2vcdsym[name], cycle * 2, p.rd())
             self._vcd_writer.change(self._name2vcdsym['clk'], cycle * 2 + 1, 0)
@@ -491,8 +485,9 @@ class Simulator(object):
     def run(self):
         for test_fn, modules, args, kwargs in self._tests:
             self._setup(modules)
+            trace_ports = []
             if 'trace_ports' in kwargs:
-                self._setup_trace(kwargs['trace_ports'])
+                trace_ports = kwargs['trace_ports']
                 if 'vcd_file' in kwargs:
                     vcdobj = self._setup_vcd(kwargs['vcd_file'], kwargs['trace_ports'])
             if args:
@@ -522,7 +517,7 @@ class Simulator(object):
                 self._update_ports()
                 self._update_regs()
                 self._update_assigned_ports()
-                self._trace(cycle)
+                self._trace(cycle, trace_ports)
                 for p in io.Port.instances:
                     p._clear_change_flag()
                 cycle += 1
