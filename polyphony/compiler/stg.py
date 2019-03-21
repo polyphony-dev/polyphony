@@ -6,6 +6,7 @@ from .block import Block
 from .common import error_info
 from .env import env
 from .ir import *
+from .irvisitor import IRVisitor
 from .memref import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -398,6 +399,76 @@ class StateBuilder(STGItemBuilder):
         return states
 
 
+def _signal_width(sym):
+    width = -1
+    if sym.typ.is_seq():
+        width = sym.typ.get_element().get_width()
+    elif sym.typ.is_int() or sym.typ.is_bool():
+        width = sym.typ.get_width()
+    elif sym.typ.is_port():
+        width = sym.typ.get_dtype().get_width()
+    elif sym.is_condition():
+        width = 1
+    return width
+
+
+def _tags_from_sym(sym):
+    tags = set()
+    if sym.typ.is_seq():
+        if sym.typ.is_list():
+            tags.add('memif')
+    elif sym.typ.is_int() or sym.typ.is_bool():
+        if sym.typ.has_signed() and sym.typ.get_signed():
+            tags.add('int')
+        else:
+            pass
+        if sym.is_alias():
+            tags.add('net')
+        else:
+            tags.add('reg')
+    elif sym.typ.is_port():
+        di = sym.typ.get_direction()
+        assert di != '?'
+        if di != 'inout':
+            tags.add(di)
+
+    if sym.is_param():
+        tags.add('input')
+    elif sym.is_return():
+        tags.add('output')
+    elif sym.is_condition():
+        tags.add('condition')
+
+    if sym.is_induction():
+        tags.add('induction')
+    return tags
+
+
+def _make_signal(sym, scope, hdlmodule):
+    width = _signal_width(sym)
+    tags = _tags_from_sym(sym)
+    if sym.scope is not scope:
+        sig_name = sym.hdl_name()
+    elif scope.is_worker() or scope.is_method():
+        is_param = False
+        if scope.is_ctor() and scope.parent.is_module() and scope.parent.module_params:
+            is_param = any((sym is copy for _, copy, _ in scope.parent.module_params))
+        if is_param:
+            sig_name = '{}'.format(sym.hdl_name())
+            tags.update({'parameter'})
+            if 'reg' in tags:
+                tags.remove('reg')
+        else:
+            sig_name = '{}_{}'.format(scope.orig_name, sym.hdl_name())
+    elif 'input' in tags:
+        sig_name = '{}_{}'.format(scope.orig_name, sym.hdl_name())
+    elif 'output' in tags:
+        sig_name = '{}_out_0'.format(scope.orig_name)
+    else:
+        sig_name = sym.hdl_name()
+    return hdlmodule.gen_sig(sig_name, width, tags, sym)
+
+
 class AHDLTranslator(object):
     def __init__(self, name, host, scope):
         super().__init__()
@@ -655,75 +726,10 @@ class AHDLTranslator(object):
         assert mv.src.is_a(ARRAY)
         self._build_mem_initialize_seq(ir, ahdl_memvar, node)
 
-    def _signal_width(self, sym):
-        width = -1
-        if sym.typ.is_seq():
-            width = sym.typ.get_element().get_width()
-        elif sym.typ.is_int() or sym.typ.is_bool():
-            width = sym.typ.get_width()
-        elif sym.typ.is_port():
-            width = sym.typ.get_dtype().get_width()
-        elif sym.is_condition():
-            width = 1
-        return width
-
-    def _tags_from_sym(self, sym):
-        tags = set()
-        if sym.typ.is_seq():
-            if sym.typ.is_list():
-                tags.add('memif')
-        elif sym.typ.is_int() or sym.typ.is_bool():
-            if sym.typ.has_signed() and sym.typ.get_signed():
-                tags.add('int')
-            else:
-                pass
-            if sym.is_alias():
-                tags.add('net')
-            else:
-                tags.add('reg')
-        elif sym.typ.is_port():
-            di = sym.typ.get_direction()
-            assert di != '?'
-            if di != 'inout':
-                tags.add(di)
-
-        if sym.is_param():
-            tags.add('input')
-        elif sym.is_return():
-            tags.add('output')
-        elif sym.is_condition():
-            tags.add('condition')
-
-        if sym.is_induction():
-            tags.add('induction')
-        return tags
-
     def _sym_2_sig(self, sym):
         if sym in self.sym2sig_map:
             return self.sym2sig_map[sym]
-        tags = self._tags_from_sym(sym)
-        if sym.scope is not self.scope:
-            sig_name = sym.hdl_name()
-        elif self.scope.is_worker() or self.scope.is_method():
-            is_param = False
-            if self.scope.is_ctor() and self.scope.parent.is_module() and self.scope.parent.module_params:
-                is_param = any((sym is copy for _, copy, _ in self.scope.parent.module_params))
-            if is_param:
-                sig_name = '{}'.format(sym.hdl_name())
-                tags.update({'parameter'})
-                if 'reg' in tags:
-                    tags.remove('reg')
-            else:
-                sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
-        elif 'input' in tags:
-            sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
-        elif 'output' in tags:
-            sig_name = '{}_out_0'.format(self.scope.orig_name)
-        else:
-            sig_name = sym.hdl_name()
-
-        width = self._signal_width(sym)
-        sig = self.hdlmodule.gen_sig(sig_name, width, tags, sym)
+        sig = _make_signal(sym, self.scope, self.hdlmodule)
         self.sym2sig_map[sym] = sig
         return sig
 
@@ -744,24 +750,24 @@ class AHDLTranslator(object):
             qsym = ir.qualified_symbol()
             qnames = [sym.hdl_name() for sym in qsym]
             signame = '_'.join(qnames)
-            width = self._signal_width(ir.attr)
-            tags = self._tags_from_sym(ir.attr)
+            width = _signal_width(ir.attr)
+            tags = _tags_from_sym(ir.attr)
             sig = self.hdlmodule.gen_sig(signame, width, tags, ir.attr)
             self.hdlmodule.add_internal_reg(sig)
         elif self.scope.parent.is_module():
             sym = ir.symbol() #ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
             signame = sym.hdl_name()
-            width = self._signal_width(sym)
+            width = _signal_width(sym)
             sig = self.hdlmodule.gen_sig(signame, width, sig_tags, sym)
         elif self.scope.is_method() and self.scope.parent is ir.attr_scope:
             # internal access to the field
-            width = self._signal_width(ir.attr)
+            width = _signal_width(ir.attr)
             sig = self.host.gen_sig(ir.attr_scope.orig_name + '_field', attr, width, sig_tags)
         else:
             # external access to the field
             io = '' if ir.ctx == Ctx.LOAD else '_in'
             instance_name = self.host.make_instance_name(ir)
-            width = self._signal_width(ir.attr)
+            width = _signal_width(ir.attr)
             sig = self.host.gen_sig(instance_name + '_field', attr + io, width, sig_tags)
         if ir.attr.typ.is_seq():
             memnode = self.mrg.node(ir.attr)
@@ -1092,7 +1098,7 @@ class AHDLTranslator(object):
         assert direction != '?'
         protocol = port_sym.typ.get_protocol()
         kind = port_sym.typ.get_port_kind()
-
+        assigned = port_sym.typ.get_assigned()
         if port_scope.orig_name.startswith('Port'):
             if 'pipelined_port' in tags and protocol == 'ready_valid':
                 # this port is already replaced to seq_port
@@ -1126,6 +1132,8 @@ class AHDLTranslator(object):
                 tags.add('net')
             else:
                 assert False
+        if 'output' in tags and not assigned:
+            tags.add('reg')
         is_pipeline_access = self.host.current_node.tag.block.synth_params['scheduling'] == 'pipeline'
         adapter_sig = None
         if root_sym.is_pipelined() and is_pipeline_access:
@@ -1178,6 +1186,8 @@ class AHDLTranslator(object):
             self._make_port_write_seq(call, port_sig, node)
         elif call.func_scope().orig_name == 'rd':
             self._make_port_read_seq(target, port_sig, node)
+        elif call.func_scope().orig_name == 'assign':
+            self._make_port_assign(call.args[0][1].symbol(), port_sig, node)
         else:
             if port_sig.is_fifo_port():
                 if call.func_scope().orig_name in ('full', 'empty'):
@@ -1223,6 +1233,22 @@ class AHDLTranslator(object):
             for i in range(step_n):
                 self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i, node)
 
+    def _make_port_assign(self, scope_sym, port_sig, node):
+        assert scope_sym.typ.is_function()
+        assigned = scope_sym.typ.get_scope()
+        assert assigned.is_assigned()
+        translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+        translator.process(assigned)
+        for assign in translator.codes:
+            self.hdlmodule.add_static_assignment(assign)
+            self.hdlmodule.add_internal_net(assign.dst.sig, '')
+        assign = AHDL_ASSIGN(AHDL_VAR(port_sig, Ctx.STORE),
+                             translator.return_var)
+        self.hdlmodule.add_static_assignment(assign)
+        port_sig.del_tag('reg')
+        port_sig.del_tag('initializable')
+        port_sig.add_tag('net')
+
     def _make_port_init(self, new, target, node):
         assert new.func_scope().is_port()
         port = target.symbol().typ
@@ -1233,3 +1259,244 @@ class AHDLTranslator(object):
     def _is_module_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_module()
 
+
+class AHDLCombTranslator(IRVisitor):
+    def __init__(self, hdlmodule, scope):
+        self.hdlmodule = hdlmodule
+        self.scope = scope
+        self.codes = []
+        self.return_var = None
+
+    def visit_UNOP(self, ir):
+        exp = self.visit(ir.exp)
+        return AHDL_OP(ir.op, exp)
+
+    def visit_BINOP(self, ir):
+        left = self.visit(ir.left)
+        right = self.visit(ir.right)
+        return AHDL_OP(ir.op, left, right)
+
+    def visit_RELOP(self, ir):
+        left = self.visit(ir.left)
+        right = self.visit(ir.right)
+        return AHDL_OP(ir.op, left, right)
+
+    def visit_CONDOP(self, ir):
+        cond = self.visit(ir.cond)
+        left = self.visit(ir.left)
+        right = self.visit(ir.right)
+        return AHDL_IF_EXP(cond, left, right)
+
+    def visit_args(self, args, kwargs):
+        for _, arg in args:
+            self.visit(arg)
+        for kwarg in kwargs.values():
+            self.visit(kwarg)
+
+    def _is_port_rd(self, ir):
+        return (ir.is_a(CALL) and
+                ir.func_scope().is_method() and
+                ir.func_scope().parent.is_port() and
+                ir.func_scope().orig_name == 'rd')
+
+    def _port_sig(self, port_qsym):
+        assert port_qsym[-1].typ.is_port()
+        port_sym = port_qsym[-1]
+        root_sym = port_sym.typ.get_root_symbol()
+        port_prefixes = port_qsym[:-1] + (root_sym,)
+
+        if port_prefixes[0].name == env.self_name:
+            port_prefixes = port_prefixes[1:]
+        port_name = '_'.join([pfx.hdl_name() for pfx in port_prefixes])
+        port_sig = env.hdlmodule(port_sym.scope).signal(port_name)
+        if port_sig:
+            tags = port_sig.tags
+        else:
+            tags = set()
+        dtype = port_sym.typ.get_dtype()
+        width = dtype.get_width()
+        direction = port_sym.typ.get_direction()
+        assert direction != '?'
+        kind = port_sym.typ.get_port_kind()
+
+        tags.add('single_port')
+        if dtype.has_signed() and dtype.get_signed():
+            tags.add('int')
+
+        if kind == 'internal':
+            tags.add('reg')
+        elif self.scope.parent.is_subclassof(port_sym.scope) and port_sym.scope.is_module():
+            if direction != 'inout':
+                tags.add(direction)
+        elif self.scope.is_worker():
+            if direction != 'inout':
+                tags.add(direction)
+        else:
+            # TODO
+            tags.add('extport')
+            if direction == 'input':
+                tags.add('reg')
+            elif direction == 'output':
+                tags.add('net')
+            else:
+                assert False
+
+        if 'extport' in tags:
+            port_sig = self.hdlmodule.gen_sig(port_name, width, tags, port_sym)
+        else:
+            if root_sym.scope.is_module():
+                module_scope = root_sym.scope
+            elif root_sym.scope.is_ctor() and root_sym.scope.parent.is_module():
+                module_scope = root_sym.scope.parent
+            else:
+                assert False
+            port_sig = env.hdlmodule(module_scope).gen_sig(port_name, width, tags, port_sym)
+        if port_sym.typ.has_init():
+            tags.add('initializable')
+            port_sig.init_value = port_sym.typ.get_init()
+        if port_sym.typ.has_maxsize():
+            port_sig.maxsize = port_sym.typ.get_maxsize()
+        if port_sym.typ.get_rewritable():
+            tags.add('rewritable')
+        return port_sig
+
+    def visit_CALL(self, ir):
+        if self._is_port_rd(ir):
+            port_qsym = ir.func.qualified_symbol()[:-1]
+            port_sig = self._port_sig(port_qsym)
+            return AHDL_VAR(port_sig, Ctx.LOAD)
+        else:
+            assert False, 'NIY'
+
+    def visit_SYSCALL(self, ir):
+        assert False, 'NIY'
+        self.visit_args(ir.args, ir.kwargs)
+
+    def visit_NEW(self, ir):
+        assert False, 'NIY'
+        self.visit_args(ir.args, ir.kwargs)
+
+    def visit_CONST(self, ir):
+        if ir.value is None:
+            return None
+        else:
+            return AHDL_CONST(ir.value)
+
+    def visit_TEMP(self, ir):
+        if ir.sym.is_return():
+            ir.sym.add_tag('alias')
+        sig = _make_signal(ir.sym, self.scope, self.hdlmodule)
+        if ir.sym.typ.is_seq():
+            return AHDL_MEMVAR(sig, ir.sym.typ.get_memnode(), ir.ctx)
+        else:
+            return AHDL_VAR(sig, ir.ctx)
+
+    def visit_ATTR(self, ir):
+        if ir.attr.typ.is_seq():
+            sig_tags = {'field', 'memif'}
+        else:
+            sig_tags = {'field', 'int'}
+        attr = ir.attr.hdl_name()
+        if ir.attr_scope.is_unflatten():
+            qsym = ir.qualified_symbol()
+            qnames = [sym.hdl_name() for sym in qsym]
+            signame = '_'.join(qnames)
+            width = _signal_width(ir.attr)
+            tags = _tags_from_sym(ir.attr)
+            sig = self.hdlmodule.gen_sig(signame, width, tags, ir.attr)
+            self.hdlmodule.add_internal_reg(sig)
+        elif ir.tail().typ.is_object() and ir.tail().typ.get_scope().is_module():
+            sym = ir.symbol() #ir.symbol().ancestor if ir.symbol().ancestor else ir.symbol()
+            signame = sym.hdl_name()
+            width = _signal_width(sym)
+            sig = self.hdlmodule.gen_sig(signame, width, sig_tags, sym)
+        return AHDL_VAR(sig, ir.ctx)
+
+    def visit_MREF(self, ir):
+        assert False, 'NIY'
+        self.visit(ir.mem)
+        self.visit(ir.offset)
+
+    def visit_MSTORE(self, ir):
+        assert False, 'NIY'
+        self.visit(ir.mem)
+        self.visit(ir.offset)
+        self.visit(ir.exp)
+
+    def visit_ARRAY(self, ir):
+        assert False, 'NIY'
+        self.visit(ir.repeat)
+        for item in ir.items:
+            self.visit(item)
+
+    def visit_EXPR(self, ir):
+        assert False, 'NIY'
+        self.visit(ir.exp)
+
+    def visit_CJUMP(self, ir):
+        assert False, 'NIY'
+        self.visit(ir.exp)
+
+    def visit_MCJUMP(self, ir):
+        assert False, 'NIY'
+        for cond in ir.conds:
+            self.visit(cond)
+
+    def visit_JUMP(self, ir):
+        assert False, 'NIY'
+        pass
+
+    def visit_RET(self, ir):
+        self.return_var = self.visit(ir.exp)
+
+    def visit_MOVE(self, ir):
+        src = self.visit(ir.src)
+        dst = self.visit(ir.dst)
+        self.codes.append(AHDL_ASSIGN(dst, src))
+
+    def visit_CEXPR(self, ir):
+        assert False, 'NIY'
+        self.visit(ir.cond)
+        self.visit_EXPR(ir)
+
+    def visit_CMOVE(self, ir):
+        assert False, 'NIY'
+        self.visit(ir.cond)
+        self.visit_MOVE(ir)
+
+    def visit_PHI(self, ir):
+        assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
+        if ir.var.symbol().typ.is_seq():
+            assert False, 'NIY'
+            memnode = ir.var.symbol().typ.get_memnode()
+            if memnode.can_be_reg():
+                self._emit_reg_array_mux(ir, node)
+            else:
+                self._emit_mem_mux(ir, node)
+        else:
+            self._emit_scalar_mux(ir)
+
+    def _emit_scalar_mux(self, ir):
+        ahdl_dst = self.visit(ir.var)
+        arg_p = list(zip(ir.args, ir.ps))
+        rexp, cond = arg_p[-1]
+        cond = self.visit(cond)
+        if cond.is_a(CONST) and cond.value:
+            rexp = self.visit(rexp)
+        else:
+            lexp = self.visit(rexp)
+            rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
+        for arg, p in arg_p[-2::-1]:
+            lexp = self.visit(arg)
+            cond = self.visit(p)
+            if_exp = AHDL_IF_EXP(cond, lexp, rexp)
+            rexp = if_exp
+        self.codes.append(AHDL_ASSIGN(ahdl_dst, if_exp))
+
+    def visit_UPHI(self, ir):
+        assert False, 'NIY'
+        self.visit_PHI(ir)
+
+    def visit_LPHI(self, ir):
+        assert False, 'NIY'
+        self.visit_PHI(ir)

@@ -22,7 +22,9 @@ class AliasVarDetector(IRVisitor):
             return
         if ir.src.is_a([TEMP, ATTR]):
             src_sym = ir.src.symbol()
-            if src_sym.is_param() or src_sym.typ.is_port():
+            if self.scope.is_ctor() and self.scope.parent.is_module():
+                pass
+            elif src_sym.is_param() or src_sym.typ.is_port():
                 return
         elif ir.src.is_a(CALL):
             if ir.src.func_scope().is_predicate():

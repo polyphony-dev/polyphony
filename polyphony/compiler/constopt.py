@@ -10,7 +10,7 @@ from .env import env
 from .usedef import UseDefDetector
 from .varreplacer import VarReplacer
 from .dominator import DominatorTreeBuilder
-from .scope import Scope
+from .usedef import UseDefDetector
 from .utils import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -323,6 +323,9 @@ class ConstantOpt(ConstantOptBase):
                 scope.usedef.remove_var_def(stm.dst, stm)
                 scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
+                if stm.dst.symbol().is_free():
+                    for clos in stm.dst.symbol().scope.closures:
+                        self._propagate_to_closure(clos, stm.dst, stm.src)
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(ATTR)
@@ -342,6 +345,16 @@ class ConstantOpt(ConstantOptBase):
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
+
+    def _propagate_to_closure(self, closure, dst, src):
+        target = dst.symbol()
+        UseDefDetector().process(closure)
+        replaces = VarReplacer.replace_uses(TEMP(target, Ctx.LOAD), src, closure.usedef)
+        # Consider the case self.scope is cloned
+        if not replaces and self.scope.origin:
+            orig_symbols = {cloned:orig for orig, cloned in self.scope.cloned_symbols.items()}
+            target = orig_symbols[target]
+        replaces = VarReplacer.replace_uses(TEMP(target, Ctx.LOAD), src, closure.usedef)
 
     def visit_SYSCALL(self, ir):
         if ir.sym.name == 'len':

@@ -1271,7 +1271,28 @@ class CodeVisitor(ast.NodeVisitor):
         return UNOP(op2str(node.op), exp)
 
     def visit_Lambda(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda'])
+        if node.args.args:
+            fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda argument'])
+        outer_scope = self.current_scope
+        tags = {'function', 'returnable', 'comb'}
+        lambda_scope = Scope.create(outer_scope, None, tags, node.lineno)
+        self.current_scope = lambda_scope
+        new_block = self._new_block(self.current_scope)
+        self.current_scope.set_entry_block(new_block)
+        self.current_scope.set_exit_block(new_block)
+        last_block = self.current_block
+        self.current_block = new_block
+
+        ret_sym = self.current_scope.add_return_sym()
+        self.emit(MOVE(TEMP(ret_sym, Ctx.STORE), self.visit(node.body)), node)
+        self.emit(RET(TEMP(ret_sym, Ctx.LOAD)), node)
+
+        self.current_scope = outer_scope
+        self.current_block = last_block
+
+        scope_sym = self.current_scope.add_sym(lambda_scope.name)
+        scope_sym.set_type(Type.function(lambda_scope, None, None))
+        return TEMP(scope_sym, Ctx.LOAD)
 
     def visit_IfExp(self, node):
         condition = self.visit(node.test)
@@ -1345,10 +1366,11 @@ class CodeVisitor(ast.NodeVisitor):
                     return SYSCALL(builtin_symbols[func_scope.name], args, kwargs)
         elif func.is_a(ATTR) and func.exp.is_a([TEMP, ATTR]):
             if isinstance(func.attr, Symbol):
-                if (func.attr.typ.is_function()
-                        and func.attr.typ.get_scope().name in builtin_symbols):
-                    builtin_sym = builtin_symbols[func.attr.typ.get_scope().name]
-                    return SYSCALL(builtin_sym, args, kwargs)
+                if func.attr.typ.is_function():
+                    func_scope = func.attr.typ.get_scope()
+                    if func_scope.name in builtin_symbols:
+                        builtin_sym = builtin_symbols[func_scope.name]
+                        return SYSCALL(builtin_sym, args, kwargs)
                 elif func.attr.typ.is_class():
                     return NEW(func.attr, args, kwargs)
             else:
@@ -1433,6 +1455,10 @@ class CodeVisitor(ast.NodeVisitor):
 
         ctx = self._nodectx2irctx(node)
         sym = self.current_scope.find_sym(node.id)
+        if sym and sym.scope is not self.current_scope and not sym.scope.is_namespace():
+            self.current_scope.add_free_sym(sym)
+            sym.scope.add_tag('enclosure')
+            sym.scope.add_closure(self.current_scope)
         if not sym:
             parent_scope = self.current_scope.find_parent_scope(node.id)
             if parent_scope:

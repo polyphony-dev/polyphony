@@ -212,7 +212,13 @@ class VerilogCodeGen(AHDLVisitor):
             if port.dir == 'in':
                 assert False
             else:
-                io_name = self._to_io_name(port.width, 'reg', 'output', port.signed,
+                # WORKAROUND
+                if (isinstance(interface, SingleWriteInterface) and
+                        not (interface.signal.is_valid_protocol() or interface.signal.is_ready_valid_protocol())):
+                    net_typ = 'wire' if interface.signal and not interface.signal.is_reg() else 'reg'
+                else:
+                    net_typ = 'reg'
+                io_name = self._to_io_name(port.width, net_typ, 'output', port.signed,
                                            interface.port_name(port))
                 if (isinstance(interface, SinglePortInterface) and
                         interface.signal.is_initializable()):

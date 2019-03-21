@@ -40,6 +40,12 @@ class CallGraphBuilder(IRVisitor):
             if w.symbol().typ.is_function():
                 worker_scope = w.symbol().typ.get_scope()
                 self.worklist.append(worker_scope)
+        elif func_scope.is_method() and func_scope.parent.is_port() and func_scope.orig_name == 'assign':
+            _, fn = ir.args[0]
+            assert fn.symbol().typ.is_function()
+            lambda_scope = fn.symbol().typ.get_scope()
+            self.call_graph.add_edge(self.scope, lambda_scope)
+            self.worklist.append(lambda_scope)
         else:
             self.call_graph.add_edge(self.scope, func_scope)
             self.worklist.append(func_scope)

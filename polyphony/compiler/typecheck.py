@@ -156,6 +156,13 @@ class TypePropagation(IRVisitor):
         if any([atype.is_undef() for atype in arg_types]):
             raise RejectPropagation(ir)
 
+        if ir.func_scope().parent.is_port() and ir.func_scope().orig_name == 'assign':
+            assert len(arg_types) == 1
+            assigned = arg_types[0].get_scope()
+            if (not (assigned.is_method() and assigned.parent.is_module()) and
+                    not (assigned.parent.is_method() and assigned.parent.parent.is_module())):
+                fail(self.current_stm, Errors.PORT_ASSIGN_CANNOT_ACCEPT)
+            assigned.add_tag('assigned')
         ret_t = ir.func_scope().return_type
         if ir.func_scope().is_class():
             assert False
@@ -787,7 +794,8 @@ class RestrictionChecker(IRVisitor):
         head = ir.head()
         if (head.scope is not self.scope and
                 head.typ.is_object() and
-                not self.scope.is_testbench()):
+                not self.scope.is_testbench() and
+                not self.scope.is_assigned()):
             scope = head.typ.get_scope()
             if scope.is_module():
                 fail(self.current_stm, Errors.INVALID_MODULE_OBJECT_ACCESS)

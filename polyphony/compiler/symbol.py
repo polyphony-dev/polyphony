@@ -10,7 +10,7 @@ class Symbol(Tagged):
     all_symbols = []
 
     TAGS = {
-        'temp', 'param', 'return', 'condition', 'induction', 'alias',
+        'temp', 'param', 'return', 'condition', 'induction', 'alias', 'free',
         'self', 'static', 'subobject',
         'builtin', 'inlined', 'flattened', 'pipelined', 'predefined',
         'loop_counter', 'register'

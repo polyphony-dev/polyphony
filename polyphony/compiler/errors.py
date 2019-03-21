@@ -72,6 +72,7 @@ class Errors(Enum):
     PORT_ACCESS_IS_NOT_ALLOWED = 911
     RESERVED_PORT_NAME = 912
     MODULE_CANNOT_ACCESS_OBJECT = 913
+    PORT_ASSIGN_CANNOT_ACCEPT = 914
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -173,11 +174,12 @@ ERROR_MESSAGES = {
     Errors.WORKER_MUST_BE_METHOD_OF_MODULE: "The worker must be a method of the module",
     Errors.PORT_ACCESS_IS_NOT_ALLOWED: "'any' port cannot be accessed from outside of the module",
     Errors.RESERVED_PORT_NAME: "The name of Port '{}' is reserved",
+    Errors.MODULE_CANNOT_ACCESS_OBJECT: "The module class cannot access an object",
+    Errors.PORT_ASSIGN_CANNOT_ACCEPT: "Port.assign() accepts only a module method or a lambda",
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",
     Errors.CANNOT_WAIT_OUTPUT: "Cannot wait for the output port",
-    Errors.MODULE_CANNOT_ACCESS_OBJECT: "The module class cannot access an object",
 
     Errors.PURE_ERROR: "@pure Python execution is failed",
     Errors.PURE_MUST_BE_GLOBAL: "@pure function must be in the global scope",

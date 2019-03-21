@@ -23,9 +23,9 @@ FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
-        'global', 'function', 'class', 'method', 'ctor',
+        'global', 'function', 'class', 'method', 'ctor', 'enclosure',
         'callable', 'returnable', 'mutable', 'inherited', 'predicate',
-        'testbench', 'pure', 'timed',
+        'testbench', 'pure', 'timed', 'comb', 'assigned',
         'module', 'worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass',
@@ -151,6 +151,7 @@ class Scope(Tagged):
         self.lineno = lineno
         self.scope_id = scope_id
         self.symbols = {}
+        self.free_symbols = {}
         self.params = []
         self.return_type = None
         self.entry_block = None
@@ -172,6 +173,7 @@ class Scope(Tagged):
         self.synth_params = make_synth_params()
         self.constants = {}
         self.branch_graph = Graph()
+        self.closures = set()
 
     def __str__(self):
         s = '\n================================\n'
@@ -311,6 +313,7 @@ class Scope(Tagged):
         s.cloned_stms = stm_map
 
         s.synth_params = self.synth_params.copy()
+        s.closures = self.closures.copy()
         # TODO:
         #s.loop_tree = None
         #s.constants
@@ -395,6 +398,10 @@ class Scope(Tagged):
 
     def add_return_sym(self):
         return self.add_sym(Symbol.return_prefix, ['return'])
+
+    def add_free_sym(self, sym):
+        sym.add_tag('free')
+        self.free_symbols[sym.name] = sym
 
     def del_sym(self, name):
         if name in self.symbols:
@@ -636,6 +643,10 @@ class Scope(Tagged):
             return self.branch_graph.find_edge(stm0, stm1) is not None
         else:
             return self.branch_graph.find_edge(stm1, stm0) is not None
+
+    def add_closure(self, closure):
+        assert closure.free_symbols
+        self.closures.add(closure)
 
 
 class SymbolReplacer(IRVisitor):

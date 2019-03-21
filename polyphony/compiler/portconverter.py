@@ -35,6 +35,7 @@ class PortTypeProp(TypePropagation):
             assert 'direction' in attrs
             attrs['dtype'] = ir.func_scope().type_args[0]
             attrs['root_symbol'] = self.current_stm.dst.symbol()
+            attrs['assigned'] = False
             if self.current_stm.is_a(MOVE) and self.current_stm.dst.is_a(TEMP):
                 attrs['port_kind'] = 'internal'
             else:
@@ -64,6 +65,8 @@ class PortTypeProp(TypePropagation):
         if ir.func_scope().is_method() and ir.func_scope().parent.is_port():
             sym = ir.func.tail()
             assert sym.typ.is_port()
+            if ir.func.symbol().typ.get_scope().orig_name == 'assign':
+                sym.typ.set_assigned(True)
             kind = sym.typ.get_port_kind()
             root = sym.typ.get_root_symbol()
             port_owner = root.scope
@@ -135,25 +138,29 @@ class PortConverter(IRTransformer):
                         warn(list(stms)[0], Warnings.PORT_IS_NOT_USED,
                              [sym.orig_name()])
 
-    def _set_and_check_port_direction(self, expected_di, sym):
+    def _set_and_check_port_direction(self, expected_di, from_external, sym):
         port_typ = sym.typ
         rootsym = port_typ.get_root_symbol()
         di = port_typ.get_direction()
         kind = port_typ.get_port_kind()
         if kind == 'external':
-            if di == 'any':
-                port_typ.set_port_kind('internal')
-                port_typ.set_direction('inout')
-            elif di != expected_di:
-                if sym.ancestor and sym.ancestor.scope is not sym.scope:
-                    # the port has been accessed as opposite direction
-                    # by a module includes original owner module
-                    port_typ.set_port_kind('internal')
-                    port_typ.set_direction('inout')
-                else:
+            assert di != 'any'
+            if from_external:
+                if di == expected_di:
                     fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
                          [sym.orig_name()])
+            else:
+                if di != expected_di:
+                    if sym.ancestor and sym.ancestor.scope is not sym.scope:
+                        # the port has been accessed as opposite direction
+                        # by a module includes original owner module
+                        port_typ.set_port_kind('internal')
+                        port_typ.set_direction('inout')
+                    else:
+                        fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
+                             [sym.orig_name()])
         elif kind == 'internal':
+            assert not from_external
             if self.scope.is_worker():
                 port_typ.set_direction('inout')
             else:
@@ -165,7 +172,7 @@ class PortConverter(IRTransformer):
             if self.writers[rootsym]:
                 assert len(self.writers[rootsym]) == 1
                 writer = list(self.writers[rootsym])[0]
-                if writer is not self.scope and writer.worker_owner is self.scope.worker_owner:
+                if writer is not self.scope and writer.worker_owner and writer.worker_owner is self.scope.worker_owner:
                     fail(self.current_stm, Errors.WRITING_IS_CONFLICTED,
                          [sym.orig_name()])
             else:
@@ -199,6 +206,23 @@ class PortConverter(IRTransformer):
         else:
             return root.scope
 
+    def _is_access_from_external(self, sym):
+        port_owner = self._get_port_owner(sym)
+        for w, _ in port_owner.workers:
+            if self.scope is w:
+                return False
+        for child in port_owner.children:
+            if self.scope is child:
+                return False
+        for subclass in port_owner.subs:
+            for w, _ in subclass.workers:
+                if self.scope is w:
+                    return False
+            for child in subclass.children:
+                if self.scope is child:
+                    return False
+        return True
+
     def _check_port_direction(self, sym, func_scope):
         if func_scope.name.startswith('polyphony.io.Queue'):
             if func_scope.orig_name in ('wr', 'full'):
@@ -206,19 +230,16 @@ class PortConverter(IRTransformer):
             else:
                 expected_di = 'input'
         else:
-            if func_scope.orig_name == 'wr':
+            if func_scope.orig_name in ('wr', 'assign'):
                 expected_di = 'output'
             else:
                 expected_di = 'input'
-        port_owner = self._get_port_owner(sym)
-        if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
-                not self.scope.is_worker()):
-            expected_di = 'output' if expected_di == 'input' else 'input'
+        from_external = self._is_access_from_external(sym)
         if sym in self.union_ports:
             for s in self.union_ports[sym]:
-                self._set_and_check_port_direction(expected_di, s)
+                self._set_and_check_port_direction(expected_di, from_external, s)
         else:
-            self._set_and_check_port_direction(expected_di, sym)
+            self._set_and_check_port_direction(expected_di, from_external, sym)
 
     def visit_CALL(self, ir):
         if not ir.func_scope().is_lib():
