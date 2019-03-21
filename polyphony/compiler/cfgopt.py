@@ -445,10 +445,7 @@ class HyperBlockBuilder(object):
                 'polyphony.timing.wait_edge',
             ]
             return call.sym.name in wait_funcs
-        elif call.is_a(CALL):
-            if call.func_scope().is_method() and call.func_scope().parent.is_port():
-                return True
-            return False
+        return False
 
     def _try_get_mem(self, stm):
         if stm.is_a(MOVE) and stm.src.is_a(MREF):
@@ -553,7 +550,9 @@ class HyperBlockBuilder(object):
                     head.insert_stm(-1, stm)
                 for _, stm in stms_:
                     blk.stms.remove(stm)
-                if remains_ and head.synth_params['scheduling'] == 'pipeline':
+                if (remains_ and
+                        (head.synth_params['scheduling'] == 'pipeline' or
+                         self.scope.is_assigned())):
                     path_exp = merge_path_exp(head, path[0], idx)
                     cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
                     for _, stm in sorted(cstms_, key=lambda _: _[0]):
