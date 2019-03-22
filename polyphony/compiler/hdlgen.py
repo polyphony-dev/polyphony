@@ -503,7 +503,8 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         if not self.hdlmodule.scope.is_instantiated():
             return
         for p in self.hdlmodule.scope.module_params:
-            sig = self.hdlmodule.sym2sig[p.copy]
+            sig = self.hdlmodule.signal(p.copy)
+            assert sig
             val = 0 if not p.defval else p.defval.value
             self.hdlmodule.parameters.append((sig, val))
         self._process_io(self.hdlmodule)
@@ -511,6 +512,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
         for fsm in self.hdlmodule.fsms.values():
             if fsm.scope.is_ctor():
+                memnodes = []
+                for sym in self.hdlmodule.scope.symbols.values():
+                    if sym.typ.is_seq():
+                        memnodes.append(sym.typ.get_memnode())
+                self._add_roms(memnodes)
+
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):
                     if stm.dst.sig.is_field():

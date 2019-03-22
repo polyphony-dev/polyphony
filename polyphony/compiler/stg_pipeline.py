@@ -38,16 +38,16 @@ class PipelineState(State):
 
     def __str__(self):
         s = '---------------------------------\n'
-        s += '{}\n'.format(self.name)
+        s += f'{self.name}\n'
 
         for subst in self.substates:
             for c in subst.codes:
                 if isinstance(c, PipelineStage):
                     stage = c
-                    lines = ['---{}---'.format(stage.name)]
-                    strcodes = '\n'.join(['{}'.format(code) for code in stage.codes])
+                    lines = [f'---{stage.name}---']
+                    strcodes = '\n'.join([code for code in stage.codes])
                     lines += strcodes.split('\n')
-                    s += '\n'.join(['  {}'.format(line) for line in lines])
+                    s += '\n'.join([f'  {line}' for line in lines])
                     s += '\n'
                 else:
                     s += str(c) + '\n'
@@ -59,8 +59,7 @@ class PipelineState(State):
     def _pipeline_signal(self, signal_name, signals, idx, is_reg):
         assert idx >= 0
         if idx not in signals:
-            stage_name = self.name + '_{}'.format(idx)
-            name = '{}_{}'.format(stage_name, signal_name)
+            name = f'{self.name}_{idx}_{signal_name}'
             if is_reg:
                 tags = {'reg', 'pipeline_ctrl'}
             else:
@@ -102,13 +101,13 @@ class PipelineState(State):
         return self._pipeline_signal('exit', self.exit_signals, idx, True)
 
     def new_stage(self, step, codes):
-        name = self.name + '_{}'.format(step)
+        name = f'{self.name}_{step}'
         s = PipelineStage(name, self.cur_sub_state_idx, step, codes, self.stg, self)
         state = self.substates[self.cur_sub_state_idx]
         state.codes.append(s)
         self.stages.append(s)
         self.cur_sub_state_idx = (self.cur_sub_state_idx + 1) % self.nstate
-        assert len(self.stages) == step + 1, 'stages {} step {}'.format(len(self.stages), step)
+        assert len(self.stages) == step + 1, f'stages {len(self.stages)} step {step}'
         return s
 
     def resolve_transition(self, next_state, blk2states):
@@ -375,7 +374,7 @@ class PipelineStageBuilder(STGItemBuilder):
                 continue
             if is_normal_reg and (num - d_num) == 1:
                 continue
-            new_name = sig.name + '_{}'.format(num)  # use previous stage variable
+            new_name = f'{sig.name}_{num}'  # use previous stage variable
             tags = sig.tags.copy()
             if 'net' in tags:
                 tags.remove('net')
@@ -387,7 +386,7 @@ class PipelineStageBuilder(STGItemBuilder):
                 continue
             if is_normal_reg and (num - d_num) == 1:
                 continue
-            new_name = sig.name + '_{}'.format(num)
+            new_name = f'{sig.name}_{num}'
             new_sig = self.hdlmodule.signal(new_name)
             replacer.replace(u, sig, new_sig)
         for num in range(start_n, end_n):
@@ -395,9 +394,9 @@ class PipelineStageBuilder(STGItemBuilder):
             if num == start_n:
                 prev_sig = sig
             else:
-                prev_name = sig.name + '_{}'.format(num)
+                prev_name = f'{sig.name}_{num}'
                 prev_sig = self.hdlmodule.signal(prev_name)
-            cur_name = sig.name + '_{}'.format(num + 1)
+            cur_name = f'{sig.name}_{num + 1}'
             cur_sig = self.hdlmodule.signal(cur_name)
             slice_stm = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
                                   AHDL_VAR(prev_sig, Ctx.LOAD))
@@ -416,7 +415,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
 
-        loop_cond = self.translator.visit(cond_def.src, None)
+        loop_cond = self.translator.visit(cond_def.src)
         for stage in pstate.stages:
             self._add_last_signal_chain(pstate, stage, loop_cond)
 
@@ -433,8 +432,8 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
 
     def build_exit_detection_block(self, dfg, pstate, exit_signal, cond_def, last_stage):
         # make a condition for unexecutable loop
-        loop_init = self.translator.visit(dfg.region.init, None)
-        loop_cond = self.translator.visit(cond_def.src, None)
+        loop_init = self.translator.visit(dfg.region.init)
+        loop_cond = self.translator.visit(cond_def.src)
         args = []
         loop_cnt = self.translator._sym_2_sig(dfg.region.counter)
         for i, a in enumerate(loop_cond.args):

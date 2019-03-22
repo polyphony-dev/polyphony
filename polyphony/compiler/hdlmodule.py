@@ -4,7 +4,7 @@ from .hdlinterface import *
 from . import libs
 from .env import env
 from .ahdl import *
-
+from .symbol import Symbol
 logger = getLogger(__name__)
 
 
@@ -44,7 +44,7 @@ class HDLModule(object):
         self.edge_detectors = set()
         self.ahdl2dfgnode = {}
         self.sig2sym = {}
-        self.sym2sig = {}
+        self.sym2sigs = defaultdict(list)
         self.clock_signal = None
 
     def __str__(self):
@@ -281,15 +281,19 @@ class HDLModule(object):
         self.signals[name] = sig
         if sym:
             self.sig2sym[sig] = sym
-            self.sym2sig[sym] = sig
+            self.sym2sigs[sym].append(sig)
         return sig
 
-    def signal(self, name):
-        if name in self.signals:
-            return self.signals[name]
+    def signal(self, key):
+        if isinstance(key, str):
+            if key in self.signals:
+                return self.signals[key]
+        elif isinstance(key, Symbol):
+            if key in self.sym2sigs and len(self.sym2sigs[key]) == 1:
+                return self.sym2sigs[key][0]
         for base in self.scope.bases:
             basemodule = env.hdlmodule(base)
-            found = basemodule.signal(name)
+            found = basemodule.signal(key)
             if found:
                 return found
         return None
