@@ -822,34 +822,6 @@ class LateRestrictionChecker(IRVisitor):
                 fail(self.current_stm, Errors.RESERVED_PORT_NAME, [ir.dst.symbol().name])
 
 
-class ModuleChecker(IRVisitor):
-    def __init__(self):
-        super().__init__()
-        self.assigns = defaultdict(set)
-
-    def process(self, scope):
-        if not (scope.parent and scope.parent.is_module()):
-            return
-        super().process(scope)
-
-    def visit_MOVE(self, ir):
-        if not ir.dst.is_a(ATTR):
-            return
-        irattr = ir.dst
-        if not irattr.exp.is_a(TEMP):
-            return
-        if irattr.exp.sym.name != env.self_name:
-            return
-        class_scope = self.scope.parent
-        if not self.scope.is_ctor():
-            type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_IN_CTOR)
-
-        if irattr.symbol() in self.assigns[class_scope]:
-            type_error(self.current_stm, Errors.MODULE_FIELD_MUST_ASSIGN_ONLY_ONCE)
-
-        self.assigns[class_scope].add(irattr.symbol())
-
-
 class AssertionChecker(IRVisitor):
     def visit_SYSCALL(self, ir):
         if ir.sym.name != 'assert':

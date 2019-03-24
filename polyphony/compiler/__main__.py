@@ -59,11 +59,12 @@ from .stg import STGBuilder
 from .synth import DefaultSynthParamSetter
 from .typecheck import TypePropagation, InstanceTypePropagation
 from .typecheck import TypeChecker
-from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker, ModuleChecker
+from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
 from .typecheck import AssertionChecker
 from .typecheck import SynthesisParamChecker
 from .unroll import LoopUnroller
 from .usedef import UseDefDetector
+from .usedef import FieldUseDef
 from .vericodegen import VerilogCodeGen
 from .veritestgen import VerilogTestGen
 import logging
@@ -123,7 +124,7 @@ def scopegraph(driver):
     uncalled_scopes = CallGraphBuilder().process_all()
     unused_scopes = DependencyGraphBuilder().process_all()
     for s in uncalled_scopes:
-        if s.is_namespace() or s.is_class() or s.is_ctor() or s.is_worker():
+        if s.is_namespace() or s.is_class() or s.is_worker():
             continue
         driver.remove_scope(s)
         Scope.destroy(s)
@@ -204,6 +205,16 @@ def usedef(driver, scope):
     UseDefDetector().process(scope)
 
 
+def fieldusedef(driver):
+    scopes = driver.get_scopes(with_global=False,
+                               with_class=True,
+                               with_lib=False)
+    for s in scopes:
+        if s.is_module():
+            field_usedef = FieldUseDef()
+            field_usedef.process(s, driver)
+
+
 def scalarssa(driver, scope):
     ScalarSSATransformer().process(scope)
 
@@ -250,10 +261,6 @@ def restrictioncheck(driver, scope):
 
 def laterestrictioncheck(driver, scope):
     LateRestrictionChecker().process(scope)
-
-
-def modulecheck(driver, scope):
-    ModuleChecker().process(scope)
 
 
 def assertioncheck(driver, scope):
@@ -666,7 +673,6 @@ def compile_plan():
         pure(execpureall),
         phase(env.PHASE_3),
         instantiate,
-        modulecheck,
         dbg(dumpscope),
         usedef,
         copyopt,
@@ -684,13 +690,12 @@ def compile_plan():
         pathexp,
         usedef,
         phi,
-        usedef,
         dbg(dumpscope),
         phase(env.PHASE_4),
         usedef,
         convport,
         phase(env.PHASE_5),
-        usedef,
+        fieldusedef,
         aliasvar,
         tempbit,
         dbg(dumpscope),

@@ -15,13 +15,13 @@ def alias05(p, x, y):
     else:
         c2 = c1
     c0.v += 10
-    return c2.get_v()
+    return c2.v + c2.get_v()
 
 @testbench
 def test():
-    assert 11 == alias05(True, 1, 2)
-    assert 12 == alias05(True, 2, 3)
-    assert 2 == alias05(False, 1, 2)
-    assert 3 == alias05(False, 2, 3)
+    assert 22 == alias05(True, 1, 2)
+    assert 24 == alias05(True, 2, 3)
+    assert 4 == alias05(False, 1, 2)
+    assert 6 == alias05(False, 2, 3)
     
 test()

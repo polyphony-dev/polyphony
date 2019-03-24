@@ -13,13 +13,20 @@ class AliasVarDetector(IRVisitor):
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
         sym = ir.dst.symbol()
-        if sym.is_register():
-            return
         if sym.is_condition():
             sym.add_tag('alias')
             return
-        if sym.typ.is_seq() or sym.is_return() or sym.typ.is_port():
+        if sym.is_register() or sym.typ.is_seq() or sym.is_return() or sym.typ.is_port():
             return
+        if sym.is_field():
+            if self.scope.is_worker():
+                module = self.scope.worker_owner
+            else:
+                # TODO:
+                module = self.scope.parent
+            defstms = module.field_usedef.get_stms_defining(sym)
+            if len(defstms) > 1:
+                return
         if ir.src.is_a([TEMP, ATTR]):
             src_sym = ir.src.symbol()
             if self.scope.is_ctor() and self.scope.parent.is_module():

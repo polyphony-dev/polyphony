@@ -165,30 +165,34 @@ class UseDefTable(object):
         vs.extend(self._use_var2stm.keys())
         return vs
 
-    def dump(self):
-        logger.debug('statements that has symbol defs')
+    def __str__(self):
+        s = ''
+        s += 'statements that has symbol defs\n'
         for sym, stms in self._def_sym2stm.items():
-            logger.debug(sym)
+            s += f'{sym}\n'
             for stm in stms:
-                logger.debug('    ' + str(stm))
+                s += f'    {stm}\n'
 
-        logger.debug('blocks that has symbol defs')
+        s += 'blocks that has symbol defs\n'
         for sym, blks in self._def_sym2blk.items():
-            logger.debug(sym)
+            s += f'{sym}\n'
             for blk in blks:
-                logger.debug('    ' + blk.name)
-
-        logger.debug('statements that has symbol uses')
+                s += f'    {blk.name}\n'
+        s += 'statements that has symbol uses\n'
         for sym, stms in self._use_sym2stm.items():
-            logger.debug(sym)
+            s += f'{sym}\n'
             for stm in stms:
-                logger.debug('    ' + str(stm))
+                s += f'    {stm}\n'
 
-        logger.debug('blocks that has symbol uses')
+        s += 'blocks that has symbol uses\n'
         for sym, blks in self._use_sym2blk.items():
-            logger.debug(sym)
+            s += f'{sym}\n'
             for blk in blks:
-                logger.debug('    ' + blk.name)
+                s += f'    {blk.name}\n'
+        return s
+
+    def dump(self):
+        logger.debug(self)
 
 
 class UseDefDetector(IRVisitor):
@@ -245,3 +249,41 @@ class UseDefDetector(IRVisitor):
             self.table.add_var_def(ir, self.current_stm)
         self.visit(ir.exp)
 
+
+class FieldUseDef(object):
+    def process(self, module, driver):
+        assert module.is_module()
+        self.module = module
+        using_scopes = set(driver.scopes)
+        self.scopes = self._collect_scopes(module, using_scopes)
+        for scope in self.scopes:
+            UseDefDetector().process(scope)
+        self.module.field_usedef = self
+
+    def _collect_scopes(self, scope, using_scopes):
+        scopes = set()
+        workers = set([w for w, _ in scope.workers]) & using_scopes
+        scopes |= workers
+        for w in workers:
+            scopes |= self._collect_scopes(w, using_scopes)
+        subscopes = (set(scope.children) | scope.closures) & using_scopes
+        for sub in subscopes:
+            if sub.is_worker():  # exclude uninstantiated worker
+                continue
+            if sub.is_lib():
+                continue
+            scopes.add(sub)
+            scopes |= self._collect_scopes(sub, using_scopes)
+        return scopes
+
+    def get_stms_defining(self, key):
+        defstms = set()
+        for scope in self.scopes:
+            defstms |= scope.usedef.get_stms_defining(key)
+        return defstms
+
+    def get_stms_using(self, key):
+        usestms = set()
+        for scope in self.scopes:
+            usestms |= scope.usedef.get_stms_using(key)
+        return usestms

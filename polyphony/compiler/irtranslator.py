@@ -1409,6 +1409,8 @@ class CodeVisitor(ast.NodeVisitor):
                         attr = scope.find_sym(node.attr)
                     else:
                         attr = scope.add_sym(node.attr)
+                        if scope.is_module():
+                            attr.add_tag('field')
                 else:
                     attr = scope.find_sym(node.attr)
             if not attr:

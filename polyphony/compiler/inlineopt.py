@@ -297,6 +297,10 @@ class AliasReplacer(CopyOpt):
                             vars.append(ir)
                     elif ir.exp.qualified_symbol() == qsym:
                         vars.append(ir.exp)
+                elif ir.is_a(TEMP) and len(qsym) == 1:
+                    if ir.sym.typ.is_object():
+                        if ir.sym == qsym[0]:
+                            vars.append(ir)
                 else:
                     for k, v in ir.__dict__.items():
                         find_vars_rec(v, qsym, vars)

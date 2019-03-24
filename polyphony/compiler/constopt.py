@@ -1,17 +1,16 @@
 ﻿from collections import deque
 from .block import Block
 from .common import fail
+from .dominator import DominatorTreeBuilder
+from .env import env
 from .errors import Errors
 from .irvisitor import IRVisitor, IRTransformer
 from .ir import *
 from .irhelper import expr2ir, reduce_relexp
 from .irhelper import eval_unop, eval_binop, reduce_binop, eval_relop
-from .env import env
-from .usedef import UseDefDetector
-from .varreplacer import VarReplacer
-from .dominator import DominatorTreeBuilder
 from .usedef import UseDefDetector
 from .utils import *
+from .varreplacer import VarReplacer
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -334,11 +333,6 @@ class ConstantOpt(ConstantOptBase):
                 if len(defstms) != 1:
                     continue
                 replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
-                receiver = stm.dst.tail()
-                if receiver.typ.is_object() and receiver.typ.get_scope().is_module():
-                    module_scope = receiver.typ.get_scope()
-                    assert self.scope.parent is module_scope
-                    module_scope.constants[stm.dst.symbol()] = stm.src
                 for rep in replaces:
                     if rep not in dead_stms:
                         worklist.append(rep)

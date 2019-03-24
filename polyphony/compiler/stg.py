@@ -398,6 +398,8 @@ def _tags_from_sym(sym):
 
     if sym.is_induction():
         tags.add('induction')
+    if sym.is_field():
+        tags.add('field')
     return tags
 
 
@@ -733,7 +735,7 @@ class AHDLTranslator(IRVisitor):
 
     def visit_ATTR(self, ir):
         sym = ir.symbol()
-        sig_tags = _tags_from_sym(ir.attr) | {'field'}
+        sig_tags = _tags_from_sym(ir.attr)
         width = _signal_width(sym)
         if ir.attr_scope.is_unflatten():
             qsym = ir.qualified_symbol()

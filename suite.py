@@ -59,6 +59,7 @@ SUITE_CASES = [
                     'pure/*',
                     'chstone/mips/pipelined_mips.py',
                     'error/pure01.py', 'error/pure02.py',
+                    'error/module_field01.py', 'error/module_field02.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
                     )
     },
@@ -68,6 +69,7 @@ SUITE_CASES = [
                     'pure/*',
                     'chstone/mips/pipelined_mips.py',
                     'error/pure01.py', 'error/pure02.py',
+                    'error/module_field01.py', 'error/module_field02.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
                     )
     },
@@ -76,6 +78,7 @@ SUITE_CASES = [
         "ignores": ('list/list31.py', 'list/list32.py',
                     'apps/filter_tester.py',
                     'pure/*', 'error/pure01.py', 'error/pure02.py',
+                    'error/module_field01.py', 'error/module_field02.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
                     )
     },

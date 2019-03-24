@@ -161,6 +161,7 @@ class Scope(Tagged):
         self.origin = None
         self.subs = []
         self.usedef = None
+        self.field_usedef = None
         self.loop_tree = LoopNestTree()
         self.callee_instances = defaultdict(set)
         #self.stgs = []

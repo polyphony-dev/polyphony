@@ -521,9 +521,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):
                     if stm.dst.sig.is_field():
-                        assign = AHDL_ASSIGN(stm.dst, stm.src)
-                        self.hdlmodule.add_static_assignment(assign, '')
-                        self.hdlmodule.add_internal_net(stm.dst.sig, '')
+                        if stm.dst.sig.is_reg():
+                            self.hdlmodule.add_internal_reg(stm.dst.sig, '')
+                        else:
+                            assign = AHDL_ASSIGN(stm.dst, stm.src)
+                            self.hdlmodule.add_static_assignment(assign, '')
+                            self.hdlmodule.add_internal_net(stm.dst.sig, '')
                 del self.hdlmodule.fsms[fsm.name]
                 break
             else:
