@@ -1290,7 +1290,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_scope = outer_scope
         self.current_block = last_block
 
-        scope_sym = self.current_scope.add_sym(lambda_scope.name)
+        scope_sym = self.current_scope.add_sym(lambda_scope.orig_name)
         scope_sym.set_type(Type.function(lambda_scope, None, None))
         return TEMP(scope_sym, Ctx.LOAD)
 

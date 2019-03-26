@@ -301,39 +301,42 @@ def earlyinstantiate(driver):
 
 
 def instantiate(driver):
+    scopes = []
     new_modules = ModuleInstantiator().process_all()
     for module in new_modules:
         assert module.name in env.scopes
-        driver.insert_scope(module)
-        driver.insert_scope(module.find_ctor())
-
         assert module.is_module()
-        for child in module.children:
-            if child.is_lib():
+        driver.insert_scope(module)
+
+        for s in module.collect_scope():
+            if not s.is_instantiated():
                 continue
-            if not (child.is_ctor() or child.is_worker()):
-                continue
-            usedef(driver, child)
-            if env.config.enable_pure:
-                execpure(driver, child)
-            constopt(driver, child)
-            checkcfg(driver, child)
+            driver.insert_scope(s)
+            scopes.append(s)
+            usedef(driver, s)
+            typeprop(driver, s)
+            constopt(driver, s)
     if new_modules:
         InstanceTypePropagation().process_all()
-
     new_workers = WorkerInstantiator().process_all()
     for worker in new_workers:
         assert worker.name in env.scopes
         driver.insert_scope(worker)
-
         assert worker.is_worker()
-        usedef(driver, worker)
+        scopes.append(worker)
+
+    for s in scopes:
+        usedef(driver, s)
         if env.config.enable_pure:
-            execpure(driver, worker)
-        constopt(driver, worker)
-        checkcfg(driver, worker)
+            execpure(driver, s)
+        typeprop(driver, s)
+        constopt(driver, s)
+        checkcfg(driver, s)
+
     scopegraph(driver)
     detectrom(driver)
+    for s in scopes:
+        constopt(driver, s)
 
 
 def specfunc(driver):

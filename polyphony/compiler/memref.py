@@ -24,7 +24,7 @@ class RefNode(object):
     def __str__(self):
         scope_name = self.scope.name
         s = '{}: {} {} {}\n'.format(self.__class__.__name__,
-                                    self.sym.name,
+                                    self.sym,
                                     scope_name,
                                     self._str_properties())
         s += '\tpreds\n'
@@ -308,6 +308,8 @@ class MemTrait(object):
         return (self.length - 1).bit_length() + 1  # +1 means sign bit
 
     def can_be_reg(self):
+        if self.scope.is_module():
+            return True
         if self.length == -1:
             src = self.single_source()
             if src:
@@ -636,6 +638,28 @@ class MemRefGraph(object):
     def is_live_node(self, node):
         return node.sym in self.nodes
 
+    def _clone_nodes(self, orig, new):
+        new_nodes = []
+        node_map = {}
+        if isinstance(orig, tuple):
+            origs = orig
+            news = new
+        else:
+            origs = [orig]
+            news = [new]
+        for orig_scope, new_scope in zip(origs, news):
+            for node in self.scope_nodes(orig_scope):
+                if node.sym.scope is orig_scope:
+                    new_node = node.clone(orig_scope, new_scope)
+                    assert new_node.sym is not node.sym
+                    assert new_node.sym.name == node.sym.name
+                    new_nodes.append(new_node)
+                    node_map[node] = new_node
+                else:
+                    # The node might be a shared (in global or class scope) node
+                    node_map[node] = node
+        return new_nodes, node_map
+
     def clone_subgraph(self, orig, new):
         def replace_connection(new_node, nodes, node_map, with_edge, is_succ=True):
             for i, n in enumerate(nodes.copy()):
@@ -648,23 +672,11 @@ class MemRefGraph(object):
                         self.edges[(new_node.sym, n.sym)] = (new_node, n)
                     else:
                         self.edges[(n.sym, new_node.sym)] = (n, new_node)
-
         #assert new.cloned_symbols
-        new_nodes = []
-        node_map = {}
-        for node in self.scope_nodes(orig):
-            if node.sym.scope is orig:
-                new_node = node.clone(orig, new)
-                assert new_node.sym is not node.sym
-                assert new_node.sym.name == node.sym.name
-                new_nodes.append(new_node)
-                node_map[node] = new_node
-            else:
-                # The node might be a shared (in global or class scope) node
-                node_map[node] = node
+        new_nodes, node_map = self._clone_nodes(orig, new)
         for new_node in new_nodes:
             if isinstance(new_node, MemRefNode) and new_node.initstm:
-                new_node.initstm = new.cloned_stms[new_node.initstm]
+                new_node.initstm = new_node.scope.cloned_stms[new_node.initstm]
             self.add_node(new_node)
             replace_connection(new_node, new_node.succs, node_map, True, is_succ=True)
             replace_connection(new_node, new_node.preds, node_map, True, is_succ=False)

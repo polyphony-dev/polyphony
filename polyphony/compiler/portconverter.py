@@ -211,16 +211,14 @@ class PortConverter(IRTransformer):
         for w, _ in port_owner.workers:
             if self.scope is w:
                 return False
-        for child in port_owner.children:
-            if self.scope is child:
-                return False
+        if port_owner.find_child(self.scope.name, rec=True):
+            return False
         for subclass in port_owner.subs:
             for w, _ in subclass.workers:
                 if self.scope is w:
                     return False
-            for child in subclass.children:
-                if self.scope is child:
-                    return False
+            if subclass.find_child(self.scope.name, rec=True):
+                return False
         return True
 
     def _check_port_direction(self, sym, func_scope):

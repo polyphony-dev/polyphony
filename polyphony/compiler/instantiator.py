@@ -229,9 +229,9 @@ class WorkerInstantiator(object):
         else:
             if binding:
                 postfix = '{}_{}'.format(idstr, '_'.join([str(v) for _, _, v in binding]))
-                new_worker = worker.clone(module.inst_name, postfix)
+                new_worker = worker.clone(module.inst_name, postfix, module)
             else:
-                new_worker = worker.clone(module.inst_name, idstr)
+                new_worker = worker.clone(module.inst_name, idstr, module)
 
         if binding:
             udd = UseDefDetector()
@@ -246,12 +246,28 @@ class WorkerInstantiator(object):
                     call.args.pop(i + 1)
                 else:
                     call.args.pop(i)
+        # Replace old module references with new module references
+        module_syms = worker.find_scope_sym(module.origin)
+        for sym in module_syms:
+            new_sym = new_worker.cloned_symbols[sym]
+            new_sym.typ.set_scope(module)
+
         if worker.is_instantiated():
             return new_worker, False
         else:
-            _instantiate_memnode(worker, new_worker)
+            # for local memnode
+            self._instantiate_memnode(worker, new_worker)
+            # for class field memnode
+            assert hasattr(module, 'cloned_memnodes')
+            if module.cloned_memnodes:
+                MemnodeReplacer(module.cloned_memnodes).process(new_worker)
             new_worker.add_tag('instantiated')
             return new_worker, True
+
+    def _instantiate_memnode(self, orig_scope, new_scope):
+        mrg = env.memref_graph
+        node_map = mrg.clone_subgraph(orig_scope, new_scope)
+        MemnodeReplacer(node_map).process(new_scope)
 
 
 class ModuleInstantiator(object):
@@ -291,10 +307,10 @@ class ModuleInstantiator(object):
                 else:
                     binding.append((bind_val, i, arg.value))
         inst_name = module_var.symbol().hdl_name()
-        new_module_name = module.orig_name + '_' + inst_name
+        children = [module.find_ctor()]
+        children.extend([c for c in module.collect_scope() if c.is_assigned()])
         if binding:
-            overrides = [module.find_ctor()]
-            new_module = module.inherit(new_module_name, overrides)
+            new_module = module.instantiate(inst_name, children)
             new_module_ctor = new_module.find_ctor()
             udd = UseDefDetector()
             udd.process(new_module_ctor)
@@ -302,19 +318,19 @@ class ModuleInstantiator(object):
                 f(new_module_ctor, i + 1, a)
             for _, i, _ in reversed(binding):
                 new_module_ctor.params.pop(i + 1)
-            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module_name)
+            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
             new.sym = new_module_sym
             for _, i, _ in reversed(binding):
                 new.args.pop(i)
         else:
-            overrides = [module.find_ctor()]
-            new_module = module.inherit(new_module_name, overrides)
-            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module_name)
+            new_module = module.instantiate(inst_name, children)
+            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
             new.sym = new_module_sym
         new.sym.typ.set_scope(new_module)
-        _instantiate_memnode(module.find_ctor(), new_module.find_ctor())
+        node_map = self._instantiate_memnode((module,     module.find_ctor()),
+                                             (new_module, new_module.find_ctor()))
+        new_module.cloned_memnodes = node_map
         new_module.inst_name = inst_name
-        new_module.add_tag('instantiated')
         new_module.module_params = []
         ctor = new_module.find_ctor()
         for i, param in enumerate(ctor.params):
@@ -325,11 +341,15 @@ class ModuleInstantiator(object):
             ctor.params.remove(param)
         return new_module
 
-
-def _instantiate_memnode(orig_scope, new_scope):
-    mrg = env.memref_graph
-    node_map = mrg.clone_subgraph(orig_scope, new_scope)
-    MemnodeReplacer(node_map).process(new_scope)
+    def _instantiate_memnode(self, orig_scope, new_scope):
+        mrg = env.memref_graph
+        node_map = mrg.clone_subgraph(orig_scope, new_scope)
+        if isinstance(new_scope, tuple):
+            for scope in new_scope:
+                MemnodeReplacer(node_map).process(scope)
+        else:
+            MemnodeReplacer(node_map).process(new_scope)
+        return node_map
 
 
 class MemnodeReplacer(IRVisitor):
@@ -349,9 +369,16 @@ class MemnodeReplacer(IRVisitor):
         typ = ir.symbol().typ
         self._replace_typ_memnode(typ)
 
+    def visit_ATTR(self, ir):
+        typ = ir.symbol().typ
+        self._replace_typ_memnode(typ)
+
     def visit_ARRAY(self, ir):
         typ = ir.sym.typ
         self._replace_typ_memnode(typ)
+
+    def visit_SYSCALL(self, ir):
+        super().visit_SYSCALL(ir)
 
 
 class CallCollector(IRVisitor):

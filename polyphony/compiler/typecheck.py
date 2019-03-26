@@ -286,6 +286,7 @@ class TypePropagation(IRVisitor):
     def visit_ARRAY(self, ir):
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
+        self.visit(ir.repeat)
         item_t = None
         if self.current_stm.dst.is_a([TEMP, ATTR]):
             dsttyp = self.current_stm.dst.symbol().typ

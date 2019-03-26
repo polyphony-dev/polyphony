@@ -304,6 +304,10 @@ class Scope(Tagged):
             s.callee_instances = new_callee_instances
         s.order = self.order
 
+        if self.parent is parent.origin and hasattr(parent, 'cloned_symbols'):
+            for sym in self.parent.symbols.values():
+                symbol_map[sym] = parent.cloned_symbols[sym]
+
         sym_replacer = SymbolReplacer(symbol_map)
         sym_replacer.process(s)
 
@@ -320,6 +324,18 @@ class Scope(Tagged):
         #s.constants
         return s
 
+    def _clone_child(self, new_class, old_class, origin_child):
+        _, new_parent = new_class.find_child(origin_child.name, True)
+        new_parent.children.remove(origin_child)
+        new_child = origin_child.clone('', '', new_parent)
+
+        res = new_class.find_closure(origin_child.name)
+        if res:
+            _, clos_parent = res
+            clos_parent.closures.remove(origin_child)
+            clos_parent.closures.add(new_child)
+        return new_child
+
     def inherit(self, name, overrides):
         sub = Scope.create(self.parent, name, set(self.tags), self.lineno, origin=self)
         sub.bases.append(self)
@@ -331,26 +347,67 @@ class Scope(Tagged):
         #env.append_scope(sub)
         self.subs.append(sub)
 
+        new_scopes = {self:sub}
         for method in overrides:
-            sub.children.remove(method)
-            sub_method = method.clone('', '', sub)
-            _in_self_sym, self_sym, _ = sub_method.params[0]
-            assert self_sym.name == 'self'
-            assert self_sym.typ.get_scope() is self
-            self_typ = Type.object(sub)
-            _in_self_sym.set_type(self_typ)
-            self_sym.set_type(self_typ)
+            new_method = self._clone_child(sub, self, method)
+            new_scopes[method] = new_method
 
-            method_sym = sub.symbols[sub_method.orig_name]
-            sub_method_sym = method_sym.clone(sub)
-            sub_method_sym.typ.set_scope(sub_method)
-            sub.symbols[sub_method.orig_name] = sub_method_sym
+        for old, new in new_scopes.items():
+            syms = sub.find_scope_sym(old)
+            for sym in syms:
+                if sym.scope in new_scopes.values():
+                    sym.typ.set_scope(new)
+            if new.parent.is_namespace():
+                continue
+            old_sym = new.parent.symbols[new.orig_name]
+            new_sym = old_sym.clone(new.parent)
+            new_sym.typ.set_scope(new)
+            new.parent.symbols[new.orig_name] = new_sym
         return sub
 
-    def find_child(self, name):
+    def instantiate(self, inst_name, children):
+        new_class = self.clone('', inst_name, self.parent)
+        new_class.add_tag('instantiated')
+
+        new_scopes = {self:new_class}
+        for child in children:
+            new_child = self._clone_child(new_class, self, child)
+            new_child.add_tag('instantiated')
+            new_scopes[child] = new_child
+
+        for old, new in new_scopes.items():
+            syms = new_class.find_scope_sym(old)
+            for sym in syms:
+                if sym.scope in new_scopes.values():
+                    sym.typ.set_scope(new)
+            if new.parent.is_namespace():
+                continue
+            assert new.parent.symbols[new.orig_name].typ.get_scope() is new
+        return new_class
+
+    def find_child(self, name, rec=False):
         for child in self.children:
-            if child.orig_name == name:
-                return child
+            if rec:
+                if child.name == name:
+                    return child, self
+                res = child.find_child(name, True)
+                if res:
+                    c, p = res
+                    return c, p
+            else:
+                if child.orig_name == name:
+                    return child, self
+        return None
+
+    def find_closure(self, name):
+        for clos in self.closures:
+            if clos.name == name:
+                return clos, self
+        for child in self.children:
+            res = child.find_closure(name)
+            if res:
+                c, p = res
+                return c, p
         return None
 
     def find_parent_scope(self, name):
@@ -364,12 +421,17 @@ class Scope(Tagged):
     def find_scope(self, name):
         if self.orig_name == name:
             return self
-        child = self.find_child(name)
-        if child:
+        if self.find_child(name):
             return child
         if self.parent:
             return self.parent.find_scope(name)
         return None
+
+    def collect_scope(self):
+        scopes = self.children[:]
+        for c in self.children:
+            scopes.extend(c.collect_scope())
+        return scopes
 
     def add_sym(self, name, tags=None, typ=Type.undef_t):
         if name in self.symbols:
@@ -475,6 +537,16 @@ class Scope(Tagged):
             else:
                 new_sym.ancestor = orig_sym
         return new_sym
+
+    def find_scope_sym(self, obj, rec=True):
+        results = []
+        for sym in self.symbols.values():
+            if sym.typ.has_scope() and sym.typ.get_scope() is obj:
+                results.append(sym)
+        if rec:
+            for c in self.children:
+                results.extend(c.find_scope_sym(obj, True))
+        return results
 
     def qualified_name(self):
         if self.name.startswith(env.global_scope_name):

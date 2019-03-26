@@ -13,6 +13,7 @@ class AliasVarDetector(IRVisitor):
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
         sym = ir.dst.symbol()
+        sched = self.current_stm.block.synth_params['scheduling']
         if sym.is_condition():
             sym.add_tag('alias')
             return
@@ -56,11 +57,12 @@ class AliasVarDetector(IRVisitor):
                 return
         elif ir.src.is_a(MREF):
             memnode = ir.src.mem.symbol().typ.get_memnode()
-            if memnode.is_immutable() or not memnode.is_writable():
+            if memnode.is_immutable() or not memnode.is_writable() or sched == 'timed':
                 sym.add_tag('alias')
                 return
             # TODO:
             return
+
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
             return

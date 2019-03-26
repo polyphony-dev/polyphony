@@ -518,6 +518,13 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                         memnodes.append(sym.typ.get_memnode())
                 self._add_roms(memnodes)
 
+                for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):
+                    assert memnode.can_be_reg()
+                    name = memnode.name()
+                    width = memnode.data_width()
+                    length = memnode.length
+                    sig = self.hdlmodule.gen_sig(name, width)
+                    self.hdlmodule.add_internal_reg_array(sig, length)
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):
                     if stm.dst.sig.is_field():
