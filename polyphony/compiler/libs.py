@@ -68,7 +68,7 @@ bidirectional_single_port_ram = """module BidirectionalSinglePortRam #
   assign ram_len = RAM_LENGTH;
   always @ (posedge clk) begin
     if (ram_we)
-      mem[ram_addr] <= ram_d;
+      mem[a] <= ram_d;
   read_addr <= a;
   end
 endmodule

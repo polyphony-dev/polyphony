@@ -863,6 +863,8 @@ class RegArrayAccessor(IOAccessor):
         sig = hdlmodule.signal(memnode.name())
         moves = []
         for i, p in enumerate(self.ports.outports()):
+            if i >= memnode.length:
+                break
             src = AHDL_SYMBOL('{}{}'.format(self.acc_name, p.name))
             idst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, memnode, Ctx.STORE), AHDL_CONST(i))
             mv = AHDL_MOVE(idst, src)
