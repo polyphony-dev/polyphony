@@ -353,7 +353,7 @@ class ConstantOpt(ConstantOptBase):
             for source in memnode.sources():
                 lens.append(source.length)
             if len(lens) <= 1 or all(lens[0] == len for len in lens):
-                if lens[0] > 0 and memnode.has_fixed_length():
+                if lens[0] > 0 and memnode.has_fixed_length(self.scope):
                      return CONST(lens[0])
         return self.visit_CALL(ir)
 

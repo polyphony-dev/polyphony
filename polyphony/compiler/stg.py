@@ -481,7 +481,7 @@ class AHDLTranslator(object):
         for source in memnode.sources():
             lens.append(source.length)
         if len(lens) <= 1 or all(lens[0] == len for len in lens):
-                if lens[0] > 0 and memnode.has_fixed_length():
+                if lens[0] > 0 and memnode.has_fixed_length(self.scope):
                     assert False  # len() must be constant value
         name = f'{memnode.sym.hdl_name()}_len'
         memlensig = self.hdlmodule.gen_sig(name, -1, ['memif'], mem.sym)

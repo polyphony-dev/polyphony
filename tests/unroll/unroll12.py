@@ -1,5 +1,6 @@
 from polyphony import testbench
 from polyphony import unroll
+from polyphony.typing import List
 
 
 def shift_full(xs:list, x):
@@ -16,7 +17,8 @@ def shift_2(xs:list, x):
     xs[0] = x
 
 
-def unroll12_a(xs, a):
+# For full unroll, the argument list must specify an explicit size.
+def unroll12_a(xs:List[int][6], a):
     if a == 0:
         shift_full(xs, 0)
     elif a == 1:
