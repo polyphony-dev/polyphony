@@ -409,14 +409,21 @@ class ObjectSSATransformer(SSATransformerBase):
         for blk in self.scope.traverse_blocks():
             phis = blk.collect_stms(PHI)
             for phi in phis:
+                will_remove = False
                 uses = usedef.get_stms_using(phi.var.qualified_symbol())
                 for use in uses:
-                    self._insert_use_phi(phi, use)
+                    if self._insert_use_phi(phi, use):
+                        will_remove = True
+                    if use.is_a(MOVE) and use.dst.is_a(ATTR) and use.dst.tail() is phi.var.symbol():
+                        self._insert_def_phi(phi, use)
+                        will_remove = True
+                if will_remove:
+                    blk.stms.remove(phi)
 
     def _insert_use_phi(self, phi, use_stm):
         insert_idx = use_stm.block.stms.index(use_stm)
-        use_attrs = [ir for ir in use_stm.kids() if ir.is_a(ATTR)]
-        qsym = phi.var.qualified_symbol()
+        use_attrs = {ir.qualified_symbol():ir for ir in use_stm.kids() if ir.is_a(ATTR)}
+        phi_qsym = phi.var.qualified_symbol()
 
         def replace_attr(attr, qsym, newattr):
             if attr.is_a(ATTR):
@@ -424,17 +431,34 @@ class ObjectSSATransformer(SSATransformerBase):
                     attr.exp = newattr
                     return
                 return replace_attr(attr.exp, qsym, newattr)
-        for use_attr in use_attrs:
-            if use_attr.attr.typ.is_object():
+        for qsym, attr in use_attrs.items():
+            if attr.attr.typ.is_object():
                 continue
-            if use_attr.exp.qualified_symbol() == qsym:
-                uphi = UPHI(use_attr.clone())
+            if qsym[:-1] == phi_qsym:
+                uphi = UPHI(attr.clone())
                 uphi.ps = phi.ps[:]
                 for arg in phi.args:
-                    uarg = use_attr.clone()
-                    replace_attr(uarg, qsym, arg.clone())
+                    uarg = attr.clone()
+                    replace_attr(uarg, phi_qsym, arg.clone())
                     uphi.args.append(uarg)
                 use_stm.block.insert_stm(insert_idx, uphi)
+                insert_idx += 1
+        return len(use_attrs)
+
+    def _insert_def_phi(self, phi, def_stm):
+        insert_idx = def_stm.block.stms.index(def_stm)
+        assert def_stm.is_a(MOVE)
+
+        for arg, p in zip(phi.args, phi.ps):
+            dst = def_stm.dst.clone()
+            dst.replace(phi.var.symbol(), arg.symbol())
+            src = def_stm.src.clone()
+            unchanged_dst = dst.clone()
+            unchanged_dst.ctx = Ctx.LOAD
+            mv = MOVE(dst, CONDOP(p, src, unchanged_dst))
+            def_stm.block.insert_stm(insert_idx, mv)
+            insert_idx += 1
+        def_stm.block.stms.remove(def_stm)
 
     def _need_rename(self, sym, qsym):
         if not sym.typ.is_object():
