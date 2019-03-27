@@ -9,7 +9,7 @@ from polyphony.io import Port
 class field02:
     def __init__(self, size):
         self.size = size
-        self.v = [None] * size
+        self.v = [None] * self.size
         self.i = Port(int, 'in')
         self.o = Port(int, 'out')
         self.append_worker(self.writer)
@@ -17,6 +17,9 @@ class field02:
 
     def reader(self):
         assert len(self.v) == 16
+        assert len(self.v) == self.size
+        local = [None] * self.size
+        assert len(local) == 16
         while is_worker_running():
             self.o.wr(self.v[0])
             clkfence()

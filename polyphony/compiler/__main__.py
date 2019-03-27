@@ -325,14 +325,13 @@ def instantiate(driver):
         assert worker.is_worker()
         scopes.append(worker)
 
+    fieldusedef(driver)
     for s in scopes:
-        usedef(driver, s)
         if env.config.enable_pure:
             execpure(driver, s)
         typeprop(driver, s)
         constopt(driver, s)
         checkcfg(driver, s)
-
     scopegraph(driver)
     detectrom(driver)
     for s in scopes:
