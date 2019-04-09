@@ -911,7 +911,6 @@ class LPHI(PHIBase):
 
     @classmethod
     def from_phi(cls, phi):
-        assert len(phi.args) == 2
         lphi = LPHI(phi.var.clone())
         lphi.args = phi.args[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
