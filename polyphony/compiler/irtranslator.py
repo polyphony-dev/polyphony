@@ -43,9 +43,6 @@ ignore_packages = []
 class ImportVisitor(ast.NodeVisitor):
     def __init__(self, target_scope):
         self.target_scope = target_scope
-        curdir = os.path.dirname(env.current_filename)
-        if curdir not in sys.path:
-            sys.path.append(curdir)
 
     def _find_module(self, name):
         spec = importlib.util.find_spec(name)
@@ -1659,6 +1656,11 @@ class IRTranslator(object):
         type_comments = self._extract_type_comment(source)
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
+        curdir = os.path.dirname(env.current_filename)
+        orig_syspath = sys.path
+        if curdir not in sys.path:
+            sys.path = sys.path + [curdir]
         ScopeVisitor(top_scope).visit(tree)
         CodeVisitor(top_scope, type_comments).visit(tree)
+        sys.path = orig_syspath
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
