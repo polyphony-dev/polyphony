@@ -1352,6 +1352,12 @@ class CodeVisitor(ast.NodeVisitor):
                 isinstance(attr, Symbol) and
                 attr.name == '__python__'):
             return CONST(False)
+        if (value.is_a([TEMP, ATTR]) and
+                isinstance(value.symbol(), Symbol) and
+                value.symbol().typ.is_class() and
+                isinstance(attr, Symbol) and
+                not attr.is_static()):
+            fail((self.current_scope, node.lineno), Errors.UNKNOWN_ATTRIBUTE, [attr])
         irattr = ATTR(value, attr, ctx)
 
         if irattr.head() and irattr.head().name == env.self_name and isinstance(attr, str):
