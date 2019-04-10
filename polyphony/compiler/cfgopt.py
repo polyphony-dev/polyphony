@@ -4,6 +4,7 @@ from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
 from .irhelper import reduce_relexp, is_port_method_call
+from .type import Type
 from .usedef import UseDefDetector
 from .utils import remove_except_one, unique
 from logging import getLogger
@@ -326,6 +327,13 @@ class HyperBlockBuilder(object):
         if len(old_mj.targets) == 2:
             cj = CJUMP(old_mj.conds[0], old_mj.targets[0], old_mj.targets[1])
             cj.lineno = old_mj.lineno
+            if not cj.exp.is_a(TEMP):
+                new_sym = self.scope.add_condition_sym()
+                new_sym.typ = Type.bool_t
+                new_c = TEMP(new_sym, Ctx.STORE)
+                mv = MOVE(new_c, cj.exp)
+                head.insert_stm(-1, mv)
+                cj.exp = TEMP(new_sym, Ctx.LOAD)
             head.replace_stm(head.stms[-1], cj)
         if len(mj.targets) == 2:
             cj = CJUMP(mj.conds[0], mj.targets[0], mj.targets[1])

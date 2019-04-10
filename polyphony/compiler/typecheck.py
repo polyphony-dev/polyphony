@@ -284,6 +284,8 @@ class TypePropagation(IRVisitor):
         return mem_t
 
     def visit_ARRAY(self, ir):
+        if not ir.repeat.is_a(CONST):
+            self.visit(ir.repeat)
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
         self.visit(ir.repeat)

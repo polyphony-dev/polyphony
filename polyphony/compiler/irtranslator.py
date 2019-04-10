@@ -45,9 +45,6 @@ ignore_packages = []
 class ImportVisitor(ast.NodeVisitor):
     def __init__(self, target_scope):
         self.target_scope = target_scope
-        curdir = os.path.dirname(env.current_filename)
-        if curdir not in sys.path:
-            sys.path.append(curdir)
 
     def _find_module(self, name):
         spec = importlib.util.find_spec(name)
@@ -1423,6 +1420,12 @@ class CodeVisitor(ast.NodeVisitor):
                 isinstance(attr, Symbol) and
                 attr.name == '__python__'):
             return CONST(False)
+        if (value.is_a([TEMP, ATTR]) and
+                isinstance(value.symbol(), Symbol) and
+                value.symbol().typ.is_class() and
+                isinstance(attr, Symbol) and
+                not attr.is_static()):
+            fail((self.current_scope, node.lineno), Errors.UNKNOWN_ATTRIBUTE, [attr])
         irattr = ATTR(value, attr, ctx)
 
         if irattr.head() and irattr.head().name == env.self_name and isinstance(attr, str):
@@ -1732,6 +1735,11 @@ class IRTranslator(object):
         meta_comments = self._extract_comment(source, 'meta:')
         CompareTransformer().visit(tree)
         AugAssignTransformer().visit(tree)
+        curdir = os.path.dirname(env.current_filename)
+        orig_syspath = sys.path
+        if curdir not in sys.path:
+            sys.path = sys.path + [curdir]
         ScopeVisitor(top_scope).visit(tree)
         CodeVisitor(top_scope, type_comments, meta_comments).visit(tree)
+        sys.path = orig_syspath
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
