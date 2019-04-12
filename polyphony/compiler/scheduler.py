@@ -14,7 +14,7 @@ from .scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
 
-MAX_FUNC_UNIT = 10
+MAX_FUNC_UNIT = 100
 
 
 class Scheduler(object):
@@ -154,6 +154,7 @@ class SchedulerImpl(object):
             while self._is_resource_full(res, scheduled_resources):
                 logger.debug("!!! resource {}'s slot '{}' is full !!!".
                              format(self._str_res(res), time))
+                assert False, 'Rescheduling due to lack of resources is not supported yet'
                 time += 1
                 scheduled_resources = table[time]
 
