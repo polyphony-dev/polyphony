@@ -142,7 +142,7 @@ class TypePropagation(IRVisitor):
                 fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)
             if ir.func_scope().return_type and not ir.func_scope().return_type.is_undef() and not ir.func_scope().return_type.is_any():
                 return ir.func_scope().return_type
-            ret, type_or_error = self.pure_type_inferrer.infer_type(ir, self.scope)
+            ret, type_or_error = self.pure_type_inferrer.infer_type(self.current_stm, ir, self.scope)
             if ret:
                 return type_or_error
             else:
@@ -284,6 +284,8 @@ class TypePropagation(IRVisitor):
         return mem_t
 
     def visit_ARRAY(self, ir):
+        if not ir.repeat.is_a(CONST):
+            self.visit(ir.repeat)
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
         self.visit(ir.repeat)
@@ -836,7 +838,8 @@ class SynthesisParamChecker(object):
     def process(self, scope):
         self.scope = scope
         if scope.synth_params['scheduling'] == 'pipeline' and not scope.is_worker():
-            fail((scope, scope.lineno), Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
+            fail((env.scope_file_map[scope], scope.lineno),
+                 Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
         for blk in scope.traverse_blocks():
             if blk.is_loop_head():
                 if blk.synth_params['scheduling'] == 'pipeline':

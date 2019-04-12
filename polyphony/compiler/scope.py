@@ -42,7 +42,7 @@ class Scope(Tagged):
         s = Scope(parent, name, tags, lineno, cls.scope_id)
         if s.name in env.scopes:
             env.append_scope(s)
-            fail((s, lineno), Errors.REDEFINED_NAME, {name})
+            fail((env.scope_file_map[s], lineno), Errors.REDEFINED_NAME, {name})
         env.append_scope(s)
         if origin:
             s.origin = origin

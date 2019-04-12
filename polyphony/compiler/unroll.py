@@ -43,7 +43,7 @@ class LoopUnroller(object):
                 if self._unroll_loop_tree_leaf(c):
                     return True
                 if c.head.synth_params['unroll']:
-                    fail((self.scope, c.head.stms[-1].lineno), Errors.RULE_UNROLL_NESTED_LOOP)
+                    fail(c.head.stms[-1], Errors.RULE_UNROLL_NESTED_LOOP)
         return False
 
     def _parse_factor(self, synth_params):
@@ -72,12 +72,12 @@ class LoopUnroller(object):
         if len(loop.bodies) > 1:
             for b in loop.bodies:
                 if len(b.succs) > 1:
-                    fail((self.scope, loop.head.stms[-1].lineno),
+                    fail(loop.head.stms[-1],
                          Errors.RULE_UNROLL_CONTROL_BRANCH)
         assert len(loop.bodies) == 1
         ret = self._find_loop_range(loop)
         if not ret:
-            fail((self.scope, loop.head.stms[-1].lineno),
+            fail(loop.head.stms[-1],
                  Errors.RULE_UNROLL_UNFIXED_LOOP)
         loop_min, loop_max, loop_step = ret
         if loop_max.is_a(CONST) and loop_min.is_a(CONST):
@@ -91,7 +91,7 @@ class LoopUnroller(object):
         else:
             initial_trip = -1
             if factor == -1:
-                fail((self.scope, loop.head.stms[-1].lineno),
+                fail(loop.head.stms[-1],
                      Errors.RULE_UNROLL_UNFIXED_LOOP)
             has_unroll_remain = True
             is_full_unroll = False
@@ -271,7 +271,7 @@ class LoopUnroller(object):
         orig_cjump = unroll_head.stms[-1]
         assert orig_cjump.is_a(CJUMP)
         jump = JUMP(None)
-        jump.lineno = orig_cjump.lineno
+        jump.loc = orig_cjump.loc
         head_stms.append(jump)
 
         unroll_head.stms = []
@@ -322,7 +322,7 @@ class LoopUnroller(object):
         head_stms.append(cond_stm)
         cond_exp = TEMP(cond_sym, Ctx.LOAD)
         cjump = CJUMP(cond_exp, None, None)
-        cjump.lineno = orig_cjump.lineno
+        cjump.loc = orig_cjump.loc
         head_stms.append(cjump)
 
         unroll_head.stms = []
@@ -437,8 +437,8 @@ class LoopUnroller(object):
                     if may_step.is_a(CONST):
                         return may_step.value
                     else:
-                        fail((self.scope, update_stm.lineno), Errors.RULE_UNROLL_VARIABLE_STEP)
-        fail((self.scope, update_stm.lineno), Errors.RULE_UNROLL_UNKNOWN_STEP)
+                        fail(update_stm, Errors.RULE_UNROLL_VARIABLE_STEP)
+        fail(update_stm, Errors.RULE_UNROLL_UNKNOWN_STEP)
 
 
 class IVReplacer(IRVisitor):

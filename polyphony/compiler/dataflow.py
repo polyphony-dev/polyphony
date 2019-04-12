@@ -26,7 +26,7 @@ class DFNode(object):
         if self.typ == 'Stm':
             s = '<{}> ({}) {} {}:{} {}'.format(
                 hex(self.__hash__())[-4:],
-                self.tag.lineno,
+                self.tag.loc.lineno,
                 self.priority,
                 self.begin,
                 self.end,

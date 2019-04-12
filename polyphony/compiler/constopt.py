@@ -225,7 +225,7 @@ class ConstantOptBase(IRVisitor):
             true_blk = cjump.false
             false_blk = cjump.true
         jump = JUMP(true_blk)
-        jump.lineno = cjump.lineno
+        jump.loc = cjump.loc
 
         if true_blk is not false_blk:
             if false_blk.preds:
@@ -584,7 +584,7 @@ class StaticConstOpt(ConstantOptBase):
             dtrees[s] = dtree
         # FIXME: Since lineno is not essential information for IR,
         #        It should not be used as sort key
-        stms = sorted(stms, key=lambda s: s.lineno)
+        stms = sorted(stms, key=lambda s: s.loc.lineno)
         for stm in stms:
             self.current_stm = stm
             self.scope = stm.block.scope

@@ -10,7 +10,7 @@ from .constopt import ConstantOptBase
 from .errors import Errors, Warnings, InterpretError
 from .env import env
 from .graph import Graph
-from .ir import Ctx, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
+from .ir import Ctx, Loc, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
 from .irhelper import expr2ir
 from .scope import Scope
 from .setlineno import LineNumberSetter
@@ -461,8 +461,8 @@ class PureCtorBuilder(object):
                             args.append((arg_name, ir))
                         new = NEW(klass_scope_sym, args, {})
                         dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
-                        stm = MOVE(dst, new)
-                        stm.lineno = ctor.lineno
+                        loc = Loc(env.scope_file_map[ctor], ctor.lineno)
+                        stm = MOVE(dst, new, loc=loc)
                         ctor.entry_block.append_stm(stm)
                         break
             else:
@@ -482,14 +482,14 @@ class PureCtorBuilder(object):
                         dst = ATTR(TEMP(self_sym, Ctx.STORE), portsym, Ctx.STORE, attr_scope=module)
                         stm = self._build_move_stm(dst, item, module)
                         assert stm
-                        stm.lineno = ctor.lineno
+                        stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
                         ctor.entry_block.append_stm(stm)
                     sym.typ.set_element(elem_t)
                 else:
                     dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
                     stm = self._build_move_stm(dst, v, module)
                     assert stm
-                    stm.lineno = ctor.lineno
+                    stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
                     ctor.entry_block.append_stm(stm)
 
     def _build_append_worker_call(self, instance, module, ctor, self_type_hints):
@@ -526,7 +526,7 @@ class PureCtorBuilder(object):
             func = ATTR(TEMP(self_sym, Ctx.LOAD), append_worker_sym, Ctx.LOAD)
             call = CALL(func, args, kwargs={})
             expr = EXPR(call)
-            expr.lineno = ctor.lineno
+            expr.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
             ctor.entry_block.append_stm(expr)
 
     def _build_move_stm(self, dst, v, module):
@@ -623,7 +623,7 @@ class PureCtorBuilder(object):
                 dst = TEMP(sym, Ctx.STORE)
                 stm = self._build_move_stm(dst, port_obj, module)
                 assert stm
-                stm.lineno = ctor.lineno
+                stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
                 ctor.entry_block.append_stm(stm)
                 self.outer_objs[port_obj] = sym
             return TEMP(sym, Ctx.LOAD)
@@ -634,14 +634,14 @@ class PureFuncTypeInferrer(object):
     def __init__(self):
         self.used_pure_node = set()
 
-    def infer_type(self, call, scope):
+    def infer_type(self, stm, call, scope):
         assert call.is_a(CALL)
         assert call.func_scope().is_pure()
         if not call.func_scope().return_type:
             call.func_scope().return_type = Type.any_t
 
         for node in env.runtime_info.pure_nodes:
-            if node.caller_lineno != call.lineno:
+            if node.caller_lineno != stm.loc.lineno:
                 continue
             if node in self.used_pure_node:
                 continue
