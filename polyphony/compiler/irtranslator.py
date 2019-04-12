@@ -136,7 +136,7 @@ class ImportVisitor(ast.NodeVisitor):
     def visit_Import(self, node):
         for nm in node.names:
             if not self._import(nm.name, nm.asname):
-                fail((self.target_scope, node.lineno), Errors.CANNOT_IMPORT, [nm.name])
+                fail((env.current_filename, node.lineno), Errors.CANNOT_IMPORT, [nm.name])
 
     def visit_ImportFrom(self, node):
         def import_to_scope(imp_sym, asname=None):
@@ -178,7 +178,7 @@ class ImportVisitor(ast.NodeVisitor):
                     # try to load nm.name as module
                     full_name = f'{from_scope.name}.{nm.name}'
                     if not self._load_module(full_name):
-                        fail((self.target_scope, node.lineno), Errors.CANNOT_IMPORT, [nm.name])
+                        fail((env.current_filename, node.lineno), Errors.CANNOT_IMPORT, [nm.name])
                     import_scope = env.scopes[full_name]
                     if self.target_scope.has_sym(nm.name):
                         imp_sym = self.target_scope.find_sym(nm.name)
@@ -291,7 +291,7 @@ class ScopeVisitor(ast.NodeVisitor):
                 is_lib = self.current_scope.is_lib()
                 param_t = Type.from_annotation(ann, self.current_scope, is_lib)
                 if not param_t:
-                    fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
+                    fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
             else:
                 param_t = Type.int()
             param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
@@ -320,14 +320,14 @@ class ScopeVisitor(ast.NodeVisitor):
                     synth_params = deco_kwargs
                 elif sym.typ.get_scope().name == 'polyphony.pure':
                     if not env.config.enable_pure:
-                        fail((outer_scope, node.lineno), Errors.PURE_IS_DISABLED)
+                        fail((env.current_filename, node.lineno), Errors.PURE_IS_DISABLED)
                     tags.add(sym.typ.get_scope().orig_name)
                 else:
                     tags.add(sym.typ.get_scope().orig_name)
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
                 tags.add(deco_name)
             else:
-                fail((outer_scope, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
+                fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
         if outer_scope.is_class() and 'classmethod' not in tags:
             tags.add('method')
             if node.name == '__init__':
@@ -361,12 +361,12 @@ class ScopeVisitor(ast.NodeVisitor):
                 if t is not Type.none_t:
                     self.current_scope.add_tag('returnable')
             else:
-                fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
+                fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
 
         if self.current_scope.is_method():
             if (not self.current_scope.params or
                     not self.current_scope.params[0].sym.is_param()):
-                fail((self.current_scope, node.lineno), Errors.METHOD_MUST_HAVE_SELF)
+                fail((env.current_filename, node.lineno), Errors.METHOD_MUST_HAVE_SELF)
             first_param = self.current_scope.params[0]
             self_typ = Type.object(outer_scope)
             first_param.copy.set_type(self_typ)
@@ -380,7 +380,7 @@ class ScopeVisitor(ast.NodeVisitor):
             pass
         elif self.current_scope.is_pure():
             if self.current_scope.is_method() and not self.current_scope.parent.is_module():
-                fail((outer_scope, node.lineno), Errors.PURE_CTOR_MUST_BE_MODULE)
+                fail((env.current_filename, node.lineno), Errors.PURE_CTOR_MUST_BE_MODULE)
             pass
         elif self.current_scope.is_testbench() and outer_scope is not Scope.global_scope():
             pass
@@ -392,7 +392,7 @@ class ScopeVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node):
         outer_scope = self.current_scope
         if outer_scope.is_function():
-            fail((outer_scope, node.lineno), Errors.LOCAL_CLASS_DEFINITION_NOT_ALLOWED)
+            fail((env.current_filename, node.lineno), Errors.LOCAL_CLASS_DEFINITION_NOT_ALLOWED)
 
         tags = set()
         for deco in node.decorator_list:
@@ -403,7 +403,7 @@ class ScopeVisitor(ast.NodeVisitor):
             elif deco_name in INTERNAL_CLASS_DECORATORS:
                 tags.add(deco_name)
             else:
-                fail((outer_scope, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
+                fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
         scope_qualified_name = (outer_scope.name + '.' + node.name)
         if scope_qualified_name in lib_port_type_names:
             tags |= {'port', 'lib'}
@@ -500,12 +500,12 @@ class CodeVisitor(ast.NodeVisitor):
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
-        stm.lineno = ast_node.lineno
+        stm.loc = Loc(env.current_filename, ast_node.lineno)
         self.last_node = ast_node
 
     def emit_to(self, block, stm, ast_node):
         block.append_stm(stm)
-        stm.lineno = ast_node.lineno
+        stm.loc = Loc(env.current_filename, ast_node.lineno)
         self.last_node = ast_node
 
     def _nodectx2irctx(self, node):
@@ -588,7 +588,7 @@ class CodeVisitor(ast.NodeVisitor):
         for idx, (param, defval) in enumerate(zip(self.current_scope.params[skip:],
                                                   node.args.defaults)):
             if param.sym.typ.is_seq():
-                fail((self.current_scope, node.lineno), Erroes.UNSUPPORTED_DEFAULT_SEQ_PARAM)
+                fail((env.current_filename, node.lineno), Erroes.UNSUPPORTED_DEFAULT_SEQ_PARAM)
             d = self.visit(defval)
             self.current_scope.params[skip + idx] = FunctionParam(param.sym, param.copy, d)
 
@@ -624,7 +624,7 @@ class CodeVisitor(ast.NodeVisitor):
         self._leave_scope(*context)
 
     def visit_AsyncFunctionDef(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async def statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async def statement'])
 
     def visit_ClassDef(self, node):
         self.lazy_defs.append(node)
@@ -669,7 +669,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_block.connect(self.function_exit)
 
     def visit_Delete(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['del statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['del statement'])
 
     def visit_Assign(self, node):
         tail_lineno = _get_tail_lineno(node.value)
@@ -681,12 +681,12 @@ class CodeVisitor(ast.NodeVisitor):
                     self.current_scope.all_imports = []
                     for item in right.items:
                         if not (item.is_a(CONST) and isinstance(item.value, str)):
-                            fail((self.current_scope, node.lineno),
+                            fail((env.current_filename, node.lineno),
                                  Errors.MUST_BE_X, ['string literal'])
                         imp_name = item.value
                         self.current_scope.all_imports.append(imp_name)
                 else:
-                    fail((self.current_scope, node.lineno),
+                    fail((env.current_filename, node.lineno),
                          Errors.MUST_BE_X, ['A sequence of string literal'])
             if tail_lineno in self.type_comments:
                 hint = self.type_comments[tail_lineno]
@@ -696,7 +696,7 @@ class CodeVisitor(ast.NodeVisitor):
                 if t:
                     left.symbol().set_type(t)
                 else:
-                    fail((self.current_scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
+                    fail((env.current_filename, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
             self.emit(MOVE(left, right), node)
 
     def visit_AugAssign(self, node):
@@ -710,10 +710,10 @@ class CodeVisitor(ast.NodeVisitor):
         dst = self.visit(node.target)
         typ = Type.from_annotation(ann, self.current_scope)
         if not typ:
-            fail((self.current_scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
+            fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if dst.is_a(TEMP):
             if dst.symbol().typ.is_freezed():
-                fail((self.current_scope, node.lineno), Errors.CONFLICT_TYPE_HINT)
+                fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
             dst.symbol().set_type(typ)
         elif dst.is_a(ATTR):
             if (dst.exp.is_a(TEMP) and dst.head().name == env.self_name and
@@ -723,11 +723,11 @@ class CodeVisitor(ast.NodeVisitor):
                 else:
                     attr_sym = self.current_scope.parent.find_sym(dst.attr)
                 if attr_sym.typ.is_freezed():
-                    fail((self.current_scope, node.lineno), Errors.CONFLICT_TYPE_HINT)
+                    fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
                 attr_sym.set_type(typ)
                 dst.attr = attr_sym
             else:
-                fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT)
+                fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT)
         if src:
             self.emit(MOVE(dst, src), node)
 
@@ -894,7 +894,7 @@ class CodeVisitor(ast.NodeVisitor):
             _, seq = it.args[0]
             if it.sym.name == 'polyphony.unroll':
                 if is_iterator_func(seq) and seq.sym.name in ('polyphony.unroll', 'polyphony.pipelined'):
-                    fail((self.current_scope, node.lineno),
+                    fail((env.current_filename, node.lineno),
                          Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.sym.name, it.sym.name])
                 if len(it.args) == 1:
                     if len(it.kwargs) == 0:
@@ -905,21 +905,21 @@ class CodeVisitor(ast.NodeVisitor):
                         factor = it.kwargs['factor']
                     else:
                         kwarg = list(it.kwargs.keys())[0]
-                        fail((self.current_scope, node.lineno),
+                        fail((env.current_filename, node.lineno),
                              Errors.GOT_UNEXPECTED_KWARGS, [it.sym.name, kwarg])
                 elif len(it.args) == 2:
                     _, factor = it.args[1]
                 else:
-                    fail((self.current_scope, node.lineno),
+                    fail((env.current_filename, node.lineno),
                          Errors.TAKES_TOOMANY_ARGS, [it.sym.name, '2', len(it.args)])
                 if not factor.is_a(CONST):
-                    fail((self.current_scope, node.lineno), Errors.RULE_UNROLL_VARIABLE_FACTOR)
+                    fail((env.current_filename, node.lineno), Errors.RULE_UNROLL_VARIABLE_FACTOR)
                 loop_synth_params.update({'unroll':factor.value})
             elif it.sym.name == 'polyphony.pipelined':
                 loop_synth_params.update({'scheduling':'pipeline'})
                 if is_iterator_func(seq):
                     if seq.sym.name == 'polyphony.pipelined':
-                        fail((self.current_scope, node.lineno),
+                        fail((env.current_filename, node.lineno),
                              Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.sym.name, it.sym.name])
                 if len(it.args) == 1:
                     if len(it.kwargs) == 0:
@@ -930,12 +930,12 @@ class CodeVisitor(ast.NodeVisitor):
                         ii = it.kwargs['ii']
                     else:
                         kwarg = list(it.kwargs.keys())[0]
-                        fail((self.current_scope, node.lineno),
+                        fail((env.current_filename, node.lineno),
                              Errors.GOT_UNEXPECTED_KWARGS, [it.sym.name, kwarg])
                 elif len(it.args) == 2:
                     _, ii = it.args[1]
                 else:
-                    fail((self.current_scope, node.lineno),
+                    fail((env.current_filename, node.lineno),
                          Errors.TAKES_TOOMANY_ARGS, [it.sym.name, '2', len(it.args)])
                 loop_synth_params.update({'ii':ii.value})
             it = seq
@@ -1028,7 +1028,7 @@ class CodeVisitor(ast.NodeVisitor):
             ]
             self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, loop_synth_params, node)
         else:
-            fail((self.current_scope, node.lineno),
+            fail((env.current_filename, node.lineno),
                  Errors.UNSUPPORTED_SYNTAX, ['This type of for statement'])
         self.invisible_symbols.add(counter)
 
@@ -1098,7 +1098,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_loop_synth_params = old_loop_synth_params
 
     def visit_AyncFor(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async for statement'])
 
     def _is_empty_entry(self):
         return all([stm in self.current_param_stms for stm in self.current_scope.entry_block.stms])
@@ -1154,26 +1154,26 @@ class CodeVisitor(ast.NodeVisitor):
             return expr, None
 
     def visit_AsyncWith(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async with statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['async with statement'])
 
     def visit_Raise(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['raise statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['raise statement'])
 
     def visit_Try(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['try statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['try statement'])
 
     def visit_ExceptHandler(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['except statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['except statement'])
 
     def visit_Assert(self, node):
         testexp = self.visit(node.test)
         self.emit(EXPR(SYSCALL(builtin_symbols['assert'], [('exp', testexp)], {})), node)
 
     def visit_Global(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['global statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['global statement'])
 
     def visit_Nonlocal(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nonlocal statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nonlocal statement'])
 
     def visit_Expr(self, node):
         exp = self.visit(node.value)
@@ -1185,14 +1185,14 @@ class CodeVisitor(ast.NodeVisitor):
 
     def visit_Break(self, node):
         if self.current_block.synth_params['scheduling'] == 'pipeline':
-            fail((self.current_scope, node.lineno), Errors.RULE_BREAK_IN_PIPELINE_LOOP)
+            fail((env.current_filename, node.lineno), Errors.RULE_BREAK_IN_PIPELINE_LOOP)
         end_block = self.loop_end_blocks[-1]
         self.emit(JUMP(end_block, 'B'), node)
         self.current_block.connect(end_block)
 
     def visit_Continue(self, node):
         if self.current_block.synth_params['scheduling'] == 'pipeline':
-            fail((self.current_scope, node.lineno), Errors.RULE_CONTINUE_IN_PIPELINE_LOOP)
+            fail((env.current_filename, node.lineno), Errors.RULE_CONTINUE_IN_PIPELINE_LOOP)
         bridge_block = self.loop_bridge_blocks[-1]
         self.emit(JUMP(bridge_block), node)
         self.current_block.connect(bridge_block)
@@ -1219,12 +1219,12 @@ class CodeVisitor(ast.NodeVisitor):
         if exp.is_a(CONST):
             v = eval_unop(op2str(node.op), exp.value)
             if v is None:
-                fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_OPERATOR, [unop.op])
+                fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_OPERATOR, [unop.op])
             return CONST(v)
         return UNOP(op2str(node.op), exp)
 
     def visit_Lambda(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda'])
 
     def visit_IfExp(self, node):
         condition = self.visit(node.test)
@@ -1233,28 +1233,28 @@ class CodeVisitor(ast.NodeVisitor):
         return CONDOP(condition, then_exp, else_exp)
 
     def visit_Dict(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['dict'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['dict'])
 
     def visit_Set(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['set'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['set'])
 
     def visit_ListComp(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['list comprehension'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['list comprehension'])
 
     def visit_SetComp(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['set comprehension'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['set comprehension'])
 
     def visit_DictComp(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['dict comprehension'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['dict comprehension'])
 
     def visit_GeneratorExp(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['generator expression'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['generator expression'])
 
     def visit_Yield(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['yield'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['yield'])
 
     def visit_YieldFrom(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['yield from'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['yield from'])
 
     def visit_Compare(self, node):
         assert len(node.ops) == 1
@@ -1278,7 +1278,7 @@ class CodeVisitor(ast.NodeVisitor):
         args = [(None, self.visit(arg)) for arg in node.args]
 
         if getattr(node, 'starargs', None) and node.starargs:
-            fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['star args'])
+            fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['star args'])
         #stararg = self.visit(node.starargs)
 
         if func.is_a(TEMP):
@@ -1321,10 +1321,10 @@ class CodeVisitor(ast.NodeVisitor):
         return CONST(node.s)
 
     def visit_Bytes(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['bytes'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['bytes'])
 
     def visit_Ellipsis(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ellipsis'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ellipsis'])
 
     #     | Attribute(expr value, identifier attr, expr_context ctx)
     def visit_Attribute(self, node):
@@ -1357,7 +1357,7 @@ class CodeVisitor(ast.NodeVisitor):
                 value.symbol().typ.is_class() and
                 isinstance(attr, Symbol) and
                 not attr.is_static()):
-            fail((self.current_scope, node.lineno), Errors.UNKNOWN_ATTRIBUTE, [attr])
+            fail((env.current_filename, node.lineno), Errors.UNKNOWN_ATTRIBUTE, [attr])
         irattr = ATTR(value, attr, ctx)
 
         if irattr.head() and irattr.head().name == env.self_name and isinstance(attr, str):
@@ -1372,13 +1372,13 @@ class CodeVisitor(ast.NodeVisitor):
         ctx = self._nodectx2irctx(node)
         v.ctx = ctx
         if isinstance(node.slice, (ast.Slice, ast.ExtSlice)):
-            fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['slice'])
+            fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['slice'])
         s = self.visit(node.slice)
         return MREF(v, s, ctx)
 
     #     | Starred(expr value, expr_context ctx)
     def visit_Starred(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['starred'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['starred'])
 
     #     | Name(identifier id, expr_context ctx)
     def visit_Name(self, node):
@@ -1400,7 +1400,7 @@ class CodeVisitor(ast.NodeVisitor):
 
         if ctx == Ctx.LOAD:
             if sym is None:
-                fail((self.current_scope, node.lineno), Errors.UNDEFINED_NAME, [node.id])
+                fail((env.current_filename, node.lineno), Errors.UNDEFINED_NAME, [node.id])
         else:
             if sym is None or sym.scope is not self.current_scope:
                 sym = self.current_scope.add_sym(node.id)
@@ -1408,7 +1408,7 @@ class CodeVisitor(ast.NodeVisitor):
                     sym.add_tag('static')
         if sym in self.invisible_symbols:
             if ctx == Ctx.LOAD:
-                fail((self.current_scope, node.lineno), Errors.NAME_SCOPE_RESTRICTION, [node.id])
+                fail((env.current_filename, node.lineno), Errors.NAME_SCOPE_RESTRICTION, [node.id])
             else:
                 self.invisible_symbols.remove(sym)
         assert sym is not None
@@ -1453,7 +1453,7 @@ class CodeVisitor(ast.NodeVisitor):
         return self.visit(node.value)
 
     def visit_Print(self, node):
-        fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['print statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['print statement'])
 
 
 class AnnotationVisitor(ast.NodeVisitor):
@@ -1562,14 +1562,14 @@ class PureScopeVisitor(ast.NodeVisitor):
                 if typ:
                     self._add_local_type_hint(self.scope.local_type_hints, left, typ)
                 else:
-                    fail((self.scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
+                    fail((env.current_filename, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
 
     def visit_AnnAssign(self, node):
         ann = self.annotation_visitor.visit(node.annotation)
         left = self.visit(node.target)
         typ = Type.from_annotation(ann, self.scope)
         if not typ:
-            fail((self.scope, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
+            fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if left:
             self._add_local_type_hint(self.scope.local_type_hints, left, typ)
 
@@ -1589,16 +1589,16 @@ class PureScopeVisitor(ast.NodeVisitor):
                     return func
 
     def visit_Global(self, node):
-        fail((self.scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['global statement'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['global statement'])
 
     def visit_FunctionDef(self, node):
         if self.scope.orig_name != node.name:
-            fail((self.scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nested function in @pure function'])
+            fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nested function in @pure function'])
         else:
             self.generic_visit(node)
 
     def visit_ClassDef(self, node):
-        fail((self.scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nested class in @pure function'])
+        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nested class in @pure function'])
 
 
 def scope_tree_str(scp, name, typ_name, indent):

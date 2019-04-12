@@ -50,7 +50,7 @@ class IfTransformer(object):
             mj.targets.append(cj.true)
             if self._merge_else_cj(cj, mj):
                 block.stms.pop()
-                mj.lineno = cj.lineno
+                mj.loc = cj.loc
                 block.append_stm(mj)
                 block.succs = []
                 for target in mj.targets:

@@ -1,4 +1,5 @@
 ﻿import functools
+import os
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .common import get_src_text
@@ -840,12 +841,13 @@ class VerilogCodeGen(AHDLVisitor):
     def _emit_source_text(self, ahdl):
         # Known issue:
         node = self.hdlmodule.ahdl2dfgnode[ahdl]
-        if node.tag.lineno < 1:
+        if node.tag.loc.lineno < 1:
             return
-        text = get_src_text(node.tag.block.scope, node.tag.lineno)
+        text = get_src_text(node.tag.loc.filename, node.tag.loc.lineno)
         text = text.strip()
         if not text:
             return
         if text[-1] == '\n':
             text = text[:-1]
-        self.emit(f'/* [{node.tag.lineno}]: {text} */', continueus=True)
+        filename = os.path.basename(node.tag.loc.filename)
+        self.emit(f'/* {filename} [{node.tag.loc.lineno}]: {text} */', continueus=True)

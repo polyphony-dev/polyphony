@@ -478,7 +478,7 @@ class FlattenObjectArgs(IRTransformer):
                 worker_scope.entry_block.stms.remove(stm)
                 for new_sym, new_copy in flatten_params:
                     mv = MOVE(TEMP(new_copy, Ctx.STORE), TEMP(new_sym, Ctx.LOAD))
-                    mv.lineno = stm.lineno
+                    mv.loc = stm.loc
                     worker_scope.entry_block.insert_stm(insert_idx, mv)
                 break
 
@@ -502,7 +502,7 @@ class FlattenModule(IRTransformer):
                 len(ir.exp.func.qualified_symbol()) > 2):
             call = ir.exp
             _, arg = call.args[0]
-            new_arg = self._make_new_worker(arg, ir.lineno)
+            new_arg = self._make_new_worker(arg, ir.loc.lineno)
             assert self.scope.parent.is_module()
             append_worker_sym = self.scope.parent.find_sym('append_worker')
             assert append_worker_sym
@@ -567,7 +567,7 @@ class ObjectHierarchyCopier(object):
                 new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
                 new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
                 new_cp = MOVE(new_dst, new_src)
-                new_cp.lineno = cp.lineno
+                new_cp.loc = cp.loc
                 cp_idx = cp.block.stms.index(cp)
                 cp.block.insert_stm(cp_idx + 1, new_cp)
                 if sym.typ.is_object():

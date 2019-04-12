@@ -19,24 +19,20 @@ def read_source(filename):
     return source
 
 
-def get_src_text(scope, lineno):
-    assert scope in env.scope_file_map
-    filename = env.scope_file_map[scope]
+def get_src_text(filename, lineno):
     assert lineno > 0
     return src_texts[filename][lineno - 1]
 
 
-def error_info(scope, lineno):
-    assert scope in env.scope_file_map
-    filename = env.scope_file_map[scope]
-    return '{}\n{}:{}'.format(filename, lineno, get_src_text(scope, lineno))
+def error_info(filename, lineno):
+    return '{}\n{}:{}'.format(filename, lineno, get_src_text(filename, lineno))
 
 
 def print_error_info(info):
     from .ir import IR
     if isinstance(info, IR):
         ir = info
-        print(error_info(ir.block.scope, ir.lineno))
+        print(error_info(ir.loc.filename, ir.loc.lineno))
     elif isinstance(info, tuple):
         print(error_info(info[0], info[1]))
 
