@@ -208,8 +208,13 @@ class WorkerInstantiator(object):
         assert w.symbol().typ.get_scope().is_worker()
         worker = w.symbol().typ.get_scope()
         binding = []
-        for i, (_, arg) in enumerate(call.args):
+        loop = False
+        for i, (name, arg) in enumerate(call.args):
             if i == 0:
+                continue
+            if name == 'loop':
+                assert arg.is_a(CONST)
+                loop = arg.value
                 continue
             if arg.is_a(CONST):
                 if worker.is_function():
@@ -232,7 +237,8 @@ class WorkerInstantiator(object):
                 new_worker = worker.clone(module.inst_name, postfix, module)
             else:
                 new_worker = worker.clone(module.inst_name, idstr, module)
-
+        if loop:
+            new_worker.add_tag('loop_worker')
         if binding:
             udd = UseDefDetector()
             udd.process(new_worker)

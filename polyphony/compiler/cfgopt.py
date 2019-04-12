@@ -569,6 +569,7 @@ class HyperBlockBuilder(object):
                 branch_blk.stms.remove(stm)
             if (remains_ and
                     (head.synth_params['scheduling'] == 'pipeline' or
+                     head.synth_params['scheduling'] == 'timed' or
                      self.scope.is_assigned())):
                 path_exp = branch_blk.path_exp
                 cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)

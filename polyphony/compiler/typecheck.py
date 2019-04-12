@@ -439,6 +439,7 @@ class TypePropagation(IRVisitor):
             nargs = args[:]
             for name, arg in kwargs.items():
                 nargs.append((name, arg))
+            kwargs.clear()
             return nargs
         for i, param in enumerate(params):
             name = param.copy.name
@@ -451,6 +452,7 @@ class TypePropagation(IRVisitor):
             else:
                 type_error(self.current_stm, Errors.MISSING_REQUIRED_ARG_N,
                            [func_name, param.copy.name])
+        kwargs.clear()
         return nargs
 
     def _normalize_syscall_args(self, func_name, args, kwargs):

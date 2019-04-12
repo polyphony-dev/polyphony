@@ -114,8 +114,8 @@ def is_worker_running():
     return _is_worker_running
 
 
-def _module_append_worker(self, fn, *args):
-    w = _Worker(fn, args)
+def _module_append_worker(self, fn, *args, loop=False):
+    w = _Worker(fn, args, loop)
     self._workers.append(w)
 
 
@@ -205,10 +205,11 @@ By creating an instance of Module class in the global scope, that instance will 
 
 
 class _Worker(object):
-    def __init__(self, func, args):
+    def __init__(self, func, args, loop):
         super().__init__()
         self.func = func
         self.args = args
+        self.loop = loop
         self.reset()
         self.exception = None
 
@@ -231,9 +232,17 @@ class _WorkerThread(threading.Thread):
 
             base._serializer.wait(self.ident)
             if self.worker.args:
-                self.worker.func(*self.worker.args)
+                while True:
+                    self.worker.func(*self.worker.args)
+                    if not self.worker.loop:
+                        break
+                    timing.clkfence()
             else:
-                self.worker.func()
+                while True:
+                    self.worker.func()
+                    if not self.worker.loop:
+                        break
+                    timing.clkfence()
             self.worker.exception = None
         except io.PolyphonyIOException as e:
             self.worker.exception = e
@@ -491,9 +500,9 @@ class Simulator(object):
                 if 'vcd_file' in kwargs:
                     vcdobj = self._setup_vcd(kwargs['vcd_file'], kwargs['trace_ports'])
             if args:
-                test_worker = _Worker(test_fn, modules + args)
+                test_worker = _Worker(test_fn, modules + args, loop=False)
             else:
-                test_worker = _Worker(test_fn, modules)
+                test_worker = _Worker(test_fn, modules, loop=False)
             self._workers.append(test_worker)
 
             self._start_all()

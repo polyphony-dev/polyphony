@@ -30,15 +30,19 @@ class StateReducer(object):
             for state in stg.states[:]:
                 if (not isinstance(state, PipelineState) and
                         len(state.codes) == 1 and
-                        len(graph.preds(state)) == 1 and
                         state.codes[0].is_a(AHDL_TRANSITION)):
-                    pred = list(graph.preds(state))[0]
-                    transition_collector.process_state(pred)
-                    for _, codes in transition_collector.results.items():
-                        for c in codes:
-                            if c.target is state:
-                                c.target = state.codes[0].target
-                    stg.states.remove(state)
+                    if len(graph.preds(state)) == 1:
+                        pred = list(graph.preds(state))[0]
+                        transition_collector.process_state(pred)
+                        for _, codes in transition_collector.results.items():
+                            for c in codes:
+                                if c.target is state:
+                                    c.target = state.codes[0].target
+                        stg.states.remove(state)
+                    elif stg.init_state is state:
+                        stg.states.remove(state)
+                        stg.init_state = state.codes[0].target
+
 
 
 class StateGraph(Graph):

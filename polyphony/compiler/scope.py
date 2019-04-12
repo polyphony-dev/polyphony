@@ -26,7 +26,7 @@ class Scope(Tagged):
         'global', 'function', 'class', 'method', 'ctor', 'enclosure',
         'callable', 'returnable', 'mutable', 'inherited', 'predicate',
         'testbench', 'pure', 'timed', 'comb', 'assigned',
-        'module', 'worker', 'instantiated',
+        'module', 'worker', 'loop_worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass',
         'function_module',

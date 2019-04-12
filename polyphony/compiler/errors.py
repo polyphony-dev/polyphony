@@ -103,6 +103,7 @@ class Errors(Enum):
     RULE_UNROLL_VARIABLE_FACTOR = 1156
 
     RULE_TIMED_PORT_IS_OVERWRITTEN = 1200
+    RULE_TIMED_LOOP_IS_NOT_ALLOWED = 1201
 
     # not supported yet
     WRITING_ALIAS_REGARRAY = 9000
@@ -205,6 +206,7 @@ ERROR_MESSAGES = {
     Errors.RULE_UNROLL_VARIABLE_FACTOR: "The unroll factor value must be a constant",
 
     Errors.RULE_TIMED_PORT_IS_OVERWRITTEN: "The port '{}' will be overwritten in the same clock cycle",
+    Errors.RULE_TIMED_LOOP_IS_NOT_ALLOWED: "Loop statement is not allowed in 'timed' scheduling",
     Errors.WRITING_ALIAS_REGARRAY: "Writing to alias register array is not supported yet",
 }
 

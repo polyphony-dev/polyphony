@@ -809,7 +809,8 @@ class AHDLTranslator(IRVisitor):
         self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time)
 
     def visit_RET(self, ir):
-        pass
+        if self.scope.is_loop_worker():
+            self._emit(AHDL_TRANSITION(self.scope.entry_block), self.sched_time)
 
     def _call_proc(self, ir):
         if ir.is_a(MOVE):
