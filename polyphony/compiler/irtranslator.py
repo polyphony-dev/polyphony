@@ -408,15 +408,11 @@ class ScopeVisitor(ast.NodeVisitor):
             elif deco_name in INTERNAL_CLASS_DECORATORS:
                 tags.add(deco_name)
             else:
-<<<<<<< HEAD
                 fail((outer_scope, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
         synth_params = {}
         if 'timed' in tags:
             synth_params.update({'scheduling':'timed'})
 
-=======
-                fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_DECORATOR, [deco_name])
->>>>>>> devel
         scope_qualified_name = (outer_scope.name + '.' + node.name)
         if scope_qualified_name in lib_port_type_names:
             tags |= {'port', 'lib'}
@@ -718,17 +714,12 @@ class CodeVisitor(ast.NodeVisitor):
                 if t:
                     left.symbol().set_type(t)
                 else:
-<<<<<<< HEAD
                     fail((self.current_scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
             mv = MOVE(left, right)
             if tail_lineno in self.meta_comments:
                 metainfo = self.meta_comments[tail_lineno].strip()
                 self._set_meta_for_move(mv, metainfo)
             self.emit(mv, node)
-=======
-                    fail((env.current_filename, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
-            self.emit(MOVE(left, right), node)
->>>>>>> devel
 
     def visit_AugAssign(self, node):
         assert 0
@@ -1277,7 +1268,6 @@ class CodeVisitor(ast.NodeVisitor):
         return UNOP(op2str(node.op), exp)
 
     def visit_Lambda(self, node):
-<<<<<<< HEAD
         if node.args.args:
             fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda argument'])
         outer_scope = self.current_scope
@@ -1300,9 +1290,6 @@ class CodeVisitor(ast.NodeVisitor):
         scope_sym = self.current_scope.add_sym(lambda_scope.orig_name)
         scope_sym.set_type(Type.function(lambda_scope, None, None))
         return TEMP(scope_sym, Ctx.LOAD)
-=======
-        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda'])
->>>>>>> devel
 
     def visit_IfExp(self, node):
         condition = self.visit(node.test)
