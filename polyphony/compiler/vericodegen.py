@@ -1,6 +1,7 @@
 ﻿import functools
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
+from .common import get_src_text
 from .env import env
 from .hdlinterface import *
 from .ir import Ctx
@@ -23,7 +24,11 @@ class VerilogCodeGen(AHDLVisitor):
     def result(self):
         return ''.join(self.codes)
 
-    def emit(self, code, with_indent=True, newline=True):
+    def emit(self, code, with_indent=True, newline=True, continueus=False):
+        if continueus:
+            prev_code = self.codes[-1]
+            if prev_code[-1] == '\n':
+                self.codes[-1] = prev_code[:-1]
         if with_indent:
             self.codes.append((' ' * self.indent) + code)
         else:
@@ -822,3 +827,25 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_BLOCK(self, ahdl):
         for c in ahdl.codes:
             self.visit(c)
+
+    def visit(self, ahdl):
+        if ahdl.is_a(AHDL_STM):
+            self.current_stm = ahdl
+        visitor = self.find_visitor(ahdl.__class__)
+        ret = visitor(ahdl)
+        if env.dev_debug_mode and ahdl in self.hdlmodule.ahdl2dfgnode:
+            self._emit_source_text(ahdl)
+        return ret
+
+    def _emit_source_text(self, ahdl):
+        # Known issue:
+        node = self.hdlmodule.ahdl2dfgnode[ahdl]
+        if node.tag.lineno < 1:
+            return
+        text = get_src_text(node.tag.block.scope, node.tag.lineno)
+        text = text.strip()
+        if not text:
+            return
+        if text[-1] == '\n':
+            text = text[:-1]
+        self.emit(f'/* [{node.tag.lineno}]: {text} */', continueus=True)
