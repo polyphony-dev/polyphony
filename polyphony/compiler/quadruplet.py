@@ -23,8 +23,8 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def _new_temp_move(self, ir, tmpsym):
         t = TEMP(tmpsym, Ctx.STORE)
-        assert self.current_stm.lineno > 0
-        mv = MOVE(t, ir, lineno=self.current_stm.lineno)
+        assert self.current_stm.loc.lineno > 0
+        mv = MOVE(t, ir, loc=self.current_stm.loc)
         self.new_stms.append(mv)
         return TEMP(tmpsym, Ctx.LOAD)
 
@@ -187,7 +187,7 @@ class EarlyQuadrupleMaker(IRTransformer):
             mref.mem.ctx = Ctx.LOAD
             ms = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
             expr = EXPR(ms)
-            expr.lineno = ir.lineno
+            expr.loc = ir.loc
             ir = expr
         self.new_stms.append(ir)
 

@@ -512,7 +512,7 @@ class PipelineScheduler(SchedulerImpl):
                 # TODO: show warnings
                 dfg.ii = conflict_n
         elif request_ii < conflict_n:
-            fail((self.scope, dfg.region.head.stms[0].lineno),
+            fail(dfg.region.head.stms[0],
                  Errors.RULE_INVALID_II, [request_ii, conflict_n])
 
         for cnode in self.cgraph.get_nodes():

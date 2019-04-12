@@ -303,7 +303,7 @@ class HyperBlockBuilder(object):
         new_head = Block(self.scope)
         old_mj = head.stms[-1]
         mj = MCJUMP()
-        mj.lineno = old_mj.lineno
+        mj.loc = old_mj.loc
         for idx in indices:
             path = branches[idx]
             br = path[0]
@@ -331,7 +331,7 @@ class HyperBlockBuilder(object):
             head.succs.pop(idx)
         if len(old_mj.targets) == 2:
             cj = CJUMP(old_mj.conds[0], old_mj.targets[0], old_mj.targets[1])
-            cj.lineno = old_mj.lineno
+            cj.loc = old_mj.loc
             if not cj.exp.is_a(TEMP):
                 new_sym = self.scope.add_condition_sym()
                 new_sym.typ = Type.bool_t
@@ -342,7 +342,7 @@ class HyperBlockBuilder(object):
             head.replace_stm(head.stms[-1], cj)
         if len(mj.targets) == 2:
             cj = CJUMP(mj.conds[0], mj.targets[0], mj.targets[1])
-            cj.lineno = mj.lineno
+            cj.loc = mj.loc
             new_head.append_stm(cj)
         else:
             new_head.append_stm(mj)
@@ -532,7 +532,7 @@ class HyperBlockBuilder(object):
                 assert False
             stm.block.stms.remove(stm)
             self.scope.usedef.remove_stm(stm)
-            cstm.lineno = stm.lineno
+            cstm.loc = stm.loc
             cstms.append(cstm)
             all_cstms.append((idx, cstm))
             self.uddetector.visit(cstm)
