@@ -163,6 +163,7 @@ class TypePropagation(IRVisitor):
                     not (assigned.parent.is_method() and assigned.parent.parent.is_module())):
                 fail(self.current_stm, Errors.PORT_ASSIGN_CANNOT_ACCEPT)
             assigned.add_tag('assigned')
+            assigned.add_tag('comb')
         ret_t = ir.func_scope().return_type
         if ir.func_scope().is_class():
             assert False
