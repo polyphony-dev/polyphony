@@ -246,11 +246,21 @@ class ConstantOpt(ConstantOptBase):
         super().__init__()
         self.mrg = env.memref_graph
 
+    def _update_usedef(self, old_stm, new_stm):
+        self.uddetector_rm.visit(old_stm)
+        if new_stm:
+            self.uddetector.visit(new_stm)
+
     def process(self, scope):
         if scope.is_class():
             return
         self.scope = scope
         self.dtree = DominatorTreeBuilder(scope).process()
+        self.uddetector = UseDefDetector()
+        self.uddetector.scope = scope
+        self.uddetector_rm = UseDefDetector()
+        self.uddetector_rm.scope = scope
+        self.uddetector_rm.set_mode(UseDefDetector.REMOVE)
         dead_stms = []
         worklist = deque()
         for blk in scope.traverse_blocks():
@@ -272,9 +282,7 @@ class ConstantOpt(ConstantOptBase):
                         mv = MOVE(stm.var, stm.args[idx])
                         blk = stm.block
                         blk.insert_stm(blk.stms.index(stm), mv)
-                        scope.usedef.add_use(mv.src, mv)
-                        scope.usedef.add_var_def(mv.dst, mv)
-                        scope.usedef.remove_var_def(stm.var, stm)
+                        self._update_usedef(stm, mv)
                         worklist.append(mv)
                         dead_stms.append(stm)
                         break
@@ -289,9 +297,7 @@ class ConstantOpt(ConstantOptBase):
                     blk = stm.block
                     mv = MOVE(stm.var, arg)
                     blk.insert_stm(blk.stms.index(stm), mv)
-                    scope.usedef.add_use(mv.src, mv)
-                    scope.usedef.add_var_def(mv.dst, mv)
-                    scope.usedef.remove_var_def(stm.var, stm)
+                    self._update_usedef(stm, mv)
                     worklist.append(mv)
                     dead_stms.append(stm)
             elif stm.is_a([CMOVE, CEXPR]):
@@ -301,10 +307,9 @@ class ConstantOpt(ConstantOptBase):
                         blk = stm.block
                         if stm.is_a(CMOVE):
                             new_stm = MOVE(stm.dst, stm.src)
-                            scope.usedef.add_use(new_stm.src, new_stm)
-                            scope.usedef.add_var_def(new_stm.dst, new_stm)
                         else:
                             new_stm = EXPR(stm.exp)
+                        self._update_usedef(stm, new_stm)
                         blk.insert_stm(blk.stms.index(stm), new_stm)
                     dead_stms.append(stm)
             elif (stm.is_a(MOVE)
@@ -319,7 +324,7 @@ class ConstantOpt(ConstantOptBase):
                 for rep in replaces:
                     if rep not in dead_stms:
                         worklist.append(rep)
-                scope.usedef.remove_var_def(stm.dst, stm)
+                self._update_usedef(stm, None)
                 scope.del_sym(stm.dst.symbol())
                 dead_stms.append(stm)
                 if stm.dst.symbol().is_free():

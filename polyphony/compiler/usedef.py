@@ -196,9 +196,23 @@ class UseDefTable(object):
 
 
 class UseDefDetector(IRVisitor):
+    ADD = 0
+    REMOVE = 1
+
     def __init__(self):
         super().__init__()
         self.table = UseDefTable()
+        self.set_mode(UseDefDetector.ADD)
+
+    def set_mode(self, mode):
+        if mode == UseDefDetector.ADD:
+            self.update_const_use = self.table.add_const_use
+            self.update_var_def = self.table.add_var_def
+            self.update_var_use = self.table.add_var_use
+        else:
+            self.update_const_use = self.table.remove_const_use
+            self.update_var_def = self.table.remove_var_def
+            self.update_var_use = self.table.remove_var_use
 
     def _process_scope_done(self, scope):
         scope.usedef = self.table
@@ -221,7 +235,7 @@ class UseDefDetector(IRVisitor):
                     memnode = env.memref_graph.node(arg.symbol())
                 if memnode and not memnode.is_writable():
                     continue
-                self.table.add_var_def(arg, self.current_stm)
+                self.update_var_def(arg, self.current_stm)
 
     def visit_CALL(self, ir):
         self.visit(ir.func)
@@ -234,19 +248,19 @@ class UseDefDetector(IRVisitor):
         self._visit_args(ir)
 
     def visit_CONST(self, ir):
-        self.table.add_const_use(ir, self.current_stm)
+        self.update_const_use(ir, self.current_stm)
 
     def visit_TEMP(self, ir):
         if ir.ctx & Ctx.LOAD:
-            self.table.add_var_use(ir, self.current_stm)
+            self.update_var_use(ir, self.current_stm)
         if ir.ctx & Ctx.STORE:
-            self.table.add_var_def(ir, self.current_stm)
+            self.update_var_def(ir, self.current_stm)
 
     def visit_ATTR(self, ir):
         if ir.ctx & Ctx.LOAD:
-            self.table.add_var_use(ir, self.current_stm)
+            self.update_var_use(ir, self.current_stm)
         if ir.ctx & Ctx.STORE:
-            self.table.add_var_def(ir, self.current_stm)
+            self.update_var_def(ir, self.current_stm)
         self.visit(ir.exp)
 
 
