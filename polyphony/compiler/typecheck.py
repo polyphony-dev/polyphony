@@ -766,6 +766,8 @@ class RestrictionChecker(IRVisitor):
     def visit_CALL(self, ir):
         self.visit(ir.func)
         if ir.func_scope().is_method() and ir.func_scope().parent.is_module():
+            if ir.func_scope().parent.find_child(self.scope.name, rec=True):
+                return
             if ir.func_scope().orig_name == 'append_worker':
                 if not (self.scope.is_ctor() and self.scope.parent.is_module()):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)

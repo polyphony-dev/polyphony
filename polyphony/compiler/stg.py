@@ -1275,8 +1275,6 @@ class AHDLCombTranslator(AHDLTranslator):
         assert False
 
     def visit_TEMP(self, ir):
-        if ir.sym.is_return():
-            ir.sym.add_tag('alias')
         return super().visit_TEMP(ir)
 
     def visit_ATTR(self, ir):
@@ -1308,6 +1306,7 @@ class AHDLCombTranslator(AHDLTranslator):
 
     def visit_MOVE(self, ir):
         src = self.visit(ir.src)
+        ir.dst.symbol().add_tag('alias')
         dst = self.visit(ir.dst)
         self._emit(AHDL_ASSIGN(dst, src))
 

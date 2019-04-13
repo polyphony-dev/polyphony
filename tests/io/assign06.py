@@ -4,7 +4,7 @@ from polyphony.timing import timed, clkfence
 
 
 @module
-class assign05:
+class assign06:
     def __init__(self, size):
         self.addr = Port(int, 'in')
         self.data = Port(int, 'in')
@@ -14,7 +14,13 @@ class assign05:
         self.addr_latch = 0  # Module class field will always be a register
 
         self.append_worker(self.main, loop=True)
-        self.q.assign(lambda:self.mem[self.addr_latch])
+        self.q.assign(lambda:self.g())
+
+    def g(self):
+        return self.f()
+
+    def f(self):
+        return self.mem[self.addr_latch]
 
     @timed
     def main(self):
@@ -23,7 +29,7 @@ class assign05:
         self.addr_latch = self.addr.rd()
 
 
-m = assign05(10)
+m = assign06(10)
 
 
 @timed
