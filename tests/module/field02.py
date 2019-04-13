@@ -12,25 +12,27 @@ class field02:
         self.v = [None] * self.size
         self.i = Port(int, 'in')
         self.o = Port(int, 'out')
-        self.append_worker(self.writer)
-        self.append_worker(self.reader)
+        self.append_worker(self.writer, loop=True)
+        self.append_worker(self.reader, loop=True)
+        self.append_worker(self.local_test, loop=True)
+
+    def local_test(self):
+        local = [0] * self.size
+        assert len(local) == 8
+        local[0] = 10
+        clkfence()
+        assert local[0] == 10
 
     def reader(self):
-        assert len(self.v) == 16
+        assert len(self.v) == 8
         assert len(self.v) == self.size
-        local = [None] * self.size
-        assert len(local) == 16
-        while is_worker_running():
-            self.o.wr(self.v[0])
-            clkfence()
+        self.o.wr(self.v[0])
 
     def writer(self):
-        while is_worker_running():
-            self.v[0] = self.i.rd()
-            clkfence()
+        self.v[0] = self.i.rd()
 
 
-m = field02(16)
+m = field02(8)
 
 
 @timed

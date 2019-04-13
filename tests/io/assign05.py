@@ -1,4 +1,4 @@
-from polyphony import module, testbench, Reg
+from polyphony import module, testbench
 from polyphony.io import Port
 from polyphony.timing import timed, clkfence
 
@@ -11,16 +11,16 @@ class assign05:
         self.we = Port(bool, 'in')
         self.q = Port(int, 'out')
         self.mem = [0] * size
+        self.addr_latch = 0  # Module class field will always be a register
 
-        self.addr_latch = Reg()
         self.append_worker(self.main, loop=True)
-        self.q.assign(lambda:self.mem[self.addr_latch.v])
+        self.q.assign(lambda:self.mem[self.addr_latch])
 
     @timed
     def main(self):
         if self.we.rd():
             self.mem[self.addr.rd()] = self.data.rd()
-        self.addr_latch.v = self.addr.rd()
+        self.addr_latch = self.addr.rd()
 
 
 m = assign05(10)

@@ -11,18 +11,14 @@ class field01:
         self.v = 0
         self.i = Port(int, 'in')
         self.o = Port(int, 'out')
-        self.append_worker(self.writer)
-        self.append_worker(self.reader)
+        self.append_worker(self.writer, loop=True)
+        self.append_worker(self.reader, loop=True)
 
     def reader(self):
-        while is_worker_running():
-            self.o.wr(self.v)
-            clkfence()
+        self.o.wr(self.v)
 
     def writer(self):
-        while is_worker_running():
-            self.v = self.i.rd()
-            clkfence()
+        self.v = self.i.rd()
 
 
 m = field01()

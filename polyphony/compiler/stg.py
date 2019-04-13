@@ -322,7 +322,9 @@ class StateBuilder(STGItemBuilder):
                 self.stg.init_state = init_state
             if is_last:
                 last_state = states[-1]
-                if self.scope.is_worker():
+                if self.scope.is_loop_worker():
+                    codes = [AHDL_TRANSITION(self.scope.entry_block)]
+                elif self.scope.is_worker():
                     codes = [AHDL_TRANSITION(None)]
                 elif self.scope.is_testbench():
                     codes = [
@@ -809,8 +811,7 @@ class AHDLTranslator(IRVisitor):
         self._emit(AHDL_TRANSITION_IF(cond_list, blocks), self.sched_time)
 
     def visit_RET(self, ir):
-        if self.scope.is_loop_worker():
-            self._emit(AHDL_TRANSITION(self.scope.entry_block), self.sched_time)
+        pass
 
     def _call_proc(self, ir):
         if ir.is_a(MOVE):

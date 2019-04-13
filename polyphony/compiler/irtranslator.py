@@ -502,8 +502,6 @@ class CodeVisitor(ast.NodeVisitor):
         self.loop_end_blocks = []
 
         self.nested_if = False
-        self.last_node = None
-
         self.annotation_visitor = AnnotationVisitor(self)
         self.lazy_defs = []
         self.current_with_blk_synth_params = {}
@@ -513,12 +511,10 @@ class CodeVisitor(ast.NodeVisitor):
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
         stm.loc = Loc(env.current_filename, ast_node.lineno)
-        self.last_node = ast_node
 
     def emit_to(self, block, stm, ast_node):
         block.append_stm(stm)
         stm.loc = Loc(env.current_filename, ast_node.lineno)
-        self.last_node = ast_node
 
     def _nodectx2irctx(self, node):
         if isinstance(node.ctx, ast.Store) or isinstance(node.ctx, ast.AugStore):
@@ -634,8 +630,8 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.replace_block(self.function_exit, function_exit)
             self.function_exit = function_exit
             self.current_scope.set_exit_block(self.function_exit)
-            if self.last_node:
-                self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), self.last_node)
+            if self.current_scope.is_returnable():
+                self.emit_to(self.function_exit, RET(TEMP(sym, Ctx.LOAD)), node)
         else:
             self.current_scope.set_exit_block(self.current_block)
         self.function_exit = outer_function_exit
