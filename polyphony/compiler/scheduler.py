@@ -28,8 +28,8 @@ class Scheduler(object):
         for dfg in self.scope.dfgs(bottom_up=True):
             if dfg.parent and dfg.synth_params['scheduling'] == 'pipeline':
                 scheduler_impl = PipelineScheduler()
-            elif dfg.synth_params['scheduling'] == 'timed':
-                scheduler_impl = TimedScheduler()
+            #elif dfg.synth_params['scheduling'] == 'timed':
+            #    scheduler_impl = TimedScheduler()
             else:
                 scheduler_impl = BlockBoundedListScheduler()
             scheduler_impl.schedule(scope, dfg)
@@ -174,6 +174,10 @@ class SchedulerImpl(object):
     def _calc_latency(self, dfg):
         is_minimum = dfg.synth_params['cycle'] == 'minimum'
         for node in dfg.get_priority_ordered_nodes():
+            if node.tag.block.synth_params['scheduling'] == 'timed':
+                self.node_latency_map[node] = (0, 0, 0)
+                self.node_seq_latency_map[node] = 1
+                continue
             def_l, seq_l = get_latency(node.tag)
             if def_l == 0:
                 if is_minimum:
@@ -328,9 +332,14 @@ class BlockBoundedListScheduler(SchedulerImpl):
         else:
             return longest_latency
 
+    def _is_clksleep(self, stm):
+        return (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+                stm.exp.sym.name == 'polyphony.timing.clksleep')
+
     def _node_sched_with_block_bound(self, dfg, node, block):
         preds = dfg.preds_without_back(node)
         preds = [p for p in preds if p.tag.block is block]
+        is_timed_node = block.synth_params['scheduling'] == 'timed'
         logger.debug('scheduling for ' + str(node))
         if preds:
             defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
@@ -341,12 +350,14 @@ class BlockBoundedListScheduler(SchedulerImpl):
             seq_preds = [p for p in seq_preds if p.tag.block is block]
             sched_times = []
             if seq_preds:
-                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag):
+                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or (has_exclusive_function(node.tag) and not is_timed_node):
                     latest_node = max(seq_preds, key=lambda p: p.end)
                     sched_time = latest_node.end
                 else:
                     latest_node = max(seq_preds, key=lambda p: (p.begin, p.end))
                     seq_latency = self.node_seq_latency_map[latest_node]
+                    if is_timed_node and self._is_clksleep(node.tag) and not self._is_clksleep(latest_node.tag):
+                        seq_latency = 0
                     sched_time = latest_node.begin + seq_latency
                 sched_times.append(sched_time)
                 logger.debug('latest_node of seq_preds ' + str(latest_node))

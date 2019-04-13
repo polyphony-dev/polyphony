@@ -455,7 +455,8 @@ class DFGBuilder(object):
             self._add_seq_edges(blocks, dfg)
         self._add_seq_edges_for_object(blocks, dfg)
         self._add_seq_edges_for_function(blocks, dfg)
-        self._add_seq_edges_for_io(blocks, dfg)
+        #self._add_seq_edges_for_io(blocks, dfg)
+        self._add_seq_edges_for_timed(blocks, dfg)
         self._add_mem_edges(dfg)
         self._remove_alias_cycle(dfg)
         if region.head.synth_params['scheduling'] == 'pipeline' and dfg.parent:
@@ -463,6 +464,7 @@ class DFGBuilder(object):
             self._tweak_port_edges_for_pipeline(dfg)
         if region.head.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
             self._add_seq_edges_for_ctrl_branch(dfg)
+        self._del_def_edges_for_timed(blocks, dfg)
         return dfg
 
     def _add_source_node(self, node, dfg, usedef, blocks):
@@ -759,6 +761,40 @@ class DFGBuilder(object):
                     if port_node:
                         dfg.add_seq_edge(port_node, node)
                     port_node = node
+
+    def _is_clksleep(self, stm):
+        return (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+                stm.exp.sym.name == 'polyphony.timing.clksleep')
+
+    def _add_seq_edges_for_timed(self, blocks, dfg):
+        for block in blocks:
+            if block.synth_params['scheduling'] != 'timed':
+                continue
+            prev_clksleep_node = None
+            other_nodes = []
+            for stm in block.stms:
+                node = dfg.find_node(stm)
+                if self._is_clksleep(stm):
+                    for n in other_nodes:
+                        dfg.add_seq_edge(n, node)
+                    if prev_clksleep_node:
+                        dfg.add_seq_edge(prev_clksleep_node, node)
+                    other_nodes.clear()
+                    prev_clksleep_node = node
+                else:
+                    other_nodes.append(node)
+                    if prev_clksleep_node:
+                        dfg.add_seq_edge(prev_clksleep_node, node)
+
+    def _del_def_edges_for_timed(self, blocks, dfg):
+        for node in dfg.nodes:
+            if node.tag.block.synth_params['scheduling'] == 'timed':
+                for def_succ in dfg.succs_typ(node, 'DefUse'):
+                    if def_succ.tag.block.synth_params['scheduling'] == 'timed':
+                        dfg.remove_edge(node, def_succ)
+                for def_pred in dfg.preds_typ(node, 'DefUse'):
+                    if def_pred.tag.block.synth_params['scheduling'] == 'timed':
+                        dfg.remove_edge(def_pred, node)
 
     @staticmethod
     def get_memnode(stm):

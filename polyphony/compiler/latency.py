@@ -65,6 +65,8 @@ def get_syscall_latency(call):
         return cycle.value
     elif call.sym.name.startswith('polyphony.timing.wait_'):
         return UNIT_STEP
+    if call.sym.name == 'assert':
+        return 0
     return UNIT_STEP
 
 
