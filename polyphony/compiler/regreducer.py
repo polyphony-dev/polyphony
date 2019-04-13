@@ -14,7 +14,7 @@ class AliasVarDetector(IRVisitor):
         assert ir.dst.is_a([TEMP, ATTR])
         sym = ir.dst.symbol()
         sched = self.current_stm.block.synth_params['scheduling']
-        if sym.is_condition():
+        if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
             return
         if sym.is_register() or sym.typ.is_seq() or sym.is_return() or sym.typ.is_port():

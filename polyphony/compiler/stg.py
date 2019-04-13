@@ -1306,7 +1306,6 @@ class AHDLCombTranslator(AHDLTranslator):
 
     def visit_MOVE(self, ir):
         src = self.visit(ir.src)
-        ir.dst.symbol().add_tag('alias')
         dst = self.visit(ir.dst)
         self._emit(AHDL_ASSIGN(dst, src))
 
