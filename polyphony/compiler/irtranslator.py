@@ -828,7 +828,7 @@ class CodeVisitor(ast.NodeVisitor):
         if (not self.current_scope.is_inlinelib() and
                 self.current_scope.synth_params['scheduling'] == 'timed'):
             fail((env.current_filename, node.lineno),
-                 Errors.RULE_TIMED_LOOP_IS_NOT_ALLOWED)
+                 Errors.RULE_TIMED_WHILE_LOOP_IS_NOT_ALLOWED)
         while_block = self._new_block(self.current_scope, 'while')
         body_block = self._new_block(self.current_scope, 'whilebody')
         loop_bridge_tmp_block = self._tmp_block(self.current_scope)
@@ -906,11 +906,6 @@ class CodeVisitor(ast.NodeVisitor):
 
         def is_iterator_func(ir):
             return it.is_a(SYSCALL) and it.sym.name in ('polyphony.unroll', 'polyphony.pipelined')
-
-        if (not self.current_scope.is_inlinelib() and
-                self.current_scope.synth_params['scheduling'] == 'timed'):
-            fail((env.current_filename, node.lineno),
-                 Errors.RULE_TIMED_LOOP_IS_NOT_ALLOWED)
 
         var = self.visit(node.target)
         it = self.visit(node.iter)
