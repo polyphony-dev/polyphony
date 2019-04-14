@@ -174,11 +174,11 @@ class SchedulerImpl(object):
     def _calc_latency(self, dfg):
         is_minimum = dfg.synth_params['cycle'] == 'minimum'
         for node in dfg.get_priority_ordered_nodes():
+            def_l, seq_l = get_latency(node.tag)
             if node.tag.block.synth_params['scheduling'] == 'timed':
                 self.node_latency_map[node] = (0, 0, 0)
-                self.node_seq_latency_map[node] = 1
+                self.node_seq_latency_map[node] = def_l
                 continue
-            def_l, seq_l = get_latency(node.tag)
             if def_l == 0:
                 if is_minimum:
                     self.node_latency_map[node] = (0, 0, 0)
