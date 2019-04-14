@@ -530,7 +530,11 @@ class VerilogCodeGen(AHDLVisitor):
                         break
             exp_str = exp_str.replace('==', '===').replace('!=', '!==')
             self.emit(f'if (!{exp_str}) begin')
-            self.emit(f'  $display("ASSERTION FAILED {exp_str}"); $finish;')
+            src_text = self._get_source_text(ahdl)
+            if src_text:
+                self.emit(f'  $display("ASSERTION FAILED: {src_text}"); $finish;')
+            else:
+                self.emit(f'  $display("ASSERTION FAILED: {exp_str}"); $finish;')
             self.emit('end')
         else:
             args = ', '.join(args)
@@ -854,8 +858,7 @@ class VerilogCodeGen(AHDLVisitor):
             self._emit_source_text(ahdl)
         return ret
 
-    def _emit_source_text(self, ahdl):
-        # Known issue:
+    def _get_source_text(self, ahdl):
         node = self.hdlmodule.ahdl2dfgnode[ahdl]
         if node.tag.loc.lineno < 1:
             return
@@ -866,4 +869,9 @@ class VerilogCodeGen(AHDLVisitor):
         if text[-1] == '\n':
             text = text[:-1]
         filename = os.path.basename(node.tag.loc.filename)
-        self.emit(f'/* {filename} [{node.tag.loc.lineno}]: {text} */', continueus=True)
+        return f'{filename} [{node.tag.loc.lineno}]: {text}'
+
+    def _emit_source_text(self, ahdl):
+        text = self._get_source_text(ahdl)
+        if text:
+            self.emit(f'/* {text} */', continueus=True)

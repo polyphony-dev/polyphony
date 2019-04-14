@@ -123,6 +123,10 @@ class IOTransformer(AHDLVisitor):
         assert visitor
         seq = visitor(ahdl.factor, ahdl.step, ahdl.step_n)
         self.current_block.codes.remove(ahdl)
+        if ahdl in self.hdlmodule.ahdl2dfgnode:
+            node = self.hdlmodule.ahdl2dfgnode[ahdl]
+            for s in seq:
+                self.hdlmodule.ahdl2dfgnode[s] = node
         meta_wait = find_only_one_in(AHDL_META_WAIT, seq)
         if meta_wait:
             trans = self.current_block.codes[-1]
