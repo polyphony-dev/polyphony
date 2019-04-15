@@ -232,6 +232,8 @@ def rel_and_exp(exp1, exp2):
 
 
 class HyperBlockBuilder(object):
+    DEBUG = False
+
     def process(self, scope):
         self.scope = scope
         self.uddetector = UseDefDetector()
@@ -240,7 +242,13 @@ class HyperBlockBuilder(object):
         self.reducer.scope = self.scope
         self.diamond_nodes = deque()
         self._visited_heads = set()
+        if HyperBlockBuilder.DEBUG:
+            self.count = 0
+            from .scope import write_dot
+            write_dot(self.scope, f'{self.count}')
+            self.count += 1
         diamond_nodes = self._find_diamond_nodes()
+
         self._convert(diamond_nodes)
 
     def _update_domtree(self):
@@ -368,6 +376,10 @@ class HyperBlockBuilder(object):
             else:
                 self._do_phi_reduction(head, tail, branches)
             diamond_nodes = self._find_diamond_nodes()
+            if HyperBlockBuilder.DEBUG:
+                from .scope import write_dot
+                write_dot(self.scope, f'{self.count}')
+                self.count += 1
 
     def _do_phi_reduction(self, head, tail, branches):
         new_tail = Block(self.scope)
@@ -389,7 +401,7 @@ class HyperBlockBuilder(object):
         for idx, br in zip(indices, removes):
             assert tail.preds[idx] is br
         for stm in tail.stms:
-            if stm.is_a(PHIBase):
+            if stm.is_a(PHIBase) and len(stm.args) == len(tail.preds):
                 new_args = []
                 new_ps = []
                 old_args = []
@@ -398,7 +410,7 @@ class HyperBlockBuilder(object):
                     if idx in indices:
                         new_args.append(stm.args[idx])
                         new_ps.append(stm.ps[idx])
-                    elif stm.args[idx]:
+                    else:
                         old_args.append(stm.args[idx])
                         old_ps.append(stm.ps[idx])
                 if all([new_args[0].symbol() is arg.symbol() for arg in new_args[1:]]):

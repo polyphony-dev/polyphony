@@ -83,7 +83,7 @@ class SSATransformerBase(object):
     def _new_phi(self, var, df):
         phi = PHI(var)
         phi.block = df
-        phi.args = [None] * len(df.preds)
+        phi.args = [CONST(None)] * len(df.preds)
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
