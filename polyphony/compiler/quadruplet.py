@@ -23,7 +23,6 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def _new_temp_move(self, ir, tmpsym):
         t = TEMP(tmpsym, Ctx.STORE)
-        assert self.current_stm.loc.lineno > 0
         mv = MOVE(t, ir, loc=self.current_stm.loc)
         self.new_stms.append(mv)
         return TEMP(tmpsym, Ctx.LOAD)
@@ -61,8 +60,12 @@ class EarlyQuadrupleMaker(IRTransformer):
         return self._new_temp_move(ir, self.scope.add_temp())
 
     def visit_RELOP(self, ir):
+        suppress = self.suppress_converting
+        self.suppress_converting = False
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
+        if suppress:
+            return ir
         return self._new_temp_move(ir, self.scope.add_condition_sym())
 
     def visit_CONDOP(self, ir):
@@ -172,12 +175,12 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def visit_MOVE(self, ir):
         #We don't convert outermost BINOP or CALL
-        if ir.src.is_a([BINOP, CALL, SYSCALL, NEW, MREF]):
+        if ir.src.is_a([BINOP, RELOP, CALL, SYSCALL, NEW, MREF]):
             self.suppress_converting = True
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
         assert ir.src.is_a([TEMP, ATTR, CONST, UNOP,
-                            BINOP, MREF, CALL,
+                            BINOP, RELOP, MREF, CALL,
                             NEW, SYSCALL, ARRAY])
         assert ir.dst.is_a([TEMP, ATTR, MREF, ARRAY])
 

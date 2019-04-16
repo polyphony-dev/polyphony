@@ -2,7 +2,7 @@ from polyphony import testbench
 
 
 def return_tuple(x, y):
-    return (x, y)
+    return x, y
 
 
 def tuple10(x, y):
