@@ -408,8 +408,11 @@ class TypePropagation(IRVisitor):
                 raise RejectPropagation(ir)
             elem_t = src_typ.get_element()
             for item in ir.dst.items:
-                assert item.is_a([TEMP, ATTR])
-                self._set_type(item.symbol(), elem_t.clone())
+                assert item.is_a([TEMP, ATTR, MREF])
+                if item.is_a([TEMP, ATTR]):
+                    self._set_type(item.symbol(), elem_t.clone())
+                elif item.is_a(MREF):
+                    item.mem.symbol().typ.set_element(elem_t)
         elif ir.dst.is_a(MREF):
             pass
         else:

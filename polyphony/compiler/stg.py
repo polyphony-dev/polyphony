@@ -636,7 +636,7 @@ class AHDLTranslator(IRVisitor):
 
     def visit_CONST(self, ir):
         if ir.value is None:
-            return None
+            return AHDL_SYMBOL("'bz")
         else:
             return AHDL_CONST(ir.value)
 

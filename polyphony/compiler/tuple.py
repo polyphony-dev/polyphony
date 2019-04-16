@@ -78,6 +78,8 @@ class TupleTransformer(IRTransformer):
                     mv.loc = ir.loc
                     self.new_stms.append(mv)
                 return
+            elif ir.src.is_a(CALL) and self.scope.is_testbench():
+                raise NotImplementedError('Return of suquence type value is not implemented')
         else:
             ir.src = self.visit(ir.src)
             ir.dst = self.visit(ir.dst)

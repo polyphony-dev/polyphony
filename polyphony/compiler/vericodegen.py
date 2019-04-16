@@ -188,9 +188,9 @@ class VerilogCodeGen(AHDLVisitor):
                 for net in nets:
                     self.emit(f'$display("%8d:WIRE  :{self.hdlmodule.name:<10}', newline=False)
                     if net.sig.is_onehot():
-                        self.emit(f'{net.sig} = 0b%b", $time, {net.sig});')
+                        self.emit(f'{net.sig.name} = 0b%b", $time, {net.sig.name});')
                     else:
-                        self.emit(f'{net.sig} = 0x%2h (%1d)", $time, {net.sig}, {net.sig});')
+                        self.emit(f'{net.sig.name} = 0x%2h (%1d)", $time, {net.sig.name}, {net.sig.name});')
             self.emit('end')
             self.emit('end')
             self.emit('')

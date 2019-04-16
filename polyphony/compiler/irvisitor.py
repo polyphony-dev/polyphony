@@ -1,4 +1,4 @@
-from .ir import IRStm
+from .ir import IRStm, JUMP, CJUMP, MCJUMP
 
 
 class IRVisitor(object):
@@ -140,11 +140,16 @@ class IRTransformer(IRVisitor):
         for stm in block.stms:
             self.visit(stm)
         block.stms = self.new_stms
+        self.new_stms = []
         #set the pointer to the block to each stm
-        for stm in block.stms:
-            stm.block = block
         if block.path_exp:
             block.path_exp = self.visit(block.path_exp)
+        if block.stms and block.stms[-1].is_a([JUMP, CJUMP, MCJUMP]):
+            block.stms = block.stms[:-1] + self.new_stms + [block.stms[-1]]
+        else:
+            block.stms.extend(self.new_stms)
+        for stm in block.stms:
+            stm.block = block
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
