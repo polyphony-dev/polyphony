@@ -259,10 +259,8 @@ class SSATransformerBase(object):
         logger.debug('remove ' + str(phi))
         if phi in phi.block.stms:
             phi.block.stms.remove(phi)
-            for a in phi.args:
-                if a:
-                    usedef.remove_use(a, phi)
-            usedef.remove_var_def(phi.var, phi)
+            usedef.remove_stm(phi)
+            self.scope.del_sym(phi.var.symbol().name)
 
     def _insert_predicate(self):
         for blk in self.scope.traverse_blocks():
@@ -403,6 +401,14 @@ class ObjectSSATransformer(SSATransformerBase):
             return
         super().process(scope)
         self._process_use_phi()
+        self._remove_obj_phi()
+
+    def _remove_obj_phi(self):
+        for blk in self.scope.traverse_blocks():
+            phis = blk.collect_stms(PHIBase)
+            for phi in phis:
+                if phi.var.is_a(TEMP) and phi.var.symbol().typ.is_object():
+                    self._remove_phi(phi, self.scope.usedef)
 
     def _process_use_phi(self):
         usedef = self.scope.usedef
@@ -411,14 +417,14 @@ class ObjectSSATransformer(SSATransformerBase):
             for phi in phis:
                 will_remove = False
                 uses = usedef.get_stms_using(phi.var.qualified_symbol())
-                for use in uses:
+                for use in uses.copy():
                     if self._insert_use_phi(phi, use):
                         will_remove = True
                     if use.is_a(MOVE) and use.dst.is_a(ATTR) and use.dst.tail() is phi.var.symbol():
                         self._insert_def_phi(phi, use)
                         will_remove = True
                 if will_remove:
-                    blk.stms.remove(phi)
+                    self._remove_phi(phi, usedef)
 
     def _insert_use_phi(self, phi, use_stm):
         insert_idx = use_stm.block.stms.index(use_stm)
@@ -459,6 +465,7 @@ class ObjectSSATransformer(SSATransformerBase):
             def_stm.block.insert_stm(insert_idx, mv)
             insert_idx += 1
         def_stm.block.stms.remove(def_stm)
+        self.scope.usedef.remove_stm(def_stm)
 
     def _need_rename(self, sym, qsym):
         if not sym.typ.is_object():
