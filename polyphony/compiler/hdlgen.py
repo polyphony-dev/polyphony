@@ -127,9 +127,9 @@ class HDLModuleBuilder(object):
                 source_scope = source.scope
                 if source_scope.is_class():  # class field rom
                     hdl_name = source_scope.orig_name + '_field_' + hdl_name
-            output_sig = self.hdlmodule.gen_sig(hdl_name, memnode.data_width())  # TODO
+            output_sig = self.hdlmodule.gen_sig(hdl_name, memnode.data_width())
             fname = AHDL_VAR(output_sig, Ctx.STORE)
-            input_sig = self.hdlmodule.gen_sig(hdl_name + '_in', memnode.data_width())  # TODO
+            input_sig = self.hdlmodule.gen_sig(hdl_name + '_in', memnode.addr_width())
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             if source:
