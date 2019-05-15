@@ -570,8 +570,8 @@ class ObjectHierarchyCopier(object):
             for sym in class_scope.class_fields().values():
                 if not sym.typ.is_object():
                     continue
-                new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
-                new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
+                new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE, attr_scope=sym.scope)
+                new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD, attr_scope=sym.scope)
                 new_cp = MOVE(new_dst, new_src)
                 new_cp.loc = cp.loc
                 cp_idx = cp.block.stms.index(cp)
