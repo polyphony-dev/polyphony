@@ -36,7 +36,7 @@ class AliasVarDetector(IRVisitor):
                 return
         elif ir.src.is_a(CALL):
             if ir.src.func_scope().is_predicate():
-                pass
+                return
             elif ir.src.func_scope().is_method() and ir.src.func_scope().parent.is_port():
                 WORKAROUND = True
                 if WORKAROUND:
