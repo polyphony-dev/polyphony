@@ -309,6 +309,8 @@ class MemTrait(object):
     def can_be_reg(self):
         if self.scope.is_module():
             return True
+        if self.scope.is_method() and self.scope.parent.is_module():
+            return True
         if self.length == -1:
             src = self.single_source()
             if src:
