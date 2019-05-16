@@ -70,6 +70,7 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('endmodule\n')
 
     def _generate_process(self, fsm):
+        self._add_state_constants(fsm)
         self.emit('always @(posedge clk) begin')
         self.set_indent(2)
         self.emit('if (rst) begin')
@@ -109,6 +110,14 @@ class VerilogCodeGen(AHDLVisitor):
         self.set_indent(-2)
         self.emit('end')
         self.emit('')
+
+    def _add_state_constants(self, fsm):
+        i = 0
+        for stg in fsm.stgs:
+            for state in stg.states:
+                self.hdlmodule.add_state_constant(state.name, i)
+                i += 1
+        fsm.state_var.width = i.bit_length()
 
     def _generate_include(self):
         pass
@@ -432,6 +441,32 @@ class VerilogCodeGen(AHDLVisitor):
             exp = self.visit(ahdl.args[0])
             return f'{exp}'
 
+    def visit_AHDL_META_OP(self, ahdl):
+        ahdl.op
+        method = 'visit_AHDL_META_OP_' + ahdl.op
+        visitor = getattr(self, method, None)
+        return visitor(ahdl)
+
+    def visit_AHDL_META_OP_edge(self, ahdl):
+        old, new = ahdl.args[0], ahdl.args[1]
+        detect_vars = []
+        for var in ahdl.args[2:]:
+            detect_var_name = f'is_{var.sig.name}_change_{self.visit(old)}_to_{self.visit(new)}'
+            detect_vars.append(AHDL_SYMBOL(detect_var_name))
+        if len(detect_vars) > 1:
+            return self.visit(AHDL_OP('And', *detect_vars))
+        else:
+            return self.visit(detect_vars[0])
+
+    def visit_AHDL_META_OP_same(self, ahdl):
+        eqs = []
+        for i in range(0, len(ahdl.args), 2):
+            value = ahdl.args[i]
+            port  = ahdl.args[i + 1]
+            eqs.append(AHDL_OP('Eq', port, value))
+        cond = functools.reduce(lambda a, b: AHDL_OP('And', a, b), eqs)
+        return self.visit(cond)
+
     def visit_AHDL_SLICE(self, ahdl):
         v = self.visit(ahdl.var)
         hi = self.visit(ahdl.hi)
@@ -690,42 +725,8 @@ class VerilogCodeGen(AHDLVisitor):
         visitor = getattr(self, method, None)
         return visitor(ahdl)
 
-    def visit_WAIT_EDGE(self, ahdl):
-        old, new = ahdl.args[0], ahdl.args[1]
-        detect_vars = []
-        for var in ahdl.args[2:]:
-            detect_var_name = f'is_{var.sig.name}_change_{self.visit(old)}_to_{self.visit(new)}'
-            detect_vars.append(AHDL_SYMBOL(detect_var_name))
-        if len(detect_vars) > 1:
-            conds = [AHDL_OP('And', *detect_vars)]
-        else:
-            conds = [detect_vars[0]]
-        if ahdl.codes:
-            codes = ahdl.codes[:]
-        else:
-            codes = []
-        if ahdl.transition:
-            codes.append(ahdl.transition)
-        ahdl_if = AHDL_IF(conds, [AHDL_BLOCK('', codes)])
-        self.visit(ahdl_if)
-
-    def visit_WAIT_VALUE(self, ahdl):
-        eqs = [AHDL_OP('Eq', port, value) for value, port in ahdl.args]
-        cond = functools.reduce(lambda a, b: AHDL_OP('And', a, b), eqs)
-        conds = [cond]
-        if ahdl.codes:
-            codes = ahdl.codes[:]
-        else:
-            codes = []
-        if ahdl.transition:
-            codes.append(ahdl.transition)
-        ahdl_if = AHDL_IF(conds, [AHDL_BLOCK('', codes)])
-        self.visit(ahdl_if)
-
     def visit_AHDL_META_WAIT(self, ahdl):
-        method = 'visit_' + ahdl.metaid
-        visitor = getattr(self, method, None)
-        return visitor(ahdl)
+        assert False
 
     def visit_AHDL_FUNCTION(self, ahdl):
         self.emit(f'function [{ahdl.output.sig.width-1}:0] {self.visit(ahdl.output)} (')

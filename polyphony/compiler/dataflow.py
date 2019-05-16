@@ -1,6 +1,6 @@
 ﻿from collections import defaultdict
 from .ir import *
-from .irhelper import is_port_method_call, has_exclusive_function
+from .irhelper import is_port_method_call, has_exclusive_function, has_clkfence
 from .env import env
 from . import utils
 from logging import getLogger
@@ -761,10 +761,6 @@ class DFGBuilder(object):
                         dfg.add_seq_edge(port_node, node)
                     port_node = node
 
-    def _is_clksleep(self, stm):
-        return (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-                stm.exp.sym.name == 'polyphony.timing.clksleep')
-
     def _add_seq_edges_for_timed(self, blocks, dfg):
         for block in blocks:
             if block.synth_params['scheduling'] != 'timed':
@@ -773,7 +769,7 @@ class DFGBuilder(object):
             other_nodes = []
             for stm in block.stms:
                 node = dfg.find_node(stm)
-                if self._is_clksleep(stm):
+                if has_clkfence(stm):
                     for n in other_nodes:
                         dfg.add_seq_edge(n, node)
                     if prev_clksleep_node:

@@ -170,8 +170,8 @@ def single_read_seq(inf, signal, step, dst):
             if step == 0:
                 return (AHDL_MOVE(ready, AHDL_CONST(1)), )
             elif step == 1:
-                expects = [(AHDL_CONST(1), valid)]
-                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+                args = [AHDL_CONST(1), valid]
+                return (AHDL_META_WAIT('WAIT_VALUE', *args), )
             elif step == 2:
                 if dst:
                     return (AHDL_MOVE(dst, data),
@@ -180,8 +180,8 @@ def single_read_seq(inf, signal, step, dst):
                     return (AHDL_MOVE(ready, AHDL_CONST(0)),)
         else:
             if step == 0:
-                expects = [(AHDL_CONST(1), valid)]
-                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+                args = [AHDL_CONST(1), valid]
+                return (AHDL_META_WAIT('WAIT_VALUE', *args), )
             elif step == 1:
                 if dst:
                     return (AHDL_MOVE(dst, data), )
@@ -230,8 +230,8 @@ def single_write_seq(inf, signal, step, src):
                 return (AHDL_MOVE(data, src),
                         AHDL_MOVE(valid, AHDL_CONST(1)))
             elif step == 1:
-                expects = [(AHDL_CONST(1), ready)]
-                return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+                args = [AHDL_CONST(1), ready]
+                return (AHDL_META_WAIT('WAIT_VALUE', *args), )
             elif step == 2:
                 return (AHDL_MOVE(valid, AHDL_CONST(0)), )
         else:
@@ -467,8 +467,8 @@ class CallInterface(Interface):
             ready = port2ahdl(self, 'ready')
 
             unset_valid = AHDL_MOVE(valid, AHDL_CONST(0))
-            expects = [(AHDL_CONST(1), ready)]
-            wait_ready = AHDL_META_WAIT("WAIT_VALUE", *expects)
+            args = [AHDL_CONST(1), ready]
+            wait_ready = AHDL_META_WAIT("WAIT_VALUE", *args)
             return (unset_valid, wait_ready)
 
     def callee_epilog(self, step, name):
@@ -477,8 +477,8 @@ class CallInterface(Interface):
             accept = port2ahdl(self, 'accept')
 
             set_valid = AHDL_MOVE(valid, AHDL_CONST(1))
-            expects = [(AHDL_CONST(1), accept)]
-            wait_accept = AHDL_META_WAIT("WAIT_VALUE", *expects)
+            args = [AHDL_CONST(1), accept]
+            wait_accept = AHDL_META_WAIT("WAIT_VALUE", *args)
             return (set_valid, wait_accept)
 
 
@@ -512,15 +512,15 @@ class CallAccessor(IOAccessor):
                 seq.extend(acc.write_sequence(0, step_n, arg))
         elif step == 1:
             seq = [AHDL_MOVE(ready, AHDL_CONST(0))]
-
-        if step == step_n - 3:
-            expects = [(AHDL_CONST(1), valid)]
-            seq.append(AHDL_META_WAIT('WAIT_VALUE', *expects))
-        elif step == step_n - 2:
+        #if step == step_n - 2:
+            args = [AHDL_CONST(1), valid]
+            seq.append(AHDL_META_WAIT('WAIT_VALUE', *args))
             for acc, ret in zip(retaccs, ahdl_call.returns):
                 seq.extend(acc.read_sequence(0, step_n, ret))
             seq.append(AHDL_MOVE(accept, AHDL_CONST(1)))
-        elif step == step_n - 1:
+        #elif step == step_n - 2:
+        #elif step == step_n - 1:
+        elif step == 2:  #step_n - 1:
             seq.append(AHDL_MOVE(accept, AHDL_CONST(0)))
         return tuple(seq)
 
@@ -881,8 +881,8 @@ def fifo_read_seq(inf, step, dst):
     dout = port2ahdl(inf, 'dout')
 
     if step == 0:
-        expects = [(AHDL_CONST(0), empty)]
-        return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+        args = [AHDL_CONST(0), empty]
+        return (AHDL_META_WAIT('WAIT_VALUE', *args), )
     elif step == 1:
         return (AHDL_MOVE(read, AHDL_CONST(1)), )
     elif step == 2:
@@ -929,8 +929,8 @@ def fifo_write_seq(inf, step, src):
     din = port2ahdl(inf, 'din')
 
     if step == 0:
-        expects = [(AHDL_CONST(0), full)]
-        return (AHDL_META_WAIT('WAIT_VALUE', *expects), )
+        args = [AHDL_CONST(0), full]
+        return (AHDL_META_WAIT('WAIT_VALUE', *args), )
     elif step == 1:
         return (AHDL_MOVE(write, AHDL_CONST(1)),
                 AHDL_MOVE(din, src))

@@ -26,6 +26,7 @@ DIRS = (
     'testbench',
     'class',
     'import',
+    'timed',
     'io',
     'module',
     'unroll',

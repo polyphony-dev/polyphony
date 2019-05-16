@@ -102,6 +102,14 @@ class Graph(object):
             if edge.src is node or edge.dst is node:
                 self.del_edge(edge.src, edge.dst, auto_del_node=False)
 
+    def del_node_with_reconnect(self, node):
+        succs = self.succs(node)
+        preds = self.preds(node)
+        for s in succs:
+            for p in preds:
+                self.add_edge(p, s)
+        self.del_node(node)
+
     def has_node(self, node):
         return node in self.nodes
 

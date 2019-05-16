@@ -27,13 +27,6 @@ class HDLModuleBuilder(object):
         self.hdlmodule = hdlmodule
         self._build_module()
 
-    def _add_state_constants(self, fsm):
-        i = 0
-        for stg in fsm.stgs:
-            for state in stg.states:
-                self.hdlmodule.add_state_constant(state.name, i)
-                i += 1
-
     def _add_internal_ports(self, locals):
         regs = []
         nets = []
@@ -54,9 +47,8 @@ class HDLModuleBuilder(object):
         return regs, nets
 
     def _add_state_register(self, fsm):
-        states_n = sum([len(stg.states) for stg in fsm.stgs])
         state_sig = self.hdlmodule.gen_sig(fsm.name + '_state',
-                                           states_n.bit_length(),
+                                           -1,
                                            ['statevar'])
         self.hdlmodule.add_fsm_state_var(fsm.name, state_sig)
         self.hdlmodule.add_internal_reg(state_sig)
@@ -341,7 +333,6 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         assert len(self.hdlmodule.fsms) == 1
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
-        self._add_state_constants(fsm)
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
         module_name = self.hdlmodule.name
@@ -425,7 +416,6 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         assert len(self.hdlmodule.fsms) == 1
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
-        self._add_state_constants(fsm)
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
         self._add_state_register(fsm)
@@ -486,7 +476,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
-        #self._add_state_constants(worker)
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
         locals = defs.union(uses)
         regs, nets = self._add_internal_ports(locals)
@@ -537,7 +526,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 del self.hdlmodule.fsms[fsm.name]
                 break
             else:
-                self._add_state_constants(fsm)
                 self._process_fsm(fsm)
         self._add_sub_module_accessors()
 
@@ -599,9 +587,9 @@ class AHDLSpecialDeclCollector(AHDLVisitor):
     def __init__(self, edge_detectors):
         self.edge_detectors = edge_detectors
 
-    def visit_WAIT_EDGE(self, ahdl):
+    def visit_AHDL_META_WAIT(self, ahdl):
+        if ahdl.metaid != 'WAIT_EDGE':
+            return
         old, new = ahdl.args[0], ahdl.args[1]
         for var in ahdl.args[2:]:
             self.edge_detectors.add((var.sig, old, new))
-            for code in ahdl.codes:
-                self.visit(code)

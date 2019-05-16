@@ -39,10 +39,18 @@ def clkfence():
     _wait_cycle()
 
 
-def clkrange(cycles):
-    for i in range(cycles):
+def clkrange(cycles=None):
+    if cycles:
+        for i in range(cycles):
+            _wait_cycle()
+            yield i
         _wait_cycle()
-        yield i
+    else:
+        i = 0
+        while True:
+            _wait_cycle()
+            yield i
+            i += 1
 
 
 def clktime():

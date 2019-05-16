@@ -3,7 +3,7 @@ from .dataflow import DataFlowGraph
 from .env import env
 
 UNIT_STEP = 1
-CALL_MINIMUM_STEP = 5
+CALL_MINIMUM_STEP = 3
 
 
 def get_call_latency(call, stm):
@@ -64,8 +64,8 @@ def get_syscall_latency(call):
         assert cycle.is_a(CONST)
         return cycle.value
     elif call.sym.name.startswith('polyphony.timing.wait_'):
-        return UNIT_STEP
-    if call.sym.name == 'assert':
+        return 0
+    if call.sym.name in ('assert', 'print'):
         return 0
     return UNIT_STEP
 

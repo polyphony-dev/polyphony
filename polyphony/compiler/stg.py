@@ -22,7 +22,12 @@ class State(AHDL_BLOCK):
         s = '---------------------------------\n'
         s += f'{self.name}:{self.step}\n'
         if self.codes:
-            s += '\n'.join([f'  {code}' for code in self.codes])
+            for code in self.codes:
+                str_code = str(code)
+                lines = str_code.split('\n')
+                for line in lines:
+                    if line:
+                        s += '  {}\n'.format(line)
         else:
             pass
         s += '\n'
@@ -43,7 +48,6 @@ class State(AHDL_BLOCK):
             else:
                 assert isinstance(code.target, Block)
                 code.target = blk2states[code.target][0]
-            transition = code
         elif code.is_a(AHDL_TRANSITION_IF):
             for i, ahdlblk in enumerate(code.blocks):
                 assert len(ahdlblk.codes) == 1
@@ -52,20 +56,6 @@ class State(AHDL_BLOCK):
                 assert isinstance(transition.target, Block)
                 target_state = blk2states[transition.target][0]
                 transition.target = target_state
-            transition = code
-        else:
-            transition = None
-
-        move_transition = False
-        for code in self.codes:
-            if code.is_a(AHDL_META_WAIT):
-                if transition:
-                    code.transition = transition
-                    move_transition = True
-                else:
-                    code.transition = AHDL_TRANSITION(next_state)
-        if move_transition:
-            self.codes.pop()
         return next_state
 
 
@@ -287,7 +277,7 @@ class StateBuilder(STGItemBuilder):
                     codes.append(item)
                 else:
                     assert False
-            if not codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF, AHDL_META_WAIT]):
+            if not codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
                 codes.append(AHDL_TRANSITION(None))
             name = f'{state_prefix}_S{step}'
             state = self._new_state(name, step + 1, codes)
@@ -301,7 +291,7 @@ class StateBuilder(STGItemBuilder):
             jump = blk.stms[-1]
             last_state = states[-1]
             trans = last_state.codes[-1]
-            assert trans.is_a([AHDL_TRANSITION, AHDL_META_WAIT])
+            assert trans.is_a([AHDL_TRANSITION])
             if trans.is_a(AHDL_TRANSITION):
                 trans.target = jump.target
 
@@ -317,8 +307,7 @@ class StateBuilder(STGItemBuilder):
                 init_state = states[0]
                 init_state.name = name
                 assert init_state.codes[-1].is_a([AHDL_TRANSITION,
-                                                  AHDL_TRANSITION_IF,
-                                                  AHDL_META_WAIT])
+                                                  AHDL_TRANSITION_IF])
                 self.stg.init_state = init_state
             if is_last:
                 last_state = states[-1]
@@ -342,11 +331,9 @@ class StateBuilder(STGItemBuilder):
                 assert first_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
                 if not (len(states) <= 1 and is_last):
                     prolog = AHDL_SEQ(AHDL_CALLEE_PROLOG(self.stg.name), 0, 1)
-                    init_state = self._new_state(f'{state_prefix}_INIT',
-                                                 0,
-                                                 [prolog, AHDL_TRANSITION(None)])
-                    states.insert(0, init_state)
+                    first_state.codes.insert(0, prolog)
                 self.stg.init_state = states[0]
+                self.stg.init_state.name = f'{state_prefix}_INIT'
             if is_last:
                 name = f'{state_prefix}_FINISH'
                 finish_state = states[-1]
@@ -616,13 +603,14 @@ class AHDLTranslator(IRVisitor):
             ports = []
             _, _val = ir.args[0]
             value = self.visit(_val)
-            expects = []
+            args = []
             for _, a in ir.args[1:]:
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 p = AHDL_VAR(port_sig, Ctx.LOAD)
-                expects.append((value, p))
-            self._emit(AHDL_META_WAIT('WAIT_VALUE', *expects),
+                args.append(value)
+                args.append(p)
+            self._emit(AHDL_META_WAIT('WAIT_VALUE', *args),
                        self.sched_time)
             return
         else:

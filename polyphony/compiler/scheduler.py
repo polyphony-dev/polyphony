@@ -7,7 +7,7 @@ from .graph import Graph
 from .latency import get_latency
 from .irvisitor import IRVisitor
 from .ir import *
-from .irhelper import has_exclusive_function
+from .irhelper import has_exclusive_function, has_clkfence
 from .latency import CALL_MINIMUM_STEP
 from .utils import unique
 from .scope import Scope
@@ -176,7 +176,10 @@ class SchedulerImpl(object):
         for node in dfg.get_priority_ordered_nodes():
             def_l, seq_l = get_latency(node.tag)
             if node.tag.block.synth_params['scheduling'] == 'timed':
-                self.node_latency_map[node] = (0, 0, 0)
+                if has_clkfence(node.tag):
+                    self.node_latency_map[node] = (def_l, def_l, def_l)
+                else:
+                    self.node_latency_map[node] = (0, 0, 0)
                 self.node_seq_latency_map[node] = def_l
                 continue
             if def_l == 0:
@@ -321,7 +324,7 @@ class BlockBoundedListScheduler(SchedulerImpl):
             scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
             n.begin = scheduled_time
             n.end = n.begin + latency
-            #logger.debug('## SCHEDULED ## ' + str(n))
+            #logger.debug(f'## SCHEDULED ## {n} latency={latency}')
             succs = dfg.succs_without_back(n)
             next_candidates = next_candidates.union(succs)
             if longest_latency < n.end:
@@ -331,10 +334,6 @@ class BlockBoundedListScheduler(SchedulerImpl):
                                                         longest_latency)
         else:
             return longest_latency
-
-    def _is_clksleep(self, stm):
-        return (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-                stm.exp.sym.name == 'polyphony.timing.clksleep')
 
     def _node_sched_with_block_bound(self, dfg, node, block):
         preds = dfg.preds_without_back(node)
@@ -356,7 +355,7 @@ class BlockBoundedListScheduler(SchedulerImpl):
                 else:
                     latest_node = max(seq_preds, key=lambda p: (p.begin, p.end))
                     seq_latency = self.node_seq_latency_map[latest_node]
-                    if is_timed_node and self._is_clksleep(node.tag) and not self._is_clksleep(latest_node.tag):
+                    if is_timed_node and has_clkfence(node.tag) and not has_clkfence(latest_node.tag):
                         seq_latency = 0
                     sched_time = latest_node.begin + seq_latency
                 sched_times.append(sched_time)

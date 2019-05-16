@@ -43,6 +43,10 @@ class AHDLVisitor(object):
         for a in ahdl.args:
             self.visit(a)
 
+    def visit_AHDL_META_OP(self, ahdl):
+        for a in ahdl.args:
+            self.visit(a)
+
     def visit_AHDL_SYMBOL(self, ahdl):
         pass
 
@@ -146,36 +150,9 @@ class AHDLVisitor(object):
         for c in conds:
             self.visit(c)
 
-    def visit_WAIT_EDGE(self, ahdl):
-        for var in ahdl.args[2:]:
-            self.visit(var)
-        if ahdl.codes:
-            for code in ahdl.codes:
-                self.visit(code)
-        if ahdl.transition:
-            self.visit(ahdl.transition)
-
-    def visit_WAIT_VALUE(self, ahdl):
-        for value, var in ahdl.args:
-            self.visit(value)
-            self.visit(var)
-        if ahdl.codes:
-            for code in ahdl.codes:
-                self.visit(code)
-        if ahdl.transition:
-            self.visit(ahdl.transition)
-
     def visit_AHDL_META_WAIT(self, ahdl):
-        method = 'visit_' + ahdl.metaid
-        visitor = getattr(self, method, None)
-        if visitor:
-            return visitor(ahdl)
-
-    def visit_AHDL_META_MULTI_WAIT(self, ahdl):
-        for w in ahdl.waits:
-            self.visit(w)
-        if ahdl.transition:
-            self.visit(ahdl.transition)
+        for arg in ahdl.args:
+            self.visit(arg)
 
     def visit_AHDL_TRANSITION(self, ahdl):
         pass

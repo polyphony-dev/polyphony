@@ -3,6 +3,7 @@ from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .common import fail
 from .errors import Errors
+from .stg import State
 from .stg_pipeline import PipelineState, PipelineStage
 from .utils import find_only_one_in
 
@@ -122,24 +123,14 @@ class IOTransformer(AHDLVisitor):
         visitor = getattr(self, method, None)
         assert visitor
         seq = visitor(ahdl.factor, ahdl.step, ahdl.step_n)
+        offs = self.current_block.codes.index(ahdl)
         self.current_block.codes.remove(ahdl)
+        for i, s in enumerate(seq):
+            self.current_block.codes.insert(offs + i, s)
         if ahdl in self.hdlmodule.ahdl2dfgnode:
             node = self.hdlmodule.ahdl2dfgnode[ahdl]
             for s in seq:
                 self.hdlmodule.ahdl2dfgnode[s] = node
-        meta_wait = find_only_one_in(AHDL_META_WAIT, seq)
-        if meta_wait:
-            trans = self.current_block.codes[-1]
-            if trans.is_a(AHDL_TRANSITION):
-                meta_wait.transition = trans
-                self.removes.append((self.current_block, trans))
-            elif isinstance(self.current_block, PipelineStage):
-                pass
-            else:
-                meta_wait_ = find_only_one_in(AHDL_META_WAIT, self.current_block.codes)
-                assert meta_wait_
-                meta_wait.transition = meta_wait_.transition
-        self.current_block.codes = list(seq) + self.current_block.codes
 
     def visit_AHDL_IO_READ(self, ahdl):
         mv = AHDL_MOVE(ahdl.dst, ahdl.io)
@@ -191,33 +182,52 @@ class WaitTransformer(AHDLVisitor):
     def __init__(self):
         self.count = 0
 
-    def process(self, hdlmodule):
-        self.hdlmodule = hdlmodule
-        for fsm in self.hdlmodule.fsms.values():
-            for stg in fsm.stgs:
-                for state in stg.states:
-                    self.visit(state)
-
     def visit_AHDL_BLOCK(self, ahdl):
         super().visit_AHDL_BLOCK(ahdl)
         self.transform_meta_wait(ahdl)
 
+    def _partition_codes(self, codes, delim):
+        partitions = []
+        part = []
+        for c in codes:
+            if c is delim:
+                partitions.append(part)
+                part = []
+            else:
+                part.append(c)
+        partitions.append(part)
+        return partitions
+
+    def _build_waiting_state(self, cond, next_codes):
+        waiting_state = State(f'{self.current_state.name}_waiting{self.count}',
+                              self.current_state.step + 1,
+                              [], self.current_stg)
+        self.count += 1
+        true_blk = AHDL_BLOCK('', next_codes)
+        false_blk = AHDL_BLOCK('', [AHDL_TRANSITION(waiting_state)])
+        wait_block = AHDL_IF([cond, None], [true_blk, false_blk])
+        waiting_state.codes = [wait_block]
+        idx = self.current_stg.states.index(self.current_state)
+        self.current_stg.states.insert(idx + 1, waiting_state)
+        return waiting_state
+
     def transform_meta_wait(self, ahdlblk):
         meta_waits = [c for c in ahdlblk.codes if c.is_a(AHDL_META_WAIT)]
-        if len(meta_waits) <= 1:
-            return
-
-        multi_wait = AHDL_META_MULTI_WAIT(self.count)
-        self.count += 1
-        multi_wait.transition = meta_waits[0].transition
-        for w in meta_waits:
-            w.transition = None
-            multi_wait.append(w)
-            ahdlblk.codes.remove(w)
-        ahdlblk.codes.append(multi_wait)
-
-        multi_wait.build_transition()
-        for i in range(len(meta_waits)):
-            ahdl_var = multi_wait.latch_var(i)
-            sig = self.hdlmodule.gen_sig(ahdl_var.name, 1)
-            self.hdlmodule.add_internal_reg(sig)
+        codes = ahdlblk.codes
+        wait_ops = {
+            'WAIT_VALUE':'same',
+            'WAIT_EDGE':'edge',
+        }
+        for meta_wait in reversed(meta_waits):
+            partitions = self._partition_codes(codes, meta_wait)
+            next_codes = partitions[1]
+            cond = AHDL_META_OP(wait_ops[meta_wait.metaid], *meta_wait.args)
+            waiting_state = self._build_waiting_state(cond, next_codes)
+            true_blk = AHDL_BLOCK('', next_codes)
+            false_blk = AHDL_BLOCK('', [AHDL_TRANSITION(waiting_state)])
+            wait_block = AHDL_IF([cond, None], [true_blk, false_blk])
+            # replace meta_wait
+            idx = codes.index(meta_wait)
+            codes.insert(idx, wait_block)
+            for i in range(len(codes) - idx - 1):
+                codes.pop()

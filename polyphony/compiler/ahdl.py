@@ -82,6 +82,21 @@ class AHDL_OP(AHDL_EXP):
         return self.op in ('USub', 'UAdd', 'Not', 'Invert')
 
 
+class AHDL_META_OP(AHDL_EXP):
+    def __init__(self, op, *args):
+        super().__init__()
+        self.op = op
+        self.args = args
+
+    def __str__(self):
+        str_args = [str(a) for a in self.args]
+        return '({} {})'.format(self.op, ', '.join(str_args))
+
+    def __repr__(self):
+        args = ', '.join([repr(arg) for arg in self.args])
+        return 'AHDL_META_OP({}, {})'.format(repr(self.op), args)
+
+
 class AHDL_VAR(AHDL_EXP):
     def __init__(self, sig, ctx):
         assert sig and isinstance(sig, Signal)
@@ -407,16 +422,25 @@ class AHDL_IF(AHDL_STM):
     def __str__(self):
         s = 'if {}\n'.format(self.conds[0])
         for code in self.blocks[0].codes:
-            s += '    {}\n'.format(code)
+            str_code = str(code)
+            lines = str_code.split('\n')
+            for line in lines:
+                s += '  {}\n'.format(line)
         for cond, ahdlblk in zip(self.conds[1:], self.blocks[1:]):
             if cond:
-                s += '  elif {}\n'.format(cond)
+                s += 'elif {}\n'.format(cond)
                 for code in ahdlblk.codes:
-                    s += '    {}\n'.format(code)
+                    str_code = str(code)
+                    lines = str_code.split('\n')
+                    for line in lines:
+                        s += '  {}\n'.format(line)
             else:
-                s += '  else\n'
+                s += 'else\n'
                 for code in ahdlblk.codes:
-                    s += '    {}'.format(code)
+                    str_code = str(code)
+                    lines = str_code.split('\n')
+                    for line in lines:
+                        s += '  {}\n'.format(line)
         return s
 
     def __repr__(self):
@@ -528,8 +552,6 @@ class AHDL_META_WAIT(AHDL_STM):
         super().__init__()
         self.metaid = args[0]
         self.args = list(args[1:])
-        self.codes = []
-        self.transition = None
 
     def __str__(self):
         items = []
@@ -539,58 +561,11 @@ class AHDL_META_WAIT(AHDL_STM):
             else:
                 items.append(str(arg))
         s = '{}({})'.format(self.metaid, ', '.join(items))
-        if self.codes:
-            s += '\n'
-            s += '\n'.join(['  {}'.format(code) for code in self.codes])
-        elif self.transition:
-            s += '\n'
-            s += '  {}'.format(self.transition)
         return s
 
     def __repr__(self):
         args = [repr(self.metaid)] + [repr(a) for a in self.args]
         return 'AHDL_META_WAIT({})'.format(', '.join(args))
-
-
-class AHDL_META_MULTI_WAIT(AHDL_STM):
-    def __init__(self, id):
-        super().__init__()
-        self.id = id
-        self.waits = []
-        self.transition = None
-
-    def __str__(self):
-        s = 'AHDL_META_MULTI_WAIT({})'.format(', '.join([str(w) for w in self.waits]))
-        if self.transition:
-            s += '\n'
-            s += '  {}'.format(self.transition)
-        return s
-
-    def __repr__(self):
-        args = [repr(w) for w in self.waits]
-        return 'AHDL_META_MULTI_WAIT({})'.format(', '.join(args))
-
-    def append(self, wait):
-        assert isinstance(wait, AHDL_META_WAIT)
-        idx = len(self.waits)
-        var = self.latch_var(idx)
-        set_latch = AHDL_MOVE(var, AHDL_CONST(1))
-        wait.codes.append(set_latch)
-        wait.transition = None
-        self.waits.append(wait)
-
-    def latch_var(self, idx):
-        return AHDL_SYMBOL('wait_latch_{}_{}'.format(self.id, idx))
-
-    def build_transition(self):
-        conds = []
-        clears = []
-        for i in range(0, len(self.waits)):
-            conds.append(AHDL_OP('Eq', self.latch_var(i), AHDL_CONST(1)))
-            clears.append(AHDL_MOVE(self.latch_var(i), AHDL_CONST(0)))
-        cond = AHDL_OP('And', *conds)
-        codes = clears + [self.transition]
-        self.transition = AHDL_TRANSITION_IF([cond], [codes])
 
 
 class AHDL_FUNCTION(AHDL_VAR_DECL):

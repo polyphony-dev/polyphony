@@ -124,18 +124,7 @@ def has_exclusive_function(stm):
         call = stm.exp
     else:
         return False
-    if call.is_a(SYSCALL):
-        # TODO: parallel scheduling for wait functions
-        wait_funcs = [
-            'polyphony.timing.clksleep',
-            'polyphony.timing.wait_rising',
-            'polyphony.timing.wait_falling',
-            'polyphony.timing.wait_value',
-            'polyphony.timing.wait_edge',
-            'print',
-        ]
-        return call.sym.name in wait_funcs
-    elif is_port_method_call(call):
+    if is_port_method_call(call):
         # TODO: parallel scheduling for port access
         port = call.func_scope().parent
         if port.name.startswith('polyphony.io.Queue'):
@@ -146,6 +135,17 @@ def has_exclusive_function(stm):
             if proto != 'none':
                 return True
     return False
+
+
+def has_clkfence(stm):
+        if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+                stm.exp.sym.name == 'polyphony.timing.clksleep'):
+            return True
+        elif (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+                stm.exp.sym.name.startswith('polyphony.timing.wait_')):
+            return True
+        else:
+            return False
 
 
 def eval_unop(op, v):

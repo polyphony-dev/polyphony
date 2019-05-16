@@ -44,13 +44,16 @@ class PipelineState(State):
             for c in subst.codes:
                 if isinstance(c, PipelineStage):
                     stage = c
-                    lines = [f'---{stage.name}---']
-                    strcodes = '\n'.join([code for code in stage.codes])
-                    lines += strcodes.split('\n')
-                    s += '\n'.join([f'  {line}' for line in lines])
-                    s += '\n'
+                    s += f'  ---{stage.name}---\n'
+                    for code in stage.codes:
+                        str_code = str(code)
+                        lines = str_code.split('\n')
+                        for line in lines:
+                            if line:
+                                s += '  {}\n'.format(line)
                 else:
-                    s += str(c) + '\n'
+                    s += f'  {c}\n'
+                s += '\n'
         else:
             pass
         s += '\n'
@@ -125,19 +128,6 @@ class PipelineState(State):
             pass
         else:
             assert False
-        transition = code
-
-        move_transition = False
-        for s in self.stages:
-            for code in s.codes:
-                if code.is_a(AHDL_META_WAIT):
-                    if transition:
-                        code.transition = transition
-                        move_transition = True
-                    else:
-                        code.transition = AHDL_TRANSITION(next_state)
-            if move_transition:
-                s.codes.pop()
         return next_state
 
     def add_global_move(self, sym, mv):
