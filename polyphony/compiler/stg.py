@@ -328,10 +328,9 @@ class StateBuilder(STGItemBuilder):
             if is_first:
                 first_state = states[0]
                 assert first_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
-                if not (len(states) <= 1 and is_last):
-                    prolog = AHDL_SEQ(AHDL_CALLEE_PROLOG(self.stg.name), 0, 1)
-                    first_state.codes.insert(0, prolog)
-                self.stg.init_state = states[0]
+                prolog = AHDL_SEQ(AHDL_CALLEE_PROLOG(self.stg.name), 0, 1)
+                first_state.codes.insert(0, prolog)
+                self.stg.init_state = first_state
                 self.stg.init_state.name = f'{state_prefix}_INIT'
             if is_last:
                 name = f'{state_prefix}_FINISH'
