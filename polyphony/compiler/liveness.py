@@ -2,6 +2,7 @@ from collections import defaultdict
 from logging import getLogger
 logger = getLogger(__name__)
 
+
 class Liveness:
     def __init__(self):
         self.liveins = defaultdict(set)
@@ -31,16 +32,15 @@ class Liveness:
         scope.liveouts = self.liveouts
         #self.dump()
 
-
     def dump(self):
         logger.debug("::::: Live in :::::")
         for blk, syms in sorted(self.liveins.items()):
             logger.debug(blk.name)
-            logger.debug('   ' + ', '.join([s.name+':'+str(hasloop) for s, hasloop in syms]))
+            logger.debug('   ' + ', '.join([s.name + ':' + str(hasloop) for s, hasloop in syms]))
         logger.debug("::::: Live out :::::")
         for blk, syms in sorted(self.liveouts.items()):
             logger.debug(blk.name)
-            logger.debug('   ' + ', '.join([s.name+':'+str(hasloop) for s, hasloop in syms]))
+            logger.debug('   ' + ', '.join([s.name + ':' + str(hasloop) for s, hasloop in syms]))
 
     def _trace_path(self, start, frm, to, path, results, hasloop):
         if frm in path:

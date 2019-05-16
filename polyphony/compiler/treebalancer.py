@@ -3,6 +3,7 @@ from .symbol import Symbol
 from logging import getLogger
 logger = getLogger(__name__)
 
+
 class PLURALOP:
     def __init__(self, op):
         self.op = op
@@ -10,7 +11,7 @@ class PLURALOP:
 
     def __str__(self):
         s = '(PLURALOP ' + self.op + ', '
-        s += ', '.join(['('+str(e)+','+str(p)+')' for e, p in self.values])
+        s += ', '.join(['(' + str(e) + ',' + str(p) + ')' for e, p in self.values])
         s += ')'
         return s
 
@@ -23,7 +24,7 @@ class PLURALOP:
             if not v:
                 continue
             e1, p1 = v
-            for j in range(i+1, len(self.values)):
+            for j in range(i + 1, len(self.values)):
                 v = self.values[j]
                 if not v:
                     continue
@@ -36,7 +37,6 @@ class PLURALOP:
         self.values = values
 
 
-            
 class TreeBalancer:
     def __init__(self):
         self.done_Blocks = []
@@ -62,6 +62,7 @@ class TreeBalancer:
             for succ in block.succs:
                 self._process_Block(succ)
 
+
 class BINOP2PLURALOP:
     def visit_BINOP(self, ir):
         ir.left = self.visit(ir.left)
@@ -78,7 +79,7 @@ class BINOP2PLURALOP:
 
             r = ir.right
             if isinstance(r, PLURALOP) and (r.op == 'Add' or r.op == 'Sub'):
-                newop.values.extend([(e, polarity==p) for e, p in r.kids()])
+                newop.values.extend([(e, polarity == p) for e, p in r.kids()])
             else:
                 newop.values.append((r, polarity))
             return newop
@@ -94,7 +95,7 @@ class BINOP2PLURALOP:
 
             r = ir.right
             if isinstance(r, PLURALOP) and r.op == 'Mult':
-                newop.values.extend([(e, polarity==p) for e, p in r.kids()])
+                newop.values.extend([(e, polarity == p) for e, p in r.kids()])
             else:
                 newop.values.append((r, polarity))
             return newop
@@ -150,7 +151,7 @@ class BINOP2PLURALOP:
 
 class PLURALOP2BINOP:
     # rebuild tree process uses two FIFO as follows
-    # 
+    #
     #            (outputs)    :    (inputs)
     #step1-1:                 : a, b, c, d, e
     #step1-2: (a,b)           : c, d, e
@@ -162,13 +163,11 @@ class PLURALOP2BINOP:
     #step3-1:                    : ((a,b) (c,d)) e
     #step3-2: (((a,b), (c,d)), e):
     def rebuild_tree(self, op, values):
-        outputs = []
         #grouping same polarity
         inputs = sorted(values, reverse=True, key=lambda item: str(item[1]))
         #TODO: grouping same bit-width
         #TODO: grouping constants
         return self._rebuild_tree(inputs, op)
-            
 
     def _rebuild_tree(self, inputs, op):
         #logger.debug([str(e)+str(p) for e, p in inputs])
@@ -195,7 +194,6 @@ class PLURALOP2BINOP:
             return 'Sub'
         else:
             return op
-
 
     def visit_PLURALOP(self, ir):
         ir.values = [(self.visit(e), p) for e, p in ir.values]
@@ -251,27 +249,54 @@ def test():
     b = Symbol.new('b', None)
     c = Symbol.new('c', None)
     # ((a+b)+c) - (b+c)
-    ir = BINOP('Sub', 
-               BINOP('Add', 
-                     BINOP('Add', TEMP(a, ''), TEMP(b, '')), 
+    ir = BINOP('Sub',
+               BINOP('Add',
+                     BINOP('Add', TEMP(a, ''), TEMP(b, '')),
                      TEMP(c, '')),
                BINOP('Add', TEMP(b, ''), TEMP(c, ''))
                )
-    #ir = BINOP('Add', BINOP('Add', BINOP('Sub', TEMP(a, ''), TEMP(b, '')), TEMP(c, '')), BINOP('Sub', TEMP(c, ''), TEMP(b, '')))
-    #ir = BINOP('Add', BINOP('Add', BINOP('Add', BINOP('Add', BINOP('Add', TEMP(a, ''), TEMP(b, '')), TEMP(c, '')), TEMP(a, '')), TEMP(b, '')), TEMP(c, ''))
-    #ir = BINOP('Mult', BINOP('Mult', BINOP('Mult', BINOP('Mult', BINOP('Mult', TEMP(a, ''), TEMP(b, '')), TEMP(c, '')), TEMP(a, '')), TEMP(b, '')), TEMP(c, ''))
-    #ir = BINOP('Mult', BINOP('Add', BINOP('Sub', BINOP('Mult', TEMP(c, ''), TEMP(c, '')), TEMP(a, '')), TEMP(b, '')), TEMP(c, ''))
+    #ir = BINOP('Add',
+    #           BINOP('Add',
+    #                 BINOP('Sub', TEMP(a, ''), TEMP(b, '')),
+    #                 TEMP(c, '')),
+    #           BINOP('Sub', TEMP(c, ''), TEMP(b, '')))
+    #ir = BINOP('Add',
+    #           BINOP('Add',
+    #                 BINOP('Add',
+    #                       BINOP('Add',
+    #                             BINOP('Add', TEMP(a, ''), TEMP(b, '')),
+    #                             TEMP(c, '')),
+    #                       TEMP(a, '')),
+    #                 TEMP(b, '')),
+    #           TEMP(c, ''))
+    #ir = BINOP('Mult',
+    #           BINOP('Mult',
+    #                 BINOP('Mult',
+    #                       BINOP('Mult',
+    #                             BINOP('Mult', TEMP(a, ''), TEMP(b, '')),
+    #                             TEMP(c, '')),
+    #                       TEMP(a, '')),
+    #                 TEMP(b, '')),
+    #           TEMP(c, ''))
+    #ir = BINOP('Mult',
+    #           BINOP('Add',
+    #                 BINOP('Sub',
+    #                       BINOP('Mult', TEMP(c, ''), TEMP(c, '')),
+    #                       TEMP(a, '')),
+    #                 TEMP(b, '')),
+    #           TEMP(c, ''))
 
     logger.debug(str(ir))
 
     v = BINOP2PLURALOP()
     ir = v.visit(ir)
     logger.debug(str(ir))
-    
+
     v = PLURALOP2BINOP()
     ir = v.visit(ir)
-    
+
     logger.debug(str(ir))
+
 
 if __name__ == '__main__':
     test()

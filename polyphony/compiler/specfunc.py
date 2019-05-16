@@ -1,5 +1,4 @@
 ﻿from collections import defaultdict, deque
-from .symbol import Symbol
 from .scope import Scope
 from .irvisitor import IRVisitor
 from .varreplacer import VarReplacer
@@ -7,9 +6,9 @@ from .memref import MemRefNode
 from .env import env
 from .ir import Ctx, CONST, TEMP, ARRAY, MOVE
 from .usedef import UseDefDetector
-from .type import Type
 import logging
 logger = logging.getLogger()
+
 
 class SpecializedFunctionMaker:
     def __init__(self):
@@ -94,15 +93,13 @@ class SpecializedFunctionMaker:
             assert False
         return '{}_{}'.format(p.hdl_name(), astr)
 
-
     def bind_val(self, scope, i, value):
-        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], Ctx.LOAD), CONST(value), scope.usedef)
-
+        VarReplacer.replace_uses(TEMP(scope.params[i][0], Ctx.LOAD), CONST(value), scope.usedef)
 
     def bind_rom(self, scope, i, memnode):
         source = memnode.single_source()
         assert source and source.initstm and source.initstm.is_a(MOVE) and source.initstm.src.is_a(ARRAY)
-        replaces = VarReplacer.replace_uses(TEMP(scope.params[i][0], Ctx.LOAD), source.initstm.src.clone(), scope.usedef)
+        VarReplacer.replace_uses(TEMP(scope.params[i][0], Ctx.LOAD), source.initstm.src.clone(), scope.usedef)
 
 
 class CallCollector(IRVisitor):
@@ -112,4 +109,3 @@ class CallCollector(IRVisitor):
 
     def visit_CALL(self, ir):
         self.calls[(self.scope, ir.func_scope)].add(ir)
-

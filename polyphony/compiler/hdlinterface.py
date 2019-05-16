@@ -520,7 +520,7 @@ class CallAccessor(IOAccessor):
             seq.append(AHDL_MOVE(accept, AHDL_CONST(1)))
         #elif step == step_n - 2:
         #elif step == step_n - 1:
-        elif step == 2:  #step_n - 1:
+        elif step == 2:  # step_n - 1:
             seq.append(AHDL_MOVE(accept, AHDL_CONST(0)))
         return tuple(seq)
 
@@ -912,8 +912,7 @@ def fifo_pipelined_read_seq(inf, step, dst, stage):
 
         read_rhs = pipeline_state.valid_exp(stage.step)
         local_stms = tuple()
-        stage_stms = (AHDL_MOVE(read, read_rhs),
-                     )
+        stage_stms = (AHDL_MOVE(read, read_rhs), )
     elif step == 1:
         if dst:
             local_stms = (AHDL_MOVE(dst, dout), )
@@ -957,8 +956,7 @@ def fifo_pipelined_write_seq(inf, step, src, stage):
         stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
         write_rhs = pipeline_state.valid_exp(stage.step)
         local_stms = (AHDL_MOVE(din, src), )
-        stage_stms = (AHDL_MOVE(write, write_rhs),
-                     )
+        stage_stms = (AHDL_MOVE(write, write_rhs), )
     return local_stms, stage_stms
 
 
@@ -1292,4 +1290,3 @@ class Interconnect(object):
         for o in self.outs:
             s += str(o) + '\n'
         return s
-

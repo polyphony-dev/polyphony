@@ -243,7 +243,6 @@ class HDLModule(object):
     def resources(self):
         num_of_regs = 0
         num_of_nets = 0
-        internal_rams = 0
         for inf in self.interfaces.values():
             for r in inf.regs():
                 num_of_regs += r.width

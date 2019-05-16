@@ -11,8 +11,7 @@ from .symbol import Symbol
 from .synth import make_synth_params
 from .type import Type
 from .irvisitor import IRVisitor
-from .ir import CONST, JUMP, CJUMP, MCJUMP, PHIBase
-from .signal import Signal
+from .ir import CONST, JUMP, CJUMP, MCJUMP
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -421,7 +420,9 @@ class Scope(Tagged):
     def find_scope(self, name):
         if self.orig_name == name:
             return self
-        if self.find_child(name):
+        ret = self.find_child(name)
+        if ret:
+            child, _ = ret
             return child
         if self.parent:
             return self.parent.find_scope(name)

@@ -1,6 +1,5 @@
 ﻿from .ir import *
 from .irvisitor import IRTransformer
-from .type import Type
 from .common import fail
 from .errors import Errors
 

@@ -1,5 +1,4 @@
 ﻿from .ir import *
-from .dataflow import DataFlowGraph
 from .env import env
 
 UNIT_STEP = 1
@@ -99,8 +98,7 @@ def _get_latency(tag):
                     return 0
                 else:
                     return UNIT_STEP * len(tag.src.items * tag.src.repeat.value)
-            if tag.src.is_a(TEMP) and tag.src.symbol().typ.is_seq():  #is_param():
-            #if tag.src.is_a(TEMP) and tag.src.symbol().is_param():
+            if tag.src.is_a(TEMP) and tag.src.symbol().typ.is_seq():
                 if not memnode.can_be_reg():
                     return 0, 0
         if tag.dst.symbol().is_alias():

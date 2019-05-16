@@ -737,7 +737,6 @@ def compile_plan():
 
 
 def setup(src_file, options):
-    import glob
     env.__init__()
     env.dev_debug_mode = options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
@@ -804,7 +803,9 @@ def output_individual(compile_results, output_name, output_dir):
 
     scopes = Scope.get_scopes(with_class=True)
     scopes = [scope for scope in scopes
-              if (scope.is_testbench() or (scope.is_module() and scope.is_instantiated()) or scope.is_function_module())]
+              if (scope.is_testbench() or
+                  (scope.is_module() and scope.is_instantiated()) or
+                  scope.is_function_module())]
     if output_name.endswith('.v'):
         output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:

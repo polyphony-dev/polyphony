@@ -1,5 +1,4 @@
 ﻿from .common import Tagged
-from .env import env
 from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)

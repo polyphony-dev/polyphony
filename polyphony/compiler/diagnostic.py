@@ -1,7 +1,6 @@
 from .block import Block
 from .env import env
 from .ir import *
-from .type import Type
 from .usedef import UseDefDetector
 
 

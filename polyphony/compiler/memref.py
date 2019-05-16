@@ -1,6 +1,5 @@
 ﻿from collections import deque, defaultdict
 from .ir import *
-from .type import Type
 from .irvisitor import IRVisitor
 from .env import env
 from .scope import Scope
@@ -325,10 +324,10 @@ class MemTrait(object):
 
     def has_fixed_length(self, scope):
         src = self.single_source()
-        return (self.can_be_reg() or          # register array
-                not self.is_writable() or     # rom
-                self.is_immutable() or        # tuple
-                src and src.scope is scope or # local ram
+        return (self.can_be_reg() or           # register array
+                not self.is_writable() or      # rom
+                self.is_immutable() or         # tuple
+                src and src.scope is scope or  # local ram
                 self.sym.typ.is_seq() and self.sym.typ.has_length()  # it has explicit type length
                 )
 
@@ -1040,7 +1039,7 @@ class MemRefGraphBuilder(IRVisitor):
                 purenode.set_pure()
                 assert memsym.typ.has_length()
                 purenode.length = memsym.typ.get_length()
-                purenode.is_source = lambda : True
+                purenode.is_source = lambda: True
 
     def visit_PHI(self, ir):
         if ir.var.sym.typ.is_seq():

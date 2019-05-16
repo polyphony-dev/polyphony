@@ -139,5 +139,3 @@ class LoopNestTree(Graph):
             return None
         assert len(preds) == 1
         return list(preds)[0]
-
-

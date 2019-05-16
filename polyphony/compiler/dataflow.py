@@ -373,7 +373,7 @@ class DataFlowGraph(object):
 
     def write_dot_pygraphviz(self, name):
         try:
-            import pygraphviz
+            import pygraphviz as pgv
         except ImportError:
             return
         G = pgv.AGraph(directed=True, strict=False, landscape='false')

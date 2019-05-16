@@ -89,7 +89,7 @@ class EarlyWorkerInstantiator(object):
         if inspect.ismethod(worker.func):
             self_sym = new_worker.find_sym(env.self_name)
             self_sym.typ.set_scope(module)
-        worker_sym = parent.add_sym(new_worker.orig_name, typ=Type.function(new_worker, None, None))
+        parent.add_sym(new_worker.orig_name, typ=Type.function(new_worker, None, None))
         env.runtime_info.inst2worker[worker] = (new_worker, worker_scope)
         return new_worker, worker_scope
 
@@ -118,7 +118,7 @@ class EarlyModuleInstantiator(object):
 
         new_module_name = module.orig_name + '_' + inst_name
 
-        overrides = [child for child in module.children if not child.is_lib() and not child.is_worker()]  # [module.find_ctor()]
+        overrides = [child for child in module.children if not child.is_lib() and not child.is_worker()]
         for method in overrides[:]:
             for worker in instance._workers:
                 if method.orig_name == worker.func.__name__:
@@ -366,7 +366,7 @@ class MemnodeReplacer(IRVisitor):
     def _replace_typ_memnode(self, typ):
         if typ.is_seq() and typ not in self.replaced:
             memnode = typ.get_memnode()
-            if memnode in self.node_map: # TODO: to be always true
+            if memnode in self.node_map:  # TODO: to be always true
                 new_memnode = self.node_map[memnode]
                 typ.set_memnode(new_memnode)
             self.replaced.add(typ)

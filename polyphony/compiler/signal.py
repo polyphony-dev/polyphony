@@ -43,4 +43,3 @@ class Signal(Tagged):
 
     def prefix(self):
         return self.name[:-len(self.sym.hdl_name())]
-        

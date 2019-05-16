@@ -60,4 +60,3 @@ def id2str(idnum):
         tmp = tmp // 36
         s += _36chars[i]
     return s[::-1]
-

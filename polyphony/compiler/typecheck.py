@@ -1,5 +1,4 @@
-﻿from collections import defaultdict
-from .common import fail, warn
+﻿from .common import fail, warn
 from .errors import Errors, Warnings
 from .irvisitor import IRVisitor
 from .ir import *
@@ -140,7 +139,9 @@ class TypePropagation(IRVisitor):
                 fail(self.current_stm, Errors.PURE_IS_DISABLED)
             if not ir.func_scope().parent.is_global():
                 fail(self.current_stm, Errors.PURE_MUST_BE_GLOBAL)
-            if ir.func_scope().return_type and not ir.func_scope().return_type.is_undef() and not ir.func_scope().return_type.is_any():
+            if (ir.func_scope().return_type and
+                    not ir.func_scope().return_type.is_undef() and
+                    not ir.func_scope().return_type.is_any()):
                 return ir.func_scope().return_type
             ret, type_or_error = self.pure_type_inferrer.infer_type(self.current_stm, ir, self.scope)
             if ret:

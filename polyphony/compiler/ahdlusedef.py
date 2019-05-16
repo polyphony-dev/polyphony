@@ -138,6 +138,6 @@ class AHDLUseDefDetector(AHDLVisitor):
                 self.enable_use = False
         method = 'visit_{}'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
-        ret = visitor(ahdl.factor)
+        visitor(ahdl.factor)
         self.enable_use = True
         self.enable_def = True

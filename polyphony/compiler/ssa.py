@@ -222,7 +222,10 @@ class SSATransformerBase(object):
         usedef = self.scope.usedef
 
         def get_sym_if_having_only_1(phi):
-            syms = [arg.symbol() for arg in phi.args if arg and arg.is_a([TEMP, ATTR]) and arg.symbol() is not phi.var.symbol()]
+            syms = [arg.symbol() for arg in phi.args
+                    if arg and
+                    arg.is_a([TEMP, ATTR]) and
+                    arg.symbol() is not phi.var.symbol()]
             if syms and all(syms[0] == s for s in syms):
                 return syms[0]
             else:

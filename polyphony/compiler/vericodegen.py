@@ -8,8 +8,6 @@ from .hdlinterface import *
 from .ir import Ctx
 from .memref import One2NMemNode, N2OneMemNode
 from .signal import Signal
-from .stg import State
-from .stg_pipeline import PipelineState, PipelineStage
 from .verilog_common import pyop2verilogop, is_verilog_keyword
 from logging import getLogger
 logger = getLogger(__name__)
@@ -282,7 +280,7 @@ class VerilogCodeGen(AHDLVisitor):
             return
         self.emit('//sub modules')
         for name, sub_module, connections, param_map in sorted(self.hdlmodule.sub_modules.values(),
-                                                         key=lambda n: str(n)):
+                                                               key=lambda n: str(n)):
             ports = []
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')

@@ -132,9 +132,11 @@ class RuntimeInfoBuilder(object):
             name = frame.f_code.co_name
             vars = frame.f_locals
             if frame.f_back:
-                self.call_stack_info.append((name, vars, self.exec_order, frame.f_lineno, frame.f_back.f_lineno, event, arg))
+                self.call_stack_info.append((name, vars, self.exec_order,
+                                             frame.f_lineno, frame.f_back.f_lineno, event, arg))
             else:
-                self.call_stack_info.append((name, vars, self.exec_order, frame.f_lineno, 0, event, arg))
+                self.call_stack_info.append((name, vars, self.exec_order,
+                                             frame.f_lineno, 0, event, arg))
 
     def build(self):
         call_graph = self.build_runtime_call_graph()

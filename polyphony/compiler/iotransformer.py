@@ -5,7 +5,6 @@ from .common import fail
 from .errors import Errors
 from .stg import State
 from .stg_pipeline import PipelineState, PipelineStage
-from .utils import find_only_one_in
 
 
 class IOTransformer(AHDLVisitor):

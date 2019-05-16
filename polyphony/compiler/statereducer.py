@@ -4,7 +4,6 @@ from .ahdlvisitor import AHDLVisitor, AHDLCollector
 from .graph import Graph
 from .stg import State
 from .stg_pipeline import PipelineState
-from .utils import find_only_one_in
 
 
 class StateReducer(object):

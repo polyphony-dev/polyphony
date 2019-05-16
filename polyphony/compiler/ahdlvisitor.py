@@ -140,7 +140,7 @@ class AHDLVisitor(object):
             return visitor(ahdl)
 
     def visit_MEM_MUX(self, ahdl):
-        prefix = ahdl.args[0]
+        #prefix = ahdl.args[0]
         dst = ahdl.args[1]
         srcs = ahdl.args[2]
         conds = ahdl.args[3]

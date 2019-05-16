@@ -1,6 +1,4 @@
-﻿from collections import deque, defaultdict
-from .ir import *
-from .irvisitor import IRVisitor
+﻿from collections import deque
 from .env import env
 from logging import getLogger
 logger = getLogger(__name__)

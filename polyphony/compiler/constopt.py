@@ -374,7 +374,7 @@ class ConstantOpt(ConstantOptBase):
                 lens.append(source.length)
             if len(lens) <= 1 or all(lens[0] == len for len in lens):
                 if lens[0] > 0 and memnode.has_fixed_length(self.scope):
-                     return CONST(lens[0])
+                    return CONST(lens[0])
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):

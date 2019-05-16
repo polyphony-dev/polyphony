@@ -1,5 +1,4 @@
-﻿from collections import defaultdict
-from .ir import *
+﻿from .ir import *
 from .synth import make_synth_params
 from .utils import replace_item, remove_except_one
 from logging import getLogger

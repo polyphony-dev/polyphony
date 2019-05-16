@@ -228,11 +228,19 @@ class Warnings(Enum):
 
 
 WARNING_MESSAGES = {
-    Warnings.ASSERTION_FAILED: "The expression of assert always evaluates to False",
-    Warnings.EXCEPTION_RAISED: "An exception occurred while executing the Python interpreter at compile time\n(For more information you can use '--verbose' option)",
-    Warnings.PORT_IS_NOT_USED: "Port '{}' is not used at all",
-    Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT: "There is a read conflict at '{}' in a pipeline, II will be adjusted",
-    Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT: "There is a write conflict at '{}' in a pipeline, II will be adjusted",
-    Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT: "There is a read/write conflict at '{}' in a pipeline, II will be adjusted",
-    Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM: "The pipeline may not work correctly if there is both read and write access to the same memory '{}'"
+    Warnings.ASSERTION_FAILED:
+        "The expression of assert always evaluates to False",
+    Warnings.EXCEPTION_RAISED:
+        "An exception occurred while executing the Python interpreter at compile time\n\
+(For more information you can use '--verbose' option)",
+    Warnings.PORT_IS_NOT_USED:
+        "Port '{}' is not used at all",
+    Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT:
+        "There is a read conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT:
+        "There is a write conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_MEM_RW_CONFLICT:
+        "There is a read/write conflict at '{}' in a pipeline, II will be adjusted",
+    Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM:
+        "The pipeline may not work correctly if there is both read and write access to the same memory '{}'"
 }

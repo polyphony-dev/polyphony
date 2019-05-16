@@ -1,11 +1,10 @@
 from collections import defaultdict
-from .common import error_info
 from .common import fail, warn
 from .env import env
 from .errors import Errors, Warnings
 from .scope import Scope
 from .ir import CONST, TEMP, MOVE
-from .irvisitor import IRVisitor, IRTransformer
+from .irvisitor import IRTransformer
 from .type import Type
 from .typecheck import TypePropagation
 

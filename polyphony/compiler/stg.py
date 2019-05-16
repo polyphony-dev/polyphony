@@ -243,7 +243,6 @@ class STGItemBuilder(object):
     #def emit(self, item, sched_time, node, tag=''):
 
 
-
 class StateBuilder(STGItemBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
