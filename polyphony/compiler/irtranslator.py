@@ -964,6 +964,10 @@ class CodeVisitor(ast.NodeVisitor):
             it = seq
 
         # In case of range() loop
+        if (self.current_scope.synth_params['scheduling'] == 'timed' and
+                not (it.is_a(SYSCALL) and it.sym.name == 'polyphony.timing.clkrange')):
+            fail((env.current_filename, node.lineno),
+                 Errors.RULE_TIMED_FOR_LOOP_IS_NOT_ALLOWED)
         if it.is_a(SYSCALL) and it.sym.name == 'range':
             init_parts = []
             if len(it.args) == 1:
