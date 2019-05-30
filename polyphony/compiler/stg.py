@@ -480,11 +480,12 @@ class AHDLTranslator(object):
         lens = []
         for source in memnode.sources():
             lens.append(source.length)
-        if any(lens[0] != len for len in lens):
-            memlensig = self.hdlmodule.gen_sig('{}_len'.format(memnode.sym.hdl_name()), -1, ['memif'], mem.sym)
-            return AHDL_VAR(memlensig, Ctx.LOAD)
-        else:
-            assert False  # len() must be constant value
+        if len(lens) <= 1 or all(lens[0] == len for len in lens):
+                if lens[0] > 0 and memnode.has_fixed_length(self.scope):
+                    assert False  # len() must be constant value
+        name = f'{memnode.sym.hdl_name()}_len'
+        memlensig = self.hdlmodule.gen_sig(name, -1, ['memif'], mem.sym)
+        return AHDL_VAR(memlensig, Ctx.LOAD)
 
     def visit_SYSCALL(self, ir, node):
         syscall_name = ir.sym.name
@@ -561,7 +562,7 @@ class AHDLTranslator(object):
 
     def visit_CONST(self, ir, node):
         if ir.value is None:
-            return None
+            return AHDL_SYMBOL("'bz")
         else:
             return AHDL_CONST(ir.value)
 
@@ -699,7 +700,16 @@ class AHDLTranslator(object):
         if sym.scope is not self.scope:
             sig_name = sym.hdl_name()
         elif self.scope.is_worker() or self.scope.is_method():
-            sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
+            is_param = False
+            if self.scope.is_ctor() and self.scope.parent.is_module() and self.scope.parent.module_params:
+                is_param = any((sym is copy for _, copy, _ in self.scope.parent.module_params))
+            if is_param:
+                sig_name = '{}'.format(sym.hdl_name())
+                tags.update({'parameter'})
+                if 'reg' in tags:
+                    tags.remove('reg')
+            else:
+                sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'input' in tags:
             sig_name = '{}_{}'.format(self.scope.orig_name, sym.hdl_name())
         elif 'output' in tags:

@@ -93,7 +93,7 @@ class LoopFlatten(object):
         outer_phi_ps = []
         subloops = self.scope.child_regions(loop)
         if len(subloops) > 1:
-            fail((self.scope, subloops.orders()[1].head.stms[-1].lineno),
+            fail(subloops.orders()[1].head.stms[-1],
                  Errors.RULE_PIPELINE_CANNNOT_FLATTEN)
 
         subloop = subloops.orders()[0]

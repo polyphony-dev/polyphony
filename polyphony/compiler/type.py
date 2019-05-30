@@ -187,16 +187,19 @@ class Type(object):
             return self.get_scope().orig_name
         if env.dev_debug_mode:
             if self.name == 'int':
-                return 'int[{}]'.format(self.get_width())
+                return 'int{}'.format(self.get_width())
             if self.name == 'list':
-                return 'list[{}]'.format(self.get_element())
+                if self.has_length():
+                    return 'list<{}><{}>'.format(self.get_element(), self.get_length())
+                else:
+                    return 'list<{}>'.format(self.get_element())
             if self.name == 'port':
-                return 'port[{}, {}]'.format(self.get_dtype(), self.get_direction())
+                return 'port<{}, {}>'.format(self.get_dtype(), self.get_direction())
             if self.name == 'function':
                 if self.get_scope().is_method():
-                    return 'function[{}.{}]'.format(self.get_scope().parent.orig_name, self.get_scope().orig_name)
+                    return 'function<{}.{}>'.format(self.get_scope().parent.orig_name, self.get_scope().orig_name)
                 else:
-                    return 'function[{}]'.format(self.get_scope().orig_name)
+                    return 'function<{}>'.format(self.get_scope().orig_name)
         return self.name
 
     def __repr__(self):

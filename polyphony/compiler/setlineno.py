@@ -108,15 +108,15 @@ class SourceDump(IRVisitor):
         logger.debug('-' * 30)
         logger.debug(scope.name)
         logger.debug('-' * 30)
-        for lineno in sorted(self.stms.keys()):
-            src_line = get_src_text(scope, lineno)
+        for loc in sorted(self.stms.keys()):
+            src_line = get_src_text(loc.filename, loc.lineno)
             src_line = src_line.replace('\n', '')
-            logger.debug('{}:{}'.format(lineno, src_line))
+            logger.debug('{}:{}'.format(loc.lineno, src_line))
             spc_nums = len(src_line) - len(src_line.lstrip())
             indent = ' ' * spc_nums
-            for stm in self.stms[lineno]:
+            for stm in self.stms[loc]:
                 logger.debug(indent + str(stm))
 
     def _process_block(self, block):
         for stm in block.stms:
-            self.stms[stm.lineno].append(stm)
+            self.stms[stm.loc].append(stm)

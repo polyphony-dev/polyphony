@@ -4,6 +4,7 @@ from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
 from .irhelper import reduce_relexp, is_port_method_call
+from .type import Type
 from .usedef import UseDefDetector
 from .utils import remove_except_one, unique
 from logging import getLogger
@@ -11,8 +12,7 @@ logger = getLogger(__name__)
 
 
 def can_merge_synth_params(params1, params2):
-    # TODO
-    return params1 == params2
+    return params1['scheduling'] == params2['scheduling']
 
 
 class BlockReducer(object):
@@ -62,29 +62,32 @@ class BlockReducer(object):
             if (len(block.preds) == 1 and
                     len(block.preds[0].succs) == 1 and
                     can_merge_synth_params(block.synth_params, block.preds[0].synth_params)):
-                pred = block.preds[0]
-                assert pred.stms[-1].is_a(JUMP)
-                assert pred.succs[0] is block
-                assert not pred.succs_loop
+                if self.merge_unidir_block(block):
+                    logger.debug('remove unidirectional block ' + str(block.name))
+                    self._remove_block(block)
 
-                pred.stms.pop()  # remove useless jump
-                # merge stms
-                for stm in block.stms:
-                    pred.append_stm(stm)
+    def merge_unidir_block(self, block):
+        pred = block.preds[0]
+        assert pred.stms[-1].is_a(JUMP)
+        assert pred.succs[0] is block
+        assert not pred.succs_loop
 
-                #deal with block links
-                for succ in block.succs:
-                    succ.replace_pred(block, pred)
-                    succ.replace_pred_loop(block, pred)
-                pred.succs = block.succs
-                pred.succs_loop = block.succs_loop
-                if block is scope.exit_block:
-                    scope.exit_block = pred
+        pred.stms.pop()  # remove useless jump
+        # merge stms
+        for stm in block.stms:
+            pred.append_stm(stm)
 
-                logger.debug('remove unidirectional block ' + str(block.name))
-                self._remove_block(block)
-                if not pred.is_hyperblock:
-                    pred.is_hyperblock = block.is_hyperblock
+        #deal with block links
+        for succ in block.succs:
+            succ.replace_pred(block, pred)
+            succ.replace_pred_loop(block, pred)
+        pred.succs = block.succs
+        pred.succs_loop = block.succs_loop
+        if block is block.scope.exit_block:
+            block.scope.exit_block = pred
+        if not pred.is_hyperblock:
+            pred.is_hyperblock = block.is_hyperblock
+        return True
 
     def remove_empty_block(self, block):
         if len(block.stms) > 1:
@@ -228,13 +231,23 @@ def rel_and_exp(exp1, exp2):
 
 
 class HyperBlockBuilder(object):
+    DEBUG = False
+
     def process(self, scope):
         self.scope = scope
         self.uddetector = UseDefDetector()
         self.uddetector.table = scope.usedef
+        self.reducer = BlockReducer()
+        self.reducer.scope = self.scope
         self.diamond_nodes = deque()
         self._visited_heads = set()
+        if HyperBlockBuilder.DEBUG:
+            self.count = 0
+            from .scope import write_dot
+            write_dot(self.scope, f'{self.count}')
+            self.count += 1
         diamond_nodes = self._find_diamond_nodes()
+
         self._convert(diamond_nodes)
 
     def _update_domtree(self):
@@ -297,7 +310,7 @@ class HyperBlockBuilder(object):
         new_head = Block(self.scope)
         old_mj = head.stms[-1]
         mj = MCJUMP()
-        mj.lineno = old_mj.lineno
+        mj.loc = old_mj.loc
         for idx in indices:
             path = branches[idx]
             br = path[0]
@@ -325,11 +338,18 @@ class HyperBlockBuilder(object):
             head.succs.pop(idx)
         if len(old_mj.targets) == 2:
             cj = CJUMP(old_mj.conds[0], old_mj.targets[0], old_mj.targets[1])
-            cj.lineno = old_mj.lineno
+            cj.loc = old_mj.loc
+            if not cj.exp.is_a(TEMP):
+                new_sym = self.scope.add_condition_sym()
+                new_sym.typ = Type.bool_t
+                new_c = TEMP(new_sym, Ctx.STORE)
+                mv = MOVE(new_c, cj.exp)
+                head.insert_stm(-1, mv)
+                cj.exp = TEMP(new_sym, Ctx.LOAD)
             head.replace_stm(head.stms[-1], cj)
         if len(mj.targets) == 2:
             cj = CJUMP(mj.conds[0], mj.targets[0], mj.targets[1])
-            cj.lineno = mj.lineno
+            cj.loc = mj.loc
             new_head.append_stm(cj)
         else:
             new_head.append_stm(mj)
@@ -342,8 +362,6 @@ class HyperBlockBuilder(object):
         return (new_head, tail, sub_branches)
 
     def _convert(self, diamond_nodes):
-        reducer = BlockReducer()
-        reducer.scope = self.scope
         while diamond_nodes:
             head, tail, branches = diamond_nodes
             if self.tree.get_parent_of(tail) is head:
@@ -351,12 +369,16 @@ class HyperBlockBuilder(object):
                 self._merge_diamond_blocks(head, tail, branches)
                 for path in branches:
                     for blk in path[:-1]:
-                        reducer.remove_empty_block(blk)
-                reducer.remove_empty_block(tail)
+                        self.reducer.remove_empty_block(blk)
+                self.reducer.remove_empty_block(tail)
                 self._visited_heads.add(head)
             else:
                 self._do_phi_reduction(head, tail, branches)
             diamond_nodes = self._find_diamond_nodes()
+            if HyperBlockBuilder.DEBUG:
+                from .scope import write_dot
+                write_dot(self.scope, f'{self.count}')
+                self.count += 1
 
     def _do_phi_reduction(self, head, tail, branches):
         new_tail = Block(self.scope)
@@ -378,7 +400,7 @@ class HyperBlockBuilder(object):
         for idx, br in zip(indices, removes):
             assert tail.preds[idx] is br
         for stm in tail.stms:
-            if stm.is_a(PHIBase):
+            if stm.is_a(PHIBase) and len(stm.args) == len(tail.preds):
                 new_args = []
                 new_ps = []
                 old_args = []
@@ -387,7 +409,7 @@ class HyperBlockBuilder(object):
                     if idx in indices:
                         new_args.append(stm.args[idx])
                         new_ps.append(stm.ps[idx])
-                    elif stm.args[idx]:
+                    else:
                         old_args.append(stm.args[idx])
                         old_ps.append(stm.ps[idx])
                 if all([new_args[0].symbol() is arg.symbol() for arg in new_args[1:]]):
@@ -396,6 +418,7 @@ class HyperBlockBuilder(object):
                     dst = TEMP(newsym, Ctx.STORE)
                     mv = MOVE(dst, new_args[0])
                     new_tail.append_stm(mv)
+                    self.uddetector.visit(mv)
                 else:
                     new_phi = stm.clone()
                     new_phi.args = new_args
@@ -404,18 +427,14 @@ class HyperBlockBuilder(object):
                     newsym.set_type(stm.var.symbol().typ.clone())
                     new_phi.var = TEMP(newsym, Ctx.STORE)
                     new_tail.append_stm(new_phi)
-
+                    self.uddetector.visit(new_phi)
                 arg = TEMP(newsym, Ctx.LOAD)
 
-                #ps = new_ps[0]
-                #for p in new_ps[1:]:
-                #    ps = RELOP('Or', ps, p)
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
-                #old_ps.insert(first_idx, ps)
                 stm.args = old_args
                 stm.ps = old_ps
-
+                self.uddetector.visit(stm)
         for br in removes:
             old_jmp = br.stms[-1]
             old_jmp.target = new_tail
@@ -448,7 +467,7 @@ class HyperBlockBuilder(object):
         elif call.is_a(CALL):
             if call.func_scope().is_method() and call.func_scope().parent.is_port():
                 return True
-            return False
+        return False
 
     def _try_get_mem(self, stm):
         if stm.is_a(MOVE) and stm.src.is_a(MREF):
@@ -521,11 +540,13 @@ class HyperBlockBuilder(object):
                 cstm = CMOVE(path_exp.clone(), stm.dst.clone(), stm.src.clone())
             elif stm.is_a(EXPR):
                 cstm = CEXPR(path_exp.clone(), stm.exp.clone())
+            elif stm.is_a(PHIBase):
+                cstm = stm
             else:
                 assert False
             stm.block.stms.remove(stm)
             self.scope.usedef.remove_stm(stm)
-            cstm.lineno = stm.lineno
+            cstm.loc = stm.loc
             cstms.append(cstm)
             all_cstms.append((idx, cstm))
             self.uddetector.visit(cstm)
@@ -541,21 +562,28 @@ class HyperBlockBuilder(object):
     def _merge_diamond_blocks(self, head, tail, branches):
         visited_path = set()
         for idx, path in enumerate(branches):
+            assert tail is path[-1]
             if path[0] in visited_path:
                 continue
-            else:
-                visited_path.update(set(path))
-            assert tail is path[-1]
+            visited_path.add(path[0])
+            if len(path) == 1:
+                continue
+            # merge blocks on the path
             for blk in path[:-1]:
-                assert len(blk.succs) == 1
-                stms_, remains_ = self._select_stms_for_speculation(head, blk)
-                for _, stm in sorted(stms_, key=lambda _: _[0]):
+                if (len(blk.preds) == 1 and
+                        len(blk.preds[0].succs) == 1):
+                    if self.reducer.merge_unidir_block(blk):
+                        path.remove(blk)
+            branch_blk = path[0]
+            assert len(branch_blk.succs) == 1
+            stms_, remains_ = self._select_stms_for_speculation(head, branch_blk)
+            for _, stm in sorted(stms_, key=lambda _: _[0]):
+                head.insert_stm(-1, stm)
+            for _, stm in stms_:
+                branch_blk.stms.remove(stm)
+            if remains_ and head.synth_params['scheduling'] == 'pipeline':
+                path_exp = branch_blk.path_exp
+                cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
+                for _, stm in sorted(cstms_, key=lambda _: _[0]):
                     head.insert_stm(-1, stm)
-                for _, stm in stms_:
-                    blk.stms.remove(stm)
-                if remains_ and head.synth_params['scheduling'] == 'pipeline':
-                    path_exp = merge_path_exp(head, path[0], idx)
-                    cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
-                    for _, stm in sorted(cstms_, key=lambda _: _[0]):
-                        head.insert_stm(-1, stm)
         head.is_hyperblock = True

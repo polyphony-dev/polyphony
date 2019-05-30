@@ -151,7 +151,7 @@ class EarlyModuleInstantiator(object):
         collector = CallCollector()
         calls = collector.process(caller_scope)
         for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope() is module and caller_lineno == stm.lineno:
+            if call.is_a(NEW) and call.func_scope() is module and caller_lineno == stm.loc.lineno:
                 obj_name = inst_name.split('.')[-1]
                 if stm.dst.symbol().name.endswith(obj_name):
                     new_module_sym = call.sym.scope.gen_sym(new_module.orig_name)
@@ -282,10 +282,14 @@ class ModuleInstantiator(object):
     def _instantiate_module(self, new, module_var):
         module = new.func_scope()
         binding = []
+        module_param_vars = []
+        ctor = module.find_ctor()
         for i, (_, arg) in enumerate(new.args):
             if arg.is_a(CONST):
-                binding.append((bind_val, i, arg.value))
-
+                if ctor.params[i + 1].copy.name.isupper():
+                    module_param_vars.append((ctor.params[i + 1].copy.name, arg.value))
+                else:
+                    binding.append((bind_val, i, arg.value))
         inst_name = module_var.symbol().hdl_name()
         new_module_name = module.orig_name + '_' + inst_name
         if binding:
@@ -305,10 +309,20 @@ class ModuleInstantiator(object):
         else:
             overrides = [module.find_ctor()]
             new_module = module.inherit(new_module_name, overrides)
+            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module_name)
+            new.sym = new_module_sym
         new.sym.typ.set_scope(new_module)
         _instantiate_memnode(module.find_ctor(), new_module.find_ctor())
         new_module.inst_name = inst_name
         new_module.add_tag('instantiated')
+        new_module.module_params = []
+        ctor = new_module.find_ctor()
+        for i, param in enumerate(ctor.params):
+            if param.copy.name.isupper():
+                new_module.module_params.append(param)
+        new_module.module_param_vars = module_param_vars
+        for param in new_module.module_params:
+            ctor.params.remove(param)
         return new_module
 
 

@@ -1,6 +1,8 @@
 ﻿import functools
+import os
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
+from .common import get_src_text
 from .env import env
 from .hdlinterface import *
 from .ir import Ctx
@@ -23,7 +25,11 @@ class VerilogCodeGen(AHDLVisitor):
     def result(self):
         return ''.join(self.codes)
 
-    def emit(self, code, with_indent=True, newline=True):
+    def emit(self, code, with_indent=True, newline=True, continueus=False):
+        if continueus:
+            prev_code = self.codes[-1]
+            if prev_code[-1] == '\n':
+                self.codes[-1] = prev_code[:-1]
         if with_indent:
             self.codes.append((' ' * self.indent) + code)
         else:
@@ -120,7 +126,14 @@ class VerilogCodeGen(AHDLVisitor):
 
     def _generate_module_header(self):
         self.emit(f'module {self.hdlmodule.qualified_name}')
-
+        if self.hdlmodule.parameters:
+            self.set_indent(2)
+            self.emit('#(')
+            self.set_indent(2)
+            self._generate_parameter_decls(self.hdlmodule.parameters)
+            self.set_indent(-2)
+            self.emit(')')
+            self.set_indent(-2)
         self.set_indent(2)
         self.emit('(')
         self.set_indent(2)
@@ -130,6 +143,15 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit(');')
         self.set_indent(-2)
         self.emit('')
+
+    def _generate_parameter_decls(self, parameters):
+        params = []
+        for sig, val in parameters:
+            if sig.is_int():
+                params.append(f'parameter signed [{sig.width-1}:0] {sig.name} = {val}')
+            else:
+                params.append(f'parameter [{sig.width-1}:0] {sig.name} = {val}')
+        self.emit((',\n' + self.tab()).join(params))
 
     def _generate_io_port(self):
         ports = []
@@ -165,9 +187,9 @@ class VerilogCodeGen(AHDLVisitor):
                 for net in nets:
                     self.emit(f'$display("%8d:WIRE  :{self.hdlmodule.name:<10}', newline=False)
                     if net.sig.is_onehot():
-                        self.emit(f'{net.sig} = 0b%b", $time, {net.sig});')
+                        self.emit(f'{net.sig.name} = 0b%b", $time, {net.sig.name});')
                     else:
-                        self.emit(f'{net.sig} = 0x%2h (%1d)", $time, {net.sig}, {net.sig});')
+                        self.emit(f'{net.sig.name} = 0x%2h (%1d)", $time, {net.sig.name}, {net.sig.name});')
             self.emit('end')
             self.emit('end')
             self.emit('')
@@ -492,7 +514,11 @@ class VerilogCodeGen(AHDLVisitor):
                         break
             exp_str = exp_str.replace('==', '===').replace('!=', '!==')
             self.emit(f'if (!{exp_str}) begin')
-            self.emit(f'  $display("ASSERTION FAILED {exp_str}"); $finish;')
+            src_text = self._get_source_text(ahdl)
+            if src_text:
+                self.emit(f'  $display("ASSERTION FAILED: {src_text}"); $finish;')
+            else:
+                self.emit(f'  $display("ASSERTION FAILED: {exp_str}"); $finish;')
             self.emit('end')
         else:
             args = ', '.join(args)
@@ -806,3 +832,30 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_BLOCK(self, ahdl):
         for c in ahdl.codes:
             self.visit(c)
+
+    def visit(self, ahdl):
+        if ahdl.is_a(AHDL_STM):
+            self.current_stm = ahdl
+        visitor = self.find_visitor(ahdl.__class__)
+        ret = visitor(ahdl)
+        if env.dev_debug_mode and ahdl in self.hdlmodule.ahdl2dfgnode:
+            self._emit_source_text(ahdl)
+        return ret
+
+    def _get_source_text(self, ahdl):
+        node = self.hdlmodule.ahdl2dfgnode[ahdl]
+        if node.tag.loc.lineno < 1:
+            return
+        text = get_src_text(node.tag.loc.filename, node.tag.loc.lineno)
+        text = text.strip()
+        if not text:
+            return
+        if text[-1] == '\n':
+            text = text[:-1]
+        filename = os.path.basename(node.tag.loc.filename)
+        return f'{filename} [{node.tag.loc.lineno}]: {text}'
+
+    def _emit_source_text(self, ahdl):
+        text = self._get_source_text(ahdl)
+        if text:
+            self.emit(f'/* {text} */', continueus=True)

@@ -351,6 +351,7 @@ def flattenmodule(driver, scope):
 
 def scalarize(driver, scope):
     TupleSSATransformer().process(scope)
+    earlyquadruple(driver, scope)
     ObjectHierarchyCopier().process(scope)
     usedef(driver, scope)
     ObjectSSATransformer().process(scope)
@@ -612,10 +613,10 @@ def compile_plan():
         dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
+        scopegraph,
         latequadruple,
         ifcondtrans,
         dbg(dumpscope),
-        scopegraph,
         earlyrestrictioncheck,
         typecheck,
         flattenport,

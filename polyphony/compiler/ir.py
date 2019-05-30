@@ -1,4 +1,5 @@
-﻿from enum import IntEnum
+﻿from collections import namedtuple
+from enum import IntEnum
 from .symbol import Symbol
 from .utils import is_a
 
@@ -17,6 +18,9 @@ op2sym_map = {
 class Ctx(IntEnum):
     LOAD = 1
     STORE = 2
+
+
+Loc = namedtuple('Loc', ('filename', 'lineno'))
 
 
 class IR(object):
@@ -623,9 +627,12 @@ class ATTR(IRExp):
 
 
 class IRStm(IR):
-    def __init__(self, lineno=-1):
+    def __init__(self, loc):
         super().__init__()
-        self.lineno = lineno
+        if not loc:
+            self.loc = Loc('', 0)
+        else:
+            self.loc = loc
         self.block = None
 
     def program_order(self):
@@ -642,8 +649,8 @@ class IRStm(IR):
 
 
 class EXPR(IRStm):
-    def __init__(self, exp, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, exp, loc=None):
+        super().__init__(loc)
         self.exp = exp
 
     def __str__(self):
@@ -662,8 +669,8 @@ class EXPR(IRStm):
 
 
 class CJUMP(IRStm):
-    def __init__(self, exp, true, false, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, exp, true, false, loc=None):
+        super().__init__(loc)
         self.exp = exp
         self.true = true
         self.false = false
@@ -682,8 +689,8 @@ class CJUMP(IRStm):
 
 
 class MCJUMP(IRStm):
-    def __init__(self, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, loc=None):
+        super().__init__(loc)
         self.conds = []
         self.targets = []
         self.loop_branch = False
@@ -708,8 +715,8 @@ class MCJUMP(IRStm):
 
 
 class JUMP(IRStm):
-    def __init__(self, target, typ='', lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, target, typ='', loc=None):
+        super().__init__(loc)
         self.target = target
         self.typ = typ  # 'B': break, 'C': continue, 'L': loop-back, 'S': specific
 
@@ -726,8 +733,8 @@ class JUMP(IRStm):
 
 
 class RET(IRStm):
-    def __init__(self, exp, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, exp, loc=None):
+        super().__init__(loc)
         self.exp = exp
 
     def __str__(self):
@@ -746,8 +753,8 @@ class RET(IRStm):
 
 
 class MOVE(IRStm):
-    def __init__(self, dst, src, lineno=-1):
-        super().__init__(lineno)
+    def __init__(self, dst, src, loc=None):
+        super().__init__(loc)
         self.dst = dst
         self.src = src
 
@@ -767,8 +774,8 @@ class MOVE(IRStm):
 
 
 class CEXPR(EXPR):
-    def __init__(self, cond, exp, lineno=-1):
-        super().__init__(exp, lineno)
+    def __init__(self, cond, exp, loc=None):
+        super().__init__(exp, loc)
         assert isinstance(cond, IRExp)
         self.cond = cond
 
@@ -788,8 +795,8 @@ class CEXPR(EXPR):
 
 
 class CMOVE(MOVE):
-    def __init__(self, cond, dst, src, lineno=-1):
-        super().__init__(dst, src, lineno)
+    def __init__(self, cond, dst, src, loc=None):
+        super().__init__(dst, src, loc)
         assert isinstance(cond, IRExp)
         self.cond = cond
 
@@ -820,7 +827,7 @@ def conds2str(conds):
 
 class PHIBase(IRStm):
     def __init__(self, var):
-        super().__init__(lineno=0)
+        super().__init__(loc=None)
         assert var.is_a([TEMP, ATTR])
         self.var = var
         self.var.ctx = Ctx.STORE
@@ -911,7 +918,6 @@ class LPHI(PHIBase):
 
     @classmethod
     def from_phi(cls, phi):
-        assert len(phi.args) == 2
         lphi = LPHI(phi.var.clone())
         lphi.args = phi.args[:]
         lphi.ps = [CONST(1)] * len(phi.ps)

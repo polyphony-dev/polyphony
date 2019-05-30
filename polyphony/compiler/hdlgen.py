@@ -127,9 +127,9 @@ class HDLModuleBuilder(object):
                 source_scope = source.scope
                 if source_scope.is_class():  # class field rom
                     hdl_name = source_scope.orig_name + '_field_' + hdl_name
-            output_sig = self.hdlmodule.gen_sig(hdl_name, memnode.data_width())  # TODO
+            output_sig = self.hdlmodule.gen_sig(hdl_name, memnode.data_width())
             fname = AHDL_VAR(output_sig, Ctx.STORE)
-            input_sig = self.hdlmodule.gen_sig(hdl_name + '_in', memnode.data_width())  # TODO
+            input_sig = self.hdlmodule.gen_sig(hdl_name + '_in', memnode.addr_width())
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             if source:
@@ -436,7 +436,11 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
                 mod_scope = sym.typ.get_scope()
                 sub_hdlmodule = env.hdlmodule(mod_scope)
-                self._add_submodule_instances(sub_hdlmodule, [cp.name], param_map={})
+                param_map = {}
+                if sub_hdlmodule.scope.module_param_vars:
+                    for name, v in sub_hdlmodule.scope.module_param_vars:
+                        param_map[name] = v
+                self._add_submodule_instances(sub_hdlmodule, [cp.name], param_map=param_map)
 
         # FIXME: FIFO should be in the @module class
         for acc in self.hdlmodule.accessors.values():
@@ -498,6 +502,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         assert self.hdlmodule.scope.is_class()
         if not self.hdlmodule.scope.is_instantiated():
             return
+        for p in self.hdlmodule.scope.module_params:
+            sig = self.hdlmodule.sym2sig[p.copy]
+            val = 0 if not p.defval else p.defval.value
+            self.hdlmodule.parameters.append((sig, val))
         self._process_io(self.hdlmodule)
         self._process_connector_port(self.hdlmodule)
 

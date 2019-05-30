@@ -1,7 +1,7 @@
 ﻿from collections import defaultdict, deque
 from .block import Block
 from .irvisitor import IRVisitor, IRTransformer
-from .ir import Ctx, IR, CONST, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
+from .ir import Ctx, IR, CONST, UNOP, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
@@ -153,7 +153,7 @@ class InlineOpt(object):
                 _, arg = call.args[i]
             else:
                 arg = defval
-            if arg.is_a([TEMP, ATTR, CONST]):
+            if arg.is_a([TEMP, ATTR, CONST, UNOP]):
                 symbol_map[p] = arg.clone()
             else:
                 assert False
@@ -193,8 +193,9 @@ class InlineOpt(object):
 
     def _merge_synth_params(self, synth_params, late_call_blk, callee_entry_blk, callee_exit_blk):
         assert synth_params
-        visited = set([late_call_blk])
-        for blk in callee_entry_blk.traverse(visited):
+        for blk in callee_entry_blk.traverse():
+            if blk is late_call_blk:
+                continue
             merge_synth_params(blk.synth_params, synth_params)
 
     def _reduce_useless_move(self, scope):
@@ -232,8 +233,7 @@ class SymbolReplacer(IRVisitor):
 
     def traverse_blocks(self, entry_block):
         assert len(entry_block.preds) == 0
-        visited = set()
-        yield from entry_block.traverse(visited)
+        yield from entry_block.traverse()
 
     def process(self, scope, entry_block):
         self.scope = scope
@@ -478,7 +478,7 @@ class FlattenObjectArgs(IRTransformer):
                 worker_scope.entry_block.stms.remove(stm)
                 for new_sym, new_copy in flatten_params:
                     mv = MOVE(TEMP(new_copy, Ctx.STORE), TEMP(new_sym, Ctx.LOAD))
-                    mv.lineno = stm.lineno
+                    mv.loc = stm.loc
                     worker_scope.entry_block.insert_stm(insert_idx, mv)
                 break
 
@@ -502,7 +502,7 @@ class FlattenModule(IRTransformer):
                 len(ir.exp.func.qualified_symbol()) > 2):
             call = ir.exp
             _, arg = call.args[0]
-            new_arg = self._make_new_worker(arg, ir.lineno)
+            new_arg = self._make_new_worker(arg, ir.loc.lineno)
             assert self.scope.parent.is_module()
             append_worker_sym = self.scope.parent.find_sym('append_worker')
             assert append_worker_sym
@@ -567,7 +567,7 @@ class ObjectHierarchyCopier(object):
                 new_dst = ATTR(cp.dst.clone(), sym, Ctx.STORE)
                 new_src = ATTR(cp.src.clone(), sym, Ctx.LOAD)
                 new_cp = MOVE(new_dst, new_src)
-                new_cp.lineno = cp.lineno
+                new_cp.loc = cp.loc
                 cp_idx = cp.block.stms.index(cp)
                 cp.block.insert_stm(cp_idx + 1, new_cp)
                 if sym.typ.is_object():

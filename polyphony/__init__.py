@@ -10,6 +10,7 @@ from . import typing
 
 
 __version__ = version.__version__
+__python__ = True
 __all__ = [
     'testbench',
     'module',

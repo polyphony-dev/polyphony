@@ -1,4 +1,4 @@
-﻿from collections import defaultdict
+﻿from collections import defaultdict, deque
 from .ir import *
 from .irhelper import is_port_method_call, has_exclusive_function
 from .env import env
@@ -26,7 +26,7 @@ class DFNode(object):
         if self.typ == 'Stm':
             s = '<{}> ({}) {} {}:{} {}'.format(
                 hex(self.__hash__())[-4:],
-                self.tag.lineno,
+                self.tag.loc.lineno,
                 self.priority,
                 self.begin,
                 self.end,
@@ -268,17 +268,18 @@ class DataFlowGraph(object):
         pass
         #self.nodes = list(filter(lambda n: n.succs or n.preds, self.nodes))
 
-    def traverse_nodes(self, traverse_func, nodes, visited):
-        if visited is not None:
-            nodes = [n for n in nodes if n not in visited]
-        for n in nodes:
-            if visited is not None:
-                visited.append(n)
-            yield n
-
-        for n in nodes:
-            next_nodes = utils.unique(traverse_func(n))
-            yield from self.traverse_nodes(traverse_func, next_nodes, visited)
+    def traverse_nodes(self, traverse_func, nodes, _):
+        visited = set()
+        queue = deque()
+        queue.extend(nodes)
+        while queue:
+            node = queue.popleft()
+            if node in visited:
+                continue
+            visited.add(node)
+            yield node
+            next_nodes = utils.unique(traverse_func(node))
+            queue.extend(next_nodes)
 
     def get_priority_ordered_nodes(self):
         return sorted(self.nodes, key=lambda n: n.priority)

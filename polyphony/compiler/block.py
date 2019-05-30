@@ -146,14 +146,19 @@ class Block(object):
         if succ in self.succs_loop:
             self.succs_loop.remove(succ)
 
-    def traverse(self, visited):
-        if self in visited:
-            return
-        if self not in visited:
-            visited.add(self)
-            yield self
-        for succ in [succ for succ in self.succs if succ not in self.succs_loop]:
-            yield from succ.traverse(visited)
+    def traverse(self):
+        visited = set()
+        stack = [self]
+        while stack:
+            blk = stack.pop()
+            yield blk
+            visited.add(blk)
+            for succ in reversed(blk.succs):
+                if (succ in blk.succs_loop or
+                        succ in visited or
+                        succ in stack):
+                    continue
+                stack.append(succ)
 
     def clone(self, scope, stm_map, nametag=None):
         if nametag:

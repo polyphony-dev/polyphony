@@ -321,6 +321,15 @@ class MemTrait(object):
             return False
         return (self.data_width() * self.length) < env.config.internal_ram_threshold_size
 
+    def has_fixed_length(self, scope):
+        src = self.single_source()
+        return (self.can_be_reg() or          # register array
+                not self.is_writable() or     # rom
+                self.is_immutable() or        # tuple
+                src and src.scope is scope or # local ram
+                self.sym.typ.is_seq() and self.sym.typ.has_length()  # it has explicit type length
+                )
+
 
 class MemRefNode(RefNode, MemTrait):
     def __init__(self, sym, scope):

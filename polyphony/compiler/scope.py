@@ -42,7 +42,7 @@ class Scope(Tagged):
         s = Scope(parent, name, tags, lineno, cls.scope_id)
         if s.name in env.scopes:
             env.append_scope(s)
-            fail((s, lineno), Errors.REDEFINED_NAME, {name})
+            fail((env.scope_file_map[s], lineno), Errors.REDEFINED_NAME, {name})
         env.append_scope(s)
         if origin:
             s.origin = origin
@@ -484,8 +484,7 @@ class Scope(Tagged):
 
     def traverse_blocks(self):
         assert len(self.entry_block.preds) == 0
-        visited = set()
-        yield from self.entry_block.traverse(visited)
+        yield from self.entry_block.traverse()
 
     def replace_block(self, old, new):
         new.preds = old.preds[:]

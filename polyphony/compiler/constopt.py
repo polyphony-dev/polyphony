@@ -71,7 +71,7 @@ class ConstantOptBase(IRVisitor):
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            v = eval_unop(ir)
+            v = eval_unop(ir.op, ir.exp.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return CONST(v)
@@ -81,7 +81,7 @@ class ConstantOptBase(IRVisitor):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.left.is_a(CONST) and ir.right.is_a(CONST):
-            v = eval_binop(ir)
+            v = eval_binop(ir.op, ir.left.value, ir.right.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return CONST(v)
@@ -226,7 +226,7 @@ class ConstantOptBase(IRVisitor):
             true_blk = cjump.false
             false_blk = cjump.true
         jump = JUMP(true_blk)
-        jump.lineno = cjump.lineno
+        jump.loc = cjump.loc
 
         if true_blk is not false_blk:
             if false_blk.preds:
@@ -353,8 +353,8 @@ class ConstantOpt(ConstantOptBase):
             for source in memnode.sources():
                 lens.append(source.length)
             if len(lens) <= 1 or all(lens[0] == len for len in lens):
-                assert lens[0] > 0
-                return CONST(lens[0])
+                if lens[0] > 0 and memnode.has_fixed_length(self.scope):
+                     return CONST(lens[0])
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):
@@ -569,7 +569,7 @@ class StaticConstOpt(ConstantOptBase):
             dtrees[s] = dtree
         # FIXME: Since lineno is not essential information for IR,
         #        It should not be used as sort key
-        stms = sorted(stms, key=lambda s: s.lineno)
+        stms = sorted(stms, key=lambda s: s.loc.lineno)
         for stm in stms:
             self.current_stm = stm
             self.scope = stm.block.scope
