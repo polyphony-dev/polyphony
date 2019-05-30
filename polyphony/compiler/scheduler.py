@@ -119,11 +119,11 @@ class SchedulerImpl(object):
         return latest_node
 
     def _is_resource_full(self, res, scheduled_resources):
-        # TODO:
-        if isinstance(res, str):
-            return len(scheduled_resources) >= MAX_FUNC_UNIT
-        elif isinstance(res, Scope):
-            return len(scheduled_resources) >= MAX_FUNC_UNIT
+        # TODO: Limiting resources by scheduler is a future task
+        #if isinstance(res, str):
+        #    return len(scheduled_resources) >= MAX_FUNC_UNIT
+        #elif isinstance(res, Scope):
+        #    return len(scheduled_resources) >= MAX_FUNC_UNIT
         return 0
 
     def _str_res(self, res):
