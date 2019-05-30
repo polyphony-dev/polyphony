@@ -1,7 +1,7 @@
 ﻿from collections import defaultdict, deque
 from .block import Block
 from .irvisitor import IRVisitor, IRTransformer
-from .ir import Ctx, IR, CONST, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
+from .ir import Ctx, IR, CONST, UNOP, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
@@ -153,7 +153,7 @@ class InlineOpt(object):
                 _, arg = call.args[i]
             else:
                 arg = defval
-            if arg.is_a([TEMP, ATTR, CONST]):
+            if arg.is_a([TEMP, ATTR, CONST, UNOP]):
                 symbol_map[p] = arg.clone()
             else:
                 assert False
