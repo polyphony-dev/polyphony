@@ -12,8 +12,7 @@ logger = getLogger(__name__)
 
 
 def can_merge_synth_params(params1, params2):
-    # TODO
-    return params1 == params2
+    return params1['scheduling'] == params2['scheduling']
 
 
 class BlockReducer(object):
