@@ -565,8 +565,7 @@ class Scope(Tagged):
 
     def traverse_blocks(self):
         assert len(self.entry_block.preds) == 0
-        visited = set()
-        yield from self.entry_block.traverse(visited)
+        yield from self.entry_block.traverse()
 
     def replace_block(self, old, new):
         new.preds = old.preds[:]

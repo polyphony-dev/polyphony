@@ -1,7 +1,7 @@
 ﻿from collections import defaultdict, deque
 from .block import Block
 from .irvisitor import IRVisitor, IRTransformer
-from .ir import Ctx, IR, CONST, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
+from .ir import Ctx, IR, CONST, UNOP, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .copyopt import CopyOpt
 from .symbol import Symbol
@@ -153,7 +153,7 @@ class InlineOpt(object):
                 _, arg = call.args[i]
             else:
                 arg = defval
-            if arg.is_a([TEMP, ATTR, CONST]):
+            if arg.is_a([TEMP, ATTR, CONST, UNOP]):
                 symbol_map[p] = arg.clone()
             else:
                 assert False
@@ -193,8 +193,9 @@ class InlineOpt(object):
 
     def _merge_synth_params(self, synth_params, late_call_blk, callee_entry_blk, callee_exit_blk):
         assert synth_params
-        visited = set([late_call_blk])
-        for blk in callee_entry_blk.traverse(visited):
+        for blk in callee_entry_blk.traverse():
+            if blk is late_call_blk:
+                continue
             merge_synth_params(blk.synth_params, synth_params)
 
     def _reduce_useless_move(self, scope):
@@ -232,8 +233,7 @@ class SymbolReplacer(IRVisitor):
 
     def traverse_blocks(self, entry_block):
         assert len(entry_block.preds) == 0
-        visited = set()
-        yield from entry_block.traverse(visited)
+        yield from entry_block.traverse()
 
     def process(self, scope, entry_block):
         self.scope = scope
