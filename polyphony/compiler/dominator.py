@@ -55,7 +55,6 @@ class DominatorTree(object):
 class DominatorTreeBuilder(object):
     def __init__(self, scope):
         self.scope = scope
-        self.done_block_links = []
         self.dominators = {}
 
     def process(self):
@@ -103,24 +102,19 @@ class DominatorTreeBuilder(object):
         return blk.preds_loop
 
     def _walk_block(self, block, visit_func):
-        self.done_block_links = []
-        self._walk_block_rec(block, visit_func)
-
-    def _walk_block_rec(self, block, visit_func):
-        visit_func(block)
-
-        #walk into successors
-        succs = self._fwd_blks(block)
-        for succ in succs:
-            if succ in self._fwd_loop_blks(block):
-                continue
-            #don't visit to already visited block
-            link = (block, succ)
-            if link in self.done_block_links:
-                continue
-            self.done_block_links.append(link)
-
-            self._walk_block_rec(succ, visit_func)
+        visited = set()
+        stack = [block]
+        while stack:
+            blk = stack.pop()
+            visit_func(blk)
+            visited.add(blk)
+            succs = self._fwd_blks(blk)
+            for succ in reversed(succs):
+                if (succ in self._fwd_loop_blks(blk) or
+                        succ in visited or
+                        succ in stack):
+                    continue
+                stack.append(succ)
 
     def _visit_Block_find_dominator(self, block):
         if block in self.dominators:

@@ -11,10 +11,9 @@ class LoopDetector(object):
     def process(self, scope):
         self.scope = scope
         self.scope.reset_loop_tree()
-        ordered_blks = []
-        visited = []
         head = scope.entry_block
-        self._process_walk(head, ordered_blks, visited)
+        blks = [b for b in head.traverse()]
+        ordered_blks = list(reversed(sorted(blks)))
         assert head is ordered_blks[-1]
 
         regions, bodies = self._make_loop_bodies(ordered_blks)
@@ -67,14 +66,6 @@ class LoopDetector(object):
             self._process_back_walk(blk, blks, visited, scc)
             sccs.append(scc)
         return sccs
-
-    def _process_walk(self, blk, blks, visited):
-        visited.append(blk)
-        if blk.succs:
-            for succ in blk.succs:
-                if succ not in visited:
-                    self._process_walk(succ, blks, visited)
-        blks.append(blk)
 
     def _process_back_walk(self, blk, blks, visited, scc):
         scc.append(blk)

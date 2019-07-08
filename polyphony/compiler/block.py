@@ -1,4 +1,5 @@
-﻿from .ir import *
+﻿from collections import deque
+from .ir import *
 from .synth import make_synth_params
 from .utils import replace_item, remove_except_one
 from logging import getLogger
@@ -8,14 +9,20 @@ logger = getLogger(__name__)
 class Block(object):
     @classmethod
     def set_order(cls, block, order):
-        order += 1
-        if order > block.order:
-            logger.debug(block.name + ' order ' + str(order))
-            block.order = order
-
-            succs = [succ for succ in block.succs if succ not in block.succs_loop]
-            for succ in succs:
-                cls.set_order(succ, order)
+        block.order = order + 1
+        logger.debug(block.name + ' order ' + str(block.order))
+        queue = deque([block])
+        while queue:
+            blk = queue.popleft()
+            for succ in blk.succs:
+                if succ in blk.succs_loop:
+                    continue
+                if succ.order < blk.order + 1:
+                    succ.order = blk.order + 1
+                    logger.debug(succ.name + ' order ' + str(succ.order))
+                if succ in queue:
+                    continue
+                queue.append(succ)
 
     def __init__(self, scope, nametag='b'):
         self.nametag = nametag
