@@ -1007,18 +1007,21 @@ class CodeVisitor(ast.NodeVisitor):
             self._build_for_loop_blocks(init_parts, condition, [], continue_parts, loop_synth_params, node)
         elif it.is_a(SYSCALL) and it.sym.name == 'polyphony.timing.clkrange':
             init_parts = []
-            assert len(it.args) == 1
+            assert len(it.args) <= 1
             start = CONST(0)
-            end = it.args[0][1]
-            step = CONST(1)
             start = make_temp_if_needed(start, init_parts)
-            end = make_temp_if_needed(end, init_parts)
+            if len(it.args) == 1:
+                end = it.args[0][1]
+                end = make_temp_if_needed(end, init_parts)
+                condition = RELOP('Lt', TEMP(var.sym, Ctx.LOAD), end)
+            elif len(it.args) == 0:
+                condition = CONST(1)
+            step = CONST(1)
             step = make_temp_if_needed(step, init_parts)
             counter = var.sym
             init_parts += [
                 MOVE(TEMP(var.sym, Ctx.STORE), start)
             ]
-            condition = RELOP('Lt', TEMP(var.sym, Ctx.LOAD), end)
             continue_parts = [
                 MOVE(TEMP(var.sym, Ctx.STORE),
                      BINOP('Add',

@@ -623,6 +623,8 @@ class AHDLTranslator(IRVisitor):
     def visit_CONST(self, ir):
         if ir.value is None:
             return AHDL_SYMBOL("'bz")
+        elif isinstance(ir.value, bool):
+            return AHDL_CONST(int(ir.value))
         else:
             return AHDL_CONST(ir.value)
 
@@ -1089,7 +1091,7 @@ class AHDLTranslator(IRVisitor):
         elif self.scope.parent.is_subclassof(port_sym.scope) and port_sym.scope.is_module():
             if direction != 'inout':
                 tags.add(direction)
-        elif self.scope.is_worker():
+        elif self.scope.is_worker() or self.scope.is_assigned():
             if direction != 'inout':
                 tags.add(direction)
         else:
@@ -1157,6 +1159,8 @@ class AHDLTranslator(IRVisitor):
             self._make_port_read_seq(target, port_sig)
         elif call.func_scope().orig_name == 'assign':
             self._make_port_assign(call.args[0][1].symbol(), port_sig)
+        elif call.func_scope().orig_name == 'edge':
+            self._make_port_edge(target, port_sig, call.args[0][1], call.args[1][1])
         else:
             if port_sig.is_fifo_port():
                 if call.func_scope().orig_name in ('full', 'empty'):
@@ -1218,6 +1222,19 @@ class AHDLTranslator(IRVisitor):
         port_sig.del_tag('initializable')
         port_sig.add_tag('net')
 
+    def _make_port_edge(self, target, port_sig, old, new):
+        if target:
+            dst = self.visit(target)
+        else:
+            dst = None
+        assert 'net' in dst.sig.tags
+        _old = self.visit(old)
+        _new = self.visit(new)
+        self.hdlmodule.add_edge_detector(port_sig, _old, _new)
+        detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
+        edge = AHDL_SYMBOL(detect_var_name)
+        self._emit(AHDL_MOVE(dst, edge), self.sched_time)
+
     def _make_port_init(self, new, target):
         assert new.func_scope().is_port()
         port = target.symbol().typ
@@ -1240,17 +1257,27 @@ class AHDLCombTranslator(AHDLTranslator):
         assert item.is_a(AHDL_ASSIGN)
         self.codes.append(item)
 
-    def _is_port_rd(self, ir):
+    def _is_port_method(self, ir, method_name):
         return (ir.is_a(CALL) and
                 ir.func_scope().is_method() and
                 ir.func_scope().parent.is_port() and
-                ir.func_scope().orig_name == 'rd')
+                ir.func_scope().orig_name == method_name)
 
     def visit_CALL(self, ir):
-        if self._is_port_rd(ir):
+        if self._is_port_method(ir, 'rd'):
             port_qsym = ir.func.qualified_symbol()[:-1]
             port_sig = self._port_sig(port_qsym)
             return AHDL_VAR(port_sig, Ctx.LOAD)
+        elif self._is_port_method(ir, 'edge'):
+            old = ir.args[0][1]
+            new = ir.args[1][1]
+            port_qsym = ir.func.qualified_symbol()[:-1]
+            port_sig = self._port_sig(port_qsym)
+            _old = self.visit(old)
+            _new = self.visit(new)
+            self.hdlmodule.add_edge_detector(port_sig, _old, _new)
+            detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
+            return AHDL_SYMBOL(detect_var_name)
         else:
             assert False, 'NIY'
 

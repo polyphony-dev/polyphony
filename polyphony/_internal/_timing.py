@@ -14,7 +14,7 @@ def clkfence() -> None:
 
 
 @builtin
-def clkrange(clk_cycles:int) -> None:
+def clkrange(clk_cycles:int=None) -> None:
     pass
 
 

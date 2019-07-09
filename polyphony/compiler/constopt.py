@@ -437,6 +437,9 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
+        if ir.exp.is_a(CONST):
+            self._process_unconditional_cjump(ir, [])
+            return
         expdefs = self.scope.usedef.get_stms_defining(ir.exp.symbol())
         assert len(expdefs) == 1
         expdef = list(expdefs)[0]

@@ -44,7 +44,7 @@ class AliasVarDetector(IRVisitor):
                         return
                     port_sym = ir.src.func.tail()
                     protocol = port_sym.typ.get_protocol()
-                    if protocol == 'none' and ir.src.func.attr.name == 'rd':
+                    if protocol == 'none' and ir.src.func.attr.name in ('rd', 'edge'):
                         pass
                     else:
                         return

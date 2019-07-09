@@ -96,6 +96,10 @@ class BlockReducer(object):
             return False
         if block.preds_loop or block.succs_loop:
             return False
+        if (block.synth_params['scheduling'] == 'timed' and
+                len(block.succs) and
+                block.succs[0].nametag == 'fortest'):
+            return False
         if block.stms and block.stms[0].is_a(JUMP):
             assert len(block.succs) == 1
             succ = block.succs[0]

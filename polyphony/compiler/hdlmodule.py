@@ -52,7 +52,7 @@ class HDLModule(object):
         s += 'HDLModule {}\n'.format(self.name)
         s += '  -- signals --\n'
         for sig in self.signals.values():
-            s += '{} '.format(sig)
+            s += f'{sig.name}[{sig.width}] {sig.tags}\n'
         s += '\n'
         s += '  -- interfaces --\n'
         for inf in self.interfaces.values():

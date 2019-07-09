@@ -17,6 +17,9 @@ class Port:
     def assign(self, fn:generic) -> None:
         pass
 
+    def edge(self, old, new) -> bool:
+        pass
+
 
 class Queue:
     def __init__(self, dtype:generic, direction:str, maxsize:int=1) -> object:

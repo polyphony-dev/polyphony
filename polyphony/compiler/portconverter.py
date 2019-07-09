@@ -137,65 +137,6 @@ class PortConverter(IRTransformer):
                         warn(list(stms)[0], Warnings.PORT_IS_NOT_USED,
                              [sym.orig_name()])
 
-    def _set_and_check_port_direction(self, expected_di, from_external, sym):
-        port_typ = sym.typ
-        rootsym = port_typ.get_root_symbol()
-        di = port_typ.get_direction()
-        kind = port_typ.get_port_kind()
-        if kind == 'external':
-            assert di != 'any'
-            if from_external:
-                if di == expected_di:
-                    fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
-                         [sym.orig_name()])
-            else:
-                if di != expected_di:
-                    if sym.ancestor and sym.ancestor.scope is not sym.scope:
-                        # the port has been accessed as opposite direction
-                        # by a module includes original owner module
-                        port_typ.set_port_kind('internal')
-                        port_typ.set_direction('inout')
-                    else:
-                        fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
-                             [sym.orig_name()])
-        elif kind == 'internal':
-            assert not from_external
-            if self.scope.is_worker():
-                port_typ.set_direction('inout')
-            else:
-                fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
-                     [sym.orig_name()])
-
-        if expected_di == 'output':
-            # write-write conflict
-            if self.writers[rootsym]:
-                assert len(self.writers[rootsym]) == 1
-                writer = list(self.writers[rootsym])[0]
-                if writer is not self.scope and writer.worker_owner and writer.worker_owner is self.scope.worker_owner:
-                    fail(self.current_stm, Errors.WRITING_IS_CONFLICTED,
-                         [sym.orig_name()])
-            else:
-                if kind == 'internal':
-                    assert self.scope.is_worker() or self.scope.parent.is_module()
-                self.writers[rootsym].add(self.scope)
-        elif expected_di == 'input':
-            # read-read conflict
-            if self.readers[rootsym]:
-                if all([s.is_testbench() for s in self.readers[rootsym]]):
-                    if self.scope.is_testbench():
-                        self.readers[rootsym].add(self.scope)
-                elif port_typ.get_scope().name.startswith('polyphony.io.Port') and port_typ.get_protocol() == 'none':
-                    pass
-                else:
-                    assert len(self.readers[rootsym]) == 1
-                    reader = list(self.readers[rootsym])[0]
-                    if reader is not self.scope and reader.worker_owner is self.scope.worker_owner:
-                        fail(self.current_stm, Errors.READING_IS_CONFLICTED,
-                             [sym.orig_name()])
-            else:
-                if kind == 'internal':
-                    assert self.scope.is_worker() or self.scope.parent.is_module()
-                self.readers[rootsym].add(self.scope)
 
     def _get_port_owner(self, sym):
         assert sym.typ.is_port()
@@ -221,22 +162,106 @@ class PortConverter(IRTransformer):
         return True
 
     def _check_port_direction(self, sym, func_scope):
-        if func_scope.name.startswith('polyphony.io.Queue'):
-            if func_scope.orig_name in ('wr', 'full'):
-                expected_di = 'output'
-            else:
-                expected_di = 'input'
-        else:
-            if func_scope.orig_name in ('wr', 'assign'):
-                expected_di = 'output'
-            else:
-                expected_di = 'input'
+        port_typ = sym.typ
+        di = port_typ.get_direction()
+        kind = port_typ.get_port_kind()
         from_external = self._is_access_from_external(sym)
-        if sym in self.union_ports:
-            for s in self.union_ports[sym]:
-                self._set_and_check_port_direction(expected_di, from_external, s)
+        exclusive_write = False
+        exclusive_read = False
+        if from_external:
+            assert kind == 'external'
+            if func_scope.name.startswith('polyphony.io.Queue'):
+                if func_scope.orig_name in ('wr',):
+                    valid_direction = {'input'}
+                    exclusive_write = True
+                elif func_scope.orig_name in ('rd',):
+                    valid_direction = {'output'}
+                    exclusive_read = True
+                else:
+                    valid_direction = {'output', 'input'}
+            else:
+                if func_scope.orig_name in ('wr', 'assign'):
+                    valid_direction = {'input'}
+                    exclusive_write = True
+                else:
+                    valid_direction = {'input', 'output'}
         else:
-            self._set_and_check_port_direction(expected_di, from_external, sym)
+            if kind == 'external':
+                if func_scope.name.startswith('polyphony.io.Queue'):
+                    if func_scope.orig_name in ('wr',):
+                        valid_direction = {'output'}
+                        exclusive_write = True
+                    elif func_scope.orig_name in ('rd',):
+                        valid_direction = {'input'}
+                        exclusive_read = True
+                    else:
+                        valid_direction = {'output', 'input'}
+                else:
+                    if func_scope.orig_name in ('wr', 'assign'):
+                        valid_direction = {'output'}
+                        exclusive_write = True
+                    else:
+                        valid_direction = {'input', 'output'}
+            else:
+                if func_scope.name.startswith('polyphony.io.Queue'):
+                    if func_scope.orig_name in ('wr',):
+                        exclusive_write = True
+                    elif func_scope.orig_name in ('rd',):
+                        exclusive_read = True
+                else:
+                    if func_scope.orig_name in ('wr', 'assign'):
+                        exclusive_write = True
+                valid_direction = {'output', 'input'}
+        if di != 'any' and di not in valid_direction:
+            if sym.ancestor and sym.ancestor.scope is not sym.scope:
+                # the port has been accessed as opposite direction
+                # by a module includes original owner module
+                port_typ.set_port_kind('internal')
+                port_typ.set_direction('inout')
+            else:
+                fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
+                     [sym.orig_name()])
+        if sym in self.union_ports:
+            assert False
+            for s in self.union_ports[sym]:
+                self._set_and_check_port_direction(exclusive_write, exclusive_read, s)
+        else:
+            self._set_and_check_port_direction(exclusive_write, exclusive_read, sym)
+
+    def _set_and_check_port_direction(self, exclusive_write, exclusive_read, sym):
+        port_typ = sym.typ
+        rootsym = port_typ.get_root_symbol()
+        kind = port_typ.get_port_kind()
+        if exclusive_write:
+            # write-write conflict
+            if self.writers[rootsym]:
+                assert len(self.writers[rootsym]) == 1
+                writer = list(self.writers[rootsym])[0]
+                if writer is not self.scope and writer.worker_owner and writer.worker_owner is self.scope.worker_owner:
+                    fail(self.current_stm, Errors.WRITING_IS_CONFLICTED,
+                         [sym.orig_name()])
+            else:
+                if kind == 'internal':
+                    assert self.scope.is_worker() or self.scope.parent.is_module()
+                self.writers[rootsym].add(self.scope)
+        elif exclusive_read:
+            # read-read conflict
+            if self.readers[rootsym]:
+                if all([s.is_testbench() for s in self.readers[rootsym]]):
+                    if self.scope.is_testbench():
+                        self.readers[rootsym].add(self.scope)
+                elif port_typ.get_scope().name.startswith('polyphony.io.Port') and port_typ.get_protocol() == 'none':
+                    pass
+                else:
+                    assert len(self.readers[rootsym]) == 1
+                    reader = list(self.readers[rootsym])[0]
+                    if reader is not self.scope and reader.worker_owner is self.scope.worker_owner:
+                        fail(self.current_stm, Errors.READING_IS_CONFLICTED,
+                             [sym.orig_name()])
+            else:
+                if kind == 'internal':
+                    assert self.scope.is_worker() or self.scope.parent.is_module()
+                self.readers[rootsym].add(self.scope)
 
     def visit_CALL(self, ir):
         if not ir.func_scope().is_lib():

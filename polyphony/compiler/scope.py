@@ -183,8 +183,10 @@ class Scope(Tagged):
         else:
             s += "Scope: {} ({})\n".format(self.orig_name, tags)
 
-        s += ", ".join([str(sym) for sym in self.symbols])
-        s += "\n"
+        for sym in self.symbols.values():
+            s += f'{sym.name} {sym.tags}\n'
+        #s += ", ".join([str(sym) for sym in self.symbols])
+        #s += "\n"
         s += '================================\n'
         s += 'Parameters\n'
         for p, _, val in self.params:
