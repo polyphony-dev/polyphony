@@ -189,8 +189,6 @@ class Port(object):
         return self.__old_v == old_v and self.__v == new_v
 
     def assign(self, exp):
-        if self._direction == 'in':
-            raise RuntimeError("Port.assign at 'in' Port is not allowed")
         self._exp = exp
 
     def __lshift__(self, other):

@@ -79,3 +79,18 @@ class Handshake:
         while self.ready.rd() is not True:
             timing.clkfence()
         self.valid.wr(False)
+
+
+@builtin
+def flipped(obj:object) -> object:
+    pass
+
+
+@builtin
+def connect(p0, p1):
+    pass
+
+
+@builtin
+def thru(parent, child):
+    pass

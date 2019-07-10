@@ -297,6 +297,8 @@ class Type(object):
             from_scope = from_t.get_scope()
             if to_scope is from_scope:
                 return True
+            elif to_scope is None or from_scope is None:
+                return True
             elif from_scope.is_subclassof(to_scope):
                 return True
             return False
