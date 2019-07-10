@@ -3,8 +3,9 @@ from .common import fail, warn
 from .env import env
 from .errors import Errors, Warnings
 from .scope import Scope
-from .ir import CONST, TEMP, MOVE
-from .irvisitor import IRTransformer
+from .ir import CONST, TEMP, MOVE, NEW
+from .irhelper import find_move_src
+from .irvisitor import IRVisitor, IRTransformer
 from .type import Type
 from .typecheck import TypePropagation
 
@@ -328,3 +329,61 @@ class FlattenPortList(IRTransformer):
         assert portsym
         ir.mem.set_symbol(portsym)
         return ir.mem
+
+
+class FlippedTransformer(TypePropagation):
+    def visit_SYSCALL(self, ir):
+        ir.args = self._normalize_syscall_args(ir.sym.name, ir.args, ir.kwargs)
+        for _, arg in ir.args:
+            self.visit(arg)
+        if ir.sym.name == 'polyphony.io.flipped':
+            return self.visit_SYSCALL_flipped(ir)
+        else:
+            assert ir.sym.typ.is_function()
+            return ir.sym.typ.get_return_type()
+
+    def visit_SYSCALL_flipped(self, ir):
+        temp = ir.args[0][1]
+        arg_scope = temp.symbol().typ.get_scope()
+        assert arg_scope.is_class()
+        if arg_scope.is_port():
+            orig_new = find_move_src(temp.symbol(), NEW)
+            _, arg = orig_new.args[0]
+            direction = 'in' if arg.value == 'out' else 'out'
+            args = [('direction', CONST(direction))] + orig_new.args[1:]
+            self.current_stm.src = NEW(orig_new.sym, args, orig_new.kwargs)
+            return self.visit(self.current_stm.src)
+        else:
+            flipped_scope = self._new_scope_with_flipped_ports(arg_scope)
+            if self.current_stm.is_a(MOVE):
+                orig_new = find_move_src(temp.symbol(), NEW)
+                sym = self.scope.find_sym(flipped_scope.orig_name)
+                if not sym:
+                    sym = self.scope.add_sym(flipped_scope.orig_name,
+                                             orig_new.sym.tags,
+                                             Type.klass(flipped_scope))
+                self.current_stm.src = NEW(sym, orig_new.args, orig_new.kwargs)
+                return self.visit(self.current_stm.src)
+
+    def _new_scope_with_flipped_ports(self, scope):
+        name = scope.orig_name + '_flipped'
+        qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
+        if qualified_name in env.scopes:
+            return env.scopes[qualified_name]
+        new_scope = scope.inherit(name, [scope.find_ctor()])
+        new_ctor = new_scope.find_ctor()
+        #self.new_scopes.append(new_ctor)
+        FlippedPortsBuilder().process(new_ctor)
+        return new_scope
+
+
+class FlippedPortsBuilder(IRVisitor):
+    def visit_NEW(self, ir):
+        if ir.sym.typ.get_scope().is_port():
+            for name, arg in ir.args:
+                if name == 'direction':
+                    if arg.value == 'in':
+                        arg.value = 'out'
+                    elif arg.value == 'out':
+                        arg.value = 'in'
+                    break

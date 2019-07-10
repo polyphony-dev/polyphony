@@ -1,4 +1,5 @@
 from .ir import *
+from .irvisitor import IRVisitor
 
 
 def op2str(op):
@@ -231,3 +232,29 @@ def eval_relop(op, lv, rv):
     else:
         return None
     return 1 if b else 0
+
+
+def find_move_src(sym, typ):
+    scope = sym.scope
+    if scope.is_class():
+        scope = scope.find_ctor()
+    finder = StmFinder(sym)
+    finder.process(scope)
+    for stm in finder.results:
+        if stm.is_a(MOVE) and stm.src.is_a(typ):
+            return stm.src
+    return None
+
+
+class StmFinder(IRVisitor):
+    def __init__(self, target_sym):
+        self.target_sym = target_sym
+        self.results = []
+
+    def visit_ATTR(self, ir):
+        if ir.attr is self.target_sym:
+            self.results.append(self.current_stm)
+
+    def visit_TEMP(self, ir):
+        if ir.sym is self.target_sym:
+            self.results.append(self.current_stm)

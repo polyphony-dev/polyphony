@@ -41,6 +41,7 @@ from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiopt import PHIInlining
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
+from .portconverter import FlippedTransformer
 from .pure import interpret, PureCtorBuilder, PureFuncExecutor
 from .quadruplet import EarlyQuadrupleMaker
 from .quadruplet import LateQuadrupleMaker
@@ -183,6 +184,10 @@ def execpure(driver, scope):
 
 def execpureall(driver):
     PureFuncExecutor().process_all(driver)
+
+
+def flipport(driver, scope):
+    FlippedTransformer().process(scope)
 
 
 def flattenport(driver, scope):
@@ -621,6 +626,8 @@ def compile_plan():
         earlytypeprop,
         dbg(dumpscope),
         typeprop,
+        dbg(dumpscope),
+        flipport,
         dbg(dumpscope),
         scopegraph,
         latequadruple,
