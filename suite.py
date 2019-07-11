@@ -62,6 +62,8 @@ SUITE_CASES = [
                     'error/pure01.py', 'error/pure02.py',
                     'error/module_field01.py', 'error/module_field02.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+                    'module/*',
+                    'io/protocol*.py',
                     )
     },
     {
@@ -72,6 +74,8 @@ SUITE_CASES = [
                     'error/pure01.py', 'error/pure02.py',
                     'error/module_field01.py', 'error/module_field02.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+                    'module/*',
+                    'io/protocol*.py',
                     )
     },
     {
@@ -81,6 +85,8 @@ SUITE_CASES = [
                     'pure/*', 'error/pure01.py', 'error/pure02.py',
                     'error/module_field01.py', 'error/module_field02.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+                    'module/*',
+                    'io/protocol*.py',
                     )
     },
     #{
