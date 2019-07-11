@@ -16,11 +16,14 @@ class flipped03:
     def __init__(self):
         inf = interface()
         self.p = flipped(flipped(inf))
+        self.fp = flipped(inf)
         self.append_worker(self.main, loop=True)
 
     def main(self):
         x = self.p.p0.rd()
+        y = self.fp.p1.rd()
         self.p.p1.wr(x)
+        self.fp.p0.wr(y)
 
 
 m = flipped03()
@@ -30,9 +33,11 @@ m = flipped03()
 @testbench
 def test(m):
     m.p.p0.wr(100)
+    m.fp.p1.wr(200)
     clkfence()
     clkfence()
     assert 100 == m.p.p1.rd()
+    assert 200 == m.fp.p0.rd()
 
 
 test(m)

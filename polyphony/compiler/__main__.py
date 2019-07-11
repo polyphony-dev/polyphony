@@ -42,6 +42,7 @@ from .phiopt import PHIInlining
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
 from .portconverter import FlippedTransformer
+from .portconverter import PortConnector
 from .pure import interpret, PureCtorBuilder, PureFuncExecutor
 from .quadruplet import EarlyQuadrupleMaker
 from .quadruplet import LateQuadrupleMaker
@@ -60,6 +61,7 @@ from .stg import STGBuilder
 from .synth import DefaultSynthParamSetter
 from .typecheck import TypePropagation, InstanceTypePropagation
 from .typecheck import TypeChecker
+from .typecheck import PortAssignChecker
 from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
 from .typecheck import AssertionChecker
 from .typecheck import SynthesisParamChecker
@@ -190,6 +192,14 @@ def flipport(driver, scope):
     FlippedTransformer().process(scope)
 
 
+def connectport(driver, scope):
+    portconnector = PortConnector()
+    portconnector.process(scope)
+    for s in portconnector.scopes:
+        driver.insert_scope(s)
+        TypePropagation().process(s)
+
+
 def flattenport(driver, scope):
     FlattenPortList().process(scope)
 
@@ -254,6 +264,10 @@ def typeprop(driver, scope):
 
 def typecheck(driver, scope):
     TypeChecker().process(scope)
+
+
+def assigncheck(driver, scope):
+    PortAssignChecker().process(scope)
 
 
 def earlyrestrictioncheck(driver, scope):
@@ -627,9 +641,13 @@ def compile_plan():
         dbg(dumpscope),
         typeprop,
         dbg(dumpscope),
+        scopegraph,
+
         flipport,
         dbg(dumpscope),
-        scopegraph,
+        connectport,
+        dbg(dumpscope),
+        assigncheck,
         latequadruple,
         ifcondtrans,
         dbg(dumpscope),

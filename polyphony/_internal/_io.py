@@ -87,7 +87,7 @@ def flipped(obj:object) -> object:
 
 
 @builtin
-def connect(p0, p1):
+def connect(p0:object, p1:object):
     pass
 
 

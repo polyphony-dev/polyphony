@@ -158,14 +158,6 @@ class TypePropagation(IRVisitor):
         if any([atype.is_undef() for atype in arg_types]):
             raise RejectPropagation(ir)
 
-        if ir.func_scope().parent.is_port() and ir.func_scope().orig_name == 'assign':
-            assert len(arg_types) == 1
-            assigned = arg_types[0].get_scope()
-            if (not (assigned.is_method() and assigned.parent.is_module()) and
-                    not (assigned.parent.is_method() and assigned.parent.parent.is_module())):
-                fail(self.current_stm, Errors.PORT_ASSIGN_CANNOT_ACCEPT)
-            assigned.add_tag('assigned')
-            assigned.add_tag('comb')
         ret_t = ir.func_scope().return_type
         if ir.func_scope().is_class():
             assert False
@@ -752,6 +744,18 @@ class TypeChecker(IRVisitor):
             if not Type.is_assignable(param_t, arg_t):
                 type_error(self.current_stm, Errors.INCOMPATIBLE_PARAMETER_TYPE,
                            [arg, scope_name])
+
+
+class PortAssignChecker(IRVisitor):
+    def visit_CALL(self, ir):
+        if ir.func_scope().parent.is_port() and ir.func_scope().orig_name == 'assign':
+            assert len(ir.args) == 1
+            assigned = ir.args[0][1].symbol().typ.get_scope()
+            if (not (assigned.is_method() and assigned.parent.is_module()) and
+                    not (assigned.parent.is_method() and assigned.parent.parent.is_module())):
+                fail(self.current_stm, Errors.PORT_ASSIGN_CANNOT_ACCEPT)
+            assigned.add_tag('assigned')
+            assigned.add_tag('comb')
 
 
 class EarlyRestrictionChecker(IRVisitor):

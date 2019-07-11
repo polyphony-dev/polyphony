@@ -1,9 +1,10 @@
 from collections import defaultdict
+from .block import Block
 from .common import fail, warn
 from .env import env
 from .errors import Errors, Warnings
 from .scope import Scope
-from .ir import CONST, TEMP, MOVE, NEW
+from .ir import Ctx, CONST, TEMP, ATTR, CALL, NEW, RET, MOVE, EXPR
 from .irhelper import find_move_src
 from .irvisitor import IRVisitor, IRTransformer
 from .type import Type
@@ -370,7 +371,7 @@ class FlippedTransformer(TypePropagation):
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name]
-        new_scope = scope.inherit(name, [scope.find_ctor()])
+        new_scope = scope.instantiate('flipped', scope.children)
         new_ctor = new_scope.find_ctor()
         #self.new_scopes.append(new_ctor)
         FlippedPortsBuilder().process(new_ctor)
@@ -387,3 +388,96 @@ class FlippedPortsBuilder(IRVisitor):
                     elif arg.value == 'out':
                         arg.value = 'in'
                     break
+
+
+class PortConnector(IRVisitor):
+    def __init__(self):
+        self.scopes = []
+
+    def visit_SYSCALL(self, ir):
+        if ir.sym.name == 'polyphony.io.connect':
+            return self.visit_SYSCALL_connect(ir)
+
+    def _ports(self, scope):
+        ports = []
+        for sym in scope.symbols.values():
+            if sym.typ.get_scope().is_port():
+                ports.append(sym)
+        return sorted(ports)
+
+    def visit_SYSCALL_connect(self, ir):
+        a0 = ir.args[0][1]
+        a1 = ir.args[1][1]
+        scope0 = a0.symbol().typ.get_scope()
+        scope1 = a1.symbol().typ.get_scope()
+        assert scope0.is_class()
+        assert scope1.is_class()
+        if scope0.is_port():
+            if not scope1.is_port():
+                assert False
+            self._connect_port(a0, a1)
+        else:
+            if scope1.is_port():
+                assert False
+            ports0 = self._ports(scope0)
+            ports1 = self._ports(scope1)
+            for port0, port1 in zip(ports0, ports1):
+                p0 = ATTR(a0, port0, Ctx.LOAD, a0.symbol().scope)
+                p1 = ATTR(a1, port1, Ctx.LOAD, a1.symbol().scope)
+                self._connect_port(p0, p1)
+
+    def _connect_port(self, p0, p1):
+        port_scope0 = p0.symbol().typ.get_scope()
+        port_scope1 = p1.symbol().typ.get_scope()
+        dtype0 = port_scope0.type_args[0]
+        dtype1 = port_scope1.type_args[0]
+        if not Type.is_same(dtype0, dtype1):
+            assert False
+        new0 = find_move_src(p0.symbol(), NEW)
+        new1 = find_move_src(p1.symbol(), NEW)
+        dir0 = new0.args[0][1]
+        dir1 = new1.args[0][1]
+        if dir0.value == 'in' and dir1.value == 'out':
+            port_assign_call = self._make_assign_call(p0, p1)
+            self.current_stm.block.append_stm(EXPR(port_assign_call))
+        elif dir0.value == 'out' and dir1.value == 'in':
+            port_assign_call = self._make_assign_call(p1, p0)
+            self.current_stm.block.append_stm(EXPR(port_assign_call))
+        else:
+            assert False
+
+    def _make_assign_call(self, p0, p1):
+        port_scope0 = p0.symbol().typ.get_scope()
+        port_scope1 = p1.symbol().typ.get_scope()
+        rd_sym = port_scope1.find_sym('rd')
+        port_rd = ATTR(p1,
+                       rd_sym,
+                       Ctx.LOAD,
+                       port_scope1)
+        port_rd_call = CALL(port_rd, args=[], kwargs={})
+        lambda_sym = self._make_lambda(port_rd_call)
+        assign_sym = port_scope0.find_sym('assign')
+        port_assign = ATTR(p0,
+                           assign_sym,
+                           Ctx.LOAD,
+                           port_scope0)
+        port_assign_call = CALL(port_assign,
+                                args=[('fn', TEMP(lambda_sym, Ctx.LOAD))], kwargs={})
+        return port_assign_call
+
+    def _make_lambda(self, body):
+        tags = {'function', 'returnable', 'comb'}
+        lambda_scope = Scope.create(self.scope, None, tags, self.scope.lineno)
+        lambda_scope.synth_params = self.scope.synth_params.copy()
+        new_block = Block(lambda_scope)
+        lambda_scope.set_entry_block(new_block)
+        lambda_scope.set_exit_block(new_block)
+        lambda_scope.return_type = Type.undef_t
+        ret_sym = lambda_scope.add_return_sym()
+        new_block.append_stm(MOVE(TEMP(ret_sym, Ctx.STORE), body))
+        new_block.append_stm(RET(TEMP(ret_sym, Ctx.LOAD)))
+        scope_sym = self.scope.add_sym(lambda_scope.orig_name)
+        scope_sym.set_type(Type.function(lambda_scope, None, None))
+
+        self.scopes.append(lambda_scope)
+        return scope_sym

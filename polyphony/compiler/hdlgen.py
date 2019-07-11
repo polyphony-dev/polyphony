@@ -212,16 +212,6 @@ class HDLModuleBuilder(object):
                                       fifo_module.param_map,
                                       is_internal=True)
 
-    def _add_single_port_channel(self, signal):
-        reader, writer = create_local_accessor(signal)
-        self.hdlmodule.add_local_reader(reader.acc_name, reader)
-        self.hdlmodule.add_local_writer(writer.acc_name, writer)
-        ports = reader.regs() + writer.regs()
-        for p in ports:
-            name = reader.port_name(p)
-            sig = self.hdlmodule.gen_sig(name, p.width)
-            self.hdlmodule.add_internal_reg(sig)
-
     def _add_fifo_channel(self, signal):
         reader, writer = create_local_accessor(signal)
         self.hdlmodule.add_local_reader(reader.acc_name, reader)
@@ -469,8 +459,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         for sig in signals.values():
             if sig.is_input() or sig.is_output():
                 continue
-            if sig.is_single_port():
-                self._add_single_port_channel(sig)
             elif sig.is_seq_port():
                 self._add_fifo_channel(sig)
 
