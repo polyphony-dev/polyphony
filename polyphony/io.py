@@ -71,6 +71,8 @@ def connect(p0, p1):
 
 
 def _thru_port(parent, child):
+    if parent._dtype != child._dtype:
+        raise TypeError(f"Incompatible port type, {parent._dtype} and {child._dtype}")
     if parent._direction == 'in':
         assert child._direction == 'in'
         child.assign(lambda:parent.rd())
@@ -285,4 +287,3 @@ class Handshake:
         while self.ready.rd() is not True:
             timing.clkfence()
         self.valid.wr(False)
-

@@ -92,5 +92,5 @@ def connect(p0:object, p1:object):
 
 
 @builtin
-def thru(parent, child):
+def thru(parent:object, child:object):
     pass

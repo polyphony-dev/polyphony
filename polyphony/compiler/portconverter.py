@@ -395,8 +395,8 @@ class PortConnector(IRVisitor):
         self.scopes = []
 
     def visit_SYSCALL(self, ir):
-        if ir.sym.name == 'polyphony.io.connect':
-            return self.visit_SYSCALL_connect(ir)
+        if ir.sym.name in ('polyphony.io.connect', 'polyphony.io.thru'):
+            self.visit_SYSCALL_connect(ir)
 
     def _ports(self, scope):
         ports = []
@@ -406,6 +406,12 @@ class PortConnector(IRVisitor):
         return sorted(ports)
 
     def visit_SYSCALL_connect(self, ir):
+        if ir.sym.name.endswith('connect'):
+            func = 'connect'
+        elif ir.sym.name.endswith('thru'):
+            func = 'thru'
+        else:
+            assert False
         a0 = ir.args[0][1]
         a1 = ir.args[1][1]
         scope0 = a0.symbol().typ.get_scope()
@@ -415,7 +421,7 @@ class PortConnector(IRVisitor):
         if scope0.is_port():
             if not scope1.is_port():
                 assert False
-            self._connect_port(a0, a1)
+            self._connect_port(a0, a1, func)
         else:
             if scope1.is_port():
                 assert False
@@ -424,9 +430,9 @@ class PortConnector(IRVisitor):
             for port0, port1 in zip(ports0, ports1):
                 p0 = ATTR(a0, port0, Ctx.LOAD, a0.symbol().scope)
                 p1 = ATTR(a1, port1, Ctx.LOAD, a1.symbol().scope)
-                self._connect_port(p0, p1)
+                self._connect_port(p0, p1, func)
 
-    def _connect_port(self, p0, p1):
+    def _connect_port(self, p0, p1, func):
         port_scope0 = p0.symbol().typ.get_scope()
         port_scope1 = p1.symbol().typ.get_scope()
         dtype0 = port_scope0.type_args[0]
@@ -437,14 +443,21 @@ class PortConnector(IRVisitor):
         new1 = find_move_src(p1.symbol(), NEW)
         dir0 = new0.args[0][1]
         dir1 = new1.args[0][1]
-        if dir0.value == 'in' and dir1.value == 'out':
-            port_assign_call = self._make_assign_call(p0, p1)
-            self.current_stm.block.append_stm(EXPR(port_assign_call))
-        elif dir0.value == 'out' and dir1.value == 'in':
-            port_assign_call = self._make_assign_call(p1, p0)
-            self.current_stm.block.append_stm(EXPR(port_assign_call))
-        else:
-            assert False
+        if func == 'connect':
+            if dir0.value == 'in' and dir1.value == 'out':
+                port_assign_call = self._make_assign_call(p0, p1)
+            elif dir0.value == 'out' and dir1.value == 'in':
+                port_assign_call = self._make_assign_call(p1, p0)
+            else:
+                assert False
+        elif func == 'thru':
+            if dir0.value == 'in' and dir1.value == 'in':
+                port_assign_call = self._make_assign_call(p1, p0)
+            elif dir0.value == 'out' and dir1.value == 'out':
+                port_assign_call = self._make_assign_call(p0, p1)
+            else:
+                assert False
+        self.current_stm.block.append_stm(EXPR(port_assign_call))
 
     def _make_assign_call(self, p0, p1):
         port_scope0 = p0.symbol().typ.get_scope()
