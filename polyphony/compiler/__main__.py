@@ -113,7 +113,11 @@ def is_uninlined_scope(scope):
 
 
 def is_hdlmodule_scope(scope):
-    return (scope.is_module() and scope.is_instantiated()) or scope.is_function_module() or scope.is_testbench()
+    if ((scope.is_module() and scope.is_instantiated())
+            or scope.is_function_module()
+            or scope.is_testbench()):
+        return True
+    return False
 
 
 def preprocess_global(driver):
@@ -125,9 +129,11 @@ def preprocess_global(driver):
 
 def scopegraph(driver):
     uncalled_scopes = CallGraphBuilder().process_all()
-    unused_scopes = DependencyGraphBuilder().process_all()
+    using_scopes, unused_scopes = DependencyGraphBuilder().process_all()
     for s in uncalled_scopes:
         if s.is_namespace() or s.is_class() or s.is_worker():
+            continue
+        if s.is_ctor() and s.parent.is_module() and s.parent in driver.scopes:
             continue
         driver.remove_scope(s)
         Scope.destroy(s)
@@ -365,7 +371,11 @@ def specfunc(driver):
 
 
 def inlineopt(driver):
-    InlineOpt().process_all(driver)
+    inlineopt = InlineOpt()
+    inlineopt.process_all(driver)
+    for s in inlineopt.new_scopes:
+        assert s.name in env.scopes
+        driver.insert_scope(s)
     scopegraph(driver)
 
 
@@ -566,6 +576,10 @@ def dumpdfgimg(driver, scope):
             dfg.write_dot(dfg.name)
 
 
+def dumpdependimg(driver):
+    env.depend_graph.write_dot(f'depend_graph_{driver.stage}')
+
+
 def dumpmrg(driver, scope):
     driver.logger.debug(str(env.memref_graph))
 
@@ -661,6 +675,7 @@ def compile_plan():
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
+        dbg(dumpdependimg),
         filter_scope(is_uninlined_scope),
         setsynthparams,
         dbg(dumpscope),
@@ -671,6 +686,7 @@ def compile_plan():
         usedef,
         flattenmodule,
         scalarize,
+        scopegraph,
         dbg(dumpscope),
         usedef,
         scalarssa,
@@ -701,6 +717,7 @@ def compile_plan():
         pure(execpureall),
         phase(env.PHASE_3),
         instantiate,
+        dbg(dumpdependimg),
         dbg(dumpscope),
         usedef,
         copyopt,

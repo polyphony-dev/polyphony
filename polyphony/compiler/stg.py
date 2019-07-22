@@ -1065,10 +1065,12 @@ class AHDLTranslator(IRVisitor):
         dtype = port_sym.typ.get_dtype()
         width = dtype.get_width()
         port_scope = port_sym.typ.get_scope()
-        direction = port_sym.typ.get_direction()
-        assert direction != '?'
         protocol = port_sym.typ.get_protocol()
-        kind = port_sym.typ.get_port_kind()
+        # kind and direction might be changed at root
+        # so we use root_sym.typ
+        kind = root_sym.typ.get_port_kind()
+        direction = root_sym.typ.get_direction()
+        assert direction != '?'
         assigned = port_sym.typ.get_assigned()
         if port_scope.orig_name.startswith('Port'):
             if 'pipelined_port' in tags and protocol == 'ready_valid':

@@ -71,17 +71,7 @@ class DependencyGraphBuilder(IRVisitor):
         while self.worklist:
             scope = self.worklist.popleft()
             if scope.is_method():
-                self.depend_graph.add_edge(scope, scope.parent)
-            if scope.is_class():
-                ctor = scope.find_ctor()
-                # some library classes do not have ctor
-                if ctor:
-                    self.depend_graph.add_edge(scope, ctor)
-                if scope.is_module():
-                    for w, _ in scope.workers:
-                        assert w
-                        self.depend_graph.add_edge(scope, w)
-                        self.worklist.append(w)
+                self._add_dependency(scope, scope.parent)
             if scope.is_lib():
                 continue
             if scope.is_directory():
@@ -93,19 +83,26 @@ class DependencyGraphBuilder(IRVisitor):
         #print(self.depend_graph)
         using_scopes = set(self.depend_graph.bfs_ordered_nodes())
         unused_scopes = set(env.scopes.values()).difference(using_scopes)
-        return unused_scopes
+        return using_scopes, unused_scopes
 
     def process(self, scope):
-        self._add_edge_for_params(scope)
+        self._add_dependency_for_params(scope)
         super().process(scope)
 
-    def _add_edge_for_params(self, scope):
+    def _add_dependency_for_params(self, scope):
         for p, _, _ in scope.params:
             if p.typ.is_object() or p.typ.is_function():
                 param_scope = p.typ.get_scope()
                 assert param_scope
-                self.depend_graph.add_edge(scope, param_scope)
+                self._add_dependency(scope, param_scope)
                 self.worklist.append(param_scope)
+
+    def _add_dependency(self, user, used):
+        if user is used:
+            return
+        if self.depend_graph.has_edge(user, used):
+            return
+        self.depend_graph.add_edge(user, used)
 
     def visit_TEMP(self, ir):
         if ir.sym.typ.has_scope():
@@ -115,14 +112,14 @@ class DependencyGraphBuilder(IRVisitor):
         else:
             return
         assert receiver_scope
-        self.depend_graph.add_edge(self.scope, receiver_scope)
+        self._add_dependency(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)
 
     def visit_ATTR(self, ir):
         if ir.attr.typ.has_scope():
             attr_scope = ir.attr.typ.get_scope()
             assert attr_scope
-            self.depend_graph.add_edge(self.scope, attr_scope)
+            self._add_dependency(self.scope, attr_scope)
             self.worklist.append(attr_scope)
         # object referencing is also added
         self.visit(ir.exp)
@@ -131,5 +128,5 @@ class DependencyGraphBuilder(IRVisitor):
             return
         receiver_scope = receiver.typ.get_scope()
         assert receiver_scope
-        self.depend_graph.add_edge(self.scope, receiver_scope)
+        self._add_dependency(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)

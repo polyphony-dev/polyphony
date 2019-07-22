@@ -401,7 +401,7 @@ class PortConnector(IRVisitor):
     def _ports(self, scope):
         ports = []
         for sym in scope.symbols.values():
-            if sym.typ.get_scope().is_port():
+            if sym.typ.has_scope() and sym.typ.get_scope().is_port():
                 ports.append(sym)
         return sorted(ports)
 

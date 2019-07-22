@@ -8,14 +8,13 @@ from .symbol import Symbol
 from .synth import merge_synth_params
 from .type import Type
 from .usedef import UseDefDetector
-from .varreplacer import VarReplacer
 import logging
 logger = logging.getLogger()
 
 
 class InlineOpt(object):
     def __init__(self):
-        pass
+        self.new_scopes = []
 
     def process_all(self, driver):
         self.dones = set()
@@ -129,6 +128,11 @@ class InlineOpt(object):
             elif call_stm.is_a(EXPR):
                 call_stm.block.stms.remove(call_stm)
 
+            if callee.is_enclosure():
+                self._process_enclosure(callee, caller,
+                                        symbol_map, attr_map,
+                                        str(self.inline_counts[caller]))
+
     def _make_result_exp(self, call_stm, call, callee, caller, symbol_map):
         result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
         result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
@@ -207,6 +211,18 @@ class InlineOpt(object):
                     removes.append(stm)
             for rm in removes:
                 block.stms.remove(rm)
+
+    def _process_enclosure(self, enclosure, caller, symbol_map, attr_map, inline_id):
+        for clos in enclosure.closures:
+            clos_sym = enclosure.symbols[clos.orig_name]
+            new_clos_sym = symbol_map[clos_sym]
+
+            new_clos = clos.clone('', postfix=f'inl{inline_id}', parent=caller)
+            new_clos_sym.typ.set_scope(new_clos)
+
+            sym_replacer = SymbolReplacer(symbol_map, attr_map)
+            sym_replacer.process(new_clos, new_clos.entry_block)
+            self.new_scopes.append(new_clos)
 
 
 class CallCollector(IRVisitor):
@@ -500,37 +516,54 @@ class FlattenModule(IRTransformer):
         if scope.parent and scope.parent.is_module() and scope is scope.parent.find_ctor():
             super().process(scope)
 
-    def visit_EXPR(self, ir):
-        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
-                ir.exp.func_scope().parent.is_module() and
-                ir.exp.func_scope().orig_name == 'append_worker' and
-                ir.exp.func.head().name == env.self_name and
-                len(ir.exp.func.qualified_symbol()) > 2):
-            call = ir.exp
-            _, arg = call.args[0]
-            new_arg = self._make_new_worker(arg, ir.loc.lineno)
-            assert self.scope.parent.is_module()
-            append_worker_sym = self.scope.parent.find_sym('append_worker')
-            assert append_worker_sym
-            self_var = TEMP(call.func.head(), Ctx.LOAD)
-            new_func = ATTR(self_var, append_worker_sym, Ctx.LOAD)
-            new_func.attr_scope = append_worker_sym.scope
-            call.func = new_func
-            call.args[0] = (None, new_arg)
-        self.new_stms.append(ir)
+    def visit_CALL(self, ir):
+        if (ir.func_scope().is_method() and
+                ir.func_scope().parent.is_module() and
+                ir.func_scope().orig_name == 'append_worker' and
+                ir.func.head().name == env.self_name and
+                len(ir.func.qualified_symbol()) > 2):
+            _, arg = ir.args[0]
+            worker_scope = arg.symbol().typ.get_scope()
+            if worker_scope.is_method():
+                new_arg = self._make_new_worker(arg, self.current_stm.loc.lineno)
+                assert self.scope.parent.is_module()
+                append_worker_sym = self.scope.parent.find_sym('append_worker')
+                assert append_worker_sym
+                self_var = TEMP(ir.func.head(), Ctx.LOAD)
+                new_func = ATTR(self_var, append_worker_sym, Ctx.LOAD)
+                new_func.attr_scope = append_worker_sym.scope
+                ir.func = new_func
+                ir.args[0] = (None, new_arg)
+            else:
+                assert self.scope.parent.is_module()
+                append_worker_sym = self.scope.parent.find_sym('append_worker')
+                assert append_worker_sym
+                self_var = TEMP(ir.func.head(), Ctx.LOAD)
+                new_func = ATTR(self_var, append_worker_sym, Ctx.LOAD)
+                new_func.attr_scope = append_worker_sym.scope
+                ir.func = new_func
+                ir.args[0] = (None, arg)
+        return ir
 
     def _make_new_worker(self, arg, lineno):
         parent_module = self.scope.parent
         worker_scope = arg.attr.typ.get_scope()
         inst_name = arg.tail().name
         new_worker = worker_scope.clone(inst_name, str(lineno), parent=parent_module)
-        UseDefDetector().process(new_worker)
+
         worker_self = new_worker.find_sym('self')
         worker_self.typ.set_scope(parent_module)
+        for sym, cp, _ in new_worker.params:
+            sym.typ.set_scope(parent_module)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
         new_exp.replace(ctor_self, worker_self)
-        VarReplacer.replace_uses(TEMP(worker_self, Ctx.LOAD), new_exp, new_worker.usedef)
+
+        attr_map = {worker_self:new_exp}
+        sym_replacer = SymbolReplacer(sym_map={}, attr_map=attr_map)
+        sym_replacer.process(new_worker, new_worker.entry_block)
+        UseDefDetector().process(new_worker)
+
         new_worker_sym = parent_module.add_sym(new_worker.orig_name,
                                                typ=Type.function(new_worker, None, None))
         arg.exp = arg.exp.exp

@@ -125,6 +125,9 @@ class Graph(object):
         self.order_map_cache = None
         self.is_dag_cache = None
 
+    def has_edge(self, src_node, dst_node, flags=0):
+        return Edge(src_node, dst_node, flags) in self.edges
+
     def del_edge(self, src_node, dst_node, auto_del_node=True):
         self.succ_nodes[src_node].discard(dst_node)
         self.pred_nodes[dst_node].discard(src_node)
@@ -268,6 +271,29 @@ class Graph(object):
         for pred in self.preds(node):
             if pred not in visited and pred in nodes:
                 self._find_scc_back_walk(pred, nodes, visited, scc)
+
+    def write_dot(self, name):
+        from .env import env
+        try:
+            import pydot
+        except ImportError:
+            raise
+        # force disable debug mode to simplify the caption
+        debug_mode = env.dev_debug_mode
+        env.dev_debug_mode = False
+
+        g = pydot.Dot(name, graph_type='digraph')
+        node_map = {node: pydot.Node(str(node.name), shape='box') for node in self.get_nodes()}
+        for n in node_map.values():
+            g.add_node(n)
+
+        for node in node_map.keys():
+            from_node = node_map[node]
+            for succ in self.succs(node):
+                to_node = node_map[succ]
+                g.add_edge(pydot.Edge(from_node, to_node))
+        g.write_png('{}/{}.png'.format(env.debug_output_dir, name))
+        env.dev_debug_mode = debug_mode
 
 
 def test_graph():
