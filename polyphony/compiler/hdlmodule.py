@@ -313,6 +313,10 @@ class HDLModule(object):
         self.signals[new] = sig
         return sig
 
+    def remove_sig(self, sig):
+        assert sig.name in self.signals
+        del self.signals[sig.name]
+
     def use_clock_time(self):
         if self.clock_signal is None:
             self.clock_signal = self.gen_sig(f'{self.name}_clktime', 64)

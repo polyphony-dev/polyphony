@@ -9,6 +9,7 @@ class AHDLVisitor(object):
         self.current_state = None
 
     def process(self, hdlmodule):
+        self.hdlmodule = hdlmodule
         for fsm in hdlmodule.fsms.values():
             self.process_fsm(fsm)
 

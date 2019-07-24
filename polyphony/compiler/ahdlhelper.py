@@ -10,3 +10,13 @@ class AHDLVarReplacer(AHDLVisitor):
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.sig == self.old:
             ahdl.sig = self.new
+
+
+class AHDLRemover(AHDLVisitor):
+    def __init__(self, removes):
+        self.removes = removes
+
+    def visit_AHDL_BLOCK(self, ahdl):
+        for rm in self.removes:
+            if rm in ahdl.codes:
+                ahdl.codes.remove(rm)

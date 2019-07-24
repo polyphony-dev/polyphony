@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from .ahdlusedef import AHDLUseDefDetector
+from .ahdlopt import AHDLCopyOpt
 from .bitwidth import BitwidthReducer
 from .bitwidth import TempVarWidthSetter
 from .builtin import builtin_symbols
@@ -528,6 +529,11 @@ def reducereg(driver, scope):
     RegReducer().process(hdlmodule)
 
 
+def ahdlcopyopt(driver, scope):
+    hdlmodule = env.hdlmodule(scope)
+    AHDLCopyOpt().process(hdlmodule)
+
+
 def reducebits(driver, scope):
     hdlmodule = env.hdlmodule(scope)
     BitwidthReducer().process(hdlmodule)
@@ -761,6 +767,7 @@ def compile_plan():
         dbg(dumpstg),
         buildmodule,
         ahdlopt(ahdlusedef),
+        ahdlopt(ahdlcopyopt),
         ahdlopt(reducebits),
         #ahdlopt(reducereg),
         dbg(dumpmodule),
