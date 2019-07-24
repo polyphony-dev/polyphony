@@ -26,10 +26,10 @@ class sub_module:
 @module
 class connect01:
     def __init__(self):
-        self.sub = sub_module()
-        self.inf = flipped(interface())
+        self._sub = sub_module()
+        self._inf = flipped(interface())
 
-        connect(self.sub.inf, self.inf)
+        connect(self._sub.inf, self._inf)
         # connect() is equivalent to
         #self.sub.inf.p0.assign(lambda:self.inf.p0.rd())
         #self.inf.p1.assign(lambda:self.sub.inf.p1.rd())
@@ -37,10 +37,10 @@ class connect01:
         self.append_worker(self.main, loop=True)
 
     def main(self):
-        self.inf.p0.wr(10)
+        self._inf.p0.wr(10)
         clkfence()
         clkfence()
-        x = self.inf.p1.rd()
+        x = self._inf.p1.rd()
         print(x)
         assert x == 20
 

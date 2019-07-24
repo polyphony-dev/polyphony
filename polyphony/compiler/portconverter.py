@@ -40,10 +40,11 @@ class PortTypeProp(TypePropagation):
             if self.current_stm.is_a(MOVE) and self.current_stm.dst.is_a(TEMP):
                 attrs['port_kind'] = 'internal'
             else:
-                if attrs['direction'] == 'input' or attrs['direction'] == 'output':
-                    attrs['port_kind'] = 'external'
-                else:
+                if self.current_stm.dst.symbol().name.startswith('_'):
                     attrs['port_kind'] = 'internal'
+                    attrs['direction'] = 'inout'
+                else:
+                    attrs['port_kind'] = 'external'
             if 'protocol' not in attrs:
                 attrs['protocol'] = 'none'
             if 'init' not in attrs or attrs['init'] is None:
@@ -80,7 +81,9 @@ class PortTypeProp(TypePropagation):
                 scope = self.scope.parent
             else:
                 scope = self.scope
-            if not scope.is_subclassof(port_owner) and kind == 'internal':
+            if (kind == 'internal'
+                    and not scope.is_subclassof(port_owner)
+                    and not port_owner.find_child(scope.name, rec=True)):
                 fail(self.current_stm, Errors.PORT_ACCESS_IS_NOT_ALLOWED)
         return super().visit_CALL(ir)
 
@@ -96,18 +99,22 @@ class PortConverter(IRTransformer):
         modules = [s for s in scopes if s.is_module()]
         if not modules:
             return
+        cleaner = UnusedPortCleaner()
         typeprop = PortTypeProp()
         for m in modules:
             if not m.is_instantiated():
                 continue
             ctor = m.find_ctor()
             assert ctor
+            cleaner.process(ctor)
             typeprop.process(ctor)
             for w, args in m.workers:
+                cleaner.process(w)
                 typeprop.process(w)
             for caller in env.depend_graph.preds(m):
                 if caller.is_namespace():
                     continue
+                cleaner.process(caller)
                 typeprop.process(caller)
 
             self.union_ports = defaultdict(set)
@@ -214,15 +221,9 @@ class PortConverter(IRTransformer):
                     if func_scope.orig_name in ('wr', 'assign'):
                         exclusive_write = True
                 valid_direction = {'output', 'input'}
-        if di != 'any' and di not in valid_direction:
-            if sym.ancestor and sym.ancestor.scope is not sym.scope:
-                # the port has been accessed as opposite direction
-                # by a module includes original owner module
-                port_typ.set_port_kind('internal')
-                port_typ.set_direction('inout')
-            else:
-                fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
-                     [sym.orig_name()])
+        if di != 'inout' and di != 'any' and di not in valid_direction:
+            fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
+                 [sym.orig_name()])
         if sym in self.union_ports:
             assert False
             for s in self.union_ports[sym]:
@@ -493,4 +494,47 @@ class PortConnector(IRVisitor):
         scope_sym.set_type(Type.function(lambda_scope, None, None))
 
         self.scopes.append(lambda_scope)
+
+        temps = body.find_irs(TEMP)
+        for t in temps:
+            if t.symbol() not in self.scope.symbols:
+                lambda_scope.add_free_sym(t.symbol())
+        self.scope.add_tag('enclosure')
+        self.scope.add_closure(lambda_scope)
         return scope_sym
+
+
+class UnusedPortCleaner(IRTransformer):
+    def __init__(self):
+        self.port_syms = set()
+
+    def visit_TEMP(self, ir):
+        if ir.ctx is Ctx.STORE:
+            if ir.symbol().typ.has_scope() and ir.symbol().typ.get_scope().is_port():
+                assert self.current_stm.is_a(MOVE)
+                self.port_syms.add(self.current_stm.dst.symbol())
+        return ir
+
+    def visit_NEW(self, ir):
+        if ir.func_scope().is_port():
+            assert self.current_stm.is_a(MOVE)
+            self.port_syms.add(self.current_stm.dst.symbol())
+        return ir
+
+    def visit_CALL(self, ir):
+        if ir.func_scope().is_method() and ir.func_scope().parent.is_port():
+            sym = ir.func.tail()
+            if sym not in self.port_syms:
+                return None
+        return ir
+
+    def visit_MOVE(self, ir):
+        src = self.visit(ir.src)
+        if src is not None:
+            self.new_stms.append(ir)
+        self.visit(ir.dst)
+
+    def visit_EXPR(self, ir):
+        exp = self.visit(ir.exp)
+        if exp is not None:
+            self.new_stms.append(ir)

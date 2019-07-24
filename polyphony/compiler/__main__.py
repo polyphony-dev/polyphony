@@ -739,6 +739,7 @@ def compile_plan():
         phase(env.PHASE_4),
         usedef,
         convport,
+        scopegraph,
         phase(env.PHASE_5),
         fieldusedef,
         aliasvar,

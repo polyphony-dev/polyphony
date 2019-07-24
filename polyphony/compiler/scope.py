@@ -108,6 +108,8 @@ class Scope(Tagged):
             for s in scope.children:
                 set_h_order(s, order)
         for s in env.scopes.values():
+            s.order = (-1, 0)
+        for s in env.scopes.values():
             if s.is_namespace():
                 s.order = (0, 0)
                 for f in s.children:
@@ -320,6 +322,11 @@ class Scope(Tagged):
 
         s.synth_params = self.synth_params.copy()
         s.closures = self.closures.copy()
+        for name, sym in self.free_symbols.items():
+            if sym in symbol_map:
+                s.free_symbols[name] = symbol_map[sym]
+            else:
+                s.free_symbols[name] = sym
         # TODO:
         #s.loop_tree = None
         #s.constants

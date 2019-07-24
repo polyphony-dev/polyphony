@@ -729,6 +729,8 @@ class AHDLTranslator(IRVisitor):
         width = _signal_width(sym)
         if ir.attr_scope.is_unflatten():
             qsym = ir.qualified_symbol()
+            if qsym[0].name.startswith(env.self_name):
+                qsym = qsym[1:]
             qnames = [sym.hdl_name() for sym in qsym]
             signame = '_'.join(qnames)
             sig = self.hdlmodule.gen_sig(signame, width, sig_tags, sym)
@@ -1088,6 +1090,8 @@ class AHDLTranslator(IRVisitor):
         if kind == 'internal':
             if 'seq_port' in tags:
                 pass  # tag?
+            elif assigned:
+                tags.add('net')
             else:
                 tags.add('reg')
         elif self.scope.parent.is_subclassof(port_sym.scope) and port_sym.scope.is_module():
@@ -1223,6 +1227,8 @@ class AHDLTranslator(IRVisitor):
         port_sig.del_tag('reg')
         port_sig.del_tag('initializable')
         port_sig.add_tag('net')
+        if not port_sig.is_input() and not port_sig.is_output():
+            self.hdlmodule.add_internal_net(port_sig, '')
 
     def _make_port_edge(self, target, port_sig, old, new):
         if target:

@@ -38,15 +38,15 @@ class sub_module:
 @module
 class connect03:
     def __init__(self):
-        self.sub = sub_module()
-        self.inf = flipped(interface())
+        self._sub = sub_module()
+        self._inf = flipped(interface())
 
-        connect(self.sub.inf, self.inf)
+        connect(self._sub.inf, self._inf)
         # connect() is equivalent to
-        #self.sub.inf.p0.assign(lambda:self.inf.p0.rd())
-        #self.inf.p1.assign(lambda:self.sub.inf.p1.rd())
+        #self._sub.inf.p0.assign(lambda:_self.inf.p0.rd())
+        #self._inf.p1.assign(lambda:self._sub.inf.p1.rd())
 
-        self.append_worker(bar, self.inf.p0, self.inf.p1, loop=True)
+        self.append_worker(bar, self._inf.p0, self._inf.p1, loop=True)
 
 
 m = connect03()

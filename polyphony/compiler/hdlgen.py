@@ -235,6 +235,8 @@ class HDLModuleBuilder(object):
                 self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         # reset output ports
         for sig in outputs:
+            if sig.is_net():
+                continue
             infs = [inf for inf in self.hdlmodule.interfaces.values() if inf.signal is sig]
             for inf in infs:
                 for stm in inf.reset_stms():

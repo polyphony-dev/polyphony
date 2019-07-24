@@ -1,5 +1,5 @@
 from polyphony import module, testbench
-from polyphony.io import Port, flipped, connect
+from polyphony.io import Port, flipped, connect, thru
 from polyphony.timing import timed, clkfence
 
 
@@ -12,7 +12,7 @@ class interface:
 
 @timed
 @module
-class sub_module:
+class sub_sub_module:
     def __init__(self):
         self.inf = interface()
         self.append_worker(self.main, loop=True)
@@ -24,16 +24,21 @@ class sub_module:
 
 @timed
 @module
-class connect02:
+class sub_module:
+    def __init__(self):
+        self.public_inf = interface()
+        self._sub_sub = sub_sub_module()
+        thru(self.public_inf, self._sub_sub.inf)
+
+
+@timed
+@module
+class connect04:
     def __init__(self):
         self._sub = sub_module()
         self._inf = flipped(interface())
 
-        connect(self._sub.inf.p0, self._inf.p0)
-        connect(self._sub.inf.p1, self._inf.p1)
-        # connect() is equivalent to
-        #self._sub.inf.p0.assign(lambda:self._inf.p0.rd())
-        #self._inf.p1.assign(lambda:self._sub.inf.p1.rd())
+        connect(self._sub.public_inf, self._inf)
 
         self.append_worker(self.main, loop=True)
 
@@ -46,7 +51,7 @@ class connect02:
         assert x == 20
 
 
-m = connect02()
+m = connect04()
 
 
 @timed

@@ -26,6 +26,10 @@ class CopyOpt(IRVisitor):
             cp = worklist.popleft()
             logger.debug('copy stm ' + str(cp))
             dst_qsym = cp.dst.qualified_symbol()
+            defs = list(scope.usedef.get_stms_defining(dst_qsym))
+            if len(defs) > 1:
+                # dst must be non ssa variables
+                continue
             uses = list(scope.usedef.get_stms_using(dst_qsym))
             orig = self._find_root_def(cp.src.qualified_symbol())
             for u in uses:
@@ -73,6 +77,8 @@ class CopyOpt(IRVisitor):
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
                 if cp.dst.is_a(ATTR) and cp.dst.tail().typ.get_scope().is_module() and scope.is_ctor():
+                    continue
+                if cp.is_a(CMOVE) and not cp.dst.symbol().is_temp():
                     continue
                 cp.block.stms.remove(cp)
 

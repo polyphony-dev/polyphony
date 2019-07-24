@@ -26,13 +26,13 @@ class sub_module:
 @module
 class thru01:
     def __init__(self):
-        self.sub = sub_module()
+        self._sub = sub_module()
         self.inf = interface()
 
-        thru(self.inf, self.sub.inf)
+        thru(self.inf, self._sub.inf)
         # thru() is equivalent to
-        #self.sub.inf.p0.assign(lambda:self.inf.p0.rd())
-        #self.inf.p1.assign(lambda:self.sub.inf.p1.rd())
+        #self._sub.inf.p0.assign(lambda:self.inf.p0.rd())
+        #self.inf.p1.assign(lambda:self._sub.inf.p1.rd())
 
 
 m = thru01()

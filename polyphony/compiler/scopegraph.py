@@ -130,3 +130,8 @@ class DependencyGraphBuilder(IRVisitor):
         assert receiver_scope
         self._add_dependency(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)
+
+    def visit_NEW(self, ir):
+        ctor = ir.sym.typ.get_scope().find_ctor()
+        self._add_dependency(self.scope, ctor)
+        self.visit_args(ir.args, ir.kwargs)

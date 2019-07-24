@@ -402,7 +402,7 @@ class FlattenFieldAccess(IRTransformer):
     def _make_new_ATTR(self, qsym, ir):
         newir = TEMP(qsym[0], Ctx.LOAD)
         for sym in qsym[1:]:
-            newir = ATTR(newir, sym, Ctx.LOAD)
+            newir = ATTR(newir, sym, Ctx.LOAD, attr_scope=sym.scope)
         newir.ctx = ir.ctx
         return newir
 
@@ -420,7 +420,6 @@ class FlattenFieldAccess(IRTransformer):
             return ir
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
-        newattr.attr_scope = ir.attr_scope
         return newattr
 
 
@@ -530,8 +529,8 @@ class FlattenModule(IRTransformer):
                 append_worker_sym = self.scope.parent.find_sym('append_worker')
                 assert append_worker_sym
                 self_var = TEMP(ir.func.head(), Ctx.LOAD)
-                new_func = ATTR(self_var, append_worker_sym, Ctx.LOAD)
-                new_func.attr_scope = append_worker_sym.scope
+                new_func = ATTR(self_var, append_worker_sym,
+                                Ctx.LOAD, attr_scope=append_worker_sym.scope)
                 ir.func = new_func
                 ir.args[0] = (None, new_arg)
             else:
@@ -539,8 +538,8 @@ class FlattenModule(IRTransformer):
                 append_worker_sym = self.scope.parent.find_sym('append_worker')
                 assert append_worker_sym
                 self_var = TEMP(ir.func.head(), Ctx.LOAD)
-                new_func = ATTR(self_var, append_worker_sym, Ctx.LOAD)
-                new_func.attr_scope = append_worker_sym.scope
+                new_func = ATTR(self_var, append_worker_sym,
+                                Ctx.LOAD, attr_scope=append_worker_sym.scope)
                 ir.func = new_func
                 ir.args[0] = (None, arg)
         return ir
@@ -550,7 +549,8 @@ class FlattenModule(IRTransformer):
         worker_scope = arg.attr.typ.get_scope()
         inst_name = arg.tail().name
         new_worker = worker_scope.clone(inst_name, str(lineno), parent=parent_module)
-
+        if new_worker.is_inlinelib():
+            new_worker.del_tag('inlinelib')
         worker_self = new_worker.find_sym('self')
         worker_self.typ.set_scope(parent_module)
         for sym, cp, _ in new_worker.params:
@@ -566,8 +566,9 @@ class FlattenModule(IRTransformer):
 
         new_worker_sym = parent_module.add_sym(new_worker.orig_name,
                                                typ=Type.function(new_worker, None, None))
-        arg.exp = arg.exp.exp
+        arg.exp = TEMP(ctor_self, Ctx.LOAD)
         arg.attr = new_worker_sym
+        arg.attr_scope = new_worker_sym.scope
         self.driver.insert_scope(new_worker)
         return arg
 
