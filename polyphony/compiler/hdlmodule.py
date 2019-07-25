@@ -126,6 +126,8 @@ class HDLModule(object):
     def add_internal_reg_array(self, sig, size, tag=''):
         assert not sig.is_net()
         sig.add_tag('regarray')
+        if isinstance(size, int):
+            size = AHDL_CONST(size)
         self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def add_internal_net(self, sig, tag=''):
@@ -136,6 +138,8 @@ class HDLModule(object):
     def add_internal_net_array(self, sig, size, tag=''):
         assert not sig.is_reg()
         sig.add_tag('netarray')
+        if isinstance(size, int):
+            size = AHDL_CONST(size)
         self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
 
     def remove_internal_net(self, sig):
@@ -191,10 +195,14 @@ class HDLModule(object):
 
     def remove_signal_decl(self, sig):
         for tag, decls in self.decls.items():
-            for decl in decls:
+            for decl in decls[:]:
                 if isinstance(decl, AHDL_SIGNAL_DECL) and decl.sig is sig:
                     self.remove_decl(tag, decl)
-                    return
+                elif isinstance(decl, AHDL_ASSIGN):
+                    if decl.dst.is_a(AHDL_VAR) and decl.dst.sig is sig:
+                        self.remove_decl(tag, decl)
+                    elif decl.dst.is_a(AHDL_SUBSCRIPT) and decl.dst.memvar.sig is sig:
+                        self.remove_decl(tag, decl)
 
     def add_sub_module(self, name, hdlmodule, connections, param_map=None):
         assert isinstance(name, str)

@@ -580,11 +580,12 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_SIGNAL_ARRAY_DECL(self, ahdl):
         nettype = 'reg' if ahdl.sig.is_regarray() else 'wire'
         name = self._safe_name(ahdl.sig)
+        size = self.visit(ahdl.size)
         if ahdl.sig.width == 1:
-            self.emit(f'{nettype} {name}[0:{ahdl.size-1}];')
+            self.emit(f'{nettype} {name}[0:{size}-1];')
         else:
             sign = 'signed' if ahdl.sig.is_int() else ''
-            self.emit(f'{nettype} {sign:<6} [{ahdl.sig.width-1}:0] {name} [0:{ahdl.size-1}];')
+            self.emit(f'{nettype} {sign:<6} [{ahdl.sig.width-1}:0] {name} [0:{size}-1];')
 
     def visit_AHDL_ASSIGN(self, ahdl):
         src = self.visit(ahdl.src)

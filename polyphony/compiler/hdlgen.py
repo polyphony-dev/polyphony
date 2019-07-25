@@ -250,21 +250,21 @@ class HDLModuleBuilder(object):
                     for stm in acc.reset_stms():
                         self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         for sig in defs:
-            # reset internal ports
-            if sig.is_seq_port() or sig.is_single_port():
-                local_accessors = self.hdlmodule.local_writers.values()
-                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-                for acc in accs:
-                    for stm in acc.reset_stms():
-                        self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
             # reset internal regs
-            elif sig.is_reg():
+            if sig.is_reg():
                 if sig.is_initializable():
                     v = AHDL_CONST(sig.init_value)
                 else:
                     v = AHDL_CONST(0)
                 mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
                 self.hdlmodule.add_fsm_reset_stm(fsm_name, mv)
+            # reset internal ports
+            elif sig.is_seq_port() or sig.is_single_port():
+                local_accessors = self.hdlmodule.local_writers.values()
+                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
+                for acc in accs:
+                    for stm in acc.reset_stms():
+                        self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         local_readers = self.hdlmodule.local_readers.values()
         local_writers = self.hdlmodule.local_writers.values()
         accs = set(list(local_readers) + list(local_writers))
@@ -551,8 +551,6 @@ class AHDLVarCollector(AHDLVisitor):
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.sig.is_ctrl() or ahdl.sig.name in self.module_constants:
-            pass
-        elif ahdl.sig.is_field():
             pass
         elif ahdl.sig.is_input():
             if ahdl.sig.is_seq_port():

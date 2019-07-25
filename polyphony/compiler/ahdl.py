@@ -111,15 +111,12 @@ class AHDL_VAR(AHDL_EXP):
         return 'AHDL_VAR({}, {})'.format(repr(self.sig), repr(self.ctx))
 
 
-class AHDL_MEMVAR(AHDL_EXP):
+class AHDL_MEMVAR(AHDL_VAR):
     def __init__(self, sig, memnode, ctx):
-        assert sig and isinstance(sig, Signal)
         assert memnode
         assert (isinstance(memnode, MemRefNode) or isinstance(memnode, MemParamNode))
-        super().__init__()
-        self.sig = sig
+        super().__init__(sig, ctx)
         self.memnode = memnode
-        self.ctx = ctx
 
     def __str__(self):
         return '{}[]'.format(self.sig)
@@ -242,7 +239,7 @@ class AHDL_MOVE(AHDL_STM):
         return 'AHDL_MOVE({}, {})'.format(repr(self.dst), repr(self.src))
 
 
-class AHDL_DECL(AHDL):
+class AHDL_DECL(AHDL_STM):
     pass
 
 
@@ -269,6 +266,7 @@ class AHDL_SIGNAL_DECL(AHDL_VAR_DECL):
 class AHDL_SIGNAL_ARRAY_DECL(AHDL_SIGNAL_DECL):
     def __init__(self, sig, size):
         super().__init__(sig)
+        assert size.is_a(AHDL)
         self.name += '[{}]'.format(size)
         self.size = size
 

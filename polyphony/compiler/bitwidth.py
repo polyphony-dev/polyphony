@@ -27,8 +27,8 @@ class TempVarWidthSetter(IRVisitor):
 
 class BitwidthReducer(AHDLVisitor):
     def process(self, hdlmodule):
+        self.usedef = hdlmodule.usedef
         for fsm in hdlmodule.fsms.values():
-            self.usedef = fsm.usedef
             for stg in fsm.stgs:
                 for state in stg.states:
                     self.visit(state)

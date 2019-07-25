@@ -10,70 +10,42 @@ class UseDefTable(object):
         self._def_sig2stm = defaultdict(set)
         self._def_stm2sig = defaultdict(set)
 
-        self._def_var2stm = defaultdict(set)
-        self._def_stm2var = defaultdict(set)
-
         self._use_sig2stm = defaultdict(set)
         self._use_stm2sig = defaultdict(set)
 
-        self._use_var2stm = defaultdict(set)
-        self._use_stm2var = defaultdict(set)
+    def add_sig_def(self, sig, stm, state=None):
+        self._def_sig2stm[sig].add(stm)
+        self._def_stm2sig[stm].add(sig)
 
-    def add_var_def(self, var, stm, state):
-        assert var.is_a(AHDL_VAR) and stm.is_a(AHDL_STM)
-        self._def_sig2stm[var.sig].add(stm)
-        self._def_stm2sig[stm].add(var.sig)
-        self._def_var2stm[var].add(stm)
-        self._def_stm2var[stm].add(var)
+    def remove_sig_def(self, sig, stm, state=None):
+        self._def_sig2stm[sig].discard(stm)
+        self._def_stm2sig[stm].discard(sig)
 
-    def remove_var_def(self, var, stm, state):
-        assert var.is_a(AHDL_VAR) and stm.is_a(AHDL_STM)
-        self._def_sig2stm[var.sig].discard(stm)
-        self._def_stm2sig[stm].discard(var.sig)
-        self._def_var2stm[var].discard(stm)
-        self._def_stm2var[stm].discard(var)
+    def add_sig_use(self, sig, stm, state=None):
+        self._use_sig2stm[sig].add(stm)
+        self._use_stm2sig[stm].add(sig)
 
-    def add_var_use(self, var, stm, state):
-        assert var.is_a(AHDL_VAR) and stm.is_a(AHDL_STM)
-        self._use_sig2stm[var.sig].add(stm)
-        self._use_stm2sig[stm].add(var.sig)
-        self._use_var2stm[var].add(stm)
-        self._use_stm2var[stm].add(var)
+    def remove_sig_use(self, sig, stm, state=None):
+        self._use_sig2stm[sig].discard(stm)
+        self._use_stm2sig[stm].discard(sig)
 
-    def remove_var_use(self, var, stm, state):
-        assert var.is_a(AHDL_VAR) and stm.is_a(AHDL_STM)
-        self._use_sig2stm[var.sig].discard(stm)
-        self._use_stm2sig[stm].discard(var.sig)
-        self._use_var2stm[var].discard(stm)
-        self._use_stm2var[stm].discard(var)
+    def remove_stm(self, stm):
+        for sig in list(self.get_sigs_used_at(stm)):
+            self.remove_sig_use(sig, stm)
+        for sig in list(self.get_sigs_defined_at(stm)):
+            self.remove_sig_def(sig, stm)
 
-    def get_stms_defining(self, key):
-        if isinstance(key, Signal):
-            return self._def_sig2stm[key]
-        elif isinstance(key, AHDL_VAR):
-            return self._def_var2stm[key]
+    def get_stms_defining(self, sig):
+        return self._def_sig2stm[sig]
 
     def get_sigs_defined_at(self, stm):
-        if isinstance(stm, AHDL_STM):
-            return self._def_stm2sig[stm]
+        return self._def_stm2sig[stm]
 
-    def get_vars_defined_at(self, stm):
-        if isinstance(stm, AHDL_STM):
-            return self._def_stm2var[stm]
-
-    def get_stms_using(self, key):
-        if isinstance(key, Signal):
-            return self._use_sig2stm[key]
-        elif isinstance(key, AHDL_VAR):
-            return self._use_var2stm[key]
+    def get_stms_using(self, sig):
+        return self._use_sig2stm[sig]
 
     def get_sigs_used_at(self, stm):
-        if isinstance(stm, AHDL_STM):
-            return self._use_stm2sig[stm]
-
-    def get_vars_used_at(self, stm):
-        if isinstance(stm, AHDL_STM):
-            return self._use_stm2var[stm]
+        return self._use_stm2sig[stm]
 
     def get_all_def_sigs(self):
         return self._def_sig2stm.keys()
@@ -104,20 +76,16 @@ class AHDLUseDefDetector(AHDLVisitor):
         self.enable_def = True
 
     def process(self, hdlmodule):
-        for fsm in hdlmodule.fsms.values():
-            for stg in fsm.stgs:
-                for state in stg.states:
-                    self.current_state = state
-                    self.visit(state)
-            fsm.usedef = self.table
+        super().process(hdlmodule)
+        hdlmodule.usedef = self.table
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.ctx & Ctx.STORE:
             if self.enable_def:
-                self.table.add_var_def(ahdl, self.current_stm, self.current_state)
+                self.table.add_sig_def(ahdl.sig, self.current_stm, self.current_state)
         else:
             if self.enable_use:
-                self.table.add_var_use(ahdl, self.current_stm, self.current_state)
+                self.table.add_sig_use(ahdl.sig, self.current_stm, self.current_state)
 
     def visit_AHDL_SEQ(self, ahdl):
         if ahdl.factor.is_a([AHDL_LOAD, AHDL_IO_READ]):

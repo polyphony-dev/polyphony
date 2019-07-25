@@ -10,11 +10,16 @@ class AHDLVisitor(object):
 
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
+        for tag, decls in hdlmodule.decls.items():
+            for decl in decls:
+                self.visit(decl)
         for fsm in hdlmodule.fsms.values():
             self.process_fsm(fsm)
 
     def process_fsm(self, fsm):
         self.current_fsm = fsm
+        for stm in fsm.reset_stms:
+            self.visit(stm)
         for stg in fsm.stgs:
             self.process_stg(stg)
 
@@ -167,6 +172,27 @@ class AHDLVisitor(object):
     def visit_AHDL_BLOCK(self, ahdl):
         for c in ahdl.codes:
             self.visit(c)
+
+    def visit_AHDL_SIGNAL_DECL(self, ahdl):
+        pass
+
+    def visit_AHDL_SIGNAL_ARRAY_DECL(self, ahdl):
+        self.visit(ahdl.size)
+
+    def visit_AHDL_ASSIGN(self, ahdl):
+        self.visit(ahdl.src)
+        self.visit(ahdl.dst)
+
+    def visit_AHDL_FUNCTION(self, ahdl):
+        self.visit(ahdl.output)
+        for inp in ahdl.inputs:
+            self.visit(inp)
+        for stm in ahdl.stms:
+            self.visit(stm)
+
+    def visit_AHDL_CONNECT(self, ahdl):
+        self.visit(ahdl.src)
+        self.visit(ahdl.dst)
 
     def find_visitor(self, cls):
         method = 'visit_' + cls.__name__

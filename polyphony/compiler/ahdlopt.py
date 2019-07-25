@@ -4,16 +4,15 @@ from .ahdlhelper import AHDLVarReplacer, AHDLRemover
 
 
 class AHDLCopyOpt(AHDLVisitor):
-    def __init__(self):
-        self.replacer = AHDLVarReplacer()
-
     def process(self, hdlmodule):
-        self.removes = []
-        super().process(hdlmodule)
-        AHDLRemover(self.removes).process(hdlmodule)
+        removes = self._remove_alias(hdlmodule)
+        AHDLRemover(removes).process(hdlmodule)
 
-    def process_fsm(self, fsm):
-        for sig in list(self.hdlmodule.signals.values()):
+    def _remove_alias(self, hdlmodule):
+        replacer = AHDLVarReplacer()
+        removes = []
+        sigs = list(hdlmodule.signals.values())
+        for sig in sigs:
             if not sig.is_net():
                 continue
             if sig.is_input() or sig.is_output():
@@ -21,7 +20,7 @@ class AHDLCopyOpt(AHDLVisitor):
             if sig.is_condition():
                 continue
 
-            defs = fsm.usedef.get_stms_defining(sig)
+            defs = hdlmodule.usedef.get_stms_defining(sig)
             if len(defs) > 1:
                 continue
             if len(defs) == 0:
@@ -29,19 +28,27 @@ class AHDLCopyOpt(AHDLVisitor):
                 continue
             d = list(defs)[0]
             if d.is_a(AHDL_IO_READ):
-                target = d.dst.sig
+                target = d.dst
                 src = d.io
             elif d.is_a(AHDL_MOVE):
-                target = d.dst.sig
+                target = d.dst
+                src = d.src
+            elif d.is_a(AHDL_ASSIGN):
+                target = d.dst
                 src = d.src
             else:
                 print(d)
                 assert False
-            uses = fsm.usedef.get_stms_using(target)
+            uses = hdlmodule.usedef.get_stms_using(target.sig)
             if len(uses) == 1 and src.is_a(AHDL_VAR):
                 use = list(uses)[0]
-                #print(use, target, '->', src.sig)
-                self.replacer.replace(use, target, src.sig)
-                self.removes.append(d)
-                self.hdlmodule.remove_sig(target)
-                self.hdlmodule.remove_signal_decl(target)
+                #print(use, target.sig, '->', src.sig)
+                replacer.replace(use, target.sig, src.sig)
+                removes.append(d)
+                hdlmodule.remove_sig(target.sig)
+                hdlmodule.remove_signal_decl(target.sig)
+
+                hdlmodule.usedef.remove_stm(d)
+                hdlmodule.usedef.remove_sig_use(target.sig, use)
+                hdlmodule.usedef.add_sig_use(src.sig, use)
+        return removes

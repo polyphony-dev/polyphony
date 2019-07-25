@@ -376,9 +376,9 @@ def _tags_from_sym(sym):
         if di != 'inout':
             tags.add(di)
 
-    if sym.is_param():
+    if sym.is_param() and sym.scope.is_function_module():
         tags.add('input')
-    elif sym.is_return():
+    elif sym.is_return() and sym.scope.is_function_module():
         tags.add('output')
     elif sym.is_condition():
         tags.add('condition')
@@ -426,9 +426,9 @@ class AHDLTranslator(IRVisitor):
                     tags.remove('reg')
             else:
                 sig_name = f'{self.scope.orig_name}_{sym.hdl_name()}'
-        elif 'input' in tags:
+        elif sym.is_param():
             sig_name = f'{self.scope.orig_name}_{sym.hdl_name()}'
-        elif 'output' in tags:
+        elif sym.is_return():
             sig_name = f'{self.scope.orig_name}_out_0'
         else:
             sig_name = sym.hdl_name()
