@@ -122,6 +122,7 @@ class HDLModuleBuilder(object):
             input_sig = self.hdlmodule.gen_sig(output_sig.name + '_in', memnode.addr_width())
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
+            source = memnode.single_source()
             if source:
                 array = source.initstm.src
                 case_items = []
