@@ -10,6 +10,7 @@ class ram:
         self.data = Port(int, 'in')
         self.we = Port(bool, 'in')
         self.q = Port(int, 'out')
+        self.size = size
         self.mem = [0] * size
         self.addr_latch = 0  # Module class field will always be a register
 
@@ -20,12 +21,15 @@ class ram:
         return self.f()
 
     def f(self):
-        return self.mem[self.addr_latch]
-
+        if self.size > self.addr_latch:
+            return self.mem[self.addr_latch]
+        else:
+            return -1
     @timed
     def main(self):
         if self.we.rd():
-            self.mem[self.addr.rd()] = self.data.rd()
+            if self.size > self.addr.rd():
+                self.mem[self.addr.rd()] = self.data.rd()
         self.addr_latch = self.addr.rd()
 
 
@@ -67,10 +71,10 @@ def test_ram(ram):
     clkfence()
     assert 11 == ram.r.q.rd()
 
-    ram.r.addr.wr(2)
+    ram.r.addr.wr(12)
     clkfence()
     clkfence()
-    assert 12 == ram.r.q.rd()
+    assert -1 == ram.r.q.rd()
 
 
 test_ram(m)

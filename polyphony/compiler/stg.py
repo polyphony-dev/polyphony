@@ -1261,9 +1261,12 @@ class AHDLCombTranslator(AHDLTranslator):
         self.codes = []
         self.return_var = None
 
-    def _emit(self, item):
+    def _emit(self, item, sched_time=0):
         assert item.is_a(AHDL_ASSIGN)
         self.codes.append(item)
+
+    def _hooked_emit(self, ahdl, sched_time=0):
+        self.hooked.append(ahdl)
 
     def _is_port_method(self, ir, method_name):
         return (ir.is_a(CALL) and
@@ -1345,4 +1348,13 @@ class AHDLCombTranslator(AHDLTranslator):
         assert False
 
     def visit_CMOVE(self, ir):
-        assert False
+        orig_emit_func = self._emit
+        self._emit = self._hooked_emit
+        self.hooked = []
+        self.visit_MOVE(ir)
+        self._emit = orig_emit_func
+        for ahdl in self.hooked:
+            cond = self.visit(ir.cond)
+            ahdl.guard_cond = cond
+            rexp = AHDL_IF_EXP(cond, ahdl.src, AHDL_SYMBOL("'bz"))
+            self._emit(AHDL_ASSIGN(ahdl.dst, rexp))

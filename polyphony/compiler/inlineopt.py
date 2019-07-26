@@ -589,6 +589,8 @@ class FlattenModule(IRTransformer):
         in_self, _, _ = new_method.params[0]
         in_self.typ.set_scope(module_scope)
         new_exp = arg.exp.clone()
+        ctor_self = self.scope.find_sym('self')
+        new_exp.replace(ctor_self, self_sym)
 
         attr_map = {self_sym:new_exp}
         sym_replacer = SymbolReplacer(sym_map={}, attr_map=attr_map)
@@ -597,7 +599,6 @@ class FlattenModule(IRTransformer):
 
         new_method_sym = module_scope.add_sym(new_method.orig_name,
                                               typ=Type.function(new_method, None, None))
-        ctor_self = self.scope.find_sym('self')
         arg.exp = TEMP(ctor_self, Ctx.LOAD)
         arg.attr = new_method_sym
         arg.attr_scope = new_method_sym.scope
