@@ -1281,7 +1281,9 @@ class CodeVisitor(ast.NodeVisitor):
         outer_scope = self.current_scope
         tags = {'function', 'returnable', 'comb'}
         lambda_scope = Scope.create(outer_scope, None, tags, node.lineno)
+        lambda_scope.synth_params.update(outer_scope.synth_params)
         self.current_scope = lambda_scope
+
         new_block = self._new_block(self.current_scope)
         self.current_scope.set_entry_block(new_block)
         self.current_scope.set_exit_block(new_block)

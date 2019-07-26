@@ -542,6 +542,13 @@ class FlattenModule(IRTransformer):
                                 Ctx.LOAD, attr_scope=append_worker_sym.scope)
                 ir.func = new_func
                 ir.args[0] = (None, arg)
+        elif (ir.func_scope().is_method() and
+                ir.func_scope().parent.is_port() and
+                ir.func_scope().orig_name == 'assign'):
+            _, arg = ir.args[0]
+            arg_scope = arg.symbol().typ.get_scope()
+            if arg_scope.is_method() and arg_scope.parent is not self.scope.parent:
+                self._make_new_assigned_method(arg, arg_scope)
         return ir
 
     def _make_new_worker(self, arg, lineno):
@@ -553,8 +560,8 @@ class FlattenModule(IRTransformer):
             new_worker.del_tag('inlinelib')
         worker_self = new_worker.find_sym('self')
         worker_self.typ.set_scope(parent_module)
-        for sym, cp, _ in new_worker.params:
-            sym.typ.set_scope(parent_module)
+        in_self, _, _ = new_worker.params[0]
+        in_self.typ.set_scope(parent_module)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
         new_exp.replace(ctor_self, worker_self)
@@ -571,6 +578,30 @@ class FlattenModule(IRTransformer):
         arg.attr_scope = new_worker_sym.scope
         self.driver.insert_scope(new_worker)
         return arg
+
+    def _make_new_assigned_method(self, arg, assigned_scope):
+        module_scope = self.scope.parent
+        new_method = assigned_scope.clone('', '', parent=module_scope)
+        if new_method.is_inlinelib():
+            new_method.del_tag('inlinelib')
+        self_sym = new_method.find_sym('self')
+        self_sym.typ.set_scope(module_scope)
+        in_self, _, _ = new_method.params[0]
+        in_self.typ.set_scope(module_scope)
+        new_exp = arg.exp.clone()
+
+        attr_map = {self_sym:new_exp}
+        sym_replacer = SymbolReplacer(sym_map={}, attr_map=attr_map)
+        sym_replacer.process(new_method, new_method.entry_block)
+        UseDefDetector().process(new_method)
+
+        new_method_sym = module_scope.add_sym(new_method.orig_name,
+                                              typ=Type.function(new_method, None, None))
+        ctor_self = self.scope.find_sym('self')
+        arg.exp = TEMP(ctor_self, Ctx.LOAD)
+        arg.attr = new_method_sym
+        arg.attr_scope = new_method_sym.scope
+        self.driver.insert_scope(new_method)
 
 
 class ObjectHierarchyCopier(object):

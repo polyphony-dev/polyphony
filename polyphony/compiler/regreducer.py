@@ -75,6 +75,9 @@ class AliasVarDetector(IRVisitor):
 
     def visit_PHI(self, ir):
         sym = ir.var.symbol()
+        if sym.is_condition() or self.scope.is_comb():
+            sym.add_tag('alias')
+            return
         if sym.is_return() or sym.typ.is_port():
             return
         if sym.typ.is_seq() and sym.typ.get_memnode().can_be_reg():
@@ -85,6 +88,9 @@ class AliasVarDetector(IRVisitor):
 
     def visit_UPHI(self, ir):
         sym = ir.var.symbol()
+        if sym.is_condition() or self.scope.is_comb():
+            sym.add_tag('alias')
+            return
         if sym.is_return() or sym.typ.is_port():
             return
         if sym.typ.is_seq() and sym.typ.get_memnode().can_be_reg():
