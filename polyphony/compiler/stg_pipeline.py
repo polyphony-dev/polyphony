@@ -425,7 +425,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
         loop_init = self.translator.visit(dfg.region.init)
         loop_cond = self.translator.visit(cond_def.src)
         args = []
-        loop_cnt = self.translator._make_signal(dfg.region.counter)
+        loop_cnt = self.translator._make_signal((dfg.region.counter,))
         for i, a in enumerate(loop_cond.args):
             if a.is_a(AHDL_VAR) and a.sig == loop_cnt:
                 args.append(loop_init)

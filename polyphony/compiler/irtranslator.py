@@ -1434,7 +1434,7 @@ class CodeVisitor(ast.NodeVisitor):
                 isinstance(value.symbol(), Symbol) and
                 value.symbol().typ.is_class() and
                 isinstance(attr, Symbol) and
-                not attr.is_static()):
+                not (attr.is_static() or attr.typ.is_class())):
             fail((env.current_filename, node.lineno), Errors.UNKNOWN_ATTRIBUTE, [attr])
         irattr = ATTR(value, attr, ctx)
 

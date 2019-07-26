@@ -407,33 +407,6 @@ class AHDLTranslator(IRVisitor):
     def set_sched_time(self, sched_time):
         self.sched_time = sched_time
 
-    def _make_signal(self, sym):
-        sig = self.hdlmodule.signal(sym)
-        if sig:
-            return sig
-        width = _signal_width(sym)
-        tags = _tags_from_sym(sym)
-        if sym.scope is not self.scope:
-            sig_name = sym.hdl_name()
-        elif self.scope.is_worker() or self.scope.is_method():
-            is_param = False
-            if self.scope.is_ctor() and self.scope.parent.is_module() and self.scope.parent.module_params:
-                is_param = any((sym is copy for _, copy, _ in self.scope.parent.module_params))
-            if is_param:
-                sig_name = sym.hdl_name()
-                tags.update({'parameter'})
-                if 'reg' in tags:
-                    tags.remove('reg')
-            else:
-                sig_name = f'{self.scope.orig_name}_{sym.hdl_name()}'
-        elif sym.is_param():
-            sig_name = f'{self.scope.orig_name}_{sym.hdl_name()}'
-        elif sym.is_return():
-            sig_name = f'{self.scope.orig_name}_out_0'
-        else:
-            sig_name = sym.hdl_name()
-        return self.hdlmodule.gen_sig(sig_name, width, tags, sym)
-
     def get_signal_prefix(self, ir):
         assert ir.is_a(CALL)
         if ir.func_scope().is_class():
@@ -717,7 +690,7 @@ class AHDLTranslator(IRVisitor):
 
     def visit_TEMP(self, ir):
         sym = ir.symbol()
-        sig = self._make_signal(sym)
+        sig = self._make_signal((sym,))
         if sym.typ.is_seq():
             return AHDL_MEMVAR(sig, sym.typ.get_memnode(), ir.ctx)
         else:
@@ -725,32 +698,61 @@ class AHDLTranslator(IRVisitor):
 
     def visit_ATTR(self, ir):
         sym = ir.symbol()
-        sig_tags = _tags_from_sym(ir.attr)
-        width = _signal_width(sym)
-        if ir.attr_scope.is_unflatten():
-            qsym = ir.qualified_symbol()
-            if qsym[0].name.startswith(env.self_name):
-                qsym = qsym[1:]
-            qnames = [sym.hdl_name() for sym in qsym]
-            signame = '_'.join(qnames)
-            sig = self.hdlmodule.gen_sig(signame, width, sig_tags, sym)
-            self.hdlmodule.add_internal_reg(sig)
-        elif ir.tail().typ.is_object() and ir.tail().typ.get_scope().is_module():
-            signame = sym.hdl_name()
-            sig = self.hdlmodule.gen_sig(signame, width, sig_tags, sym)
-        else:
-            # external access to the field
-            attr = sym.hdl_name()
-            io = '' if ir.ctx == Ctx.LOAD else '_in'
-            instance_name = self.make_instance_name(ir)
-            signame = f'{instance_name}_field_{attr + io}'
-            sig = self.hdlmodule.gen_sig(signame, width, sig_tags)
-        #else:
-        #    assert False
+        qsym = ir.qualified_symbol()
+        sig = self._make_signal(qsym)
         if sym.typ.is_seq():
             return AHDL_MEMVAR(sig, sym.typ.get_memnode(), ir.ctx)
         else:
             return AHDL_VAR(sig, ir.ctx)
+
+    def _make_signal(self, qsym, ir=None):
+        sig = self.hdlmodule.signal(qsym[-1])
+        if sig:
+            return sig
+        tags = _tags_from_sym(qsym[-1])
+        width = _signal_width(qsym[-1])
+
+        if len(qsym) >= 2:
+            if qsym[-1].scope.is_unflatten():
+                qsym = qsym[:-1]
+                if qsym[0].name.startswith(env.self_name):
+                    qsym = qsym[1:]
+                sig_name = '_'.join([sym.hdl_name() for sym in qsym])
+            elif qsym[-2].typ.is_object() and qsym[-2].typ.get_scope().is_module():
+                sig_name = qsym[-1].hdl_name()
+            elif qsym[-2].typ.is_class():
+                #assert False
+                #sig_name = qsym[-1].hdl_name()
+                # external access to the field
+                sig_name = '_'.join([sym.hdl_name() for sym in qsym])
+                #attr = qsym[-1].hdl_name()
+                #io = '' if ir.ctx == Ctx.LOAD else '_in'
+                #instance_name = self.make_instance_name(ir)
+                #sig_name = f'{instance_name}_field_{attr + io}'
+        else:
+            if qsym[-1].scope is not self.scope:
+                sig_name = qsym[-1].hdl_name()
+            elif self.scope.is_worker() or self.scope.is_method():
+                is_param = False
+                if self.scope.is_ctor() and self.scope.parent.is_module() and self.scope.parent.module_params:
+                    is_param = any((sym is copy for _, copy, _ in self.scope.parent.module_params))
+                if is_param:
+                    sig_name = qsym[-1].hdl_name()
+                    tags.update({'parameter'})
+                    if 'reg' in tags:
+                        tags.remove('reg')
+                else:
+                    sig_name = f'{self.scope.orig_name}_{qsym[-1].hdl_name()}'
+            elif qsym[-1].is_param():
+                sig_name = f'{self.scope.orig_name}_{qsym[-1].hdl_name()}'
+            elif qsym[-1].is_return():
+                sig_name = f'{self.scope.orig_name}_out_0'
+            else:
+                sig_name = qsym[-1].hdl_name()
+        sig = self.hdlmodule.gen_sig(sig_name, width, tags, qsym[-1])
+        if qsym[-1].is_register():
+            self.hdlmodule.add_internal_reg(sig)
+        return sig
 
     def visit_EXPR(self, ir):
         if not (ir.exp.is_a([CALL, SYSCALL, MSTORE])):

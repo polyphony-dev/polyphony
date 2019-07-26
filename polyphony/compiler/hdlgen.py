@@ -113,15 +113,13 @@ class HDLModuleBuilder(object):
         roms = [n for n in memnodes if mrg.is_readonly_sink(n)]
         while roms:
             memnode = roms.pop()
-            hdl_name = memnode.name()
-            source = memnode.single_source()
-            if source:
-                source_scope = source.scope
-                if source_scope.is_class():  # class field rom
-                    hdl_name = source_scope.orig_name + '_field_' + hdl_name
-            output_sig = self.hdlmodule.gen_sig(hdl_name, memnode.data_width())
+            output_sig = self.hdlmodule.signal(memnode.sym)
+            if not output_sig:
+                # In this case memnode is not used at all
+                # so we do not declare rom function
+                continue
             fname = AHDL_VAR(output_sig, Ctx.STORE)
-            input_sig = self.hdlmodule.gen_sig(hdl_name + '_in', memnode.addr_width())
+            input_sig = self.hdlmodule.gen_sig(output_sig.name + '_in', memnode.addr_width())
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             if source:
@@ -134,7 +132,7 @@ class HDLModuleBuilder(object):
                 case = AHDL_CASE(input, case_items)
                 rom_func = AHDL_FUNCTION(fname, [input], [case])
             else:
-                cs_name = hdl_name + '_cs'
+                cs_name = output_sig.name + '_cs'
                 cs_sig = self.hdlmodule.signal(cs_name)
                 assert cs_sig
                 cs = AHDL_VAR(cs_sig, Ctx.LOAD)
