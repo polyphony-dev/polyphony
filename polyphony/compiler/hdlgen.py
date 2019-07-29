@@ -489,7 +489,8 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         self._process_io(self.hdlmodule)
         self._process_connector_port(self.hdlmodule)
 
-        for fsm in self.hdlmodule.fsms.values():
+        fsms = list(self.hdlmodule.fsms.values())
+        for fsm in fsms:
             if fsm.scope.is_ctor():
                 memnodes = []
                 for sym in self.hdlmodule.scope.symbols.values():
@@ -514,7 +515,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                             self.hdlmodule.add_static_assignment(assign, '')
                             self.hdlmodule.add_internal_net(stm.dst.sig, '')
                 del self.hdlmodule.fsms[fsm.name]
-                break
             else:
                 self._process_fsm(fsm)
         self._add_sub_module_accessors()

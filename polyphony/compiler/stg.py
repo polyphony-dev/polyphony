@@ -123,16 +123,17 @@ class STGBuilder(object):
         self.hdlmodule = hdlmodule
         self.blk2states = {}
         if hdlmodule.scope.is_module():
-            for w, _ in hdlmodule.scope.workers:
-                stgs = self._process_scope(w)
-                fsm_name = w.orig_name
-                self.hdlmodule.add_fsm(fsm_name, w)
-                self.hdlmodule.add_fsm_stg(fsm_name, stgs)
             ctor = hdlmodule.scope.find_ctor()
             stgs = self._process_scope(ctor)
             fsm_name = stgs[0].name
             self.hdlmodule.add_fsm(fsm_name, ctor)
             self.hdlmodule.add_fsm_stg(fsm_name, stgs)
+
+            for w, _ in hdlmodule.scope.workers:
+                stgs = self._process_scope(w)
+                fsm_name = w.orig_name
+                self.hdlmodule.add_fsm(fsm_name, w)
+                self.hdlmodule.add_fsm_stg(fsm_name, stgs)
         else:
             stgs = self._process_scope(hdlmodule.scope)
             fsm_name = stgs[0].name
@@ -387,6 +388,8 @@ def _tags_from_sym(sym):
         tags.add('induction')
     if sym.is_field():
         tags.add('field')
+    if 'reg' in tags:
+        tags.add('initializable')
     return tags
 
 
@@ -705,7 +708,7 @@ class AHDLTranslator(IRVisitor):
         else:
             return AHDL_VAR(sig, ir.ctx)
 
-    def _make_signal(self, qsym, ir=None):
+    def _make_signal(self, qsym):
         sig = self.hdlmodule.signal(qsym[-1])
         if sig:
             return sig
@@ -715,20 +718,16 @@ class AHDLTranslator(IRVisitor):
         if len(qsym) >= 2:
             if qsym[-1].scope.is_unflatten():
                 qsym = qsym[:-1]
-                if qsym[0].name.startswith(env.self_name):
-                    qsym = qsym[1:]
+            if qsym[0].typ.is_object():
+                if qsym[0].typ.get_scope().is_module():
+                    assert qsym[0].name.startswith(env.self_name)
+                    tags.add('field')
+                    qsym = qsym[1:]  # skip 'self'
                 sig_name = '_'.join([sym.hdl_name() for sym in qsym])
-            elif qsym[-2].typ.is_object() and qsym[-2].typ.get_scope().is_module():
-                sig_name = qsym[-1].hdl_name()
-            elif qsym[-2].typ.is_class():
-                #assert False
-                #sig_name = qsym[-1].hdl_name()
-                # external access to the field
+            elif qsym[0].typ.is_class():
                 sig_name = '_'.join([sym.hdl_name() for sym in qsym])
-                #attr = qsym[-1].hdl_name()
-                #io = '' if ir.ctx == Ctx.LOAD else '_in'
-                #instance_name = self.make_instance_name(ir)
-                #sig_name = f'{instance_name}_field_{attr + io}'
+            else:
+                assert False
         else:
             if qsym[-1].scope is not self.scope:
                 sig_name = qsym[-1].hdl_name()
@@ -883,6 +882,8 @@ class AHDLTranslator(IRVisitor):
                 memsw = AHDL_META('MEM_SWITCH', '', dst.memnode, src.memnode)
                 self._emit(memsw, self.sched_time)
                 return
+        elif dst.is_a(AHDL_VAR) and self.scope.is_ctor() and dst.sig.is_initializable():
+            dst.sig.init_value = src.value
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
 
     def visit_PHI(self, ir):
@@ -1075,7 +1076,7 @@ class AHDLTranslator(IRVisitor):
         kind = root_sym.typ.get_port_kind()
         direction = root_sym.typ.get_direction()
         assert direction != '?'
-        assigned = port_sym.typ.get_assigned()
+        assigned = root_sym.typ.get_assigned()
         if port_scope.orig_name.startswith('Port'):
             if 'pipelined_port' in tags and protocol == 'ready_valid':
                 # this port is already replaced to seq_port
@@ -1143,7 +1144,7 @@ class AHDLTranslator(IRVisitor):
             else:
                 assert False
             port_sig = env.hdlmodule(module_scope).gen_sig(port_name, width, tags, port_sym)
-        if port_sym.typ.has_init():
+        if port_sym.typ.has_init() and not assigned:
             tags.add('initializable')
             port_sig.init_value = port_sym.typ.get_init()
         if port_sym.typ.has_maxsize():
