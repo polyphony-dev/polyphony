@@ -345,7 +345,7 @@ class HyperBlockBuilder(object):
             cj.loc = old_mj.loc
             if not cj.exp.is_a(TEMP):
                 new_sym = self.scope.add_condition_sym()
-                new_sym.typ = Type.bool_t
+                new_sym.typ = Type.bool()
                 new_c = TEMP(new_sym, Ctx.STORE)
                 mv = MOVE(new_c, cj.exp)
                 head.insert_stm(-1, mv)
@@ -490,7 +490,7 @@ class HyperBlockBuilder(object):
         mem = self._try_get_mem(stm)
         if mem is None:
             return False
-        if mem.symbol().typ.has_length():
+        if mem.symbol().typ.has_length() and mem.symbol().typ.get_length() != -1:
             l = mem.symbol().typ.get_length()
             w = mem.symbol().typ.get_element().get_width()
             # TODO:

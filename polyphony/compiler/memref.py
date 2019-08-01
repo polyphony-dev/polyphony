@@ -934,17 +934,13 @@ class MemRefGraphBuilder(IRVisitor):
             self.edges.append((src, dst))
 
     def _set_type(self, sym, typ):
-        if not sym.typ.is_freezed():
-            sym.set_type(typ)
-        else:
-            sym.typ = typ
+        sym.set_type(typ)
 
     def _set_memnode(self, typ, memnode):
         if typ.get_memnode() is None:
             typ.set_memnode(memnode)
         else:
             assert typ.get_memnode() is memnode
-        typ.freeze()
 
     def visit_CALL(self, ir):
         for i, (_, arg) in enumerate(ir.args):

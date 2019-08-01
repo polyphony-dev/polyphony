@@ -442,9 +442,6 @@ class PureCtorBuilder(object):
                 typ = self_type_hints[name]
             else:
                 typ = Type.from_expr(v, module)
-            if typ.is_object() and typ.get_scope().is_port():
-                typ.unfreeze()
-
             if typ.is_object() and not typ.get_scope().is_port():
                 klass_scope = typ.get_scope()
                 if klass_scope.find_ctor().is_pure():
@@ -640,7 +637,7 @@ class PureFuncTypeInferrer(object):
         assert call.is_a(CALL)
         assert call.func_scope().is_pure()
         if not call.func_scope().return_type:
-            call.func_scope().return_type = Type.any_t
+            call.func_scope().return_type = Type.any()
 
         for node in env.runtime_info.pure_nodes:
             if node.caller_lineno != stm.loc.lineno:

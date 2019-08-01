@@ -66,6 +66,7 @@ from .typecheck import PortAssignChecker
 from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
 from .typecheck import AssertionChecker
 from .typecheck import SynthesisParamChecker
+from .typecheck import TypeEvalVisitor
 from .unroll import LoopUnroller
 from .usedef import UseDefDetector
 from .usedef import FieldUseDef
@@ -251,6 +252,10 @@ def memrefgraph(driver):
 
 def meminstgraph(driver, scope):
     MemInstanceGraphBuilder().process(scope)
+
+
+def evaltype(driver, scope):
+    TypeEvalVisitor().process(scope)
 
 
 def earlytypeprop(driver):
@@ -640,8 +645,10 @@ def compile_plan():
         pure(earlyinstantiate),
         pure(buildpurector),
 
+        dbg(dumpscope),
         filter_scope(is_static_scope),
         earlyquadruple,
+        evaltype,
         earlytypeprop,
         latequadruple,
         earlyrestrictioncheck,
@@ -656,6 +663,8 @@ def compile_plan():
         reduceblk,
         dbg(dumpscope),
         earlyquadruple,
+        dbg(dumpscope),
+        evaltype,
         dbg(dumpscope),
         earlytypeprop,
         dbg(dumpscope),

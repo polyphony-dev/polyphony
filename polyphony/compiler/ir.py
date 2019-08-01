@@ -454,7 +454,7 @@ class CONST(IRExp):
 class MREF(IRExp):
     def __init__(self, mem, offset, ctx):
         super().__init__()
-        assert mem.is_a([TEMP, ATTR])
+        assert mem.is_a([TEMP, ATTR, MREF])
         self.mem = mem
         self.offset = offset
         self.ctx = ctx
@@ -497,10 +497,10 @@ class MSTORE(IRExp):
 
 
 class ARRAY(IRExp):
-    def __init__(self, items, is_mutable=True):
+    def __init__(self, items, is_mutable=True, sym=None):
         super().__init__()
         self.items = items
-        self.sym = None
+        self.sym = sym
         self.repeat = CONST(1)
         self.is_mutable = is_mutable
 

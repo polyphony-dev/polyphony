@@ -199,8 +199,7 @@ class ImportVisitor(ast.NodeVisitor):
 class ScopeVisitor(ast.NodeVisitor):
     def __init__(self, top_scope):
         self.current_scope = top_scope
-        self.annotation_visitor = AnnotationVisitor(self)
-        self.decorator_visitor = DecoratorVisitor(self)
+        self.decorator_visitor = DecoratorVisitor()
         self.import_visitor = ImportVisitor(top_scope)
 
     def _leave_scope(self, outer_scope):
@@ -209,7 +208,7 @@ class ScopeVisitor(ast.NodeVisitor):
         if self.current_scope.is_class():
             t = Type.klass(self.current_scope)
         else:
-            t = Type.function(self.current_scope, None, None)
+            t = Type.function(self.current_scope)
         outer_scope.add_sym(self.current_scope.orig_name, typ=t)
         self.current_scope = outer_scope
 
@@ -287,21 +286,6 @@ class ScopeVisitor(ast.NodeVisitor):
                     self.visit(stm)
 
     def visit_FunctionDef(self, node):
-        def _make_param_symbol(arg, is_vararg=False):
-            if arg.annotation:
-                ann = self.annotation_visitor.visit(arg.annotation)
-                is_lib = self.current_scope.is_lib()
-                param_t = Type.from_annotation(ann, self.current_scope, is_lib)
-                if not param_t:
-                    fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
-            else:
-                param_t = Type.int()
-            param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
-            param_copy = self.current_scope.add_sym(arg.arg, typ=param_t.clone())
-            if is_vararg:
-                param_t.set_vararg(True)
-            return param_in, param_copy
-
         outer_scope = self.current_scope
 
         synth_params = {}
@@ -351,36 +335,7 @@ class ScopeVisitor(ast.NodeVisitor):
         self.current_scope.synth_params.update(synth_params)
         if self.current_scope.parent.synth_params['scheduling'] == 'timed':
             self.current_scope.synth_params.update({'scheduling':'timed'})
-        for arg in node.args.args:
-            param_in, param_copy = _make_param_symbol(arg)
-            self.current_scope.add_param(param_in, param_copy, None)
-        if node.args.vararg:
-            param_in, param_copy = _make_param_symbol(node.args.vararg, is_vararg=True)
-            self.current_scope.add_param(param_in, param_copy, None)
-        if node.returns:
-            ann = self.annotation_visitor.visit(node.returns)
-            is_lib = self.current_scope.is_lib()
-            t = Type.from_annotation(ann, self.current_scope, is_lib)
-            if t:
-                self.current_scope.return_type = t
-                if t is not Type.none_t and not self.current_scope.is_ctor():
-                    self.current_scope.add_tag('returnable')
-            else:
-                fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
 
-        if self.current_scope.is_method():
-            if (not self.current_scope.params or
-                    not self.current_scope.params[0].sym.is_param()):
-                fail((env.current_filename, node.lineno), Errors.METHOD_MUST_HAVE_SELF)
-            first_param = self.current_scope.params[0]
-            self_typ = Type.object(outer_scope)
-            first_param.copy.set_type(self_typ)
-            first_param.sym.set_type(self_typ)
-            first_param.copy.add_tag('self')
-            first_param.sym.add_tag('self')
-
-        if self.current_scope.is_builtin() and not self.current_scope.is_method():
-            append_builtin(outer_scope, self.current_scope)
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             pass
         elif self.current_scope.is_pure():
@@ -443,13 +398,10 @@ class ScopeVisitor(ast.NodeVisitor):
         if self.current_scope.is_module():
             for m in ['append_worker']:
                 scope = Scope.create(self.current_scope, m, {'method', 'lib'}, node.lineno)
-                sym = self.current_scope.add_sym(m, typ=Type.function(scope, None, None))
+                sym = self.current_scope.add_sym(m, typ=Type.function(scope))
                 blk = Block(scope)
                 scope.set_entry_block(blk)
                 scope.set_exit_block(blk)
-
-        if self.current_scope.is_builtin():
-            append_builtin(outer_scope, self.current_scope)
 
         for stm in node.body:
             self.visit(stm)
@@ -502,11 +454,11 @@ class CodeVisitor(ast.NodeVisitor):
         self.loop_end_blocks = []
 
         self.nested_if = False
-        self.annotation_visitor = AnnotationVisitor(self)
         self.lazy_defs = []
         self.current_with_blk_synth_params = {}
         self.current_loop_synth_params = {}
         self.invisible_symbols = set()
+        self._parsing_annotation = False
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
@@ -585,10 +537,57 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_FunctionDef(self, node):
         self.lazy_defs.append(node)
 
+    def _make_param_symbol(self, arg, is_vararg=False):
+        if arg.annotation:
+            param_t = self._type_from_annotation(arg.annotation)
+            if not param_t:
+                fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
+        else:
+            param_t = Type.int()
+        param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
+        param_copy = self.current_scope.add_sym(arg.arg, typ=param_t.clone())
+        if is_vararg:
+            param_t.set_vararg(True)
+        return param_in, param_copy
+
     def _visit_lazy_FunctionDef(self, node):
         context = self._enter_scope(node.name)
         outer_function_exit = self.function_exit
         self.function_exit = self._tmp_block(self.current_scope)
+
+        for arg in node.args.args:
+            param_in, param_copy = self._make_param_symbol(arg)
+            self.current_scope.add_param(param_in, param_copy, None)
+        if node.args.vararg:
+            param_in, param_copy = self._make_param_symbol(node.args.vararg, is_vararg=True)
+            self.current_scope.add_param(param_in, param_copy, None)
+
+        if self.current_scope.is_method():
+            if (not self.current_scope.params or
+                    not self.current_scope.params[0].sym.is_param()):
+                fail((env.current_filename, node.lineno), Errors.METHOD_MUST_HAVE_SELF)
+            first_param = self.current_scope.params[0]
+            self_typ = Type.object(self.current_scope.parent)
+            first_param.copy.set_type(self_typ)
+            first_param.sym.set_type(self_typ)
+            first_param.copy.add_tag('self')
+            first_param.sym.add_tag('self')
+
+        if self.current_scope.is_ctor():
+            self.current_scope.return_type = Type.object(self.current_scope)
+        elif node.returns:
+            t = self._type_from_annotation(node.returns)
+            if t:
+                self.current_scope.return_type = t
+                if not t.is_none() and not self.current_scope.is_ctor():
+                    self.current_scope.add_tag('returnable')
+            else:
+                fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
+        else:
+            self.current_scope.return_type = Type.undef_t
+        if self.current_scope.is_builtin() and not self.current_scope.is_method():
+            append_builtin(self.current_scope.parent, self.current_scope)
+
         if self.current_scope.is_method():
             params = self.current_scope.params[1:]  # skip 'self'
         else:
@@ -625,6 +624,7 @@ class CodeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(Symbol.return_prefix)
         else:
             sym = self.current_scope.add_return_sym()
+        sym.set_type(self.current_scope.return_type)
         if self.function_exit.preds:
             function_exit = self._new_block(self.current_scope, 'exit')
             self.current_scope.replace_block(self.function_exit, function_exit)
@@ -645,6 +645,9 @@ class CodeVisitor(ast.NodeVisitor):
 
     def _visit_lazy_ClassDef(self, node):
         context = self._enter_scope(node.name)
+        if self.current_scope.is_builtin():
+            append_builtin(self.current_scope.parent, self.current_scope)
+
         for body in node.body:
             self.visit(body)
         logger.debug(node.name)
@@ -675,6 +678,7 @@ class CodeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(Symbol.return_prefix)
         else:
             sym = self.current_scope.add_return_sym()
+        sym.set_type(self.current_scope.return_type)
         ret = TEMP(sym, Ctx.STORE)
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
@@ -706,8 +710,11 @@ class CodeVisitor(ast.NodeVisitor):
             if tail_lineno in self.type_comments:
                 hint = self.type_comments[tail_lineno]
                 mod = ast.parse(hint)
-                ann = self.annotation_visitor.visit(mod.body[0])
-                t = Type.from_annotation(ann, self.current_scope)
+                if isinstance(mod.body[0], ast.Expr):
+                    ann = mod.body[0].value
+                else:
+                    ann = mod.body[0]
+                t = self._type_from_annotation(ann)
                 if t:
                     left.symbol().set_type(t)
                 else:
@@ -722,16 +729,15 @@ class CodeVisitor(ast.NodeVisitor):
         assert 0
 
     def visit_AnnAssign(self, node):
-        ann = self.annotation_visitor.visit(node.annotation)
         src = None
         if node.value:
             src = self.visit(node.value)
         dst = self.visit(node.target)
-        typ = Type.from_annotation(ann, self.current_scope)
+        typ = self._type_from_annotation(node.annotation)
         if not typ:
             fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if dst.is_a(TEMP):
-            if dst.symbol().typ.is_freezed():
+            if not dst.symbol().typ.is_undef():
                 fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
             dst.symbol().set_type(typ)
         elif dst.is_a(ATTR):
@@ -741,7 +747,7 @@ class CodeVisitor(ast.NodeVisitor):
                     attr_sym = dst.attr
                 else:
                     attr_sym = self.current_scope.parent.find_sym(dst.attr)
-                if attr_sym.typ.is_freezed():
+                if not attr_sym.typ.is_undef():
                     fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
                 attr_sym.set_type(typ)
                 dst.attr = attr_sym
@@ -1298,7 +1304,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_block = last_block
 
         scope_sym = self.current_scope.add_sym(lambda_scope.orig_name)
-        scope_sym.set_type(Type.function(lambda_scope, None, None))
+        scope_sym.set_type(Type.function(lambda_scope))
         return TEMP(scope_sym, Ctx.LOAD)
 
     def visit_IfExp(self, node):
@@ -1400,7 +1406,10 @@ class CodeVisitor(ast.NodeVisitor):
         fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['bytes'])
 
     def visit_Ellipsis(self, node):
-        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ellipsis'])
+        if self._parsing_annotation:
+            return CONST(...)
+        else:
+            fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ellipsis'])
 
     #     | Attribute(expr value, identifier attr, expr_context ctx)
     def visit_Attribute(self, node):
@@ -1506,7 +1515,9 @@ class CodeVisitor(ast.NodeVisitor):
         for elt in node.elts:
             item = self.visit(elt)
             items.append(item)
-        return ARRAY(items)
+        sym = self.current_scope.add_temp('@array')
+        sym.typ = Type.list(Type.undef_t, None, -1)
+        return ARRAY(items, sym=sym)
 
     #     | Tuple(expr* elts, expr_context ctx)
     def visit_Tuple(self, node):
@@ -1514,7 +1525,9 @@ class CodeVisitor(ast.NodeVisitor):
         for elt in node.elts:
             item = self.visit(elt)
             items.append(item)
-        return ARRAY(items, is_mutable=False)
+        sym = self.current_scope.add_temp('@array')
+        sym.typ = Type.tuple(Type.undef_t, None, -1)
+        return ARRAY(items, is_mutable=False, sym=sym)
 
     def visit_NameConstant(self, node):
         # for Python 3.4
@@ -1537,10 +1550,21 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_Print(self, node):
         fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['print statement'])
 
+    def _type_from_annotation(self, ann):
+        self._parsing_annotation = True
+        ann_expr = self.visit(ann)
+        self._parsing_annotation = False
+        return Type.from_ir(ann_expr)
 
-class AnnotationVisitor(ast.NodeVisitor):
-    def __init__(self, parent_visitor):
-        self.parent_visitor = parent_visitor
+
+class DecoratorVisitor(ast.NodeVisitor):
+    def visit_Call(self, node):
+        func = self.visit(node.func)
+        args = list(map(self.visit, node.args))
+        kwargs = {}
+        for kw in node.keywords:
+            kwargs[kw.arg] = self.visit(kw.value)
+        return (func, args, kwargs)
 
     def visit_Expr(self, node):
         return self.visit(node.value)
@@ -1557,7 +1581,6 @@ class AnnotationVisitor(ast.NodeVisitor):
         return node.id
 
     def visit_NameConstant(self, node):
-        # for Python 3.4
         if node.value is True:
             return 'True'
         elif node.value is False:
@@ -1565,18 +1588,10 @@ class AnnotationVisitor(ast.NodeVisitor):
         elif node.value is None:
             return 'None'
 
-    def visit_Ellipsis(self, node):
-        return '...'
-
     def visit_Attribute(self, node):
         value = self.visit(node.value)
         attr = node.attr
         return '{}.{}'.format(value, attr)
-
-    def visit_Call(self, node):
-        func = self.visit(node.func)
-        args = list(map(self.visit, node.args))
-        return (func, args)
 
     def visit_Tuple(self, node):
         items = []
@@ -1590,17 +1605,6 @@ class AnnotationVisitor(ast.NodeVisitor):
 
     def visit_Str(self, node):
         return node.s
-
-
-class DecoratorVisitor(AnnotationVisitor):
-    def visit_Call(self, node):
-        func = self.visit(node.func)
-        args = list(map(self.visit, node.args))
-        kwargs = {}
-        for kw in node.keywords:
-            kwargs[kw.arg] = self.visit(kw.value)
-        return (func, args, kwargs)
-
 
 class PureScopeVisitor(ast.NodeVisitor):
     def __init__(self, scope, type_comments):
@@ -1665,7 +1669,6 @@ class PureScopeVisitor(ast.NodeVisitor):
                     t = Type.from_typeclass(sym_scope)
                 else:
                     t = Type.object(sym_scope)
-                t.freeze()
                 if t:
                     self._add_local_type_hint(self.scope.local_type_hints, func, t)
                     return func

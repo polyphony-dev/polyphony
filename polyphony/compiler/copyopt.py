@@ -40,8 +40,7 @@ class CopyOpt(IRVisitor):
                     else:
                         new = cp.src.clone()
                     # TODO: we need the bit width propagation
-                    if not new.symbol().typ.is_freezed():
-                        new.symbol().set_type(old.symbol().typ.clone())
+                    new.symbol().set_type(old.symbol().typ.clone())
                     logger.debug('replace FROM ' + str(u))
                     u.replace(old, new)
                     logger.debug('replace TO ' + str(u))

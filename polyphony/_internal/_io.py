@@ -87,10 +87,10 @@ def flipped(obj:object) -> object:
 
 
 @builtin
-def connect(p0:object, p1:object):
+def connect(p0:object, p1:object) -> None:
     pass
 
 
 @builtin
-def thru(parent:object, child:object):
+def thru(parent:object, child:object) -> None:
     pass

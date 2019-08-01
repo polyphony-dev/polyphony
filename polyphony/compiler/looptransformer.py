@@ -50,8 +50,8 @@ class LoopFlatten(object):
         return subloop_body, subloop_body_else, subloop_exit
 
     def _insert_init_flag(self, loop, body_cond, else_cond):
-        init_sym = self.scope.add_temp('init', {'induction'}, typ=Type.bool_t)
-        init_update_sym = self.scope.add_temp('init_update', typ=Type.bool_t)
+        init_sym = self.scope.add_temp('init', {'induction'}, typ=Type.bool())
+        init_update_sym = self.scope.add_temp('init_update', typ=Type.bool())
         init_lphi = LPHI(TEMP(init_sym, Ctx.STORE))
         init_lphi.args = [
             CONST(True),

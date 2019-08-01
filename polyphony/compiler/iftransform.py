@@ -108,7 +108,7 @@ class IfCondTransformer(object):
                     new_conds.append(c)
                 else:
                     new_sym = self.scope.add_condition_sym()
-                    new_sym.typ = Type.bool_t
+                    new_sym.typ = Type.bool()
                     new_c = TEMP(new_sym, Ctx.STORE)
                     mv = MOVE(new_c, c)
                     block.insert_stm(-1, mv)

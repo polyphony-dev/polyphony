@@ -316,7 +316,7 @@ class LoopUnroller(object):
         cond_rhs = RELOP('Lt', TEMP(tmp, Ctx.LOAD), loop_max)
         cond_sym = self.scope.add_condition_sym()
         sym_map[orig_cond_sym] = cond_sym
-        cond_sym.typ = Type.bool_t
+        cond_sym.typ = Type.bool()
         cond_lhs = TEMP(cond_sym, Ctx.STORE)
         cond_stm = MOVE(cond_lhs, cond_rhs)
         head_stms.append(cond_stm)

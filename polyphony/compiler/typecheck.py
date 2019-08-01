@@ -5,6 +5,7 @@ from .ir import *
 from .pure import PureFuncTypeInferrer
 from .scope import Scope
 from .type import Type
+from .typeeval import TypeEvaluator
 from .env import env
 from .symbol import Symbol
 import logging
@@ -34,7 +35,7 @@ class TypePropagation(IRVisitor):
         for s in scopes:
             if s.return_type is None:
                 s.return_type = Type.undef_t
-            else:
+            elif s.is_returnable():
                 ret = s.symbols[Symbol.return_prefix]
                 ret.set_type(s.return_type)
         prev_untyped = []
@@ -82,7 +83,7 @@ class TypePropagation(IRVisitor):
     def visit_RELOP(self, ir):
         self.visit(ir.left)
         self.visit(ir.right)
-        return Type.bool_t
+        return Type.bool()
 
     def visit_CONDOP(self, ir):
         self.visit(ir.cond)
@@ -211,11 +212,11 @@ class TypePropagation(IRVisitor):
 
     def visit_CONST(self, ir):
         if isinstance(ir.value, bool):
-            return Type.bool_t
+            return Type.bool()
         elif isinstance(ir.value, int):
             return Type.int()
         elif isinstance(ir.value, str):
-            return Type.str_t
+            return Type.str()
         elif ir.value is None:
             return Type.int()
         else:
@@ -260,6 +261,9 @@ class TypePropagation(IRVisitor):
                            [ir.mem])
             else:
                 return Type.undef_t
+        elif mem_t.is_tuple():
+            # TODO:
+            return mem_t.get_element()
         return mem_t.get_element()
 
     def visit_MSTORE(self, ir):
@@ -288,20 +292,20 @@ class TypePropagation(IRVisitor):
             self.visit(ir.repeat)
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
-        self.visit(ir.repeat)
+        #self.visit(ir.repeat)
         item_t = None
         if self.current_stm.dst.is_a([TEMP, ATTR]):
             dsttyp = self.current_stm.dst.symbol().typ
-            if dsttyp.is_seq() and dsttyp.get_element().is_freezed():
+            if dsttyp.is_seq() and dsttyp.get_element().is_explicit():
                 item_t = dsttyp.get_element().clone()
         if item_t is None:
             item_typs = [self.visit(item) for item in ir.items]
             if self.current_stm.src == ir:
-                if any([t is Type.undef_t for t in item_typs]):
+                if any([t.is_undef() for t in item_typs]):
                     raise RejectPropagation(ir)
 
             if item_typs and all([Type.is_assignable(item_typs[0], item_t) for item_t in item_typs]):
-                if item_typs[0].is_scalar() and not item_typs[0].is_str():
+                if item_typs[0].is_scalar() and item_typs[0].is_int():
                     maxwidth = max([item_t.get_width() for item_t in item_typs])
                     signed = any([item_t.has_signed() and item_t.get_signed() for item_t in item_typs])
                     item_t = Type.int(maxwidth, signed)
@@ -316,7 +320,10 @@ class TypePropagation(IRVisitor):
         if ir.is_mutable:
             t = Type.list(item_t, memnode)
         else:
-            t = Type.tuple(item_t, memnode, len(ir.items))
+            if ir.repeat.is_a(CONST):
+                t = Type.tuple(item_t, memnode, len(ir.items) * ir.repeat.value)
+            else:
+                t = Type.tuple(item_t, memnode, Type.ANY_LENGTH)
         self._set_type(ir.sym, t)
         return t
 
@@ -352,7 +359,7 @@ class TypePropagation(IRVisitor):
             self._set_type(param.copy, arg_types[i].clone())
 
         funct = Type.function(worker_scope,
-                              Type.none_t,
+                              Type.none(),
                               tuple([param.sym.typ for param in worker_scope.params]))
         self._set_type(func.symbol(), funct)
         mod_sym = call.func.tail()
@@ -385,7 +392,7 @@ class TypePropagation(IRVisitor):
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
-        if src_typ in (Type.undef_t, Type.generic_t):
+        if src_typ.is_undef() or src_typ.is_generic():
             raise RejectPropagation(ir)
         dst_typ = self.visit(ir.dst)
 
@@ -426,7 +433,7 @@ class TypePropagation(IRVisitor):
         arg_types = [self.visit(arg) for arg in ir.args]
         # TODO: Union type
         for arg_t in arg_types:
-            if not arg_t.is_undef() and not ir.var.symbol().typ.is_freezed():
+            if not arg_t.is_undef():
                 self._set_type(ir.var.symbol(), arg_t.clone())
                 break
 
@@ -462,7 +469,12 @@ class TypePropagation(IRVisitor):
         return args
 
     def _set_type(self, sym, typ):
-        if not sym.typ.is_freezed():
+        if not Type.can_propagate(sym.typ, typ):
+            return
+        if sym.typ.is_explicit():
+            t = Type.propagate(sym.typ, typ)
+            assert sym.typ is t
+        else:
             sym.set_type(typ)
 
     def _new_scope_with_type(self, scope, typ, param_idx):
@@ -481,10 +493,10 @@ class TypePropagation(IRVisitor):
         new_scope = scope.inherit(name, scope.children)
         for child in new_scope.children:
             for sym, copy, _ in child.params:
-                if Type.is_same(sym.typ, Type.generic_t):
+                if sym.typ.is_generic():
                     sym.set_type(t)
-                    copy.set_type(t)
-            if Type.is_same(child.return_type, Type.generic_t):
+                    copy.set_type(t.clone())
+            if child.return_type.is_generic():
                 child.return_type = t
         new_scope.type_args.append(t)
         new_ctor = new_scope.find_ctor()
@@ -545,7 +557,7 @@ class TypeChecker(IRVisitor):
         if not l_t.is_scalar() or not r_t.is_scalar():
             type_error(self.current_stm, Errors.UNSUPPORTED_BINARY_OPERAND_TYPE,
                        [op2sym_map[ir.op], l_t, r_t])
-        return Type.bool_t
+        return Type.bool()
 
     def visit_CONDOP(self, ir):
         self.visit(ir.cond)
@@ -563,15 +575,13 @@ class TypeChecker(IRVisitor):
             return ir.func_scope().return_type
         assert ir.func_scope()
         if ir.func_scope().is_pure():
-            return Type.any_t
+            return Type.any()
         elif ir.func_scope().is_method():
-            param_len = len(ir.func_scope().params) - 1
-            param_typs = tuple(func_sym.typ.get_param_types()[1:])
+            param_typs = tuple([sym.typ for sym, _, _ in ir.func_scope().params[1:]])
         else:
-            param_len = len(ir.func_scope().params)
-            param_typs = tuple(func_sym.typ.get_param_types())
-
-        with_vararg = len(param_typs) and param_typs[-1].has_vararg()
+            param_typs = tuple([sym.typ for sym, _, _ in ir.func_scope().params])
+        param_len = len(param_typs)
+        with_vararg = param_len and param_typs[-1].has_vararg()
         self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
         self._check_param_type(param_typs, ir, ir.func_scope().orig_name, with_vararg)
 
@@ -620,12 +630,13 @@ class TypeChecker(IRVisitor):
 
     def visit_CONST(self, ir):
         if isinstance(ir.value, bool):
-            return Type.bool_t
+            return Type.bool()
         elif isinstance(ir.value, int):
             return Type.int()
         elif isinstance(ir.value, str):
-            return Type.str_t
+            return Type.str()
         elif ir.value is None:
+            # The value of 'None' is evaluated as int(0)
             return Type.int()
         else:
             type_error(self.current_stm, Errors.UNSUPPORTED_LETERAL_TYPE,
@@ -679,7 +690,7 @@ class TypeChecker(IRVisitor):
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
         if ir.exp.is_a(CALL):
-            if ir.exp.func_scope().return_type is Type.none_t:
+            if ir.exp.func_scope().return_type and ir.exp.func_scope().return_type.is_none():
                 #TODO: warning
                 pass
 
@@ -703,13 +714,13 @@ class TypeChecker(IRVisitor):
         src_t = self.visit(ir.src)
         dst_t = self.visit(ir.dst)
         if ir.dst.is_a(TEMP) and ir.dst.symbol().is_return():
-            if dst_t is not Type.undef_t and not Type.is_same(src_t, dst_t):
+            if not dst_t.is_undef() and not Type.is_same(src_t, dst_t):
                 type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
                            [dst_t, src_t])
         if not Type.is_assignable(dst_t, src_t):
             type_error(ir, Errors.INCOMPATIBLE_TYPES,
                        [dst_t, src_t])
-        if (dst_t.is_seq() and dst_t.is_freezed() and
+        if (dst_t.is_seq() and
                 dst_t.has_length() and
                 dst_t.get_length() != Type.ANY_LENGTH):
             if ir.src.is_a(ARRAY):
@@ -890,3 +901,32 @@ class SynthesisParamChecker(object):
                 fail(writestms[1], Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED, [sym])
             if len(readstms) >= 1 and len(writestms) >= 1:
                 assert False
+
+
+class TypeEvalVisitor(IRVisitor):
+    def process(self, scope):
+        self.type_evaluator = TypeEvaluator(scope)
+        for sym, copy, _ in scope.params:
+            pt = self._eval(sym.typ)
+            sym.set_type(pt)
+            copy.set_type(pt.clone())
+        if scope.return_type:
+            scope.return_type = self._eval(scope.return_type)
+        super().process(scope)
+
+    def _eval(self, typ):
+        return self.type_evaluator.visit(typ)
+
+    def visit_TEMP(self, ir):
+        ir.sym.typ = self._eval(ir.sym.typ)
+
+    def visit_ATTR(self, ir):
+        if not isinstance(ir.attr, str):
+            ir.attr.typ = self._eval(ir.attr.typ)
+
+    def visit_SYSCALL(self, ir):
+        ir.sym.typ = self._eval(ir.sym.typ)
+
+    def visit_ARRAY(self, ir):
+        if ir.sym:
+            ir.sym.typ = self._eval(ir.sym.typ)

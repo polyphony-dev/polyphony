@@ -572,7 +572,7 @@ class FlattenModule(IRTransformer):
         UseDefDetector().process(new_worker)
 
         new_worker_sym = parent_module.add_sym(new_worker.orig_name,
-                                               typ=Type.function(new_worker, None, None))
+                                               typ=Type.function(new_worker))
         arg.exp = TEMP(ctor_self, Ctx.LOAD)
         arg.attr = new_worker_sym
         arg.attr_scope = new_worker_sym.scope
@@ -598,7 +598,7 @@ class FlattenModule(IRTransformer):
         UseDefDetector().process(new_method)
 
         new_method_sym = module_scope.add_sym(new_method.orig_name,
-                                              typ=Type.function(new_method, None, None))
+                                              typ=Type.function(new_method))
         arg.exp = TEMP(ctor_self, Ctx.LOAD)
         arg.attr = new_method_sym
         arg.attr_scope = new_method_sym.scope

@@ -53,13 +53,13 @@ class Scope(Tagged):
     def create_namespace(cls, parent, name, tags, path=None):
         tags |= {'namespace'}
         namespace = Scope.create(parent, name, tags, lineno=1)
-        namesym = namespace.add_sym('__name__', typ=Type.str_t)
+        namesym = namespace.add_sym('__name__', typ=Type.str())
         if namespace.is_global():
             namespace.constants[namesym] = CONST('__main__')
         else:
             namespace.constants[namesym] = CONST(namespace.name)
         if path:
-            filesym = namespace.add_sym('__file__', typ=Type.str_t)
+            filesym = namespace.add_sym('__file__', typ=Type.str())
             namespace.constants[filesym] = CONST(path)
         return namespace
 
@@ -459,7 +459,7 @@ class Scope(Tagged):
         return self.add_sym(name, tags, typ)
 
     def add_condition_sym(self):
-        return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool_t)
+        return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool())
 
     def add_param_sym(self, param_name, typ=Type.undef_t):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)

@@ -89,7 +89,7 @@ class EarlyWorkerInstantiator(object):
         if inspect.ismethod(worker.func):
             self_sym = new_worker.find_sym(env.self_name)
             self_sym.typ.set_scope(module)
-        parent.add_sym(new_worker.orig_name, typ=Type.function(new_worker, None, None))
+        parent.add_sym(new_worker.orig_name, typ=Type.function(new_worker))
         env.runtime_info.inst2worker[worker] = (new_worker, worker_scope)
         return new_worker, worker_scope
 
@@ -195,7 +195,7 @@ class WorkerInstantiator(object):
                     continue
                 new_workers.add(new_worker)
                 new_worker_sym = module.add_sym(new_worker.orig_name,
-                                                typ=Type.function(new_worker, None, None))
+                                                typ=Type.function(new_worker))
                 _, w = call.args[0]
                 w.set_symbol(new_worker_sym)
         return new_workers

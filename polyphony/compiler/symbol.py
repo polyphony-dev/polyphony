@@ -88,10 +88,8 @@ class Symbol(Tagged):
         return name
 
     def set_type(self, typ):
-        if self.typ.is_freezed():
-            assert False
         self.typ = typ
-        if self.ancestor and not self.ancestor.typ.is_freezed():
+        if self.ancestor:
             self.ancestor.set_type(typ.clone())
 
     def clone(self, scope, postfix=''):

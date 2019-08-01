@@ -2,16 +2,16 @@
 from polyphony import testbench
 
 
-def return_type(p):
+def return_type02(p):
     if p:
-        return True
-    else:
         return 1
+    else:
+        return True
 
 
 @testbench
 def test():
-    return_type(True)
+    return_type02(True)
 
 
 test()

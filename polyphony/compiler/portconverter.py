@@ -50,7 +50,6 @@ class PortTypeProp(TypePropagation):
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
             port_typ = Type.port(ir.func_scope(), attrs)
-            #port_typ.freeze()
             ir.func_scope().return_type = port_typ
         return ir.func_scope().return_type
 
@@ -296,7 +295,6 @@ class PortConverter(IRTransformer):
                 if kind == 'external':
                     port_owner = self._get_port_owner(p.symbol())
                     #port.set_direction('input')
-                    #port.freeze()
                     if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
                             not self.scope.is_worker()):
                         if di == 'input':
@@ -491,7 +489,7 @@ class PortConnector(IRVisitor):
         new_block.append_stm(MOVE(TEMP(ret_sym, Ctx.STORE), body))
         new_block.append_stm(RET(TEMP(ret_sym, Ctx.LOAD)))
         scope_sym = self.scope.add_sym(lambda_scope.orig_name)
-        scope_sym.set_type(Type.function(lambda_scope, None, None))
+        scope_sym.set_type(Type.function(lambda_scope))
 
         self.scopes.append(lambda_scope)
 
