@@ -1,4 +1,5 @@
 ﻿from .ir import *
+from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -82,17 +83,23 @@ class VarReplacer(object):
     def visit_TEMP(self, ir):
         if ir.sym is self.replace_dst.symbol():
             self.replaced = True
-            rep = self.replace_src.clone()
-            return rep
+            ir = self.replace_src.clone()
+        if ir.is_a([TEMP, ATTR]):
+            for expr in Type.find_expr(ir.symbol().typ):
+                assert expr.is_a(EXPR)
+                self.visit(expr)
         return ir
 
     def visit_ATTR(self, ir):
         if ir.qualified_symbol() == self.replace_dst.qualified_symbol():
             self.replaced = True
-            rep = self.replace_src.clone()
-            return rep
+            ir = self.replace_src.clone()
         else:
             ir.exp = self.visit(ir.exp)
+        if ir.is_a([TEMP, ATTR]):
+            for expr in Type.find_expr(ir.symbol().typ):
+                assert expr.is_a(EXPR)
+                self.visit(expr)
         return ir
 
     def visit_EXPR(self, ir):

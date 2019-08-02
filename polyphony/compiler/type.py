@@ -111,7 +111,7 @@ class Type(object):
 
     @classmethod
     def from_ir(cls, ann):
-        from .ir import IR, CONST, TEMP, ATTR, MREF, ARRAY
+        from .ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
         from .symbol import Symbol
         assert ann
         assert isinstance(ann, IR)
@@ -132,16 +132,21 @@ class Type(object):
         elif ann.is_a(MREF):
             if ann.mem.is_a(MREF):
                 t = Type.from_ir(ann.mem)
-                t.set_length(Type.from_ir(ann.offset))
+                if ann.offset.is_a(CONST):
+                    t.set_length(ann.offset.value)
+                else:
+                    t.set_length(Type.from_ir(ann.offset))
             else:
                 t = Type.from_ir(ann.mem)
                 t.set_element(Type.from_ir(ann.offset))
-        #elif ann.is_a(ARRAY):
-        #    assert ann.repeat.is_a(CONST) and ann.repeat.value == 1
-        #    assert ann.is_mutable is False
-        #    return tuple([Type.from_ir(item) for item in ann.items])
+        elif ann.is_a(ARRAY):
+            assert ann.repeat.is_a(CONST) and ann.repeat.value == 1
+            assert ann.is_mutable is False
+            # FIXME: tuple should have more than one type
+            return Type.from_ir(ann.items[0])
         else:
-            t = Type.expr(ann)
+            assert ann.is_a(IRExp)
+            t = Type.expr(EXPR(ann))
         t.set_explicit(True)
         return t
 
@@ -243,6 +248,9 @@ class Type(object):
                     return 'function<{}.{}>'.format(self.get_scope().parent.orig_name, self.get_scope().orig_name)
                 else:
                     return 'function<{}>'.format(self.get_scope().orig_name)
+            if self.name == 'expr':
+                expr = self.get_expr()
+                return str(expr)
         return self.name
 
     def __repr__(self):
@@ -293,6 +301,10 @@ class Type(object):
 
     @classmethod
     def function(cls, scope, ret_t=None, param_ts=None):
+        if ret_t is None:
+            ret_t = Type.undef_t
+        if param_ts is None:
+            param_ts = []
         return Type('function', scope=scope, return_type=ret_t, param_types=param_ts)
 
     @classmethod
@@ -390,8 +402,28 @@ class Type(object):
 
     def clone(self):
         if self.name in {'undef', 'ellipsis'}:
-            return self
-        return Type(self.name, **self.attrs)
+            t = self
+        elif self.is_list():
+            t = Type(self.name, **self.attrs)
+            t.set_element(t.get_element().clone())
+            if isinstance(t.get_length(), Type):
+                t.set_length(t.get_length().clone())
+        elif self.is_tuple():
+            t = Type(self.name, **self.attrs)
+            t.set_element(t.get_element().clone())
+            if isinstance(t.get_length(), Type):
+                t.set_length(t.get_length().clone())
+        elif self.is_function():
+            t = Type(self.name, **self.attrs)
+            t.set_return_type(t.get_return_type().clone())
+            param_types = [pt.clone() for pt in t.get_param_types()]
+            t.set_param_types(param_types)
+        elif self.is_expr():
+            t = Type(self.name, **self.attrs)
+            t.set_expr(t.get_expr().clone())
+        else:
+            t = Type(self.name, **self.attrs)
+        return t
 
     @classmethod
     def propagate(cls, dst, src):
@@ -430,6 +462,27 @@ class Type(object):
                 return True
             return False
         return True
+
+    @classmethod
+    def find_expr(cls, typ):
+        def find_expr_r(typ, exprs):
+            if not isinstance(typ, Type):
+                return
+            if typ.is_expr():
+                exprs.append(typ.get_expr())
+            elif typ.is_list():
+                find_expr_r(typ.get_element(), exprs)
+                find_expr_r(typ.get_length(), exprs)
+            elif typ.is_tuple():
+                find_expr_r(typ.get_element(), exprs)
+                find_expr_r(typ.get_length(), exprs)
+            elif typ.is_function():
+                for pt in typ.get_param_types():
+                    find_expr_r(pt, exprs)
+                find_expr_r(typ.get_return_type(), exprs)
+        exprs = []
+        find_expr_r(typ, exprs)
+        return exprs
 
 
 Type.undef_t = Type('undef')

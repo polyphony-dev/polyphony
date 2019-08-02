@@ -11,7 +11,7 @@ from .symbol import Symbol
 from .synth import make_synth_params
 from .type import Type
 from .irvisitor import IRVisitor
-from .ir import CONST, JUMP, CJUMP, MCJUMP
+from .ir import CONST, JUMP, CJUMP, MCJUMP, EXPR
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -742,12 +742,26 @@ class SymbolReplacer(IRVisitor):
         else:
             logger.debug('WARNING: not found {}'.format(ir.sym))
 
+        for expr in Type.find_expr(ir.sym.typ):
+            assert expr.is_a(EXPR)
+            old_stm = self.current_stm
+            self.current_stm = expr
+            self.visit(expr)
+            self.current_stm = old_stm
+
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
         if ir.attr in self.sym_map:
             ir.attr = self.sym_map[ir.attr]
         else:
             logger.debug('WARNING: not found {}'.format(ir.attr))
+
+        for expr in Type.find_expr(ir.attr.typ):
+            assert expr.is_a(EXPR)
+            old_stm = self.current_stm
+            self.current_stm = expr
+            self.visit(expr)
+            self.current_stm = old_stm
 
     def visit_ARRAY(self, ir):
         if ir.sym in self.sym_map:

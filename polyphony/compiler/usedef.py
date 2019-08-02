@@ -4,6 +4,7 @@ from .ir import *
 from .block import Block
 from .env import env
 from .symbol import Symbol
+from .type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -256,12 +257,26 @@ class UseDefDetector(IRVisitor):
         if ir.ctx & Ctx.STORE:
             self.update_var_def(ir, self.current_stm)
 
+        for expr in Type.find_expr(ir.sym.typ):
+            assert expr.is_a(EXPR)
+            old_stm = self.current_stm
+            self.current_stm = expr
+            self.visit(expr)
+            self.current_stm = old_stm
+
     def visit_ATTR(self, ir):
         if ir.ctx & Ctx.LOAD:
             self.update_var_use(ir, self.current_stm)
         if ir.ctx & Ctx.STORE:
             self.update_var_def(ir, self.current_stm)
         self.visit(ir.exp)
+
+        for expr in Type.find_expr(ir.attr.typ):
+            assert expr.is_a(EXPR)
+            old_stm = self.current_stm
+            self.current_stm = expr
+            self.visit(expr)
+            self.current_stm = old_stm
 
 
 class FieldUseDef(object):

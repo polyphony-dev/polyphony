@@ -5,6 +5,7 @@ from .env import env
 from .symbol import Symbol
 from .ir import *
 from .tuple import TupleTransformer
+from .type import Type
 from .usedef import UseDefDetector
 from .utils import replace_item
 from .varreplacer import VarReplacer
@@ -128,6 +129,14 @@ class SSATransformerBase(object):
                     key = use.qualified_symbol()
                     i, _ = stack[key][-1]
                     self._add_new_sym(use, i)
+
+                    for expr in Type.find_expr(use.symbol().typ):
+                        vs = expr.find_irs([TEMP, ATTR])
+                        for v in vs:
+                            key = v.qualified_symbol()
+                            if self._need_rename(key[-1], key):
+                                i, _ = stack[key][-1]
+                                self._add_new_sym(v, i)
             #this loop includes PHI
             for d in self.usedef.get_vars_defined_at(stm):
                 #print(stm, d)
@@ -141,6 +150,14 @@ class SSATransformerBase(object):
                 self._add_new_sym(d, i)
                 if stm.is_a(PHI) and d.is_a(ATTR):
                     self._add_new_sym_rest(d.exp, stack)
+
+                for expr in Type.find_expr(d.symbol().typ):
+                    vs = expr.find_irs([TEMP, ATTR])
+                    for v in vs:
+                        key = v.qualified_symbol()
+                        if self._need_rename(key[-1], key):
+                            i, _ = stack[key][-1]
+                            self._add_new_sym(v, i)
         #into successors
         for succ in block.succs:
             #collect phi

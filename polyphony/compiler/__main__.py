@@ -356,7 +356,14 @@ def instantiate(driver):
         assert worker.is_worker()
         scopes.append(worker)
 
-    fieldusedef(driver)
+
+def postinstantiate(driver):
+    scopes = driver.get_scopes(with_global=False,
+                               with_class=True,
+                               with_lib=False)
+    scopes = [scope for scope in scopes if scope.is_instantiated()]
+    if not scopes:
+        return
     for s in scopes:
         if env.config.enable_pure:
             execpure(driver, s)
@@ -648,11 +655,11 @@ def compile_plan():
         dbg(dumpscope),
         filter_scope(is_static_scope),
         earlyquadruple,
-        evaltype,
         earlytypeprop,
         latequadruple,
         earlyrestrictioncheck,
         staticconstopt,
+        evaltype,
         typeprop,
         dbg(dumpscope),
         typecheck,
@@ -663,8 +670,6 @@ def compile_plan():
         reduceblk,
         dbg(dumpscope),
         earlyquadruple,
-        dbg(dumpscope),
-        evaltype,
         dbg(dumpscope),
         earlytypeprop,
         dbg(dumpscope),
@@ -732,6 +737,11 @@ def compile_plan():
         pure(execpureall),
         phase(env.PHASE_3),
         instantiate,
+        fieldusedef,
+        postinstantiate,
+        dbg(dumpscope),
+        evaltype,
+        typeprop,
         dbg(dumpdependimg),
         dbg(dumpscope),
         usedef,

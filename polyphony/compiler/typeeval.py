@@ -1,4 +1,5 @@
-from .ir import CONST, TEMP
+from .constopt import try_get_constant
+from .ir import CONST, TEMP, EXPR
 from .irvisitor import IRVisitor
 from .type import Type
 
@@ -22,9 +23,10 @@ class TypeEvaluator(object):
         elm = self.visit(t.get_element())
         t.set_element(elm)
         if isinstance(t.get_length(), Type):
+            assert t.get_length().is_expr()
             ln = self.visit(t.get_length())
-            if ln.is_expr() and ln.get_expr().is_a(CONST):
-                t.set_length(ln.get_expr().value)
+            if ln.is_expr() and ln.get_expr().is_a(EXPR) and ln.get_expr().exp.is_a(CONST):
+                t.set_length(ln.get_expr().exp.value)
             else:
                 t.set_length(ln)
         return t
@@ -41,8 +43,9 @@ class TypeEvaluator(object):
             for sym, copy, _ in func.params:
                 pt = self.visit(sym.typ)
                 sym.set_type(pt)
-                copy.set_type(pt.clone())
                 param_types.append(pt)
+                pt = self.visit(copy.typ)
+                copy.set_type(pt)
             t.set_param_types(param_types)
             func.return_type = self.visit(func.return_type)
             t.set_return_type(func.return_type)
@@ -116,6 +119,10 @@ class TypeExprEvaluator(IRVisitor):
             typ = self.sym2type(ir.sym)
             if typ:
                 return typ
+        elif ir.sym.typ.is_scalar():
+            c = try_get_constant((ir.sym,), self.scope)
+            if c:
+                return c
         return ir
 
     def visit_ATTR(self, ir):
@@ -123,6 +130,10 @@ class TypeExprEvaluator(IRVisitor):
             typ = self.sym2type(ir.attr)
             if typ:
                 return typ
+        elif ir.attr.typ.is_scalar():
+            c = try_get_constant(ir.qualified_symbol(), ir.attr.scope)
+            if c:
+                return c
         return ir
 
     def visit_MREF(self, ir):
@@ -168,8 +179,18 @@ class TypeExprEvaluator(IRVisitor):
         for item in ir.items:
             types.append(self.visit(item))
         if isinstance(types[-1], CONST) and types[-1].value is ...:
+            # FIXME: tuple should have more than one type
             return types[0]
         if all([isinstance(t, Type) for t in types]):
-            # FIXME:
+            # FIXME: tuple should have more than one type
             return types[0]
         return ir
+
+    def visit_EXPR(self, ir):
+        result = self.visit(ir.exp)
+        assert result
+        if isinstance(result, Type):
+            return result
+        else:
+            ir.exp = result
+            return ir

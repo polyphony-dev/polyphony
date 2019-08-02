@@ -67,7 +67,7 @@ class TypePropagation(IRVisitor):
         try:
             super().process(scope)
         except RejectPropagation as r:
-            pass
+            self.untyped.append(scope)
         return [scope for scope in self.new_scopes if not scope.is_lib()]
 
     def visit_UNOP(self, ir):
@@ -722,6 +722,7 @@ class TypeChecker(IRVisitor):
                        [dst_t, src_t])
         if (dst_t.is_seq() and
                 dst_t.has_length() and
+                isinstance(dst_t.get_length(), int) and
                 dst_t.get_length() != Type.ANY_LENGTH):
             if ir.src.is_a(ARRAY):
                 if len(ir.src.items * ir.src.repeat.value) > dst_t.get_length():
@@ -835,6 +836,10 @@ class RestrictionChecker(IRVisitor):
 
 
 class LateRestrictionChecker(IRVisitor):
+    def visit_ARRAY(self, ir):
+        if not ir.repeat.is_a(CONST):
+            fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
+
     def visit_MSTORE(self, ir):
         memnode = ir.mem.symbol().typ.get_memnode()
         if memnode.is_alias() and memnode.can_be_reg():
@@ -909,7 +914,8 @@ class TypeEvalVisitor(IRVisitor):
         for sym, copy, _ in scope.params:
             pt = self._eval(sym.typ)
             sym.set_type(pt)
-            copy.set_type(pt.clone())
+            pt = self._eval(copy.typ)
+            copy.set_type(pt)
         if scope.return_type:
             scope.return_type = self._eval(scope.return_type)
         super().process(scope)

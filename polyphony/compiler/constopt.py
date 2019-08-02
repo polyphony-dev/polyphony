@@ -386,9 +386,10 @@ class ConstantOpt(ConstantOptBase):
             if source:
                 assert source.initstm
                 if not source.initstm.src.repeat.is_a(CONST):
-                    fail(source.initstm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
-                items = source.initstm.src.items * source.initstm.src.repeat.value
-                return items[ir.offset.value]
+                    pass
+                else:
+                    items = source.initstm.src.items * source.initstm.src.repeat.value
+                    return items[ir.offset.value]
         return ir
 
     def visit_TEMP(self, ir):

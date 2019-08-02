@@ -264,19 +264,28 @@ class SymbolReplacer(IRVisitor):
             return ATTR(exp, qsym[-1], ctx)
 
     def visit_TEMP(self, ir):
+        ret_ir = ir
         if self.attr_map and ir.sym in self.attr_map:
             attr = self.attr_map[ir.sym].clone()
-            return attr
-        if ir.sym in self.sym_map:
+            ret_ir = attr
+        elif ir.sym in self.sym_map:
             rep = self.sym_map[ir.sym]
             if isinstance(rep, Symbol):
                 ir.sym = rep
-                return ir
+                ret_ir = ir
             elif isinstance(rep, tuple):  # qualified_symbol
-                return self._qsym_to_var(rep, ir.ctx)
+                ret_ir = self._qsym_to_var(rep, ir.ctx)
             else:
                 self.current_stm.replace(ir, rep)
-                return rep
+                ret_ir = rep
+        if ret_ir.is_a([TEMP, ATTR]):
+            for expr in Type.find_expr(ret_ir.symbol().typ):
+                assert expr.is_a(EXPR)
+                old_stm = self.current_stm
+                self.current_stm = expr
+                self.visit(expr)
+                self.current_stm = old_stm
+        return ret_ir
 
     def visit_ATTR(self, ir):
         exp = self.visit(ir.exp)
@@ -285,6 +294,13 @@ class SymbolReplacer(IRVisitor):
 
         if ir.attr in self.sym_map:
             ir.attr = self.sym_map[ir.attr]
+
+        for expr in Type.find_expr(ir.attr.typ):
+            assert expr.is_a(EXPR)
+            old_stm = self.current_stm
+            self.current_stm = expr
+            self.visit(expr)
+            self.current_stm = old_stm
 
     def visit_ARRAY(self, ir):
         self.visit(ir.repeat)
@@ -406,7 +422,23 @@ class FlattenFieldAccess(IRTransformer):
         newir.ctx = ir.ctx
         return newir
 
+    def visit_TEMP(self, ir):
+        for expr in Type.find_expr(ir.sym.typ):
+            assert expr.is_a(EXPR)
+            old_stm = self.current_stm
+            self.current_stm = expr
+            expr.exp = self.visit(expr.exp)
+            self.current_stm = old_stm
+        return ir
+
     def visit_ATTR(self, ir):
+        for expr in Type.find_expr(ir.attr.typ):
+            assert expr.is_a(EXPR)
+            old_stm = self.current_stm
+            self.current_stm = expr
+            expr.exp = self.visit(expr.exp)
+            self.current_stm = old_stm
+
         # don't flatten use of the other instance in the class except module
         if self.scope.is_method():
             if self.scope.parent.is_module():
@@ -416,7 +448,7 @@ class FlattenFieldAccess(IRTransformer):
         # don't flatten use of the static class field
         if ir.tail().typ.is_class():
             return ir
-        if ir.attr_scope.is_unflatten():
+        if ir.attr.scope.is_unflatten():
             return ir
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
