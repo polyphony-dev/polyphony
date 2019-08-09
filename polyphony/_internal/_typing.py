@@ -388,3 +388,4 @@ class uint128: pass
 
 class List: pass
 class Tuple: pass
+class Type: pass

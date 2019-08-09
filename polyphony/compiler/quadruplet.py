@@ -121,8 +121,10 @@ class EarlyQuadrupleMaker(IRTransformer):
     def visit_MREF(self, ir):
         #suppress converting
         suppress = self.suppress_converting
-        self.suppress_converting = False
-
+        if ir.mem.is_a(MREF):
+            self.suppress_converting = True
+        else:
+            self.suppress_converting = False
         ir.mem = self.visit(ir.mem)
         ir.offset = self.visit(ir.offset)
         if not ir.offset.is_a([TEMP, ATTR, CONST, UNOP]):

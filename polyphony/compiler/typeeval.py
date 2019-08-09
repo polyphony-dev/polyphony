@@ -105,9 +105,12 @@ class TypeExprEvaluator(IRVisitor):
         if sym.typ.is_class():
             typ_scope = sym.typ.get_scope()
             if typ_scope.is_typeclass():
-                return Type.from_typeclass(typ_scope)
+                t = Type.from_typeclass(typ_scope)
+                if sym.typ.has_typeargs():
+                    args = sym.typ.get_typeargs()
+                    t.attrs.update(args)
+                return t
             elif typ_scope.is_function():
-                print(typ_scope.name)
                 assert False
             else:
                 return Type.object(typ_scope)

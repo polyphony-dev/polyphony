@@ -121,6 +121,9 @@ class Type(object):
             scope = ann.sym.typ.get_scope()
             if scope.is_typeclass():
                 t = Type.from_typeclass(scope)
+                if ann.sym.typ.has_typeargs():
+                    args = ann.sym.typ.get_typeargs()
+                    t.attrs.update(args)
             else:
                 t = Type.object(scope)
         elif ann.is_a(ATTR) and isinstance(ann.attr, Symbol) and ann.attr.typ.has_scope():
@@ -138,7 +141,16 @@ class Type(object):
                     t.set_length(Type.from_ir(ann.offset))
             else:
                 t = Type.from_ir(ann.mem)
-                t.set_element(Type.from_ir(ann.offset))
+                if t.is_seq():
+                    t.set_element(Type.from_ir(ann.offset))
+                elif t.is_class():
+                    elm_t = Type.from_ir(ann.offset)
+                    if elm_t.is_object():
+                        t.set_scope(elm_t.get_scope())
+                    else:
+                        type_scope, args = Type.to_scope(elm_t)
+                        t.set_scope(type_scope)
+                        t.set_typeargs(args)
         elif ann.is_a(ARRAY):
             assert ann.repeat.is_a(CONST) and ann.repeat.value == 1
             assert ann.is_mutable is False
@@ -171,6 +183,8 @@ class Type(object):
             return Type.list(Type.undef_t, None)
         elif scope.orig_name == 'tuple':
             return Type.tuple(Type.undef_t, None, Type.ANY_LENGTH)
+        elif scope.orig_name == 'Type':
+            return Type.klass(None)
         elif scope.orig_name.startswith('int'):
             return Type.int(int(scope.orig_name[3:]))
         elif scope.orig_name.startswith('uint'):
@@ -198,6 +212,24 @@ class Type(object):
         else:
             print(scope.name)
             assert False
+
+    @classmethod
+    def to_scope(cls, t):
+        if t.is_int():
+            scope = env.scopes['__builtin__.int']
+        elif t.is_bool():
+            scope = env.scopes['__builtin__.bool']
+        elif t.is_str():
+            scope = env.scopes['__builtin__.str']
+        elif t.is_list():
+            scope = env.scopes['__builtin__.list']
+        elif t.is_tuple():
+            scope = env.scopes['__builtin__.tuple']
+        elif t.is_object():
+            scope = env.scopes['__builtin__.object']
+        else:
+            assert False
+        return scope, t.attrs.copy()
 
     @classmethod
     def from_expr(cls, val, scope):
@@ -312,8 +344,10 @@ class Type(object):
         return Type('object', scope=scope)
 
     @classmethod
-    def klass(cls, scope):
-        return Type('class', scope=scope)
+    def klass(cls, scope, typeargs=None):
+        if typeargs is None:
+            typeargs = {}
+        return Type('class', scope=scope, typeargs=typeargs)
 
     @classmethod
     def port(cls, portcls, attrs):
@@ -391,6 +425,11 @@ class Type(object):
             return True
         if Type.is_strict_same(to_t, from_t):
             return True
+        if to_t.is_expr():
+            from .ir import TEMP, ATTR
+            expr = to_t.get_expr()
+            if expr.exp.is_a([TEMP, ATTR]) and expr.exp.symbol().typ.is_class():
+                return True
         return False
 
     @classmethod
@@ -428,13 +467,14 @@ class Type(object):
     @classmethod
     def propagate(cls, dst, src):
         if dst.is_explicit():
-            assert cls.is_same(dst, src)
             if dst.is_list():
+                assert cls.is_same(dst, src)
                 elm = cls.propagate(dst.get_element(), src.get_element())
                 dst.set_element(elm)
                 if dst.get_length() == Type.ANY_LENGTH:
                     dst.set_length(src.get_length())
             elif dst.is_tuple():
+                assert cls.is_same(dst, src)
                 dst_elm, src_elm = dst.get_element(), src.get_element()
                 elm = cls.propagate(dst_elm, src_elm)
                 dst.set_element(elm)
@@ -443,6 +483,7 @@ class Type(object):
             elif dst.is_function():
                 raise NotImplementedError()
             elif dst.is_object():
+                assert cls.is_same(dst, src)
                 if dst.get_scope() is None:
                     dst.set_scope(src.get_scope())
             return dst

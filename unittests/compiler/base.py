@@ -7,6 +7,17 @@ from polyphony.compiler.env import env
 
 class CompilerTestCase(unittest.TestCase):
     def setUp(self, hook=None, order=0, before=False):
+        options = types.SimpleNamespace()
+        options.output_name = ''
+        options.output_dir = ''
+        options.verbose_level = 0
+        options.quiet_level = 0
+        options.debug_mode = True
+        options.verilog_dump = False
+        options.verilog_monitor = False
+        options.config = None
+        self.file_name = 'dummy'
+        setup(self.file_name, options)
         plan = compile_plan()
         if hook:
             count = 0
@@ -23,17 +34,6 @@ class CompilerTestCase(unittest.TestCase):
                 self.plan = plan[:idx + 1]
         else:
             self.plan = plan
-        options = types.SimpleNamespace()
-        options.output_name = ''
-        options.output_dir = ''
-        options.verbose_level = 0
-        options.quiet_level = 0
-        options.debug_mode = True
-        options.verilog_dump = False
-        options.verilog_monitor = False
-        options.config = None
-        self.file_name = 'dummy'
-        setup(self.file_name, options)
 
     def tearDown(self):
         env.destroy()

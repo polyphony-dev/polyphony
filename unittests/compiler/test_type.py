@@ -1,9 +1,9 @@
-from polyphony.compiler.__main__ import earlytypeprop, evaltype
+from polyphony.compiler.__main__ import earlytypeprop, typeprop, evaltype
 from polyphony.compiler.env import env
 from polyphony.compiler.type import Type
 from polyphony.compiler.typecheck import TypePropagation
 from polyphony.compiler.typecheck import TypeEvalVisitor
-from polyphony.compiler.tests.base import CompilerTestCase
+from base import CompilerTestCase
 import unittest
 
 
@@ -554,6 +554,7 @@ class C:
 class test_typeexpr(CompilerTestCase):
     def setUp(self):
         super().setUp(evaltype, order=1, before=True)
+        #super().setUp(typeprop, order=4, before=True)
 
     test_expr_1_src = '''
 from polyphony.typing import List
@@ -896,6 +897,153 @@ m = test_expr_7(11, 12)
 
         self.assertTrue(mem1.typ.is_explicit())
         self.assertTrue(mem1.typ.get_element().is_explicit())
+
+
+class test_alias_type(CompilerTestCase):
+    def setUp(self):
+        # super().setUp(evaltype, order=1, before=True)
+        super().setUp(earlytypeprop, order=0, before=True)
+
+    test_alias_1_src = '''
+from polyphony.typing import Type, int8
+
+int_t1 = int8
+int_t2:Type[int8] = int8
+
+i1:int_t1 = 0
+i2:int_t2 = 0
+    '''
+
+    def test_alias_1(self):
+        self._run(self.test_alias_1_src)
+        top = env.scopes['@top']
+        int_t1 = top.find_sym('int_t1')
+        int_t2 = top.find_sym('int_t2')
+        i1 = top.find_sym('i1')
+        i2 = top.find_sym('i2')
+        self.assertTrue(int_t1.typ.is_undef())
+        self.assertTrue(i1.typ.is_expr())
+
+        self.assertTrue(int_t2.typ.is_class())
+        self.assertTrue(int_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(int_t2.typ.get_scope().name == '__builtin__.int')
+        self.assertTrue(i2.typ.is_int())
+        self.assertTrue(i2.typ.get_width() == 8)
+
+        TypePropagation().process(top)
+
+        self.assertTrue(int_t1.typ.is_class())
+        self.assertTrue(int_t1.typ.get_scope().is_typeclass())
+        self.assertTrue(int_t1.typ.get_scope().name == '__builtin__.int')
+        self.assertTrue(i1.typ.is_expr())
+        self.assertTrue(int_t2.typ.is_class())
+        self.assertTrue(int_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(int_t2.typ.get_scope().name == '__builtin__.int')
+
+        TypeEvalVisitor().process(top)
+
+        self.assertTrue(i1.typ.is_int())
+        self.assertTrue(i1.typ.get_width() == 8)
+
+        self.assertTrue(i2.typ.is_int())
+        self.assertTrue(i2.typ.get_width() == 8)
+
+    test_alias_2_src = '''
+from polyphony.typing import Type, List, int8
+
+vec_t1 = List[int8]
+vec_t2:Type[List[int8]] = List[int8]
+
+v1:vec_t1 = [0]
+v2:vec_t2 = [0]
+    '''
+
+    def test_alias_2(self):
+        self._run(self.test_alias_2_src)
+        top = env.scopes['@top']
+        vec_t1 = top.find_sym('vec_t1')
+        vec_t2 = top.find_sym('vec_t2')
+        v1 = top.find_sym('v1')
+        v2 = top.find_sym('v2')
+        self.assertTrue(vec_t1.typ.is_undef())
+        self.assertTrue(v1.typ.is_expr())
+
+        self.assertTrue(vec_t2.typ.is_class())
+        self.assertTrue(vec_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(vec_t2.typ.get_scope().name == '__builtin__.list')
+        self.assertTrue('element' in vec_t2.typ.get_typeargs())
+        self.assertTrue(vec_t2.typ.get_typeargs()['element'].is_int())
+        self.assertTrue(v2.typ.is_list())
+        self.assertTrue(v2.typ.get_element().is_int())
+        self.assertTrue(v2.typ.get_element().get_width() == 8)
+
+        TypePropagation().process(top)
+        self.assertTrue(vec_t1.typ.is_class())
+        self.assertTrue(vec_t1.typ.get_scope().is_typeclass())
+        self.assertTrue(vec_t1.typ.get_scope().name == '__builtin__.list')
+        self.assertTrue(vec_t2.typ.is_class())
+        self.assertTrue(vec_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(vec_t2.typ.get_scope().name == '__builtin__.list')
+
+        TypeEvalVisitor().process(top)
+
+        self.assertTrue(v1.typ.is_list())
+        self.assertTrue(v1.typ.get_element().is_int())
+        self.assertTrue(v1.typ.get_element().get_width() == 8)
+
+        self.assertTrue(v2.typ.is_list())
+        self.assertTrue(v2.typ.get_element().is_int())
+        self.assertTrue(v2.typ.get_element().get_width() == 8)
+
+    test_alias_3_src = '''
+from polyphony.typing import Type, List, int8
+
+vec_t1 = List[int8][3]
+vec_t2:Type[List[int8][3]] = List[int8][3]
+
+v1:vec_t1 = [0, 1, 2]
+v2:vec_t2 = [0, 1, 2]
+    '''
+
+    def test_alias_3(self):
+        self._run(self.test_alias_3_src)
+        top = env.scopes['@top']
+        vec_t1 = top.find_sym('vec_t1')
+        vec_t2 = top.find_sym('vec_t2')
+        v1 = top.find_sym('v1')
+        v2 = top.find_sym('v2')
+        self.assertTrue(vec_t1.typ.is_undef())
+        self.assertTrue(v1.typ.is_expr())
+
+        self.assertTrue(vec_t2.typ.is_class())
+        self.assertTrue(vec_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(vec_t2.typ.get_scope().name == '__builtin__.list')
+        self.assertTrue('element' in vec_t2.typ.get_typeargs())
+        self.assertTrue(vec_t2.typ.get_typeargs()['element'].is_int())
+        self.assertTrue(v2.typ.is_list())
+        self.assertTrue(v2.typ.get_element().is_int())
+        self.assertTrue(v2.typ.get_element().get_width() == 8)
+        self.assertTrue(v2.typ.get_length() == 3)
+
+        TypePropagation().process(top)
+        self.assertTrue(vec_t1.typ.is_class())
+        self.assertTrue(vec_t1.typ.get_scope().is_typeclass())
+        self.assertTrue(vec_t1.typ.get_scope().name == '__builtin__.list')
+        self.assertTrue(vec_t2.typ.is_class())
+        self.assertTrue(vec_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(vec_t2.typ.get_scope().name == '__builtin__.list')
+
+        TypeEvalVisitor().process(top)
+
+        self.assertTrue(v1.typ.is_list())
+        self.assertTrue(v1.typ.get_element().is_int())
+        self.assertTrue(v1.typ.get_element().get_width() == 8)
+        self.assertTrue(v1.typ.get_length() == 3)
+
+        self.assertTrue(v2.typ.is_list())
+        self.assertTrue(v2.typ.get_element().is_int())
+        self.assertTrue(v2.typ.get_element().get_width() == 8)
+        self.assertTrue(v2.typ.get_length() == 3)
 
 
 if __name__ == '__main__':

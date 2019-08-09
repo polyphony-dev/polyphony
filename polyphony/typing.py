@@ -35,6 +35,10 @@ class Tuple(tuple, metaclass=GenericMeta):
     pass
 
 
+class Type(type, metaclass=GenericMeta):
+    pass
+
+
 class int_base:
     base_type = int
 

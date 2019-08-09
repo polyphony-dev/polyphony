@@ -226,6 +226,14 @@ class TypePropagation(IRVisitor):
     def visit_TEMP(self, ir):
         if ir.sym.typ.is_undef() and ir.sym.ancestor:
             ir.sym.set_type(ir.sym.ancestor.typ.clone())
+        elif ir.sym.typ.is_class() and ir.sym.typ.get_scope().is_typeclass():
+            t = Type.from_ir(ir)
+            if t.is_object():
+                ir.sym.typ.set_scope(t.get_scope())
+            else:
+                type_scope, args = Type.to_scope(t)
+                ir.sym.typ.set_scope(type_scope)
+                ir.sym.typ.set_typeargs(args)
         return ir.sym.typ
 
     def visit_ATTR(self, ir):
@@ -255,7 +263,16 @@ class TypePropagation(IRVisitor):
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
         self.visit(ir.offset)
-        if not mem_t.is_seq():
+        if mem_t.is_class() and mem_t.get_scope().is_typeclass():
+            t = Type.from_ir(ir)
+            if t.is_object():
+                mem_t.set_scope(t.get_scope())
+            else:
+                type_scope, args = Type.to_scope(t)
+                mem_t.set_scope(type_scope)
+                mem_t.set_typeargs(args)
+            return mem_t
+        elif not mem_t.is_seq():
             if self.check_error:
                 type_error(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE,
                            [ir.mem])
@@ -656,6 +673,8 @@ class TypeChecker(IRVisitor):
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
+        if mem_t.is_class():
+            return mem_t
         assert mem_t.is_seq()
         offs_t = self.visit(ir.offset)
         if not offs_t.is_int():
