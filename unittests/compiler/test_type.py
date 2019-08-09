@@ -1045,6 +1045,55 @@ v2:vec_t2 = [0, 1, 2]
         self.assertTrue(v2.typ.get_element().get_width() == 8)
         self.assertTrue(v2.typ.get_length() == 3)
 
+    test_alias_4_src = '''
+from polyphony.typing import Type, Int
+
+byte_t1 = Int[8]
+byte_t2:Type[Int[8]] = Int[8]
+
+b1:byte_t1 = 0
+b2:byte_t2 = 0
+    '''
+
+    def test_alias_4(self):
+        self._run(self.test_alias_4_src)
+        top = env.scopes['@top']
+        byte_t1 = top.find_sym('byte_t1')
+        byte_t2 = top.find_sym('byte_t2')
+        b1 = top.find_sym('b1')
+        b2 = top.find_sym('b2')
+        self.assertTrue(byte_t1.typ.is_undef())
+        self.assertTrue(b1.typ.is_expr())
+
+        self.assertTrue(byte_t2.typ.is_class())
+        self.assertTrue(byte_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(byte_t2.typ.get_scope().name == '__builtin__.int')
+        self.assertTrue('width' in byte_t2.typ.get_typeargs())
+        self.assertTrue(byte_t2.typ.get_typeargs()['width'] == 8)
+        self.assertTrue(b2.typ.is_int())
+        self.assertTrue(b2.typ.get_width() == 8)
+
+        TypePropagation().process(top)
+        self.assertTrue(byte_t1.typ.is_class())
+        self.assertTrue(byte_t1.typ.get_scope().is_typeclass())
+        self.assertTrue(byte_t1.typ.get_scope().name == '__builtin__.int')
+        self.assertTrue('width' in byte_t1.typ.get_typeargs())
+        self.assertTrue(byte_t1.typ.get_typeargs()['width'] == 8)
+
+        self.assertTrue(byte_t2.typ.is_class())
+        self.assertTrue(byte_t2.typ.get_scope().is_typeclass())
+        self.assertTrue(byte_t2.typ.get_scope().name == '__builtin__.int')
+        self.assertTrue('width' in byte_t2.typ.get_typeargs())
+        self.assertTrue(byte_t2.typ.get_typeargs()['width'] == 8)
+
+        TypeEvalVisitor().process(top)
+
+        self.assertTrue(b1.typ.is_int())
+        self.assertTrue(b1.typ.get_width() == 8)
+
+        self.assertTrue(b2.typ.is_int())
+        self.assertTrue(b2.typ.get_width() == 8)
+
 
 if __name__ == '__main__':
     unittest.main()

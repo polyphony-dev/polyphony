@@ -27,6 +27,10 @@ class GenericMeta(abc.ABCMeta):
         return self.__class__(self.__name__, self.__bases__, dict(self.__dict__))
 
 
+class Int(int, metaclass=GenericMeta):
+    pass
+
+
 class List(list, metaclass=GenericMeta):
     pass
 

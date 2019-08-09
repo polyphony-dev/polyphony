@@ -141,7 +141,10 @@ class Type(object):
                     t.set_length(Type.from_ir(ann.offset))
             else:
                 t = Type.from_ir(ann.mem)
-                if t.is_seq():
+                if t.is_int():
+                    assert ann.offset.is_a(CONST)
+                    t.set_width(ann.offset.value)
+                elif t.is_seq():
                     t.set_element(Type.from_ir(ann.offset))
                 elif t.is_class():
                     elm_t = Type.from_ir(ann.offset)
@@ -191,6 +194,8 @@ class Type(object):
             return Type.int(int(scope.orig_name[4:]), signed=False)
         elif scope.orig_name.startswith('bit'):
             return Type.int(int(scope.orig_name[3:]), signed=False)
+        elif scope.orig_name == ('Int'):
+            return Type.int()
         elif scope.orig_name == ('List'):
             if elms:
                 assert len(elms) == 1
