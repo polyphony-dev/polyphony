@@ -1,5 +1,5 @@
 import polyphony
-from polyphony.io import Port, Queue
+from polyphony.io import Port, Queue, Handshake
 from polyphony.typing import int8, uint8, uint16
 
 
@@ -14,7 +14,7 @@ class MiniVM:
 
     def __init__(self, start_addr, end_addr):
         # define i/o
-        self.dout = Port(int8, 'out', protocol='ready_valid')
+        self.dout = Handshake(int8, 'out')
 
         # define internals
         instq = Queue(uint16, 'any', maxsize=2)

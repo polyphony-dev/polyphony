@@ -1,6 +1,6 @@
 from polyphony import testbench
 from polyphony import module
-from polyphony.io import Port
+from polyphony.io import Port, Handshake
 from polyphony.typing import int12, List, Tuple
 from polyphony import rule, pipelined
 from sobel_filter import PipelinedStreamFilter as StreamFilter
@@ -689,14 +689,14 @@ H = 4
 @module
 class FilterTester:
     def __init__(self):
-        self.start = Port(bool, 'in', protocol='ready_valid')
-        self.finish = Port(bool, 'out', protocol='ready_valid')
+        self.start = Handshake(bool, 'in')
+        self.finish = Handshake(bool, 'out')
         self.sobel = StreamFilter(W, H, 2)
         self.append_worker(self.test_source)
         self.append_worker(self.test_sink)
 
     def test_source(self):
-        self.start()
+        self.start.rd()
         for y in range(H):
             for x in pipelined(range(W)):
                 idx = y * W + x
@@ -717,7 +717,7 @@ class FilterTester:
             expected = EXPECTED_DATA_15x4[i]
             print(actual, expected)
             assert actual == expected
-        self.finish(True)
+        self.finish.wr(True)
 
 
 @testbench

@@ -45,8 +45,6 @@ class PortTypeProp(TypePropagation):
                     attrs['direction'] = 'inout'
                 else:
                     attrs['port_kind'] = 'external'
-            if 'protocol' not in attrs:
-                attrs['protocol'] = 'none'
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
             port_typ = Type.port(ir.func_scope(), attrs)
@@ -252,7 +250,7 @@ class PortConverter(IRTransformer):
                 if all([s.is_testbench() for s in self.readers[rootsym]]):
                     if self.scope.is_testbench():
                         self.readers[rootsym].add(self.scope)
-                elif port_typ.get_scope().name.startswith('polyphony.io.Port') and port_typ.get_protocol() == 'none':
+                elif port_typ.get_scope().name.startswith('polyphony.io.Port'):
                     pass
                 else:
                     assert len(self.readers[rootsym]) == 1

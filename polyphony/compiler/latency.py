@@ -20,37 +20,12 @@ def get_call_latency(call, stm):
     elif call.func_scope().is_method() and call.func_scope().parent.is_port():
         receiver = call.func.tail()
         assert receiver.typ.is_port()
-        protocol = receiver.typ.get_protocol()
         if call.func_scope().orig_name == 'rd':
             dummy_read = stm.is_a(EXPR)
-            if protocol == 'ready_valid':
-                if is_pipelined:
-                    return UNIT_STEP * 2
-                else:
-                    return UNIT_STEP * 3
-            elif protocol == 'valid':
-                if is_pipelined:
-                    return UNIT_STEP * 1
-                elif dummy_read:
-                    return UNIT_STEP * 1
-                else:
-                    return UNIT_STEP * 2
+            if dummy_read:
+                return 0
             else:
-                if dummy_read:
-                    return 0
-                else:
-                    return UNIT_STEP * 1
-        elif call.func_scope().orig_name == 'wr':
-            if protocol == 'ready_valid':
-                if is_pipelined:
-                    return UNIT_STEP * 1
-                else:
-                    return UNIT_STEP * 3
-            elif protocol == 'valid':
-                if is_pipelined:
-                    return UNIT_STEP * 1
-                else:
-                    return UNIT_STEP * 2
+                return UNIT_STEP * 1
         return UNIT_STEP
     elif call.func_scope().asap_latency > 0:
         return UNIT_STEP * call.func_scope().asap_latency

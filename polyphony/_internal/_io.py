@@ -1,6 +1,5 @@
 class Port:
     def __init__(self, dtype:generic, direction:str, init=None,
-                 protocol:str='none',
                  rewritable:bool=False) -> object:
         pass
 

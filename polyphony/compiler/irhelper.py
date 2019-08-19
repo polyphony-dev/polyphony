@@ -130,11 +130,6 @@ def has_exclusive_function(stm):
         port = call.func_scope().parent
         if port.name.startswith('polyphony.io.Queue'):
             return True
-        elif port.name.startswith('polyphony.io.Port'):
-            assert call.func.tail().typ.is_port()
-            proto = call.func.tail().typ.get_protocol()
-            if proto != 'none':
-                return True
     return False
 
 

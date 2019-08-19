@@ -43,8 +43,7 @@ class AliasVarDetector(IRVisitor):
                     if ir.src.func_scope().parent.name.startswith('polyphony.io.Queue'):
                         return
                     port_sym = ir.src.func.tail()
-                    protocol = port_sym.typ.get_protocol()
-                    if protocol == 'none' and ir.src.func.attr.name in ('rd', 'edge'):
+                    if ir.src.func.attr.name in ('rd', 'edge'):
                         pass
                     else:
                         return

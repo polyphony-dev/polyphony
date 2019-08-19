@@ -99,6 +99,8 @@ class TypePropagation(IRVisitor):
             else:
                 fun_name = env.callop_name
             func_sym = clazz.find_sym(fun_name)
+            if not func_sym:
+                fail(self.current_stm, Errors.IS_NOT_CALLABLE, [clazz.name])
             assert func_sym.typ.is_function()
             ir.func = ATTR(ir.func, clazz.symbols[fun_name], Ctx.LOAD)
             ir.func.attr_scope = clazz
@@ -905,7 +907,7 @@ class SynthesisParamChecker(object):
         for sym in syms:
             if not sym.typ.is_port():
                 continue
-            if sym.typ.get_scope().orig_name.startswith('Port') and sym.typ.get_protocol() == 'none':
+            if sym.typ.get_scope().orig_name.startswith('Port'):
                 continue
             usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
             usestms = [stm for stm in usestms if stm.block in loop.blocks()]

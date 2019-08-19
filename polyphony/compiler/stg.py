@@ -1070,7 +1070,6 @@ class AHDLTranslator(IRVisitor):
         dtype = port_sym.typ.get_dtype()
         width = dtype.get_width()
         port_scope = port_sym.typ.get_scope()
-        protocol = port_sym.typ.get_protocol()
         # kind and direction might be changed at root
         # so we use root_sym.typ
         kind = root_sym.typ.get_port_kind()
@@ -1078,11 +1077,7 @@ class AHDLTranslator(IRVisitor):
         assert direction != '?'
         assigned = root_sym.typ.get_assigned()
         if port_scope.orig_name.startswith('Port'):
-            if 'pipelined_port' in tags and protocol == 'ready_valid':
-                # this port is already replaced to seq_port
-                pass
-            else:
-                tags.add('single_port')
+            tags.add('single_port')
             if dtype.has_signed() and dtype.get_signed():
                 tags.add('int')
         elif port_scope.orig_name.startswith('Queue'):
@@ -1115,24 +1110,8 @@ class AHDLTranslator(IRVisitor):
         if 'output' in tags and not assigned:
             tags.add('reg')
         is_pipeline_access = self.current_stm.block.synth_params['scheduling'] == 'pipeline'
-        adapter_sig = None
         if root_sym.is_pipelined() and is_pipeline_access:
             tags.add('pipelined_port')
-            if 'single_port' in tags and protocol == 'ready_valid':
-                if kind == 'internal':
-                    tags.remove('single_port')
-                    tags.remove('reg')
-                    tags.add('fifo_port')
-                    tags.add('seq_port')
-                    port_sym.typ.set_maxsize(3)  # TODO:
-                elif kind == 'external':
-                    tags.add('adaptered')
-                    name = port_name + '_adapter_fifo'
-                    adapter_sig = self.hdlmodule.gen_sig(name, width, {'fifo_port', 'seq_port'})
-                    adapter_sig.maxsize = 3
-
-        if protocol != 'none':
-            tags.add(protocol + '_protocol')
 
         if 'extport' in tags:
             port_sig = self.hdlmodule.gen_sig(port_name, width, tags, port_sym)
@@ -1149,10 +1128,8 @@ class AHDLTranslator(IRVisitor):
             port_sig.init_value = port_sym.typ.get_init()
         if port_sym.typ.has_maxsize():
             port_sig.maxsize = port_sym.typ.get_maxsize()
-        if port_sig.is_adaptered() and adapter_sig:
-            port_sig.adapter_sig = adapter_sig
         # TODO: get_rewritable to be always available
-        if 'single_port' in tags and protocol == 'none':
+        if 'single_port' in tags:
             if port_sym.typ.get_rewritable():
                 tags.add('rewritable')
         return port_sig
@@ -1190,7 +1167,7 @@ class AHDLTranslator(IRVisitor):
                             src,
                             port_sig.is_output())
         # TODO: Do not use AHDL_SEQ
-        if port_sig.is_single_port() and port_sig.sym.typ.get_protocol() == 'none':
+        if port_sig.is_single_port():
             self._emit(iow, self.sched_time)
         else:
             step_n = self.node.latency()
@@ -1206,7 +1183,7 @@ class AHDLTranslator(IRVisitor):
                            dst,
                            port_sig.is_input())
         # TODO: Do not use AHDL_SEQ
-        if port_sig.is_single_port() and port_sig.sym.typ.get_protocol() == 'none':
+        if port_sig.is_single_port():
             self._emit(ior, self.sched_time)
         else:
             step_n = self.node.latency()

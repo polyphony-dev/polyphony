@@ -8,14 +8,12 @@ class Signal(Tagged):
         'regarray', 'netarray',
         'input', 'output', 'parameter',
         'extport',
-        'valid_protocol', 'ready_valid_protocol',
         'statevar',
         'field', 'ctrl', 'memif', 'onehot',
         'single_port', 'seq_port', 'fifo_port', 'pipelined_port',
         'initializable',
         'induction',
         'pipeline_ctrl',
-        'adaptered',
         'rewritable',
     }
 

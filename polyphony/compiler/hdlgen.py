@@ -88,25 +88,6 @@ class HDLModuleBuilder(object):
             # we have never accessed this interface
             return
         self.hdlmodule.add_accessor(acc.acc_name, acc)
-        # deal with pipelined single port
-        if sub_module_inf.signal and sub_module_inf.signal.is_single_port():
-            acc_signal = self.hdlmodule.signals[acc.acc_name]
-            # we should check acc_signal for the context of caller
-            # (it is accessed in pipeline or not)
-            if acc_signal.is_pipelined_port() and sub_module_inf.signal.is_adaptered():
-                adapter_name = '{}_{}'.format(acc.inst_name,
-                                              sub_module_inf.signal.adapter_sig.name)
-                adapter_sig = self.hdlmodule.gen_sig(adapter_name, sub_module_inf.signal.width)
-                self._add_fifo_channel(adapter_sig)
-                if sub_module_inf.signal.is_input():
-                    item = single_output_port_fifo_adapter(self.hdlmodule,
-                                                           sub_module_inf.signal,
-                                                           acc.inst_name)
-                else:
-                    item = single_input_port_fifo_adapter(self.hdlmodule,
-                                                          sub_module_inf.signal,
-                                                          acc.inst_name)
-                self.hdlmodule.add_decl('', item)
 
     def _add_roms(self, memnodes):
         mrg = env.memref_graph
@@ -193,13 +174,6 @@ class HDLModuleBuilder(object):
         inf = create_single_port_interface(signal)
         if inf:
             self.hdlmodule.add_interface(inf.if_name, inf)
-        if signal.is_adaptered():
-            self._add_fifo_channel(signal.adapter_sig)
-            if signal.is_input():
-                item = single_input_port_fifo_adapter(self.hdlmodule, signal)
-            else:
-                item = single_output_port_fifo_adapter(self.hdlmodule, signal)
-            self.hdlmodule.add_decl('', item)
 
     def _add_internal_fifo(self, signal):
         if signal.is_fifo_port():
@@ -228,8 +202,6 @@ class HDLModuleBuilder(object):
     def _add_reset_stms(self, fsm, defs, uses, outputs):
         fsm_name = fsm.name
         for acc in self.hdlmodule.accessors.values():
-            if acc.inf.signal and acc.inf.signal.is_adaptered():
-                continue
             for stm in acc.reset_stms():
                 self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         # reset output ports
@@ -560,11 +532,6 @@ class AHDLVarCollector(AHDLVisitor):
         elif ahdl.sig.is_output():
             self.output_temps.add(ahdl.sig)
         else:
-            if ahdl.sig.is_adaptered():
-                if ahdl.ctx & Ctx.STORE:
-                    self.local_defs.add(ahdl.sig.adapter_sig)
-                else:
-                    self.local_uses.add(ahdl.sig.adapter_sig)
             if ahdl.ctx & Ctx.STORE:
                 self.local_defs.add(ahdl.sig)
             else:

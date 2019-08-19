@@ -226,8 +226,7 @@ class VerilogCodeGen(AHDLVisitor):
                 assert False
             else:
                 # WORKAROUND
-                if (isinstance(interface, SingleWriteInterface) and
-                        not (interface.signal.is_valid_protocol() or interface.signal.is_ready_valid_protocol())):
+                if isinstance(interface, SingleWriteInterface):
                     net_typ = 'wire' if interface.signal and not interface.signal.is_reg() else 'reg'
                 else:
                     net_typ = 'reg'
