@@ -195,12 +195,11 @@ def suite_main():
     else:
         procs = (suite, error_test, warn_test)
 
-    ignores = []
-    add_files(ignores, default_ignores)
-
     fails = 0
     if options.full:
         for case in SUITE_CASES:
+            ignores = []
+            add_files(ignores, default_ignores)
             if not options.silent:
                 pprint(case)
             add_files(ignores, case['ignores'])
@@ -211,6 +210,8 @@ def suite_main():
             results = [p(options, ignores) for p in procs]
             fails += sum(results)
     else:
+        ignores = []
+        add_files(ignores, default_ignores)
         if ignores and not options.silent:
             print('NOTE: these files will be ignored')
             print(ignores)
