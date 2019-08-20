@@ -362,6 +362,13 @@ class Type(object):
         return Type('port', **d)
 
     @classmethod
+    def channel(cls, chancls, attrs):
+        assert isinstance(attrs, dict)
+        d = {'scope':chancls}
+        d.update(attrs)
+        return Type('channel', **d)
+
+    @classmethod
     def namespace(cls, scope):
         return Type('namespace', scope=scope)
 

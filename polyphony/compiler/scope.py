@@ -27,7 +27,7 @@ class Scope(Tagged):
         'testbench', 'pure', 'timed', 'comb', 'assigned',
         'module', 'worker', 'loop_worker', 'instantiated',
         'lib', 'namespace', 'builtin', 'decorator',
-        'port', 'typeclass',
+        'port', 'channel', 'typeclass',
         'function_module',
         'inlinelib', 'unflatten',
         'package', 'directory'

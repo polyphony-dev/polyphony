@@ -41,3 +41,22 @@ class Reg:
     @inlinelib
     def __init__(self, initv=0) -> object:
         self.v = initv  # meta: symbol=register
+
+
+class Channel:
+    def __init__(self, dtype:generic, maxsize:int=1) -> object:
+        pass
+
+    def get(self) -> generic:
+        pass
+
+    def put(self, v:generic) -> None:
+        pass
+
+    @predicate
+    def empty(self) -> bool:
+        pass
+
+    @predicate
+    def full(self) -> bool:
+        pass

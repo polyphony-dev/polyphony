@@ -57,6 +57,8 @@ class HDLModuleBuilder(object):
         for callee_scope, inst_names in scope.callee_instances.items():
             if callee_scope.is_port():
                 continue
+            if callee_scope.is_channel():
+                continue
             if callee_scope.is_lib():
                 continue
             inst_scope_name = callee_scope.orig_name
@@ -165,18 +167,13 @@ class HDLModuleBuilder(object):
                 moves.extend([code for code in state.traverse() if code.is_a(AHDL_MOVE)])
         return moves
 
-    def _add_seq_interface(self, signal):
-        inf = create_seq_interface(signal)
-        if inf:
-            self.hdlmodule.add_interface(inf.if_name, inf)
-
     def _add_single_port_interface(self, signal):
         inf = create_single_port_interface(signal)
         if inf:
             self.hdlmodule.add_interface(inf.if_name, inf)
 
     def _add_internal_fifo(self, signal):
-        if signal.is_fifo_port():
+        if signal.is_channel():
             fifo_module = FIFOModule(signal)
         else:
             assert False
@@ -214,7 +211,7 @@ class HDLModuleBuilder(object):
                     self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         # reset local ports
         for sig in uses:
-            if sig.is_seq_port() or sig.is_single_port():
+            if sig.is_channel() or sig.is_single_port():
                 local_accessors = self.hdlmodule.local_readers.values()
                 accs = [acc for acc in local_accessors if acc.inf.signal is sig]
                 for acc in accs:
@@ -222,7 +219,7 @@ class HDLModuleBuilder(object):
                         self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         for sig in defs:
             # reset internal ports
-            if sig.is_seq_port() or sig.is_single_port():
+            if sig.is_channel() or sig.is_single_port():
                 local_accessors = self.hdlmodule.local_writers.values()
                 accs = [acc for acc in local_accessors if acc.inf.signal is sig]
                 for acc in accs:
@@ -424,8 +421,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         for sig in signals.values():
             if sig.is_single_port():
                 self._add_single_port_interface(sig)
-            elif sig.is_seq_port():
-                self._add_seq_interface(sig)
 
     def _process_connector_port(self, hdlmodule):
         signals = hdlmodule.get_signals()
@@ -433,7 +428,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         for sig in signals.values():
             if sig.is_input() or sig.is_output():
                 continue
-            elif sig.is_seq_port():
+            elif sig.is_channel():
                 self._add_fifo_channel(sig)
 
     def _process_fsm(self, fsm):
@@ -525,9 +520,7 @@ class AHDLVarCollector(AHDLVisitor):
         if ahdl.sig.is_ctrl() or ahdl.sig.name in self.module_constants:
             pass
         elif ahdl.sig.is_input():
-            if ahdl.sig.is_seq_port():
-                self.output_temps.add(ahdl.sig)
-            elif ahdl.sig.is_single_port():
+            if ahdl.sig.is_single_port():
                 self.output_temps.add(ahdl.sig)
         elif ahdl.sig.is_output():
             self.output_temps.add(ahdl.sig)

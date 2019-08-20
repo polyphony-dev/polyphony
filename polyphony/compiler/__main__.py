@@ -9,6 +9,7 @@ from .bitwidth import TempVarWidthSetter
 from .builtin import builtin_symbols
 from .cfgopt import BlockReducer, PathExpTracer
 from .cfgopt import HyperBlockBuilder
+from .channelconverter import ChannelConverter
 from .common import read_source
 from .constopt import ConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
@@ -214,6 +215,10 @@ def flattenport(driver, scope):
 
 def convport(driver):
     PortConverter().process_all()
+
+
+def convchannel(driver):
+    ChannelConverter().process_all()
 
 
 def earlyquadruple(driver, scope):
@@ -706,6 +711,7 @@ def compile_plan():
         usedef,
         flattenmodule,
         scalarize,
+        dbg(dumpscope),
         scopegraph,
         dbg(dumpscope),
         usedef,
@@ -764,6 +770,7 @@ def compile_plan():
         phase(env.PHASE_4),
         usedef,
         convport,
+        convchannel,
         scopegraph,
         phase(env.PHASE_5),
         fieldusedef,

@@ -6,7 +6,6 @@ import sys
 import builtins as python_builtins
 from .block import Block
 from .builtin import builtin_symbols, append_builtin
-from .builtin import lib_port_type_names
 from .common import fail
 from .env import env
 from .errors import Errors
@@ -369,8 +368,10 @@ class ScopeVisitor(ast.NodeVisitor):
             synth_params.update({'scheduling':'timed'})
 
         scope_qualified_name = (outer_scope.name + '.' + node.name)
-        if scope_qualified_name in lib_port_type_names:
+        if scope_qualified_name == 'polyphony.io.Port':
             tags |= {'port', 'lib'}
+        if scope_qualified_name == 'polyphony.Channel':
+            tags |= {'channel', 'lib'}
         if outer_scope.name == 'polyphony.typing':
             tags |= {'typeclass', 'lib'}
         if outer_scope.is_builtin():

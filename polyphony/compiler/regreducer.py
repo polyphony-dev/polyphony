@@ -41,6 +41,9 @@ class AliasVarDetector(IRVisitor):
                 WORKAROUND = True
                 if WORKAROUND:
                     if ir.src.func_scope().parent.name.startswith('polyphony.io.Queue'):
+                        assert False
+                        return
+                    if ir.src.func_scope().parent.name.startswith('polyphony.Channel'):
                         return
                     port_sym = ir.src.func.tail()
                     if ir.src.func.attr.name in ('rd', 'edge'):

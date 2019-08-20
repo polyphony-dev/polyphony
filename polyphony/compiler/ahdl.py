@@ -393,6 +393,32 @@ class AHDL_IO_WRITE(AHDL_STM):
                                               repr(self.src))
 
 
+class AHDL_CHANNEL_GET(AHDL_STM):
+    def __init__(self, c, dst):
+        super().__init__()
+        self.c = c
+        self.dst = dst
+
+    def __str__(self):
+        return f'{self.dst} <= {self.c}.get()'
+
+    def __repr__(self):
+        return f'AHDL_CHANNEL_GET({repr(self.c)}, {repr(self.dst)})'
+
+
+class AHDL_CHANNEL_PUT(AHDL_STM):
+    def __init__(self, c, src):
+        super().__init__()
+        self.c = c
+        self.src = src
+
+    def __str__(self):
+        return f'{self.c}.put({self.src})'
+
+    def __repr__(self):
+        return f'AHDL_CHANNEL_PUT({repr(self.c)}, {repr(self.src)})'
+
+
 class AHDL_SEQ(AHDL_STM):
     def __init__(self, factor, step, step_n):
         super().__init__()

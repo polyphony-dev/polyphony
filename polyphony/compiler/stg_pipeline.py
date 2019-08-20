@@ -195,7 +195,7 @@ class PipelineStageBuilder(STGItemBuilder):
                 assert isinstance(item, AHDL)
                 # FIXME: should check the use of wait function
                 for seq in item.find_ahdls(AHDL_SEQ):
-                    if seq.find_ahdls([AHDL_IO_READ, AHDL_IO_WRITE]):
+                    if seq.find_ahdls([AHDL_CHANNEL_GET, AHDL_CHANNEL_PUT]):
                         return False
         return True
 
@@ -255,10 +255,10 @@ class PipelineStageBuilder(STGItemBuilder):
         for c in stage.codes:
             for seq in c.find_ahdls(AHDL_SEQ):
                 if seq.step == 0:
-                    ahdl_io = seq.find_ahdls([AHDL_IO_READ, AHDL_IO_WRITE])
-                    if ahdl_io:
+                    ahdl_chan = seq.find_ahdls([AHDL_CHANNEL_GET, AHDL_CHANNEL_PUT])
+                    if ahdl_chan:
                         stage.has_enable = True
-                        if any([a.is_a(AHDL_IO_WRITE) for a in ahdl_io]):
+                        if any([a.is_a(AHDL_CHANNEL_PUT) for a in ahdl_chan]):
                             stage.is_source = True
         for c in stage.codes[:]:
             if self._check_guard_need(c):

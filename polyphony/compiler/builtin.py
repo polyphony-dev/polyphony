@@ -27,11 +27,3 @@ def append_builtin(namespace, scope):
         assert False
     sym = Symbol(name, namespace, {'builtin'}, t)
     builtin_symbols[name] = sym
-
-
-lib_port_type_names = (
-    'polyphony.io.Port',
-    'polyphony.io.Queue',
-)
-
-lib_class_names = lib_port_type_names

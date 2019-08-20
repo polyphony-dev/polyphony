@@ -654,8 +654,7 @@ class ResourceExtractor(IRVisitor):
     def visit_CALL(self, ir):
         self.ops[self.current_node][ir.func_scope()] += 1
         func_name = ir.func_scope().name
-        if (func_name.startswith('polyphony.io.Port') or
-                func_name.startswith('polyphony.io.Queue')):
+        if func_name.startswith('polyphony.io.Port'):
             inst_ = ir.func.tail()
             self.ports[self.current_node].append(inst_)
         super().visit_CALL(ir)

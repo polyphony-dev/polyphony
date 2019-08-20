@@ -219,6 +219,7 @@ class Warnings(Enum):
     EXCEPTION_RAISED = 101
 
     PORT_IS_NOT_USED = 1000
+    CHANNEL_IS_NOT_USED = 1001
 
     RULE_PIPELINE_HAS_MEM_READ_CONFLICT = 1130
     RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT = 1131
@@ -237,6 +238,8 @@ WARNING_MESSAGES = {
 (For more information you can use '--verbose' option)",
     Warnings.PORT_IS_NOT_USED:
         "Port '{}' is not used at all",
+    Warnings.CHANNEL_IS_NOT_USED:
+        "Channel '{}' is not used at all",
     Warnings.RULE_PIPELINE_HAS_MEM_READ_CONFLICT:
         "There is a read conflict at '{}' in a pipeline, II will be adjusted",
     Warnings.RULE_PIPELINE_HAS_MEM_WRITE_CONFLICT:

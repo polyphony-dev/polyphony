@@ -88,7 +88,7 @@ class AHDLUseDefDetector(AHDLVisitor):
                 self.table.add_sig_use(ahdl.sig, self.current_stm, self.current_state)
 
     def visit_AHDL_SEQ(self, ahdl):
-        if ahdl.factor.is_a([AHDL_LOAD, AHDL_IO_READ]):
+        if ahdl.factor.is_a([AHDL_LOAD, AHDL_CHANNEL_GET]):
             if ahdl.step == 0:
                 # only first item can be valid 'use' in load sequence
                 self.enable_def = False
@@ -98,7 +98,7 @@ class AHDLUseDefDetector(AHDLVisitor):
             else:
                 self.enable_def = False
                 self.enable_use = False
-        elif ahdl.factor.is_a([AHDL_STORE, AHDL_IO_WRITE]):
+        elif ahdl.factor.is_a([AHDL_STORE, AHDL_CHANNEL_PUT]):
             if ahdl.step == 0:
                 # only first item can be valid 'use' in store sequence
                 pass

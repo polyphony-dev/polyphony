@@ -221,10 +221,6 @@ class WorkerInstantiator(object):
                     # adjust the index for the first parameter of append_worker()
                     i -= 1
                 binding.append((bind_val, i, arg.value))
-            elif (arg.is_a([TEMP, ATTR]) and
-                    arg.symbol().typ.is_object() and
-                    arg.symbol().typ.get_scope().is_port()):
-                pass
             else:
                 pass
 

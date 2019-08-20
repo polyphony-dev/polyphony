@@ -767,15 +767,16 @@ def fifo_read_seq(inf, step, dst):
 
     if step == 0:
         args = [AHDL_CONST(0), empty]
-        return (AHDL_META_WAIT('WAIT_VALUE', *args), )
+        return (AHDL_META_WAIT('WAIT_VALUE', *args),
+                AHDL_MOVE(read, AHDL_CONST(1)),)
     elif step == 1:
-        return (AHDL_MOVE(read, AHDL_CONST(1)), )
-    elif step == 2:
         if dst:
             return (AHDL_MOVE(read, AHDL_CONST(0)),
                     AHDL_MOVE(dst, dout))
         else:
             return (AHDL_MOVE(read, AHDL_CONST(0)),)
+    else:
+        assert False
 
 
 def fifo_pipelined_read_seq(inf, step, dst, stage):
@@ -811,15 +812,15 @@ def fifo_write_seq(inf, step, src):
     full = port2ahdl(inf, 'full')
     write = port2ahdl(inf, 'write')
     din = port2ahdl(inf, 'din')
-
     if step == 0:
         args = [AHDL_CONST(0), full]
-        return (AHDL_META_WAIT('WAIT_VALUE', *args), )
-    elif step == 1:
-        return (AHDL_MOVE(write, AHDL_CONST(1)),
+        return (AHDL_META_WAIT('WAIT_VALUE', *args),
+                AHDL_MOVE(write, AHDL_CONST(1)),
                 AHDL_MOVE(din, src))
-    elif step == 2:
+    elif step == 1:
         return (AHDL_MOVE(write, AHDL_CONST(0)), )
+    else:
+        assert False
 
 
 def fifo_pipelined_write_seq(inf, step, src, stage):
@@ -1021,14 +1022,15 @@ class PipelinedFIFOWriteAccessor(FIFOWriteAccessor):
 def create_local_accessor(signal):
     assert not signal.is_input() and not signal.is_output()
     if signal.is_single_port():
-        if signal.is_pipelined_port():
+        assert False
+        if signal.is_pipelined():
             reader = PipelinedSingleWriteInterface(signal).accessor('')
             writer = PipelinedSingleReadInterface(signal).accessor('')
         else:
             reader = SingleWriteInterface(signal).accessor('')
             writer = SingleReadInterface(signal).accessor('')
-    elif signal.is_fifo_port():
-        if signal.is_pipelined_port():
+    elif signal.is_channel():
+        if signal.is_pipelined():
             reader = PipelinedFIFOWriteInterface(signal).accessor('')
             writer = PipelinedFIFOReadInterface(signal).accessor('')
         else:
@@ -1040,31 +1042,15 @@ def create_local_accessor(signal):
 def create_single_port_interface(signal):
     inf = None
     if signal.is_input():
-        if signal.is_pipelined_port():
+        if signal.is_pipelined():
             inf = PipelinedSingleReadInterface(signal)
         else:
             inf = SingleReadInterface(signal)
     elif signal.is_output():
-        if signal.is_pipelined_port():
+        if signal.is_pipelined():
             inf = PipelinedSingleWriteInterface(signal)
         else:
             inf = SingleWriteInterface(signal)
-    return inf
-
-
-def create_seq_interface(signal):
-    inf = None
-    if signal.is_fifo_port():
-        if signal.is_input():
-            if signal.is_pipelined_port():
-                inf = PipelinedFIFOReadInterface(signal)
-            else:
-                inf = FIFOReadInterface(signal)
-        elif signal.is_output():
-            if signal.is_pipelined_port():
-                inf = PipelinedFIFOWriteInterface(signal)
-            else:
-                inf = FIFOWriteInterface(signal)
     return inf
 
 

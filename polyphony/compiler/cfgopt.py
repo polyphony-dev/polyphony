@@ -3,7 +3,7 @@ from .block import Block
 from .dominator import DominatorTreeBuilder
 from .env import env
 from .ir import *
-from .irhelper import reduce_relexp, is_port_method_call
+from .irhelper import reduce_relexp
 from .type import Type
 from .usedef import UseDefDetector
 from .utils import remove_except_one, unique
@@ -475,14 +475,6 @@ class HyperBlockBuilder(object):
             return stm.src.mem
         elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
             return stm.exp.mem
-        else:
-            return None
-
-    def _try_get_port(self, stm):
-        if stm.is_a(MOVE) and is_port_method_call(stm.src):
-            return stm.src.func.tail()
-        elif stm.is_a(EXPR) and is_port_method_call(stm.exp):
-            return stm.src.func.tail()
         else:
             return None
 

@@ -759,6 +759,8 @@ class AHDLTranslator(IRVisitor):
 
         if self._is_port_method(ir.exp):
             return self._make_port_access(ir.exp, None)
+        if self._is_channel_method(ir.exp):
+            return self._make_channel_access(ir.exp, None)
         elif self._is_module_method(ir.exp):
             return
         if ir.exp.is_a(CALL):
@@ -841,6 +843,8 @@ class AHDLTranslator(IRVisitor):
         if ir.src.is_a([CALL, NEW]):
             if self._is_port_method(ir.src):
                 return self._make_port_access(ir.src, ir.dst)
+            elif self._is_channel_method(ir.src):
+                return self._make_channel_access(ir.src, ir.dst)
             elif self._is_port_ctor(ir.src):
                 return self._make_port_init(ir.src, ir.dst)
             elif self._is_module_method(ir.src):
@@ -853,6 +857,8 @@ class AHDLTranslator(IRVisitor):
             elif ir.src.sym.typ.is_object() and ir.src.sym.typ.get_scope().is_module():
                 return
             elif ir.src.sym.typ.is_port():
+                return
+            elif ir.src.sym.typ.is_channel():
                 return
         src = self.visit(ir.src)
         dst = self.visit(ir.dst)
@@ -1050,6 +1056,9 @@ class AHDLTranslator(IRVisitor):
     def _is_port_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_port()
 
+    def _is_channel_method(self, ir):
+        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_channel()
+
     def _is_port_ctor(self, ir):
         return ir.is_a(NEW) and ir.func_scope().is_port()
 
@@ -1076,19 +1085,13 @@ class AHDLTranslator(IRVisitor):
         direction = root_sym.typ.get_direction()
         assert direction != '?'
         assigned = root_sym.typ.get_assigned()
-        if port_scope.orig_name.startswith('Port'):
-            tags.add('single_port')
-            if dtype.has_signed() and dtype.get_signed():
-                tags.add('int')
-        elif port_scope.orig_name.startswith('Queue'):
-            # TODO
-            tags.add('fifo_port')
-            tags.add('seq_port')
+        assert port_scope.orig_name.startswith('Port')
+        tags.add('single_port')
+        if dtype.has_signed() and dtype.get_signed():
+            tags.add('int')
 
         if kind == 'internal':
-            if 'seq_port' in tags:
-                pass  # tag?
-            elif assigned:
+            if assigned:
                 tags.add('net')
             else:
                 tags.add('reg')
@@ -1111,7 +1114,7 @@ class AHDLTranslator(IRVisitor):
             tags.add('reg')
         is_pipeline_access = self.current_stm.block.synth_params['scheduling'] == 'pipeline'
         if root_sym.is_pipelined() and is_pipeline_access:
-            tags.add('pipelined_port')
+            tags.add('pipelined')
 
         if 'extport' in tags:
             port_sig = self.hdlmodule.gen_sig(port_name, width, tags, port_sym)
@@ -1129,9 +1132,8 @@ class AHDLTranslator(IRVisitor):
         if port_sym.typ.has_maxsize():
             port_sig.maxsize = port_sym.typ.get_maxsize()
         # TODO: get_rewritable to be always available
-        if 'single_port' in tags:
-            if port_sym.typ.get_rewritable():
-                tags.add('rewritable')
+        if port_sym.typ.get_rewritable():
+            tags.add('rewritable')
         return port_sig
 
     def _make_port_access(self, call, target):
@@ -1148,15 +1150,6 @@ class AHDLTranslator(IRVisitor):
         elif call.func_scope().orig_name == 'edge':
             self._make_port_edge(target, port_sig, call.args[0][1], call.args[1][1])
         else:
-            if port_sig.is_fifo_port():
-                if call.func_scope().orig_name in ('full', 'empty'):
-                    if target:
-                        dst = self.visit(target)
-                        sig_name = f'{port_sig.name}_{call.func_scope().orig_name}'
-                        sig = self.hdlmodule.gen_sig(sig_name, 1)
-                        src = AHDL_VAR(sig, Ctx.LOAD)
-                        self._emit(AHDL_MOVE(dst, src), self.sched_time)
-                    return
             assert False
 
     def _make_port_write_seq(self, call, port_sig):
@@ -1166,13 +1159,8 @@ class AHDLTranslator(IRVisitor):
         iow = AHDL_IO_WRITE(AHDL_VAR(port_sig, Ctx.STORE),
                             src,
                             port_sig.is_output())
-        # TODO: Do not use AHDL_SEQ
-        if port_sig.is_single_port():
-            self._emit(iow, self.sched_time)
-        else:
-            step_n = self.node.latency()
-            for i in range(step_n):
-                self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i)
+        assert port_sig.is_single_port()
+        self._emit(iow, self.sched_time)
 
     def _make_port_read_seq(self, target, port_sig):
         if target:
@@ -1182,15 +1170,8 @@ class AHDLTranslator(IRVisitor):
         ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
                            dst,
                            port_sig.is_input())
-        # TODO: Do not use AHDL_SEQ
-        if port_sig.is_single_port():
-            self._emit(ior, self.sched_time)
-        else:
-            step_n = self.node.latency()
-            if step_n == 0:
-                step_n = 1
-            for i in range(step_n):
-                self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
+        assert port_sig.is_single_port()
+        self._emit(ior, self.sched_time)
 
     def _make_port_assign(self, scope_sym, port_sig):
         assert scope_sym.typ.is_function()
@@ -1232,6 +1213,78 @@ class AHDLTranslator(IRVisitor):
 
     def _is_module_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_module()
+
+    def _channel_sig(self, channel_qsym):
+        assert channel_qsym[-1].typ.is_channel()
+        channel_sym = channel_qsym[-1]
+        root_sym = channel_sym.typ.get_root_symbol()
+        channel_prefixes = channel_qsym[:-1] + (root_sym,)
+
+        if channel_prefixes[0].name == env.self_name:
+            channel_prefixes = channel_prefixes[1:]
+        channel_name = '_'.join([pfx.hdl_name() for pfx in channel_prefixes])
+
+        dtype = channel_sym.typ.get_dtype()
+        width = dtype.get_width()
+        tags = {'channel'}
+        is_pipeline_access = self.current_stm.block.synth_params['scheduling'] == 'pipeline'
+        if root_sym.is_pipelined() and is_pipeline_access:
+            tags.add('pipelined')
+        if root_sym.scope.is_module():
+            module_scope = root_sym.scope
+        elif root_sym.scope.is_ctor() and root_sym.scope.parent.is_module():
+            module_scope = root_sym.scope.parent
+        else:
+            assert False
+        channel_sig = env.hdlmodule(channel_sym.scope).signal(channel_name)
+        if channel_sig:
+            channel_sig.tags.update(tags)
+            return channel_sig
+        channel_sig = env.hdlmodule(module_scope).gen_sig(channel_name, width, tags, channel_sym)
+        if channel_sym.typ.has_maxsize():
+            channel_sig.maxsize = channel_sym.typ.get_maxsize()
+        return channel_sig
+
+    def _make_channel_access(self, call, target):
+        assert call.func.is_a(ATTR)
+        channel_qsym = call.func.qualified_symbol()[:-1]
+        channel_sig = self._channel_sig(channel_qsym)
+
+        if call.func_scope().orig_name == 'put':
+            self._make_channel_put_seq(call, channel_sig)
+        elif call.func_scope().orig_name == 'get':
+            self._make_channel_get_seq(target, channel_sig)
+        elif call.func_scope().orig_name in ('full', 'empty'):
+            if target:
+                dst = self.visit(target)
+                sig_name = f'{channel_sig.name}_{call.func_scope().orig_name}'
+                sig = self.hdlmodule.gen_sig(sig_name, 1)
+                src = AHDL_VAR(sig, Ctx.LOAD)
+                self._emit(AHDL_MOVE(dst, src), self.sched_time)
+            return
+        else:
+            assert False
+
+    def _make_channel_put_seq(self, call, channel_sig):
+        assert call.args
+        _, val = call.args[0]
+        src = self.visit(val)
+        iow = AHDL_CHANNEL_PUT(AHDL_VAR(channel_sig, Ctx.STORE), src)
+        step_n = self.node.latency()
+        for i in range(step_n):
+            self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i)
+
+    def _make_channel_get_seq(self, target, channel_sig):
+        if target:
+            dst = self.visit(target)
+        else:
+            dst = None
+        ior = AHDL_CHANNEL_GET(AHDL_VAR(channel_sig, Ctx.LOAD), dst)
+        step_n = self.node.latency()
+        if step_n == 0:
+            step_n = 1
+        for i in range(step_n):
+            self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
 
 
 class AHDLCombTranslator(AHDLTranslator):

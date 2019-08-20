@@ -28,6 +28,7 @@ DIRS = (
     'import',
     'timed',
     'io',
+    'channel',
     'module',
     'unroll',
     'pipeline',

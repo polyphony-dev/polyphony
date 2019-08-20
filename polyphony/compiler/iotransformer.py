@@ -47,37 +47,27 @@ class IOTransformer(AHDLVisitor):
         callinf = self.hdlmodule.interfaces['']
         return callinf.callee_epilog(step, ahdl.name)
 
-    def visit_AHDL_IO_READ_SEQ(self, ahdl, step, step_n):
-        if ahdl.is_self:
-            io = self.hdlmodule.find_interface(ahdl.io.sig.name)
-        elif ahdl.io.sig.is_extport():
-            io = self.hdlmodule.accessors[ahdl.io.sig.name]
-        else:
-            io = self.hdlmodule.local_readers[ahdl.io.sig.name]
+    def visit_AHDL_CHANNEL_GET_SEQ(self, ahdl, step, step_n):
+        chan = self.hdlmodule.local_readers[ahdl.c.sig.name]
         if isinstance(self.current_state, PipelineState):
             assert isinstance(self.current_stage, PipelineStage)
-            local_stms, stage_stms = io.pipelined_read_sequence(step, step_n, ahdl.dst,
-                                                                self.current_stage)
+            local_stms, stage_stms = chan.pipelined_read_sequence(step, step_n, ahdl.dst,
+                                                                  self.current_stage)
             self.current_stage.codes.extend(stage_stms)
             return local_stms
         else:
-            return io.read_sequence(step, step_n, ahdl.dst)
+            return chan.read_sequence(step, step_n, ahdl.dst)
 
-    def visit_AHDL_IO_WRITE_SEQ(self, ahdl, step, step_n):
-        if ahdl.is_self:
-            io = self.hdlmodule.find_interface(ahdl.io.sig.name)
-        elif ahdl.io.sig.is_extport():
-            io = self.hdlmodule.accessors[ahdl.io.sig.name]
-        else:
-            io = self.hdlmodule.local_writers[ahdl.io.sig.name]
+    def visit_AHDL_CHANNEL_PUT_SEQ(self, ahdl, step, step_n):
+        chan = self.hdlmodule.local_writers[ahdl.c.sig.name]
         if isinstance(self.current_state, PipelineState):
             assert isinstance(self.current_stage, PipelineStage)
-            local_stms, stage_stms = io.pipelined_write_sequence(step, step_n, ahdl.src,
-                                                                 self.current_stage)
+            local_stms, stage_stms = chan.pipelined_write_sequence(step, step_n, ahdl.src,
+                                                                   self.current_stage)
             self.current_stage.codes.extend(stage_stms)
             return local_stms
         else:
-            return io.write_sequence(step, step_n, ahdl.src)
+            return chan.write_sequence(step, step_n, ahdl.src)
 
     def _is_continuous_access_to_mem(self, ahdl):
         other_memnodes = [c.factor.mem.memnode for c in self.current_block.codes

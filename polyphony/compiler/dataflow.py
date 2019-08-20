@@ -1,6 +1,6 @@
 ﻿from collections import defaultdict, deque
 from .ir import *
-from .irhelper import is_port_method_call, has_exclusive_function, has_clkfence
+from .irhelper import is_port_method_call, is_channel_method_call, has_exclusive_function, has_clkfence
 from .env import env
 from . import utils
 from logging import getLogger
@@ -756,7 +756,7 @@ class DFGBuilder(object):
                     call = stm.exp
                 else:
                     continue
-                if is_port_method_call(call):
+                if is_port_method_call(call) or is_channel_method_call(call):
                     node = dfg.find_node(stm)
                     if port_node:
                         dfg.add_seq_edge(port_node, node)
@@ -873,7 +873,7 @@ class DFGBuilder(object):
             call = stm.exp
         else:
             return None
-        if not is_port_method_call(call):
+        if not (is_port_method_call(call) or is_channel_method_call(call)):
             return None
         return call.func.tail()
 
