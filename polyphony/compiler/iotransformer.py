@@ -16,6 +16,7 @@ class IOTransformer(AHDLVisitor):
         self.hdlmodule = hdlmodule
         self.current_block = None
         self.current_stage = None
+        self.old_codes = []
         super().process(hdlmodule)
         self.post_process()
 
@@ -47,7 +48,18 @@ class IOTransformer(AHDLVisitor):
         callinf = self.hdlmodule.interfaces['']
         return callinf.callee_epilog(step, ahdl.name)
 
+    def _is_continuous_access_to_channel(self, ahdl):
+        other_channels = [c.factor.c for c in self.old_codes
+                          if c.is_a([AHDL_SEQ]) and
+                          c.factor.is_a([AHDL_CHANNEL_GET, AHDL_CHANNEL_PUT]) and
+                          c.factor is not ahdl]
+        for c in other_channels:
+            if c.sig is ahdl.c.sig:
+                return True
+        return False
+
     def visit_AHDL_CHANNEL_GET_SEQ(self, ahdl, step, step_n):
+        is_continuous = self._is_continuous_access_to_channel(ahdl)
         chan = self.hdlmodule.local_readers[ahdl.c.sig.name]
         if isinstance(self.current_state, PipelineState):
             assert isinstance(self.current_stage, PipelineStage)
@@ -56,18 +68,20 @@ class IOTransformer(AHDLVisitor):
             self.current_stage.codes.extend(stage_stms)
             return local_stms
         else:
-            return chan.read_sequence(step, step_n, ahdl.dst)
+            return chan.read_sequence(step, step_n, ahdl.dst, is_continuous)
 
     def visit_AHDL_CHANNEL_PUT_SEQ(self, ahdl, step, step_n):
+        is_continuous = self._is_continuous_access_to_channel(ahdl)
         chan = self.hdlmodule.local_writers[ahdl.c.sig.name]
         if isinstance(self.current_state, PipelineState):
             assert isinstance(self.current_stage, PipelineStage)
             local_stms, stage_stms = chan.pipelined_write_sequence(step, step_n, ahdl.src,
-                                                                   self.current_stage)
+                                                                   self.current_stage
+                                                                   )
             self.current_stage.codes.extend(stage_stms)
             return local_stms
         else:
-            return chan.write_sequence(step, step_n, ahdl.src)
+            return chan.write_sequence(step, step_n, ahdl.src, is_continuous)
 
     def _is_continuous_access_to_mem(self, ahdl):
         other_memnodes = [c.factor.mem.memnode for c in self.current_block.codes
@@ -143,8 +157,9 @@ class IOTransformer(AHDLVisitor):
     def visit_AHDL_BLOCK(self, ahdl):
         old_block = self.current_block
         self.current_block = ahdl
-        # we should use copy of codes because it might be changed
-        for code in ahdl.codes[:]:
+        # we should save copy of codes because it might be changed
+        self.old_codes = ahdl.codes[:]
+        for code in self.old_codes:
             self.visit(code)
         self.current_block = old_block
 
@@ -213,7 +228,11 @@ class WaitTransformer(AHDLVisitor):
             cond = AHDL_META_OP(wait_ops[meta_wait.metaid], *meta_wait.args)
             waiting_state = self._build_waiting_state(cond, next_codes)
             true_blk = AHDL_BLOCK('', next_codes)
-            false_blk = AHDL_BLOCK('', [AHDL_TRANSITION(waiting_state)])
+            if meta_wait.waiting_stms:
+                false_codes = meta_wait.waiting_stms[:] + [AHDL_TRANSITION(waiting_state)]
+            else:
+                false_codes = [AHDL_TRANSITION(waiting_state)]
+            false_blk = AHDL_BLOCK('', false_codes)
             wait_block = AHDL_IF([cond, None], [true_blk, false_blk])
             # replace meta_wait
             idx = codes.index(meta_wait)

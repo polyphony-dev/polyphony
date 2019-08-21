@@ -133,22 +133,24 @@ def has_exclusive_function(stm):
         call = stm.exp
     else:
         return False
+    if is_port_method_call(call):
+        if stm.block.synth_params['scheduling'] == 'timed':
+            return False
+        return True
     if is_channel_method_call(call):
-        port = call.func_scope().parent
-        if port.name.startswith('polyphony.Channel'):
-            return True
+        return True
     return False
 
 
 def has_clkfence(stm):
-        if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-                stm.exp.sym.name == 'polyphony.timing.clksleep'):
-            return True
-        elif (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-                stm.exp.sym.name.startswith('polyphony.timing.wait_')):
-            return True
-        else:
-            return False
+    if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+            stm.exp.sym.name == 'polyphony.timing.clksleep'):
+        return True
+    elif (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+            stm.exp.sym.name.startswith('polyphony.timing.wait_')):
+        return True
+    else:
+        return False
 
 
 def eval_unop(op, v):

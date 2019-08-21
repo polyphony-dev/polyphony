@@ -19,6 +19,8 @@ class AHDLCopyOpt(AHDLVisitor):
                 continue
             if sig.is_condition():
                 continue
+            if sig.is_pipeline_ctrl():
+                continue
 
             defs = hdlmodule.usedef.get_stms_defining(sig)
             if len(defs) > 1:

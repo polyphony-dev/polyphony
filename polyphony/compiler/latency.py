@@ -12,11 +12,11 @@ def get_call_latency(call, stm):
         if call.func_scope().name.endswith('.get'):
             if is_pipelined:
                 return UNIT_STEP * 2
-            return UNIT_STEP * 2
+            return UNIT_STEP * 2, UNIT_STEP * 1
         elif call.func_scope().name.endswith('.put'):
             if is_pipelined:
                 return UNIT_STEP * 1
-            return UNIT_STEP * 2
+            return UNIT_STEP * 2, UNIT_STEP * 1
     elif call.func_scope().is_method() and call.func_scope().parent.is_port():
         receiver = call.func.tail()
         assert receiver.typ.is_port()

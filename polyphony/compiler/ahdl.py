@@ -572,10 +572,11 @@ class AHDL_META(AHDL_STM):
 
 
 class AHDL_META_WAIT(AHDL_STM):
-    def __init__(self, *args):
+    def __init__(self, *args, waiting_stms=None):
         super().__init__()
         self.metaid = args[0]
         self.args = list(args[1:])
+        self.waiting_stms = waiting_stms
 
     def __str__(self):
         items = []

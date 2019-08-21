@@ -352,7 +352,8 @@ class BlockBoundedListScheduler(SchedulerImpl):
             seq_preds = [p for p in seq_preds if p.tag.block is block]
             sched_times = []
             if seq_preds:
-                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or (has_exclusive_function(node.tag) and not is_timed_node):
+                #if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or (has_exclusive_function(node.tag) and not is_timed_node):
+                if node.tag.is_a([JUMP, CJUMP, MCJUMP]):
                     latest_node = max(seq_preds, key=lambda p: p.end)
                     sched_time = latest_node.end
                 else:

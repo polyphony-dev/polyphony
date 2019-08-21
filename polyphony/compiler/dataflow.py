@@ -730,6 +730,8 @@ class DFGBuilder(object):
                 if seq_func_node:
                     if self.scope.has_branch_edge(seq_func_node.tag, node.tag):
                         continue
+                    if not has_exclusive_function(stm):
+                        continue
                     dfg.add_seq_edge(seq_func_node, node)
                 if has_exclusive_function(stm):
                     seq_func_node = node
@@ -740,6 +742,8 @@ class DFGBuilder(object):
                 node = dfg.find_node(stm)
                 if seq_func_node:
                     if self.scope.has_branch_edge(node.tag, seq_func_node.tag):
+                        continue
+                    if not has_exclusive_function(stm):
                         continue
                     dfg.add_seq_edge(node, seq_func_node)
                 if has_exclusive_function(stm):

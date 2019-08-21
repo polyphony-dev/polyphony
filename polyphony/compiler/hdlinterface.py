@@ -760,23 +760,37 @@ class RegArrayAccessor(IOAccessor):
         assert src.is_a(AHDL_MEMVAR)
 
 
-def fifo_read_seq(inf, step, dst):
+def fifo_read_seq(inf, step, dst, is_continuous):
     empty = port2ahdl(inf, 'empty')
+    will_empty = port2ahdl(inf, 'will_empty')
     read = port2ahdl(inf, 'read')
     dout = port2ahdl(inf, 'dout')
 
-    if step == 0:
-        args = [AHDL_CONST(0), empty]
-        return (AHDL_META_WAIT('WAIT_VALUE', *args),
-                AHDL_MOVE(read, AHDL_CONST(1)),)
-    elif step == 1:
-        if dst:
-            return (AHDL_MOVE(read, AHDL_CONST(0)),
-                    AHDL_MOVE(dst, dout))
+    if is_continuous:
+        if step == 0:
+            args = [AHDL_CONST(0), AHDL_OP('BitOr', empty, will_empty)]
+            return (AHDL_META_WAIT('WAIT_VALUE', *args,
+                                   waiting_stms=[AHDL_MOVE(read, AHDL_CONST(0))]),
+                    AHDL_MOVE(read, AHDL_CONST(1)))
+        elif step == 1:
+            if dst:
+                return (AHDL_MOVE(dst, dout), )
+            else:
+                return tuple()
         else:
-            return (AHDL_MOVE(read, AHDL_CONST(0)),)
+            assert False
     else:
-        assert False
+        if step == 0:
+            args = [AHDL_CONST(0), AHDL_OP('BitOr', empty, will_empty)]
+            return (AHDL_META_WAIT('WAIT_VALUE', *args),
+                    AHDL_MOVE(read, AHDL_CONST(1)))
+        elif step == 1:
+            if dst:
+                return (AHDL_MOVE(dst, dout), AHDL_MOVE(read, AHDL_CONST(0)))
+            else:
+                return (AHDL_MOVE(read, AHDL_CONST(0)), )
+        else:
+            assert False
 
 
 def fifo_pipelined_read_seq(inf, step, dst, stage):
@@ -808,19 +822,33 @@ def fifo_pipelined_read_seq(inf, step, dst, stage):
     return local_stms, stage_stms
 
 
-def fifo_write_seq(inf, step, src):
+def fifo_write_seq(inf, step, src, is_continuous):
     full = port2ahdl(inf, 'full')
+    will_full = port2ahdl(inf, 'will_full')
     write = port2ahdl(inf, 'write')
     din = port2ahdl(inf, 'din')
-    if step == 0:
-        args = [AHDL_CONST(0), full]
-        return (AHDL_META_WAIT('WAIT_VALUE', *args),
-                AHDL_MOVE(write, AHDL_CONST(1)),
-                AHDL_MOVE(din, src))
-    elif step == 1:
-        return (AHDL_MOVE(write, AHDL_CONST(0)), )
+
+    if is_continuous:
+        if step == 0:
+            args = [AHDL_CONST(0), AHDL_OP('BitOr', full, will_full)]
+            return (AHDL_META_WAIT('WAIT_VALUE', *args,
+                                   waiting_stms=[AHDL_MOVE(write, AHDL_CONST(0))]),
+                    AHDL_MOVE(write, AHDL_CONST(1)),
+                    AHDL_MOVE(din, src))
+        elif step == 1:
+            return tuple()
+        else:
+            assert False
     else:
-        assert False
+        if step == 0:
+            args = [AHDL_CONST(0), AHDL_OP('BitOr', full, will_full)]
+            return (AHDL_META_WAIT('WAIT_VALUE', *args),
+                    AHDL_MOVE(write, AHDL_CONST(1)),
+                    AHDL_MOVE(din, src))
+        elif step == 1:
+            return (AHDL_MOVE(write, AHDL_CONST(0)), )
+        else:
+            assert False
 
 
 def fifo_pipelined_write_seq(inf, step, src, stage):
@@ -856,11 +884,11 @@ class FIFOInterface(Interface):
     def port_name(self, port):
         return self._port_name(port)
 
-    def read_sequence(self, step, step_n, dst):
-        return fifo_read_seq(self, step, dst)
+    def read_sequence(self, step, step_n, dst, is_continuous):
+        return fifo_read_seq(self, step, dst, is_continuous)
 
-    def write_sequence(self, step, step_n, src):
-        return fifo_write_seq(self, step, src)
+    def write_sequence(self, step, step_n, src, is_continuous):
+        return fifo_write_seq(self, step, src, is_continuous)
 
     def reset_stms(self):
         stms = []
@@ -874,11 +902,11 @@ class FIFOAccessor(IOAccessor):
     def __init__(self, inf, inst_name):
         super().__init__(inf, inst_name)
 
-    def read_sequence(self, step, step_n, dst):
-        return fifo_read_seq(self, step, dst)
+    def read_sequence(self, step, step_n, dst, is_continuous):
+        return fifo_read_seq(self, step, dst, is_continuous)
 
-    def write_sequence(self, step, step_n, src):
-        return fifo_write_seq(self, step, src)
+    def write_sequence(self, step, step_n, src, is_continuous):
+        return fifo_write_seq(self, step, src, is_continuous)
 
     def reset_stms(self):
         stms = []
