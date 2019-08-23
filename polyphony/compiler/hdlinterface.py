@@ -352,8 +352,8 @@ class CallInterface(Interface):
             ready = port2ahdl(self, 'ready')
 
             unset_valid = AHDL_MOVE(valid, AHDL_CONST(0))
-            args = [AHDL_CONST(1), ready]
-            wait_ready = AHDL_META_WAIT("WAIT_VALUE", *args)
+            args = ['Eq', AHDL_CONST(1), ready]
+            wait_ready = AHDL_META_WAIT("WAIT_COND", *args)
             return (unset_valid, wait_ready)
 
     def callee_epilog(self, step, name):
@@ -362,8 +362,8 @@ class CallInterface(Interface):
             accept = port2ahdl(self, 'accept')
 
             set_valid = AHDL_MOVE(valid, AHDL_CONST(1))
-            args = [AHDL_CONST(1), accept]
-            wait_accept = AHDL_META_WAIT("WAIT_VALUE", *args)
+            args = ['Eq', AHDL_CONST(1), accept]
+            wait_accept = AHDL_META_WAIT("WAIT_COND", *args)
             return (set_valid, wait_accept)
 
 
@@ -398,8 +398,8 @@ class CallAccessor(IOAccessor):
         elif step == 1:
             seq = [AHDL_MOVE(ready, AHDL_CONST(0))]
         #if step == step_n - 2:
-            args = [AHDL_CONST(1), valid]
-            seq.append(AHDL_META_WAIT('WAIT_VALUE', *args))
+            args = ['Eq', AHDL_CONST(1), valid]
+            seq.append(AHDL_META_WAIT('WAIT_COND', *args))
             for acc, ret in zip(retaccs, ahdl_call.returns):
                 seq.extend(acc.read_sequence(0, step_n, ret))
             seq.append(AHDL_MOVE(accept, AHDL_CONST(1)))
@@ -768,8 +768,8 @@ def fifo_read_seq(inf, step, dst, is_continuous):
 
     if is_continuous:
         if step == 0:
-            args = [AHDL_CONST(0), AHDL_OP('BitOr', empty, will_empty)]
-            return (AHDL_META_WAIT('WAIT_VALUE', *args,
+            args = ['Eq', AHDL_CONST(0), AHDL_OP('BitOr', empty, will_empty)]
+            return (AHDL_META_WAIT('WAIT_COND', *args,
                                    waiting_stms=[AHDL_MOVE(read, AHDL_CONST(0))]),
                     AHDL_MOVE(read, AHDL_CONST(1)))
         elif step == 1:
@@ -781,8 +781,8 @@ def fifo_read_seq(inf, step, dst, is_continuous):
             assert False
     else:
         if step == 0:
-            args = [AHDL_CONST(0), AHDL_OP('BitOr', empty, will_empty)]
-            return (AHDL_META_WAIT('WAIT_VALUE', *args),
+            args = ['Eq', AHDL_CONST(0), AHDL_OP('BitOr', empty, will_empty)]
+            return (AHDL_META_WAIT('WAIT_COND', *args),
                     AHDL_MOVE(read, AHDL_CONST(1)))
         elif step == 1:
             if dst:
@@ -830,8 +830,8 @@ def fifo_write_seq(inf, step, src, is_continuous):
 
     if is_continuous:
         if step == 0:
-            args = [AHDL_CONST(0), AHDL_OP('BitOr', full, will_full)]
-            return (AHDL_META_WAIT('WAIT_VALUE', *args,
+            args = ['Eq', AHDL_CONST(0), AHDL_OP('BitOr', full, will_full)]
+            return (AHDL_META_WAIT('WAIT_COND', *args,
                                    waiting_stms=[AHDL_MOVE(write, AHDL_CONST(0))]),
                     AHDL_MOVE(write, AHDL_CONST(1)),
                     AHDL_MOVE(din, src))
@@ -841,8 +841,8 @@ def fifo_write_seq(inf, step, src, is_continuous):
             assert False
     else:
         if step == 0:
-            args = [AHDL_CONST(0), AHDL_OP('BitOr', full, will_full)]
-            return (AHDL_META_WAIT('WAIT_VALUE', *args),
+            args = ['Eq', AHDL_CONST(0), AHDL_OP('BitOr', full, will_full)]
+            return (AHDL_META_WAIT('WAIT_COND', *args),
                     AHDL_MOVE(write, AHDL_CONST(1)),
                     AHDL_MOVE(din, src))
         elif step == 1:

@@ -161,11 +161,11 @@ class EarlyModuleInstantiator(object):
 
 class WorkerInstantiator(object):
     def process_all(self):
-        new_workers = self._process_global_module()
-        return new_workers
+        self.new_scopes = set()
+        self._process_global_module()
+        return self.new_scopes
 
     def _process_global_module(self):
-        new_workers = set()
         collector = CallCollector()
         #g = Scope.global_scope()
         #calls = collector.process(g)
@@ -179,11 +179,9 @@ class WorkerInstantiator(object):
                 calls |= collector.process(s)
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().find_ctor().is_pure():
-                new_workers = new_workers | self._process_workers(call.func_scope())
-        return new_workers
+                self._process_workers(call.func_scope())
 
     def _process_workers(self, module):
-        new_workers = set()
         collector = CallCollector()
         ctor = module.find_ctor()
         calls = collector.process(ctor)
@@ -193,12 +191,11 @@ class WorkerInstantiator(object):
                 module.register_worker(new_worker, call.args)
                 if not is_created:
                     continue
-                new_workers.add(new_worker)
                 new_worker_sym = module.add_sym(new_worker.orig_name,
                                                 typ=Type.function(new_worker))
                 _, w = call.args[0]
                 w.set_symbol(new_worker_sym)
-        return new_workers
+        #return new_workers
 
     def _instantiate_worker(self, call, ctor, module):
         assert len(call.args) >= 1
@@ -230,9 +227,10 @@ class WorkerInstantiator(object):
         else:
             if binding:
                 postfix = '{}_{}'.format(idstr, '_'.join([str(v) for _, _, v in binding]))
-                new_worker = worker.clone(module.inst_name, postfix, module)
             else:
-                new_worker = worker.clone(module.inst_name, idstr, module)
+                postfix = idstr
+            new_worker = worker.clone(module.inst_name, postfix, module)
+
         if loop:
             new_worker.add_tag('loop_worker')
         if binding:
@@ -257,6 +255,22 @@ class WorkerInstantiator(object):
         if worker.is_instantiated():
             return new_worker, False
         else:
+            self.new_scopes.add(new_worker)
+            children = [c for c in worker.collect_scope() if c.is_closure()]
+            new_scopes = {worker:new_worker}
+            for child in children:
+                new_child = worker._clone_child(new_worker, worker, child)
+                new_child.add_tag('instantiated')
+                new_scopes[child] = new_child
+                self.new_scopes.add(new_child)
+            for old, new in new_scopes.items():
+                syms = new_worker.find_scope_sym(old)
+                for sym in syms:
+                    if sym.scope in new_scopes.values():
+                        sym.typ.set_scope(new)
+                if new.parent.is_namespace():
+                    continue
+                #assert new.parent.symbols[new.orig_name].typ.get_scope() is new
             # for local memnode
             self._instantiate_memnode(worker, new_worker)
             # for class field memnode
@@ -309,7 +323,8 @@ class ModuleInstantiator(object):
                 else:
                     binding.append((bind_val, i, arg.value))
         inst_name = module_var.symbol().hdl_name()
-        children = [module.find_ctor()]
+        ctor = module.find_ctor()
+        children = [ctor]
         children.extend([c for c in module.collect_scope() if c.is_assigned()])
         if binding:
             new_module = module.instantiate(inst_name, children)

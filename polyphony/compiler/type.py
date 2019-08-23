@@ -180,6 +180,8 @@ class Type(object):
             return Type.object(None)
         elif scope.orig_name == 'generic':
             return Type.generic()
+        elif scope.orig_name == 'function':
+            return Type.function(None)
         elif scope.orig_name == 'str':
             return Type.str()
         elif scope.orig_name == 'list':

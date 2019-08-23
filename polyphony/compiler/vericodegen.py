@@ -455,12 +455,13 @@ class VerilogCodeGen(AHDLVisitor):
         else:
             return self.visit(detect_vars[0])
 
-    def visit_AHDL_META_OP_same(self, ahdl):
+    def visit_AHDL_META_OP_cond(self, ahdl):
         eqs = []
-        for i in range(0, len(ahdl.args), 2):
-            value = ahdl.args[i]
-            port  = ahdl.args[i + 1]
-            eqs.append(AHDL_OP('Eq', port, value))
+        for i in range(0, len(ahdl.args), 3):
+            cond  = ahdl.args[i]
+            value = ahdl.args[i + 1]
+            port  = ahdl.args[i + 2]
+            eqs.append(AHDL_OP(cond, port, value))
         cond = functools.reduce(lambda a, b: AHDL_OP('And', a, b), eqs)
         return self.visit(cond)
 

@@ -87,6 +87,7 @@ class EarlyQuadrupleMaker(IRTransformer):
         self.suppress_converting = False
 
         ir.func = self.visit(ir.func)
+        ir.func.funcall = True
         self._visit_args(ir)
 
         if suppress:

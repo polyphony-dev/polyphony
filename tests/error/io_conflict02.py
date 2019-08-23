@@ -1,13 +1,13 @@
 #Port direction of 'p' is conflicted
 from polyphony import testbench
 from polyphony import module
-from polyphony.io import Queue
+from polyphony.io import Port
 
 
 @module
 class io_conflict02:
     def __init__(self):
-        self.p = Queue(int, 'in')
+        self.p = Port(int, 'in')
         self.append_worker(self.w)
 
     def w(self):

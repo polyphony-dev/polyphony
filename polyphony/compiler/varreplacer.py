@@ -47,6 +47,7 @@ class VarReplacer(object):
 
     def visit_CALL(self, ir):
         ir.func = self.visit(ir.func)
+        ir.func.funcall = True
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 

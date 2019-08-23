@@ -103,6 +103,7 @@ class TypePropagation(IRVisitor):
                 fail(self.current_stm, Errors.IS_NOT_CALLABLE, [clazz.name])
             assert func_sym.typ.is_function()
             ir.func = ATTR(ir.func, clazz.symbols[fun_name], Ctx.LOAD)
+            ir.func.funcall = True
             ir.func.attr_scope = clazz
 
     def visit_CALL(self, ir):
@@ -850,7 +851,8 @@ class RestrictionChecker(IRVisitor):
         if (head.scope is not self.scope and
                 head.typ.is_object() and
                 not self.scope.is_testbench() and
-                not self.scope.is_assigned()):
+                not self.scope.is_assigned() and
+                not self.scope.is_closure()):
             scope = head.typ.get_scope()
             if scope.is_module():
                 fail(self.current_stm, Errors.INVALID_MODULE_OBJECT_ACCESS)
@@ -893,21 +895,25 @@ class AssertionChecker(IRVisitor):
 class SynthesisParamChecker(object):
     def process(self, scope):
         self.scope = scope
-        if scope.synth_params['scheduling'] == 'pipeline' and not scope.is_worker():
-            fail((env.scope_file_map[scope], scope.lineno),
-                 Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
+        if scope.synth_params['scheduling'] == 'pipeline':
+            if scope.is_worker() or (scope.is_closure() and scope.parent.is_worker()):
+                pass
+            else:
+                fail((env.scope_file_map[scope], scope.lineno),
+                     Errors.RULE_FUNCTION_CANNOT_BE_PIPELINED)
         for blk in scope.traverse_blocks():
             if blk.is_loop_head():
                 if blk.synth_params['scheduling'] == 'pipeline':
                     loop = scope.find_region(blk)
                     self._check_port_conflict_in_pipeline(loop, scope)
+                    self._check_channel_conflict_in_pipeline(loop, scope)
 
     def _check_port_conflict_in_pipeline(self, loop, scope):
         syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
         for sym in syms:
             if not sym.typ.is_port():
                 continue
-            if sym.typ.get_scope().orig_name.startswith('Port'):
+            if not sym.typ.get_scope().is_port():
                 continue
             usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
             usestms = [stm for stm in usestms if stm.block in loop.blocks()]
@@ -928,6 +934,31 @@ class SynthesisParamChecker(object):
             if len(readstms) >= 1 and len(writestms) >= 1:
                 assert False
 
+    def _check_channel_conflict_in_pipeline(self, loop, scope):
+        syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
+        for sym in syms:
+            if not sym.typ.is_channel():
+                continue
+            if not sym.typ.get_scope().is_channel():
+                continue
+            usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
+            usestms = [stm for stm in usestms if stm.block in loop.blocks()]
+            readstms = []
+            for stm in usestms:
+                if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func.symbol().orig_name() == 'get':
+                    readstms.append(stm)
+            writestms = []
+            for stm in usestms:
+                if stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func.symbol().orig_name() == 'put':
+                    writestms.append(stm)
+            if len(readstms) > 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(readstms[1], Errors.RULE_READING_PIPELINE_IS_CONFLICTED, [sym])
+            if len(writestms) > 1:
+                sym = sym.ancestor if sym.ancestor else sym
+                fail(writestms[1], Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED, [sym])
+            if len(readstms) >= 1 and len(writestms) >= 1:
+                assert False
 
 class TypeEvalVisitor(IRVisitor):
     def process(self, scope):

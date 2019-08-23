@@ -268,6 +268,7 @@ class CALL(IRExp):
     def __init__(self, func, args, kwargs):
         super().__init__()
         self.func = func
+        self.func.funcall = True
         self.args = args
         self.kwargs = kwargs
 
@@ -305,6 +306,7 @@ class CALL(IRExp):
     def replace(self, old, new):
         if self.func is old:
             self.func = new
+            self.func.funcall = True
             return True
         if self.func.replace(old, new):
             return True
@@ -546,6 +548,7 @@ class TEMP(IRExp):
         super().__init__()
         self.sym = sym
         self.ctx = ctx
+        self.funcall = False
         assert isinstance(sym, Symbol)
         assert isinstance(ctx, int)
 
@@ -581,6 +584,7 @@ class ATTR(IRExp):
         self.ctx = ctx
         self.attr_scope = attr_scope
         self.exp.ctx = Ctx.LOAD
+        self.funcall = False
 
     def __str__(self):
         return '{}.{}'.format(self.exp, self.attr)

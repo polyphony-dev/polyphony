@@ -1482,6 +1482,7 @@ class CodeVisitor(ast.NodeVisitor):
         sym = self.current_scope.find_sym(node.id)
         if sym and sym.scope is not self.current_scope and not sym.scope.is_namespace():
             self.current_scope.add_free_sym(sym)
+            self.current_scope.add_tag('closure')
             sym.scope.add_tag('enclosure')
             sym.scope.add_closure(self.current_scope)
         if not sym:

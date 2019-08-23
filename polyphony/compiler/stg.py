@@ -582,9 +582,24 @@ class AHDLTranslator(IRVisitor):
                 assert a.is_a([TEMP, ATTR])
                 port_sig = self._port_sig(a.qualified_symbol())
                 p = AHDL_VAR(port_sig, Ctx.LOAD)
+                args.append('Eq')
                 args.append(value)
                 args.append(p)
-            self._emit(AHDL_META_WAIT('WAIT_VALUE', *args),
+            self._emit(AHDL_META_WAIT('WAIT_COND', *args),
+                       self.sched_time)
+            return
+        elif ir.sym.name == 'polyphony.timing.wait_until':
+            scope_sym = ir.args[0][1].symbol()
+            assert scope_sym.typ.is_function()
+            pred = scope_sym.typ.get_scope()
+            #assert pred.is_assigned()
+            translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+            translator.process(pred)
+            for assign in translator.codes:
+                self.hdlmodule.add_static_assignment(assign)
+                self.hdlmodule.add_internal_net(assign.dst.sig, '')
+            args = ('NotEq', AHDL_CONST(0), translator.return_var)
+            self._emit(AHDL_META_WAIT('WAIT_COND', *args),
                        self.sched_time)
             return
         else:
@@ -1307,6 +1322,12 @@ class AHDLCombTranslator(AHDLTranslator):
                 ir.func_scope().parent.is_port() and
                 ir.func_scope().orig_name == method_name)
 
+    def _is_channel_method(self, ir, method_name):
+        return (ir.is_a(CALL) and
+                ir.func_scope().is_method() and
+                ir.func_scope().parent.is_channel() and
+                ir.func_scope().orig_name == method_name)
+
     def visit_CALL(self, ir):
         if self._is_port_method(ir, 'rd'):
             port_qsym = ir.func.qualified_symbol()[:-1]
@@ -1322,6 +1343,13 @@ class AHDLCombTranslator(AHDLTranslator):
             self.hdlmodule.add_edge_detector(port_sig, _old, _new)
             detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
             return AHDL_SYMBOL(detect_var_name)
+        elif self._is_channel_method(ir, 'full'):
+            channel_qsym = ir.func.qualified_symbol()[:-1]
+            channel_sig = self._channel_sig(channel_qsym)
+
+            sig_name = f'{channel_sig.name}_full'
+            sig = self.hdlmodule.gen_sig(sig_name, 1)
+            return AHDL_VAR(sig, Ctx.LOAD)
         else:
             assert False, 'NIY'
 

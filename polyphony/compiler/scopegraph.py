@@ -35,20 +35,9 @@ class CallGraphBuilder(IRVisitor):
     def visit_CALL(self, ir):
         func_scope = ir.func_scope()
         assert func_scope
-        if func_scope.is_method() and func_scope.parent.is_module() and func_scope.orig_name == 'append_worker':
-            _, w = ir.args[0]
-            if w.symbol().typ.is_function():
-                worker_scope = w.symbol().typ.get_scope()
-                self.worklist.append(worker_scope)
-        elif func_scope.is_method() and func_scope.parent.is_port() and func_scope.orig_name == 'assign':
-            _, fn = ir.args[0]
-            assert fn.symbol().typ.is_function()
-            lambda_scope = fn.symbol().typ.get_scope()
-            self.call_graph.add_edge(self.scope, lambda_scope)
-            self.worklist.append(lambda_scope)
-        else:
-            self.call_graph.add_edge(self.scope, func_scope)
-            self.worklist.append(func_scope)
+        self.call_graph.add_edge(self.scope, func_scope)
+        self.worklist.append(func_scope)
+        self.visit_args(ir.args, ir.kwargs)
 
     def visit_NEW(self, ir):
         assert ir.func_scope()
@@ -56,6 +45,22 @@ class CallGraphBuilder(IRVisitor):
         assert ctor
         self.call_graph.add_edge(self.scope, ctor)
         self.worklist.append(ctor)
+
+    def visit_TEMP(self, ir):
+        if not ir.symbol().typ.is_function():
+            return
+        sym_scope = ir.symbol().typ.get_scope()
+        if not sym_scope.is_worker():
+            self.call_graph.add_edge(self.scope, sym_scope)
+        self.worklist.append(sym_scope)
+
+    def visit_ATTR(self, ir):
+        if not ir.symbol().typ.is_function():
+            return
+        sym_scope = ir.symbol().typ.get_scope()
+        if not sym_scope.is_worker():
+            self.call_graph.add_edge(self.scope, sym_scope)
+        self.worklist.append(sym_scope)
 
 
 class DependencyGraphBuilder(IRVisitor):

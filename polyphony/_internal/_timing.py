@@ -44,3 +44,8 @@ def wait_falling(*ports:Port) -> None:
 @builtin
 def wait_value(value:int, *ports:Port) -> None:
     pass
+
+
+@builtin
+def wait_until(pred:function) -> bool:
+    pass

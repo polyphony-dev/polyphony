@@ -337,7 +337,6 @@ def earlyinstantiate(driver):
 
 
 def instantiate(driver):
-    scopes = []
     new_modules = ModuleInstantiator().process_all()
     for module in new_modules:
         assert module.name in env.scopes
@@ -348,18 +347,15 @@ def instantiate(driver):
             if not s.is_instantiated():
                 continue
             driver.insert_scope(s)
-            scopes.append(s)
             usedef(driver, s)
             typeprop(driver, s)
             constopt(driver, s)
     if new_modules:
         InstanceTypePropagation().process_all()
-    new_workers = WorkerInstantiator().process_all()
-    for worker in new_workers:
-        assert worker.name in env.scopes
-        driver.insert_scope(worker)
-        assert worker.is_worker()
-        scopes.append(worker)
+    new_scopes = WorkerInstantiator().process_all()
+    for s in new_scopes:
+        assert s.name in env.scopes
+        driver.insert_scope(s)
 
 
 def postinstantiate(driver):

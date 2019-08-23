@@ -542,7 +542,7 @@ class FlattenObjectArgs(IRTransformer):
                 break
 
 
-class FlattenModule(IRTransformer):
+class FlattenModule(IRVisitor):
     '''
     self.sub.append_worker(self.sub.worker, ...)  =>  self.append_worker(self.worker, ...)
     '''
@@ -550,7 +550,7 @@ class FlattenModule(IRTransformer):
         self.driver = driver
 
     def process(self, scope):
-        if scope.parent and scope.parent.is_module() and scope is scope.parent.find_ctor():
+        if scope.parent and scope.parent.is_module(): # and scope is scope.parent.find_ctor():
             super().process(scope)
 
     def visit_CALL(self, ir):
@@ -569,6 +569,7 @@ class FlattenModule(IRTransformer):
                 self_var = TEMP(ir.func.head(), Ctx.LOAD)
                 new_func = ATTR(self_var, append_worker_sym,
                                 Ctx.LOAD, attr_scope=append_worker_sym.scope)
+                new_func.funcall = True
                 ir.func = new_func
                 ir.args[0] = (None, new_arg)
             else:
@@ -578,16 +579,29 @@ class FlattenModule(IRTransformer):
                 self_var = TEMP(ir.func.head(), Ctx.LOAD)
                 new_func = ATTR(self_var, append_worker_sym,
                                 Ctx.LOAD, attr_scope=append_worker_sym.scope)
+                new_func.funcall = True
                 ir.func = new_func
                 ir.args[0] = (None, arg)
-        elif (ir.func_scope().is_method() and
-                ir.func_scope().parent.is_port() and
-                ir.func_scope().orig_name == 'assign'):
-            _, arg = ir.args[0]
-            arg_scope = arg.symbol().typ.get_scope()
-            if arg_scope.is_method() and arg_scope.parent is not self.scope.parent:
-                self._make_new_assigned_method(arg, arg_scope)
-        return ir
+        else:
+            super().visit_CALL(ir)
+
+    def visit_TEMP(self, ir):
+        if not ir.symbol().typ.is_function():
+            return
+        sym_scope = ir.symbol().typ.get_scope()
+        if not sym_scope.is_closure() and not sym_scope.is_assigned():
+            return
+        if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
+            self._make_new_assigned_method(ir, sym_scope)
+
+    def visit_ATTR(self, ir):
+        if not ir.symbol().typ.is_function():
+            return
+        sym_scope = ir.symbol().typ.get_scope()
+        if not sym_scope.is_closure() and not sym_scope.is_assigned():
+            return
+        if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
+            self._make_new_assigned_method(ir, sym_scope)
 
     def _make_new_worker(self, arg, lineno):
         parent_module = self.scope.parent

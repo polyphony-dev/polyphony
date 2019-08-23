@@ -1,5 +1,5 @@
 from collections import defaultdict
-from .ahdl import AHDL_STM
+from .ahdl import AHDL, AHDL_STM
 
 
 class AHDLVisitor(object):
@@ -51,7 +51,8 @@ class AHDLVisitor(object):
 
     def visit_AHDL_META_OP(self, ahdl):
         for a in ahdl.args:
-            self.visit(a)
+            if isinstance(a, AHDL):
+                self.visit(a)
 
     def visit_AHDL_SYMBOL(self, ahdl):
         pass
@@ -167,7 +168,8 @@ class AHDLVisitor(object):
 
     def visit_AHDL_META_WAIT(self, ahdl):
         for arg in ahdl.args:
-            self.visit(arg)
+            if isinstance(arg, AHDL):
+                self.visit(arg)
 
     def visit_AHDL_TRANSITION(self, ahdl):
         pass

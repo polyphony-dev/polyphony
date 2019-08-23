@@ -26,6 +26,10 @@ class object: pass
 class generic: pass
 
 
+@typeclass
+class function: pass
+
+
 def print(*args) -> None:
     pass
 

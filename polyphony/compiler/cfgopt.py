@@ -466,6 +466,7 @@ class HyperBlockBuilder(object):
                 'polyphony.timing.wait_falling',
                 'polyphony.timing.wait_value',
                 'polyphony.timing.wait_edge',
+                'polyphony.timing.wait_until'
             ]
             return call.sym.name in wait_funcs
         return False
@@ -577,7 +578,7 @@ class HyperBlockBuilder(object):
             if (remains_ and
                     (head.synth_params['scheduling'] == 'pipeline' or
                      head.synth_params['scheduling'] == 'timed' or
-                     self.scope.is_assigned())):
+                     self.scope.is_comb())):
                 path_exp = branch_blk.path_exp
                 cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
                 for _, stm in sorted(cstms_, key=lambda _: _[0]):

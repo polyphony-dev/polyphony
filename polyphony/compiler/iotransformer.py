@@ -219,7 +219,7 @@ class WaitTransformer(AHDLVisitor):
         meta_waits = [c for c in ahdlblk.codes if c.is_a(AHDL_META_WAIT)]
         codes = ahdlblk.codes
         wait_ops = {
-            'WAIT_VALUE':'same',
+            'WAIT_COND':'cond',
             'WAIT_EDGE':'edge',
         }
         for meta_wait in reversed(meta_waits):

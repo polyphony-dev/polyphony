@@ -22,7 +22,7 @@ FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
 class Scope(Tagged):
     ordered_scopes = []
     TAGS = {
-        'global', 'function', 'class', 'method', 'ctor', 'enclosure',
+        'global', 'function', 'class', 'method', 'ctor', 'enclosure', 'closure',
         'callable', 'returnable', 'mutable', 'inherited', 'predicate',
         'testbench', 'pure', 'timed', 'comb', 'assigned',
         'module', 'worker', 'loop_worker', 'instantiated',

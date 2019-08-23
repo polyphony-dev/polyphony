@@ -139,6 +139,8 @@ def has_exclusive_function(stm):
         return True
     if is_channel_method_call(call):
         return True
+    if has_clkfence(stm):
+        return True
     return False
 
 

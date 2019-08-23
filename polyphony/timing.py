@@ -120,3 +120,14 @@ def wait_value(value, *ports):
         raise TypeError("wait_value() missing required argument: 'ports'")
     while not all([p.rd() == value for p in ports]):
         clkfence()
+
+
+def wait_until(pred):
+    '''
+    Wait until the predicate function returns True.
+
+    *Parameters:*
+        pred : A predicate function
+    '''
+    while not pred():
+        clkfence()

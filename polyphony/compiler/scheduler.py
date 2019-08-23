@@ -898,9 +898,6 @@ class TimedScheduler:
                 assert len(stm.exp.args) == 1
                 assert stm.exp.args[0][1].is_a(CONST)
                 return stm.exp.args[0][1].value
-            elif stm.exp.sym.name in ['polyphony.timing.wait_value',
-                                      'polyphony.timing.wait_edge',
-                                      'polyphony.timing.wait_rising',
-                                      'polyphony.timing.wait_falling']:
+            elif stm.exp.sym.name.startswith('polyphony.timing.wait_'):
                 return 1
         return 0

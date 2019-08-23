@@ -183,7 +183,7 @@ class PortConverter(IRTransformer):
                 valid_direction = {'input'}
                 exclusive_write = True
             else:
-                valid_direction = {'input', 'output'}
+                valid_direction = {'output'}
         else:
             if kind == 'external':
                 if func_scope.orig_name in ('wr', 'assign'):
@@ -238,7 +238,9 @@ class PortConverter(IRTransformer):
 
     def visit_SYSCALL(self, ir):
         if ir.sym.name.startswith('polyphony.timing.wait_'):
-            if (ir.sym.name == 'polyphony.timing.wait_rising' or
+            if ir.sym.name == 'polyphony.timing.wait_until':
+                return ir
+            elif (ir.sym.name == 'polyphony.timing.wait_rising' or
                     ir.sym.name == 'polyphony.timing.wait_falling'):
                 ports = ir.args
             elif ir.sym.name == 'polyphony.timing.wait_edge':

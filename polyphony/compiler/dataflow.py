@@ -509,6 +509,8 @@ class DFGBuilder(object):
         if call:
             if len(call.args) == 0 or has_mem_arg(call.args):
                 dfg.src_nodes.add(node)
+        if has_exclusive_function(stm):
+            dfg.src_nodes.add(node)
 
     def _add_defuse_edges(self, stm, usenode, dfg, usedef, blocks):
         for v in usedef.get_vars_used_at(stm):
