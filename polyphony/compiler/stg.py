@@ -862,6 +862,10 @@ class AHDLTranslator(IRVisitor):
                 return self._make_channel_access(ir.src, ir.dst)
             elif self._is_port_ctor(ir.src):
                 return self._make_port_init(ir.src, ir.dst)
+            elif self._is_net_ctor(ir.src):
+                return self._make_net_init(ir.src, ir.dst)
+            elif self._is_net_method(ir.src):
+                return self._make_net_access(ir.src, ir.dst)
             elif self._is_module_method(ir.src):
                 return
             self._call_proc(ir)
@@ -1074,8 +1078,14 @@ class AHDLTranslator(IRVisitor):
     def _is_channel_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_channel()
 
+    def _is_net_method(self, ir):
+        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.name.startswith('polyphony.Net')
+
     def _is_port_ctor(self, ir):
         return ir.is_a(NEW) and ir.func_scope().is_port()
+
+    def _is_net_ctor(self, ir):
+        return ir.is_a(NEW) and ir.func_scope().name.startswith('polyphony.Net')
 
     def _port_sig(self, port_qsym):
         assert port_qsym[-1].typ.is_port()
@@ -1301,6 +1311,72 @@ class AHDLTranslator(IRVisitor):
         for i in range(step_n):
             self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
 
+    def _net_sig(self, net_qsym):
+        net_sym = net_qsym[-1]
+        net_prefixes = net_qsym
+
+        if net_prefixes[0].name == env.self_name:
+            net_prefixes = net_prefixes[1:]
+        net_name = '_'.join([pfx.hdl_name() for pfx in net_prefixes])
+
+        dtype = net_sym.typ.get_scope().type_args[0]
+        width = dtype.get_width()
+        tags = {'net'}
+        net_sig = env.hdlmodule(net_sym.scope).signal(net_name)
+        if net_sig:
+            net_sig.tags.update(tags)
+            return net_sig
+        net_sig = self.hdlmodule.gen_sig(net_name, width, tags, net_sym)
+        self.hdlmodule.add_internal_net(net_sig, '')
+        return net_sig
+
+    def _make_net_init(self, new, target):
+        net_sig = self._net_sig(target.qualified_symbol())
+        scope_sym = new.args[0][1].symbol()
+        assert scope_sym.typ.is_function()
+        assigned = scope_sym.typ.get_scope()
+        assert assigned.is_assigned()
+        translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+        translator.process(assigned)
+        for assign in translator.codes:
+            self.hdlmodule.add_static_assignment(assign)
+            self.hdlmodule.add_internal_net(assign.dst.sig, '')
+        assign = AHDL_ASSIGN(AHDL_VAR(net_sig, Ctx.STORE),
+                             translator.return_var)
+        self.hdlmodule.add_static_assignment(assign)
+
+    def _make_net_access(self, call, target):
+        assert call.func.is_a(ATTR)
+        net_qsym = call.func.qualified_symbol()[:-1]
+        net_sig = self._net_sig(net_qsym)
+
+        if call.func_scope().orig_name == 'rd':
+            self._make_net_read_seq(target, net_sig)
+        elif call.func_scope().orig_name == 'assign':
+            self._make_net_assign(call.args[0][1].symbol(), net_sig)
+        else:
+            assert False
+
+    def _make_net_read_seq(self, target, net_sig):
+        if target:
+            dst = self.visit(target)
+            mv = AHDL_MOVE(dst, AHDL_VAR(net_sig, Ctx.LOAD))
+            self._emit(mv, self.sched_time)
+
+    def _make_net_assign(self, scope_sym, net_sig):
+        assert scope_sym.typ.is_function()
+        assigned = scope_sym.typ.get_scope()
+        assert assigned.is_assigned()
+        translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+        translator.process(assigned)
+        for assign in translator.codes:
+            self.hdlmodule.add_static_assignment(assign)
+            self.hdlmodule.add_internal_net(assign.dst.sig, '')
+        assign = AHDL_ASSIGN(AHDL_VAR(net_sig, Ctx.STORE),
+                             translator.return_var)
+        self.hdlmodule.add_static_assignment(assign)
+        assert net_sig.is_net()
+
 
 class AHDLCombTranslator(AHDLTranslator):
     def __init__(self, hdlmodule, scope):
@@ -1328,6 +1404,12 @@ class AHDLCombTranslator(AHDLTranslator):
                 ir.func_scope().parent.is_channel() and
                 ir.func_scope().orig_name == method_name)
 
+    def _is_net_method(self, ir, method_name):
+        return (ir.is_a(CALL) and
+                ir.func_scope().is_method() and
+                ir.func_scope().parent.name.startswith('polyphony.Net') and
+                ir.func_scope().orig_name == method_name)
+
     def visit_CALL(self, ir):
         if self._is_port_method(ir, 'rd'):
             port_qsym = ir.func.qualified_symbol()[:-1]
@@ -1350,6 +1432,17 @@ class AHDLCombTranslator(AHDLTranslator):
             sig_name = f'{channel_sig.name}_full'
             sig = self.hdlmodule.gen_sig(sig_name, 1)
             return AHDL_VAR(sig, Ctx.LOAD)
+        elif self._is_channel_method(ir, 'empty'):
+            channel_qsym = ir.func.qualified_symbol()[:-1]
+            channel_sig = self._channel_sig(channel_qsym)
+
+            sig_name = f'{channel_sig.name}_empty'
+            sig = self.hdlmodule.gen_sig(sig_name, 1)
+            return AHDL_VAR(sig, Ctx.LOAD)
+        elif self._is_net_method(ir, 'rd'):
+            net_qsym = ir.func.qualified_symbol()[:-1]
+            net_sig = self._net_sig(net_qsym)
+            return AHDL_VAR(net_sig, Ctx.LOAD)
         else:
             assert False, 'NIY'
 

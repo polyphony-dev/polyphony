@@ -43,6 +43,17 @@ class Reg:
         self.v = initv  # meta: symbol=register
 
 
+class Net:
+    def __init__(self, dtype:generic, exp=None) -> object:
+        pass
+
+    def assign(self, exp:function) -> None:
+        pass
+
+    def rd(self) -> generic:
+        pass
+
+
 class Channel:
     def __init__(self, dtype:generic, maxsize:int=1) -> object:
         pass

@@ -31,6 +31,8 @@ class StateReducer(object):
                         len(state.codes) == 1 and
                         state.codes[0].is_a(AHDL_TRANSITION)):
                     next_state = state.codes[0].target
+                    if next_state is state:
+                        continue
                     for pred_i in range(len(graph.preds(state))):
                         pred = list(graph.preds(state))[pred_i]
                         transition_collector.process_state(pred)

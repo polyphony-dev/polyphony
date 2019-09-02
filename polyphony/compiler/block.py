@@ -72,9 +72,8 @@ class Block(object):
     def __str__(self):
         s = 'Block: (' + str(self.order) + ') ' + str(self.name) + '\n'
         s += self._str_connection()
-        if self.path_exp:
-            s += ' # path exp: '
-            s += str(self.path_exp) + '\n'
+        s += ' # path exp: '
+        s += str(self.path_exp) + '\n'
         s += ' # code\n'
         s += '\n'.join(['  ' + str(stm) for stm in self.stms])
         s += '\n\n'

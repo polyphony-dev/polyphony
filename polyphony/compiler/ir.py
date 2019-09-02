@@ -640,7 +640,11 @@ class IRStm(IR):
         self.block = None
 
     def program_order(self):
-        return (self.block.order, self.block.stms.index(self))
+        for i, s in enumerate(self.block.stms):
+            if self is s:
+                return (self.block.order, i)
+        else:
+            assert False
 
     def kids(self):
         return []

@@ -495,7 +495,15 @@ class Type(object):
                 if dst.get_length() == Type.ANY_LENGTH:
                     dst.set_length(src.get_length())
             elif dst.is_function():
-                raise NotImplementedError()
+                assert cls.is_same(dst, src)
+                if dst.get_scope() is None:
+                    dst.set_scope(src.get_scope())
+                param_types = []
+                for pt_dst, pt_src in zip(dst.get_param_types(), src.get_param_types()):
+                    param_types.append(cls.propagate(pt_dst, pt_src))
+                dst.set_param_types(param_types)
+                ret = cls.propagate(dst.get_return_type(), src.get_return_type())
+                dst.set_return_type(ret)
             elif dst.is_object():
                 assert cls.is_same(dst, src)
                 if dst.get_scope() is None:

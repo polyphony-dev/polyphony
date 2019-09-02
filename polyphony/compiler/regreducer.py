@@ -45,7 +45,6 @@ class AliasVarDetector(IRVisitor):
                         return
                     if ir.src.func_scope().parent.name.startswith('polyphony.Channel'):
                         return
-                    port_sym = ir.src.func.tail()
                     if ir.src.func.attr.name in ('rd', 'edge'):
                         pass
                     else:
@@ -55,6 +54,11 @@ class AliasVarDetector(IRVisitor):
                         pass
                     else:
                         return
+            elif ir.src.func_scope().is_method() and ir.src.func_scope().parent.name.startswith('polyphony.Net'):
+                if ir.src.func.attr.name in ('rd'):
+                    pass
+                else:
+                    return
             else:
                 return
         elif ir.src.is_a(MREF):

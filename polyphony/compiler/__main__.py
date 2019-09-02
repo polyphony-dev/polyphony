@@ -592,7 +592,7 @@ def dumpcfgimg(driver, scope):
 def dumpdfgimg(driver, scope):
     if scope.is_function_module() or scope.is_method() or scope.is_module():
         for dfg in scope.dfgs():
-            dfg.write_dot(dfg.name)
+            dfg.write_dot(f'{scope.orig_name}_{dfg.name}')
 
 
 def dumpdependimg(driver):
@@ -696,7 +696,7 @@ def compile_plan():
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
-        dbg(dumpdependimg),
+        #dbg(dumpdependimg),
         filter_scope(is_uninlined_scope),
         setsynthparams,
         dbg(dumpscope),
@@ -744,7 +744,7 @@ def compile_plan():
         dbg(dumpscope),
         evaltype,
         typeprop,
-        dbg(dumpdependimg),
+        #dbg(dumpdependimg),
         dbg(dumpscope),
         usedef,
         copyopt,

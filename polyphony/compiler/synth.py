@@ -29,6 +29,9 @@ class DefaultSynthParamSetter(object):
                 if not v:
                     b.synth_params[k] = scope.synth_params[k]
 
+        for child in scope.children:
+            self.process(child)
+
 
 def make_synth_params():
     di = defaultdict(str)

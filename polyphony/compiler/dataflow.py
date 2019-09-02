@@ -487,12 +487,10 @@ class DFGBuilder(object):
                     dfg.src_nodes.add(node)
                     return
 
-        uses = usedef.get_consts_used_at(stm)
-        if uses:
-            if self._is_constant_stm(stm):
-                logger.log(0, 'add src: $use const ' + str(stm))
-                dfg.src_nodes.add(node)
-                return
+        if self._is_constant_stm(stm):
+            logger.log(0, 'add src: $use const ' + str(stm))
+            dfg.src_nodes.add(node)
+            return
 
         def has_mem_arg(args):
             for _, a in args:
@@ -550,9 +548,7 @@ class DFGBuilder(object):
                 self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
     def _is_constant_stm(self, stm):
-        if stm.is_a(PHIBase):
-            return True
-        elif stm.is_a(MOVE):
+        if stm.is_a(MOVE):
             if stm.src.is_a([CONST, ARRAY, CALL]):
                 return True
             elif stm.src.is_a(MREF) and stm.src.offset.is_a(CONST):

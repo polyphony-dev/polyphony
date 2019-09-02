@@ -781,8 +781,15 @@ class TypeChecker(IRVisitor):
 
 
 class PortAssignChecker(IRVisitor):
-    def visit_CALL(self, ir):
+    def _is_assign_call(self, ir):
         if ir.func_scope().parent.is_port() and ir.func_scope().orig_name == 'assign':
+            return True
+        elif ir.func_scope().parent.name.startswith('polyphony.Net') and ir.func_scope().orig_name == 'assign':
+            return True
+        return False
+
+    def visit_CALL(self, ir):
+        if self._is_assign_call(ir):
             assert len(ir.args) == 1
             assigned = ir.args[0][1].symbol().typ.get_scope()
             if (not (assigned.is_method() and assigned.parent.is_module()) and
@@ -791,6 +798,15 @@ class PortAssignChecker(IRVisitor):
             assigned.add_tag('assigned')
             assigned.add_tag('comb')
 
+    def visit_NEW(self, ir):
+        if ir.sym.typ.get_scope().name.startswith('polyphony.Net'):
+            if len(ir.args) == 1:
+                assigned = ir.args[0][1].symbol().typ.get_scope()
+                if (not (assigned.is_method() and assigned.parent.is_module()) and
+                        not (assigned.parent.is_method() and assigned.parent.parent.is_module())):
+                    fail(self.current_stm, Errors.PORT_ASSIGN_CANNOT_ACCEPT)
+                assigned.add_tag('assigned')
+                assigned.add_tag('comb')
 
 class EarlyRestrictionChecker(IRVisitor):
     def visit_SYSCALL(self, ir):

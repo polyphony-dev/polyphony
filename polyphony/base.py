@@ -71,3 +71,27 @@ class Reg(object):
     def _update(self):
         object.__setattr__(self, 'v', self._new_v)
         object.__setattr__(self, '_wrote', False)
+
+
+class Net(object):
+    instances = []
+
+    def __init__(self, dtype, exp=None):
+        Net.instances.append(self)
+        self.v = 0
+        self._dtype = dtype
+        self.__pytype = _pytype_from_dtype(dtype)
+        self.assign(exp)
+
+    def _update(self):
+        assert self.exp
+        v = self.exp()
+        if not isinstance(v, self.__pytype):
+            raise TypeError(f"Incompatible value type, got {type(v)} expected {self._dtype}")
+        self.v = v
+
+    def assign(self, exp):
+        self.exp = exp
+
+    def rd(self):
+        return self.v
