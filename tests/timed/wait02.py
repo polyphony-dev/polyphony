@@ -11,23 +11,23 @@ class wait02:
         self.flag2 = Port(bool, 'in')
         self.flag3 = Port(bool, 'in')
         self.o = Port(int, 'out', -1)
-        self.t1 = Reg()
-        self.t2 = Reg()
+        self.t1 = 0
+        self.t2 = 0
         self.append_worker(self.untimed_worker, loop=True)
 
     @timed
     def timed_func(self):
         wait_value(True, self.start)
 
-        self.t1.v = clktime()
+        self.t1 = clktime()
         wait_value(True, self.flag1)
         wait_value(True, self.flag2)
         wait_value(True, self.flag3)
-        self.t2.v = clktime()
+        self.t2 = clktime()
 
         clkfence()
-        print(self.t1.v, self.t2.v)
-        self.o.wr(self.t2.v - self.t1.v)
+        print(self.t1, self.t2)
+        self.o.wr(self.t2 - self.t1)
         #self.o.wr(1)
 
     def untimed_worker(self):

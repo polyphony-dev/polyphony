@@ -11,29 +11,29 @@ class timed03:
     def __init__(self):
         self.i = Port(int, 'in')
         self.o = Port(int, 'out')
-        self.append_worker(self.w)
+        #self.append_worker(self.w)
+        # Module instance variables are always registers
+        self.y = 0
+        self.z = 0
 
     def w(self):
-        y = Reg()
-        z = Reg()
-
         clkfence()
 
         x = self.i.rd()
         assert 3 == x
         clkfence()
 
-        y.v = self.i.rd()
+        self.y = self.i.rd()
         assert self.i.rd() == 4
-        assert y.v == 0
+        assert self.y == 0
         clkfence()
 
-        z.v = self.i.rd()
+        self.z = self.i.rd()
         assert self.i.rd() == 5
-        assert z.v == 0
+        assert self.z == 0
         clkfence()
 
-        self.o.wr(y.v + z.v)
+        self.o.wr(self.y + self.z)
         clkfence()
 
 

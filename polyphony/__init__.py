@@ -114,9 +114,79 @@ def is_worker_running():
     return _is_worker_running
 
 
-def _module_append_worker(self, fn, *args, loop=False):
-    w = _Worker(fn, args, loop)
-    self._workers.append(w)
+_module_registers = []
+_module_register_arrays = []
+
+
+class RegArray(object):
+    def __init__(self, module, vs):
+        self.module = module
+        self.vs = vs
+
+    def __setitem__(self, idx, v):
+        stack = inspect.stack()
+        if self.module._is_timed(stack[1]):
+            if isinstance(v, (int, bool, str)):
+                _module_register_arrays.append(lambda:self.vs.__setitem__(idx, v))
+        else:
+            self.vs[idx] = v
+
+    def __getitem__(self, idx):
+        return self.vs[idx]
+
+    def __iter__(self):
+        return self.vs.__iter__()
+
+    def __next__(self):
+        return self.vs.__next__()
+
+
+class _ModuleBase(object):
+    def __init__(self):
+        object.__setattr__(self, '_workers', [])
+        object.__setattr__(self, '_submodules', [])
+
+    def append_worker(self, fn, *args, loop=False):
+        w = _Worker(fn, args, loop)
+        self._workers.append(w)
+        if hasattr(self, 'timed_module'):
+            if inspect.ismethod(fn):
+                setattr(fn.__func__, 'timed_func', True)
+            elif inspect.isfunction(fn):
+                setattr(fn, 'timed_func', True)
+        else:
+            pass
+
+    def _is_timed(self, finfo):
+        if hasattr(self, 'timed_module'):
+            return True
+        if 'self' in finfo.frame.f_locals:
+            if self is not finfo.frame.f_locals['self']:
+                assert False
+            f = self.__class__.__dict__[finfo.function]
+            return hasattr(f, 'func') and hasattr(f.func, 'timed_func')
+        else:
+            raise TypeError('Module class variables cannot be accessed from outside the module')
+
+    def _is_ctor(self, finfo):
+        if 'self' in finfo.frame.f_locals:
+            return self is finfo.frame.f_locals['self'] and finfo.function == '__init__'
+        else:
+            return False
+
+    def __setattr__(self, k, v):
+        stack = inspect.stack()
+        if self._is_ctor(stack[1]):
+            if isinstance(v, (list, tuple)) and not hasattr(self, k):
+                v = RegArray(self, v)
+            object.__setattr__(self, k, v)
+        elif self._is_timed(stack[1]):
+            if isinstance(v, (int, bool, str)):
+                if not hasattr(self, k):
+                    object.__setattr__(self, k, v)
+                _module_registers.append(lambda:object.__setattr__(self, k, v))
+        else:
+            object.__setattr__(self, k, v)
 
 
 class _ModuleDecorator(object):
@@ -127,21 +197,16 @@ class _ModuleDecorator(object):
         def _module_decorator(*args, **kwargs):
             if threading.get_ident() in base._worker_map:
                 raise TypeError('Cannot instatiate module class in a worker thread')
-            instance = object.__new__(cls)
-            if instance.__init__.__name__ == '_pure_decorator':
-                ctor = types.MethodType(instance.__init__.func, instance)
-            else:
-                ctor = instance.__init__
-            instance._ctor = ctor
-            instance.append_worker = types.MethodType(_module_append_worker, instance)
-            instance._module_decorator = self
+            dic = cls.__dict__.copy()
+            del dic['__dict__']
+            new_cls = type(cls.__name__, (_ModuleBase, ), dic)
+            instance = new_cls.__new__(new_cls)
             io._enable()
-            setattr(instance, '_workers', [])
-            setattr(instance, '_submodules', [])
+            super(new_cls, instance).__init__()
             instance.__init__(*args, **kwargs)
             io._disable()
-            self.module_instances[cls.__name__].append(instance)
-            for name, obj in instance.__dict__.items():
+            self.module_instances[new_cls.__name__].append(instance)
+            for name, obj in vars(instance).items():
                 if obj in self.module_instances[obj.__class__.__name__]:
                     instance._submodules.append(obj)
             return instance
@@ -490,6 +555,16 @@ class Simulator(object):
     def _update_regs(self):
         for r in Reg.instances:
             r._update()
+        for fn in _module_registers:
+            fn()
+        _module_registers.clear()
+        for fn in _module_register_arrays:
+            fn()
+        _module_register_arrays.clear()
+
+    def _update_nets(self):
+        for r in Net.instances:
+            r._update()
 
     def run(self):
         for test_fn, modules, args, kwargs in self._tests:
@@ -507,6 +582,7 @@ class Simulator(object):
 
             self._start_all()
             self._update_assigned_ports()
+            self._update_nets()
             cycle = 0
             workers = self._workers[:]
             while workers:
@@ -526,6 +602,7 @@ class Simulator(object):
                 self._update_ports()
                 self._update_regs()
                 self._update_assigned_ports()
+                self._update_nets()
                 self._trace(cycle, trace_ports)
                 for p in io.Port.instances:
                     p._clear_change_flag()
@@ -541,6 +618,7 @@ class Simulator(object):
 
 
 Reg = base.Reg
+Net = base.Net
 
 
 class TimedRestrictChecker(object):

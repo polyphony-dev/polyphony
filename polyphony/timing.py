@@ -11,7 +11,15 @@ from . import typing
 def timed(func):
     # TODO: error check
     def _timed_decorator(*args, **kwargs):
+        if hasattr(func, 'cls'):
+            cls = getattr(func, 'cls')
+            cls.timed_module = True
+        elif hasattr(func, 'func'):  # is decorator
+            func.func.timed_func = True
+        else:
+            func.timed_func = True
         return func(*args, **kwargs)
+    _timed_decorator.func = func
     return _timed_decorator
 
 

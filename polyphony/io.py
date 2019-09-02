@@ -91,25 +91,33 @@ def thru(parent, child):
         _thru_port(p, c)
 
 
-def _ports(obj):
+def _ports(obj, root=None):
+    if root is None:
+        root = obj
     if isinstance(obj, Port):
         return [obj]
     if not hasattr(obj, '__dict__'):
         return []
     results = []
     for v in vars(obj).values():
-        results.extend(_ports(v))
+        if v is root:
+            continue
+        results.extend(_ports(v, root=root))
     return results
 
 
-def ports(name, obj):
+def ports(name, obj, root=None):
+    if root is None:
+        root = obj
     if isinstance(obj, Port):
         return [(name, obj)]
     if not hasattr(obj, '__dict__'):
         return []
     results = []
     for k, v in vars(obj).items():
-        results.extend(ports(f'{name}.{k}', v))
+        if v is root:
+            continue
+        results.extend(ports(f'{name}.{k}', v, root=root))
     return results
 
 
