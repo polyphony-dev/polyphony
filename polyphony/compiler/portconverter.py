@@ -95,6 +95,22 @@ class PortConverter(IRTransformer):
         super().__init__()
         self.writers = defaultdict(set)
 
+    def _collect_scopes(self, module):
+        scopes = []
+        ctor = module.find_ctor()
+        assert ctor
+        scopes.append(ctor)
+        scopes.extend(ctor.children)
+        for w, args in module.workers:
+            scopes.append(w)
+            scopes.extend(w.children)
+        for caller in env.depend_graph.preds(module):
+            if caller.is_namespace():
+                continue
+            if caller not in scopes:
+                scopes.append(caller)
+        return scopes
+
     def process_all(self):
         scopes = Scope.get_scopes(with_class=True)
         modules = [s for s in scopes if s.is_module()]
@@ -105,28 +121,16 @@ class PortConverter(IRTransformer):
         for m in modules:
             if not m.is_instantiated():
                 continue
-            ctor = m.find_ctor()
-            assert ctor
-            cleaner.process(ctor)
-            typeprop.process(ctor)
-            for w, args in m.workers:
-                cleaner.process(w)
-                typeprop.process(w)
-            for caller in env.depend_graph.preds(m):
-                if caller.is_namespace():
-                    continue
-                cleaner.process(caller)
-                typeprop.process(caller)
+            scopes_ = self._collect_scopes(m)
+            for s in scopes_:
+                cleaner.process(s)
+                typeprop.process(s)
 
             self.union_ports = defaultdict(set)
-            self.process(ctor)
-            for w, args in m.workers:
-                self.process(w)
-            for caller in env.depend_graph.preds(m):
-                if caller.is_namespace():
-                    continue
-                self.process(caller)
+            for s in scopes_:
+                self.process(s)
 
+            ctor = m.find_ctor()
             # check for instance variable port
             for field in m.class_fields().values():
                 if field.typ.is_port() and field not in self.writers:

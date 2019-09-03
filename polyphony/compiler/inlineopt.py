@@ -13,12 +13,13 @@ logger = logging.getLogger()
 
 
 class InlineOpt(object):
+    inline_counts = 0
+
     def __init__(self):
         self.new_scopes = []
 
     def process_all(self, driver):
         self.dones = set()
-        self.inline_counts = defaultdict(int)
         scopes = driver.get_scopes()
         for scope in scopes:
             if scope not in self.dones:
@@ -46,13 +47,13 @@ class InlineOpt(object):
         if caller.is_testbench() and callee.is_function_module():
             return
         for call, call_stm in calls:
-            self.inline_counts[caller] += 1
+            self.inline_counts += 1
             assert callee is call.func_scope()
 
             symbol_map = self._make_replace_symbol_map(call,
                                                        caller,
                                                        callee,
-                                                       str(self.inline_counts[caller]))
+                                                       str(self.inline_counts))
             if callee.is_returnable():
                 self._make_result_exp(call_stm, call, callee, caller, symbol_map)
 
@@ -68,6 +69,11 @@ class InlineOpt(object):
             if call_stm.is_a(EXPR):
                 call_stm.block.stms.remove(call_stm)
 
+            if callee.is_enclosure():
+                self._process_enclosure(callee, caller,
+                                        symbol_map, {},
+                                        str(self.inline_counts))
+
     def _process_method(self, callee, caller, calls):
         if caller.is_namespace():
             return
@@ -77,12 +83,12 @@ class InlineOpt(object):
             else:
                 return
         for call, call_stm in calls:
-            self.inline_counts[caller] += 1
+            self.inline_counts += 1
 
             symbol_map = self._make_replace_symbol_map(call,
                                                        caller,
                                                        callee,
-                                                       str(self.inline_counts[caller]))
+                                                       str(self.inline_counts))
             if callee.is_returnable():
                 self._make_result_exp(call_stm, call, callee, caller, symbol_map)
 
@@ -94,6 +100,9 @@ class InlineOpt(object):
                         callee_self = call_stm.dst.clone()
                         callee_self.ctx = Ctx.LOAD
                         attr_map[callee.symbols[env.self_name]] = callee_self
+                        object_sym = call_stm.dst.qualified_symbol()
+                    else:
+                        continue
                 else:
                     if call_stm.is_a(MOVE):
                         object_sym = call.func.exp.qualified_symbol()
@@ -108,7 +117,7 @@ class InlineOpt(object):
                         assert call_stm.src is call
                         object_sym = call_stm.dst.qualified_symbol()
                     else:
-                        assert False
+                        continue
                 else:
                     object_sym = call.func.exp.qualified_symbol()
                 symbol_map[callee.symbols[env.self_name]] = object_sym
@@ -131,11 +140,11 @@ class InlineOpt(object):
             if callee.is_enclosure():
                 self._process_enclosure(callee, caller,
                                         symbol_map, attr_map,
-                                        str(self.inline_counts[caller]))
+                                        str(self.inline_counts))
 
     def _make_result_exp(self, call_stm, call, callee, caller, symbol_map):
         result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-        result_sym.name = callee.orig_name + '_result' + str(self.inline_counts[caller])
+        result_sym.name = callee.orig_name + '_result' + str(self.inline_counts)
         assert result_sym.is_return()
         result_sym.del_tag('return')
         result = TEMP(result_sym, Ctx.LOAD)
@@ -157,7 +166,11 @@ class InlineOpt(object):
                 _, arg = call.args[i]
             else:
                 arg = defval
-            if arg.is_a([TEMP, ATTR, CONST, UNOP]):
+            if arg.is_a([TEMP, ATTR]):
+                if arg.symbol().typ.is_object():
+                    symbol_map[copy] = arg.clone()
+                symbol_map[p] = arg.clone()
+            elif arg.is_a([CONST, UNOP]):
                 symbol_map[p] = arg.clone()
             else:
                 assert False
@@ -213,15 +226,21 @@ class InlineOpt(object):
                 block.stms.remove(rm)
 
     def _process_enclosure(self, enclosure, caller, symbol_map, attr_map, inline_id):
+        caller.add_tag('enclosure')
         for clos in enclosure.closures:
             clos_sym = enclosure.symbols[clos.orig_name]
             new_clos_sym = symbol_map[clos_sym]
 
-            new_clos = clos.clone('', postfix=f'inl{inline_id}', parent=caller)
+            new_clos = clos.clone('', postfix=f'inl{inline_id}', parent=caller, sym_postfix=f'_{inline_id}')
             new_clos_sym.typ.set_scope(new_clos)
 
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
             sym_replacer.process(new_clos, new_clos.entry_block)
+            for sym in new_clos.free_symbols.copy():
+                if sym in symbol_map:
+                    new_clos.free_symbols.add(symbol_map[sym])
+                    new_clos.free_symbols.discard(sym)
+            caller.add_closure(new_clos)
             self.new_scopes.append(new_clos)
 
 
@@ -473,8 +492,7 @@ class FlattenObjectArgs(IRTransformer):
         for pindex, (name, arg) in enumerate(call.args):
             if (arg.is_a([TEMP, ATTR])
                     and arg.symbol().typ.is_object()
-                    and not arg.symbol().typ.get_scope().is_port()
-                    and not arg.symbol().typ.get_scope().is_channel()):
+                    and not arg.symbol().typ.get_scope().is_port()):
                 flatten_args = self._flatten_object_args(call, arg, pindex)
                 args.extend(flatten_args)
             else:
@@ -629,6 +647,20 @@ class FlattenModule(IRVisitor):
         arg.attr = new_worker_sym
         arg.attr_scope = new_worker_sym.scope
         self.driver.insert_scope(new_worker)
+
+        scope_map = {worker_scope:new_worker}
+        children = [c for c in worker_scope.collect_scope() if c.is_closure()]
+        for child in children:
+            new_child = worker_scope._clone_child(new_worker, worker_scope, child)
+            scope_map[child] = new_child
+            self.driver.insert_scope(new_child)
+            sym_replacer.process(new_child, new_child.entry_block)
+            UseDefDetector().process(new_child)
+        for old, new in scope_map.items():
+            syms = new_worker.find_scope_sym(old)
+            for sym in syms:
+                if sym.scope in scope_map.values():
+                    sym.typ.set_scope(new)
         return arg
 
     def _make_new_assigned_method(self, arg, assigned_scope):

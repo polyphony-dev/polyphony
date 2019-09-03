@@ -152,7 +152,7 @@ class Scope(Tagged):
         self.lineno = lineno
         self.scope_id = scope_id
         self.symbols = {}
-        self.free_symbols = {}
+        self.free_symbols = set()
         self.params = []
         self.return_type = None
         self.entry_block = None
@@ -253,7 +253,7 @@ class Scope(Tagged):
                 stm.targets = [block_map[t] for t in stm.targets]
         return block_map, stm_map
 
-    def clone(self, prefix, postfix, parent=None):
+    def clone(self, prefix, postfix, parent=None, sym_postfix=''):
         #if self.is_lib():
         #    return
         name = prefix + '_' if prefix else ''
@@ -272,7 +272,7 @@ class Scope(Tagged):
         s.subs = list(self.subs)
         s.type_args = list(self.type_args)
 
-        symbol_map = self.clone_symbols(s)
+        symbol_map = self.clone_symbols(s, sym_postfix)
         s.params = []
         for p, cp, defval in self.params:
             param = FunctionParam(symbol_map[p],
@@ -322,11 +322,11 @@ class Scope(Tagged):
 
         s.synth_params = self.synth_params.copy()
         s.closures = self.closures.copy()
-        for name, sym in self.free_symbols.items():
+        for sym in self.free_symbols:
             if sym in symbol_map:
-                s.free_symbols[name] = symbol_map[sym]
+                s.free_symbols.add(symbol_map[sym])
             else:
-                s.free_symbols[name] = sym
+                s.free_symbols.add(sym)
         # TODO:
         #s.loop_tree = None
         #s.constants
@@ -474,7 +474,7 @@ class Scope(Tagged):
 
     def add_free_sym(self, sym):
         sym.add_tag('free')
-        self.free_symbols[sym.name] = sym
+        self.free_symbols.add(sym)
 
     def del_sym(self, name):
         if name in self.symbols:

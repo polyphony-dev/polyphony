@@ -496,6 +496,8 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.is_param():
             return False
+        if sym.is_free():
+            return False
         if sym in [copy for _, copy, _ in self.scope.params]:
             return False
         if sym.typ.get_scope().is_module():

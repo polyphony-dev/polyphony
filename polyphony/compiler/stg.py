@@ -879,6 +879,8 @@ class AHDLTranslator(IRVisitor):
                 return
             elif ir.src.sym.typ.is_channel():
                 return
+        elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol().typ.is_port():
+            return
         src = self.visit(ir.src)
         dst = self.visit(ir.dst)
         if not src:

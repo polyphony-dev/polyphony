@@ -21,6 +21,8 @@ class DeadCodeEliminator(object):
                     for var in defvars:
                         if not var.is_a(TEMP):
                             break
+                        if var.symbol().is_free():
+                            break
                         if stm.block.path_exp.is_a([TEMP, ATTR]) and stm.block.path_exp.symbol() is var.symbol():
                             break
                         uses = usedef.get_stms_using(var.symbol())

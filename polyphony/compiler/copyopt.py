@@ -115,6 +115,8 @@ class CopyCollector(IRVisitor):
             return
         if ir.dst.symbol().is_field():
             return
+        if ir.dst.symbol().is_free():
+            return
         if ir.src.is_a(TEMP):
             if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
                 return

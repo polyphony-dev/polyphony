@@ -110,6 +110,7 @@ class CFGChecker(object):
                         sym.is_param() or sym.is_static() or
                         sym.is_self() or sym.is_return() or
                         sym.typ.is_function() or
+                        sym.is_free() or
                         # TODO:
                         sym.is_inlined() or
                         (sym.is_subobject() and sym.is_flattened()) or

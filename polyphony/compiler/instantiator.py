@@ -257,20 +257,17 @@ class WorkerInstantiator(object):
         else:
             self.new_scopes.add(new_worker)
             children = [c for c in worker.collect_scope() if c.is_closure()]
-            new_scopes = {worker:new_worker}
+            scope_map = {worker:new_worker}
             for child in children:
                 new_child = worker._clone_child(new_worker, worker, child)
                 new_child.add_tag('instantiated')
-                new_scopes[child] = new_child
+                scope_map[child] = new_child
                 self.new_scopes.add(new_child)
-            for old, new in new_scopes.items():
+            for old, new in scope_map.items():
                 syms = new_worker.find_scope_sym(old)
                 for sym in syms:
-                    if sym.scope in new_scopes.values():
+                    if sym.scope in scope_map.values():
                         sym.typ.set_scope(new)
-                if new.parent.is_namespace():
-                    continue
-                #assert new.parent.symbols[new.orig_name].typ.get_scope() is new
             # for local memnode
             self._instantiate_memnode(worker, new_worker)
             # for class field memnode

@@ -23,29 +23,26 @@ def clktime() -> int:
     pass
 
 
-from .io import Port
-
-
-@builtin
-def wait_edge(old:int, new:int, *ports:Port) -> None:
-    pass
-
-
-@builtin
-def wait_rising(*ports:Port) -> None:
-    pass
-
-
-@builtin
-def wait_falling(*ports:Port) -> None:
-    pass
-
-
-@builtin
-def wait_value(value:int, *ports:Port) -> None:
-    pass
-
-
 @builtin
 def wait_until(pred:function) -> bool:
     pass
+
+
+@inlinelib
+def wait_edge(old, new, port) -> None:
+    wait_until(lambda: port.edge(old, new))
+
+
+@inlinelib
+def wait_rising(port) -> None:
+    wait_until(lambda: port.edge(0, 1))
+
+
+@inlinelib
+def wait_falling(port) -> None:
+    wait_until(lambda: port.edge(1, 0))
+
+
+@inlinelib
+def wait_value(value, port) -> None:
+    wait_until(lambda: port.rd() == value)

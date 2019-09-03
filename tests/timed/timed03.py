@@ -11,7 +11,7 @@ class timed03:
     def __init__(self):
         self.i = Port(int, 'in')
         self.o = Port(int, 'out')
-        #self.append_worker(self.w)
+        self.append_worker(self.w)
         # Module instance variables are always registers
         self.y = 0
         self.z = 0
