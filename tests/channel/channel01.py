@@ -1,13 +1,15 @@
-from polyphony import module, testbench, Channel
-from polyphony.timing import clktime, wait_value
+from polyphony import module, testbench
+from polyphony import Channel
+from polyphony.timing import timed, clktime, wait_value
 from polyphony.io import Port
 
 
+@timed
 @module
 class channel01:
     def __init__(self):
         self.done = Port(bool, 'out', False)
-        self.c0 = Channel(int)
+        self.c0 = Channel(int, 2)
         self.append_worker(self.sender)
         self.append_worker(self.receiver)
 
@@ -29,6 +31,7 @@ class channel01:
         self.done.wr(True)
 
 
+@timed
 @testbench
 def test(c):
     wait_value(True, c.done)

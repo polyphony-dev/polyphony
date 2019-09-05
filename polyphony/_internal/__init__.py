@@ -54,20 +54,85 @@ class Net:
         pass
 
 
+from . import timing
+
+
+@timing.timed
+@module
+@inlinelib
 class Channel:
-    def __init__(self, dtype:generic, maxsize:int=1) -> object:
-        pass
+    def __init__(self, dtype, capacity=4):
+        self.din = 0
+        self.write = False
+        self.read = False
+        self.length = capacity
+        self.mem = [0] * capacity
+        self.wp = 0
+        self.rp = 0
+        self.count = 0
 
-    def get(self) -> generic:
-        pass
+        self._dout = Net(dtype, lambda:self.mem[self.rp])
+        self._full = Net(bool, lambda:self.count >= self.length)
+        self._empty = Net(bool, lambda:self.count == 0)
+        self._will_full = Net(bool, lambda:self.write and not self.read and self.count == self.length - 1)
+        self._will_empty = Net(bool, lambda:self.read and not self.write and self.count == 1)
 
-    def put(self, v:generic) -> None:
-        pass
+        self.append_worker(self.write_worker, loop=True)
+        self.append_worker(self.main_worker, loop=True)
 
-    @predicate
-    def empty(self) -> bool:
-        pass
+    def put(self, v):
+        timing.wait_until(lambda:not self.full() or not self.will_full())
+        self.write = True
+        self.din = v
+        timing.clkfence()
+        self.write = False
 
-    @predicate
-    def full(self) -> bool:
-        pass
+    def get(self):
+        timing.wait_until(lambda:not self.empty() or not self.will_empty())
+        self.read = True
+        timing.clkfence()
+        self.read = False
+        return self._dout.rd()
+
+    def full(self):
+        return self._full.rd()
+
+    def empty(self):
+        return self._empty.rd()
+
+    def will_full(self):
+        return self._will_full.rd()
+
+    def will_empty(self):
+        return self._will_empty.rd()
+
+    def write_worker(self):
+        if self.write:
+            self.mem[self.wp] = self.din
+
+    def _inc_wp(self):
+        self.wp = 0 if self.wp == self.length - 1 else self.wp + 1
+
+    def _inc_rp(self):
+        self.rp = 0 if self.rp == self.length - 1 else self.rp + 1
+
+    def main_worker(self):
+        if self.write and self.read:
+            if self.count == self.length:
+                self.count = self.count - 1
+                self._inc_rp()
+            elif self.count == 0:
+                self.count = self.count + 1
+                self._inc_wp()
+            else:
+                self.count = self.count
+                self._inc_wp()
+                self._inc_rp()
+        elif self.write:
+            if self.count < self.length:
+                self.count = self.count + 1
+                self._inc_wp()
+        elif self.read:
+            if self.count > 0:
+                self.count = self.count - 1
+                self._inc_rp()

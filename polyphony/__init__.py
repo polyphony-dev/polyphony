@@ -142,13 +142,11 @@ class RegArray(object):
 
 
 class _ModuleBase(object):
-    def __init__(self):
-        object.__setattr__(self, '_workers', [])
-        object.__setattr__(self, '_submodules', [])
+    _workers = []
 
     def append_worker(self, fn, *args, loop=False):
         w = _Worker(fn, args, loop)
-        self._workers.append(w)
+        _ModuleBase._workers.append(w)
         if hasattr(self, 'timed_module'):
             if inspect.ismethod(fn):
                 setattr(fn.__func__, 'timed_func', True)
@@ -202,13 +200,9 @@ class _ModuleDecorator(object):
             new_cls = type(cls.__name__, (_ModuleBase, ), dic)
             instance = new_cls.__new__(new_cls)
             io._enable()
-            super(new_cls, instance).__init__()
             instance.__init__(*args, **kwargs)
             io._disable()
             self.module_instances[new_cls.__name__].append(instance)
-            for name, obj in vars(instance).items():
-                if obj in self.module_instances[obj.__class__.__name__]:
-                    instance._submodules.append(obj)
             return instance
         _module_decorator.__dict__ = cls.__dict__.copy()
         _module_decorator.cls = cls
@@ -353,35 +347,7 @@ def unroll(seq, factor='full'):
     return seq
 
 
-class Channel(object):
-    '''
-    Channel class is used to communicate between workers.
-
-    *Parameters:*
-
-        dtype : an immutable type class
-            A data type of the queue port.
-            which of the below can be used.
-
-                - int
-                - bool
-                - polyphony.typing.bit
-                - polyphony.typing.int<n>
-                - polyphony.typing.uint<n>
-
-        maxsize : int, optional
-            The capacity of the queue
-
-    *Examples:*
-    ::
-
-        @module
-        class M:
-            def __init__(self):
-                self.in_q = Channel(uint16, maxsize=4)
-                self.out_q = Channel(uint16, maxsize=4)
-    '''
-
+class Channel_(object):
     def __init__(self, dtype, maxsize=1):
         self._dtype = dtype
         self.__pytype = base._pytype_from_dtype(dtype)
@@ -427,6 +393,113 @@ class Channel(object):
         self._changed = False
 
 
+@timing.timed
+@module
+class Channel:
+    '''
+    Channel class is used to communicate between workers.
+
+    *Parameters:*
+
+        dtype : an immutable type class
+            A data type of the channel.
+            which of the below can be used.
+
+                - int
+                - bool
+                - polyphony.typing.bit
+                - polyphony.typing.int<n>
+                - polyphony.typing.uint<n>
+
+        capacity : int, optional
+            The capacity of the internal queue
+
+    *Examples:*
+    ::
+
+        @module
+        class M:
+            def __init__(self):
+                self.ch = Channel(uint16, capacity=4)
+    '''
+
+    def __init__(self, dtype, capacity):
+        self.din = 0
+        self.write = False
+        self.read = False
+        self.length = capacity
+        self.mem = [0] * capacity
+        self.wp = 0
+        self.rp = 0
+        self.count = 0
+
+        self._dout = Net(dtype, lambda:self.mem[self.rp])
+        self._full = Net(bool, lambda:self.count >= self.length)
+        self._empty = Net(bool, lambda:self.count == 0)
+        self._will_full = Net(bool, lambda:self.write and not self.read and self.count == self.length - 1)
+        self._will_empty = Net(bool, lambda:self.read and not self.write and self.count == 1)
+
+        self.append_worker(self.write_worker, loop=True)
+        self.append_worker(self.main_worker, loop=True)
+
+    def put(self, v):
+        timing.wait_until(lambda:not self.full() and not self.will_full())
+        self.write = True
+        self.din = v
+        timing.clkfence()
+        self.write = False
+
+    def get(self):
+        timing.wait_until(lambda:not self.empty() and not self.will_empty())
+        self.read = True
+        timing.clkfence()
+        self.read = False
+        return self._dout.rd()
+
+    def full(self):
+        return self._full.rd()
+
+    def empty(self):
+        return self._empty.rd()
+
+    def will_full(self):
+        return self._will_full.rd()
+
+    def will_empty(self):
+        return self._will_empty.rd()
+
+    def write_worker(self):
+        if self.write:
+            self.mem[self.wp] = self.din
+
+    def _inc_wp(self):
+        self.wp = 0 if self.wp == self.length - 1 else self.wp + 1
+
+    def _inc_rp(self):
+        self.rp = 0 if self.rp == self.length - 1 else self.rp + 1
+
+    def main_worker(self):
+        if self.write and self.read:
+            if self.count == self.length:
+                self.count = self.count - 1
+                self._inc_rp()
+            elif self.count == 0:
+                self.count = self.count + 1
+                self._inc_wp()
+            else:
+                self.count = self.count
+                self._inc_wp()
+                self._inc_rp()
+        elif self.write:
+            if self.count < self.length:
+                self.count = self.count + 1
+                self._inc_wp()
+        elif self.read:
+            if self.count > 0:
+                self.count = self.count - 1
+                self._inc_rp()
+
+
 def ptype2vcdtype(typ):
     if typ.__module__ == 'polyphony.typing':
         if typ.__name__.startswith('int'):
@@ -465,12 +538,6 @@ class Simulator(object):
         self._tests.append((fn, modules, args, kwargs))
 
     def _setup(self, modules):
-        def collect_worker(modules):
-            for m in modules:
-                self._workers.extend(m._workers)
-                if m._submodules:
-                    collect_worker(m._submodules)
-
         global _is_worker_running
         if _is_worker_running:
             return
@@ -478,8 +545,7 @@ class Simulator(object):
 
         io._enable()
         self._workers.clear()
-
-        collect_worker(modules)
+        self._workers.extend(_ModuleBase._workers)
         for p in io.Port.instances:
             p._reset()
 
