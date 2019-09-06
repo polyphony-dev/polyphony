@@ -81,14 +81,14 @@ class Channel:
         self.append_worker(self.main_worker, loop=True)
 
     def put(self, v):
-        timing.wait_until(lambda:not self.full() or not self.will_full())
+        timing.wait_until(lambda:not self.full() and not self.will_full())
         self.write = True
         self.din = v
         timing.clkfence()
         self.write = False
 
     def get(self):
-        timing.wait_until(lambda:not self.empty() or not self.will_empty())
+        timing.wait_until(lambda:not self.empty() and not self.will_empty())
         self.read = True
         timing.clkfence()
         self.read = False
