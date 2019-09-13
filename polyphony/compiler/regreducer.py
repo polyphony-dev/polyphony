@@ -38,22 +38,10 @@ class AliasVarDetector(IRVisitor):
             if ir.src.func_scope().is_predicate():
                 return
             elif ir.src.func_scope().is_method() and ir.src.func_scope().parent.is_port():
-                WORKAROUND = True
-                if WORKAROUND:
-                    if ir.src.func_scope().parent.name.startswith('polyphony.io.Queue'):
-                        assert False
-                        return
-                    if ir.src.func_scope().parent.name.startswith('polyphony.Channel'):
-                        return
-                    if ir.src.func.attr.name in ('rd', 'edge'):
-                        pass
-                    else:
-                        return
+                if ir.src.func.attr.name in ('rd', 'edge'):
+                    pass
                 else:
-                    if ir.src.func.attr.name == 'rd':
-                        pass
-                    else:
-                        return
+                    return
             elif ir.src.func_scope().is_method() and ir.src.func_scope().parent.name.startswith('polyphony.Net'):
                 if ir.src.func.attr.name in ('rd'):
                     pass
@@ -72,11 +60,12 @@ class AliasVarDetector(IRVisitor):
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
             return
-        # TODO: need more strict scheme
-        #uses = self.usedef.get_syms_used_at(ir)
-        #for u in uses:
-        #    if u.is_induction():
-        #        return
+        stms = self.usedef.get_stms_using(sym)
+        for stm in stms:
+            if sched != 'pipeline' and stm.block.synth_params['scheduling'] == 'pipeline':
+                return
+            if sched != 'parallel' and stm.block.synth_params['scheduling'] == 'parallel':
+                return
         sym.add_tag('alias')
 
     def visit_PHI(self, ir):

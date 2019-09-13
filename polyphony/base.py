@@ -88,7 +88,9 @@ class Net(object):
         v = self.exp()
         if not isinstance(v, self.__pytype):
             raise TypeError(f"Incompatible value type, got {type(v)} expected {self._dtype}")
+        changed = self.v != v
         self.v = v
+        return changed
 
     def assign(self, exp):
         self.exp = exp

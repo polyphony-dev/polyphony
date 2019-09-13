@@ -37,7 +37,7 @@ class Scope(Tagged):
     @classmethod
     def create(cls, parent, name, tags, lineno=0, origin=None):
         if name is None:
-            name = "unnamed_scope" + str(cls.scope_id)
+            name = "_" + str(cls.scope_id)
         s = Scope(parent, name, tags, lineno, cls.scope_id)
         if s.name in env.scopes:
             env.append_scope(s)

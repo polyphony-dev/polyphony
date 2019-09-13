@@ -41,6 +41,10 @@ class AHDLCopyOpt(AHDLVisitor):
             else:
                 print(d)
                 assert False
+            if (target.sig.sym and
+                    target.sig.sym.typ.is_object() and
+                    target.sig.sym.typ.get_scope().name.startswith('polyphony.Net')):
+                continue
             uses = hdlmodule.usedef.get_stms_using(target.sig)
             if len(uses) == 1 and src.is_a(AHDL_VAR):
                 use = list(uses)[0]

@@ -27,6 +27,15 @@ def get_call_latency(call, stm):
             else:
                 return UNIT_STEP * 1
         return UNIT_STEP
+    elif call.func_scope().parent.name.startswith('polyphony.Net'):
+        if call.func_scope().orig_name == 'rd':
+            if stm.is_a(MOVE):
+                if stm.dst.symbol().is_alias():
+                    return 0
+                else:
+                    return UNIT_STEP * 1
+            else:
+                return 0
     elif call.func_scope().asap_latency > 0:
         return UNIT_STEP * call.func_scope().asap_latency
     return UNIT_STEP * CALL_MINIMUM_STEP

@@ -140,6 +140,9 @@ class RegArray(object):
     def __next__(self):
         return self.vs.__next__()
 
+    def __str__(self):
+        return str(self.vs)
+
 
 class _ModuleBase(object):
     _workers = []
@@ -629,8 +632,12 @@ class Simulator(object):
         _module_register_arrays.clear()
 
     def _update_nets(self):
-        for r in Net.instances:
-            r._update()
+        update_count = 0
+        while any([n._update() for n in Net.instances]):
+            update_count += 1
+            if update_count > len(Net.instances):
+                print('Net value is not stable')
+                break
 
     def run(self):
         for test_fn, modules, args, kwargs in self._tests:

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from .ahdl import *
 from .ahdlhelper import AHDLVarReplacer
 from .ahdlusedef import AHDLUseDefDetector
@@ -39,7 +40,8 @@ class PipelineState(State):
     def __str__(self):
         s = '---------------------------------\n'
         s += f'{self.name}\n'
-
+        for mv in self.whole_moves:
+            s += f'  {mv}\n'
         for subst in self.substates:
             for c in subst.codes:
                 if isinstance(c, PipelineStage):
@@ -193,10 +195,8 @@ class PipelineStageBuilder(STGItemBuilder):
         for items in self.scheduled_items.queue.values():
             for item, _ in items:
                 assert isinstance(item, AHDL)
-                # FIXME: should check the use of wait function
-                for seq in item.find_ahdls(AHDL_SEQ):
-                    if seq.find_ahdls([AHDL_CHANNEL_GET, AHDL_CHANNEL_PUT]):
-                        return False
+                if item.find_ahdls(AHDL_META_WAIT):
+                    return False
         return True
 
     def _build_pipeline_stages(self, prefix, pstate, is_main):
@@ -211,6 +211,9 @@ class PipelineStageBuilder(STGItemBuilder):
             else:
                 codes = [AHDL_NOP('empty stage')]
             self._make_stage(pstate, step, codes, is_stall_free)
+        self._transform_wait_function(pstate)
+        for stage in pstate.stages:
+            self._add_pipeline_guard(pstate, stage)
         if is_stall_free:
             for stage in pstate.stages:
                 self._add_control_chain_no_stall(pstate, stage)
@@ -247,24 +250,53 @@ class PipelineStageBuilder(STGItemBuilder):
 
     def _make_stage(self, pstate, step, codes, is_stall_free):
         stage = pstate.new_stage(step, codes)
-        guarded_codes = []
         if stage.step == 0 and pstate.is_finite_loop:
             stage.has_enable = True
         if stage.step > 0:
             stage.has_hold = not is_stall_free
         for c in stage.codes:
-            for seq in c.find_ahdls(AHDL_SEQ):
-                if seq.step == 0:
-                    ahdl_chan = seq.find_ahdls([AHDL_CHANNEL_GET, AHDL_CHANNEL_PUT])
-                    if ahdl_chan:
-                        stage.has_enable = True
-                        if any([a.is_a(AHDL_CHANNEL_PUT) for a in ahdl_chan]):
-                            stage.is_source = True
+            if c.find_ahdls(AHDL_META_WAIT):
+                stage.has_enable = True
+
+    def _transform_wait_function(self, pstate):
+        multi_assign_vars = defaultdict(list)
+        removes = []
+        for step, stage in enumerate(pstate.stages):
+            for code in stage.codes[:]:
+                if code.is_a(AHDL_META_WAIT):
+                    assert stage.has_enable
+                    enable_sig = pstate.enable_signal(step)
+                    enable_cond = AHDL_OP(*code.args)
+                    stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
+                    removes.append((stage, code))
+                elif code.is_a([AHDL_NOP, AHDL_TRANSITION]):
+                    removes.append((stage, code))
+                elif code.is_a(AHDL_MOVE) and code.dst.is_a(AHDL_VAR) and not code.dst.sig.is_net():
+                    multi_assign_vars[code.dst.sig].append((step, stage, code))
+        for sig, srcs in multi_assign_vars.items():
+            rhs = None
+            if len(srcs) > 1:
+                for step, stage, code in reversed(srcs):
+                    removes.append((stage, code))
+            else:
+                continue
+            for step, _, code in reversed(srcs):
+                src = code.src
+                valid = pstate.valid_signal(step)
+                if rhs is None:
+                    rhs = src
+                else:
+                    rhs = AHDL_IF_EXP(AHDL_VAR(valid, Ctx.LOAD), src, rhs)
+            pstate.add_global_move(sig.name, AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), rhs))
+        for stage, code in removes:
+            stage.codes.remove(code)
+
+    def _add_pipeline_guard(self, pstate, stage):
+        guarded_codes = []
         for c in stage.codes[:]:
             if self._check_guard_need(c):
                 guarded_codes.append(c)
                 stage.codes.remove(c)
-
         if stage.step == 0:
             if stage.has_enable:
                 guard_cond = AHDL_VAR(pstate.ready_signal(0), Ctx.LOAD)

@@ -176,7 +176,12 @@ class SchedulerImpl(object):
         for node in dfg.get_priority_ordered_nodes():
             def_l, seq_l = get_latency(node.tag)
             if node.tag.block.synth_params['scheduling'] == 'timed':
-                if has_clkfence(node.tag):
+                used_by_untimed = False
+                for succ_node in dfg.succs(node):
+                    if succ_node.tag.block.synth_params['scheduling'] != 'timed':
+                        used_by_untimed = True
+                        break
+                if has_clkfence(node.tag) or used_by_untimed:
                     self.node_latency_map[node] = (def_l, def_l, def_l)
                 else:
                     self.node_latency_map[node] = (0, 0, 0)

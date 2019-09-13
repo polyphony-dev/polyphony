@@ -233,6 +233,8 @@ class AHDL_MOVE(AHDL_STM):
         self.src = src
 
     def __str__(self):
+        if self.dst.is_a(AHDL_VAR) and self.dst.sig.is_net():
+            return '{} := {}'.format(self.dst, self.src)
         return '{} <= {}'.format(self.dst, self.src)
 
     def __repr__(self):
