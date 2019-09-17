@@ -1,15 +1,15 @@
 from polyphony import testbench
 from polyphony import module
 from polyphony.typing import bit8
-from polyphony.io import Queue
+from polyphony.io import Handshake
 from polyphony import is_worker_running
 
 
 @module
 class worker_with_tuple:
     def __init__(self):
-        self.i  = Queue(bit8, 'in')
-        self.o  = Queue(bit8, 'out')
+        self.i  = Handshake(bit8, 'in')
+        self.o  = Handshake(bit8, 'out')
         self.append_worker(self.worker)
 
     def func(self, a, b):

@@ -55,18 +55,18 @@ class Net:
 
 
 from . import timing
-
+from . import typing
 
 @timing.timed
 @module
 @inlinelib
 class Channel:
     def __init__(self, dtype, capacity=4):
-        self.din = 0
+        self.din:dtype = 0
         self.write = False
         self.read = False
         self.length = capacity
-        self.mem = [0] * capacity
+        self.mem:typing.List[dtype][capacity] = [0] * capacity
         self.wp = 0
         self.rp = 0
         self.count = 0

@@ -500,11 +500,14 @@ class TypePropagation(IRVisitor):
     def _new_scope_with_type(self, scope, typ, param_idx):
         if typ.is_class():
             typscope = typ.get_scope()
-            name = scope.orig_name + '<' + typscope.orig_name + '>'
             if typscope.is_typeclass():
                 t = Type.from_typeclass(typscope)
+                if typ.has_typeargs():
+                    args = typ.get_typeargs()
+                    t.attrs.update(args)
             else:
                 t = Type.object(typscope)
+            name = f'{scope.orig_name}<{t}>'
         else:
             return None
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
