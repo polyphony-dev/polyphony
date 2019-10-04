@@ -120,7 +120,7 @@ class CopyCollector(IRVisitor):
         if ir.src.is_a(TEMP):
             if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
-            if not Type.is_strict_same(ir.dst.symbol().typ, ir.src.sym.typ):
+            if not ir.dst.symbol().typ == ir.src.sym.typ:
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):

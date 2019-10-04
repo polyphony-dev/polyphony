@@ -43,9 +43,9 @@ class Type(object):
             elif ann == 'bool':
                 t = Type.bool()
             elif ann == 'list':
-                t = Type.list(Type.undef_t, None)  # TODO: use Type.any
+                t = Type.list(Type.undef(), None)
             elif ann == 'tuple':
-                t = Type.tuple(Type.undef_t, None, Type.ANY_LENGTH)  # TODO: use Type.any
+                t = Type.tuple(Type.undef(), None, Type.ANY_LENGTH)
             elif ann == 'object':
                 t = Type.object(None)
             elif ann == 'str':
@@ -94,7 +94,7 @@ class Type(object):
                     elms = [Type.from_annotation(elm, scope) for elm in second]
                     if len(elms) == 2 and elms[1].is_ellipsis():
                         pass
-                    elif not all([Type.is_strict_same(elms[0], elm) for elm in elms[1:]]):
+                    elif not all([elms[0] == elm for elm in elms[1:]]):
                         raise TypeError('multiple type tuple is not supported yet')
                 elif isinstance(second, str):
                     elms = [Type.from_annotation(second, scope)]
@@ -106,11 +106,11 @@ class Type(object):
                         t.set_length(Type.ANY_LENGTH)
                     return t
         elif ann is None:
-            return Type.undef_t
+            return Type.undef()
         assert False
 
     @classmethod
-    def from_ir(cls, ann):
+    def from_ir(cls, ann, explicit=False):
         from .ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
         from .symbol import Symbol
         assert ann
@@ -134,20 +134,20 @@ class Type(object):
                 t = Type.object(scope)
         elif ann.is_a(MREF):
             if ann.mem.is_a(MREF):
-                t = Type.from_ir(ann.mem)
+                t = Type.from_ir(ann.mem, explicit)
                 if ann.offset.is_a(CONST):
                     t.set_length(ann.offset.value)
                 else:
-                    t.set_length(Type.from_ir(ann.offset))
+                    t.set_length(Type.from_ir(ann.offset, explicit))
             else:
-                t = Type.from_ir(ann.mem)
+                t = Type.from_ir(ann.mem, explicit)
                 if t.is_int():
                     assert ann.offset.is_a(CONST)
                     t.set_width(ann.offset.value)
                 elif t.is_seq():
-                    t.set_element(Type.from_ir(ann.offset))
+                    t.set_element(Type.from_ir(ann.offset, explicit))
                 elif t.is_class():
-                    elm_t = Type.from_ir(ann.offset)
+                    elm_t = Type.from_ir(ann.offset, explicit)
                     if elm_t.is_object():
                         t.set_scope(elm_t.get_scope())
                     else:
@@ -158,11 +158,11 @@ class Type(object):
             assert ann.repeat.is_a(CONST) and ann.repeat.value == 1
             assert ann.is_mutable is False
             # FIXME: tuple should have more than one type
-            return Type.from_ir(ann.items[0])
+            return Type.from_ir(ann.items[0], explicit)
         else:
             assert ann.is_a(IRExp)
             t = Type.expr(EXPR(ann))
-        t.set_explicit(True)
+        t.set_explicit(explicit)
         return t
 
     @classmethod
@@ -185,9 +185,9 @@ class Type(object):
         elif scope.orig_name == 'str':
             return Type.str()
         elif scope.orig_name == 'list':
-            return Type.list(Type.undef_t, None)
+            return Type.list(Type.undef(), None)
         elif scope.orig_name == 'tuple':
-            return Type.tuple(Type.undef_t, None, Type.ANY_LENGTH)
+            return Type.tuple(Type.undef(), None, Type.ANY_LENGTH)
         elif scope.orig_name == 'Type':
             return Type.klass(None)
         elif scope.orig_name.startswith('int'):
@@ -203,8 +203,7 @@ class Type(object):
                 assert len(elms) == 1
                 return Type.list(elms[0], None)
             else:
-                # TODO: use Type.any
-                return Type.list(Type.undef_t, None)
+                return Type.list(Type.undef(), None)
         elif scope.orig_name == ('Tuple'):
             if elms:
                 if len(elms) == 2 and elms[1].is_ellipsis():
@@ -214,8 +213,7 @@ class Type(object):
                 # TODO: multiple type tuple
                 return Type.tuple(elms[0], None, length)
             else:
-                # TODO: use Type.any
-                return Type.tuple(Type.undef_t, None, Type.ANY_LENGTH)
+                return Type.tuple(Type.undef(), None, Type.ANY_LENGTH)
         else:
             print(scope.name)
             assert False
@@ -274,39 +272,92 @@ class Type(object):
             return self.get_scope().orig_name
         if env.dev_debug_mode:
             if self.name == 'int':
-                return 'int{}'.format(self.get_width())
+                return f'int{self.get_width()}'
             if self.name == 'list':
                 if self.has_length():
-                    return 'list<{}><{}>'.format(self.get_element(), self.get_length())
+                    return f'list<{self.get_element()}, {self.get_length()}>'
                 else:
-                    return 'list<{}>'.format(self.get_element())
+                    return f'list<{self.get_element()}>'
+            if self.name == 'tuple':
+                return f'tuple<{self.get_element()}>'
             if self.name == 'port':
-                return 'port<{}, {}>'.format(self.get_dtype(), self.get_direction())
+                return f'port<{self.get_dtype()}, {self.get_direction()}>'
             if self.name == 'function':
                 if self.get_scope().is_method():
-                    return 'function<{}.{}>'.format(self.get_scope().parent.orig_name, self.get_scope().orig_name)
+                    receiver_name = self.get_scope().parent.orig_name
+                    return f'function<{receiver_name}>'
                 else:
-                    return 'function<{}>'.format(self.get_scope().orig_name)
+                    return f'function'
             if self.name == 'expr':
                 expr = self.get_expr()
                 return str(expr)
+            if self.name == 'union':
+                return f'union<{self.get_types()}>'
         return self.name
 
     def __repr__(self):
-        return 'Type({}, {})'.format(repr(self.name), repr(self.attrs))
+        return f'{self.name}({repr(self.attrs)})'
+
+    def __hash__(self):
+        if self.name == 'int':
+            return hash((self.name, self.get_width(), self.get_signed()))
+        if self.name in ('bool', 'str', 'undef', 'generic', 'none'):
+            return hash((self.name,))
+        if self.name == 'union':
+            hs = tuple([hash(t) for t in self.get_types()])
+            return hash(hs)
+        if self.name == 'list':
+            return hash((hash(self.get_element()), self.get_length()))
+        if self.name == 'tuple':
+            return hash((hash(self.get_element()), self.get_length()))
+        if self.name == 'object':
+            return hash((self.name, self.get_scope().name))
+        if self.name == 'class':
+            return hash((self.name, self.get_scope().name))
+        if self.name == 'function':
+            return hash((self.name, self.get_scope().name))
+        if self.name == 'namespace':
+            return hash((self.name, self.get_scope().name))
+        if self.name == 'port':
+            return hash((self.name, self.get_scope().name))
+        return 0
+
+    def __eq__(self, other):
+        if not isinstance(other, Type):
+            return False
+        if self.name != other.name:
+            return False
+        if self.name == 'int':
+            return self.get_width() == other.get_width() and self.get_signed() == other.get_signed()
+        if self.name in ('bool', 'str', 'undef', 'generic', 'none'):
+            return True
+        if self.name == 'union':
+            return self.get_types() == other.get_types()
+        if self.name == 'list':
+            return self.get_element() == other.get_element() and self.get_length() == other.get_length()
+        if self.name == 'tuple':
+            return self.get_element() == other.get_element() and self.get_length() == other.get_length()
+        if self.name == 'object':
+            return self.get_scope() is other.get_scope()
+        if self.name == 'class':
+            return self.get_scope() is other.get_scope()
+        if self.name == 'function':
+            return self.get_scope() is other.get_scope()
+        if self.name == 'namespace':
+            return self.get_scope() is other.get_scope()
+        if self.name == 'port':
+            return self.get_scope() is other.get_scope()
+        return False
+
+    @classmethod
+    def undef(cls):
+        return Type('undef')
 
     @classmethod
     def int(cls, width=None, signed=True):
         if width is None:
             width = env.config.default_int_width
         return Type('int', width=width, signed=signed)
-
-    @classmethod
-    def wider_int(clk, t0, t1):
-        if t0.is_int() and t1.is_int():
-            return t0 if t0.get_width() >= t1.get_width() else t1
-        else:
-            return t0
 
     @classmethod
     def bool(cls):
@@ -341,7 +392,7 @@ class Type(object):
     @classmethod
     def function(cls, scope, ret_t=None, param_ts=None):
         if ret_t is None:
-            ret_t = Type.undef_t
+            ret_t = Type.undef()
         if param_ts is None:
             param_ts = []
         return Type('function', scope=scope, return_type=ret_t, param_types=param_ts)
@@ -379,26 +430,25 @@ class Type(object):
         assert expr
         return Type('expr', expr=expr)
 
+    @classmethod
+    def union(cls, types):
+        raise NotImplementedError()
+        assert isinstance(types, set)
+        assert all([isinstance(t, Type) for t in types])
+        return UnionType(types)
+
     def is_seq(self):
-        return self.name == 'list' or self.name == 'tuple' or self.name == 'any'
+        return self.name in ('list', 'tuple')
 
     def is_scalar(self):
-        return self.name == 'int' or self.name == 'bool' or self.name == 'str' or self.name == 'any'
+        return self.name in ('int', 'bool', 'str')
 
     def is_containable(self):
-        return self.name == 'namespace' or self.name == 'class'
+        return self.name in ('namespace', 'class')
 
     @classmethod
     def is_same(cls, t0, t1):
         return t0.name == t1.name
-
-    @classmethod
-    def is_strict_same(cls, t0, t1):
-        if t0.name != t1.name:
-            return False
-        if t0.is_int():
-            return t0.get_width() == t1.get_width() and t0.get_signed() == t1.get_signed()
-        return True
 
     @classmethod
     def is_assignable(cls, to_t, from_t):
@@ -406,13 +456,14 @@ class Type(object):
             return True
         if to_t is from_t:
             return True
-        if to_t.is_int() and from_t.is_int():
+        if to_t.name == from_t.name:
+            if to_t.name in ('int', 'bool', 'str'):
+                return True
+        if to_t == from_t:
             return True
         if to_t.is_int() and from_t.is_bool():
             return True
         if to_t.is_bool() and from_t.is_int():
-            return True
-        if to_t.is_str() and from_t.is_str():
             return True
         if to_t.is_list() and from_t.is_list():
             if to_t.has_length() and from_t.has_length():
@@ -437,13 +488,18 @@ class Type(object):
             return False
         if to_t.is_object() and from_t.is_port() and to_t.get_scope() is from_t.get_scope():
             return True
-        if Type.is_strict_same(to_t, from_t):
-            return True
         if to_t.is_expr():
             from .ir import TEMP, ATTR
             expr = to_t.get_expr()
             if expr.exp.is_a([TEMP, ATTR]) and expr.exp.symbol().typ.is_class():
                 return True
+        if to_t.is_function() and from_t.is_function():
+            if to_t.get_scope() is None:
+                return True
+        if to_t.is_union():
+            return any([cls.is_assignable(t, from_t) for t in to_t.get_types()])
+        if from_t.is_union() and len(from_t.get_types()) == 1:
+            return any([cls.is_assignable(to_t, t) for t in from_t.get_types()])
         return False
 
     @classmethod
@@ -452,6 +508,19 @@ class Type(object):
 
     def is_explicit(self):
         return 'explicit' in self.attrs and self.attrs['explicit'] is True
+
+    def is_perfect_explicit(self):
+        if self.name in ('list', 'tuple'):
+            return self.is_explicit() and self.get_element().is_explicit()
+        else:
+            return self.is_explicit()
+
+    def set_perfect_explicit(self):
+        if self.name in ('list', 'tuple'):
+            self.set_explicit(True)
+            self.get_element().set_explicit(True)
+        else:
+            self.set_explicit(True)
 
     def clone(self):
         if self.name in {'undef', 'ellipsis'}:
@@ -481,40 +550,51 @@ class Type(object):
     @classmethod
     def propagate(cls, dst, src):
         if dst.is_explicit():
+            new_dst = dst.clone()
             if dst.is_list():
                 assert cls.is_same(dst, src)
                 elm = cls.propagate(dst.get_element(), src.get_element())
-                dst.set_element(elm)
+                new_dst.set_element(elm)
                 if dst.get_length() == Type.ANY_LENGTH:
-                    dst.set_length(src.get_length())
+                    new_dst.set_length(src.get_length())
             elif dst.is_tuple():
                 assert cls.is_same(dst, src)
                 dst_elm, src_elm = dst.get_element(), src.get_element()
                 elm = cls.propagate(dst_elm, src_elm)
-                dst.set_element(elm)
+                new_dst.set_element(elm)
                 if dst.get_length() == Type.ANY_LENGTH:
-                    dst.set_length(src.get_length())
+                    new_dst.set_length(src.get_length())
             elif dst.is_function():
                 assert cls.is_same(dst, src)
                 if dst.get_scope() is None:
-                    dst.set_scope(src.get_scope())
+                    new_dst.set_scope(src.get_scope())
                 param_types = []
                 for pt_dst, pt_src in zip(dst.get_param_types(), src.get_param_types()):
                     param_types.append(cls.propagate(pt_dst, pt_src))
-                dst.set_param_types(param_types)
+                new_dst.set_param_types(param_types)
                 ret = cls.propagate(dst.get_return_type(), src.get_return_type())
-                dst.set_return_type(ret)
+                new_dst.set_return_type(ret)
             elif dst.is_object():
-                assert cls.is_same(dst, src)
-                if dst.get_scope() is None:
-                    dst.set_scope(src.get_scope())
-            return dst
+                if cls.is_same(dst, src):
+                    if dst.get_scope() is None:
+                        new_dst.set_scope(src.get_scope())
+                    elif dst.get_scope() is src.get_scope().origin:
+                        new_dst.set_scope(src.get_scope())
+                elif src.is_port() and dst.get_scope().is_port():
+                    new_dst = src.clone()
+            elif dst.is_generic():
+                return src.clone()
+            elif dst.is_union():
+                raise NotImplementedError()
+            return new_dst
         else:
-            return src
+            return src.clone()
 
     @classmethod
     def can_propagate(cls, dst, src):
         if dst.is_undef():
+            return True
+        elif dst.is_union():
             return True
         elif dst.is_seq() and src.is_seq():
             if dst.get_memnode() is src.get_memnode():
@@ -523,6 +603,8 @@ class Type(object):
                 return True
             elif src.get_memnode() and dst.get_memnode().sym is src.get_memnode().sym:
                 return True
+            #assert False
+            #print(dst, src)
             return False
         return True
 
@@ -548,5 +630,51 @@ class Type(object):
         return exprs
 
 
-Type.undef_t = Type('undef')
 Type.ellipsis_t = Type('ellipsis')
+
+
+class UnionType(Type):
+    def __init__(self, types):
+        super().__init__('union')
+        self.types = types
+
+    def __getattr__(self, name):
+        if name.startswith('is_'):
+            typename = name[3:]
+            return lambda: self.name == typename
+        elif name.startswith('has_'):
+            typname = name[4:]
+            tnames = [t.name for t in self.types]
+            return lambda: typname in tnames
+        else:
+            raise AttributeError(name)
+
+    def __repr__(self):
+        return f'{self.name}({self.types})'
+
+    def __str__(self):
+        if env.dev_debug_mode:
+            return f'union<{self.types}>'
+        return self.name
+
+    def is_seq(self):
+        return all([t.name in ('list', 'tuple') for t in self.types])
+
+    def is_scalar(self):
+        return all([t.name in ('int', 'bool', 'str') for t in self.types])
+
+    def is_containable(self):
+        return all([t.name in ('namespace', 'class') for t in self.types])
+
+    def get_types(self):
+        return self.types
+
+    def clone(self):
+        return UnionType(self.types.copy())
+
+    def get_element(self):
+        assert self.is_seq()
+        return UnionType(set([t.get_element() for t in self.types if t.is_seq()]))
+
+    def get_memnode(self):
+        assert False

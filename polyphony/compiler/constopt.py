@@ -360,8 +360,9 @@ class ConstantOpt(ConstantOptBase):
         # Consider the case self.scope is cloned
         if not replaces and self.scope.origin:
             orig_symbols = {cloned:orig for orig, cloned in self.scope.cloned_symbols.items()}
-            target = orig_symbols[target]
-        replaces = VarReplacer.replace_uses(TEMP(target, Ctx.LOAD), src, closure.usedef)
+            if target in orig_symbols:
+                target = orig_symbols[target]
+                replaces = VarReplacer.replace_uses(TEMP(target, Ctx.LOAD), src, closure.usedef)
 
     def visit_SYSCALL(self, ir):
         if ir.sym.name == 'len':

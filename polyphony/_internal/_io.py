@@ -10,13 +10,10 @@ class Port:
     def wr(self, v:generic) -> None:
         pass
 
-    def __call__(self, v=None) -> generic:
+    def assign(self, fn:function) -> None:
         pass
 
-    def assign(self, fn:generic) -> None:
-        pass
-
-    def edge(self, old, new) -> bool:
+    def edge(self, old:generic, new:generic) -> bool:
         pass
 
 

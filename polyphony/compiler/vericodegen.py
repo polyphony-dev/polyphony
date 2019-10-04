@@ -209,13 +209,13 @@ class VerilogCodeGen(AHDLVisitor):
             decls = [decl for decl in decls if isinstance(decl, AHDL_SIGNAL_DECL)]
             if decls:
                 self.emit(f'//signals: {tag}')
-                for decl in sorted(decls, key=lambda d: str(d)):
+                for decl in sorted(decls, key=lambda d: d.name):
                     self.visit(decl)
         for tag, decls in sorted(self.hdlmodule.decls.items()):
             decls = [decl for decl in decls if not isinstance(decl, AHDL_SIGNAL_DECL)]
             if decls:
                 self.emit(f'//combinations: {tag}')
-                for decl in sorted(decls, key=lambda d: str(d)):
+                for decl in sorted(decls, key=lambda d: d.name):
                     self.visit(decl)
 
     def _get_io_names_from(self, interface):

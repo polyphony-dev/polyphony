@@ -51,7 +51,7 @@ class AliasVarDetector(IRVisitor):
                 return
         elif ir.src.is_a(MREF):
             memnode = ir.src.mem.symbol().typ.get_memnode()
-            if memnode.is_immutable() or not memnode.is_writable() or sched == 'timed':
+            if sched == 'timed':
                 sym.add_tag('alias')
                 return
             # TODO:

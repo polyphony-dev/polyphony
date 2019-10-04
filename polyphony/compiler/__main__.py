@@ -61,7 +61,9 @@ from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .statereducer import StateReducer
 from .stg import STGBuilder
 from .synth import DefaultSynthParamSetter
-from .typecheck import TypePropagation, InstanceTypePropagation
+from .typecheck import TypePropagation
+from .typecheck import EarlyTypePropagation
+from .typecheck import InstanceTypePropagation
 from .typecheck import TypeChecker
 from .typecheck import PortAssignChecker
 from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
@@ -206,7 +208,6 @@ def connectport(driver, scope):
     portconnector.process(scope)
     for s in portconnector.scopes:
         driver.insert_scope(s)
-        TypePropagation().process(s)
 
 
 def flattenport(driver, scope):
@@ -264,19 +265,19 @@ def evaltype(driver, scope):
 
 
 def earlytypeprop(driver):
-    typed_scopes = TypePropagation().process_all(driver)
+    typeprop = EarlyTypePropagation()
+    typed_scopes = typeprop.process_all()
+    scopes = driver.all_scopes()
     for s in typed_scopes:
-        assert s.name in env.scopes
-        driver.insert_scope(s)
-        TypePropagation().process(s)
+        if s not in scopes:
+            driver.insert_scope(s)
+    for s in scopes:
+        if s not in typed_scopes:
+            driver.remove_scope(s)
 
 
-def typeprop(driver, scope):
-    typed_scopes = TypePropagation().process(scope)
-    for s in typed_scopes:
-        assert s.name in env.scopes
-        driver.insert_scope(s)
-        TypePropagation().process(s)
+def typeprop(driver):
+    TypePropagation().process_all()
 
 
 def typecheck(driver, scope):
@@ -348,8 +349,8 @@ def instantiate(driver):
                 continue
             driver.insert_scope(s)
             usedef(driver, s)
-            typeprop(driver, s)
             constopt(driver, s)
+    TypePropagation().process_all()
     if new_modules:
         InstanceTypePropagation().process_all()
     new_scopes = WorkerInstantiator().process_all()
@@ -368,7 +369,8 @@ def postinstantiate(driver):
     for s in scopes:
         if env.config.enable_pure:
             execpure(driver, s)
-        typeprop(driver, s)
+    TypePropagation().process_all()
+    for s in scopes:
         constopt(driver, s)
         checkcfg(driver, s)
     scopegraph(driver)
@@ -654,9 +656,13 @@ def compile_plan():
         pure(buildpurector),
 
         dbg(dumpscope),
-        filter_scope(is_static_scope),
+        iftrans,
+        reduceblk,
         earlyquadruple,
+        dbg(dumpscope),
         earlytypeprop,
+
+        filter_scope(is_static_scope),
         latequadruple,
         earlyrestrictioncheck,
         staticconstopt,
@@ -667,28 +673,19 @@ def compile_plan():
         restrictioncheck,
         usedef,
         filter_scope(is_not_static_scope),
-        iftrans,
-        reduceblk,
-        dbg(dumpscope),
-        earlyquadruple,
-        dbg(dumpscope),
-        earlytypeprop,
-        dbg(dumpscope),
-        typeprop,
-        dbg(dumpscope),
         scopegraph,
-
         flipport,
         dbg(dumpscope),
         connectport,
+        typeprop,
         dbg(dumpscope),
         assigncheck,
         latequadruple,
         ifcondtrans,
         dbg(dumpscope),
         earlyrestrictioncheck,
-        typecheck,
-        flattenport,
+        #typecheck,
+        #flattenport,
         typeprop,
         restrictioncheck,
         phase(env.PHASE_1),
@@ -696,7 +693,7 @@ def compile_plan():
         earlyconstopt_nonssa,
         dbg(dumpscope),
         inlineopt,
-        #dbg(dumpdependimg),
+        dbg(dumpscope),
         filter_scope(is_uninlined_scope),
         setsynthparams,
         dbg(dumpscope),
@@ -744,6 +741,7 @@ def compile_plan():
         dbg(dumpscope),
         evaltype,
         typeprop,
+        typecheck,
         #dbg(dumpdependimg),
         dbg(dumpscope),
         usedef,
@@ -766,7 +764,7 @@ def compile_plan():
         phase(env.PHASE_4),
         usedef,
         convport,
-        convchannel,
+        #convchannel,
         scopegraph,
         phase(env.PHASE_5),
         fieldusedef,

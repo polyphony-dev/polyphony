@@ -25,7 +25,7 @@ class Scope(Tagged):
         'global', 'function', 'class', 'method', 'ctor', 'enclosure', 'closure',
         'callable', 'returnable', 'mutable', 'inherited', 'predicate',
         'testbench', 'pure', 'timed', 'comb', 'assigned',
-        'module', 'worker', 'loop_worker', 'instantiated',
+        'module', 'worker', 'loop_worker', 'instantiated', 'specialized',
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'channel', 'typeclass',
         'function_module',
@@ -373,16 +373,26 @@ class Scope(Tagged):
             new.parent.symbols[new.orig_name] = new_sym
         return sub
 
-    def instantiate(self, inst_name, children):
+    def instantiate(self, inst_name, children, with_tag=True):
         new_class = self.clone('', inst_name, self.parent)
-        new_class.add_tag('instantiated')
+        if with_tag:
+            new_class.add_tag('instantiated')
+        assert new_class.origin is self
 
+        new_class_sym = new_class.parent.add_sym(new_class.orig_name)
+        old_class_sym = new_class.parent.find_sym(self.orig_name)
+        if old_class_sym.typ.is_class():
+            new_class_sym.set_type(Type.klass(new_class))
+        elif old_class_sym.typ.is_function():
+            new_class_sym.set_type(Type.function(new_class))
+        else:
+            assert False
         new_scopes = {self:new_class}
         for child in children:
             new_child = self._clone_child(new_class, self, child)
-            new_child.add_tag('instantiated')
+            if with_tag:
+                new_child.add_tag('instantiated')
             new_scopes[child] = new_child
-
         for old, new in new_scopes.items():
             syms = new_class.find_scope_sym(old)
             for sym in syms:
@@ -443,14 +453,16 @@ class Scope(Tagged):
             scopes.extend(c.collect_scope())
         return scopes
 
-    def add_sym(self, name, tags=None, typ=Type.undef_t):
+    def add_sym(self, name, tags=None, typ=None):
+        if typ is None:
+            typ = Type.undef()
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
         sym = Symbol(name, self, tags, typ)
         self.symbols[name] = sym
         return sym
 
-    def add_temp(self, temp_name=None, tags=None, typ=Type.undef_t):
+    def add_temp(self, temp_name=None, tags=None, typ=None):
         name = Symbol.unique_name(temp_name)
         if tags:
             tags.add('temp')
@@ -461,7 +473,7 @@ class Scope(Tagged):
     def add_condition_sym(self):
         return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool())
 
-    def add_param_sym(self, param_name, typ=Type.undef_t):
+    def add_param_sym(self, param_name, typ=None):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
         return self.add_sym(name, {'param'}, typ)
 
@@ -756,6 +768,8 @@ class SymbolReplacer(IRVisitor):
         else:
             logger.debug('WARNING: not found {}'.format(ir.attr))
 
+        if isinstance(ir.attr, str):
+            return
         for expr in Type.find_expr(ir.attr.typ):
             assert expr.is_a(EXPR)
             old_stm = self.current_stm

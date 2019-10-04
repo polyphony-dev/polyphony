@@ -403,6 +403,7 @@ class ScopeVisitor(ast.NodeVisitor):
                 blk = Block(scope)
                 scope.set_entry_block(blk)
                 scope.set_exit_block(blk)
+                scope.return_type = Type.none()
 
         for stm in node.body:
             self.visit(stm)
@@ -544,7 +545,7 @@ class CodeVisitor(ast.NodeVisitor):
             if not param_t:
                 fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
         else:
-            param_t = Type.int()
+            param_t = Type.undef()
         param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
         param_copy = self.current_scope.add_sym(arg.arg, typ=param_t.clone())
         if is_vararg:
@@ -585,7 +586,7 @@ class CodeVisitor(ast.NodeVisitor):
             else:
                 fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         else:
-            self.current_scope.return_type = Type.undef_t
+            self.current_scope.return_type = Type.undef()
         if self.current_scope.is_builtin() and not self.current_scope.is_method():
             append_builtin(self.current_scope.parent, self.current_scope)
 
@@ -1287,6 +1288,7 @@ class CodeVisitor(ast.NodeVisitor):
             fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['lambda argument'])
         outer_scope = self.current_scope
         tags = {'function', 'returnable', 'comb'}
+        tags |= outer_scope.tags & {'inlinelib'}
         lambda_scope = Scope.create(outer_scope, None, tags, node.lineno)
         lambda_scope.synth_params.update(outer_scope.synth_params)
         self.current_scope = lambda_scope
@@ -1518,7 +1520,7 @@ class CodeVisitor(ast.NodeVisitor):
             item = self.visit(elt)
             items.append(item)
         sym = self.current_scope.add_temp('@array')
-        sym.typ = Type.list(Type.undef_t, None, -1)
+        sym.typ = Type.list(Type.undef(), None, -1)
         return ARRAY(items, sym=sym)
 
     #     | Tuple(expr* elts, expr_context ctx)
@@ -1528,7 +1530,7 @@ class CodeVisitor(ast.NodeVisitor):
             item = self.visit(elt)
             items.append(item)
         sym = self.current_scope.add_temp('@array')
-        sym.typ = Type.tuple(Type.undef_t, None, -1)
+        sym.typ = Type.tuple(Type.undef(), None, -1)
         return ARRAY(items, is_mutable=False, sym=sym)
 
     def visit_NameConstant(self, node):
@@ -1556,7 +1558,8 @@ class CodeVisitor(ast.NodeVisitor):
         self._parsing_annotation = True
         ann_expr = self.visit(ann)
         self._parsing_annotation = False
-        return Type.from_ir(ann_expr)
+        t = Type.from_ir(ann_expr, explicit=True)
+        return t
 
 
 class DecoratorVisitor(ast.NodeVisitor):

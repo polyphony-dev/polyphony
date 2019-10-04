@@ -276,6 +276,9 @@ class CALL(IRExp):
         s = '{}('.format(self.func)
         #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ', '.join(['{}'.format(arg) for name, arg in self.args])
+        if self.kwargs:
+            s += ', '
+            s += ', '.join([f'{name}={value}' for name, value in self.kwargs.items()])
         s += ")"
         return s
 
@@ -300,7 +303,8 @@ class CALL(IRExp):
     def clone(self):
         func = self.func.clone()
         args = [(name, arg.clone()) for name, arg in self.args]
-        clone = CALL(func, args, {})
+        kwargs = {name:arg.clone() for name, arg in self.kwargs.items()}
+        clone = CALL(func, args, kwargs)
         return clone
 
     def replace(self, old, new):
@@ -312,16 +316,24 @@ class CALL(IRExp):
             return True
         if replace_args(self.args, old, new):
             return True
+        for name, kwarg in self.kwargs.copy().items():
+            if kwarg is old:
+                self.kwargs[name] = new
+                return True
+            if kwarg.replace(old, new):
+                return True
         return False
 
     def find_vars(self, qsym):
         vars = self.func.find_vars(qsym)
         vars.extend(find_vars_args(self.args, qsym))
+        vars.extend(find_vars_args(self.kwargs.values(), qsym))
         return vars
 
     def find_irs(self, typ):
         irs = self.func.find_irs(typ)
         irs.extend(find_irs_args(self.args, typ))
+        irs.extend(find_irs_args(self.kwargs.values(), typ))
         return irs
 
     def func_scope(self):
@@ -340,6 +352,9 @@ class SYSCALL(IRExp):
         s = '!{}('.format(self.sym)
         #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         s += ', '.join(['{}'.format(arg) for name, arg in self.args])
+        if self.kwargs:
+            s += ', '
+            s += ', '.join([f'{name}={value}' for name, value in self.kwargs.items()])
         s += ")"
         return s
 
@@ -362,7 +377,8 @@ class SYSCALL(IRExp):
 
     def clone(self):
         args = [(name, arg.clone()) for name, arg in self.args]
-        clone = SYSCALL(self.sym, args, {})
+        kwargs = {name:arg.clone() for name, arg in self.kwargs.items()}
+        clone = SYSCALL(self.sym, args, kwargs)
         return clone
 
     def replace(self, old, new):
@@ -389,6 +405,9 @@ class NEW(IRExp):
     def __str__(self):
         s = '{}('.format(self.func_scope().orig_name)
         s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
+        if self.kwargs:
+            s += ', '
+            s += ', '.join([f'{name}={value}' for name, value in self.kwargs.items()])
         s += ")"
         return s
 
@@ -411,7 +430,8 @@ class NEW(IRExp):
 
     def clone(self):
         args = [(name, arg.clone()) for name, arg in self.args]
-        clone = NEW(self.sym, args, {})
+        kwargs = {name:arg.clone() for name, arg in self.kwargs.items()}
+        clone = NEW(self.sym, args, kwargs)
         return clone
 
     def replace(self, old, new):

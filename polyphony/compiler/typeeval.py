@@ -71,6 +71,9 @@ class TypeEvaluator(object):
     def visit_undef(self, t):
         return t
 
+    def visit_union(self, t):
+        return t
+
     def visit_expr(self, t):
         result = self.expr_evaluator.visit(t.get_expr())
         if isinstance(result, Type):

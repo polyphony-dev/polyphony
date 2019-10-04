@@ -40,8 +40,10 @@ class Symbol(Tagged):
     temp_prefix = '@t'
     param_prefix = '@in'
 
-    def __init__(self, name, scope, tags, typ=Type.undef_t):
+    def __init__(self, name, scope, tags, typ=None):
         super().__init__(tags)
+        if typ is None:
+            typ = Type.undef()
         self.id = len(Symbol.all_symbols)
         self.name = name
         self.scope = scope
