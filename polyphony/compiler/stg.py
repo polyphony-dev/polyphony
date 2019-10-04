@@ -774,8 +774,6 @@ class AHDLTranslator(IRVisitor):
 
         if self._is_port_method(ir.exp):
             return self._make_port_access(ir.exp, None)
-        if self._is_channel_method(ir.exp):
-            return self._make_channel_access(ir.exp, None)
         elif self._is_module_method(ir.exp):
             return
         if ir.exp.is_a(CALL):
@@ -858,8 +856,6 @@ class AHDLTranslator(IRVisitor):
         if ir.src.is_a([CALL, NEW]):
             if self._is_port_method(ir.src):
                 return self._make_port_access(ir.src, ir.dst)
-            elif self._is_channel_method(ir.src):
-                return self._make_channel_access(ir.src, ir.dst)
             elif self._is_port_ctor(ir.src):
                 return self._make_port_init(ir.src, ir.dst)
             elif self._is_net_ctor(ir.src):
@@ -876,8 +872,6 @@ class AHDLTranslator(IRVisitor):
             elif ir.src.sym.typ.is_object() and ir.src.sym.typ.get_scope().is_module():
                 return
             elif ir.src.sym.typ.is_port():
-                return
-            elif ir.src.sym.typ.is_channel():
                 return
         elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol().typ.is_port():
             return
@@ -1077,9 +1071,6 @@ class AHDLTranslator(IRVisitor):
     def _is_port_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_port()
 
-    def _is_channel_method(self, ir):
-        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_channel()
-
     def _is_net_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.name.startswith('polyphony.Net')
 
@@ -1241,78 +1232,6 @@ class AHDLTranslator(IRVisitor):
     def _is_module_method(self, ir):
         return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_module()
 
-    def _channel_sig(self, channel_qsym):
-        assert channel_qsym[-1].typ.is_channel()
-        channel_sym = channel_qsym[-1]
-        root_sym = channel_sym.typ.get_root_symbol()
-        channel_prefixes = channel_qsym[:-1] + (root_sym,)
-
-        if channel_prefixes[0].name == env.self_name:
-            channel_prefixes = channel_prefixes[1:]
-        channel_name = '_'.join([pfx.hdl_name() for pfx in channel_prefixes])
-
-        dtype = channel_sym.typ.get_dtype()
-        width = dtype.get_width()
-        tags = {'channel'}
-        is_pipeline_access = self.current_stm.block.synth_params['scheduling'] == 'pipeline'
-        if root_sym.is_pipelined() and is_pipeline_access:
-            tags.add('pipelined')
-        if root_sym.scope.is_module():
-            module_scope = root_sym.scope
-        elif root_sym.scope.is_ctor() and root_sym.scope.parent.is_module():
-            module_scope = root_sym.scope.parent
-        else:
-            assert False
-        channel_sig = env.hdlmodule(channel_sym.scope).signal(channel_name)
-        if channel_sig:
-            channel_sig.tags.update(tags)
-            return channel_sig
-        channel_sig = env.hdlmodule(module_scope).gen_sig(channel_name, width, tags, channel_sym)
-        if channel_sym.typ.has_maxsize():
-            channel_sig.maxsize = channel_sym.typ.get_maxsize()
-        return channel_sig
-
-    def _make_channel_access(self, call, target):
-        assert call.func.is_a(ATTR)
-        channel_qsym = call.func.qualified_symbol()[:-1]
-        channel_sig = self._channel_sig(channel_qsym)
-
-        if call.func_scope().orig_name == 'put':
-            self._make_channel_put_seq(call, channel_sig)
-        elif call.func_scope().orig_name == 'get':
-            self._make_channel_get_seq(target, channel_sig)
-        elif call.func_scope().orig_name in ('full', 'empty'):
-            if target:
-                dst = self.visit(target)
-                sig_name = f'{channel_sig.name}_{call.func_scope().orig_name}'
-                sig = self.hdlmodule.gen_sig(sig_name, 1)
-                src = AHDL_VAR(sig, Ctx.LOAD)
-                self._emit(AHDL_MOVE(dst, src), self.sched_time)
-            return
-        else:
-            assert False
-
-    def _make_channel_put_seq(self, call, channel_sig):
-        assert call.args
-        _, val = call.args[0]
-        src = self.visit(val)
-        iow = AHDL_CHANNEL_PUT(AHDL_VAR(channel_sig, Ctx.STORE), src)
-        step_n = self.node.latency()
-        for i in range(step_n):
-            self._emit(AHDL_SEQ(iow, i, step_n), self.sched_time + i)
-
-    def _make_channel_get_seq(self, target, channel_sig):
-        if target:
-            dst = self.visit(target)
-        else:
-            dst = None
-        ior = AHDL_CHANNEL_GET(AHDL_VAR(channel_sig, Ctx.LOAD), dst)
-        step_n = self.node.latency()
-        if step_n == 0:
-            step_n = 1
-        for i in range(step_n):
-            self._emit(AHDL_SEQ(ior, i, step_n), self.sched_time + i)
-
     def _net_sig(self, net_qsym):
         net_sym = net_qsym[-1]
         net_prefixes = net_qsym
@@ -1400,12 +1319,6 @@ class AHDLCombTranslator(AHDLTranslator):
                 ir.func_scope().parent.is_port() and
                 ir.func_scope().orig_name == method_name)
 
-    def _is_channel_method(self, ir, method_name):
-        return (ir.is_a(CALL) and
-                ir.func_scope().is_method() and
-                ir.func_scope().parent.is_channel() and
-                ir.func_scope().orig_name == method_name)
-
     def _is_net_method(self, ir, method_name):
         return (ir.is_a(CALL) and
                 ir.func_scope().is_method() and
@@ -1427,20 +1340,6 @@ class AHDLCombTranslator(AHDLTranslator):
             self.hdlmodule.add_edge_detector(port_sig, _old, _new)
             detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
             return AHDL_SYMBOL(detect_var_name)
-        elif self._is_channel_method(ir, 'full'):
-            channel_qsym = ir.func.qualified_symbol()[:-1]
-            channel_sig = self._channel_sig(channel_qsym)
-
-            sig_name = f'{channel_sig.name}_full'
-            sig = self.hdlmodule.gen_sig(sig_name, 1)
-            return AHDL_VAR(sig, Ctx.LOAD)
-        elif self._is_channel_method(ir, 'empty'):
-            channel_qsym = ir.func.qualified_symbol()[:-1]
-            channel_sig = self._channel_sig(channel_qsym)
-
-            sig_name = f'{channel_sig.name}_empty'
-            sig = self.hdlmodule.gen_sig(sig_name, 1)
-            return AHDL_VAR(sig, Ctx.LOAD)
         elif self._is_net_method(ir, 'rd'):
             net_qsym = ir.func.qualified_symbol()[:-1]
             net_sig = self._net_sig(net_qsym)

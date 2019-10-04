@@ -370,8 +370,6 @@ class ScopeVisitor(ast.NodeVisitor):
         scope_qualified_name = (outer_scope.name + '.' + node.name)
         if scope_qualified_name == 'polyphony.io.Port':
             tags |= {'port', 'lib'}
-        if scope_qualified_name == 'polyphony.Channel':
-            tags |= {'channel', 'lib'}
         if outer_scope.name == 'polyphony.typing':
             tags |= {'typeclass', 'lib'}
         if outer_scope.is_builtin():

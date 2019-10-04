@@ -125,5 +125,5 @@ class CopyCollector(IRVisitor):
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):
             typ = ir.src.symbol().typ
-            if typ.is_object() and (typ.get_scope().is_port() or typ.get_scope().is_channel()):
+            if typ.is_object() and typ.get_scope().is_port():
                 self.copies.append(ir)

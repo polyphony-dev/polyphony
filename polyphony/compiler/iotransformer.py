@@ -48,41 +48,6 @@ class IOTransformer(AHDLVisitor):
         callinf = self.hdlmodule.interfaces['']
         return callinf.callee_epilog(step, ahdl.name)
 
-    def _is_continuous_access_to_channel(self, ahdl):
-        other_channels = [c.factor.c for c in self.old_codes
-                          if c.is_a([AHDL_SEQ]) and
-                          c.factor.is_a([AHDL_CHANNEL_GET, AHDL_CHANNEL_PUT]) and
-                          c.factor is not ahdl]
-        for c in other_channels:
-            if c.sig is ahdl.c.sig:
-                return True
-        return False
-
-    def visit_AHDL_CHANNEL_GET_SEQ(self, ahdl, step, step_n):
-        is_continuous = self._is_continuous_access_to_channel(ahdl)
-        chan = self.hdlmodule.local_readers[ahdl.c.sig.name]
-        if isinstance(self.current_state, PipelineState):
-            assert isinstance(self.current_stage, PipelineStage)
-            local_stms, stage_stms = chan.pipelined_read_sequence(step, step_n, ahdl.dst,
-                                                                  self.current_stage)
-            self.current_stage.codes.extend(stage_stms)
-            return local_stms
-        else:
-            return chan.read_sequence(step, step_n, ahdl.dst, is_continuous)
-
-    def visit_AHDL_CHANNEL_PUT_SEQ(self, ahdl, step, step_n):
-        is_continuous = self._is_continuous_access_to_channel(ahdl)
-        chan = self.hdlmodule.local_writers[ahdl.c.sig.name]
-        if isinstance(self.current_state, PipelineState):
-            assert isinstance(self.current_stage, PipelineStage)
-            local_stms, stage_stms = chan.pipelined_write_sequence(step, step_n, ahdl.src,
-                                                                   self.current_stage
-                                                                   )
-            self.current_stage.codes.extend(stage_stms)
-            return local_stms
-        else:
-            return chan.write_sequence(step, step_n, ahdl.src, is_continuous)
-
     def _is_continuous_access_to_mem(self, ahdl):
         other_memnodes = [c.factor.mem.memnode for c in self.current_block.codes
                           if c.is_a([AHDL_SEQ]) and

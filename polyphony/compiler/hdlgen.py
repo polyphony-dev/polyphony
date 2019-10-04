@@ -57,8 +57,6 @@ class HDLModuleBuilder(object):
         for callee_scope, inst_names in scope.callee_instances.items():
             if callee_scope.is_port():
                 continue
-            if callee_scope.is_channel():
-                continue
             if callee_scope.is_lib():
                 continue
             inst_scope_name = callee_scope.orig_name
@@ -172,30 +170,6 @@ class HDLModuleBuilder(object):
         if inf:
             self.hdlmodule.add_interface(inf.if_name, inf)
 
-    def _add_internal_fifo(self, signal):
-        if signal.is_channel():
-            fifo_module = FIFOModule(signal)
-        else:
-            assert False
-        self._add_submodule_instances(fifo_module,
-                                      [signal.name],
-                                      fifo_module.param_map,
-                                      is_internal=True)
-
-    def _add_fifo_channel(self, signal):
-        reader, writer = create_local_accessor(signal)
-        self.hdlmodule.add_local_reader(reader.acc_name, reader)
-        self.hdlmodule.add_local_writer(writer.acc_name, writer)
-        self._add_internal_fifo(signal)
-        ports = reader.ports + writer.ports
-        for p in ports:
-            name = reader.port_name(p)
-            sig = self.hdlmodule.gen_sig(name, p.width)
-            if p.dir == 'in':
-                self.hdlmodule.add_internal_reg(sig)
-            else:
-                self.hdlmodule.add_internal_net(sig)
-
     def _add_reset_stms(self, fsm, defs, uses, outputs):
         fsm_name = fsm.name
         for acc in self.hdlmodule.accessors.values():
@@ -211,7 +185,7 @@ class HDLModuleBuilder(object):
                     self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         # reset local ports
         for sig in uses:
-            if sig.is_channel() or sig.is_single_port():
+            if sig.is_single_port():
                 local_accessors = self.hdlmodule.local_readers.values()
                 accs = [acc for acc in local_accessors if acc.inf.signal is sig]
                 for acc in accs:
@@ -219,7 +193,7 @@ class HDLModuleBuilder(object):
                         self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         for sig in defs:
             # reset internal ports
-            if sig.is_channel() or sig.is_single_port():
+            if sig.is_single_port():
                 local_accessors = self.hdlmodule.local_writers.values()
                 accs = [acc for acc in local_accessors if acc.inf.signal is sig]
                 for acc in accs:
@@ -422,15 +396,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             if sig.is_single_port():
                 self._add_single_port_interface(sig)
 
-    def _process_connector_port(self, hdlmodule):
-        signals = hdlmodule.get_signals()
-        #signals = hdlmodule.signals
-        for sig in signals.values():
-            if sig.is_input() or sig.is_output():
-                continue
-            elif sig.is_channel():
-                self._add_fifo_channel(sig)
-
     def _process_fsm(self, fsm):
         scope = fsm.scope
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
@@ -454,7 +419,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             val = 0 if not p.defval else p.defval.value
             self.hdlmodule.parameters.append((sig, val))
         self._process_io(self.hdlmodule)
-        self._process_connector_port(self.hdlmodule)
 
         fsms = list(self.hdlmodule.fsms.values())
         for fsm in fsms:

@@ -1079,7 +1079,6 @@ class SynthesisParamChecker(object):
                 if blk.synth_params['scheduling'] == 'pipeline':
                     loop = scope.find_region(blk)
                     self._check_port_conflict_in_pipeline(loop, scope)
-                    self._check_channel_conflict_in_pipeline(loop, scope)
 
     def _check_port_conflict_in_pipeline(self, loop, scope):
         syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
@@ -1107,31 +1106,6 @@ class SynthesisParamChecker(object):
             if len(readstms) >= 1 and len(writestms) >= 1:
                 assert False
 
-    def _check_channel_conflict_in_pipeline(self, loop, scope):
-        syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
-        for sym in syms:
-            if not sym.typ.is_channel():
-                continue
-            if not sym.typ.get_scope().is_channel():
-                continue
-            usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
-            usestms = [stm for stm in usestms if stm.block in loop.blocks()]
-            readstms = []
-            for stm in usestms:
-                if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func.symbol().orig_name() == 'get':
-                    readstms.append(stm)
-            writestms = []
-            for stm in usestms:
-                if stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func.symbol().orig_name() == 'put':
-                    writestms.append(stm)
-            if len(readstms) > 1:
-                sym = sym.ancestor if sym.ancestor else sym
-                fail(readstms[1], Errors.RULE_READING_PIPELINE_IS_CONFLICTED, [sym])
-            if len(writestms) > 1:
-                sym = sym.ancestor if sym.ancestor else sym
-                fail(writestms[1], Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED, [sym])
-            if len(readstms) >= 1 and len(writestms) >= 1:
-                assert False
 
 class TypeEvalVisitor(IRVisitor):
     def process(self, scope):

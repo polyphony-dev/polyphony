@@ -120,12 +120,6 @@ def is_port_method_call(call):
             call.func_scope().parent.is_port())
 
 
-def is_channel_method_call(call):
-    return (call.is_a(CALL) and
-            call.func_scope().is_method() and
-            call.func_scope().parent.is_channel())
-
-
 def has_exclusive_function(stm):
     if stm.is_a(MOVE):
         call = stm.src
@@ -136,8 +130,6 @@ def has_exclusive_function(stm):
     if is_port_method_call(call):
         if stm.block.synth_params['scheduling'] == 'timed':
             return False
-        return True
-    if is_channel_method_call(call):
         return True
     if has_clkfence(stm):
         return True

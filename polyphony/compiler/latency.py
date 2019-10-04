@@ -8,16 +8,7 @@ CALL_MINIMUM_STEP = 3
 def get_call_latency(call, stm):
     # FIXME: It is better to ask HDLInterface the I/O latency
     is_pipelined = stm.block.synth_params['scheduling'] == 'pipeline'
-    if call.func_scope().name.startswith('polyphony.Channel'):
-        if call.func_scope().name.endswith('.get'):
-            if is_pipelined:
-                return UNIT_STEP * 2
-            return UNIT_STEP * 2, UNIT_STEP * 1
-        elif call.func_scope().name.endswith('.put'):
-            if is_pipelined:
-                return UNIT_STEP * 1
-            return UNIT_STEP * 2, UNIT_STEP * 1
-    elif call.func_scope().is_method() and call.func_scope().parent.is_port():
+    if call.func_scope().is_method() and call.func_scope().parent.is_port():
         receiver = call.func.tail()
         assert receiver.typ.is_port()
         if call.func_scope().orig_name == 'rd':

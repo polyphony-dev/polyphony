@@ -11,7 +11,6 @@ class Signal(Tagged):
         'statevar',
         'field', 'ctrl', 'memif', 'onehot',
         'single_port', 'pipelined',
-        'channel',
         'initializable',
         'induction',
         'pipeline_ctrl',

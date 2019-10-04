@@ -1057,13 +1057,6 @@ def create_local_accessor(signal):
         else:
             reader = SingleWriteInterface(signal).accessor('')
             writer = SingleReadInterface(signal).accessor('')
-    elif signal.is_channel():
-        if signal.is_pipelined():
-            reader = PipelinedFIFOWriteInterface(signal).accessor('')
-            writer = PipelinedFIFOReadInterface(signal).accessor('')
-        else:
-            reader = FIFOWriteInterface(signal).accessor('')
-            writer = FIFOReadInterface(signal).accessor('')
     return reader, writer
 
 

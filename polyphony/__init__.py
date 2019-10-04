@@ -350,52 +350,6 @@ def unroll(seq, factor='full'):
     return seq
 
 
-class Channel_(object):
-    def __init__(self, dtype, maxsize=1):
-        self._dtype = dtype
-        self.__pytype = base._pytype_from_dtype(dtype)
-        self._maxsize = maxsize
-        self.__q = deque()
-        self._changed = False
-        self._will_get = False
-
-    def get(self):
-        '''
-        Read the current value from the channel.
-        '''
-        while self.empty():
-            timing.clkfence()
-        d = self.__q.popleft()
-        self._changed = True
-        if not isinstance(d, self.__pytype):
-            raise TypeError(f"Incompatible value type, got {type(self.__v)} expected {self._dtype}")
-        return d
-
-    def put(self, v):
-        '''
-        Write the value to the channel.
-        '''
-        if not isinstance(v, self.__pytype):
-            raise TypeError(f"Incompatible value type, got {type(v)} expected {self._dtype}")
-        while self.full():
-            timing.clkfence()
-        self.__q.append(v)
-        self._changed = True
-
-    def empty(self):
-        return len(self.__q) == 0
-
-    def full(self):
-        return len(self.__q) == self._maxsize
-
-    def _reset(self):
-        self.__q.clear()
-        self._changed = False
-
-    def _late_update(self):
-        self._changed = False
-
-
 @timing.timed
 @module
 class Channel:
@@ -426,7 +380,7 @@ class Channel:
                 self.ch = Channel(uint16, capacity=4)
     '''
 
-    def __init__(self, dtype, capacity):
+    def __init__(self, dtype, capacity=4):
         self.din = 0
         self.write = False
         self.read = False
@@ -435,13 +389,6 @@ class Channel:
         self.wp = 0
         self.rp = 0
         self.count = 0
-
-        self._dout = Net(dtype, lambda:self.mem[self.rp])
-        self._full = Net(bool, lambda:self.count >= self.length)
-        self._empty = Net(bool, lambda:self.count == 0)
-        self._will_full = Net(bool, lambda:self.write and not self.read and self.count == self.length - 1)
-        self._will_empty = Net(bool, lambda:self.read and not self.write and self.count == 1)
-
         self.append_worker(self.write_worker, loop=True)
         self.append_worker(self.main_worker, loop=True)
 
@@ -457,19 +404,19 @@ class Channel:
         self.read = True
         timing.clkfence()
         self.read = False
-        return self._dout.rd()
+        return self.mem[self.rp]
 
     def full(self):
-        return self._full.rd()
+        return self.count >= self.length
 
     def empty(self):
-        return self._empty.rd()
+        return self.count == 0
 
     def will_full(self):
-        return self._will_full.rd()
+        return self.write and not self.read and self.count == self.length - 1
 
     def will_empty(self):
-        return self._will_empty.rd()
+        return self.read and not self.write and self.count == 1
 
     def write_worker(self):
         if self.write:

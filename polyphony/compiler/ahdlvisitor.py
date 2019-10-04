@@ -95,15 +95,6 @@ class AHDLVisitor(object):
         self.visit(ahdl.io)
         self.visit(ahdl.src)
 
-    def visit_AHDL_CHANNEL_GET(self, ahdl):
-        self.visit(ahdl.c)
-        if ahdl.dst:
-            self.visit(ahdl.dst)
-
-    def visit_AHDL_CHANNEL_PUT(self, ahdl):
-        self.visit(ahdl.c)
-        self.visit(ahdl.src)
-
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)

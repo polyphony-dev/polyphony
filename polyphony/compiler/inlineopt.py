@@ -375,8 +375,6 @@ class AliasDefCollector(IRVisitor):
             return False
         if mov.src.symbol().typ.get_scope().is_port():
             return False
-        if mov.src.symbol().typ.get_scope().is_channel():
-            return False
         if not mov.dst.is_a([TEMP, ATTR]):
             return False
         if not mov.dst.symbol().typ.is_object():
@@ -510,8 +508,7 @@ class FlattenObjectArgs(IRTransformer):
         for fname, fsym in object_scope.class_fields().items():
             if fsym.typ.is_function():
                 continue
-            if ((fsym.typ.is_object()
-                    and (fsym.typ.get_scope().is_port() or fsym.typ.get_scope().is_channel()))
+            if ((fsym.typ.is_object() and fsym.typ.get_scope().is_port())
                     or fsym.typ.is_scalar()):
                 new_name = '{}_{}'.format(base_name, fname)
                 new_sym = module_scope.find_sym(new_name)
