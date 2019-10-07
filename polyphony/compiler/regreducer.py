@@ -50,12 +50,11 @@ class AliasVarDetector(IRVisitor):
             else:
                 return
         elif ir.src.is_a(MREF):
-            memnode = ir.src.mem.symbol().typ.get_memnode()
             if sched == 'timed':
-                sym.add_tag('alias')
+                pass
+            else:
+                # TODO:
                 return
-            # TODO:
-            return
 
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
