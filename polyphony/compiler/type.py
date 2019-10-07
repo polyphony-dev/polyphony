@@ -279,7 +279,7 @@ class Type(object):
                 else:
                     return f'list<{self.get_element()}>'
             if self.name == 'tuple':
-                return f'tuple<{self.get_element()}>'
+                return f'tuple<{self.get_element()}, {self.get_length()}>'
             if self.name == 'port':
                 return f'port<{self.get_dtype()}, {self.get_direction()}>'
             if self.name == 'function':

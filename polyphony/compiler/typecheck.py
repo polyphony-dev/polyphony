@@ -543,16 +543,28 @@ class EarlyTypePropagation(TypePropagation):
                 new_param_types.append(arg_t)
         return new_param_types
 
-    def _types_to_str(self, types):
+    def _mangled_names(self, types):
         ts = []
         for t in types:
             if t.is_list():
-                s = f'list_{t.get_element()}'
+                elm = self._mangled_names([t.get_element()])
+                s = f'l_{elm}'
             elif t.is_tuple():
-                s = f'tuple_{t.get_element()}'
+                elm = self._mangled_names([t.get_element()])
+                elms = ''.join([elm] * t.get_length())
+                s = f't_{elms}'
             elif t.is_class():
                 # TODO: we should avoid naming collision
-                s = f'class_{t.get_scope().orig_name}'
+                s = f'c_{t.get_scope().orig_name}'
+            elif t.is_int():
+                s = f'i{t.get_width()}'
+            elif t.is_bool():
+                s = f'b'
+            elif t.is_str():
+                s = f's'
+            elif t.is_object():
+                # TODO: we should avoid naming collision
+                s = f'o_{t.get_scope().orig_name}'
             else:
                 s = str(t)
             ts.append(s)
@@ -561,7 +573,7 @@ class EarlyTypePropagation(TypePropagation):
     def _specialize_function_with_types(self, scope, types):
         assert not scope.is_specialized()
         types = [t.clone() for t in types]
-        postfix = self._types_to_str(types)
+        postfix = self._mangled_names(types)
         assert postfix
         name = f'{scope.orig_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
@@ -585,7 +597,7 @@ class EarlyTypePropagation(TypePropagation):
         if scope.is_port():
             return self._specialize_port_with_types(scope, types)
         types = [t.clone() for t in types]
-        postfix = self._types_to_str(types)
+        postfix = self._mangled_names(types)
         assert postfix
         name = f'{scope.orig_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
@@ -620,7 +632,7 @@ class EarlyTypePropagation(TypePropagation):
                 dtype = typ.clone()
         else:
             dtype = typ.clone()
-        postfix = self._types_to_str([dtype])
+        postfix = self._mangled_names([dtype])
         name = f'{scope.orig_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
@@ -656,7 +668,7 @@ class EarlyTypePropagation(TypePropagation):
     def _specialize_worker_with_types(self, scope, types):
         assert not scope.is_specialized()
         types = [t.clone() for t in types]
-        postfix = self._types_to_str(types)
+        postfix = self._mangled_names(types)
         assert postfix
         name = f'{scope.orig_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
