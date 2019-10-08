@@ -85,6 +85,11 @@ class SSATransformerBase(object):
         phi = PHI(var)
         phi.block = df
         phi.args = [CONST(None)] * len(df.preds)
+        defs = self.scope.usedef.get_stms_defining(var.symbol())
+        for d in defs:
+            if d.block is df.preds[0]:
+                phi.loc = d.loc
+                break
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):

@@ -47,7 +47,7 @@ class TypePropagation(IRVisitor):
         return self.typed
 
     def _add_scope(self, scope):
-        if scope not in self.typed and scope not in self.worklist:
+        if scope is not self.scope and scope not in self.typed and scope not in self.worklist:
             self.worklist.append(scope)
 
     def visit_UNOP(self, ir):
@@ -167,6 +167,8 @@ class TypePropagation(IRVisitor):
 
     def visit_ATTR(self, ir):
         exptyp = self.visit(ir.exp)
+        if exptyp.is_undef():
+            raise RejectPropagation(ir)
         if exptyp.is_object() or exptyp.is_class() or exptyp.is_namespace() or exptyp.is_port():
             attr_scope = exptyp.get_scope()
             ir.attr_scope = attr_scope
@@ -191,13 +193,19 @@ class TypePropagation(IRVisitor):
                 self._add_scope(func_scope)
             return ir.attr.typ
 
-        raise RejectPropagation(ir)
+        type_error(self.current_stm, Errors.UNKNOWN_ATTRIBUTE, [ir.attr])
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
         if mem_t.is_undef():
             raise RejectPropagation(ir)
-        self.visit(ir.offset)
+        offs_t = self.visit(ir.offset)
+        if offs_t.is_undef():
+            raise RejectPropagation(ir)
+        if not offs_t.is_int():
+            type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
+                       [ir.offset, 'int', offs_t])
+
         if mem_t.is_class() and mem_t.get_scope().is_typeclass():
             t = Type.from_ir(ir)
             if t.is_object():
@@ -219,7 +227,10 @@ class TypePropagation(IRVisitor):
         mem_t = self.visit(ir.mem)
         if mem_t.is_undef():
             raise RejectPropagation(ir)
-        self.visit(ir.offset)
+        offs_t = self.visit(ir.offset)
+        if not offs_t.is_int():
+            type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
+                       [ir.offset, 'int', offs_t])
         if not mem_t.is_seq():
             type_error(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE,
                        [ir.mem])
@@ -499,6 +510,7 @@ class EarlyTypePropagation(TypePropagation):
         return ir.func_scope().return_type
 
     def visit_NEW(self, ir):
+        self._add_scope(ir.func_scope().parent)
         ret_t = Type.object(ir.func_scope())
         ir.func_scope().return_type = ret_t
         ctor = ir.func_scope().find_ctor()
@@ -921,10 +933,21 @@ class TypeChecker(IRVisitor):
                                [])
 
     def visit_PHI(self, ir):
-        # FIXME
-        #assert ir.var.symbol().typ is not None
+        assert ir.var.symbol().typ is not None
         #assert all([arg is None or arg.symbol().typ is not None for arg, blk in ir.args])
-        pass
+        arg_types = [self.visit(arg) for arg in ir.args]
+        var_t = self.visit(ir.var)
+        if ir.var.is_a(TEMP) and ir.var.symbol().is_return():
+            assert not var_t.is_undef()
+            for arg_t in arg_types:
+                if not Type.is_same(var_t, arg_t):
+                    type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
+                               [var_t, arg_t])
+        else:
+            for arg_t in arg_types:
+                if not Type.is_assignable(var_t, arg_t):
+                    type_error(ir, Errors.INCOMPATIBLE_TYPES,
+                               [var_t, arg_t])
 
     def _check_param_number(self, arg_len, param_len, ir, scope_name, with_vararg=False):
         if arg_len == param_len:

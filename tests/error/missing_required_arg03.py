@@ -1,4 +1,4 @@
-#polyphony.timing.wait_rising() missing required argument
+#wait_rising() missing required argument 'port'
 from polyphony import module
 from polyphony.io import Port
 from polyphony.timing import wait_rising

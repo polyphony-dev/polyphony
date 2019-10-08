@@ -369,15 +369,13 @@ class ModuleInstantiator(object):
 class MemnodeReplacer(IRVisitor):
     def __init__(self, node_map):
         self.node_map = node_map
-        self.replaced = set()
 
     def _replace_typ_memnode(self, typ):
-        if typ.is_seq() and typ not in self.replaced:
+        if typ.is_seq():
             memnode = typ.get_memnode()
-            if memnode in self.node_map:  # TODO: to be always true
+            if memnode in self.node_map:
                 new_memnode = self.node_map[memnode]
                 typ.set_memnode(new_memnode)
-            self.replaced.add(typ)
 
     def visit_TEMP(self, ir):
         typ = ir.symbol().typ

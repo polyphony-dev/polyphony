@@ -1,4 +1,4 @@
-#missing_required_arg01() missing required argument x
+#missing_required_arg01() missing required argument 'x'
 from polyphony import testbench
 
 
