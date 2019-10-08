@@ -41,7 +41,7 @@ FILES = (
     '/apps/ad7091r.py',
     '/apps/fib.py',
     '/apps/fifo.py',
-    '/apps/filter_tester.py',
+    # '/apps/filter_tester.py',
     '/apps/fir.py',
     '/apps/minivm.py',
     '/apps/minivm2.py',

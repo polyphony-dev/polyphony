@@ -1,6 +1,6 @@
 from polyphony import module
 from polyphony import is_worker_running
-from polyphony.io import Queue
+from polyphony.io import Handshake
 from polyphony.typing import int4, int12, List, Tuple
 from polyphony import pipelined
 
@@ -46,10 +46,8 @@ def filter3x3(r0, r1, r2, r3, r4, r5, r6, r7, r8, k):
 @module
 class PipelinedStreamFilter:
     def __init__(self, width, height, blank_size):
-        self.inq = Queue(int12, 'in', maxsize=4)
-        #self.outhq = Queue(int12, 'out', maxsize=4)
-        #self.outvq = Queue(int12, 'out', maxsize=4)
-        self.outq = Queue(int12, 'out', maxsize=4)
+        self.inq = Handshake(int12, 'in')
+        self.outq = Handshake(int12, 'out')
         self.append_worker(self.worker, width, height, blank_size)
 
     def worker(self, width, height, blank_size):

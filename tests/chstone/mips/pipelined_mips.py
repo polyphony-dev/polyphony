@@ -2,7 +2,7 @@ from polyphony import testbench
 from polyphony import module, is_worker_running
 from polyphony import rule
 from polyphony.typing import int32, int64
-from polyphony.io import Queue, Handshake
+from polyphony.io import Handshake
 from polyphony import unroll
 
 
@@ -97,8 +97,8 @@ class MIPS:
     def __init__(self):
         self.run = Handshake(bool, 'in')
         self.result = Handshake(int, 'out')
-        self.din = Queue(int32, 'in')
-        self.dout = Queue(int32, 'out')
+        self.din = Handshake(int32, 'in')
+        self.dout = Handshake(int32, 'out')
 
         self.append_worker(self.mips_main)
 
@@ -111,7 +111,7 @@ class MIPS:
     def mips_main(self):
         inputs = [0] * 8
         for i in range(len(inputs)):
-            inputs[i] = self.din()
+            inputs[i] = self.din.rd()
         dmem = [0] * 64
         for i in range(8):
             dmem[i] = inputs[i]
@@ -222,7 +222,7 @@ class MIPS:
                     #if pc == 0:
             self.result.wr(n_inst)
             for i in range(len(dmem)):
-                self.dout(dmem[i])
+                self.dout.wr(dmem[i])
             self.run.rd()
 
 
@@ -231,12 +231,12 @@ def test(mips):
     inputs = [ 22, 5, -9, 3, -17, 38, 0, 11 ]
     outData = [-17, -9, 0, 3, 5, 11, 22, 38 ]
     for d in inputs:
-        mips.din(d)
+        mips.din.wr(d)
     mips.run.wr(True)
     main_result = 611 != mips.result.rd()
 
     for j in range(8):
-        d = mips.dout()
+        d = mips.dout.rd()
         print(d)
         main_result += (d != outData[j])
     assert 0 == main_result
