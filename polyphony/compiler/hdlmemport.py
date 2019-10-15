@@ -60,7 +60,7 @@ class HDLMemPortMaker(object):
             port_name = ramacc.port_name(p)
             sig = self.hdlmodule.gen_sig(port_name, p.width)
             self.hdlmodule.add_internal_reg(sig, ramacc.acc_name)
-            self.hdlmodule.add_fsm_output(self.scope.orig_name, sig)
+            self.hdlmodule.add_fsm_output(self.scope.base_name, sig)
         for p in ramacc.nets():
             port_name = ramacc.port_name(p)
             sig = self.hdlmodule.gen_sig(port_name, p.width)
@@ -385,7 +385,7 @@ class HDLRegArrayPortMaker(object):
         assert len(self.memnode.succs) == 1
         succ = self.memnode.succs[0]
 
-        callee_name = succ.scope.orig_name
+        callee_name = succ.scope.base_name
         if isinstance(succ, MemParamNode):
             for inst in self.mrg.param_node_instances[succ]:
                 pred_ramaccs = []

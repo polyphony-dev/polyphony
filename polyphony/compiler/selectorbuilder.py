@@ -136,9 +136,9 @@ class SelectorBuilder(object):
             self.hdlmodule.add_internal_reg(cs_sig, tag)
             mv = AHDL_MOVE(AHDL_VAR(cs_sig, Ctx.STORE), AHDL_SYMBOL("{}'b0".format(cs_width)))
             if self.hdlmodule is env.hdlmodule(memnode.scope):
-                fsm_name = memnode.scope.orig_name
+                fsm_name = memnode.scope.base_name
             else:
-                fsm_name = memnode.pred_branch().preds[0].scope.orig_name
+                fsm_name = memnode.pred_branch().preds[0].scope.base_name
             self.hdlmodule.add_fsm_reset_stm(fsm_name, mv)
         else:
             cs_sig = self.hdlmodule.gen_sig('{}_cs'.format(name), cs_width, {'net'})

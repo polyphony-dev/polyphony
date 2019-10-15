@@ -403,7 +403,7 @@ class NEW(IRExp):
         self.kwargs = kwargs
 
     def __str__(self):
-        s = '{}('.format(self.func_scope().orig_name)
+        s = '{}('.format(self.func_scope().base_name)
         s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
         if self.kwargs:
             s += ', '

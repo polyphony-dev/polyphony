@@ -59,7 +59,7 @@ class HDLModuleBuilder(object):
                 continue
             if callee_scope.is_lib():
                 continue
-            inst_scope_name = callee_scope.orig_name
+            inst_scope_name = callee_scope.base_name
             # TODO: add primitive function hook here
             if inst_scope_name == 'print':
                 continue
@@ -291,9 +291,9 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             params = scope.params
         for i, (sym, copy, _) in enumerate(params):
             if sym.typ.is_int() or sym.typ.is_bool():
-                sig_name = '{}_{}'.format(scope.orig_name, sym.hdl_name())
+                sig_name = '{}_{}'.format(scope.base_name, sym.hdl_name())
                 sig = self.hdlmodule.signal(sig_name)
-                inf = SingleReadInterface(sig, sym.hdl_name(), scope.orig_name)
+                inf = SingleReadInterface(sig, sym.hdl_name(), scope.base_name)
             elif sym.typ.is_list():
                 memnode = sym.typ.get_memnode()
                 if memnode.can_be_reg():
@@ -332,9 +332,9 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
 
     def _add_output_interfaces(self, scope):
         if scope.return_type.is_scalar():
-            sig_name = '{}_out_0'.format(scope.orig_name)
+            sig_name = '{}_out_0'.format(scope.base_name)
             sig = self.hdlmodule.signal(sig_name)
-            inf = SingleWriteInterface(sig, 'out_0', scope.orig_name)
+            inf = SingleWriteInterface(sig, 'out_0', scope.base_name)
             self.hdlmodule.add_interface(inf.if_name, inf)
         elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')

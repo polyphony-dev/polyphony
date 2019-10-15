@@ -14,7 +14,7 @@ def append_builtin(namespace, scope):
         if scope.name in builtin_mappings:
             name = builtin_mappings[scope.name]
         else:
-            name = scope.orig_name
+            name = scope.base_name
     else:
         name = scope.name
 

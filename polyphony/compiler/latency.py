@@ -11,7 +11,7 @@ def get_call_latency(call, stm):
     if call.func_scope().is_method() and call.func_scope().parent.is_port():
         receiver = call.func.tail()
         assert receiver.typ.is_port()
-        if call.func_scope().orig_name == 'rd':
+        if call.func_scope().base_name == 'rd':
             dummy_read = stm.is_a(EXPR)
             if dummy_read:
                 return 0
@@ -19,7 +19,7 @@ def get_call_latency(call, stm):
                 return UNIT_STEP * 1
         return UNIT_STEP
     elif call.func_scope().parent.name.startswith('polyphony.Net'):
-        if call.func_scope().orig_name == 'rd':
+        if call.func_scope().base_name == 'rd':
             if stm.is_a(MOVE):
                 if stm.dst.symbol().is_alias():
                     return 0

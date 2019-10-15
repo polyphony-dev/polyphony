@@ -203,12 +203,12 @@ class ScopeVisitor(ast.NodeVisitor):
 
     def _leave_scope(self, outer_scope):
         # override it if already exists
-        outer_scope.del_sym(self.current_scope.orig_name)
+        outer_scope.del_sym(self.current_scope.base_name)
         if self.current_scope.is_class():
             t = Type.klass(self.current_scope)
         else:
             t = Type.function(self.current_scope)
-        outer_scope.add_sym(self.current_scope.orig_name, typ=t)
+        outer_scope.add_sym(self.current_scope.base_name, typ=t)
         self.current_scope = outer_scope
 
     def visit_Import(self, node):
@@ -221,7 +221,7 @@ class ScopeVisitor(ast.NodeVisitor):
         return node.n
 
     def visit_Name(self, node):
-        if self.current_scope.orig_name == 'polyphony':
+        if self.current_scope.base_name == 'polyphony':
             return
         #ctx = self._nodectx2irctx(node)
         sym = self.current_scope.find_sym(node.id)
@@ -306,11 +306,11 @@ class ScopeVisitor(ast.NodeVisitor):
                 elif sym.typ.get_scope().name == 'polyphony.pure':
                     if not env.config.enable_pure:
                         fail((env.current_filename, node.lineno), Errors.PURE_IS_DISABLED)
-                    tags.add(sym.typ.get_scope().orig_name)
+                    tags.add(sym.typ.get_scope().base_name)
                 elif sym.typ.get_scope().name == 'polyphony.timing.timed':
                     synth_params.update({'scheduling':'timed'})
                 else:
-                    tags.add(sym.typ.get_scope().orig_name)
+                    tags.add(sym.typ.get_scope().base_name)
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
                 tags.add(deco_name)
             else:
@@ -358,7 +358,7 @@ class ScopeVisitor(ast.NodeVisitor):
             deco_name = self.decorator_visitor.visit(deco)
             sym = self.current_scope.find_sym(deco_name)
             if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
-                tags.add(sym.typ.get_scope().orig_name)
+                tags.add(sym.typ.get_scope().base_name)
             elif deco_name in INTERNAL_CLASS_DECORATORS:
                 tags.add(deco_name)
             else:
@@ -1304,7 +1304,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_scope = outer_scope
         self.current_block = last_block
 
-        scope_sym = self.current_scope.add_sym(lambda_scope.orig_name)
+        scope_sym = self.current_scope.add_sym(lambda_scope.base_name)
         scope_sym.set_type(Type.function(lambda_scope))
         return TEMP(scope_sym, Ctx.LOAD)
 
@@ -1436,7 +1436,7 @@ class CodeVisitor(ast.NodeVisitor):
             attr = node.attr
         if (value.is_a(TEMP) and
                 value.sym.typ.is_namespace() and
-                value.sym.typ.get_scope().orig_name == 'polyphony' and
+                value.sym.typ.get_scope().base_name == 'polyphony' and
                 isinstance(attr, Symbol) and
                 attr.name == '__python__'):
             return CONST(False)
@@ -1680,7 +1680,7 @@ class PureScopeVisitor(ast.NodeVisitor):
         fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['global statement'])
 
     def visit_FunctionDef(self, node):
-        if self.scope.orig_name != node.name:
+        if self.scope.base_name != node.name:
             fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['nested function in @pure function'])
         else:
             self.generic_visit(node)

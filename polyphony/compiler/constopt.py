@@ -58,6 +58,14 @@ def try_get_constant(qsym, scope):
         return _try_get_constant(qsym, scope)
 
 
+def _mask_bit(typ, const):
+    assert typ.is_int()
+    assert const.is_a(CONST)
+    w = typ.get_width()
+    mask = (1 << w) - 1
+    return CONST(mask & const.value)
+
+
 class ConstantOptBase(IRVisitor):
     def __init__(self):
         super().__init__()
@@ -320,7 +328,11 @@ class ConstantOpt(ConstantOptBase):
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 assert len(defstms) <= 1
 
-                replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
+                if stm.dst.symbol().typ.is_int() and isinstance(stm.src.value, int):
+                    src = _mask_bit(stm.dst.symbol().typ, stm.src)
+                else:
+                    src = stm.src
+                replaces = VarReplacer.replace_uses(stm.dst, src, scope.usedef)
                 for rep in replaces:
                     if rep not in dead_stms:
                         worklist.append(rep)
@@ -413,10 +425,10 @@ class ConstantOpt(ConstantOptBase):
         if receiver.typ.is_object() and ir.attr.typ.is_scalar():
             objscope = receiver.typ.get_scope()
             if objscope.is_class():
-                classsym = objscope.parent.find_sym(objscope.orig_name)
+                classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():
                     objscope = objscope.origin
-                    classsym = objscope.parent.find_sym(objscope.orig_name)
+                    classsym = objscope.parent.find_sym(objscope.base_name)
                 c = try_get_constant((classsym, ir.attr), self.scope)
                 if c:
                     return c
@@ -469,10 +481,10 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         if receiver.typ.is_object() and ir.attr.typ.is_scalar():
             objscope = receiver.typ.get_scope()
             if objscope.is_class():
-                classsym = objscope.parent.find_sym(objscope.orig_name)
+                classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():
                     objscope = objscope.bases[0]
-                    classsym = objscope.parent.find_sym(objscope.orig_name)
+                    classsym = objscope.parent.find_sym(objscope.base_name)
                 c = try_get_constant((classsym, ir.attr), self.scope)
                 if c:
                     return c

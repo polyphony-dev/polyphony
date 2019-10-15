@@ -131,7 +131,7 @@ class STGBuilder(object):
 
             for w, _ in hdlmodule.scope.workers:
                 stgs = self._process_scope(w)
-                fsm_name = w.orig_name
+                fsm_name = w.base_name
                 self.hdlmodule.add_fsm(fsm_name, w)
                 self.hdlmodule.add_fsm_stg(fsm_name, stgs)
         else:
@@ -170,16 +170,16 @@ class STGBuilder(object):
         is_main = index == 0
         if self.scope.parent and self.scope.parent.is_module() and self.scope.is_callable():
             if is_main:
-                stg_name = self.scope.parent.orig_name
+                stg_name = self.scope.parent.base_name
             else:
-                stg_name = f'{self.scope.parent.orig_name}_L{index}'
+                stg_name = f'{self.scope.parent.base_name}_L{index}'
         else:
             if is_main:
-                stg_name = self.scope.orig_name
+                stg_name = self.scope.base_name
             else:
-                stg_name = f'{self.scope.orig_name}_L{index}'
+                stg_name = f'{self.scope.base_name}_L{index}'
             if self.scope.is_method():
-                stg_name = self.scope.parent.orig_name + '_' + stg_name
+                stg_name = self.scope.parent.base_name + '_' + stg_name
 
         parent_stg = self._get_parent_stg(dfg) if not is_main else None
         stg = STG(stg_name, parent_stg, None, self.hdlmodule)
@@ -422,7 +422,7 @@ class AHDLTranslator(IRVisitor):
             return f'{instance_name}_{ir.func.attr.name}'
         else:
             assert ir.func.is_a(TEMP)
-            name = ir.func_scope().orig_name
+            name = ir.func_scope().base_name
             n = self.node.instance_num
             return f'{name}_{n}'
 
@@ -434,11 +434,11 @@ class AHDLTranslator(IRVisitor):
             if ir.exp.is_a(TEMP):
                 if ir.exp.sym.name == env.self_name:
                     if self.scope.is_ctor():
-                        return self.scope.parent.orig_name
+                        return self.scope.parent.base_name
                     else:
-                        return self.scope.orig_name
+                        return self.scope.base_name
                 elif ir.exp.sym.typ.is_class():
-                    return ir.exp.sym.typ.get_scope().orig_name
+                    return ir.exp.sym.typ.get_scope().base_name
                 else:
                     return ir.exp.sym.hdl_name()
             else:
@@ -756,11 +756,11 @@ class AHDLTranslator(IRVisitor):
                     if 'reg' in tags:
                         tags.remove('reg')
                 else:
-                    sig_name = f'{self.scope.orig_name}_{qsym[-1].hdl_name()}'
+                    sig_name = f'{self.scope.base_name}_{qsym[-1].hdl_name()}'
             elif qsym[-1].is_param():
-                sig_name = f'{self.scope.orig_name}_{qsym[-1].hdl_name()}'
+                sig_name = f'{self.scope.base_name}_{qsym[-1].hdl_name()}'
             elif qsym[-1].is_return():
-                sig_name = f'{self.scope.orig_name}_out_0'
+                sig_name = f'{self.scope.base_name}_out_0'
             else:
                 sig_name = qsym[-1].hdl_name()
         sig = self.hdlmodule.gen_sig(sig_name, width, tags, qsym[-1])
@@ -1103,7 +1103,7 @@ class AHDLTranslator(IRVisitor):
         direction = root_sym.typ.get_direction()
         assert direction != '?'
         assigned = root_sym.typ.get_assigned()
-        assert port_scope.orig_name.startswith('Port')
+        assert port_scope.base_name.startswith('Port')
         tags.add('single_port')
         if dtype.has_signed() and dtype.get_signed():
             tags.add('int')
@@ -1159,13 +1159,13 @@ class AHDLTranslator(IRVisitor):
         port_qsym = call.func.qualified_symbol()[:-1]
         port_sig = self._port_sig(port_qsym)
 
-        if call.func_scope().orig_name == 'wr':
+        if call.func_scope().base_name == 'wr':
             self._make_port_write_seq(call, port_sig)
-        elif call.func_scope().orig_name == 'rd':
+        elif call.func_scope().base_name == 'rd':
             self._make_port_read_seq(target, port_sig)
-        elif call.func_scope().orig_name == 'assign':
+        elif call.func_scope().base_name == 'assign':
             self._make_port_assign(call.args[0][1].symbol(), port_sig)
-        elif call.func_scope().orig_name == 'edge':
+        elif call.func_scope().base_name == 'edge':
             self._make_port_edge(target, port_sig, call.args[0][1], call.args[1][1])
         else:
             assert False
@@ -1271,9 +1271,9 @@ class AHDLTranslator(IRVisitor):
         net_qsym = call.func.qualified_symbol()[:-1]
         net_sig = self._net_sig(net_qsym)
 
-        if call.func_scope().orig_name == 'rd':
+        if call.func_scope().base_name == 'rd':
             self._make_net_read_seq(target, net_sig)
-        elif call.func_scope().orig_name == 'assign':
+        elif call.func_scope().base_name == 'assign':
             self._make_net_assign(call.args[0][1].symbol(), net_sig)
         else:
             assert False
@@ -1317,13 +1317,13 @@ class AHDLCombTranslator(AHDLTranslator):
         return (ir.is_a(CALL) and
                 ir.func_scope().is_method() and
                 ir.func_scope().parent.is_port() and
-                ir.func_scope().orig_name == method_name)
+                ir.func_scope().base_name == method_name)
 
     def _is_net_method(self, ir, method_name):
         return (ir.is_a(CALL) and
                 ir.func_scope().is_method() and
                 ir.func_scope().parent.name.startswith('polyphony.Net') and
-                ir.func_scope().orig_name == method_name)
+                ir.func_scope().base_name == method_name)
 
     def visit_CALL(self, ir):
         if self._is_port_method(ir, 'rd'):

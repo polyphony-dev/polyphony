@@ -144,7 +144,7 @@ class InlineOpt(object):
 
     def _make_result_exp(self, call_stm, call, callee, caller, symbol_map):
         result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-        result_sym.name = callee.orig_name + '_result' + str(self.inline_counts)
+        result_sym.name = callee.base_name + '_result' + str(self.inline_counts)
         assert result_sym.is_return()
         result_sym.del_tag('return')
         result = TEMP(result_sym, Ctx.LOAD)
@@ -228,7 +228,7 @@ class InlineOpt(object):
     def _process_enclosure(self, enclosure, caller, symbol_map, attr_map, inline_id):
         caller.add_tag('enclosure')
         for clos in enclosure.closures:
-            clos_sym = enclosure.symbols[clos.orig_name]
+            clos_sym = enclosure.symbols[clos.base_name]
             new_clos_sym = symbol_map[clos_sym]
 
             new_clos = clos.clone('', postfix=f'inl{inline_id}', parent=caller, sym_postfix=f'_{inline_id}')
@@ -481,7 +481,7 @@ class FlattenObjectArgs(IRTransformer):
     def visit_EXPR(self, ir):
         if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
                 ir.exp.func_scope().parent.is_module()):
-            if ir.exp.func_scope().orig_name == 'append_worker':
+            if ir.exp.func_scope().base_name == 'append_worker':
                 self._flatten_args(ir.exp)
         self.new_stms.append(ir)
 
@@ -571,7 +571,7 @@ class FlattenModule(IRVisitor):
     def visit_CALL(self, ir):
         if (ir.func_scope().is_method() and
                 ir.func_scope().parent.is_module() and
-                ir.func_scope().orig_name == 'append_worker' and
+                ir.func_scope().base_name == 'append_worker' and
                 ir.func.head().name == env.self_name and
                 len(ir.func.qualified_symbol()) > 2):
             _, arg = ir.args[0]
@@ -638,7 +638,7 @@ class FlattenModule(IRVisitor):
         sym_replacer.process(new_worker, new_worker.entry_block)
         UseDefDetector().process(new_worker)
 
-        new_worker_sym = parent_module.add_sym(new_worker.orig_name,
+        new_worker_sym = parent_module.add_sym(new_worker.base_name,
                                                typ=Type.function(new_worker))
         arg.exp = TEMP(ctor_self, Ctx.LOAD)
         arg.attr = new_worker_sym
@@ -678,7 +678,7 @@ class FlattenModule(IRVisitor):
         sym_replacer.process(new_method, new_method.entry_block)
         UseDefDetector().process(new_method)
 
-        new_method_sym = module_scope.add_sym(new_method.orig_name,
+        new_method_sym = module_scope.add_sym(new_method.base_name,
                                               typ=Type.function(new_method))
         arg.exp = TEMP(ctor_self, Ctx.LOAD)
         arg.attr = new_method_sym

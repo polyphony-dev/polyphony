@@ -52,7 +52,7 @@ class Symbol(Tagged):
         Symbol.all_symbols.append(self)
 
     def __str__(self):
-        #return '{}:{}({}:{})'.format(self.name, self.typ, self.id, self.scope.orig_name)
+        #return '{}:{}({}:{})'.format(self.name, self.typ, self.id, self.scope.base_name)
         #return '{}:{}({})'.format(self.name, repr(self.typ), self.tags)
         if env.dev_debug_mode:
             return '{}:{}'.format(self.name, self.typ)

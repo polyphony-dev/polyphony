@@ -40,7 +40,7 @@ def exec_test(casefile_path, options=None):
     if exec_compile(casefile_path, casename, options):
         finishes = []
         for testbench in env.testbenches:
-            result_lines = simulate_verilog(testbench.orig_name, casename, casefile_path, options)
+            result_lines = simulate_verilog(testbench.base_name, casename, casefile_path, options)
             if result_lines:
                 finishes.append(result_lines[-2])
         return finishes

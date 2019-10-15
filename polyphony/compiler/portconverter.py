@@ -65,7 +65,7 @@ class PortTypeProp(TypePropagation):
             sym = ir.func.tail()
             if not sym.typ.is_port():
                 raise RejectPropagation(ir)
-            if ir.func.symbol().typ.get_scope().orig_name == 'assign':
+            if ir.func.symbol().typ.get_scope().base_name == 'assign':
                 sym.typ.set_assigned(True)
             kind = sym.typ.get_port_kind()
             root = sym.typ.get_root_symbol()
@@ -98,7 +98,7 @@ class PortTypeProp(TypePropagation):
             return ir.func_scope().return_type
 
     def visit_CALL_lib(self, ir):
-        if ir.func_scope().orig_name == 'append_worker':
+        if ir.func_scope().base_name == 'append_worker':
             if not ir.args[0][1].symbol().typ.is_function():
                 assert False
             worker = ir.args[0][1].symbol().typ.get_scope()
@@ -214,20 +214,20 @@ class PortConverter(IRTransformer):
         exclusive_write = False
         if from_external:
             assert kind == 'external'
-            if func_scope.orig_name in ('wr', 'assign'):
+            if func_scope.base_name in ('wr', 'assign'):
                 valid_direction = {'input'}
                 exclusive_write = True
             else:
                 valid_direction = {'output'}
         else:
             if kind == 'external':
-                if func_scope.orig_name in ('wr', 'assign'):
+                if func_scope.base_name in ('wr', 'assign'):
                     valid_direction = {'output'}
                     exclusive_write = True
                 else:
                     valid_direction = {'input', 'output'}
             else:
-                if func_scope.orig_name in ('wr', 'assign'):
+                if func_scope.base_name in ('wr', 'assign'):
                     exclusive_write = True
                 valid_direction = {'output', 'input'}
         if di != 'inout' and di != 'any' and di not in valid_direction:
@@ -357,16 +357,16 @@ class FlippedTransformer(TypePropagation):
             flipped_scope = self._new_scope_with_flipped_ports(arg_scope)
             if self.current_stm.is_a(MOVE):
                 orig_new = find_move_src(temp.symbol(), NEW)
-                sym = self.scope.find_sym(flipped_scope.orig_name)
+                sym = self.scope.find_sym(flipped_scope.base_name)
                 if not sym:
-                    sym = self.scope.add_sym(flipped_scope.orig_name,
+                    sym = self.scope.add_sym(flipped_scope.base_name,
                                              orig_new.sym.tags,
                                              Type.klass(flipped_scope))
                 self.current_stm.src = NEW(sym, orig_new.args, orig_new.kwargs)
                 return self.visit(self.current_stm.src)
 
     def _new_scope_with_flipped_ports(self, scope):
-        name = scope.orig_name + '_flipped'
+        name = scope.base_name + '_flipped'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name]
@@ -490,7 +490,7 @@ class PortConnector(IRVisitor):
         ret_sym = lambda_scope.add_return_sym()
         new_block.append_stm(MOVE(TEMP(ret_sym, Ctx.STORE), body))
         new_block.append_stm(RET(TEMP(ret_sym, Ctx.LOAD)))
-        scope_sym = self.scope.add_sym(lambda_scope.orig_name)
+        scope_sym = self.scope.add_sym(lambda_scope.base_name)
         scope_sym.set_type(Type.function(lambda_scope))
 
         self.scopes.append(lambda_scope)

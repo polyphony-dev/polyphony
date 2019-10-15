@@ -505,12 +505,12 @@ def schedule(driver, scope):
 
 def createhdlmodule(driver, scope):
     assert is_hdlmodule_scope(scope)
-    hdlmodule = HDLModule(scope, scope.orig_name, scope.qualified_name())
+    hdlmodule = HDLModule(scope, scope.base_name, scope.qualified_name())
     env.append_hdlmodule(hdlmodule)
     if scope.is_instantiated():
         for b in scope.bases:
             if env.hdlmodule(b) is None:
-                basemodule = HDLModule(b, b.orig_name, b.qualified_name())
+                basemodule = HDLModule(b, b.base_name, b.qualified_name())
                 env.append_hdlmodule(basemodule)
 
 
@@ -589,7 +589,7 @@ def dumpcfgimg(driver, scope):
 def dumpdfgimg(driver, scope):
     if scope.is_function_module() or scope.is_method() or scope.is_module():
         for dfg in scope.dfgs():
-            dfg.write_dot(f'{scope.orig_name}_{dfg.name}')
+            dfg.write_dot(f'{scope.base_name}_{dfg.name}')
 
 
 def dumpdependimg(driver):

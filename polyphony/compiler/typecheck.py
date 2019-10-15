@@ -434,7 +434,7 @@ class EarlyTypePropagation(TypePropagation):
             params = ir.func_scope().params[1:]
         else:
             params = ir.func_scope().params[:]
-        ir.args = self._normalize_args(ir.func_scope().orig_name, params, ir.args, ir.kwargs)
+        ir.args = self._normalize_args(ir.func_scope().base_name, params, ir.args, ir.kwargs)
         if ir.func_scope().is_lib():
             return self.visit_CALL_lib(ir)
 
@@ -451,10 +451,10 @@ class EarlyTypePropagation(TypePropagation):
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new = self._specialize_function_with_types(ir.func_scope(), new_param_types)
             if is_new:
-                new_scope_sym = ir.func_scope().parent.find_sym(new_scope.orig_name)
+                new_scope_sym = ir.func_scope().parent.find_sym(new_scope.base_name)
                 self._add_scope(new_scope)
             else:
-                new_scope_sym = ir.func_scope().parent.find_sym(new_scope.orig_name)
+                new_scope_sym = ir.func_scope().parent.find_sym(new_scope.base_name)
             ret_t = new_scope.return_type
             if ir.func.is_a(TEMP):
                 ir.func = TEMP(new_scope_sym, Ctx.LOAD)
@@ -468,7 +468,7 @@ class EarlyTypePropagation(TypePropagation):
         return ret_t
 
     def visit_CALL_lib(self, ir):
-        if ir.func_scope().orig_name == 'append_worker':
+        if ir.func_scope().base_name == 'append_worker':
             if not ir.args[0][1].symbol().typ.is_function():
                 assert False
             worker = ir.args[0][1].symbol().typ.get_scope()
@@ -488,10 +488,10 @@ class EarlyTypePropagation(TypePropagation):
                 new_param_types = self._get_new_param_types(param_types, arg_types)
                 new_scope, is_new = self._specialize_worker_with_types(worker, new_param_types)
                 if is_new:
-                    new_scope_sym = worker.parent.find_sym(new_scope.orig_name)
+                    new_scope_sym = worker.parent.find_sym(new_scope.base_name)
                     self._add_scope(new_scope)
                 else:
-                    new_scope_sym = worker.parent.find_sym(new_scope.orig_name)
+                    new_scope_sym = worker.parent.find_sym(new_scope.base_name)
                 if ir.args[0][1].is_a(TEMP):
                     ir.args[0] = (ir.args[0][0], TEMP(new_scope_sym, Ctx.LOAD))
                 elif ir.args[0][1].is_a(ATTR):
@@ -500,7 +500,7 @@ class EarlyTypePropagation(TypePropagation):
                     assert False
             else:
                 self._add_scope(worker)
-        elif ir.func_scope().orig_name == 'assign':
+        elif ir.func_scope().base_name == 'assign':
             assert ir.func_scope().parent.is_port()
             _, arg = ir.args[0]
             self.visit(arg)
@@ -514,7 +514,7 @@ class EarlyTypePropagation(TypePropagation):
         ret_t = Type.object(ir.func_scope())
         ir.func_scope().return_type = ret_t
         ctor = ir.func_scope().find_ctor()
-        ir.args = self._normalize_args(ir.func_scope().orig_name, ctor.params[1:], ir.args, ir.kwargs)
+        ir.args = self._normalize_args(ir.func_scope().base_name, ctor.params[1:], ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if ir.func_scope().is_specialized():
             return ir.func_scope().return_type
@@ -525,17 +525,17 @@ class EarlyTypePropagation(TypePropagation):
             new_scope, is_new = self._specialize_class_with_types(ir.func_scope(), new_param_types)
             if is_new:
                 new_ctor = new_scope.find_ctor()
-                new_scope_sym = ir.func_scope().parent.gen_sym(new_scope.orig_name)
+                new_scope_sym = ir.func_scope().parent.gen_sym(new_scope.base_name)
                 new_scope_sym.set_type(Type.klass(new_scope))
                 ctor_t = Type.function(new_ctor,
                                        new_scope.return_type,
                                        tuple([new_ctor.params[0].sym.typ] + new_param_types))
-                new_ctor_sym = new_scope.find_sym(new_ctor.orig_name)
+                new_ctor_sym = new_scope.find_sym(new_ctor.base_name)
                 new_ctor_sym.set_type(ctor_t)
                 self._add_scope(new_scope)
                 self._add_scope(new_ctor)
             else:
-                new_scope_sym = ir.func_scope().parent.find_sym(new_scope.orig_name)
+                new_scope_sym = ir.func_scope().parent.find_sym(new_scope.base_name)
             ret_t = new_scope.return_type
             ir.sym = new_scope_sym
         else:
@@ -567,7 +567,7 @@ class EarlyTypePropagation(TypePropagation):
                 s = f't_{elms}'
             elif t.is_class():
                 # TODO: we should avoid naming collision
-                s = f'c_{t.get_scope().orig_name}'
+                s = f'c_{t.get_scope().base_name}'
             elif t.is_int():
                 s = f'i{t.get_width()}'
             elif t.is_bool():
@@ -576,7 +576,7 @@ class EarlyTypePropagation(TypePropagation):
                 s = f's'
             elif t.is_object():
                 # TODO: we should avoid naming collision
-                s = f'o_{t.get_scope().orig_name}'
+                s = f'o_{t.get_scope().base_name}'
             else:
                 s = str(t)
             ts.append(s)
@@ -587,7 +587,7 @@ class EarlyTypePropagation(TypePropagation):
         types = [t.clone() for t in types]
         postfix = self._mangled_names(types)
         assert postfix
-        name = f'{scope.orig_name}_{postfix}'
+        name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False
@@ -611,7 +611,7 @@ class EarlyTypePropagation(TypePropagation):
         types = [t.clone() for t in types]
         postfix = self._mangled_names(types)
         assert postfix
-        name = f'{scope.orig_name}_{postfix}'
+        name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False
@@ -645,7 +645,7 @@ class EarlyTypePropagation(TypePropagation):
         else:
             dtype = typ.clone()
         postfix = self._mangled_names([dtype])
-        name = f'{scope.orig_name}_{postfix}'
+        name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False
@@ -682,7 +682,7 @@ class EarlyTypePropagation(TypePropagation):
         types = [t.clone() for t in types]
         postfix = self._mangled_names(types)
         assert postfix
-        name = f'{scope.orig_name}_{postfix}'
+        name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False
@@ -773,11 +773,11 @@ class TypeChecker(IRVisitor):
             param_typs = tuple([sym.typ for sym, _, _ in ir.func_scope().params])
         param_len = len(param_typs)
         with_vararg = param_len and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().base_name, with_vararg)
         if ir.func_scope().is_specialized():
-            scope_name = ir.func_scope().origin.orig_name
+            scope_name = ir.func_scope().origin.base_name
         else:
-            scope_name = ir.func_scope().orig_name
+            scope_name = ir.func_scope().base_name
         self._check_param_type(ir.func_scope(), param_typs, ir, scope_name, with_vararg)
 
         return ir.func_scope().return_type
@@ -814,15 +814,15 @@ class TypeChecker(IRVisitor):
         ctor = ir.func_scope().find_ctor()
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
-                       [ir.func_scope().orig_name, 0, arg_len])
+                       [ir.func_scope().base_name, 0, arg_len])
         param_len = len(ctor.params) - 1
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().base_name, with_vararg)
         if ir.func_scope().is_specialized():
-            scope_name = ir.func_scope().origin.orig_name
+            scope_name = ir.func_scope().origin.base_name
         else:
-            scope_name = ir.func_scope().orig_name
+            scope_name = ir.func_scope().base_name
         self._check_param_type(ir.func_scope(), param_typs, ir, scope_name, with_vararg)
 
         return Type.object(ir.func_scope())
@@ -974,9 +974,9 @@ class TypeChecker(IRVisitor):
 
 class PortAssignChecker(IRVisitor):
     def _is_assign_call(self, ir):
-        if ir.func_scope().parent.is_port() and ir.func_scope().orig_name == 'assign':
+        if ir.func_scope().parent.is_port() and ir.func_scope().base_name == 'assign':
             return True
-        elif ir.func_scope().parent.name.startswith('polyphony.Net') and ir.func_scope().orig_name == 'assign':
+        elif ir.func_scope().parent.name.startswith('polyphony.Net') and ir.func_scope().base_name == 'assign':
             return True
         return False
 
@@ -1025,7 +1025,7 @@ class RestrictionChecker(IRVisitor):
         if ir.func_scope().is_method() and ir.func_scope().parent.is_module():
             if ir.func_scope().parent.find_child(self.scope.name, rec=True):
                 return
-            if ir.func_scope().orig_name == 'append_worker':
+            if ir.func_scope().base_name == 'append_worker':
                 if not (self.scope.is_ctor() and self.scope.parent.is_module()):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
                 self._check_append_worker(ir)

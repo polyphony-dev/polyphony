@@ -50,7 +50,7 @@ class RefNode(object):
 
     def name(self):
         if self.scope.is_worker() or self.scope.is_method():
-            return self.scope.orig_name + '_' + self.sym.hdl_name()
+            return self.scope.base_name + '_' + self.sym.hdl_name()
         else:
             return self.sym.hdl_name()
 

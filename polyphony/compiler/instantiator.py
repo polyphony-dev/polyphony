@@ -89,7 +89,7 @@ class EarlyWorkerInstantiator(object):
         if inspect.ismethod(worker.func):
             self_sym = new_worker.find_sym(env.self_name)
             self_sym.typ.set_scope(module)
-        parent.add_sym(new_worker.orig_name, typ=Type.function(new_worker))
+        parent.add_sym(new_worker.base_name, typ=Type.function(new_worker))
         env.runtime_info.inst2worker[worker] = (new_worker, worker_scope)
         return new_worker, worker_scope
 
@@ -116,12 +116,12 @@ class EarlyModuleInstantiator(object):
         if not ctor.is_pure():
             return None, None
 
-        new_module_name = module.orig_name + '_' + inst_name
+        new_module_name = module.base_name + '_' + inst_name
 
         overrides = [child for child in module.children if not child.is_lib() and not child.is_worker()]
         for method in overrides[:]:
             for worker in instance._workers:
-                if method.orig_name == worker.func.__name__:
+                if method.base_name == worker.func.__name__:
                     if method in overrides:
                         overrides.remove(method)
         new_module = module.inherit(new_module_name, overrides)
@@ -154,7 +154,7 @@ class EarlyModuleInstantiator(object):
             if call.is_a(NEW) and call.func_scope() is module and caller_lineno == stm.loc.lineno:
                 obj_name = inst_name.split('.')[-1]
                 if stm.dst.symbol().name.endswith(obj_name):
-                    new_module_sym = call.sym.scope.gen_sym(new_module.orig_name)
+                    new_module_sym = call.sym.scope.gen_sym(new_module.base_name)
                     new_module_sym.typ = Type.klass(new_module)
                     call.sym = new_module_sym
 
@@ -186,12 +186,12 @@ class WorkerInstantiator(object):
         ctor = module.find_ctor()
         calls = collector.process(ctor)
         for stm, call in calls:
-            if call.is_a(CALL) and call.func_scope().orig_name == 'append_worker':
+            if call.is_a(CALL) and call.func_scope().base_name == 'append_worker':
                 new_worker, is_created = self._instantiate_worker(call, ctor, module)
                 module.register_worker(new_worker, call.args)
                 if not is_created:
                     continue
-                new_worker_sym = module.add_sym(new_worker.orig_name,
+                new_worker_sym = module.add_sym(new_worker.base_name,
                                                 typ=Type.function(new_worker))
                 _, w = call.args[0]
                 w.set_symbol(new_worker_sym)

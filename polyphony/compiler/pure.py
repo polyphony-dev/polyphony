@@ -447,7 +447,7 @@ class PureCtorBuilder(object):
                 if klass_scope.find_ctor().is_pure():
                     klass_scope, _ = env.runtime_info.inst2module[v]
                     typ.set_scope(klass_scope)
-                klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.orig_name)
+                klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.base_name)
                 klass_scope_sym.set_type(Type.klass(klass_scope))
                 sym = module.add_sym(name, typ=typ.clone())
                 orig_obj = instance.__dict__[name]
@@ -499,11 +499,11 @@ class PureCtorBuilder(object):
         for worker in instance._workers:
             if inspect.ismethod(worker.func):
                 worker_scope, _ = env.runtime_info.inst2worker[worker]
-                worker_sym = module.find_sym(worker_scope.orig_name)
+                worker_sym = module.find_sym(worker_scope.base_name)
                 worker_var = ATTR(TEMP(self_sym, Ctx.LOAD), worker_sym, Ctx.LOAD)
             else:
                 worker_scope, _ = env.runtime_info.inst2worker[worker]
-                worker_sym = Scope.global_scope().find_sym(worker_scope.orig_name)
+                worker_sym = Scope.global_scope().find_sym(worker_scope.base_name)
                 worker_var = TEMP(worker_sym, Ctx.LOAD)
             args = [(None, worker_var)]
             for arg in worker.args:
@@ -559,7 +559,7 @@ class PureCtorBuilder(object):
         args = [(pname, expr2ir(pvalue, None, module)) for pname, pvalue in port_args]
         port_qualname = port.__module__ + '.' + port.__class__.__name__
         port_scope = env.scopes[port_qualname]
-        port_scope_sym = port_scope.parent.gen_sym(port_scope.orig_name)
+        port_scope_sym = port_scope.parent.gen_sym(port_scope.base_name)
         port_scope_sym.set_type(Type.klass(port_scope))
         return NEW(port_scope_sym, args, kwargs={})
 

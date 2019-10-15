@@ -168,43 +168,43 @@ class Type(object):
     @classmethod
     def from_typeclass(cls, scope, elms=None):
         assert scope.is_typeclass()
-        if scope.orig_name == 'int':
+        if scope.base_name == 'int':
             return Type.int()
-        elif scope.orig_name == 'uint':
+        elif scope.base_name == 'uint':
             return Type.int(signed=False)
-        elif scope.orig_name == 'bool':
+        elif scope.base_name == 'bool':
             return Type.bool()
-        elif scope.orig_name == 'bit':
+        elif scope.base_name == 'bit':
             return Type.int(1, signed=False)
-        elif scope.orig_name == 'object':
+        elif scope.base_name == 'object':
             return Type.object(None)
-        elif scope.orig_name == 'generic':
+        elif scope.base_name == 'generic':
             return Type.generic()
-        elif scope.orig_name == 'function':
+        elif scope.base_name == 'function':
             return Type.function(None)
-        elif scope.orig_name == 'str':
+        elif scope.base_name == 'str':
             return Type.str()
-        elif scope.orig_name == 'list':
+        elif scope.base_name == 'list':
             return Type.list(Type.undef(), None)
-        elif scope.orig_name == 'tuple':
+        elif scope.base_name == 'tuple':
             return Type.tuple(Type.undef(), None, Type.ANY_LENGTH)
-        elif scope.orig_name == 'Type':
+        elif scope.base_name == 'Type':
             return Type.klass(None)
-        elif scope.orig_name.startswith('int'):
-            return Type.int(int(scope.orig_name[3:]))
-        elif scope.orig_name.startswith('uint'):
-            return Type.int(int(scope.orig_name[4:]), signed=False)
-        elif scope.orig_name.startswith('bit'):
-            return Type.int(int(scope.orig_name[3:]), signed=False)
-        elif scope.orig_name == ('Int'):
+        elif scope.base_name.startswith('int'):
+            return Type.int(int(scope.base_name[3:]))
+        elif scope.base_name.startswith('uint'):
+            return Type.int(int(scope.base_name[4:]), signed=False)
+        elif scope.base_name.startswith('bit'):
+            return Type.int(int(scope.base_name[3:]), signed=False)
+        elif scope.base_name == ('Int'):
             return Type.int()
-        elif scope.orig_name == ('List'):
+        elif scope.base_name == ('List'):
             if elms:
                 assert len(elms) == 1
                 return Type.list(elms[0], None)
             else:
                 return Type.list(Type.undef(), None)
-        elif scope.orig_name == ('Tuple'):
+        elif scope.base_name == ('Tuple'):
             if elms:
                 if len(elms) == 2 and elms[1].is_ellipsis():
                     length = Type.ANY_LENGTH
@@ -269,22 +269,29 @@ class Type(object):
 
     def __str__(self):
         if self.name == 'object' and self.get_scope():
-            return self.get_scope().orig_name
+            return self.get_scope().base_name
         if env.dev_debug_mode:
             if self.name == 'int':
                 return f'int{self.get_width()}'
             if self.name == 'list':
-                if self.has_length():
-                    return f'list<{self.get_element()}, {self.get_length()}>'
+                memnode = self.get_memnode()
+                if memnode:
+                    if self.has_length():
+                        return f'list<{self.get_element()}, {self.get_length()}, {memnode.scope.name}>'
+                    else:
+                        return f'list<{self.get_element()}, {memnode.scope.name}>'
                 else:
-                    return f'list<{self.get_element()}>'
+                    if self.has_length():
+                        return f'list<{self.get_element()}, {self.get_length()}>'
+                    else:
+                        return f'list<{self.get_element()}>'
             if self.name == 'tuple':
                 return f'tuple<{self.get_element()}, {self.get_length()}>'
             if self.name == 'port':
                 return f'port<{self.get_dtype()}, {self.get_direction()}>'
             if self.name == 'function':
                 if self.get_scope().is_method():
-                    receiver_name = self.get_scope().parent.orig_name
+                    receiver_name = self.get_scope().parent.base_name
                     return f'function<{receiver_name}>'
                 else:
                     return f'function'

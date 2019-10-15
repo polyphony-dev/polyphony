@@ -143,7 +143,7 @@ class Scope(Tagged):
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(tags)
         self.name = name
-        self.orig_name = name
+        self.base_name = name
         self.parent = parent
         if parent:
             self.name = parent.name + "." + name
@@ -181,9 +181,9 @@ class Scope(Tagged):
         s = '\n================================\n'
         tags = ", ".join([att for att in self.tags])
         if self.parent:
-            s += "Scope: {}, parent={} ({})\n".format(self.orig_name, self.parent.name, tags)
+            s += "Scope: {}, parent={} ({})\n".format(self.base_name, self.parent.name, tags)
         else:
-            s += "Scope: {} ({})\n".format(self.orig_name, tags)
+            s += "Scope: {} ({})\n".format(self.base_name, tags)
 
         for sym in self.symbols.values():
             s += f'{sym.name} {sym.tags}\n'
@@ -223,6 +223,44 @@ class Scope(Tagged):
         elif self.order == other.order:
             return self.lineno < other.lineno
 
+    def param_types(self):
+        if self.is_method():
+            params = self.params[1:]
+        else:
+            params = self.params[:]
+        return [p.sym.typ for p in params]
+
+    def _mangled_names(self, types):
+        ts = []
+        for t in types:
+            if t.is_list():
+                elm = self._mangled_names([t.get_element()])
+                s = f'l_{elm}'
+            elif t.is_tuple():
+                elm = self._mangled_names([t.get_element()])
+                elms = ''.join([elm] * t.get_length())
+                s = f't_{elms}'
+            elif t.is_class():
+                # TODO: we should avoid naming collision
+                s = f'c_{t.get_scope().base_name}'
+            elif t.is_int():
+                s = f'i{t.get_width()}'
+            elif t.is_bool():
+                s = f'b'
+            elif t.is_str():
+                s = f's'
+            elif t.is_object():
+                # TODO: we should avoid naming collision
+                s = f'o_{t.get_scope().base_name}'
+            else:
+                s = str(t)
+            ts.append(s)
+        return '_'.join(ts)
+
+    def signature(self):
+        param_signature = self._mangled_names(self.param_types())
+        return (self.name, param_signature)
+
     def clone_symbols(self, scope, postfix=''):
         symbol_map = {}
 
@@ -257,7 +295,7 @@ class Scope(Tagged):
         #if self.is_lib():
         #    return
         name = prefix + '_' if prefix else ''
-        name += self.orig_name
+        name += self.base_name
         name = name + '_' + postfix if postfix else name
         parent = self.parent if parent is None else parent
         s = Scope.create(parent, name, set(self.tags), self.lineno, origin=self)
@@ -367,10 +405,10 @@ class Scope(Tagged):
                     sym.typ.set_scope(new)
             if new.parent.is_namespace():
                 continue
-            old_sym = new.parent.symbols[new.orig_name]
+            old_sym = new.parent.symbols[new.base_name]
             new_sym = old_sym.clone(new.parent)
             new_sym.typ.set_scope(new)
-            new.parent.symbols[new.orig_name] = new_sym
+            new.parent.symbols[new.base_name] = new_sym
         return sub
 
     def instantiate(self, inst_name, children, with_tag=True):
@@ -379,8 +417,8 @@ class Scope(Tagged):
             new_class.add_tag('instantiated')
         assert new_class.origin is self
 
-        new_class_sym = new_class.parent.add_sym(new_class.orig_name)
-        old_class_sym = new_class.parent.find_sym(self.orig_name)
+        new_class_sym = new_class.parent.add_sym(new_class.base_name)
+        old_class_sym = new_class.parent.find_sym(self.base_name)
         if old_class_sym.typ.is_class():
             new_class_sym.set_type(Type.klass(new_class))
         elif old_class_sym.typ.is_function():
@@ -400,7 +438,7 @@ class Scope(Tagged):
                     sym.typ.set_scope(new)
             if new.parent.is_namespace():
                 continue
-            assert new.parent.symbols[new.orig_name].typ.get_scope() is new
+            assert new.parent.symbols[new.base_name].typ.get_scope() is new
         return new_class
 
     def find_child(self, name, rec=False):
@@ -413,7 +451,7 @@ class Scope(Tagged):
                     c, p = res
                     return c, p
             else:
-                if child.orig_name == name:
+                if child.base_name == name:
                     return child, self
         return None
 
@@ -437,7 +475,7 @@ class Scope(Tagged):
             return None
 
     def find_scope(self, name):
-        if self.orig_name == name:
+        if self.base_name == name:
             return self
         ret = self.find_child(name)
         if ret:
@@ -794,7 +832,7 @@ def write_dot(scope, tag):
     debug_mode = env.dev_debug_mode
     env.dev_debug_mode = False
 
-    name = scope.orig_name + '_' + str(tag)
+    name = scope.base_name + '_' + str(tag)
     g = pydot.Dot(name, graph_type='digraph')
 
     def get_text(blk):
