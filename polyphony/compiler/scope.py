@@ -45,6 +45,7 @@ class Scope(Tagged):
         env.append_scope(s)
         if origin:
             s.origin = origin
+            s.orig_name = origin.orig_name
             env.scope_file_map[s] = env.scope_file_map[origin]
         cls.scope_id += 1
         return s
@@ -144,6 +145,7 @@ class Scope(Tagged):
         super().__init__(tags)
         self.name = name
         self.base_name = name
+        self.orig_name = name
         self.parent = parent
         if parent:
             self.name = parent.name + "." + name
@@ -362,9 +364,9 @@ class Scope(Tagged):
         s.closures = self.closures.copy()
         for sym in self.free_symbols:
             if sym in symbol_map:
-                s.free_symbols.add(symbol_map[sym])
+                s.add_free_sym(symbol_map[sym])
             else:
-                s.free_symbols.add(sym)
+                s.add_free_sym(sym)
         # TODO:
         #s.loop_tree = None
         #s.constants
@@ -417,14 +419,14 @@ class Scope(Tagged):
             new_class.add_tag('instantiated')
         assert new_class.origin is self
 
-        new_class_sym = new_class.parent.add_sym(new_class.base_name)
         old_class_sym = new_class.parent.find_sym(self.base_name)
         if old_class_sym.typ.is_class():
-            new_class_sym.set_type(Type.klass(new_class))
+            new_t = Type.klass(new_class)
         elif old_class_sym.typ.is_function():
-            new_class_sym.set_type(Type.function(new_class))
+            new_t = Type.function(new_class)
         else:
             assert False
+        new_class.parent.add_sym(new_class.base_name, tags=old_class_sym.tags, typ=new_t)
         new_scopes = {self:new_class}
         for child in children:
             new_child = self._clone_child(new_class, self, child)
@@ -525,6 +527,9 @@ class Scope(Tagged):
     def add_free_sym(self, sym):
         sym.add_tag('free')
         self.free_symbols.add(sym)
+
+    def del_free_sym(self, sym):
+        self.free_symbols.discard(sym)
 
     def del_sym(self, name):
         if name in self.symbols:

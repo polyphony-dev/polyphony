@@ -773,12 +773,8 @@ class TypeChecker(IRVisitor):
             param_typs = tuple([sym.typ for sym, _, _ in ir.func_scope().params])
         param_len = len(param_typs)
         with_vararg = param_len and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope().base_name, with_vararg)
-        if ir.func_scope().is_specialized():
-            scope_name = ir.func_scope().origin.base_name
-        else:
-            scope_name = ir.func_scope().base_name
-        self._check_param_type(ir.func_scope(), param_typs, ir, scope_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_type(ir.func_scope(), param_typs, ir, ir.func_scope().orig_name, with_vararg)
 
         return ir.func_scope().return_type
 
@@ -814,16 +810,12 @@ class TypeChecker(IRVisitor):
         ctor = ir.func_scope().find_ctor()
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
-                       [ir.func_scope().base_name, 0, arg_len])
+                       [ir.func_scope().orig_name, 0, arg_len])
         param_len = len(ctor.params) - 1
         param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
         with_vararg = len(param_typs) and param_typs[-1].has_vararg()
-        self._check_param_number(arg_len, param_len, ir, ir.func_scope().base_name, with_vararg)
-        if ir.func_scope().is_specialized():
-            scope_name = ir.func_scope().origin.base_name
-        else:
-            scope_name = ir.func_scope().base_name
-        self._check_param_type(ir.func_scope(), param_typs, ir, scope_name, with_vararg)
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        self._check_param_type(ir.func_scope(), param_typs, ir, ir.func_scope().orig_name, with_vararg)
 
         return Type.object(ir.func_scope())
 
@@ -848,6 +840,10 @@ class TypeChecker(IRVisitor):
                 not self.scope.find_sym(ir.sym.name).is_builtin()):
             type_error(self.current_stm, Errors.REFERENCED_BEFORE_ASSIGN,
                        [ir.sym.name])
+        # sanity check
+        if ir.sym.scope is not self.scope:
+            if not (ir.sym.scope.is_namespace() or ir.sym.scope.is_lib()):
+                assert ir.sym.is_free()
         return ir.sym.typ
 
     def visit_ATTR(self, ir):

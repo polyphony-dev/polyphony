@@ -238,8 +238,21 @@ class InlineOpt(object):
             sym_replacer.process(new_clos, new_clos.entry_block)
             for sym in new_clos.free_symbols.copy():
                 if sym in symbol_map:
-                    new_clos.free_symbols.add(symbol_map[sym])
-                    new_clos.free_symbols.discard(sym)
+                    sym_or_ir = symbol_map[sym]
+                    if isinstance(sym_or_ir, IR):
+                        if sym_or_ir.is_a(TEMP):
+                            new_sym = sym_or_ir.symbol()
+                        elif sym_or_ir.is_a(ATTR):
+                            new_sym = sym_or_ir.head()
+                        else:
+                            assert False
+                    elif isinstance(sym_or_ir, tuple):
+                        new_sym = sym_or_ir[0]
+                    else:
+                        assert isinstance(sym_or_ir, Symbol)
+                        new_sym = sym_or_ir
+                    new_clos.add_free_sym(new_sym)
+                    new_clos.del_free_sym(sym)
             caller.add_closure(new_clos)
             self.new_scopes.append(new_clos)
 
