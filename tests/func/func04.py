@@ -1,15 +1,11 @@
 from polyphony import testbench
 
 def func04(x):
-    def g(a):
-        return a*a
-
     def f(a):
-        return g(a)+g(a+1)
+        return g(a) + g(a + 1)
 
-    #TODO: post declaration
-    #def g(a):
-    #    return a*a
+    def g(a):
+        return a * a
 
     return f(x)
 

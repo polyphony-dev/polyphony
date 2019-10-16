@@ -1,13 +1,13 @@
 #print() takes only scalar type (e.g. int, str, ...) argument
 from polyphony import testbench
 from polyphony import module
-from polyphony.io import Queue
+from polyphony.io import Port
 
 
 @module
 class M:
     def __init__(self):
-        self.in_q = Queue(int, 'in')
+        self.in_q = Port(int, 'in')
         self.append_worker(self.w)
 
     def w(self):
