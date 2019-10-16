@@ -55,7 +55,6 @@ from .scopegraph import CallGraphBuilder
 from .scopegraph import DependencyGraphBuilder
 from .selectorbuilder import SelectorBuilder
 from .setlineno import SourceDump
-from .specfunc import SpecializedFunctionMaker
 from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
 from .statereducer import StateReducer
 from .stg import STGBuilder
@@ -372,13 +371,6 @@ def postinstantiate(driver):
     detectrom(driver)
     for s in scopes:
         constopt(driver, s)
-
-
-def specfunc(driver):
-    new_scopes, unused_scopes = SpecializedFunctionMaker().process_all()
-    for s in new_scopes:
-        assert s.name in env.scopes
-        driver.insert_scope(s)
 
 
 def inlineopt(driver):
