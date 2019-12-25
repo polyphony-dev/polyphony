@@ -337,7 +337,7 @@ class ConstantOpt(ConstantOptBase):
                     if rep not in dead_stms:
                         worklist.append(rep)
                 self._update_usedef(stm, None)
-                scope.del_sym(stm.dst.symbol())
+                scope.del_sym(stm.dst.symbol().name)
                 dead_stms.append(stm)
                 if stm.dst.symbol().is_free():
                     for clos in stm.dst.symbol().scope.closures:

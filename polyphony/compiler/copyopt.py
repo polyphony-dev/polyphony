@@ -31,10 +31,10 @@ class CopyOpt(IRVisitor):
                 # dst must be non ssa variables
                 continue
             orig = self._find_root_def(cp.src.qualified_symbol())
-            self._replace_copies(scope, cp, orig, dst_qsym, copies)
+            self._replace_copies(scope, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures:
-                    self._replace_copies(clos, cp, orig, dst_qsym, copies)
+                    self._replace_copies(clos, cp, orig, dst_qsym, copies, worklist)
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
@@ -44,7 +44,7 @@ class CopyOpt(IRVisitor):
                     continue
                 cp.block.stms.remove(cp)
 
-    def _replace_copies(self, scope, copy_stm, orig, target, copies):
+    def _replace_copies(self, scope, copy_stm, orig, target, copies, worklist):
         uses = list(scope.usedef.get_stms_using(target))
         for u in uses:
             olds = self._find_old_use(u, target)
