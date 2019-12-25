@@ -31,8 +31,8 @@ class connect01:
 
         connect(self._sub.inf, self._inf)
         # connect() is equivalent to
-        #self.sub.inf.p0.assign(lambda:self.inf.p0.rd())
-        #self.inf.p1.assign(lambda:self.sub.inf.p1.rd())
+        # self._sub.inf.p0.assign(lambda:self._inf.p0.rd())
+        # self._inf.p1.assign(lambda:self._sub.inf.p1.rd())
 
         self.append_worker(self.main, loop=True)
 

@@ -74,6 +74,7 @@ class Errors(Enum):
     RESERVED_PORT_NAME = 912
     MODULE_CANNOT_ACCESS_OBJECT = 913
     PORT_ASSIGN_CANNOT_ACCEPT = 914
+    WORKER_TEMP_OBJ_ARG = 915
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -180,6 +181,7 @@ ERROR_MESSAGES = {
     Errors.RESERVED_PORT_NAME: "The name of Port '{}' is reserved",
     Errors.MODULE_CANNOT_ACCESS_OBJECT: "The module class cannot access an object",
     Errors.PORT_ASSIGN_CANNOT_ACCEPT: "Port.assign() accepts only a module method or a lambda",
+    Errors.WORKER_TEMP_OBJ_ARG: "Temporary object argument is not supported.",
     Errors.READING_IS_CONFLICTED: "Reading from '{}' is conflicted",
     Errors.WRITING_IS_CONFLICTED: "Writing to '{}' is conflicted",
     Errors.DIRECTION_IS_CONFLICTED: "Port direction of '{}' is conflicted",

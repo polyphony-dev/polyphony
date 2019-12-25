@@ -27,6 +27,7 @@ from .iftransform import IfTransformer, IfCondTransformer
 from .inlineopt import InlineOpt
 from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
 from .inlineopt import AliasReplacer, ObjectHierarchyCopier
+from .inlineopt import SpecializeWorker
 from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
 from .iotransformer import IOTransformer
@@ -306,6 +307,12 @@ def detectrom(driver):
     RomDetector().process_all()
 
 
+def specworker(driver, scope):
+    new_workers = SpecializeWorker().process(scope)
+    for w in new_workers:
+        driver.insert_scope(w)
+
+
 def earlyinstantiate(driver):
     new_modules = EarlyModuleInstantiator().process_all()
     for module in new_modules:
@@ -390,15 +397,20 @@ def flattenmodule(driver, scope):
     FlattenModule(driver).process(scope)
 
 
-def scalarize(driver, scope):
+def objssa(driver, scope):
     TupleSSATransformer().process(scope)
     earlyquadruple(driver, scope)
     ObjectHierarchyCopier().process(scope)
     usedef(driver, scope)
     ObjectSSATransformer().process(scope)
+
+
+def objcopyopt(driver, scope):
     usedef(driver, scope)
     AliasReplacer().process(scope)
 
+
+def scalarize(driver, scope):
     FlattenObjectArgs().process(scope)
     FlattenFieldAccess().process(scope)
     checkcfg(driver, scope)
@@ -659,6 +671,7 @@ def compile_plan():
         typecheck,
         restrictioncheck,
         usedef,
+
         filter_scope(is_not_static_scope),
         scopegraph,
         flipport,
@@ -674,6 +687,7 @@ def compile_plan():
         #typecheck,
         #flattenport,
         typeprop,
+        specworker,
         restrictioncheck,
         phase(env.PHASE_1),
         usedef,
@@ -681,6 +695,7 @@ def compile_plan():
         dbg(dumpscope),
         inlineopt,
         dbg(dumpscope),
+
         filter_scope(is_uninlined_scope),
         setsynthparams,
         dbg(dumpscope),
@@ -690,7 +705,12 @@ def compile_plan():
         phase(env.PHASE_2),
         usedef,
         flattenmodule,
+        objssa,
+        dbg(dumpscope),
+        objcopyopt,
+        dbg(dumpscope),
         scalarize,
+
         dbg(dumpscope),
         scopegraph,
         dbg(dumpscope),

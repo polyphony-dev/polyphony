@@ -649,7 +649,12 @@ class ATTR(IRExp):
     def qualified_symbol(self):
         return self.exp.qualified_symbol() + (self.attr,)
 
-
+    def replace_head(self, new_head):
+        if self.exp.is_a(ATTR):
+            self.exp.replace_head(new_head)
+        else:
+            self.exp.sym = new_head
+        return self
 class IRStm(IR):
     def __init__(self, loc):
         super().__init__()

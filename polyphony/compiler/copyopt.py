@@ -30,48 +30,11 @@ class CopyOpt(IRVisitor):
             if len(defs) > 1:
                 # dst must be non ssa variables
                 continue
-            uses = list(scope.usedef.get_stms_using(dst_qsym))
             orig = self._find_root_def(cp.src.qualified_symbol())
-            for u in uses:
-                olds = self._find_old_use(u, dst_qsym)
-                for old in olds:
-                    if orig:
-                        new = orig.clone()
-                    else:
-                        new = cp.src.clone()
-                    # TODO: we need the bit width propagation
-                    new.symbol().set_type(old.symbol().typ.clone())
-                    logger.debug('replace FROM ' + str(u))
-                    u.replace(old, new)
-                    logger.debug('replace TO ' + str(u))
-                    scope.usedef.remove_use(old, u)
-                    scope.usedef.add_use(new, u)
-                if u.is_a(PHIBase):
-                    syms = [arg.qualified_symbol() for arg in u.args
-                            if arg.is_a([TEMP, ATTR]) and arg.symbol() is not u.var.symbol()]
-                    if syms:
-                        if len(u.args) == len(syms) and all(syms[0] == s for s in syms):
-                            src = u.args[0]
-                        elif len(syms) == 1 and len([arg for arg in u.args if arg.is_a([TEMP, ATTR])]) > 1:
-                            for arg in u.args:
-                                if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol() == syms[0]:
-                                    src = arg
-                                    break
-                            else:
-                                assert False
-                        else:
-                            continue
-                        mv = MOVE(u.var, src)
-                        idx = u.block.stms.index(u)
-                        u.block.stms[idx] = mv
-                        mv.block = u.block
-                        scope.usedef.remove_stm(u)
-                        scope.usedef.add_var_def(mv.dst, mv)
-                        scope.usedef.add_use(mv.src, mv)
-                        if mv.src.is_a([TEMP, ATTR]):
-                            worklist.append(mv)
-                            copies.append(mv)
-
+            self._replace_copies(scope, cp, orig, dst_qsym, copies)
+            if dst_qsym[0].is_free():
+                for clos in scope.closures:
+                    self._replace_copies(clos, cp, orig, dst_qsym, copies)
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
@@ -80,6 +43,61 @@ class CopyOpt(IRVisitor):
                 if cp.is_a(CMOVE) and not cp.dst.symbol().is_temp():
                     continue
                 cp.block.stms.remove(cp)
+
+    def _replace_copies(self, scope, copy_stm, orig, target, copies):
+        uses = list(scope.usedef.get_stms_using(target))
+        for u in uses:
+            olds = self._find_old_use(u, target)
+            for old in olds:
+                if orig:
+                    new = orig.clone()
+                else:
+                    new = copy_stm.src.clone()
+                # TODO: we need the bit width propagation
+                new.symbol().set_type(old.symbol().typ.clone())
+                logger.debug('replace FROM ' + str(u))
+                u.replace(old, new)
+                logger.debug('replace TO ' + str(u))
+                scope.usedef.remove_use(old, u)
+                scope.usedef.add_use(new, u)
+            if u.is_a(PHIBase):
+                syms = [arg.qualified_symbol() for arg in u.args
+                        if arg.is_a([TEMP, ATTR]) and arg.symbol() is not u.var.symbol()]
+                if syms:
+                    if len(u.args) == len(syms) and all(syms[0] == s for s in syms):
+                        src = u.args[0]
+                    elif len(syms) == 1 and len([arg for arg in u.args if arg.is_a([TEMP, ATTR])]) > 1:
+                        for arg in u.args:
+                            if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol() == syms[0]:
+                                src = arg
+                                break
+                        else:
+                            assert False
+                    else:
+                        continue
+                    mv = MOVE(u.var, src)
+                    idx = u.block.stms.index(u)
+                    u.block.stms[idx] = mv
+                    mv.block = u.block
+                    scope.usedef.remove_stm(u)
+                    scope.usedef.add_var_def(mv.dst, mv)
+                    scope.usedef.add_use(mv.src, mv)
+                    if mv.src.is_a([TEMP, ATTR]):
+                        worklist.append(mv)
+                        copies.append(mv)
+        # Deal with 'free' attribute
+        if target[0].is_free() and target[0] in scope.free_symbols:
+            scope.free_symbols.remove(target[0])
+            if orig:
+                src = orig
+            else:
+                src = copy_stm.src
+            if src.is_a(ATTR):
+                scope.add_free_sym(src.head())
+            elif src.is_a(TEMP):
+                scope.add_free_sym(src.symbol())
+            else:
+                assert False
 
     def _find_root_def(self, qsym) -> IR:
         defs = list(self.scope.usedef.get_stms_defining(qsym))

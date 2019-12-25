@@ -3,7 +3,9 @@ from .block import Block
 from .irvisitor import IRVisitor, IRTransformer
 from .ir import Ctx, IR, CONST, UNOP, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
 from .env import env
+from .common import fail
 from .copyopt import CopyOpt
+from .errors import Errors
 from .symbol import Symbol
 from .synth import merge_synth_params
 from .type import Type
@@ -81,7 +83,8 @@ class InlineOpt(object):
             if caller.is_ctor() and caller.parent.is_module():
                 pass
             else:
-                return
+                # TODO
+                pass
         for call, call_stm in calls:
             self.inline_counts += 1
 
@@ -101,6 +104,7 @@ class InlineOpt(object):
                         callee_self.ctx = Ctx.LOAD
                         attr_map[callee.symbols[env.self_name]] = callee_self
                         object_sym = call_stm.dst.qualified_symbol()
+                        object_sym[0].add_tag('inlined')
                     else:
                         continue
                 else:
@@ -738,3 +742,83 @@ class ObjectHierarchyCopier(object):
                 cp.block.insert_stm(cp_idx + 1, new_cp)
                 if sym.typ.is_object():
                     worklist.append(new_cp)
+
+
+class SpecializeWorker(IRTransformer):
+    '''
+    Specialize Worker with object type argument
+    '''
+    def process(self, scope):
+        self.new_workers = []
+        super().process(scope)
+        return self.new_workers
+
+    def visit_EXPR(self, ir):
+        if (ir.exp.is_a(CALL) and ir.exp.func_scope().is_method() and
+                ir.exp.func_scope().parent.is_module()):
+            if ir.exp.func_scope().base_name == 'append_worker':
+                self._specialize_worker(ir.exp)
+        self.new_stms.append(ir)
+
+    def _specialize_worker(self, call):
+        if not any([True if arg.is_a([TEMP, ATTR]) and arg.symbol().typ.is_object() else False
+                   for name, arg in call.args]):
+            return
+        origin_worker = call.args[0][1].symbol().typ.get_scope()
+        # workerを複製
+        new_worker = self._make_new_worker(origin_worker, call.args,
+                                           self.current_stm.loc.lineno)
+        args = []
+        if origin_worker.is_method():
+            params = new_worker.params[:]
+        else:
+            params = [None] + new_worker.params[:]
+        for pindex, ((name, arg), param) in enumerate(zip(call.args, params)):
+            if (arg.is_a([TEMP, ATTR])
+                    and arg.symbol().typ.is_object()):
+                if arg.is_a(TEMP):
+                    fail(self.current_stm, Errors.WORKER_TEMP_OBJ_ARG)
+                self._subst_obj_arg(new_worker, arg, param)
+                new_worker.params.remove(param)
+            else:
+                args.append((name, arg))
+        call.args[:len(params)] = args[:]
+
+    def _subst_obj_arg(self, new_worker, arg, param):
+        param_sym, _, _ = param
+        assert arg.is_a(ATTR)
+        assert arg.head().is_self()
+        assert new_worker.parent.is_module()
+        if arg.exp.is_a(ATTR):
+            arg = arg.clone()
+            arg.replace_head(new_worker.find_sym('self'))
+            rep_ir = arg
+        else:
+            assert arg.exp.is_a(TEMP)
+            rep_ir = ATTR(TEMP(new_worker.find_sym('self'), Ctx.LOAD),
+                          arg.symbol(), Ctx.LOAD)
+        sym_replacer = SymbolReplacer(sym_map={param_sym:rep_ir}, attr_map={})
+        sym_replacer.process(new_worker, new_worker.entry_block)
+
+    def _make_new_worker(self, worker, args, lineno):
+        parent_module = self.scope.parent
+        new_worker = worker.clone('', str(lineno), parent=parent_module)
+        if new_worker.is_inlinelib():
+            new_worker.del_tag('inlinelib')
+        # Convert function worker to method of module
+        if not new_worker.is_method():
+            new_worker.add_tag('method')
+            new_worker_self = new_worker.add_sym('self',
+                                                 tags={'self'},
+                                                 typ=Type.object(parent_module))
+            new_worker.add_param(new_worker_self, new_worker_self, None)
+        # transform append_worker call
+        ctor_self = self.scope.find_sym('self')
+        new_worker_sym = parent_module.add_sym(new_worker.base_name,
+                                               typ=Type.function(new_worker))
+        worker_attr = ATTR(TEMP(ctor_self, Ctx.LOAD), new_worker_sym, Ctx.LOAD)
+        worker_attr.attr_scope = new_worker_sym.scope
+        args[0] = (args[0][0], worker_attr)
+
+        self.new_workers.append(new_worker)
+        return new_worker
