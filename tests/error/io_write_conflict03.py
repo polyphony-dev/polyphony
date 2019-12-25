@@ -6,12 +6,13 @@ from polyphony.io import Port
 @module
 class io_write_conflict03:
     def __init__(self):
-        p = Port(int, 'out')
-        self.append_worker(self.w, p)
-        self.append_worker(self.w, p)
+        self.p = Port(int, 'out')
+        self.append_worker(w, self.p)
+        self.append_worker(w, self.p)
 
-    def w(self, p):
-        p.wr(1)
+
+def w(p):
+    p.wr(1)
 
 
 m = io_write_conflict03()
