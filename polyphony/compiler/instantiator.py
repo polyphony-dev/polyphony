@@ -12,7 +12,7 @@ logger = logging.getLogger()
 
 
 def bind_val(scope, i, value):
-    VarReplacer.replace_uses(TEMP(scope.params[i][0], Ctx.LOAD), CONST(value), scope.usedef)
+    VarReplacer.replace_uses(scope, TEMP(scope.params[i][0], Ctx.LOAD), CONST(value))
 
 
 class EarlyWorkerInstantiator(object):

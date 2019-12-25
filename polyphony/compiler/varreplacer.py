@@ -6,14 +6,20 @@ logger = getLogger(__name__)
 
 class VarReplacer(object):
     @classmethod
-    def replace_uses(cls, dst, src, usedef):
+    def replace_uses(cls, scope, dst, src):
         assert dst.is_a([TEMP, ATTR])
         assert src.is_a([IRExp])
+        assert scope.usedef
+        usedef = scope.usedef
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(dst, src, usedef)
         uses = list(usedef.get_stms_using(dst.qualified_symbol()))
         for use in uses:
             replacer.visit(use)
+        for blk in scope.traverse_blocks():
+            if blk.path_exp and blk.path_exp.is_a([TEMP, ATTR]):
+                if blk.path_exp.symbol() is dst.symbol():
+                    blk.path_exp = src
         return replacer.replaces
 
     def __init__(self, dst, src, usedef, enable_dst=False):

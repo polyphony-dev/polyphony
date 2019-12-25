@@ -332,7 +332,7 @@ class ConstantOpt(ConstantOptBase):
                     src = _mask_bit(stm.dst.symbol().typ, stm.src)
                 else:
                     src = stm.src
-                replaces = VarReplacer.replace_uses(stm.dst, src, scope.usedef)
+                replaces = VarReplacer.replace_uses(scope, stm.dst, src)
                 for rep in replaces:
                     if rep not in dead_stms:
                         worklist.append(rep)
@@ -349,7 +349,7 @@ class ConstantOpt(ConstantOptBase):
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 if len(defstms) != 1:
                     continue
-                replaces = VarReplacer.replace_uses(stm.dst, stm.src, scope.usedef)
+                replaces = VarReplacer.replace_uses(scope, stm.dst, stm.src)
                 receiver = stm.dst.tail()
                 if receiver.typ.is_object() and receiver.typ.get_scope().is_module():
                     module_scope = receiver.typ.get_scope()
@@ -368,13 +368,13 @@ class ConstantOpt(ConstantOptBase):
     def _propagate_to_closure(self, closure, dst, src):
         target = dst.symbol()
         UseDefDetector().process(closure)
-        replaces = VarReplacer.replace_uses(TEMP(target, Ctx.LOAD), src, closure.usedef)
+        replaces = VarReplacer.replace_uses(closure, TEMP(target, Ctx.LOAD), src)
         # Consider the case self.scope is cloned
         if not replaces and self.scope.origin:
             orig_symbols = {cloned:orig for orig, cloned in self.scope.cloned_symbols.items()}
             if target in orig_symbols:
                 target = orig_symbols[target]
-                replaces = VarReplacer.replace_uses(TEMP(target, Ctx.LOAD), src, closure.usedef)
+                replaces = VarReplacer.replace_uses(closure, TEMP(target, Ctx.LOAD), src)
 
     def visit_SYSCALL(self, ir):
         if ir.sym.name == 'len':

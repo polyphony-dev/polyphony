@@ -273,7 +273,7 @@ class SSATransformerBase(object):
                 replace_var = phi.var.clone()
                 replace_var.set_symbol(sym)
                 replace_var.ctx = Ctx.LOAD
-                replaces = VarReplacer.replace_uses(phi.var, replace_var, usedef)
+                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var)
                 for rep in replaces:
                     if rep.is_a(PHI):
                         worklist.append(rep)
