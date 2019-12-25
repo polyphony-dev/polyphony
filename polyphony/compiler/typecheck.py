@@ -23,9 +23,13 @@ class RejectPropagation(Exception):
 
 class TypePropagation(IRVisitor):
     def process_all(self):
+        worklist = deque([Scope.global_scope()])
+        return self._process_all(worklist)
+
+    def _process_all(self, worklist):
         self.typed = []
         self.pure_type_inferrer = PureFuncTypeInferrer()
-        self.worklist = deque([Scope.global_scope()])
+        self.worklist = worklist
         while self.worklist:
             scope = self.worklist.popleft()
             if scope.is_lib():
@@ -378,6 +382,15 @@ class TypePropagation(IRVisitor):
 
 
 class EarlyTypePropagation(TypePropagation):
+    def process_all(self):
+        scopes = Scope.get_scopes(bottom_up=False,
+                                  with_global=True,
+                                  with_class=True,
+                                  with_lib=True)
+        scopes = [s for s in scopes if s.is_namespace()]
+        worklist = deque(scopes)
+        return self._process_all(worklist)
+
     def visit_CALL(self, ir):
         self.visit(ir.func)
         if ir.func.is_a(TEMP):
@@ -996,6 +1009,7 @@ class PortAssignChecker(IRVisitor):
                 assigned.add_tag('assigned')
                 assigned.add_tag('comb')
 
+
 class EarlyRestrictionChecker(IRVisitor):
     def visit_SYSCALL(self, ir):
         if ir.sym.name in ('range', 'polyphony.unroll', 'polyphony.pipelined'):
@@ -1025,8 +1039,8 @@ class RestrictionChecker(IRVisitor):
                 if not (self.scope.is_ctor() and self.scope.parent.is_module()):
                     fail(self.current_stm, Errors.CALL_APPEND_WORKER_IN_CTOR)
                 self._check_append_worker(ir)
-            if not (self.scope.is_method() and self.scope.parent.is_module()):
-                fail(self.current_stm, Errors.CALL_MODULE_METHOD)
+            # if not (self.scope.is_method() and self.scope.parent.is_module()):
+            #    fail(self.current_stm, Errors.CALL_MODULE_METHOD)
 
     def _check_append_worker(self, call):
         for i, (_, arg) in enumerate(call.args):

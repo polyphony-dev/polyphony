@@ -62,9 +62,9 @@ SUITE_CASES = [
                     'chstone/mips/pipelined_mips.py',
                     'error/pure01.py', 'error/pure02.py',
                     'error/module_field01.py', 'error/module_field02.py',
+                    'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
                     'module/*',
-                    'channel/channel02.py',
                     )
     },
     {
@@ -74,9 +74,9 @@ SUITE_CASES = [
                     'chstone/mips/pipelined_mips.py',
                     'error/pure01.py', 'error/pure02.py',
                     'error/module_field01.py', 'error/module_field02.py',
+                    'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
                     'module/*',
-                    'channel/channel02.py',
                     )
     },
     {
@@ -85,9 +85,9 @@ SUITE_CASES = [
                     'apps/filter_tester.py',
                     'pure/*', 'error/pure01.py', 'error/pure02.py',
                     'error/module_field01.py', 'error/module_field02.py',
+                    'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
                     'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
                     'module/*',
-                    'channel/channel02.py',
                     )
     },
     #{

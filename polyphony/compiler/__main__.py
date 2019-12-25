@@ -267,7 +267,9 @@ def earlytypeprop(driver):
         if s not in scopes:
             driver.insert_scope(s)
     for s in scopes:
-        if s not in typed_scopes:
+        # The namespace scope should not be removed here,
+        # since staticconstopt will be executed later
+        if s not in typed_scopes and not s.is_namespace():
             driver.remove_scope(s)
 
 
