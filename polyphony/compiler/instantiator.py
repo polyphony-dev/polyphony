@@ -268,20 +268,8 @@ class WorkerInstantiator(object):
                 for sym in syms:
                     if sym.scope in scope_map.values():
                         sym.typ.set_scope(new)
-            # for local memnode
-            self._instantiate_memnode(worker, new_worker)
-            # for class field memnode
-            assert hasattr(module, 'cloned_memnodes')
-            if module.cloned_memnodes:
-                MemnodeReplacer(module.cloned_memnodes).process(new_worker)
             new_worker.add_tag('instantiated')
             return new_worker, True
-
-    def _instantiate_memnode(self, orig_scope, new_scope):
-        mrg = env.memref_graph
-        node_map = mrg.clone_subgraph(orig_scope, new_scope)
-        MemnodeReplacer(node_map).process(new_scope)
-
 
 class ModuleInstantiator(object):
     def process_all(self):
@@ -341,9 +329,6 @@ class ModuleInstantiator(object):
             new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
             new.sym = new_module_sym
         new.sym.typ.set_scope(new_module)
-        node_map = self._instantiate_memnode((module,     module.find_ctor()),
-                                             (new_module, new_module.find_ctor()))
-        new_module.cloned_memnodes = node_map
         new_module.inst_name = inst_name
         new_module.module_params = []
         ctor = new_module.find_ctor()
@@ -354,43 +339,6 @@ class ModuleInstantiator(object):
         for param in new_module.module_params:
             ctor.params.remove(param)
         return new_module
-
-    def _instantiate_memnode(self, orig_scope, new_scope):
-        mrg = env.memref_graph
-        node_map = mrg.clone_subgraph(orig_scope, new_scope)
-        if isinstance(new_scope, tuple):
-            for scope in new_scope:
-                MemnodeReplacer(node_map).process(scope)
-        else:
-            MemnodeReplacer(node_map).process(new_scope)
-        return node_map
-
-
-class MemnodeReplacer(IRVisitor):
-    def __init__(self, node_map):
-        self.node_map = node_map
-
-    def _replace_typ_memnode(self, typ):
-        if typ.is_seq():
-            memnode = typ.get_memnode()
-            if memnode in self.node_map:
-                new_memnode = self.node_map[memnode]
-                typ.set_memnode(new_memnode)
-
-    def visit_TEMP(self, ir):
-        typ = ir.symbol().typ
-        self._replace_typ_memnode(typ)
-
-    def visit_ATTR(self, ir):
-        typ = ir.symbol().typ
-        self._replace_typ_memnode(typ)
-
-    def visit_ARRAY(self, ir):
-        typ = ir.sym.typ
-        self._replace_typ_memnode(typ)
-
-    def visit_SYSCALL(self, ir):
-        super().visit_SYSCALL(ir)
 
 
 class CallCollector(IRVisitor):

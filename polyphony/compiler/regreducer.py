@@ -87,7 +87,7 @@ class AliasVarDetector(IRVisitor):
             return
         if sym.is_return() or sym.typ.is_port():
             return
-        if sym.typ.is_seq() and sym.typ.get_memnode().can_be_reg():
+        if sym.typ.is_seq():# and sym.typ.get_memnode().can_be_reg():
             return
         if any([sym is a.symbol() for a in ir.args if a.is_a(TEMP)]):
             return

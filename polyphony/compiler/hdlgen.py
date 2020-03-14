@@ -32,8 +32,10 @@ class HDLModuleBuilder(object):
         nets = []
         for sig in locals:
             sig = self.hdlmodule.gen_sig(sig.name, sig.width, sig.tags)
-            if sig.is_memif() or sig.is_ctrl() or sig.is_extport():
+            if  sig.is_ctrl() or sig.is_extport():
                 continue
+            #elif sig.is_regarray():
+            #    self.hdlmodule.add_internal_reg_array(sig)
             else:
                 assert ((sig.is_net() and not sig.is_reg()) or
                         (not sig.is_net() and sig.is_reg()) or
@@ -89,12 +91,13 @@ class HDLModuleBuilder(object):
             return
         self.hdlmodule.add_accessor(acc.acc_name, acc)
 
-    def _add_roms(self, memnodes):
-        mrg = env.memref_graph
-        roms = [n for n in memnodes if mrg.is_readonly_sink(n)]
+    def _add_roms(self, memsigs):
+        #mrg = env.memref_graph
+        roms = [sig for sig in memsigs if sig.sym.typ.get_ro()]
         while roms:
-            memnode = roms.pop()
-            output_sig = self.hdlmodule.signal(memnode.sym)
+            #memnode = roms.pop()
+            #output_sig = self.hdlmodule.signal(memnode.sym)
+            output_sig = roms.pop()
             if not output_sig:
                 # In this case memnode is not used at all
                 # so we do not declare rom function
@@ -219,14 +222,15 @@ class HDLModuleBuilder(object):
                         self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
 
     def _add_mem_connections(self, scope):
-        mrg = env.memref_graph
-        HDLMemPortMaker(mrg.collect_ram(scope), scope, self.hdlmodule).make_port_all()
-        for memnode in mrg.collect_immutable(scope):
-            if memnode.is_writable():
-                HDLTuplePortMaker(memnode, scope, self.hdlmodule).make_port()
-        for memnode in mrg.collect_ram(scope):
-            if memnode.can_be_reg():
-                HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
+        return
+        # mrg = env.memref_graph
+        # HDLMemPortMaker(mrg.collect_ram(scope), scope, self.hdlmodule).make_port_all()
+        # for memnode in mrg.collect_immutable(scope):
+        #     if memnode.is_writable():
+        #         HDLTuplePortMaker(memnode, scope, self.hdlmodule).make_port()
+        # for memnode in mrg.collect_ram(scope):
+        #     if memnode.can_be_reg():
+        #         HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
 
     def _add_edge_detectors(self, fsm):
         edge_detectors = self._collect_special_decls(fsm)
@@ -296,19 +300,23 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                 inf = SingleReadInterface(sig, sym.hdl_name(), scope.base_name)
             elif sym.typ.is_list():
                 memnode = sym.typ.get_memnode()
-                if memnode.can_be_reg():
-                    sig = self.hdlmodule.gen_sig(memnode.name(),
-                                                 memnode.data_width(),
-                                                 sym=memnode.sym)
-                    inf = RegArrayReadInterface(sig, memnode.name(),
+                if True:  #memnode.can_be_reg():
+                    name = sym.hdl_name()
+                    width = sym.typ.get_element().get_width()
+                    length = sym.typ.get_length()
+                    assert length > 0
+                    sig = self.hdlmodule.gen_sig(name, #memnode.name(),
+                                                 width, #memnode.data_width(),
+                                                 sym=sym)#sym=memnode.sym)
+                    inf = RegArrayReadInterface(sig, name, #memnode.name(),
                                                 self.hdlmodule.name,
-                                                memnode.data_width(),
-                                                memnode.length)
+                                                width, # memnode.data_width(),
+                                                length) #memnode.length)
                     self.hdlmodule.add_interface(inf.if_name, inf)
                     inf = RegArrayWriteInterface(sig, 'out_{}'.format(copy.name),
                                                  self.hdlmodule.name,
-                                                 memnode.data_width(),
-                                                 memnode.length)
+                                                 width, #memnode.data_width(),
+                                                 length)  #memnode.length)
                     self.hdlmodule.add_interface(inf.if_name, inf)
                     continue
                 else:
@@ -321,11 +329,14 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                                              memnode.addr_width())
                     self.hdlmodule.node2if[memnode] = inf
             elif sym.typ.is_tuple():
-                memnode = sym.typ.get_memnode()
-                inf = TupleInterface(memnode.name(),
+                name = sym.hdl_name()
+                width = sym.typ.get_element().get_width()
+                length = sym.typ.get_length()
+                #memnode = sym.typ.get_memnode()
+                inf = TupleInterface(name, # memnode.name(),
                                      self.hdlmodule.name,
-                                     memnode.data_width(),
-                                     memnode.length)
+                                     width, # memnode.data_width(),
+                                     length)  #memnode.length)
             else:
                 assert False
             self.hdlmodule.add_interface(inf.if_name, inf)
@@ -423,17 +434,23 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         fsms = list(self.hdlmodule.fsms.values())
         for fsm in fsms:
             if fsm.scope.is_ctor():
-                memnodes = []
-                for sym in self.hdlmodule.scope.symbols.values():
-                    if sym.typ.is_seq():
-                        memnodes.append(sym.typ.get_memnode())
-                self._add_roms(memnodes)
+                memsigs = []
+                for sig in self.hdlmodule.signals.values():
+                    if sig.sym.scope is self.hdlmodule.scope and sig.sym.typ.is_seq():
+                        memsigs.append(sig)
+                self._add_roms(memsigs)
 
-                for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):
-                    assert memnode.can_be_reg()
-                    name = memnode.name()
-                    width = memnode.data_width()
-                    length = memnode.length
+                #for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):
+                for sym in self.hdlmodule.scope.symbols.values():
+                    if not sym.typ.is_list():
+                        continue
+                    #assert memnode.can_be_reg()
+                    #name = memnode.name()
+                    #width = memnode.data_width()
+                    #length = memnode.length
+                    name = sym.hdl_name()
+                    width = sym.typ.get_element().get_width()
+                    length = sym.typ.get_length()
                     sig = self.hdlmodule.gen_sig(name, width)
                     self.hdlmodule.add_internal_reg_array(sig, length)
                 # remove ctor fsm and add constant parameter assigns
@@ -463,12 +480,12 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
 class AHDLVarCollector(AHDLVisitor):
     '''this class collects inputs and outputs and locals'''
-    def __init__(self, hdlmodule, local_defs, local_uses, output_temps, memnodes):
+    def __init__(self, hdlmodule, local_defs, local_uses, output_temps, mems):
         self.local_defs = local_defs
         self.local_uses = local_uses
         self.output_temps = output_temps
         self.module_constants = [c for c, _ in hdlmodule.state_constants]
-        self.memnodes = memnodes
+        self.mems = mems
 
     def visit_AHDL_CONST(self, ahdl):
         pass
@@ -478,7 +495,7 @@ class AHDLVarCollector(AHDLVisitor):
             self.local_defs.add(ahdl.sig)
         else:
             self.local_uses.add(ahdl.sig)
-        self.memnodes.add(ahdl.memnode)
+        self.mems.add(ahdl.sig)
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.sig.is_ctrl() or ahdl.sig.name in self.module_constants:

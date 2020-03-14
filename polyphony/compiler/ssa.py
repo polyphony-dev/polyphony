@@ -387,12 +387,44 @@ class TupleSSATransformer(SSATransformerBase):
 
     def _insert_use_phi(self, phi, use_stm):
         insert_idx = use_stm.block.stms.index(use_stm)
+        qsym = phi.var.qualified_symbol()
+        if use_stm.is_a(MOVE):
+            src_use_vars = [ir for ir in use_stm.src.find_vars(qsym)]
+            dst_use_vars = [ir for ir in use_stm.dst.find_vars(qsym)]
+            if src_use_vars:
+                use_var = src_use_vars[0]
+                uphi = UPHI(use_stm.dst.clone())
+                uphi.ps = phi.ps[:]
+                for arg in phi.args:
+                    src = use_stm.src.clone()
+                    src.replace(use_var, arg.clone())
+                    uphi.args.append(src)
+                use_stm.block.insert_stm(insert_idx, uphi)    
+            else:
+                assert dst_use_vars
+                use_var = dst_use_vars[0]
+                for p, arg in zip(phi.ps, phi.args):
+                    dst = use_stm.dst.clone()
+                    dst.replace(use_var, arg.clone())
+                    cmov = CMOVE(p.clone(), dst, use_stm.src.clone())
+                    use_stm.block.insert_stm(insert_idx, cmov)
+            use_stm.block.stms.remove(use_stm)
+        elif use_stm.is_a(EXPR):            
+            use_vars = [ir for ir in use_stm.exp.find_vars(qsym)]
+            assert use_vars
+            use_var = use_vars[0]
+            for p, arg in zip(phi.ps, phi.args):
+                exp = use_stm.exp.clone()
+                exp.replace(use_var, arg.clone())
+                cexp = CEXPR(p.clone(), exp)
+                use_stm.block.insert_stm(insert_idx, cexp)
+            use_stm.block.stms.remove(use_stm)
+        else:
+            assert False
+    def _insert_use_phi_old(self, phi, use_stm):
+        insert_idx = use_stm.block.stms.index(use_stm)
         use_mrefs = [ir for ir in use_stm.find_irs(MREF) if ir.mem.symbol().typ.is_tuple()]
         qsym = phi.var.qualified_symbol()
-
-        def replace_attr(mref, qsym, newmem):
-            if mref.mem.qualified_symbol() == qsym:
-                mref.mem = newmem
 
         for mref in use_mrefs:
             if mref.mem.qualified_symbol() == qsym:
@@ -415,6 +447,54 @@ class TupleSSATransformer(SSATransformerBase):
         if sym.scope.is_namespace() or sym.scope.is_class():
             return False
         return sym.typ.is_tuple() and not sym.is_param()
+
+
+class ListSSATransformer(SSATransformerBase):
+    def __init__(self):
+        super().__init__()
+
+    def process(self, scope):
+        if scope.is_class() or scope.is_namespace():
+            return
+        super().process(scope)
+        self._process_use_phi()
+
+    def _process_use_phi(self):
+        usedef = self.scope.usedef
+        for blk in self.scope.traverse_blocks():
+            phis = blk.collect_stms(PHI)
+            for phi in phis:
+                uses = usedef.get_stms_using(phi.var.qualified_symbol())
+                for use in uses:
+                    self._insert_use_phi(phi, use)
+
+    def _insert_use_phi(self, phi, use_stm):
+        insert_idx = use_stm.block.stms.index(use_stm)
+        use_mrefs = [ir for ir in use_stm.find_irs(MREF) if ir.mem.symbol().typ.is_list()]
+        qsym = phi.var.qualified_symbol()
+
+        for mref in use_mrefs:
+            if mref.mem.qualified_symbol() == qsym:
+                tmp = self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix,
+                                                         mref.mem.symbol().orig_name()))
+                var = TEMP(tmp, Ctx.STORE)
+                uphi = UPHI(var)
+                #assert False
+                uphi.ps = phi.ps[:]
+                for arg in phi.args:
+                    argmref = mref.clone()
+                    argmref.mem = arg.clone()
+                    uphi.args.append(argmref)
+                use_stm.block.insert_stm(insert_idx, uphi)
+            var = var.clone()
+            var.ctx = Ctx.LOAD
+            use_stm.replace(mref, var)
+        pass
+
+    def _need_rename(self, sym, qsym):
+        if sym.scope.is_namespace() or sym.scope.is_class():
+            return False
+        return sym.typ.is_list() and not sym.is_param()
 
 
 class ObjectSSATransformer(SSATransformerBase):

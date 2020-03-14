@@ -60,19 +60,23 @@ class IR(object):
             if isinstance(ir, IR):
                 if ir.is_a([CALL, SYSCALL, NEW]):
                     return ir.replace(old, new)
+                ret = False
                 for k, v in ir.__dict__.items():
                     if v == old:
                         ir.__dict__[k] = new
-                        return True
+                        ret = True
                     elif replace_rec(v, old, new):
-                        return True
+                        ret = True
+                return ret
             elif isinstance(ir, list):
+                ret = False
                 for i, elm in enumerate(ir):
                     if elm == old:
                         ir[i] = new
-                        return True
+                        ret = True
                     elif replace_rec(elm, old, new):
-                        return True
+                        ret = True
+                return ret
             return False
         return replace_rec(self, old, new)
 
@@ -237,13 +241,14 @@ class POLYOP(IRExp):
 
 
 def replace_args(args, old, new):
+    ret = False
     for i, (name, arg) in enumerate(args):
         if arg is old:
             args[i] = (name, new)
-            return True
+            ret = True
         if arg.replace(old, new):
-            return True
-    return False
+            ret = True
+    return ret
 
 
 def find_vars_args(args, qsym):
@@ -934,6 +939,7 @@ class PHI(PHIBase):
 
 class UPHI(PHIBase):
     def __init__(self, var):
+        #assert False
         super().__init__(var)
 
     def __str__(self):

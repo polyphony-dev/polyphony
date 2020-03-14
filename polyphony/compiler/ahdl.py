@@ -113,8 +113,8 @@ class AHDL_VAR(AHDL_EXP):
 
 class AHDL_MEMVAR(AHDL_VAR):
     def __init__(self, sig, memnode, ctx):
-        assert memnode
-        assert (isinstance(memnode, MemRefNode) or isinstance(memnode, MemParamNode))
+        # assert memnode
+        # assert (isinstance(memnode, MemRefNode) or isinstance(memnode, MemParamNode))
         super().__init__(sig, ctx)
         self.memnode = memnode
 

@@ -1,6 +1,7 @@
 from polyphony.compiler.__main__ import earlytypeprop, typeprop, evaltype
 from polyphony.compiler.env import env
 from polyphony.compiler.type import Type
+from polyphony.compiler.typecheck import EarlyTypePropagation
 from polyphony.compiler.typecheck import TypePropagation
 from polyphony.compiler.typecheck import TypeEvalVisitor
 from base import CompilerTestCase
@@ -9,7 +10,7 @@ import unittest
 
 class test_typeprop(CompilerTestCase):
     def setUp(self):
-        super().setUp(earlytypeprop, order=1, before=True)
+        super().setUp(earlytypeprop, order=0, before=True)
 
     test_implicit_1_src = '''
 def test_implicit_1():
@@ -59,20 +60,21 @@ def test_implicit_2():
         a = scope.find_sym('a')
         b = scope.find_sym('b')
         c = scope.find_sym('c')
+
         typeprop = TypePropagation()
         typeprop.process(scope)
 
         self.assertTrue(a.typ.is_list())
         self.assertTrue(a.typ.get_element().is_int())
-        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(a.typ.get_length() == 3)
 
         self.assertTrue(b.typ.is_list())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(b.typ.get_length() == 2)
 
         self.assertTrue(c.typ.is_list())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(c.typ.get_length() == 2)
 
         self.assertTrue(not a.typ.is_explicit())
         self.assertTrue(not b.typ.is_explicit())
@@ -91,6 +93,7 @@ def test_implicit_3():
         a = scope.find_sym('a')
         b = scope.find_sym('b')
         c = scope.find_sym('c')
+
         typeprop = TypePropagation()
         typeprop.process(scope)
 
@@ -146,7 +149,8 @@ def test_explicit_1():
         self.assertTrue(c.typ.is_explicit())
 
     test_explicit_2_src = '''
-def test_explicit_2(n):
+def test_explicit_2():
+    n = 10
     a:list = [1, 2, 3]
     b:list = [True, False]
     c:list = ['a', 'b'] * 2
@@ -193,15 +197,15 @@ def test_explicit_2(n):
         self.assertTrue(a.typ.get_element().is_int())
         self.assertTrue(a.typ.get_element().get_width() == 32)
         self.assertTrue(a.typ.get_element().get_signed() is True)
-        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(a.typ.get_length() == 3)
 
         self.assertTrue(b.typ.is_list())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(b.typ.get_length() == 2)
 
         self.assertTrue(c.typ.is_list())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(c.typ.get_length() == 4)
 
         self.assertTrue(d.typ.is_list())
         self.assertTrue(d.typ.get_element().is_str())
@@ -217,7 +221,8 @@ def test_explicit_2(n):
         self.assertTrue(not d.typ.get_element().is_explicit())
 
     test_explicit_3_src = '''
-def test_explicit_3(n):
+def test_explicit_3():
+    n = 10
     a:tuple = (1, 2, 3)
     b:tuple = (True, False)
     c:tuple = ('a', 'b') * 2
@@ -290,7 +295,8 @@ def test_explicit_3(n):
     test_explicit_4_src = '''
 from polyphony.typing import List
 
-def test_explicit_4(n):
+def test_explicit_4():
+    n = 10
     a:List[int] = [1, 2, 3]
     b:List[bool] = [True, False]
     c:List[str] = ['a', 'b'] * 2
@@ -335,15 +341,15 @@ def test_explicit_4(n):
 
         self.assertTrue(a.typ.is_list())
         self.assertTrue(a.typ.get_element().is_int())
-        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(a.typ.get_length() == 3)
 
         self.assertTrue(b.typ.is_list())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(b.typ.get_length() == 2)
 
         self.assertTrue(c.typ.is_list())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
+        self.assertTrue(c.typ.get_length() == 4)
 
         self.assertTrue(d.typ.is_list())
         self.assertTrue(d.typ.get_element().is_str())
@@ -361,7 +367,8 @@ def test_explicit_4(n):
     test_explicit_5_src = '''
 from polyphony.typing import Tuple
 
-def test_explicit_5(n):
+def test_explicit_5():
+    n = 10
     a:Tuple[int, ...] = (1, 2, 3)
     b:Tuple[bool, ...] = (True, False)
     c:Tuple[str, ...] = ('a', 'b') * 2
@@ -435,6 +442,8 @@ def f(x):
 
 def test_call_1():
     a = f(True)
+
+test_call_1()
     '''
 
     def test_call_1(self):
@@ -453,24 +462,23 @@ def test_call_1():
         pts = f.typ.get_param_types()
         self.assertTrue(len(pts) == 0)
 
-        self.assertTrue(f_x.typ.is_int())
+        self.assertTrue(f_x.typ.is_undef())
         self.assertTrue(not f_x.typ.is_explicit())
 
-        typeprop = TypePropagation()
-        typeprop.process(scope)
-        self.assertTrue(len(typeprop.untyped) == 1)
-        typeprop.untyped.clear()
-        self.assertTrue(a.typ.is_undef())
+        typeprop = EarlyTypePropagation()
+        typeprop.process_all()
+
+        scope_f = self.scope('f_b')
+        f = scope.find_sym('f_b')
+        f_x = scope_f.find_sym('x')
+
+        self.assertTrue(a.typ.is_bool())
         self.assertTrue(f.typ.is_function())
-        self.assertTrue(f.typ.get_return_type().is_undef())
+        self.assertTrue(f.typ.get_return_type().is_bool())
         pts = f.typ.get_param_types()
         self.assertTrue(len(pts) == 1)
         self.assertTrue(pts[0].is_bool())
-        self.assertTrue(not pts[0].is_explicit())
-
-        typeprop.process(scope_f)
-        typeprop.process(scope)
-        self.assertTrue(len(typeprop.untyped) == 0)
+        self.assertTrue(pts[0].is_explicit())
 
         self.assertTrue(a.typ.is_bool())
 
@@ -479,10 +487,10 @@ def test_call_1():
         pts = f.typ.get_param_types()
         self.assertTrue(len(pts) == 1)
         self.assertTrue(pts[0].is_bool())
-        self.assertTrue(not pts[0].is_explicit())
+        self.assertTrue(pts[0].is_explicit())
 
         self.assertTrue(f_x.typ.is_bool())
-        self.assertTrue(not f_x.typ.is_explicit())
+        self.assertTrue(f_x.typ.is_explicit())
 
 
 class test_typeexpr_static(CompilerTestCase):
@@ -759,7 +767,8 @@ m = test_expr_5(10)
 
     def test_expr_5(self):
         self._run(self.test_expr_5_src)
-        scope = self.scope('test_expr_5_m')
+        param_name = Type.mangled_names([Type.int()])
+        scope = self.scope(f'test_expr_5_{param_name}_m')
         self.assertTrue(scope.is_module())
         self.assertTrue(scope.is_instantiated())
         mem = self.find_symbol(scope, 'mem')
@@ -804,7 +813,8 @@ m = test_expr_6(10)
 
     def test_expr_6(self):
         self._run(self.test_expr_6_src)
-        scope = self.scope('test_expr_6_m')
+        param_name = Type.mangled_names([Type.int()])
+        scope = self.scope(f'test_expr_6_{param_name}_m')
         self.assertTrue(scope.is_module())
         self.assertTrue(scope.is_instantiated())
         func_scope, _ = scope.workers[0]
@@ -851,13 +861,14 @@ m = test_expr_7(11, 12)
 
     def test_expr_7(self):
         self._run(self.test_expr_7_src)
-        scope = self.scope('test_expr_7_m')
+        param_name = Type.mangled_names([Type.int(), Type.int()])
+        scope = self.scope(f'test_expr_7_{param_name}_m')
         self.assertTrue(scope.is_module())
         self.assertTrue(scope.is_instantiated())
         w0, _ = scope.workers[0]
         w1, _ = scope.workers[1]
 
-        if w0.orig_name.endswith('11'):
+        if w0.base_name.endswith('11'):
             mem0 = self.find_symbol(w0, 'mem')
             mem1 = self.find_symbol(w1, 'mem')
         else:

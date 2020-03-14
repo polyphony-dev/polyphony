@@ -389,7 +389,7 @@ class Type(object):
     @classmethod
     def list(cls, elm_t, memnode, length=ANY_LENGTH):
         #assert elm_t.is_scalar() or elm_t.is_undef()
-        return Type('list', element=elm_t, memnode=memnode, length=length)
+        return Type('list', element=elm_t, memnode=memnode, length=length, ro=False)
 
     @classmethod
     def tuple(cls, elm_t, memnode, length):
@@ -629,6 +629,33 @@ class Type(object):
         find_expr_r(typ, exprs)
         return exprs
 
+    @classmethod
+    def mangled_names(cls, types):
+        ts = []
+        for t in types:
+            if t.is_list():
+                elm = cls.mangled_names([t.get_element()])
+                s = f'l_{elm}'
+            elif t.is_tuple():
+                elm = cls.mangled_names([t.get_element()])
+                elms = ''.join([elm] * t.get_length())
+                s = f't_{elms}'
+            elif t.is_class():
+                # TODO: we should avoid naming collision
+                s = f'c_{t.get_scope().base_name}'
+            elif t.is_int():
+                s = f'i{t.get_width()}'
+            elif t.is_bool():
+                s = f'b'
+            elif t.is_str():
+                s = f's'
+            elif t.is_object():
+                # TODO: we should avoid naming collision
+                s = f'o_{t.get_scope().base_name}'
+            else:
+                s = str(t)
+            ts.append(s)
+        return '_'.join(ts)
 
 Type.ellipsis_t = Type('ellipsis')
 

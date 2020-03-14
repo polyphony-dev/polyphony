@@ -3,11 +3,11 @@ from .common import fail, warn
 from .errors import Errors, Warnings
 from .irvisitor import IRVisitor
 from .ir import *
-from .pure import PureFuncTypeInferrer
 from .scope import Scope
 from .type import Type
 from .typeeval import TypeEvaluator
 from .env import env
+from .pure import PureFuncTypeInferrer
 from .symbol import Symbol
 import logging
 logger = logging.getLogger(__name__)
@@ -206,9 +206,6 @@ class TypePropagation(IRVisitor):
         offs_t = self.visit(ir.offset)
         if offs_t.is_undef():
             raise RejectPropagation(ir)
-        if not offs_t.is_int():
-            type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
-                       [ir.offset, 'int', offs_t])
 
         if mem_t.is_class() and mem_t.get_scope().is_typeclass():
             t = Type.from_ir(ir)
@@ -225,6 +222,11 @@ class TypePropagation(IRVisitor):
         elif mem_t.is_tuple():
             # TODO: Return union type if the offset is variable
             return mem_t.get_element()
+        else:
+            assert mem_t.is_list()
+            if not offs_t.is_int():
+                type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
+                           [ir.offset, 'int', offs_t])
         return mem_t.get_element()
 
     def visit_MSTORE(self, ir):
@@ -245,6 +247,8 @@ class TypePropagation(IRVisitor):
             self.visit(ir.repeat)
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
+        if all(item.is_a(CONST) for item in ir.items):
+            ir.sym.typ.set_ro(True)
         #self.visit(ir.repeat)
         item_t = None
         if self.current_stm.dst.is_a([TEMP, ATTR]):
@@ -271,7 +275,10 @@ class TypePropagation(IRVisitor):
         else:
             memnode = None
         if ir.is_mutable:
-            t = Type.list(item_t, memnode)
+            if ir.repeat.is_a(CONST):
+                t = Type.list(item_t, memnode, len(ir.items) * ir.repeat.value)
+            else:
+                t = Type.list(item_t, memnode)
         else:
             if ir.repeat.is_a(CONST):
                 t = Type.tuple(item_t, memnode, len(ir.items) * ir.repeat.value)
@@ -296,6 +303,8 @@ class TypePropagation(IRVisitor):
     def visit_RET(self, ir):
         typ = self.visit(ir.exp)
         self.scope.return_type = typ
+        sym = self.scope.parent.find_sym(self.scope.base_name)
+        sym.typ.set_return_type(typ)
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
@@ -387,7 +396,7 @@ class EarlyTypePropagation(TypePropagation):
                                   with_global=True,
                                   with_class=True,
                                   with_lib=True)
-        scopes = [s for s in scopes if s.is_namespace()]
+        scopes = [s for s in scopes if (s.is_namespace() or s.is_class())]
         worklist = deque(scopes)
         return self._process_all(worklist)
 
@@ -568,37 +577,10 @@ class EarlyTypePropagation(TypePropagation):
                 new_param_types.append(arg_t)
         return new_param_types
 
-    def _mangled_names(self, types):
-        ts = []
-        for t in types:
-            if t.is_list():
-                elm = self._mangled_names([t.get_element()])
-                s = f'l_{elm}'
-            elif t.is_tuple():
-                elm = self._mangled_names([t.get_element()])
-                elms = ''.join([elm] * t.get_length())
-                s = f't_{elms}'
-            elif t.is_class():
-                # TODO: we should avoid naming collision
-                s = f'c_{t.get_scope().base_name}'
-            elif t.is_int():
-                s = f'i{t.get_width()}'
-            elif t.is_bool():
-                s = f'b'
-            elif t.is_str():
-                s = f's'
-            elif t.is_object():
-                # TODO: we should avoid naming collision
-                s = f'o_{t.get_scope().base_name}'
-            else:
-                s = str(t)
-            ts.append(s)
-        return '_'.join(ts)
-
     def _specialize_function_with_types(self, scope, types):
         assert not scope.is_specialized()
         types = [t.clone() for t in types]
-        postfix = self._mangled_names(types)
+        postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
@@ -615,6 +597,9 @@ class EarlyTypePropagation(TypePropagation):
             new_t.set_perfect_explicit()
             p.sym.set_type(new_t)
         new_scope.add_tag('specialized')
+        sym = new_scope.parent.find_sym(new_scope.base_name)
+        sym.typ.set_param_types(types)
+        sym.typ.set_return_type(new_scope.return_type)
         return new_scope, True
 
     def _specialize_class_with_types(self, scope, types):
@@ -622,7 +607,7 @@ class EarlyTypePropagation(TypePropagation):
         if scope.is_port():
             return self._specialize_port_with_types(scope, types)
         types = [t.clone() for t in types]
-        postfix = self._mangled_names(types)
+        postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
@@ -657,7 +642,7 @@ class EarlyTypePropagation(TypePropagation):
                 dtype = typ.clone()
         else:
             dtype = typ.clone()
-        postfix = self._mangled_names([dtype])
+        postfix = Type.mangled_names([dtype])
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
@@ -693,7 +678,7 @@ class EarlyTypePropagation(TypePropagation):
     def _specialize_worker_with_types(self, scope, types):
         assert not scope.is_specialized()
         types = [t.clone() for t in types]
-        postfix = self._mangled_names(types)
+        postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
@@ -1082,6 +1067,7 @@ class LateRestrictionChecker(IRVisitor):
             fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
 
     def visit_MSTORE(self, ir):
+        return
         memnode = ir.mem.symbol().typ.get_memnode()
         if memnode.is_alias() and memnode.can_be_reg():
             fail(self.current_stm, Errors.WRITING_ALIAS_REGARRAY)
@@ -1162,6 +1148,9 @@ class TypeEvalVisitor(IRVisitor):
             copy.set_type(pt)
         if scope.return_type:
             scope.return_type = self._eval(scope.return_type)
+        for sym in scope.constants.keys():
+            pt = self._eval(sym.typ)
+            sym.set_type(pt)
         super().process(scope)
 
     def _eval(self, typ):

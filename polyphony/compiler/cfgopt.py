@@ -487,8 +487,8 @@ class HyperBlockBuilder(object):
             l = mem.symbol().typ.get_length()
             w = mem.symbol().typ.get_element().get_width()
             # TODO:
-            if w * l < env.config.internal_ram_threshold_size:
-                return False
+            #if w * l < env.config.internal_ram_threshold_size:
+            #    return False
         return True
 
     def _has_instance_var_modification(self, stm):

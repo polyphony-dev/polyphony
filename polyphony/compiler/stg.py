@@ -509,15 +509,16 @@ class AHDLTranslator(IRVisitor):
     def translate_builtin_len(self, syscall):
         _, mem = syscall.args[0]
         assert mem.is_a(TEMP)
-        memnode = self.mrg.node(mem.sym)
-        lens = []
-        for source in memnode.sources():
-            lens.append(source.length)
-        if len(lens) <= 1 or all(lens[0] == len for len in lens):
-            if lens[0] > 0 and memnode.has_fixed_length(self.scope):
-                assert False  # len() must be constant value
-        name = f'{memnode.sym.hdl_name()}_len'
-        memlensig = self.hdlmodule.gen_sig(name, -1, ['memif'], mem.sym)
+        #memnode = self.mrg.node(mem.sym)
+        #lens = []
+        #for source in memnode.sources():
+        #    lens.append(source.length)
+        # if len(lens) <= 1 or all(lens[0] == len for len in lens):
+        #     if lens[0] > 0 and memnode.has_fixed_length(self.scope):
+        #         assert False  # len() must be constant value
+        #name = f'{memnode.sym.hdl_name()}_len'
+        name = f'{mem.symbol().hdl_name()}_len'
+        memlensig = self.hdlmodule.gen_sig(name, -1, ['memif'], mem.symbol())
         return AHDL_VAR(memlensig, Ctx.LOAD)
 
     def visit_SYSCALL(self, ir):
@@ -633,44 +634,48 @@ class AHDLTranslator(IRVisitor):
     def visit_MREF(self, ir):
         offset = self.visit(ir.offset)
         memvar = self.visit(ir.mem)
-        if not memvar.memnode.is_writable():
-            if memvar.memnode.single_source():
+        typ = ir.mem.symbol().typ
+        if typ.is_list() and typ.get_ro():
+        # if not memvar.memnode.is_writable():
+            if True:  # memvar.memnode.single_source():
                 return AHDL_FUNCALL(memvar, [offset])
             else:
                 cs = self._make_rom_cs(memvar.memnode)
                 return AHDL_FUNCALL(memvar, [offset, cs])
-        elif memvar.memnode.is_immutable():
+        #elif memvar.memnode.is_immutable():
+        elif typ.is_tuple():
             return AHDL_SUBSCRIPT(memvar, offset)
-        elif memvar.memnode.can_be_reg():
-            arraynode = memvar.memnode.single_source()
-            if arraynode and arraynode.scope is self.scope:
-                sig = self.hdlmodule.signal(arraynode.name())
-                return AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, ir.ctx), offset)
-            return AHDL_SUBSCRIPT(memvar, offset)
+        #elif memvar.memnode.can_be_reg():
         else:
-            assert isinstance(self.current_stm, MOVE)
-            dst = self.visit(self.current_stm.dst)
-            return AHDL_LOAD(memvar, dst, offset)
+            # arraynode = memvar.memnode.single_source()
+            # if arraynode and arraynode.scope is self.scope:
+            #     sig = self.hdlmodule.signal(arraynode.name())
+            #     return AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, ir.ctx), offset)
+            return AHDL_SUBSCRIPT(memvar, offset)
+        # else:
+        #     assert isinstance(self.current_stm, MOVE)
+        #     dst = self.visit(self.current_stm.dst)
+        #     return AHDL_LOAD(memvar, dst, offset)
 
     def visit_MSTORE(self, ir):
         offset = self.visit(ir.offset)
         exp = self.visit(ir.exp)
         memvar = self.visit(ir.mem)
         memvar.ctx = Ctx.STORE
-        assert memvar.memnode.is_writable()
-        if memvar.memnode.can_be_reg():
-            arraynode = memvar.memnode.single_source()
-            if arraynode and arraynode.scope is self.scope:
-                sig = self.hdlmodule.signal(arraynode.name())
-                dst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, Ctx.STORE), offset)
-            else:
-                dst = AHDL_SUBSCRIPT(memvar, offset)
+        #assert memvar.memnode.is_writable()
+        if True:  # memvar.memnode.can_be_reg():
+            #arraynode = memvar.memnode.single_source()
+            #if arraynode and arraynode.scope is self.scope:
+            #    sig = self.hdlmodule.signal(arraynode.name())
+            #    dst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, arraynode, Ctx.STORE), offset)
+            #else:
+            dst = AHDL_SUBSCRIPT(memvar, offset)
             self._emit(AHDL_MOVE(dst, exp), self.sched_time)
             return None
         return AHDL_STORE(memvar, exp, offset)
 
     def _build_mem_initialize_seq(self, array, memvar):
-        if array.is_mutable and not memvar.memnode.can_be_reg():
+        if array.is_mutable and False: # not memvar.memnode.can_be_reg():
             sched_time = self.sched_time
             for i, item in enumerate(array.items):
                 if not(isinstance(item, CONST) and item.value is None):
@@ -679,12 +684,20 @@ class AHDLTranslator(IRVisitor):
                     self._emit_memstore_sequence(ahdl, sched_time)
                     sched_time += 1
         else:
-            arraynode = array.sym.typ.get_memnode()
-            sig = self.hdlmodule.gen_sig(arraynode.name(), 1, {'memif'}, array.sym)
+            #arraynode = array.sym.typ.get_memnode()
+            #sig = self.hdlmodule.gen_sig(arraynode.name(), 1, {'memif'}, array.sym)
+            sym = self.current_stm.dst.symbol()
+            name = sym.hdl_name()
+            width = sym.typ.get_element().get_width()
+            length = sym.typ.get_length()
+            #sig = self.hdlmodule.gen_sig(array.sym.hdl_name(), 1, {'memif'}, array.sym)
+            sig = self.hdlmodule.gen_sig(name, width, {'regarray'}, sym)
+            self.hdlmodule.add_internal_reg_array(sig, length)
             for i, item in enumerate(array.items):
                 if not(isinstance(item, CONST) and item.value is None):
                     idx = AHDL_CONST(i)
-                    memvar = AHDL_MEMVAR(sig, arraynode, Ctx.STORE)
+                    #memvar = AHDL_MEMVAR(sig, arraynode, Ctx.STORE)
+                    memvar = AHDL_MEMVAR(sig, None, Ctx.STORE)
                     ahdl_item = self.visit(item)
                     ahdl_move = AHDL_MOVE(AHDL_SUBSCRIPT(memvar, idx), ahdl_item)
                     self._emit(ahdl_move, self.sched_time)
@@ -696,14 +709,14 @@ class AHDLTranslator(IRVisitor):
 
         assert isinstance(self.current_stm, MOVE)
         ahdl_memvar = self.visit(self.current_stm.dst)
-        memnode = ahdl_memvar.memnode
+        #memnode = ahdl_memvar.memnode
 
-        if not memnode.is_writable():
-            return
-        arraynode = memnode.single_source()
-        assert arraynode.initstm
-        mv = arraynode.initstm
-        assert mv.src.is_a(ARRAY)
+        #if not memnode.is_writable():
+        #    return
+        #arraynode = memnode.single_source()
+        #assert arraynode.initstm
+        #mv = arraynode.initstm
+        #assert mv.src.is_a(ARRAY)
         self._build_mem_initialize_seq(ir, ahdl_memvar)
 
     def visit_TEMP(self, ir):
@@ -840,17 +853,17 @@ class AHDLTranslator(IRVisitor):
             if arg.is_a(AHDL_MEMVAR):
                 assert p.typ.is_seq()
                 param_memnode = p.typ.get_memnode()
-                if param_memnode.is_immutable():
+                if p.typ.is_tuple():  # param_memnode.is_immutable():
                     continue
                 # find joint node in outer scope
-                assert len(param_memnode.preds) == 1
-                is_joinable_param = isinstance(param_memnode.preds[0], N2OneMemNode)
-                if is_joinable_param and param_memnode.is_writable():
-                    memsw = AHDL_META('MEM_SWITCH',
-                                      ahdl_call.instance_name,
-                                      param_memnode,
-                                      arg.memnode)
-                    self._emit(memsw, self.sched_time)
+                # assert len(param_memnode.preds) == 1
+                # is_joinable_param = isinstance(param_memnode.preds[0], N2OneMemNode)
+                # if is_joinable_param and param_memnode.is_writable():
+                #     memsw = AHDL_META('MEM_SWITCH',
+                #                       ahdl_call.instance_name,
+                #                       param_memnode,
+                #                       arg.memnode)
+                #     self._emit(memsw, self.sched_time)
 
     def visit_MOVE(self, ir):
         if ir.src.is_a([CALL, NEW]):
@@ -885,24 +898,31 @@ class AHDLTranslator(IRVisitor):
             self._emit_memload_sequence(src, self.sched_time)
             return
         elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
-            memnode = dst.memnode
-            assert memnode
             if ir.src.sym.is_param():
-                if memnode.can_be_reg():
-                    for i in range(memnode.length):
-                        src_name = f'{src.sig.name}{i}'
-                        self._emit(AHDL_MOVE(AHDL_SUBSCRIPT(dst, AHDL_CONST(i)),
-                                             AHDL_SYMBOL(src_name)),
-                                   self.sched_time)
-                    return
-                else:
-                    return
-            elif memnode.is_immutable():
+                width = ir.src.sym.typ.get_element().get_width()
+                length = ir.src.sym.typ.get_length()
+                for i in range(length):
+                    src_name = f'{src.sig.name}{i}'
+                    self._emit(AHDL_MOVE(AHDL_SUBSCRIPT(dst, AHDL_CONST(i)),
+                                         AHDL_SYMBOL(src_name)),
+                               self.sched_time)
+
+                self.hdlmodule.add_internal_reg_array(dst.sig, length)
+                mem = AHDL_MEMVAR(dst.sig, None, Ctx.LOAD)
+                for i in range(length):
+                    sig_name = f'{self.hdlmodule.name}_out_{dst.sig.name}{i}'
+                    dst_sig = self.hdlmodule.gen_sig(sig_name, width)
+                    dst_var = AHDL_VAR(dst_sig, Ctx.LOAD)
+                    ahdl_assign = AHDL_ASSIGN(dst_var, AHDL_SUBSCRIPT(mem, AHDL_CONST(i)))
+                    self.hdlmodule.add_static_assignment(ahdl_assign)
+
                 return
-            elif memnode.is_joinable():
-                memsw = AHDL_META('MEM_SWITCH', '', dst.memnode, src.memnode)
-                self._emit(memsw, self.sched_time)
-                return
+            # elif memnode.is_immutable():
+            #     return
+            # elif memnode.is_joinable():
+            #     memsw = AHDL_META('MEM_SWITCH', '', dst.memnode, src.memnode)
+            #     self._emit(memsw, self.sched_time)
+            #     return
         elif dst.is_a(AHDL_VAR) and self.scope.is_ctor() and dst.sig.is_initializable():
             dst.sig.init_value = src.value
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
@@ -911,7 +931,7 @@ class AHDLTranslator(IRVisitor):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
         if ir.var.symbol().typ.is_seq():
             memnode = ir.var.symbol().typ.get_memnode()
-            if memnode.can_be_reg():
+            if True:  # memnode.can_be_reg():
                 self._emit_reg_array_mux(ir)
             else:
                 self._emit_mem_mux(ir)
@@ -922,7 +942,7 @@ class AHDLTranslator(IRVisitor):
     def _emit_call_sequence(self, ahdl_call, dst, sched_time):
         assert ahdl_call.is_a(AHDL_MODULECALL)
         for arg in ahdl_call.args:
-            if arg.is_a(AHDL_MEMVAR) and arg.memnode.can_be_reg():
+            if arg.is_a(AHDL_MEMVAR):  # and arg.memnode.can_be_reg():
                 ahdl_call.returns.append(arg)
         # TODO:
         if dst:
@@ -984,26 +1004,28 @@ class AHDLTranslator(IRVisitor):
         memnode = ir.var.symbol().typ.get_memnode()
         ahdl_var = self.visit(ir.var)
         arg_p = list(zip(ir.args, ir.ps))
-        for i in range(memnode.length):
+        #for i in range(memnode.length):
+        length = ir.var.symbol().typ.get_length()
+        for i in range(length):
             rexp, cond = arg_p[-1]
             cond = self.visit(cond)
             ahdl_dst = AHDL_SUBSCRIPT(ahdl_var, AHDL_CONST(i))
             if cond.is_a(CONST) and cond.value:
                 rexp_var = self.visit(rexp)
-                if i >= rexp_var.memnode.length:
+                if i >= length:
                     rexp = AHDL_SYMBOL("'bz")
                 else:
                     rexp = AHDL_SUBSCRIPT(rexp_var, AHDL_CONST(i))
             else:
                 lexp_var = self.visit(rexp)
-                if i >= lexp_var.memnode.length:
+                if i >= length:
                     rexp = AHDL_SYMBOL("'bz")
                 else:
                     lexp = AHDL_SUBSCRIPT(lexp_var, AHDL_CONST(i))
                     rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
             for arg, p in arg_p[-2::-1]:
                 lexp_var = self.visit(arg)
-                if i >= lexp_var.memnode.length:
+                if i >= length:
                     if_exp = rexp
                 else:
                     lexp = AHDL_SUBSCRIPT(lexp_var, AHDL_CONST(i))

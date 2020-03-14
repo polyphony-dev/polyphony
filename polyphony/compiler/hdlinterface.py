@@ -397,15 +397,12 @@ class CallAccessor(IOAccessor):
                 seq.extend(acc.write_sequence(0, step_n, arg))
         elif step == 1:
             seq = [AHDL_MOVE(ready, AHDL_CONST(0))]
-        #if step == step_n - 2:
             args = ['Eq', AHDL_CONST(1), valid]
             seq.append(AHDL_META_WAIT('WAIT_COND', *args))
             for acc, ret in zip(retaccs, ahdl_call.returns):
                 seq.extend(acc.read_sequence(0, step_n, ret))
             seq.append(AHDL_MOVE(accept, AHDL_CONST(1)))
-        #elif step == step_n - 2:
-        #elif step == step_n - 1:
-        elif step == 2:  # step_n - 1:
+        elif step == 2:
             seq.append(AHDL_MOVE(accept, AHDL_CONST(0)))
         return tuple(seq)
 
@@ -742,16 +739,18 @@ class RegArrayAccessor(IOAccessor):
 
     def read_sequence(self, step, step_n, dst):
         assert dst.is_a(AHDL_MEMVAR)
-        memnode = dst.memnode.single_source()
-        mem_scope = memnode.scope
-        hdlmodule = env.hdlmodule(mem_scope)
-        sig = hdlmodule.signal(memnode.name())
+        #memnode = dst.memnode.single_source()
+        #mem_scope = memnode.scope
+        #hdlmodule = env.hdlmodule(mem_scope)
+        #sig = hdlmodule.signal(memnode.name())
+        sig = dst.sig
+        length = sig.sym.typ.get_length()
         moves = []
         for i, p in enumerate(self.ports.outports()):
-            if i >= memnode.length:
+            if i >= length:
                 break
             src = AHDL_SYMBOL('{}{}'.format(self.acc_name, p.name))
-            idst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, memnode, Ctx.STORE), AHDL_CONST(i))
+            idst = AHDL_SUBSCRIPT(AHDL_MEMVAR(sig, None, Ctx.STORE), AHDL_CONST(i))
             mv = AHDL_MOVE(idst, src)
             moves.append(mv)
         return moves

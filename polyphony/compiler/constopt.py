@@ -380,21 +380,26 @@ class ConstantOpt(ConstantOptBase):
         if ir.sym.name == 'len':
             _, mem = ir.args[0]
             memsym = mem.symbol()
-            memnode = self.mrg.node(memsym)
-            lens = []
-            assert memnode
-            for source in memnode.sources():
-                lens.append(source.length)
-            if len(lens) <= 1 or all(lens[0] == len for len in lens):
-                if lens[0] > 0 and memnode.has_fixed_length(self.scope):
-                    return CONST(lens[0])
+            assert memsym.typ.is_seq()
+            length = memsym.typ.get_length()
+            if length > 0:
+                return CONST(length)
+            # memnode = self.mrg.node(memsym)
+            # lens = []
+            # assert memnode
+            # for source in memnode.sources():
+            #     lens.append(source.length)
+            # if len(lens) <= 1 or all(lens[0] == len for len in lens):
+            #     if lens[0] > 0 and memnode.has_fixed_length(self.scope):
+            #         return CONST(lens[0])
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):
         ir.offset = self.visit(ir.offset)
-        memnode = ir.mem.symbol().typ.get_memnode()
+        memtyp = ir.mem.symbol().typ
 
-        if ir.offset.is_a(CONST) and not memnode.is_writable():
+        #if ir.offset.is_a(CONST) and not memnode.is_writable():
+        if ir.offset.is_a(CONST) and memtyp.get_ro():
             source = memnode.single_source()
             if source:
                 assert source.initstm
@@ -648,3 +653,19 @@ class StaticConstOpt(ConstantOptBase):
             elif src.is_a(ARRAY):
                 self.constant_array_table[ir.dst.sym] = src
         ir.src = src
+
+
+# from .typecheck import TypePropagation
+
+
+# class RomDetector(TypePropagation):
+#     def visit_ARRAY(self, ir):
+#         if all(item.is_a(CONST) for item in ir.items):
+#             ir.sym.typ.set_ro(True)
+#         return ir.sym.typ
+
+#     def visit_MOVE(self, ir):
+#         # Do not overwrite other than the seq type
+#         src_typ = self.visit(ir.src)
+#         if ir.dst.is_a([TEMP, ATTR]) and ir.dst.symbol().typ.is_seq():
+#             self._set_type(ir.dst.symbol(), src_typ.clone())

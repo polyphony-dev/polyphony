@@ -15,6 +15,7 @@ from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .constopt import PolyadConstantFolding
 from .constopt import StaticConstOpt
 from .copyopt import CopyOpt
+#from .copyopt import RomDetector
 from .dataflow import DFGBuilder
 from .deadcode import DeadCodeEliminator
 from .diagnostic import CFGChecker
@@ -38,8 +39,8 @@ from .loopdetector import LoopInfoSetter
 from .loopdetector import LoopRegionSetter
 from .loopdetector import LoopDependencyDetector
 from .looptransformer import LoopFlatten
-from .memorytransform import RomDetector
-from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
+#from .memorytransform import RomDetector
+#from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .phiopt import PHIInlining
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
@@ -56,7 +57,10 @@ from .scopegraph import CallGraphBuilder
 from .scopegraph import DependencyGraphBuilder
 from .selectorbuilder import SelectorBuilder
 from .setlineno import SourceDump
-from .ssa import ScalarSSATransformer, TupleSSATransformer, ObjectSSATransformer
+from .ssa import ScalarSSATransformer
+from .ssa import TupleSSATransformer
+from .ssa import ListSSATransformer
+from .ssa import ObjectSSATransformer 
 from .statereducer import StateReducer
 from .stg import STGBuilder
 from .synth import DefaultSynthParamSetter
@@ -248,11 +252,13 @@ def phi(driver, scope):
 
 
 def memrefgraph(driver):
-    MemRefGraphBuilder().process_all(driver)
+    #MemRefGraphBuilder().process_all(driver)
+    pass
 
 
 def meminstgraph(driver, scope):
-    MemInstanceGraphBuilder().process(scope)
+    #MemInstanceGraphBuilder().process(scope)
+    pass
 
 
 def evaltype(driver, scope):
@@ -260,6 +266,12 @@ def evaltype(driver, scope):
 
 
 def earlytypeprop(driver):
+    def static_scope(s):
+        if s.is_namespace():
+            return True
+        elif s.is_class():
+            return True
+        return False
     typeprop = EarlyTypePropagation()
     typed_scopes = typeprop.process_all()
     scopes = driver.all_scopes()
@@ -269,7 +281,7 @@ def earlytypeprop(driver):
     for s in scopes:
         # The namespace scope should not be removed here,
         # since staticconstopt will be executed later
-        if s not in typed_scopes and not s.is_namespace():
+        if s not in typed_scopes and not static_scope(s):
             driver.remove_scope(s)
 
 
@@ -306,8 +318,8 @@ def synthcheck(driver, scope):
 
 
 def detectrom(driver):
-    RomDetector().process_all()
-
+    #RomDetector().process_all()
+    pass
 
 def specworker(driver, scope):
     new_workers = SpecializeWorker().process(scope)
@@ -372,10 +384,10 @@ def postinstantiate(driver):
     for s in scopes:
         if env.config.enable_pure:
             execpure(driver, s)
-    TypePropagation().process_all()
     for s in scopes:
         constopt(driver, s)
         checkcfg(driver, s)
+    TypePropagation().process_all()
     scopegraph(driver)
     detectrom(driver)
     for s in scopes:
@@ -402,6 +414,7 @@ def flattenmodule(driver, scope):
 def objssa(driver, scope):
     TupleSSATransformer().process(scope)
     earlyquadruple(driver, scope)
+    #ListSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
     usedef(driver, scope)
     ObjectSSATransformer().process(scope)
@@ -733,12 +746,12 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         memrefgraph,
-        dbg(dumpmrg),
+        #dbg(dumpmrg),
         dbg(dumpscope),
         constopt_pre_detectrom,
         dbg(dumpscope),
         detectrom,
-        dbg(dumpmrg),
+        #dbg(dumpmrg),
         usedef,
         constopt,
         dbg(dumpscope),

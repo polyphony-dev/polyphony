@@ -1,10 +1,11 @@
 ﻿from collections import deque
 from .env import env
+from .ir import CONST, TEMP, ATTR
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class RomDetector(object):
+class RomDetector__(object):
     def _propagate_writable_flag(self):
         for node in self.mrg.collect_top_module_nodes():
             node.set_writable()

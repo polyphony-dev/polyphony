@@ -597,9 +597,10 @@ class DFGBuilder(object):
                             node_groups_by_mem[mem_group].append(node)
                 elif mv.dst.is_a([TEMP, ATTR]):
                     if mv.dst.symbol().typ.is_seq():
-                        memnode = mv.dst.symbol().typ.get_memnode()
-                        if not memnode.can_be_reg():
-                            node_groups_by_mem[mv.dst.symbol()].append(node)
+                        pass
+                        #memnode = mv.dst.symbol().typ.get_memnode()
+                        #if not memnode.can_be_reg():
+                        #    node_groups_by_mem[mv.dst.symbol()].append(node)
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
@@ -612,10 +613,12 @@ class DFGBuilder(object):
                     node_groups_by_mem[mem_group].append(node)
         parallelizer = RegArrayParallelizer(self.scope)
         for group, nodes in node_groups_by_mem.items():
-            memnode = group.typ.get_memnode()
-            if memnode.is_immutable():  # or memnode.can_be_reg():
+            if group.typ.is_tuple():
                 continue
-            is_reg_array = memnode.can_be_reg()
+            # memnode = group.typ.get_memnode()
+            # if memnode.is_immutable():  # or memnode.can_be_reg():
+            #     continue
+            is_reg_array = True  # memnode.can_be_reg()
             node_groups_by_blk = defaultdict(list)
             # grouping by block
             for n in nodes:
@@ -819,7 +822,7 @@ class DFGBuilder(object):
                 dfg.add_seq_edge(unode, defnode)
             elif unode.tag.is_mem_read() or unode.tag.is_mem_write():
                 memnode = self.get_memnode(unode.tag)
-                if not memnode.can_be_reg():
+                if False:  #not memnode.can_be_reg():
                     dfg.add_seq_edge(unode, defnode)
                 else:
                     dfg.add_usedef_edge(unode, defnode)
