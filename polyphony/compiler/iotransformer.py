@@ -49,13 +49,6 @@ class IOTransformer(AHDLVisitor):
         return callinf.callee_epilog(step, ahdl.name)
 
     def _is_continuous_access_to_mem(self, ahdl):
-        other_memnodes = [c.factor.mem.memnode for c in self.current_block.codes
-                          if c.is_a([AHDL_SEQ]) and
-                          c.factor.is_a([AHDL_LOAD, AHDL_STORE]) and
-                          c.factor is not ahdl]
-        for memnode in other_memnodes:
-            if memnode is ahdl.mem.memnode:
-                return True
         return False
 
     def visit_AHDL_LOAD_SEQ(self, ahdl, step, step_n):

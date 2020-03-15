@@ -44,7 +44,7 @@ class CompilerTestCase(unittest.TestCase):
 
     def scope(self, scope_name):
         name = '{}.{}'.format(env.global_scope_name, scope_name)
-        assert name in env.scopes
+        self.assertTrue(name in env.scopes)
         return env.scopes[name]
 
     def find_symbol(self, scope, orig_name):

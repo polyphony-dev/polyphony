@@ -384,30 +384,9 @@ class ConstantOpt(ConstantOptBase):
             length = memsym.typ.get_length()
             if length > 0:
                 return CONST(length)
-            # memnode = self.mrg.node(memsym)
-            # lens = []
-            # assert memnode
-            # for source in memnode.sources():
-            #     lens.append(source.length)
-            # if len(lens) <= 1 or all(lens[0] == len for len in lens):
-            #     if lens[0] > 0 and memnode.has_fixed_length(self.scope):
-            #         return CONST(lens[0])
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):
-        ir.offset = self.visit(ir.offset)
-        memtyp = ir.mem.symbol().typ
-
-        #if ir.offset.is_a(CONST) and not memnode.is_writable():
-        if ir.offset.is_a(CONST) and memtyp.get_ro():
-            source = memnode.single_source()
-            if source:
-                assert source.initstm
-                if not source.initstm.src.repeat.is_a(CONST):
-                    pass
-                else:
-                    items = source.initstm.src.items * source.initstm.src.repeat.value
-                    return items[ir.offset.value]
         return ir
 
     def visit_TEMP(self, ir):

@@ -231,11 +231,6 @@ class UseDefDetector(IRVisitor):
             if (env.compile_phase >= env.PHASE_4
                     and arg.is_a([TEMP, ATTR])
                     and arg.symbol().typ.is_list()):
-                memnode = None
-                if env.memref_graph:
-                    memnode = env.memref_graph.node(arg.symbol())
-                if memnode and not memnode.is_writable():
-                    continue
                 self.update_var_def(arg, self.current_stm)
 
     def visit_CALL(self, ir):

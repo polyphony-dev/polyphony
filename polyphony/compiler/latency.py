@@ -60,22 +60,10 @@ def _get_latency(tag):
                 return 0
             return UNIT_STEP * 1
         elif tag.src.is_a(MREF):
-            memnode = tag.src.mem.symbol().typ.get_memnode()
-            #if memnode.is_immutable() or not memnode.is_writable() or memnode.can_be_reg():
             return UNIT_STEP
-            return UNIT_STEP * env.config.internal_ram_load_latency, UNIT_STEP * 1
         elif tag.dst.is_a(TEMP) and tag.dst.symbol().typ.is_seq():
-            memnode = tag.dst.symbol().typ.get_memnode()
             if tag.src.is_a(ARRAY):
-                if True: # memnode.can_be_reg():
-                    return 1
-                elif not memnode.is_writable():
-                    return 0
-                else:
-                    return UNIT_STEP * len(tag.src.items * tag.src.repeat.value)
-            if tag.src.is_a(TEMP) and tag.src.symbol().typ.is_seq():
-                if False:  # not memnode.can_be_reg():
-                    return 0, 0
+                return UNIT_STEP
         if tag.dst.symbol().is_alias():
             return 0
     elif tag.is_a(EXPR):
@@ -84,13 +72,8 @@ def _get_latency(tag):
         elif tag.exp.is_a(SYSCALL):
             return get_syscall_latency(tag.exp)
         elif tag.exp.is_a(MSTORE):
-            memnode = tag.exp.mem.symbol().typ.get_memnode()
-            if True:  # memnode.can_be_reg():
-                return UNIT_STEP * 1
-            return UNIT_STEP * env.config.internal_ram_store_latency, UNIT_STEP * 1
+            return UNIT_STEP
     elif tag.is_a(PHI):
-        #if tag.var.symbol().typ.is_seq() and not tag.var.symbol().typ.get_memnode().can_be_reg():
-        #    return 0
         if tag.var.symbol().is_alias():
             return 0
     elif tag.is_a(UPHI):

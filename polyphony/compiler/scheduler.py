@@ -666,17 +666,11 @@ class ResourceExtractor(IRVisitor):
         super().visit_CALL(ir)
 
     def visit_MREF(self, ir):
-        if True: # ir.mem.symbol().typ.get_memnode().can_be_reg():
-            self.regarrays[self.current_node].append(ir.mem.symbol())
-        else:
-            self.mems[self.current_node].append(ir.mem.symbol())
+        self.regarrays[self.current_node].append(ir.mem.symbol())
         super().visit_MREF(ir)
 
     def visit_MSTORE(self, ir):
-        if True:  #ir.mem.symbol().typ.get_memnode().can_be_reg():
-            self.regarrays[self.current_node].append(ir.mem.symbol())
-        else:
-            self.mems[self.current_node].append(ir.mem.symbol())
+        self.regarrays[self.current_node].append(ir.mem.symbol())
         super().visit_MSTORE(ir)
 
 

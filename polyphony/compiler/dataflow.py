@@ -598,9 +598,6 @@ class DFGBuilder(object):
                 elif mv.dst.is_a([TEMP, ATTR]):
                     if mv.dst.symbol().typ.is_seq():
                         pass
-                        #memnode = mv.dst.symbol().typ.get_memnode()
-                        #if not memnode.can_be_reg():
-                        #    node_groups_by_mem[mv.dst.symbol()].append(node)
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
@@ -615,30 +612,25 @@ class DFGBuilder(object):
         for group, nodes in node_groups_by_mem.items():
             if group.typ.is_tuple():
                 continue
-            # memnode = group.typ.get_memnode()
-            # if memnode.is_immutable():  # or memnode.can_be_reg():
-            #     continue
-            is_reg_array = True  # memnode.can_be_reg()
             node_groups_by_blk = defaultdict(list)
             # grouping by block
             for n in nodes:
                 node_groups_by_blk[n.tag.block].append(n)
             for ns in node_groups_by_blk.values():
                 sorted_nodes = sorted(ns, key=self._node_order_by_ctrl)
-                if is_reg_array:
-                    for i in range(len(sorted_nodes) - 1):
-                        n1 = sorted_nodes[i]
-                        for k in range(i + 1, len(sorted_nodes)):
-                            n2 = sorted_nodes[k]
-                            if parallelizer.can_be_parallel(group, n1, n2):
-                                continue
-                            if n1.tag.is_mem_read():
-                                if n2.tag.is_mem_write():
-                                    dfg.add_usedef_edge(n1, n2)
-                                continue
-                            if self.scope.has_branch_edge(n1.tag, n2.tag):
-                                continue
-                            dfg.add_seq_edge(n1, n2)
+                for i in range(len(sorted_nodes) - 1):
+                    n1 = sorted_nodes[i]
+                    for k in range(i + 1, len(sorted_nodes)):
+                        n2 = sorted_nodes[k]
+                        if parallelizer.can_be_parallel(group, n1, n2):
+                            continue
+                        if n1.tag.is_mem_read():
+                            if n2.tag.is_mem_write():
+                                dfg.add_usedef_edge(n1, n2)
+                            continue
+                        if self.scope.has_branch_edge(n1.tag, n2.tag):
+                            continue
+                        dfg.add_seq_edge(n1, n2)
 
                 else:
                     for i in range(len(sorted_nodes) - 1):
@@ -787,16 +779,6 @@ class DFGBuilder(object):
                     if prev_clksleep_node:
                         dfg.add_seq_edge(prev_clksleep_node, node)
 
-    @staticmethod
-    def get_memnode(stm):
-        if stm.is_mem_read():
-            m = stm.src
-        elif stm.is_mem_write():
-            m = stm.exp
-        else:
-            return None
-        return m.mem.symbol().typ.get_memnode()
-
     def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef, visited):
         if (usenode, defnode) in visited:
             return
@@ -821,11 +803,7 @@ class DFGBuilder(object):
             if has_exclusive_function(u):
                 dfg.add_seq_edge(unode, defnode)
             elif unode.tag.is_mem_read() or unode.tag.is_mem_write():
-                memnode = self.get_memnode(unode.tag)
-                if False:  #not memnode.can_be_reg():
-                    dfg.add_seq_edge(unode, defnode)
-                else:
-                    dfg.add_usedef_edge(unode, defnode)
+                dfg.add_usedef_edge(unode, defnode)
             else:
                 dfg.add_usedef_edge(unode, defnode)
             self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef, visited)

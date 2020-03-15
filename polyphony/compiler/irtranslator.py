@@ -1518,7 +1518,7 @@ class CodeVisitor(ast.NodeVisitor):
             item = self.visit(elt)
             items.append(item)
         sym = self.current_scope.add_temp('@array')
-        sym.typ = Type.list(Type.undef(), None, -1)
+        sym.typ = Type.list(Type.undef(), -1)
         return ARRAY(items, sym=sym)
 
     #     | Tuple(expr* elts, expr_context ctx)
@@ -1528,7 +1528,7 @@ class CodeVisitor(ast.NodeVisitor):
             item = self.visit(elt)
             items.append(item)
         sym = self.current_scope.add_temp('@array')
-        sym.typ = Type.tuple(Type.undef(), None, -1)
+        sym.typ = Type.tuple(Type.undef(), Type.ANY_LENGTH)
         return ARRAY(items, is_mutable=False, sym=sym)
 
     def visit_NameConstant(self, node):

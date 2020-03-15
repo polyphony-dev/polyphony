@@ -701,20 +701,3 @@ class PureFuncExecutor(ConstantOptBase):
 
     def visit_NEW(self, ir):
         return super().visit_CALL(ir)
-
-    def visit_MOVE(self, ir):
-        ir.src = self.visit(ir.src)
-        if ir.src.is_a(ARRAY):
-            memnode = env.memref_graph.node(ir.dst.symbol())
-            source = memnode.single_source()
-            if source.is_pure() and not source.initstm:  # and not memnode.preds:
-                source.initstm = ir
-                if ir.src.items[0].is_a(CONST):
-                    item_t = Type.from_expr(ir.src.items[0].value, self.scope)
-                else:
-                    assert False
-                if ir.src.is_mutable:
-                    t = Type.list(item_t, source)
-                else:
-                    t = Type.tuple(item_t, source, len(ir.src.items))
-                ir.src.sym.set_type(t)

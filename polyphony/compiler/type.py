@@ -43,9 +43,9 @@ class Type(object):
             elif ann == 'bool':
                 t = Type.bool()
             elif ann == 'list':
-                t = Type.list(Type.undef(), None)
+                t = Type.list(Type.undef())
             elif ann == 'tuple':
-                t = Type.tuple(Type.undef(), None, Type.ANY_LENGTH)
+                t = Type.tuple(Type.undef(), Type.ANY_LENGTH)
             elif ann == 'object':
                 t = Type.object(None)
             elif ann == 'str':
@@ -185,9 +185,9 @@ class Type(object):
         elif scope.base_name == 'str':
             return Type.str()
         elif scope.base_name == 'list':
-            return Type.list(Type.undef(), None)
+            return Type.list(Type.undef())
         elif scope.base_name == 'tuple':
-            return Type.tuple(Type.undef(), None, Type.ANY_LENGTH)
+            return Type.tuple(Type.undef(), Type.ANY_LENGTH)
         elif scope.base_name == 'Type':
             return Type.klass(None)
         elif scope.base_name.startswith('int'):
@@ -201,9 +201,9 @@ class Type(object):
         elif scope.base_name == ('List'):
             if elms:
                 assert len(elms) == 1
-                return Type.list(elms[0], None)
+                return Type.list(elms[0])
             else:
-                return Type.list(Type.undef(), None)
+                return Type.list(Type.undef())
         elif scope.base_name == ('Tuple'):
             if elms:
                 if len(elms) == 2 and elms[1].is_ellipsis():
@@ -211,9 +211,9 @@ class Type(object):
                 else:
                     length = len(elms)
                 # TODO: multiple type tuple
-                return Type.tuple(elms[0], None, length)
+                return Type.tuple(elms[0], length)
             else:
-                return Type.tuple(Type.undef(), None, Type.ANY_LENGTH)
+                return Type.tuple(Type.undef(), Type.ANY_LENGTH)
         else:
             print(scope.name)
             assert False
@@ -249,7 +249,7 @@ class Type(object):
                 elem_t = Type.from_expr(val[0], scope)
             else:
                 elem_t = Type.int()
-            t = Type.list(elem_t, None)
+            t = Type.list(elem_t)
             t.attrs['length'] = len(val)
             return t
         elif isinstance(val, tuple):
@@ -257,7 +257,7 @@ class Type(object):
                 elem_t = Type.from_expr(val[0], scope)
             else:
                 elem_t = Type.int()
-            t = Type.tuple(elem_t, None, len(val))
+            t = Type.tuple(elem_t, len(val))
             return t
         elif val is None:
             return Type.none()
@@ -274,17 +274,10 @@ class Type(object):
             if self.name == 'int':
                 return f'int{self.get_width()}'
             if self.name == 'list':
-                memnode = self.get_memnode()
-                if memnode:
-                    if self.has_length():
-                        return f'list<{self.get_element()}, {self.get_length()}, {memnode.scope.name}>'
-                    else:
-                        return f'list<{self.get_element()}, {memnode.scope.name}>'
+                if self.has_length():
+                    return f'list<{self.get_element()}, {self.get_length()}>'
                 else:
-                    if self.has_length():
-                        return f'list<{self.get_element()}, {self.get_length()}>'
-                    else:
-                        return f'list<{self.get_element()}>'
+                    return f'list<{self.get_element()}>'
             if self.name == 'tuple':
                 return f'tuple<{self.get_element()}, {self.get_length()}>'
             if self.name == 'port':
@@ -387,14 +380,14 @@ class Type(object):
         return Type('any')
 
     @classmethod
-    def list(cls, elm_t, memnode, length=ANY_LENGTH):
+    def list(cls, elm_t, length=ANY_LENGTH):
         #assert elm_t.is_scalar() or elm_t.is_undef()
-        return Type('list', element=elm_t, memnode=memnode, length=length, ro=False)
+        return Type('list', element=elm_t, length=length, ro=False)
 
     @classmethod
-    def tuple(cls, elm_t, memnode, length):
+    def tuple(cls, elm_t, length):
         #assert elm_t.is_scalar() or elm_t.is_undef()
-        return Type('tuple', element=elm_t, memnode=memnode, length=length)
+        return Type('tuple', element=elm_t, length=length)
 
     @classmethod
     def function(cls, scope, ret_t=None, param_ts=None):
@@ -597,14 +590,10 @@ class Type(object):
         elif dst.is_union():
             return True
         elif dst.is_seq() and src.is_seq():
-            if dst.get_memnode() is src.get_memnode():
-                return True
-            elif dst.get_memnode() is None:
-                return True
-            elif src.get_memnode() and dst.get_memnode().sym is src.get_memnode().sym:
-                return True
-            #assert False
-            #print(dst, src)
+            if cls.can_propagate(dst.get_element(), src.get_element()):
+                if (dst.get_length() == src.get_length()
+                        or dst.get_length() == Type.ANY_LENGTH):
+                    return True
             return False
         return True
 
@@ -635,10 +624,16 @@ class Type(object):
         for t in types:
             if t.is_list():
                 elm = cls.mangled_names([t.get_element()])
-                s = f'l_{elm}'
+                if t.get_length() != Type.ANY_LENGTH:
+                    s = f'l_{elm}_{t.get_length()}'
+                else:
+                    s = f'l_{elm}'
             elif t.is_tuple():
                 elm = cls.mangled_names([t.get_element()])
-                elms = ''.join([elm] * t.get_length())
+                if t.get_length() != Type.ANY_LENGTH:
+                    elms = ''.join([elm] * t.get_length())
+                else:
+                    elms = elm
                 s = f't_{elms}'
             elif t.is_class():
                 # TODO: we should avoid naming collision
@@ -702,6 +697,3 @@ class UnionType(Type):
     def get_element(self):
         assert self.is_seq()
         return UnionType(set([t.get_element() for t in self.types if t.is_seq()]))
-
-    def get_memnode(self):
-        assert False

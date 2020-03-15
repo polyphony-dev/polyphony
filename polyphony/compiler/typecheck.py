@@ -270,20 +270,16 @@ class TypePropagation(IRVisitor):
                     item_t = item_typs[0]
             else:
                 assert False  # TODO:
-        if ir.sym.typ.is_seq():
-            memnode = ir.sym.typ.get_memnode()
-        else:
-            memnode = None
         if ir.is_mutable:
             if ir.repeat.is_a(CONST):
-                t = Type.list(item_t, memnode, len(ir.items) * ir.repeat.value)
+                t = Type.list(item_t, len(ir.items) * ir.repeat.value)
             else:
-                t = Type.list(item_t, memnode)
+                t = Type.list(item_t)
         else:
             if ir.repeat.is_a(CONST):
-                t = Type.tuple(item_t, memnode, len(ir.items) * ir.repeat.value)
+                t = Type.tuple(item_t, len(ir.items) * ir.repeat.value)
             else:
-                t = Type.tuple(item_t, memnode, Type.ANY_LENGTH)
+                t = Type.tuple(item_t, Type.ANY_LENGTH)
         self._propagate(ir.sym, t)
         return t
 
@@ -1068,11 +1064,6 @@ class LateRestrictionChecker(IRVisitor):
 
     def visit_MSTORE(self, ir):
         return
-        memnode = ir.mem.symbol().typ.get_memnode()
-        if memnode.is_alias() and memnode.can_be_reg():
-            fail(self.current_stm, Errors.WRITING_ALIAS_REGARRAY)
-        if memnode.scope.is_global():
-            fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
 
     def visit_NEW(self, ir):
         if ir.func_scope().is_port():

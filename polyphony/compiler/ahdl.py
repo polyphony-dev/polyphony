@@ -112,19 +112,15 @@ class AHDL_VAR(AHDL_EXP):
 
 
 class AHDL_MEMVAR(AHDL_VAR):
-    def __init__(self, sig, memnode, ctx):
-        # assert memnode
-        # assert (isinstance(memnode, MemRefNode) or isinstance(memnode, MemParamNode))
+    def __init__(self, sig, ctx):
         super().__init__(sig, ctx)
-        self.memnode = memnode
 
     def __str__(self):
         return '{}[]'.format(self.sig)
 
     def __repr__(self):
-        return 'AHDL_MEMVAR({}, {}, {})'.format(repr(self.sig),
-                                                repr(self.memnode),
-                                                repr(self.ctx))
+        return 'AHDL_MEMVAR({}, {})'.format(repr(self.sig),
+                                            repr(self.ctx))
 
     def name(self):
         return self.sig.name
@@ -332,7 +328,6 @@ class AHDL_CONNECT(AHDL_STM):
 class AHDL_STORE(AHDL_STM):
     def __init__(self, mem, src, offset):
         assert isinstance(mem, AHDL_MEMVAR)
-        assert mem.memnode.is_sink()
         super().__init__()
         self.mem = mem
         self.src = src
@@ -350,7 +345,6 @@ class AHDL_STORE(AHDL_STM):
 class AHDL_LOAD(AHDL_STM):
     def __init__(self, mem, dst, offset):
         assert isinstance(mem, AHDL_MEMVAR)
-        assert mem.memnode.is_sink()
         super().__init__()
         self.mem = mem
         self.dst = dst
@@ -534,12 +528,6 @@ class AHDL_META(AHDL_STM):
         self.args = list(args[1:])
 
     def __str__(self):
-        if self.metaid == 'MEM_SWITCH':
-            return '{}({}, {} <= {})'.format(self.metaid, self.args[0], self.args[1].name(), self.args[2].name())
-        elif self.metaid == 'MEM_MUX':
-            _, dst, srcs, conds = self.args
-            items = ['{}?{}'.format(c, s) for c, s in zip(conds, srcs)]
-            return '{}({} = {})'.format(self.metaid, dst, ', '.join(items))
         return '{}({})'.format(self.metaid, ', '.join([str(arg) for arg in self.args]))
 
     def __repr__(self):
