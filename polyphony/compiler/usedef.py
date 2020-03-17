@@ -168,23 +168,25 @@ class UseDefTable(object):
 
     def __str__(self):
         s = ''
+        s += '--------------------------------\n'
         s += 'statements that has symbol defs\n'
         for sym, stms in self._def_sym2stm.items():
             s += f'{sym}\n'
             for stm in stms:
                 s += f'    {stm}\n'
-
+        s += '--------------------------------\n'
         s += 'blocks that has symbol defs\n'
         for sym, blks in self._def_sym2blk.items():
             s += f'{sym}\n'
             for blk in blks:
                 s += f'    {blk.name}\n'
+        s += '--------------------------------\n'
         s += 'statements that has symbol uses\n'
         for sym, stms in self._use_sym2stm.items():
             s += f'{sym}\n'
             for stm in stms:
                 s += f'    {stm}\n'
-
+        s += '--------------------------------\n'
         s += 'blocks that has symbol uses\n'
         for sym, blks in self._use_sym2blk.items():
             s += f'{sym}\n'

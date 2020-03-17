@@ -211,6 +211,8 @@ class ConstantOptBase(IRVisitor):
             blk.preds = []  # mark as garbage block
             remove_from_list(worklist, blk.stms)
             logger.debug('remove block {}'.format(blk.name))
+            for child in self.dtree.get_children_of(blk):
+                remove_dominated_branch(child)
             for succ in blk.succs:
                 if blk in succ.preds:
                     idx = succ.preds.index(blk)
@@ -220,9 +222,6 @@ class ConstantOptBase(IRVisitor):
                         for phi in phis:
                             phi.args.pop(idx)
                             phi.ps.pop(idx)
-            for succ in (succ for succ in blk.succs if succ not in blk.succs_loop):
-                if self.dtree.is_child(blk, succ):
-                    remove_dominated_branch(succ)
 
         blk = cjump.block
         logger.debug('unconditional block {}'.format(blk.name))
@@ -265,10 +264,14 @@ class ConstantOpt(ConstantOptBase):
         self.scope = scope
         self.dtree = DominatorTreeBuilder(scope).process()
         self.uddetector = UseDefDetector()
-        self.uddetector.scope = scope
         self.uddetector_rm = UseDefDetector()
+        self.uddetector.scope = scope
+        self.uddetector.table = scope.usedef
         self.uddetector_rm.scope = scope
+        self.uddetector_rm.table = scope.usedef
+        self.uddetector.set_mode(UseDefDetector.ADD)
         self.uddetector_rm.set_mode(UseDefDetector.REMOVE)
+
         dead_stms = []
         worklist = deque()
         for blk in scope.traverse_blocks():

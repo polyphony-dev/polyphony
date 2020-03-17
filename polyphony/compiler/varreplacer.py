@@ -16,6 +16,7 @@ class VarReplacer(object):
         uses = list(usedef.get_stms_using(dst.qualified_symbol()))
         for use in uses:
             replacer.visit(use)
+            scope.usedef.remove_var_use(dst, use)
         for blk in scope.traverse_blocks():
             if blk.path_exp and blk.path_exp.is_a([TEMP, ATTR]):
                 if blk.path_exp.symbol() is dst.symbol():
