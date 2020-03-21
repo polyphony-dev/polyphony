@@ -276,6 +276,24 @@ class UseDefDetector(IRVisitor):
             self.current_stm = old_stm
 
 
+class UseDefUpdater(object):
+    def __init__(self, scope):
+        self.adder = UseDefDetector()
+        self.remover = UseDefDetector()
+        self.adder.scope = scope
+        self.adder.table = scope.usedef
+        self.remover.scope = scope
+        self.remover.table = scope.usedef
+        self.adder.set_mode(UseDefDetector.ADD)
+        self.remover.set_mode(UseDefDetector.REMOVE)
+
+    def update(self, old_stm, new_stm):
+        if old_stm:
+            self.remover.visit(old_stm)
+        if new_stm:
+            self.adder.visit(new_stm)
+
+
 class FieldUseDef(object):
     def process(self, module, driver):
         assert module.is_module()

@@ -9,6 +9,7 @@ from .ir import *
 from .irhelper import expr2ir, reduce_relexp
 from .irhelper import eval_unop, eval_binop, reduce_binop, eval_relop
 from .usedef import UseDefDetector
+from .usedef import UseDefUpdater
 from .utils import *
 from .varreplacer import VarReplacer
 from logging import getLogger
@@ -180,10 +181,13 @@ class ConstantOptBase(IRVisitor):
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            self._process_unconditional_cjump(ir, [])
+            self._process_unconditional_jump(ir, [])
 
     def visit_MCJUMP(self, ir):
         ir.conds = [self.visit(cond) for cond in ir.conds]
+        conds = [c.value for c in ir.conds if c.is_a(CONST)]
+        if len(conds) == len(ir.conds) and conds.count(1) == 1:
+            self._process_unconditional_jump(ir, [], conds)
 
     def visit_JUMP(self, ir):
         pass
@@ -206,43 +210,52 @@ class ConstantOptBase(IRVisitor):
         # TODO: loop-phi
         pass
 
-    def _process_unconditional_cjump(self, cjump, worklist):
-        def remove_dominated_branch(blk):
-            blk.preds = []  # mark as garbage block
-            remove_from_list(worklist, blk.stms)
-            logger.debug('remove block {}'.format(blk.name))
-            for child in self.dtree.get_children_of(blk):
-                remove_dominated_branch(child)
-            for succ in blk.succs:
-                if blk in succ.preds:
-                    idx = succ.preds.index(blk)
-                    succ.remove_pred(blk)
-                    if succ.preds:
-                        phis = succ.collect_stms([PHI, LPHI])
-                        for phi in phis:
-                            phi.args.pop(idx)
-                            phi.ps.pop(idx)
+    def _remove_dominated_branch(self, blk, worklist):
+        blk.preds = []  # mark as garbage block
+        remove_from_list(worklist, blk.stms)
+        logger.debug('remove block {}'.format(blk.name))
+        for child in self.dtree.get_children_of(blk):
+            self._remove_dominated_branch(child, worklist)
+        for succ in blk.succs:
+            if blk in succ.preds:
+                idx = succ.preds.index(blk)
+                succ.remove_pred(blk)
+                if succ.preds:
+                    phis = succ.collect_stms([PHI, LPHI])
+                    for phi in phis:
+                        phi.args.pop(idx)
+                        phi.ps.pop(idx)
+                elif succ is not self.scope.entry_block:
+                    self._remove_dominated_branch(succ, worklist)
 
+
+    def _process_unconditional_jump(self, cjump, worklist, conds=None):
         blk = cjump.block
         logger.debug('unconditional block {}'.format(blk.name))
-        if cjump.exp.value:
-            true_blk = cjump.true
-            false_blk = cjump.false
+
+        if cjump.is_a(CJUMP):
+            if cjump.exp.value:
+                true_blk = cjump.true
+                false_blks = [cjump.false]
+            else:
+                true_blk = cjump.false
+                false_blks = [cjump.true]
         else:
-            true_blk = cjump.false
-            false_blk = cjump.true
+            idx = conds.index(1)
+            true_blk = cjump.targets[idx]
+            false_blks = cjump.targets[:idx] + cjump.targets[idx + 1:]
+        for false_blk in false_blks:
+            if true_blk is not false_blks:
+                if false_blk.preds:
+                    false_blk.remove_pred(blk)
+                blk.remove_succ(false_blk)
+                if self.scope.exit_block is false_blk and not false_blk.preds:
+                    self.scope.exit_block = blk
+                if (not [p for p in false_blk.preds if p not in false_blk.preds_loop] and
+                        self.dtree.is_child(blk, false_blk)):
+                    self._remove_dominated_branch(false_blk, worklist)
         jump = JUMP(true_blk)
         jump.loc = cjump.loc
-
-        if true_blk is not false_blk:
-            if false_blk.preds:
-                false_blk.remove_pred(blk)
-            blk.remove_succ(false_blk)
-            if self.scope.exit_block is false_blk and not false_blk.preds:
-                self.scope.exit_block = blk
-            if (not [p for p in false_blk.preds if p not in false_blk.preds_loop] and
-                    self.dtree.is_child(blk, false_blk)):
-                remove_dominated_branch(false_blk)
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
             worklist.remove(cjump)
@@ -251,35 +264,26 @@ class ConstantOptBase(IRVisitor):
 class ConstantOpt(ConstantOptBase):
     def __init__(self):
         super().__init__()
-        self.mrg = env.memref_graph
-
-    def _update_usedef(self, old_stm, new_stm):
-        self.uddetector_rm.visit(old_stm)
-        if new_stm:
-            self.uddetector.visit(new_stm)
 
     def process(self, scope):
         if scope.is_class():
             return
         self.scope = scope
         self.dtree = DominatorTreeBuilder(scope).process()
-        self.uddetector = UseDefDetector()
-        self.uddetector_rm = UseDefDetector()
-        self.uddetector.scope = scope
-        self.uddetector.table = scope.usedef
-        self.uddetector_rm.scope = scope
-        self.uddetector_rm.table = scope.usedef
-        self.uddetector.set_mode(UseDefDetector.ADD)
-        self.uddetector_rm.set_mode(UseDefDetector.REMOVE)
+        self.udupdater = UseDefUpdater(scope)
 
         dead_stms = []
-        worklist = deque()
+        self.worklist = deque()
         for blk in scope.traverse_blocks():
-            worklist.extend(blk.stms)
-        while worklist:
-            stm = worklist.popleft()
-            while stm in worklist:
-                worklist.remove(stm)
+            self.worklist.extend(blk.stms)
+        while self.worklist:
+            stm = self.worklist.popleft()
+            while stm in self.worklist:
+                self.worklist.remove(stm)
+            # Note: stm has no block if stm is used as type expr
+            if stm.block and not stm.block.preds and stm.block is not self.scope.entry_block:
+                logger.debug(f'skip stm in unreachble block {stm}')
+                continue
             self.current_stm = stm
             self.visit(stm)
             if stm.is_a(PHIBase):
@@ -293,8 +297,8 @@ class ConstantOpt(ConstantOptBase):
                         mv = MOVE(stm.var, stm.args[idx])
                         blk = stm.block
                         blk.insert_stm(blk.stms.index(stm), mv)
-                        self._update_usedef(stm, mv)
-                        worklist.append(mv)
+                        self.udupdater.update(stm, mv)
+                        self.worklist.append(mv)
                         dead_stms.append(stm)
                         break
                 for p in stm.ps[:]:
@@ -303,13 +307,14 @@ class ConstantOpt(ConstantOptBase):
                         idx = stm.ps.index(p)
                         stm.ps.pop(idx)
                         stm.args.pop(idx)
+                assert len(stm.args) >= 1, f'{stm.block.name} is unreachble'
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.block
                     mv = MOVE(stm.var, arg)
                     blk.insert_stm(blk.stms.index(stm), mv)
-                    self._update_usedef(stm, mv)
-                    worklist.append(mv)
+                    self.udupdater.update(stm, mv)
+                    self.worklist.append(mv)
                     dead_stms.append(stm)
             elif stm.is_a([CMOVE, CEXPR]):
                 stm.cond = reduce_relexp(stm.cond)
@@ -320,7 +325,7 @@ class ConstantOpt(ConstantOptBase):
                             new_stm = MOVE(stm.dst, stm.src)
                         else:
                             new_stm = EXPR(stm.exp)
-                        self._update_usedef(stm, new_stm)
+                        self.udupdater.update(stm, new_stm)
                         blk.insert_stm(blk.stms.index(stm), new_stm)
                     dead_stms.append(stm)
             elif (stm.is_a(MOVE)
@@ -331,15 +336,16 @@ class ConstantOpt(ConstantOptBase):
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 assert len(defstms) <= 1
 
-                if stm.dst.symbol().typ.is_int() and isinstance(stm.src.value, int):
-                    src = _mask_bit(stm.dst.symbol().typ, stm.src)
-                else:
-                    src = stm.src
-                replaces = VarReplacer.replace_uses(scope, stm.dst, src)
+                # TODO:
+                #if stm.dst.symbol().typ.is_int() and isinstance(stm.src.value, int):
+                #    src = _mask_bit(stm.dst.symbol().typ, stm.src)
+                #else:
+                #    src = stm.src
+                replaces = VarReplacer.replace_uses(scope, stm.dst, stm.src)
                 for rep in replaces:
                     if rep not in dead_stms:
-                        worklist.append(rep)
-                self._update_usedef(stm, None)
+                        self.worklist.append(rep)
+                self.udupdater.update(stm, None)
                 scope.del_sym(stm.dst.symbol().name)
                 dead_stms.append(stm)
                 if stm.dst.symbol().is_free():
@@ -363,7 +369,7 @@ class ConstantOpt(ConstantOptBase):
                             module_scope.constants[stm.dst.symbol()] = stm.src
                 for rep in replaces:
                     if rep not in dead_stms:
-                        worklist.append(rep)
+                        self.worklist.append(rep)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
@@ -390,7 +396,17 @@ class ConstantOpt(ConstantOptBase):
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):
+        if not ir.offset.is_a(CONST):
+            return ir
+        if ir.mem.sym.scope.is_namespace() and ir.mem.sym.typ.is_seq():
+            array = try_get_constant(ir.mem.qualified_symbol(), self.scope)
+            if array:
+                c = array.items[ir.offset.value]
+                return c
+            else:
+                fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         return ir
+
 
     def visit_TEMP(self, ir):
         if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
@@ -431,6 +447,17 @@ class ConstantOpt(ConstantOptBase):
             for arg in remove_args:
                 ir.remove_arg(arg)
 
+    def visit_CJUMP(self, ir):
+        ir.exp = self.visit(ir.exp)
+        if ir.exp.is_a(CONST):
+            self._process_unconditional_jump(ir, self.worklist)
+
+    def visit_MCJUMP(self, ir):
+        ir.conds = [self.visit(cond) for cond in ir.conds]
+        conds = [c.value for c in ir.conds if c.is_a(CONST)]
+        if len(conds) == len(ir.conds) and conds.count(1) == 1:
+            self._process_unconditional_jump(ir, self.worklist, conds)
+
 
 class EarlyConstantOptNonSSA(ConstantOptBase):
     def __init__(self):
@@ -439,14 +466,14 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
         if ir.exp.is_a(CONST):
-            self._process_unconditional_cjump(ir, [])
+            self._process_unconditional_jump(ir, [])
             return
         expdefs = self.scope.usedef.get_stms_defining(ir.exp.symbol())
         assert len(expdefs) == 1
         expdef = list(expdefs)[0]
         if expdef.src.is_a(CONST):
             ir.exp = expdef.src
-            self._process_unconditional_cjump(ir, [])
+            self._process_unconditional_jump(ir, [])
 
     def visit_TEMP(self, ir):
         if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
