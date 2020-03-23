@@ -66,15 +66,15 @@ def test_implicit_2():
 
         self.assertTrue(a.typ.is_list())
         self.assertTrue(a.typ.get_element().is_int())
-        self.assertTrue(a.typ.get_length() == 3)
+        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(b.typ.is_list())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == 2)
+        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(c.typ.is_list())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == 2)
+        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(not a.typ.is_explicit())
         self.assertTrue(not b.typ.is_explicit())
@@ -99,15 +99,15 @@ def test_implicit_3():
 
         self.assertTrue(a.typ.is_tuple())
         self.assertTrue(a.typ.get_element().is_int())
-        self.assertTrue(a.typ.get_length() == 3)
+        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(b.typ.is_tuple())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == 2)
+        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(c.typ.is_tuple())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == 4)
+        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(not a.typ.is_explicit())
         self.assertTrue(not b.typ.is_explicit())
@@ -197,15 +197,15 @@ def test_explicit_2():
         self.assertTrue(a.typ.get_element().is_int())
         self.assertTrue(a.typ.get_element().get_width() == 32)
         self.assertTrue(a.typ.get_element().get_signed() is True)
-        self.assertTrue(a.typ.get_length() == 3)
+        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(b.typ.is_list())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == 2)
+        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(c.typ.is_list())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == 4)
+        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(d.typ.is_list())
         self.assertTrue(d.typ.get_element().is_str())
@@ -269,15 +269,15 @@ def test_explicit_3():
         self.assertTrue(a.typ.get_element().is_int())
         self.assertTrue(a.typ.get_element().get_width() == 32)
         self.assertTrue(a.typ.get_element().get_signed() is True)
-        self.assertTrue(a.typ.get_length() == 3)
+        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(b.typ.is_tuple())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == 2)
+        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(c.typ.is_tuple())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == 4)
+        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(d.typ.is_tuple())
         self.assertTrue(d.typ.get_element().is_str())
@@ -341,15 +341,15 @@ def test_explicit_4():
 
         self.assertTrue(a.typ.is_list())
         self.assertTrue(a.typ.get_element().is_int())
-        self.assertTrue(a.typ.get_length() == 3)
+        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(b.typ.is_list())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == 2)
+        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(c.typ.is_list())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == 4)
+        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(d.typ.is_list())
         self.assertTrue(d.typ.get_element().is_str())
@@ -365,9 +365,81 @@ def test_explicit_4():
         self.assertTrue(d.typ.get_element().is_explicit())
 
     test_explicit_5_src = '''
-from polyphony.typing import Tuple
+from polyphony.typing import List
 
 def test_explicit_5():
+    n = 10
+    a:List[int][3] = [1, 2, 3]
+    b:List[bool][2] = [True, False]
+    c:List[str][4] = ['a', 'b'] * 2
+    d:List[str][2*n] = ['a', 'b'] * n
+    '''
+
+    def test_explicit_5(self):
+        self._run(self.test_explicit_5_src)
+        scope = self.scope('test_explicit_5')
+        a = scope.find_sym('a')
+        b = scope.find_sym('b')
+        c = scope.find_sym('c')
+        d = scope.find_sym('d')
+
+        self.assertTrue(a.typ.is_list())
+        self.assertTrue(a.typ.get_element().is_int())
+        self.assertTrue(a.typ.get_length() == 3)
+
+        self.assertTrue(b.typ.is_list())
+        self.assertTrue(b.typ.get_element().is_bool())
+        self.assertTrue(b.typ.get_length() == 2)
+
+        self.assertTrue(c.typ.is_list())
+        self.assertTrue(c.typ.get_element().is_str())
+        self.assertTrue(c.typ.get_length() == 4)
+
+        self.assertTrue(d.typ.is_list())
+        self.assertTrue(d.typ.get_element().is_str())
+        self.assertTrue(d.typ.get_length().is_expr())
+
+        self.assertTrue(a.typ.is_explicit())
+        self.assertTrue(a.typ.get_element().is_explicit())
+        self.assertTrue(b.typ.is_explicit())
+        self.assertTrue(b.typ.get_element().is_explicit())
+        self.assertTrue(c.typ.is_explicit())
+        self.assertTrue(c.typ.get_element().is_explicit())
+        self.assertTrue(d.typ.is_explicit())
+        self.assertTrue(d.typ.get_element().is_explicit())
+
+        typeprop = TypePropagation()
+        typeprop.process(scope)
+
+        self.assertTrue(a.typ.is_list())
+        self.assertTrue(a.typ.get_element().is_int())
+        self.assertTrue(a.typ.get_length() == 3)
+
+        self.assertTrue(b.typ.is_list())
+        self.assertTrue(b.typ.get_element().is_bool())
+        self.assertTrue(b.typ.get_length() == 2)
+
+        self.assertTrue(c.typ.is_list())
+        self.assertTrue(c.typ.get_element().is_str())
+        self.assertTrue(c.typ.get_length() == 4)
+
+        self.assertTrue(d.typ.is_list())
+        self.assertTrue(d.typ.get_element().is_str())
+        self.assertTrue(d.typ.get_length().is_expr())
+
+        self.assertTrue(a.typ.is_explicit())
+        self.assertTrue(a.typ.get_element().is_explicit())
+        self.assertTrue(b.typ.is_explicit())
+        self.assertTrue(b.typ.get_element().is_explicit())
+        self.assertTrue(c.typ.is_explicit())
+        self.assertTrue(c.typ.get_element().is_explicit())
+        self.assertTrue(d.typ.is_explicit())
+        self.assertTrue(d.typ.get_element().is_explicit())
+
+    test_explicit_6_src = '''
+from polyphony.typing import Tuple
+
+def test_explicit_6():
     n = 10
     a:Tuple[int, ...] = (1, 2, 3)
     b:Tuple[bool, ...] = (True, False)
@@ -375,9 +447,9 @@ def test_explicit_5():
     d:Tuple[str, ...] = ('a', 'b') * n
     '''
 
-    def test_explicit_5(self):
-        self._run(self.test_explicit_5_src)
-        scope = self.scope('test_explicit_5')
+    def test_explicit_6(self):
+        self._run(self.test_explicit_6_src)
+        scope = self.scope('test_explicit_6')
         a = scope.find_sym('a')
         b = scope.find_sym('b')
         c = scope.find_sym('c')
@@ -413,15 +485,15 @@ def test_explicit_5():
 
         self.assertTrue(a.typ.is_tuple())
         self.assertTrue(a.typ.get_element().is_int())
-        self.assertTrue(a.typ.get_length() == 3)
+        self.assertTrue(a.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(b.typ.is_tuple())
         self.assertTrue(b.typ.get_element().is_bool())
-        self.assertTrue(b.typ.get_length() == 2)
+        self.assertTrue(b.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(c.typ.is_tuple())
         self.assertTrue(c.typ.get_element().is_str())
-        self.assertTrue(c.typ.get_length() == 4)
+        self.assertTrue(c.typ.get_length() == Type.ANY_LENGTH)
 
         self.assertTrue(d.typ.is_tuple())
         self.assertTrue(d.typ.get_element().is_str())
@@ -577,7 +649,7 @@ test_expr_1()
     def test_expr_1(self):
         self._run(self.test_expr_1_src)
         scope = self.scope('test_expr_1')
-        xs = scope.find_sym('xs')
+        xs = self.find_symbol(scope, 'xs', 1)
 
         self.assertTrue(xs.typ.is_list())
         self.assertTrue(xs.typ.get_element().is_int())
@@ -615,8 +687,8 @@ test_expr_2()
     def test_expr_2(self):
         self._run(self.test_expr_2_src)
         scope = self.scope('test_expr_2')
-        xs = scope.find_sym('xs')
-        ys = scope.find_sym('ys')
+        xs = self.find_symbol(scope, 'xs', 1)
+        ys = self.find_symbol(scope, 'ys', 1)
 
         self.assertTrue(xs.typ.is_list())
         self.assertTrue(xs.typ.get_element().is_int())
@@ -667,7 +739,7 @@ test_expr_3()
     def test_expr_3(self):
         self._run(self.test_expr_3_src)
         scope = self.scope('test_expr_3')
-        xs = self.find_symbol(scope, 'xs')
+        xs = self.find_symbol(scope, 'xs', 1)
 
         self.assertTrue(xs.typ.is_list())
         self.assertTrue(xs.typ.get_element().is_int())
@@ -717,8 +789,8 @@ test_expr_4()
     def test_expr_4(self):
         self._run(self.test_expr_4_src)
         scope = self.scope('test_expr_4')
-        xs = self.find_symbol(scope, 'xs')
-        ys = self.find_symbol(scope, 'ys')
+        xs = self.find_symbol(scope, 'xs', 1)
+        ys = self.find_symbol(scope, 'ys', 1)
 
         self.assertTrue(xs.typ.is_list())
         self.assertTrue(xs.typ.get_element().is_int())
@@ -818,7 +890,7 @@ m = test_expr_6(10)
         self.assertTrue(scope.is_module())
         self.assertTrue(scope.is_instantiated())
         func_scope, _ = scope.workers[0]
-        mem = self.find_symbol(func_scope, 'mem')
+        mem = self.find_symbol(func_scope, 'mem', 1)
 
         self.assertTrue(mem.typ.is_list())
         self.assertTrue(mem.typ.get_element().is_int())
@@ -869,11 +941,11 @@ m = test_expr_7(11, 12)
         w1, _ = scope.workers[1]
 
         if w0.base_name.endswith('11'):
-            mem0 = self.find_symbol(w0, 'mem')
-            mem1 = self.find_symbol(w1, 'mem')
+            mem0 = self.find_symbol(w0, 'mem', 1)
+            mem1 = self.find_symbol(w1, 'mem', 1)
         else:
-            mem0 = self.find_symbol(w1, 'mem')
-            mem1 = self.find_symbol(w0, 'mem')
+            mem0 = self.find_symbol(w1, 'mem', 1)
+            mem1 = self.find_symbol(w0, 'mem', 1)
 
         self.assertTrue(mem0.typ.is_list())
         self.assertTrue(mem0.typ.get_element().is_int())

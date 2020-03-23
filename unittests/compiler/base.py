@@ -47,12 +47,16 @@ class CompilerTestCase(unittest.TestCase):
         self.assertTrue(name in env.scopes)
         return env.scopes[name]
 
-    def find_symbol(self, scope, orig_name):
-        sym = scope.find_sym(orig_name)
+    def find_symbol(self, scope, orig_name, ssa_num=0):
+        if ssa_num:
+            postfix = f'#{ssa_num}'
+        else:
+            postfix = f''
+        sym = scope.find_sym(orig_name + postfix)
         if sym:
             return sym
         for i in range(100):
-            name = f'{orig_name}_inl{i}'
+            name = f'{orig_name}_inl{i}{postfix}'
             sym = scope.find_sym(name)
             if sym:
                 return sym
