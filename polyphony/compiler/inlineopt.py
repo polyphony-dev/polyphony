@@ -1,7 +1,8 @@
 ﻿from collections import defaultdict, deque
 from .block import Block
+from .builtin import builtin_symbols
 from .irvisitor import IRVisitor, IRTransformer
-from .ir import Ctx, IR, CONST, UNOP, TEMP, ATTR, CALL, MOVE, EXPR, RET, JUMP
+from .ir import Ctx, IR, CONST, UNOP, TEMP, ATTR, CALL, SYSCALL, MOVE, EXPR, RET, JUMP
 from .env import env
 from .common import fail
 from .copyopt import CopyOpt
@@ -137,7 +138,12 @@ class InlineOpt(object):
 
             if callee.is_ctor():
                 assert call_stm.src is call
-                call_stm.block.stms.remove(call_stm)
+                cls_scope = callee.parent
+                cls_sym = cls_scope.parent.find_sym(cls_scope.base_name)
+                builtin_new = SYSCALL(builtin_symbols['$new'],
+                                      args=[('typ', TEMP(cls_sym, Ctx.LOAD))],
+                                      kwargs={})
+                call_stm.replace(call_stm.src, builtin_new)
             elif call_stm.is_a(EXPR):
                 call_stm.block.stms.remove(call_stm)
 
@@ -191,7 +197,7 @@ class InlineOpt(object):
             succ.replace_pred(early_call_blk, late_call_blk)
             succ.replace_pred_loop(early_call_blk, late_call_blk)
 
-        idx = early_call_blk.stms.index(call_stm)
+        idx = early_call_blk.stms.index(call_stm) + 1
         late_call_blk.stms = early_call_blk.stms[idx:]
         for s in late_call_blk.stms:
             s.block = late_call_blk

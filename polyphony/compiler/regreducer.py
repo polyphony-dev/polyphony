@@ -10,6 +10,9 @@ class AliasVarDetector(IRVisitor):
         self.removes = []
         super().process(scope)
 
+    def visit_CMOVE(self, ir):
+        return
+
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
         sym = ir.dst.symbol()
@@ -48,6 +51,9 @@ class AliasVarDetector(IRVisitor):
                 else:
                     return
             else:
+                return
+        elif ir.src.is_a(SYSCALL):
+            if ir.src.sym.name == '$new':
                 return
         elif ir.src.is_a(MREF):
             if sched == 'timed':

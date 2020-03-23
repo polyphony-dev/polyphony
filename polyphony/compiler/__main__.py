@@ -41,6 +41,7 @@ from .loopdetector import LoopDependencyDetector
 from .looptransformer import LoopFlatten
 #from .memorytransform import RomDetector
 #from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
+from .objtransform import ObjectTransformer
 from .phiopt import PHIInlining
 from .phiresolve import PHICondResolver
 from .portconverter import PortConverter, FlattenPortList
@@ -60,7 +61,7 @@ from .setlineno import SourceDump
 from .ssa import ScalarSSATransformer
 from .ssa import TupleSSATransformer
 from .ssa import ListSSATransformer
-from .ssa import ObjectSSATransformer 
+from .ssa import ObjectSSATransformer
 from .statereducer import StateReducer
 from .stg import STGBuilder
 from .synth import DefaultSynthParamSetter
@@ -289,6 +290,10 @@ def typeprop(driver):
     TypePropagation().process_all()
 
 
+def stricttypeprop(driver):
+    TypePropagation(is_strict=True).process_all()
+
+
 def typecheck(driver, scope):
     TypeChecker().process(scope)
 
@@ -414,7 +419,7 @@ def flattenmodule(driver, scope):
 def objssa(driver, scope):
     TupleSSATransformer().process(scope)
     earlyquadruple(driver, scope)
-    #ListSSATransformer().process(scope)
+    ListSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
     usedef(driver, scope)
     ObjectSSATransformer().process(scope)
@@ -423,6 +428,10 @@ def objssa(driver, scope):
 def objcopyopt(driver, scope):
     usedef(driver, scope)
     AliasReplacer().process(scope)
+
+
+def objtrans(driver, scope):
+    ObjectTransformer().process(scope)
 
 
 def scalarize(driver, scope):
@@ -724,8 +733,9 @@ def compile_plan():
         dbg(dumpscope),
         objcopyopt,
         dbg(dumpscope),
+        objtrans,
+        dbg(dumpscope),
         scalarize,
-
         dbg(dumpscope),
         scopegraph,
         dbg(dumpscope),
@@ -748,6 +758,7 @@ def compile_plan():
         memrefgraph,
         #dbg(dumpmrg),
         dbg(dumpscope),
+        #dumpcfgimg,
         constopt_pre_detectrom,
         dbg(dumpscope),
         detectrom,
@@ -762,7 +773,7 @@ def compile_plan():
         postinstantiate,
         dbg(dumpscope),
         evaltype,
-        typeprop,
+        stricttypeprop,
         typecheck,
         #dbg(dumpdependimg),
         dbg(dumpscope),

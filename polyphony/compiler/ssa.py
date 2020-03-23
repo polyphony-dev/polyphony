@@ -353,6 +353,7 @@ class ScalarSSATransformer(SSATransformerBase):
         if (sym.is_condition() or
                 sym.is_param() or
                 sym.is_static() or
+                sym.is_flattened() or
                 sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
             return False
         if len(qsym) > 1:
@@ -399,7 +400,7 @@ class TupleSSATransformer(SSATransformerBase):
                     src = use_stm.src.clone()
                     src.replace(use_var, arg.clone())
                     uphi.args.append(src)
-                use_stm.block.insert_stm(insert_idx, uphi)    
+                use_stm.block.insert_stm(insert_idx, uphi)
             else:
                 assert dst_use_vars
                 use_var = dst_use_vars[0]
@@ -409,7 +410,7 @@ class TupleSSATransformer(SSATransformerBase):
                     cmov = CMOVE(p.clone(), dst, use_stm.src.clone())
                     use_stm.block.insert_stm(insert_idx, cmov)
             use_stm.block.stms.remove(use_stm)
-        elif use_stm.is_a(EXPR):            
+        elif use_stm.is_a(EXPR):
             use_vars = [ir for ir in use_stm.exp.find_vars(qsym)]
             assert use_vars
             use_var = use_vars[0]
@@ -506,14 +507,6 @@ class ObjectSSATransformer(SSATransformerBase):
             return
         super().process(scope)
         self._process_use_phi()
-        self._remove_obj_phi()
-
-    def _remove_obj_phi(self):
-        for blk in self.scope.traverse_blocks():
-            phis = blk.collect_stms(PHIBase)
-            for phi in phis:
-                if phi.var.is_a(TEMP) and phi.var.symbol().typ.is_object():
-                    self._remove_phi(phi, self.scope.usedef)
 
     def _process_use_phi(self):
         usedef = self.scope.usedef

@@ -352,6 +352,8 @@ def _signal_width(sym):
         width = sym.typ.get_width()
     elif sym.typ.is_port():
         width = sym.typ.get_dtype().get_width()
+    elif sym.typ.is_object():
+        width = 16
     elif sym.is_condition():
         width = 1
     return width
@@ -376,6 +378,8 @@ def _tags_from_sym(sym):
         assert di != '?'
         if di != 'inout':
             tags.add(di)
+    elif sym.typ.is_object():
+        tags.add('reg')
 
     if sym.is_param() and sym.scope.is_function_module():
         tags.add('input')
@@ -509,9 +513,9 @@ class AHDLTranslator(IRVisitor):
     def translate_builtin_len(self, syscall):
         _, mem = syscall.args[0]
         assert mem.is_a(TEMP)
-        name = f'{mem.symbol().hdl_name()}_len'
-        memlensig = self.hdlmodule.gen_sig(name, -1, ['memif'], mem.symbol())
-        return AHDL_VAR(memlensig, Ctx.LOAD)
+        assert mem.symbol().typ.is_seq()
+        assert isinstance(mem.symbol().typ.get_length(), int)
+        return AHDL_CONST(mem.symbol().typ.get_length())
 
     def visit_SYSCALL(self, ir):
         logger.debug(ir.sym.name)
@@ -525,6 +529,8 @@ class AHDLTranslator(IRVisitor):
             fname = '!hdl_verilog_write'
         elif ir.sym.name == 'len':
             return self.translate_builtin_len(ir)
+        elif ir.sym.name == '$new':
+            return AHDL_CONST(self.current_stm.dst.symbol().id)
         elif ir.sym.name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
             assert cycle.is_a(CONST)

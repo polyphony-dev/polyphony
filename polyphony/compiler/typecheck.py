@@ -22,6 +22,9 @@ class RejectPropagation(Exception):
 
 
 class TypePropagation(IRVisitor):
+    def __init__(self, is_strict=False):
+        self.is_strict = is_strict
+
     def process_all(self):
         worklist = deque([Scope.global_scope()])
         return self._process_all(worklist)
@@ -130,6 +133,10 @@ class TypePropagation(IRVisitor):
                 raise RejectPropagation(ir)
             arg_scope = temp.symbol().typ.get_scope()
             return Type.object(arg_scope)
+        elif ir.sym.name == '$new':
+            _, typ = ir.args[0]
+            assert typ.symbol().typ.is_class()
+            return Type.object(typ.symbol().typ.get_scope())
         else:
             assert ir.sym.typ.is_function()
             return ir.sym.typ.get_return_type()
@@ -249,7 +256,6 @@ class TypePropagation(IRVisitor):
             ir.sym = self.scope.add_temp('@array')
         if all(item.is_a(CONST) for item in ir.items):
             ir.sym.typ.set_ro(True)
-        #self.visit(ir.repeat)
         item_t = None
         if self.current_stm.dst.is_a([TEMP, ATTR]):
             dsttyp = self.current_stm.dst.symbol().typ
@@ -270,16 +276,18 @@ class TypePropagation(IRVisitor):
                     item_t = item_typs[0]
             else:
                 assert False  # TODO:
-        if ir.is_mutable:
-            if ir.repeat.is_a(CONST):
-                t = Type.list(item_t, len(ir.items) * ir.repeat.value)
-            else:
-                t = Type.list(item_t)
+
+        if self.is_strict and ir.repeat.is_a(CONST):
+            length = len(ir.items) * ir.repeat.value
         else:
-            if ir.repeat.is_a(CONST):
-                t = Type.tuple(item_t, len(ir.items) * ir.repeat.value)
-            else:
-                t = Type.tuple(item_t, Type.ANY_LENGTH)
+            length = Type.ANY_LENGTH
+        if ir.is_mutable:
+            t = Type.list(item_t, length)
+        else:
+            t = Type.tuple(item_t, length)
+        return t
+
+        t = self._seq_type_from_array(ir, item_t)
         self._propagate(ir.sym, t)
         return t
 
@@ -739,7 +747,9 @@ class TypeChecker(IRVisitor):
     def visit_RELOP(self, ir):
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
-        if not l_t.is_scalar() or not r_t.is_scalar():
+        valid_l_t = l_t.is_scalar() or l_t.is_object()
+        valid_r_t = r_t.is_scalar() or r_t.is_object()
+        if not valid_l_t or not valid_r_t:
             type_error(self.current_stm, Errors.UNSUPPORTED_BINARY_OPERAND_TYPE,
                        [op2sym_map[ir.op], l_t, r_t])
         return Type.bool()
@@ -784,6 +794,10 @@ class TypeChecker(IRVisitor):
                 arg_t = self.visit(arg)
                 if not arg_t.is_scalar():
                     type_error(self.current_stm, Errors.PRINT_TAKES_SCALAR_TYPE)
+        elif ir.sym.name == '$new':
+            _, typ = ir.args[0]
+            assert typ.symbol().typ.is_class()
+            return Type.object(typ.symbol().typ.get_scope())
         elif ir.sym.name in env.all_scopes:
             scope = env.all_scopes[ir.sym.name]
             arg_len = len(ir.args)

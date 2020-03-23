@@ -2,6 +2,7 @@
 from .ir import *
 from .irvisitor import IRVisitor
 from .type import Type
+from .usedef import UseDefUpdater
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -18,6 +19,7 @@ class CopyOpt(IRVisitor):
 
     def process(self, scope):
         self.scope = scope
+        self.udupdater = UseDefUpdater(scope)
         copies = []
         collector = self._new_collector(copies)
         collector.process(scope)
@@ -56,10 +58,10 @@ class CopyOpt(IRVisitor):
                 # TODO: we need the bit width propagation
                 new.symbol().set_type(old.symbol().typ.clone())
                 logger.debug('replace FROM ' + str(u))
+                self.udupdater.update(u, None)
                 u.replace(old, new)
                 logger.debug('replace TO ' + str(u))
-                scope.usedef.remove_use(old, u)
-                scope.usedef.add_use(new, u)
+                self.udupdater.update(None, u)
             if u.is_a(PHIBase):
                 syms = [arg.qualified_symbol() for arg in u.args
                         if arg.is_a([TEMP, ATTR]) and arg.symbol() is not u.var.symbol()]
@@ -79,9 +81,7 @@ class CopyOpt(IRVisitor):
                     idx = u.block.stms.index(u)
                     u.block.stms[idx] = mv
                     mv.block = u.block
-                    scope.usedef.remove_stm(u)
-                    scope.usedef.add_var_def(mv.dst, mv)
-                    scope.usedef.add_use(mv.src, mv)
+                    self.udupdater.update(u, mv)
                     if mv.src.is_a([TEMP, ATTR]):
                         worklist.append(mv)
                         copies.append(mv)

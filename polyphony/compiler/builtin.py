@@ -4,6 +4,7 @@ from .type import Type
 
 builtin_mappings = {
     '__builtin__._assert': 'assert',
+    '__builtin__._new': '$new',
 }
 
 builtin_symbols = {}

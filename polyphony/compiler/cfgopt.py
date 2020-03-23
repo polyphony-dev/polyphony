@@ -502,6 +502,8 @@ class HyperBlockBuilder(object):
         # We need to ignore the statement accessing the resource
         for idx, stm in enumerate(blk.stms[:-1]):
             if (stm.is_a(EXPR) or
+                    stm.is_a(CEXPR) or
+                    stm.is_a(CMOVE) or
                     self._has_timing_function(stm) or
                     self._has_mem_access(stm) or
                     self._has_instance_var_modification(stm)):

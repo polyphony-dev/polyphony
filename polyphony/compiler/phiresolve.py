@@ -47,8 +47,6 @@ class PHICondResolver(object):
 
     def _divide_phi_to_mv(self, phi):
         for arg, pred in zip(phi.args, phi.block.preds):
-            if phi.var.symbol().typ.is_object():
-                continue
             self._insert_mv(phi.var.clone(), arg, pred)
         phi.block.stms.remove(phi)
 

@@ -555,6 +555,8 @@ class DFGBuilder(object):
                 return True
             elif stm.src.is_a(NEW):
                 return True
+            elif stm.src.is_a(SYSCALL) and stm.src.sym.name == '$new':
+                return True
         elif stm.is_a(EXPR):
             if stm.exp.is_a([CALL, SYSCALL]):
                 call = stm.exp

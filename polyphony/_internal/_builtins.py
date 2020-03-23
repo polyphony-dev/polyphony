@@ -44,3 +44,7 @@ def len() -> int:
 
 def _assert(expr:bool) -> None:
     pass
+
+
+def _new(typ):
+    pass
