@@ -369,10 +369,16 @@ class AliasReplacer(CopyOpt):
                     if ir.attr.typ.is_object():
                         if ir.qualified_symbol() == qsym:
                             vars.append(ir)
+                    elif ir.attr.typ.is_seq():
+                        if ir.qualified_symbol() == qsym:
+                            vars.append(ir)
                     elif ir.exp.qualified_symbol() == qsym:
                         vars.append(ir.exp)
                 elif ir.is_a(TEMP) and len(qsym) == 1:
                     if ir.sym.typ.is_object():
+                        if ir.sym == qsym[0]:
+                            vars.append(ir)
+                    elif ir.sym.typ.is_seq():
                         if ir.sym == qsym[0]:
                             vars.append(ir)
                 else:
@@ -394,18 +400,16 @@ class AliasDefCollector(IRVisitor):
             return False
         if not mov.src.is_a([TEMP, ATTR]):
             return False
-        if not mov.src.symbol().typ.is_object():
-            return False
-        if mov.src.symbol().typ.get_scope().is_port():
-            return False
         if not mov.dst.is_a([TEMP, ATTR]):
-            return False
-        if not mov.dst.symbol().typ.is_object():
             return False
         if (mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and
                 mov.dst.tail().typ.get_scope().is_module()):
             return False
-        return True
+        if mov.src.symbol().typ.is_object() and mov.dst.symbol().typ.is_object():
+            return True
+        if mov.src.symbol().typ.is_seq() and mov.dst.symbol().typ.is_seq():
+            return True
+        return False
 
     def visit_MOVE(self, ir):
         if not self._is_alias_def(ir):

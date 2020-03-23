@@ -530,6 +530,8 @@ class AHDLTranslator(IRVisitor):
         elif ir.sym.name == 'len':
             return self.translate_builtin_len(ir)
         elif ir.sym.name == '$new':
+            _, arg = ir.args[0]
+            self.visit(arg)
             return AHDL_CONST(self.current_stm.dst.symbol().id)
         elif ir.sym.name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
@@ -843,11 +845,8 @@ class AHDLTranslator(IRVisitor):
 
     def visit_PHI(self, ir):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
-        if ir.var.symbol().typ.is_seq():
-            self._emit_reg_array_mux(ir)
-        else:
-            ahdl_dst, if_exp = self._make_scalar_mux(ir)
-            self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
+        ahdl_dst, if_exp = self._make_scalar_mux(ir)
+        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
 
     def _emit_call_sequence(self, ahdl_call, dst, sched_time):
         assert ahdl_call.is_a(AHDL_MODULECALL)
@@ -895,59 +894,6 @@ class AHDLTranslator(IRVisitor):
             if_exp = AHDL_IF_EXP(cond, lexp, rexp)
             rexp = if_exp
         return ahdl_dst, if_exp
-
-    def _emit_reg_array_mux(self, ir):
-        ahdl_var = self.visit(ir.var)
-        arg_p = list(zip(ir.args, ir.ps))
-        length = ir.var.symbol().typ.get_length()
-        for i in range(length):
-            rexp, cond = arg_p[-1]
-            cond = self.visit(cond)
-            ahdl_dst = AHDL_SUBSCRIPT(ahdl_var, AHDL_CONST(i))
-            if cond.is_a(CONST) and cond.value:
-                rexp_var = self.visit(rexp)
-                if i >= length:
-                    rexp = AHDL_SYMBOL("'bz")
-                else:
-                    rexp = AHDL_SUBSCRIPT(rexp_var, AHDL_CONST(i))
-            else:
-                lexp_var = self.visit(rexp)
-                if i >= length:
-                    rexp = AHDL_SYMBOL("'bz")
-                else:
-                    lexp = AHDL_SUBSCRIPT(lexp_var, AHDL_CONST(i))
-                    rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
-            for arg, p in arg_p[-2::-1]:
-                lexp_var = self.visit(arg)
-                if i >= length:
-                    if_exp = rexp
-                else:
-                    lexp = AHDL_SUBSCRIPT(lexp_var, AHDL_CONST(i))
-                    cond = self.visit(p)
-                    if_exp = AHDL_IF_EXP(cond, lexp, rexp)
-                rexp = if_exp
-            self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
-
-        var_len = f'{ir.var.symbol().hdl_name()}_len'
-        vlen = AHDL_SYMBOL(var_len)
-
-        rexp, cond = arg_p[-1]
-        cond = self.visit(cond)
-        ahdl_dst = vlen
-        if cond.is_a(CONST) and cond.value:
-            rexp_str = f'{rexp.symbol().hdl_name()}_len'
-            rexp = AHDL_SYMBOL(rexp_str)
-        else:
-            lexp_str = f'{rexp.symbol().hdl_name()}_len'
-            lexp = AHDL_SYMBOL(lexp_str)
-            rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
-        for arg, p in arg_p[-2::-1]:
-            lexp_str = f'{arg.symbol().hdl_name()}_len'
-            lexp = AHDL_SYMBOL(lexp_str)
-            cond = self.visit(p)
-            if_exp = AHDL_IF_EXP(cond, lexp, rexp)
-            rexp = if_exp
-        self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
 
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
