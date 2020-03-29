@@ -231,6 +231,8 @@ class ConstantOptBase(IRVisitor):
 
     def _process_unconditional_jump(self, cjump, worklist, conds=None):
         blk = cjump.block
+        if not blk.preds and self.scope.entry_block is not blk:
+            return
         logger.debug('unconditional block {}'.format(blk.name))
 
         if cjump.is_a(CJUMP):
@@ -245,13 +247,19 @@ class ConstantOptBase(IRVisitor):
             true_blk = cjump.targets[idx]
             false_blks = cjump.targets[:idx] + cjump.targets[idx + 1:]
         for false_blk in false_blks:
-            if true_blk is not false_blks:
+            if true_blk is not false_blk:
                 if false_blk.preds:
+                    idx = false_blk.preds.index(blk)
                     false_blk.remove_pred(blk)
+                    phis = false_blk.collect_stms([PHI, LPHI])
+                    for phi in phis:
+                        phi.args.pop(idx)
+                        phi.ps.pop(idx)
                 blk.remove_succ(false_blk)
                 if self.scope.exit_block is false_blk and not false_blk.preds:
                     self.scope.exit_block = blk
-                if (not [p for p in false_blk.preds if p not in false_blk.preds_loop] and
+                preds = [p for p in false_blk.preds if p not in false_blk.preds_loop]
+                if (not preds and
                         self.dtree.is_child(blk, false_blk)):
                     self._remove_dominated_branch(false_blk, worklist)
         jump = JUMP(true_blk)
@@ -259,6 +267,10 @@ class ConstantOptBase(IRVisitor):
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
             worklist.remove(cjump)
+        # Branch to a single block
+        # in case the destination block is the same(true_blk is false_blk)
+        true_blk.preds = [blk]
+        blk.succs = [true_blk]
 
 
 class ConstantOpt(ConstantOptBase):
@@ -280,10 +292,6 @@ class ConstantOpt(ConstantOptBase):
             stm = self.worklist.popleft()
             while stm in self.worklist:
                 self.worklist.remove(stm)
-            # Note: stm has no block if stm is used as type expr
-            if stm.block and not stm.block.preds and stm.block is not self.scope.entry_block:
-                logger.debug(f'skip stm in unreachble block {stm}')
-                continue
             self.current_stm = stm
             self.visit(stm)
             if stm.is_a(PHIBase):
@@ -307,7 +315,6 @@ class ConstantOpt(ConstantOptBase):
                         idx = stm.ps.index(p)
                         stm.ps.pop(idx)
                         stm.args.pop(idx)
-                assert len(stm.args) >= 1, f'{stm.block.name} is unreachble'
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = stm.block
@@ -315,6 +322,9 @@ class ConstantOpt(ConstantOptBase):
                     blk.insert_stm(blk.stms.index(stm), mv)
                     self.udupdater.update(stm, mv)
                     self.worklist.append(mv)
+                    dead_stms.append(stm)
+                elif len(stm.args) == 0:
+                    # the stm in unreachble block
                     dead_stms.append(stm)
             elif stm.is_a([CMOVE, CEXPR]):
                 stm.cond = reduce_relexp(stm.cond)
