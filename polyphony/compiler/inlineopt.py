@@ -67,7 +67,7 @@ class InlineOpt(object):
             sym_replacer = SymbolReplacer(symbol_map)
             sym_replacer.process(caller, callee_entry_blk)
 
-            self._merge_blocks(call_stm, callee_entry_blk, callee_exit_blk)
+            self._merge_blocks(call_stm, False, callee_entry_blk, callee_exit_blk)
 
             if call_stm.is_a(EXPR):
                 call_stm.block.stms.remove(call_stm)
@@ -134,7 +134,7 @@ class InlineOpt(object):
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
             sym_replacer.process(caller, callee_entry_blk)
 
-            self._merge_blocks(call_stm, callee_entry_blk, callee_exit_blk)
+            self._merge_blocks(call_stm, callee.is_ctor(), callee_entry_blk, callee_exit_blk)
 
             if callee.is_ctor():
                 assert call_stm.src is call
@@ -186,7 +186,7 @@ class InlineOpt(object):
                 assert False
         return symbol_map
 
-    def _merge_blocks(self, call_stm, callee_entry_blk, callee_exit_blk):
+    def _merge_blocks(self, call_stm, is_ctor, callee_entry_blk, callee_exit_blk):
         caller_scope = call_stm.block.scope
         early_call_blk = call_stm.block
         late_call_blk  = Block(caller_scope)
@@ -197,7 +197,9 @@ class InlineOpt(object):
             succ.replace_pred(early_call_blk, late_call_blk)
             succ.replace_pred_loop(early_call_blk, late_call_blk)
 
-        idx = early_call_blk.stms.index(call_stm) + 1
+        idx = early_call_blk.stms.index(call_stm)
+        if is_ctor:
+            idx += 1
         late_call_blk.stms = early_call_blk.stms[idx:]
         for s in late_call_blk.stms:
             s.block = late_call_blk
