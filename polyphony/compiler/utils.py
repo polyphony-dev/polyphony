@@ -60,3 +60,13 @@ def id2str(idnum):
         tmp = tmp // 36
         s += _36chars[i]
     return s[::-1]
+
+
+def find_nth_item_index(items, target, nth):
+    found = 0
+    for i, item in enumerate(items):
+        if item == target:
+            if found == nth:
+                return i
+            found += 1
+    return -1

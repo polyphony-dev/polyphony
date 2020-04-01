@@ -1,4 +1,4 @@
-﻿from collections import deque
+﻿from collections import deque, defaultdict
 from .block import Block
 from .common import fail
 from .dominator import DominatorTreeBuilder
@@ -228,7 +228,6 @@ class ConstantOptBase(IRVisitor):
                 elif succ is not self.scope.entry_block:
                     self._remove_dominated_branch(succ, worklist)
 
-
     def _process_unconditional_jump(self, cjump, worklist, conds=None):
         blk = cjump.block
         if not blk.preds and self.scope.entry_block is not blk:
@@ -237,40 +236,49 @@ class ConstantOptBase(IRVisitor):
 
         if cjump.is_a(CJUMP):
             if cjump.exp.value:
-                true_blk = cjump.true
-                false_blks = [cjump.false]
+                true_idx = 0
             else:
-                true_blk = cjump.false
-                false_blks = [cjump.true]
+                true_idx = 1
+            targets = [cjump.true, cjump.false]
         else:
-            idx = conds.index(1)
-            true_blk = cjump.targets[idx]
-            false_blks = cjump.targets[:idx] + cjump.targets[idx + 1:]
-        for false_blk in false_blks:
-            if true_blk is not false_blk:
-                if false_blk.preds:
-                    idx = false_blk.preds.index(blk)
-                    false_blk.remove_pred(blk)
-                    phis = false_blk.collect_stms([PHI, LPHI])
-                    for phi in phis:
-                        phi.args.pop(idx)
-                        phi.ps.pop(idx)
-                blk.remove_succ(false_blk)
-                if self.scope.exit_block is false_blk and not false_blk.preds:
-                    self.scope.exit_block = blk
-                preds = [p for p in false_blk.preds if p not in false_blk.preds_loop]
-                if (not preds and
-                        self.dtree.is_child(blk, false_blk)):
-                    self._remove_dominated_branch(false_blk, worklist)
+            true_idx = conds.index(1)
+            targets = cjump.targets[:]
+
+        counts = defaultdict(int)
+        targets_with_count = []
+        for tgt in targets:
+            targets_with_count.append((tgt, counts[tgt]))
+            counts[tgt] += 1
+        true_blk, true_i = targets_with_count[true_idx]
+        targets_with_count = targets_with_count[:true_idx] + targets_with_count[true_idx + 1:]
+        # It is necessary to reverse the order of the loop
+        # to avoid breaking blk_i
+        for false_blk, blk_i in reversed(targets_with_count):
+            if false_blk.preds:
+                idx = find_nth_item_index(false_blk.preds, blk, blk_i)
+                assert idx >= 0
+                false_blk.preds.pop(idx)
+                phis = false_blk.collect_stms([PHI, LPHI])
+                for phi in phis:
+                    phi.args.pop(idx)
+                    phi.ps.pop(idx)
+
+            idx = find_nth_item_index(blk.succs, false_blk, blk_i)
+            assert idx >= 0
+            blk.succs.pop(idx)
+            if self.scope.exit_block is false_blk and not false_blk.preds:
+                self.scope.exit_block = blk
+            preds = [p for p in false_blk.preds if p not in false_blk.preds_loop]
+            if (not preds and
+                    self.dtree.is_child(blk, false_blk)):
+                self._remove_dominated_branch(false_blk, worklist)
+
         jump = JUMP(true_blk)
         jump.loc = cjump.loc
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
             worklist.remove(cjump)
-        # Branch to a single block
-        # in case the destination block is the same(true_blk is false_blk)
-        true_blk.preds = [blk]
-        blk.succs = [true_blk]
+        logger.debug(self.scope)
 
 
 class ConstantOpt(ConstantOptBase):
