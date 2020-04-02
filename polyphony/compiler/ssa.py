@@ -353,7 +353,7 @@ class ScalarSSATransformer(SSATransformerBase):
         if (sym.is_condition() or
                 sym.is_param() or
                 sym.is_static() or
-                sym.is_flattened() or
+                #sym.is_flattened() or
                 sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
             return False
         if len(qsym) > 1:
@@ -458,39 +458,6 @@ class ListSSATransformer(SSATransformerBase):
         if scope.is_class() or scope.is_namespace():
             return
         super().process(scope)
-        self._process_use_phi()
-
-    def _process_use_phi(self):
-        usedef = self.scope.usedef
-        for blk in self.scope.traverse_blocks():
-            phis = blk.collect_stms(PHI)
-            for phi in phis:
-                uses = usedef.get_stms_using(phi.var.qualified_symbol())
-                for use in uses:
-                    self._insert_use_phi(phi, use)
-
-    def _insert_use_phi(self, phi, use_stm):
-        insert_idx = use_stm.block.stms.index(use_stm)
-        use_mrefs = [ir for ir in use_stm.find_irs(MREF) if ir.mem.symbol().typ.is_list()]
-        qsym = phi.var.qualified_symbol()
-
-        for mref in use_mrefs:
-            if mref.mem.qualified_symbol() == qsym:
-                tmp = self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix,
-                                                         mref.mem.symbol().orig_name()))
-                var = TEMP(tmp, Ctx.STORE)
-                uphi = UPHI(var)
-                #assert False
-                uphi.ps = phi.ps[:]
-                for arg in phi.args:
-                    argmref = mref.clone()
-                    argmref.mem = arg.clone()
-                    uphi.args.append(argmref)
-                use_stm.block.insert_stm(insert_idx, uphi)
-            var = var.clone()
-            var.ctx = Ctx.LOAD
-            use_stm.replace(mref, var)
-        pass
 
     def _need_rename(self, sym, qsym):
         if sym.scope.is_namespace() or sym.scope.is_class():

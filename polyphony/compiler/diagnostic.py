@@ -45,7 +45,7 @@ class CFGChecker(object):
             assert blk in p.succs
 
         for p in blk.preds_loop:
-            assert p in blk.preds
+            assert p in blk.preds, f"{p.name} not in {blk.name}.preds"
             assert blk in p.succs_loop
 
     def _check_succs(self, blk):

@@ -40,6 +40,8 @@ class InlineOpt(object):
                 self._process_method(callee, scope, calls)
             else:
                 self._process_func(callee, scope, calls)
+            logger.debug(f"inlined {callee.name} on {scope.name}")
+            logger.debug(scope)
         self.dones.add(scope)
         if calls:
             self._reduce_useless_move(scope)
@@ -47,8 +49,8 @@ class InlineOpt(object):
     def _process_func(self, callee, caller, calls):
         if callee.is_testbench():
             return
-        if caller.is_testbench() and callee.is_function_module():
-            return
+        # if caller.is_testbench() and callee.is_function_module():
+        #    return
         for call, call_stm in calls:
             self.inline_counts += 1
             assert callee is call.func_scope()
