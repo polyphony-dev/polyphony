@@ -460,8 +460,6 @@ def constopt_pre_detectrom(driver, scope):
 
 def constopt(driver, scope):
     ConstantOpt().process(scope)
-    dumpscope(driver, scope)
-    checkcfg(driver, scope)
 
 
 def copyopt(driver, scope):
@@ -767,6 +765,8 @@ def compile_plan():
         #dbg(dumpmrg),
         #usedef,
         constopt,
+        usedef,
+        deadcode,
         dbg(dumpscope),
         pure(execpureall),
         phase(env.PHASE_3),
@@ -781,6 +781,8 @@ def compile_plan():
         dbg(dumpscope),
         usedef,
         copyopt,
+        usedef,
+        constopt,
         usedef,
         deadcode,
         dbg(dumpscope),

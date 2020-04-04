@@ -285,6 +285,8 @@ class TypePropagation(IRVisitor):
             t = Type.list(item_t, length)
         else:
             t = Type.tuple(item_t, length)
+        if self.scope.is_global():
+            t.set_ro(True)
         return t
 
         t = self._seq_type_from_array(ir, item_t)

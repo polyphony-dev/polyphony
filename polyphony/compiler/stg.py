@@ -624,7 +624,10 @@ class AHDLTranslator(IRVisitor):
         offset = self.visit(ir.offset)
         memvar = self.visit(ir.mem)
         typ = ir.mem.symbol().typ
-        return AHDL_SUBSCRIPT(memvar, offset)
+        if typ.is_list() and typ.get_ro():
+            return AHDL_FUNCALL(memvar, [offset])
+        else:
+            return AHDL_SUBSCRIPT(memvar, offset)
 
     def visit_MSTORE(self, ir):
         offset = self.visit(ir.offset)

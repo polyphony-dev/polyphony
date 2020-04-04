@@ -92,54 +92,26 @@ class HDLModuleBuilder(object):
         self.hdlmodule.add_accessor(acc.acc_name, acc)
 
     def _add_roms(self, memsigs):
-        pass
-        # roms = [sig for sig in memsigs if sig.sym.typ.get_ro()]
-        # while roms:
-        #     output_sig = roms.pop()
-        #     if not output_sig:
-        #         # In this case memnode is not used at all
-        #         # so we do not declare rom function
-        #         continue
-        #     fname = AHDL_VAR(output_sig, Ctx.STORE)
-        #     addr_width = 8  # TODO
-        #     input_sig = self.hdlmodule.gen_sig(output_sig.name + '_in', addr_width)
-        #     input = AHDL_VAR(input_sig, Ctx.LOAD)
+        roms = [sig for sig in memsigs if sig.sym.typ.is_list() and sig.sym.typ.get_ro()]
+        while roms:
+            output_sig = roms.pop()
+            fname = AHDL_VAR(output_sig, Ctx.STORE)
+            addr_width = 8  # TODO
+            input_sig = self.hdlmodule.gen_sig(output_sig.name + '_in', addr_width)
+            input = AHDL_VAR(input_sig, Ctx.LOAD)
 
-        #     source = memnode.single_source()
-        #     if source:
-        #         array = source.initstm.src
-        #         case_items = []
-        #         for i, item in enumerate(array.items):
-        #             assert item.is_a(CONST)
-        #             connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, AHDL_CONST(item.value))])
-        #             case_items.append(AHDL_CASE_ITEM(i, connect))
-        #         case = AHDL_CASE(input, case_items)
-        #         rom_func = AHDL_FUNCTION(fname, [input], [case])
-        #     else:
-        #         cs_name = output_sig.name + '_cs'
-        #         cs_sig = self.hdlmodule.signal(cs_name)
-        #         assert cs_sig
-        #         cs = AHDL_VAR(cs_sig, Ctx.LOAD)
-
-        #         case_items = []
-        #         n2o = memnode.pred_branch()
-        #         for i, pred in enumerate(n2o.preds):
-        #             pred_root = mrg.find_nearest_single_source(pred)
-        #             assert len(pred_root.succs) == 1
-        #             for romsrc in pred_root.succs[0].succs:
-        #                 if romsrc.is_sink():
-        #                     break
-        #             else:
-        #                 assert False
-        #             roms.append(romsrc)
-        #             rom_func_name = romsrc.sym.hdl_name()
-        #             call = AHDL_FUNCALL(AHDL_SYMBOL(rom_func_name), [input])
-        #             connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, call)])
-        #             case_val = '{}[{}]'.format(cs_name, i)
-        #             case_items.append(AHDL_CASE_ITEM(case_val, connect))
-        #         case = AHDL_CASE(AHDL_SYMBOL('1\'b1'), case_items)
-        #         rom_func = AHDL_FUNCTION(fname, [input, cs], [case])
-        #     self.hdlmodule.add_function(rom_func)
+            defstms = output_sig.sym.scope.usedef.get_stms_defining(output_sig.sym)
+            assert len(defstms) == 1
+            defstm = list(defstms)[0]
+            array = defstm.src
+            case_items = []
+            for i, item in enumerate(array.items):
+                assert item.is_a(CONST)
+                connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, AHDL_CONST(item.value))])
+                case_items.append(AHDL_CASE_ITEM(i, connect))
+            case = AHDL_CASE(input, case_items)
+            rom_func = AHDL_FUNCTION(fname, [input], [case])
+            self.hdlmodule.add_function(rom_func)
 
     def _collect_vars(self, fsm):
         outputs = set()
