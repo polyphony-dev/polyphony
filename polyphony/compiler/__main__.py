@@ -39,8 +39,6 @@ from .loopdetector import LoopInfoSetter
 from .loopdetector import LoopRegionSetter
 from .loopdetector import LoopDependencyDetector
 from .looptransformer import LoopFlatten
-#from .memorytransform import RomDetector
-#from .memref import MemRefGraphBuilder, MemInstanceGraphBuilder
 from .objtransform import ObjectTransformer
 from .phiopt import PHIInlining
 from .phiresolve import PHICondResolver
@@ -56,7 +54,6 @@ from .scheduler import Scheduler
 from .scope import Scope
 from .scopegraph import CallGraphBuilder
 from .scopegraph import DependencyGraphBuilder
-from .selectorbuilder import SelectorBuilder
 from .setlineno import SourceDump
 from .ssa import ScalarSSATransformer
 from .ssa import TupleSSATransformer
@@ -250,16 +247,6 @@ def scalarssa(driver, scope):
 
 def phi(driver, scope):
     PHICondResolver().process(scope)
-
-
-def memrefgraph(driver):
-    #MemRefGraphBuilder().process_all(driver)
-    pass
-
-
-def meminstgraph(driver, scope):
-    #MemInstanceGraphBuilder().process(scope)
-    pass
 
 
 def evaltype(driver, scope):
@@ -583,11 +570,6 @@ def buildmodule(driver, scope):
     modulebuilder.process(hdlmodule)
 
 
-def buildselector(driver, scope):
-    hdlmodule = env.hdlmodule(scope)
-    SelectorBuilder().process(hdlmodule)
-
-
 def ahdlusedef(driver, scope):
     hdlmodule = env.hdlmodule(scope)
     AHDLUseDefDetector().process(hdlmodule)
@@ -621,10 +603,6 @@ def dumpdfgimg(driver, scope):
 
 def dumpdependimg(driver):
     env.depend_graph.write_dot(f'depend_graph_{driver.stage}')
-
-
-def dumpmrg(driver, scope):
-    driver.logger.debug(str(env.memref_graph))
 
 
 def dumpdfg(driver, scope):
@@ -755,15 +733,6 @@ def compile_plan():
         phiopt,
         dbg(dumpscope),
         usedef,
-        #memrefgraph,
-        #dbg(dumpmrg),
-        #dbg(dumpscope),
-        #dumpcfgimg,
-        #constopt_pre_detectrom,
-        #dbg(dumpscope),
-        #detectrom,
-        #dbg(dumpmrg),
-        #usedef,
         constopt,
         usedef,
         deadcode,
@@ -813,8 +782,6 @@ def compile_plan():
         schedule,
         #dumpdfgimg,
         dbg(dumpsched),
-        meminstgraph,
-        dbg(dumpmrg),
         assertioncheck,
         filter_scope(is_hdlmodule_scope),
         phase(env.PHASE_GEN_HDL),
@@ -833,7 +800,6 @@ def compile_plan():
         dbg(dumpmodule),
         transformwait,
         dbg(dumpmodule),
-        buildselector,
         genhdl,
         dbg(dumphdl),
         dbg(printresouces),

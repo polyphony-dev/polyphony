@@ -53,7 +53,6 @@ class Env(object):
         self.compile_phase = 0
         self.logfiles = {}
         self.using_libs = set()
-        self.memref_graph = None
         self.scope_file_map = {}
         self.current_filename = None
         self.testbenches = []

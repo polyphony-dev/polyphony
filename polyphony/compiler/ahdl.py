@@ -1,6 +1,5 @@
 ﻿from .signal import Signal
 from .ir import Ctx
-from .memref import MemRefNode, MemParamNode
 from .utils import is_a
 
 PYTHON_OP_2_HDL_OP_MAP = {

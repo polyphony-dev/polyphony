@@ -6,7 +6,6 @@ from .block import Block
 from .env import env
 from .ir import *
 from .irvisitor import IRVisitor
-from .memref import *
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -404,7 +403,6 @@ class AHDLTranslator(IRVisitor):
         self.host = host
         self.scope = scope
         self.hdlmodule = env.hdlmodule(scope)
-        self.mrg = env.memref_graph
         self.scheduled_items = None
 
     def process_node(self, node):

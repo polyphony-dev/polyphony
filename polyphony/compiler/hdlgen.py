@@ -4,9 +4,7 @@ from .ir import Ctx, CONST
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .hdlmodule import FIFOModule
-from .hdlmemport import HDLMemPortMaker, HDLTuplePortMaker, HDLRegArrayPortMaker
 from .hdlinterface import *
-from .memref import *
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -192,17 +190,6 @@ class HDLModuleBuilder(object):
                     for stm in acc.reset_stms():
                         self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
 
-    def _add_mem_connections(self, scope):
-        return
-        # mrg = env.memref_graph
-        # HDLMemPortMaker(mrg.collect_ram(scope), scope, self.hdlmodule).make_port_all()
-        # for memnode in mrg.collect_immutable(scope):
-        #     if memnode.is_writable():
-        #         HDLTuplePortMaker(memnode, scope, self.hdlmodule).make_port()
-        # for memnode in mrg.collect_ram(scope):
-        #     if memnode.can_be_reg():
-        #         HDLRegArrayPortMaker(memnode, scope, self.hdlmodule).make_port()
-
     def _add_edge_detectors(self, fsm):
         edge_detectors = self._collect_special_decls(fsm)
         for sig, old, new in edge_detectors:
@@ -252,7 +239,6 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         self._add_input_interfaces(scope)
         self._add_output_interfaces(scope)
         self._add_internal_ports(locals)
-        self._add_mem_connections(scope)
         self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
@@ -321,7 +307,6 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         locals = defs.union(uses)
         self._add_state_register(fsm)
         self._add_internal_ports(locals)
-        self._add_mem_connections(scope)
         self._add_callee_submodules(scope)
         for sym, cp, _ in scope.params:
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
@@ -368,7 +353,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         locals = defs.union(uses)
         regs, nets = self._add_internal_ports(locals)
         self._add_state_register(fsm)
-        self._add_mem_connections(scope)
         self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)

@@ -5,8 +5,6 @@ from .ahdlvisitor import AHDLVisitor
 from .common import get_src_text
 from .env import env
 from .hdlinterface import *
-from .ir import Ctx
-from .memref import One2NMemNode, N2OneMemNode
 from .signal import Signal
 from .verilog_common import pyop2verilogop, is_verilog_keyword
 from logging import getLogger
@@ -18,7 +16,6 @@ class VerilogCodeGen(AHDLVisitor):
         self.codes = []
         self.indent = 0
         self.hdlmodule = hdlmodule
-        self.mrg = env.memref_graph
 
     def result(self):
         return ''.join(self.codes)
