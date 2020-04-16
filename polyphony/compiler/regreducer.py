@@ -20,7 +20,7 @@ class AliasVarDetector(IRVisitor):
         if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
             return
-        if sym.is_register() or sym.typ.is_seq() or sym.is_return() or sym.typ.is_port():
+        if sym.is_register() or sym.is_return() or sym.typ.is_port():
             return
         if sym.is_field():
             if self.scope.is_worker():
@@ -61,7 +61,8 @@ class AliasVarDetector(IRVisitor):
             else:
                 # TODO:
                 return
-
+        elif ir.src.is_a(ARRAY):
+            return
         stms = self.usedef.get_stms_defining(sym)
         if len(stms) > 1:
             return

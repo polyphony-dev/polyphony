@@ -378,7 +378,10 @@ def _tags_from_sym(sym):
         if di != 'inout':
             tags.add(di)
     elif sym.typ.is_object():
-        tags.add('reg')
+        if sym.is_alias():
+            tags.add('net')
+        else:
+            tags.add('reg')
 
     if sym.is_param() and sym.scope.is_function_module():
         tags.add('input')
