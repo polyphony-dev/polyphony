@@ -14,8 +14,7 @@ from .constopt import ConstantOpt
 from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
 from .constopt import PolyadConstantFolding
 from .constopt import StaticConstOpt
-from .copyopt import CopyOpt
-#from .copyopt import RomDetector
+from .copyopt import CopyOpt, ObjCopyOpt
 from .dataflow import DFGBuilder
 from .deadcode import DeadCodeEliminator
 from .diagnostic import CFGChecker
@@ -27,7 +26,7 @@ from .hdlmodule import HDLModule
 from .iftransform import IfTransformer, IfCondTransformer
 from .inlineopt import InlineOpt
 from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
-from .inlineopt import AliasReplacer, ObjectHierarchyCopier
+from .inlineopt import ObjectHierarchyCopier
 from .inlineopt import SpecializeWorker
 from .instantiator import ModuleInstantiator, WorkerInstantiator
 from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
@@ -40,8 +39,7 @@ from .loopdetector import LoopRegionSetter
 from .loopdetector import LoopDependencyDetector
 from .looptransformer import LoopFlatten
 from .objtransform import ObjectTransformer
-from .phiopt import PHIInlining
-from .phiresolve import PHICondResolver
+from .phiopt import PHIInlining, LPHIRemover
 from .portconverter import PortConverter, FlattenPortList
 from .portconverter import FlippedTransformer
 from .portconverter import PortConnector
@@ -245,8 +243,8 @@ def scalarssa(driver, scope):
     ScalarSSATransformer().process(scope)
 
 
-def phi(driver, scope):
-    PHICondResolver().process(scope)
+def removelphi(driver, scope):
+    LPHIRemover().process(scope)
 
 
 def evaltype(driver, scope):
@@ -414,7 +412,7 @@ def objssa(driver, scope):
 
 def objcopyopt(driver, scope):
     usedef(driver, scope)
-    AliasReplacer().process(scope)
+    ObjCopyOpt().process(scope)
 
 
 def objtrans(driver, scope):
@@ -765,7 +763,7 @@ def compile_plan():
         dbg(dumpscope),
         pathexp,
         usedef,
-        phi,
+        removelphi,
         dbg(dumpscope),
         phase(env.PHASE_4),
         usedef,

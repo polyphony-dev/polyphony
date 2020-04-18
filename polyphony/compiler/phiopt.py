@@ -32,3 +32,29 @@ class PHIInlining(object):
                 phi.args = new_args
                 phi.ps = new_ps
                 logger.debug('new ' + str(phi))
+
+
+class LPHIRemover(object):
+    def process(self, scope):
+        self.scope = scope
+        for loop in scope.loop_tree.traverse():
+            lphis = loop.head.collect_stms(LPHI)
+            if not lphis:
+                continue
+            mstm = MSTM()
+            update_idx = loop.head.preds.index(loop.head.preds_loop[0])
+            init_idx = 1 - update_idx
+            for lphi in lphis:
+                assert len(lphi.args) == 2
+                lphi.block.stms.remove(lphi)
+
+                init_blk = lphi.block.preds[init_idx]
+                init_arg = lphi.args[init_idx]
+                mv = MOVE(lphi.var.clone(), init_arg, loc=Loc(lphi.loc.filename, 0))
+                init_blk.insert_stm(-1, mv)
+
+                update_arg = lphi.args[update_idx]
+                mv = MOVE(lphi.var.clone(), update_arg, loc=lphi.loc)
+                mstm.append(mv)
+                mv.block = loop.head.preds_loop[0]
+            loop.head.preds_loop[0].insert_stm(-1, mstm)

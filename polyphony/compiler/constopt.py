@@ -416,7 +416,7 @@ class ConstantOpt(ConstantOptBase):
     def visit_MREF(self, ir):
         if not ir.offset.is_a(CONST):
             return ir
-        if ir.mem.sym.scope.is_namespace() and ir.mem.sym.typ.is_seq():
+        if ir.mem.symbol().scope.is_namespace() and ir.mem.symbol().typ.is_seq():
             array = try_get_constant(ir.mem.qualified_symbol(), self.scope)
             if array:
                 c = array.items[ir.offset.value]

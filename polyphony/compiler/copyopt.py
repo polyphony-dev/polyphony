@@ -148,3 +148,71 @@ class CopyCollector(IRVisitor):
             typ = ir.src.symbol().typ
             if typ.is_object() and typ.get_scope().is_port():
                 self.copies.append(ir)
+
+
+class ObjCopyOpt(CopyOpt):
+    def _new_collector(self, copies):
+        return ObjCopyCollector(copies)
+
+    def __init__(self):
+        super().__init__()
+
+    def _find_old_use(self, ir, qsym):
+        vars = []
+
+        def find_vars_rec(ir, qsym, vars):
+            if isinstance(ir, IR):
+                if ir.is_a(ATTR):
+                    if ir.attr.typ.is_object():
+                        if ir.qualified_symbol() == qsym:
+                            vars.append(ir)
+                    elif ir.attr.typ.is_seq():
+                        if ir.qualified_symbol() == qsym:
+                            vars.append(ir)
+                    elif ir.exp.qualified_symbol() == qsym:
+                        vars.append(ir.exp)
+                elif ir.is_a(TEMP) and len(qsym) == 1:
+                    if ir.sym.typ.is_object():
+                        if ir.sym == qsym[0]:
+                            vars.append(ir)
+                    elif ir.sym.typ.is_seq():
+                        if ir.sym == qsym[0]:
+                            vars.append(ir)
+                else:
+                    for k, v in ir.__dict__.items():
+                        find_vars_rec(v, qsym, vars)
+            elif isinstance(ir, list) or isinstance(ir, tuple):
+                for elm in ir:
+                    find_vars_rec(elm, qsym, vars)
+        find_vars_rec(ir, qsym, vars)
+        return vars
+
+
+class ObjCopyCollector(IRVisitor):
+    def __init__(self, copies):
+        self.copies = copies
+
+    def _is_alias_def(self, mov):
+        if not mov.is_a(MOVE):
+            return False
+        if not mov.src.is_a([TEMP, ATTR]):
+            return False
+        if not mov.dst.is_a([TEMP, ATTR]):
+            return False
+        if (mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and
+                mov.dst.tail().typ.get_scope().is_module()):
+            return False
+        #if mov.src.symbol().is_induction() or mov.dst.symbol().is_induction():
+        #    return False
+        if mov.src.symbol().typ.is_object() and mov.dst.symbol().typ.is_object():
+            return True
+        if mov.src.symbol().typ.is_seq() and mov.dst.symbol().typ.is_seq():
+            return True
+        return False
+
+    def visit_MOVE(self, ir):
+        if not self._is_alias_def(ir):
+            return
+        if ir.src.symbol().is_param():
+            return
+        self.copies.append(ir)

@@ -660,6 +660,8 @@ class ATTR(IRExp):
         else:
             self.exp.sym = new_head
         return self
+
+
 class IRStm(IR):
     def __init__(self, loc):
         super().__init__()
@@ -670,11 +672,7 @@ class IRStm(IR):
         self.block = None
 
     def program_order(self):
-        for i, s in enumerate(self.block.stms):
-            if self is s:
-                return (self.block.order, i)
-        else:
-            assert False
+        return (self.block.order, self.block.stms.index(self))
 
     def kids(self):
         return []
@@ -961,4 +959,25 @@ class LPHI(PHIBase):
         lphi.args = phi.args[:]
         lphi.ps = [CONST(1)] * len(phi.ps)
         lphi.block = phi.block
+        lphi.loc = phi.loc
         return lphi
+
+
+class MSTM(IRStm):
+    def __init__(self, loc=None):
+        super().__init__(loc)
+        self.stms = []
+
+    def append(self, stm):
+        self.stms.append(stm)
+
+    def __str__(self):
+        return 'mstm{{{}}}'.format(', '.join([str(stm) for stm in self.stms]))
+
+    def __eq__(self, other):
+        if other is None or not isinstance(other, MSTM):
+            return False
+        return all([a == b for a, b in zip(self.stms, other.stms)])
+
+    def __hash__(self):
+        return super().__hash__()

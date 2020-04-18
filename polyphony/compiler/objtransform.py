@@ -57,6 +57,8 @@ class ObjectTransformer(object):
                 return copy_sources[sym.ancestor]
             else:
                 return None
+        if not defs:
+            return
         copy_sources = defaultdict(set)
         worklist = deque()
         for copy_sym, stm in copies.items():
@@ -80,6 +82,8 @@ class ObjectTransformer(object):
         self._transform_seq_ctor()
 
     def _transform_use(self, copies, copy_sources):
+        if not copy_sources:
+            return
         for copy_sym, copy_stm in copies.items():
             sources = copy_sources[copy_sym.ancestor]
             usestms = self.scope.usedef.get_stms_using(copy_sym).copy()

@@ -130,6 +130,12 @@ class IRVisitor(object):
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
 
+    def visit_MSTM(self, ir):
+        for stm in ir.stms:
+            method = 'visit_' + stm.__class__.__name__
+            visitor = getattr(self, method, None)
+            visitor(stm)
+
 
 class IRTransformer(IRVisitor):
     def __init__(self):
@@ -263,3 +269,11 @@ class IRTransformer(IRVisitor):
 
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
+
+    def visit_MSTM(self, ir):
+        for stm in ir.stms:
+            method = 'visit_' + stm.__class__.__name__
+            visitor = getattr(self, method, None)
+            visitor(stm)
+            self.new_stms.pop()
+        self.new_stms.append(ir)
