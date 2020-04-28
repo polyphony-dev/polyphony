@@ -416,7 +416,7 @@ class ConstantOpt(ConstantOptBase):
     def visit_MREF(self, ir):
         if not ir.offset.is_a(CONST):
             return ir
-        if ir.mem.symbol().scope.is_namespace() and ir.mem.symbol().typ.is_seq():
+        if ir.mem.symbol().scope.is_containable() and ir.mem.symbol().typ.is_seq():
             array = try_get_constant(ir.mem.qualified_symbol(), self.scope)
             if array:
                 c = array.items[ir.offset.value]
@@ -427,7 +427,7 @@ class ConstantOpt(ConstantOptBase):
 
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
+        if ir.sym.scope.is_containable() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
                 return c
@@ -494,7 +494,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
             self._process_unconditional_jump(ir, [])
 
     def visit_TEMP(self, ir):
-        if ir.sym.scope.is_namespace() and ir.sym.typ.is_scalar():
+        if ir.sym.scope.is_containable() and ir.sym.typ.is_scalar():
             c = try_get_constant(ir.qualified_symbol(), self.scope)
             if c:
                 return c
