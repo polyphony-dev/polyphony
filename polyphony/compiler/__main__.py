@@ -404,6 +404,7 @@ def flattenmodule(driver, scope):
 def objssa(driver, scope):
     TupleSSATransformer().process(scope)
     earlyquadruple(driver, scope)
+    usedef(driver, scope)
     ListSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
     usedef(driver, scope)

@@ -243,7 +243,7 @@ class POLYOP(IRExp):
 def replace_args(args, old, new):
     ret = False
     for i, (name, arg) in enumerate(args):
-        if arg is old:
+        if arg == old:
             args[i] = (name, new)
             ret = True
         if arg.replace(old, new):
@@ -619,8 +619,7 @@ class ATTR(IRExp):
             return False
         return (self.exp == other.exp and
                 self.attr is other.attr and
-                self.ctx == other.ctx and
-                self.attr_scope is other.attr_scope)
+                self.ctx == other.ctx)
 
     def __hash__(self):
         return super().__hash__()

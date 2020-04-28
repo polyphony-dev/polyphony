@@ -151,6 +151,12 @@ class UseDefTable(object):
 
     def get_qsyms_defined_at(self, key):
         if isinstance(key, IRStm):
+            return set([v.qualified_symbol() for v in self._def_stm2var[key]])
+        elif isinstance(key, Block):
+            return set([v.qualified_symbol() for v in self._def_blk2var[key]])
+
+    def get_qsyms_used_at(self, key):
+        if isinstance(key, IRStm):
             return set([v.qualified_symbol() for v in self._use_stm2var[key]])
         elif isinstance(key, Block):
             return set([v.qualified_symbol() for v in self._use_blk2var[key]])
