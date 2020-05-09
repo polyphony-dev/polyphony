@@ -90,7 +90,21 @@ class HDLModuleBuilder(object):
         self.hdlmodule.add_accessor(acc.acc_name, acc)
 
     def _add_roms(self, memsigs):
-        roms = [sig for sig in memsigs if sig.sym.typ.is_list() and sig.sym.typ.get_ro()]
+        def find_defstm(symbol):
+            # use ancestor if it is imported symbol
+            if symbol.scope.is_containable() and symbol.is_inherited():
+                symbol = symbol.ancestor
+            defstms = symbol.scope.field_usedef.get_stms_defining(symbol)
+            assert len(defstms) == 1
+            return list(defstms)[0]
+
+        roms = []
+        for sig in memsigs:
+            if not sig.sym.scope.is_containable():
+                continue
+            typ = sig.sym.typ
+            if typ.is_tuple() or typ.is_list() and typ.get_ro():
+                roms.append(sig)
         while roms:
             output_sig = roms.pop()
             fname = AHDL_VAR(output_sig, Ctx.STORE)
@@ -98,9 +112,7 @@ class HDLModuleBuilder(object):
             input_sig = self.hdlmodule.gen_sig(output_sig.name + '_in', addr_width)
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
-            defstms = output_sig.sym.scope.usedef.get_stms_defining(output_sig.sym)
-            assert len(defstms) == 1
-            defstm = list(defstms)[0]
+            defstm = find_defstm(output_sig.sym)
             array = defstm.src
             case_items = []
             for i, item in enumerate(array.items):
@@ -381,12 +393,8 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
                 #for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):
                 for sym in self.hdlmodule.scope.symbols.values():
-                    if not sym.typ.is_list():
+                    if not sym.typ.is_list() or sym.typ.get_ro():
                         continue
-                    #assert memnode.can_be_reg()
-                    #name = memnode.name()
-                    #width = memnode.data_width()
-                    #length = memnode.length
                     name = sym.hdl_name()
                     width = sym.typ.get_element().get_width()
                     length = sym.typ.get_length()

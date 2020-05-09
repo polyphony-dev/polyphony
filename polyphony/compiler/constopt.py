@@ -408,8 +408,10 @@ class ConstantOpt(ConstantOptBase):
             _, mem = ir.args[0]
             memsym = mem.symbol()
             assert memsym.typ.is_seq()
-            length = memsym.typ.get_length()
-            if length > 0:
+            array = try_get_constant(mem.qualified_symbol(), self.scope)
+            if array and array.repeat.is_a(CONST):
+                length = array.repeat.value * len(array.items)
+                array.sym.typ.set_length(length)
                 return CONST(length)
         return self.visit_CALL(ir)
 
@@ -521,23 +523,6 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
                 if c:
                     return c
         return ir
-
-
-class ConstantOptPreDetectROM(ConstantOpt):
-    def __init__(self):
-        super().__init__()
-
-    def visit_SYSCALL(self, ir):
-        return self.visit_CALL(ir)
-
-    def visit_MREF(self, ir):
-        ir.offset = self.visit(ir.offset)
-        return ir
-
-    def visit_PHI(self, ir):
-        super().visit_PHI(ir)
-        for i, arg in enumerate(ir.args):
-            ir.args[i] = self.visit(arg)
 
 
 class PolyadConstantFolding(object):
@@ -679,20 +664,8 @@ class StaticConstOpt(ConstantOptBase):
                 self.constant_table[ir.dst.sym] = src
             elif src.is_a(ARRAY):
                 self.constant_array_table[ir.dst.sym] = src
+                #if src.repeat.is_a(CONST):
+                #    length = src.repeat.value * len(src.items)
+                #    src.sym.typ.set_length(length)
+                #    ir.dst.sym.typ = src.sym.typ.clone()
         ir.src = src
-
-
-# from .typecheck import TypePropagation
-
-
-# class RomDetector(TypePropagation):
-#     def visit_ARRAY(self, ir):
-#         if all(item.is_a(CONST) for item in ir.items):
-#             ir.sym.typ.set_ro(True)
-#         return ir.sym.typ
-
-#     def visit_MOVE(self, ir):
-#         # Do not overwrite other than the seq type
-#         src_typ = self.visit(ir.src)
-#         if ir.dst.is_a([TEMP, ATTR]) and ir.dst.symbol().typ.is_seq():
-#             self._set_type(ir.dst.symbol(), src_typ.clone())

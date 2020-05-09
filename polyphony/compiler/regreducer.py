@@ -59,8 +59,9 @@ class AliasVarDetector(IRVisitor):
             if sched == 'timed':
                 pass
             else:
-                # TODO:
-                return
+                typ = ir.src.mem.symbol().typ
+                if typ.is_list() and not typ.get_ro():
+                    return
         elif ir.src.is_a(ARRAY):
             return
         stms = self.usedef.get_stms_defining(sym)

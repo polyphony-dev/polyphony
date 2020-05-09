@@ -155,15 +155,7 @@ class TypePropagation(IRVisitor):
                        [repr(ir)])
 
     def visit_TEMP(self, ir):
-        if ir.sym.typ.is_undef() and ir.sym.is_static():
-            if ir.sym.ancestor:
-                if ir.sym.ancestor.typ.is_undef():
-                    self._add_scope(ir.sym.ancestor.scope)
-                    raise RejectPropagation(ir)
-                ir.sym.set_type(ir.sym.ancestor.typ.clone())
-            elif self.scope is not ir.sym.scope:
-                self._add_scope(ir.sym.scope)
-        elif ir.sym.typ.is_class() and ir.sym.typ.get_scope().is_typeclass():
+        if ir.sym.typ.is_class() and ir.sym.typ.get_scope().is_typeclass():
             t = Type.from_ir(ir)
             if t.is_object():
                 ir.sym.typ.set_scope(t.get_scope())
@@ -240,6 +232,7 @@ class TypePropagation(IRVisitor):
         mem_t = self.visit(ir.mem)
         if mem_t.is_undef():
             raise RejectPropagation(ir)
+        mem_t.set_ro(False)
         offs_t = self.visit(ir.offset)
         if not offs_t.is_int():
             type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
@@ -254,8 +247,6 @@ class TypePropagation(IRVisitor):
             self.visit(ir.repeat)
         if not ir.sym:
             ir.sym = self.scope.add_temp('@array')
-        if all(item.is_a(CONST) for item in ir.items):
-            ir.sym.typ.set_ro(True)
         item_t = None
         if self.current_stm.dst.is_a([TEMP, ATTR]):
             dsttyp = self.current_stm.dst.symbol().typ
@@ -276,7 +267,6 @@ class TypePropagation(IRVisitor):
                     item_t = item_typs[0]
             else:
                 assert False  # TODO:
-
         if self.is_strict and ir.repeat.is_a(CONST):
             length = len(ir.items) * ir.repeat.value
         else:
@@ -285,12 +275,9 @@ class TypePropagation(IRVisitor):
             t = Type.list(item_t, length)
         else:
             t = Type.tuple(item_t, length)
-        if self.scope.is_global():
+        if all(item.is_a(CONST) for item in ir.items):
             t.set_ro(True)
-        return t
-
-        t = self._seq_type_from_array(ir, item_t)
-        self._propagate(ir.sym, t)
+        ir.sym.set_type(t)
         return t
 
     def visit_EXPR(self, ir):
@@ -396,7 +383,7 @@ class TypePropagation(IRVisitor):
         sym.set_type(typ)
 
 
-class EarlyTypePropagation(TypePropagation):
+class TypeSpecializer(TypePropagation):
     def process_all(self):
         scopes = Scope.get_scopes(bottom_up=False,
                                   with_global=True,
@@ -702,6 +689,66 @@ class EarlyTypePropagation(TypePropagation):
             p.sym.set_type(new_t)
         new_scope.add_tag('specialized')
         return new_scope, True
+
+
+class StaticTypePropagation(TypePropagation):
+    def __init__(self, is_strict):
+        super().__init__(is_strict=is_strict)
+
+    def process_all(self):
+        scopes = Scope.get_scopes(bottom_up=True,
+                                  with_global=True,
+                                  with_class=True,
+                                  with_lib=True)
+        scopes = [s for s in scopes if (s.is_namespace() or s.is_class())]
+        self._process_scopes(scopes)
+
+    def _process_scopes(self, scopes):
+        stms = []
+        #dtrees = {}
+        worklist = deque(scopes)
+        while worklist:
+            s = worklist.popleft()
+            stms = self.collect_stms(s)
+            # FIXME: Since lineno is not essential information for IR,
+            #        It should not be used as sort key
+            stms = sorted(stms, key=lambda s: s.loc.lineno)
+            for stm in stms:
+                self.current_stm = stm
+                self.scope = stm.block.scope
+                try:
+                    self.visit(stm)
+                except RejectPropagation as r:
+                    worklist.append(s)
+                    break
+        for s in scopes:
+            for sym in s.symbols.values():
+                if sym.is_inherited() and sym.typ != sym.ancestor.typ:
+                    sym.set_type(sym.ancestor.typ.clone())
+
+    def collect_stms(self, scope):
+        stms = []
+        for blk in scope.traverse_blocks():
+            stms.extend(blk.stms)
+        return stms
+
+    def _add_scope(self, scope):
+        pass
+
+    def visit_CALL(self, ir):
+        if self.is_strict:
+            return super().visit_CALL(ir)
+        else:
+            self.visit(ir.func)
+            func_scope = ir.func_scope()
+            return func_scope.return_type
+
+    def visit_NEW(self, ir):
+        if self.is_strict:
+            return super().visit_NEW(ir)
+        else:
+            func_scope = ir.func_scope()
+            return Type.object(func_scope)
 
 
 class TypeReplacer(IRVisitor):
@@ -1164,15 +1211,15 @@ class TypeEvalVisitor(IRVisitor):
         return self.type_evaluator.visit(typ)
 
     def visit_TEMP(self, ir):
-        ir.sym.typ = self._eval(ir.sym.typ)
+        ir.sym.set_type( self._eval(ir.sym.typ))
 
     def visit_ATTR(self, ir):
         if not isinstance(ir.attr, str):
-            ir.attr.typ = self._eval(ir.attr.typ)
+            ir.attr.set_type(self._eval(ir.attr.typ))
 
     def visit_SYSCALL(self, ir):
-        ir.sym.typ = self._eval(ir.sym.typ)
+        ir.sym.set_type(self._eval(ir.sym.typ))
 
     def visit_ARRAY(self, ir):
         if ir.sym:
-            ir.sym.typ = self._eval(ir.sym.typ)
+            ir.sym.set_type(self._eval(ir.sym.typ))

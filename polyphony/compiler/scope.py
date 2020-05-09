@@ -188,7 +188,7 @@ class Scope(Tagged):
             s += "Scope: {} ({})\n".format(self.base_name, tags)
 
         for sym in self.symbols.values():
-            s += f'{sym.name} {sym.tags}\n'
+            s += f'{sym} {sym.tags}\n'
         #s += ", ".join([str(sym) for sym in self.symbols])
         #s += "\n"
         s += '================================\n'
@@ -596,7 +596,7 @@ class Scope(Tagged):
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
-            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym.typ.clone())
+            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym.typ.clone())
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:

@@ -361,8 +361,7 @@ def _signal_width(sym):
 def _tags_from_sym(sym):
     tags = set()
     if sym.typ.is_seq():
-        if sym.typ.is_list():
-            tags.add('memif')
+        tags.add('memif')
     elif sym.typ.is_int() or sym.typ.is_bool():
         if sym.typ.has_signed() and sym.typ.get_signed():
             tags.add('int')
@@ -625,7 +624,8 @@ class AHDLTranslator(IRVisitor):
         offset = self.visit(ir.offset)
         memvar = self.visit(ir.mem)
         typ = ir.mem.symbol().typ
-        if typ.is_list() and typ.get_ro():
+        # Only static class or global field can be hdl function
+        if ir.mem.symbol().scope.is_containable() and (typ.is_tuple() or typ.is_list() and typ.get_ro()):
             return AHDL_FUNCALL(memvar, [offset])
         else:
             return AHDL_SUBSCRIPT(memvar, offset)
@@ -660,8 +660,13 @@ class AHDLTranslator(IRVisitor):
         ir.items = [item.clone() for item in ir.items * ir.repeat.value]
 
         assert isinstance(self.current_stm, MOVE)
-        ahdl_memvar = self.visit(self.current_stm.dst)
-        self._build_mem_initialize_seq(ir, ahdl_memvar)
+        sym = self.current_stm.dst.symbol()
+        if sym.scope.is_containable() and (sym.typ.is_tuple() or sym.typ.is_list() and sym.typ.get_ro()):
+            # this array will be rom
+            pass
+        else:
+            ahdl_memvar = self.visit(self.current_stm.dst)
+            self._build_mem_initialize_seq(ir, ahdl_memvar)
 
     def visit_TEMP(self, ir):
         sym = ir.symbol()

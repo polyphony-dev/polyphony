@@ -11,7 +11,7 @@ from .cfgopt import BlockReducer, PathExpTracer
 from .cfgopt import HyperBlockBuilder
 from .common import read_source
 from .constopt import ConstantOpt
-from .constopt import ConstantOptPreDetectROM, EarlyConstantOptNonSSA
+from .constopt import EarlyConstantOptNonSSA
 from .constopt import PolyadConstantFolding
 from .constopt import StaticConstOpt
 from .copyopt import CopyOpt, ObjCopyOpt
@@ -61,8 +61,9 @@ from .statereducer import StateReducer
 from .stg import STGBuilder
 from .synth import DefaultSynthParamSetter
 from .typecheck import TypePropagation
-from .typecheck import EarlyTypePropagation
+from .typecheck import TypeSpecializer
 from .typecheck import InstanceTypePropagation
+from .typecheck import StaticTypePropagation
 from .typecheck import TypeChecker
 from .typecheck import PortAssignChecker
 from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
@@ -258,8 +259,8 @@ def earlytypeprop(driver):
         elif s.is_class():
             return True
         return False
-    typeprop = EarlyTypePropagation()
-    typed_scopes = typeprop.process_all()
+    StaticTypePropagation(is_strict=False).process_all()
+    typed_scopes = TypeSpecializer().process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
@@ -273,6 +274,10 @@ def earlytypeprop(driver):
 
 def typeprop(driver):
     TypePropagation().process_all()
+
+
+def statictypeprop(driver):
+    StaticTypePropagation(is_strict=True).process_all()
 
 
 def stricttypeprop(driver):
@@ -436,11 +441,6 @@ def staticconstopt(driver):
 
 def earlyconstopt_nonssa(driver, scope):
     EarlyConstantOptNonSSA().process(scope)
-    checkcfg(driver, scope)
-
-
-def constopt_pre_detectrom(driver, scope):
-    ConstantOptPreDetectROM().process(scope)
     checkcfg(driver, scope)
 
 
@@ -663,10 +663,12 @@ def compile_plan():
 
         filter_scope(is_static_scope),
         latequadruple,
+        dbg(dumpscope),
         earlyrestrictioncheck,
         staticconstopt,
         evaltype,
-        typeprop,
+
+        statictypeprop,
         dbg(dumpscope),
         typecheck,
         restrictioncheck,
