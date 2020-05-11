@@ -8,6 +8,7 @@ from .irvisitor import IRVisitor, IRTransformer
 from .ir import *
 from .irhelper import expr2ir, reduce_relexp
 from .irhelper import eval_unop, eval_binop, reduce_binop, eval_relop
+from .type import Type
 from .usedef import UseDefDetector
 from .usedef import UseDefUpdater
 from .utils import *
@@ -408,6 +409,8 @@ class ConstantOpt(ConstantOptBase):
             _, mem = ir.args[0]
             memsym = mem.symbol()
             assert memsym.typ.is_seq()
+            if memsym.typ.get_length() != Type.ANY_LENGTH:
+                return CONST(memsym.typ.get_length())
             array = try_get_constant(mem.qualified_symbol(), self.scope)
             if array and array.repeat.is_a(CONST):
                 length = array.repeat.value * len(array.items)

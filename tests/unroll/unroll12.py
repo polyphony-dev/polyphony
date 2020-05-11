@@ -18,7 +18,7 @@ def shift_2(xs:list, x):
 
 
 # For full unroll, the argument list must specify an explicit size.
-def unroll12_a(xs:List[int][6], a):
+def unroll12_a(xs:List[int][5], a):
     if a == 0:
         shift_full(xs, 0)
     elif a == 1:

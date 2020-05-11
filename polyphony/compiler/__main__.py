@@ -145,6 +145,8 @@ def scopegraph(driver):
     for s in unused_scopes:
         if s.is_namespace():
             continue
+        if s.is_builtin() and s.is_typeclass():
+            continue
         if s.name in env.scopes:
             driver.remove_scope(s)
             Scope.destroy(s)
