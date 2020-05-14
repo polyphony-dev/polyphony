@@ -11,7 +11,10 @@ class AliasVarDetector(IRVisitor):
         super().process(scope)
 
     def visit_CMOVE(self, ir):
-        return
+        assert ir.dst.is_a([TEMP, ATTR])
+        sym = ir.dst.symbol()
+        if sym.is_condition() or self.scope.is_comb():
+            sym.add_tag('alias')
 
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
