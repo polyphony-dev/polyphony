@@ -94,6 +94,10 @@ class HDLModuleBuilder(object):
             # use ancestor if it is imported symbol
             if symbol.scope.is_containable() and symbol.is_inherited():
                 symbol = symbol.ancestor
+            defstms = symbol.scope.usedef.get_stms_defining(symbol)
+            if defstms:
+                assert len(defstms) == 1
+                return list(defstms)[0]
             defstms = symbol.scope.field_usedef.get_stms_defining(symbol)
             assert len(defstms) == 1
             return list(defstms)[0]

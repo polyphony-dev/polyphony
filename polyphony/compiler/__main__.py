@@ -434,11 +434,7 @@ def scalarize(driver, scope):
 
 
 def staticconstopt(driver):
-    scopes = driver.get_scopes(bottom_up=True,
-                               with_global=True,
-                               with_class=True,
-                               with_lib=True)
-    StaticConstOpt().process_scopes(scopes)
+    StaticConstOpt().process_all(driver)
 
 
 def earlyconstopt_nonssa(driver, scope):
@@ -667,6 +663,7 @@ def compile_plan():
         latequadruple,
         dbg(dumpscope),
         earlyrestrictioncheck,
+        usedef,
         staticconstopt,
         evaltype,
 
