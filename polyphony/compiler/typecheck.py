@@ -1126,7 +1126,8 @@ class LateRestrictionChecker(IRVisitor):
             fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
 
     def visit_MSTORE(self, ir):
-        return
+        if ir.mem.symbol().is_static():
+            fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
 
     def visit_NEW(self, ir):
         if ir.func_scope().is_port():

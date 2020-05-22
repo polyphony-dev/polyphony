@@ -275,9 +275,9 @@ class Type(object):
                 return f'int{self.get_width()}'
             if self.name == 'list':
                 if self.has_length():
-                    return f'list<{self.get_element()}, {self.get_length()}>'
+                    return f'list<{self.get_element()}, {self.get_length()}, ro:{self.get_ro()}>'
                 else:
-                    return f'list<{self.get_element()}>'
+                    return f'list<{self.get_element()}, ro:{self.get_ro()}>'
             if self.name == 'tuple':
                 return f'tuple<{self.get_element()}, {self.get_length()}>'
             if self.name == 'port':
@@ -548,6 +548,7 @@ class Type(object):
                 assert cls.is_same(dst, src)
                 elm = cls.propagate(dst.get_element(), src.get_element())
                 new_dst.set_element(elm)
+                new_dst.set_ro(src.get_ro())
                 if dst.get_length() == Type.ANY_LENGTH:
                     new_dst.set_length(src.get_length())
             elif dst.is_tuple():

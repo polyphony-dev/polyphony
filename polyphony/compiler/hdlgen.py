@@ -199,12 +199,6 @@ class HDLModuleBuilder(object):
         local_readers = self.hdlmodule.local_readers.values()
         local_writers = self.hdlmodule.local_writers.values()
         accs = set(list(local_readers) + list(local_writers))
-        for acc in accs:
-            # reset local (SinglePort)RAM ports
-            if acc.inf.signal.is_memif():
-                if acc.inf.signal.sym.scope is fsm.scope:
-                    for stm in acc.reset_stms():
-                        self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
 
     def _add_edge_detectors(self, fsm):
         edge_detectors = self._collect_special_decls(fsm)
@@ -389,10 +383,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         fsms = list(self.hdlmodule.fsms.values())
         for fsm in fsms:
             if fsm.scope.is_ctor():
-                memsigs = []
-                for sig in self.hdlmodule.signals.values():
-                    if sig.sym.scope is self.hdlmodule.scope and sig.sym.typ.is_seq():
-                        memsigs.append(sig)
+                memsigs = [sig for sig in self.hdlmodule.signals.values() if sig.is_regarray() or sig.is_netarray()]
                 self._add_roms(memsigs)
 
                 #for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):

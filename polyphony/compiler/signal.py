@@ -9,7 +9,7 @@ class Signal(Tagged):
         'input', 'output', 'parameter',
         'extport',
         'statevar',
-        'field', 'ctrl', 'memif', 'onehot',
+        'field', 'ctrl', 'onehot',
         'single_port', 'pipelined',
         'initializable',
         'induction',

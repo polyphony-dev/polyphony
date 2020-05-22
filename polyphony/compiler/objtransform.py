@@ -31,6 +31,8 @@ class ObjectTransformer(object):
                     if typ.is_object():
                         if stm.src.is_a(SYSCALL) and stm.src.sym is builtin_symbols['$new']:
                             self.obj_defs.add(qsym[-1])
+                        elif stm.src.is_a(TEMP) and stm.src.sym.is_param():
+                            pass
                         else:
                             self.obj_copies[qsym] = stm
                     elif typ.is_seq():

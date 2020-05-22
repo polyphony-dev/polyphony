@@ -360,9 +360,7 @@ def _signal_width(sym):
 
 def _tags_from_sym(sym):
     tags = set()
-    if sym.typ.is_seq():
-        tags.add('memif')
-    elif sym.typ.is_int() or sym.typ.is_bool():
+    if sym.typ.is_int() or sym.typ.is_bool():
         if sym.typ.has_signed() and sym.typ.get_signed():
             tags.add('int')
         else:

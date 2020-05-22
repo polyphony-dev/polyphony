@@ -108,9 +108,6 @@ class Errors(Enum):
     RULE_TIMED_WHILE_LOOP_IS_NOT_ALLOWED = 1201
     RULE_TIMED_FOR_LOOP_IS_NOT_ALLOWED = 1202
 
-    # not supported yet
-    WRITING_ALIAS_REGARRAY = 9000
-
     def __str__(self):
         return ERROR_MESSAGES[self]
 
@@ -213,7 +210,6 @@ ERROR_MESSAGES = {
     Errors.RULE_TIMED_PORT_IS_OVERWRITTEN: "The port '{}' will be overwritten in the same clock cycle",
     Errors.RULE_TIMED_WHILE_LOOP_IS_NOT_ALLOWED: "While statement is not allowed in 'timed' scheduling",
     Errors.RULE_TIMED_FOR_LOOP_IS_NOT_ALLOWED: "Only polyphony.timing.clkrange() can be used at for-in statement in 'timed' scheduling",
-    Errors.WRITING_ALIAS_REGARRAY: "Writing to alias register array is not supported yet",
 }
 
 
