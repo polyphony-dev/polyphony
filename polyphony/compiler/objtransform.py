@@ -38,6 +38,8 @@ class ObjectTransformer(object):
                     elif typ.is_seq():
                         if stm.src.is_a(ARRAY):
                             self.seq_defs.add(qsym[-1])
+                        elif stm.src.is_a(TEMP) and stm.src.sym.is_param():
+                            pass
                         else:
                             self.seq_copies[qsym] = stm
                 elif stm.is_a(PHIBase):

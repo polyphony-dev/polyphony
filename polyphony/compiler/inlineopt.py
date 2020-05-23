@@ -49,8 +49,9 @@ class InlineOpt(object):
     def _process_func(self, callee, caller, calls):
         if callee.is_testbench():
             return
-        # if caller.is_testbench() and callee.is_function_module():
-        #    return
+        if not env.config.perfect_inlining:
+            if caller.is_testbench() and callee.is_function_module():
+                return
         for call, call_stm in calls:
             self.inline_counts += 1
             assert callee is call.func_scope()

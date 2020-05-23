@@ -63,8 +63,6 @@ c3d16 = 426
 c5d16 = 284
 c7d16 = 100
 
-# NOTE: you must modify env.internal_ram_threshold_size > 32*64
-
 
 def ChenIDct(x:list, y:list):
     '''

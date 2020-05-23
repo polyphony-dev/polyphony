@@ -103,25 +103,6 @@ class BitwidthReducer(AHDLVisitor):
         #if dst_sig.width > srcw:
         #    dst_sig.width = srcw
 
-    def visit_AHDL_STORE(self, ahdl):
-        pass
-
-    def visit_AHDL_LOAD(self, ahdl):
-        if ahdl.dst.is_a(AHDL_VAR):
-            dst_sig = ahdl.dst.sig
-        else:
-            return
-        if dst_sig.is_output():
-            return
-        stms = self.usedef.get_stms_defining(dst_sig)
-        if len(stms) > 1:
-            return
-        srcw = self.visit(ahdl.mem)
-        if srcw is None:
-            return
-        if dst_sig.width > srcw:
-            dst_sig.width = srcw
-
     def visit_AHDL_MODULECALL(self, ahdl):
         pass
 

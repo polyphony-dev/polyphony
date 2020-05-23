@@ -211,14 +211,6 @@ class HDLModule(object):
     def add_function(self, func, tag=''):
         self.add_decl(tag, func)
 
-    def add_mux(self, mux, tag=''):
-        assert isinstance(mux, AHDL_MUX)
-        self.add_decl(tag, mux)
-
-    def add_demux(self, demux, tag=''):
-        assert isinstance(demux, AHDL_DEMUX)
-        self.add_decl(tag, demux)
-
     def add_fsm(self, fsm_name, scope):
         self.fsms[fsm_name] = FSM(fsm_name, scope)
 
@@ -328,25 +320,3 @@ class HDLModule(object):
     def use_clock_time(self):
         if self.clock_signal is None:
             self.clock_signal = self.gen_sig(f'{self.name}_clktime', 64)
-
-
-class RAMModule(HDLModule):
-    def __init__(self, name, data_width, addr_width):
-        super().__init__(None, 'ram', 'BidirectionalSinglePortRam')
-        self.ramif = RAMModuleInterface('ram', data_width, addr_width)
-        self.add_interface('', self.ramif)
-        env.add_using_lib(libs.bidirectional_single_port_ram)
-
-
-class FIFOModule(HDLModule):
-    def __init__(self, signal):
-        super().__init__(None, 'fifo', 'FIFO')
-        self.inf = FIFOModuleInterface(signal)
-        maxsize = signal.maxsize
-        addr_width = (signal.maxsize - 1).bit_length() if maxsize > 1 else 1
-        data_width = signal.width
-        self.param_map = {'LENGTH': maxsize,
-                          'ADDR_WIDTH': addr_width,
-                          'DATA_WIDTH': data_width}
-        self.add_interface('', self.inf)
-        env.add_using_lib(libs.fifo)

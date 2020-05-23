@@ -6,8 +6,6 @@ from polyphony import rule, pipelined
 from sobel_filter import PipelinedStreamFilter as StreamFilter
 
 
-# NOTE: env.internal_ram_threshold_size = 0 is required for running this test.
-
 
 TEST_DATA_61x52:List[int12] = [
     141, 140, 137, 128, 126, 121, 119, 116, 113, 110, 114, 117, 114, 117, 124,

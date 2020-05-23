@@ -3,7 +3,6 @@ from .env import env
 from .ir import Ctx, CONST
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
-from .hdlmodule import FIFOModule
 from .hdlinterface import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -138,14 +137,6 @@ class HDLModuleBuilder(object):
                 collector.visit(state)
         return defs, uses, outputs, memnodes
 
-    def _collect_special_decls(self, fsm):
-        edge_detectors = set()
-        collector = AHDLSpecialDeclCollector(edge_detectors)
-        for stg in fsm.stgs:
-            for state in stg.states:
-                collector.visit(state)
-        return edge_detectors
-
     def _collect_moves(self, fsm):
         moves = []
         for stg in fsm.stgs:
@@ -200,25 +191,15 @@ class HDLModuleBuilder(object):
         local_writers = self.hdlmodule.local_writers.values()
         accs = set(list(local_readers) + list(local_writers))
 
-    def _add_edge_detectors(self, fsm):
-        edge_detectors = self._collect_special_decls(fsm)
-        for sig, old, new in edge_detectors:
-            self.hdlmodule.add_edge_detector(sig, old, new)
-
     def _add_sub_module_accessors(self):
         def is_acc_connected(sub, acc, hdlmodule):
-            if sub_module.name == 'ram' or sub_module.name == 'fifo':
-                return True
-            elif sub_module.scope.is_function_module():
+            if sub_module.scope.is_function_module():
                 return True
             elif acc.acc_name in hdlmodule.accessors:
                 return True
             return False
 
         for name, sub_module, connections, param_map in self.hdlmodule.sub_modules.values():
-            # TODO
-            if sub_module.name == 'fifo':
-                continue
             for conns in connections.values():
                 for inf, acc in conns:
                     if not is_acc_connected(sub_module, acc, self.hdlmodule):
@@ -265,29 +246,8 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                 sig_name = '{}_{}'.format(scope.base_name, sym.hdl_name())
                 sig = self.hdlmodule.signal(sig_name)
                 inf = SingleReadInterface(sig, sym.hdl_name(), scope.base_name)
-            elif sym.typ.is_list():
+            elif sym.typ.is_seq():
                 raise NotImplementedError()
-                name = sym.hdl_name()
-                width = sym.typ.get_element().get_width()
-                length = sym.typ.get_length()
-                addr_width = (length - 1).bit_length() + 1
-                sig = self.hdlmodule.gen_sig(name,
-                                             width,
-                                             sym=sym)
-                inf = RAMBridgeInterface(sig, name,
-                                         self.hdlmodule.name,
-                                         width,
-                                         addr_width)
-                self.hdlmodule.node2if[memnode] = inf
-            elif sym.typ.is_tuple():
-                name = sym.hdl_name()
-                width = sym.typ.get_element().get_width()
-                length = sym.typ.get_length()
-                #memnode = sym.typ.get_memnode()
-                inf = TupleInterface(name, # memnode.name(),
-                                     self.hdlmodule.name,
-                                     width, # memnode.data_width(),
-                                     length)  #memnode.length)
             else:
                 assert False
             self.hdlmodule.add_interface(inf.if_name, inf)
@@ -300,12 +260,6 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
             self.hdlmodule.add_interface(inf.if_name, inf)
         elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')
-
-
-def accessor2module(acc):
-    if isinstance(acc, FIFOWriteAccessor) or isinstance(acc, FIFOReadAccessor):
-        return FIFOModule(acc.inf.signal)
-    return None
 
 
 class HDLTestbenchBuilder(HDLModuleBuilder):
@@ -327,25 +281,8 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                     for name, v in sub_hdlmodule.scope.module_param_vars:
                         param_map[name] = v
                 self._add_submodule_instances(sub_hdlmodule, [cp.name], param_map=param_map)
-
-        # FIXME: FIFO should be in the @module class
-        for acc in self.hdlmodule.accessors.values():
-            acc_mod = accessor2module(acc)
-            if acc_mod:
-                connections = defaultdict(list)
-                for inf in acc_mod.interfaces.values():
-                    inf_acc = inf.accessor(acc.inst_name)
-                    if isinstance(inf, WriteInterface):
-                        connections['ret'].append((inf, inf_acc))
-                    else:
-                        connections[''].append((inf, inf_acc))
-                self.hdlmodule.add_sub_module(inf_acc.acc_name,
-                                              acc_mod,
-                                              connections,
-                                              acc_mod.param_map)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
-        self._add_edge_detectors(fsm)
         self._add_sub_module_accessors()
 
 
@@ -366,7 +303,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
-        self._add_edge_detectors(fsm)
 
     def _build_module(self):
         assert self.hdlmodule.scope.is_module()
@@ -452,15 +388,3 @@ class AHDLVarCollector(AHDLVisitor):
                 self.local_defs.add(ahdl.sig)
             else:
                 self.local_uses.add(ahdl.sig)
-
-
-class AHDLSpecialDeclCollector(AHDLVisitor):
-    def __init__(self, edge_detectors):
-        self.edge_detectors = edge_detectors
-
-    def visit_AHDL_META_WAIT(self, ahdl):
-        if ahdl.metaid != 'WAIT_EDGE':
-            return
-        old, new = ahdl.args[0], ahdl.args[1]
-        for var in ahdl.args[2:]:
-            self.edge_detectors.add((var.sig, old, new))

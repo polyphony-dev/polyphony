@@ -56,39 +56,48 @@ FILES = (
 
 SUITE_CASES = [
     {
-        'config': '{ "internal_ram_threshold_size": 512 }',
-        "ignores": ('apps/filter_tester.py',
-                    'pure/*',
-                    'chstone/mips/pipelined_mips.py',
-                    'error/pure01.py', 'error/pure02.py',
-                    'error/module_field01.py', 'error/module_field02.py',
-                    'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
-                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
-                    'module/*',
-                    )
+        'config': '{ "perfect_inlining": false }',
+        "ignores": (
+            'pure/*',
+            'module/*',
+            'typing/typing02.py', 'typing/typing03.py', 'typing/typing04.py', 'typing/typing05.py',
+            'if/if22.py', 'loop/for14.py', 'return/noreturn01.py',
+            'list/list16.py', 'list/list26.py', 'list/list28.py', 'list/list29.py', 'list/list30.py',
+            'list/list31.py', 'list/list32.py', 'list/list33.py', 'list/list34.py',
+            'list/rom04.py', 'list/rom07.py', 'list/rom08.py', 'list/rom09.py',
+            'tuple/tuple12.py', 'tuple/tuple13.py', 'func/func11.py',
+            'testbench/tb04.py', 'testbench/tb05.py', 'testbench/tb11.py',
+            'unroll/pipelined_unroll01.py', 'unroll/unroll01.py', 'unroll/unroll02.py',
+            'unroll/unroll04.py', 'unroll/unroll05.py', 'unroll/unroll06.py', 'unroll/unroll07.py',
+            'unroll/unroll08.py', 'unroll/unroll09.py', 'unroll/unroll10.py', 'unroll/unroll11.py',
+            'unroll/unroll12.py',
+            'pipeline/for01.py', 'pipeline/for02.py', 'pipeline/for03.py', 'pipeline/for04.py', 
+            'pipeline/for06.py', 'pipeline/for07.py', 'pipeline/for08.py', 'pipeline/for09.py', 
+            'pipeline/for10.py', 'pipeline/for11.py', 'pipeline/for12.py', 'pipeline/for13.py', 
+            'pipeline/for14.py', 'pipeline/for15.py', 'pipeline/for16.py', 'pipeline/for17.py', 
+            'pipeline/for18.py', 'pipeline/nested01.py',
+            'issues/cfg07.py',
+            'apps/odd_even_sort.py', 'apps/shellsort.py',
+            'chstone/mips/mips.py',
+            'chstone/mips/pipelined_mips.py',
+            'chstone/jpeg/chenidct.py'
+            'error/pure01.py', 'error/pure02.py',
+            'error/module_field01.py', 'error/module_field02.py',
+            'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
+            'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+        )
     },
     {
-        'config': '{ "internal_ram_threshold_size": 0 }',
-        "ignores": ('unroll/pipelined_unroll01.py',
-                    'pure/*',
-                    'chstone/mips/pipelined_mips.py',
-                    'error/pure01.py', 'error/pure02.py',
-                    'error/module_field01.py', 'error/module_field02.py',
-                    'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
-                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
-                    'module/*',
-                    )
-    },
-    {
-        'config': '{ "internal_ram_threshold_size": 1000000 }',
-        "ignores": ('list/list31.py', 'list/list32.py',
-                    'apps/filter_tester.py',
-                    'pure/*', 'error/pure01.py', 'error/pure02.py',
-                    'error/module_field01.py', 'error/module_field02.py',
-                    'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
-                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
-                    'module/*',
-                    )
+        'config': '{ "perfect_inlining": true }',
+        "ignores": (
+            'pure/*',
+            'module/*',
+            'chstone/mips/pipelined_mips.py',
+            'error/pure01.py', 'error/pure02.py',
+            'error/module_field01.py', 'error/module_field02.py',
+            'error/io_pipeline_read_conflict01.py', 'error/io_pipeline_write_conflict01.py',
+            'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+        )
     },
     #{
     #    'config': '{ "enable_pure": true, \

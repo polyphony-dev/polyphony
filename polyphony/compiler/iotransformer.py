@@ -48,37 +48,6 @@ class IOTransformer(AHDLVisitor):
         callinf = self.hdlmodule.interfaces['']
         return callinf.callee_epilog(step, ahdl.name)
 
-    def _is_continuous_access_to_mem(self, ahdl):
-        return False
-
-    def visit_AHDL_LOAD_SEQ(self, ahdl, step, step_n):
-        is_continuous = self._is_continuous_access_to_mem(ahdl)
-        memacc = self.hdlmodule.local_readers[ahdl.mem.sig.name]
-        if isinstance(self.current_state, PipelineState):
-            assert isinstance(self.current_stage, PipelineStage)
-            pmemacc = memacc.pipelined(self.current_stage)
-            local_stms, stage_stms = pmemacc.read_sequence(step, step_n,
-                                                           ahdl,
-                                                           is_continuous)
-            self.current_stage.codes.extend(stage_stms)
-            return local_stms
-        else:
-            return memacc.read_sequence(step, step_n, ahdl.offset, ahdl.dst, is_continuous)
-
-    def visit_AHDL_STORE_SEQ(self, ahdl, step, step_n):
-        is_continuous = self._is_continuous_access_to_mem(ahdl)
-        memacc = self.hdlmodule.local_writers[ahdl.mem.sig.name]
-        if isinstance(self.current_state, PipelineState):
-            assert isinstance(self.current_stage, PipelineStage)
-            pmemacc = memacc.pipelined(self.current_stage)
-            local_stms, stage_stms = pmemacc.write_sequence(step, step_n,
-                                                            ahdl,
-                                                            is_continuous)
-            self.current_stage.codes.extend(stage_stms)
-            return local_stms
-        else:
-            return memacc.write_sequence(step, step_n, ahdl.offset, ahdl.src, is_continuous)
-
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)

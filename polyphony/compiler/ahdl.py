@@ -324,40 +324,6 @@ class AHDL_CONNECT(AHDL_STM):
         return 'AHDL_CONNECT({}, {})'.format(repr(self.dst), repr(self.src))
 
 
-class AHDL_STORE(AHDL_STM):
-    def __init__(self, mem, src, offset):
-        assert isinstance(mem, AHDL_MEMVAR)
-        super().__init__()
-        self.mem = mem
-        self.src = src
-        self.offset = offset
-
-    def __str__(self):
-        return '{}[{}] <= {}'.format(self.mem, self.offset, self.src)
-
-    def __repr__(self):
-        return 'AHDL_STORE({}, {}, {})'.format(repr(self.mem),
-                                               repr(self.src),
-                                               repr(self.offset))
-
-
-class AHDL_LOAD(AHDL_STM):
-    def __init__(self, mem, dst, offset):
-        assert isinstance(mem, AHDL_MEMVAR)
-        super().__init__()
-        self.mem = mem
-        self.dst = dst
-        self.offset = offset
-
-    def __str__(self):
-        return '{} <= {}[{}]'.format(self.dst, self.mem, self.offset)
-
-    def __repr__(self):
-        return 'AHDL_LOAD({}, {}, {})'.format(repr(self.mem),
-                                              repr(self.dst),
-                                              repr(self.offset))
-
-
 class AHDL_IO_READ(AHDL_STM):
     def __init__(self, io, dst, is_self=True):
         super().__init__()
@@ -573,32 +539,6 @@ class AHDL_FUNCTION(AHDL_VAR_DECL):
             repr(self.inputs),
             repr(self.stms)
         )
-
-
-class AHDL_MUX(AHDL_VAR_DECL):
-    def __init__(self, name, selector, inputs, output, defval):
-        super().__init__(name)
-        assert isinstance(output, Signal)
-        self.selector = selector
-        self.inputs = inputs
-        self.output = output
-        self.defval = defval
-
-    def __str__(self):
-        return 'MUX {}'.format(self.name)
-
-
-class AHDL_DEMUX(AHDL_VAR_DECL):
-    def __init__(self, name, selector, input, outputs, defval):
-        super().__init__(name)
-        assert isinstance(input, Signal)
-        self.selector = selector
-        self.input = input
-        self.outputs = outputs
-        self.defval = defval
-
-    def __str__(self):
-        return 'DEMUX {}'.format(self.name)
 
 
 class AHDL_COMB(AHDL_VAR_DECL):

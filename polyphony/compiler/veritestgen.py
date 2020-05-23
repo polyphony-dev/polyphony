@@ -1,7 +1,6 @@
 ﻿from .ahdl import *
 from .env import env
 from .vericodegen import VerilogCodeGen
-from .hdlmodule import RAMModule
 from .hdlinterface import *
 from logging import getLogger
 logger = getLogger(__name__)
@@ -94,8 +93,6 @@ class VerilogTestGen(VerilogCodeGen):
         formats = []
         args = ['$time']
         for name, sub_module, _, _, in self.hdlmodule.sub_modules.values():
-            if isinstance(sub_module, RAMModule):
-                continue
             if not sub_module.interfaces:
                 continue
             for inf in sub_module.interfaces.values():

@@ -541,52 +541,11 @@ class AHDLTranslator(IRVisitor):
         elif ir.sym.name == 'polyphony.timing.clktime':
             self.hdlmodule.use_clock_time()
             return AHDL_VAR(self.hdlmodule.clock_signal, Ctx.LOAD)
-        elif ir.sym.name == 'polyphony.timing.wait_rising':
-            ports = []
-            for _, a in ir.args:
-                assert a.is_a([TEMP, ATTR])
-                port_sig = self._port_sig(a.qualified_symbol())
-                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(0), AHDL_CONST(1), *ports),
-                       self.sched_time)
-            return
-        elif ir.sym.name == 'polyphony.timing.wait_falling':
-            ports = []
-            for _, a in ir.args:
-                assert a.is_a([TEMP, ATTR])
-                port_sig = self._port_sig(a.qualified_symbol())
-                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', AHDL_CONST(1), AHDL_CONST(0), *ports),
-                       self.sched_time)
-            return
-        elif ir.sym.name == 'polyphony.timing.wait_edge':
-            ports = []
-            _, _old = ir.args[0]
-            _, _new = ir.args[1]
-            old = self.visit(_old)
-            new = self.visit(_new)
-            for _, a in ir.args[2:]:
-                assert a.is_a([TEMP, ATTR])
-                port_sig = self._port_sig(a.qualified_symbol())
-                ports.append(AHDL_VAR(port_sig, Ctx.LOAD))
-            self._emit(AHDL_META_WAIT('WAIT_EDGE', old, new, *ports),
-                       self.sched_time)
-            return
-        elif ir.sym.name == 'polyphony.timing.wait_value':
-            ports = []
-            _, _val = ir.args[0]
-            value = self.visit(_val)
-            args = []
-            for _, a in ir.args[1:]:
-                assert a.is_a([TEMP, ATTR])
-                port_sig = self._port_sig(a.qualified_symbol())
-                p = AHDL_VAR(port_sig, Ctx.LOAD)
-                args.append('Eq')
-                args.append(value)
-                args.append(p)
-            self._emit(AHDL_META_WAIT('WAIT_COND', *args),
-                       self.sched_time)
-            return
+        elif ir.sym.name in ('polyphony.timing.wait_rising',
+                             'polyphony.timing.wait_falling',
+                             'polyphony.timing.wait_edge',
+                             'polyphony.timing.wait_value'):
+            assert False, 'It must be inlined'
         elif ir.sym.name == 'polyphony.timing.wait_until':
             scope_sym = ir.args[0][1].symbol()
             assert scope_sym.typ.is_function()
@@ -738,11 +697,6 @@ class AHDLTranslator(IRVisitor):
             return
         if ir.exp.is_a(CALL):
             self._call_proc(ir)
-        elif ir.exp.is_a(MSTORE):
-            exp = self.visit(ir.exp)
-            if exp:
-                assert exp.is_a(AHDL_STORE)
-                self._emit_memstore_sequence(exp, self.sched_time)
         else:
             exp = self.visit(ir.exp)
             if exp:
@@ -823,9 +777,6 @@ class AHDLTranslator(IRVisitor):
             return
         elif src.is_a(AHDL_VAR) and dst.is_a(AHDL_VAR) and src.sig == dst.sig:
             return
-        elif src.is_a(AHDL_LOAD):
-            self._emit_memload_sequence(src, self.sched_time)
-            return
         elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
             if ir.src.sym.is_param():
                 width = ir.src.sym.typ.get_element().get_width()
@@ -867,23 +818,6 @@ class AHDLTranslator(IRVisitor):
         step_n = self.node.latency()
         for i in range(step_n):
             self._emit(AHDL_SEQ(ahdl_call, i, step_n), sched_time + i)
-
-    def _emit_memload_sequence(self, ahdl_load, sched_time):
-        assert ahdl_load.is_a(AHDL_LOAD)
-        # TODO : step_n should be calculated from a memory type
-        step_n = env.config.internal_ram_load_latency
-        for i in range(step_n):
-            self._emit(AHDL_SEQ(ahdl_load, i, step_n), sched_time + i)
-
-    def _emit_memstore_sequence(self, ahdl_store, sched_time):
-        assert ahdl_store.is_a(AHDL_STORE)
-        # TODO : step_n should be calculated from a memory type
-        if env.config.internal_ram_store_latency < 2:
-            step_n = 2
-        else:
-            step_n = env.config.internal_ram_store_latency
-        for i in range(step_n):
-            self._emit(AHDL_SEQ(ahdl_store, i, step_n), sched_time + i)
 
     def _make_scalar_mux(self, ir):
         ahdl_dst = self.visit(ir.var)

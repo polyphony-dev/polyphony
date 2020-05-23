@@ -76,16 +76,6 @@ class AHDLVisitor(object):
         self.visit(ahdl.src)
         self.visit(ahdl.dst)
 
-    def visit_AHDL_STORE(self, ahdl):
-        self.visit(ahdl.src)
-        self.visit(ahdl.mem)
-        self.visit(ahdl.offset)
-
-    def visit_AHDL_LOAD(self, ahdl):
-        self.visit(ahdl.mem)
-        self.visit(ahdl.dst)
-        self.visit(ahdl.offset)
-
     def visit_AHDL_IO_READ(self, ahdl):
         self.visit(ahdl.io)
         if ahdl.dst:

@@ -471,25 +471,8 @@ class HyperBlockBuilder(object):
             return call.sym.name in wait_funcs
         return False
 
-    def _try_get_mem(self, stm):
-        if stm.is_a(MOVE) and stm.src.is_a(MREF):
-            return stm.src.mem
-        elif stm.is_a(EXPR) and stm.exp.is_a(MSTORE):
-            return stm.exp.mem
-        else:
-            return None
-
     def _has_mem_access(self, stm):
-        mem = self._try_get_mem(stm)
-        if mem is None:
-            return False
-        if mem.symbol().typ.has_length() and mem.symbol().typ.get_length() != -1:
-            l = mem.symbol().typ.get_length()
-            w = mem.symbol().typ.get_element().get_width()
-            # TODO:
-            #if w * l < env.config.internal_ram_threshold_size:
-            #    return False
-        return True
+        return stm.is_mem_read() or stm.is_mem_write()
 
     def _has_instance_var_modification(self, stm):
         if stm.is_a(MOVE) and stm.dst.is_a(ATTR):
