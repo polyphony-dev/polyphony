@@ -157,7 +157,7 @@ class InlineOpt(object):
 
     def _make_result_exp(self, call_stm, call, callee, caller, symbol_map):
         result_sym = symbol_map[callee.symbols[Symbol.return_prefix]]
-        result_sym.name = callee.base_name + '_result' + str(self.inline_counts)
+        result_sym.name = f'{callee.base_name}_result{self.inline_counts}'
         assert result_sym.is_return()
         result_sym.del_tag('return')
         result = TEMP(result_sym, Ctx.LOAD)

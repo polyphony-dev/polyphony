@@ -297,4 +297,4 @@ class ObjectTransformer(object):
                 elif usestm.is_a([LPHI, PHI]):
                     usestm.replace(seq_sym, seq_id)
         for seq_sym in self.seq_copies.keys():
-            seq_sym[-1].set_type(Type.int(16))
+            seq_sym[-1].typ = Type.int(16)

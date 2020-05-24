@@ -293,7 +293,7 @@ class ModuleInstantiator(object):
             if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().is_instantiated():
                 new_module = self._instantiate_module(call, stm.dst)
                 new_modules.add(new_module)
-                stm.dst.symbol().set_type(Type.object(new_module))
+                stm.dst.symbol().typ = Type.object(new_module)
         return new_modules
 
     def _instantiate_module(self, new, module_var):

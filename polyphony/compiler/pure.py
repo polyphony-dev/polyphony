@@ -448,7 +448,7 @@ class PureCtorBuilder(object):
                     klass_scope, _ = env.runtime_info.inst2module[v]
                     typ = typ.with_scope(klass_scope)
                 klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.base_name)
-                klass_scope_sym.set_type(Type.klass(klass_scope))
+                klass_scope_sym.typ = Type.klass(klass_scope)
                 sym = module.add_sym(name, typ=typ)
                 orig_obj = instance.__dict__[name]
                 calls = env.runtime_info.get_internal_calls(instance)
@@ -468,7 +468,7 @@ class PureCtorBuilder(object):
                 module.del_sym(name)  # use a new symbol always for the field
                 sym = module.add_sym(name)
                 if sym.typ.is_undef():
-                    sym.set_type(typ)
+                    sym.typ = typ
 
                 # deal with a list of port
                 if sym.typ.is_seq() and all([isinstance(item, (Port, Queue)) for item in v]):
@@ -560,7 +560,7 @@ class PureCtorBuilder(object):
         port_qualname = port.__module__ + '.' + port.__class__.__name__
         port_scope = env.scopes[port_qualname]
         port_scope_sym = port_scope.parent.gen_sym(port_scope.base_name)
-        port_scope_sym.set_type(Type.klass(port_scope))
+        port_scope_sym.typ = Type.klass(port_scope)
         return NEW(port_scope_sym, args, kwargs={})
 
     def _port2ir(self, port_obj, instance, module, ctor):
@@ -571,7 +571,7 @@ class PureCtorBuilder(object):
                     assert sym
                     if sym.typ.is_undef():
                         typ = Type.from_expr(field, scope)
-                        sym.set_type(typ)
+                        sym.typ = typ
                     return (sym, )
                 if isinstance(field, (list, tuple)) and obj in field:
                     idx = field.index(obj)
@@ -588,7 +588,7 @@ class PureCtorBuilder(object):
                     continue
                 if sym.typ.is_undef():
                     typ = Type.from_expr(field, scope)
-                    sym.set_type(typ)
+                    sym.typ = typ
                 assert sym.typ.has_scope()
                 scp = sym.typ.get_scope()
                 result = port_qsym(scp, field.__dict__, obj)
@@ -617,7 +617,7 @@ class PureCtorBuilder(object):
             else:
                 sym = ctor.add_temp('local_port')
                 typ = Type.from_expr(port_obj, ctor)
-                sym.set_type(typ)
+                sym.typ = typ
 
                 dst = TEMP(sym, Ctx.STORE)
                 stm = self._build_move_stm(dst, port_obj, module)

@@ -490,8 +490,7 @@ class PortConnector(IRVisitor):
         ret_sym = lambda_scope.add_return_sym()
         new_block.append_stm(MOVE(TEMP(ret_sym, Ctx.STORE), body))
         new_block.append_stm(RET(TEMP(ret_sym, Ctx.LOAD)))
-        scope_sym = self.scope.add_sym(lambda_scope.base_name)
-        scope_sym.set_type(Type.function(lambda_scope))
+        scope_sym = self.scope.add_sym(lambda_scope.base_name, typ=Type.function(lambda_scope))
 
         self.scopes.append(lambda_scope)
 

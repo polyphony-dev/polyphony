@@ -276,7 +276,7 @@ class TypePropagation(IRVisitor):
             t = Type.tuple(item_t, length)
         if all(item.is_a(CONST) for item in ir.items):
             t = t.with_ro(True)
-        ir.sym.set_type(t)
+        ir.sym.typ = t
         return t
 
     def visit_EXPR(self, ir):
@@ -379,7 +379,7 @@ class TypePropagation(IRVisitor):
         else:
             if sym.typ != typ:
                 logger.debug(f'typeprop {sym.name}: {sym.typ} -> {typ}')
-        sym.set_type(typ)
+        sym.typ = typ
 
 
 class TypeSpecializer(TypePropagation):
@@ -540,12 +540,12 @@ class TypeSpecializer(TypePropagation):
             if is_new:
                 new_ctor = new_scope.find_ctor()
                 new_scope_sym = ir.func_scope().parent.gen_sym(new_scope.base_name)
-                new_scope_sym.set_type(Type.klass(new_scope))
+                new_scope_sym.typ = Type.klass(new_scope)
                 ctor_t = Type.function(new_ctor,
                                        new_scope.return_type,
                                        tuple([new_ctor.params[0].sym.typ] + new_param_types))
                 new_ctor_sym = new_scope.find_sym(new_ctor.base_name)
-                new_ctor_sym.set_type(ctor_t)
+                new_ctor_sym.typ = ctor_t
                 self._add_scope(new_scope)
                 self._add_scope(new_ctor)
             else:
@@ -585,7 +585,7 @@ class TypeSpecializer(TypePropagation):
             params = new_scope.params[:]
         for p, new_t in zip(params, types):
             new_t = new_t.with_perfect_explicit()
-            p.sym.set_type(new_t)
+            p.sym.typ = new_t
         new_scope.add_tag('specialized')
         sym = new_scope.parent.find_sym(new_scope.base_name)
         sym.typ = sym.typ.with_param_types(types).with_return_type(new_scope.return_type)
@@ -613,7 +613,7 @@ class TypeSpecializer(TypePropagation):
 
         for p, new_t in zip(new_ctor.params[1:], types):
             new_t = new_t.with_perfect_explicit()
-            p.sym.set_type(new_t)
+            p.sym.typ = new_t
         new_scope.add_tag('specialized')
         return new_scope, True
 
@@ -625,7 +625,7 @@ class TypeSpecializer(TypePropagation):
                 dtype = Type.from_typeclass(typscope)
                 if typ.has_typeargs():
                     args = typ.get_typeargs()
-                    dtype.attrs.update(args)
+                    dtype.attrs.update(args)  # FIXME
             else:
                 dtype = typ
         else:
@@ -642,22 +642,15 @@ class TypeSpecializer(TypePropagation):
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_ctor)
         dtype_param = new_ctor.params[1]
-        dtype_param.sym.set_type(typ)
-        dtype_param.sym.typ = dtype_param.sym.typ.with_explicit(True)
-        dtype_param.copy.set_type(typ)
-        dtype_param.sym.typ = dtype_param.sym.typ.with_explicit(True)
+        dtype_param.copy.typ = dtype_param.sym.typ = typ.with_explicit(True)
         init_param = new_ctor.params[3]
-        init_param.sym.set_type(dtype)
-        init_param.sym.typ = init_param.sym.typ.with_explicit(True)
-        init_param.copy.set_type(dtype)
-        init_param.sym.typ = init_param.sym.typ.with_explicit(True)
+        init_param.copy.typ = init_param.sym.typ = dtype.with_explicit(True)
 
         new_scope.add_tag('specialized')
         for child in new_scope.children:
             for sym, copy, _ in child.params:
                 if sym.typ.is_generic():
-                    sym.set_type(dtype)
-                    copy.set_type(dtype)
+                    copy.typ = sym.typ = dtype
             if child.return_type.is_generic():
                 child.return_type = dtype
             child.add_tag('specialized')
@@ -680,7 +673,7 @@ class TypeSpecializer(TypePropagation):
             params = new_scope.params[:]
         for p, new_t in zip(params, types):
             new_t = new_t.with_perfect_explicit()
-            p.sym.set_type(new_t)
+            p.sym.typ = new_t
         new_scope.add_tag('specialized')
         return new_scope, True
 
@@ -718,7 +711,7 @@ class StaticTypePropagation(TypePropagation):
         for s in scopes:
             for sym in s.symbols.values():
                 if sym.is_inherited() and sym.typ != sym.ancestor.typ:
-                    sym.set_type(sym.ancestor.typ)
+                    sym.typ = sym.ancestor.typ
 
     def collect_stms(self, scope):
         stms = []
@@ -753,18 +746,18 @@ class TypeReplacer(IRVisitor):
 
     def visit_TEMP(self, ir):
         if self.comparator(ir.sym.typ, self.old_t):
-            ir.sym.set_type(self.new_t)
+            ir.sym.typ = self.new_t
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
         if self.comparator(ir.attr.typ, self.old_t):
-            ir.attr.set_type(self.new_t)
+            ir.attr.typ = self.new_t
 
 
 class InstanceTypePropagation(TypePropagation):
     def _propagate(self, sym, typ):
         if sym.typ.is_object() and sym.typ.get_scope().is_module():
-            sym.set_type(typ)
+            sym.typ = typ
 
 
 class TypeChecker(IRVisitor):
@@ -1192,29 +1185,29 @@ class TypeEvalVisitor(IRVisitor):
         self.type_evaluator = TypeEvaluator(scope)
         for sym, copy, _ in scope.params:
             pt = self._eval(sym.typ)
-            sym.set_type(pt)
+            sym.typ = pt
             pt = self._eval(copy.typ)
-            copy.set_type(pt)
+            copy.typ = pt
         if scope.return_type:
             scope.return_type = self._eval(scope.return_type)
         for sym in scope.constants.keys():
             pt = self._eval(sym.typ)
-            sym.set_type(pt)
+            sym.typ = pt
         super().process(scope)
 
     def _eval(self, typ):
         return self.type_evaluator.visit(typ)
 
     def visit_TEMP(self, ir):
-        ir.sym.set_type( self._eval(ir.sym.typ))
+        ir.sym.typ = self._eval(ir.sym.typ)
 
     def visit_ATTR(self, ir):
         if not isinstance(ir.attr, str):
-            ir.attr.set_type(self._eval(ir.attr.typ))
+            ir.attr.typ = self._eval(ir.attr.typ)
 
     def visit_SYSCALL(self, ir):
-        ir.sym.set_type(self._eval(ir.sym.typ))
+        ir.sym.typ = self._eval(ir.sym.typ)
 
     def visit_ARRAY(self, ir):
         if ir.sym:
-            ir.sym.set_type(self._eval(ir.sym.typ))
+            ir.sym.typ = self._eval(ir.sym.typ)

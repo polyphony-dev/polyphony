@@ -131,7 +131,7 @@ class ImportVisitor(ast.NodeVisitor):
                 self.target_scope.add_sym(top_name, typ=Type.namespace(env.scopes[top_name]))
             else:
                 sym = self.target_scope.find_sym(top_name)
-                sym.set_type(Type.namespace(env.scopes[top_name]))
+                sym.typ = Type.namespace(env.scopes[top_name])
         return True
 
     def visit_Import(self, node):
@@ -185,7 +185,7 @@ class ImportVisitor(ast.NodeVisitor):
                         imp_sym = self.target_scope.find_sym(nm.name)
                     else:
                         imp_sym = self.target_scope.gen_sym(nm.name)
-                    imp_sym.set_type(Type.namespace(import_scope))
+                    imp_sym.typ = Type.namespace(import_scope)
                 import_to_scope(imp_sym, nm.asname)
 
     def _current_package(self):
@@ -568,8 +568,8 @@ class CodeVisitor(ast.NodeVisitor):
                 fail((env.current_filename, node.lineno), Errors.METHOD_MUST_HAVE_SELF)
             first_param = self.current_scope.params[0]
             self_typ = Type.object(self.current_scope.parent)
-            first_param.copy.set_type(self_typ)
-            first_param.sym.set_type(self_typ)
+            first_param.copy.typ = self_typ
+            first_param.sym.typ = self_typ
             first_param.copy.add_tag('self')
             first_param.sym.add_tag('self')
 
@@ -624,7 +624,7 @@ class CodeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(Symbol.return_prefix)
         else:
             sym = self.current_scope.add_return_sym()
-        sym.set_type(self.current_scope.return_type)
+        sym.typ = self.current_scope.return_type
         if self.function_exit.preds:
             function_exit = self._new_block(self.current_scope, 'exit')
             self.current_scope.replace_block(self.function_exit, function_exit)
@@ -678,7 +678,7 @@ class CodeVisitor(ast.NodeVisitor):
             sym = self.current_scope.find_sym(Symbol.return_prefix)
         else:
             sym = self.current_scope.add_return_sym()
-        sym.set_type(self.current_scope.return_type)
+        sym.typ = self.current_scope.return_type
         ret = TEMP(sym, Ctx.STORE)
         if node.value:
             self.emit(MOVE(ret, self.visit(node.value)), node)
@@ -716,7 +716,7 @@ class CodeVisitor(ast.NodeVisitor):
                     ann = mod.body[0]
                 t = self._type_from_annotation(ann)
                 if t:
-                    left.symbol().set_type(t)
+                    left.symbol().typ = t
                 else:
                     fail((self.current_scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
             mv = MOVE(left, right)
@@ -739,7 +739,7 @@ class CodeVisitor(ast.NodeVisitor):
         if dst.is_a(TEMP):
             if not dst.symbol().typ.is_undef():
                 fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
-            dst.symbol().set_type(typ)
+            dst.symbol().typ = typ
         elif dst.is_a(ATTR):
             if (dst.exp.is_a(TEMP) and dst.head().name == env.self_name and
                     self.current_scope.is_method()):
@@ -749,7 +749,7 @@ class CodeVisitor(ast.NodeVisitor):
                     attr_sym = self.current_scope.parent.find_sym(dst.attr)
                 if not attr_sym.typ.is_undef():
                     fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
-                attr_sym.set_type(typ)
+                attr_sym.typ = typ
                 dst.attr = attr_sym
             else:
                 fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT)
@@ -1305,7 +1305,7 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_block = last_block
 
         scope_sym = self.current_scope.add_sym(lambda_scope.base_name)
-        scope_sym.set_type(Type.function(lambda_scope))
+        scope_sym.typ = Type.function(lambda_scope)
         return TEMP(scope_sym, Ctx.LOAD)
 
     def visit_IfExp(self, node):

@@ -6,7 +6,7 @@ logger = getLogger(__name__)
 
 
 class Symbol(Tagged):
-    __slots__ = ['id', 'name', 'scope', 'typ', 'ancestor']
+    __slots__ = ['_id', '_name', '_scope', '_typ', '_ancestor']
     all_symbols = []
 
     TAGS = {
@@ -44,60 +44,89 @@ class Symbol(Tagged):
         super().__init__(tags)
         if typ is None:
             typ = Type.undef()
-        self.id = len(Symbol.all_symbols)
-        self.name = name
-        self.scope = scope
-        self.typ = typ
-        self.ancestor = None
+        self._id = len(Symbol.all_symbols)
+        self._name = name
+        self._scope = scope
+        self._typ = typ
+        self._ancestor = None
         Symbol.all_symbols.append(self)
+
+    @property
+    def id(self):
+        return self._id
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        self._name = name
+
+    @property
+    def scope(self):
+        return self._scope
+
+    @property
+    def typ(self):
+        return self._typ
+
+    @typ.setter
+    def typ(self, typ):
+        self._typ = typ
+        if self._ancestor:
+            self._ancestor.typ = typ
+
+    @property
+    def ancestor(self):
+        return self._ancestor
+
+    @ancestor.setter
+    def ancestor(self, a):
+        self._ancestor = a
 
     def __str__(self):
         #return '{}:{}({}:{})'.format(self.name, self.typ, self.id, self.scope.base_name)
         #return '{}:{}({})'.format(self.name, repr(self.typ), self.tags)
         if env.dev_debug_mode:
-            return '{}:{}'.format(self.name, self.typ)
-        return self.name
+            return '{}:{}'.format(self._name, self._typ)
+        return self._name
 
     def __repr__(self):
         #return '{}({})'.format(self.name, hex(self.__hash__()))
-        return self.name
+        return self._name
 
     def __lt__(self, other):
-        return self.name < other.name
+        return self._name < other._name
 
     def orig_name(self):
-        if self.ancestor:
-            return self.ancestor.orig_name()
+        if self._ancestor:
+            return self._ancestor.orig_name()
         else:
-            return self.name
+            return self._name
 
     def root_sym(self):
-        if self.ancestor:
-            return self.ancestor.root_sym()
+        if self._ancestor:
+            return self._ancestor.root_sym()
         else:
             return self
 
     def hdl_name(self):
-        if self.typ.is_port():
-            name = self.name[:]
-        elif self.typ.is_object() and self.typ.get_scope().is_module() and self.ancestor:
-            return self.ancestor.hdl_name()
-        elif self.name[0] == '@' or self.name[0] == '!':
-            name = self.name[1:]
+        if self._typ.is_port():
+            name = self._name[:]
+        elif self._typ.is_object() and self._typ.get_scope().is_module() and self._ancestor:
+            return self._ancestor.hdl_name()
+        elif self._name[0] == '@' or self._name[0] == '!':
+            name = self._name[1:]
         else:
-            name = self.name[:]
+            name = self._name[:]
         name = name.replace('#', '')
         return name
 
-    def set_type(self, typ):
-        self.typ = typ
-        if self.ancestor:
-            self.ancestor.set_type(typ)
-
     def clone(self, scope, postfix=''):
-        newsym = Symbol(self.name + postfix,
+        newsym = Symbol(self._name + postfix,
                         scope,
                         set(self.tags),
-                        self.typ)
-        newsym.ancestor = self.ancestor
+                        self._typ)
+        newsym.ancestor = self._ancestor
         return newsym

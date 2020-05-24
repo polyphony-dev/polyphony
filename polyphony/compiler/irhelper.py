@@ -33,13 +33,13 @@ def expr2ir(expr, name=None, scope=None):
                 klass_scope = env.scopes[klass_name]
                 t = Type.klass(klass_scope)
                 sym = scope.add_temp('@dtype', {'predefined'})
-                sym.set_type(t)
+                sym.typ = t
             elif expr.__module__ == 'builtins':
                 klass_name = '__builtin__.' + expr.__name__
                 klass_scope = env.scopes[klass_name]
                 t = Type.klass(klass_scope)
                 sym = scope.add_temp('@dtype', {'predefined'})
-                sym.set_type(t)
+                sym.typ = t
             else:
                 assert False
             return TEMP(sym, Ctx.LOAD)

@@ -41,10 +41,10 @@ class TypeEvaluator(object):
             param_types = []
             for sym, copy, _ in func.params:
                 pt = self.visit(sym.typ)
-                sym.set_type(pt)
+                sym.typ = pt
                 param_types.append(pt)
                 pt = self.visit(copy.typ)
-                copy.set_type(pt)
+                copy.typ = pt
             t = t.with_param_types(param_types)
             func.return_type = self.visit(func.return_type)
             t = t.with_return_type(func.return_type)
