@@ -307,7 +307,7 @@ class LoopUnroller(object):
         assert orig_cjump.is_a(CJUMP)
         new_loop_iv = new_ivs[loop.counter][0]
         tmp = self.scope.add_temp()
-        tmp.typ = new_loop_iv.typ.clone()
+        tmp.typ = new_loop_iv.typ
         mv = MOVE(TEMP(tmp, Ctx.STORE),
                   BINOP('Add',
                         TEMP(new_loop_iv, Ctx.LOAD),

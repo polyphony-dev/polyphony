@@ -17,14 +17,19 @@ class Type(object):
             if attrname not in self.attrs:
                 raise AttributeError(name)
             return lambda: self.attrs[attrname]
-        elif name.startswith('set_'):
-            attrname = name[4:]
-            return lambda v: self.attrs.update({attrname:v})
+        elif name.startswith('with_'):
+            attrname = name[5:]
+            return lambda v: self._with_x(attrname, v)
         elif name.startswith('has_'):
             attrname = name[4:]
             return lambda: attrname in self.attrs
         else:
             raise AttributeError(name)
+
+    def _with_x(self, attrname, value):
+        copy = Type(self.name, **self.attrs.copy())
+        copy.attrs[attrname] = value
+        return copy
 
     @classmethod
     def from_annotation(cls, ann, scope, is_lib=False):
@@ -80,7 +85,7 @@ class Type(object):
                 t = Type.from_annotation(first, scope)
                 if t.is_seq():
                     length = int(second)
-                    t.set_length(length)
+                    t = t.with_length(length)
                 else:
                     assert False
                 return t
@@ -103,7 +108,7 @@ class Type(object):
                 if target_scope.is_typeclass():
                     t = Type.from_typeclass(target_scope, elms)
                     if t.is_seq():
-                        t.set_length(Type.ANY_LENGTH)
+                        t = t.with_length(Type.ANY_LENGTH)
                     return t
         elif ann is None:
             return Type.undef()
@@ -136,24 +141,23 @@ class Type(object):
             if ann.mem.is_a(MREF):
                 t = Type.from_ir(ann.mem, explicit)
                 if ann.offset.is_a(CONST):
-                    t.set_length(ann.offset.value)
+                    t = t.with_length(ann.offset.value)
                 else:
-                    t.set_length(Type.from_ir(ann.offset, explicit))
+                    t = t.with_length(Type.from_ir(ann.offset, explicit))
             else:
                 t = Type.from_ir(ann.mem, explicit)
                 if t.is_int():
                     assert ann.offset.is_a(CONST)
-                    t.set_width(ann.offset.value)
+                    t = t.with_width(ann.offset.value)
                 elif t.is_seq():
-                    t.set_element(Type.from_ir(ann.offset, explicit))
+                    t = t.with_element(Type.from_ir(ann.offset, explicit))
                 elif t.is_class():
                     elm_t = Type.from_ir(ann.offset, explicit)
                     if elm_t.is_object():
-                        t.set_scope(elm_t.get_scope())
+                        t = t.with_scope(elm_t.get_scope())
                     else:
                         type_scope, args = Type.to_scope(elm_t)
-                        t.set_scope(type_scope)
-                        t.set_typeargs(args)
+                        t = t.with_scope(type_scope).with_typeargs(args)
         elif ann.is_a(ARRAY):
             assert ann.repeat.is_a(CONST) and ann.repeat.value == 1
             assert ann.is_mutable is False
@@ -162,7 +166,7 @@ class Type(object):
         else:
             assert ann.is_a(IRExp)
             t = Type.expr(EXPR(ann))
-        t.set_explicit(explicit)
+        t = t.with_explicit(explicit)
         return t
 
     @classmethod
@@ -508,81 +512,56 @@ class Type(object):
         else:
             return self.is_explicit()
 
-    def set_perfect_explicit(self):
+    def with_perfect_explicit(self):
         if self.name in ('list', 'tuple'):
-            self.set_explicit(True)
-            self.get_element().set_explicit(True)
+            elm_copy = self.get_element().with_explicit(True)
+            copy = self.with_explicit(True).with_element(elm_copy)
         else:
-            self.set_explicit(True)
-
-    def clone(self):
-        if self.name in {'undef', 'ellipsis'}:
-            t = self
-        elif self.is_list():
-            t = Type(self.name, **self.attrs)
-            t.set_element(t.get_element().clone())
-            if isinstance(t.get_length(), Type):
-                t.set_length(t.get_length().clone())
-        elif self.is_tuple():
-            t = Type(self.name, **self.attrs)
-            t.set_element(t.get_element().clone())
-            if isinstance(t.get_length(), Type):
-                t.set_length(t.get_length().clone())
-        elif self.is_function():
-            t = Type(self.name, **self.attrs)
-            t.set_return_type(t.get_return_type().clone())
-            param_types = [pt.clone() for pt in t.get_param_types()]
-            t.set_param_types(param_types)
-        elif self.is_expr():
-            t = Type(self.name, **self.attrs)
-            t.set_expr(t.get_expr().clone())
-        else:
-            t = Type(self.name, **self.attrs)
-        return t
+            copy = self.with_explicit(True)
+        return copy
 
     @classmethod
     def propagate(cls, dst, src):
         if dst.is_explicit():
-            new_dst = dst.clone()
+            new_dst = dst
             if dst.is_list():
                 assert cls.is_same(dst, src)
                 elm = cls.propagate(dst.get_element(), src.get_element())
-                new_dst.set_element(elm)
-                new_dst.set_ro(src.get_ro())
+                new_dst = new_dst.with_element(elm).with_ro(src.get_ro())
                 if dst.get_length() == Type.ANY_LENGTH:
-                    new_dst.set_length(src.get_length())
+                    new_dst = new_dst.with_length(src.get_length())
             elif dst.is_tuple():
                 assert cls.is_same(dst, src)
                 dst_elm, src_elm = dst.get_element(), src.get_element()
                 elm = cls.propagate(dst_elm, src_elm)
-                new_dst.set_element(elm)
+                new_dst = new_dst.with_element(elm)
                 if dst.get_length() == Type.ANY_LENGTH:
-                    new_dst.set_length(src.get_length())
+                    new_dst = new_dst.with_length(src.get_length())
             elif dst.is_function():
                 assert cls.is_same(dst, src)
                 if dst.get_scope() is None:
-                    new_dst.set_scope(src.get_scope())
+                    new_dst = new_dst.with_scope(src.get_scope())
                 param_types = []
                 for pt_dst, pt_src in zip(dst.get_param_types(), src.get_param_types()):
                     param_types.append(cls.propagate(pt_dst, pt_src))
-                new_dst.set_param_types(param_types)
+                new_dst = new_dst.with_param_types(param_types)
                 ret = cls.propagate(dst.get_return_type(), src.get_return_type())
-                new_dst.set_return_type(ret)
+                new_dst = new_dst.with_return_type(ret)
             elif dst.is_object():
                 if cls.is_same(dst, src):
                     if dst.get_scope() is None:
-                        new_dst.set_scope(src.get_scope())
+                        new_dst = new_dst.with_scope(src.get_scope())
                     elif dst.get_scope() is src.get_scope().origin:
-                        new_dst.set_scope(src.get_scope())
+                        new_dst = new_dst.with_scope(src.get_scope())
                 elif src.is_port() and dst.get_scope().is_port():
-                    new_dst = src.clone()
+                    new_dst = src
             elif dst.is_generic():
-                return src.clone()
+                return src
             elif dst.is_union():
                 raise NotImplementedError()
             return new_dst
         else:
-            return src.clone()
+            return src
 
     @classmethod
     def can_propagate(cls, dst, src):

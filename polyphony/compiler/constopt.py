@@ -414,7 +414,7 @@ class ConstantOpt(ConstantOptBase):
             array = try_get_constant(mem.qualified_symbol(), self.scope)
             if array and array.repeat.is_a(CONST):
                 length = array.repeat.value * len(array.items)
-                array.sym.typ.set_length(length)
+                array.sym.typ = array.sym.typ.with_length(length)
                 return CONST(length)
         return self.visit_CALL(ir)
 

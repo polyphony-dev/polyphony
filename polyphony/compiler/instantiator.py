@@ -88,7 +88,7 @@ class EarlyWorkerInstantiator(object):
         new_worker.add_tag('instantiated')
         if inspect.ismethod(worker.func):
             self_sym = new_worker.find_sym(env.self_name)
-            self_sym.typ.set_scope(module)
+            self_sym.typ = self_sym.typ.with_scope(module)
         parent.add_sym(new_worker.base_name, typ=Type.function(new_worker))
         env.runtime_info.inst2worker[worker] = (new_worker, worker_scope)
         return new_worker, worker_scope
@@ -250,7 +250,7 @@ class WorkerInstantiator(object):
         module_syms = worker.find_scope_sym(module.origin)
         for sym in module_syms:
             new_sym = new_worker.cloned_symbols[sym]
-            new_sym.typ.set_scope(module)
+            new_sym.typ = new_sym.typ.with_scope(module)
 
         if worker.is_instantiated():
             return new_worker, False
@@ -267,7 +267,7 @@ class WorkerInstantiator(object):
                 syms = new_worker.find_scope_sym(old)
                 for sym in syms:
                     if sym.scope in scope_map.values():
-                        sym.typ.set_scope(new)
+                        sym.typ = sym.typ.with_scope(new)
             new_worker.add_tag('instantiated')
             return new_worker, True
 
@@ -328,7 +328,7 @@ class ModuleInstantiator(object):
             new_module = module.instantiate(inst_name, children)
             new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
             new.sym = new_module_sym
-        new.sym.typ.set_scope(new_module)
+        new.sym.typ = new.sym.typ.with_scope(new_module)
         new_module.inst_name = inst_name
         new_module.module_params = []
         ctor = new_module.find_ctor()

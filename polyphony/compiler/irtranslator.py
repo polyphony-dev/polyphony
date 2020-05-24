@@ -544,10 +544,10 @@ class CodeVisitor(ast.NodeVisitor):
                 fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, (ann,))
         else:
             param_t = Type.undef()
-        param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
-        param_copy = self.current_scope.add_sym(arg.arg, typ=param_t.clone())
         if is_vararg:
-            param_t.set_vararg(True)
+            param_t = param_t.with_vararg(True)
+        param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
+        param_copy = self.current_scope.add_sym(arg.arg, typ=param_t)
         return param_in, param_copy
 
     def _visit_lazy_FunctionDef(self, node):

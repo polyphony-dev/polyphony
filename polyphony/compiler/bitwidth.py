@@ -22,7 +22,7 @@ class TempVarWidthSetter(IRVisitor):
         if self.temps:
             max_width = max([t.get_width() for t in self.int_types])
             for t in self.temps:
-                t.typ.set_width(max_width)
+                t.typ = t.typ.with_width(max_width)
 
 
 class BitwidthReducer(AHDLVisitor):

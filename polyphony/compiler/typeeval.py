@@ -10,8 +10,7 @@ class TypeEvaluator(object):
 
     def visit_int(self, t):
         w = self.visit(t.get_width())
-        t.set_width(w)
-        return t
+        return t.with_width(w)
 
     def visit_bool(self, t):
         return t
@@ -21,19 +20,19 @@ class TypeEvaluator(object):
 
     def visit_list(self, t):
         elm = self.visit(t.get_element())
-        t.set_element(elm)
+        t = t.with_element(elm)
         if isinstance(t.get_length(), Type):
             assert t.get_length().is_expr()
             ln = self.visit(t.get_length())
             if ln.is_expr() and ln.get_expr().is_a(EXPR) and ln.get_expr().exp.is_a(CONST):
-                t.set_length(ln.get_expr().exp.value)
+                t = t.with_length(ln.get_expr().exp.value)
             else:
-                t.set_length(ln)
+                t = t.with_length(ln)
         return t
 
     def visit_tuple(self, t):
         elm = self.visit(t.get_element())
-        t.set_element(elm)
+        t = t.with_element(elm)
         return t
 
     def visit_function(self, t):
@@ -46,14 +45,14 @@ class TypeEvaluator(object):
                 param_types.append(pt)
                 pt = self.visit(copy.typ)
                 copy.set_type(pt)
-            t.set_param_types(param_types)
+            t = t.with_param_types(param_types)
             func.return_type = self.visit(func.return_type)
-            t.set_return_type(func.return_type)
+            t = t.with_return_type(func.return_type)
         else:
             param_types = [self.visit(sym.typ) for pt in t.get_param_types()]
-            t.set_param_types(param_types)
+            t = t.with_param_types(param_types)
             ret_t = self.visit(t.get_return_type())
-            t.set_return_type(ret_t)
+            t = t.with_return_type(ret_t)
         return t
 
     def visit_object(self, t):
@@ -80,7 +79,7 @@ class TypeEvaluator(object):
             pass
         else:
             result = Type.expr(result)
-        result.set_explicit(t.get_explicit())
+        result = result.with_explicit(t.get_explicit())
         return result
 
     def visit(self, t):
@@ -150,30 +149,30 @@ class TypeExprEvaluator(IRVisitor):
                 if expr_typ.get_element() is Type.undef():
                     elm = self.visit(ir.offset)
                     if isinstance(elm, Type):
-                        expr_typ.set_element(elm)
+                        expr_typ = expr_typ.with_element(elm)
                     else:
-                        expr_typ.set_element(Type.expr(elm))
+                        expr_typ = expr_typ.with_element(Type.expr(elm))
                 elif ir.mem.is_a(TEMP):
                     elm = self.visit(ir.offset)
                     if isinstance(elm, Type):
-                        expr_typ.set_element(elm)
+                        expr_typ = expr_typ.with_element(elm)
                     else:
-                        expr_typ.set_element(Type.expr(elm))
+                        expr_typ = expr_typ.with_element(Type.expr(elm))
                 else:
                     length = self.visit(ir.offset)
                     if length.is_a(CONST):
-                        expr_typ.set_length(length.value)
+                        expr_typ = expr_typ.with_length(length.value)
                     else:
-                        expr_typ.set_length(Type.expr(length))
+                        expr_typ = expr_typ.with_length(Type.expr(length))
             elif expr_typ.is_tuple():
                 assert ir.mem.is_a(TEMP)
                 elms = self.visit(ir.offset)
-                expr_typ.set_element(elms[0])  # TODO:
-                expr_typ.set_length(len(elms))
+                expr_typ = expr_typ.with_element(elms[0])  # TODO:
+                expr_typ = expr_typ.with_length(len(elms))
             elif expr_typ.is_int():
                 width = self.visit(ir.offset)
                 if width.is_a(CONST):
-                    expr_typ.set_width(width.value)
+                    expr_typ = expr_typ.with_width(width.value)
             else:
                 print(expr_typ)
                 assert False

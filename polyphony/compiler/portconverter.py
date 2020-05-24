@@ -66,7 +66,7 @@ class PortTypeProp(TypePropagation):
             if not sym.typ.is_port():
                 raise RejectPropagation(ir)
             if ir.func.symbol().typ.get_scope().base_name == 'assign':
-                sym.typ.set_assigned(True)
+                sym.typ = sym.typ.with_assigned(True)
             kind = sym.typ.get_port_kind()
             root = sym.typ.get_root_symbol()
             port_owner = root.scope
@@ -93,7 +93,7 @@ class PortTypeProp(TypePropagation):
                 params = ir.func_scope().params[:]
             arg_types = [self.visit(arg) for _, arg in ir.args]
             for i, param in enumerate(params):
-                self._propagate(param.sym, arg_types[i].clone())
+                self._propagate(param.sym, arg_types[i])
             self._add_scope(ir.func_scope())
             return ir.func_scope().return_type
 

@@ -404,12 +404,12 @@ class Scope(Tagged):
             syms = sub.find_scope_sym(old)
             for sym in syms:
                 if sym.scope in new_scopes.values():
-                    sym.typ.set_scope(new)
+                    sym.typ = sym.typ.with_scope(new)
             if new.parent.is_namespace():
                 continue
             old_sym = new.parent.symbols[new.base_name]
             new_sym = old_sym.clone(new.parent)
-            new_sym.typ.set_scope(new)
+            new_sym.typ = new_sym.typ.with_scope(new)
             new.parent.symbols[new.base_name] = new_sym
         return sub
 
@@ -437,7 +437,7 @@ class Scope(Tagged):
             syms = new_class.find_scope_sym(old)
             for sym in syms:
                 if sym.scope in new_scopes.values():
-                    sym.typ.set_scope(new)
+                    sym.typ = sym.typ.with_scope(new)
             if new.parent.is_namespace():
                 continue
             assert new.parent.symbols[new.base_name].typ.get_scope() is new
@@ -596,7 +596,7 @@ class Scope(Tagged):
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
-            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym.typ.clone())
+            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym.typ)
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:

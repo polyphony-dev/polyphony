@@ -56,7 +56,7 @@ class CopyOpt(IRVisitor):
                 else:
                     new = copy_stm.src.clone()
                 # TODO: we need the bit width propagation
-                new.symbol().set_type(old.symbol().typ.clone())
+                new.symbol().set_type(old.symbol().typ)
                 logger.debug('replace FROM ' + str(u))
                 self.udupdater.update(u, None)
                 u.replace(old, new)

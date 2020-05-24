@@ -418,7 +418,7 @@ class HyperBlockBuilder(object):
                         old_ps.append(stm.ps[idx])
                 if all([new_args[0].symbol() is arg.symbol() for arg in new_args[1:]]):
                     newsym = self.scope.add_temp()
-                    newsym.set_type(stm.var.symbol().typ.clone())
+                    newsym.set_type(stm.var.symbol().typ)
                     dst = TEMP(newsym, Ctx.STORE)
                     mv = MOVE(dst, new_args[0])
                     new_tail.append_stm(mv)
@@ -428,7 +428,7 @@ class HyperBlockBuilder(object):
                     new_phi.args = new_args
                     new_phi.ps = new_ps
                     newsym = self.scope.add_temp()
-                    newsym.set_type(stm.var.symbol().typ.clone())
+                    newsym.set_type(stm.var.symbol().typ)
                     new_phi.var = TEMP(newsym, Ctx.STORE)
                     new_tail.append_stm(new_phi)
                     self.uddetector.visit(new_phi)

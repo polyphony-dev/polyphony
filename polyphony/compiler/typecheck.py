@@ -158,11 +158,10 @@ class TypePropagation(IRVisitor):
         if ir.sym.typ.is_class() and ir.sym.typ.get_scope().is_typeclass():
             t = Type.from_ir(ir)
             if t.is_object():
-                ir.sym.typ.set_scope(t.get_scope())
+                ir.sym.typ = ir.sym.typ.with_scope(t.get_scope())
             else:
                 type_scope, args = Type.to_scope(t)
-                ir.sym.typ.set_scope(type_scope)
-                ir.sym.typ.set_typeargs(args)
+                ir.sym.typ = ir.sym.typ.with_scope(type_scope).with_typeargs(args)
         elif ir.funcall is False and ir.sym.typ.is_function():
             func_scope = ir.sym.typ.get_scope()
             self._add_scope(func_scope)
@@ -209,11 +208,11 @@ class TypePropagation(IRVisitor):
         if mem_t.is_class() and mem_t.get_scope().is_typeclass():
             t = Type.from_ir(ir)
             if t.is_object():
-                mem_t.set_scope(t.get_scope())
+                mem_t = mem_t.with_scope(t.get_scope())
             else:
                 type_scope, args = Type.to_scope(t)
-                mem_t.set_scope(type_scope)
-                mem_t.set_typeargs(args)
+                mem_t = mem_t.with_scope(type_scope).with_typeargs(args)
+            ir.mem.symbol().typ = mem_t
             return mem_t
         elif not mem_t.is_seq():
             type_error(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE,
@@ -232,7 +231,7 @@ class TypePropagation(IRVisitor):
         mem_t = self.visit(ir.mem)
         if mem_t.is_undef():
             raise RejectPropagation(ir)
-        mem_t.set_ro(False)
+        ir.mem.symbol().typ = mem_t.with_ro(False)
         offs_t = self.visit(ir.offset)
         if not offs_t.is_int():
             type_error(self.current_stm, Errors.MUST_BE_X_TYPE,
@@ -251,7 +250,7 @@ class TypePropagation(IRVisitor):
         if self.current_stm.dst.is_a([TEMP, ATTR]):
             dsttyp = self.current_stm.dst.symbol().typ
             if dsttyp.is_seq() and dsttyp.get_element().is_explicit():
-                item_t = dsttyp.get_element().clone()
+                item_t = dsttyp.get_element()
         if item_t is None:
             item_typs = [self.visit(item) for item in ir.items]
             if self.current_stm.src == ir:
@@ -276,7 +275,7 @@ class TypePropagation(IRVisitor):
         else:
             t = Type.tuple(item_t, length)
         if all(item.is_a(CONST) for item in ir.items):
-            t.set_ro(True)
+            t = t.with_ro(True)
         ir.sym.set_type(t)
         return t
 
@@ -297,7 +296,7 @@ class TypePropagation(IRVisitor):
         typ = self.visit(ir.exp)
         self.scope.return_type = typ
         sym = self.scope.parent.find_sym(self.scope.base_name)
-        sym.typ.set_return_type(typ)
+        sym.typ = sym.typ.with_return_type(typ)
 
     def visit_MOVE(self, ir):
         src_typ = self.visit(ir.src)
@@ -309,7 +308,7 @@ class TypePropagation(IRVisitor):
             if not isinstance(ir.dst.symbol(), Symbol):
                 # the type of object has not inferenced yet
                 raise RejectPropagation(ir)
-            self._propagate(ir.dst.symbol(), src_typ.clone())
+            self._propagate(ir.dst.symbol(), src_typ)
         elif ir.dst.is_a(ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet
@@ -320,9 +319,9 @@ class TypePropagation(IRVisitor):
             for item in ir.dst.items:
                 assert item.is_a([TEMP, ATTR, MREF])
                 if item.is_a([TEMP, ATTR]):
-                    self._propagate(item.symbol(), elem_t.clone())
+                    self._propagate(item.symbol(), elem_t)
                 elif item.is_a(MREF):
-                    item.mem.symbol().typ.set_element(elem_t)
+                    item.mem.symbol().typ = item.mem.symbol().typ.with_element(elem_t)
         elif ir.dst.is_a(MREF):
             pass
         else:
@@ -336,7 +335,7 @@ class TypePropagation(IRVisitor):
     def visit_PHI(self, ir):
         arg_types = [self.visit(arg) for arg in ir.args]
         for arg_t in arg_types:
-            self._propagate(ir.var.symbol(), arg_t.clone())
+            self._propagate(ir.var.symbol(), arg_t)
 
     def visit_UPHI(self, ir):
         self.visit_PHI(ir)
@@ -565,14 +564,12 @@ class TypeSpecializer(TypePropagation):
                 new_param_t = Type.propagate(param_t, arg_t)
                 new_param_types.append(new_param_t)
             else:
-                arg_t = arg_t.clone()
-                arg_t.set_explicit(False)
+                arg_t = arg_t.with_explicit(False)
                 new_param_types.append(arg_t)
         return new_param_types
 
     def _specialize_function_with_types(self, scope, types):
         assert not scope.is_specialized()
-        types = [t.clone() for t in types]
         postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
@@ -587,19 +584,17 @@ class TypeSpecializer(TypePropagation):
         else:
             params = new_scope.params[:]
         for p, new_t in zip(params, types):
-            new_t.set_perfect_explicit()
+            new_t = new_t.with_perfect_explicit()
             p.sym.set_type(new_t)
         new_scope.add_tag('specialized')
         sym = new_scope.parent.find_sym(new_scope.base_name)
-        sym.typ.set_param_types(types)
-        sym.typ.set_return_type(new_scope.return_type)
+        sym.typ = sym.typ.with_param_types(types).with_return_type(new_scope.return_type)
         return new_scope, True
 
     def _specialize_class_with_types(self, scope, types):
         assert not scope.is_specialized()
         if scope.is_port():
             return self._specialize_port_with_types(scope, types)
-        types = [t.clone() for t in types]
         postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
@@ -617,7 +612,7 @@ class TypeSpecializer(TypePropagation):
         new_ctor.return_type = Type.object(new_ctor)
 
         for p, new_t in zip(new_ctor.params[1:], types):
-            new_t.set_perfect_explicit()
+            new_t = new_t.with_perfect_explicit()
             p.sym.set_type(new_t)
         new_scope.add_tag('specialized')
         return new_scope, True
@@ -632,9 +627,9 @@ class TypeSpecializer(TypePropagation):
                     args = typ.get_typeargs()
                     dtype.attrs.update(args)
             else:
-                dtype = typ.clone()
+                dtype = typ
         else:
-            dtype = typ.clone()
+            dtype = typ
         postfix = Type.mangled_names([dtype])
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
@@ -647,30 +642,29 @@ class TypeSpecializer(TypePropagation):
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_ctor)
         dtype_param = new_ctor.params[1]
-        dtype_param.sym.set_type(typ.clone())
-        dtype_param.sym.typ.set_explicit(True)
-        dtype_param.copy.set_type(typ.clone())
-        dtype_param.sym.typ.set_explicit(True)
+        dtype_param.sym.set_type(typ)
+        dtype_param.sym.typ = dtype_param.sym.typ.with_explicit(True)
+        dtype_param.copy.set_type(typ)
+        dtype_param.sym.typ = dtype_param.sym.typ.with_explicit(True)
         init_param = new_ctor.params[3]
-        init_param.sym.set_type(dtype.clone())
-        init_param.sym.typ.set_explicit(True)
-        init_param.copy.set_type(dtype.clone())
-        init_param.sym.typ.set_explicit(True)
+        init_param.sym.set_type(dtype)
+        init_param.sym.typ = init_param.sym.typ.with_explicit(True)
+        init_param.copy.set_type(dtype)
+        init_param.sym.typ = init_param.sym.typ.with_explicit(True)
 
         new_scope.add_tag('specialized')
         for child in new_scope.children:
             for sym, copy, _ in child.params:
                 if sym.typ.is_generic():
-                    sym.set_type(dtype.clone())
-                    copy.set_type(dtype.clone())
+                    sym.set_type(dtype)
+                    copy.set_type(dtype)
             if child.return_type.is_generic():
-                child.return_type = dtype.clone()
+                child.return_type = dtype
             child.add_tag('specialized')
         return new_scope, True
 
     def _specialize_worker_with_types(self, scope, types):
         assert not scope.is_specialized()
-        types = [t.clone() for t in types]
         postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
@@ -685,7 +679,7 @@ class TypeSpecializer(TypePropagation):
         else:
             params = new_scope.params[:]
         for p, new_t in zip(params, types):
-            new_t.set_perfect_explicit()
+            new_t = new_t.with_perfect_explicit()
             p.sym.set_type(new_t)
         new_scope.add_tag('specialized')
         return new_scope, True
@@ -724,7 +718,7 @@ class StaticTypePropagation(TypePropagation):
         for s in scopes:
             for sym in s.symbols.values():
                 if sym.is_inherited() and sym.typ != sym.ancestor.typ:
-                    sym.set_type(sym.ancestor.typ.clone())
+                    sym.set_type(sym.ancestor.typ)
 
     def collect_stms(self, scope):
         stms = []

@@ -247,7 +247,7 @@ class InlineOpt(object):
             new_clos_sym = symbol_map[clos_sym]
 
             new_clos = clos.clone('', postfix=f'inl{inline_id}', parent=caller, sym_postfix=f'_{inline_id}')
-            new_clos_sym.typ.set_scope(new_clos)
+            new_clos_sym.typ = new_clos_sym.typ.with_scope(new_clos)
 
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
             sym_replacer.process(new_clos, new_clos.entry_block)
@@ -393,7 +393,7 @@ class FlattenFieldAccess(IRTransformer):
                 tags = set()
                 for sym in ir.qualified_symbol():
                     tags |= sym.tags
-                flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ.clone())
+                flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
                 flatsym.ancestor = ancestor
                 flatsym.add_tag('flattened')
             return head + (flatsym, ) + tail
@@ -479,7 +479,7 @@ class FlattenObjectArgs(IRTransformer):
                 new_name = '{}_{}'.format(base_name, fname)
                 new_sym = module_scope.find_sym(new_name)
                 if not new_sym:
-                    new_sym = module_scope.add_sym(new_name, typ=fsym.typ.clone())
+                    new_sym = module_scope.add_sym(new_name, typ=fsym.typ)
                 new_arg = arg.clone()
                 new_arg.set_symbol(new_sym)
                 args.append((new_name, new_arg))
@@ -497,10 +497,10 @@ class FlattenObjectArgs(IRTransformer):
             new_name = '{}_{}'.format(base_name, name)
             param_in = worker_scope.find_param_sym(new_name)
             if not param_in:
-                param_in = worker_scope.add_param_sym(new_name, typ=sym.typ.clone())
+                param_in = worker_scope.add_param_sym(new_name, typ=sym.typ)
             param_copy = worker_scope.find_sym(new_name)
             if not param_copy:
-                param_copy = worker_scope.add_sym(new_name, typ=sym.typ.clone())
+                param_copy = worker_scope.add_sym(new_name, typ=sym.typ)
             flatten_params.append((param_in, param_copy))
         new_params = []
         for idx, (sym, copy, defval) in enumerate(worker_scope.params):
@@ -592,9 +592,9 @@ class FlattenModule(IRVisitor):
         if new_worker.is_inlinelib():
             new_worker.del_tag('inlinelib')
         worker_self = new_worker.find_sym('self')
-        worker_self.typ.set_scope(parent_module)
+        worker_self.typ = worker_self.typ.with_scope(parent_module)
         in_self, _, _ = new_worker.params[0]
-        in_self.typ.set_scope(parent_module)
+        in_self.typ = in_self.typ.with_scope(parent_module)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
         new_exp.replace(ctor_self, worker_self)
@@ -623,7 +623,7 @@ class FlattenModule(IRVisitor):
             syms = new_worker.find_scope_sym(old)
             for sym in syms:
                 if sym.scope in scope_map.values():
-                    sym.typ.set_scope(new)
+                    sym.typ = sym.typ.with_scope(new)
         return arg
 
     def _make_new_assigned_method(self, arg, assigned_scope):
@@ -632,9 +632,9 @@ class FlattenModule(IRVisitor):
         if new_method.is_inlinelib():
             new_method.del_tag('inlinelib')
         self_sym = new_method.find_sym('self')
-        self_sym.typ.set_scope(module_scope)
+        self_sym.typ = self_sym.typ.with_scope(module_scope)
         in_self, _, _ = new_method.params[0]
-        in_self.typ.set_scope(module_scope)
+        in_self.typ = in_self.typ.with_scope(module_scope)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
         new_exp.replace(ctor_self, self_sym)

@@ -92,12 +92,12 @@ class Symbol(Tagged):
     def set_type(self, typ):
         self.typ = typ
         if self.ancestor:
-            self.ancestor.set_type(typ.clone())
+            self.ancestor.set_type(typ)
 
     def clone(self, scope, postfix=''):
         newsym = Symbol(self.name + postfix,
                         scope,
                         set(self.tags),
-                        self.typ.clone())
+                        self.typ)
         newsym.ancestor = self.ancestor
         return newsym

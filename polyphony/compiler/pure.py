@@ -446,10 +446,10 @@ class PureCtorBuilder(object):
                 klass_scope = typ.get_scope()
                 if klass_scope.find_ctor().is_pure():
                     klass_scope, _ = env.runtime_info.inst2module[v]
-                    typ.set_scope(klass_scope)
+                    typ = typ.with_scope(klass_scope)
                 klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.base_name)
                 klass_scope_sym.set_type(Type.klass(klass_scope))
-                sym = module.add_sym(name, typ=typ.clone())
+                sym = module.add_sym(name, typ=typ)
                 orig_obj = instance.__dict__[name]
                 calls = env.runtime_info.get_internal_calls(instance)
                 for cname, cself, cargs in calls:
@@ -483,7 +483,7 @@ class PureCtorBuilder(object):
                         assert stm
                         stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
                         ctor.entry_block.append_stm(stm)
-                    sym.typ.set_element(elem_t)
+                    sym.typ = sym.typ.with_element(elem_t)
                 else:
                     dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
                     stm = self._build_move_stm(dst, v, module)
