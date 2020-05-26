@@ -1,9 +1,10 @@
 from polyphony.compiler.__main__ import earlytypeprop, typeprop, evaltype
-from polyphony.compiler.env import env
-from polyphony.compiler.type import Type
-from polyphony.compiler.typecheck import EarlyTypePropagation
-from polyphony.compiler.typecheck import TypePropagation
-from polyphony.compiler.typecheck import TypeEvalVisitor
+from polyphony.compiler.common.env import env
+from polyphony.compiler.ir.type import Type
+from polyphony.compiler.ir.transformers.typecheck import TypePropagation
+from polyphony.compiler.ir.transformers.typecheck import TypeSpecializer
+from polyphony.compiler.ir.transformers.typecheck import StaticTypePropagation
+from polyphony.compiler.ir.transformers.typecheck import TypeEvalVisitor
 from base import CompilerTestCase
 import unittest
 
@@ -537,8 +538,7 @@ test_call_1()
         self.assertTrue(f_x.typ.is_undef())
         self.assertTrue(not f_x.typ.is_explicit())
 
-        typeprop = EarlyTypePropagation()
-        typeprop.process_all()
+        TypeSpecializer().process_all()
 
         scope_f = self.scope('f_b')
         f = scope.find_sym('f_b')
@@ -642,6 +642,7 @@ from polyphony.typing import List
 def test_expr_1():
     size = 3
     xs:List[int][size] = [0, 1, 2]
+    return xs[0]
 
 test_expr_1()
     '''
@@ -680,6 +681,7 @@ class C:
 def test_expr_2():
     xs:List[int][size] = [0, 1]
     ys:List[int][C.size] = [0, 1, 2]
+    return xs[0] + ys[0]
 
 test_expr_2()
     '''

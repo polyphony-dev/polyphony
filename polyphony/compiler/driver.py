@@ -1,7 +1,7 @@
 ﻿import inspect
 import sys
-from .scope import Scope
-from .env import env
+from .ir.scope import Scope
+from .common.env import env
 import logging
 
 

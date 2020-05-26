@@ -14,7 +14,7 @@ TMP_DIR  = ROOT_DIR + '.tmp'
 sys.path.append(ROOT_DIR)
 
 from polyphony.compiler.__main__ import compile_main, logging_setting
-from polyphony.compiler.env import env
+from polyphony.compiler.common.env import env
 
 
 def parse_options():

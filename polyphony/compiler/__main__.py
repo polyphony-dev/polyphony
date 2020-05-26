@@ -2,79 +2,88 @@
 import json
 import os
 import sys
-from .ahdlusedef import AHDLUseDefDetector
-from .ahdlopt import AHDLCopyOpt
-from .bitwidth import BitwidthReducer
-from .bitwidth import TempVarWidthSetter
-from .builtin import builtin_symbols
-from .cfgopt import BlockReducer, PathExpTracer
-from .cfgopt import HyperBlockBuilder
-from .common import read_source
-from .constopt import ConstantOpt
-from .constopt import EarlyConstantOptNonSSA
-from .constopt import PolyadConstantFolding
-from .constopt import StaticConstOpt
-from .copyopt import CopyOpt, ObjCopyOpt
-from .dataflow import DFGBuilder
-from .deadcode import DeadCodeEliminator
-from .diagnostic import CFGChecker
+
 from .driver import Driver
-from .env import env
-from .errors import CompileError, InterpretError
-from .hdlgen import HDLModuleBuilder
-from .hdlmodule import HDLModule
-from .iftransform import IfTransformer, IfCondTransformer
-from .inlineopt import InlineOpt
-from .inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
-from .inlineopt import ObjectHierarchyCopier
-from .inlineopt import SpecializeWorker
-from .instantiator import ModuleInstantiator, WorkerInstantiator
-from .instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
-from .iotransformer import IOTransformer
-from .iotransformer import WaitTransformer
-from .irtranslator import IRTranslator
-from .loopdetector import LoopDetector
-from .loopdetector import LoopInfoSetter
-from .loopdetector import LoopRegionSetter
-from .loopdetector import LoopDependencyDetector
-from .looptransformer import LoopFlatten
-from .objtransform import ObjectTransformer
-from .phiopt import PHIInlining, LPHIRemover
-from .portconverter import PortConverter, FlattenPortList
-from .portconverter import FlippedTransformer
-from .portconverter import PortConnector
-from .pure import interpret, PureCtorBuilder, PureFuncExecutor
-from .quadruplet import EarlyQuadrupleMaker
-from .quadruplet import LateQuadrupleMaker
-from .regreducer import RegReducer
-from .regreducer import AliasVarDetector
-from .scheduler import Scheduler
-from .scope import Scope
-from .scopegraph import CallGraphBuilder
-from .scopegraph import DependencyGraphBuilder
-from .setlineno import SourceDump
-from .ssa import ScalarSSATransformer
-from .ssa import TupleSSATransformer
-from .ssa import ListSSATransformer
-from .ssa import ObjectSSATransformer
-from .statereducer import StateReducer
-from .stg import STGBuilder
-from .synth import DefaultSynthParamSetter
-from .typecheck import TypePropagation
-from .typecheck import TypeSpecializer
-from .typecheck import InstanceTypePropagation
-from .typecheck import StaticTypePropagation
-from .typecheck import TypeChecker
-from .typecheck import PortAssignChecker
-from .typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
-from .typecheck import AssertionChecker
-from .typecheck import SynthesisParamChecker
-from .typecheck import TypeEvalVisitor
-from .unroll import LoopUnroller
-from .usedef import UseDefDetector
-from .usedef import FieldUseDef
-from .vericodegen import VerilogCodeGen
-from .veritestgen import VerilogTestGen
+
+from .common.common import read_source
+from .common.env import env
+from .common.errors import CompileError, InterpretError
+
+from .ahdl.hdlgen import HDLModuleBuilder
+from .ahdl.hdlmodule import HDLModule
+from .ahdl.stg import STGBuilder
+from .ahdl.analysis.ahdlusedef import AHDLUseDefDetector
+from .ahdl.transformers.ahdlopt import AHDLCopyOpt
+from .ahdl.transformers.bitwidthreducer import BitwidthReducer
+from .ahdl.transformers.iotransformer import IOTransformer
+from .ahdl.transformers.iotransformer import WaitTransformer
+from .ahdl.transformers.statereducer import StateReducer
+
+from .ir.builtin import builtin_symbols
+from .ir.scope import Scope
+from .ir.setlineno import SourceDump
+from .ir.synth import DefaultSynthParamSetter
+
+from .ir.analysis.usedef import UseDefDetector
+from .ir.analysis.usedef import FieldUseDef
+from .ir.analysis.diagnostic import CFGChecker
+from .ir.analysis.loopdetector import LoopDetector
+from .ir.analysis.loopdetector import LoopInfoSetter
+from .ir.analysis.loopdetector import LoopRegionSetter
+from .ir.analysis.loopdetector import LoopDependencyDetector
+from .ir.analysis.regreducer import AliasVarDetector
+from .ir.analysis.scopegraph import CallGraphBuilder
+from .ir.analysis.scopegraph import DependencyGraphBuilder
+
+from .ir.transformers.bitwidth import TempVarWidthSetter
+from .ir.transformers.cfgopt import BlockReducer, PathExpTracer
+from .ir.transformers.cfgopt import HyperBlockBuilder
+from .ir.transformers.constopt import ConstantOpt
+from .ir.transformers.constopt import EarlyConstantOptNonSSA
+from .ir.transformers.constopt import PolyadConstantFolding
+from .ir.transformers.constopt import StaticConstOpt
+from .ir.transformers.copyopt import CopyOpt, ObjCopyOpt
+from .ir.transformers.deadcode import DeadCodeEliminator
+from .ir.transformers.iftransform import IfTransformer, IfCondTransformer
+from .ir.transformers.inlineopt import InlineOpt
+from .ir.transformers.inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
+from .ir.transformers.inlineopt import ObjectHierarchyCopier
+from .ir.transformers.inlineopt import SpecializeWorker
+from .ir.transformers.instantiator import ModuleInstantiator, WorkerInstantiator
+from .ir.transformers.instantiator import EarlyModuleInstantiator, EarlyWorkerInstantiator
+from .ir.transformers.looptransformer import LoopFlatten
+from .ir.transformers.objtransform import ObjectTransformer
+from .ir.transformers.phiopt import PHIInlining, LPHIRemover
+from .ir.transformers.portconverter import PortConverter, FlattenPortList
+from .ir.transformers.portconverter import FlippedTransformer
+from .ir.transformers.portconverter import PortConnector
+from .ir.transformers.quadruplet import EarlyQuadrupleMaker
+from .ir.transformers.quadruplet import LateQuadrupleMaker
+from .ir.transformers.ssa import ScalarSSATransformer
+from .ir.transformers.ssa import TupleSSATransformer
+from .ir.transformers.ssa import ListSSATransformer
+from .ir.transformers.ssa import ObjectSSATransformer
+from .ir.transformers.typecheck import TypePropagation
+from .ir.transformers.typecheck import TypeSpecializer
+from .ir.transformers.typecheck import InstanceTypePropagation
+from .ir.transformers.typecheck import StaticTypePropagation
+from .ir.transformers.typecheck import TypeChecker
+from .ir.transformers.typecheck import PortAssignChecker
+from .ir.transformers.typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
+from .ir.transformers.typecheck import AssertionChecker
+from .ir.transformers.typecheck import SynthesisParamChecker
+from .ir.transformers.typecheck import TypeEvalVisitor
+from .ir.transformers.unroll import LoopUnroller
+
+from .ir.scheduling.dataflow import DFGBuilder
+from .ir.scheduling.scheduler import Scheduler
+
+from .frontend.python.irtranslator import IRTranslator
+from .frontend.python.pure import interpret, PureCtorBuilder, PureFuncExecutor
+
+from .target.verilog.vericodegen import VerilogCodeGen
+from .target.verilog.veritestgen import VerilogTestGen
+
 import logging
 logger = logging.getLogger()
 
@@ -546,8 +555,7 @@ def transformwait(driver, scope):
 
 
 def reducereg(driver, scope):
-    hdlmodule = env.hdlmodule(scope)
-    RegReducer().process(hdlmodule)
+    pass
 
 
 def ahdlcopyopt(driver, scope):

@@ -1,8 +1,8 @@
 import unittest
 import types
 from polyphony.compiler.__main__ import setup, compile, compile_plan
-from polyphony.compiler.common import src_texts
-from polyphony.compiler.env import env
+from polyphony.compiler.common.common import src_texts
+from polyphony.compiler.common.env import env
 
 
 class CompilerTestCase(unittest.TestCase):
