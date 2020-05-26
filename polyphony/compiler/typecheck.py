@@ -212,7 +212,6 @@ class TypePropagation(IRVisitor):
             else:
                 type_scope, args = Type.to_scope(t)
                 mem_t = mem_t.with_scope(type_scope).with_typeargs(args)
-            ir.mem.symbol().typ = mem_t
             return mem_t
         elif not mem_t.is_seq():
             type_error(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE,
@@ -583,12 +582,14 @@ class TypeSpecializer(TypePropagation):
             params = new_scope.params[1:]
         else:
             params = new_scope.params[:]
+        new_types = []
         for p, new_t in zip(params, types):
             new_t = new_t.with_perfect_explicit()
             p.sym.typ = new_t
+            new_types.append(new_t)
         new_scope.add_tag('specialized')
         sym = new_scope.parent.find_sym(new_scope.base_name)
-        sym.typ = sym.typ.with_param_types(types).with_return_type(new_scope.return_type)
+        sym.typ = sym.typ.with_param_types(new_types).with_return_type(new_scope.return_type)
         return new_scope, True
 
     def _specialize_class_with_types(self, scope, types):

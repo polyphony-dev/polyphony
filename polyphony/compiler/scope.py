@@ -268,6 +268,9 @@ class Scope(Tagged):
 
         for orig_sym in self.symbols.values():
             new_sym = orig_sym.clone(scope, postfix)
+            exprs = Type.find_expr(orig_sym.typ)
+            if exprs:
+                new_sym.typ = orig_sym.typ.with_clone_expr()
             assert new_sym.name not in scope.symbols
             scope.symbols[new_sym.name] = new_sym
             symbol_map[orig_sym] = new_sym

@@ -598,6 +598,16 @@ class Type(object):
         find_expr_r(typ, exprs)
         return exprs
 
+    def with_clone_expr(self):
+        copy = Type(self.name, **self.attrs.copy())
+        if self.is_expr():
+            copy.attrs['expr'] = self.get_expr().clone()
+        else:
+            for key, v in self.attrs.items():
+                if isinstance(v, Type):
+                    copy.attrs[key] = v.with_clone_expr()
+        return copy
+
     @classmethod
     def mangled_names(cls, types):
         ts = []
