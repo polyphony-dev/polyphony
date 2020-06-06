@@ -41,18 +41,18 @@ class LPHIRemover(object):
             lphis = loop.head.collect_stms(LPHI)
             if not lphis:
                 continue
-            mstm = MSTM()
+            assert len(loop.head.preds_loop) == 1
             update_idx = loop.head.preds.index(loop.head.preds_loop[0])
-            init_idx = 1 - update_idx
+            mstm = MSTM()
             for lphi in lphis:
-                assert len(lphi.args) == 2
                 lphi.block.stms.remove(lphi)
-
-                init_blk = lphi.block.preds[init_idx]
-                init_arg = lphi.args[init_idx]
-                mv = MOVE(lphi.var.clone(), init_arg, loc=Loc(lphi.loc.filename, 0))
-                init_blk.insert_stm(-1, mv)
-
+                for i in range(len(lphi.args)):
+                    if i == update_idx:
+                        continue
+                    init_blk = lphi.block.preds[i]
+                    init_arg = lphi.args[i]
+                    mv = MOVE(lphi.var.clone(), init_arg, loc=Loc(lphi.loc.filename, 0))
+                    init_blk.insert_stm(-1, mv)
                 update_arg = lphi.args[update_idx]
                 mv = MOVE(lphi.var.clone(), update_arg, loc=lphi.loc)
                 mstm.append(mv)

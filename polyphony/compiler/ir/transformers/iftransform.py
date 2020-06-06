@@ -10,20 +10,6 @@ class IfTransformer(object):
         self.mcjumps = []
         for blk in scope.traverse_blocks():
             self._process_block(blk)
-        if self.mcjumps:
-            self._sort_cfg_edges(scope)
-
-    def _sort_cfg_edges(self, scope):
-        g = Graph()
-        for blk in scope.traverse_blocks():
-            succs = [succ for succ in blk.succs if succ not in blk.succs_loop]
-            for succ in succs:
-                g.add_edge(blk, succ)
-
-        dfs_order_map = g.node_order_map(is_breadth_first=False)
-        for blk in scope.traverse_blocks():
-            if len(blk.preds) > 1:
-                blk.preds = sorted(blk.preds, key=lambda b: dfs_order_map[b])
 
     def _merge_else_cj(self, cj, mj):
         #has false block elif?
