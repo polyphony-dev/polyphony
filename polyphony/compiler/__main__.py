@@ -34,6 +34,11 @@ from .ir.analysis.loopdetector import LoopDependencyDetector
 from .ir.analysis.regreducer import AliasVarDetector
 from .ir.analysis.scopegraph import CallGraphBuilder
 from .ir.analysis.scopegraph import DependencyGraphBuilder
+from .ir.analysis.typecheck import TypeChecker
+from .ir.analysis.typecheck import PortAssignChecker
+from .ir.analysis.typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
+from .ir.analysis.typecheck import AssertionChecker
+from .ir.analysis.typecheck import SynthesisParamChecker
 
 from .ir.transformers.bitwidth import TempVarWidthSetter
 from .ir.transformers.cfgopt import BlockReducer, PathExpTracer
@@ -63,16 +68,11 @@ from .ir.transformers.ssa import ScalarSSATransformer
 from .ir.transformers.ssa import TupleSSATransformer
 from .ir.transformers.ssa import ListSSATransformer
 from .ir.transformers.ssa import ObjectSSATransformer
-from .ir.transformers.typecheck import TypePropagation
-from .ir.transformers.typecheck import TypeSpecializer
-from .ir.transformers.typecheck import InstanceTypePropagation
-from .ir.transformers.typecheck import StaticTypePropagation
-from .ir.transformers.typecheck import TypeChecker
-from .ir.transformers.typecheck import PortAssignChecker
-from .ir.transformers.typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
-from .ir.transformers.typecheck import AssertionChecker
-from .ir.transformers.typecheck import SynthesisParamChecker
-from .ir.transformers.typecheck import TypeEvalVisitor
+from .ir.transformers.typeprop import TypePropagation
+from .ir.transformers.typeprop import TypeSpecializer
+from .ir.transformers.typeprop import InstanceTypePropagation
+from .ir.transformers.typeprop import StaticTypePropagation
+from .ir.transformers.typeprop import TypeEvalVisitor
 from .ir.transformers.unroll import LoopUnroller
 
 from .ir.scheduling.dataflow import DFGBuilder
@@ -662,6 +662,7 @@ def compile_plan():
 
         dbg(dumpscope),
         iftrans,
+        dbg(dumpscope),
         reduceblk,
         earlyquadruple,
         dbg(dumpscope),
@@ -818,7 +819,7 @@ def compile_plan():
 
 def setup(src_file, options):
     env.__init__()
-    env.dev_debug_mode = options.debug_mode
+    env.dev_debug_mode = True#options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
     env.quiet_level = options.quiet_level if options.quiet_level else 0
     env.enable_verilog_dump = options.verilog_dump

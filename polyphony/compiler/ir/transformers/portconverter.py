@@ -1,5 +1,5 @@
 from collections import defaultdict
-from .typecheck import TypePropagation, RejectPropagation
+from .typeprop import TypePropagation, RejectPropagation
 from ..block import Block
 from ..scope import Scope
 from ..ir import Ctx, CONST, TEMP, ATTR, CALL, NEW, RET, MOVE, EXPR

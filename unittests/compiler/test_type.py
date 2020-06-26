@@ -1,10 +1,10 @@
 from polyphony.compiler.__main__ import earlytypeprop, typeprop, evaltype
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.type import Type
-from polyphony.compiler.ir.transformers.typecheck import TypePropagation
-from polyphony.compiler.ir.transformers.typecheck import TypeSpecializer
-from polyphony.compiler.ir.transformers.typecheck import StaticTypePropagation
-from polyphony.compiler.ir.transformers.typecheck import TypeEvalVisitor
+from polyphony.compiler.ir.transformers.typeprop import TypePropagation
+from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
+from polyphony.compiler.ir.transformers.typeprop import StaticTypePropagation
+from polyphony.compiler.ir.transformers.typeprop import TypeEvalVisitor
 from base import CompilerTestCase
 import unittest
 
