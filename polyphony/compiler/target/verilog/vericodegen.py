@@ -496,8 +496,6 @@ class VerilogCodeGen(AHDLVisitor):
     def visit_AHDL_IF(self, ahdl):
         blocks = 0
         for i, (cond, ahdlblk) in enumerate(zip(ahdl.conds, ahdl.blocks)):
-            if not ahdlblk.codes:
-                continue
             blocks += 1
             if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1) or i == 0:
                 cond = self.visit(cond)

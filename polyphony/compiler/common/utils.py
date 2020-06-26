@@ -70,3 +70,10 @@ def find_nth_item_index(items, target, nth):
                 return i
             found += 1
     return -1
+
+
+def find_id_index(items, target):
+    for i, item in enumerate(items):
+        if id(item) == id(target):
+            return i
+    return -1

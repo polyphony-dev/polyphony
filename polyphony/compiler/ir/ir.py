@@ -1,7 +1,7 @@
 ﻿from collections import namedtuple
 from enum import IntEnum
 from .symbol import Symbol
-from ..common.utils import is_a
+from ..common.utils import is_a, find_id_index
 
 
 op2sym_map = {
@@ -671,7 +671,7 @@ class IRStm(IR):
         self.block = None
 
     def program_order(self):
-        return (self.block.order, self.block.stms.index(self))
+        return (self.block.order, find_id_index(self.block.stms, self))
 
     def kids(self):
         return []
@@ -689,7 +689,7 @@ class EXPR(IRStm):
         self.exp = exp
 
     def __str__(self):
-        return '{}_{}'.format(self.exp, id(self))
+        return '{}'.format(self.exp)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, EXPR):
@@ -901,7 +901,7 @@ class PHIBase(IRStm):
         return self.var.kids() + kids
 
     def remove_arg(self, arg):
-        idx = self.args.index(arg)
+        idx = find_id_index(self.args, arg)
         if self.ps:
             assert len(self.args) == len(self.ps)
             self.ps.pop(idx)

@@ -112,8 +112,8 @@ class PortTypeProp(TypePropagation):
             for i, param in enumerate(params):
                 # we should not set the same type here.
                 # because the type of 'sym' and 'copy' might be have different objects(e.g. memnode)
-                self._propagate(param.sym, arg_types[i].clone())
-                #self._propagate_param(worker, param.copy, arg_types[i].clone())
+                self._propagate(param.sym, arg_types[i])
+                #self._propagate_param(worker, param.copy, arg_types[i])
 
             funct = Type.function(worker,
                                   Type.none(),
