@@ -20,6 +20,7 @@ def timed(func):
             func.timed_func = True
         return func(*args, **kwargs)
     _timed_decorator.func = func
+    _timed_decorator.__dict__.update(func.__dict__)
     return _timed_decorator
 
 
