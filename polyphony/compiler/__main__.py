@@ -595,7 +595,7 @@ def dumpscope(driver, scope):
 
 
 def dumpcfgimg(driver, scope):
-    from .scope import write_dot
+    from .ir.scope import write_dot
     if scope.is_function() or scope.is_function_module() or scope.is_method() or scope.is_module():
         write_dot(scope, f'{driver.stage - 1}_{driver.procs[driver.stage - 1].__name__}')
 
