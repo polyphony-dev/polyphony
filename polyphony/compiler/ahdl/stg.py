@@ -597,8 +597,8 @@ class AHDLTranslator(IRVisitor):
         return None
 
     def _build_mem_initialize_seq(self, array, memvar):
+        name = memvar.sig.name  # sym.hdl_name()
         sym = self.current_stm.dst.symbol()
-        name = sym.hdl_name()
         width = sym.typ.get_element().get_width()
         length = sym.typ.get_length()
         sig = self.hdlmodule.gen_sig(name, width, {'regarray'}, sym)
