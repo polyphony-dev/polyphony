@@ -219,13 +219,17 @@ class ConstantOptBase(IRVisitor):
             self._remove_dominated_branch(child, worklist)
         for succ in blk.succs:
             if blk in succ.preds:
-                idx = succ.preds.index(blk)
                 succ.remove_pred(blk)
                 if succ.preds:
                     phis = succ.collect_stms([PHI, LPHI])
                     for phi in phis:
-                        phi.args.pop(idx)
-                        phi.ps.pop(idx)
+                        for pi, p in enumerate(phi.ps[:]):
+                            for v in p.find_irs([TEMP, ATTR]):
+                                blks = self.scope.usedef.get_blks_defining(v.symbol())
+                                if blk in blks:
+                                    phi.args.pop(pi)
+                                    phi.ps.pop(pi)
+                                    break
                 elif succ is not self.scope.entry_block:
                     self._remove_dominated_branch(succ, worklist)
 
