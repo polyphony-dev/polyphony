@@ -455,17 +455,21 @@ class PipelineScheduler(SchedulerImpl):
 
     def _find_induction_paths(self, paths):
         induction_paths = []
+        last_nodes = set()
         for path in paths:
             last_node = path[-1]
+            if last_node in last_nodes:
+                continue
+            last_nodes.add(last_node)
             if not last_node.defs:
                 continue
-            d = last_node.defs[0]
-            if not d.is_induction():
-                continue
-            for i, p in enumerate(path):
-                if d in p.uses:
-                    induction_paths.append(path[i:])
-                    break
+            for d in last_node.defs:
+                if not d.is_induction():
+                    continue
+                for i, p in enumerate(path):
+                    if d in p.uses:
+                        induction_paths.append(path[i:])
+                        break
         return induction_paths
 
     def _get_using_resources(self, node):
