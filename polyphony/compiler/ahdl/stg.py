@@ -369,6 +369,11 @@ def _tags_from_sym(sym):
             tags.add('net')
         else:
             tags.add('reg')
+    if sym.typ.is_tuple():
+        if sym.is_alias():
+            tags.add('netarray')
+        else:
+            tags.add('regarray')
     elif sym.typ.is_port():
         di = sym.typ.get_direction()
         assert di != '?'
@@ -601,8 +606,12 @@ class AHDLTranslator(IRVisitor):
         sym = self.current_stm.dst.symbol()
         width = sym.typ.get_element().get_width()
         length = sym.typ.get_length()
-        sig = self.hdlmodule.gen_sig(name, width, {'regarray'}, sym)
-        self.hdlmodule.add_internal_reg_array(sig, length)
+        if memvar.sig.is_netarray():
+            sig = self.hdlmodule.gen_sig(name, width, {'netarray'}, sym)
+            self.hdlmodule.add_internal_net_array(sig, length)
+        else:
+            sig = self.hdlmodule.gen_sig(name, width, {'regarray'}, sym)
+            self.hdlmodule.add_internal_reg_array(sig, length)
         for i, item in enumerate(array.items):
             if not(isinstance(item, CONST) and item.value is None):
                 idx = AHDL_CONST(i)

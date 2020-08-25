@@ -32,6 +32,9 @@ class AliasVarDetector(IRVisitor):
             defstms = module.field_usedef.get_stms_defining(sym)
             if len(defstms) > 1:
                 return
+        if sym.typ.is_tuple() and sched == 'timed':
+            sym.add_tag('alias')
+            return
         if ir.src.is_a([TEMP, ATTR]):
             src_sym = ir.src.symbol()
             if self.scope.is_ctor() and self.scope.parent.is_module():
