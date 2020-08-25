@@ -819,7 +819,7 @@ def compile_plan():
 
 def setup(src_file, options):
     env.__init__()
-    env.dev_debug_mode = True#options.debug_mode
+    env.dev_debug_mode = options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
     env.quiet_level = options.quiet_level if options.quiet_level else 0
     env.enable_verilog_dump = options.verilog_dump
