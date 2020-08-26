@@ -219,9 +219,10 @@ class ConstantOptBase(IRVisitor):
             self._remove_dominated_branch(child, worklist)
         for succ in blk.succs:
             if blk in succ.preds:
+                idx = succ.preds.index(blk)
                 succ.remove_pred(blk)
                 if succ.preds:
-                    phis = succ.collect_stms([PHI, LPHI])
+                    phis = succ.collect_stms(PHI)
                     for phi in phis:
                         for pi, p in enumerate(phi.ps[:]):
                             for v in p.find_irs([TEMP, ATTR]):
@@ -230,6 +231,10 @@ class ConstantOptBase(IRVisitor):
                                     phi.args.pop(pi)
                                     phi.ps.pop(pi)
                                     break
+                    lphis = succ.collect_stms(LPHI)
+                    for lphi in lphis:
+                        lphi.args.pop(idx)
+                        lphi.ps.pop(idx)
                 elif succ is not self.scope.entry_block:
                     self._remove_dominated_branch(succ, worklist)
 
