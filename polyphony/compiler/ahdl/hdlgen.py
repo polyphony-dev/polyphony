@@ -3,7 +3,7 @@ from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from .hdlinterface import *
 from ..common.env import env
-from ..ir.ir import Ctx, CONST
+from ..ir.ir import *
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -115,8 +115,16 @@ class HDLModuleBuilder(object):
             input_sig = self.hdlmodule.gen_sig(output_sig.name + '_in', addr_width)
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
-            defstm = find_defstm(output_sig.sym)
-            array = defstm.src
+            array_sym = output_sig.sym
+            while True:
+                defstm = find_defstm(array_sym)
+                array = defstm.src
+                if array.is_a(ARRAY):
+                    break
+                elif array.is_a([TEMP, ATTR]):
+                    array_sym = array.symbol()
+                else:
+                    assert False
             case_items = []
             for i, item in enumerate(array.items):
                 assert item.is_a(CONST)
