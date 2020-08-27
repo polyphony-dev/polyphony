@@ -1,48 +1,58 @@
-from polyphony import testbench, module, is_worker_running
+from polyphony import testbench, module
 from polyphony.io import Port
-from polyphony.typing import int8, bit
-from polyphony.timing import clkfence, wait_value
+from polyphony.typing import int8
+from polyphony.timing import timed, clkfence
 
 
 @module
 class Port01:
     def __init__(self):
-        self.in0       = Port(int8, 'in')
-        self.in_valid  = Port(bit, 'in')
-        self.out0      = Port(int8, 'out')
-        self.out_valid = Port(bit, 'out', init=0)
-        self.start     = Port(bit, 'out', init=0)
-        # append this module's worker
+        self.in0  = Port(int8, 'in')
+        self.out0 = Port(int8, 'out')
+        self.v = 0
         self.append_worker(self.main)
 
+    @timed
     def main(self):
-        self.start(1)
-        while is_worker_running():
-            self.out_valid(0)
-            # We have to wait the input data ...
-            wait_value(1, self.in_valid)
+        # 0
+        clkfence()
+        # 1
+        self.v = self.in0.rd()
+        clkfence()
+        # 2
+        self.out0.wr(self.v)
+        clkfence()
+        # 3
+        clkfence()
+        # 4
+        self.out0.wr(self.in0.rd())
+        clkfence()
+        # 5
 
-            i = self.in0()
-            self.out0(i * i)
-            # clkfence() function guarantees that the writing to out_valid is executed in a next cycle
-            clkfence()
-            self.out_valid(1)
-            break
 
 
+@timed
 @testbench
 def test(p01):
-    # wait to ensure the test starts after the worker is running
-    wait_value(1, p01.start)
-
-    p01.in0(2)
-    p01.in_valid(1)
-    print('wait out_valid')
-
-    wait_value(1, p01.out_valid)
-    assert p01.out0() == 4
+    # 0
+    p01.in0.wr(1)
     clkfence()
-    print(p01.out0())
+    # 1
+    # read from in0 at module
+    clkfence()
+    # 2
+    # write to out0 at module
+    clkfence()
+    # 3
+    print(p01.out0.rd())
+    p01.in0.wr(2)
+    clkfence()
+    # 4
+    # read and write at module
+    clkfence()
+    # 5
+    print(p01.out0.rd())
+    #clkfence()
 
 
 p01 = Port01()
