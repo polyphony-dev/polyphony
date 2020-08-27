@@ -321,8 +321,9 @@ def assertioncheck(driver, scope):
 
 
 def synthcheck(driver, scope):
+    LoopDetector().process(scope)
     SynthesisParamChecker().process(scope)
-
+    scope.reset_loop_tree()
 
 def detectrom(driver):
     #RomDetector().process_all()
@@ -703,6 +704,7 @@ def compile_plan():
         phase(env.PHASE_1),
         usedef,
         earlyconstopt_nonssa,
+        synthcheck,
         dbg(dumpscope),
         inlineopt,
         dbg(dumpscope),
@@ -787,7 +789,6 @@ def compile_plan():
         tempbit,
         dbg(dumpscope),
         dfg,
-        synthcheck,
         dbg(dumpdfg),
         schedule,
         #dumpdfgimg,

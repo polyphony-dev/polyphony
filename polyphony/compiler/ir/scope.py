@@ -429,7 +429,11 @@ class Scope(Tagged):
             new_t = Type.function(new_class)
         else:
             assert False
-        new_class.parent.add_sym(new_class.base_name, tags=old_class_sym.tags, typ=new_t)
+        new_sym = new_class.parent.add_sym(new_class.base_name, tags=old_class_sym.tags, typ=new_t)
+        if old_class_sym.ancestor:
+            new_sym.ancestor = old_class_sym.ancestor
+        else:
+            new_sym.ancestor = old_class_sym
         new_scopes = {self:new_class}
         for child in children:
             new_child = self._clone_child(new_class, self, child)
