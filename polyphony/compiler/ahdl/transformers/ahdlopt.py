@@ -48,6 +48,9 @@ class AHDLCopyOpt(AHDLVisitor):
             uses = hdlmodule.usedef.get_stms_using(target.sig)
             if len(uses) == 1 and src.is_a(AHDL_VAR):
                 use = list(uses)[0]
+                if use.is_a(AHDL_IO_WRITE):
+                    # don't change the I/O timing
+                    continue
                 #print(use, target.sig, '->', src.sig)
                 replacer.replace(use, target.sig, src.sig)
                 removes.append(d)
