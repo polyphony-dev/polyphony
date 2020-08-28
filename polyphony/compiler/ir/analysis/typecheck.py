@@ -260,7 +260,61 @@ class TypeChecker(IRVisitor):
             arg_t = self.visit(arg)
             if not Type.is_assignable(param_t, arg_t):
                 type_error(self.current_stm, Errors.INCOMPATIBLE_PARAMETER_TYPE,
-                           [arg, scope_name])
+                           [arg.symbol().orig_name(), scope_name])
+
+
+class EarlyTypeChecker(IRVisitor):
+    def visit_CALL(self, ir):
+        arg_len = len(ir.args)
+        if ir.func_scope().is_lib():
+            return ir.func_scope().return_type
+        assert ir.func_scope()
+        if ir.func_scope().is_pure():
+            return Type.any()
+        if ir.func_scope().is_method():
+            param_typs = tuple([sym.typ for sym, _, _ in ir.func_scope().params[1:]])
+        else:
+            param_typs = tuple([sym.typ for sym, _, _ in ir.func_scope().params])
+        param_len = len(param_typs)
+        with_vararg = param_len and param_typs[-1].has_vararg()
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        return ir.func_scope().return_type
+
+    def visit_SYSCALL(self, ir):
+        if ir.sym.name in env.all_scopes:
+            scope = env.all_scopes[ir.sym.name]
+            arg_len = len(ir.args)
+            param_len = len(scope.params)
+            param_typs = tuple([sym.typ for sym, _, _ in scope.params])
+            with_vararg = len(param_typs) and param_typs[-1].has_vararg()
+            self._check_param_number(arg_len, param_len, ir, ir.sym.name, with_vararg)
+        else:
+            for _, arg in ir.args:
+                self.visit(arg)
+        assert ir.sym.typ.is_function()
+        return ir.sym.typ.get_return_type()
+
+    def visit_NEW(self, ir):
+        arg_len = len(ir.args)
+        ctor = ir.func_scope().find_ctor()
+        if not ctor and arg_len:
+            type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
+                       [ir.func_scope().orig_name, 0, arg_len])
+        param_len = len(ctor.params) - 1
+        param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
+        with_vararg = len(param_typs) and param_typs[-1].has_vararg()
+        self._check_param_number(arg_len, param_len, ir, ir.func_scope().orig_name, with_vararg)
+        return Type.object(ir.func_scope())
+
+    def _check_param_number(self, arg_len, param_len, ir, scope_name, with_vararg=False):
+        if arg_len == param_len:
+            pass
+        elif arg_len < param_len:
+            type_error(self.current_stm, Errors.MISSING_REQUIRED_ARG,
+                       [scope_name])
+        elif not with_vararg:
+            type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
+                       [scope_name, param_len, arg_len])
 
 
 class PortAssignChecker(IRVisitor):

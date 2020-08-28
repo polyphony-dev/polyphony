@@ -36,6 +36,7 @@ from .ir.analysis.regreducer import AliasVarDetector
 from .ir.analysis.scopegraph import CallGraphBuilder
 from .ir.analysis.scopegraph import DependencyGraphBuilder
 from .ir.analysis.typecheck import TypeChecker
+from .ir.analysis.typecheck import EarlyTypeChecker
 from .ir.analysis.typecheck import PortAssignChecker
 from .ir.analysis.typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
 from .ir.analysis.typecheck import AssertionChecker
@@ -298,6 +299,10 @@ def stricttypeprop(driver):
 
 def typecheck(driver, scope):
     TypeChecker().process(scope)
+
+
+def earlytypecheck(driver, scope):
+    EarlyTypeChecker().process(scope)
 
 
 def assigncheck(driver, scope):
@@ -696,7 +701,7 @@ def compile_plan():
         ifcondtrans,
         dbg(dumpscope),
         earlyrestrictioncheck,
-        #typecheck,
+        earlytypecheck,
         #flattenport,
         typeprop,
         specworker,
