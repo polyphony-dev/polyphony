@@ -91,8 +91,8 @@ class HDLModuleBuilder(object):
     def _add_roms(self, memsigs):
         def find_defstm(symbol):
             # use ancestor if it is imported symbol
-            if symbol.scope.is_containable() and symbol.is_inherited():
-                symbol = symbol.ancestor
+            if symbol.scope.is_containable() and symbol.is_imported():
+                symbol = symbol.import_src()
             defstms = symbol.scope.usedef.get_stms_defining(symbol)
             if defstms:
                 assert len(defstms) == 1

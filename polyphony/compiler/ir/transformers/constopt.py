@@ -19,8 +19,8 @@ logger = getLogger(__name__)
 
 def _try_get_constant(qsym, scope):
     sym = qsym[-1]
-    if sym.ancestor:
-        sym = sym.ancestor
+    if sym.is_imported():
+        sym = sym.import_src()
     if sym in sym.scope.constants:
         return sym.scope.constants[sym]
     return None

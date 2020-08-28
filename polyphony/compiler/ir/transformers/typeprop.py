@@ -709,10 +709,6 @@ class StaticTypePropagation(TypePropagation):
                 except RejectPropagation as r:
                     worklist.append(s)
                     break
-        for s in scopes:
-            for sym in s.symbols.values():
-                if sym.is_inherited() and sym.typ != sym.ancestor.typ:
-                    sym.typ = sym.ancestor.typ
 
     def collect_stms(self, scope):
         stms = []

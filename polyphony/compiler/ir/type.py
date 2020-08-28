@@ -287,11 +287,11 @@ class Type(object):
             if self.name == 'port':
                 return f'port<{self.get_dtype()}, {self.get_direction()}>'
             if self.name == 'function':
-                if self.get_scope().is_method():
+                if self.get_scope() and self.get_scope().is_method():
                     receiver_name = self.get_scope().parent.base_name
                     return f'function<{receiver_name}>'
                 else:
-                    return f'function'
+                    return 'function'
             if self.name == 'expr':
                 expr = self.get_expr()
                 return str(expr)
@@ -332,25 +332,45 @@ class Type(object):
         if self.name != other.name:
             return False
         if self.name == 'int':
-            return self.get_width() == other.get_width() and self.get_signed() == other.get_signed()
+            return (self.get_width() == other.get_width()
+                    and self.get_signed() == other.get_signed())
         if self.name in ('bool', 'str', 'undef', 'generic', 'none'):
             return True
         if self.name == 'union':
             return self.get_types() == other.get_types()
         if self.name == 'list':
-            return self.get_element() == other.get_element() and self.get_length() == other.get_length()
+            return (self.get_element() == other.get_element()
+                    and self.get_length() == other.get_length()
+                    and self.get_ro == other.get_ro())
         if self.name == 'tuple':
-            return self.get_element() == other.get_element() and self.get_length() == other.get_length()
+            return (self.get_element() == other.get_element()
+                    and self.get_length() == other.get_length())
         if self.name == 'object':
             return self.get_scope() is other.get_scope()
         if self.name == 'class':
-            return self.get_scope() is other.get_scope()
+            if self.get_scope() is not other.get_scope():
+                return False
+            if len(self.get_typeargs()) != len(other.get_typeargs()):
+                return False
+            return all([t1 == t2 for t1, t2 in zip(self.get_typeargs(), other.get_typeargs())])
         if self.name == 'function':
-            return self.get_scope() is other.get_scope()
+            if self.get_scope() is not other.get_scope():
+                return False
+            if self.get_return_type() != other.get_return_type():
+                return False
+            if len(self.get_param_types()) != len(other.get_param_types()):
+                return False
+            return all([pt1 == pt2 for pt1, pt2 in zip(self.get_param_types(), other.get_param_types())])
         if self.name == 'namespace':
             return self.get_scope() is other.get_scope()
         if self.name == 'port':
-            return self.get_scope() is other.get_scope()
+            return (self.get_scope() is other.get_scope()
+                    and self.get_direction() == other.get_direction()
+                    and self.get_init() == other.get_init()
+                    and self.get_rewritable() == other.get_rewritable()
+                    and self.get_root_symbol() == other.get_root_symbol()
+                    and self.get_assigned() == other.get_assigned()
+                    and self.get_port_kind() == other.get_port_kind())
         return False
 
     @classmethod

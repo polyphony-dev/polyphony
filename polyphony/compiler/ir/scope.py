@@ -547,6 +547,14 @@ class Scope(Tagged):
             raise RuntimeError("symbol '{}' is already registered ".format(sym.name))
         self.symbols[sym.name] = sym
 
+    def import_copy_sym(self, orig_sym, new_name):
+        if self.has_sym(new_name):
+            new_sym = self.symbols[new_name]
+        else:
+            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym.typ)
+            new_sym.import_from(orig_sym)
+        return new_sym
+
     def find_sym(self, name):
         names = name.split('.')
         if len(names) > 1:

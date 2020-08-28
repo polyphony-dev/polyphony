@@ -142,9 +142,9 @@ class ImportVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         def import_to_scope(imp_sym, asname=None):
             if asname:
-                self.target_scope.inherit_sym(imp_sym, asname)
+                self.target_scope.import_copy_sym(imp_sym, asname)
             else:
-                self.target_scope.inherit_sym(imp_sym, imp_sym.name)
+                self.target_scope.import_copy_sym(imp_sym, imp_sym.name)
         if node.level == 0:
             assert node.module
             full_name = node.module
