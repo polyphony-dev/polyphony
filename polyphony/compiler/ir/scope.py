@@ -716,6 +716,15 @@ class Scope(Tagged):
                 return True
         return False
 
+    def is_assignable(self, other):
+        if self is other:
+            return True
+        if self.origin and self.origin.is_assignable(other):
+            return True
+        if other.origin and self.is_assignable(other.origin):
+            return True
+        return False
+
     def class_fields(self):
         assert self.is_class()
         class_fields = {}

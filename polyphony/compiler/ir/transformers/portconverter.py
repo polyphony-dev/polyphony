@@ -29,12 +29,11 @@ class PortTypeProp(TypePropagation):
                     else:
                         attrs[p.copy.name] = a.value
                 elif a.is_a(TEMP) and a.symbol().typ.is_class():
-                    attrs[p.copy.name] = a.symbol().typ.name
+                    attrs[p.copy.name] = Type.from_ir(a)
                 else:
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
-            init_param = ctor.params[3]
+            assert 'dtype' in attrs
             assert 'direction' in attrs
-            attrs['dtype'] = init_param.sym.typ
             attrs['root_symbol'] = self.current_stm.dst.symbol()
             attrs['assigned'] = False
             if self.current_stm.is_a(MOVE) and self.current_stm.dst.is_a(TEMP):

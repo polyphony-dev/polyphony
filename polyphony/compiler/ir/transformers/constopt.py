@@ -60,12 +60,32 @@ def try_get_constant(qsym, scope):
         return _try_get_constant(qsym, scope)
 
 
-def _mask_bit(typ, const):
+def bits2int(bits, nbit):
+    signbit = bits & (1 << (nbit - 1))
+    if signbit:
+        mask = (1 << nbit) - 1
+        return -((bits ^ mask) + 1)
+    else:
+        return bits
+
+
+def _to_signed(typ, const):
     assert typ.is_int()
+    assert typ.get_signed() is True
     assert const.is_a(CONST)
-    w = typ.get_width()
-    mask = (1 << w) - 1
-    return CONST(mask & const.value)
+    nbit = typ.get_width()
+    mask = (1 << nbit) - 1
+    bits = (const.value & mask)
+    return CONST(bits2int(bits, nbit))
+
+
+def _to_unsigned(typ, const):
+    assert typ.is_int()
+    assert typ.get_signed() is False
+    assert const.is_a(CONST)
+    nbit = typ.get_width()
+    mask = (1 << nbit) - 1
+    return CONST(const.value & mask)
 
 
 class ConstantOptBase(IRVisitor):
@@ -364,13 +384,16 @@ class ConstantOpt(ConstantOptBase):
                 defstms = scope.usedef.get_stms_defining(stm.dst.symbol())
                 assert len(defstms) <= 1
 
-                # TODO:
-                #if stm.dst.symbol().typ.is_int() and isinstance(stm.src.value, int):
-                #    src = _mask_bit(stm.dst.symbol().typ, stm.src)
-                #else:
-                #    src = stm.src
-                replaces = VarReplacer.replace_uses(scope, stm.dst, stm.src)
+                if stm.dst.symbol().typ.is_int() and isinstance(stm.src.value, int):
+                    if stm.dst.symbol().typ.get_signed():
+                        src = _to_signed(stm.dst.symbol().typ, stm.src)
+                    else:
+                        src = _to_unsigned(stm.dst.symbol().typ, stm.src)
+                else:
+                    src = stm.src
+                replaces = VarReplacer.replace_uses(scope, stm.dst, src)
                 for rep in replaces:
+                    logger.debug(rep)
                     if rep not in dead_stms:
                         self.worklist.append(rep)
                 self.udupdater.update(stm, None)
@@ -438,7 +461,6 @@ class ConstantOpt(ConstantOptBase):
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         return ir
-
 
     def visit_TEMP(self, ir):
         if ir.sym.scope.is_containable() and ir.sym.typ.is_scalar():

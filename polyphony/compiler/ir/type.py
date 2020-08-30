@@ -276,7 +276,10 @@ class Type(object):
             return self.get_scope().base_name
         if env.dev_debug_mode:
             if self.name == 'int':
-                return f'int{self.get_width()}'
+                if self.get_signed():
+                    return f'int{self.get_width()}'
+                else:
+                    return f'bit{self.get_width()}'
             if self.name == 'list':
                 if self.has_length():
                     return f'list<{self.get_element()}, {self.get_length()}, ro:{self.get_ro()}>'
@@ -650,6 +653,7 @@ class Type(object):
                 s = f'c_{t.get_scope().base_name}'
             elif t.is_int():
                 s = f'i{t.get_width()}'
+                s = 'i'
             elif t.is_bool():
                 s = f'b'
             elif t.is_str():

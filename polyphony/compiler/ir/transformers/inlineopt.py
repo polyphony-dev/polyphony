@@ -678,7 +678,7 @@ class ObjectHierarchyCopier(object):
         while worklist:
             cp = worklist.popleft()
             class_scope = cp.src.symbol().typ.get_scope()
-            assert class_scope is cp.dst.symbol().typ.get_scope()
+            assert class_scope.is_assignable(cp.dst.symbol().typ.get_scope())
             for sym in class_scope.class_fields().values():
                 if not sym.typ.is_object():
                     continue

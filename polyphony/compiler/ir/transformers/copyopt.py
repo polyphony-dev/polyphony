@@ -31,6 +31,7 @@ class CopyOpt(IRVisitor):
             defs = list(scope.usedef.get_stms_defining(dst_qsym))
             if len(defs) > 1:
                 # dst must be non ssa variables
+                copies.remove(cp)
                 continue
             orig = self._find_root_def(cp.src.qualified_symbol())
             self._replace_copies(scope, cp, orig, dst_qsym, copies, worklist)
@@ -108,12 +109,16 @@ class CopyOpt(IRVisitor):
             if d.src.is_a(TEMP):
                 if d.src.symbol().is_param():
                     return None
+                if d.src.symbol().typ != d.dst.symbol().typ:
+                    return None
                 orig = self._find_root_def(d.src.qualified_symbol())
                 if orig:
                     return orig
                 else:
                     return d.src
             elif d.src.is_a(ATTR):
+                if d.src.symbol().typ != d.dst.symbol().typ:
+                    return None
                 orig = self._find_root_def(d.src.qualified_symbol())
                 if orig:
                     return orig
@@ -141,7 +146,7 @@ class CopyCollector(IRVisitor):
         if ir.src.is_a(TEMP):
             if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
-            if not Type.can_propagate(ir.dst.symbol().typ, ir.src.sym.typ):
+            if ir.src.symbol().typ != ir.dst.symbol().typ:
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):

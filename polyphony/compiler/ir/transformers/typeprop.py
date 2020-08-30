@@ -63,8 +63,19 @@ class TypePropagation(IRVisitor):
     def visit_BINOP(self, ir):
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
-        if l_t.is_bool() and r_t.is_bool() and not ir.op.startswith('Bit'):
-            return Type.int(2)
+        if l_t.is_undef() or r_t.is_undef():
+            return Type.undef()
+        if l_t.is_int():
+            if ir.op in ('Add', 'Sub'):
+                w = max(l_t.get_width(), r_t.get_width()) + 1
+            elif ir.op == 'Mult':
+                w = l_t.get_width() + r_t.get_width()
+            else:
+                w = l_t.get_width()
+            if l_t.get_signed() or r_t.get_signed():
+                return Type.int(w, signed=True)
+            else:
+                return Type.int(w, signed=False)
         return l_t
 
     def visit_RELOP(self, ir):

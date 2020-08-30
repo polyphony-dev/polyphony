@@ -1,10 +1,12 @@
-import polyphony
-from polyphony import testbench
-from polyphony.typing import bit, bit8, int8
+from polyphony import testbench, __python__
+from polyphony.typing import bit8, int8
 
 
 def typing08(a:bit8) -> int8:
-    assert a > 0    # This will throw AssertionError in Python interpreter
+    if __python__:
+        pass
+    else:
+        assert a > 0    # This will throw AssertionError in Python interpreter
     b:int8  = a
     assert b < 0
     return b

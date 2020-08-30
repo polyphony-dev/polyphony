@@ -360,20 +360,31 @@ def _signal_width(sym):
 
 def _tags_from_sym(sym):
     tags = set()
-    if sym.typ.is_int() or sym.typ.is_bool():
-        if sym.typ.has_signed() and sym.typ.get_signed():
+    if sym.typ.is_int():
+        if sym.typ.get_signed():
             tags.add('int')
-        else:
-            pass
         if sym.is_alias():
             tags.add('net')
         else:
             tags.add('reg')
-    if sym.typ.is_tuple():
+    elif sym.typ.is_bool():
+        if sym.is_alias():
+            tags.add('net')
+        else:
+            tags.add('reg')
+    elif sym.typ.is_tuple():
+        elm_t = sym.typ.get_element()
+        if elm_t.is_int() and elm_t.get_signed():
+            tags.add('int')
         if sym.is_alias():
             tags.add('netarray')
         else:
             tags.add('regarray')
+    elif sym.typ.is_list():
+        elm_t = sym.typ.get_element()
+        if elm_t.is_int() and elm_t.get_signed():
+            tags.add('int')
+        tags.add('regarray')
     elif sym.typ.is_port():
         di = sym.typ.get_direction()
         assert di != '?'
