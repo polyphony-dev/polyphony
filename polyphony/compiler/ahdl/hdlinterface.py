@@ -337,18 +337,3 @@ class CallAccessor(IOAccessor):
         elif step == 2:
             seq.append(AHDL_MOVE(accept, AHDL_CONST(0)))
         return tuple(seq)
-
-
-def create_single_port_interface(signal):
-    inf = None
-    if signal.is_input():
-        if signal.is_pipelined():
-            inf = PipelinedSingleReadInterface(signal)
-        else:
-            inf = SingleReadInterface(signal)
-    elif signal.is_output():
-        if signal.is_pipelined():
-            inf = PipelinedSingleWriteInterface(signal)
-        else:
-            inf = SingleWriteInterface(signal)
-    return inf

@@ -39,12 +39,7 @@ class StateReducer(object):
                         for _, codes in transition_collector.results.items():
                             for c in codes:
                                 if c.target is state:
-                                    if state is stg.finish_state is next_state:
-                                        c.target = pred
-                                    else:
-                                        c.target = next_state
-                    if stg.init_state is state:
-                        stg.init_state = next_state
+                                    c.target = next_state
                     stg.states.remove(state)
                     graph.del_node_with_reconnect(state)
             if not stg.states:
@@ -63,7 +58,7 @@ class StateGraph(Graph):
 class StateGraphBuilder(AHDLVisitor):
     def process(self, fsm):
         self.graph = StateGraph()
-        init_state = fsm.stgs[0].init_state
+        init_state = fsm.stgs[0].states[0]
         nexts = deque([init_state])
         visited = set()
         while nexts:

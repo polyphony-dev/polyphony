@@ -898,11 +898,6 @@ def output_hdl(compiled_scopes, options):
     if d[-1] != '/':
         d += '/'
 
-    #scopes = Scope.get_scopes(with_class=True)
-    #scopes = [scope for scope in scopes
-    #          if (scope.is_testbench() or
-    #              (scope.is_module() and scope.is_instantiated()) or
-    #              scope.is_function_module())]
     if output_name.endswith('.v'):
         output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:

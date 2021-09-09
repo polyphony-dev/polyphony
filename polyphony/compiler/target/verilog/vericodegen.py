@@ -87,7 +87,7 @@ class VerilogCodeGen(AHDLVisitor):
         assert main_stg
 
         self.current_state_sig = fsm.state_var
-        self.emit(f'{self.current_state_sig.name} <= {main_stg.init_state.name};')
+        self.emit(f'{self.current_state_sig.name} <= {main_stg.states[0].name};')
         self.set_indent(-2)
         self.emit('end else begin //if (rst)')
         self.set_indent(2)

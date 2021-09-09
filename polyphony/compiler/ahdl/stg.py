@@ -68,8 +68,6 @@ class STG(object):
             logger.debug('#### parent stg ' + parent.name)
         self.states = []
         self.hdlmodule = hdlmodule
-        self.init_state = None
-        self.finish_state = None
         self.scheduling = ''
         self.fsm = None
 
@@ -296,10 +294,7 @@ class StateBuilder(STGItemBuilder):
 
         # deal with the first/last state
         if not is_main:
-            if is_first:
-                self.stg.init_state = states[0]
-            if is_last:
-                self.stg.finish_state = states[0]
+            pass
         elif self.scope.is_worker() or self.scope.is_testbench():
             if is_first:
                 name = f'{state_prefix}_INIT'
@@ -307,7 +302,6 @@ class StateBuilder(STGItemBuilder):
                 init_state.name = name
                 assert init_state.codes[-1].is_a([AHDL_TRANSITION,
                                                   AHDL_TRANSITION_IF])
-                self.stg.init_state = init_state
             if is_last:
                 last_state = states[-1]
                 if self.scope.is_loop_worker():
@@ -323,15 +317,13 @@ class StateBuilder(STGItemBuilder):
                                                last_state.step + 1,
                                                codes)
                 states.append(finish_state)
-                self.stg.finish_state = finish_state
         else:
             if is_first:
                 first_state = states[0]
                 assert first_state.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
                 prolog = AHDL_SEQ(AHDL_CALLEE_PROLOG(self.stg.name), 0, 1)
                 first_state.codes.insert(0, prolog)
-                self.stg.init_state = first_state
-                self.stg.init_state.name = f'{state_prefix}_INIT'
+                first_state.name = f'{state_prefix}_INIT'
             if is_last:
                 name = f'{state_prefix}_FINISH'
                 finish_state = states[-1]
@@ -339,7 +331,6 @@ class StateBuilder(STGItemBuilder):
                 assert finish_state.codes[-1].is_a(AHDL_TRANSITION)
                 epilog = AHDL_SEQ(AHDL_CALLEE_EPILOG(self.stg.name), 0, 1)
                 finish_state.codes.insert(-1, epilog)
-                self.stg.finish_state = finish_state
         return states
 
 

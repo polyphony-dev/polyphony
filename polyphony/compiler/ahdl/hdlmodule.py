@@ -27,8 +27,6 @@ class HDLModule(object):
         self.interfaces = OrderedDict()
         self.interconnects = []
         self.accessors = {}
-        self.local_readers = {}
-        self.local_writers = {}
         self.parameters = []
         self.constants = []
         self.state_constants = []
@@ -58,12 +56,6 @@ class HDLModule(object):
             s += '{}\n'.format(inf)
         s += '  -- accessors --\n'
         for acc in self.accessors.values():
-            s += '{}\n'.format(acc)
-        s += '  -- local readers --\n'
-        for acc in self.local_readers.values():
-            s += '{}\n'.format(acc)
-        s += '  -- local writers --\n'
-        for acc in self.local_writers.values():
             s += '{}\n'.format(acc)
         s += '  -- sub modules --\n'
         for name, hdlmodule, connections, param_map in self.sub_modules.values():
@@ -102,12 +94,6 @@ class HDLModule(object):
 
     def add_accessor(self, name, accessor):
         self.accessors[name] = accessor
-
-    def add_local_reader(self, name, reader):
-        self.local_readers[name] = reader
-
-    def add_local_writer(self, name, writer):
-        self.local_writers[name] = writer
 
     def add_constant(self, name, value):
         assert isinstance(name, str)

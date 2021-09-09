@@ -169,8 +169,6 @@ class PipelineStageBuilder(STGItemBuilder):
             self.blk2states[blk] = [pstate]
 
         self.stg.states.append(pstate)
-        self.stg.init_state = pstate
-        self.stg.finish_state = pstate
 
         # customize point
         self.post_build(dfg, is_main, pstate)

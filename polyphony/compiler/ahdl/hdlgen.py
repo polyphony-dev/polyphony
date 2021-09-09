@@ -153,7 +153,11 @@ class HDLModuleBuilder(object):
         return moves
 
     def _add_single_port_interface(self, signal):
-        inf = create_single_port_interface(signal)
+        inf = None
+        if signal.is_input():
+            inf = SingleReadInterface(signal)
+        elif signal.is_output():
+            inf = SingleWriteInterface(signal)
         if inf:
             self.hdlmodule.add_interface(inf.if_name, inf)
 
@@ -171,33 +175,15 @@ class HDLModuleBuilder(object):
                 for stm in inf.reset_stms():
                     self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         # reset local ports
-        for sig in uses:
-            if sig.is_single_port():
-                local_accessors = self.hdlmodule.local_readers.values()
-                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-                for acc in accs:
-                    for stm in acc.reset_stms():
-                        self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
         for sig in defs:
-            # reset internal ports
-            if sig.is_single_port():
-                local_accessors = self.hdlmodule.local_writers.values()
-                accs = [acc for acc in local_accessors if acc.inf.signal is sig]
-                for acc in accs:
-                    for stm in acc.reset_stms():
-                        self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
             # reset internal regs
-            elif sig.is_reg():
+            if sig.is_reg():
                 if sig.is_initializable():
                     v = AHDL_CONST(sig.init_value)
                 else:
                     v = AHDL_CONST(0)
                 mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
                 self.hdlmodule.add_fsm_reset_stm(fsm_name, mv)
-
-        local_readers = self.hdlmodule.local_readers.values()
-        local_writers = self.hdlmodule.local_writers.values()
-        accs = set(list(local_readers) + list(local_writers))
 
     def _add_sub_module_accessors(self):
         def is_acc_connected(sub, acc, hdlmodule):
