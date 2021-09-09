@@ -587,16 +587,6 @@ def ahdlusedef(driver, scope):
     AHDLUseDefDetector().process(hdlmodule)
 
 
-def genhdl(driver, scope):
-    hdlmodule = env.hdlmodule(scope)
-    if not hdlmodule.scope.is_testbench():
-        vcodegen = VerilogCodeGen(hdlmodule)
-    else:
-        vcodegen = VerilogTestGen(hdlmodule)
-    vcodegen.generate()
-    driver.set_result(hdlmodule.scope, vcodegen.result())
-
-
 def dumpscope(driver, scope):
     driver.logger.debug(str(scope))
 
@@ -639,6 +629,15 @@ def dumpstg(driver, scope):
 def dumpmodule(driver, scope):
     hdlmodule = env.hdlmodule(scope)
     logger.debug(str(hdlmodule))
+
+
+def genhdl(hdlmodule):
+    if not hdlmodule.scope.is_testbench():
+        vcodegen = VerilogCodeGen(hdlmodule)
+    else:
+        vcodegen = VerilogTestGen(hdlmodule)
+    vcodegen.generate()
+    return vcodegen.result()
 
 
 def dumphdl(driver, scope):
@@ -816,9 +815,6 @@ def compile_plan():
         dbg(dumpmodule),
         transformwait,
         dbg(dumpmodule),
-        genhdl,
-        dbg(dumphdl),
-        dbg(printresouces),
     ]
     plan = [p for p in plan if p is not None]
     return plan
@@ -874,36 +870,43 @@ def compile(plan, source, src_file=''):
                               with_lib=True)
     driver = Driver(plan, scopes)
     driver.run()
-    return driver.codes
+    return driver.scopes
 
 
 def compile_main(src_file, options):
     setup(src_file, options)
     main_source = read_source(src_file)
-    compile_results = compile(compile_plan(), main_source, src_file)
-    output_individual(compile_results, options.output_name, options.output_dir)
+    scopes = compile(compile_plan(), main_source, src_file)
+    output_hdl(scopes, options)
     env.destroy()
 
 
-def output_individual(compile_results, output_name, output_dir):
-    d = output_dir if output_dir else './'
+def output_hdl(compiled_scopes, options):
+    results = []
+    for s in compiled_scopes:
+        hdlmodule = env.hdlmodule(s)
+        code = genhdl(hdlmodule)
+        if options.debug_mode:
+            logger.debug(code)
+            if s.is_function_module() or s.is_module():
+                resources = hdlmodule.resources()
+                print(resources)
+        results.append((s, hdlmodule, code))
+
+    output_name = options.output_name
+    d = options.output_dir if options.output_dir else './'
     if d[-1] != '/':
         d += '/'
 
-    scopes = Scope.get_scopes(with_class=True)
-    scopes = [scope for scope in scopes
-              if (scope.is_testbench() or
-                  (scope.is_module() and scope.is_instantiated()) or
-                  scope.is_function_module())]
+    #scopes = Scope.get_scopes(with_class=True)
+    #scopes = [scope for scope in scopes
+    #          if (scope.is_testbench() or
+    #              (scope.is_module() and scope.is_instantiated()) or
+    #              scope.is_function_module())]
     if output_name.endswith('.v'):
         output_name = output_name[:-2]
     with open(d + output_name + '.v', 'w') as f:
-        for scope in scopes:
-            if scope not in compile_results:
-                continue
-            code = compile_results[scope]
-            if not code:
-                continue
+        for scope, _, code in results:
             scope_name = scope.qualified_name()
             file_name = '{}.v'.format(scope_name)
             if output_name.upper() == scope_name.upper():
@@ -914,8 +917,6 @@ def output_individual(compile_results, output_name, output_dir):
                 env.append_testbench(scope)
             else:
                 f.write('`include "./{}"\n'.format(file_name))
-        for lib in env.using_libs:
-            f.write(lib)
 
 
 def main():

@@ -11,7 +11,6 @@ class Driver(object):
         self.scopes = scopes[:]
         self.disable_scopes = []
         self.logger = logging.getLogger()  # root logger
-        self.codes = {}
 
     def insert_scope(self, scope):
         self.scopes.append(scope)
@@ -77,14 +76,6 @@ class Driver(object):
                         self.end_logging(proc, s)
             else:
                 break
-
-    def set_result(self, scope, code):
-        self.codes[scope] = code
-
-    def result(self, scope):
-        if scope in self.codes:
-            return self.codes[scope]
-        return None
 
 
 def print_progress(proc, percent):

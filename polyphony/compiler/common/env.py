@@ -6,7 +6,7 @@ class Config(object):
     main_clock_frequency = 100000000
     reset_activation_signal = 1
     enable_pure = False
-    perfect_inlining = True
+    perfect_inlining = False
 
     def __str__(self):
         d = {}
@@ -50,7 +50,6 @@ class Env(object):
         self.all_scopes = {}
         self.compile_phase = 0
         self.logfiles = {}
-        self.using_libs = set()
         self.scope_file_map = {}
         self.current_filename = None
         self.testbenches = []
@@ -83,9 +82,6 @@ class Env(object):
 
     def remove_scope(self, scope):
         del self.scopes[scope.name]
-
-    def add_using_lib(self, lib):
-        self.using_libs.add(lib)
 
     def append_testbench(self, testbench):
         self.testbenches.append(testbench)
