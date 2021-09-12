@@ -107,7 +107,7 @@ class AHDL_VAR(AHDL_EXP):
         return '{}'.format(self.sig)
 
     def __repr__(self):
-        return 'AHDL_VAR({}, {})'.format(repr(self.sig), repr(self.ctx))
+        return 'AHDL_VAR(\'{}\')'.format(self.sig.name)
 
 
 class AHDL_MEMVAR(AHDL_VAR):
@@ -244,34 +244,6 @@ class AHDL_VAR_DECL(AHDL_DECL):
     def __init__(self, name):
         assert isinstance(name, str)
         self.name = name
-
-
-class AHDL_SIGNAL_DECL(AHDL_VAR_DECL):
-    def __init__(self, sig):
-        super().__init__(sig.name)
-        self.sig = sig
-
-    def __str__(self):
-        sign = 'signed' if self.sig.is_int() else ''
-        type = 'reg' if self.sig.is_reg() else 'net'
-        return '{} {} {}'.format(sign, type, self.sig)
-
-    def __repr__(self):
-        return 'AHDL_SIGNAL_DECL({})'.format(repr(self.sig))
-
-
-class AHDL_SIGNAL_ARRAY_DECL(AHDL_SIGNAL_DECL):
-    def __init__(self, sig, size):
-        super().__init__(sig)
-        assert size.is_a(AHDL)
-        self.name += '[{}]'.format(size)
-        self.size = size
-
-    def __str__(self):
-        return '{}[{}]'.format(super().__str__(), self.size)
-
-    def __repr__(self):
-        return 'AHDL_SIGNAL_ARRAY_DECL({}, {})'.format(repr(self.sig), repr(self.size))
 
 
 class AHDL_ASSIGN(AHDL_VAR_DECL):
@@ -557,7 +529,10 @@ class AHDL_CASE(AHDL_STM):
         self.items = items
 
     def __str__(self):
-        return 'case' + ', '.join([str(item) for item in self.items])
+        return f'case {self.sel}\n' + '\n'.join([str(item) for item in self.items])
+
+    def __repr__(self):
+        return 'AHDL_CASE({})'.format(repr(self.sel))
 
 
 class AHDL_CASE_ITEM(AHDL_STM):
@@ -568,6 +543,9 @@ class AHDL_CASE_ITEM(AHDL_STM):
 
     def __str__(self):
         return '{}:{}'.format(self.val, str(self.block))
+
+    def __repr__(self):
+        return 'AHDL_CASE_ITEM({})'.format(repr(self.val))
 
 
 class AHDL_TRANSITION(AHDL_STM):
@@ -603,7 +581,7 @@ class AHDL_BLOCK(AHDL):
         self.codes = codes
 
     def __str__(self):
-        return 'AHDL_BLOCK begin\n' + ('\n'.join([str(c) for c in self.codes])) + 'AHDL_BLOCK end'
+        return 'begin\n' + ('\n'.join([str(c) for c in self.codes])) + '\nend'
 
     def __repr__(self):
         return 'AHDL_BLOCK({})'.format(', '.join([repr(c) for c in self.codes]))

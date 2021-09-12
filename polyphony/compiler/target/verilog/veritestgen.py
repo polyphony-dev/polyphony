@@ -9,10 +9,6 @@ logger = getLogger(__name__)
 class VerilogTestGen(VerilogCodeGen):
     def __init__(self, hdlmodule):
         super().__init__(hdlmodule)
-        clk = self.hdlmodule.gen_sig('clk', 1, {'reserved'})
-        rst = self.hdlmodule.gen_sig('rst', 1, {'reserved'})
-        self.hdlmodule.add_internal_reg(clk)
-        self.hdlmodule.add_internal_reg(rst)
 
     def generate(self):
         """output verilog module format:
@@ -33,27 +29,14 @@ class VerilogTestGen(VerilogCodeGen):
         self.hdlmodule.add_constant('CLK_HALF_PERIOD', int(clk_period / 2))
         self.hdlmodule.add_constant('INITIAL_RESET_SPAN', clk_period * 10)
 
-        self.set_indent(2)
-        self._generate_main()
-        self.set_indent(-2)
-        main_code = self.result()
-        self.codes = []
-
         self._generate_include()
         self._generate_module()
         self.set_indent(2)
-        self._generate_monitor_task()
-        self.set_indent(-2)
-        self.emit(main_code)
-        self.emit('endmodule\n')
-
-    def _generate_main(self):
         self._generate_clock_task()
         self._generate_reset_task()
-        self.emit('\n')
-        #self._generate_test_main()
-        for fsm in self.hdlmodule.fsms.values():
-            self._generate_process(fsm)
+        self._generate_monitor_task()
+        self.set_indent(-2)
+        self.emit('endmodule\n')
 
     def _generate_clock_task(self):
         self.emit('initial begin')

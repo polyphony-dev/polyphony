@@ -337,7 +337,7 @@ class StateBuilder(STGItemBuilder):
 def _signal_width(sym):
     width = -1
     if sym.typ.is_seq():
-        width = sym.typ.get_element().get_width()
+        width = (sym.typ.get_element().get_width(), sym.typ.get_length())
     elif sym.typ.is_int() or sym.typ.is_bool():
         width = sym.typ.get_width()
     elif sym.typ.is_port():
@@ -367,7 +367,9 @@ def _tags_from_sym(sym):
         elm_t = sym.typ.get_element()
         if elm_t.is_int() and elm_t.get_signed():
             tags.add('int')
-        if sym.is_alias():
+        if sym.scope.is_containable():
+            tags.add('rom')
+        elif sym.is_alias():
             tags.add('netarray')
         else:
             tags.add('regarray')
@@ -375,7 +377,10 @@ def _tags_from_sym(sym):
         elm_t = sym.typ.get_element()
         if elm_t.is_int() and elm_t.get_signed():
             tags.add('int')
-        tags.add('regarray')
+        if sym.typ.get_ro() and sym.scope.is_containable():
+            tags.add('rom')
+        else:
+            tags.add('regarray')
     elif sym.typ.is_port():
         di = sym.typ.get_direction()
         assert di != '?'
@@ -562,7 +567,6 @@ class AHDLTranslator(IRVisitor):
             translator.process(pred)
             for assign in translator.codes:
                 self.hdlmodule.add_static_assignment(assign)
-                self.hdlmodule.add_internal_net(assign.dst.sig, '')
             args = ('NotEq', AHDL_CONST(0), translator.return_var)
             self._emit(AHDL_META_WAIT('WAIT_COND', *args),
                        self.sched_time)
@@ -609,11 +613,9 @@ class AHDLTranslator(IRVisitor):
         width = sym.typ.get_element().get_width()
         length = sym.typ.get_length()
         if memvar.sig.is_netarray():
-            sig = self.hdlmodule.gen_sig(name, width, {'netarray'}, sym)
-            self.hdlmodule.add_internal_net_array(sig, length)
+            sig = self.hdlmodule.gen_sig(name, (width, length), {'netarray'}, sym)
         else:
-            sig = self.hdlmodule.gen_sig(name, width, {'regarray'}, sym)
-            self.hdlmodule.add_internal_reg_array(sig, length)
+            sig = self.hdlmodule.gen_sig(name, (width, length), {'regarray'}, sym)
         for i, item in enumerate(array.items):
             if not(isinstance(item, CONST) and item.value is None):
                 idx = AHDL_CONST(i)
@@ -694,8 +696,6 @@ class AHDLTranslator(IRVisitor):
             else:
                 sig_name = qsym[-1].hdl_name()
         sig = self.hdlmodule.gen_sig(sig_name, width, tags, qsym[-1])
-        if qsym[-1].is_register():
-            self.hdlmodule.add_internal_reg(sig)
         return sig
 
     def visit_EXPR(self, ir):
@@ -798,7 +798,6 @@ class AHDLTranslator(IRVisitor):
                                          AHDL_SYMBOL(src_name)),
                                self.sched_time)
 
-                self.hdlmodule.add_internal_reg_array(dst.sig, length)
                 mem = AHDL_MEMVAR(dst.sig, Ctx.LOAD)
                 for i in range(length):
                     sig_name = f'{self.hdlmodule.name}_out_{dst.sig.name}{i}'
@@ -1013,15 +1012,12 @@ class AHDLTranslator(IRVisitor):
         translator.process(assigned)
         for assign in translator.codes:
             self.hdlmodule.add_static_assignment(assign)
-            self.hdlmodule.add_internal_net(assign.dst.sig, '')
         assign = AHDL_ASSIGN(AHDL_VAR(port_sig, Ctx.STORE),
                              translator.return_var)
         self.hdlmodule.add_static_assignment(assign)
         port_sig.del_tag('reg')
         port_sig.del_tag('initializable')
         port_sig.add_tag('net')
-        if not port_sig.is_input() and not port_sig.is_output():
-            self.hdlmodule.add_internal_net(port_sig, '')
 
     def _make_port_edge(self, target, port_sig, old, new):
         if target:
@@ -1062,7 +1058,6 @@ class AHDLTranslator(IRVisitor):
             net_sig.tags.update(tags)
             return net_sig
         net_sig = self.hdlmodule.gen_sig(net_name, width, tags, net_sym)
-        self.hdlmodule.add_internal_net(net_sig, '')
         return net_sig
 
     def _make_net_init(self, new, target):
@@ -1075,7 +1070,6 @@ class AHDLTranslator(IRVisitor):
         translator.process(assigned)
         for assign in translator.codes:
             self.hdlmodule.add_static_assignment(assign)
-            self.hdlmodule.add_internal_net(assign.dst.sig, '')
         assign = AHDL_ASSIGN(AHDL_VAR(net_sig, Ctx.STORE),
                              translator.return_var)
         self.hdlmodule.add_static_assignment(assign)
@@ -1106,7 +1100,6 @@ class AHDLTranslator(IRVisitor):
         translator.process(assigned)
         for assign in translator.codes:
             self.hdlmodule.add_static_assignment(assign)
-            self.hdlmodule.add_internal_net(assign.dst.sig, '')
         assign = AHDL_ASSIGN(AHDL_VAR(net_sig, Ctx.STORE),
                              translator.return_var)
         self.hdlmodule.add_static_assignment(assign)

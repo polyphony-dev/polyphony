@@ -15,6 +15,7 @@ from .ahdl.stg import STGBuilder
 from .ahdl.analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdl.transformers.ahdlopt import AHDLCopyOpt
 from .ahdl.transformers.bitwidthreducer import BitwidthReducer
+from .ahdl.transformers.canonical import Canonicalizer
 from .ahdl.transformers.iotransformer import IOTransformer
 from .ahdl.transformers.iotransformer import WaitTransformer
 from .ahdl.transformers.statereducer import StateReducer
@@ -587,6 +588,11 @@ def ahdlusedef(driver, scope):
     AHDLUseDefDetector().process(hdlmodule)
 
 
+def canonicalize(driver, scope):
+    hdlmodule = env.hdlmodule(scope)
+    Canonicalizer().process(hdlmodule)
+
+
 def dumpscope(driver, scope):
     driver.logger.debug(str(scope))
 
@@ -815,6 +821,7 @@ def compile_plan():
         dbg(dumpmodule),
         transformwait,
         dbg(dumpmodule),
+        canonicalize,
     ]
     plan = [p for p in plan if p is not None]
     return plan

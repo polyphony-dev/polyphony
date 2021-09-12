@@ -31,26 +31,19 @@ class HDLModuleBuilder(object):
             sig = self.hdlmodule.gen_sig(sig.name, sig.width, sig.tags)
             if  sig.is_ctrl() or sig.is_extport():
                 continue
-            #elif sig.is_regarray():
-            #    self.hdlmodule.add_internal_reg_array(sig)
             else:
                 assert ((sig.is_net() and not sig.is_reg()) or
                         (not sig.is_net() and sig.is_reg()) or
                         (not sig.is_net() and not sig.is_reg()))
                 if sig.is_net():
-                    self.hdlmodule.add_internal_net(sig)
                     nets.append(sig)
                 elif sig.is_reg():
-                    self.hdlmodule.add_internal_reg(sig)
                     regs.append(sig)
         return regs, nets
 
     def _add_state_register(self, fsm):
-        state_sig = self.hdlmodule.gen_sig(fsm.name + '_state',
-                                           -1,
-                                           ['statevar'])
+        state_sig = self.hdlmodule.gen_sig(fsm.name + '_state', -1, {'reg'})
         self.hdlmodule.add_fsm_state_var(fsm.name, state_sig)
-        self.hdlmodule.add_internal_reg(state_sig)
 
     def _add_callee_submodules(self, scope):
         for callee_scope, inst_names in scope.callee_instances.items():
@@ -83,7 +76,7 @@ class HDLModuleBuilder(object):
                                           param_map=param_map)
 
     def _add_external_accessor_for_submodule(self, sub_module_inf, acc):
-        if not isinstance(acc, CallAccessor) and acc.acc_name not in self.hdlmodule.signals:
+        if not isinstance(acc, CallAccessor) and not self.hdlmodule.signal(acc.acc_name):
             # we have never accessed this interface
             return
         self.hdlmodule.add_accessor(acc.acc_name, acc)
@@ -101,13 +94,7 @@ class HDLModuleBuilder(object):
             assert len(defstms) == 1
             return list(defstms)[0]
 
-        roms = []
-        for sig in memsigs:
-            if not sig.sym.scope.is_containable():
-                continue
-            typ = sig.sym.typ
-            if typ.is_tuple() or typ.is_list() and typ.get_ro():
-                roms.append(sig)
+        roms = [sig for sig in memsigs if sig.is_rom()]
         while roms:
             output_sig = roms.pop()
             fname = AHDL_VAR(output_sig, Ctx.STORE)
@@ -129,7 +116,7 @@ class HDLModuleBuilder(object):
             for i, item in enumerate(array.items):
                 assert item.is_a(CONST)
                 connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, AHDL_CONST(item.value))])
-                case_items.append(AHDL_CASE_ITEM(i, connect))
+                case_items.append(AHDL_CASE_ITEM(AHDL_CONST(i), connect))
             case = AHDL_CASE(input, case_items)
             rom_func = AHDL_FUNCTION(fname, [input], [case])
             self.hdlmodule.add_function(rom_func)
@@ -202,12 +189,10 @@ class HDLModuleBuilder(object):
                     tag = inf.if_name
                     for p in acc.regs():
                         int_name = acc.port_name(p)
-                        sig = self.hdlmodule.gen_sig(int_name, p.width)
-                        self.hdlmodule.add_internal_reg(sig, tag)
+                        sig = self.hdlmodule.gen_sig(int_name, p.width, {'reg'})
                     for p in acc.nets():
                         int_name = acc.port_name(p)
-                        sig = self.hdlmodule.gen_sig(int_name, p.width)
-                        self.hdlmodule.add_internal_net(sig, tag)
+                        sig = self.hdlmodule.gen_sig(int_name, p.width, {'net'})
 
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
@@ -282,11 +267,8 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
     def _process_io(self, hdlmodule):
-        signals = hdlmodule.get_signals()
-        #signals = hdlmodule.signals
-        for sig in signals.values():
-            if sig.is_single_port():
-                self._add_single_port_interface(sig)
+        for sig in hdlmodule.get_signals({'single_port'}, None, with_base=True):
+            self._add_single_port_interface(sig)
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
@@ -313,7 +295,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         fsms = list(self.hdlmodule.fsms.values())
         for fsm in fsms:
             if fsm.scope.is_ctor():
-                memsigs = [sig for sig in self.hdlmodule.signals.values() if sig.is_regarray() or sig.is_netarray()]
+                memsigs = self.hdlmodule.get_signals({'regarray', 'netarray'})
                 self._add_roms(memsigs)
 
                 #for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):
@@ -323,17 +305,13 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                     name = sym.hdl_name()
                     width = sym.typ.get_element().get_width()
                     length = sym.typ.get_length()
-                    sig = self.hdlmodule.gen_sig(name, width)
-                    self.hdlmodule.add_internal_reg_array(sig, length)
+                    sig = self.hdlmodule.gen_sig(name, (width, length), {'regarray'})
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):
                     if stm.dst.sig.is_field():
-                        if stm.dst.sig.is_reg():
-                            self.hdlmodule.add_internal_reg(stm.dst.sig, '')
-                        else:
+                        if stm.dst.sig.is_net():
                             assign = AHDL_ASSIGN(stm.dst, stm.src)
                             self.hdlmodule.add_static_assignment(assign, '')
-                            self.hdlmodule.add_internal_net(stm.dst.sig, '')
                 del self.hdlmodule.fsms[fsm.name]
             else:
                 self._process_fsm(fsm)
@@ -356,7 +334,7 @@ class AHDLVarCollector(AHDLVisitor):
         self.local_defs = local_defs
         self.local_uses = local_uses
         self.output_temps = output_temps
-        self.module_constants = [c for c, _ in hdlmodule.state_constants]
+        self.module_constants = [c for c, _ in hdlmodule.constants.keys()]
         self.mems = mems
 
     def visit_AHDL_CONST(self, ahdl):
@@ -370,7 +348,7 @@ class AHDLVarCollector(AHDLVisitor):
         self.mems.add(ahdl.sig)
 
     def visit_AHDL_VAR(self, ahdl):
-        if ahdl.sig.is_ctrl() or ahdl.sig.name in self.module_constants:
+        if ahdl.sig.is_ctrl() or ahdl.sig in self.module_constants:
             pass
         elif ahdl.sig.is_input():
             if ahdl.sig.is_single_port():

@@ -154,12 +154,6 @@ class AHDLVisitor(object):
         for c in ahdl.codes:
             self.visit(c)
 
-    def visit_AHDL_SIGNAL_DECL(self, ahdl):
-        pass
-
-    def visit_AHDL_SIGNAL_ARRAY_DECL(self, ahdl):
-        self.visit(ahdl.size)
-
     def visit_AHDL_ASSIGN(self, ahdl):
         self.visit(ahdl.src)
         self.visit(ahdl.dst)

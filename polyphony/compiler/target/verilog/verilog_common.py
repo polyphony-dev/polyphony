@@ -34,8 +34,6 @@ _keywords = {
     'unsigned', 'use',
     'vectored',
     'wait', 'wand', 'while', 'wor', 'wire',
-    # polyphony specific
-    'clk', 'rst',
 }
 
 

@@ -12,7 +12,7 @@ class PipelineState(State):
         assert isinstance(name, str)
         assert 1 <= nstate
         subblocks = [AHDL_BLOCK(str(i), []) for i in range(nstate)]
-        caseitems = [AHDL_CASE_ITEM(i, subb) for i, subb in enumerate(subblocks)]
+        caseitems = [AHDL_CASE_ITEM(AHDL_CONST(i), subb) for i, subb in enumerate(subblocks)]
         self.substate_var = stg.hdlmodule.gen_sig(f'{name}_state',
                                                   nstate.bit_length(),
                                                   {'reg', 'pipeline_ctrl'})

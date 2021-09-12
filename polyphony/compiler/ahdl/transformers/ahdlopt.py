@@ -11,17 +11,7 @@ class AHDLCopyOpt(AHDLVisitor):
     def _remove_alias(self, hdlmodule):
         replacer = AHDLVarReplacer()
         removes = []
-        sigs = list(hdlmodule.signals.values())
-        for sig in sigs:
-            if not sig.is_net():
-                continue
-            if sig.is_input() or sig.is_output():
-                continue
-            if sig.is_condition():
-                continue
-            if sig.is_pipeline_ctrl():
-                continue
-
+        for sig in hdlmodule.get_signals({'net'}, {'input', 'output', 'condition', 'pipeline_ctrl'}):
             defs = hdlmodule.usedef.get_stms_defining(sig)
             if len(defs) > 1:
                 continue

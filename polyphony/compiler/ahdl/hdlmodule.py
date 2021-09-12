@@ -25,17 +25,15 @@ class HDLModule(object):
         self.qualified_name = qualified_name
         self.signals = {}
         self.interfaces = OrderedDict()
-        self.interconnects = []
+        self.tasks = []
         self.accessors = {}
         self.parameters = []
-        self.constants = []
-        self.state_constants = []
+        self.constants = {}
         self.sub_modules = {}
         self.functions = []
         self.muxes = []
         self.demuxes = []
         self.decls = defaultdict(list)
-        self.internal_field_accesses = {}
         self.fsms = {}
         self.node2if = {}
         self.edge_detectors = set()
@@ -89,73 +87,16 @@ class HDLModule(object):
     def add_interface(self, name, interface):
         self.interfaces[name] = interface
 
-    def add_interconnect(self, interconnect):
-        self.interconnects.append(interconnect)
+    def add_task(self, task):
+        self.tasks.append(task)
 
     def add_accessor(self, name, accessor):
         self.accessors[name] = accessor
 
     def add_constant(self, name, value):
         assert isinstance(name, str)
-        self.constants.append((name, value))
-
-    def add_state_constant(self, name, value):
-        assert isinstance(name, str)
-        self.state_constants.append((name, value))
-
-    def add_internal_reg(self, sig, tag=''):
-        assert not sig.is_net()
-        sig.add_tag('reg')
-        self.add_decl(tag, AHDL_SIGNAL_DECL(sig))
-
-    def add_internal_reg_array(self, sig, size, tag=''):
-        assert not sig.is_net()
-        sig.add_tag('regarray')
-        if isinstance(size, int):
-            size = AHDL_CONST(size)
-        self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
-
-    def add_internal_net(self, sig, tag=''):
-        assert not sig.is_reg()
-        sig.add_tag('net')
-        self.add_decl(tag, AHDL_SIGNAL_DECL(sig))
-
-    def add_internal_net_array(self, sig, size, tag=''):
-        assert not sig.is_reg()
-        sig.add_tag('netarray')
-        if isinstance(size, int):
-            size = AHDL_CONST(size)
-        self.add_decl(tag, AHDL_SIGNAL_ARRAY_DECL(sig, size))
-
-    def remove_internal_net(self, sig):
-        assert isinstance(sig, Signal)
-        removes = []
-        for tag, decls in self.decls.items():
-            for decl in decls:
-                if isinstance(decl, AHDL_SIGNAL_DECL) and decl.sig == sig and sig.is_net():
-                    removes.append((tag, decl))
-        for tag, decl in removes:
-            self.remove_decl(tag, decl)
-
-    def get_reg_decls(self, with_array=True):
-        results = []
-        for tag, decls in self.decls.items():
-            sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
-            if not with_array:
-                sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
-            regdecls = [decl for decl in sigdecls if decl.sig.is_reg()]
-            results.append((tag, regdecls))
-        return results
-
-    def get_net_decls(self, with_array=True):
-        results = []
-        for tag, decls in self.decls.items():
-            sigdecls = [decl for decl in decls if decl.is_a(AHDL_SIGNAL_DECL)]
-            if not with_array:
-                sigdecls = [decl for decl in sigdecls if not decl.is_a(AHDL_SIGNAL_ARRAY_DECL)]
-            netdecls = [decl for decl in sigdecls if decl.sig.is_net()]
-            results.append((tag, netdecls))
-        return results
+        sig = self.gen_sig(name, env.config.default_int_width, {'constant'})
+        self.constants[sig] = value
 
     def add_static_assignment(self, assign, tag=''):
         assert isinstance(assign, AHDL_ASSIGN)
@@ -181,9 +122,7 @@ class HDLModule(object):
     def remove_signal_decl(self, sig):
         for tag, decls in self.decls.items():
             for decl in decls[:]:
-                if isinstance(decl, AHDL_SIGNAL_DECL) and decl.sig is sig:
-                    self.remove_decl(tag, decl)
-                elif isinstance(decl, AHDL_ASSIGN):
+                if isinstance(decl, AHDL_ASSIGN):
                     if decl.dst.is_a(AHDL_VAR) and decl.dst.sig is sig:
                         self.remove_decl(tag, decl)
                     elif decl.dst.is_a(AHDL_SUBSCRIPT) and decl.dst.memvar.sig is sig:
@@ -233,21 +172,17 @@ class HDLModule(object):
                 num_of_regs += r.width
             for n in inf.nets():
                 num_of_nets += n.width
-        for _, decls in self.decls.items():
-            for decl in decls:
-                if decl.is_a(AHDL_SIGNAL_DECL):
-                    if decl.sig.is_reg():
-                        num_of_regs += decl.sig.width
-                    elif decl.sig.is_net():
-                        num_of_nets += decl.sig.width
-                elif decl.is_a(AHDL_SIGNAL_ARRAY_DECL):
-                    if decl.sig.is_reg():
-                        num_of_regs += decl.sig.width * decl.size.value
-                    elif decl.sig.is_net():
-                        num_of_nets += decl.sig.width * decl.size.value
-                elif decl.is_a(AHDL_ASSIGN):
-                    decl.src
-
+        for sig in sorted(self.signals.values(), key=lambda sig: sig.name):
+            if sig.is_input() or sig.is_output():
+                continue
+            if sig.is_reg():
+                num_of_regs += sig.width
+            elif sig.is_regarray():
+                num_of_regs += sig.width[0] * sig.width[1]
+            elif sig.is_net():
+                num_of_nets += sig.width
+            elif sig.is_netarray():
+                num_of_nets += sig.width[0] * sig.width[1]
         num_of_states = 0
         for _, fsm in self.fsms.items():
             for stg in fsm.stgs:
@@ -282,13 +217,26 @@ class HDLModule(object):
                 return found
         return None
 
-    def get_signals(self):
-        signals_ = {}
-        for base in self.scope.bases:
-            basemodule = env.hdlmodule(base)
-            signals_.update(basemodule.get_signals())
-        signals_.update(self.signals)
-        return signals_
+    def get_signals(self, include_tags=None, exclude_tags=None, with_base=False):
+        if include_tags:
+            assert isinstance(include_tags, set)
+        if exclude_tags:
+            assert isinstance(exclude_tags, set)
+        sigs = []
+        if with_base:
+            for base in self.scope.bases:
+                basemodule = env.hdlmodule(base)
+                sigs.extend(basemodule.get_signals(include_tags, exclude_tags, True))
+        for sig in sorted(self.signals.values(), key=lambda sig: sig.name):
+            if exclude_tags and exclude_tags & sig.tags:
+                continue
+            if include_tags:
+                ret = include_tags & sig.tags
+                if ret:
+                    sigs.append(sig)
+            else:
+                sigs.append(sig)
+        return sigs
 
     def rename_sig(self, old, new):
         assert old in self.signals

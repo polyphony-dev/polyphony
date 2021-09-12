@@ -5,10 +5,9 @@ class Signal(Tagged):
     TAGS = {
         'reserved',
         'reg', 'net', 'int', 'condition',
-        'regarray', 'netarray',
-        'input', 'output', 'parameter',
+        'regarray', 'netarray', 'rom',
+        'input', 'output', 'parameter', 'constant',
         'extport',
-        'statevar',
         'field', 'ctrl', 'onehot',
         'single_port', 'pipelined',
         'initializable',
@@ -20,7 +19,7 @@ class Signal(Tagged):
     def __init__(self, name, width, tags, sym=None):
         super().__init__(tags)
         self.name = name
-        self.width = width
+        self.width = width  # width:int | (width:int, array_length:int)
         self.sym = sym
         self.init_value = 0
 
