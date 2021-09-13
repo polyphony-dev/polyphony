@@ -196,6 +196,7 @@ def suite_main():
     options.debug_mode = False
     options.verilog_dump = False
     options.verilog_monitor = False
+    options.with_path_name = True
     if os.path.exists('.suite_ignores'):
         with open('.suite_ignores', 'r') as f:
             default_ignores.extend(f.read().splitlines())

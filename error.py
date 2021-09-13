@@ -26,13 +26,20 @@ def parse_options():
     parser.add_argument('-d', '--enable_debug', dest='debug_mode',
                         action='store_true', help='enable debug mode')
     parser.add_argument('-w', dest='warn_test', action='store_true')
+    parser.add_argument('-p', dest='with_path_name', action='store_true')
     parser.add_argument('source', help='Python source file')
     return parser.parse_args()
 
 
-def make_compile_options(casename, err_options, quiet_level):
+def make_compile_options(casename, casefile_path, err_options, quiet_level):
     options = types.SimpleNamespace()
     options.config = err_options.config
+    if err_options.with_path_name:
+        p, _ = os.path.splitext(casefile_path)
+        options.output_prefix = p.replace('.', '').replace(os.path.sep, '_')
+        casename = f'{options.output_prefix}_{casename}'
+    else:
+        options.output_prefix = ''
     options.output_name = casename
     options.output_dir = TMP_DIR
     options.verbose_level = 0
@@ -52,7 +59,7 @@ def error_test(casefile_path, err_options):
             print('The file is not error test file')
             sys.exit(0)
         expected_msg = first_line.split('#')[1].rstrip('\n')
-    options = make_compile_options(casename, err_options, env.QUIET_ERROR)
+    options = make_compile_options(casename, casefile_path, err_options, env.QUIET_ERROR)
     try:
         compile_main(casefile_path, options)
     except AssertionError:
@@ -81,13 +88,17 @@ def warn_test(casefile_path, err_options):
         expected_msg = first_line.split('#')[1].rstrip('\n')
     f = io.StringIO()
     err_options.debug_mode = False
-    options = make_compile_options(casename, err_options, 0)
+    options = make_compile_options(casename, casefile_path, err_options, 0)
+    stopped = False
     with redirect_stdout(f):
         try:
             compile_main(casefile_path, options)
         except Exception as e:
-            print(casefile_path)
-            print('[WARNING TEST] FAILED')
+            stopped = True
+    if stopped:
+        print(casefile_path)
+        print('[WARNING TEST] FAILED: Compilation has stopped')
+        return False
     msg = f.getvalue()
     #print(msg)
     header = 'Warning: '

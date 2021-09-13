@@ -907,11 +907,15 @@ def output_hdl(compiled_scopes, options):
 
     if output_name.endswith('.v'):
         output_name = output_name[:-2]
-    with open(d + output_name + '.v', 'w') as f:
+    output_file_name = output_name + '.v'
+    with open(d + output_file_name, 'w') as f:
         for scope, _, code in results:
             scope_name = scope.qualified_name()
-            file_name = '{}.v'.format(scope_name)
-            if output_name.upper() == scope_name.upper():
+            if options.output_prefix:
+                file_name = f'{options.output_prefix}_{scope_name}.v'
+            else:
+                file_name = f'{scope_name}.v'
+            if output_file_name == file_name:
                 file_name = '_' + file_name
             with open('{}{}'.format(d, file_name), 'w') as f2:
                 f2.write(code)
@@ -942,6 +946,8 @@ def main():
                         action='store_true', help='output vcd file in testbench')
     parser.add_argument('-vm', '--verilog_monitor', dest='verilog_monitor',
                         action='store_true', help='enable $monitor in testbench')
+    parser.add_argument('-op', '--output_prefix', metavar='PREFIX',
+                        dest='output_prefix', help='output name prefix')
     from .. version import __version__
     parser.add_argument('-V', '--version', action='version',
                         version='%(prog)s ' + __version__,

@@ -30,6 +30,7 @@ def parse_options():
                         action='store_true', help='output vcd file in testbench')
     parser.add_argument('-vm', '--verilog_monitor', dest='verilog_monitor',
                         action='store_true', help='enable $monitor in testbench')
+    parser.add_argument('-p', dest='with_path_name', action='store_true')
     parser.add_argument('source', help='Python source file')
     return parser.parse_args()
 
@@ -37,6 +38,12 @@ def parse_options():
 def exec_test(casefile_path, options=None):
     casefile = os.path.basename(casefile_path)
     casename, _ = os.path.splitext(casefile)
+    if options.with_path_name:
+        p, _ = os.path.splitext(casefile_path)
+        options.output_prefix = p.replace('.', '').replace(os.path.sep, '_')
+        casename = f'{options.output_prefix}_{casename}'
+    else:
+        options.output_prefix = ''
     if exec_compile(casefile_path, casename, options):
         finishes = []
         for testbench in env.testbenches:
@@ -49,23 +56,24 @@ def exec_test(casefile_path, options=None):
 
 
 def exec_compile(casefile_path, casename, simu_options):
-    options = types.SimpleNamespace()
-    options.output_name = casename
-    options.output_dir = TMP_DIR
-    options.verbose_level = 0
-    options.quiet_level = 0 if simu_options.debug_mode else 3
+    compiler_options = types.SimpleNamespace()
+    compiler_options.output_name = casename
+    compiler_options.output_prefix = simu_options.output_prefix
+    compiler_options.output_dir = TMP_DIR
+    compiler_options.verbose_level = 0
+    compiler_options.quiet_level = 0 if simu_options.debug_mode else 3
     if simu_options:
-        options.config = simu_options.config
-        options.debug_mode = simu_options.debug_mode
-        options.verilog_dump = simu_options.verilog_dump
-        options.verilog_monitor = simu_options.verilog_monitor
+        compiler_options.config = simu_options.config
+        compiler_options.debug_mode = simu_options.debug_mode
+        compiler_options.verilog_dump = simu_options.verilog_dump
+        compiler_options.verilog_monitor = simu_options.verilog_monitor
     else:
-        options.config = None
-        options.debug_mode = False
-        options.verilog_dump = False
-        options.verilog_monitor = False
+        compiler_options.config = None
+        compiler_options.debug_mode = False
+        compiler_options.verilog_dump = False
+        compiler_options.verilog_monitor = False
     try:
-        compile_main(casefile_path, options)
+        compile_main(casefile_path, compiler_options)
     except Exception as e:
         print('[COMPILE PYTHON] FAILED:' + casefile_path)
         if env.dev_debug_mode:
@@ -78,8 +86,15 @@ def exec_compile(casefile_path, casename, simu_options):
 
 
 def simulate_verilog(testname, casename, casefile_path, options):
-    hdl_files = ['{}{}{}.v'.format(TMP_DIR, os.path.sep, casename), '{}{}{}.v'.format(TMP_DIR, os.path.sep, testname)]
-    exec_name = '{}{}{}'.format(TMP_DIR, os.path.sep, testname)
+    if options.output_prefix:
+        test_filename = f'{options.output_prefix}_{testname}'
+    else:
+        test_filename = testname
+    hdl_files = [
+        f'{TMP_DIR}{os.path.sep}{casename}.v',
+        f'{TMP_DIR}{os.path.sep}{test_filename}.v',
+    ]
+    exec_name = '{}{}{}'.format(TMP_DIR, os.path.sep, test_filename)
     args = ('{} -I {} -W all -Wno-implicit-dimensions -o {} -s {}'.format(IVERILOG_PATH, TMP_DIR, exec_name, testname)).split(' ')
     args += hdl_files
     try:
@@ -87,7 +102,6 @@ def simulate_verilog(testname, casename, casefile_path, options):
     except Exception as e:
         print('[COMPILE HDL] FAILED:' + casefile_path)
         return
-
     try:
         out = subprocess.check_output([exec_name])
         lines = out.decode('utf-8').split('\n')
