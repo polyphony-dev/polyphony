@@ -33,11 +33,13 @@ class Scope(Tagged):
         'package', 'directory'
     }
     scope_id = 0
-
+    unnamed_ids = defaultdict(int)
+    instance_ids = defaultdict(int)
     @classmethod
     def create(cls, parent, name, tags, lineno=0, origin=None):
         if name is None:
-            name = "_" + str(cls.scope_id)
+            name = str(cls.unnamed_ids[parent])
+            cls.unnamed_ids[parent] += 1
         s = Scope(parent, name, tags, lineno, cls.scope_id)
         if s.name in env.scopes:
             env.append_scope(s)
@@ -808,6 +810,11 @@ class Scope(Tagged):
     def add_closure(self, closure):
         assert closure.free_symbols
         self.closures.add(closure)
+
+    def instance_number(self):
+        n = Scope.instance_ids[self]
+        Scope.instance_ids[self] += 1
+        return n
 
 
 class SymbolReplacer(IRVisitor):

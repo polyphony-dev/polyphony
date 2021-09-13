@@ -70,7 +70,7 @@ class EarlyWorkerInstantiator(object):
                     binding.append((bind_val, i, arg))
             else:
                 pass
-        idstr = utils.id2str(Scope.scope_id)
+        idstr = str(worker.instance_number())
         if binding:
             # FIXME: use scope-id instead of lineno
             postfix = '{}_{}'.format(idstr,
@@ -167,16 +167,14 @@ class WorkerInstantiator(object):
 
     def _process_global_module(self):
         collector = CallCollector()
-        #g = Scope.global_scope()
-        #calls = collector.process(g)
-        calls = set()
+        calls = []
         scopes = Scope.get_scopes(bottom_up=False,
                                   with_global=True,
                                   with_class=False,
                                   with_lib=False)
         for s in scopes:
             if s.is_global() or s.is_function_module():
-                calls |= collector.process(s)
+                calls.extend(collector.process(s))
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().find_ctor().is_pure():
                 self._process_workers(call.func_scope())
@@ -221,7 +219,7 @@ class WorkerInstantiator(object):
             else:
                 pass
 
-        idstr = utils.id2str(Scope.scope_id)
+        idstr = str(worker.instance_number())
         if worker.is_instantiated():
             new_worker = worker
         else:
@@ -279,16 +277,14 @@ class ModuleInstantiator(object):
     def _process_global_module(self):
         collector = CallCollector()
         new_modules = set()
-        #g = Scope.global_scope()
-        #calls = collector.process(g)
-        calls = set()
+        calls = []
         scopes = Scope.get_scopes(bottom_up=False,
                                   with_global=True,
                                   with_class=False,
                                   with_lib=False)
         for s in scopes:
             if s.is_global() or s.is_function_module():
-                calls |= collector.process(s)
+                calls.extend(collector.process(s))
         for stm, call in calls:
             if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().is_instantiated():
                 new_module = self._instantiate_module(call, stm.dst)
@@ -344,14 +340,14 @@ class ModuleInstantiator(object):
 class CallCollector(IRVisitor):
     def __init__(self):
         super().__init__()
-        self.calls = set()
+        self.calls = []
 
     def process(self, scope):
         super().process(scope)
         return self.calls
 
     def visit_CALL(self, ir):
-        self.calls.add((self.current_stm, ir))
+        self.calls.append((self.current_stm, ir))
 
     def visit_NEW(self, ir):
-        self.calls.add((self.current_stm, ir))
+        self.calls.append((self.current_stm, ir))

@@ -542,7 +542,7 @@ class FlattenModule(IRVisitor):
             _, arg = ir.args[0]
             worker_scope = arg.symbol().typ.get_scope()
             if worker_scope.is_method():
-                new_arg = self._make_new_worker(arg, self.current_stm.loc.lineno)
+                new_arg = self._make_new_worker(arg)
                 assert self.scope.parent.is_module()
                 append_worker_sym = self.scope.parent.find_sym('append_worker')
                 assert append_worker_sym
@@ -583,11 +583,11 @@ class FlattenModule(IRVisitor):
         if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
             self._make_new_assigned_method(ir, sym_scope)
 
-    def _make_new_worker(self, arg, lineno):
+    def _make_new_worker(self, arg):
         parent_module = self.scope.parent
         worker_scope = arg.attr.typ.get_scope()
         inst_name = arg.tail().name
-        new_worker = worker_scope.clone(inst_name, str(lineno), parent=parent_module)
+        new_worker = worker_scope.clone(inst_name, str(worker_scope.instance_number()), parent=parent_module)
         if new_worker.is_inlinelib():
             new_worker.del_tag('inlinelib')
         worker_self = new_worker.find_sym('self')
@@ -714,8 +714,7 @@ class SpecializeWorker(IRTransformer):
             return
         origin_worker = call.args[0][1].symbol().typ.get_scope()
         # workerを複製
-        new_worker = self._make_new_worker(origin_worker, call.args,
-                                           self.current_stm.loc.lineno)
+        new_worker = self._make_new_worker(origin_worker, call.args)
         args = []
         if origin_worker.is_method():
             params = new_worker.params[:]
@@ -748,9 +747,9 @@ class SpecializeWorker(IRTransformer):
         sym_replacer = SymbolReplacer(sym_map={param_sym:rep_ir}, attr_map={})
         sym_replacer.process(new_worker, new_worker.entry_block)
 
-    def _make_new_worker(self, worker, args, lineno):
+    def _make_new_worker(self, worker, args):
         parent_module = self.scope.parent
-        new_worker = worker.clone('', str(lineno), parent=parent_module)
+        new_worker = worker.clone('', str(worker.instance_number()), parent=parent_module)
         if new_worker.is_inlinelib():
             new_worker.del_tag('inlinelib')
         # Convert function worker to method of module

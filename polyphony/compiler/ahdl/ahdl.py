@@ -104,10 +104,10 @@ class AHDL_VAR(AHDL_EXP):
         self.ctx = ctx
 
     def __str__(self):
-        return '{}'.format(self.sig)
+        return '{}'.format(self.sig.name)
 
     def __repr__(self):
-        return 'AHDL_VAR(\'{}\')'.format(self.sig.name)
+        return 'AHDL_VAR(\'{}\')'.format(self.sig)
 
 
 class AHDL_MEMVAR(AHDL_VAR):
@@ -115,11 +115,10 @@ class AHDL_MEMVAR(AHDL_VAR):
         super().__init__(sig, ctx)
 
     def __str__(self):
-        return '{}[]'.format(self.sig)
+        return '{}[]'.format(self.sig.name)
 
     def __repr__(self):
-        return 'AHDL_MEMVAR({}, {})'.format(repr(self.sig),
-                                            repr(self.ctx))
+        return 'AHDL_MEMVAR(\'{}\')'.format(self.sig)
 
     def name(self):
         return self.sig.name

@@ -126,7 +126,7 @@ class VerilogCodeGen(AHDLVisitor):
         if not self.hdlmodule.constants:
             return
         self.emit('//localparams')
-        for sig, val in self.hdlmodule.constants.items():
+        for sig, val in sorted(self.hdlmodule.constants.items(), key=lambda item: item[0].name):
             self.emit(f'localparam {sig.name} = {val};')
         self.emit('')
 
@@ -309,6 +309,8 @@ class VerilogCodeGen(AHDLVisitor):
             return sig.name
         if is_verilog_keyword(sig.name):
             return sig.name + '_'
+        if sig.name[0].isnumeric():
+            return '_' + sig.name
         return sig.name
 
     def visit_AHDL_VAR(self, ahdl):
