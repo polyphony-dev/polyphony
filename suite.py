@@ -6,6 +6,7 @@ import glob
 import simu
 import error
 import json
+import multiprocessing as mp
 from pprint import pprint
 
 
@@ -124,6 +125,7 @@ def parse_options():
     parser.add_argument('-j', dest='show_json', action='store_true')
     parser.add_argument('-s', dest='silent', action='store_true')
     parser.add_argument('-f', dest='full', action='store_true')
+    parser.add_argument('-n', '--num_cpu', dest='ncpu', type=int, default=1)
     parser.add_argument('dir', nargs='*')
     return parser.parse_args()
 
@@ -135,9 +137,18 @@ def add_files(lst, patterns):
             lst.append(f)
 
 
+def exec_test_entry(t, options, suite_results):
+    if not options.silent:
+        print(t)
+    finishes = simu.exec_test(t, options)
+    if finishes:
+        suite_results[t] = ','.join(finishes)
+    else:
+        suite_results[t] = 'FAIL'
+
+
 def suite(options, ignores):
     tests = []
-    suite_results = {}
     ds = options.dir if options.dir else DIRS
     for d in ds:
         fs = glob.glob('{0}/{1}/*.py'.format(TEST_DIR, d))
@@ -145,19 +156,19 @@ def suite(options, ignores):
         tests.extend(sorted(fs))
     if not options.dir:
         tests.extend([TEST_DIR + f for f in FILES])
+    pool = mp.Pool(options.ncpu)
+    manager = mp.Manager()
+    suite_results = manager.dict()
     for t in ignores:
         if t in tests:
             tests.remove(t)
     fails = 0
     for t in tests:
-        if not options.silent:
-            print(t)
-        finishes = simu.exec_test(t, options)
-        if finishes:
-            suite_results[t] = ','.join(finishes)
-        else:
-            suite_results[t] = 'FAIL'
-            fails += 1
+        pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+    pool.close()
+    pool.join()
+    suite_results = dict(suite_results)
+    fails = sum([res == 'FAIL' for res in suite_results.values()])
     if options.config:
         suite_results['-config'] = json.loads(options.config)
     global_suite_results.append(suite_results)
@@ -165,29 +176,37 @@ def suite(options, ignores):
 
 
 def error_test(options, ignores):
-    return abnormal_test(options, ignores, True)
+    tests = sorted(glob.glob('{0}/error/*.py'.format(TEST_DIR)))
+    proc = error.error_test
+    return abnormal_test(tests, proc, options, ignores)
 
 
 def warn_test(options, ignores):
-    return abnormal_test(options, ignores, False)
+    tests = sorted(glob.glob('{0}/warning/*.py'.format(TEST_DIR)))
+    proc = error.warn_test
+    return abnormal_test(tests, proc, options, ignores)
 
 
-def abnormal_test(options, ignores, is_err):
-    if is_err:
-        tests = sorted(glob.glob('{0}/error/*.py'.format(TEST_DIR)))
-        proc = error.error_test
-    else:
-        tests = sorted(glob.glob('{0}/warning/*.py'.format(TEST_DIR)))
-        proc = error.warn_test
+def exec_abnormal_test_entry(proc, t, options, error_results):
+    if not options.silent:
+        print(t)
+    if not proc(t, options):
+        error_results[t] = True
+
+
+def abnormal_test(tests, proc, options, ignores):
+    pool = mp.Pool(options.ncpu)
+    manager = mp.Manager()
+    error_results = manager.dict()
     for t in ignores:
         if t in tests:
             tests.remove(t)
     fails = 0
     for t in tests:
-        if not options.silent:
-            print(t)
-        if not proc(t, options):
-            fails += 1
+        pool.apply_async(exec_abnormal_test_entry, args=(proc, t, options, error_results))
+    pool.close()
+    pool.join()
+    fails = sum(error_results.values())
     return fails
 
 
@@ -243,4 +262,5 @@ def suite_main():
 
 if __name__ == '__main__':
     ret = suite_main()
+    print(ret)
     sys.exit(ret)
