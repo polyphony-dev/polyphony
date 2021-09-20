@@ -1,5 +1,4 @@
 ﻿from collections import defaultdict, OrderedDict
-from .hdlinterface import *
 from .ahdl import *
 from ..ir.symbol import Symbol
 from ..common.env import env
@@ -24,15 +23,13 @@ class HDLModule(object):
         self.name = name
         self.qualified_name = qualified_name
         self.signals = {}
-        self.interfaces = OrderedDict()
+        self._inputs = []
+        self._outputs = []
         self.tasks = []
-        self.accessors = {}
         self.parameters = []
         self.constants = {}
         self.sub_modules = {}
         self.functions = []
-        self.muxes = []
-        self.demuxes = []
         self.decls = defaultdict(list)
         self.fsms = {}
         self.node2if = {}
@@ -49,21 +46,11 @@ class HDLModule(object):
         for sig in self.signals.values():
             s += f'{sig.name}[{sig.width}] {sig.tags}\n'
         s += '\n'
-        s += '  -- interfaces --\n'
-        for inf in self.interfaces.values():
-            s += '{}\n'.format(inf)
-        s += '  -- accessors --\n'
-        for acc in self.accessors.values():
-            s += '{}\n'.format(acc)
         s += '  -- sub modules --\n'
         for name, hdlmodule, connections, param_map in self.sub_modules.values():
             s += '{} \n'.format(name)
-            for conns in connections.values():
-                for inf, acc in conns:
-                    if acc.connected:
-                        s += '    connection : .{}({}) \n'.format(inf.if_name, acc.acc_name)
-                    else:
-                        s += '    connection : .{}(---) \n'.format(inf.if_name)
+            for sig, acc in connections:
+                s += '    connection : .{}({}) \n'.format(sig.name, acc.name)
         s += '  -- declarations --\n'
         for tag, decls in self.decls.items():
             s += 'tag : {}\n'.format(tag)
@@ -78,20 +65,25 @@ class HDLModule(object):
                 for state in stg.states:
                     s += str(state)
         s += '\n'
-        s += '\n'.join([str(inf) for inf in self.interfaces.values()])
         return s
 
     def __repr__(self):
         return self.name
 
-    def add_interface(self, name, interface):
-        self.interfaces[name] = interface
+    def add_input(self, sig):
+        self._inputs.append(sig)
+
+    def inputs(self):
+        return self._inputs
+
+    def add_output(self, sig):
+        self._outputs.append(sig)
+
+    def outputs(self):
+        return self._outputs
 
     def add_task(self, task):
         self.tasks.append(task)
-
-    def add_accessor(self, name, accessor):
-        self.accessors[name] = accessor
 
     def add_constant(self, name, value):
         assert isinstance(name, str)
@@ -159,19 +151,9 @@ class HDLModule(object):
     def add_edge_detector(self, sig, old, new):
         self.edge_detectors.add((sig, old, new))
 
-    def find_interface(self, name):
-        if name in self.interfaces:
-            return self.interfaces[name]
-        assert False
-
     def resources(self):
         num_of_regs = 0
         num_of_nets = 0
-        for inf in self.interfaces.values():
-            for r in inf.regs():
-                num_of_regs += r.width
-            for n in inf.nets():
-                num_of_nets += n.width
         for sig in sorted(self.signals.values(), key=lambda sig: sig.name):
             if sig.is_input() or sig.is_output():
                 continue

@@ -1,7 +1,6 @@
 ﻿from collections import defaultdict
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
-from .hdlinterface import *
 from ..common.env import env
 from ..ir.ir import *
 from logging import getLogger
@@ -24,23 +23,6 @@ class HDLModuleBuilder(object):
         self.hdlmodule = hdlmodule
         self._build_module()
 
-    def _add_internal_ports(self, locals):
-        regs = []
-        nets = []
-        for sig in locals:
-            sig = self.hdlmodule.gen_sig(sig.name, sig.width, sig.tags)
-            if  sig.is_ctrl() or sig.is_extport():
-                continue
-            else:
-                assert ((sig.is_net() and not sig.is_reg()) or
-                        (not sig.is_net() and sig.is_reg()) or
-                        (not sig.is_net() and not sig.is_reg()))
-                if sig.is_net():
-                    nets.append(sig)
-                elif sig.is_reg():
-                    regs.append(sig)
-        return regs, nets
-
     def _add_state_register(self, fsm):
         state_sig = self.hdlmodule.gen_sig(fsm.name + '_state', -1, {'reg'})
         self.hdlmodule.add_fsm_state_var(fsm.name, state_sig)
@@ -59,27 +41,27 @@ class HDLModuleBuilder(object):
 
     def _add_submodule_instances(self, sub_hdlmodule, inst_names, param_map, is_internal=False):
         for inst_name in inst_names:
-            connections = defaultdict(list)
-            for sub_module_inf in sub_hdlmodule.interfaces.values():
-                if is_internal:
-                    acc = sub_module_inf.accessor('')
+            connections = []
+            ios = sub_hdlmodule.inputs() + sub_hdlmodule.outputs()
+            for sig in ios:
+                if sub_hdlmodule.scope.is_module():
+                    ifname = sig.name
                 else:
-                    acc = sub_module_inf.accessor(inst_name)
-                    self._add_external_accessor_for_submodule(sub_module_inf, acc)
-                if isinstance(sub_module_inf, WriteInterface):
-                    connections['ret'].append((sub_module_inf, acc))
+                    ifname = sig.name[len(sub_hdlmodule.name) + 1:]
+                accessor_name = f'{inst_name}_{ifname}'
+                attr = {'extport'}
+                if sig.is_input():
+                    attr.add('reg')
                 else:
-                    connections[''].append((sub_module_inf, acc))
+                    attr.add('net')
+                if sig.is_ctrl():
+                    attr.add('ctrl')
+                accessor = self.hdlmodule.gen_sig(accessor_name, sig.width, attr)
+                connections.append((sig, accessor))
             self.hdlmodule.add_sub_module(inst_name,
                                           sub_hdlmodule,
                                           connections,
                                           param_map=param_map)
-
-    def _add_external_accessor_for_submodule(self, sub_module_inf, acc):
-        if not isinstance(acc, CallAccessor) and not self.hdlmodule.signal(acc.acc_name):
-            # we have never accessed this interface
-            return
-        self.hdlmodule.add_accessor(acc.acc_name, acc)
 
     def _add_roms(self, memsigs):
         def find_defstm(symbol):
@@ -139,31 +121,9 @@ class HDLModuleBuilder(object):
                 moves.extend([code for code in state.traverse() if code.is_a(AHDL_MOVE)])
         return moves
 
-    def _add_single_port_interface(self, signal):
-        inf = None
-        if signal.is_input():
-            inf = SingleReadInterface(signal)
-        elif signal.is_output():
-            inf = SingleWriteInterface(signal)
-        if inf:
-            self.hdlmodule.add_interface(inf.if_name, inf)
-
     def _add_reset_stms(self, fsm, defs, uses, outputs):
         fsm_name = fsm.name
-        for acc in self.hdlmodule.accessors.values():
-            for stm in acc.reset_stms():
-                self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
-        # reset output ports
-        for sig in outputs:
-            if sig.is_net():
-                continue
-            infs = [inf for inf in self.hdlmodule.interfaces.values() if inf.signal is sig]
-            for inf in infs:
-                for stm in inf.reset_stms():
-                    self.hdlmodule.add_fsm_reset_stm(fsm_name, stm)
-        # reset local ports
-        for sig in defs:
-            # reset internal regs
+        for sig in defs | outputs:
             if sig.is_reg():
                 if sig.is_initializable():
                     v = AHDL_CONST(sig.init_value)
@@ -172,28 +132,6 @@ class HDLModuleBuilder(object):
                 mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
                 self.hdlmodule.add_fsm_reset_stm(fsm_name, mv)
 
-    def _add_sub_module_accessors(self):
-        def is_acc_connected(sub, acc, hdlmodule):
-            if sub_module.scope.is_function_module():
-                return True
-            elif acc.acc_name in hdlmodule.accessors:
-                return True
-            return False
-
-        for name, sub_module, connections, param_map in self.hdlmodule.sub_modules.values():
-            for conns in connections.values():
-                for inf, acc in conns:
-                    if not is_acc_connected(sub_module, acc, self.hdlmodule):
-                        acc.connected = False
-                        continue
-                    tag = inf.if_name
-                    for p in acc.regs():
-                        int_name = acc.port_name(p)
-                        sig = self.hdlmodule.gen_sig(int_name, p.width, {'reg'})
-                    for p in acc.nets():
-                        int_name = acc.port_name(p)
-                        sig = self.hdlmodule.gen_sig(int_name, p.width, {'net'})
-
 
 class HDLFunctionModuleBuilder(HDLModuleBuilder):
     def _build_module(self):
@@ -201,44 +139,43 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
-        locals = defs.union(uses)
-        module_name = self.hdlmodule.name
         self._add_state_register(fsm)
-        callif = CallInterface('', module_name)
-        self.hdlmodule.add_interface('', callif)
-        self._add_input_interfaces(scope)
-        self._add_output_interfaces(scope)
-        self._add_internal_ports(locals)
+        self._add_input(scope)
+        self._add_output(scope)
         self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
-        self._add_sub_module_accessors()
 
-    def _add_input_interfaces(self, scope):
+    def _add_input(self, scope):
         if scope.is_method():
             assert False
             params = scope.params[1:]
         else:
             params = scope.params
-        for i, (sym, copy, _) in enumerate(params):
+        for sym, _, _ in params:
             if sym.typ.is_int() or sym.typ.is_bool():
-                sig_name = '{}_{}'.format(scope.base_name, sym.hdl_name())
-                sig = self.hdlmodule.signal(sig_name)
-                inf = SingleReadInterface(sig, sym.hdl_name(), scope.base_name)
+                sig = self.hdlmodule.signal(sym)
             elif sym.typ.is_seq():
                 raise NotImplementedError()
             else:
                 assert False
-            self.hdlmodule.add_interface(inf.if_name, inf)
+            self.hdlmodule.add_input(sig)
+        module_name = self.hdlmodule.name
+        sig = self.hdlmodule.gen_sig(f'{module_name}_ready', 1, {'input', 'net', 'ctrl'})
+        self.hdlmodule.add_input(sig)
+        sig = self.hdlmodule.gen_sig(f'{module_name}_accept', 1, {'input', 'net', 'ctrl'})
+        self.hdlmodule.add_input(sig)
 
-    def _add_output_interfaces(self, scope):
+    def _add_output(self, scope):
         if scope.return_type.is_scalar():
             sig_name = '{}_out_0'.format(scope.base_name)
             sig = self.hdlmodule.signal(sig_name)
-            inf = SingleWriteInterface(sig, 'out_0', scope.base_name)
-            self.hdlmodule.add_interface(inf.if_name, inf)
+            self.hdlmodule.add_output(sig)
         elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')
+        module_name = self.hdlmodule.name
+        sig = self.hdlmodule.gen_sig(f'{module_name}_valid', 1, {'output', 'reg', 'ctrl'})
+        self.hdlmodule.add_output(sig)
 
 
 class HDLTestbenchBuilder(HDLModuleBuilder):
@@ -247,9 +184,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
-        locals = defs.union(uses)
         self._add_state_register(fsm)
-        self._add_internal_ports(locals)
         self._add_callee_submodules(scope)
         for sym, cp, _ in scope.params:
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
@@ -262,19 +197,19 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                 self._add_submodule_instances(sub_hdlmodule, [cp.name], param_map=param_map)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
-        self._add_sub_module_accessors()
 
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
     def _process_io(self, hdlmodule):
         for sig in hdlmodule.get_signals({'single_port'}, None, with_base=True):
-            self._add_single_port_interface(sig)
+            if sig.is_input():
+                hdlmodule.add_input(sig)
+            elif sig.is_output():
+                hdlmodule.add_output(sig)
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
-        locals = defs.union(uses)
-        regs, nets = self._add_internal_ports(locals)
         self._add_state_register(fsm)
         self._add_callee_submodules(scope)
         self._add_roms(memnodes)
@@ -315,7 +250,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 del self.hdlmodule.fsms[fsm.name]
             else:
                 self._process_fsm(fsm)
-        self._add_sub_module_accessors()
 
     def _collect_module_defs(self, fsm):
         moves = self._collect_moves(fsm)

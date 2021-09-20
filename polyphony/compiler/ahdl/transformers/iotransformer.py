@@ -28,24 +28,59 @@ class IOTransformer(AHDLVisitor):
             if code in state.codes:
                 state.codes.remove(code)
 
+    def call_sequence(self, step, step_n, args, returns, ahdl_call):
+        seq = []
+        inst_name = ahdl_call.instance_name
+        valid = self.hdlmodule.signal(f'{inst_name}_valid')
+        ready = self.hdlmodule.signal(f'{inst_name}_ready')
+        accept = self.hdlmodule.signal(f'{inst_name}_valid')
+
+        if step == 0:
+            seq = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(1))]
+            for acc, arg in zip(args, ahdl_call.args):
+                assert not arg.is_a(AHDL_MEMVAR)
+                seq.append(AHDL_MOVE(AHDL_VAR(acc, Ctx.STORE), arg))
+        elif step == 1:
+            seq = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(0))]
+            args = ['Eq', AHDL_CONST(1), AHDL_VAR(valid, Ctx.LOAD)]
+            seq.append(AHDL_META_WAIT('WAIT_COND', *args))
+            for acc, ret in zip(returns, ahdl_call.returns):
+                seq.append(AHDL_MOVE(ret, AHDL_VAR(acc, Ctx.LOAD)))
+            seq.append(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE), AHDL_CONST(1)))
+        elif step == 2:
+            seq.append(AHDL_MOVE(AHDL_VAR(accept, Ctx.STORE), AHDL_CONST(0)))
+        return tuple(seq)
+
     def visit_AHDL_MODULECALL_SEQ(self, ahdl, step, step_n):
         _, sub_module, connections, _ = self.hdlmodule.sub_modules[ahdl.instance_name]
-        assert len(connections['']) + len(connections['ret']) >= 1 + len(ahdl.args) + len(ahdl.returns)
-        conns = connections['']
-        callacc = conns[0][1]
-        argaccs = []
-        argaccs = [acc for inf, acc in conns[1:]]
-        ret_conns = connections['ret']
-        retaccs = [acc for inf, acc in ret_conns]
-        return callacc.call_sequence(step, step_n, argaccs, retaccs, ahdl)
+        args = []
+        returns = []
+        for sig, acc in connections:
+            if sig.is_ctrl():
+                continue
+            elif sig.is_input():
+                args.append(acc)
+            elif sig.is_output():
+                returns.append(acc)
+        return self.call_sequence(step, step_n, args, returns, ahdl)
 
     def visit_AHDL_CALLEE_PROLOG_SEQ(self, ahdl, step, step_n):
-        callinf = self.hdlmodule.interfaces['']
-        return callinf.callee_prolog(step, ahdl.name)
+        if step == 0:
+            valid = self.hdlmodule.signal(f'{self.hdlmodule.name}_valid')
+            ready = self.hdlmodule.signal(f'{self.hdlmodule.name}_ready')
+            unset_valid = AHDL_MOVE(AHDL_VAR(valid, Ctx.STORE), AHDL_CONST(0))
+            args = ['Eq', AHDL_CONST(1), AHDL_VAR(ready, Ctx.LOAD)]
+            wait_ready = AHDL_META_WAIT("WAIT_COND", *args)
+            return (unset_valid, wait_ready)
 
     def visit_AHDL_CALLEE_EPILOG_SEQ(self, ahdl, step, step_n):
-        callinf = self.hdlmodule.interfaces['']
-        return callinf.callee_epilog(step, ahdl.name)
+        if step == 0:
+            valid = self.hdlmodule.signal(f'{self.hdlmodule.name}_valid')
+            accept = self.hdlmodule.signal(f'{self.hdlmodule.name}_accept')
+            set_valid = AHDL_MOVE(AHDL_VAR(valid, Ctx.STORE), AHDL_CONST(1))
+            args = ['Eq', AHDL_CONST(1), AHDL_VAR(accept, Ctx.LOAD)]
+            wait_accept = AHDL_META_WAIT("WAIT_COND", *args)
+            return (set_valid, wait_accept)
 
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}_SEQ'.format(ahdl.factor.__class__.__name__)

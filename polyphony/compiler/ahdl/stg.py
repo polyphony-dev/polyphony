@@ -394,6 +394,8 @@ def _tags_from_sym(sym):
 
     if sym.is_param() and sym.scope.is_function_module():
         tags.add('input')
+        tags.remove('reg')
+        tags.add('net')
     elif sym.is_return() and sym.scope.is_function_module():
         tags.add('output')
     elif sym.is_condition():
@@ -921,17 +923,19 @@ class AHDLTranslator(IRVisitor):
         if dtype.has_signed() and dtype.get_signed():
             tags.add('int')
 
+        outer_module_scope = self.scope.outer_module()
         if kind == 'internal':
             if assigned:
                 tags.add('net')
             else:
                 tags.add('reg')
-        elif self.scope.parent.is_subclassof(port_sym.scope) and port_sym.scope.is_module():
-            if direction != 'inout':
-                tags.add(direction)
-        elif self.scope.is_worker() or self.scope.is_assigned():
-            if direction != 'inout':
-                tags.add(direction)
+        elif outer_module_scope:
+            if direction == 'input':
+                tags.add('input')
+                tags.add('net')
+            elif direction == 'output':
+                tags.add('output')
+                tags.add('reg')
         else:
             # TODO
             tags.add('extport')
@@ -941,8 +945,6 @@ class AHDLTranslator(IRVisitor):
                 tags.add('net')
             else:
                 assert False
-        if 'output' in tags and not assigned:
-            tags.add('reg')
         is_pipeline_access = self.current_stm.block.synth_params['scheduling'] == 'pipeline'
         if root_sym.is_pipelined() and is_pipeline_access:
             tags.add('pipelined')
@@ -950,16 +952,16 @@ class AHDLTranslator(IRVisitor):
         if 'extport' in tags:
             port_sig = self.hdlmodule.gen_sig(port_name, width, tags, port_sym)
         else:
-            if root_sym.scope.is_module():
-                module_scope = root_sym.scope
-            elif root_sym.scope.is_ctor() and root_sym.scope.parent.is_module():
-                module_scope = root_sym.scope.parent
-            else:
-                assert False
-            port_sig = env.hdlmodule(module_scope).gen_sig(port_name, width, tags, port_sym)
+            assert outer_module_scope
+            port_sig = env.hdlmodule(outer_module_scope).gen_sig(port_name, width, tags, port_sym)
         if port_sym.typ.has_init() and not assigned:
             tags.add('initializable')
-            port_sig.init_value = port_sym.typ.get_init()
+            if dtype.is_int():
+                port_sig.init_value = port_sym.typ.get_init()
+            elif dtype.is_bool():
+                port_sig.init_value = 1 if port_sym.typ.get_init() else 0
+            else:
+                assert False
         if port_sym.typ.has_maxsize():
             port_sig.maxsize = port_sym.typ.get_maxsize()
         # TODO: get_rewritable to be always available

@@ -727,6 +727,15 @@ class Scope(Tagged):
             return True
         return False
 
+    def outer_module(self):
+        if self.is_module():
+            return self
+        else:
+            if self.parent.is_namespace():
+                return None
+            else:
+                return self.parent.outer_module()
+
     def class_fields(self):
         assert self.is_class()
         class_fields = {}

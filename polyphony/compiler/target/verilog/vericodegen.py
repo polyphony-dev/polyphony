@@ -2,7 +2,6 @@
 from .verilog_common import pyop2verilogop, is_verilog_keyword
 from ...ahdl.ahdl import *
 from ...ahdl.ahdlvisitor import AHDLVisitor
-from ...ahdl.hdlinterface import *
 from ...common.common import get_src_text
 from ...common.env import env
 from logging import getLogger
@@ -101,8 +100,19 @@ class VerilogCodeGen(AHDLVisitor):
         if self.hdlmodule.scope.is_module() or self.hdlmodule.scope.is_function_module():
             ports.append('input wire clk')
             ports.append('input wire rst')
-        for interface in self.hdlmodule.interfaces.values():
-            ports.extend(self._get_io_names_from(interface))
+        for sig in self.hdlmodule.inputs():
+            typ = 'reg' if sig.is_reg() else 'wire'
+            signed = 'signed' if sig.is_int() else ''
+            width = f'[{sig.width-1}:0]' if sig.width > 1 else ''
+            ports.append(f'input  {typ:4s} {signed:6s} {width:8s} {sig.name}')
+        for sig in self.hdlmodule.outputs():
+            typ = 'wire' if sig.is_net() else 'reg'
+            signed = 'signed' if sig.is_int() else ''
+            width = f'[{sig.width-1}:0]' if sig.width > 1 else ''
+            if sig.is_initializable():
+                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {sig.name} = {sig.init_value}')
+            else:
+                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {sig.name}')
         self.emit((',\n' + self.tab()).join(ports))
 
     def _generate_signal(self, sig):
@@ -159,62 +169,6 @@ class VerilogCodeGen(AHDLVisitor):
                 for decl in sorted(decls, key=lambda d: d.name):
                     self.visit(decl)
 
-    def _get_io_names_from(self, interface):
-        in_names = []
-        out_names = []
-        for port in interface.regs():
-            if port.dir == 'in':
-                assert False
-            else:
-                # WORKAROUND
-                if isinstance(interface, SingleWriteInterface):
-                    net_typ = 'wire' if interface.signal and not interface.signal.is_reg() else 'reg'
-                else:
-                    net_typ = 'reg'
-                io_name = self._to_io_name(port.width, net_typ, 'output', port.signed,
-                                           interface.port_name(port))
-                if (isinstance(interface, SinglePortInterface) and
-                        interface.signal.is_initializable()):
-                    io_name += f' = {int(interface.signal.init_value)}'
-                out_names.append(io_name)
-        for port in interface.nets():
-            if port.dir == 'in':
-                io_name = self._to_io_name(port.width, 'wire', 'input', port.signed,
-                                           interface.port_name(port))
-                in_names.append(io_name)
-            else:
-                io_name = self._to_io_name(port.width, 'wire', 'output', port.signed,
-                                           interface.port_name(port))
-                out_names.append(io_name)
-        return in_names + out_names
-
-    def _to_io_name(self, width, typ, io, signed, port_name):
-        if is_verilog_keyword(port_name):
-            port_name = port_name + '_'
-        if width == 1:
-            ioname = f'{io} {typ} {port_name}'
-        else:
-            if signed:
-                ioname = f'{io} {typ} signed [{width-1}:0] {port_name}'
-            else:
-                ioname = f'{io} {typ} [{width-1}:0] {port_name}'
-        return ioname
-
-    def _to_sub_module_connect(self, instance_name, inf, acc, port):
-        port_name = inf.port_name(port)
-        if is_verilog_keyword(port_name):
-            port_name = port_name + '_'
-        accessor_name = acc.port_name(port)
-        connection = f'.{port_name}({accessor_name})'
-        return connection
-
-    def _to_sub_module_connect_default(self, instance_name, inf, port):
-        port_name = inf.port_name(port)
-        if is_verilog_keyword(port_name):
-            port_name = port_name + '_'
-        connection = f'.{port_name}({port.width}\'d{port.default})'
-        return connection
-
     def _generate_sub_module_instances(self):
         if not self.hdlmodule.sub_modules:
             return
@@ -224,28 +178,9 @@ class VerilogCodeGen(AHDLVisitor):
             ports = []
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
-            conns = connections['']
-            for inf, acc in sorted(conns, key=lambda c: str(c)):
-                if acc.connected:
-                    for p in inf.ports:
-                        ports.append(self._to_sub_module_connect(name, inf, acc, p))
-                else:
-                    for p in inf.ports:
-                        if p.dir == 'in':
-                            ports.append(self._to_sub_module_connect_default(name, inf, p))
-                        else:
-                            pass
-            conns = connections['ret']
-            for inf, acc in sorted(conns, key=lambda c: str(c)):
-                if acc.connected:
-                    for p in inf.ports:
-                        ports.append(self._to_sub_module_connect(name, inf, acc, p))
-                else:
-                    for p in inf.ports:
-                        if p.dir == 'in':
-                            ports.append(self._to_sub_module_connect_default(name, inf, p))
-                        else:
-                            pass
+            for sig, acc in connections:
+                ports.append(f'.{sig.name}({acc.name})')
+
             self.emit(f'//{name} instance')
             if param_map:
                 params = []
