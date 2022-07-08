@@ -1031,7 +1031,8 @@ class AHDLTranslator(IRVisitor):
         _new = self.visit(new)
         self.hdlmodule.add_edge_detector(port_sig, _old, _new)
         detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
-        edge = AHDL_SYMBOL(detect_var_name)
+        detect_var_sig = self.hdlmodule.gen_sig(detect_var_name, 1, {'net'})
+        edge = AHDL_VAR(detect_var_sig, Ctx.LOAD)
         self._emit(AHDL_MOVE(dst, edge), self.sched_time)
 
     def _make_port_init(self, new, target):
@@ -1148,7 +1149,8 @@ class AHDLCombTranslator(AHDLTranslator):
             _new = self.visit(new)
             self.hdlmodule.add_edge_detector(port_sig, _old, _new)
             detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
-            return AHDL_SYMBOL(detect_var_name)
+            detect_var_sig = self.hdlmodule.gen_sig(detect_var_name, 1, {'net'})
+            return AHDL_VAR(detect_var_sig, Ctx.LOAD)
         elif self._is_net_method(ir, 'rd'):
             net_qsym = ir.func.qualified_symbol()[:-1]
             net_sig = self._net_sig(net_qsym)

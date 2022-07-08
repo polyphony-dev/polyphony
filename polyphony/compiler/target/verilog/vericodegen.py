@@ -168,6 +168,8 @@ class VerilogCodeGen(AHDLVisitor):
                 self.emit(f'//combinations: {tag}')
                 for decl in sorted(decls, key=lambda d: d.name):
                     self.visit(decl)
+        for func in self.hdlmodule.functions:
+            self.visit(func)
 
     def _generate_sub_module_instances(self):
         if not self.hdlmodule.sub_modules:

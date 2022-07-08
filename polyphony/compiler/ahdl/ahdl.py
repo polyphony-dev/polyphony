@@ -8,7 +8,7 @@ PYTHON_OP_2_HDL_OP_MAP = {
     'LShift': '<<', 'RShift': '>>',
     'BitOr': '|', 'BitXor': '^', 'BitAnd': '&',
     'Eq': '==', 'NotEq': '!=', 'Lt': '<', 'LtE': '<=', 'Gt': '>', 'GtE': '>=',
-    'IsNot': '!=',
+    'Is': '==', 'IsNot': '!=',
     'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~'
 }
 
@@ -75,7 +75,7 @@ class AHDL_OP(AHDL_EXP):
         return 'AHDL_OP({}, {})'.format(repr(self.op), args)
 
     def is_relop(self):
-        return self.op in ('And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE')
+        return self.op in ('And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE', 'Is', 'IsNot')
 
     def is_unop(self):
         return self.op in ('USub', 'UAdd', 'Not', 'Invert')

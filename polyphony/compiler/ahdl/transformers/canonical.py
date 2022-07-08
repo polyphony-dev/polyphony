@@ -100,7 +100,7 @@ class Canonicalizer(AHDLVisitor):
                 continue
             detect_var_names.add(detect_var_name)
             delayed_sig = self.hdlmodule.signal(delayed_name)
-            detect_var_sig = self.hdlmodule.gen_sig(detect_var_name, 1, {'net'})
+            detect_var_sig = self.hdlmodule.signal(detect_var_name)
             # assign {detect_var} = ({delayed}=={old} && {sig}=={new});
             rhs = AHDL_OP('And',
                           AHDL_OP('Eq', AHDL_VAR(delayed_sig, Ctx.LOAD), old),
@@ -164,7 +164,8 @@ class Canonicalizer(AHDLVisitor):
         detect_vars = []
         for var in ahdl.args[2:]:
             detect_var_name = f'is_{var.sig.name}_change_{self.visit(old)}_to_{self.visit(new)}'
-            detect_vars.append(AHDL_SYMBOL(detect_var_name))
+            detect_var_sig = self.hdlmodule.gen_sig(detect_var_name, 1, {'net'})
+            detect_vars.append(AHDL_VAR(detect_var_sig, Ctx.LOAD))
         if len(detect_vars) > 1:
             return self.visit(AHDL_OP('And', *detect_vars))
         else:

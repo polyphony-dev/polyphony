@@ -30,7 +30,8 @@ class Scope(Tagged):
         'port', 'typeclass',
         'function_module',
         'inlinelib', 'unflatten',
-        'package', 'directory'
+        'package', 'directory',
+        'interface'
     }
     scope_id = 0
     unnamed_ids = defaultdict(int)

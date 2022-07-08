@@ -125,7 +125,9 @@ class HDLModule(object):
         self.sub_modules[name] = (name, hdlmodule, connections, param_map)
 
     def add_function(self, func, tag=''):
-        self.add_decl(tag, func)
+        assert isinstance(func, AHDL_FUNCTION)
+        self.functions.append(func)
+
 
     def add_fsm(self, fsm_name, scope):
         self.fsms[fsm_name] = FSM(fsm_name, scope)

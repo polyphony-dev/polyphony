@@ -752,7 +752,7 @@ class ConflictGraphBuilder(object):
                 pass
             else:
                 warn(cnode.items[0].tag,
-                     Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM, [res])
+                     Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM, [res.orig_name()])
         # for cnode in master_cgraph.get_nodes():
         #     for dnode in cnode.items:
         #         preds = self.dfg.collect_all_preds(dnode)

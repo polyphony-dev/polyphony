@@ -1,127 +1,25 @@
 '''
 The class defined in polyphony.io provides the function for passing data between the module's I / O ports.
 '''
-import copy
 from . import base
-from . import timing
+from .simulator import Port
 
-
-_io_enabled = False
-
-
-def _enable():
-    global _io_enabled
-    _io_enabled = True
-
-
-def _disable():
-    global _io_enabled
-    _io_enabled = False
-
-
-class PolyphonyException(Exception):
-    pass
-
-
-class PolyphonyIOException(PolyphonyException):
-    pass
-
-
-def _is_called_from_owner():
-    # TODO:
-    return False
+def interface(cls):
+    cls.interface_tag = True
+    return cls
 
 
 def flipped(obj):
-    def dflip(d):
-        return 'in' if d == 'out' else 'out'
-
-    if isinstance(obj, Port):
-        return Port(obj._dtype, dflip(obj._direction), init=obj._init, rewritable=obj._rewritable)
-    if not hasattr(obj, '__dict__') or not obj.__dict__:
-        return obj
-    if type(obj).__module__ == 'builtins':
-        return obj
-    _obj = copy.copy(obj)
-    vs = vars(_obj)
-    for k, v in vs.items():
-        vs[k] = flipped(v)
-    return _obj
-
-
-def _connect_port(p0, p1):
-    if p0._dtype != p1._dtype:
-        raise TypeError(f"Incompatible port type, {p0._dtype} and {p1._dtype}")
-    if p0._direction == 'in':
-        assert p1._direction == 'out'
-        p0.assign(lambda:p1.rd())
-    else:
-        assert p1._direction == 'in'
-        p1.assign(lambda:p0.rd())
-
+    pass
 
 def connect(p0, p1):
-    assert _ports(p0) == _ports(flipped(p1))
-    assert type(p0) == type(p1)
-    if isinstance(p0, Port):
-        _connect_port(p0, p1)
-        return
-    for _p0, _p1 in zip(_ports(p0), _ports(p1)):
-        _connect_port(_p0, _p1)
-
-
-def _thru_port(parent, child):
-    if parent._dtype != child._dtype:
-        raise TypeError(f"Incompatible port type, {parent._dtype} and {child._dtype}")
-    if parent._direction == 'in':
-        assert child._direction == 'in'
-        child.assign(lambda:parent.rd())
-    else:
-        assert child._direction == 'out'
-        parent.assign(lambda:child.rd())
-
+    pass
 
 def thru(parent, child):
-    assert _ports(parent) == _ports(child)
-    assert type(parent) == type(child)
-    if isinstance(parent, Port):
-        _thru_port(parent, child)
-        return
-    for p, c in zip(_ports(parent), _ports(child)):
-        _thru_port(p, c)
+    pass
 
 
-def _ports(obj, root=None):
-    if root is None:
-        root = obj
-    if isinstance(obj, Port):
-        return [obj]
-    if not hasattr(obj, '__dict__'):
-        return []
-    results = []
-    for v in vars(obj).values():
-        if v is root:
-            continue
-        results.extend(_ports(v, root=root))
-    return results
-
-
-def ports(name, obj, root=None):
-    if root is None:
-        root = obj
-    if isinstance(obj, Port):
-        return [(name, obj)]
-    if not hasattr(obj, '__dict__'):
-        return []
-    results = []
-    for k, v in vars(obj).items():
-        if v is root:
-            continue
-        results.extend(ports(f'{name}.{k}', v, root=root))
-    return results
-
-
-class Port(object):
+class old_Port(object):
     '''
     Port class is used to an I/O port of a module class.
     It can read or write a value of immutable type.
@@ -263,35 +161,3 @@ class Out(Port):
         super().__init__(dtype, 'out', init)
 
 
-@timing.timed
-class Handshake:
-    def __init__(self, dtype, direction, init=None):
-        self.data = Port(dtype, direction, init)
-        if direction == 'in':
-            self.ready = Port(bool, 'out', 0, rewritable=True)
-            self.valid = Port(bool, 'in', rewritable=True)
-        else:
-            self.ready = Port(bool, 'in', rewritable=True)
-            self.valid = Port(bool, 'out', 0, rewritable=True)
-
-    def rd(self):
-        '''
-        Read the current value from the port.
-        '''
-        self.ready.wr(True)
-        timing.clkfence()
-        while self.valid.rd() is not True:
-            timing.clkfence()
-        self.ready.wr(False)
-        return self.data.rd()
-
-    def wr(self, v):
-        '''
-        Write the value to the port.
-        '''
-        self.data.wr(v)
-        self.valid.wr(True)
-        timing.clkfence()
-        while self.ready.rd() is not True:
-            timing.clkfence()
-        self.valid.wr(False)

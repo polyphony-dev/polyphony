@@ -1,69 +1,12 @@
 '''
 The polyphony.timing library provides functions for timing control.
 '''
-import threading
-from . import base
-from . import io
 from . import typing
-
+from .simulator import clkfence, clksleep, clktime
 
 # @timed decorator
-def timed(func):
-    # TODO: error check
-    def _timed_decorator(*args, **kwargs):
-        if hasattr(func, 'cls'):
-            cls = getattr(func, 'cls')
-            cls.timed_module = True
-        elif hasattr(func, 'func'):  # is decorator
-            func.func.timed_func = True
-        else:
-            func.timed_func = True
-        return func(*args, **kwargs)
-    _timed_decorator.func = func
-    _timed_decorator.__dict__.update(func.__dict__)
-    return _timed_decorator
-
-
-def _wait_cycle():
-    if not io._io_enabled:
-        raise io.PolyphonyIOException()
-    worker = base._worker_map[threading.get_ident()]
-    with base._cycle_update_cv:
-        worker.cycle += 1
-        base._cycle_update_cv.notify()
-
-    base._serializer.wait(threading.get_ident())
-
-    #print('restart', worker.func.__name__)
-    if not io._io_enabled:
-        raise io.PolyphonyIOException()
-
-
-def clksleep(clk_cycles):
-    for i in range(clk_cycles):
-        _wait_cycle()
-
-
-def clkfence():
-    _wait_cycle()
-
-
-def clkrange(cycles=None):
-    if cycles:
-        for i in range(cycles):
-            _wait_cycle()
-            yield i
-        _wait_cycle()
-    else:
-        i = 0
-        while True:
-            _wait_cycle()
-            yield i
-            i += 1
-
-
-def clktime():
-    return base._simulation_time
+def timed(cls):
+    return cls
 
 
 def wait_until(pred):

@@ -29,6 +29,7 @@ INTERNAL_CLASS_DECORATORS = [
     'typeclass',
     'inlinelib',
     'unflatten',
+    'interface',
 ]
 BUILTIN_PACKAGES = (
     'polyphony',
