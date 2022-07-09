@@ -145,14 +145,14 @@ class Scope(Tagged):
 
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(tags)
-        self.name = name
-        self.base_name = name
-        self.orig_name = name
-        self.parent = parent
         if parent:
             self.name = parent.name + "." + name
             parent.append_child(self)
-
+        else:
+            self.name = name
+        self.orig_name = self.name
+        self.base_name = name
+        self.parent = parent
         self.lineno = lineno
         self.scope_id = scope_id
         self.symbols = {}
@@ -215,6 +215,9 @@ class Scope(Tagged):
             s += str(r)
         s += '================================\n'
         return s
+
+    def dump(self):
+        print(self)
 
     def __repr__(self):
         return self.name

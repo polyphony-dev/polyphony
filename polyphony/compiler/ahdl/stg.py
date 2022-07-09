@@ -387,10 +387,12 @@ def _tags_from_sym(sym):
         if di != 'inout':
             tags.add(di)
     elif sym.typ.is_object():
-        if sym.is_alias():
-            tags.add('net')
-        else:
+        if sym.typ.get_scope().orig_name == 'polyphony.Reg':
+            assert not sym.is_alias()
             tags.add('reg')
+        elif sym.typ.get_scope().orig_name == 'polyphony.Net':
+            assert sym.is_alias()
+            tags.add('net')
 
     if sym.is_param() and sym.scope.is_function_module():
         tags.add('input')
