@@ -421,6 +421,12 @@ class ConstantOpt(ConstantOptBase):
                 for rep in replaces:
                     if rep not in dead_stms:
                         self.worklist.append(rep)
+            elif (stm.is_a(MOVE)
+                    and stm.src.is_a(ARRAY)
+                    and stm.src.repeat.is_a(CONST)):
+                assert stm.dst.symbol().typ.is_seq()
+                if stm.dst.symbol().typ.get_length() == Type.ANY_LENGTH:
+                    stm.dst.symbol().typ = stm.dst.symbol().typ.with_length(len(stm.src.items) * stm.src.repeat.value)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)

@@ -102,7 +102,7 @@ class Symbol(Tagged):
         #return '{}:{}({}:{})'.format(self.name, self.typ, self.id, self.scope.base_name)
         #return '{}:{}({})'.format(self.name, repr(self.typ), self.tags)
         if env.dev_debug_mode:
-            return '{}:{}'.format(self._name, self._typ)
+            return '{}<{}>'.format(self._name, self._typ)
         return self._name
 
     def __repr__(self):

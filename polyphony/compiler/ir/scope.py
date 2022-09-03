@@ -49,6 +49,7 @@ class Scope(Tagged):
         if origin:
             s.origin = origin
             s.orig_name = origin.orig_name
+            s.orig_base_name = origin.orig_base_name
             env.scope_file_map[s] = env.scope_file_map[origin]
         cls.scope_id += 1
         return s
@@ -152,6 +153,7 @@ class Scope(Tagged):
         else:
             self.name = name
         self.orig_name = self.name
+        self.orig_base_name = name
         self.base_name = name
         self.parent = parent
         self.lineno = lineno

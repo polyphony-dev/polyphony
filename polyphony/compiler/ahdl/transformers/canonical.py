@@ -185,6 +185,9 @@ class Canonicalizer(AHDLVisitor):
     def visit_AHDL_SYMBOL(self, ahdl):
         return ahdl
 
+    def visit_AHDL_RECORD(self, ahdl):
+        return ahdl
+
     def visit_AHDL_CONCAT(self, ahdl):
         return ahdl
 

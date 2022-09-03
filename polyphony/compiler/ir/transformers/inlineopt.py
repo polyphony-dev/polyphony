@@ -429,11 +429,22 @@ class FlattenFieldAccess(IRTransformer):
                 pass
             else:
                 return ir
+        if not ir.tail().typ.is_object():
+            return ir
+        object_scope = ir.tail().typ.get_scope()
+        if object_scope.is_interface():
+            return ir
+        if object_scope.is_module():
+            return ir
+        if object_scope.is_port():
+            return ir
+
         # don't flatten use of the static class field
-        if ir.tail().typ.is_class():
-            return ir
-        if ir.attr.scope.is_unflatten():
-            return ir
+        # if ir.tail().typ.is_class():
+        #     return ir
+        # if ir.attr.scope.is_unflatten():
+        #     return ir
+
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
         return newattr

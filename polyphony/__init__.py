@@ -59,7 +59,15 @@ By creating an instance of Module class in the global scope, that instance will 
 def module(cls):
     def append_worker(self, fn, *args, loop=False):
         pass
+
     cls.append_worker = append_worker
+    orig_init = cls.__init__
+
+    def init_wrapper(self, *args, **kwargs):
+       self._args = args
+       self._kwargs = kwargs
+       orig_init(self, *args, **kwargs)
+    cls.__init__ = init_wrapper
     return cls
 
 

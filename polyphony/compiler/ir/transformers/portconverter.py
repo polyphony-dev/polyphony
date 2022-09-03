@@ -1,4 +1,5 @@
 from collections import defaultdict
+from collections import deque
 from .typeprop import TypePropagation, RejectPropagation
 from ..block import Block
 from ..scope import Scope
@@ -11,7 +12,18 @@ from ...common.env import env
 from ...common.errors import Errors, Warnings
 
 
+# port
+#  dtype
+#  direction ... in | out
+#  init      ... initial value
+#  assigned    ... True | False
+#  root_symbol ... symbol
+#  owners_access   ... True | False
+#
 class PortTypeProp(TypePropagation):
+    def process(self, scope):
+        super().process(scope)
+
     def visit_NEW(self, ir):
         if ir.func_scope().is_port():
             assert self.scope.is_ctor() and self.scope.parent.is_module()
@@ -36,14 +48,6 @@ class PortTypeProp(TypePropagation):
             assert 'direction' in attrs
             attrs['root_symbol'] = self.current_stm.dst.symbol()
             attrs['assigned'] = False
-            if self.current_stm.is_a(MOVE) and self.current_stm.dst.is_a(TEMP):
-                attrs['port_kind'] = 'internal'
-            else:
-                if self.current_stm.dst.symbol().name.startswith('_'):
-                    attrs['port_kind'] = 'internal'
-                    attrs['direction'] = 'inout'
-                else:
-                    attrs['port_kind'] = 'external'
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
             return Type.port(ir.func_scope(), attrs)
@@ -66,7 +70,6 @@ class PortTypeProp(TypePropagation):
                 raise RejectPropagation(ir)
             if ir.func.symbol().typ.get_scope().base_name == 'assign':
                 sym.typ = sym.typ.with_assigned(True)
-            kind = sym.typ.get_port_kind()
             root = sym.typ.get_root_symbol()
             port_owner = root.scope
             # if port is a local variable, we modify the port owner its parent
@@ -78,10 +81,6 @@ class PortTypeProp(TypePropagation):
                 scope = self.scope.parent
             else:
                 scope = self.scope
-            if (kind == 'internal'
-                    and not scope.is_subclassof(port_owner)
-                    and not port_owner.find_child(scope.name, rec=True)):
-                fail(self.current_stm, Errors.PORT_ACCESS_IS_NOT_ALLOWED)
             return ir.func_scope().return_type
         elif ir.func_scope().is_lib():
             return self.visit_CALL_lib(ir)
@@ -142,16 +141,33 @@ def _collect_scopes(module):
 class PortConverter(IRTransformer):
     def __init__(self):
         super().__init__()
+
+    def process_all(self):
+        scopes = Scope.get_scopes(with_class=True)
+        modules = [s for s in scopes if s.is_module() and s.is_instantiated()]
+        if not modules:
+            return
+        #PortTypeProp().process_all()
+        for module in modules:
+            scopes_ = _collect_scopes(module)
+            worklist = deque(scopes_)
+            #self.union_ports = defaultdict(set)
+            #for s in scopes_:
+            PortTypeProp()._process_all(worklist)
+
+
+class PortChecker(IRTransformer):
+    def __init__(self):
+        super().__init__()
         self.writers = defaultdict(set)
 
     def process_all(self):
-        UnusedPortCleaner().process_all()
+        #UnusedPortCleaner().process_all()
 
         scopes = Scope.get_scopes(with_class=True)
         modules = [s for s in scopes if s.is_module()]
         if not modules:
             return
-        PortTypeProp().process_all()
         for m in modules:
             if not m.is_instantiated():
                 continue
@@ -168,8 +184,8 @@ class PortConverter(IRTransformer):
                         continue
                     assert ctor.usedef
                     stm = ctor.usedef.get_stms_defining(field).pop()
-                    warn(stm, Warnings.PORT_IS_NOT_USED,
-                         [field.orig_name()])
+                    #warn(stm, Warnings.PORT_IS_NOT_USED,
+                    #     [field.orig_name()])
             # check for local variable port
             for sym in ctor.symbols.values():
                 if sym.typ.is_port() and sym not in self.writers:
@@ -205,21 +221,20 @@ class PortConverter(IRTransformer):
         return True
 
     def _check_port_direction(self, sym, func_scope):
+        return
         assert func_scope.name.startswith('polyphony.io.Port')
         port_typ = sym.typ
         di = port_typ.get_direction()
-        kind = port_typ.get_port_kind()
         from_external = self._is_access_from_external(sym)
         exclusive_write = False
         if from_external:
-            assert kind == 'external'
             if func_scope.base_name in ('wr', 'assign'):
                 valid_direction = {'input'}
                 exclusive_write = True
             else:
                 valid_direction = {'output'}
         else:
-            if kind == 'external':
+            if not owners_access:
                 if func_scope.base_name in ('wr', 'assign'):
                     valid_direction = {'output'}
                     exclusive_write = True
@@ -230,8 +245,9 @@ class PortConverter(IRTransformer):
                     exclusive_write = True
                 valid_direction = {'output', 'input'}
         if di != 'inout' and di != 'any' and di not in valid_direction:
-            fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
-                 [sym.orig_name()])
+            #fail(self.current_stm, Errors.DIRECTION_IS_CONFLICTED,
+            #     [sym.orig_name()])
+            pass
         if not exclusive_write:
             return
         if sym in self.union_ports:
@@ -244,7 +260,7 @@ class PortConverter(IRTransformer):
     def _set_and_check_port_direction(self, sym):
         port_typ = sym.typ
         rootsym = port_typ.get_root_symbol()
-        kind = port_typ.get_port_kind()
+        owners_access = port_typ.get_owners_access()
         # write-write conflict
         if self.writers[rootsym]:
             assert len(self.writers[rootsym]) == 1
@@ -253,7 +269,7 @@ class PortConverter(IRTransformer):
                 fail(self.current_stm, Errors.WRITING_IS_CONFLICTED,
                         [sym.orig_name()])
         else:
-            if kind == 'internal':
+            if owners_access:
                 assert self.scope.is_worker() or self.scope.parent.is_module()
             self.writers[rootsym].add(self.scope)
 
@@ -285,8 +301,8 @@ class PortConverter(IRTransformer):
                 port = p.symbol().typ
                 assert port.is_port()
                 di = port.get_direction()
-                kind = port.get_port_kind()
-                if kind == 'external':
+                owners_access = port.get_owners_access()
+                if not owners_access:
                     port_owner = self._get_port_owner(p.symbol())
                     #port.set_direction('input')
                     if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or

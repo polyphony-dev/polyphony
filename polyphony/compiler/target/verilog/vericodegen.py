@@ -264,6 +264,9 @@ class VerilogCodeGen(AHDLVisitor):
             return ahdl.name + '_'
         return ahdl.name
 
+    def visit_AHDL_RECORD(self, ahdl):
+        return self.visit(ahdl.attr)
+
     def visit_AHDL_CONCAT(self, ahdl):
         if ahdl.op:
             code = PYTHON_OP_2_HDL_OP_MAP[ahdl.op].join([str(v) for v in ahdl.varlist])

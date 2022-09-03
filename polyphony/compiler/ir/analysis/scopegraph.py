@@ -13,6 +13,7 @@ class CallGraphBuilder(IRVisitor):
 
     def process_all(self):
         g = Scope.global_scope()
+        # targets = [scope for scope, args in env.targets]
         self.worklist = deque([g])
         visited = set()
         while self.worklist:
@@ -21,6 +22,8 @@ class CallGraphBuilder(IRVisitor):
                 continue
             visited.add(scope)
             self.process(scope)
+            if scope.is_class():
+                self.worklist.append(scope.find_ctor())
         #print(self.call_graph)
         if not self.call_graph.succs(g):
             raise Warning(

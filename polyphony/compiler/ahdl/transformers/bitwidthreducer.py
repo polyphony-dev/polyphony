@@ -60,6 +60,9 @@ class BitwidthReducer(AHDLVisitor):
     def visit_AHDL_SYMBOL(self, ahdl):
         pass
 
+    def visit_AHDL_RECORD(self, ahdl):
+        return self.visit(ahdl.attr)
+
     def visit_AHDL_CONCAT(self, ahdl):
         return sum([self.visit(var) for var in ahdl.varlist])
 

@@ -20,13 +20,15 @@ def from_python(src_file, target_name, args, module_instance=None):
     options.debug_mode = False
     options.verilog_dump = False
     options.verilog_monitor = False
+    options.targets = [(target_name, args)]
     setup(src_file, options)
     main_source = read_source(src_file)
     if not module_instance:
         m = import_module(main_source, src_file)
         py_module_class = getattr(m, target_name)
         if inspect.isclass(py_module_class):
-            py_args = [getattr(m, a) for a in args]
+            # TODO:
+            py_args = [None] * len(args)
             py_module_instance = py_module_class(*py_args)
         elif inspect.isfunction(py_module_class):
             py_module_instance = None
@@ -37,12 +39,11 @@ def from_python(src_file, target_name, args, module_instance=None):
     scopes = compile_polyphony(compile_plan(), main_source, src_file)
     model = None
     for s in scopes:
-        if s.orig_name != target_name:
+        if s.orig_base_name != target_name:
             continue
-        hdlmodule = env.hdlmodule(s)
+        hdlmodule = env.hdlscope(s)
         #print(hdlmodule)
-        builder = SimulationModelBuilder(hdlmodule, py_module_instance)
-        model = builder.build()
+        model = SimulationModelBuilder(hdlmodule, py_module_instance).build()
         break
     return model
 
@@ -56,4 +57,8 @@ def import_module(code, filename):
     module = types.ModuleType('polyphony_internal_imported_module')
     exec(code, module.__dict__)
     return module
+
+def from_object(object):
+    print(vars(object))
+
 

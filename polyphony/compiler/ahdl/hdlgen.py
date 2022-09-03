@@ -37,7 +37,7 @@ class HDLModuleBuilder(object):
             # TODO: add primitive function hook here
             if inst_scope_name == 'print':
                 continue
-            self._add_submodule_instances(env.hdlmodule(callee_scope), inst_names, {})
+            self._add_submodule_instances(env.hdlscope(callee_scope), inst_names, {})
 
     def _add_submodule_instances(self, sub_hdlmodule, inst_names, param_map, is_internal=False):
         for inst_name in inst_names:
@@ -189,7 +189,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         for sym, cp, _ in scope.params:
             if sym.typ.is_object() and sym.typ.get_scope().is_module():
                 mod_scope = sym.typ.get_scope()
-                sub_hdlmodule = env.hdlmodule(mod_scope)
+                sub_hdlmodule = env.hdlscope(mod_scope)
                 param_map = {}
                 if sub_hdlmodule.scope.module_param_vars:
                     for name, v in sub_hdlmodule.scope.module_param_vars:

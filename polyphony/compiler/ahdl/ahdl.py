@@ -152,6 +152,24 @@ class AHDL_SYMBOL(AHDL_EXP):
         return 'AHDL_SYMBOL({})'.format(repr(self.name))
 
 
+class AHDL_RECORD(AHDL_EXP):
+    def __init__(self, name, hdlscope, attr=None):
+        super().__init__()
+        self.name = name
+        self.hdlscope = hdlscope
+        self.attr = attr
+
+    @property
+    def sig(self):
+        return self.attr.sig
+
+    def __str__(self):
+        return '{}.{}'.format(self.hdlscope.name, self.attr)
+
+    def __repr__(self):
+        return 'AHDL_RECORD({}, {})'.format(self.hdlscope.name, repr(self.attr))
+
+
 class AHDL_CONCAT(AHDL_EXP):
     def __init__(self, varlist, op=None):
         super().__init__()

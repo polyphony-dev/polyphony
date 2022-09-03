@@ -445,6 +445,15 @@ class ModelEvaluator(AHDLVisitor):
             return Integer('X', 1, False)
         assert False
 
+    def visit_AHDL_RECORD(self, ahdl):
+        submodel = self.hdlscope2model(ahdl.hdlscope)
+        current = self.current_model
+        self.current_model = submodel
+        attr = self.visit(ahdl.attr)
+        self.current_model = current
+        return attr
+        assert False
+
     def visit_AHDL_CONCAT(self, ahdl):
         for var in ahdl.varlist:
             self.visit(var)
@@ -632,10 +641,10 @@ class Model(object):
         attr = getattr(model_core, name)
         if not attr:
             raise AttributeError()
-        if isinstance(attr, Value):
-            return attr.get()
         if isinstance(attr, Port):
             return attr
+        if isinstance(attr, Value):
+            return attr.get()
         if callable(attr):
             return attr
         if hasattr(attr, 'interface_tag'):
@@ -755,7 +764,7 @@ class SimulationModelBuilder(object):
                 input_object = Reg(0, sig.width, sig)
                 port._set_value(input_object)
 
-                setattr(self.model, sig.name, input_object)
+                setattr(self.model, sig.name, port)
                 if owner is not self.pymodule:
                     setattr(self.model, names[0], owner)
             elif name in out_sig_names:
@@ -768,7 +777,7 @@ class SimulationModelBuilder(object):
                     output_object = Net(0, sig.width, sig)
                 port._set_value(output_object)
 
-                setattr(self.model, sig.name, output_object)
+                setattr(self.model, sig.name, port)
                 if owner is not self.pymodule:
                     setattr(self.model, names[0], owner)
 
@@ -835,5 +844,7 @@ class SimulationModelBuilder(object):
     def _make_rom_function(self):
         for fn in self.hdlmodule.functions:
             for i in fn.inputs:
+                assert not hasattr(self.model, i.sig.name)
                 setattr(self.model, i.sig.name, Net(0, i.sig.width, i.sig))
+            assert not hasattr(self.model, fn.output.sig.name)
             setattr(self.model, fn.output.sig.name, Net(0, fn.output.sig.width[0], fn.output.sig))

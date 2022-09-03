@@ -16,13 +16,97 @@ class FSM(object):
         self.reset_stms = []
 
 
-class HDLModule(object):
-    #Port = namedtuple('Port', ['name', 'width'])
+class HDLScope(object):
     def __init__(self, scope, name, qualified_name):
         self.scope = scope
         self.name = name
         self.qualified_name = qualified_name
         self.signals = {}
+        self.sig2sym = {}
+        self.sym2sigs = defaultdict(list)
+        self.subscope = {}
+
+    def __str__(self):
+        s = '---------------------------------\n'
+        s += 'HDLScope {}\n'.format(self.name)
+        s += '  -- signals --\n'
+        for sig in self.signals.values():
+            s += f'{sig.name}[{sig.width}] {sig.tags}\n'
+        s += '\n'
+        return s
+
+    def __repr__(self):
+        return self.name
+
+    def gen_sig(self, name, width, tag=None, sym=None):
+        if name in self.signals:
+            sig = self.signals[name]
+            sig.width = width
+            if tag:
+                sig.add_tag(tag)
+            return sig
+        sig = Signal(name, width, tag, sym)
+        self.signals[name] = sig
+        if sym:
+            self.sig2sym[sig] = sym
+            self.sym2sigs[sym].append(sig)
+        return sig
+
+    def signal(self, key):
+        if isinstance(key, str):
+            if key in self.signals:
+                return self.signals[key]
+        elif isinstance(key, Symbol):
+            if key in self.sym2sigs and len(self.sym2sigs[key]) == 1:
+                return self.sym2sigs[key][0]
+        for base in self.scope.bases:
+            basemodule = env.hdlscope(base)
+            found = basemodule.signal(key)
+            if found:
+                return found
+        return None
+
+    def get_signals(self, include_tags=None, exclude_tags=None, with_base=False):
+        if include_tags:
+            assert isinstance(include_tags, set)
+        if exclude_tags:
+            assert isinstance(exclude_tags, set)
+        sigs = []
+        if with_base:
+            for base in self.scope.bases:
+                basemodule = env.hdlscope(base)
+                sigs.extend(basemodule.get_signals(include_tags, exclude_tags, True))
+        for sig in sorted(self.signals.values(), key=lambda sig: sig.name):
+            if exclude_tags and exclude_tags & sig.tags:
+                continue
+            if include_tags:
+                ret = include_tags & sig.tags
+                if ret:
+                    sigs.append(sig)
+            else:
+                sigs.append(sig)
+        return sigs
+
+    def rename_sig(self, old, new):
+        assert old in self.signals
+        sig = self.signals[old]
+        del self.signals[old]
+        sig.name = new
+        self.signals[new] = sig
+        return sig
+
+    def remove_sig(self, sig):
+        assert sig.name in self.signals
+        del self.signals[sig.name]
+
+    def add_subscope(self, name, hdlscope):
+        self.subscope[name] = hdlscope
+
+
+class HDLModule(HDLScope):
+    #Port = namedtuple('Port', ['name', 'width'])
+    def __init__(self, scope, name, qualified_name):
+        super().__init__(scope, name, qualified_name)
         self._inputs = []
         self._outputs = []
         self.tasks = []
@@ -35,9 +119,13 @@ class HDLModule(object):
         self.node2if = {}
         self.edge_detectors = set()
         self.ahdl2dfgnode = {}
-        self.sig2sym = {}
-        self.sym2sigs = defaultdict(list)
         self.clock_signal = None
+
+    @classmethod
+    def is_hdlmodule_scope(self, scope):
+        return ((scope.is_module() and scope.is_instantiated())
+                or scope.is_function_module()
+                or scope.is_testbench())
 
     def __str__(self):
         s = '---------------------------------\n'
@@ -128,7 +216,6 @@ class HDLModule(object):
         assert isinstance(func, AHDL_FUNCTION)
         self.functions.append(func)
 
-
     def add_fsm(self, fsm_name, scope):
         self.fsms[fsm_name] = FSM(fsm_name, scope)
 
@@ -172,67 +259,6 @@ class HDLModule(object):
             for stg in fsm.stgs:
                 num_of_states += len(stg.states)
         return num_of_regs, num_of_nets, num_of_states
-
-    def gen_sig(self, name, width, tag=None, sym=None):
-        if name in self.signals:
-            sig = self.signals[name]
-            sig.width = width
-            if tag:
-                sig.add_tag(tag)
-            return sig
-        sig = Signal(name, width, tag, sym)
-        self.signals[name] = sig
-        if sym:
-            self.sig2sym[sig] = sym
-            self.sym2sigs[sym].append(sig)
-        return sig
-
-    def signal(self, key):
-        if isinstance(key, str):
-            if key in self.signals:
-                return self.signals[key]
-        elif isinstance(key, Symbol):
-            if key in self.sym2sigs and len(self.sym2sigs[key]) == 1:
-                return self.sym2sigs[key][0]
-        for base in self.scope.bases:
-            basemodule = env.hdlmodule(base)
-            found = basemodule.signal(key)
-            if found:
-                return found
-        return None
-
-    def get_signals(self, include_tags=None, exclude_tags=None, with_base=False):
-        if include_tags:
-            assert isinstance(include_tags, set)
-        if exclude_tags:
-            assert isinstance(exclude_tags, set)
-        sigs = []
-        if with_base:
-            for base in self.scope.bases:
-                basemodule = env.hdlmodule(base)
-                sigs.extend(basemodule.get_signals(include_tags, exclude_tags, True))
-        for sig in sorted(self.signals.values(), key=lambda sig: sig.name):
-            if exclude_tags and exclude_tags & sig.tags:
-                continue
-            if include_tags:
-                ret = include_tags & sig.tags
-                if ret:
-                    sigs.append(sig)
-            else:
-                sigs.append(sig)
-        return sigs
-
-    def rename_sig(self, old, new):
-        assert old in self.signals
-        sig = self.signals[old]
-        del self.signals[old]
-        sig.name = new
-        self.signals[new] = sig
-        return sig
-
-    def remove_sig(self, sig):
-        assert sig.name in self.signals
-        del self.signals[sig.name]
 
     def use_clock_time(self):
         if self.clock_signal is None:

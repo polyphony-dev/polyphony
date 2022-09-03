@@ -56,8 +56,9 @@ class Env(object):
         self.config = Config()
         self.runtime_info = None
         self.outermost_scope_stack = []
-        self.hdlmodules = []
-        self.scope2module = {}
+        self.hdlscopes = []
+        self.scope2hdlscope = {}
+        self.targets = []
 
     def load_config(self, config):
         for key, v in config.items():
@@ -95,19 +96,19 @@ class Env(object):
     def outermost_scope(self):
         return self.outermost_scope_stack[-1]
 
-    def append_hdlmodule(self, module):
-        self.hdlmodules.append(module)
-        self.scope2module[module.scope] = module
-        if module.scope.is_module():
-            for w, _ in module.scope.workers:
-                self.scope2module[w] = module
-            ctor = module.scope.find_ctor()
+    def append_hdlscope(self, hdlscope):
+        self.hdlscopes.append(hdlscope)
+        self.scope2hdlscope[hdlscope.scope] = hdlscope
+        if hdlscope.scope.is_module():
+            for w, _ in hdlscope.scope.workers:
+                self.scope2hdlscope[w] = hdlscope
+            ctor = hdlscope.scope.find_ctor()
             if ctor:
-                self.scope2module[ctor] = module
+                self.scope2hdlscope[ctor] = hdlscope
 
-    def hdlmodule(self, scope):
-        if scope in self.scope2module:
-            return self.scope2module[scope]
+    def hdlscope(self, scope):
+        if scope in self.scope2hdlscope:
+            return self.scope2hdlscope[scope]
         return None
 
 
