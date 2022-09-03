@@ -164,7 +164,8 @@ def suite(options, ignores):
             tests.remove(t)
     fails = 0
     for t in tests:
-        pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+        r = pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+        r.get()
     pool.close()
     pool.join()
     suite_results = dict(suite_results)
