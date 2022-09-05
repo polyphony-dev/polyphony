@@ -91,7 +91,7 @@ class HDLModuleBuilder(object):
                 if array.is_a(ARRAY):
                     break
                 elif array.is_a([TEMP, ATTR]):
-                    array_sym = array.symbol()
+                    array_sym = array.symbol
                 else:
                     assert False
             case_items = []

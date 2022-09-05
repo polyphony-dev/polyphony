@@ -227,10 +227,10 @@ class Block(object):
         for cond in conds:
             if cond.is_a(CONST):
                 continue
-            defstms = usedef.get_stms_defining(cond.symbol())
+            defstms = usedef.get_stms_defining(cond.symbol)
             assert len(defstms) == 1
             stm = defstms.pop()
-            usestms = usedef.get_stms_using(cond.symbol())
+            usestms = usedef.get_stms_using(cond.symbol)
             if len(usestms) > 1:
                 continue
             stm.block.stms.remove(stm)

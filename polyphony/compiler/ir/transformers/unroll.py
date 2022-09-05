@@ -139,7 +139,7 @@ class LoopUnroller(object):
             self.scope.append_sibling_region(loop, new_loop)
             if has_unroll_remain:
                 assert loop.counter in new_ivs
-                origin_lphis = {s.var.symbol():s for s in loop.head.stms if s.is_a(LPHI)}
+                origin_lphis = {s.var.symbol:s for s in loop.head.stms if s.is_a(LPHI)}
                 for sym, new_syms in new_ivs.items():
                     new_sym = new_syms[0]
                     lphi = origin_lphis[sym]
@@ -256,11 +256,11 @@ class LoopUnroller(object):
         for _, stm in stm_map.items():
             if stm.is_a(LPHI):
                 assert len(stm.args) == 2
-                orig_sym = stm.var.symbol()
+                orig_sym = stm.var.symbol
                 new_sym_0 = new_ivs[orig_sym][0]
                 dst = TEMP(new_sym_0, Ctx.STORE)
                 src = stm.args[0]
-                iv_updates[stm.args[1].symbol()] = new_ivs[orig_sym]
+                iv_updates[stm.args[1].symbol] = new_ivs[orig_sym]
                 mv = MOVE(dst, src)
                 head_stms.append(mv)
         orig_cjump_cond = unroll_head.stms[-2]
@@ -277,7 +277,7 @@ class LoopUnroller(object):
         unroll_head.stms = []
         for stm in head_stms:
             unroll_head.append_stm(stm)
-        return unroll_head, iv_updates, orig_cjump_cond.dst.symbol()
+        return unroll_head, iv_updates, orig_cjump_cond.dst.symbol
 
     def _make_unroll_head(self, loop, loop_max, loop_step, factor, new_ivs):
         unroll_head, stm_map = self._clone_block(loop.head, 'unroll_head')
@@ -291,18 +291,18 @@ class LoopUnroller(object):
         for _, stm in stm_map.items():
             if stm.is_a(LPHI):
                 assert len(stm.args) == 2
-                orig_sym = stm.var.symbol()
+                orig_sym = stm.var.symbol
                 new_sym_0 = new_ivs[orig_sym][0]
                 new_sym_n = new_ivs[orig_sym][factor]
-                stm.var.set_symbol(new_sym_0)
-                iv_updates[stm.args[1].symbol()] = new_ivs[orig_sym]
-                stm.args[1].set_symbol(new_sym_n)
+                stm.var.symbol = new_sym_0
+                iv_updates[stm.args[1].symbol] = new_ivs[orig_sym]
+                stm.args[1].symbol = new_sym_n
                 head_stms.append(stm)
                 lphis.append(stm)
 
         orig_cjump_cond = unroll_head.stms[-2]
         assert orig_cjump_cond.is_a(MOVE) and orig_cjump_cond.src.is_a(RELOP)
-        orig_cond_sym = orig_cjump_cond.dst.symbol()
+        orig_cond_sym = orig_cjump_cond.dst.symbol
         orig_cjump = unroll_head.stms[-1]
         assert orig_cjump.is_a(CJUMP)
         new_loop_iv = new_ivs[loop.counter][0]
@@ -413,7 +413,7 @@ class LoopUnroller(object):
         if loop_cond_rhs.is_a(RELOP):
             # We focus on simple increasing loops
             if loop_cond_rhs.op in ('Lt'):
-                if loop_cond_rhs.left.symbol() is loop.counter:
+                if loop_cond_rhs.left.symbol is loop.counter:
                     may_max = loop_cond_rhs.right
                     if may_max.is_a(CONST):
                         return may_max
@@ -424,7 +424,7 @@ class LoopUnroller(object):
     def _find_loop_step(self, loop):
         loop_update = loop.update
         assert loop_update.is_a(TEMP)
-        update_sym = loop_update.symbol()
+        update_sym = loop_update.symbol
         update_defs = self.scope.usedef.get_stms_defining(update_sym)
         assert len(update_defs) == 1
         update_stm = list(update_defs)[0]
@@ -432,7 +432,7 @@ class LoopUnroller(object):
         update_rhs = update_stm.src
         if update_rhs.is_a(BINOP):
             if update_rhs.op == 'Add':
-                if update_rhs.left.symbol() is loop.counter:
+                if update_rhs.left.symbol is loop.counter:
                     may_step = update_rhs.right
                     if may_step.is_a(CONST):
                         return may_step.value
@@ -450,21 +450,21 @@ class IVReplacer(IRVisitor):
         self.idx = idx
 
     def visit_TEMP(self, ir):
-        if ir.sym not in self.defsyms and ir.sym not in self.new_ivs.keys():
+        if ir.symbol not in self.defsyms and ir.symbol not in self.new_ivs.keys():
             # this is loop invariant
             return
-        if not ir.sym.typ.is_scalar():
+        if not ir.symbol.typ.is_scalar():
             return
-        if ir.sym.is_induction():
-            assert ir.sym in self.new_ivs.keys()
-            new_sym = self.new_ivs[ir.sym][self.idx]
-        elif ir.sym in self.iv_updates:
-            new_ivs = self.iv_updates[ir.sym]
+        if ir.symbol.is_induction():
+            assert ir.symbol in self.new_ivs.keys()
+            new_sym = self.new_ivs[ir.symbol][self.idx]
+        elif ir.symbol in self.iv_updates:
+            new_ivs = self.iv_updates[ir.symbol]
             new_sym = new_ivs[self.idx + 1]
         else:
-            new_name = '{}_{}'.format(ir.sym.name, self.idx)
-            new_sym = self.scope.inherit_sym(ir.sym, new_name)
-        ir.set_symbol(new_sym)
+            new_name = '{}_{}'.format(ir.symbol.name, self.idx)
+            new_sym = self.scope.inherit_sym(ir.symbol, new_name)
+        ir.symbol = new_sym
 
 
 class PHICondRemover(IRTransformer):
@@ -472,11 +472,11 @@ class PHICondRemover(IRTransformer):
         self.sym = sym
 
     def visit_UNOP(self, ir):
-        if ir.exp.is_a(TEMP) and ir.exp.symbol() is self.sym:
+        if ir.exp.is_a(TEMP) and ir.exp.symbol is self.sym:
             return CONST(1)
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.ctx & Ctx.STORE == 0 and ir.symbol() is self.sym:
+        if ir.ctx & Ctx.STORE == 0 and ir.symbol is self.sym:
             return CONST(1)
         return ir

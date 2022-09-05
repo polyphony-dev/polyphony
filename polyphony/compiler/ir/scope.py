@@ -1,13 +1,14 @@
 ﻿import itertools
 from collections import defaultdict, namedtuple
 from copy import copy
+from xml.dom.expatbuilder import Namespaces
 from .block import Block
 from .loop import LoopNestTree
 from .symbol import Symbol
 from .synth import make_synth_params
 from .type import Type
 from .irvisitor import IRVisitor
-from .ir import CONST, JUMP, CJUMP, MCJUMP, EXPR
+from .ir import *
 from ..common.common import Tagged, fail
 from ..common.errors import Errors
 from ..common.env import env
@@ -276,11 +277,15 @@ class Scope(Tagged):
 
         for orig_sym in self.symbols.values():
             new_sym = orig_sym.clone(scope, postfix)
-            exprs = Type.find_expr(orig_sym.typ)
+            orig_sym_t = orig_sym.typ
+            exprs = Type.find_expr(orig_sym_t)
             if exprs:
-                new_sym.typ = orig_sym.typ.with_clone_expr()
+                new_sym_t = orig_sym_t.with_clone_expr()
+            else:
+                new_sym_t = orig_sym_t.clone()
             assert new_sym.name not in scope.symbols
             scope.symbols[new_sym.name] = new_sym
+            new_sym.typ = new_sym_t
             symbol_map[orig_sym] = new_sym
         return symbol_map
 
@@ -395,35 +400,6 @@ class Scope(Tagged):
             clos_parent.closures.add(new_child)
         return new_child
 
-    def inherit(self, name, overrides):
-        sub = Scope.create(self.parent, name, set(self.tags), self.lineno, origin=self)
-        sub.bases.append(self)
-        sub.symbols = copy(self.symbols)
-        sub.workers = copy(self.workers)
-        sub.children = copy(self.children)
-        sub.exit_block = sub.entry_block = Block(sub)
-        sub.add_tag('inherited')
-        #env.append_scope(sub)
-        self.subs.append(sub)
-
-        new_scopes = {self:sub}
-        for method in overrides:
-            new_method = self._clone_child(sub, self, method)
-            new_scopes[method] = new_method
-
-        for old, new in new_scopes.items():
-            syms = sub.find_scope_sym(old)
-            for sym in syms:
-                if sym.scope in new_scopes.values():
-                    sym.typ = sym.typ.with_scope(new)
-            if new.parent.is_namespace():
-                continue
-            old_sym = new.parent.symbols[new.base_name]
-            new_sym = old_sym.clone(new.parent)
-            new_sym.typ = new_sym.typ.with_scope(new)
-            new.parent.symbols[new.base_name] = new_sym
-        return sub
-
     def instantiate(self, inst_name, children, with_tag=True):
         new_class = self.clone('', inst_name, self.parent)
         if with_tag:
@@ -431,9 +407,10 @@ class Scope(Tagged):
         assert new_class.origin is self
 
         old_class_sym = new_class.parent.find_sym(self.base_name)
-        if old_class_sym.typ.is_class():
+        old_class_sym_t = old_class_sym.typ
+        if old_class_sym_t.is_class():
             new_t = Type.klass(new_class)
-        elif old_class_sym.typ.is_function():
+        elif old_class_sym_t.is_function():
             new_t = Type.function(new_class)
         else:
             assert False
@@ -455,7 +432,8 @@ class Scope(Tagged):
                     sym.typ = sym.typ.with_scope(new)
             if new.parent.is_namespace():
                 continue
-            assert new.parent.symbols[new.base_name].typ.get_scope() is new
+            new_t = new.parent.find_sym(new.base_name).typ
+            assert new_t.get_scope() is new
         return new_class
 
     def find_child(self, name, rec=False):
@@ -559,7 +537,8 @@ class Scope(Tagged):
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
-            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym.typ)
+            orig_sym_t = orig_sym.typ
+            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym_t)
             new_sym.import_from(orig_sym)
         return new_sym
 
@@ -590,8 +569,9 @@ class Scope(Tagged):
         name = names[0]
         sym = self.find_sym(name)
         if sym and len(names) > 1:
-            if sym.typ.is_containable():
-                return sym.typ.get_scope().find_sym_r(names[1:])
+            sym_t = sym.typ
+            if sym_t.is_containable():
+                return sym_t.get_scope().find_sym_r(names[1:])
             else:
                 return None
         return sym
@@ -619,7 +599,8 @@ class Scope(Tagged):
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
-            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym.typ)
+            orig_sym_t = orig_sym.typ
+            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym_t)
             if orig_sym.ancestor:
                 new_sym.ancestor = orig_sym.ancestor
             else:
@@ -629,7 +610,8 @@ class Scope(Tagged):
     def find_scope_sym(self, obj, rec=True):
         results = []
         for sym in self.symbols.values():
-            if sym.typ.has_scope() and sym.typ.get_scope() is obj:
+            sym_t = sym.typ
+            if sym_t.has_scope() and sym_t.get_scope() is obj:
                 results.append(sym)
         if rec:
             for c in self.children:
@@ -838,12 +820,13 @@ class SymbolReplacer(IRVisitor):
         self.sym_map = sym_map
 
     def visit_TEMP(self, ir):
-        if ir.sym in self.sym_map:
-            ir.sym = self.sym_map[ir.sym]
+        if ir.symbol in self.sym_map:
+            ir.symbol = self.sym_map[ir.symbol]
         else:
-            logger.debug('WARNING: not found {}'.format(ir.sym))
+            logger.debug('WARNING: not found {}'.format(ir.symbol))
 
-        for expr in Type.find_expr(ir.sym.typ):
+        sym_t = ir.symbol.typ
+        for expr in Type.find_expr(sym_t):
             assert expr.is_a(EXPR)
             old_stm = self.current_stm
             self.current_stm = expr
@@ -852,14 +835,15 @@ class SymbolReplacer(IRVisitor):
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
-        if ir.attr in self.sym_map:
-            ir.attr = self.sym_map[ir.attr]
+        if ir.symbol in self.sym_map:
+            ir.symbol = self.sym_map[ir.symbol]
         else:
-            logger.debug('WARNING: not found {}'.format(ir.attr))
+            logger.debug('WARNING: not found {}'.format(ir.symbol))
 
-        if isinstance(ir.attr, str):
+        if isinstance(ir.symbol, str):
             return
-        for expr in Type.find_expr(ir.attr.typ):
+        attr_t = ir.symbol.typ
+        for expr in Type.find_expr(attr_t):
             assert expr.is_a(EXPR)
             old_stm = self.current_stm
             self.current_stm = expr
@@ -867,8 +851,8 @@ class SymbolReplacer(IRVisitor):
             self.current_stm = old_stm
 
     def visit_ARRAY(self, ir):
-        if ir.sym in self.sym_map:
-            ir.sym = self.sym_map[ir.sym]
+        if ir.symbol in self.sym_map:
+            ir.symbol = self.sym_map[ir.symbol]
         for item in ir.items:
             self.visit(item)
         self.visit(ir.repeat)

@@ -439,17 +439,18 @@ class AHDLTranslator(IRVisitor):
 
     def get_signal_prefix(self, ir):
         assert ir.is_a(CALL)
-        if ir.func_scope().is_class():
+        callee_scope = ir.callee_scope
+        if callee_scope.is_class():
             assert self.current_stm.is_a(MOVE)
-            name = self.current_stm.dst.symbol().name
+            name = self.current_stm.dst.symbol.name
             return f'{name}_{env.ctor_name}'
-        elif ir.func_scope().is_method():
+        elif callee_scope.is_method():
             assert ir.func.is_a(ATTR)
             instance_name = self.make_instance_name(ir.func)
-            return f'{instance_name}_{ir.func.attr.name}'
+            return f'{instance_name}_{ir.func.symbol.name}'
         else:
             assert ir.func.is_a(TEMP)
-            name = ir.func_scope().base_name
+            name = callee_scope.base_name
             n = self.node.instance_num
             return f'{name}_{n}'
 
@@ -459,18 +460,18 @@ class AHDLTranslator(IRVisitor):
         def make_instance_name_rec(ir):
             assert ir.is_a(ATTR)
             if ir.exp.is_a(TEMP):
-                if ir.exp.sym.name == env.self_name:
+                if ir.exp.symbol.name == env.self_name:
                     if self.scope.is_ctor():
                         return self.scope.parent.base_name
                     else:
                         return self.scope.base_name
-                elif ir.exp.sym.typ.is_class():
-                    return ir.exp.sym.typ.get_scope().base_name
+                elif ir.exp.symbol.typ.is_class():
+                    return ir.exp.symbol.typ.get_scope().base_name
                 else:
-                    return ir.exp.sym.hdl_name()
+                    return ir.exp.symbol.hdl_name()
             else:
                 exp_name = make_instance_name_rec(ir.exp)
-                attr_name = ir.exp.attr.name
+                attr_name = ir.exp.symbol.name
                 instance_name = f'{exp_name}_{attr_name}'
             return instance_name
         return make_instance_name_rec(ir)
@@ -508,71 +509,74 @@ class AHDLTranslator(IRVisitor):
         return callargs
 
     def visit_CALL(self, ir):
-        if ir.func_scope().is_method():
+        callee_scope = ir.callee_scope
+        if callee_scope.is_method():
             instance_name = self.make_instance_name(ir.func)
         else:
-            qname = ir.func_scope().qualified_name()
+            qname = callee_scope.qualified_name()
             n = self.node.instance_num
             instance_name = f'{qname}_{n}'
         signal_prefix = self.get_signal_prefix(ir)
         callargs = self._visit_args(ir)
-        if not ir.func_scope().is_method():
-            self.scope.append_callee_instance(ir.func_scope(), instance_name)
+        if not callee_scope.is_method():
+            self.scope.append_callee_instance(callee_scope, instance_name)
 
-        ahdl_call = AHDL_MODULECALL(ir.func_scope(), callargs, instance_name, signal_prefix)
+        ahdl_call = AHDL_MODULECALL(callee_scope, callargs, instance_name, signal_prefix)
         return ahdl_call
 
     def visit_NEW(self, ir):
         assert self.current_stm.is_a(MOVE)
         mv = self.current_stm
-        instance_name = mv.dst.symbol().hdl_name()
+        instance_name = mv.dst.symbol.hdl_name()
         signal_prefix = '{}_{}'.format(instance_name, env.ctor_name)
         callargs = self._visit_args(ir)
-        self.scope.append_callee_instance(ir.func_scope(), instance_name)
+        callee_scope = ir.callee_scope
+        self.scope.append_callee_instance(callee_scope, instance_name)
 
-        ahdl_call = AHDL_MODULECALL(ir.func_scope(), callargs, instance_name, signal_prefix)
+        ahdl_call = AHDL_MODULECALL(callee_scope, callargs, instance_name, signal_prefix)
         return ahdl_call
 
     def translate_builtin_len(self, syscall):
         _, mem = syscall.args[0]
         assert mem.is_a(TEMP)
-        assert mem.symbol().typ.is_seq()
-        assert isinstance(mem.symbol().typ.get_length(), int)
-        return AHDL_CONST(mem.symbol().typ.get_length())
+        assert mem.symbol.typ.is_seq()
+        assert isinstance(mem.symbol.typ.get_length(), int)
+        return AHDL_CONST(mem.symbol.typ.get_length())
 
     def visit_SYSCALL(self, ir):
-        logger.debug(ir.sym.name)
-        if ir.sym.name == 'print':
+        name = ir.symbol.name
+        logger.debug(name)
+        if name == 'print':
             fname = '!hdl_print'
-        elif ir.sym.name == 'assert':
+        elif name == 'assert':
             fname = '!hdl_assert'
-        elif ir.sym.name == 'polyphony.verilog.display':
+        elif name == 'polyphony.verilog.display':
             fname = '!hdl_verilog_display'
-        elif ir.sym.name == 'polyphony.verilog.write':
+        elif name == 'polyphony.verilog.write':
             fname = '!hdl_verilog_write'
-        elif ir.sym.name == 'len':
+        elif name == 'len':
             return self.translate_builtin_len(ir)
-        elif ir.sym.name == '$new':
+        elif name == '$new':
             _, arg = ir.args[0]
             self.visit(arg)
-            return AHDL_CONST(self.current_stm.dst.symbol().id)
-        elif ir.sym.name == 'polyphony.timing.clksleep':
+            return AHDL_CONST(self.current_stm.dst.symbol.id)
+        elif name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
             assert cycle.is_a(CONST)
             for i in range(cycle.value):
                 self._emit(AHDL_NOP('wait a cycle'),
                            self.sched_time + i)
             return
-        elif ir.sym.name == 'polyphony.timing.clktime':
+        elif name == 'polyphony.timing.clktime':
             self.hdlmodule.use_clock_time()
             return AHDL_VAR(self.hdlmodule.clock_signal, Ctx.LOAD)
-        elif ir.sym.name in ('polyphony.timing.wait_rising',
-                             'polyphony.timing.wait_falling',
-                             'polyphony.timing.wait_edge',
-                             'polyphony.timing.wait_value'):
+        elif name in ('polyphony.timing.wait_rising',
+                      'polyphony.timing.wait_falling',
+                      'polyphony.timing.wait_edge',
+                      'polyphony.timing.wait_value'):
             assert False, 'It must be inlined'
-        elif ir.sym.name == 'polyphony.timing.wait_until':
-            scope_sym = ir.args[0][1].symbol()
+        elif name == 'polyphony.timing.wait_until':
+            scope_sym = ir.args[0][1].symbol
             assert scope_sym.typ.is_function()
             pred = scope_sym.typ.get_scope()
             #assert pred.is_assigned()
@@ -604,9 +608,9 @@ class AHDLTranslator(IRVisitor):
     def visit_MREF(self, ir):
         offset = self.visit(ir.offset)
         memvar = self.visit(ir.mem)
-        typ = ir.mem.symbol().typ
+        typ = ir.mem.symbol.typ
         # Only static class or global field can be hdl function
-        if ir.mem.symbol().scope.is_containable() and (typ.is_tuple() or typ.is_list() and typ.get_ro()):
+        if ir.mem.symbol.scope.is_containable() and (typ.is_tuple() or typ.is_list() and typ.get_ro()):
             return AHDL_FUNCALL(memvar, [offset])
         else:
             return AHDL_SUBSCRIPT(memvar, offset)
@@ -622,7 +626,7 @@ class AHDLTranslator(IRVisitor):
 
     def _build_mem_initialize_seq(self, array, memvar):
         name = memvar.sig.name  # sym.hdl_name()
-        sym = self.current_stm.dst.symbol()
+        sym = self.current_stm.dst.symbol
         width = sym.typ.get_element().get_width()
         length = sym.typ.get_length()
         if memvar.sig.is_netarray():
@@ -643,7 +647,7 @@ class AHDLTranslator(IRVisitor):
         ir.items = [item.clone() for item in ir.items * ir.repeat.value]
 
         assert isinstance(self.current_stm, MOVE)
-        sym = self.current_stm.dst.symbol()
+        sym = self.current_stm.dst.symbol
         if sym.scope.is_containable() and (sym.typ.is_tuple() or sym.typ.is_list() and sym.typ.get_ro()):
             # this array will be rom
             pass
@@ -652,7 +656,7 @@ class AHDLTranslator(IRVisitor):
             self._build_mem_initialize_seq(ir, ahdl_memvar)
 
     def visit_TEMP(self, ir):
-        sym = ir.symbol()
+        sym = ir.symbol
         sig = self._make_signal(self.hdlmodule, (sym,))
         if sym.typ.is_seq():
             return AHDL_MEMVAR(sig, ir.ctx)
@@ -660,15 +664,7 @@ class AHDLTranslator(IRVisitor):
             return AHDL_VAR(sig, ir.ctx)
 
     def visit_ATTR(self, ir):
-        #sym0 = ir.symbol()
-        #qsym0 = ir.qualified_symbol()
-        #sig0 = self._make_signal(self.hdlmodule, qsym0)
-        # if sym.typ.is_seq():
-        #     return AHDL_MEMVAR(sig, ir.ctx)
-        # else:
-        #     return AHDL_VAR(sig, ir.ctx)
-
-        qsym = ir.qualified_symbol()
+        qsym = ir.qualified_symbol
         head = obj = None
         for sym in qsym[:-1]:
             hdlscope = env.hdlscope(sym.typ.get_scope())
@@ -681,7 +677,6 @@ class AHDLTranslator(IRVisitor):
                 head = record
             obj = record
 
-        # sym = qsym[-1]
         sig = self._make_signal(hdlscope, qsym)
         if qsym[-1].typ.is_seq():
             obj.attr = AHDL_MEMVAR(sig, ir.ctx)
@@ -790,8 +785,10 @@ class AHDLTranslator(IRVisitor):
             dst = self.visit(ir.dst)
         else:
             dst = None
-        if ir.is_a(MOVE) and ir.src.is_a([NEW, CALL]) and ir.src.func_scope().is_module():
-            return
+        if ir.is_a(MOVE) and ir.src.is_a([NEW, CALL]):
+            callee_scope = ir.src.callee_scope
+            if callee_scope.is_module():
+                return
         self._emit_call_sequence(ahdl_call, dst, self.sched_time)
 
     def visit_MOVE(self, ir):
@@ -808,14 +805,14 @@ class AHDLTranslator(IRVisitor):
                 return
             self._call_proc(ir)
             return
-        elif ir.src.is_a(TEMP) and ir.src.sym.is_param():
-            if ir.src.sym.name.endswith(env.self_name):
+        elif ir.src.is_a(TEMP) and ir.src.symbol.is_param():
+            if ir.src.symbol.name.endswith(env.self_name):
                 return
-            elif ir.src.sym.typ.is_object() and ir.src.sym.typ.get_scope().is_module():
+            elif ir.src.symbol.typ.is_object() and ir.src.symbol.typ.get_scope().is_module():
                 return
-            elif ir.src.sym.typ.is_port():
+            elif ir.src.symbol.typ.is_port():
                 return
-        elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol().typ.is_port():
+        elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol.typ.is_port():
             return
         src = self.visit(ir.src)
         dst = self.visit(ir.dst)
@@ -824,9 +821,9 @@ class AHDLTranslator(IRVisitor):
         elif src.is_a(AHDL_VAR) and dst.is_a(AHDL_VAR) and src.sig == dst.sig:
             return
         elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
-            if ir.src.sym.is_param():
-                width = ir.src.sym.typ.get_element().get_width()
-                length = ir.src.sym.typ.get_length()
+            if ir.src.symbol.is_param():
+                width = ir.src.symbol.typ.get_element().get_width()
+                length = ir.src.symbol.typ.get_length()
                 for i in range(length):
                     src_name = f'{src.sig.name}{i}'
                     self._emit(AHDL_MOVE(AHDL_SUBSCRIPT(dst, AHDL_CONST(i)),
@@ -917,16 +914,28 @@ class AHDLTranslator(IRVisitor):
             self._emit(AHDL_IF([cond], [AHDL_BLOCK('', [ahdl])]), sched_time)
 
     def _is_port_method(self, ir):
-        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_port()
+        if not ir.is_a(CALL):
+            return False
+        callee_scope = ir.callee_scope
+        return callee_scope.is_method() and callee_scope.parent.is_port()
 
     def _is_net_method(self, ir):
-        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.name.startswith('polyphony.Net')
+        if not ir.is_a(CALL):
+            return False
+        callee_scope = ir.callee_scope
+        return callee_scope.is_method() and callee_scope.parent.name.startswith('polyphony.Net')
 
     def _is_port_ctor(self, ir):
-        return ir.is_a(NEW) and ir.func_scope().is_port()
+        if not ir.is_a(NEW):
+            return False
+        callee_scope = ir.callee_scope
+        return callee_scope.is_port()
 
     def _is_net_ctor(self, ir):
-        return ir.is_a(NEW) and ir.func_scope().name.startswith('polyphony.Net')
+        if not ir.is_a(NEW):
+            return False
+        callee_scope = ir.callee_scope
+        return callee_scope.name.startswith('polyphony.Net')
 
     def _get_port_owner(self, sym):
         assert sym.typ.is_port()
@@ -1029,16 +1038,17 @@ class AHDLTranslator(IRVisitor):
 
     def _make_port_access(self, call, target):
         assert call.func.is_a(ATTR)
-        port_qsym = call.func.qualified_symbol()[:-1]
+        port_qsym = call.func.qualified_symbol[:-1]
         port_sig = self._port_sig(port_qsym)
 
-        if call.func_scope().base_name == 'wr':
+        callee_scope = call.callee_scope
+        if callee_scope.base_name == 'wr':
             self._make_port_write_seq(call, port_sig)
-        elif call.func_scope().base_name == 'rd':
+        elif callee_scope.base_name == 'rd':
             self._make_port_read_seq(target, port_sig)
-        elif call.func_scope().base_name == 'assign':
-            self._make_port_assign(call.args[0][1].symbol(), port_sig)
-        elif call.func_scope().base_name == 'edge':
+        elif callee_scope.base_name == 'assign':
+            self._make_port_assign(call.args[0][1].symbol, port_sig)
+        elif callee_scope.base_name == 'edge':
             self._make_port_edge(target, port_sig, call.args[0][1], call.args[1][1])
         else:
             assert False
@@ -1094,15 +1104,18 @@ class AHDLTranslator(IRVisitor):
         self._emit(AHDL_MOVE(dst, edge), self.sched_time)
 
     def _make_port_init(self, new, target):
-        assert new.func_scope().is_port()
-        port = target.symbol().typ
+        assert new.callee_scope.is_port()
+        port = target.symbol.typ
         assert port.is_port()
         # make port signal
         self.visit(target)
-        self._port_sig(target.qualified_symbol())
+        self._port_sig(target.qualified_symbol)
 
     def _is_module_method(self, ir):
-        return ir.is_a(CALL) and ir.func_scope().is_method() and ir.func_scope().parent.is_module()
+        if not ir.is_a(CALL):
+            return False
+        callee_scope = ir.callee_scope
+        return callee_scope.is_method() and callee_scope.parent.is_module()
 
     def _net_sig(self, net_qsym):
         net_sym = net_qsym[-1]
@@ -1123,8 +1136,8 @@ class AHDLTranslator(IRVisitor):
         return net_sig
 
     def _make_net_init(self, new, target):
-        net_sig = self._net_sig(target.qualified_symbol())
-        scope_sym = new.args[0][1].symbol()
+        net_sig = self._net_sig(target.qualified_symbol)
+        scope_sym = new.args[0][1].symbol
         assert scope_sym.typ.is_function()
         assigned = scope_sym.typ.get_scope()
         assert assigned.is_assigned()
@@ -1138,13 +1151,14 @@ class AHDLTranslator(IRVisitor):
 
     def _make_net_access(self, call, target):
         assert call.func.is_a(ATTR)
-        net_qsym = call.func.qualified_symbol()[:-1]
+        net_qsym = call.func.qualified_symbol[:-1]
         net_sig = self._net_sig(net_qsym)
 
-        if call.func_scope().base_name == 'rd':
+        callee_scope = call.callee_scope
+        if callee_scope.base_name == 'rd':
             self._make_net_read_seq(target, net_sig)
-        elif call.func_scope().base_name == 'assign':
-            self._make_net_assign(call.args[0][1].symbol(), net_sig)
+        elif callee_scope.base_name == 'assign':
+            self._make_net_assign(call.args[0][1].symbol, net_sig)
         else:
             assert False
 
@@ -1183,26 +1197,30 @@ class AHDLCombTranslator(AHDLTranslator):
         self.hooked.append(ahdl)
 
     def _is_port_method(self, ir, method_name):
-        return (ir.is_a(CALL) and
-                ir.func_scope().is_method() and
-                ir.func_scope().parent.is_port() and
-                ir.func_scope().base_name == method_name)
+        if not ir.is_a(CALL):
+            return False
+        callee_scope = ir.callee_scope
+        return (callee_scope.is_method() and
+                callee_scope.parent.is_port() and
+                callee_scope.base_name == method_name)
 
     def _is_net_method(self, ir, method_name):
-        return (ir.is_a(CALL) and
-                ir.func_scope().is_method() and
-                ir.func_scope().parent.name.startswith('polyphony.Net') and
-                ir.func_scope().base_name == method_name)
+        if not ir.is_a(CALL):
+            return False
+        callee_scope = ir.callee_scope
+        return (callee_scope.is_method() and
+                callee_scope.parent.name.startswith('polyphony.Net') and
+                callee_scope.base_name == method_name)
 
     def visit_CALL(self, ir):
         if self._is_port_method(ir, 'rd'):
-            port_qsym = ir.func.qualified_symbol()[:-1]
+            port_qsym = ir.func.qualified_symbol[:-1]
             port_sig = self._port_sig(port_qsym)
             return AHDL_VAR(port_sig, Ctx.LOAD)
         elif self._is_port_method(ir, 'edge'):
             old = ir.args[0][1]
             new = ir.args[1][1]
-            port_qsym = ir.func.qualified_symbol()[:-1]
+            port_qsym = ir.func.qualified_symbol[:-1]
             port_sig = self._port_sig(port_qsym)
             _old = self.visit(old)
             _new = self.visit(new)
@@ -1211,7 +1229,7 @@ class AHDLCombTranslator(AHDLTranslator):
             detect_var_sig = self.hdlmodule.gen_sig(detect_var_name, 1, {'net'})
             return AHDL_VAR(detect_var_sig, Ctx.LOAD)
         elif self._is_net_method(ir, 'rd'):
-            net_qsym = ir.func.qualified_symbol()[:-1]
+            net_qsym = ir.func.qualified_symbol[:-1]
             net_sig = self._net_sig(net_qsym)
             return AHDL_VAR(net_sig, Ctx.LOAD)
         else:
@@ -1260,7 +1278,7 @@ class AHDLCombTranslator(AHDLTranslator):
 
     def visit_PHI(self, ir):
         assert ir.ps and len(ir.args) == len(ir.ps) and len(ir.args) > 1
-        if ir.var.symbol().typ.is_seq():
+        if ir.var.symbol.typ.is_seq():
             assert False, 'NIY'
         else:
             ahdl_dst, if_exp = self._make_scalar_mux(ir)

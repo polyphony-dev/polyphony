@@ -19,12 +19,12 @@ def expr2ir(expr, name=None, scope=None):
     elif isinstance(expr, list):
         items = [expr2ir(e) for e in expr]
         ar = ARRAY(items)
-        ar.sym = scope.add_temp('@array', {'predefined'})
+        ar.symbol = scope.add_temp('@array', {'predefined'})
         return ar
     elif isinstance(expr, tuple):
         items = [expr2ir(e) for e in expr]
         ar = ARRAY(items, is_mutable=False)
-        ar.sym = scope.add_temp('@array', {'predefined'})
+        ar.symbol = scope.add_temp('@array', {'predefined'})
         return ar
     else:
         if inspect.isclass(expr):
@@ -115,9 +115,11 @@ def reduce_relexp(exp):
 
 
 def is_port_method_call(call):
-    return (call.is_a(CALL) and
-            call.func_scope().is_method() and
-            call.func_scope().parent.is_port())
+    if not call.is_a(CALL):
+        return False
+    calee_scope = call.callee_scope
+    return (calee_scope.is_method() and
+            calee_scope.parent.is_port())
 
 
 def has_exclusive_function(stm):
@@ -138,10 +140,10 @@ def has_exclusive_function(stm):
 
 def has_clkfence(stm):
     if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-            stm.exp.sym.name == 'polyphony.timing.clksleep'):
+            stm.exp.symbol.name == 'polyphony.timing.clksleep'):
         return True
     elif (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-            stm.exp.sym.name.startswith('polyphony.timing.wait_')):
+            stm.exp.symbol.name.startswith('polyphony.timing.wait_')):
         return True
     else:
         return False
@@ -250,9 +252,9 @@ class StmFinder(IRVisitor):
         self.results = []
 
     def visit_ATTR(self, ir):
-        if ir.attr is self.target_sym:
+        if ir.symbol is self.target_sym:
             self.results.append(self.current_stm)
 
     def visit_TEMP(self, ir):
-        if ir.sym is self.target_sym:
+        if ir.symbol is self.target_sym:
             self.results.append(self.current_stm)

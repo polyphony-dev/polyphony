@@ -13,13 +13,13 @@ class VarReplacer(object):
         usedef = scope.usedef
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(dst, src, usedef)
-        uses = list(usedef.get_stms_using(dst.qualified_symbol()))
+        uses = list(usedef.get_stms_using(dst.qualified_symbol))
         for use in uses:
             replacer.visit(use)
             scope.usedef.remove_var_use(dst, use)
         for blk in scope.traverse_blocks():
             if blk.path_exp and blk.path_exp.is_a([TEMP, ATTR]):
-                if blk.path_exp.symbol() is dst.symbol():
+                if blk.path_exp.symbol is dst.symbol:
                     blk.path_exp = src
         return replacer.replaces
 
@@ -54,7 +54,6 @@ class VarReplacer(object):
 
     def visit_CALL(self, ir):
         ir.func = self.visit(ir.func)
-        ir.func.funcall = True
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 
@@ -89,23 +88,23 @@ class VarReplacer(object):
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.sym is self.replace_dst.symbol():
+        if ir.symbol is self.replace_dst.symbol:
             self.replaced = True
             ir = self.replace_src.clone()
         if ir.is_a([TEMP, ATTR]):
-            for expr in Type.find_expr(ir.symbol().typ):
+            for expr in Type.find_expr(ir.symbol.typ):
                 assert expr.is_a(EXPR)
                 self.visit(expr)
         return ir
 
     def visit_ATTR(self, ir):
-        if ir.qualified_symbol() == self.replace_dst.qualified_symbol():
+        if ir.qualified_symbol == self.replace_dst.qualified_symbol:
             self.replaced = True
             ir = self.replace_src.clone()
         else:
             ir.exp = self.visit(ir.exp)
         if ir.is_a([TEMP, ATTR]):
-            for expr in Type.find_expr(ir.symbol().typ):
+            for expr in Type.find_expr(ir.symbol.typ):
                 assert expr.is_a(EXPR)
                 self.visit(expr)
         return ir

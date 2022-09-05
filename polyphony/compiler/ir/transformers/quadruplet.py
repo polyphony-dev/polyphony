@@ -87,7 +87,6 @@ class EarlyQuadrupleMaker(IRTransformer):
         self.suppress_converting = False
 
         ir.func = self.visit(ir.func)
-        ir.func.funcall = True
         self._visit_args(ir)
 
         if suppress:
@@ -159,7 +158,7 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        assert ir.exp.is_a(TEMP) and ir.exp.sym.is_condition() or ir.exp.is_a(CONST)
+        assert ir.exp.is_a(TEMP) and ir.exp.symbol.is_condition() or ir.exp.is_a(CONST)
         self.new_stms.append(ir)
 
     def visit_MCJUMP(self, ir):
@@ -189,7 +188,7 @@ class EarlyQuadrupleMaker(IRTransformer):
         if ir.dst.is_a(MREF):
             mref = ir.dst
             # the memory store is not a variable definition, so the context should be LOAD
-            mref.mem.ctx = Ctx.LOAD
+            # mref.mem.ctx = Ctx.LOAD
             ms = MSTORE(mref.mem, mref.offset, self.visit(ir.src))
             expr = EXPR(ms)
             expr.loc = ir.loc
@@ -200,10 +199,13 @@ class EarlyQuadrupleMaker(IRTransformer):
 class LateQuadrupleMaker(IRTransformer):
     def visit_ATTR(self, ir):
         receiver = ir.tail()
-        if (receiver.typ.is_class() or receiver.typ.is_namespace()) and ir.attr.typ.is_scalar():
+        receiver_t = receiver.typ
+        attr_t = ir.symbol.typ
+        if (receiver_t.is_class() or receiver_t.is_namespace()) and attr_t.is_scalar():
             return ir
         ir.exp = self.visit(ir.exp)
-        if ir.exp.is_a(TEMP) and ir.exp.sym.typ.is_namespace():
-            ir_ = TEMP(ir.attr, ir.ctx)
+
+        if ir.exp.is_a(TEMP) and ir.exp.symbol.typ.is_namespace():
+            ir_ = TEMP(ir.symbol, ir.ctx)
             ir = ir_
         return ir

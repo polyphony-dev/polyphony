@@ -12,7 +12,7 @@ class DeadCodeEliminator(object):
             dead_stms = []
             for stm in blk.stms:
                 if stm.is_a([MOVE, PHIBase]):
-                    if stm.is_a(MOVE) and stm.src.is_a([TEMP, ATTR]) and stm.src.symbol().is_param():
+                    if stm.is_a(MOVE) and stm.src.is_a([TEMP, ATTR]) and stm.src.symbol.is_param():
                         continue
                     if stm.is_a(MOVE) and stm.src.is_a(CALL):
                         continue
@@ -20,11 +20,11 @@ class DeadCodeEliminator(object):
                     for var in defvars:
                         if not var.is_a(TEMP):
                             break
-                        if var.symbol().is_free():
+                        if var.symbol.is_free():
                             break
-                        if stm.block.path_exp.is_a([TEMP, ATTR]) and stm.block.path_exp.symbol() is var.symbol():
+                        if stm.block.path_exp.is_a([TEMP, ATTR]) and stm.block.path_exp.symbol is var.symbol:
                             break
-                        uses = usedef.get_stms_using(var.symbol())
+                        uses = usedef.get_stms_using(var.symbol)
                         if uses:
                             break
                     else:

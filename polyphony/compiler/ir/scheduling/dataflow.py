@@ -474,13 +474,13 @@ class DFGBuilder(object):
             dfg.src_nodes.add(node)
             return
         for v in usevars:
-            if v.symbol().is_param():
+            if v.symbol.is_param():
                 dfg.src_nodes.add(node)
                 return
             if v.is_a(ATTR) and v.head().name == env.self_name:
                 dfg.src_nodes.add(node)
                 return
-            defstms = usedef.get_stms_defining(v.symbol())
+            defstms = usedef.get_stms_defining(v.symbol)
             for defstm in defstms:
                 # this definition stm is in the out of the section
                 if defstm.block not in blocks:
@@ -494,7 +494,7 @@ class DFGBuilder(object):
 
         def has_mem_arg(args):
             for _, a in args:
-                if a.is_a(TEMP) and a.symbol().typ.is_list():
+                if a.is_a(TEMP) and a.symbol.typ.is_list():
                     return True
             return False
         call = None
@@ -512,9 +512,9 @@ class DFGBuilder(object):
 
     def _add_defuse_edges(self, stm, usenode, dfg, usedef, blocks):
         for v in usedef.get_vars_used_at(stm):
-            usenode.uses.append(v.symbol())
-            defstms = usedef.get_stms_defining(v.symbol())
-            logger.log(0, v.symbol().name + ' defstms ')
+            usenode.uses.append(v.symbol)
+            defstms = usedef.get_stms_defining(v.symbol)
+            logger.log(0, v.symbol.name + ' defstms ')
             for defstm in defstms:
                 logger.log(0, str(defstm))
 
@@ -530,8 +530,8 @@ class DFGBuilder(object):
 
     def _add_usedef_edges(self, stm, defnode, dfg, usedef, blocks):
         for v in usedef.get_vars_defined_at(stm):
-            defnode.defs.append(v.symbol())
-            usestms = usedef.get_stms_using(v.symbol())
+            defnode.defs.append(v.symbol)
+            usestms = usedef.get_stms_using(v.symbol)
             for usestm in usestms:
                 if stm is usestm:
                     continue
@@ -543,7 +543,7 @@ class DFGBuilder(object):
                 usenode = dfg.add_stm_node(usestm)
                 dfg.add_usedef_edge(usenode, defnode)
                 visited = set()
-                if v.symbol().typ.is_scalar() and not v.symbol().is_induction():
+                if v.symbol.typ.is_scalar() and not v.symbol.is_induction():
                     continue
                 self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
@@ -555,7 +555,7 @@ class DFGBuilder(object):
                 return True
             elif stm.src.is_a(NEW):
                 return True
-            elif stm.src.is_a(SYSCALL) and stm.src.sym.name == '$new':
+            elif stm.src.is_a(SYSCALL) and stm.src.symbol.name == '$new':
                 return True
         elif stm.is_a(EXPR):
             if stm.exp.is_a([CALL, SYSCALL]):
@@ -590,25 +590,25 @@ class DFGBuilder(object):
             if node.tag.is_a(MOVE):
                 mv = node.tag
                 if mv.src.is_a(MREF):
-                    mem_group = mv.src.mem.symbol()
+                    mem_group = mv.src.mem.symbol
                     node_groups_by_mem[mem_group].append(node)
                 elif mv.src.is_a(CALL):
                     for _, arg in mv.src.args:
-                        if arg.is_a(TEMP) and arg.symbol().typ.is_list():
-                            mem_group = arg.symbol()
+                        if arg.is_a(TEMP) and arg.symbol.typ.is_list():
+                            mem_group = arg.symbol
                             node_groups_by_mem[mem_group].append(node)
                 elif mv.dst.is_a([TEMP, ATTR]):
-                    if mv.dst.symbol().typ.is_seq():
+                    if mv.dst.symbol.typ.is_seq():
                         pass
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
                     for _, arg in expr.exp.args:
-                        if arg.is_a(TEMP) and arg.symbol().typ.is_list():
-                            mem_group = arg.symbol()
+                        if arg.is_a(TEMP) and arg.symbol.typ.is_list():
+                            mem_group = arg.symbol
                             node_groups_by_mem[mem_group].append(node)
                 elif expr.exp.is_a(MSTORE):
-                    mem_group = expr.exp.mem.symbol()
+                    mem_group = expr.exp.mem.symbol
                     node_groups_by_mem[mem_group].append(node)
         parallelizer = RegArrayParallelizer(self.scope)
         for group, nodes in node_groups_by_mem.items():
@@ -649,10 +649,14 @@ class DFGBuilder(object):
         prev_node = None
         for stm in all_stms_in_section:
             node = None
-            if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func_scope().is_function_module():
-                node = dfg.add_stm_node(stm)
-            elif stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func_scope().is_function_module():
-                node = dfg.add_stm_node(stm)
+            if stm.is_a(MOVE) and stm.src.is_a(CALL):
+                callee_scope = stm.src.callee_scope
+                if callee_scope.is_function_module():
+                    node = dfg.add_stm_node(stm)
+            elif stm.is_a(EXPR) and stm.exp.is_a(CALL):
+                callee_scope = stm.exp.callee_scope
+                if callee_scope.is_function_module():
+                    node = dfg.add_stm_node(stm)
             if node:
                 if prev_node:
                     if prev_node.tag.block is node.tag.block:
@@ -684,7 +688,8 @@ class DFGBuilder(object):
             return None
         receiver = call.func.tail()
         if receiver.typ.is_object() or receiver.typ.is_port():
-            if call.func_scope().is_mutable():
+            callee_scope = call.callee_scope
+            if callee_scope.is_mutable():
                 return receiver
         return None
 
@@ -792,9 +797,9 @@ class DFGBuilder(object):
             var = stm.var
         else:
             return
-        if not var.symbol().is_alias():
+        if not var.symbol.is_alias():
             return
-        for u in usedef.get_stms_using(var.symbol()):
+        for u in usedef.get_stms_using(var.symbol):
             if u is defnode.tag:
                 continue
             if defnode.tag.program_order() <= u.program_order():
@@ -814,7 +819,7 @@ class DFGBuilder(object):
         backs = []
         for (n1, n2), (_, back) in dfg.edges.items():
             if back and n1.tag.is_a([MOVE, PHIBase]):
-                var = n1.tag.dst.symbol() if n1.tag.is_a(MOVE) else n1.tag.var.symbol()
+                var = n1.tag.dst.symbol if n1.tag.is_a(MOVE) else n1.tag.var.symbol
                 if var.is_alias():
                     backs.append((n1, n2))
         dones = set()
@@ -830,7 +835,7 @@ class DFGBuilder(object):
                 dones.add(end)
             return
         if node.tag.is_a([MOVE, PHIBase]) and node.defs[0].is_alias():
-            var = node.tag.dst.symbol() if node.tag.is_a(MOVE) else node.tag.var.symbol()
+            var = node.tag.dst.symbol if node.tag.is_a(MOVE) else node.tag.var.symbol
             if var.is_alias():
                 succs = dfg.succs_typ_without_back(node, 'DefUse')
                 for s in succs:
@@ -847,7 +852,7 @@ class DFGBuilder(object):
                 remove_seq_pred(defnode, visited)
         for node in dfg.nodes:
             stm = node.tag
-            if stm.is_a(MOVE) and stm.dst.symbol().is_induction():
+            if stm.is_a(MOVE) and stm.dst.symbol.is_induction():
                 remove_seq_pred(node, set())
 
     def _get_port_sym_from_node(self, node):
@@ -897,7 +902,7 @@ class RegArrayParallelizer(object):
             m = stm.exp
         else:
             return None
-        assert msym is m.mem.symbol()
+        assert msym is m.mem.symbol
         return m.offset
 
     @staticmethod
@@ -918,7 +923,7 @@ class RegArrayParallelizer(object):
         # v2 = v1 + 1
         if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
                 return False
-        rhs_syms = [e.symbol() for e in v2_stm.src.kids() if e.is_a(TEMP)]
+        rhs_syms = [e.symbol for e in v2_stm.src.kids() if e.is_a(TEMP)]
         if len(rhs_syms) != 1:
             return False
         rhs_const = self._get_const(v2_stm.src)
@@ -940,8 +945,8 @@ class RegArrayParallelizer(object):
             return False
         if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
             return False
-        v1_rhs_syms = set([e.symbol() for e in v1_stm.src.kids() if e.is_a(TEMP)])
-        v2_rhs_syms = set([e.symbol() for e in v2_stm.src.kids() if e.is_a(TEMP)])
+        v1_rhs_syms = set([e.symbol for e in v1_stm.src.kids() if e.is_a(TEMP)])
+        v2_rhs_syms = set([e.symbol for e in v2_stm.src.kids() if e.is_a(TEMP)])
         common_syms = v1_rhs_syms.intersection(v2_rhs_syms)
         if not common_syms:
             return False
@@ -955,17 +960,17 @@ class RegArrayParallelizer(object):
         if offs1.is_a(CONST) and offs2.is_a(CONST) and offs1.value != offs2.value:
             return True
         elif offs1.is_a(TEMP) and offs2.is_a(TEMP):
-            offs1_defstms = self.scope.usedef.get_stms_defining(offs1.symbol())
-            offs2_defstms = self.scope.usedef.get_stms_defining(offs2.symbol())
+            offs1_defstms = self.scope.usedef.get_stms_defining(offs1.symbol)
+            offs2_defstms = self.scope.usedef.get_stms_defining(offs2.symbol)
             if len(offs1_defstms) != 1 and len(offs2_defstms) != 1:
                 return False
             offs2_stm = list(offs2_defstms)[0]
             offs1_stm = list(offs1_defstms)[0]
             if len(offs2_defstms) == 1:
-                if self._has_other_var_and_difference(offs1.symbol(), offs2_stm):
+                if self._has_other_var_and_difference(offs1.symbol, offs2_stm):
                     return True
             if len(offs1_defstms) == 1:
-                if self._has_other_var_and_difference(offs2.symbol(), offs1_stm):
+                if self._has_other_var_and_difference(offs2.symbol, offs1_stm):
                     return True
             if len(offs2_defstms) == 1 and len(offs1_defstms) == 1:
                 return self._has_same_var_and_difference(offs2_stm, offs1_stm)

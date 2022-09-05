@@ -183,7 +183,6 @@ class IRTransformer(IRVisitor):
 
     def visit_CALL(self, ir):
         ir.func = self.visit(ir.func)
-        ir.func.funcall = True
         self.visit_args(ir.args)
         return ir
 

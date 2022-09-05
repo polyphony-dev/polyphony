@@ -27,13 +27,13 @@ class CopyOpt(IRVisitor):
         while worklist:
             cp = worklist.popleft()
             logger.debug('copy stm ' + str(cp))
-            dst_qsym = cp.dst.qualified_symbol()
+            dst_qsym = cp.dst.qualified_symbol
             defs = list(scope.usedef.get_stms_defining(dst_qsym))
             if len(defs) > 1:
                 # dst must be non ssa variables
                 copies.remove(cp)
                 continue
-            orig = self._find_root_def(cp.src.qualified_symbol())
+            orig = self._find_root_def(cp.src.qualified_symbol)
             self._replace_copies(scope, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures:
@@ -43,7 +43,7 @@ class CopyOpt(IRVisitor):
                 # TODO: Copy propagation of module parameter should be supported
                 if cp.dst.is_a(ATTR) and cp.dst.tail().typ.get_scope().is_module() and scope.is_ctor():
                     continue
-                if cp.is_a(CMOVE) and not cp.dst.symbol().is_temp():
+                if cp.is_a(CMOVE) and not cp.dst.symbol.is_temp():
                     continue
                 cp.block.stms.remove(cp)
 
@@ -57,21 +57,21 @@ class CopyOpt(IRVisitor):
                 else:
                     new = copy_stm.src.clone()
                 # TODO: we need the bit width propagation
-                new.symbol().typ = old.symbol().typ
+                new.symbol.typ = old.symbol.typ
                 logger.debug('replace FROM ' + str(u))
                 self.udupdater.update(u, None)
                 u.replace(old, new)
                 logger.debug('replace TO ' + str(u))
                 self.udupdater.update(None, u)
             if u.is_a(PHIBase):
-                syms = [arg.qualified_symbol() for arg in u.args
-                        if arg.is_a([TEMP, ATTR]) and arg.symbol() is not u.var.symbol()]
+                syms = [arg.qualified_symbol for arg in u.args
+                        if arg.is_a([TEMP, ATTR]) and arg.symbol is not u.var.symbol]
                 if syms:
                     if len(u.args) == len(syms) and all(syms[0] == s for s in syms):
                         src = u.args[0]
                     elif len(syms) == 1 and len([arg for arg in u.args if arg.is_a([TEMP, ATTR])]) > 1:
                         for arg in u.args:
-                            if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol() == syms[0]:
+                            if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol == syms[0]:
                                 src = arg
                                 break
                         else:
@@ -96,7 +96,7 @@ class CopyOpt(IRVisitor):
             if src.is_a(ATTR):
                 scope.add_free_sym(src.head())
             elif src.is_a(TEMP):
-                scope.add_free_sym(src.symbol())
+                scope.add_free_sym(src.symbol)
             else:
                 assert False
 
@@ -106,20 +106,23 @@ class CopyOpt(IRVisitor):
             return None
         d = defs[0]
         if d.is_a(MOVE):
+            dst_t = d.dst.symbol.typ
             if d.src.is_a(TEMP):
-                if d.src.symbol().is_param():
+                if d.src.symbol.is_param():
                     return None
-                if d.src.symbol().typ != d.dst.symbol().typ:
+                src_t = d.src.symbol.typ
+                if src_t != dst_t:
                     return None
-                orig = self._find_root_def(d.src.qualified_symbol())
+                orig = self._find_root_def(d.src.qualified_symbol)
                 if orig:
                     return orig
                 else:
                     return d.src
             elif d.src.is_a(ATTR):
-                if d.src.symbol().typ != d.dst.symbol().typ:
+                src_t = d.src.symbol.typ
+                if src_t != dst_t:
                     return None
-                orig = self._find_root_def(d.src.qualified_symbol())
+                orig = self._find_root_def(d.src.qualified_symbol)
                 if orig:
                     return orig
                 else:
@@ -135,23 +138,25 @@ class CopyCollector(IRVisitor):
         return
 
     def visit_MOVE(self, ir):
-        if ir.dst.symbol().is_return():
+        dst_t = ir.dst.symbol.typ
+        if ir.dst.symbol.is_return():
             return
-        if ir.dst.symbol().is_register():
+        if ir.dst.symbol.is_register():
             return
-        if ir.dst.symbol().is_field():
+        if ir.dst.symbol.is_field():
             return
-        if ir.dst.symbol().is_free():
+        if ir.dst.symbol.is_free():
             return
         if ir.src.is_a(TEMP):
-            if ir.src.sym.is_param():  # or ir.src.sym.typ.is_list():
+            src_t = ir.src.symbol.typ
+            if ir.src.symbol.is_param():  # or ir.src.sym.typ.is_list():
                 return
-            if ir.src.symbol().typ != ir.dst.symbol().typ:
+            if src_t != dst_t:
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):
-            typ = ir.src.symbol().typ
-            if typ.is_object() and typ.get_scope().is_port():
+            src_t = ir.src.symbol.typ
+            if src_t.is_object() and src_t.get_scope().is_port():
                 self.copies.append(ir)
 
 
@@ -168,20 +173,22 @@ class ObjCopyOpt(CopyOpt):
         def find_vars_rec(ir, qsym, vars):
             if isinstance(ir, IR):
                 if ir.is_a(ATTR):
-                    if ir.attr.typ.is_object():
-                        if ir.qualified_symbol() == qsym:
+                    attr_t = ir.symbol.typ
+                    if attr_t.is_object():
+                        if ir.qualified_symbol == qsym:
                             vars.append(ir)
-                    elif ir.attr.typ.is_seq():
-                        if ir.qualified_symbol() == qsym:
+                    elif attr_t.is_seq():
+                        if ir.qualified_symbol == qsym:
                             vars.append(ir)
-                    elif ir.exp.qualified_symbol() == qsym:
+                    elif ir.exp.qualified_symbol == qsym:
                         vars.append(ir.exp)
                 elif ir.is_a(TEMP) and len(qsym) == 1:
-                    if ir.sym.typ.is_object():
-                        if ir.sym == qsym[0]:
+                    sym_t = ir.symbol.typ
+                    if sym_t.is_object():
+                        if ir.symbol == qsym[0]:
                             vars.append(ir)
-                    elif ir.sym.typ.is_seq():
-                        if ir.sym == qsym[0]:
+                    elif sym_t.is_seq():
+                        if ir.symbol == qsym[0]:
                             vars.append(ir)
                 else:
                     for k, v in ir.__dict__.items():
@@ -204,20 +211,23 @@ class ObjCopyCollector(IRVisitor):
             return False
         if not mov.dst.is_a([TEMP, ATTR]):
             return False
-        if (mov.dst.is_a(ATTR) and mov.dst.tail().typ.is_object() and
-                mov.dst.tail().typ.get_scope().is_module()):
-            return False
-        #if mov.src.symbol().is_induction() or mov.dst.symbol().is_induction():
+        if mov.dst.is_a(ATTR):
+            tail_t = mov.dst.tail().typ
+            if tail_t.is_object() and tail_t.get_scope().is_module():
+                return False
+        #if mov.src.symbol.is_induction() or mov.dst.symbol.is_induction():
         #    return False
-        if mov.src.symbol().typ.is_object() and mov.dst.symbol().typ.is_object():
+        src_t = mov.src.symbol.typ
+        dst_t = mov.dst.symbol.typ
+        if src_t.is_object() and dst_t.is_object():
             return True
-        if mov.src.symbol().typ.is_seq() and mov.dst.symbol().typ.is_seq():
+        if src_t.is_seq() and dst_t.is_seq():
             return True
         return False
 
     def visit_MOVE(self, ir):
         if not self._is_alias_def(ir):
             return
-        if ir.src.symbol().is_param():
+        if ir.src.symbol.is_param():
             return
         self.copies.append(ir)

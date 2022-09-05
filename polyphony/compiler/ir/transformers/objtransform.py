@@ -26,24 +26,24 @@ class ObjectTransformer(object):
         for blk in self.scope.traverse_blocks():
             for stm in blk.collect_stms([MOVE, PHI, LPHI, UPHI]):
                 if stm.is_a(MOVE):
-                    qsym = stm.dst.qualified_symbol()
+                    qsym = stm.dst.qualified_symbol
                     typ = qsym[-1].typ
                     if typ.is_object():
-                        if stm.src.is_a(SYSCALL) and stm.src.sym is builtin_symbols['$new']:
+                        if stm.src.is_a(SYSCALL) and stm.src.symbol is builtin_symbols['$new']:
                             self.obj_defs.add(qsym[-1])
-                        elif stm.src.is_a(TEMP) and stm.src.sym.is_param():
+                        elif stm.src.is_a(TEMP) and stm.src.symbol.is_param():
                             pass
                         else:
                             self.obj_copies[qsym] = stm
                     elif typ.is_seq():
                         if stm.src.is_a(ARRAY):
                             self.seq_defs.add(qsym[-1])
-                        elif stm.src.is_a(TEMP) and stm.src.sym.is_param():
+                        elif stm.src.is_a(TEMP) and stm.src.symbol.is_param():
                             pass
                         else:
                             self.seq_copies[qsym] = stm
                 elif stm.is_a(PHIBase):
-                    qsym = stm.var.qualified_symbol()
+                    qsym = stm.var.qualified_symbol
                     typ = qsym[-1].typ
                     if typ.is_object():
                         self.obj_copies[qsym] = stm
@@ -89,10 +89,10 @@ class ObjectTransformer(object):
         worklist = deque()
         for copy_qsym, stm in copies.items():
             if stm.is_a(MOVE) and stm.src.is_a([TEMP, ATTR]):
-                worklist.append((stm.src.qualified_symbol(), copy_qsym))
+                worklist.append((stm.src.qualified_symbol, copy_qsym))
             elif stm.is_a(PHIBase):
                 for arg in stm.args:
-                    worklist.append((arg.qualified_symbol(), copy_qsym))
+                    worklist.append((arg.qualified_symbol, copy_qsym))
         while worklist:
             qsym, copy_qsym = worklist.popleft()
             roots = _find_root_def(qsym, copy_qsym)
@@ -111,11 +111,11 @@ class ObjectTransformer(object):
         max_len = 0
         var = None
         for use_var in self.scope.usedef.get_vars_used_at(stm):
-            qsym_ = use_var.qualified_symbol()
+            qsym_ = use_var.qualified_symbol
             if len(qsym_) > max_len:
                 var = use_var
                 max_len = len(qsym_)
-        if var.qualified_symbol()[:-1] == qsym:
+        if var.qualified_symbol[:-1] == qsym:
             return var
         return None
 
@@ -123,11 +123,11 @@ class ObjectTransformer(object):
         max_len = 0
         var = None
         for def_var in self.scope.usedef.get_vars_defined_at(stm):
-            qsym_ = def_var.qualified_symbol()
+            qsym_ = def_var.qualified_symbol
             if len(qsym_) > max_len:
                 var = def_var
                 max_len = len(qsym_)
-        if var.qualified_symbol()[:-1] == qsym:
+        if var.qualified_symbol[:-1] == qsym:
             return var
         return None
 
@@ -142,7 +142,7 @@ class ObjectTransformer(object):
                     continue
                 if copy_stm.is_a(PHIBase) and stm.is_a(MOVE):
                     use_var = self._find_use_var(stm, copy_qsym)
-                    if use_var or stm.src.is_a(MREF) or (stm.src.is_a(SYSCALL) and stm.src.sym.name == 'len'):
+                    if use_var or stm.src.is_a(MREF) or (stm.src.is_a(SYSCALL) and stm.src.symbol.name == 'len'):
                         # y = obj.x  -->  y = uphi(c0 ? obj0.x,
                         #                          c1 ? obj1.x)
                         self._add_uphi(stm, sources, copy_qsym)
@@ -185,8 +185,7 @@ class ObjectTransformer(object):
         mv_stm.block.insert_stm(insert_idx, uphi)
         self.udupdater.update(None, uphi)
         self.udupdater.update(mv_stm, None)
-        var = var.clone()
-        var.ctx = Ctx.LOAD
+        var = var.clone(ctx=Ctx.LOAD)
         mv_stm.src = var
         self.udupdater.update(None, mv_stm)
 

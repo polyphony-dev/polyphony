@@ -110,7 +110,7 @@ class SchedulerImpl(object):
         stm = node.tag
         if not stm.is_a([MOVE, PHIBase]):
             return node
-        var = node.tag.dst.symbol() if node.tag.is_a(MOVE) else node.tag.var.symbol()
+        var = node.tag.dst.symbol if node.tag.is_a(MOVE) else node.tag.var.symbol
         if not var.is_alias():
             return node
         succs = dfg.succs_typ_without_back(node, 'DefUse')
@@ -192,7 +192,7 @@ class SchedulerImpl(object):
                     self.node_latency_map[node] = (0, 0, 0)
                 else:
                     if node.tag.is_a([MOVE, PHIBase]):
-                        var = node.tag.dst.symbol() if node.tag.is_a(MOVE) else node.tag.var.symbol()
+                        var = node.tag.dst.symbol if node.tag.is_a(MOVE) else node.tag.var.symbol
                         if var.is_condition():
                             self.node_latency_map[node] = (0, 0, 0)
                         else:
@@ -662,19 +662,20 @@ class ResourceExtractor(IRVisitor):
         super().visit_BINOP(ir)
 
     def visit_CALL(self, ir):
-        self.ops[self.current_node][ir.func_scope()] += 1
-        func_name = ir.func_scope().name
+        callee_scope = ir.callee_scope
+        self.ops[self.current_node][callee_scope] += 1
+        func_name = callee_scope.name
         if func_name.startswith('polyphony.io.Port'):
             inst_ = ir.func.tail()
             self.ports[self.current_node].append(inst_)
         super().visit_CALL(ir)
 
     def visit_MREF(self, ir):
-        self.regarrays[self.current_node].append(ir.mem.symbol())
+        self.regarrays[self.current_node].append(ir.mem.symbol)
         super().visit_MREF(ir)
 
     def visit_MSTORE(self, ir):
-        self.regarrays[self.current_node].append(ir.mem.symbol())
+        self.regarrays[self.current_node].append(ir.mem.symbol)
         super().visit_MSTORE(ir)
 
 
@@ -846,7 +847,7 @@ class ConflictGraphBuilder(object):
                         (stm1.is_a(CMOVE) or stm1.is_a(CEXPR))):
                     if stm0.cond == stm1.cond:
                         vs = stm0.cond.find_irs(TEMP)
-                        syms = tuple(sorted([v.sym for v in vs]))
+                        syms = tuple(sorted([v.symbol for v in vs]))
                         merge_cnodes[syms].add(cn0)
                         merge_cnodes[syms].add(cn1)
             for cnodes in merge_cnodes.values():
@@ -897,10 +898,10 @@ class TimedScheduler:
 
     def get_clk_increment(self, stm):
         if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL)):
-            if stm.exp.sym.name == 'polyphony.timing.clksleep':
+            if stm.exp.symbol.name == 'polyphony.timing.clksleep':
                 assert len(stm.exp.args) == 1
                 assert stm.exp.args[0][1].is_a(CONST)
                 return stm.exp.args[0][1].value
-            elif stm.exp.sym.name.startswith('polyphony.timing.wait_'):
+            elif stm.exp.symbol.name.startswith('polyphony.timing.wait_'):
                 return 1
         return 0

@@ -31,16 +31,18 @@ class WorkerInstantiator(object):
         for s in scopes:
             if s.is_global() or s.is_function_module():
                 calls.extend(collector.process(s))
-        for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().find_ctor().is_pure():
-                self._process_workers(call.func_scope())
+        for scope, stm, call in calls:
+            callee_scope = call.callee_scope
+            if call.is_a(NEW) and callee_scope.is_module() and not callee_scope.find_ctor().is_pure():
+                self._process_workers(callee_scope)
 
     def _process_workers(self, module):
         collector = CallCollector()
         ctor = module.find_ctor()
         calls = collector.process(ctor)
-        for stm, call in calls:
-            if call.is_a(CALL) and call.func_scope().base_name == 'append_worker':
+        for scope, stm, call in calls:
+            callee_scope = call.callee_scope
+            if call.is_a(CALL) and callee_scope.base_name == 'append_worker':
                 new_worker, is_created = self._instantiate_worker(call, ctor, module)
                 module.register_worker(new_worker, call.args)
                 if not is_created:
@@ -55,9 +57,9 @@ class WorkerInstantiator(object):
         assert len(call.args) >= 1
         _, w = call.args[0]
         assert w.is_a([TEMP, ATTR])
-        assert w.symbol().typ.is_function()
-        assert w.symbol().typ.get_scope().is_worker()
-        worker = w.symbol().typ.get_scope()
+        assert w.symbol.typ.is_function()
+        assert w.symbol.typ.get_scope().is_worker()
+        worker = w.symbol.typ.get_scope()
         binding = []
         loop = False
         for i, (name, arg) in enumerate(call.args):
@@ -148,7 +150,7 @@ class ModuleInstantiator(object):
             new_module = self._instantiate_module(module, args)
             self._process_workers(new_module)
             new_modules.add(new_module)
-            #stm.dst.symbol().typ = Type.object(new_module)
+            #stm.dst.symbol.typ = Type.object(new_module)
         return new_modules
 
     def _process_called_module(self):
@@ -161,26 +163,27 @@ class ModuleInstantiator(object):
             if s.is_global() or s.is_function_module():
                 calls.extend(CallCollector().process(s))
         new_modules = set()
-        for stm, call in calls:
-            if call.is_a(NEW) and call.func_scope().is_module() and not call.func_scope().is_instantiated():
-                new_module = self._instantiate_called_module(call, stm.dst)
+        for scope, stm, call in calls:
+            callee_scope = call.callee_scope
+            if call.is_a(NEW) and callee_scope.is_module() and not callee_scope.is_instantiated():
+                new_module = self._instantiate_called_module(scope, call, stm.dst)
                 self._process_workers(new_module)
                 self._process_objects(new_module)
                 new_modules.add(new_module)
-                stm.dst.symbol().typ = Type.object(new_module)
+                stm.dst.symbol.typ = Type.object(new_module)
         return new_modules
 
     def _process_inner_scope(self, ctor):
         calls = CallCollector().process(ctor)
         new_scopes = set()
-        for stm, call in calls:
+        for scope, stm, call in calls:
             new_scope = self._instantiate(call, stm.dst)
             new_scopes.add(new_scope)
-            stm.dst.symbol().typ = Type.object(new_scope)
+            stm.dst.symbol.typ = Type.object(new_scope)
         return new_scopes
 
-    def _instantiate_called_module(self, new, module_var):
-        module = new.func_scope()
+    def _instantiate_called_module(self, scope, new, module_var):
+        module = new.callee_scope
         binding = []
         module_param_vars = []
         ctor = module.find_ctor()
@@ -190,7 +193,7 @@ class ModuleInstantiator(object):
                     module_param_vars.append((ctor.params[i + 1].copy.name, arg.value))
                 else:
                     binding.append((bind_val, i, arg.value))
-        inst_name = module_var.symbol().hdl_name()
+        inst_name = module_var.symbol.hdl_name()
         ctor = module.find_ctor()
         children = [ctor]
         children.extend([c for c in module.collect_scope() if c.is_assigned()])
@@ -203,15 +206,15 @@ class ModuleInstantiator(object):
                 f(new_module_ctor, i + 1, a)
             for _, i, _ in reversed(binding):
                 new_module_ctor.params.pop(i + 1)
-            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
-            new.sym = new_module_sym
+            new_module_sym = new.symbol.scope.inherit_sym(new.symbol, new_module.name)
+            new.symbol = new_module_sym
             for _, i, _ in reversed(binding):
                 new.args.pop(i)
         else:
             new_module = module.instantiate(inst_name, children)
-            new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
-            new.sym = new_module_sym
-        new.sym.typ = new.sym.typ.with_scope(new_module)
+            new_module_sym = new.symbol.scope.inherit_sym(new.symbol, new_module.name)
+            new.symbol = new_module_sym
+        new.symbol.typ = new.symbol.typ.with_scope(new_module)
         new_module.inst_name = inst_name
         new_module.module_params = []
         ctor = new_module.find_ctor()
@@ -270,8 +273,9 @@ class ModuleInstantiator(object):
         collector = CallCollector()
         ctor = module.find_ctor()
         calls = collector.process(ctor)
-        for stm, call in calls:
-            if call.is_a(CALL) and call.func_scope().base_name == 'append_worker':
+        for scope, stm, call in calls:
+            callee_scope = call.callee_scope
+            if call.is_a(CALL) and callee_scope.base_name == 'append_worker':
                 new_worker, is_created = self._instantiate_worker(call, ctor, module)
                 module.register_worker(new_worker, call.args)
                 if not is_created:
@@ -279,16 +283,16 @@ class ModuleInstantiator(object):
                 new_worker_sym = module.add_sym(new_worker.base_name,
                                                 typ=Type.function(new_worker))
                 _, w = call.args[0]
-                w.set_symbol(new_worker_sym)
+                w.symbol = new_worker_sym
         #return new_workers
 
     def _instantiate_worker(self, call, ctor, module):
         assert len(call.args) >= 1
         _, w = call.args[0]
         assert w.is_a([TEMP, ATTR])
-        assert w.symbol().typ.is_function()
-        assert w.symbol().typ.get_scope().is_worker()
-        worker = w.symbol().typ.get_scope()
+        assert w.symbol.typ.is_function()
+        assert w.symbol.typ.get_scope().is_worker()
+        worker = w.symbol.typ.get_scope()
         binding = []
         loop = False
         for i, (name, arg) in enumerate(call.args):
@@ -360,8 +364,8 @@ class ModuleInstantiator(object):
         collector = CallCollector()
         ctor = module.find_ctor()
         calls = collector.process(ctor)
-        for stm, call in calls:
-            if call.is_a(SYSCALL) and call.sym.name == '$new':
+        for scope, stm, call in calls:
+            if call.is_a(SYSCALL) and call.symbol.name == '$new':
                 # TODO
                 pass
 
@@ -376,11 +380,11 @@ class CallCollector(IRVisitor):
         return self.calls
 
     def visit_CALL(self, ir):
-        self.calls.append((self.current_stm, ir))
+        self.calls.append((self.scope, self.current_stm, ir))
 
     def visit_NEW(self, ir):
-        self.calls.append((self.current_stm, ir))
+        self.calls.append((self.scope, self.current_stm, ir))
 
     def visit_SYSCALL(self, ir):
-        if ir.sym.name == '$new':
-            self.calls.append((self.current_stm, ir))
+        if ir.symbol.name == '$new':
+            self.calls.append((self.scope, self.current_stm, ir))

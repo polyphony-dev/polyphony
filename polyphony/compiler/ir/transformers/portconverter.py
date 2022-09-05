@@ -25,10 +25,11 @@ class PortTypeProp(TypePropagation):
         super().process(scope)
 
     def visit_NEW(self, ir):
-        if ir.func_scope().is_port():
+        callee_scope = ir.callee_scope
+        if callee_scope.is_port():
             assert self.scope.is_ctor() and self.scope.parent.is_module()
             attrs = {}
-            ctor = ir.func_scope().find_ctor()
+            ctor = callee_scope.find_ctor()
             for (_, a), p in zip(ir.args, ctor.params[1:]):
                 if a.is_a(CONST):
                     if p.copy.name == 'direction':
@@ -40,17 +41,17 @@ class PortTypeProp(TypePropagation):
                         attrs[p.copy.name] = di
                     else:
                         attrs[p.copy.name] = a.value
-                elif a.is_a(TEMP) and a.symbol().typ.is_class():
+                elif a.is_a(TEMP) and a.symbol.typ.is_class():
                     attrs[p.copy.name] = Type.from_ir(a)
                 else:
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
             assert 'dtype' in attrs
             assert 'direction' in attrs
-            attrs['root_symbol'] = self.current_stm.dst.symbol()
+            attrs['root_symbol'] = self.current_stm.dst.symbol
             attrs['assigned'] = False
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
-            return Type.port(ir.func_scope(), attrs)
+            return Type.port(callee_scope, attrs)
         else:
             return super().visit_NEW(ir)
 
@@ -64,42 +65,41 @@ class PortTypeProp(TypePropagation):
         return ''
 
     def visit_CALL(self, ir):
-        if ir.func_scope().is_method() and ir.func_scope().parent.is_port():
-            sym = ir.func.tail()
-            if not sym.typ.is_port():
+        callee_scope = ir.callee_scope
+        if callee_scope.is_method() and callee_scope.parent.is_port():
+            receiver = ir.func.tail()
+            receiver_t = receiver.typ
+            if not receiver_t.is_port():
                 raise RejectPropagation(ir)
-            if ir.func.symbol().typ.get_scope().base_name == 'assign':
-                sym.typ = sym.typ.with_assigned(True)
-            root = sym.typ.get_root_symbol()
+            if callee_scope.base_name == 'assign':
+                receiver_t = receiver_t.with_assigned(True)
+                receiver.typ = receiver_t
+            root = receiver_t.get_root_symbol()
             port_owner = root.scope
             # if port is a local variable, we modify the port owner its parent
             if port_owner.is_method():
                 port_owner = port_owner.parent
-            if self.scope.is_worker():
-                scope = self.scope.worker_owner
-            elif self.scope.is_method():
-                scope = self.scope.parent
-            else:
-                scope = self.scope
-            return ir.func_scope().return_type
-        elif ir.func_scope().is_lib():
+            return callee_scope.return_type
+        elif callee_scope.is_lib():
             return self.visit_CALL_lib(ir)
         else:
-            if ir.func_scope().is_method():
-                params = ir.func_scope().params[1:]
+            if callee_scope.is_method():
+                params = callee_scope.params[1:]
             else:
-                params = ir.func_scope().params[:]
+                params = callee_scope.params[:]
             arg_types = [self.visit(arg) for _, arg in ir.args]
             for i, param in enumerate(params):
                 self._propagate(param.sym, arg_types[i])
-            self._add_scope(ir.func_scope())
-            return ir.func_scope().return_type
+            self._add_scope(callee_scope)
+            return callee_scope.return_type
 
     def visit_CALL_lib(self, ir):
-        if ir.func_scope().base_name == 'append_worker':
-            if not ir.args[0][1].symbol().typ.is_function():
+        callee_scope = ir.callee_scope
+        if callee_scope.base_name == 'append_worker':
+            arg_t = ir.args[0][1].symbol.typ
+            if not arg_t.is_function():
                 assert False
-            worker = ir.args[0][1].symbol().typ.get_scope()
+            worker = arg_t.get_scope()
             assert worker.is_worker()
 
             if worker.is_method():
@@ -116,9 +116,9 @@ class PortTypeProp(TypePropagation):
             funct = Type.function(worker,
                                   Type.none(),
                                   tuple([param.sym.typ for param in worker.params]))
-            self._propagate(ir.args[0][1].symbol(), funct)
+            self._propagate(ir.args[0][1].symbol, funct)
             self._add_scope(worker)
-        return ir.func_scope().return_type
+        return callee_scope.return_type
 
 
 def _collect_scopes(module):
@@ -179,7 +179,8 @@ class PortChecker(IRTransformer):
             ctor = m.find_ctor()
             # check for instance variable port
             for field in m.class_fields().values():
-                if field.typ.is_port() and field not in self.writers:
+                field_t = field.typ
+                if field_t.is_port() and field not in self.writers:
                     if not env.depend_graph.preds(m):
                         continue
                     assert ctor.usedef
@@ -188,7 +189,8 @@ class PortChecker(IRTransformer):
                     #     [field.orig_name()])
             # check for local variable port
             for sym in ctor.symbols.values():
-                if sym.typ.is_port() and sym not in self.writers:
+                sym_t = sym.typ
+                if sym_t.is_port() and sym not in self.writers:
                     assert ctor.usedef
                     stms = ctor.usedef.get_stms_defining(sym)
                     # This symbol might not be used (e.g. ancestor symbol),
@@ -198,8 +200,9 @@ class PortChecker(IRTransformer):
                              [sym.orig_name()])
 
     def _get_port_owner(self, sym):
-        assert sym.typ.is_port()
-        root = sym.typ.get_root_symbol()
+        sym_t = sym.typ
+        assert sym_t.is_port()
+        root = sym_t.get_root_symbol()
         if root.scope.is_ctor():
             return root.scope.parent
         else:
@@ -258,9 +261,9 @@ class PortChecker(IRTransformer):
             self._set_and_check_port_direction(sym)
 
     def _set_and_check_port_direction(self, sym):
-        port_typ = sym.typ
-        rootsym = port_typ.get_root_symbol()
-        owners_access = port_typ.get_owners_access()
+        port_t = sym.typ
+        rootsym = port_t.get_root_symbol()
+        owners_access = port_t.get_owners_access()
         # write-write conflict
         if self.writers[rootsym]:
             assert len(self.writers[rootsym]) == 1
@@ -274,36 +277,39 @@ class PortChecker(IRTransformer):
             self.writers[rootsym].add(self.scope)
 
     def visit_CALL(self, ir):
-        if not ir.func_scope().is_lib():
+        callee_scope = ir.callee_scope
+        if not callee_scope.is_lib():
             return ir
-        if ir.func_scope().is_method() and ir.func_scope().parent.is_port():
-            sym = ir.func.tail()
-            assert sym.typ.is_port()
-            self._check_port_direction(sym, ir.func_scope())
+        if callee_scope.is_method() and callee_scope.parent.is_port():
+            receiver = ir.func.tail()
+            receiver_t = receiver.typ
+            assert receiver_t.is_port()
+            self._check_port_direction(sym, callee_scope)
             if (self.current_stm.block.synth_params['scheduling'] == 'pipeline' and
                     self.scope.find_region(self.current_stm.block) is not self.scope.top_region()):
-                root_sym = sym.typ.get_root_symbol()
+                root_sym = receiver_t.get_root_symbol()
                 root_sym.add_tag('pipelined')
         return ir
 
     def visit_SYSCALL(self, ir):
-        if ir.sym.name.startswith('polyphony.timing.wait_'):
-            if ir.sym.name == 'polyphony.timing.wait_until':
+        name = ir.symbol.name
+        if name.startswith('polyphony.timing.wait_'):
+            if name == 'polyphony.timing.wait_until':
                 return ir
-            elif (ir.sym.name == 'polyphony.timing.wait_rising' or
-                    ir.sym.name == 'polyphony.timing.wait_falling'):
+            elif (name == 'polyphony.timing.wait_rising' or
+                    name == 'polyphony.timing.wait_falling'):
                 ports = ir.args
-            elif ir.sym.name == 'polyphony.timing.wait_edge':
+            elif name == 'polyphony.timing.wait_edge':
                 ports = ir.args[2:]
-            elif ir.sym.name == 'polyphony.timing.wait_value':
+            elif name == 'polyphony.timing.wait_value':
                 ports = ir.args[1:]
             for _, p in ports:
-                port = p.symbol().typ
-                assert port.is_port()
-                di = port.get_direction()
-                owners_access = port.get_owners_access()
+                port_t = p.symbol.typ
+                assert port_t.is_port()
+                di = port_t.get_direction()
+                owners_access = port_t.get_owners_access()
                 if not owners_access:
-                    port_owner = self._get_port_owner(p.symbol())
+                    port_owner = self._get_port_owner(p.symbol)
                     #port.set_direction('input')
                     if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
                             not self.scope.is_worker()):
@@ -315,18 +321,19 @@ class PortChecker(IRTransformer):
         return ir
 
     def visit_PHI(self, ir):
-        if ir.var.symbol().typ.is_port():
+        var_t = ir.var.symbol.typ
+        if var_t.is_port():
             for arg in ir.args:
-                self.union_ports[ir.var.symbol()].add(arg.symbol())
+                self.union_ports[ir.var.symbol].add(arg.symbol)
         super().visit_PHI(ir)
 
 
 class FlattenPortList(IRTransformer):
     def visit_MREF(self, ir):
-        memsym = ir.mem.symbol()
-        memtyp = memsym.typ
-        assert memtyp.is_seq()
-        elm_t = memtyp.get_element()
+        memsym = ir.mem.symbol
+        mem_t = memsym.typ
+        assert mem_t.is_seq()
+        elm_t = mem_t.get_element()
         if not elm_t.is_object():
             return ir
         if not elm_t.get_scope().is_port():
@@ -334,7 +341,7 @@ class FlattenPortList(IRTransformer):
         if not ir.offset.is_a(CONST):
             return ir
         portname = '{}_{}'.format(memsym.name, ir.offset.value)
-        scope = ir.mem.symbol().scope
+        scope = ir.mem.symbol.scope
         portsym = scope.find_sym(portname)
         assert portsym
         ir.mem.set_symbol(portsym)
@@ -348,34 +355,36 @@ class FlippedTransformer(TypePropagation):
         super().process(scope)
 
     def visit_SYSCALL(self, ir):
-        ir.args = self._normalize_syscall_args(ir.sym.name, ir.args, ir.kwargs)
+        ir.args = self._normalize_syscall_args(ir.symbol.name, ir.args, ir.kwargs)
         for _, arg in ir.args:
             self.visit(arg)
-        if ir.sym.name == 'polyphony.io.flipped':
+        sym_t = ir.symbol.typ
+        if ir.symbol.name == 'polyphony.io.flipped':
             return self.visit_SYSCALL_flipped(ir)
         else:
-            assert ir.sym.typ.is_function()
-            return ir.sym.typ.get_return_type()
+            assert sym_t.is_function()
+            return sym_t.get_return_type()
 
     def visit_SYSCALL_flipped(self, ir):
         temp = ir.args[0][1]
-        arg_scope = temp.symbol().typ.get_scope()
+        temp_t = temp.symbol.typ
+        arg_scope = temp_t.get_scope()
         assert arg_scope.is_class()
         if arg_scope.is_port():
-            orig_new = find_move_src(temp.symbol(), NEW)
+            orig_new = find_move_src(temp.symbol, NEW)
             _, arg = orig_new.args[1]
             direction = 'in' if arg.value == 'out' else 'out'
             args = orig_new.args[0:1] + [('direction', CONST(direction))] + orig_new.args[2:]
-            self.current_stm.src = NEW(orig_new.sym, args, orig_new.kwargs)
+            self.current_stm.src = NEW(orig_new.symbol, args, orig_new.kwargs)
             return self.visit(self.current_stm.src)
         else:
             flipped_scope = self._new_scope_with_flipped_ports(arg_scope)
             if self.current_stm.is_a(MOVE):
-                orig_new = find_move_src(temp.symbol(), NEW)
+                orig_new = find_move_src(temp.symbol, NEW)
                 sym = self.scope.find_sym(flipped_scope.base_name)
                 if not sym:
                     sym = self.scope.add_sym(flipped_scope.base_name,
-                                             orig_new.sym.tags,
+                                             orig_new.symbol.tags,
                                              Type.klass(flipped_scope))
                 self.current_stm.src = NEW(sym, orig_new.args, orig_new.kwargs)
                 return self.visit(self.current_stm.src)
@@ -393,7 +402,8 @@ class FlippedTransformer(TypePropagation):
 
 class FlippedPortsBuilder(IRVisitor):
     def visit_NEW(self, ir):
-        if ir.sym.typ.get_scope().is_port():
+        sym_t = ir.symbol.typ
+        if sym_t.get_scope().is_port():
             for name, arg in ir.args:
                 if name == 'direction':
                     if arg.value == 'in':
@@ -408,27 +418,30 @@ class PortConnector(IRVisitor):
         self.scopes = []
 
     def visit_SYSCALL(self, ir):
-        if ir.sym.name in ('polyphony.io.connect', 'polyphony.io.thru'):
+        if ir.symbol.name in ('polyphony.io.connect', 'polyphony.io.thru'):
             self.visit_SYSCALL_connect(ir)
 
     def _ports(self, scope):
         ports = []
         for sym in scope.symbols.values():
-            if sym.typ.has_scope() and sym.typ.get_scope().is_port():
+            sym_t = sym.typ
+            if sym_t.has_scope() and sym_t.get_scope().is_port():
                 ports.append(sym)
         return sorted(ports)
 
     def visit_SYSCALL_connect(self, ir):
-        if ir.sym.name.endswith('connect'):
+        if ir.symbol.name.endswith('connect'):
             func = 'connect'
-        elif ir.sym.name.endswith('thru'):
+        elif ir.symbol.name.endswith('thru'):
             func = 'thru'
         else:
             assert False
         a0 = ir.args[0][1]
         a1 = ir.args[1][1]
-        scope0 = a0.symbol().typ.get_scope()
-        scope1 = a1.symbol().typ.get_scope()
+        a0_t = a0.symbol.typ
+        a1_t = a1.symbol.typ
+        scope0 = a0_t.get_scope()
+        scope1 = a1_t.get_scope()
         assert scope0.is_class()
         assert scope1.is_class()
         if scope0.is_port():
@@ -441,22 +454,23 @@ class PortConnector(IRVisitor):
             ports0 = self._ports(scope0)
             ports1 = self._ports(scope1)
             for port0, port1 in zip(ports0, ports1):
-                p0 = ATTR(a0, port0, Ctx.LOAD, a0.symbol().scope)
-                p1 = ATTR(a1, port1, Ctx.LOAD, a1.symbol().scope)
+                p0 = ATTR(a0, port0, Ctx.LOAD, a0.symbol.scope)
+                p1 = ATTR(a1, port1, Ctx.LOAD, a1.symbol.scope)
                 self._connect_port(p0, p1, func)
 
     def _connect_port(self, p0, p1, func):
-        port_scope0 = p0.symbol().typ.get_scope()
-        port_scope1 = p1.symbol().typ.get_scope()
+        p0_t = p0.symbol.typ
+        p1_t = p1.symbol.typ
+        port_scope0 = p0_t.get_scope()
+        port_scope1 = p1_t.get_scope()
         init_param0 = port_scope0.find_ctor().params[3]
         init_param1 = port_scope1.find_ctor().params[3]
-
-        dtype0 = init_param0.sym.typ  # port_scope0.type_args[0]
-        dtype1 = init_param1.sym.typ  # port_scope1.type_args[0]
+        dtype0 = init_param0.sym.typ
+        dtype1 = init_param1.sym.typ
         if not Type.is_same(dtype0, dtype1):
             assert False
-        new0 = find_move_src(p0.symbol(), NEW)
-        new1 = find_move_src(p1.symbol(), NEW)
+        new0 = find_move_src(p0.symbol, NEW)
+        new1 = find_move_src(p1.symbol, NEW)
         dir0 = new0.args[1][1]
         dir1 = new1.args[1][1]
         if func == 'connect':
@@ -476,8 +490,10 @@ class PortConnector(IRVisitor):
         self.current_stm.block.append_stm(EXPR(port_assign_call))
 
     def _make_assign_call(self, p0, p1):
-        port_scope0 = p0.symbol().typ.get_scope()
-        port_scope1 = p1.symbol().typ.get_scope()
+        p0_t = p0.symbol.typ
+        p1_t = p1.symbol.typ
+        port_scope0 = p0_t.get_scope()
+        port_scope1 = p1_t.get_scope()
         rd_sym = port_scope1.find_sym('rd')
         port_rd = ATTR(p1,
                        rd_sym,
@@ -511,8 +527,8 @@ class PortConnector(IRVisitor):
 
         temps = body.find_irs(TEMP)
         for t in temps:
-            if t.symbol() not in self.scope.symbols:
-                lambda_scope.add_free_sym(t.symbol())
+            if t.symbol not in self.scope.symbols:
+                lambda_scope.add_free_sym(t.symbol)
         self.scope.add_tag('enclosure')
         self.scope.add_closure(lambda_scope)
         return scope_sym
@@ -537,19 +553,22 @@ class UnusedPortCleaner(IRTransformer):
 
     def visit_TEMP(self, ir):
         if ir.ctx is Ctx.STORE:
-            if ir.symbol().typ.has_scope() and ir.symbol().typ.get_scope().is_port():
+            sym_t = ir.symbol.typ
+            if sym_t.has_scope() and sym_t.get_scope().is_port():
                 assert self.current_stm.is_a(MOVE)
-                self.port_syms.add(self.current_stm.dst.symbol())
+                self.port_syms.add(self.current_stm.dst.symbol)
         return ir
 
     def visit_NEW(self, ir):
-        if ir.func_scope().is_port():
+        callee_scope = ir.callee_scope
+        if callee_scope.is_port():
             assert self.current_stm.is_a(MOVE)
-            self.port_syms.add(self.current_stm.dst.symbol())
+            self.port_syms.add(self.current_stm.dst.symbol)
         return ir
 
     def visit_CALL(self, ir):
-        if ir.func_scope().is_method() and ir.func_scope().parent.is_port():
+        callee_scope = ir.callee_scope
+        if callee_scope.is_method() and callee_scope.parent.is_port():
             sym = ir.func.tail()
             if sym not in self.port_syms:
                 return None

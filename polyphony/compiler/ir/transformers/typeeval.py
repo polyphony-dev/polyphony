@@ -40,16 +40,14 @@ class TypeEvaluator(object):
         if func:
             param_types = []
             for sym, copy, _ in func.params:
-                pt = self.visit(sym.typ)
-                sym.typ = pt
-                param_types.append(pt)
-                pt = self.visit(copy.typ)
-                copy.typ = pt
+                sym.typ = self.visit(sym.typ)
+                param_types.append(sym.typ)
+                copy.typ = self.visit(copy.typ)
             t = t.with_param_types(param_types)
             func.return_type = self.visit(func.return_type)
             t = t.with_return_type(func.return_type)
         else:
-            param_types = [self.visit(sym.typ) for pt in t.get_param_types()]
+            param_types = [self.visit(pt) for pt in t.get_param_types()]
             t = t.with_param_types(param_types)
             ret_t = self.visit(t.get_return_type())
             t = t.with_return_type(ret_t)
@@ -104,12 +102,13 @@ class TypeExprEvaluator(IRVisitor):
         raise NotImplementedError()
 
     def sym2type(self, sym):
-        if sym.typ.is_class():
-            typ_scope = sym.typ.get_scope()
+        sym_t = sym.typ
+        if sym_t.is_class():
+            typ_scope = sym_t.get_scope()
             if typ_scope.is_typeclass():
                 t = Type.from_typeclass(typ_scope)
-                if sym.typ.has_typeargs():
-                    args = sym.typ.get_typeargs()
+                if sym_t.has_typeargs():
+                    args = sym_t.get_typeargs()
                     t.attrs.update(args)
                 return t
             elif typ_scope.is_function():
@@ -120,23 +119,25 @@ class TypeExprEvaluator(IRVisitor):
             return None
 
     def visit_TEMP(self, ir):
-        if ir.sym.typ.is_class():
+        sym_t = ir.symbol.typ
+        if sym_t.is_class():
             typ = self.sym2type(ir.sym)
             if typ:
                 return typ
-        elif ir.sym.typ.is_scalar():
+        elif sym_t.is_scalar():
             c = try_get_constant((ir.sym,), self.scope)
             if c:
                 return c
         return ir
 
     def visit_ATTR(self, ir):
-        if ir.attr.typ.is_class():
-            typ = self.sym2type(ir.attr)
+        attr_t = ir.symbol.typ
+        if attr_t.is_class():
+            typ = self.sym2type(ir.symbol)
             if typ:
                 return typ
-        elif ir.attr.typ.is_scalar():
-            c = try_get_constant(ir.qualified_symbol(), ir.attr.scope)
+        elif attr_t.is_scalar():
+            c = try_get_constant(ir.qualified_symbol, ir.symbol.scope)
             if c:
                 return c
         return ir

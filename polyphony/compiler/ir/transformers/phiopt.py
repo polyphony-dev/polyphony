@@ -9,17 +9,17 @@ class PHIInlining(object):
         for blk in scope.traverse_blocks():
             phis = {}
             for phi in blk.collect_stms([PHI, UPHI]):
-                if not phi.var.symbol().is_induction():
-                    phis[phi.var.symbol()] = phi
+                if not phi.var.symbol.is_induction():
+                    phis[phi.var.symbol] = phi
             phis_ = list(phis.values())
             for phi in phis_:
                 new_args = []
                 new_ps   = []
                 for i, (arg, p) in enumerate(zip(phi.args, phi.ps)):
                     if (arg.is_a([TEMP, ATTR]) and
-                            arg.symbol() in phis and
-                            phi != phis[arg.symbol()]):
-                        inline_phi = phis[arg.symbol()]
+                            arg.symbol in phis and
+                            phi != phis[arg.symbol]):
+                        inline_phi = phis[arg.symbol]
                         assert phi.block is inline_phi.block
                         new_args.extend(inline_phi.args)
                         for offs, ip in enumerate(inline_phi.ps):

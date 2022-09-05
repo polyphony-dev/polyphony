@@ -190,7 +190,7 @@ class PathExpTracer(object):
         csym = self.scope.add_condition_sym()
         mv = MOVE(TEMP(csym, Ctx.STORE), exp)
         blk.insert_stm(insert_pos, mv)
-        return TEMP(mv.dst.symbol(), Ctx.LOAD)
+        return TEMP(mv.dst.symbol, Ctx.LOAD)
 
 
 def merge_path_exp(pred, blk, idx_hint=-1):
@@ -415,9 +415,9 @@ class HyperBlockBuilder(object):
                     else:
                         old_args.append(stm.args[idx])
                         old_ps.append(stm.ps[idx])
-                if all([new_args[0].symbol() is arg.symbol() for arg in new_args[1:]]):
+                if all([new_args[0].symbol is arg.symbol for arg in new_args[1:]]):
                     newsym = self.scope.add_temp()
-                    newsym.typ = stm.var.symbol().typ
+                    newsym.typ = stm.var.symbol.typ
                     dst = TEMP(newsym, Ctx.STORE)
                     mv = MOVE(dst, new_args[0])
                     new_tail.append_stm(mv)
@@ -427,7 +427,7 @@ class HyperBlockBuilder(object):
                     new_phi.args = new_args
                     new_phi.ps = new_ps
                     newsym = self.scope.add_temp()
-                    newsym.typ = stm.var.symbol().typ
+                    newsym.typ = stm.var.symbol.typ
                     new_phi.var = TEMP(newsym, Ctx.STORE)
                     new_tail.append_stm(new_phi)
                     self.uddetector.visit(new_phi)
@@ -467,7 +467,7 @@ class HyperBlockBuilder(object):
                 'polyphony.timing.wait_edge',
                 'polyphony.timing.wait_until'
             ]
-            return call.sym.name in wait_funcs
+            return call.symbol.name in wait_funcs
         return False
 
     def _has_mem_access(self, stm):

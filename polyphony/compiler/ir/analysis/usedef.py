@@ -28,41 +28,41 @@ class UseDefTable(object):
 
     def add_var_def(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._def_sym2stm[var.symbol()].add(stm)
-        self._def_qsym2stm[var.qualified_symbol()].add(stm)
+        self._def_sym2stm[var.symbol].add(stm)
+        self._def_qsym2stm[var.qualified_symbol].add(stm)
         self._def_var2stm[var].add(stm)
-        self._def_sym2blk[var.symbol()].add(stm.block)
-        self._def_qsym2blk[var.qualified_symbol()].add(stm.block)
+        self._def_sym2blk[var.symbol].add(stm.block)
+        self._def_qsym2blk[var.qualified_symbol].add(stm.block)
         self._def_stm2var[stm].add(var)
         self._def_blk2var[stm.block].add(var)
 
     def remove_var_def(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._def_sym2stm[var.symbol()].discard(stm)
-        self._def_qsym2stm[var.qualified_symbol()].discard(stm)
+        self._def_sym2stm[var.symbol].discard(stm)
+        self._def_qsym2stm[var.qualified_symbol].discard(stm)
         self._def_var2stm[var].discard(stm)
-        self._def_sym2blk[var.symbol()].discard(stm.block)
-        self._def_qsym2blk[var.qualified_symbol()].discard(stm.block)
+        self._def_sym2blk[var.symbol].discard(stm.block)
+        self._def_qsym2blk[var.qualified_symbol].discard(stm.block)
         self._def_stm2var[stm].discard(var)
         self._def_blk2var[stm.block].discard(var)
 
     def add_var_use(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._use_sym2stm[var.symbol()].add(stm)
-        self._use_qsym2stm[var.qualified_symbol()].add(stm)
+        self._use_sym2stm[var.symbol].add(stm)
+        self._use_qsym2stm[var.qualified_symbol].add(stm)
         self._use_var2stm[var].add(stm)
-        self._use_sym2blk[var.symbol()].add(stm.block)
-        self._use_qsym2blk[var.qualified_symbol()].add(stm.block)
+        self._use_sym2blk[var.symbol].add(stm.block)
+        self._use_qsym2blk[var.qualified_symbol].add(stm.block)
         self._use_stm2var[stm].add(var)
         self._use_blk2var[stm.block].add(var)
 
     def remove_var_use(self, var, stm):
         assert var.is_a([TEMP, ATTR]) and stm.is_a(IRStm)
-        self._use_sym2stm[var.symbol()].discard(stm)
-        self._use_qsym2stm[var.qualified_symbol()].discard(stm)
+        self._use_sym2stm[var.symbol].discard(stm)
+        self._use_qsym2stm[var.qualified_symbol].discard(stm)
         self._use_var2stm[var].discard(stm)
-        self._use_sym2blk[var.symbol()].discard(stm.block)
-        self._use_qsym2blk[var.qualified_symbol()].discard(stm.block)
+        self._use_sym2blk[var.symbol].discard(stm.block)
+        self._use_qsym2blk[var.qualified_symbol].discard(stm.block)
         self._use_stm2var[stm].discard(var)
         self._use_blk2var[stm.block].discard(var)
 
@@ -138,27 +138,27 @@ class UseDefTable(object):
 
     def get_syms_defined_at(self, key):
         if isinstance(key, IRStm):
-            return set([v.symbol() for v in self._def_stm2var[key]])
+            return set([v.symbol for v in self._def_stm2var[key]])
         elif isinstance(key, Block):
-            return set([v.symbol() for v in self._def_blk2var[key]])
+            return set([v.symbol for v in self._def_blk2var[key]])
 
     def get_syms_used_at(self, key):
         if isinstance(key, IRStm):
-            return set([v.symbol() for v in self._use_stm2var[key]])
+            return set([v.symbol for v in self._use_stm2var[key]])
         elif isinstance(key, Block):
-            return set([v.symbol() for v in self._use_blk2var[key]])
+            return set([v.symbol for v in self._use_blk2var[key]])
 
     def get_qsyms_defined_at(self, key):
         if isinstance(key, IRStm):
-            return set([v.qualified_symbol() for v in self._def_stm2var[key]])
+            return set([v.qualified_symbol for v in self._def_stm2var[key]])
         elif isinstance(key, Block):
-            return set([v.qualified_symbol() for v in self._def_blk2var[key]])
+            return set([v.qualified_symbol for v in self._def_blk2var[key]])
 
     def get_qsyms_used_at(self, key):
         if isinstance(key, IRStm):
-            return set([v.qualified_symbol() for v in self._use_stm2var[key]])
+            return set([v.qualified_symbol for v in self._use_stm2var[key]])
         elif isinstance(key, Block):
-            return set([v.qualified_symbol() for v in self._use_blk2var[key]])
+            return set([v.qualified_symbol for v in self._use_blk2var[key]])
 
     def get_all_def_syms(self):
         return self._def_sym2stm.keys()
@@ -250,12 +250,14 @@ class UseDefDetector(IRVisitor):
         self.update_const_use(ir, self.current_stm)
 
     def visit_TEMP(self, ir):
-        if ir.ctx & Ctx.LOAD:
+        if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
             self.update_var_use(ir, self.current_stm)
-        if ir.ctx & Ctx.STORE:
+        elif ir.ctx == Ctx.STORE:
             self.update_var_def(ir, self.current_stm)
-
-        for expr in Type.find_expr(ir.sym.typ):
+        else:
+            assert False
+        sym_t = ir.symbol.typ
+        for expr in Type.find_expr(sym_t):
             assert expr.is_a(EXPR)
             old_stm = self.current_stm
             self.current_stm = expr
@@ -263,13 +265,16 @@ class UseDefDetector(IRVisitor):
             self.current_stm = old_stm
 
     def visit_ATTR(self, ir):
-        if ir.ctx & Ctx.LOAD:
+        if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
             self.update_var_use(ir, self.current_stm)
-        if ir.ctx & Ctx.STORE:
+        elif ir.ctx == Ctx.STORE:
             self.update_var_def(ir, self.current_stm)
+        else:
+            assert False
         self.visit(ir.exp)
 
-        for expr in Type.find_expr(ir.attr.typ):
+        attr_t = ir.symbol.typ
+        for expr in Type.find_expr(attr_t):
             assert expr.is_a(EXPR)
             old_stm = self.current_stm
             self.current_stm = expr

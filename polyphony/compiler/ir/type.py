@@ -31,6 +31,10 @@ class Type(object):
         copy.attrs[attrname] = value
         return copy
 
+    def clone(self):
+        copy = Type(self.name, **self.attrs.copy())
+        return copy
+
     @classmethod
     def from_annotation(cls, ann, scope, is_lib=False):
         if isinstance(ann, str):
@@ -69,11 +73,11 @@ class Type(object):
                     else:
                         scope = scope.parent
                 if sym and sym.typ.has_scope():
-                    sym_scope = sym.typ.get_scope()
-                    if sym_scope.is_typeclass():
-                        t = Type.from_typeclass(sym_scope)
+                    type_scope = sym.typ.get_scope()
+                    if type_scope.is_typeclass():
+                        t = Type.from_typeclass(type_scope)
                     else:
-                        t = Type.object(sym_scope)
+                        t = Type.object(type_scope)
                 else:
                     raise NameError(ann + ' is not defined')
             return t
@@ -122,17 +126,20 @@ class Type(object):
         assert isinstance(ann, IR)
         if ann.is_a(CONST) and ann.value is None:
             t = Type.none()
-        elif ann.is_a(TEMP) and ann.sym.typ.has_scope():
-            scope = ann.sym.typ.get_scope()
+        elif ann.is_a(TEMP) and ann.symbol.typ.has_scope():
+            ann_sym_type = ann.symbol.typ
+            # scope = ann.sym.typ.get_scope()
+            scope = ann_sym_type.get_scope()
             if scope.is_typeclass():
                 t = Type.from_typeclass(scope)
-                if ann.sym.typ.has_typeargs():
-                    args = ann.sym.typ.get_typeargs()
+                if ann_sym_type.has_typeargs():
+                    args = ann_sym_type.get_typeargs()
                     t.attrs.update(args)
             else:
                 t = Type.object(scope)
-        elif ann.is_a(ATTR) and isinstance(ann.attr, Symbol) and ann.attr.typ.has_scope():
-            scope = ann.attr.typ.get_scope()
+        elif ann.is_a(ATTR) and isinstance(ann.symbol, Symbol) and ann.symbol.typ.has_scope():
+            ann_attr_type = ann.symbol.typ
+            scope = ann_attr_type.get_scope()  # ann.attr.typ.get_scope()
             if scope.is_typeclass():
                 t = Type.from_typeclass(scope)
             else:
@@ -511,8 +518,7 @@ class Type(object):
         if to_t.is_expr():
             from .ir import TEMP, ATTR
             expr = to_t.get_expr()
-            if expr.exp.is_a([TEMP, ATTR]) and expr.exp.symbol().typ.is_class():
-                return True
+            raise NotImplementedError()
         if to_t.is_function() and from_t.is_function():
             if to_t.get_scope() is None:
                 return True

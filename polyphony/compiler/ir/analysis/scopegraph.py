@@ -36,24 +36,26 @@ class CallGraphBuilder(IRVisitor):
         super().process(scope)
 
     def visit_CALL(self, ir):
-        func_scope = ir.func_scope()
-        assert func_scope
-        self.call_graph.add_edge(self.scope, func_scope)
-        self.worklist.append(func_scope)
+        callee_scope = ir.callee_scope
+        assert callee_scope
+        self.call_graph.add_edge(self.scope, callee_scope)
+        self.worklist.append(callee_scope)
         self.visit_args(ir.args, ir.kwargs)
 
     def visit_NEW(self, ir):
-        assert ir.func_scope()
-        ctor = ir.func_scope().find_ctor()
+        callee_scope = ir.callee_scope
+        assert callee_scope
+        ctor = callee_scope.find_ctor()
         assert ctor
         self.call_graph.add_edge(self.scope, ctor)
         self.worklist.append(ctor)
         self.visit_args(ir.args, ir.kwargs)
 
     def visit_TEMP(self, ir):
-        if not ir.symbol().typ.is_function():
+        sym_t = ir.symbol.typ
+        if not sym_t.is_function():
             return
-        sym_scope = ir.symbol().typ.get_scope()
+        sym_scope = sym_t.get_scope()
         if not sym_scope:
             return
         if not sym_scope.is_worker():
@@ -61,9 +63,10 @@ class CallGraphBuilder(IRVisitor):
         self.worklist.append(sym_scope)
 
     def visit_ATTR(self, ir):
-        if not ir.symbol().typ.is_function():
+        attr_t = ir.symbol.typ
+        if not attr_t.is_function():
             return
-        sym_scope = ir.symbol().typ.get_scope()
+        sym_scope = attr_t.get_scope()
         if not sym_scope.is_worker():
             self.call_graph.add_edge(self.scope, sym_scope)
         self.worklist.append(sym_scope)
@@ -102,8 +105,9 @@ class DependencyGraphBuilder(IRVisitor):
 
     def _add_dependency_for_params(self, scope):
         for p, _, _ in scope.params:
-            if p.typ.is_object() or p.typ.is_function():
-                param_scope = p.typ.get_scope()
+            p_t = p.typ
+            if p_t.is_object() or p_t.is_function():
+                param_scope = p_t.get_scope()
                 assert param_scope
                 self._add_dependency(scope, param_scope)
                 self.worklist.append(param_scope)
@@ -116,10 +120,11 @@ class DependencyGraphBuilder(IRVisitor):
         self.depend_graph.add_edge(user, used)
 
     def visit_TEMP(self, ir):
-        if ir.sym.typ.has_scope():
-            receiver_scope = ir.sym.typ.get_scope()
-        elif ir.sym.scope is not self.scope:
-            receiver_scope = ir.sym.ancestor.scope if ir.sym.ancestor else ir.sym.scope
+        sym_t = ir.symbol.typ
+        if sym_t.has_scope():
+            receiver_scope = sym_t.get_scope()
+        elif ir.symbol.scope is not self.scope:
+            receiver_scope = ir.symbol.ancestor.scope if ir.symbol.ancestor else ir.symbol.scope
         else:
             return
         assert receiver_scope
@@ -127,22 +132,25 @@ class DependencyGraphBuilder(IRVisitor):
         self.worklist.append(receiver_scope)
 
     def visit_ATTR(self, ir):
-        if ir.attr.typ.has_scope():
-            attr_scope = ir.attr.typ.get_scope()
+        attr_t = ir.symbol.typ
+        if attr_t.has_scope():
+            attr_scope = attr_t.get_scope()
             assert attr_scope
             self._add_dependency(self.scope, attr_scope)
             self.worklist.append(attr_scope)
         # object referencing is also added
         self.visit(ir.exp)
         receiver = ir.tail()
-        if not receiver.typ.has_scope():
+        receiver_t = receiver.typ
+        if not receiver_t.has_scope():
             return
-        receiver_scope = receiver.typ.get_scope()
+        receiver_scope = receiver_t.get_scope()
         assert receiver_scope
         self._add_dependency(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)
 
     def visit_NEW(self, ir):
-        ctor = ir.sym.typ.get_scope().find_ctor()
+        sym_t = ir.symbol.typ
+        ctor = sym_t.get_scope().find_ctor()
         self._add_dependency(self.scope, ctor)
         self.visit_args(ir.args, ir.kwargs)

@@ -36,8 +36,8 @@ class TupleTransformer(IRTransformer):
         def is_contain(ir, irs):
             if not ir.is_a([TEMP, ATTR]):
                 return False
-            sym = ir.symbol()
-            return sym in [ir.symbol() for ir in irs if ir.is_a([TEMP, ATTR])]
+            sym = ir.symbol
+            return sym in [ir.symbol for ir in irs if ir.is_a([TEMP, ATTR])]
 
         for i, l in enumerate(lhs):
             if is_contain(l, rhs[i + 1:]):
@@ -50,7 +50,7 @@ class TupleTransformer(IRTransformer):
 
     def _make_temp_syms(self, items):
         assert all([item.is_a([TEMP, ATTR]) for item in items])
-        return [self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix, item.symbol().name)) for item in items]
+        return [self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix, item.symbol.name)) for item in items]
 
     def _make_temps(self, syms, ctx):
         return [TEMP(sym, ctx) for sym in syms]
@@ -72,7 +72,7 @@ class TupleTransformer(IRTransformer):
                     mv.loc = ir.loc
                     self.new_stms.append(mv)
                 return
-            elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol().typ.is_tuple():
+            elif ir.src.is_a([TEMP, ATTR]) and ir.src.symbol.typ.is_tuple():
                 mvs = self._unpack(ir.dst.items, self._make_mrefs(ir.src, len(ir.dst.items)))
                 for mv in mvs:
                     mv.loc = ir.loc

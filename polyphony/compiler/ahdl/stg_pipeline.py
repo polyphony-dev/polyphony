@@ -512,7 +512,7 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
                 continue
             if n.tag.is_a(CJUMP):
                 # remove cjump for the loop
-                if n.tag.exp.symbol() is dfg.region.cond:
+                if n.tag.exp.symbol is dfg.region.cond:
                     continue
                 else:
                     assert False

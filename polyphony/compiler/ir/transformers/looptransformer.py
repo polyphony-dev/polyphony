@@ -120,12 +120,12 @@ class LoopFlatten(object):
         # deal with phi for induction variables
         for lphi in subloop.head.collect_stms(LPHI):
             assert lphi.args[1].is_a(TEMP)
-            var_t = lphi.var.symbol().typ
+            var_t = lphi.var.symbol.typ
             psi_sym = self.scope.add_temp(typ=var_t)
             psi = PHI(TEMP(psi_sym, Ctx.STORE))
             psi.args = [
                 lphi.args[1].clone(),
-                TEMP(lphi.var.symbol(), Ctx.LOAD)
+                TEMP(lphi.var.symbol, Ctx.LOAD)
             ]
             psi.ps = [
                 body_cond,
@@ -149,10 +149,10 @@ class LoopFlatten(object):
         for lphi in loop.head.collect_stms(LPHI):
             if lphi is init_lphi:
                 continue
-            psi_sym = self.scope.add_temp(typ=lphi.var.symbol().typ)
+            psi_sym = self.scope.add_temp(typ=lphi.var.symbol.typ)
             psi = PHI(TEMP(psi_sym, Ctx.STORE))
             psi.args = [
-                TEMP(lphi.var.symbol(), Ctx.LOAD),
+                TEMP(lphi.var.symbol, Ctx.LOAD),
                 lphi.args[1].clone()
             ]
             psi.ps = outer_phi_ps

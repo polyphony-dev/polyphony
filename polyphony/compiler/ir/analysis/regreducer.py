@@ -10,13 +10,13 @@ class AliasVarDetector(IRVisitor):
 
     def visit_CMOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
-        sym = ir.dst.symbol()
+        sym = ir.dst.symbol
         if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
 
     def visit_MOVE(self, ir):
         assert ir.dst.is_a([TEMP, ATTR])
-        sym = ir.dst.symbol()
+        sym = ir.dst.symbol
         sched = self.current_stm.block.synth_params['scheduling']
         if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
@@ -36,34 +36,35 @@ class AliasVarDetector(IRVisitor):
             sym.add_tag('alias')
             return
         if ir.src.is_a([TEMP, ATTR]):
-            src_sym = ir.src.symbol()
+            src_sym = ir.src.symbol
             if self.scope.is_ctor() and self.scope.parent.is_module():
                 pass
             elif src_sym.is_param() or src_sym.typ.is_port():
                 return
         elif ir.src.is_a(CALL):
-            if ir.src.func_scope().is_predicate():
+            callee_scope = ir.src.callee_scope
+            if callee_scope.is_predicate():
                 return
-            elif ir.src.func_scope().is_method() and ir.src.func_scope().parent.is_port():
-                if ir.src.func.attr.name in ('rd', 'edge'):
+            elif callee_scope.is_method() and callee_scope.parent.is_port():
+                if ir.src.func.symbol.name in ('rd', 'edge'):
                     pass
                 else:
                     return
-            elif ir.src.func_scope().is_method() and ir.src.func_scope().parent.name.startswith('polyphony.Net'):
-                if ir.src.func.attr.name in ('rd'):
+            elif callee_scope.is_method() and callee_scope.parent.name.startswith('polyphony.Net'):
+                if ir.src.func.symbol.name in ('rd'):
                     pass
                 else:
                     return
             else:
                 return
         elif ir.src.is_a(SYSCALL):
-            if ir.src.sym.name == '$new':
+            if ir.src.symbol.name == '$new':
                 return
         elif ir.src.is_a(MREF):
             if sched == 'timed':
                 pass
             else:
-                typ = ir.src.mem.symbol().typ
+                typ = ir.src.mem.symbol.typ
                 if typ.is_list() and not typ.get_ro():
                     return
         elif ir.src.is_a(ARRAY):
@@ -80,7 +81,7 @@ class AliasVarDetector(IRVisitor):
         sym.add_tag('alias')
 
     def visit_PHI(self, ir):
-        sym = ir.var.symbol()
+        sym = ir.var.symbol
         if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
             return
@@ -88,12 +89,12 @@ class AliasVarDetector(IRVisitor):
             return
         if sym.typ.is_seq():
             return
-        if any([sym is a.symbol() for a in ir.args if a.is_a(TEMP)]):
+        if any([sym is a.symbol for a in ir.args if a.is_a(TEMP)]):
             return
         sym.add_tag('alias')
 
     def visit_UPHI(self, ir):
-        sym = ir.var.symbol()
+        sym = ir.var.symbol
         if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
             return
@@ -101,6 +102,6 @@ class AliasVarDetector(IRVisitor):
             return
         if sym.typ.is_seq():
             return
-        if any([sym is a.symbol() for a in ir.args if a.is_a(TEMP)]):
+        if any([sym is a.symbol for a in ir.args if a.is_a(TEMP)]):
             return
         sym.add_tag('alias')

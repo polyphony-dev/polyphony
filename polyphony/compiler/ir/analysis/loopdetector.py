@@ -96,9 +96,9 @@ class LoopInfoSetter(object):
             # this loop may busy loop
             return
         cond_var = cjump.exp
-        loop.cond = cond_var.symbol()
+        loop.cond = cond_var.symbol
         assert cond_var.is_a(TEMP)
-        defs = self.scope.usedef.get_stms_defining(cond_var.symbol())
+        defs = self.scope.usedef.get_stms_defining(cond_var.symbol)
         assert len(defs) == 1
         cond_stm = list(defs)[0]
         assert cond_stm.is_a(MOVE)
@@ -106,19 +106,19 @@ class LoopInfoSetter(object):
             return
         loop_relexp = cond_stm.src
 
-        if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol().is_induction():
+        if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol.is_induction():
             assert loop_relexp.right.is_a([CONST, TEMP])
-            loop.counter = loop_relexp.left.symbol()
+            loop.counter = loop_relexp.left.symbol
             loop.counter.add_tag('loop_counter')
-        elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol().is_induction():
+        elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol.is_induction():
             assert loop_relexp.left.is_a([CONST, TEMP])
-            loop.counter = loop_relexp.right.symbol()
+            loop.counter = loop_relexp.right.symbol
             loop.counter.add_tag('loop_counter')
         else:
             lphis = loop.head.collect_stms(LPHI)
             for lphi in lphis:
-                if lphi.var.symbol().is_loop_counter():
-                    loop.counter = lphi.var.symbol()
+                if lphi.var.symbol.is_loop_counter():
+                    loop.counter = lphi.var.symbol
                     break
             else:
                 # this loop may busy loop
