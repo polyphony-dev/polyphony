@@ -1,4 +1,7 @@
 @typeclass
+class none: pass
+
+@typeclass
 class int: pass
 
 

@@ -363,7 +363,7 @@ class IRCallable(IRExp):
             print('!')
         func_t = self.symbol.typ
         assert func_t.has_scope()
-        return func_t.get_scope()
+        return func_t.scope
 
 
 class CALL(IRCallable):
@@ -643,7 +643,7 @@ class CONST(IRExp):
 
 
 class MREF(IRExp):
-    def __init__(self, mem, offset, ctx):
+    def __init__(self, mem, offset, ctx=Ctx.LOAD):
         super().__init__()
         assert mem.is_a([TEMP, ATTR, MREF])
         self._mem = mem
@@ -809,7 +809,7 @@ class ARRAY(IRExp):
 
 
 class TEMP(IRExp):
-    def __init__(self, sym, ctx):
+    def __init__(self, sym, ctx=Ctx.LOAD):
         super().__init__()
         assert isinstance(sym, Symbol)
         assert isinstance(ctx, int)
@@ -848,7 +848,7 @@ class TEMP(IRExp):
 
 
 class ATTR(IRExp):
-    def __init__(self, exp, attr, ctx):
+    def __init__(self, exp, attr, ctx=Ctx.LOAD):
         super().__init__()
         self._exp = exp
         self._attr = attr

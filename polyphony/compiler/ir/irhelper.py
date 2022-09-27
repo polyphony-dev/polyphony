@@ -8,8 +8,8 @@ def op2str(op):
 
 def expr2ir(expr, name=None, scope=None):
     import inspect
-    from .env import env
-    from .type import Type
+    from ..common.env import env
+    from .types.type import Type
     if expr is None:
         return CONST(None)
     elif isinstance(expr, int):

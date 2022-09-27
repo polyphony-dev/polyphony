@@ -6,7 +6,7 @@ from ..irvisitor import IRVisitor, IRTransformer
 from ..ir import *
 from ..irhelper import expr2ir, reduce_relexp
 from ..irhelper import eval_unop, eval_binop, reduce_binop, eval_relop
-from ..type import Type
+from ..types.type import Type
 from ..analysis.usedef import UseDefDetector
 from ..analysis.usedef import UseDefUpdater
 from ...common.common import fail
@@ -71,9 +71,9 @@ def bits2int(bits, nbit):
 
 def _to_signed(typ, const):
     assert typ.is_int()
-    assert typ.get_signed() is True
+    assert typ.signed is True
     assert const.is_a(CONST)
-    nbit = typ.get_width()
+    nbit = typ.width
     mask = (1 << nbit) - 1
     bits = (const.value & mask)
     return CONST(bits2int(bits, nbit))
@@ -81,9 +81,9 @@ def _to_signed(typ, const):
 
 def _to_unsigned(typ, const):
     assert typ.is_int()
-    assert typ.get_signed() is False
+    assert typ.signed is False
     assert const.is_a(CONST)
-    nbit = typ.get_width()
+    nbit = typ.width
     mask = (1 << nbit) - 1
     return CONST(const.value & mask)
 
@@ -162,7 +162,7 @@ class ConstantOptBase(IRVisitor):
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         func_t = ir.symbol.typ
         if (func_t.is_function()
-                and func_t.get_scope().is_lib()
+                and func_t.scope.is_lib()
                 and ir.symbol.name == 'is_worker_running'):
             return CONST(True)
         return ir
@@ -386,7 +386,7 @@ class ConstantOpt(ConstantOptBase):
 
                 dst_t = stm.dst.symbol.typ
                 if dst_t.is_int() and isinstance(stm.src.value, int):
-                    if dst_t.get_signed():
+                    if dst_t.signed:
                         src = _to_signed(dst_t, stm.src)
                     else:
                         src = _to_unsigned(dst_t, stm.src)
@@ -413,8 +413,8 @@ class ConstantOpt(ConstantOptBase):
                 replaces = VarReplacer.replace_uses(scope, stm.dst, stm.src)
                 receiver = stm.dst.tail()
                 receiver_t = receiver.typ
-                if receiver_t.is_object() and receiver_t.get_scope().is_module():
-                    module_scope = receiver_t.get_scope()
+                if receiver_t.is_object() and receiver_t.scope.is_module():
+                    module_scope = receiver_t.scope
                     assert self.scope.parent is module_scope
                     if module_scope.field_usedef:
                         defstms = module_scope.field_usedef.get_stms_defining(stm.dst.symbol)
@@ -430,8 +430,8 @@ class ConstantOpt(ConstantOptBase):
                 dst_sym = stm.dst.symbol
                 array_t = dst_sym.typ
                 assert array_t.is_seq()
-                if array_t.get_length() == Type.ANY_LENGTH:
-                    dst_sym.typ = dst_sym.typ.with_length(len(src.items) * src.repeat.value)
+                if array_t.length == Type.ANY_LENGTH:
+                    dst_sym.typ = dst_sym.typ.clone(length=len(src.items) * src.repeat.value)
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
@@ -453,12 +453,12 @@ class ConstantOpt(ConstantOptBase):
             memsym = mem.symbol
             mem_t = memsym.typ
             assert mem_t.is_seq()
-            if mem_t.get_length() != Type.ANY_LENGTH:
-                return CONST(mem_t.get_length())
+            if mem_t.length != Type.ANY_LENGTH:
+                return CONST(mem_t.length)
             array = try_get_constant(mem.qualified_symbol, self.scope)
             if array and array.repeat.is_a(CONST):
                 length = array.repeat.value * len(array.items)
-                array.symbol.typ = array.symbol.typ.with_length(length)
+                array.symbol.typ = array.symbol.typ.clone(length=length)
                 return CONST(length)
         return self.visit_CALL(ir)
 
@@ -496,7 +496,7 @@ class ConstantOpt(ConstantOptBase):
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         if receiver_t.is_object() and attr_t.is_scalar():
-            objscope = receiver_t.get_scope()
+            objscope = receiver_t.scope
             if objscope.is_class():
                 classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():
@@ -566,7 +566,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         if receiver_t.is_object() and attr_t.is_scalar():
-            objscope = receiver_t.get_scope()
+            objscope = receiver_t.scope
             if objscope.is_class():
                 classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():

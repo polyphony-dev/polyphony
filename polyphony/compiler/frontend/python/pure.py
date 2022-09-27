@@ -13,7 +13,7 @@ from ...ir.ir import Ctx, Loc, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
 from ...ir.irhelper import expr2ir
 from ...ir.scope import Scope
 from ...ir.setlineno import LineNumberSetter
-from ...ir.type import Type
+from ...ir.types.type import Type
 from ...ir.transformers.constopt import ConstantOptBase
 
 
@@ -446,7 +446,7 @@ class PureCtorBuilder(object):
                 klass_scope = typ.get_scope()
                 if klass_scope.find_ctor().is_pure():
                     klass_scope, _ = env.runtime_info.inst2module[v]
-                    typ = typ.with_scope(klass_scope)
+                    typ = typ.clone(scope=klass_scope)
                 klass_scope_sym = klass_scope.parent.gen_sym(klass_scope.base_name)
                 klass_scope_sym.typ = Type.klass(klass_scope)
                 sym = module.add_sym(name, typ=typ)
@@ -483,7 +483,7 @@ class PureCtorBuilder(object):
                         assert stm
                         stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
                         ctor.entry_block.append_stm(stm)
-                    sym.typ = sym.typ.with_element(elem_t)
+                    sym.typ = sym.typ.clone(element=elem_t)
                 else:
                     dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
                     stm = self._build_move_stm(dst, v, module)

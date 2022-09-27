@@ -6,7 +6,7 @@ from ..scope import Scope
 from ..ir import Ctx, CONST, TEMP, ATTR, CALL, NEW, RET, MOVE, EXPR
 from ..irhelper import find_move_src
 from ..irvisitor import IRVisitor, IRTransformer
-from ..type import Type
+from ..types.type import Type
 from ...common.common import fail, warn
 from ...common.env import env
 from ...common.errors import Errors, Warnings
@@ -72,7 +72,7 @@ class PortTypeProp(TypePropagation):
             if not receiver_t.is_port():
                 raise RejectPropagation(ir)
             if callee_scope.base_name == 'assign':
-                receiver_t = receiver_t.with_assigned(True)
+                receiver_t = receiver_t.clone(assigned=True)
                 receiver.typ = receiver_t
             root = receiver_t.get_root_symbol()
             port_owner = root.scope
@@ -99,7 +99,7 @@ class PortTypeProp(TypePropagation):
             arg_t = ir.args[0][1].symbol.typ
             if not arg_t.is_function():
                 assert False
-            worker = arg_t.get_scope()
+            worker = arg_t.scope
             assert worker.is_worker()
 
             if worker.is_method():
@@ -333,10 +333,10 @@ class FlattenPortList(IRTransformer):
         memsym = ir.mem.symbol
         mem_t = memsym.typ
         assert mem_t.is_seq()
-        elm_t = mem_t.get_element()
+        elm_t = mem_t.element
         if not elm_t.is_object():
             return ir
-        if not elm_t.get_scope().is_port():
+        if not elm_t.scope.is_port():
             return ir
         if not ir.offset.is_a(CONST):
             return ir
@@ -363,12 +363,12 @@ class FlippedTransformer(TypePropagation):
             return self.visit_SYSCALL_flipped(ir)
         else:
             assert sym_t.is_function()
-            return sym_t.get_return_type()
+            return sym_t.return_type
 
     def visit_SYSCALL_flipped(self, ir):
         temp = ir.args[0][1]
         temp_t = temp.symbol.typ
-        arg_scope = temp_t.get_scope()
+        arg_scope = temp_t.scope
         assert arg_scope.is_class()
         if arg_scope.is_port():
             orig_new = find_move_src(temp.symbol, NEW)
@@ -403,7 +403,7 @@ class FlippedTransformer(TypePropagation):
 class FlippedPortsBuilder(IRVisitor):
     def visit_NEW(self, ir):
         sym_t = ir.symbol.typ
-        if sym_t.get_scope().is_port():
+        if sym_t.scope.is_port():
             for name, arg in ir.args:
                 if name == 'direction':
                     if arg.value == 'in':
@@ -425,7 +425,7 @@ class PortConnector(IRVisitor):
         ports = []
         for sym in scope.symbols.values():
             sym_t = sym.typ
-            if sym_t.has_scope() and sym_t.get_scope().is_port():
+            if sym_t.has_scope() and sym_t.scope.is_port():
                 ports.append(sym)
         return sorted(ports)
 
@@ -440,8 +440,8 @@ class PortConnector(IRVisitor):
         a1 = ir.args[1][1]
         a0_t = a0.symbol.typ
         a1_t = a1.symbol.typ
-        scope0 = a0_t.get_scope()
-        scope1 = a1_t.get_scope()
+        scope0 = a0_t.scope
+        scope1 = a1_t.scope
         assert scope0.is_class()
         assert scope1.is_class()
         if scope0.is_port():
@@ -461,8 +461,8 @@ class PortConnector(IRVisitor):
     def _connect_port(self, p0, p1, func):
         p0_t = p0.symbol.typ
         p1_t = p1.symbol.typ
-        port_scope0 = p0_t.get_scope()
-        port_scope1 = p1_t.get_scope()
+        port_scope0 = p0_t.scope
+        port_scope1 = p1_t.scope
         init_param0 = port_scope0.find_ctor().params[3]
         init_param1 = port_scope1.find_ctor().params[3]
         dtype0 = init_param0.sym.typ
@@ -492,8 +492,8 @@ class PortConnector(IRVisitor):
     def _make_assign_call(self, p0, p1):
         p0_t = p0.symbol.typ
         p1_t = p1.symbol.typ
-        port_scope0 = p0_t.get_scope()
-        port_scope1 = p1_t.get_scope()
+        port_scope0 = p0_t.scope
+        port_scope1 = p1_t.scope
         rd_sym = port_scope1.find_sym('rd')
         port_rd = ATTR(p1,
                        rd_sym,
@@ -554,7 +554,7 @@ class UnusedPortCleaner(IRTransformer):
     def visit_TEMP(self, ir):
         if ir.ctx is Ctx.STORE:
             sym_t = ir.symbol.typ
-            if sym_t.has_scope() and sym_t.get_scope().is_port():
+            if sym_t.has_scope() and sym_t.scope.is_port():
                 assert self.current_stm.is_a(MOVE)
                 self.port_syms.add(self.current_stm.dst.symbol)
         return ir

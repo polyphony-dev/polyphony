@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict
-from .type import Type
+from .types.type import Type
 from ..common.common import Tagged
 from ..common.env import env
 from logging import getLogger
@@ -8,7 +8,7 @@ logger = getLogger(__name__)
 
 class Symbol(Tagged):
     __slots__ = ['_id', '_name', '_scope', '_typ', '_ancestor']
-    all_symbols = []
+    id_counter = 0
     imported_symbol_map = defaultdict(set)
     import_src_symbol_map = {}
 
@@ -21,7 +21,7 @@ class Symbol(Tagged):
 
     @classmethod
     def initialize(cls):
-        cls.all_symbols.clear()
+        cls.id_counter = 0
         cls.imported_symbol_map.clear()
         cls.import_src_symbol_map.clear()
 
@@ -29,20 +29,7 @@ class Symbol(Tagged):
     def unique_name(cls, prefix=None):
         if not prefix:
             prefix = cls.temp_prefix
-        return '{}{}'.format(prefix, len(cls.all_symbols))
-
-    @classmethod
-    def dump(cls):
-        logger.debug('All symbol instances ----------------')
-        for sym in cls.all_symbols:
-            s = str(sym) + '\n'
-            s += '  defs\n'
-            for d in sym.defs:
-                s += '    ' + str(d) + '\n'
-            s += '  uses\n'
-            for u in sym.uses:
-                s += '    ' + str(u) + '\n'
-            logger.debug(s)
+        return '{}{}'.format(prefix, cls.id_counter)
 
     return_prefix = '@function_return'
     condition_prefix = '@c'
@@ -53,12 +40,12 @@ class Symbol(Tagged):
         super().__init__(tags)
         if typ is None:
             typ = Type.undef()
-        self._id = len(Symbol.all_symbols)
+        self._id = Symbol.id_counter
         self._name = name
         self._scope = scope
         self._typ = typ
         self._ancestor = None
-        Symbol.all_symbols.append(self)
+        Symbol.id_counter += 1
 
     @property
     def id(self):
@@ -127,7 +114,7 @@ class Symbol(Tagged):
     def hdl_name(self):
         if self._typ.is_port():
             name = self._name[:]
-        elif self._typ.is_object() and self._typ.get_scope().is_module() and self._ancestor:
+        elif self._typ.is_object() and self._typ.scope.is_module() and self._ancestor:
             return self._ancestor.hdl_name()
         elif self._name[0] == '@' or self._name[0] == '!':
             name = self._name[1:]

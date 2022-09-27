@@ -1,7 +1,7 @@
 ﻿from collections import deque
 from ..ir import *
 from ..irvisitor import IRVisitor
-from ..type import Type
+from ..types.type import Type
 from ..analysis.usedef import UseDefUpdater
 from logging import getLogger
 logger = getLogger(__name__)
@@ -41,7 +41,7 @@ class CopyOpt(IRVisitor):
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
-                if cp.dst.is_a(ATTR) and cp.dst.tail().typ.get_scope().is_module() and scope.is_ctor():
+                if cp.dst.is_a(ATTR) and cp.dst.tail().typ.scope.is_module() and scope.is_ctor():
                     continue
                 if cp.is_a(CMOVE) and not cp.dst.symbol.is_temp():
                     continue
@@ -156,7 +156,7 @@ class CopyCollector(IRVisitor):
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):
             src_t = ir.src.symbol.typ
-            if src_t.is_object() and src_t.get_scope().is_port():
+            if src_t.is_object() and src_t.scope.is_port():
                 self.copies.append(ir)
 
 
@@ -213,7 +213,7 @@ class ObjCopyCollector(IRVisitor):
             return False
         if mov.dst.is_a(ATTR):
             tail_t = mov.dst.tail().typ
-            if tail_t.is_object() and tail_t.get_scope().is_module():
+            if tail_t.is_object() and tail_t.scope.is_module():
                 return False
         #if mov.src.symbol.is_induction() or mov.dst.symbol.is_induction():
         #    return False

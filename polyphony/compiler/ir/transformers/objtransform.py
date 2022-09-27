@@ -2,7 +2,7 @@ from collections import defaultdict, deque
 from ..block import Block
 from ..builtin import builtin_symbols
 from ..ir import *
-from ..type import Type
+from ..types.type import Type
 from ..analysis.usedef import UseDefUpdater
 from ...common.utils import replace_item
 from logging import getLogger

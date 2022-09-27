@@ -5,7 +5,7 @@ import os
 import sys
 import builtins as python_builtins
 from ...ir.block import Block
-from ...ir.builtin import builtin_symbols, append_builtin
+from ...ir.builtin import builtin_symbols, append_builtin, builtin_types
 from ...common.common import fail
 from ...common.env import env
 from ...common.errors import Errors
@@ -13,7 +13,7 @@ from ...ir.ir import *
 from ...ir.irhelper import op2str, eval_unop, eval_binop, eval_relop
 from ...ir.scope import Scope, FunctionParam
 from ...ir.symbol import Symbol
-from ...ir.type import Type
+from ...ir.types.type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -301,18 +301,18 @@ class ScopeVisitor(ast.NodeVisitor):
             else:
                 assert False
             sym = self.current_scope.find_sym(deco_name)
-            if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
+            if sym and sym.typ.is_function() and sym.typ.scope.is_decorator():
                 sym_t = sym.typ
-                if sym_t.get_scope().name == 'polyphony.rule':
+                if sym_t.scope.name == 'polyphony.rule':
                     synth_params.update(deco_kwargs)
-                elif sym_t.get_scope().name == 'polyphony.pure':
+                elif sym_t.scope.name == 'polyphony.pure':
                     if not env.config.enable_pure:
                         fail((env.current_filename, node.lineno), Errors.PURE_IS_DISABLED)
-                    tags.add(sym_t.get_scope().base_name)
-                elif sym_t.get_scope().name == 'polyphony.timing.timed':
+                    tags.add(sym_t.scope.base_name)
+                elif sym_t.scope.name == 'polyphony.timing.timed':
                     synth_params.update({'scheduling':'timed'})
                 else:
-                    tags.add(sym_t.get_scope().base_name)
+                    tags.add(sym_t.scope.base_name)
             elif deco_name in INTERNAL_FUNCTION_DECORATORS:
                 tags.add(deco_name)
             else:
@@ -359,8 +359,8 @@ class ScopeVisitor(ast.NodeVisitor):
         for deco in node.decorator_list:
             deco_name = self.decorator_visitor.visit(deco)
             sym = self.current_scope.find_sym(deco_name)
-            if sym and sym.typ.is_function() and sym.typ.get_scope().is_decorator():
-                tags.add(sym.typ.get_scope().base_name)
+            if sym and sym.typ.is_function() and sym.typ.scope.is_decorator():
+                tags.add(sym.typ.scope.base_name)
             elif deco_name in INTERNAL_CLASS_DECORATORS:
                 tags.add(deco_name)
             else:
@@ -392,7 +392,7 @@ class ScopeVisitor(ast.NodeVisitor):
             base_sym = outer_scope.find_sym(base_name)
             base_sym_t = base_sym.typ
             assert base_sym_t.is_class()
-            base_scope = base_sym_t.get_scope()
+            base_scope = base_sym_t.scope
             for sym in base_scope.symbols.values():
                 self.current_scope.import_sym(sym)
             self.current_scope.bases.append(base_scope)
@@ -548,7 +548,7 @@ class CodeVisitor(ast.NodeVisitor):
         else:
             param_t = Type.undef()
         if is_vararg:
-            param_t = param_t.with_vararg(True)
+            param_t = param_t.clone(vararg=True)
         param_in = self.current_scope.add_param_sym(arg.arg, typ=param_t)
         param_copy = self.current_scope.add_sym(arg.arg, typ=param_t)
         return param_in, param_copy
@@ -934,7 +934,7 @@ class CodeVisitor(ast.NodeVisitor):
                 if len(it.args) == 1:
                     if len(it.kwargs) == 0:
                         assert sym_t.is_function()
-                        scp = sym_t.get_scope()
+                        scp = sym_t.scope
                         factor = scp.params[1].defval
                     elif len(it.kwargs) == 1 and 'factor' in it.kwargs:
                         factor = it.kwargs['factor']
@@ -959,7 +959,7 @@ class CodeVisitor(ast.NodeVisitor):
                 if len(it.args) == 1:
                     if len(it.kwargs) == 0:
                         assert sym_t.is_function()
-                        scp = sym_t.get_scope()
+                        scp = sym_t.scope
                         ii = scp.params[1].defval
                     elif len(it.kwargs) == 1 and 'ii' in it.kwargs:
                         ii = it.kwargs['ii']
@@ -1180,7 +1180,7 @@ class CodeVisitor(ast.NodeVisitor):
             expr, var = self.visit(item)
             if expr.is_a(CALL):
                 func_t = self.current_scope.ir_type(expr)
-                if func_t.get_scope().name == 'polyphony.rule':
+                if func_t.scope.name == 'polyphony.rule':
                     # merge nested params
                     old_with_blk_synth_params = self.current_with_blk_synth_params
                     self.current_with_blk_synth_params = self.current_with_blk_synth_params.copy()
@@ -1375,7 +1375,7 @@ class CodeVisitor(ast.NodeVisitor):
             if func_t.is_class():
                 return NEW(func.symbol, args, kwargs)
             sym = self.current_scope.find_sym(func.symbol.name)
-            func_scope = func_t.get_scope() if func_t.has_scope() else None
+            func_scope = func_t.scope if func_t.has_scope() else None
             #assert func_scope
             if not func_scope:
                 if func.symbol.name in dir(python_builtins):
@@ -1390,7 +1390,7 @@ class CodeVisitor(ast.NodeVisitor):
             if isinstance(func.symbol, Symbol):
                 func_t = func.symbol.typ
                 if func_t.is_function():
-                    func_scope = func_t.get_scope()
+                    func_scope = func_t.scope
                     if func_scope.name in builtin_symbols:
                         builtin_sym = builtin_symbols[func_scope.name]
                         return SYSCALL(builtin_sym, args, kwargs)
@@ -1401,7 +1401,7 @@ class CodeVisitor(ast.NodeVisitor):
                 if isinstance(scope_sym, Symbol):
                     scope_sym_t = scope_sym.typ
                     if scope_sym_t.is_containable():
-                        receiver = scope_sym_t.get_scope()
+                        receiver = scope_sym_t.scope
                         attr_sym = receiver.find_sym(func.symbol)
                         attr_sym_t = attr_sym.typ
                         if attr_sym_t.is_class():
@@ -1431,7 +1431,7 @@ class CodeVisitor(ast.NodeVisitor):
                 and isinstance(value.symbol, Symbol)
                 and value.symbol.typ.has_scope()):
             value_t = value.symbol.typ
-            scope = value_t.get_scope()
+            scope = value_t.scope
             attr = None
             if scope:
                 if ctx == Ctx.STORE:
@@ -1450,7 +1450,7 @@ class CodeVisitor(ast.NodeVisitor):
         if value.is_a(TEMP):
             value_t = value.symbol.typ
             if (value_t.is_namespace()
-                    and value_t.get_scope().base_name == 'polyphony'
+                    and value_t.scope.base_name == 'polyphony'
                     and isinstance(attr, Symbol)
                     and attr.name == '__python__'):
                 return CONST(False)
@@ -1464,7 +1464,7 @@ class CodeVisitor(ast.NodeVisitor):
 
         if irattr.head() and irattr.head().name == env.self_name and isinstance(attr, str):
             head_t = irattr.head().typ
-            scope = head_t.get_scope()
+            scope = head_t.scope
             if ctx & Ctx.STORE:
                 scope.gen_sym(attr)
         return irattr
@@ -1686,7 +1686,7 @@ class PureScopeVisitor(ast.NodeVisitor):
         sym_t = sym.typ
         if not sym_t.has_scope():
             return
-        sym_scope = sym_t.get_scope()
+        sym_scope = sym_t.scope
         if sym_scope.is_typeclass():
             t = Type.from_typeclass(sym_scope)
         else:
@@ -1712,7 +1712,7 @@ def scope_tree_str(scp, name, typ_name, indent):
     for sym in sorted(scp.symbols.values()):
         sym_t = sym.typ
         if sym_t.is_containable():
-            s += scope_tree_str(sym_t.get_scope(), sym.name, sym_t.name, indent + '  ')
+            s += scope_tree_str(sym_t.scope, sym.name, sym_t.name, indent + '  ')
         else:
             s += '{}{} : {}\n'.format(indent + '  ', sym.name, sym_t)
     return s

@@ -5,7 +5,7 @@ from ..irvisitor import IRVisitor, IRTransformer
 from ..ir import Ctx, IR, CONST, UNOP, TEMP, ATTR, CALL, SYSCALL, MOVE, EXPR, RET, JUMP
 from ..symbol import Symbol
 from ..synth import merge_synth_params
-from ..type import Type
+from ..types.type import Type
 from ..analysis.usedef import UseDefDetector
 from ...common.env import env
 from ...common.common import fail
@@ -22,7 +22,7 @@ class InlineOpt(object):
 
     def process_all(self, driver):
         self.dones = set()
-        scopes = driver.get_scopes()
+        scopes = driver.scopes
         for scope in scopes:
             if scope not in self.dones:
                 self._process_scope(scope)
@@ -246,7 +246,7 @@ class InlineOpt(object):
             new_clos_sym = symbol_map[clos_sym]
 
             new_clos = clos.clone('', postfix=f'inl{inline_id}', parent=caller, sym_postfix=f'_{inline_id}')
-            new_clos_sym.typ = new_clos_sym.typ.with_scope(new_clos)
+            new_clos_sym.typ = new_clos_sym.typ.clone(scope=new_clos)
 
             sym_replacer = SymbolReplacer(symbol_map, attr_map)
             sym_replacer.process(new_clos, new_clos.entry_block)
@@ -378,10 +378,10 @@ class FlattenFieldAccess(IRTransformer):
         ancestor = qsym[-1]
         for i, sym in enumerate(qsym):
             if (sym.typ.is_object() and not sym.is_subobject() and
-                    sym.typ.get_scope().is_module()):
+                    sym.typ.scope.is_module()):
                 flatname = self._make_flatname(qsym[i + 1:])
                 head = qsym[:i + 1]
-                scope = sym.typ.get_scope()
+                scope = sym.typ.scope
                 break
         else:
             flatname = self._make_flatname(qsym)
@@ -435,19 +435,13 @@ class FlattenFieldAccess(IRTransformer):
                 return ir
         if not ir.tail().typ.is_object():
             return ir
-        object_scope = ir.tail().typ.get_scope()
+        object_scope = ir.tail().typ.scope
         if object_scope.is_interface():
             return ir
         if object_scope.is_module():
             return ir
         if object_scope.is_port():
             return ir
-
-        # don't flatten use of the static class field
-        # if ir.tail().typ.is_class():
-        #     return ir
-        # if ir.attr.scope.is_unflatten():
-        #     return ir
 
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)
@@ -472,7 +466,7 @@ class FlattenObjectArgs(IRTransformer):
         for pindex, (name, arg) in enumerate(call.args):
             if (arg.is_a([TEMP, ATTR])
                     and arg.symbol.typ.is_object()
-                    and not arg.symbol.typ.get_scope().is_port()):
+                    and not arg.symbol.typ.scope.is_port()):
                 flatten_args = self._flatten_object_args(call, arg, pindex)
                 args.extend(flatten_args)
             else:
@@ -480,17 +474,17 @@ class FlattenObjectArgs(IRTransformer):
         call.args = args
 
     def _flatten_object_args(self, call, arg, pindex):
-        worker_scope = call.args[0][1].symbol.typ.get_scope()
+        worker_scope = call.args[0][1].symbol.typ.scope
         args = []
         base_name = arg.symbol.name
         module_scope = self.scope.parent
-        object_scope = arg.symbol.typ.get_scope()
+        object_scope = arg.symbol.typ.scope
         assert object_scope.is_class()
         flatten_args = []
         for fname, fsym in object_scope.class_fields().items():
             if fsym.typ.is_function():
                 continue
-            if ((fsym.typ.is_object() and fsym.typ.get_scope().is_port())
+            if ((fsym.typ.is_object() and fsym.typ.scope.is_port())
                     or fsym.typ.is_scalar()):
                 new_name = '{}_{}'.format(base_name, fname)
                 new_sym = module_scope.find_sym(new_name)
@@ -558,7 +552,7 @@ class FlattenModule(IRVisitor):
                 ir.func.head().name == env.self_name and
                 len(ir.func.qualified_symbol) > 2):
             _, arg = ir.args[0]
-            worker_scope = arg.symbol.typ.get_scope()
+            worker_scope = arg.symbol.typ.scope
             if worker_scope.is_method():
                 new_arg = self._make_new_worker(arg)
                 assert self.scope.parent.is_module()
@@ -583,7 +577,7 @@ class FlattenModule(IRVisitor):
         sym_t = ir.symbol.typ
         if not sym_t.is_function():
             return
-        sym_scope = sym_t.get_scope()
+        sym_scope = sym_t.scope
         if not sym_scope.is_closure() and not sym_scope.is_assigned():
             return
         if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
@@ -593,7 +587,7 @@ class FlattenModule(IRVisitor):
         attr_t = ir.symbol.typ
         if not attr_t.is_function():
             return
-        sym_scope = attr_t.get_scope()
+        sym_scope = attr_t.scope
         if not sym_scope.is_closure() and not sym_scope.is_assigned():
             return
         if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
@@ -601,15 +595,15 @@ class FlattenModule(IRVisitor):
 
     def _make_new_worker(self, arg):
         parent_module = self.scope.parent
-        worker_scope = arg.symbol.typ.get_scope()
+        worker_scope = arg.symbol.typ.scope
         inst_name = arg.tail().name
         new_worker = worker_scope.clone(inst_name, str(worker_scope.instance_number()), parent=parent_module)
         if new_worker.is_inlinelib():
             new_worker.del_tag('inlinelib')
         worker_self = new_worker.find_sym('self')
-        worker_self.typ = worker_self.typ.with_scope(parent_module)
+        worker_self.typ = worker_self.typ.clone(scope=parent_module)
         in_self, _, _ = new_worker.params[0]
-        in_self.typ = in_self.typ.with_scope(parent_module)
+        in_self.typ = in_self.typ.clone(scope=parent_module)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
         new_exp.replace(ctor_self, worker_self)
@@ -637,7 +631,7 @@ class FlattenModule(IRVisitor):
             syms = new_worker.find_scope_sym(old)
             for sym in syms:
                 if sym.scope in scope_map.values():
-                    sym.typ = sym.typ.with_scope(new)
+                    sym.typ = sym.typ.clone(scope=new)
         return arg
 
     def _make_new_assigned_method(self, arg, assigned_scope):
@@ -646,10 +640,10 @@ class FlattenModule(IRVisitor):
         if new_method.is_inlinelib():
             new_method.del_tag('inlinelib')
         self_sym = new_method.find_sym('self')
-        self_sym.typ = self_sym.typ.with_scope(module_scope)
+        self_sym.typ = self_sym.typ.clone(scope=module_scope)
 
         in_self, _, _ = new_method.params[0]
-        in_self.typ = in_self.typ.with_scope(module_scope)
+        in_self.typ = in_self.typ.clone(scope=module_scope)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
         new_exp.replace(ctor_self, self_sym)
@@ -674,7 +668,7 @@ class ObjectHierarchyCopier(object):
         return (ir.is_a([TEMP, ATTR]) and
                 not ir.symbol.is_param() and
                 ir.symbol.typ.is_object() and
-                not ir.symbol.typ.get_scope().is_module())
+                not ir.symbol.typ.scope.is_module())
 
     def _is_object_copy(self, mov):
         return self._is_inlining_object(mov.src) and self._is_inlining_object(mov.dst)
@@ -692,8 +686,8 @@ class ObjectHierarchyCopier(object):
         worklist.extend(copies)
         while worklist:
             cp = worklist.popleft()
-            class_scope = cp.src.symbol.typ.get_scope()
-            assert class_scope.is_assignable(cp.dst.symbol.typ.get_scope())
+            class_scope = cp.src.symbol.typ.scope
+            assert class_scope.is_assignable(cp.dst.symbol.typ.scope)
             for sym in class_scope.class_fields().values():
                 if not sym.typ.is_object():
                     continue
@@ -736,7 +730,7 @@ class SpecializeWorker(IRTransformer):
         if not has_object_arg:
             return
         arg1_t = call.args[0][1].symbol.typ
-        origin_worker = arg1_t.get_scope()
+        origin_worker = arg1_t.scope
         new_worker = self._make_new_worker(origin_worker, call.args)
         args = []
         if origin_worker.is_method():

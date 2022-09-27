@@ -1,5 +1,5 @@
 ﻿from ..ir import *
-from ..type import Type
+from ..types.type import Type
 from ...common.graph import Graph
 from logging import getLogger
 logger = getLogger(__name__)

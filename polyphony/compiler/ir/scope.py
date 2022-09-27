@@ -6,7 +6,7 @@ from .block import Block
 from .loop import LoopNestTree
 from .symbol import Symbol
 from .synth import make_synth_params
-from .type import Type
+from .types.type import Type
 from .irvisitor import IRVisitor
 from .ir import *
 from ..common.common import Tagged, fail
@@ -59,14 +59,15 @@ class Scope(Tagged):
     def create_namespace(cls, parent, name, tags, path=None):
         tags |= {'namespace'}
         namespace = Scope.create(parent, name, tags, lineno=1)
-        namesym = namespace.add_sym('__name__', typ=Type.str())
-        if namespace.is_global():
-            namespace.constants[namesym] = CONST('__main__')
-        else:
-            namespace.constants[namesym] = CONST(namespace.name)
-        if path:
-            filesym = namespace.add_sym('__file__', typ=Type.str())
-            namespace.constants[filesym] = CONST(path)
+        if not namespace.is_builtin():
+            namesym = namespace.add_sym('__name__', typ=Type.str())
+            if namespace.is_global():
+                namespace.constants[namesym] = CONST('__main__')
+            else:
+                namespace.constants[namesym] = CONST(namespace.name)
+            if path:
+                filesym = namespace.add_sym('__file__', typ=Type.str())
+                namespace.constants[filesym] = CONST(path)
         return namespace
 
     @classmethod
@@ -234,6 +235,9 @@ class Scope(Tagged):
         elif self.order == other.order:
             return self.lineno < other.lineno
 
+    def __hash__(self):
+        return hash(self.name)
+
     def param_types(self):
         if self.is_method():
             params = self.params[1:]
@@ -245,24 +249,24 @@ class Scope(Tagged):
         ts = []
         for t in types:
             if t.is_list():
-                elm = self._mangled_names([t.get_element()])
+                elm = self._mangled_names([t.element])
                 s = f'l_{elm}'
             elif t.is_tuple():
-                elm = self._mangled_names([t.get_element()])
-                elms = ''.join([elm] * t.get_length())
+                elm = self._mangled_names([t.element])
+                elms = ''.join([elm] * t.length)
                 s = f't_{elms}'
             elif t.is_class():
                 # TODO: we should avoid naming collision
-                s = f'c_{t.get_scope().base_name}'
+                s = f'c_{t.scope.base_name}'
             elif t.is_int():
-                s = f'i{t.get_width()}'
+                s = f'i{t.width}'
             elif t.is_bool():
                 s = f'b'
             elif t.is_str():
                 s = f's'
             elif t.is_object():
                 # TODO: we should avoid naming collision
-                s = f'o_{t.get_scope().base_name}'
+                s = f'o_{t.scope.base_name}'
             else:
                 s = str(t)
             ts.append(s)
@@ -274,18 +278,11 @@ class Scope(Tagged):
 
     def clone_symbols(self, scope, postfix=''):
         symbol_map = {}
-
         for orig_sym in self.symbols.values():
             new_sym = orig_sym.clone(scope, postfix)
-            orig_sym_t = orig_sym.typ
-            exprs = Type.find_expr(orig_sym_t)
-            if exprs:
-                new_sym_t = orig_sym_t.with_clone_expr()
-            else:
-                new_sym_t = orig_sym_t.clone()
             assert new_sym.name not in scope.symbols
             scope.symbols[new_sym.name] = new_sym
-            new_sym.typ = new_sym_t
+            new_sym.typ = orig_sym.typ.clone()
             symbol_map[orig_sym] = new_sym
         return symbol_map
 
@@ -429,11 +426,11 @@ class Scope(Tagged):
             syms = new_class.find_scope_sym(old)
             for sym in syms:
                 if sym.scope in new_scopes.values():
-                    sym.typ = sym.typ.with_scope(new)
+                    sym.typ = sym.typ.clone(scope=new)
             if new.parent.is_namespace():
                 continue
             new_t = new.parent.find_sym(new.base_name).typ
-            assert new_t.get_scope() is new
+            assert new_t.scope is new
         return new_class
 
     def find_child(self, name, rec=False):
@@ -571,7 +568,7 @@ class Scope(Tagged):
         if sym and len(names) > 1:
             sym_t = sym.typ
             if sym_t.is_containable():
-                return sym_t.get_scope().find_sym_r(names[1:])
+                return sym_t.scope.find_sym_r(names[1:])
             else:
                 return None
         return sym
@@ -611,7 +608,7 @@ class Scope(Tagged):
         results = []
         for sym in self.symbols.values():
             sym_t = sym.typ
-            if sym_t.has_scope() and sym_t.get_scope() is obj:
+            if sym_t.has_scope() and sym_t.scope is obj:
                 results.append(sym)
         if rec:
             for c in self.children:

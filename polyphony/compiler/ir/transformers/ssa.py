@@ -3,7 +3,7 @@ from .cfgopt import merge_path_exp, rel_and_exp
 from .varreplacer import VarReplacer
 from .tuple import TupleTransformer
 from ..ir import *
-from ..type import Type
+from ..types.type import Type
 from ..analysis.dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from ..analysis.usedef import UseDefDetector
 from ...common.env import env
@@ -447,7 +447,7 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym in [copy for _, copy, _ in self.scope.params]:
             return False
-        if sym_t.get_scope().is_module():
+        if sym_t.scope.is_module():
             return False
         idx = qsym.index(sym)
         if idx > 0:

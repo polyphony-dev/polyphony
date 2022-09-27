@@ -3,7 +3,7 @@ from ..irvisitor import IRVisitor
 from ..ir import *
 from ..block import Block
 from ..symbol import Symbol
-from ..type import Type
+from ..types.type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 

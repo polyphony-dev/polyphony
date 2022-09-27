@@ -836,9 +836,13 @@ def compile_plan():
     return plan
 
 
-def setup(src_file, options):
+def initialize():
     env.__init__()
     Symbol.initialize()
+
+
+def setup(src_file, options):
+    initialize()
     env.dev_debug_mode = options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
     env.quiet_level = options.quiet_level if options.quiet_level else 0

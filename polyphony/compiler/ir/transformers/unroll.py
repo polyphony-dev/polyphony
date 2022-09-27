@@ -4,7 +4,7 @@ from ..ir import *
 from ..irvisitor import IRVisitor, IRTransformer
 from ..loop import Loop
 from ..scope import SymbolReplacer
-from ..type import Type
+from ..types.type import Type
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger

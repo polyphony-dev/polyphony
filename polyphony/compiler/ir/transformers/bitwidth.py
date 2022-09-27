@@ -16,6 +16,6 @@ class TempVarWidthSetter(IRVisitor):
         self.int_types = []
         super().visit_MOVE(ir)
         if self.temps:
-            max_width = max([t.get_width() for t in self.int_types])
+            max_width = max([t.width for t in self.int_types])
             for t in self.temps:
-                t.typ = t.typ.with_width(max_width)
+                t.typ = t.typ.clone(width=max_width)

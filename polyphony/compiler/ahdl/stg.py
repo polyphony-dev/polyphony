@@ -337,13 +337,15 @@ class StateBuilder(STGItemBuilder):
 def _signal_width(sym):
     width = -1
     if sym.typ.is_seq():
-        width = (sym.typ.get_element().get_width(), sym.typ.get_length())
-    elif sym.typ.is_int() or sym.typ.is_bool():
-        width = sym.typ.get_width()
+        width = (sym.typ.element.width, sym.typ.length)
+    elif sym.typ.is_int():
+        width = sym.typ.width
+    elif sym.typ.is_bool():
+        width = 1
     elif sym.typ.is_port():
-        width = sym.typ.get_dtype().get_width()
+        width = sym.typ.get_dtype().width
     elif sym.typ.is_object():
-        #sym_scope_name = sym.typ.get_scope().orig_name
+        #sym_scope_name = sym.typ.scope.orig_name
         #if sym_scope_name == 'polyphony.Reg' or sym_scope_name == 'polyphony.Net':
         width = 16
     elif sym.is_condition():
@@ -354,7 +356,7 @@ def _signal_width(sym):
 def _tags_from_sym(sym):
     tags = set()
     if sym.typ.is_int():
-        if sym.typ.get_signed():
+        if sym.typ.signed:
             tags.add('int')
         if sym.is_alias():
             tags.add('net')
@@ -366,8 +368,8 @@ def _tags_from_sym(sym):
         else:
             tags.add('reg')
     elif sym.typ.is_tuple():
-        elm_t = sym.typ.get_element()
-        if elm_t.is_int() and elm_t.get_signed():
+        elm_t = sym.typ.element
+        if elm_t.is_int() and elm_t.signed:
             tags.add('int')
         if sym.scope.is_containable():
             tags.add('rom')
@@ -376,10 +378,10 @@ def _tags_from_sym(sym):
         else:
             tags.add('regarray')
     elif sym.typ.is_list():
-        elm_t = sym.typ.get_element()
-        if elm_t.is_int() and elm_t.get_signed():
+        elm_t = sym.typ.element
+        if elm_t.is_int() and elm_t.signed:
             tags.add('int')
-        if sym.typ.get_ro() and sym.scope.is_containable():
+        if sym.typ.ro and sym.scope.is_containable():
             tags.add('rom')
         else:
             tags.add('regarray')
@@ -389,7 +391,7 @@ def _tags_from_sym(sym):
         if di != 'inout':
             tags.add(di)
     elif sym.typ.is_object():
-        sym_scope = sym.typ.get_scope()
+        sym_scope = sym.typ.scope
         if sym_scope.orig_name == 'polyphony.Reg':
             assert not sym.is_alias()
             tags.add('reg')
@@ -466,7 +468,7 @@ class AHDLTranslator(IRVisitor):
                     else:
                         return self.scope.base_name
                 elif ir.exp.symbol.typ.is_class():
-                    return ir.exp.symbol.typ.get_scope().base_name
+                    return ir.exp.symbol.typ.scope.base_name
                 else:
                     return ir.exp.symbol.hdl_name()
             else:
@@ -540,8 +542,8 @@ class AHDLTranslator(IRVisitor):
         _, mem = syscall.args[0]
         assert mem.is_a(TEMP)
         assert mem.symbol.typ.is_seq()
-        assert isinstance(mem.symbol.typ.get_length(), int)
-        return AHDL_CONST(mem.symbol.typ.get_length())
+        assert isinstance(mem.symbol.typ.length, int)
+        return AHDL_CONST(mem.symbol.typ.length)
 
     def visit_SYSCALL(self, ir):
         name = ir.symbol.name
@@ -578,7 +580,7 @@ class AHDLTranslator(IRVisitor):
         elif name == 'polyphony.timing.wait_until':
             scope_sym = ir.args[0][1].symbol
             assert scope_sym.typ.is_function()
-            pred = scope_sym.typ.get_scope()
+            pred = scope_sym.typ.scope
             #assert pred.is_assigned()
             translator = AHDLCombTranslator(self.hdlmodule, self.scope)
             translator.process(pred)
@@ -610,7 +612,7 @@ class AHDLTranslator(IRVisitor):
         memvar = self.visit(ir.mem)
         typ = ir.mem.symbol.typ
         # Only static class or global field can be hdl function
-        if ir.mem.symbol.scope.is_containable() and (typ.is_tuple() or typ.is_list() and typ.get_ro()):
+        if ir.mem.symbol.scope.is_containable() and (typ.is_tuple() or typ.is_list() and typ.ro):
             return AHDL_FUNCALL(memvar, [offset])
         else:
             return AHDL_SUBSCRIPT(memvar, offset)
@@ -627,8 +629,8 @@ class AHDLTranslator(IRVisitor):
     def _build_mem_initialize_seq(self, array, memvar):
         name = memvar.sig.name  # sym.hdl_name()
         sym = self.current_stm.dst.symbol
-        width = sym.typ.get_element().get_width()
-        length = sym.typ.get_length()
+        width = sym.typ.element.width
+        length = sym.typ.length
         if memvar.sig.is_netarray():
             sig = self.hdlmodule.gen_sig(name, (width, length), {'netarray'}, sym)
         else:
@@ -648,7 +650,7 @@ class AHDLTranslator(IRVisitor):
 
         assert isinstance(self.current_stm, MOVE)
         sym = self.current_stm.dst.symbol
-        if sym.scope.is_containable() and (sym.typ.is_tuple() or sym.typ.is_list() and sym.typ.get_ro()):
+        if sym.scope.is_containable() and (sym.typ.is_tuple() or sym.typ.is_list() and sym.typ.ro):
             # this array will be rom
             pass
         else:
@@ -665,25 +667,31 @@ class AHDLTranslator(IRVisitor):
 
     def visit_ATTR(self, ir):
         qsym = ir.qualified_symbol
-        head = obj = None
-        for sym in qsym[:-1]:
-            hdlscope = env.hdlscope(sym.typ.get_scope())
-            assert hdlscope
-            record = AHDL_RECORD(sym.name, hdlscope)
-            if obj:
-                obj.attr = record
-                obj.hdlscope.add_subscope(record.name, hdlscope)
+        if False:  # TODO: enabled AHDL_RECORD
+            head = obj = None
+            for sym in qsym[:-1]:
+                hdlscope = env.hdlscope(sym.typ.scope)
+                assert hdlscope
+                record = AHDL_RECORD(sym.name, hdlscope)
+                if obj:
+                    obj.attr = record
+                    obj.hdlscope.add_subscope(record.name, hdlscope)
+                else:
+                    head = record
+                obj = record
+            sig = self._make_signal(hdlscope, qsym)
+            if qsym[-1].typ.is_seq():
+                obj.attr = AHDL_MEMVAR(sig, ir.ctx)
             else:
-                head = record
-            obj = record
-
-        sig = self._make_signal(hdlscope, qsym)
-        if qsym[-1].typ.is_seq():
-            obj.attr = AHDL_MEMVAR(sig, ir.ctx)
+                obj.attr = AHDL_VAR(sig, ir.ctx)
+            return head
         else:
-            obj.attr = AHDL_VAR(sig, ir.ctx)
-        return head
-
+            hdlscope = self.hdlmodule
+            sig = self._make_signal(hdlscope, qsym)
+            if qsym[-1].typ.is_seq():
+                return AHDL_MEMVAR(sig, ir.ctx)
+            else:
+                return AHDL_VAR(sig, ir.ctx)
 
     def _make_signal(self, hdlscope, qsym):
         sig = hdlscope.signal(qsym[-1])
@@ -696,7 +704,7 @@ class AHDLTranslator(IRVisitor):
             if qsym[-1].scope.is_unflatten():
                 qsym = qsym[:-1]
             if qsym[0].typ.is_object():
-                if qsym[0].typ.get_scope().is_module():
+                if qsym[0].typ.scope.is_module():
                     assert qsym[0].name.startswith(env.self_name)
                     tags.add('field')
                     qsym = qsym[1:]  # skip 'self'
@@ -808,7 +816,7 @@ class AHDLTranslator(IRVisitor):
         elif ir.src.is_a(TEMP) and ir.src.symbol.is_param():
             if ir.src.symbol.name.endswith(env.self_name):
                 return
-            elif ir.src.symbol.typ.is_object() and ir.src.symbol.typ.get_scope().is_module():
+            elif ir.src.symbol.typ.is_object() and ir.src.symbol.typ.scope.is_module():
                 return
             elif ir.src.symbol.typ.is_port():
                 return
@@ -822,8 +830,8 @@ class AHDLTranslator(IRVisitor):
             return
         elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
             if ir.src.symbol.is_param():
-                width = ir.src.symbol.typ.get_element().get_width()
-                length = ir.src.symbol.typ.get_length()
+                width = ir.src.symbol.typ.element.width
+                length = ir.src.symbol.typ.length
                 for i in range(length):
                     src_name = f'{src.sig.name}{i}'
                     self._emit(AHDL_MOVE(AHDL_SUBSCRIPT(dst, AHDL_CONST(i)),
@@ -976,8 +984,8 @@ class AHDLTranslator(IRVisitor):
         else:
             tags = set()
         dtype = port_sym.typ.get_dtype()
-        width = dtype.get_width()
-        port_scope = port_sym.typ.get_scope()
+        width = dtype.width
+        port_scope = port_sym.typ.scope
         # kind and direction might be changed at root
         # so we use root_sym.typ
         owners_access = not self._is_access_from_external(port_sym)
@@ -986,7 +994,7 @@ class AHDLTranslator(IRVisitor):
         assigned = root_sym.typ.get_assigned()
         assert port_scope.base_name.startswith('Port')
         tags.add('single_port')
-        if dtype.has_signed() and dtype.get_signed():
+        if dtype.has_signed() and dtype.signed:
             tags.add('int')
 
         outer_module_scope = self.scope.outer_module()
@@ -1076,7 +1084,7 @@ class AHDLTranslator(IRVisitor):
 
     def _make_port_assign(self, scope_sym, port_sig):
         assert scope_sym.typ.is_function()
-        assigned = scope_sym.typ.get_scope()
+        assigned = scope_sym.typ.scope
         assert assigned.is_assigned()
         translator = AHDLCombTranslator(self.hdlmodule, self.scope)
         translator.process(assigned)
@@ -1125,8 +1133,8 @@ class AHDLTranslator(IRVisitor):
             net_prefixes = net_prefixes[1:]
         net_name = '_'.join([pfx.hdl_name() for pfx in net_prefixes])
 
-        dtype = net_sym.typ.get_scope().type_args[0]
-        width = dtype.get_width()
+        dtype = net_sym.typ.scope.type_args[0]
+        width = dtype.width
         tags = {'net'}
         net_sig = env.hdlscope(net_sym.scope).signal(net_name)
         if net_sig:
@@ -1139,7 +1147,7 @@ class AHDLTranslator(IRVisitor):
         net_sig = self._net_sig(target.qualified_symbol)
         scope_sym = new.args[0][1].symbol
         assert scope_sym.typ.is_function()
-        assigned = scope_sym.typ.get_scope()
+        assigned = scope_sym.typ.scope
         assert assigned.is_assigned()
         translator = AHDLCombTranslator(self.hdlmodule, self.scope)
         translator.process(assigned)
@@ -1170,7 +1178,7 @@ class AHDLTranslator(IRVisitor):
 
     def _make_net_assign(self, scope_sym, net_sig):
         assert scope_sym.typ.is_function()
-        assigned = scope_sym.typ.get_scope()
+        assigned = scope_sym.typ.scope
         assert assigned.is_assigned()
         translator = AHDLCombTranslator(self.hdlmodule, self.scope)
         translator.process(assigned)

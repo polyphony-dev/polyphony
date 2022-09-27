@@ -1,5 +1,5 @@
 ﻿from .symbol import Symbol
-from .type import Type
+from .types.type import Type
 
 
 builtin_mappings = {
@@ -9,6 +9,12 @@ builtin_mappings = {
 
 builtin_symbols = {}
 
+builtin_types = {
+    'none', 'int', 'bool', 'str',
+    'list', 'tuple', 'object',
+    'generic',
+    'fuction',
+}
 
 def append_builtin(namespace, scope):
     if namespace.name == '__builtin__':

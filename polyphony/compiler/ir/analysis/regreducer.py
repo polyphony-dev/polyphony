@@ -65,7 +65,7 @@ class AliasVarDetector(IRVisitor):
                 pass
             else:
                 typ = ir.src.mem.symbol.typ
-                if typ.is_list() and not typ.get_ro():
+                if typ.is_list() and not typ.ro:
                     return
         elif ir.src.is_a(ARRAY):
             return

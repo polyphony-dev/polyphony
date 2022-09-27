@@ -1,6 +1,6 @@
 from ..block import Block
 from ..ir import Ctx, CONST, UNOP, RELOP, TEMP, JUMP, PHI, LPHI
-from ..type import Type
+from ..types.type import Type
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger

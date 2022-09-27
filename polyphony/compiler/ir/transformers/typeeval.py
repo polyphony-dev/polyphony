@@ -1,7 +1,7 @@
 from .constopt import try_get_constant
 from ..ir import CONST, TEMP, EXPR
 from ..irvisitor import IRVisitor
-from ..type import Type
+from ..types.type import Type
 
 
 class TypeEvaluator(object):
@@ -9,8 +9,8 @@ class TypeEvaluator(object):
         self.expr_evaluator = TypeExprEvaluator(scope)
 
     def visit_int(self, t):
-        w = self.visit(t.get_width())
-        return t.with_width(w)
+        w = self.visit(t.width)
+        return t.clone(width=w)
 
     def visit_bool(self, t):
         return t
@@ -19,38 +19,38 @@ class TypeEvaluator(object):
         return t
 
     def visit_list(self, t):
-        elm = self.visit(t.get_element())
-        t = t.with_element(elm)
-        if isinstance(t.get_length(), Type):
-            assert t.get_length().is_expr()
-            ln = self.visit(t.get_length())
-            if ln.is_expr() and ln.get_expr().is_a(EXPR) and ln.get_expr().exp.is_a(CONST):
-                t = t.with_length(ln.get_expr().exp.value)
+        elm = self.visit(t.element)
+        t = t.clone(element=elm)
+        if isinstance(t.length, Type):
+            assert t.length.is_expr()
+            ln = self.visit(t.length)
+            if ln.is_expr() and ln.expr.is_a(EXPR) and ln.expr.exp.is_a(CONST):
+                t = t.clone(length=ln.expr.exp.value)
             else:
-                t = t.with_length(ln)
+                t = t.clone(length=ln)
         return t
 
     def visit_tuple(self, t):
-        elm = self.visit(t.get_element())
-        t = t.with_element(elm)
+        elm = self.visit(t.element)
+        t = t.clone(element=elm)
         return t
 
     def visit_function(self, t):
-        func = t.get_scope()
+        func = t.scope
         if func:
             param_types = []
             for sym, copy, _ in func.params:
                 sym.typ = self.visit(sym.typ)
                 param_types.append(sym.typ)
                 copy.typ = self.visit(copy.typ)
-            t = t.with_param_types(param_types)
+            t = t.clone(param_types=param_types)
             func.return_type = self.visit(func.return_type)
-            t = t.with_return_type(func.return_type)
+            t = t.clone(return_type=func.return_type)
         else:
-            param_types = [self.visit(pt) for pt in t.get_param_types()]
-            t = t.with_param_types(param_types)
-            ret_t = self.visit(t.get_return_type())
-            t = t.with_return_type(ret_t)
+            param_types = [self.visit(pt) for pt in t.param_types]
+            t = t.clone(param_types=param_types)
+            ret_t = self.visit(t.return_type)
+            t = t.clone(return_type=ret_t)
         return t
 
     def visit_object(self, t):
@@ -72,12 +72,12 @@ class TypeEvaluator(object):
         return t
 
     def visit_expr(self, t):
-        result = self.expr_evaluator.visit(t.get_expr())
+        result = self.expr_evaluator.visit(t.expr)
         if isinstance(result, Type):
             pass
         else:
             result = Type.expr(result)
-        result = result.with_explicit(t.get_explicit())
+        result = result.clone(explicit=t.explicit)
         return result
 
     def visit(self, t):
@@ -104,12 +104,12 @@ class TypeExprEvaluator(IRVisitor):
     def sym2type(self, sym):
         sym_t = sym.typ
         if sym_t.is_class():
-            typ_scope = sym_t.get_scope()
+            typ_scope = sym_t.scope
             if typ_scope.is_typeclass():
                 t = Type.from_typeclass(typ_scope)
-                if sym_t.has_typeargs():
-                    args = sym_t.get_typeargs()
-                    t.attrs.update(args)
+                # if sym_t.has_typeargs():
+                #     args = sym_t.get_typeargs()
+                #     t.attrs.update(args)
                 return t
             elif typ_scope.is_function():
                 assert False
@@ -147,33 +147,33 @@ class TypeExprEvaluator(IRVisitor):
         if isinstance(expr, Type):
             expr_typ = expr
             if expr_typ.is_list():
-                if expr_typ.get_element() is Type.undef():
+                if expr_typ.element is Type.undef():
                     elm = self.visit(ir.offset)
                     if isinstance(elm, Type):
-                        expr_typ = expr_typ.with_element(elm)
+                        expr_typ = expr_typ.clone(element=elm)
                     else:
-                        expr_typ = expr_typ.with_element(Type.expr(elm))
+                        expr_typ = expr_typ.clone(element=Type.expr(elm))
                 elif ir.mem.is_a(TEMP):
                     elm = self.visit(ir.offset)
                     if isinstance(elm, Type):
-                        expr_typ = expr_typ.with_element(elm)
+                        expr_typ = expr_typ.clone(element=elm)
                     else:
-                        expr_typ = expr_typ.with_element(Type.expr(elm))
+                        expr_typ = expr_typ.clone(element=Type.expr(elm))
                 else:
                     length = self.visit(ir.offset)
                     if length.is_a(CONST):
-                        expr_typ = expr_typ.with_length(length.value)
+                        expr_typ = expr_typ.clone(length=length.value)
                     else:
-                        expr_typ = expr_typ.with_length(Type.expr(length))
+                        expr_typ = expr_typ.clone(length=Type.expr(length))
             elif expr_typ.is_tuple():
                 assert ir.mem.is_a(TEMP)
                 elms = self.visit(ir.offset)
-                expr_typ = expr_typ.with_element(elms[0])  # TODO:
-                expr_typ = expr_typ.with_length(len(elms))
+                expr_typ = expr_typ.clone(element=elms[0])  # TODO:
+                expr_typ = expr_typ.clone(length=len(elms))
             elif expr_typ.is_int():
                 width = self.visit(ir.offset)
                 if width.is_a(CONST):
-                    expr_typ = expr_typ.with_width(width.value)
+                    expr_typ = expr_typ.clone(width=width.value)
             else:
                 print(expr_typ)
                 assert False

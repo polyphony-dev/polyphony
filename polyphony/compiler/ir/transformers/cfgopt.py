@@ -2,7 +2,7 @@ from collections import deque
 from ..block import Block
 from ..ir import *
 from ..irhelper import reduce_relexp
-from ..type import Type
+from ..types.type import Type
 from ..analysis.dominator import DominatorTreeBuilder
 from ..analysis.usedef import UseDefDetector
 from ...common.utils import remove_except_one, unique

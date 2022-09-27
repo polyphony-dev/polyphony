@@ -187,8 +187,8 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         self._add_state_register(fsm)
         self._add_callee_submodules(scope)
         for sym, cp, _ in scope.params:
-            if sym.typ.is_object() and sym.typ.get_scope().is_module():
-                mod_scope = sym.typ.get_scope()
+            if sym.typ.is_object() and sym.typ.scope.is_module():
+                mod_scope = sym.typ.scope
                 sub_hdlmodule = env.hdlscope(mod_scope)
                 param_map = {}
                 if sub_hdlmodule.scope.module_param_vars:
@@ -235,11 +235,11 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
                 #for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):
                 for sym in self.hdlmodule.scope.symbols.values():
-                    if not sym.typ.is_list() or sym.typ.get_ro():
+                    if not sym.typ.is_list() or sym.typ.ro:
                         continue
                     name = sym.hdl_name()
-                    width = sym.typ.get_element().get_width()
-                    length = sym.typ.get_length()
+                    width = sym.typ.element.width
+                    length = sym.typ.length
                     sig = self.hdlmodule.gen_sig(name, (width, length), {'regarray'})
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):

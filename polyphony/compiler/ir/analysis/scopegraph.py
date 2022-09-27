@@ -55,7 +55,7 @@ class CallGraphBuilder(IRVisitor):
         sym_t = ir.symbol.typ
         if not sym_t.is_function():
             return
-        sym_scope = sym_t.get_scope()
+        sym_scope = sym_t.scope
         if not sym_scope:
             return
         if not sym_scope.is_worker():
@@ -66,7 +66,7 @@ class CallGraphBuilder(IRVisitor):
         attr_t = ir.symbol.typ
         if not attr_t.is_function():
             return
-        sym_scope = attr_t.get_scope()
+        sym_scope = attr_t.scope
         if not sym_scope.is_worker():
             self.call_graph.add_edge(self.scope, sym_scope)
         self.worklist.append(sym_scope)
@@ -107,7 +107,7 @@ class DependencyGraphBuilder(IRVisitor):
         for p, _, _ in scope.params:
             p_t = p.typ
             if p_t.is_object() or p_t.is_function():
-                param_scope = p_t.get_scope()
+                param_scope = p_t.scope
                 assert param_scope
                 self._add_dependency(scope, param_scope)
                 self.worklist.append(param_scope)
@@ -122,7 +122,7 @@ class DependencyGraphBuilder(IRVisitor):
     def visit_TEMP(self, ir):
         sym_t = ir.symbol.typ
         if sym_t.has_scope():
-            receiver_scope = sym_t.get_scope()
+            receiver_scope = sym_t.scope
         elif ir.symbol.scope is not self.scope:
             receiver_scope = ir.symbol.ancestor.scope if ir.symbol.ancestor else ir.symbol.scope
         else:
@@ -134,7 +134,7 @@ class DependencyGraphBuilder(IRVisitor):
     def visit_ATTR(self, ir):
         attr_t = ir.symbol.typ
         if attr_t.has_scope():
-            attr_scope = attr_t.get_scope()
+            attr_scope = attr_t.scope
             assert attr_scope
             self._add_dependency(self.scope, attr_scope)
             self.worklist.append(attr_scope)
@@ -144,13 +144,13 @@ class DependencyGraphBuilder(IRVisitor):
         receiver_t = receiver.typ
         if not receiver_t.has_scope():
             return
-        receiver_scope = receiver_t.get_scope()
+        receiver_scope = receiver_t.scope
         assert receiver_scope
         self._add_dependency(self.scope, receiver_scope)
         self.worklist.append(receiver_scope)
 
     def visit_NEW(self, ir):
         sym_t = ir.symbol.typ
-        ctor = sym_t.get_scope().find_ctor()
+        ctor = sym_t.scope.find_ctor()
         self._add_dependency(self.scope, ctor)
         self.visit_args(ir.args, ir.kwargs)
