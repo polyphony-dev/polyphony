@@ -39,10 +39,9 @@ class TypeEvaluator(object):
         func = t.scope
         if func:
             param_types = []
-            for sym, copy, _ in func.params:
+            for sym in func.param_symbols():
                 sym.typ = self.visit(sym.typ)
                 param_types.append(sym.typ)
-                copy.typ = self.visit(copy.typ)
             t = t.clone(param_types=param_types)
             func.return_type = self.visit(func.return_type)
             t = t.clone(return_type=func.return_type)

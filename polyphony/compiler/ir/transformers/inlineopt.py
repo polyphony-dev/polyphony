@@ -168,22 +168,15 @@ class InlineOpt(object):
 
     def _make_replace_symbol_map(self, call, caller, callee, inline_id):
         symbol_map = callee.clone_symbols(caller, postfix='_inl' + inline_id)
-        if callee.is_method():
-            params = callee.params[1:]
-        else:
-            params = callee.params[:]
-        for i, (p, copy, defval) in enumerate(params):
+        param_symbols = callee.param_symbols()
+        param_values = callee.param_default_values()
+        for i, (sym, defval) in enumerate(zip(param_symbols, param_values)):
             if len(call.args) > i:
                 _, arg = call.args[i]
             else:
                 arg = defval
-            if arg.is_a([TEMP, ATTR]):
-                arg_t = arg.symbol.typ
-                if arg_t.is_object():
-                    symbol_map[copy] = arg.clone()
-                symbol_map[p] = arg.clone()
-            elif arg.is_a([CONST, UNOP]):
-                symbol_map[p] = arg.clone()
+            if arg.is_a([TEMP, ATTR, CONST, UNOP]):
+                symbol_map[sym] = arg.clone()
             else:
                 assert False
         return symbol_map
@@ -500,37 +493,38 @@ class FlattenObjectArgs(IRTransformer):
         return args
 
     def _flatten_scope_params(self, worker_scope, pindex, flatten_args):
+        assert False, 'need test'
         flatten_params = []
-        in_sym, sym, _ = worker_scope.params[pindex]
+        sym = worker_scope.param_symbols()[pindex]
         base_name = sym.name
         for name, sym in flatten_args:
             new_name = '{}_{}'.format(base_name, name)
             param_in = worker_scope.find_param_sym(new_name)
             if not param_in:
                 param_in = worker_scope.add_param_sym(new_name, typ=sym.typ)
-            param_copy = worker_scope.find_sym(new_name)
-            if not param_copy:
-                param_copy = worker_scope.add_sym(new_name, typ=sym.typ)
-            flatten_params.append((param_in, param_copy))
+            #param_copy = worker_scope.find_sym(new_name)
+            #if not param_copy:
+            #    param_copy = worker_scope.add_sym(new_name, typ=sym.typ)
+            flatten_params.append(param_in)
         new_params = []
-        for idx, (sym, copy, defval) in enumerate(worker_scope.params):
+        for idx, (sym, defval) in enumerate(worker_scope.params):
             if idx == pindex:
-                for new_sym, new_copy in flatten_params:
-                    new_params.append((new_sym, new_copy, None))
+                for new_sym in flatten_params:
+                    new_params.append((new_sym, None))
             else:
-                new_params.append((sym, copy, defval))
-        worker_scope.params.clear()
-        for sym, copy, defval in new_params:
-            worker_scope.add_param(sym, copy, defval)
-        for stm in worker_scope.entry_block.stms[:]:
-            if stm.is_a(MOVE) and stm.src.is_a(TEMP) and stm.src.symbol is in_sym:
-                insert_idx = worker_scope.entry_block.stms.index(stm)
-                worker_scope.entry_block.stms.remove(stm)
-                for new_sym, new_copy in flatten_params:
-                    mv = MOVE(TEMP(new_copy, Ctx.STORE), TEMP(new_sym, Ctx.LOAD))
-                    mv.loc = stm.loc
-                    worker_scope.entry_block.insert_stm(insert_idx, mv)
-                break
+                new_params.append((sym, defval))
+        worker_scope.clear_params()
+        for sym, defval in new_params:
+            worker_scope.add_param(sym, defval)
+        # for stm in worker_scope.entry_block.stms[:]:
+        #     if stm.is_a(MOVE) and stm.src.is_a(TEMP) and stm.src.symbol is sym:
+        #         insert_idx = worker_scope.entry_block.stms.index(stm)
+        #         worker_scope.entry_block.stms.remove(stm)
+        #         for new_sym, new_copy in flatten_params:
+        #             mv = MOVE(TEMP(new_copy, Ctx.STORE), TEMP(new_sym, Ctx.LOAD))
+        #             mv.loc = stm.loc
+        #             worker_scope.entry_block.insert_stm(insert_idx, mv)
+        #         break
 
 
 class FlattenModule(IRVisitor):
@@ -602,7 +596,7 @@ class FlattenModule(IRVisitor):
             new_worker.del_tag('inlinelib')
         worker_self = new_worker.find_sym('self')
         worker_self.typ = worker_self.typ.clone(scope=parent_module)
-        in_self, _, _ = new_worker.params[0]
+        in_self = new_worker.param_symbols(with_self=True)[0]
         in_self.typ = in_self.typ.clone(scope=parent_module)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
@@ -642,7 +636,7 @@ class FlattenModule(IRVisitor):
         self_sym = new_method.find_sym('self')
         self_sym.typ = self_sym.typ.clone(scope=module_scope)
 
-        in_self, _, _ = new_method.params[0]
+        in_self = new_method.param_symbols(with_self=True)[0]
         in_self.typ = in_self.typ.clone(scope=module_scope)
         new_exp = arg.exp.clone()
         ctor_self = self.scope.find_sym('self')
@@ -734,16 +728,17 @@ class SpecializeWorker(IRTransformer):
         new_worker = self._make_new_worker(origin_worker, call.args)
         args = []
         if origin_worker.is_method():
-            params = new_worker.params[:]
+            param_symbols = new_worker.param_symbols(with_self=True)
         else:
-            params = [None] + new_worker.params[:]
-        for pindex, ((name, arg), param) in enumerate(zip(call.args, params)):
+            param_symbols = [None] + new_worker.param_symbols()
+
+        for pindex, ((name, arg), sym) in enumerate(zip(call.args, param_symbols)):
             if (arg.is_a([TEMP, ATTR])
                     and arg.symbol.typ.is_object()):
                 if arg.is_a(TEMP):
                     fail(self.current_stm, Errors.WORKER_TEMP_OBJ_ARG)
-                self._subst_obj_arg(new_worker, arg, param)
-                new_worker.params.remove(param)
+                self._subst_obj_arg(new_worker, arg, sym)
+                new_worker.remove_param(sym)
             else:
                 args.append((name, arg))
         call.args[:len(params)] = args[:]

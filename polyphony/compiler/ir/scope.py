@@ -17,7 +17,61 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-FunctionParam = namedtuple('FunctionParam', ('sym', 'copy', 'defval'))
+FunctionParam = namedtuple('FunctionParam', ('sym', 'defval'))
+
+class FunctionParams(object):
+    def __init__(self, is_method=False):
+        self._params = []
+        self._is_method = is_method
+
+    def add_param(self, sym, defval):
+        self._params.append(FunctionParam(sym, defval))
+
+    def _explicit_params(self, with_self):
+        if not with_self and self._is_method:
+            return self._params[1:]
+        else:
+            return self._params[:]
+
+    def symbols(self, with_self=False):
+        params = self._explicit_params(with_self)
+        return tuple([sym for sym, _ in params])
+
+    def default_values(self, with_self=False):
+        params = self._explicit_params(with_self)
+        return tuple([defval for _, defval in params])
+
+    def types(self, with_self=False):
+        params = self._explicit_params(with_self)
+        return [p.sym.typ for p in params]
+
+    def param_names(self, with_self=False):
+        names = []
+        for s in self.symbols(with_self):
+            l = len(Symbol.param_prefix + '_')
+            names.append(s.name[l:])
+        return names
+
+    def clear(self):
+        self._params = []
+
+    def remove(self, sym):
+        params = []
+        for s, v in self._params:
+            if s is sym:
+                continue
+            params.append(FunctionParam(s, v))
+        self._params = params
+
+    def __str__(self):
+        s = ''
+        for p, val in self._params:
+            if val:
+                s += '{}:{} = {}\n'.format(p, repr(p.typ), val)
+            else:
+                s += '{}:{}\n'.format(p, repr(p.typ))
+        return s
+
 
 
 class Scope(Tagged):
@@ -162,7 +216,7 @@ class Scope(Tagged):
         self.scope_id = scope_id
         self.symbols = {}
         self.free_symbols = set()
-        self.params = []
+        self.function_params = FunctionParams(self.is_method())
         self.return_type = None
         self.entry_block = None
         self.exit_block = None
@@ -200,11 +254,7 @@ class Scope(Tagged):
         #s += "\n"
         s += '================================\n'
         s += 'Parameters\n'
-        for p, _, val in self.params:
-            if val:
-                s += '{}:{} = {}\n'.format(p, repr(p.typ), val)
-            else:
-                s += '{}:{}\n'.format(p, repr(p.typ))
+        s += str(self.function_params)
         s += "\n"
         s += 'Return\n'
         if self.return_type:
@@ -237,13 +287,6 @@ class Scope(Tagged):
 
     def __hash__(self):
         return hash(self.name)
-
-    def param_types(self):
-        if self.is_method():
-            params = self.params[1:]
-        else:
-            params = self.params[:]
-        return [p.sym.typ for p in params]
 
     def _mangled_names(self, types):
         ts = []
@@ -326,12 +369,10 @@ class Scope(Tagged):
         s.type_args = list(self.type_args)
 
         symbol_map = self.clone_symbols(s, sym_postfix)
-        s.params = []
-        for p, cp, defval in self.params:
-            param = FunctionParam(symbol_map[p],
-                                  symbol_map[cp],
-                                  defval.clone() if defval else None)
-            s.params.append(param)
+
+        for p, defval in zip(self.function_params.symbols(with_self=True), self.function_params.default_values(with_self=True)):
+            s.function_params.add_param(symbol_map[p], defval.clone() if defval else None)
+
         s.return_type = self.return_type
         block_map, stm_map = self.clone_blocks(s)
         s.entry_block = block_map[self.entry_block]
@@ -507,6 +548,24 @@ class Scope(Tagged):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
         return self.add_sym(name, {'param'}, typ)
 
+    def param_names(self, with_self=False):
+        return self.function_params.param_names(with_self)
+
+    def param_symbols(self, with_self=False):
+        return self.function_params.symbols(with_self)
+
+    def param_default_values(self, with_self=False):
+        return self.function_params.default_values(with_self)
+
+    def param_types(self, with_self=False):
+        return self.function_params.types(with_self)
+
+    def clear_params(self):
+        return self.function_params.clear()
+
+    def remove_param(self, sym):
+        return self.function_params.remove(sym)
+
     def find_param_sym(self, param_name):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
         return self.find_sym(name)
@@ -651,22 +710,8 @@ class Scope(Tagged):
         if child_scope not in self.children:
             self.children.append(child_scope)
 
-    def add_param(self, sym, copy, defval):
-        self.params.append(FunctionParam(sym, copy, defval))
-
-    def has_param(self, sym):
-        name = sym.name.split('#')[0]
-        for p, _, _ in self.params:
-            if p.name == name:
-                return True
-        return False
-
-    def get_param_index(self, sym):
-        name = sym.name.split('#')[0]
-        for i, (p, _, _) in enumerate(self.params):
-            if p.name == name:
-                return i
-        return -1
+    def add_param(self, sym, defval):
+        self.function_params.add_param(sym, defval)
 
     def append_callee_instance(self, callee_scope, inst_name):
         self.callee_instances[callee_scope].add(inst_name)

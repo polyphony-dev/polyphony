@@ -104,8 +104,7 @@ class DependencyGraphBuilder(IRVisitor):
         super().process(scope)
 
     def _add_dependency_for_params(self, scope):
-        for p, _, _ in scope.params:
-            p_t = p.typ
+        for p_t in scope.param_types():
             if p_t.is_object() or p_t.is_function():
                 param_scope = p_t.scope
                 assert param_scope

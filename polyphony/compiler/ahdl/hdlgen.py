@@ -149,10 +149,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
     def _add_input(self, scope):
         if scope.is_method():
             assert False
-            params = scope.params[1:]
-        else:
-            params = scope.params
-        for sym, _, _ in params:
+        for sym in scope.param_symbols():
             if sym.typ.is_int() or sym.typ.is_bool():
                 sig = self.hdlmodule.signal(sym)
             elif sym.typ.is_seq():
@@ -186,7 +183,7 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
         self._add_state_register(fsm)
         self._add_callee_submodules(scope)
-        for sym, cp, _ in scope.params:
+        for sym in scope.param_symbols():
             if sym.typ.is_object() and sym.typ.scope.is_module():
                 mod_scope = sym.typ.scope
                 sub_hdlmodule = env.hdlscope(mod_scope)
@@ -194,7 +191,8 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
                 if sub_hdlmodule.scope.module_param_vars:
                     for name, v in sub_hdlmodule.scope.module_param_vars:
                         param_map[name] = v
-                self._add_submodule_instances(sub_hdlmodule, [cp.name], param_map=param_map)
+                param_name = scope.original_param_name(sym)
+                self._add_submodule_instances(sub_hdlmodule, [param_name], param_map=param_map)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
 

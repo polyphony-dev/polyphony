@@ -445,8 +445,6 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.is_free():
             return False
-        if sym in [copy for _, copy, _ in self.scope.params]:
-            return False
         if sym_t.scope.is_module():
             return False
         idx = qsym.index(sym)

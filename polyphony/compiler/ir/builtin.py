@@ -26,8 +26,7 @@ def append_builtin(namespace, scope):
         name = scope.name
 
     if scope.is_function():
-        param_types = [sym.typ for sym, _, _ in scope.params]
-        t = Type.function(scope, scope.return_type, param_types)
+        t = Type.function(scope, scope.return_type, scope.param_types())
     elif scope.is_class():
         t = Type.klass(scope)
     else:

@@ -105,15 +105,12 @@ class TypePropagation(IRVisitor):
     def visit_CALL(self, ir):
         self.visit(ir.func)
         callee_scope = ir.callee_scope
-        if callee_scope.is_method():
-            params = callee_scope.params[1:]
-        else:
-            params = callee_scope.params[:]
+        param_symbols = callee_scope.param_symbols()
         arg_types = [self.visit(arg) for _, arg in ir.args]
-        if params:
+        if param_symbols:
             assert callee_scope.is_specialized()
-        for p, arg_t in zip(params, arg_types):
-            self._propagate(p.sym, arg_t)
+        for sym, arg_t in zip(param_symbols, arg_types):
+            self._propagate(sym, arg_t)
         self._add_scope(callee_scope)
         return callee_scope.return_type
 
@@ -122,12 +119,12 @@ class TypePropagation(IRVisitor):
         ret_t = Type.object(callee_scope)
         callee_scope.return_type = ret_t
         ctor = callee_scope.find_ctor()
-        params = ctor.params[1:]
+        param_symbols = callee_scope.param_symbols()
         arg_types = [self.visit(arg) for _, arg in ir.args]
-        if params:
+        if param_symbols:
             assert callee_scope.is_specialized()
-        for p, arg_t in zip(params, arg_types):
-            self._propagate(p.sym, arg_t)
+        for sym, arg_t in zip(param_symbols, arg_types):
+            self._propagate(sym, arg_t)
         self._add_scope(callee_scope)
         self._add_scope(ctor)
         return ret_t
@@ -271,7 +268,7 @@ class TypePropagation(IRVisitor):
         item_t = None
         if self.current_stm.dst.is_a([TEMP, ATTR]):
             dst_t = self.current_stm.dst.symbol.typ
-            if dst_t.is_seq() and dst_t.element.is_explicit():
+            if dst_t.is_seq() and dst_t.element.explicit:
                 item_t = dst_t.element
         if item_t is None:
             item_typs = [self.visit(item) for item in ir.items]
@@ -365,25 +362,24 @@ class TypePropagation(IRVisitor):
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
 
-    def _normalize_args(self, func_name, params, args, kwargs):
+    def _normalize_args(self, func_name, param_names, defvals, args, kwargs):
         nargs = []
-        if len(params) < len(args):
+        if len(param_names) < len(args):
             nargs = args[:]
             for name, arg in kwargs.items():
                 nargs.append((name, arg))
             kwargs.clear()
             return nargs
-        for i, param in enumerate(params):
-            name = param.copy.name
+        for i, (name, defval) in enumerate(zip(param_names, defvals)):
             if i < len(args):
                 nargs.append((name, args[i][1]))
             elif name in kwargs:
                 nargs.append((name, kwargs[name]))
-            elif param.defval:
-                nargs.append((name, param.defval))
+            elif defval:
+                nargs.append((name, defval))
             else:
                 type_error(self.current_stm, Errors.MISSING_REQUIRED_ARG_N,
-                           [func_name, param.copy.name])
+                           [func_name, name])
         kwargs.clear()
         return nargs
 
@@ -397,7 +393,7 @@ class TypePropagation(IRVisitor):
         assert not typ.is_undef()
         #if not Type.can_propagate(sym_t, typ):
         #    return
-        # if sym_t.is_explicit():
+        # if sym_t.explicit:
         #     typ = Type.propagate(sym_t, typ)
         # else:
         #     if sym_t != typ:
@@ -467,11 +463,9 @@ class TypeSpecializer(TypePropagation):
                 return type_or_error
             else:
                 fail(self.current_stm, type_or_error)
-        elif callee_scope.is_method():
-            params = callee_scope.params[1:]
-        else:
-            params = callee_scope.params[:]
-        ir.args = self._normalize_args(callee_scope.base_name, params, ir.args, ir.kwargs)
+        names = callee_scope.param_names()
+        defvals = callee_scope.param_default_values()
+        ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
         if callee_scope.is_lib():
             return self.visit_CALL_lib(ir)
 
@@ -483,7 +477,7 @@ class TypeSpecializer(TypePropagation):
             # Must return after ir.args are visited
             return callee_scope.return_type
         ret_t = callee_scope.return_type
-        param_types = [p.sym.typ for p in params]
+        param_types = callee_scope.param_types()
         if param_types:
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new = self._specialize_function_with_types(callee_scope, new_param_types)
@@ -517,11 +511,7 @@ class TypeSpecializer(TypePropagation):
             arg_types = [self.visit(arg) for _, arg in ir.args[1:]]
             if any([atype.is_undef() for atype in arg_types]):
                 raise RejectPropagation(ir)
-            if worker.is_method():
-                params = worker.params[1:]
-            else:
-                params = worker.params[:]
-            param_types = [p.sym.typ for p in params]
+            param_types = worker.param_types()
             if param_types:
                 new_param_types = self._get_new_param_types(param_types, arg_types)
                 new_scope, is_new = self._specialize_worker_with_types(worker, new_param_types)
@@ -553,12 +543,13 @@ class TypeSpecializer(TypePropagation):
         ret_t = Type.object(callee_scope)
         callee_scope.return_type = ret_t
         ctor = callee_scope.find_ctor()
-        ir.args = self._normalize_args(callee_scope.base_name, ctor.params[1:], ir.args, ir.kwargs)
+        names = callee_scope.param_names()
+        defvals = callee_scope.param_default_values()
+        ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if callee_scope.is_specialized():
             return callee_scope.return_type
-        params = ctor.params[1:]
-        param_types = [p.sym.typ for p in params]
+        param_types = ctor.param_types()
         if param_types:
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new = self._specialize_class_with_types(callee_scope, new_param_types)
@@ -568,7 +559,7 @@ class TypeSpecializer(TypePropagation):
                 new_scope_sym.typ = Type.klass(new_scope)
                 ctor_t = Type.function(new_ctor,
                                        new_scope.return_type,
-                                       tuple([new_ctor.params[0].sym.typ] + new_param_types))
+                                       tuple([new_ctor.param_types(with_self=True)[0]] + new_param_types))
                 new_ctor_sym = new_scope.find_sym(new_ctor.base_name)
                 new_ctor_sym.typ = ctor_t
                 self._add_scope(new_scope)
@@ -585,7 +576,7 @@ class TypeSpecializer(TypePropagation):
     def _get_new_param_types(self, param_types, arg_types):
         new_param_types = []
         for param_t, arg_t in zip(param_types, arg_types):
-            if param_t.is_explicit():
+            if param_t.explicit:
                 new_param_t = Type.propagate(param_t, arg_t)
                 new_param_types.append(new_param_t)
             else:
@@ -604,13 +595,9 @@ class TypeSpecializer(TypePropagation):
         new_scope = scope.instantiate(postfix, scope.children, with_tag=False)
         assert qualified_name == new_scope.name
         assert new_scope.return_type is not None
-        if new_scope.is_method():
-            params = new_scope.params[1:]
-        else:
-            params = new_scope.params[:]
         new_types = []
-        for p, new_t in zip(params, types):
-            p.sym.typ = new_t.clone(explicit=True)
+        for sym, new_t in zip(new_scope.param_symbols(), types):
+            sym.typ = new_t.clone(explicit=True)
             new_types.append(new_t)
         new_scope.add_tag('specialized')
         sym = new_scope.parent.find_sym(new_scope.base_name)
@@ -637,8 +624,8 @@ class TypeSpecializer(TypePropagation):
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_ctor)
 
-        for p, new_t in zip(new_ctor.params[1:], types):
-            p.sym.typ = new_t.clone(explicit=True)
+        for sym, new_t in zip(new_ctor.param_symbols(), types):
+            sym.typ = new_t.clone(explicit=True)
         new_scope.add_tag('specialized')
         return new_scope, True
 
@@ -666,18 +653,17 @@ class TypeSpecializer(TypePropagation):
         new_scope.return_type = Type.object(new_scope)
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_ctor)
-        dtype_param = new_ctor.params[1]
-        dtype_param.sym.typ = typ.clone(explicit=True)
-        dtype_param.copy.typ = typ.clone(explicit=True)
-        init_param = new_ctor.params[3]
-        init_param.sym.typ = dtype.clone(explicit=True)
-        init_param.copy.typ = dtype.clone(explicit=True)
+        param_symbols = new_ctor.param_symbols()
+        dtype_sym = param_symbols[1]
+        dtype_sym.typ = typ.clone(explicit=True)
+        init_sym = param_symbols[3]
+        init_sym.typ = dtype.clone(explicit=True)
 
         new_scope.add_tag('specialized')
         for child in new_scope.children:
-            for sym, copy, _ in child.params:
+            for sym in child.param_symbols():
                 if sym.typ.is_class() and sym.typ.scope is None:
-                    copy.typ = sym.typ = dtype
+                    sym.typ = dtype
             if child.return_type.is_class() and child.return_type.scope is None:
                 child.return_type = dtype
             child.add_tag('specialized')
@@ -694,13 +680,10 @@ class TypeSpecializer(TypePropagation):
         new_scope = scope.instantiate(postfix, scope.children, with_tag=False)
         assert qualified_name == new_scope.name
         assert new_scope.return_type is not None
-        if new_scope.is_method():
-            params = new_scope.params[1:]
-        else:
-            params = new_scope.params[:]
-        for p, new_t in zip(params, types):
+        param_symbols = new_scope.param_symbols()
+        for sym, new_t in zip(param_symbols, types):
             new_t = new_t.with_perfect_explicit()
-            p.sym.typ = new_t
+            sym.typ = new_t
         new_scope.add_tag('specialized')
         return new_scope, True
 
@@ -785,9 +768,8 @@ class InstanceTypePropagation(TypePropagation):
 class TypeEvalVisitor(IRVisitor):
     def process(self, scope):
         self.type_evaluator = TypeEvaluator(scope)
-        for sym, copy, _ in scope.params:
+        for sym in scope.param_symbols():
             sym.typ = self._eval(sym.typ)
-            copy.typ = self._eval(copy.typ)
         if scope.return_type:
             scope.return_type = self._eval(scope.return_type)
         for sym in scope.constants.keys():

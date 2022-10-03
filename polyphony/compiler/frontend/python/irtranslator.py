@@ -558,22 +558,22 @@ class CodeVisitor(ast.NodeVisitor):
         outer_function_exit = self.function_exit
         self.function_exit = self._tmp_block(self.current_scope)
 
+        params = []
         for arg in node.args.args:
             param_in, param_copy = self._make_param_symbol(arg)
-            self.current_scope.add_param(param_in, param_copy, None)
+            params.append((param_in, param_copy))
         if node.args.vararg:
             param_in, param_copy = self._make_param_symbol(node.args.vararg, is_vararg=True)
-            self.current_scope.add_param(param_in, param_copy, None)
+            params.append((param_in, param_copy))
 
         if self.current_scope.is_method():
-            if (not self.current_scope.params or
-                    not self.current_scope.params[0].sym.is_param()):
+            if (not params or
+                    not params[0][0].is_param()):
                 fail((env.current_filename, node.lineno), Errors.METHOD_MUST_HAVE_SELF)
-            first_param = self.current_scope.params[0]
-            first_param.sym.typ  = Type.object(self.current_scope.parent)
-            first_param.copy.typ = Type.object(self.current_scope.parent)
-            first_param.copy.add_tag('self')
-            first_param.sym.add_tag('self')
+            params[0][0].typ = Type.object(self.current_scope.parent)
+            params[0][1].typ = Type.object(self.current_scope.parent)
+            params[0][0].add_tag('self')
+            params[0][1].add_tag('self')
 
         if self.current_scope.is_ctor():
             self.current_scope.return_type = Type.object(self.current_scope)
@@ -591,22 +591,23 @@ class CodeVisitor(ast.NodeVisitor):
             append_builtin(self.current_scope.parent, self.current_scope)
 
         if self.current_scope.is_method():
-            params = self.current_scope.params[1:]  # skip 'self'
+            mv_params = params[1:]
         else:
-            params = self.current_scope.params
-        for idx, param in enumerate(params):
-            mv = MOVE(TEMP(param.copy, Ctx.STORE),
-                      TEMP(param.sym, Ctx.LOAD))
+            mv_params = params[:]
+        for param, copy in mv_params:
+            mv = MOVE(TEMP(copy, Ctx.STORE),
+                      TEMP(param, Ctx.LOAD))
             self.emit(mv, node)
             self.current_param_stms.append(mv)
+
         skip = len(node.args.args) - len(node.args.defaults)
-        for idx, (param, defval) in enumerate(zip(self.current_scope.params[skip:],
-                                                  node.args.defaults)):
-            param_sym_t = param.sym.typ
-            if param_sym_t.is_seq():
+        for param, copy in params[:skip]:
+            self.current_scope.add_param(param, None)
+        for (param, copy), defval in zip(params[skip:], node.args.defaults):
+            if param.typ.is_seq():
                 fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_DEFAULT_SEQ_PARAM)
             d = self.visit(defval)
-            self.current_scope.params[skip + idx] = FunctionParam(param.sym, param.copy, d)
+            self.current_scope.add_param(param, d)
 
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
             self._leave_scope(*context)
@@ -661,10 +662,9 @@ class CodeVisitor(ast.NodeVisitor):
                 tags |= {'lib'}
             ctor = Scope.create(self.current_scope, '__init__', tags, node.lineno)
             # add 'self' parameter
-            param_t = Type.object(self.current_scope)
-            param_in = ctor.add_param_sym(env.self_name, typ=param_t)
-            param_copy = ctor.add_sym(env.self_name, typ=param_t)
-            ctor.add_param(param_in, param_copy, None)
+            param_in = ctor.add_param_sym(env.self_name, typ=Type.object(self.current_scope))
+            param_copy = ctor.add_sym(env.self_name, typ=Type.object(self.current_scope))
+            ctor.add_param(param_in, None)
             # add empty block
             blk = self._new_block(ctor)
             ctor.set_entry_block(blk)
@@ -935,7 +935,7 @@ class CodeVisitor(ast.NodeVisitor):
                     if len(it.kwargs) == 0:
                         assert sym_t.is_function()
                         scp = sym_t.scope
-                        factor = scp.params[1].defval
+                        factor = scp.param_default_values()[1]
                     elif len(it.kwargs) == 1 and 'factor' in it.kwargs:
                         factor = it.kwargs['factor']
                     else:
@@ -960,7 +960,7 @@ class CodeVisitor(ast.NodeVisitor):
                     if len(it.kwargs) == 0:
                         assert sym_t.is_function()
                         scp = sym_t.scope
-                        ii = scp.params[1].defval
+                        ii = scp.param_default_values()[1]
                     elif len(it.kwargs) == 1 and 'ii' in it.kwargs:
                         ii = it.kwargs['ii']
                     else:

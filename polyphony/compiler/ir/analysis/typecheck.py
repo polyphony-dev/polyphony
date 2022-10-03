@@ -60,10 +60,7 @@ class TypeChecker(IRVisitor):
 
         if callee_scope.is_pure():
             return Type.any()
-        elif callee_scope.is_method():
-            param_typs = tuple([sym.typ for sym, _, _ in callee_scope.params[1:]])
-        else:
-            param_typs = tuple([sym.typ for sym, _, _ in callee_scope.params])
+        param_typs = callee_scope.param_types()
         param_len = len(param_typs)
         #with_vararg = param_len and param_typs[-1].has_vararg()
         # TODO:
@@ -95,8 +92,8 @@ class TypeChecker(IRVisitor):
         elif name in env.all_scopes:
             syscall_scope = env.all_scopes[ir.symbol.name]
             arg_len = len(ir.args)
-            param_len = len(syscall_scope.params)
-            param_typs = tuple([sym.typ for sym, _, _ in syscall_scope.params])
+            param_typs = tuple(syscall_scope.param_types())
+            param_len = len(param_typs)
             #with_vararg = len(param_typs) and param_typs[-1].has_vararg()
             # TODO:
             with_vararg = False
@@ -117,8 +114,8 @@ class TypeChecker(IRVisitor):
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
                        [callee_scope.orig_name, 0, arg_len])
-        param_len = len(ctor.params) - 1
-        param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
+        param_typs = ctor.param_types()
+        param_len = len(param_typs)
         #with_vararg = len(param_typs) and param_typs[-1].has_vararg()
         # TODO:
         with_vararg = False
@@ -286,10 +283,8 @@ class EarlyTypeChecker(IRVisitor):
             return callee_scope.return_type
         if callee_scope.is_pure():
             return Type.any()
-        if callee_scope.is_method():
-            param_typs = tuple([sym.typ for sym, _, _ in callee_scope.params[1:]])
-        else:
-            param_typs = tuple([sym.typ for sym, _, _ in callee_scope.params])
+
+        param_typs = callee_scope.param_types()
         param_len = len(param_typs)
         #with_vararg = param_len and param_typs[-1].has_vararg()
         # TODO:
@@ -301,8 +296,8 @@ class EarlyTypeChecker(IRVisitor):
         if ir.symbol.name in env.all_scopes:
             syscall_scope = env.all_scopes[ir.symbol.name]
             arg_len = len(ir.args)
-            param_len = len(syscall_scope.params)
-            param_typs = tuple([sym.typ for sym, _, _ in syscall_scope.params])
+            param_typs = tuple(syscall_scope.param_types())
+            param_len = len(param_typs)
             # with_vararg = len(param_typs) and param_typs[-1].has_vararg()
             # TODO:
             with_vararg = False
@@ -321,8 +316,8 @@ class EarlyTypeChecker(IRVisitor):
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
                        [callee_scope.orig_name, 0, arg_len])
-        param_len = len(ctor.params) - 1
-        param_typs = tuple([param.sym.typ for param in ctor.params])[1:]
+        param_typs = ctor.param_types()
+        param_len = len(param_typs)
         #with_vararg = len(param_typs) and param_typs[-1].has_vararg()
         # TODO:
         with_vararg = False

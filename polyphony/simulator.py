@@ -830,13 +830,14 @@ class SimulationModelBuilder(object):
 
         def call_body(*args, **kwargs):
             arg_and_names = []
+            param_names = self.hdlmodule.scope.param_names()
+            default_values = self.hdlmodule.scope.param_default_values()
             for i, v in enumerate(args):
-                sym, copy, defval = self.hdlmodule.scope.params[i]
-                arg_and_names.append((copy.name, v))
+                arg_and_names.append((param_names[i], v))
             for k, v in kwargs.items():
                 arg_and_names.append((k, v))
-            for sym, copy, defval in self.hdlmodule.scope.params[len(arg_and_names):]:
-                arg_and_names.append((copy.name, defval.value))
+            for param_name, defval in zip(param_names, default_values)[len(arg_and_names):]:
+                arg_and_names.append((param_name, defval.value))
             return _funcall(self.model, self.hdlmodule.name, arg_and_names)
 
         setattr(self.model, '_call_body', call_body)
