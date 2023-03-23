@@ -1,4 +1,5 @@
 from .type import Type
+from .exprtype import ExprType
 from ...common.env import env
 
 
@@ -26,6 +27,9 @@ class ListType(Type):
     def scope(self):
         return self._scope
 
+    def is_any_length(self):
+        return isinstance(self._length, ExprType) or (isinstance(self._length, int) and self._length == Type.ANY_LENGTH)
+
     def clone(self, **args):
         clone = self.__new__(self.__class__)
         clone.__dict__ = self.__dict__.copy()
@@ -36,26 +40,26 @@ class ListType(Type):
         return clone
 
     def can_assign(self, rhs_t):
-        if not rhs_t.is_seq():
+        if not rhs_t.is_list():
             return False
-        elif self._length == rhs_t._length:
-            return True
-        elif self._length == Type.ANY_LENGTH or rhs_t._length == Type.ANY_LENGTH:
+        elif not self._element.can_assign(rhs_t._element):
+            return False
+        elif isinstance(self._length, int):
+            if isinstance(rhs_t._length, int):
+                return self._length == rhs_t._length or self._length == Type.ANY_LENGTH
+            elif isinstance(rhs_t._length, ExprType):
+                return True
+        elif isinstance(self._length, ExprType):
             return True
         else:
             return False
 
     def propagate(self, rhs_t):
-        if self._name != rhs_t._name:
+        if not self.can_assign(rhs_t):
             return self
-        if not (self._length == rhs_t._length or self._length == Type.ANY_LENGTH):
-            return self
-        if self._element != rhs_t._element:
-            return self
-        if self._ro != rhs_t._ro:
-            return self
-        lhs_t = rhs_t.clone()
-        if self._length == Type.ANY_LENGTH:
+        elm_t = self._element.propagate(rhs_t._element)
+        lhs_t = self.clone(element=elm_t, ro=rhs_t.ro)
+        if lhs_t._length == Type.ANY_LENGTH:
             lhs_t = lhs_t.clone(length=rhs_t._length)
         return lhs_t
 

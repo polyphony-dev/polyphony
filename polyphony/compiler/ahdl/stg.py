@@ -343,7 +343,10 @@ def _signal_width(sym):
     elif sym.typ.is_bool():
         width = 1
     elif sym.typ.is_port():
-        width = sym.typ.get_dtype().width
+        if sym.typ.dtype.is_int() or sym.typ.dtype.is_bool():
+            width = sym.typ.dtype.width
+        else:
+            raise NotImplementedError()
     elif sym.typ.is_object():
         #sym_scope_name = sym.typ.scope.orig_name
         #if sym_scope_name == 'polyphony.Reg' or sym_scope_name == 'polyphony.Net':
@@ -386,7 +389,7 @@ def _tags_from_sym(sym):
         else:
             tags.add('regarray')
     elif sym.typ.is_port():
-        di = sym.typ.get_direction()
+        di = sym.typ.direction
         assert di != '?'
         if di != 'inout':
             tags.add(di)
@@ -947,7 +950,7 @@ class AHDLTranslator(IRVisitor):
 
     def _get_port_owner(self, sym):
         assert sym.typ.is_port()
-        root = sym.typ.get_root_symbol()
+        root = sym.typ.root_symbol
         if root.scope.is_ctor():
             return root.scope.parent
         else:
@@ -972,7 +975,7 @@ class AHDLTranslator(IRVisitor):
         assert port_qsym[-1].typ.is_port()
         port_sym = port_qsym[-1]
         port_owner = port_qsym[-2]
-        root_sym = port_sym.typ.get_root_symbol()
+        root_sym = port_sym.typ.root_symbol
         port_prefixes = port_qsym[:-1] + (root_sym,)
 
         if port_prefixes[0].name == env.self_name:
@@ -983,18 +986,18 @@ class AHDLTranslator(IRVisitor):
             tags = port_sig.tags
         else:
             tags = set()
-        dtype = port_sym.typ.get_dtype()
+        dtype = port_sym.typ.dtype
         width = dtype.width
         port_scope = port_sym.typ.scope
         # kind and direction might be changed at root
         # so we use root_sym.typ
         owners_access = not self._is_access_from_external(port_sym)
-        direction = root_sym.typ.get_direction()
+        direction = root_sym.typ.direction
         assert direction != '?'
-        assigned = root_sym.typ.get_assigned()
+        assigned = root_sym.typ.assigned
         assert port_scope.base_name.startswith('Port')
         tags.add('single_port')
-        if dtype.has_signed() and dtype.signed:
+        if dtype.signed:
             tags.add('int')
 
         outer_module_scope = self.scope.outer_module()
@@ -1028,20 +1031,21 @@ class AHDLTranslator(IRVisitor):
         else:
             assert outer_module_scope
             port_sig = env.hdlscope(outer_module_scope).gen_sig(port_name, width, tags, port_sym)
+            tags = port_sig.tags
         if 'reg' in tags and not assigned:
             tags.add('initializable')
             if dtype.is_int():
-                port_sig.init_value = port_sym.typ.get_init()
+                port_sig.init_value = port_sym.typ.init
             elif dtype.is_bool():
-                port_sig.init_value = 1 if port_sym.typ.get_init() else 0
+                port_sig.init_value = 1 if port_sym.typ.init else 0
             else:
                 assert False
-        if port_sym.typ.has_maxsize():
-            port_sig.maxsize = port_sym.typ.get_maxsize()
+        #if port_sym.typ.has_maxsize():
+        #    port_sig.maxsize = port_sym.typ.get_maxsize()
         # TODO: get_rewritable to be always available
-        if port_sym.typ.get_rewritable():
-            tags.add('rewritable')
-        print(self.hdlmodule.name, port_sig, tags)
+        #if port_sym.typ.get_rewritable():
+        tags.add('rewritable')
+        #print(self.hdlmodule.name, port_sig, tags)
         return port_sig
 
     def _make_port_access(self, call, target):

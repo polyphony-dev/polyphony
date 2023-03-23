@@ -45,11 +45,14 @@ class FunctionParams(object):
         params = self._explicit_params(with_self)
         return [p.sym.typ for p in params]
 
+    def _param_name(self, sym):
+        l = len(Symbol.param_prefix + '_')
+        return sym.name[l:]
+
     def param_names(self, with_self=False):
         names = []
         for s in self.symbols(with_self):
-            l = len(Symbol.param_prefix + '_')
-            names.append(s.name[l:])
+            names.append(self._param_name(s))
         return names
 
     def clear(self):
@@ -60,8 +63,17 @@ class FunctionParams(object):
         for s, v in self._params:
             if s is sym:
                 continue
+            elif self._param_name(s) == sym:
+                continue
             params.append(FunctionParam(s, v))
         self._params = params
+
+    def remove_by_index(self, indices):
+        for i in reversed(indices):
+            if self._is_method:
+                self._params.pop(i + 1)
+            else:
+                self._params.pop(i)
 
     def __str__(self):
         s = ''
@@ -254,7 +266,7 @@ class Scope(Tagged):
         #s += "\n"
         s += '================================\n'
         s += 'Parameters\n'
-        s += str(self.function_params)
+        #s += str(self.function_params)
         s += "\n"
         s += 'Return\n'
         if self.return_type:
@@ -318,6 +330,9 @@ class Scope(Tagged):
     def signature(self):
         param_signature = self._mangled_names(self.param_types())
         return (self.name, param_signature)
+
+    def unique_name(self):
+        return self.name.replace('@top.', '').replace('.', '_')
 
     def clone_symbols(self, scope, postfix=''):
         symbol_map = {}
@@ -563,8 +578,11 @@ class Scope(Tagged):
     def clear_params(self):
         return self.function_params.clear()
 
-    def remove_param(self, sym):
-        return self.function_params.remove(sym)
+    def remove_param(self, key):
+        if isinstance(key, Symbol):
+            return self.function_params.remove(key)
+        elif isinstance(key, list):
+            return self.function_params.remove_by_index(key)
 
     def find_param_sym(self, param_name):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
@@ -854,6 +872,18 @@ class Scope(Tagged):
         n = Scope.instance_ids[self]
         Scope.instance_ids[self] += 1
         return n
+
+    def build_module_params(self, module_param_vars):
+        module_params = []
+        ctor = self.find_ctor()
+        param_names = ctor.param_names(with_self=True)
+        for i, name in enumerate(param_names):
+            if name.isupper():
+                module_params.append(ctor.function_params._params[i])
+        for sym, _ in module_params:
+            ctor.function_params.remove(sym)
+        self.module_param_vars = module_param_vars
+        self.module_params = module_params
 
 
 class SymbolReplacer(IRVisitor):

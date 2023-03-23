@@ -183,16 +183,15 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
         self._add_state_register(fsm)
         self._add_callee_submodules(scope)
-        for sym in scope.param_symbols():
-            if sym.typ.is_object() and sym.typ.scope.is_module():
-                mod_scope = sym.typ.scope
+        for p_name, p_typ in zip(scope.param_names(), scope.param_types()):
+            if p_typ.is_object() and p_typ.scope.is_module():
+                mod_scope = p_typ.scope
                 sub_hdlmodule = env.hdlscope(mod_scope)
                 param_map = {}
                 if sub_hdlmodule.scope.module_param_vars:
                     for name, v in sub_hdlmodule.scope.module_param_vars:
                         param_map[name] = v
-                param_name = scope.original_param_name(sym)
-                self._add_submodule_instances(sub_hdlmodule, [param_name], param_map=param_map)
+                self._add_submodule_instances(sub_hdlmodule, [p_name], param_map=param_map)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)
 

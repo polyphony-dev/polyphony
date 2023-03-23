@@ -61,7 +61,7 @@ from . import typing
 @module
 @inlinelib
 class Channel:
-    def __init__(self, dtype, capacity=4):
+    def __init__(self, dtype:generic, capacity=4):
         self.din:dtype = 0
         self.write = False
         self.read = False

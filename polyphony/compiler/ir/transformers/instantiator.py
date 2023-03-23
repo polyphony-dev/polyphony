@@ -12,7 +12,7 @@ logger = logging.getLogger()
 
 
 def bind_val(scope, i, value):
-    VarReplacer.replace_uses(scope, TEMP(scope.params[i][0], Ctx.LOAD), CONST(value))
+    VarReplacer.replace_uses(scope, TEMP(scope.param_symbols()[i], Ctx.LOAD), CONST(value))
 
 
 class WorkerInstantiator(object):
@@ -73,7 +73,7 @@ class WorkerInstantiator(object):
                 if worker.is_function():
                     # adjust the index for the first parameter of append_worker()
                     i -= 1
-                binding.append((bind_val, i, arg.value))
+                binding.append((i, arg.value))
             else:
                 pass
 
@@ -92,11 +92,10 @@ class WorkerInstantiator(object):
         if binding:
             udd = UseDefDetector()
             udd.process(new_worker)
-            for f, i, a in binding:
-                f(new_worker, i, a)
-            for _, i, _ in reversed(binding):
-                new_worker.params.pop(i)
-            for _, i, _ in reversed(binding):
+            for i, a in binding:
+                bind_val(new_worker, i, a)
+            new_worker.remove_param([i for i, _ in binding])
+            for i, _ in reversed(binding):
                 if worker.is_function():
                     # adjust the index for the first parameter of append_worker()
                     call.args.pop(i + 1)
@@ -187,12 +186,13 @@ class ModuleInstantiator(object):
         binding = []
         module_param_vars = []
         ctor = module.find_ctor()
+        param_names = ctor.param_names()
         for i, (_, arg) in enumerate(new.args):
             if arg.is_a(CONST):
-                if ctor.params[i + 1].copy.name.isupper():
-                    module_param_vars.append((ctor.params[i + 1].copy.name, arg.value))
+                if param_names[i].isupper():
+                    module_param_vars.append((param_names[i], arg.value))
                 else:
-                    binding.append((bind_val, i, arg.value))
+                    binding.append((i, arg.value))
         inst_name = module_var.symbol.hdl_name()
         ctor = module.find_ctor()
         children = [ctor]
@@ -202,13 +202,12 @@ class ModuleInstantiator(object):
             new_module_ctor = new_module.find_ctor()
             udd = UseDefDetector()
             udd.process(new_module_ctor)
-            for f, i, a in binding:
-                f(new_module_ctor, i + 1, a)
-            for _, i, _ in reversed(binding):
-                new_module_ctor.params.pop(i + 1)
+            for i, a in binding:
+                bind_val(new_module_ctor, i, a)
+            new_module_ctor.remove_param([i for i, _ in binding])
             new_module_sym = new.symbol.scope.inherit_sym(new.symbol, new_module.name)
             new.symbol = new_module_sym
-            for _, i, _ in reversed(binding):
+            for i, _ in reversed(binding):
                 new.args.pop(i)
         else:
             new_module = module.instantiate(inst_name, children)
@@ -216,14 +215,7 @@ class ModuleInstantiator(object):
             new.symbol = new_module_sym
         new.symbol.typ = new.symbol.typ.clone(scope=new_module)
         new_module.inst_name = inst_name
-        new_module.module_params = []
-        ctor = new_module.find_ctor()
-        for i, param in enumerate(ctor.params):
-            if param.copy.name.isupper():
-                new_module.module_params.append(param)
-        new_module.module_param_vars = module_param_vars
-        for param in new_module.module_params:
-            ctor.params.remove(param)
+        new_module.build_module_params(module_param_vars)
         return new_module
 
     def _instantiate_module(self, module, args):
@@ -235,7 +227,7 @@ class ModuleInstantiator(object):
                 if ctor.params[i + 1].copy.name.isupper():
                     module_param_vars.append((ctor.params[i + 1].copy.name, arg))
                 else:
-                    binding.append((bind_val, i, arg))
+                    binding.append((i, arg))
         inst_name = 'x'
         ctor = module.find_ctor()
         children = [ctor]
@@ -245,13 +237,12 @@ class ModuleInstantiator(object):
             new_module_ctor = new_module.find_ctor()
             udd = UseDefDetector()
             udd.process(new_module_ctor)
-            for f, i, a in binding:
-                f(new_module_ctor, i + 1, a)
-            for _, i, _ in reversed(binding):
-                new_module_ctor.params.pop(i + 1)
+            for i, a in binding:
+                bind_val(new_module_ctor, i, a)
+            new_module_ctor.remove_param([i for i, _ in binding])
             #new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
             #new.sym = new_module_sym
-            #for _, i, _ in reversed(binding):
+            #for i, _ in reversed(binding):
             #    new.args.pop(i)
         else:
             new_module = module.instantiate(inst_name, children)
@@ -259,14 +250,7 @@ class ModuleInstantiator(object):
             #new.sym = new_module_sym
         #new.sym.typ = new.sym.typ.clone(scope=new_module)
         new_module.inst_name = inst_name
-        new_module.module_params = []
-        ctor = new_module.find_ctor()
-        for i, param in enumerate(ctor.params):
-            if param.copy.name.isupper():
-                new_module.module_params.append(param)
-        new_module.module_param_vars = module_param_vars
-        for param in new_module.module_params:
-            ctor.params.remove(param)
+        new_module.build_module_params(module_param_vars)
         return new_module
 
     def _process_workers(self, module):
@@ -306,7 +290,7 @@ class ModuleInstantiator(object):
                 if worker.is_function():
                     # adjust the index for the first parameter of append_worker()
                     i -= 1
-                binding.append((bind_val, i, arg.value))
+                binding.append((i, arg.value))
             else:
                 pass
 
@@ -325,11 +309,10 @@ class ModuleInstantiator(object):
         if binding:
             udd = UseDefDetector()
             udd.process(new_worker)
-            for f, i, a in binding:
-                f(new_worker, i, a)
-            for _, i, _ in reversed(binding):
-                new_worker.params.pop(i)
-            for _, i, _ in reversed(binding):
+            for i, a in binding:
+                bind_val(new_worker, i, a)
+            new_worker.remove_params([i for i, _ in binding])
+            for i, _ in reversed(binding):
                 if worker.is_function():
                     # adjust the index for the first parameter of append_worker()
                     call.args.pop(i + 1)

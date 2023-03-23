@@ -26,9 +26,9 @@ class FunctionType(ScopeType):
         lhs_t = self
         if lhs_t._name == rhs_t._name:
             if lhs_t._scope is None:
-                lhs_t = rhs_t.clone()
+                lhs_t = rhs_t.clone(explicit=self.explicit)
             if not lhs_t.explicit and rhs_t.explicit and lhs_t._scope is rhs_t._scope:
-                param_types = [t.clone() for t in rhs_t._param_types]
+                param_types = [t.clone(explicit=False) for t in rhs_t._param_types]
                 lhs_t = lhs_t.clone(param_types=param_types, return_type=rhs_t._return_type.clone())
         return lhs_t
 

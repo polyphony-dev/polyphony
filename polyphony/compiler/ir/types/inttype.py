@@ -37,7 +37,7 @@ class IntType(Type):
         lhs_t = self
         if self._name == rhs_t._name:
             if not self.explicit:
-                lhs_t = rhs_t.clone()
+                lhs_t = rhs_t.clone(explicit=self.explicit)
         return lhs_t
 
     def __str__(self):

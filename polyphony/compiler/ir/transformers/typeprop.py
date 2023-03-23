@@ -119,7 +119,7 @@ class TypePropagation(IRVisitor):
         ret_t = Type.object(callee_scope)
         callee_scope.return_type = ret_t
         ctor = callee_scope.find_ctor()
-        param_symbols = callee_scope.param_symbols()
+        param_symbols = ctor.param_symbols()
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if param_symbols:
             assert callee_scope.is_specialized()
@@ -166,13 +166,11 @@ class TypePropagation(IRVisitor):
 
     def visit_TEMP(self, ir):
         sym_t = ir.symbol.typ
-        if sym_t.is_class() and sym_t.scope.is_typeclass():
+        # Convert type classes defined in polyphony.typing to builtin scope(ex. int8 to builtin.int)
+        if sym_t.is_class() and sym_t.scope and sym_t.scope.is_typeclass():
             t = Type.from_ir(ir)
-            if t.is_object():
-                new_sym_t = sym_t.clone(scope=t.scope)
-            else:
-                type_scope, args = Type.to_scope(t)
-                new_sym_t = sym_t.clone(scope=type_scope, typeargs=args)
+            type_scope, args = Type.to_scope(t)
+            new_sym_t = sym_t.clone(scope=type_scope, typeargs=args)
             ir.symbol.typ =  new_sym_t
         elif sym_t.is_function() and ir.ctx == Ctx.LOAD:
             # Cases in which a variable of function type is referenced
@@ -285,18 +283,24 @@ class TypePropagation(IRVisitor):
                     item_t = item_typs[0]
             else:
                 assert False  # TODO:
-        if self.is_strict and ir.repeat.is_a(CONST):
+
+        typ = ir.symbol.typ
+        if typ.is_tuple():
             length = len(ir.items) * ir.repeat.value
         else:
-            length = Type.ANY_LENGTH
-        if ir.is_mutable:
-            t = Type.list(item_t, length)
-        else:
-            t = Type.tuple(item_t, length)
+            if self.is_strict and ir.repeat.is_a(CONST):
+                length = len(ir.items) * ir.repeat.value
+            else:
+                length = Type.ANY_LENGTH
+        typ = typ.clone(element=item_t, length=length)
+        #if ir.is_mutable:
+        #    typ = Type.list(item_t, length)
+        #else:
+        #    typ = Type.tuple(item_t, length)
         if all(item.is_a(CONST) for item in ir.items):
-            t = t.clone(ro=True)
-        ir.symbol.typ = t
-        return t
+            typ = typ.clone(ro=True)
+        ir.symbol.typ = typ
+        return typ
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
@@ -543,8 +547,8 @@ class TypeSpecializer(TypePropagation):
         ret_t = Type.object(callee_scope)
         callee_scope.return_type = ret_t
         ctor = callee_scope.find_ctor()
-        names = callee_scope.param_names()
-        defvals = callee_scope.param_default_values()
+        names = ctor.param_names()
+        defvals = ctor.param_default_values()
         ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if callee_scope.is_specialized():
@@ -577,7 +581,7 @@ class TypeSpecializer(TypePropagation):
         new_param_types = []
         for param_t, arg_t in zip(param_types, arg_types):
             if param_t.explicit:
-                new_param_t = Type.propagate(param_t, arg_t)
+                new_param_t = param_t.propagate(arg_t)
                 new_param_types.append(new_param_t)
             else:
                 arg_t = arg_t.clone(explicit=False)
@@ -654,9 +658,9 @@ class TypeSpecializer(TypePropagation):
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_ctor)
         param_symbols = new_ctor.param_symbols()
-        dtype_sym = param_symbols[1]
+        dtype_sym = param_symbols[0]
         dtype_sym.typ = typ.clone(explicit=True)
-        init_sym = param_symbols[3]
+        init_sym = param_symbols[2]
         init_sym.typ = dtype.clone(explicit=True)
 
         new_scope.add_tag('specialized')

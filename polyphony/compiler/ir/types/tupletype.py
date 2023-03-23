@@ -31,21 +31,23 @@ class TupleType(Type):
         return clone
 
     def can_assign(self, rhs_t):
-        if not rhs_t.is_seq():
+        if not rhs_t.is_tuple():
             return False
-        elif self._length == rhs_t._length:
+        elif not self._element.can_assign(rhs_t._element):
+            return False
+        elif self._length == rhs_t._length or self._length == Type.ANY_LENGTH:
             return True
         else:
             return False
 
     def propagate(self, rhs_t):
-        if self._name != rhs_t._name:
+        if not self.can_assign(rhs_t):
             return self
-        if not (self._length == rhs_t._length or self._length == Type.ANY_LENGTH):
-            return self.clone()
-        if self._element != rhs_t._element:
-            return self
-        return rhs_t.clone()
+        elm_t = self._element.propagate(rhs_t._element)
+        lhs_t = self.clone(element=elm_t)
+        if lhs_t._length == Type.ANY_LENGTH:
+            lhs_t = lhs_t.clone(length=rhs_t._length)
+        return lhs_t
 
     def __str__(self):
         if env.dev_debug_mode:

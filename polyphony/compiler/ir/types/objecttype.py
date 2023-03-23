@@ -21,9 +21,9 @@ class ObjectType(ScopeType):
         lhs_t = self
         if self._name == rhs_t._name:
             if self._scope is None:
-                lhs_t = rhs_t.clone()
+                lhs_t = rhs_t.clone(explicit=self.explicit)
             elif rhs_t._scope and rhs_t._scope.origin is self._scope:
-                lhs_t = rhs_t.clone()
+                lhs_t = rhs_t.clone(explicit=self.explicit)
         elif rhs_t.is_port() and self._scope.is_port():
-            lhs_t = rhs_t.clone()
+            lhs_t = rhs_t.clone(explicit=self.explicit)
         return lhs_t

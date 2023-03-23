@@ -856,7 +856,7 @@ class ATTR(IRExp):
         self._exp._ctx = Ctx.LOAD
 
     def __str__(self):
-        return '{}.{}'.format(self.exp, self._attr)
+        return '{}->{}'.format(self.exp, self._attr)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, ATTR):
@@ -1190,12 +1190,12 @@ class CEXPR(EXPR):
         return self._cond.kids() + super().kids()
 
     @property
-    def conds(self):
-        return self._conds
+    def cond(self):
+        return self._cond
 
-    @conds.setter
-    def conds(self, c):
-        self._conds = c
+    @cond.setter
+    def cond(self, c):
+        self._cond = c
 
 
 class CMOVE(MOVE):

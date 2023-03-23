@@ -24,5 +24,5 @@ class SimpleType(Type):
 
     def propagate(self, rhs_t):
         if self._name == rhs_t._name and rhs_t._explicit:
-            return rhs_t.clone()
+            return rhs_t.clone(explicit=self.explicit)
         return self

@@ -36,4 +36,4 @@ class ExprType(Type):
         return hash((super().__hash__(), hash(self._expr)))
 
     def __eq__(self, other):
-        return self._name == other._name and self._expr == other._expr
+        return isinstance(other, Type) and self._name == other._name and self._expr == other._expr

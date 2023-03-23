@@ -25,30 +25,32 @@ class PortTypeProp(TypePropagation):
         super().process(scope)
 
     def visit_NEW(self, ir):
+        assert self.current_stm.is_a(MOVE)
         callee_scope = ir.callee_scope
         if callee_scope.is_port():
             assert self.scope.is_ctor() and self.scope.parent.is_module()
             attrs = {}
             ctor = callee_scope.find_ctor()
-            for (_, a), p in zip(ir.args, ctor.params[1:]):
+            for (_, a), name in zip(ir.args, ctor.param_names()):
                 if a.is_a(CONST):
-                    if p.copy.name == 'direction':
+                    if name == 'direction':
                         di = self._normalize_direction(a.value)
                         if not di:
                             fail(self.current_stm,
                                  Errors.UNKNOWN_X_IS_SPECIFIED,
                                  ['direction', a.value])
-                        attrs[p.copy.name] = di
+                        attrs[name] = di
                     else:
-                        attrs[p.copy.name] = a.value
+                        attrs[name] = a.value
                 elif a.is_a(TEMP) and a.symbol.typ.is_class():
-                    attrs[p.copy.name] = Type.from_ir(a)
+                    attrs[name] = Type.from_ir(a)
                 else:
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
             assert 'dtype' in attrs
             assert 'direction' in attrs
             attrs['root_symbol'] = self.current_stm.dst.symbol
             attrs['assigned'] = False
+            attrs['owners_access'] = True
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
             return Type.port(callee_scope, attrs)
@@ -74,7 +76,7 @@ class PortTypeProp(TypePropagation):
             if callee_scope.base_name == 'assign':
                 receiver_t = receiver_t.clone(assigned=True)
                 receiver.typ = receiver_t
-            root = receiver_t.get_root_symbol()
+            root = receiver_t.root_symbol
             port_owner = root.scope
             # if port is a local variable, we modify the port owner its parent
             if port_owner.is_method():
@@ -83,13 +85,9 @@ class PortTypeProp(TypePropagation):
         elif callee_scope.is_lib():
             return self.visit_CALL_lib(ir)
         else:
-            if callee_scope.is_method():
-                params = callee_scope.params[1:]
-            else:
-                params = callee_scope.params[:]
             arg_types = [self.visit(arg) for _, arg in ir.args]
-            for i, param in enumerate(params):
-                self._propagate(param.sym, arg_types[i])
+            for arg_t, param_sym in zip(arg_types, callee_scope.param_symbols()):
+                self._propagate(param_sym, arg_t)
             self._add_scope(callee_scope)
             return callee_scope.return_type
 
@@ -102,20 +100,14 @@ class PortTypeProp(TypePropagation):
             worker = arg_t.scope
             assert worker.is_worker()
 
-            if worker.is_method():
-                params = worker.params[1:]
-            else:
-                params = worker.params[:]
-            arg_types = [self.visit(arg) for _, arg in ir.args[1:len(params) + 1]]
-            for i, param in enumerate(params):
-                # we should not set the same type here.
-                # because the type of 'sym' and 'copy' might be have different objects(e.g. memnode)
-                self._propagate(param.sym, arg_types[i])
-                #self._propagate_param(worker, param.copy, arg_types[i])
+            param_syms = worker.param_symbols()
+            arg_types = [self.visit(arg) for _, arg in ir.args[1:len(param_syms) + 1]]
+            for arg_t, param_sym in zip(arg_types, param_syms):
+                self._propagate(param_sym, arg_t)
 
             funct = Type.function(worker,
                                   Type.none(),
-                                  tuple([param.sym.typ for param in worker.params]))
+                                  tuple([p_t for p_t in worker.param_types()]))
             self._propagate(ir.args[0][1].symbol, funct)
             self._add_scope(worker)
         return callee_scope.return_type
@@ -199,17 +191,9 @@ class PortChecker(IRTransformer):
                         warn(list(stms)[0], Warnings.PORT_IS_NOT_USED,
                              [sym.orig_name()])
 
-    def _get_port_owner(self, sym):
-        sym_t = sym.typ
-        assert sym_t.is_port()
-        root = sym_t.get_root_symbol()
-        if root.scope.is_ctor():
-            return root.scope.parent
-        else:
-            return root.scope
-
     def _is_access_from_external(self, sym):
-        port_owner = self._get_port_owner(sym)
+        assert sym.typ.is_port()
+        port_owner = sym.typ.port_owner()
         for w, _ in port_owner.workers:
             if self.scope is w:
                 return False
@@ -227,7 +211,7 @@ class PortChecker(IRTransformer):
         return
         assert func_scope.name.startswith('polyphony.io.Port')
         port_typ = sym.typ
-        di = port_typ.get_direction()
+        di = port_typ.direction
         from_external = self._is_access_from_external(sym)
         exclusive_write = False
         if from_external:
@@ -262,8 +246,8 @@ class PortChecker(IRTransformer):
 
     def _set_and_check_port_direction(self, sym):
         port_t = sym.typ
-        rootsym = port_t.get_root_symbol()
-        owners_access = port_t.get_owners_access()
+        rootsym = port_t.root_symbol
+        owners_access = port_t.owners_access
         # write-write conflict
         if self.writers[rootsym]:
             assert len(self.writers[rootsym]) == 1
@@ -287,7 +271,7 @@ class PortChecker(IRTransformer):
             self._check_port_direction(sym, callee_scope)
             if (self.current_stm.block.synth_params['scheduling'] == 'pipeline' and
                     self.scope.find_region(self.current_stm.block) is not self.scope.top_region()):
-                root_sym = receiver_t.get_root_symbol()
+                root_sym = receiver_t.root_symbol
                 root_sym.add_tag('pipelined')
         return ir
 
@@ -306,10 +290,11 @@ class PortChecker(IRTransformer):
             for _, p in ports:
                 port_t = p.symbol.typ
                 assert port_t.is_port()
-                di = port_t.get_direction()
-                owners_access = port_t.get_owners_access()
+                di = port_t.direction
+                owners_access = port_t.owners_access
                 if not owners_access:
-                    port_owner = self._get_port_owner(p.symbol)
+                    assert p.symbol.typ.is_port()
+                    port_owner = p.symbol.typ.port_owner()
                     #port.set_direction('input')
                     if ((self.scope.is_worker() and not self.scope.worker_owner.is_subclassof(port_owner)) or
                             not self.scope.is_worker()):
@@ -467,7 +452,7 @@ class PortConnector(IRVisitor):
         init_param1 = port_scope1.find_ctor().params[3]
         dtype0 = init_param0.sym.typ
         dtype1 = init_param1.sym.typ
-        if not Type.is_same(dtype0, dtype1):
+        if not dtype0.is_same(dtype1):
             assert False
         new0 = find_move_src(p0.symbol, NEW)
         new1 = find_move_src(p1.symbol, NEW)

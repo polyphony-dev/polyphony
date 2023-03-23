@@ -12,6 +12,6 @@ class ClassType(ScopeType):
 
     def propagate(self, rhs_t):
         if self._name == rhs_t._name and self._scope is None:
-            return rhs_t.clone()
+            return rhs_t.clone(explicit=self.explicit)
         else:
             return self

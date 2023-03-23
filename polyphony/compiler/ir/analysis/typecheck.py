@@ -46,7 +46,7 @@ class TypeChecker(IRVisitor):
         self.visit(ir.cond)
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
-        if not Type.is_compatible(l_t, r_t):
+        if not l_t.is_compatible(r_t):
             type_error(self.current_stm, Errors.INCOMPTIBLE_TYPES,
                        [l_t, r_t])
         return l_t
@@ -219,7 +219,7 @@ class TypeChecker(IRVisitor):
         dst_t = self.visit(ir.dst)
         if ir.dst.is_a(TEMP) and ir.dst.symbol.is_return():
             assert not dst_t.is_undef()
-            if not Type.is_same(dst_t, src_t) and not dst_t.can_assign(src_t):
+            if not dst_t.is_same(src_t) and not dst_t.can_assign(src_t):
                 type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
                            [dst_t, src_t])
         else:
@@ -242,7 +242,7 @@ class TypeChecker(IRVisitor):
         if ir.var.is_a(TEMP) and ir.var.symbol.is_return():
             assert not var_t.is_undef()
             for arg_t in arg_types:
-                if not Type.is_same(var_t, arg_t):
+                if not var_t.is_same(arg_t):
                     type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
                                [var_t, arg_t])
         else:

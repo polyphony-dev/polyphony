@@ -414,12 +414,12 @@ class ConstantOpt(ConstantOptBase):
                 receiver = stm.dst.tail()
                 receiver_t = receiver.typ
                 if receiver_t.is_object() and receiver_t.scope.is_module():
-                    module_scope = receiver_t.scope
-                    assert self.scope.parent is module_scope
-                    if module_scope.field_usedef:
-                        defstms = module_scope.field_usedef.get_stms_defining(stm.dst.symbol)
+                    receiver_scope = receiver_t.scope
+                    #assert self.scope.parent is module_scope
+                    if receiver_scope.field_usedef:
+                        defstms = receiver_scope.field_usedef.get_stms_defining(stm.dst.symbol)
                         if len(defstms) == 1:
-                            module_scope.constants[stm.dst.symbol] = stm.src
+                            receiver_scope.constants[stm.dst.symbol] = stm.src
                 for rep in replaces:
                     if rep not in dead_stms:
                         self.worklist.append(rep)

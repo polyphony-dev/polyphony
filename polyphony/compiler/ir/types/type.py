@@ -37,27 +37,27 @@ class Type(object):
             if ann in env.all_scopes:
                 scope = env.all_scopes[ann]
                 if scope.is_typeclass():
-                    t = Type.from_typeclass(scope)
+                    t = Type.from_typeclass(scope, explicit=True)
                 else:
-                    t = Type.object(scope)
+                    t = Type.object(scope, explicit=True)
             elif ann == 'int':
-                t = Type.int()
+                t = Type.int(explicit=True)
             elif ann == 'uint':
-                t = Type.int(signed=False)
+                t = Type.int(signed=False, explicit=True)
             elif ann == 'bool':
-                t = Type.bool()
+                t = Type.bool(explicit=True)
             elif ann == 'list':
-                t = Type.list(Type.undef())
+                t = Type.list(Type.undef(), explicit=True)
             elif ann == 'tuple':
-                t = Type.tuple(Type.undef(), Type.ANY_LENGTH)
+                t = Type.tuple(Type.undef(), Type.ANY_LENGTH, explicit=True)
             elif ann == 'object':
-                t = Type.object(None)
+                t = Type.object(None, explicit=True)
             elif ann == 'str':
-                t = Type.str()
+                t = Type.str(explicit=True)
             elif ann == 'None':
-                t = Type.none()
+                t = Type.none(explicit=True)
             elif ann == 'generic':
-                t = Type.klass(None)
+                t = Type.klass(None, explicit=True)
             elif ann == '...':
                 t = Type.ellipsis_t
             else:
@@ -70,9 +70,9 @@ class Type(object):
                 if sym and sym.typ.has_scope():
                     type_scope = sym.typ.scope
                     if type_scope.is_typeclass():
-                        t = Type.from_typeclass(type_scope)
+                        t = Type.from_typeclass(type_scope, explicit=True)
                     else:
-                        t = Type.object(type_scope)
+                        t = Type.object(type_scope, explicit=True)
                 else:
                     raise NameError(ann + ' is not defined')
             return t
@@ -105,7 +105,7 @@ class Type(object):
                 else:
                     assert False
                 if target_scope.is_typeclass():
-                    t = Type.from_typeclass(target_scope, elms)
+                    t = Type.from_typeclass(target_scope, elms, explicit=True)
                     if t.is_seq():
                         t = t.clone(length=Type.ANY_LENGTH)
                     return t
@@ -124,17 +124,16 @@ class Type(object):
             t = Type.none(explicit)
         elif ann.is_a(TEMP) and (ann.symbol.typ.has_scope()):
             ann_sym_type = ann.symbol.typ
-            # scope = ann.sym.typ.get_scope()
             scope = ann_sym_type.scope
-            if scope.is_typeclass():
-                t = Type.from_typeclass(scope)
+            if scope and scope.is_typeclass():
+                t = Type.from_typeclass(scope, explicit=explicit)
             else:
                 t = Type.object(scope, explicit)
         elif ann.is_a(ATTR) and isinstance(ann.symbol, Symbol) and ann.symbol.typ.has_scope():
             ann_attr_type = ann.symbol.typ
             scope = ann_attr_type.scope
             if scope.is_typeclass():
-                t = Type.from_typeclass(scope)
+                t = Type.from_typeclass(scope, explicit=explicit)
             else:
                 t = Type.object(scope, explicit)
         elif ann.is_a(MREF):
@@ -171,44 +170,44 @@ class Type(object):
         return t
 
     @classmethod
-    def from_typeclass(cls, scope, elms=None):
+    def from_typeclass(cls, scope, elms=None, explicit=True):
         assert scope.is_typeclass()
         if scope.base_name == 'int':
-            return Type.int()
+            return Type.int(explicit=explicit)
         elif scope.base_name == 'uint':
-            return Type.int(signed=False)
+            return Type.int(signed=False, explicit=explicit)
         elif scope.base_name == 'bool':
-            return Type.bool()
+            return Type.bool(explicit=explicit)
         elif scope.base_name == 'bit':
-            return Type.int(1, signed=False)
+            return Type.int(1, signed=False, explicit=explicit)
         elif scope.base_name == 'object':
-            return Type.object(None)
+            return Type.object(None, explicit=explicit)
         elif scope.base_name == 'generic':
-            return Type.klass(None)
+            return Type.klass(None, explicit=explicit)
         elif scope.base_name == 'Type':
             raise NotImplementedError()
         elif scope.base_name == 'function':
-            return Type.function(None)
+            return Type.function(None, explicit=explicit)
         elif scope.base_name == 'str':
-            return Type.str()
+            return Type.str(explicit=explicit)
         elif scope.base_name == 'list':
-            return Type.list(Type.undef())
+            return Type.list(Type.undef(), explicit=explicit)
         elif scope.base_name == 'tuple':
-            return Type.tuple(Type.undef(), Type.ANY_LENGTH)
+            return Type.tuple(Type.undef(), Type.ANY_LENGTH, explicit=explicit)
         elif scope.base_name.startswith('int'):
-            return Type.int(int(scope.base_name[3:]))
+            return Type.int(int(scope.base_name[3:]), explicit=explicit)
         elif scope.base_name.startswith('uint'):
-            return Type.int(int(scope.base_name[4:]), signed=False)
+            return Type.int(int(scope.base_name[4:]), signed=False, explicit=explicit)
         elif scope.base_name.startswith('bit'):
-            return Type.int(int(scope.base_name[3:]), signed=False)
+            return Type.int(int(scope.base_name[3:]), signed=False, explicit=explicit)
         elif scope.base_name == ('Int'):
-            return Type.int()
+            return Type.int(explicit=explicit)
         elif scope.base_name == ('List'):
             if elms:
                 assert len(elms) == 1
-                return Type.list(elms[0])
+                return Type.list(elms[0], explicit=explicit)
             else:
-                return Type.list(Type.undef())
+                return Type.list(Type.undef(), explicit=explicit)
         elif scope.base_name == ('Tuple'):
             if elms:
                 if len(elms) == 2 and elms[1].is_ellipsis():
@@ -216,9 +215,9 @@ class Type(object):
                 else:
                     length = len(elms)
                 # TODO: multiple type tuple
-                return Type.tuple(elms[0], length)
+                return Type.tuple(elms[0], length, explicit=explicit)
             else:
-                return Type.tuple(Type.undef(), Type.ANY_LENGTH)
+                return Type.tuple(Type.undef(), Type.ANY_LENGTH, explicit=explicit)
         else:
             print(scope.name)
             assert False
@@ -246,7 +245,7 @@ class Type(object):
         return self._name
 
     def __repr__(self):
-        return f'{self.name}()'
+        return str(self)
 
     def __hash__(self):
         return hash((self._name, self._explicit))
@@ -316,7 +315,8 @@ class Type(object):
 
     @classmethod
     def port(cls, portcls, attrs):
-        raise NotImplementedError()
+        from .porttype import PortType
+        return PortType(portcls, attrs)
 
     @classmethod
     def namespace(cls, scope, explicit=False):
@@ -343,18 +343,16 @@ class Type(object):
         return self.name in ('namespace', 'class')
 
     def has_scope(self):
-        return self.name in ('class', 'function', 'object')
+        return self.name in ('class', 'function', 'object', 'namespace')
 
-    @classmethod
-    def is_same(cls, t0, t1):
-        return t0.name == t1.name
+    def is_same(self, other):
+        return self.name == other.name
 
     def can_assign(self, from_t):
         raise NotImplementedError()
 
-    @classmethod
-    def is_compatible(cls, t0, t1):
-        return t0.can_assign(t1) and t1.can_assign(t0)
+    def is_compatible(self, other):
+        return self.can_assign(other) and other.can_assign(self)
 
     def propagate(self, src):
         raise NotImplementedError()
@@ -396,8 +394,8 @@ class Type(object):
                     elms = elm
                 s = f't_{elms}'
             elif t.is_class():
-                # TODO: we should avoid naming collision
-                s = f'c_{t.scope.base_name}'
+                name = t.scope.unique_name()
+                s = f'c_{name}'
             elif t.is_int():
                 s = f'i{t.width}'
                 s = 'i'
@@ -406,8 +404,8 @@ class Type(object):
             elif t.is_str():
                 s = f's'
             elif t.is_object():
-                # TODO: we should avoid naming collision
-                s = f'o_{t.scope.base_name}'
+                name = t.scope.unique_name()
+                s = f'o_{name}'
             else:
                 s = str(t)
             ts.append(s)

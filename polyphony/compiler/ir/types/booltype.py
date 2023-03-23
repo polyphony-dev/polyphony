@@ -9,3 +9,11 @@ class BoolType(SimpleType):
     def can_assign(self, rhs_t):
         return (self._name == rhs_t._name
             or rhs_t.is_int())
+
+    @property
+    def width(self):
+        return 1
+
+    @property
+    def signed(self):
+        return False
