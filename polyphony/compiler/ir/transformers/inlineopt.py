@@ -21,37 +21,62 @@ class InlineOpt(object):
         self.new_scopes = []
 
     def process_all(self, driver):
-        self.dones = set()
+        self.processed_scopes = set()
         scopes = driver.scopes
-        for scope in scopes:
-            if scope not in self.dones:
-                self._process_scope(scope)
+        self.process_scopes(driver.scopes)
+        self.process_scopes(self.new_scopes)
 
-    def _process_scope(self, scope):
+    def process_scopes(self, scopes):
+        call_graph = {}
+        for scope in scopes:
+            self._build_call_graph_rec(scope, call_graph)
+
+        callers = set()
+        while call_graph:
+            leaf = self._pop_leaf(call_graph)
+            if not leaf:
+                continue
+            caller, callee, call_irs = leaf
+            if callee.is_method():
+                self._process_method(callee, caller, call_irs)
+            else:
+                self._process_func(callee, caller, call_irs)
+            logger.debug(f"inlined {callee.name} on {caller.name}")
+            # logger.debug(scope)
+            callers.add(caller)
+        for c in callers:
+            self._reduce_useless_move(c)
+
+    def _build_call_graph_rec(self, scope, call_graph):
+        if scope in call_graph:
+            return
         calls = defaultdict(list)
         collector = CallCollector(calls)
         collector.process(scope)
-        for callee, calls in calls.items():
-            self._process_scope(callee)
-            if callee.is_lib() or callee.is_pure():
-                continue
-            elif callee.is_method():
-                self._process_method(callee, scope, calls)
-            else:
-                self._process_func(callee, scope, calls)
-            logger.debug(f"inlined {callee.name} on {scope.name}")
-            logger.debug(scope)
-        self.dones.add(scope)
         if calls:
-            self._reduce_useless_move(scope)
+            call_graph[scope] = calls
+            for callee in calls.keys():
+                self._build_call_graph_rec(callee, call_graph)
 
-    def _process_func(self, callee, caller, calls):
+    def _pop_leaf(self, call_graph):
+        for scope, calls in call_graph.copy().items():
+            for callee in calls.copy().keys():
+                if callee not in call_graph:
+                    call_irs = calls.pop(callee)
+                    if not calls:
+                        call_graph.pop(scope)
+                    if callee.is_lib() or callee.is_pure():
+                        continue
+                    return scope, callee, call_irs
+        return None
+
+    def _process_func(self, callee, caller, call_irs):
         if callee.is_testbench():
             return
         if not env.config.perfect_inlining:
             if caller.is_testbench() and callee.is_function_module():
                 return
-        for call, call_stm in calls:
+        for call, call_stm in call_irs:
             self.inline_counts += 1
             assert callee is call.callee_scope
 
@@ -79,7 +104,7 @@ class InlineOpt(object):
                                         symbol_map, {},
                                         str(self.inline_counts))
 
-    def _process_method(self, callee, caller, calls):
+    def _process_method(self, callee, caller, call_irs):
         if caller.is_namespace():
             return
         if callee.is_ctor() and callee.parent.is_module():
@@ -88,7 +113,7 @@ class InlineOpt(object):
             else:
                 # TODO
                 pass
-        for call, call_stm in calls:
+        for call, call_stm in call_irs:
             self.inline_counts += 1
 
             symbol_map = self._make_replace_symbol_map(call,
