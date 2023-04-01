@@ -128,8 +128,12 @@ def is_uninlined_scope(scope):
     return True
 
 
-def is_instantiated(scope):
-    return scope.is_instantiated() or scope.is_function_module() or scope.is_testbench()
+def is_synthesis_target_scope(scope):
+    if scope.is_instantiated() or scope.is_function_module() or scope.is_testbench():
+        return True
+    if scope.parent and is_synthesis_target_scope(scope.parent):
+        return True
+    return False
 
 
 def is_hdlmodule_scope(scope):
@@ -771,7 +775,7 @@ def compile_plan():
         dbg(dumpscope),
         fieldusedef,
         postinstantiate,
-        filter_scope(is_instantiated),
+        filter_scope(is_synthesis_target_scope),
         dbg(dumpscope),
         evaltype,
         stricttypeprop,
