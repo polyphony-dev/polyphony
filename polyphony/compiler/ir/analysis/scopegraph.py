@@ -120,7 +120,7 @@ class DependencyGraphBuilder(IRVisitor):
 
     def visit_TEMP(self, ir):
         sym_t = ir.symbol.typ
-        if sym_t.has_scope():
+        if sym_t.has_valid_scope():
             receiver_scope = sym_t.scope
         elif ir.symbol.scope is not self.scope:
             receiver_scope = ir.symbol.ancestor.scope if ir.symbol.ancestor else ir.symbol.scope
@@ -132,7 +132,7 @@ class DependencyGraphBuilder(IRVisitor):
 
     def visit_ATTR(self, ir):
         attr_t = ir.symbol.typ
-        if attr_t.has_scope():
+        if attr_t.has_valid_scope():
             attr_scope = attr_t.scope
             assert attr_scope
             self._add_dependency(self.scope, attr_scope)
@@ -141,7 +141,7 @@ class DependencyGraphBuilder(IRVisitor):
         self.visit(ir.exp)
         receiver = ir.tail()
         receiver_t = receiver.typ
-        if not receiver_t.has_scope():
+        if not receiver_t.has_valid_scope():
             return
         receiver_scope = receiver_t.scope
         assert receiver_scope

@@ -120,11 +120,11 @@ class TypeExprEvaluator(IRVisitor):
     def visit_TEMP(self, ir):
         sym_t = ir.symbol.typ
         if sym_t.is_class():
-            typ = self.sym2type(ir.sym)
+            typ = self.sym2type(ir.symbol)
             if typ:
                 return typ
         elif sym_t.is_scalar():
-            c = try_get_constant((ir.sym,), self.scope)
+            c = try_get_constant((ir.symbol,), self.scope)
             if c:
                 return c
         return ir

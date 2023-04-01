@@ -67,7 +67,7 @@ class Type(object):
                         break
                     else:
                         scope = scope.parent
-                if sym and sym.typ.has_scope():
+                if sym and sym.typ.has_valid_scope():
                     type_scope = sym.typ.scope
                     if type_scope.is_typeclass():
                         t = Type.from_typeclass(type_scope, explicit=True)
@@ -122,14 +122,14 @@ class Type(object):
 
         if ann.is_a(CONST) and ann.value is None:
             t = Type.none(explicit)
-        elif ann.is_a(TEMP) and (ann.symbol.typ.has_scope()):
+        elif ann.is_a(TEMP) and ann.symbol.typ.has_valid_scope():
             ann_sym_type = ann.symbol.typ
             scope = ann_sym_type.scope
             if scope and scope.is_typeclass():
                 t = Type.from_typeclass(scope, explicit=explicit)
             else:
                 t = Type.object(scope, explicit)
-        elif ann.is_a(ATTR) and isinstance(ann.symbol, Symbol) and ann.symbol.typ.has_scope():
+        elif ann.is_a(ATTR) and isinstance(ann.symbol, Symbol) and ann.symbol.typ.has_valid_scope():
             ann_attr_type = ann.symbol.typ
             scope = ann_attr_type.scope
             if scope.is_typeclass():
@@ -344,6 +344,9 @@ class Type(object):
 
     def has_scope(self):
         return self.name in ('class', 'function', 'object', 'namespace')
+
+    def has_valid_scope(self):
+        return self.has_scope() and self.scope
 
     def is_same(self, other):
         return self.name == other.name

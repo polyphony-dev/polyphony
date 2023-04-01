@@ -687,6 +687,7 @@ class ObjectHierarchyCopier(object):
         return (ir.is_a([TEMP, ATTR]) and
                 not ir.symbol.is_param() and
                 ir.symbol.typ.is_object() and
+                ir.symbol.typ.scope and
                 not ir.symbol.typ.scope.is_module())
 
     def _is_object_copy(self, mov):

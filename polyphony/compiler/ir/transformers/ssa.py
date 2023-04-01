@@ -445,7 +445,7 @@ class ObjectSSATransformer(SSATransformerBase):
             return False
         if sym.is_free():
             return False
-        if sym_t.scope.is_module():
+        if sym_t.scope and sym_t.scope.is_module():
             return False
         idx = qsym.index(sym)
         if idx > 0:

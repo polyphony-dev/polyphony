@@ -114,7 +114,7 @@ class CFGChecker(object):
                         # TODO:
                         sym.is_inlined() or
                         (sym.is_subobject() and sym.is_flattened()) or
-                        sym.typ.has_scope() and sym.typ.scope.is_unflatten()
+                        sym.typ.has_valid_scope() and sym.typ.scope.is_unflatten()
                         )
 
     def _check_path_exp(self, blk):
