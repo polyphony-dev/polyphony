@@ -57,11 +57,11 @@ from .ir.transformers.inlineopt import InlineOpt
 from .ir.transformers.inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
 from .ir.transformers.inlineopt import ObjectHierarchyCopier
 from .ir.transformers.inlineopt import SpecializeWorker
-from .ir.transformers.instantiator import ModuleInstantiator, WorkerInstantiator
+from .ir.transformers.instantiator import ModuleInstantiator
 from .ir.transformers.looptransformer import LoopFlatten
 from .ir.transformers.objtransform import ObjectTransformer
 from .ir.transformers.phiopt import PHIInlining, LPHIRemover
-from .ir.transformers.portconverter import PortConverter, FlattenPortList
+from .ir.transformers.portconverter import PortConverter
 from .ir.transformers.portconverter import FlippedTransformer
 from .ir.transformers.portconverter import PortConnector
 from .ir.transformers.quadruplet import EarlyQuadrupleMaker
@@ -240,10 +240,6 @@ def connectport(driver, scope):
         driver.insert_scope(s)
 
 
-def flattenport(driver, scope):
-    FlattenPortList().process(scope)
-
-
 def convport(driver):
     PortConverter().process_all()
     #PortConverter().process(scope)
@@ -374,15 +370,6 @@ def instantiate(driver):
             orig_scopes.add(s.origin)
             usedef(driver, s)
             constopt(driver, s)
-
-    #TypePropagation().process_all()
-    #if new_modules:
-    #    InstanceTypePropagation().process_all()
-    #new_scopes = WorkerInstantiator().process_all()
-    #for s in new_scopes:
-    #    assert s.name in env.scopes
-    #    driver.insert_scope(s)
-    #    orig_scopes.add(s.origin)
 
     for s in orig_scopes:
         driver.remove_scope(s)
@@ -718,7 +705,6 @@ def compile_plan():
         dbg(dumpscope),
         earlyrestrictioncheck,
         earlytypecheck,
-        #flattenport,
         typeprop,
         specworker,
         restrictioncheck,
