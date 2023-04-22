@@ -397,8 +397,8 @@ class Type(object):
                     elms = elm
                 s = f't_{elms}'
             elif t.is_class():
-                name = t.scope.unique_name()
-                s = f'c_{name}'
+                name = t.scope.scope_id
+                s = f'c{name}'
             elif t.is_int():
                 s = f'i{t.width}'
                 s = 'i'
@@ -407,8 +407,8 @@ class Type(object):
             elif t.is_str():
                 s = f's'
             elif t.is_object():
-                name = t.scope.unique_name()
-                s = f'o_{name}'
+                name = t.scope.scope_id
+                s = f'o{name}'
             else:
                 s = str(t)
             ts.append(s)
