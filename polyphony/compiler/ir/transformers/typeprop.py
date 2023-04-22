@@ -686,8 +686,7 @@ class TypeSpecializer(TypePropagation):
         assert new_scope.return_type is not None
         param_symbols = new_scope.param_symbols()
         for sym, new_t in zip(param_symbols, types):
-            new_t = new_t.with_perfect_explicit()
-            sym.typ = new_t
+            sym.typ = new_t.clone()
         new_scope.add_tag('specialized')
         return new_scope, True
 

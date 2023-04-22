@@ -756,9 +756,9 @@ class SpecializeWorker(IRTransformer):
         if origin_worker.is_method():
             param_symbols = new_worker.param_symbols(with_self=True)
         else:
-            param_symbols = [None] + new_worker.param_symbols()
+            param_symbols = (None,) + new_worker.param_symbols()
 
-        for pindex, ((name, arg), sym) in enumerate(zip(call.args, param_symbols)):
+        for (name, arg), sym in zip(call.args, param_symbols):
             if (arg.is_a([TEMP, ATTR])
                     and arg.symbol.typ.is_object()):
                 if arg.is_a(TEMP):
@@ -767,10 +767,9 @@ class SpecializeWorker(IRTransformer):
                 new_worker.remove_param(sym)
             else:
                 args.append((name, arg))
-        call.args[:len(params)] = args[:]
+        call.args[:len(param_symbols)] = args[:]
 
-    def _subst_obj_arg(self, new_worker, arg, param):
-        param_sym, _, _ = param
+    def _subst_obj_arg(self, new_worker, arg, param_sym):
         assert arg.is_a(ATTR)
         assert arg.head().is_self()
         assert new_worker.parent.is_module()
@@ -796,7 +795,7 @@ class SpecializeWorker(IRTransformer):
             new_worker_self = new_worker.add_sym('self',
                                                  tags={'self'},
                                                  typ=Type.object(parent_module))
-            new_worker.add_param(new_worker_self, new_worker_self, None)
+            new_worker.add_param(new_worker_self, None)
         # transform append_worker call
         ctor_self = self.scope.find_sym('self')
         new_worker_sym = parent_module.add_sym(new_worker.base_name,
