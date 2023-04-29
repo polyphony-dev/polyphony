@@ -43,14 +43,18 @@ class Driver(object):
         return self.scopes + self.disable_scopes
 
     def start_logging(self, proc, scope):
-        if env.dev_debug_mode and scope in env.logfiles:
-            self.logger.addHandler(env.logfiles[scope])
+        if env.dev_debug_mode:
+            if not scope.is_lib() and not scope.is_inlinelib():
+                self.logger.addHandler(env.scope_log_handler(scope))
+            self.logger.addHandler(env.process_log_handler(self.stage, proc))
         self.logger.debug('--------------------------')
         self.logger.debug(str(proc.__name__) + ':' + scope.name)
 
     def end_logging(self, proc, scope):
-        if env.dev_debug_mode and scope in env.logfiles:
-            self.logger.removeHandler(env.logfiles[scope])
+        if env.dev_debug_mode:
+            if not scope.is_lib() and not scope.is_inlinelib():
+                self.logger.removeHandler(env.scope_log_handler(scope))
+            self.logger.removeHandler(env.process_log_handler(self.stage, proc))
 
     def run(self):
         while True:

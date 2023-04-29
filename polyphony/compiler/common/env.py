@@ -59,6 +59,7 @@ class Env(object):
         self.hdlscopes = []
         self.scope2hdlscope = {}
         self.targets = []
+        self.root_dir = ''
 
     def load_config(self, config):
         for key, v in config.items():
@@ -71,11 +72,6 @@ class Env(object):
         self.scope_file_map[scope] = self.current_filename
         self.scopes[scope.name] = scope
         self.all_scopes[scope.name] = scope
-        if self.dev_debug_mode and (not scope.is_lib() and not scope.is_inlinelib()):
-            logname = '{}/debug_log.{}'.format(env.debug_output_dir,
-                                               scope.name.replace('@', ''))
-            logfile = logging.FileHandler(logname, 'w')
-            self.logfiles[scope] = logfile
 
     def destroy(self):
         for logfile in self.logfiles.values():
@@ -110,6 +106,19 @@ class Env(object):
         if scope in self.scope2hdlscope:
             return self.scope2hdlscope[scope]
         return None
+
+    def process_log_handler(self, stage, proc):
+        logname = f'{self.debug_output_dir}/{stage}_{proc.__name__}.log'
+        if logname not in self.logfiles:
+            self.logfiles[logname] = logging.FileHandler(logname, 'w')
+        return self.logfiles[logname]
+
+    def scope_log_handler(self, scope):
+        scope_log = scope.name.replace('@', '')
+        logname = f'{self.debug_output_dir}/{scope_log}.log'
+        if logname not in self.logfiles:
+            self.logfiles[logname] = logging.FileHandler(logname, 'w')
+        return self.logfiles[logname]
 
 
 env = Env()

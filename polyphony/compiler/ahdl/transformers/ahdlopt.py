@@ -42,7 +42,7 @@ class AHDLCopyOpt(AHDLVisitor):
                 if use.is_a(AHDL_IO_WRITE):
                     # don't change the I/O timing
                     continue
-                logger.debug(use, target.sig, '->', src.sig)
+                logger.debug(f'{use} {target.sig} -> {src.sig}')
                 replacer.replace(use, target.varsig, src.varsig)
                 removes.append(d)
                 hdlmodule.remove_sig(target.varsig)
