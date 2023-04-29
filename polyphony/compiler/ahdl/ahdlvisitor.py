@@ -1,12 +1,13 @@
 from collections import defaultdict
+from typing import Optional
 from .ahdl import AHDL, AHDL_STM
-
+from .stg import STG, State
 
 class AHDLVisitor(object):
     def __init__(self):
         self.current_fsm = None
-        self.current_stg = None
-        self.current_state = None
+        self.current_stg: STG = None  # type: ignore
+        self.current_state: State = None  # type: ignore
 
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
@@ -26,11 +27,7 @@ class AHDLVisitor(object):
     def process_stg(self, stg):
         self.current_stg = stg
         for state in stg.states:
-            self.process_state(state)
-
-    def process_state(self, state):
-        self.current_state = state
-        self.visit(state)
+            self.visit(state)
 
     def visit_AHDL_CONST(self, ahdl):
         pass
@@ -171,6 +168,10 @@ class AHDLVisitor(object):
     def visit_AHDL_CONNECT(self, ahdl):
         self.visit(ahdl.src)
         self.visit(ahdl.dst)
+
+    def visit_State(self, state):
+        self.current_state = state
+        self.visit(state.block)
 
     def find_visitor(self, cls):
         method = 'visit_' + cls.__name__

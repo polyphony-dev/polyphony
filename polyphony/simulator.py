@@ -618,7 +618,7 @@ class ModelEvaluator(AHDLVisitor):
         dst.set(src.get())
 
     def _get_source_text(self, ahdl):
-        node = self.model.hdlmodule.ahdl2dfgnode[ahdl]
+        _, node = self.model.hdlmodule.ahdl2dfgnode[id(ahdl)]
         if node.tag.loc.lineno < 1:
             return
         text = get_src_text(node.tag.loc.filename, node.tag.loc.lineno)

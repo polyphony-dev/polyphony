@@ -1,4 +1,4 @@
-﻿from collections import defaultdict
+from collections import defaultdict
 from .ahdl import *
 from .ahdlvisitor import AHDLVisitor
 from ..common.env import env

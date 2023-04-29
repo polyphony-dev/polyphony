@@ -93,7 +93,7 @@ class Graph(object):
         return len(self.nodes)
 
     def add_node(self, node):
-        node.g = self
+        # node.g = self
         self.nodes.add(node)
 
     def del_node(self, node):

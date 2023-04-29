@@ -17,8 +17,9 @@ class Signal(Tagged):
         'interface', 'submodule',
     }
 
-    def __init__(self, name, width, tags, sym=None):
+    def __init__(self, hdlscope, name, width, tags, sym=None):
         super().__init__(tags)
+        self.hdlscope = hdlscope
         self.name = name
         self.width = width  # width:int | (width:int, array_length:int)
         self.sym = sym

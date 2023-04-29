@@ -1,4 +1,8 @@
-﻿from .signal import Signal
+from __future__ import annotations
+import dataclasses
+from dataclasses import dataclass, field
+from typing import Optional, cast
+from .signal import Signal
 from ..ir.ir import Ctx
 from ..common.utils import is_a
 
@@ -12,12 +16,8 @@ PYTHON_OP_2_HDL_OP_MAP = {
     'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~'
 }
 
-
 class AHDL(object):
     '''Abstract HDL'''
-    def __init__(self):
-        pass
-
     def is_a(self, cls):
         return is_a(self, cls)
 
@@ -44,35 +44,29 @@ class AHDL_EXP(AHDL):
     pass
 
 
+@dataclass(frozen=True)
 class AHDL_CONST(AHDL_EXP):
-    def __init__(self, value):
-        super().__init__()
-        self.value = value
+    value: int | str
 
     def __str__(self):
-        return '{}'.format(self.value)
+        return f'{self.value}'
 
-    def __repr__(self):
-        return 'AHDL_CONST({})'.format(repr(self.value))
-
-
+@dataclass(frozen=True, init=False)
 class AHDL_OP(AHDL_EXP):
+    op: str
+    args: tuple[AHDL_EXP, ...]
+
     def __init__(self, op, *args):
-        super().__init__()
-        self.op = op
-        self.args = args
+        object.__setattr__(self, 'op', op)
+        object.__setattr__(self, 'args', args)
 
     def __str__(self):
         if len(self.args) > 1:
             op = ' ' + PYTHON_OP_2_HDL_OP_MAP[self.op] + ' '
             str_args = [str(a) for a in self.args]
-            return '({})'.format(op.join(str_args))
+            return f'({op.join(str_args)})'
         else:
-            return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.args[0])
-
-    def __repr__(self):
-        args = ', '.join([repr(arg) for arg in self.args])
-        return 'AHDL_OP({}, {})'.format(repr(self.op), args)
+            return f'({PYTHON_OP_2_HDL_OP_MAP[self.op]}{self.args[0]})'
 
     def is_relop(self):
         return self.op in ('And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE', 'Is', 'IsNot')
@@ -81,176 +75,186 @@ class AHDL_OP(AHDL_EXP):
         return self.op in ('USub', 'UAdd', 'Not', 'Invert')
 
 
+@dataclass(frozen=True)
 class AHDL_META_OP(AHDL_EXP):
+    op: str
+    args: tuple[AHDL_EXP, ...]
+
     def __init__(self, op, *args):
-        super().__init__()
-        self.op = op
-        self.args = args
+        object.__setattr__(self, 'op', op)
+        object.__setattr__(self, 'args', args)
 
     def __str__(self):
         str_args = [str(a) for a in self.args]
-        return '({} {})'.format(self.op, ', '.join(str_args))
-
-    def __repr__(self):
-        args = ', '.join([repr(arg) for arg in self.args])
-        return 'AHDL_META_OP({}, {})'.format(repr(self.op), args)
+        concat_args = ', '.join(str_args)
+        return f'({self.op} {concat_args})'
 
 
+@dataclass(frozen=True)
 class AHDL_VAR(AHDL_EXP):
-    def __init__(self, sig, ctx):
-        assert sig and isinstance(sig, Signal)
-        super().__init__()
-        self.sig = sig
-        self.ctx = ctx
+    sig: Signal
+    ctx: Ctx
 
     def __str__(self):
-        return '{}'.format(self.sig.name)
+        return self.sig.name
 
-    def __repr__(self):
-        return 'AHDL_VAR(\'{}\')'.format(self.sig)
-
-
-class AHDL_MEMVAR(AHDL_VAR):
-    def __init__(self, sig, ctx):
-        super().__init__(sig, ctx)
-
-    def __str__(self):
-        return '{}[]'.format(self.sig.name)
-
-    def __repr__(self):
-        return 'AHDL_MEMVAR(\'{}\')'.format(self.sig)
-
+    @property
     def name(self):
         return self.sig.name
 
+    @property
+    def varsig(self):
+        return self.sig
 
-class AHDL_SUBSCRIPT(AHDL_EXP):
-    def __init__(self, memvar, offset):
-        assert memvar.is_a(AHDL_MEMVAR)
-        assert offset.is_a(AHDL_EXP)
-        super().__init__()
-        self.memvar = memvar
-        self.offset = offset
-
+@dataclass(frozen=True)
+class AHDL_MEMVAR(AHDL_VAR):
     def __str__(self):
-        return '{}[{}]'.format(self.memvar.name(), self.offset)
-
-    def __repr__(self):
-        return 'AHDL_SUBSCRIPT({}, {})'.format(repr(self.memvar), repr(self.offset))
+        return f'{self.sig.name}[]'
 
 
-class AHDL_SYMBOL(AHDL_EXP):
-    def __init__(self, name):
-        assert name and isinstance(name, str)
-        super().__init__()
-        self.name = name
-
-    def __str__(self):
-        return '{}'.format(self.name)
-
-    def __repr__(self):
-        return 'AHDL_SYMBOL({})'.format(repr(self.name))
-
-
-class AHDL_RECORD(AHDL_EXP):
-    def __init__(self, name, hdlscope, attr=None):
-        super().__init__()
-        self.name = name
-        self.hdlscope = hdlscope
-        self.attr = attr
+@dataclass(frozen=True)
+class AHDL_STRUCT(AHDL_VAR):
+    attr: AHDL_VAR
 
     @property
-    def sig(self):
-        return self.attr.sig
+    def tail(self) -> AHDL_VAR:
+        if self.attr.is_a(AHDL_STRUCT):
+            return cast(AHDL_STRUCT, self.attr).tail
+        else:
+            return self.attr
+
+    @property
+    def varsig(self):
+        return self.attr.varsig
+
+    def replace_tail(self, tail: AHDL_VAR) -> 'AHDL_STRUCT':
+        if self.attr.is_a(AHDL_STRUCT):
+            attr = cast(AHDL_STRUCT, self.attr)
+            attr = attr.replace_tail(tail)
+            return dataclasses.replace(self, attr=attr)
+        else:
+            return dataclasses.replace(self, attr=tail)
 
     def __str__(self):
-        return '{}.{}'.format(self.hdlscope.name, self.attr)
-
-    def __repr__(self):
-        return 'AHDL_RECORD({}, {})'.format(self.hdlscope.name, repr(self.attr))
+        return f'{self.name}.{self.attr}'
 
 
+@dataclass(frozen=True)
+class AHDL_SUBSCRIPT(AHDL_EXP):
+    memvar: AHDL_VAR
+    offset: AHDL_EXP
+
+    def __str__(self):
+        return f'{self.memvar.name}[{self.offset}]'
+
+
+@dataclass(frozen=True)
+class AHDL_SYMBOL(AHDL_EXP):
+    name: str
+
+    def __str__(self):
+        return self.name
+
+
+@dataclass(frozen=True)
 class AHDL_CONCAT(AHDL_EXP):
-    def __init__(self, varlist, op=None):
-        super().__init__()
-        assert isinstance(varlist, list)
-        self.varlist = varlist
-        self.op = op
+    varlist: tuple
+    op: Optional[str]
 
     def __str__(self):
         if self.op:
             op = PYTHON_OP_2_HDL_OP_MAP[self.op]
-            return '{{{0}}}'.format(op.join([str(v) for v in self.varlist]))
         else:
-            return '{{{0}}}'.format(', '.join([str(v) for v in self.varlist]))
+            op = ', '
+        concat_str = op.join([str(v) for v in self.varlist])
+        return f'{{{concat_str}}}'
 
-    def __repr__(self):
-        return 'AHDL_CONCAT({}, {})'.format(repr(self.varlist), repr(self.op))
-
-
+@dataclass(frozen=True)
 class AHDL_SLICE(AHDL_EXP):
-    def __init__(self, var, hi, lo):
-        super().__init__()
-        self.var = var
-        self.hi = hi
-        self.lo = lo
+    var: AHDL_VAR
+    hi: AHDL_EXP
+    lo: AHDL_EXP
 
     def __str__(self):
-        return '{}[{}:{}]'.format(self.var, self.hi, self.lo)
+        return f'{self.var}[{self.hi}:{self.lo}]'
 
-    def __repr__(self):
-        return 'AHDL_SLICE({}, {}, {})'.format(repr(self.var), repr(self.hi), repr(self.lo))
+
+@dataclass(frozen=True)
+class AHDL_FUNCALL(AHDL_EXP):
+    name: str
+    args: tuple[AHDL_EXP, ...]
+
+    def __str__(self):
+        args_str = ', '.join([str(arg) for arg in self.args])
+        return f'{self.name}({args_str})'
+
+
+@dataclass(frozen=True)
+class AHDL_IF_EXP(AHDL_EXP):
+    cond: AHDL_EXP
+    lexp: AHDL_EXP
+    rexp: AHDL_EXP
+
+    def __str__(self):
+        return f'{self.cond} ? {self.lexp} : {self.rexp}'
 
 
 class AHDL_STM(AHDL):
-    def __init__(self):
-        self.guard_cond = None
+    pass
 
 
+@dataclass(frozen=True)
+class AHDL_BLOCK(AHDL_STM):
+    name: str
+    codes: tuple[AHDL_STM, ...]
+
+    def __post_init__(self):
+        assert isinstance(self.codes, tuple)
+
+    def __str__(self):
+        return 'begin\n' + ('\n'.join([str(c) for c in self.codes])) + '\nend'
+
+    def traverse(self):
+        codes = []
+        for c in self.codes:
+            if c.is_a(AHDL_BLOCK):
+                codes.extend(cast(AHDL_BLOCK, c).traverse())
+            else:
+                codes.append(c)
+        return codes
+
+
+@dataclass(frozen=True)
 class AHDL_NOP(AHDL_STM):
-    def __init__(self, info):
-        super().__init__()
-        self.info = info
+    info: str
 
     def __str__(self):
-        return 'nop for {}'.format(self.info)
-
-    def __repr__(self):
-        return 'AHDL_NOP({})'.format(repr(self.info))
+        return f'nop for {self.info}'
 
 
+@dataclass(frozen=True)
 class AHDL_INLINE(AHDL_STM):
-    def __init__(self, code):
-        super().__init__()
-        assert isinstance(code, str)
-        self.code = code
+    code: str
 
     def __str__(self):
-        return '{}'.format(self.code)
-
-    def __repr__(self):
-        return 'AHDL_INLINE({})'.format(repr(self.code))
+        return self.code
 
 
+@dataclass(frozen=True)
 class AHDL_MOVE(AHDL_STM):
-    def __init__(self, dst, src):
-        assert dst.is_a(AHDL)
-        assert src.is_a(AHDL)
-        if src.is_a(AHDL_VAR):
-            assert src.ctx == Ctx.LOAD
-        if dst.is_a(AHDL_VAR):
-            assert dst.ctx == Ctx.STORE
-        super().__init__()
-        self.dst = dst
-        self.src = src
+    dst: AHDL_EXP
+    src: AHDL_EXP
+
+    def __post_init__(self):
+        if self.src.is_a(AHDL_VAR):
+            assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
+        if self.dst.is_a(AHDL_VAR):
+            assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
 
     def __str__(self):
-        if self.dst.is_a(AHDL_VAR) and self.dst.sig.is_net():
-            return '{} := {}'.format(self.dst, self.src)
-        return '{} <= {}'.format(self.dst, self.src)
-
-    def __repr__(self):
-        return 'AHDL_MOVE({}, {})'.format(repr(self.dst), repr(self.src))
+        if self.dst.is_a(AHDL_VAR) and cast(AHDL_VAR, self.dst).sig.is_net():
+            return f'{self.dst} := {self.src}'
+        return f'{self.dst} <= {self.src}'
 
 
 class AHDL_DECL(AHDL_STM):
@@ -258,114 +262,120 @@ class AHDL_DECL(AHDL_STM):
 
 
 class AHDL_VAR_DECL(AHDL_DECL):
-    def __init__(self, name):
-        assert isinstance(name, str)
-        self.name = name
+    pass
 
 
+@dataclass(frozen=True)
 class AHDL_ASSIGN(AHDL_VAR_DECL):
-    def __init__(self, dst, src):
-        assert dst.is_a(AHDL)
-        assert src.is_a(AHDL)
-        if dst.is_a(AHDL_VAR):
-            super().__init__(dst.sig.name)
-        elif dst.is_a(AHDL_SUBSCRIPT):
-            super().__init__(dst.memvar.sig.name + '[{}]'.format(dst.offset))
+    dst: AHDL_EXP
+    src: AHDL_EXP
+    name: str = field(init=False)
+
+    def __post_init__(self):
+        if self.dst.is_a(AHDL_VAR):
+            name = cast(AHDL_VAR, self.dst).sig.name
+        elif self.dst.is_a(AHDL_SUBSCRIPT):
+            subs = cast(AHDL_SUBSCRIPT, self.dst)
+            name = f'{subs.memvar.sig.name}[{subs.offset}]'
         else:
             assert False
-        self.dst = dst
-        self.src = src
+        # Use object.__setattr__ when writing to frozen fields after __init__
+        # https://docs.python.org/3/library/dataclasses.html#frozen-instances
+        object.__setattr__(self, 'name', name)
 
     def __str__(self):
-        return '{} := {}'.format(self.dst, self.src)
-
-    def __repr__(self):
-        return 'AHDL_ASSIGN({}, {})'.format(repr(self.dst), repr(self.src))
+        return f'{self.dst} := {self.src}'
 
 
+@dataclass(frozen=True)
+class AHDL_FUNCTION(AHDL_VAR_DECL):
+    output: AHDL_VAR
+    inputs: tuple[AHDL_EXP, ...]
+    stms: tuple[AHDL_STM, ...]
+    name: str = field(init=False)
+
+    def __post_init__(self):
+        # Use object.__setattr__ when writing to frozen fields after __init__
+        # https://docs.python.org/3/library/dataclasses.html#frozen-instances
+        object.__setattr__(self, 'name', self.output.sig.name)
+
+    def __str__(self):
+        return f'function {self.output}'
+
+
+@dataclass(frozen=True)
+class AHDL_COMB(AHDL_VAR_DECL):
+    name: str
+    stms: tuple[AHDL_STM, ...]
+
+    def __str__(self):
+        return f'COMB {self.name}'
+
+
+@dataclass(frozen=True)
 class AHDL_EVENT_TASK(AHDL_DECL):
-    def __init__(self, events, stm):
-        assert isinstance(events, list)
-        assert isinstance(stm, AHDL_STM)
-        self.events = events
-        self.stm = stm
+    events: tuple[tuple[Signal, str], ...]
+    stm: AHDL_STM
 
     def __str__(self):
-        events = ', '.join('{} {}'.format(ev, var) for var, ev in self.events)
-        return '({})\n{}'.format(events, self.stm)
-
-    def __repr__(self):
-        return 'AHDL_EVENT_TASK({}, {})'.format(repr(self.events), repr(self.stm))
+        events = ', '.join(f'{ev} {var}' for var, ev in self.events)
+        return f'({events})\n{self.stm}'
 
 
+@dataclass(frozen=True)
 class AHDL_CONNECT(AHDL_STM):
-    def __init__(self, dst, src):
-        assert dst.is_a(AHDL)
-        assert src.is_a(AHDL)
-        super().__init__()
-        self.dst = dst
-        self.src = src
+    dst: AHDL_EXP
+    src: AHDL_EXP
 
     def __str__(self):
-        return '{} = {}'.format(self.dst, self.src)
-
-    def __repr__(self):
-        return 'AHDL_CONNECT({}, {})'.format(repr(self.dst), repr(self.src))
+        return f'{self.dst} = {self.src}'
 
 
+@dataclass(frozen=True)
 class AHDL_IO_READ(AHDL_STM):
-    def __init__(self, io, dst, is_self=True):
-        super().__init__()
-        self.io = io
-        self.dst = dst
-        self.is_self = is_self
+    io: AHDL_VAR
+    dst: Optional[AHDL_VAR]
+    is_self: bool
 
     def __str__(self):
-        return '{} <= {}.rd()'.format(self.dst, self.io)
+        if self.dst:
+            return f'{self.dst} <= {self.io}.rd()'
+        else:
+            return f'{self.io}.rd()'
 
-    def __repr__(self):
-        return 'AHDL_IO_READ({}, {})'.format(repr(self.io),
-                                             repr(self.dst))
 
-
+@dataclass(frozen=True)
 class AHDL_IO_WRITE(AHDL_STM):
-    def __init__(self, io, src, is_self=True):
-        super().__init__()
-        self.io = io
-        self.src = src
-        self.is_self = is_self
+    io: AHDL_VAR
+    src: AHDL_EXP
+    is_self: bool
 
     def __str__(self):
-        return '{}.wr({})'.format(self.io, self.src)
-
-    def __repr__(self):
-        return 'AHDL_IO_WRITE({}, {})'.format(repr(self.io),
-                                              repr(self.src))
+        return f'{self.io}.wr({self.src})'
 
 
+@dataclass(frozen=True)
 class AHDL_SEQ(AHDL_STM):
-    def __init__(self, factor, step, step_n):
-        super().__init__()
-        self.factor = factor
-        self.step = step
-        self.step_n = step_n
+    factor: AHDL_STM
+    step: int
+    step_n: int
 
     def __str__(self):
-        return 'Sequence {} : {}'.format(self.step, self.factor)
-
-    def __repr__(self):
-        return 'AHDL_SEQ({}, {})'.format(repr(self.factor), repr(self.step))
+        return f'Sequence {self.step} : {self.factor}'
 
 
+@dataclass(frozen=True)
 class AHDL_IF(AHDL_STM):
     # ([cond], [code]) => if (cond) code
     # ([cond, None], [code1, code2]) => if (cond) code1 else code2
-    def __init__(self, conds, blocks):
-        super().__init__()
-        self.conds = conds
-        self.blocks = blocks
-        assert len(conds) == len(blocks)
-        assert conds[0]
+    conds: tuple[Optional[AHDL_EXP], ...]
+    blocks: tuple[AHDL_BLOCK, ...]
+
+    def __post_init__(self):
+        assert len(self.conds) == len(self.blocks)
+        assert self.conds[0]
+        assert isinstance(self.conds, tuple)
+        assert isinstance(self.blocks, tuple)
 
     def __str__(self):
         s = 'if {}\n'.format(self.conds[0])
@@ -391,110 +401,48 @@ class AHDL_IF(AHDL_STM):
                         s += '  {}\n'.format(line)
         return s
 
-    def __repr__(self):
-        return 'AHDL_IF({}, {})'.format(repr(self.conds), repr(self.blocks))
 
-
-class AHDL_IF_EXP(AHDL_EXP):
-    def __init__(self, cond, lexp, rexp):
-        super().__init__()
-        self.cond = cond
-        self.lexp = lexp
-        self.rexp = rexp
-
-    def __str__(self):
-        return '{} ? {} : {}'.format(self.cond, self.lexp, self.rexp)
-
-    def __repr__(self):
-        return 'AHDL_IF_EXP({}, {}, {})'.format(repr(self.cond),
-                                                repr(self.lexp),
-                                                repr(self.rexp))
-
-
+@dataclass(frozen=True)
 class AHDL_MODULECALL(AHDL_STM):
-    def __init__(self, scope, args, instance_name, prefix):
-        assert isinstance(instance_name, str)
-        assert isinstance(prefix, str)
-        super().__init__()
-        self.scope = scope
-        self.args = args
-        self.instance_name = instance_name
-        self.prefix = prefix
-        self.returns = []
+    scope: object  # TODO:
+    args: tuple[AHDL_EXP, ...]
+    instance_name: str
+    prefix: str
+    returns: tuple[AHDL_STM, ...]
 
     def __str__(self):
-        return '{}({})'.format(self.instance_name, ', '.join([str(arg) for arg in self.args]))
-
-    def __repr__(self):
-        return 'AHDL_MODULECALL({}, {}, {}, {})'.format(repr(self.scope),
-                                                        repr(self.args),
-                                                        repr(self.instance_name),
-                                                        repr(self.prefix))
+        args_str = ', '.join([str(arg) for arg in self.args])
+        return f'{self.instance_name}({args_str})'
 
 
+@dataclass(frozen=True)
 class AHDL_CALLEE_PROLOG(AHDL_STM):
-    def __init__(self, name):
-        self.name = name
-
-    def __repr__(self):
-        return 'AHDL_CALLEE_PROLOG({})'.format(repr(self.name))
+    name: str
 
 
+@dataclass(frozen=True)
 class AHDL_CALLEE_EPILOG(AHDL_STM):
-    def __init__(self, name):
-        self.name = name
-
-    def __repr__(self):
-        return 'AHDL_CALLEE_EPILOG({})'.format(repr(self.name))
+    name: str
 
 
-class AHDL_FUNCALL(AHDL_EXP):
-    def __init__(self, name, args):
-        super().__init__()
-        self.name = name
-        self.args = args
-
-    def __str__(self):
-        return '{}({})'.format(self.name, ', '.join([str(arg) for arg in self.args]))
-
-    def __repr__(self):
-        return 'AHDL_FUNCALL({}, {})'.format(repr(self.name), repr(self.args))
-
-
+@dataclass(frozen=True)
 class AHDL_PROCCALL(AHDL_STM):
-    def __init__(self, name, args):
-        assert isinstance(name, str)
-        super().__init__()
-        self.name = name
-        self.args = args
+    name: str
+    args: tuple[AHDL_EXP, ...]
 
     def __str__(self):
-        return '{}({})'.format(self.name, ', '.join([str(arg) for arg in self.args]))
-
-    def __repr__(self):
-        return 'AHDL_PROCCALL({}, {})'.format(repr(self.name), repr(self.args))
+        args_str = ', '.join([str(arg) for arg in self.args])
+        return f'{self.name}({args_str})'
 
 
-class AHDL_META(AHDL_STM):
-    def __init__(self, *args):
-        super().__init__()
-        self.metaid = args[0]
-        self.args = list(args[1:])
-
-    def __str__(self):
-        return '{}({})'.format(self.metaid, ', '.join([str(arg) for arg in self.args]))
-
-    def __repr__(self):
-        args = [repr(self.metaid)] + [repr(a) for a in self.args]
-        return 'AHDL_META({})'.format(', '.join(args))
-
-
+@dataclass(frozen=True, init=False)
 class AHDL_META_WAIT(AHDL_STM):
-    def __init__(self, *args, waiting_stms=None):
-        super().__init__()
-        self.metaid = args[0]
-        self.args = list(args[1:])
-        self.waiting_stms = waiting_stms
+    metaid: str
+    args: tuple
+
+    def __init__(self, metaid, *args):
+        object.__setattr__(self, 'metaid', metaid)
+        object.__setattr__(self, 'args', args)
 
     def __str__(self):
         items = []
@@ -503,111 +451,75 @@ class AHDL_META_WAIT(AHDL_STM):
                 items.append(', '.join([str(a) for a in arg]))
             else:
                 items.append(str(arg))
-        s = '{}({})'.format(self.metaid, ', '.join(items))
+        items_str = ', '.join(items)
+        s = f'{self.metaid}({items_str})'
         return s
 
-    def __repr__(self):
-        args = [repr(self.metaid)] + [repr(a) for a in self.args]
-        return 'AHDL_META_WAIT({})'.format(', '.join(args))
 
-
-class AHDL_FUNCTION(AHDL_VAR_DECL):
-    def __init__(self, output, inputs, stms):
-        assert isinstance(output, AHDL_VAR)
-        super().__init__(output.sig.name)
-        self.inputs = inputs
-        self.output = output
-        self.stms = stms
+@dataclass(frozen=True)
+class AHDL_CASE_ITEM(AHDL_STM):
+    val: AHDL_EXP
+    block: AHDL_BLOCK
 
     def __str__(self):
-        return 'function {}'.format(self.output)
-
-    def __repr__(self):
-        return 'AHDL_FUNCTION({}, {}, {})'.format(
-            repr(self.output),
-            repr(self.inputs),
-            repr(self.stms)
-        )
+        return f'{self.val}:{self.block}'
 
 
-class AHDL_COMB(AHDL_VAR_DECL):
-    def __init__(self, name, stms):
-        super().__init__(name)
-        self.stms = stms
-
-    def __str__(self):
-        return 'COMB {}'.format(self.name)
-
-
+@dataclass(frozen=True)
 class AHDL_CASE(AHDL_STM):
-    def __init__(self, sel, items):
-        super().__init__()
-        self.sel = sel
-        self.items = items
+    sel: AHDL_VAR
+    items: tuple[AHDL_CASE_ITEM, ...]
 
     def __str__(self):
         return f'case {self.sel}\n' + '\n'.join([str(item) for item in self.items])
 
-    def __repr__(self):
-        return 'AHDL_CASE({})'.format(repr(self.sel))
 
-
-class AHDL_CASE_ITEM(AHDL_STM):
-    def __init__(self, val, block):
-        super().__init__()
-        self.val = val
-        self.block = block
-
-    def __str__(self):
-        return '{}:{}'.format(self.val, str(self.block))
-
-    def __repr__(self):
-        return 'AHDL_CASE_ITEM({})'.format(repr(self.val))
-
-
+@dataclass(frozen=True)
 class AHDL_TRANSITION(AHDL_STM):
-    def __init__(self, target):
-        self.target = target
+    target_name: str
+
+    def __post_init__(self):
+        assert isinstance(self.target_name, str)
+
+    def update_target(self, target_state_name: str):
+        object.__setattr__(self, 'target_name', target_state_name)
+
+    def is_empty(self):
+        return self.target_name == ''
 
     def __str__(self):
-        return '(next state: {})'.format(self.target.name)
+        if self.target_name:
+            name = self.target_name
+        else:
+            name = 'None'
+        return f'(next state: {name})'
 
-    def __repr__(self):
-        return 'AHDL_TRANSITION({})'.format(self.target.name)
 
-
+@dataclass(frozen=True)
 class AHDL_TRANSITION_IF(AHDL_IF):
-    def __init__(self, conds, blocks):
-        super().__init__(conds, blocks)
-
-    def __repr__(self):
-        return 'AHDL_TRANSITION_IF({}, {})'.format(repr(self.conds), repr(self.blocks))
+    pass
 
 
+@dataclass(frozen=True)
 class AHDL_PIPELINE_GUARD(AHDL_IF):
     def __init__(self, cond, codes):
-        super().__init__([cond], [AHDL_BLOCK('', codes)])
-
-    def __repr__(self):
-        return 'AHDL_PIPELINE_GUARD({}, {})'.format(repr(self.conds), repr(self.blocks))
+        super().__init__((cond, ), (AHDL_BLOCK('', codes),))
 
 
-class AHDL_BLOCK(AHDL):
-    def __init__(self, name, codes):
-        self.name = name
-        self.codes = codes
+@dataclass(frozen=True)
+class State(AHDL):
+    name: str
+    block: AHDL_BLOCK
+    step: int
+    stg: object  # TODO
 
     def __str__(self):
-        return 'begin\n' + ('\n'.join([str(c) for c in self.codes])) + '\nend'
-
-    def __repr__(self):
-        return 'AHDL_BLOCK({})'.format(', '.join([repr(c) for c in self.codes]))
+        s = '---------------------------------\n'
+        s += f'{self.name}:{self.step}\n'
+        lines = ['  ' + line for line in str(self.block).split('\n')]
+        s += '\n'.join(lines)
+        s += '\n'
+        return s
 
     def traverse(self):
-        codes = []
-        for c in self.codes:
-            if c.is_a(AHDL_BLOCK):
-                codes.extend(c.traverse())
-            else:
-                codes.append(c)
-        return codes
+        return self.block.traverse()

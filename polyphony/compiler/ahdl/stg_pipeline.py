@@ -18,7 +18,7 @@ class PipelineState(State):
                                                   {'reg', 'pipeline_ctrl'})
         self.whole_moves = []
         whole_moves_blk = AHDL_BLOCK('', self.whole_moves)
-        codes = [whole_moves_blk, AHDL_CASE(AHDL_VAR(self.substate_var, Ctx.LOAD), caseitems)]
+        codes = [whole_moves_blk, AHDL_CASE(AHDL_VAR(self.substate_var, Ctx.LOAD), tuple(caseitems))]
         super().__init__(name, 0, codes, stg)
         self.substates = subblocks[:]
         self.stages = []
@@ -381,7 +381,7 @@ class PipelineStageBuilder(STGItemBuilder):
         return False
 
     def _insert_register_slices(self, sig, stages, start_n, end_n, usedef, stm2stage_num):
-        replacer = AHDLVarReplacer()
+        replacer = AHDLVarReplacer(self.hdlmodule)
         defs = usedef.get_stms_defining(sig)
         assert len(defs) == 1
         d = list(defs)[0]

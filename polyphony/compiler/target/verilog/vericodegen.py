@@ -478,12 +478,12 @@ class VerilogCodeGen(AHDLVisitor):
             self.current_stm = ahdl
         visitor = self.find_visitor(ahdl.__class__)
         ret = visitor(ahdl)
-        if env.dev_debug_mode and ahdl in self.hdlmodule.ahdl2dfgnode:
+        if env.dev_debug_mode and id(ahdl) in self.hdlmodule.ahdl2dfgnode:
             self._emit_source_text(ahdl)
         return ret
 
     def _get_source_text(self, ahdl):
-        node = self.hdlmodule.ahdl2dfgnode[ahdl]
+        _, node = self.hdlmodule.ahdl2dfgnode[id(ahdl)]
         if node.tag.loc.lineno < 1:
             return
         text = get_src_text(node.tag.loc.filename, node.tag.loc.lineno)

@@ -1,7 +1,8 @@
 from ..ahdl import *
 from ..ahdlvisitor import AHDLVisitor
 from ..ahdlhelper import AHDLVarReplacer, AHDLRemover
-
+from logging import getLogger
+logger = getLogger(__name__)
 
 class AHDLCopyOpt(AHDLVisitor):
     def process(self, hdlmodule):
@@ -9,7 +10,7 @@ class AHDLCopyOpt(AHDLVisitor):
         AHDLRemover(removes).process(hdlmodule)
 
     def _remove_alias(self, hdlmodule):
-        replacer = AHDLVarReplacer()
+        replacer = AHDLVarReplacer(hdlmodule)
         removes = []
         for sig in hdlmodule.get_signals({'net'}, {'input', 'output', 'condition', 'pipeline_ctrl'}):
             defs = hdlmodule.usedef.get_stms_defining(sig)
@@ -31,23 +32,23 @@ class AHDLCopyOpt(AHDLVisitor):
             else:
                 print(d)
                 assert False
-            if (target.sig.sym and
-                    target.sig.sym.typ.is_object() and
-                    target.sig.sym.typ.scope.name.startswith('polyphony.Net')):
+            if (target.varsig.sym and
+                    target.varsig.sym.typ.is_object() and
+                    target.varsig.sym.typ.scope.name.startswith('polyphony.Net')):
                 continue
-            uses = hdlmodule.usedef.get_stms_using(target.sig)
+            uses = hdlmodule.usedef.get_stms_using(target.varsig)
             if len(uses) == 1 and src.is_a(AHDL_VAR):
                 use = list(uses)[0]
                 if use.is_a(AHDL_IO_WRITE):
                     # don't change the I/O timing
                     continue
-                #print(use, target.sig, '->', src.sig)
-                replacer.replace(use, target.sig, src.sig)
+                logger.debug(use, target.sig, '->', src.sig)
+                replacer.replace(use, target.varsig, src.varsig)
                 removes.append(d)
-                hdlmodule.remove_sig(target.sig)
-                hdlmodule.remove_signal_decl(target.sig)
+                hdlmodule.remove_sig(target.varsig)
+                hdlmodule.remove_signal_decl(target.varsig)
 
                 hdlmodule.usedef.remove_stm(d)
-                hdlmodule.usedef.remove_sig_use(target.sig, use)
-                hdlmodule.usedef.add_sig_use(src.sig, use)
+                hdlmodule.usedef.remove_sig_use(target.varsig, use)
+                hdlmodule.usedef.add_sig_use(src.varsig, use)
         return removes

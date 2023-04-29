@@ -1,6 +1,7 @@
 from collections import deque
 from ..ahdl import *
 from ..ahdlvisitor import AHDLVisitor, AHDLCollector
+from ..ahdltransformer import AHDLTransformer
 from ...common.graph import Graph
 from ..stg import State
 from ..stg_pipeline import PipelineState
@@ -10,7 +11,7 @@ class StateReducer(object):
     def process(self, hdlmodule):
         for fsm in hdlmodule.fsms.values():
             IfForwarder().process(fsm)
-            graph = StateGraphBuilder().process(fsm)
+            graph = StateGraphBuilder().process_fsm(fsm)
             self._remove_unreached_state(fsm, graph)
             self._remove_empty_state(fsm, graph)
 
@@ -27,20 +28,20 @@ class StateReducer(object):
         remove_stgs = []
         for stg in fsm.stgs:
             for state in stg.states[:]:
+                state_codes = state.block.codes
                 if (not isinstance(state, PipelineState) and
-                        len(state.codes) == 1 and
-                        state.codes[0].is_a(AHDL_TRANSITION)):
-                    next_state = state.codes[0].target
+                        len(state_codes) == 1 and
+                        state_codes[0].is_a(AHDL_TRANSITION)):
+                    next_state = state.stg.get_state(state_codes[0].target_name)
                     if next_state is state:
                         continue
-                    for pred_i in range(len(graph.preds(state))):
-                        pred = list(graph.preds(state))[pred_i]
-                        transition_collector.process_state(pred)
+                    for pred in graph.preds(state):
+                        transition_collector.visit(pred)
                         for _, codes in transition_collector.results.items():
                             for c in codes:
-                                if c.target is state:
-                                    c.target = next_state
-                    stg.states.remove(state)
+                                if c.target_name == state.name:
+                                    c.update_target(next_state.name)
+                    stg.remove_state(state)
                     graph.del_node_with_reconnect(state)
             if not stg.states:
                 remove_stgs.append(stg)
@@ -52,29 +53,26 @@ class StateReducer(object):
 
 
 class StateGraph(Graph):
-    pass
+    def __str__(self):
+        s = 'Nodes\n'
+        for node in self.get_nodes():
+            s += '{}\n'.format(node.name)
+        s += 'Edges\n'
+        for edge in self.ordered_edges():
+            s += '{} --> {}: {}\n'.format(edge.src.name, edge.dst.name, edge.flags)
+        return s
+
 
 
 class StateGraphBuilder(AHDLVisitor):
-    def process(self, fsm):
+    def process_fsm(self, fsm):
         self.graph = StateGraph()
-        init_state = fsm.stgs[0].states[0]
-        nexts = deque([init_state])
-        visited = set()
-        while nexts:
-            state = nexts.popleft()
-            visited.add(state)
-            self.next_states = []
-            self.visit(state)
-            for next in self.next_states:
-                self.graph.add_edge(state, next)
-                if next not in visited:
-                    nexts.append(next)
+        super().process_fsm(fsm)
         return self.graph
 
     def visit_AHDL_TRANSITION(self, ahdl):
-        assert isinstance(ahdl.target, State)
-        self.next_states.append(ahdl.target)
+        next_state = self.current_stg.get_state(ahdl.target_name)
+        self.graph.add_edge(self.current_state, next_state)
 
 
 class IfForwarder(AHDLVisitor):
