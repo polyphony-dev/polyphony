@@ -264,7 +264,7 @@ class VerilogCodeGen(AHDLVisitor):
             return ahdl.name + '_'
         return ahdl.name
 
-    def visit_AHDL_RECORD(self, ahdl):
+    def visit_AHDL_STRUCT(self, ahdl):
         return self.visit(ahdl.attr)
 
     def visit_AHDL_CONCAT(self, ahdl):
@@ -493,7 +493,7 @@ class VerilogCodeGen(AHDLVisitor):
         if text[-1] == '\n':
             text = text[:-1]
         filename = os.path.basename(node.tag.loc.filename)
-        return f'{filename} [{node.tag.loc.lineno}]: {text}'
+        return f'{filename}, line [{node.tag.loc.lineno}]: {text}'
 
     def _emit_source_text(self, ahdl):
         text = self._get_source_text(ahdl)

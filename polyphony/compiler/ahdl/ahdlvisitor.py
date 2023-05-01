@@ -54,7 +54,7 @@ class AHDLVisitor(object):
     def visit_AHDL_SYMBOL(self, ahdl):
         pass
 
-    def visit_AHDL_RECORD(self, ahdl):
+    def visit_AHDL_STRUCT(self, ahdl):
         self.visit(ahdl.attr)
 
     def visit_AHDL_CONCAT(self, ahdl):

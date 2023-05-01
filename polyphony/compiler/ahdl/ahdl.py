@@ -40,6 +40,7 @@ class AHDL(object):
         return ahdls
 
 
+@dataclass(frozen=True)
 class AHDL_EXP(AHDL):
     pass
 
@@ -99,12 +100,13 @@ class AHDL_VAR(AHDL_EXP):
         return self.sig.name
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self.sig.name
 
     @property
-    def varsig(self):
+    def varsig(self) -> Signal:
         return self.sig
+
 
 @dataclass(frozen=True)
 class AHDL_MEMVAR(AHDL_VAR):
@@ -144,6 +146,12 @@ class AHDL_SUBSCRIPT(AHDL_EXP):
     memvar: AHDL_VAR
     offset: AHDL_EXP
 
+    @property
+    def ctx(self):
+        if self.memvar.is_a(AHDL_STRUCT):
+            return cast(AHDL_STRUCT, self.memvar).tail.ctx
+        return self.memvar.ctx
+
     def __str__(self):
         return f'{self.memvar.name}[{self.offset}]'
 
@@ -168,6 +176,7 @@ class AHDL_CONCAT(AHDL_EXP):
             op = ', '
         concat_str = op.join([str(v) for v in self.varlist])
         return f'{{{concat_str}}}'
+
 
 @dataclass(frozen=True)
 class AHDL_SLICE(AHDL_EXP):
@@ -242,14 +251,16 @@ class AHDL_INLINE(AHDL_STM):
 
 @dataclass(frozen=True)
 class AHDL_MOVE(AHDL_STM):
-    dst: AHDL_EXP
+    dst: AHDL_VAR | AHDL_SUBSCRIPT
     src: AHDL_EXP
 
     def __post_init__(self):
         if self.src.is_a(AHDL_VAR):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
-        if self.dst.is_a(AHDL_VAR):
-            assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
+        if self.dst.is_a(AHDL_STRUCT):
+            assert cast(AHDL_STRUCT, self.dst).tail.ctx == Ctx.STORE
+        else:
+            assert self.dst.ctx == Ctx.STORE
 
     def __str__(self):
         if self.dst.is_a(AHDL_VAR) and cast(AHDL_VAR, self.dst).sig.is_net():
@@ -267,18 +278,16 @@ class AHDL_VAR_DECL(AHDL_DECL):
 
 @dataclass(frozen=True)
 class AHDL_ASSIGN(AHDL_VAR_DECL):
-    dst: AHDL_EXP
+    dst: AHDL_VAR
     src: AHDL_EXP
     name: str = field(init=False)
 
     def __post_init__(self):
-        if self.dst.is_a(AHDL_VAR):
-            name = cast(AHDL_VAR, self.dst).sig.name
-        elif self.dst.is_a(AHDL_SUBSCRIPT):
-            subs = cast(AHDL_SUBSCRIPT, self.dst)
-            name = f'{subs.memvar.sig.name}[{subs.offset}]'
-        else:
-            assert False
+        if self.src.is_a(AHDL_VAR):
+            assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
+        assert self.dst.is_a(AHDL_VAR)
+        assert self.dst.ctx == Ctx.STORE
+        name = self.dst.sig.name
         # Use object.__setattr__ when writing to frozen fields after __init__
         # https://docs.python.org/3/library/dataclasses.html#frozen-instances
         object.__setattr__(self, 'name', name)
@@ -469,6 +478,7 @@ class AHDL_CASE_ITEM(AHDL_STM):
 class AHDL_CASE(AHDL_STM):
     sel: AHDL_VAR
     items: tuple[AHDL_CASE_ITEM, ...]
+
 
     def __str__(self):
         return f'case {self.sel}\n' + '\n'.join([str(item) for item in self.items])

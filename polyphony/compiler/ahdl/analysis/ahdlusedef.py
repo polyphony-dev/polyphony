@@ -7,45 +7,45 @@ logger = getLogger(__name__)
 
 class UseDefTable(object):
     def __init__(self):
-        self._def_sig2stm = defaultdict(set)
-        self._def_stm2sig = defaultdict(set)
+        self._def_sig2stm: dict[Signal, set[AHDL_STM]] = defaultdict(set)
+        self._def_stm2sig: dict[int, set[Signal]] = defaultdict(set)
 
-        self._use_sig2stm = defaultdict(set)
-        self._use_stm2sig = defaultdict(set)
+        self._use_sig2stm: dict[Signal, set[AHDL_STM]] = defaultdict(set)
+        self._use_stm2sig: dict[int, set[Signal]] = defaultdict(set)
 
-    def add_sig_def(self, sig, stm, state=None):
+    def add_sig_def(self, sig:Signal, stm:AHDL_STM):
         self._def_sig2stm[sig].add(stm)
-        self._def_stm2sig[stm].add(sig)
+        self._def_stm2sig[id(stm)].add(sig)
 
-    def remove_sig_def(self, sig, stm, state=None):
+    def remove_sig_def(self, sig:Signal, stm:AHDL_STM):
         self._def_sig2stm[sig].discard(stm)
-        self._def_stm2sig[stm].discard(sig)
+        self._def_stm2sig[id(stm)].discard(sig)
 
-    def add_sig_use(self, sig, stm, state=None):
+    def add_sig_use(self, sig:Signal, stm:AHDL_STM):
         self._use_sig2stm[sig].add(stm)
-        self._use_stm2sig[stm].add(sig)
+        self._use_stm2sig[id(stm)].add(sig)
 
-    def remove_sig_use(self, sig, stm, state=None):
+    def remove_sig_use(self, sig:Signal, stm:AHDL_STM):
         self._use_sig2stm[sig].discard(stm)
-        self._use_stm2sig[stm].discard(sig)
+        self._use_stm2sig[id(stm)].discard(sig)
 
-    def remove_stm(self, stm):
+    def remove_stm(self, stm:AHDL_STM):
         for sig in list(self.get_sigs_used_at(stm)):
             self.remove_sig_use(sig, stm)
         for sig in list(self.get_sigs_defined_at(stm)):
             self.remove_sig_def(sig, stm)
 
-    def get_stms_defining(self, sig):
+    def get_def_stms(self, sig:Signal) -> set[AHDL_STM]:
         return self._def_sig2stm[sig]
 
-    def get_sigs_defined_at(self, stm):
-        return self._def_stm2sig[stm]
+    def get_sigs_defined_at(self, stm:AHDL_STM) -> set[Signal]:
+        return self._def_stm2sig[id(stm)]
 
-    def get_stms_using(self, sig):
+    def get_use_stms(self, sig:Signal) -> set[AHDL_STM]:
         return self._use_sig2stm[sig]
 
-    def get_sigs_used_at(self, stm):
-        return self._use_stm2sig[stm]
+    def get_sigs_used_at(self, stm:AHDL_STM) -> set[Signal]:
+        return self._use_stm2sig[id(stm)]
 
     def get_all_def_sigs(self):
         return self._def_sig2stm.keys()
@@ -77,15 +77,15 @@ class AHDLUseDefDetector(AHDLVisitor):
 
     def process(self, hdlmodule):
         super().process(hdlmodule)
-        hdlmodule.usedef = self.table
+        return self.table
 
     def visit_AHDL_VAR(self, ahdl):
         if ahdl.ctx & Ctx.STORE:
             if self.enable_def:
-                self.table.add_sig_def(ahdl.sig, self.current_stm, self.current_state)
+                self.table.add_sig_def(ahdl.sig, self.current_stm)
         else:
             if self.enable_use:
-                self.table.add_sig_use(ahdl.sig, self.current_stm, self.current_state)
+                self.table.add_sig_use(ahdl.sig, self.current_stm)
 
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}'.format(ahdl.factor.__class__.__name__)

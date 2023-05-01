@@ -10,9 +10,10 @@ class AHDLTransformer(object):
 
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
-        for tag, decls in hdlmodule.decls.items():
-            for decl in decls:
-                self.visit(decl)
+        for tag, decls in hdlmodule.decls.copy().items():
+            new_decls = [self.visit(decl) for decl in decls]
+            new_decls = [decl for decl in new_decls if decl.is_a(AHDL_DECL)]
+            hdlmodule.decls[tag] = new_decls
         for fsm in hdlmodule.fsms.values():
             self.process_fsm(fsm)
 
@@ -45,7 +46,7 @@ class AHDLTransformer(object):
         return tuple(new_codes)
 
     def visit_AHDL_CONST(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_OP(self, ahdl):
         args = [self.visit(a) for a in ahdl.args]
@@ -56,10 +57,10 @@ class AHDLTransformer(object):
         return AHDL_META_OP(ahdl.op, *args)
 
     def visit_AHDL_VAR(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_MEMVAR(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_STRUCT(self, ahdl):
         attr = self.visit(ahdl.attr)
@@ -71,7 +72,7 @@ class AHDLTransformer(object):
         return AHDL_SUBSCRIPT(memvar, offset)
 
     def visit_AHDL_SYMBOL(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_CONCAT(self, ahdl):
         varlist = [self.visit(var) for var in ahdl.varlist]
@@ -99,10 +100,10 @@ class AHDLTransformer(object):
         return AHDL_BLOCK(ahdl.name, codes)
 
     def visit_AHDL_NOP(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_INLINE(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_MOVE(self, ahdl):
         dst = self.visit(ahdl.dst)
@@ -161,10 +162,10 @@ class AHDLTransformer(object):
         return dataclasses.replace(ahdl, args=args, returns=returns)
 
     def visit_AHDL_CALLEE_PROLOG(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_CALLEE_EPILOG(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_PROCCALL(self, ahdl):
         args = tuple([self.visit(arg) for arg in ahdl.args])
@@ -185,7 +186,7 @@ class AHDLTransformer(object):
         return AHDL_CASE(sel, items)
 
     def visit_AHDL_TRANSITION(self, ahdl):
-        return dataclasses.replace(ahdl)
+        return ahdl
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
         return self.visit_AHDL_IF(ahdl)
@@ -223,5 +224,4 @@ class AHDLTransformer(object):
                 # del self.hdlmodule.ahdl2dfgnode[id(ahdl)]
                 self.hdlmodule.ahdl2dfgnode[id(new_ahdl)] = (new_ahdl, node)
         return new_ahdl
-
 

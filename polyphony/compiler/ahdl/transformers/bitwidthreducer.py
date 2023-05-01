@@ -1,5 +1,6 @@
 from ..ahdl import *
 from ..ahdlvisitor import AHDLVisitor
+from ..analysis.ahdlusedef import AHDLUseDefDetector
 from ...common.env import env
 import logging
 logger = logging.getLogger(__name__)
@@ -7,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class BitwidthReducer(AHDLVisitor):
     def process(self, hdlmodule):
-        self.usedef = hdlmodule.usedef
+        self.usedef = AHDLUseDefDetector().process(hdlmodule)
         for fsm in hdlmodule.fsms.values():
             for stg in fsm.stgs:
                 for state in stg.states:
@@ -18,10 +19,10 @@ class BitwidthReducer(AHDLVisitor):
             return env.config.default_int_width
         elif isinstance(ahdl.value, str):
             return 1
-        elif ir.value is None:
+        elif ahdl.value is None:
             return 1
         else:
-            type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ir)))
+            type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ahdl)))
 
     def visit_AHDL_VAR(self, ahdl):
         return ahdl.sig.width
@@ -60,7 +61,7 @@ class BitwidthReducer(AHDLVisitor):
     def visit_AHDL_SYMBOL(self, ahdl):
         pass
 
-    def visit_AHDL_RECORD(self, ahdl):
+    def visit_AHDL_STRUCT(self, ahdl):
         return self.visit(ahdl.attr)
 
     def visit_AHDL_CONCAT(self, ahdl):
@@ -76,7 +77,7 @@ class BitwidthReducer(AHDLVisitor):
             return
         if dst_sig.is_output() or dst_sig.is_extport():
             return
-        stms = self.usedef.get_stms_defining(dst_sig)
+        stms = self.usedef.get_def_stms(dst_sig)
         if len(stms) > 1:
             return
         srcw = self.visit(ahdl.src)

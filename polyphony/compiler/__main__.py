@@ -809,7 +809,7 @@ def compile_plan():
         stg,
         dbg(dumpstg),
         buildmodule,
-        ahdlopt(ahdlusedef),
+        dbg(dumpmodule),
         ahdlopt(ahdlcopyopt),
         ahdlopt(reducebits),
         #ahdlopt(reducereg),
