@@ -190,7 +190,7 @@ class AHDL_SLICE(AHDL_EXP):
 
 @dataclass(frozen=True)
 class AHDL_FUNCALL(AHDL_EXP):
-    name: str
+    name: AHDL_VAR
     args: tuple[AHDL_EXP, ...]
 
     def __str__(self):

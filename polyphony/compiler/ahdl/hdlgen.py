@@ -23,10 +23,6 @@ class HDLModuleBuilder(object):
         self.hdlmodule = hdlmodule
         self._build_module()
 
-    def _add_state_register(self, fsm):
-        state_sig = self.hdlmodule.gen_sig(fsm.name + '_state', -1, {'reg'})
-        self.hdlmodule.add_fsm_state_var(fsm.name, state_sig)
-
     def _add_callee_submodules(self, scope):
         for callee_scope, inst_names in scope.callee_instances.items():
             if callee_scope.is_port():
@@ -97,10 +93,10 @@ class HDLModuleBuilder(object):
             case_items = []
             for i, item in enumerate(array.items):
                 assert item.is_a(CONST)
-                connect = AHDL_BLOCK(str(i), [AHDL_CONNECT(fname, AHDL_CONST(item.value))])
+                connect = AHDL_BLOCK(str(i), (AHDL_CONNECT(fname, AHDL_CONST(item.value)), ))
                 case_items.append(AHDL_CASE_ITEM(AHDL_CONST(i), connect))
-            case = AHDL_CASE(input, case_items)
-            rom_func = AHDL_FUNCTION(fname, [input], [case])
+            case = AHDL_CASE(input, tuple(case_items))
+            rom_func = AHDL_FUNCTION(fname, (input,), (case,))
             self.hdlmodule.add_function(rom_func)
 
     def _collect_vars(self, fsm):
@@ -139,7 +135,6 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
-        self._add_state_register(fsm)
         self._add_input(scope)
         self._add_output(scope)
         self._add_callee_submodules(scope)
@@ -181,7 +176,6 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
-        self._add_state_register(fsm)
         self._add_callee_submodules(scope)
         for p_name, p_typ in zip(scope.param_names(), scope.param_types()):
             if p_typ.is_object() and p_typ.scope.is_module():
@@ -207,7 +201,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
     def _process_fsm(self, fsm):
         scope = fsm.scope
         defs, uses, outputs, memnodes = self._collect_vars(fsm)
-        self._add_state_register(fsm)
         self._add_callee_submodules(scope)
         self._add_roms(memnodes)
         self._add_reset_stms(fsm, defs, uses, outputs)

@@ -19,8 +19,12 @@ class AHDLTransformer(object):
 
     def process_fsm(self, fsm):
         self.current_fsm = fsm
+        new_stms = []
         for stm in fsm.reset_stms:
-            self.visit(stm)
+            new_stm = self.visit(stm)
+            if new_stm.is_a(AHDL_MOVE):
+                new_stms.append(new_stm)
+        fsm.reset_stms = new_stms
         for stg in fsm.stgs:
             self.process_stg(stg)
 
@@ -85,9 +89,9 @@ class AHDLTransformer(object):
         return AHDL_SLICE(var, hi, lo)
 
     def visit_AHDL_FUNCALL(self, ahdl):
-        self.visit(ahdl.name)
-        for arg in ahdl.args:
-            self.visit(arg)
+        name = self.visit(ahdl.name)
+        args = [self.visit(arg) for arg in ahdl.args]
+        return AHDL_FUNCALL(name, tuple(args))
 
     def visit_AHDL_IF_EXP(self, ahdl):
         cond = self.visit(ahdl.cond)
@@ -189,10 +193,15 @@ class AHDLTransformer(object):
         return ahdl
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
-        return self.visit_AHDL_IF(ahdl)
+        conds = tuple([self.visit(cond) if cond else None for cond in ahdl.conds])
+        blocks = tuple([self.visit(block) for block in ahdl.blocks])
+        return AHDL_TRANSITION_IF(conds, blocks)
+
 
     def visit_AHDL_PIPELINE_GUARD(self, ahdl):
-        return self.visit_AHDL_IF(ahdl)
+        cond = self.visit(ahdl.conds[0])
+        block = self.visit(ahdl.blocks[0])
+        return AHDL_PIPELINE_GUARD(cond, block.codes)
 
     def visit_State(self, state):
         self.current_state = state

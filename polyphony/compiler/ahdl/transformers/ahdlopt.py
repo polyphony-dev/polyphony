@@ -35,7 +35,7 @@ class AHDLCopyOpt(AHDLTransformer):
         return new_src
 
     def visit_AHDL_VAR(self, ahdl:AHDL_VAR) -> AHDL_EXP:
-        if ahdl.ctx != Ctx.LOAD:
+        if ahdl.ctx != Ctx.LOAD or ahdl.sig.is_net():
             return super().visit_AHDL_VAR(ahdl)
 
         src_defs = self.usedef.get_def_stms(ahdl.sig)

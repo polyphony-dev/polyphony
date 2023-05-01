@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import Optional
-from .ahdl import AHDL, AHDL_STM
-from .stg import STG, State
+from .ahdl import AHDL, AHDL_STM, State
+from .stg import STG
 
 class AHDLVisitor(object):
     def __init__(self):

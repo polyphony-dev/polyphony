@@ -11,7 +11,7 @@ from .common.errors import CompileError, InterpretError
 
 from .ahdl.hdlgen import HDLModuleBuilder
 from .ahdl.hdlmodule import HDLScope, HDLModule
-from .ahdl.stg import STGBuilder
+from .ahdl.stgbuilder import STGBuilder
 from .ahdl.analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdl.transformers.ahdlopt import AHDLCopyOpt
 from .ahdl.transformers.bitwidthreducer import BitwidthReducer

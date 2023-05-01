@@ -1,5 +1,6 @@
 ﻿from collections import defaultdict
 from .ahdl import *
+from .stg import STG
 from ..common.env import env
 from .hdlscope import HDLScope
 from logging import getLogger
@@ -7,13 +8,13 @@ logger = getLogger(__name__)
 
 
 class FSM(object):
-    def __init__(self, name, scope):
+    def __init__(self, name, scope, state_var):
         self.name = name
         self.scope = scope
-        self.state_var = None
-        self.stgs = []
-        self.outputs = set()
-        self.reset_stms = []
+        self.state_var:Signal = state_var
+        self.stgs:list[STG] = []
+        self.outputs:set[Signal] = set()
+        self.reset_stms:list[AHDL_STM] = []
 
 
 class HDLModule(HDLScope):
@@ -130,11 +131,9 @@ class HDLModule(HDLScope):
         self.functions.append(func)
 
     def add_fsm(self, fsm_name, scope):
-        self.fsms[fsm_name] = FSM(fsm_name, scope)
-
-    def add_fsm_state_var(self, fsm_name, var):
-        assert fsm_name in self.fsms
-        self.fsms[fsm_name].state_var = var
+        state_sig = self.gen_sig(fsm_name + '_state', -1, {'reg'})
+        fsm = FSM(fsm_name, scope, state_sig)
+        self.fsms[fsm_name] = fsm
 
     def add_fsm_stg(self, fsm_name, stgs):
         assert fsm_name in self.fsms

@@ -2,54 +2,32 @@ from collections import deque
 from ..ahdl import *
 from ..ahdlvisitor import AHDLVisitor, AHDLCollector
 from ..ahdltransformer import AHDLTransformer
+from ..hdlmodule import FSM
 from ...common.graph import Graph
-from ..stg import State
 from ..stg_pipeline import PipelineState
+from logging import getLogger
+logger = getLogger(__name__)
 
 
 class StateReducer(object):
     def process(self, hdlmodule):
+        IfForwarder().process(hdlmodule)
+        EmptyStateSkipper().process(hdlmodule)
+        graph = StateGraphBuilder().process(hdlmodule)
         for fsm in hdlmodule.fsms.values():
-            IfForwarder().process(fsm)
-            graph = StateGraphBuilder().process_fsm(fsm)
             self._remove_unreached_state(fsm, graph)
-            self._remove_empty_state(fsm, graph)
 
-    def _remove_unreached_state(self, fsm, graph):
+    def _remove_unreached_state(self, fsm:FSM, graph):
         for stg in fsm.stgs:
             if len(stg.states) == 1:
                 continue
-            for state in stg.states[:]:
-                if not graph.has_node(state):
-                    stg.states.remove(state)
-
-    def _remove_empty_state(self, fsm, graph):
-        transition_collector = AHDLCollector(AHDL_TRANSITION)
-        remove_stgs = []
-        for stg in fsm.stgs:
-            for state in stg.states[:]:
-                state_codes = state.block.codes
-                if (not isinstance(state, PipelineState) and
-                        len(state_codes) == 1 and
-                        state_codes[0].is_a(AHDL_TRANSITION)):
-                    next_state = state.stg.get_state(state_codes[0].target_name)
-                    if next_state is state:
-                        continue
-                    for pred in graph.preds(state):
-                        transition_collector.visit(pred)
-                        for _, codes in transition_collector.results.items():
-                            for c in codes:
-                                if c.target_name == state.name:
-                                    c.update_target(next_state.name)
+            for state in stg.states[1:]:  # skip initial state
+                if not graph.has_node(state.name):
+                    logger.debug(f'Remove state {state.name}')
                     stg.remove_state(state)
-                    graph.del_node_with_reconnect(state)
-            if not stg.states:
-                remove_stgs.append(stg)
-        for stg in fsm.stgs[:]:
-            if stg in remove_stgs:
-                fsm.stgs.remove(stg)
-            if stg.parent in remove_stgs:
-                stg.parent = None
+                elif not graph.preds(state.name):
+                    logger.debug(f'Remove state {state.name}')
+                    stg.remove_state(state)
 
 
 class StateGraph(Graph):
@@ -63,35 +41,67 @@ class StateGraph(Graph):
         return s
 
 
-
 class StateGraphBuilder(AHDLVisitor):
-    def process_fsm(self, fsm):
+    def process(self, hdlmodule):
         self.graph = StateGraph()
-        super().process_fsm(fsm)
+        super().process(hdlmodule)
         return self.graph
 
     def visit_AHDL_TRANSITION(self, ahdl):
-        next_state = self.current_stg.get_state(ahdl.target_name)
-        self.graph.add_edge(self.current_state, next_state)
+        for stg in self.current_fsm.stgs:
+            if stg.has_state(ahdl.target_name):
+                next_state = stg.get_state(ahdl.target_name)
+                self.graph.add_edge(self.current_state.name, next_state.name)
+                return
 
 
-class IfForwarder(AHDLVisitor):
-    def process(self, fsm):
-        self.forwarded = set()
-        for stg in fsm.stgs:
-            for state in stg.states:
-                if isinstance(state, PipelineState):
-                    continue
-                self.visit(state)
+class EmptyStateSkipper(AHDLTransformer):
+    def _get_state(self, target_name):
+        for stg in self.current_fsm.stgs:
+            if stg.has_state(target_name):
+                return stg.get_state(target_name)
+        assert False
+
+    def _is_empty(self, state):
+        return (not isinstance(state, PipelineState) and
+            len(state.block.codes) == 1 and
+            state.block.codes[0].is_a(AHDL_TRANSITION))
+
+    def visit_AHDL_TRANSITION(self, ahdl):
+        next_state = self._get_state(ahdl.target_name)
+        if not self._is_empty(next_state):
+            return ahdl
+        assert next_state.block.codes[0].is_a(AHDL_TRANSITION)
+        next_transition = next_state.block.codes[0]
+        logger.debug(f'{self.current_state.name}: Skip {ahdl.target_name} -> {next_transition.target_name}')
+        return AHDL_TRANSITION(next_transition.target_name)
+
+
+class IfForwarder(AHDLTransformer):
+    def _get_state(self, target_name):
+        for stg in self.current_fsm.stgs:
+            if stg.has_state(target_name):
+                return stg.get_state(target_name)
+        assert False
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
-        if ahdl in self.forwarded:
-            return
-        for i, ahdlblk in enumerate(ahdl.blocks):
-            transition = ahdlblk.codes[-1]
+        blocks = []
+        for block in ahdl.blocks:
+            transition = block.codes[-1]
             assert transition.is_a(AHDL_TRANSITION)
-            if isinstance(transition.target, PipelineState):
+            target_state = self._get_state(transition.target_name)
+            if isinstance(target_state, PipelineState):
                 continue
-            ahdlblk.codes.pop()
-            ahdl.blocks[i].codes.extend(transition.target.codes[:])
-        self.forwarded.add(ahdl)
+            codes = list(block.codes)
+            codes.pop()
+            codes.extend(target_state.block.codes[:])
+            new_block = AHDL_BLOCK(block.name, tuple(codes))
+            blocks.append(new_block)
+        new_ahdl = AHDL_IF(ahdl.conds, tuple(blocks))
+        logger.debug(f'Forwarded AHDL_TRANSITION_IF:')
+        logger.debug(f'{ahdl}')
+        logger.debug(f'{new_ahdl}')
+        return new_ahdl
+
+    def visit_PipelineState(self, ahdl):
+        return ahdl

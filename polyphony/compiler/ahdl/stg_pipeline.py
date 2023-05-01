@@ -1,7 +1,7 @@
 from collections import defaultdict
 from .ahdl import *
 from .ahdlhelper import AHDLVarReplacer
-from .stg import State, STGItemBuilder, ScheduledItemQueue
+from .stgbuilder import State, STGItemBuilder, ScheduledItemQueue
 from .analysis.ahdlusedef import AHDLUseDefDetector
 from ..ir.block import Block
 from ..ir.ir import *

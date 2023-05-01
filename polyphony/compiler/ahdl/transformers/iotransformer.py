@@ -1,7 +1,6 @@
 from collections import defaultdict
 from ..ahdl import *
 from ..ahdltransformer import AHDLTransformer
-from ..stg import State
 from ...common.common import fail
 from ...common.errors import Errors
 
@@ -94,7 +93,11 @@ class WaitTransformer(AHDLTransformer):
             return new_state
 
     def visit_AHDL_BLOCK(self, ahdl):
-        return self._transform_meta_wait(ahdl)
+        new_block = super().visit_AHDL_BLOCK(ahdl)
+        meta_waits = [c for c in new_block.codes if c.is_a(AHDL_META_WAIT)]
+        if meta_waits:
+            new_block = self._transform_meta_wait(new_block, meta_waits)
+        return new_block
 
     def _partition_codes(self, codes: list[AHDL_STM], delim: AHDL_STM) -> list[tuple[AHDL_STM]]:
         partitions: list[tuple[AHDL_STM]] = []
@@ -121,8 +124,7 @@ class WaitTransformer(AHDLTransformer):
                               self.current_stg)
         return waiting_state
 
-    def _transform_meta_wait(self, ahdlblk: AHDL_BLOCK):
-        meta_waits = [c for c in ahdlblk.codes if c.is_a(AHDL_META_WAIT)]
+    def _transform_meta_wait(self, ahdlblk: AHDL_BLOCK, meta_waits):
         codes = ahdlblk.codes
         wait_ops = {
             'WAIT_COND':'cond',
