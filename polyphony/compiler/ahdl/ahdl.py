@@ -221,7 +221,12 @@ class AHDL_BLOCK(AHDL_STM):
         assert isinstance(self.codes, tuple)
 
     def __str__(self):
-        return 'begin\n' + ('\n'.join([str(c) for c in self.codes])) + '\nend'
+        s = '{\n'
+        str_codes = '\n'.join([str(c) for c in self.codes])
+        lines = ['  ' + line for line in str_codes.split('\n') if line]
+        s += '\n'.join(lines)
+        s += '\n}\n'
+        return s
 
     def traverse(self):
         codes = []
@@ -238,7 +243,7 @@ class AHDL_NOP(AHDL_STM):
     info: str
 
     def __str__(self):
-        return f'nop for {self.info}'
+        return f'nop(\'{self.info}\')'
 
 
 @dataclass(frozen=True)
@@ -387,27 +392,15 @@ class AHDL_IF(AHDL_STM):
         assert isinstance(self.blocks, tuple)
 
     def __str__(self):
-        s = 'if {}\n'.format(self.conds[0])
-        for code in self.blocks[0].codes:
-            str_code = str(code)
-            lines = str_code.split('\n')
-            for line in lines:
-                s += '  {}\n'.format(line)
+        s = f'if {self.conds[0]}\n'
+        s += str(self.blocks[0])
         for cond, ahdlblk in zip(self.conds[1:], self.blocks[1:]):
             if cond:
-                s += 'elif {}\n'.format(cond)
-                for code in ahdlblk.codes:
-                    str_code = str(code)
-                    lines = str_code.split('\n')
-                    for line in lines:
-                        s += '  {}\n'.format(line)
+                s += f'elif {cond}\n'
+                s += str(ahdlblk)
             else:
                 s += 'else\n'
-                for code in ahdlblk.codes:
-                    str_code = str(code)
-                    lines = str_code.split('\n')
-                    for line in lines:
-                        s += '  {}\n'.format(line)
+                s += str(ahdlblk)
         return s
 
 
@@ -479,7 +472,6 @@ class AHDL_CASE(AHDL_STM):
     sel: AHDL_VAR
     items: tuple[AHDL_CASE_ITEM, ...]
 
-
     def __str__(self):
         return f'case {self.sel}\n' + '\n'.join([str(item) for item in self.items])
 
@@ -502,7 +494,7 @@ class AHDL_TRANSITION(AHDL_STM):
             name = self.target_name
         else:
             name = 'None'
-        return f'(next state: {name})'
+        return f'goto {name}'
 
 
 @dataclass(frozen=True)
@@ -526,8 +518,7 @@ class State(AHDL):
     def __str__(self):
         s = '---------------------------------\n'
         s += f'{self.name}:{self.step}\n'
-        lines = ['  ' + line for line in str(self.block).split('\n')]
-        s += '\n'.join(lines)
+        s += str(self.block)
         s += '\n'
         return s
 
