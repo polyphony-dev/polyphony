@@ -93,52 +93,42 @@ class AHDL_META_OP(AHDL_EXP):
 
 @dataclass(frozen=True)
 class AHDL_VAR(AHDL_EXP):
-    sig: Signal
+    vars: tuple[Signal]
     ctx: Ctx
 
+    def __init__(self, var: Signal | tuple, ctx: Ctx):
+        if isinstance(var, Signal):
+            object.__setattr__(self, 'vars', (var,))
+        else:
+            object.__setattr__(self, 'vars', var)
+        object.__setattr__(self, 'ctx', ctx)
+
     def __str__(self):
-        return self.sig.name
+        return '.'.join([s.name for s in self.vars])
 
     @property
     def name(self) -> str:
-        return self.sig.name
+        return str(self)
 
     @property
-    def varsig(self) -> Signal:
-        return self.sig
+    def hdl_name(self) -> str:
+        return '_'.join([s.name for s in self.vars])
+
+    @property
+    def sig(self) -> Signal:
+        return self.vars[-1]
+
+    def is_local_var(self) -> bool:
+        return len(self.vars) == 1
 
 
 @dataclass(frozen=True)
 class AHDL_MEMVAR(AHDL_VAR):
-    def __str__(self):
-        return f'{self.sig.name}[]'
-
-
-@dataclass(frozen=True)
-class AHDL_STRUCT(AHDL_VAR):
-    attr: AHDL_VAR
-
-    @property
-    def tail(self) -> AHDL_VAR:
-        if self.attr.is_a(AHDL_STRUCT):
-            return cast(AHDL_STRUCT, self.attr).tail
-        else:
-            return self.attr
-
-    @property
-    def varsig(self):
-        return self.attr.varsig
-
-    def replace_tail(self, tail: AHDL_VAR) -> 'AHDL_STRUCT':
-        if self.attr.is_a(AHDL_STRUCT):
-            attr = cast(AHDL_STRUCT, self.attr)
-            attr = attr.replace_tail(tail)
-            return dataclasses.replace(self, attr=attr)
-        else:
-            return dataclasses.replace(self, attr=tail)
+    def __init__(self, var: Signal | tuple, ctx: Ctx):
+        super().__init__(var, ctx)
 
     def __str__(self):
-        return f'{self.name}.{self.attr}'
+        return super().__str__() + f'[{self.vars[-1].width}]'
 
 
 @dataclass(frozen=True)
@@ -148,12 +138,10 @@ class AHDL_SUBSCRIPT(AHDL_EXP):
 
     @property
     def ctx(self):
-        if self.memvar.is_a(AHDL_STRUCT):
-            return cast(AHDL_STRUCT, self.memvar).tail.ctx
         return self.memvar.ctx
 
     def __str__(self):
-        return f'{self.memvar.name}[{self.offset}]'
+        return f'{self.memvar}[{self.offset}]'
 
 
 @dataclass(frozen=True)
@@ -262,10 +250,12 @@ class AHDL_MOVE(AHDL_STM):
     def __post_init__(self):
         if self.src.is_a(AHDL_VAR):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
-        if self.dst.is_a(AHDL_STRUCT):
-            assert cast(AHDL_STRUCT, self.dst).tail.ctx == Ctx.STORE
+        if self.dst.is_a(AHDL_VAR):
+            assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
+        elif self.dst.is_a(AHDL_SUBSCRIPT):
+            assert cast(AHDL_SUBSCRIPT, self.dst).memvar.ctx == Ctx.STORE
         else:
-            assert self.dst.ctx == Ctx.STORE
+            assert False
 
     def __str__(self):
         if self.dst.is_a(AHDL_VAR) and cast(AHDL_VAR, self.dst).sig.is_net():
@@ -283,16 +273,21 @@ class AHDL_VAR_DECL(AHDL_DECL):
 
 @dataclass(frozen=True)
 class AHDL_ASSIGN(AHDL_VAR_DECL):
-    dst: AHDL_VAR
+    dst: AHDL_VAR | AHDL_SUBSCRIPT
     src: AHDL_EXP
     name: str = field(init=False)
 
     def __post_init__(self):
         if self.src.is_a(AHDL_VAR):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
-        assert self.dst.is_a(AHDL_VAR)
-        assert self.dst.ctx == Ctx.STORE
-        name = self.dst.sig.name
+        if self.dst.is_a(AHDL_VAR):
+            assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
+            name = cast(AHDL_VAR, self.dst).name
+        elif self.dst.is_a(AHDL_SUBSCRIPT):
+            assert cast(AHDL_SUBSCRIPT, self.dst).memvar.ctx == Ctx.STORE
+            name = cast(AHDL_SUBSCRIPT, self.dst).memvar.name
+        else:
+            assert False
         # Use object.__setattr__ when writing to frozen fields after __init__
         # https://docs.python.org/3/library/dataclasses.html#frozen-instances
         object.__setattr__(self, 'name', name)
@@ -327,7 +322,7 @@ class AHDL_COMB(AHDL_VAR_DECL):
 
 
 @dataclass(frozen=True)
-class AHDL_EVENT_TASK(AHDL_DECL):
+class AHDL_EVENT_TASK(AHDL):
     events: tuple[tuple[Signal, str], ...]
     stm: AHDL_STM
 

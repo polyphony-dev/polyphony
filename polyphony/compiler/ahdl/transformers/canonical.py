@@ -83,19 +83,20 @@ class Canonicalizer(AHDLTransformer):
         if not self.hdlmodule.edge_detectors:
             return
         clk = self.hdlmodule.signal('clk')
-        regs = set([sig for sig, _, _ in self.hdlmodule.edge_detectors])
-        for sig in regs:
+        vars = set([var for var, _, _ in self.hdlmodule.edge_detectors])
+        for var in vars:
             # always @(posedge clk) sig_d <= sig;
-            delayed_name = f'{sig.name}_d'
-            delayed_sig = self.hdlmodule.gen_sig(delayed_name, sig.width, {'reg'})
-            mv = AHDL_MOVE(AHDL_VAR(delayed_sig, Ctx.STORE), AHDL_VAR(sig, Ctx.LOAD))
+            delayed_name = f'{var.hdl_name}_d'
+            delayed_sig = self.hdlmodule.gen_sig(delayed_name, var.sig.width, {'reg'})
+            assert var.ctx == Ctx.LOAD
+            mv = AHDL_MOVE(AHDL_VAR(delayed_sig, Ctx.STORE), var)
             task = AHDL_EVENT_TASK(((clk, 'rising'),), mv)
             self.hdlmodule.add_task(task)
 
         detect_var_names = set()
-        for sig, old, new in self.hdlmodule.edge_detectors:
-            delayed_name = f'{sig.name}_d'
-            detect_var_name = f'is_{sig.name}_change_{old}_to_{new}'
+        for var, old, new in self.hdlmodule.edge_detectors:
+            delayed_name = f'{var.hdl_name}_d'
+            detect_var_name = f'is_{var.hdl_name}_change_{old}_to_{new}'
             if detect_var_name in detect_var_names:
                 continue
             detect_var_names.add(detect_var_name)
@@ -104,7 +105,7 @@ class Canonicalizer(AHDLTransformer):
             # assign {detect_var} = ({delayed}=={old} && {sig}=={new});
             rhs = AHDL_OP('And',
                           AHDL_OP('Eq', AHDL_VAR(delayed_sig, Ctx.LOAD), old),
-                          AHDL_OP('Eq', AHDL_VAR(sig, Ctx.LOAD), new))
+                          AHDL_OP('Eq', var, new))
             assign = AHDL_ASSIGN(AHDL_VAR(detect_var_sig, Ctx.STORE), rhs)
             self.hdlmodule.add_static_assignment(assign)
 

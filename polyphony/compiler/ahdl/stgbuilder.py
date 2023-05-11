@@ -303,9 +303,9 @@ def _signal_width(sym):
         else:
             raise NotImplementedError()
     elif sym.typ.is_object():
-        #sym_scope_name = sym.typ.scope.orig_name
-        #if sym_scope_name == 'polyphony.Reg' or sym_scope_name == 'polyphony.Net':
-        width = 16
+        # The signal indicating an object is
+        # represented by an int value to identify the object.
+        width = env.config.default_int_width
     elif sym.is_condition():
         width = 1
     return width
@@ -348,6 +348,22 @@ def _tags_from_sym(sym):
         assert di != '?'
         if di != 'inout':
             tags.add(di)
+        tags.add('single_port')
+
+        root_sym = sym.typ.root_symbol
+        dtype = sym.typ.dtype
+        width = dtype.width
+        port_scope = sym.typ.scope
+        direction = root_sym.typ.direction
+        assert direction != '?'
+        assigned = root_sym.typ.assigned
+        assert port_scope.base_name.startswith('Port')
+        if dtype.signed:
+            tags.add('int')
+        if direction == 'input' or assigned:
+            tags.add('net')
+        else:
+            tags.add('reg')
     elif sym.typ.is_object():
         sym_scope = sym.typ.scope
         if sym_scope.orig_name == 'polyphony.Reg':
@@ -360,9 +376,13 @@ def _tags_from_sym(sym):
             tags.add('interface')
         elif sym.is_alias():
             tags.add('net')
+        elif sym.is_self():
+            tags.add('self')
         else:
-            pass
-            # tags.add('reg')
+            if sym.scope.is_testbench():
+                tags.add('dut')
+            else:
+                tags.add('subscope')
 
     if sym.is_param() and sym.scope.is_function_module():
         tags.add('input')
@@ -518,8 +538,6 @@ class AHDLTranslator(IRVisitor):
         elif name == 'len':
             return self.translate_builtin_len(ir)
         elif name == '$new':
-            _, arg = ir.args[0]
-            self.visit(arg)
             return AHDL_CONST(self.current_stm.dst.symbol.id)
         elif name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
@@ -574,30 +592,19 @@ class AHDLTranslator(IRVisitor):
             return AHDL_SUBSCRIPT(memvar, offset)
 
     def visit_MSTORE(self, ir):
-        offset = self.visit(ir.offset)
-        exp = self.visit(ir.exp)
-        memvar = self.visit(ir.mem)
-        if memvar.is_a(AHDL_STRUCT):
-            tail = dataclasses.replace(memvar.tail, ctx=Ctx.STORE)
-            memvar = memvar.replace_tail(tail)
-        else:
-            memvar = dataclasses.replace(memvar, ctx=Ctx.STORE)
+        offset = cast(AHDL_EXP, self.visit(ir.offset))
+        exp = cast(AHDL_EXP, self.visit(ir.exp))
+        memvar = cast(AHDL_MEMVAR, self.visit(ir.mem))
+        assert memvar.is_a(AHDL_MEMVAR)
+        memvar = AHDL_MEMVAR(memvar.vars, ctx=Ctx.STORE)
         dst = AHDL_SUBSCRIPT(memvar, offset)
         return AHDL_MOVE(dst, exp)
 
     def _build_mem_initialize_seq(self, array, memvar):
-        name = memvar.varsig.name  # sym.hdl_name()
-        sym = self.current_stm.dst.symbol
-        width = sym.typ.element.width
-        length = sym.typ.length
-        if memvar.varsig.is_netarray():
-            sig = self.hdlmodule.gen_sig(name, (width, length), {'netarray'}, sym)
-        else:
-            sig = self.hdlmodule.gen_sig(name, (width, length), {'regarray'}, sym)
         for i, item in enumerate(array.items):
             if not(isinstance(item, CONST) and item.value is None):
                 idx = AHDL_CONST(i)
-                memvar = AHDL_MEMVAR(sig, Ctx.STORE)
+                # memvar = AHDL_MEMVAR(sig, Ctx.STORE)
                 ahdl_item = self.visit(item)
                 ahdl_move = AHDL_MOVE(AHDL_SUBSCRIPT(memvar, idx), ahdl_item)
                 self._emit(ahdl_move, self.sched_time)
@@ -626,21 +633,19 @@ class AHDLTranslator(IRVisitor):
 
     def visit_ATTR(self, ir):
         qsym = ir.qualified_symbol
-        hdlscope = env.hdlscope(qsym[-1].scope)
-        if not hdlscope:
-            print(qsym)
-        sig = self._make_signal(hdlscope, qsym[-1])
-        if qsym[-1].typ.is_seq():
-            attr = AHDL_MEMVAR(sig, ir.ctx)
-        else:
-            attr = AHDL_VAR(sig, ir.ctx)
-        for sym in reversed(qsym[:-1]):
+        sigs = []
+        for sym in qsym:
+            if sym.is_self():
+                continue
             hdlscope = env.hdlscope(sym.scope)
             assert hdlscope
             sig = self._make_signal(hdlscope, sym)
-            struct = AHDL_STRUCT(sig, ir.ctx, attr)
-            attr = struct
-        return struct
+            sigs.append(sig)
+        if qsym[-1].typ.is_seq():
+            ahdl = AHDL_MEMVAR(tuple(sigs), ir.ctx)
+        else:
+            ahdl = AHDL_VAR(tuple(sigs), ir.ctx)
+        return ahdl
 
     def _make_signal(self, hdlscope, sym):
         sig = hdlscope.signal(sym)
@@ -648,7 +653,19 @@ class AHDLTranslator(IRVisitor):
             return sig
         tags = _tags_from_sym(sym)
         width = _signal_width(sym)
+        sig_name = self._make_signal_name(sym, tags)
+        sig = hdlscope.gen_sig(sig_name, width, tags, sym)
+        if sig.is_subscope() or sig.is_dut():
+            hdlscope.add_subscope(sig, env.hdlscope(sym.typ.scope))
+        if sig.is_single_port() and sig.is_initializable():
+            assert sym.typ.is_port()
+            if isinstance(sym.typ.init, bool):
+                sig.init_value = 1 if sym.typ.init else 0
+            else:
+                sig.init_value = sym.typ.init
+        return sig
 
+    def _make_signal_name(self, sym, tags):
         if sym.scope is not self.scope:
             sig_name = sym.hdl_name()
         elif self.scope.is_worker() or self.scope.is_method():
@@ -662,16 +679,14 @@ class AHDLTranslator(IRVisitor):
                     tags.remove('reg')
             else:
                 # sig_name = f'{self.scope.base_name}_{sym.hdl_name()}'
-                sig_name = f'{sym.hdl_name()}'
+                sig_name = f'{sym.hdl_name()}_{sym.id}'
         elif sym.is_param():
             sig_name = f'{self.scope.base_name}_{sym.hdl_name()}'
         elif sym.is_return():
             sig_name = f'{self.scope.base_name}_out_0'
         else:
             sig_name = sym.hdl_name()
-        sig = hdlscope.gen_sig(sig_name, width, tags, sym)
-        return sig
-
+        return sig_name
 
     def _make_signal_old(self, hdlscope, qsym):
         sig = hdlscope.signal(qsym[-1])
@@ -806,7 +821,7 @@ class AHDLTranslator(IRVisitor):
         dst = self.visit(ir.dst)
         if not src:
             return
-        elif src.is_a(AHDL_VAR) and dst.is_a(AHDL_VAR) and src.varsig == dst.varsig:
+        elif src.is_a(AHDL_VAR) and dst.is_a(AHDL_VAR) and src.sig == dst.sig:
             return
         elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
             if ir.src.symbol.is_param():
@@ -827,8 +842,9 @@ class AHDLTranslator(IRVisitor):
                     self.hdlmodule.add_static_assignment(ahdl_assign)
 
                 return
-        elif dst.is_a(AHDL_VAR) and self.scope.is_ctor() and dst.varsig.is_initializable():
-            dst.varsig.init_value = src.value
+        elif dst.is_a(AHDL_VAR) and self.scope.is_ctor() and dst.sig.is_initializable():
+            # assert False
+            dst.sig.init_value = src.value
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
 
     def visit_PHI(self, ir):
@@ -920,145 +936,45 @@ class AHDLTranslator(IRVisitor):
         callee_scope = ir.callee_scope
         return callee_scope.name.startswith('polyphony.Net')
 
-    def _get_port_owner(self, sym):
-        assert sym.typ.is_port()
-        root = sym.typ.root_symbol
-        if root.scope.is_ctor():
-            return root.scope.parent
-        else:
-            return root.scope
-
-    def _is_access_from_external(self, sym):
-        port_owner = self._get_port_owner(sym)
-        for w, _ in port_owner.workers:
-            if self.scope is w:
-                return False
-        if port_owner.find_child(self.scope.name, rec=True):
-            return False
-        for subclass in port_owner.subs:
-            for w, _ in subclass.workers:
-                if self.scope is w:
-                    return False
-            if subclass.find_child(self.scope.name, rec=True):
-                return False
-        return True
-
-    def _port_sig(self, port_qsym):
-        assert port_qsym[-1].typ.is_port()
-        port_sym = port_qsym[-1]
-        port_owner = port_qsym[-2]
-        root_sym = port_sym.typ.root_symbol
-        port_prefixes = port_qsym[:-1] + (root_sym,)
-
-        if port_prefixes[0].name == env.self_name:
-            port_prefixes = port_prefixes[1:]
-        port_name = '_'.join([pfx.hdl_name() for pfx in port_prefixes])
-        port_sig = env.hdlscope(port_sym.scope).signal(port_name)
-        if port_sig:
-            tags = port_sig.tags
-        else:
-            tags = set()
-        dtype = port_sym.typ.dtype
-        width = dtype.width
-        port_scope = port_sym.typ.scope
-        # kind and direction might be changed at root
-        # so we use root_sym.typ
-        owners_access = not self._is_access_from_external(port_sym)
-        direction = root_sym.typ.direction
-        assert direction != '?'
-        assigned = root_sym.typ.assigned
-        assert port_scope.base_name.startswith('Port')
-        tags.add('single_port')
-        if dtype.signed:
-            tags.add('int')
-
-        outer_module_scope = self.scope.outer_module()
-        if owners_access:
-            if direction == 'input' or assigned:
-                tags.add('net')
-            else:
-                tags.add('reg')
-        elif outer_module_scope:
-            if direction == 'input':
-                tags.add('input')
-                tags.add('net')
-            elif direction == 'output':
-                tags.add('output')
-                tags.add('reg')
-        else:
-            # TODO
-            tags.add('extport')
-            if direction == 'input':
-                tags.add('reg')
-            elif direction == 'output':
-                tags.add('net')
-            else:
-                assert False
-        is_pipeline_access = self.current_stm.block.synth_params['scheduling'] == 'pipeline'
-        if root_sym.is_pipelined() and is_pipeline_access:
-            tags.add('pipelined')
-
-        if 'extport' in tags:
-            port_sig = self.hdlmodule.gen_sig(port_name, width, tags, port_sym)
-        else:
-            assert outer_module_scope
-            port_sig = env.hdlscope(outer_module_scope).gen_sig(port_name, width, tags, port_sym)
-            tags = port_sig.tags
-        if 'reg' in tags and not assigned:
-            tags.add('initializable')
-            if dtype.is_int():
-                port_sig.init_value = port_sym.typ.init
-            elif dtype.is_bool():
-                port_sig.init_value = 1 if port_sym.typ.init else 0
-            else:
-                assert False
-        #if port_sym.typ.has_maxsize():
-        #    port_sig.maxsize = port_sym.typ.get_maxsize()
-        # TODO: get_rewritable to be always available
-        #if port_sym.typ.get_rewritable():
-        tags.add('rewritable')
-        #print(self.hdlmodule.name, port_sig, tags)
-        return port_sig
-
     def _make_port_access(self, call, target):
         assert call.func.is_a(ATTR)
-        port_qsym = call.func.qualified_symbol[:-1]
-        port_sig = self._port_sig(port_qsym)
-
+        port_var = cast(AHDL_VAR, self.visit(call.func.exp))
         callee_scope = call.callee_scope
         if callee_scope.base_name == 'wr':
-            self._make_port_write_seq(call, port_sig)
+            self._make_port_write_seq(call, port_var)
         elif callee_scope.base_name == 'rd':
-            self._make_port_read_seq(target, port_sig)
+            self._make_port_read_seq(target, port_var)
         elif callee_scope.base_name == 'assign':
-            self._make_port_assign(call.args[0][1].symbol, port_sig)
+            self._make_port_assign(call.args[0][1].symbol, port_var)
         elif callee_scope.base_name == 'edge':
-            self._make_port_edge(target, port_sig, call.args[0][1], call.args[1][1])
+            self._make_port_edge(target, port_var, call.args[0][1], call.args[1][1])
         else:
             assert False
 
-    def _make_port_write_seq(self, call, port_sig):
+    def _make_port_write_seq(self, call, port_var:AHDL_VAR):
         assert call.args
         _, val = call.args[0]
         src = self.visit(val)
-        iow = AHDL_IO_WRITE(AHDL_VAR(port_sig, Ctx.STORE),
+        port_var = AHDL_VAR(port_var.vars, ctx=Ctx.STORE)
+        iow = AHDL_IO_WRITE(port_var,
                             src,
-                            port_sig.is_output())
-        assert port_sig.is_single_port()
+                            port_var.sig.is_output())
+        assert port_var.sig.is_single_port()
         self._emit(iow, self.sched_time)
 
-    def _make_port_read_seq(self, target, port_sig):
+    def _make_port_read_seq(self, target, port_var:AHDL_VAR):
         if target:
             dst = self.visit(target)
         else:
             dst = None
-        ior = AHDL_IO_READ(AHDL_VAR(port_sig, Ctx.LOAD),
+        port_var = AHDL_VAR(port_var.vars, ctx=Ctx.LOAD)
+        ior = AHDL_IO_READ(port_var,
                            dst,
-                           port_sig.is_input())
-        assert port_sig.is_single_port()
+                           port_var.sig.is_input())
+        assert port_var.sig.is_single_port()
         self._emit(ior, self.sched_time)
 
-    def _make_port_assign(self, scope_sym, port_sig):
+    def _make_port_assign(self, scope_sym, port_var:AHDL_VAR):
         assert scope_sym.typ.is_function()
         assigned = scope_sym.typ.scope
         assert assigned.is_assigned()
@@ -1066,23 +982,18 @@ class AHDLTranslator(IRVisitor):
         translator.process(assigned)
         for assign in translator.codes:
             self.hdlmodule.add_static_assignment(assign)
-        assign = AHDL_ASSIGN(AHDL_VAR(port_sig, Ctx.STORE),
-                             translator.return_var)
+        port_var = AHDL_VAR(port_var.vars, ctx=Ctx.STORE)
+        assign = AHDL_ASSIGN(port_var, translator.return_var)
         self.hdlmodule.add_static_assignment(assign)
-        port_sig.del_tag('reg')
-        port_sig.del_tag('initializable')
-        port_sig.add_tag('net')
 
-    def _make_port_edge(self, target, port_sig, old, new):
-        if target:
-            dst = self.visit(target)
-            assert 'net' in dst.sig.tags
-        else:
-            dst = None
+    def _make_port_edge(self, target, port_var, old, new):
+        dst = self.visit(target)
+        assert isinstance(dst, AHDL_VAR)
+        assert dst.sig.is_net()
         _old = self.visit(old)
         _new = self.visit(new)
-        self.hdlmodule.add_edge_detector(port_sig, _old, _new)
-        detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
+        self.hdlmodule.add_edge_detector(port_var, _old, _new)
+        detect_var_name = f'is_{port_var.hdl_name}_change_{_old}_to_{_new}'
         detect_var_sig = self.hdlmodule.gen_sig(detect_var_name, 1, {'net'})
         edge = AHDL_VAR(detect_var_sig, Ctx.LOAD)
         self._emit(AHDL_MOVE(dst, edge), self.sched_time)
@@ -1093,7 +1004,6 @@ class AHDLTranslator(IRVisitor):
         assert port.is_port()
         # make port signal
         self.visit(target)
-        self._port_sig(target.qualified_symbol)
 
     def _is_module_method(self, ir):
         if not ir.is_a(CALL):
@@ -1198,18 +1108,19 @@ class AHDLCombTranslator(AHDLTranslator):
 
     def visit_CALL(self, ir):
         if self._is_port_method(ir, 'rd'):
-            port_qsym = ir.func.qualified_symbol[:-1]
-            port_sig = self._port_sig(port_qsym)
-            return AHDL_VAR(port_sig, Ctx.LOAD)
+            port_var = cast(AHDL_VAR, self.visit(ir.func.exp))
+            assert port_var.is_a(AHDL_VAR)
+            return AHDL_VAR(port_var.vars, Ctx.LOAD)
         elif self._is_port_method(ir, 'edge'):
             old = ir.args[0][1]
             new = ir.args[1][1]
-            port_qsym = ir.func.qualified_symbol[:-1]
-            port_sig = self._port_sig(port_qsym)
+            port_var = cast(AHDL_VAR, self.visit(ir.func.exp))
+            assert port_var.is_a(AHDL_VAR)
+            port_var = AHDL_VAR(port_var.vars, Ctx.LOAD)
             _old = self.visit(old)
             _new = self.visit(new)
-            self.hdlmodule.add_edge_detector(port_sig, _old, _new)
-            detect_var_name = f'is_{port_sig.name}_change_{_old}_to_{_new}'
+            self.hdlmodule.add_edge_detector(port_var, _old, _new)
+            detect_var_name = f'is_{port_var.hdl_name}_change_{_old}_to_{_new}'
             detect_var_sig = self.hdlmodule.gen_sig(detect_var_name, 1, {'net'})
             return AHDL_VAR(detect_var_sig, Ctx.LOAD)
         elif self._is_net_method(ir, 'rd'):

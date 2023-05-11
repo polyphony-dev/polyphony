@@ -14,19 +14,25 @@ class HDLScope(object):
         self.signals = {}
         self.sig2sym = {}
         self.sym2sigs = defaultdict(list)
-        self.subscope = {}
+        self.subscopes:dict[Signal, 'HDLScope'] = {}
 
     def __str__(self):
         s = '---------------------------------\n'
         s += 'HDLScope {}\n'.format(self.name)
-        s += '  -- signals --\n'
-        for sig in self.signals.values():
-            s += f'{sig.name}[{sig.width}] {sig.tags}\n'
-        s += '\n'
+        s += self.str_signals()
         return s
 
-    def __repr__(self):
-        return self.name
+    def str_signals(self):
+        s = '-- signals --\n'
+        for sig in self.signals.values():
+            s += f'{sig}\n'
+            if sig.is_subscope():
+                subscope = self.subscopes[sig]
+                ss = subscope.str_signals()
+                lines = ss.split('\n')
+                s += '\n'.join(['  ' + line for line in lines if line])
+                s += '\n'
+        return s
 
     def gen_sig(self, name, width, tag=None, sym=None):
         if name in self.signals:
@@ -40,9 +46,10 @@ class HDLScope(object):
         if sym:
             self.sig2sym[sig] = sym
             self.sym2sigs[sym].append(sig)
+        logger.debug(f'{self.name}.gen_sig {sig}')
         return sig
 
-    def signal(self, key):
+    def signal(self, key) -> Signal|None:
         if isinstance(key, str):
             if key in self.signals:
                 return self.signals[key]
@@ -54,6 +61,15 @@ class HDLScope(object):
             found = basemodule.signal(key)
             if found:
                 return found
+        return None
+
+    def find_scope(self, sig:Signal):
+        if self.signal(sig.name):
+            return self
+        else:
+            for subscope in self.subscopes.values():
+                if subscope.signal(sig.name):
+                    return subscope
         return None
 
     def get_signals(self, include_tags=None, exclude_tags=None, with_base=False):
@@ -89,6 +105,6 @@ class HDLScope(object):
         assert sig.name in self.signals
         del self.signals[sig.name]
 
-    def add_subscope(self, name, hdlscope):
-        self.subscope[name] = hdlscope
+    def add_subscope(self, signal:Signal, hdlscope:'HDLScope'):
+        self.subscopes[signal] = hdlscope
 

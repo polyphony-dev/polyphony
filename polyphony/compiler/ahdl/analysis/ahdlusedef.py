@@ -80,6 +80,8 @@ class AHDLUseDefDetector(AHDLVisitor):
         return self.table
 
     def visit_AHDL_VAR(self, ahdl):
+        if not ahdl.is_local_var():
+            return
         if ahdl.ctx & Ctx.STORE:
             if self.enable_def:
                 self.table.add_sig_def(ahdl.sig, self.current_stm)

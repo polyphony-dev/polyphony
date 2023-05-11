@@ -9,9 +9,17 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
+def is_empty_state(state):
+    return (not isinstance(state, PipelineState) and
+        len(state.block.codes) == 1 and
+        state.block.codes[0].is_a(AHDL_TRANSITION) and
+        state.block.codes[-1].target_name != state.name)
+
+
 class StateReducer(object):
     def process(self, hdlmodule):
         IfForwarder().process(hdlmodule)
+        logger.debug(str(hdlmodule))
         EmptyStateSkipper().process(hdlmodule)
         graph = StateGraphBuilder().process(hdlmodule)
         for fsm in hdlmodule.fsms.values():
@@ -28,6 +36,8 @@ class StateReducer(object):
                 elif not graph.preds(state.name):
                     logger.debug(f'Remove state {state.name}')
                     stg.remove_state(state)
+            if is_empty_state(stg.states[0]):
+                stg.remove_state(stg.states[0])
 
 
 class StateGraph(Graph):
@@ -62,18 +72,17 @@ class EmptyStateSkipper(AHDLTransformer):
                 return stg.get_state(target_name)
         assert False
 
-    def _is_empty(self, state):
-        return (not isinstance(state, PipelineState) and
-            len(state.block.codes) == 1 and
-            state.block.codes[0].is_a(AHDL_TRANSITION))
-
     def visit_AHDL_TRANSITION(self, ahdl):
         next_state = self._get_state(ahdl.target_name)
-        if not self._is_empty(next_state):
+        if not is_empty_state(next_state):
             return ahdl
-        assert next_state.block.codes[0].is_a(AHDL_TRANSITION)
-        next_transition = next_state.block.codes[0]
-        logger.debug(f'{self.current_state.name}: Skip {ahdl.target_name} -> {next_transition.target_name}')
+        while is_empty_state(next_state):
+            assert next_state.block.codes[0].is_a(AHDL_TRANSITION)
+            next_transition = next_state.block.codes[-1]
+            if next_transition.target_name == next_state.name:
+                break
+            logger.debug(f'{self.current_state.name}: Skip {ahdl.target_name} -> {next_transition.target_name}')
+            next_state = self._get_state(next_transition.target_name)
         return AHDL_TRANSITION(next_transition.target_name)
 
 
@@ -101,7 +110,7 @@ class IfForwarder(AHDLTransformer):
         logger.debug(f'Forwarded AHDL_TRANSITION_IF:')
         logger.debug(f'{ahdl}')
         logger.debug(f'{new_ahdl}')
-        return new_ahdl
+        return self.visit(new_ahdl)
 
     def visit_PipelineState(self, ahdl):
         return ahdl

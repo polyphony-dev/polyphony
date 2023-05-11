@@ -417,7 +417,7 @@ class ConstantOpt(ConstantOptBase):
                     receiver_scope = receiver_t.scope
                     #assert self.scope.parent is module_scope
                     if receiver_scope.field_usedef:
-                        defstms = receiver_scope.field_usedef.get_stms_defining(stm.dst.symbol)
+                        defstms = receiver_scope.field_usedef.get_def_stms(stm.dst.qualified_symbol)
                         if len(defstms) == 1:
                             receiver_scope.constants[stm.dst.symbol] = stm.src
                 for rep in replaces:

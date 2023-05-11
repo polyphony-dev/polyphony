@@ -1,20 +1,25 @@
+from dataclasses import dataclass
 from ..common.common import Tagged
 
 
 class Signal(Tagged):
     TAGS = {
-        'reserved',
-        'reg', 'net', 'int', 'condition',
+        'reg',  # reg is a reg in VerilogHDL
+        'net',  # net is a wire in VerilogHDL
+        'int', 'condition',
         'regarray', 'netarray', 'rom',
-        'input', 'output', 'parameter', 'constant',
-        'extport',
+        'parameter', 'constant',
+        'single_port',  # port is an I/O port, either input or output
+        'input', 'output',
+        'accessor',     # accessor is a local signal which accessing a submodule's port
         'field', 'ctrl', 'onehot',
-        'single_port', 'pipelined',
         'initializable',
         'induction',
+        'pipelined',
         'pipeline_ctrl',
         'rewritable',
-        'interface', 'submodule',
+        'interface', 'subscope', 'dut',
+        'self'
     }
 
     def __init__(self, hdlscope, name, width, tags, sym=None):
@@ -26,7 +31,7 @@ class Signal(Tagged):
         self.init_value = 0
 
     def __str__(self):
-        return '{}<{}>'.format(self.name, self.width)
+        return f'{self.name}<{self.width}> {self.tags}'
 
     def __eq__(self, other):
         return self.name == other.name

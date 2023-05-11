@@ -103,9 +103,8 @@ class Env(object):
                 self.scope2hdlscope[ctor] = hdlscope
 
     def hdlscope(self, scope):
-        if scope in self.scope2hdlscope:
-            return self.scope2hdlscope[scope]
-        return None
+        assert scope in self.scope2hdlscope
+        return self.scope2hdlscope[scope]
 
     def process_log_handler(self, stage, proc):
         logname = f'{self.debug_output_dir}/{stage}_{proc.__name__}.log'

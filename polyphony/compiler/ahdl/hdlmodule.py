@@ -21,8 +21,8 @@ class HDLModule(HDLScope):
     #Port = namedtuple('Port', ['name', 'width'])
     def __init__(self, scope, name, qualified_name):
         super().__init__(scope, name, qualified_name)
-        self._inputs = []
-        self._outputs = []
+        self._inputs:list[AHDL_VAR] = []
+        self._outputs:list[AHDL_VAR] = []
         self.tasks = []
         self.parameters = []
         self.constants = {}
@@ -31,12 +31,12 @@ class HDLModule(HDLScope):
         self.decls = defaultdict(list)
         self.fsms = {}
         self.node2if = {}
-        self.edge_detectors = set()
+        self.edge_detectors:set[tuple[AHDL_VAR, AHDL_EXP, AHDL_EXP]] = set()
         self.ahdl2dfgnode = {}
         self.clock_signal = None
 
     @classmethod
-    def is_hdlmodule_scope(self, scope):
+    def is_hdlmodule_scope(cls, scope):
         return ((scope.is_module() and scope.is_instantiated())
                 or scope.is_function_module()
                 or scope.is_testbench())
@@ -44,45 +44,71 @@ class HDLModule(HDLScope):
     def __str__(self):
         s = '---------------------------------\n'
         s += 'HDLModule {}\n'.format(self.name)
-        s += '  -- signals --\n'
-        for sig in self.signals.values():
-            s += f'{sig.name}[{sig.width}] {sig.tags}\n'
+        s += self.str_signals()
         s += '\n'
-        s += '  -- sub modules --\n'
+        s += self.str_ios()
+        s += '\n'
+        s += '-- sub modules --\n'
         for name, hdlmodule, connections, param_map in self.sub_modules.values():
             s += '{} \n'.format(name)
             for sig, acc in connections:
                 s += '    connection : .{}({}) \n'.format(sig.name, acc.name)
-        s += '  -- declarations --\n'
+        s += '-- declarations --\n'
         for tag, decls in self.decls.items():
             s += 'tag : {}\n'.format(tag)
             for decl in decls:
                 s += '  {}\n'.format(decl)
         s += '\n'
-        s += '  -- fsm --\n'
+        s += '-- fsm --\n'
         for name, fsm in self.fsms.items():
             s += '---------------------------------\n'
-            s += 'fsm : {}\n'.format(name)
+            s += f'{name}\n'
+            s += '---------------------------------\n'
+            s += 'reset:\n'
+            for stm in fsm.reset_stms:
+                s += f'{stm}\n'
             for stg in fsm.stgs:
                 for state in stg.states:
                     s += str(state)
         s += '\n'
         return s
 
-    def __repr__(self):
-        return self.name
+    def str_ios(self):
+        s = '-- I/O ports --\n'
+        for var in self.inputs():
+            s += f'{var.name} {var.sig}\n'
+        for var in self.outputs():
+            s += f'{var.name} {var.sig}\n'
+        return s
 
-    def add_input(self, sig):
-        self._inputs.append(sig)
+    def add_input(self, var:AHDL_VAR):
+        self._inputs.append(var)
 
-    def inputs(self):
+    def inputs(self) -> list[AHDL_VAR]:
         return self._inputs
 
-    def add_output(self, sig):
-        self._outputs.append(sig)
+    def add_output(self, var:AHDL_VAR):
+        self._outputs.append(var)
 
-    def outputs(self):
+    def outputs(self) -> list[AHDL_VAR]:
         return self._outputs
+
+    def accessors(self, prefix):
+        for var in self._inputs + self._outputs:
+            if self.scope.is_module():
+                ifname = var.hdl_name
+            else:
+                ifname = var.name[len(self.scope.base_name) + 1:]
+            accessor_name = f'{prefix}_{ifname}'
+            attr = {'accessor'}
+            if var.sig.is_input():
+                attr.add('reg')
+                attr.add('initializable')
+            else:
+                attr.add('net')
+            if var.sig.is_ctrl():
+                attr.add('ctrl')
+            yield (var, accessor_name, attr)
 
     def add_task(self, task):
         self.tasks.append(task)
@@ -122,7 +148,7 @@ class HDLModule(HDLScope):
                     elif decl.dst.is_a(AHDL_SUBSCRIPT) and decl.dst.memvar.sig is sig:
                         self.remove_decl(tag, decl)
 
-    def add_sub_module(self, name, hdlmodule, connections, param_map=None):
+    def add_sub_module(self, name:str, hdlmodule, connections:list[tuple[AHDL_VAR, Signal]], param_map=None):
         assert isinstance(name, str)
         self.sub_modules[name] = (name, hdlmodule, connections, param_map)
 
@@ -149,8 +175,8 @@ class HDLModule(HDLScope):
         assert fsm_name in self.fsms
         self.fsms[fsm_name].reset_stms.append(ahdl_stm)
 
-    def add_edge_detector(self, sig, old, new):
-        self.edge_detectors.add((sig, old, new))
+    def add_edge_detector(self, var:AHDL_VAR, old:AHDL_EXP, new:AHDL_EXP):
+        self.edge_detectors.add((var, old, new))
 
     def resources(self):
         num_of_regs = 0

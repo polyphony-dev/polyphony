@@ -1,3 +1,5 @@
+from polyphony.typing import uint64
+
 @decorator
 def timed() -> None:
     pass
@@ -19,7 +21,7 @@ def clkrange(clk_cycles:int=None) -> None:
 
 
 @builtin
-def clktime() -> int:
+def clktime() -> uint64:
     pass
 
 

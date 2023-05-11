@@ -27,7 +27,7 @@ from .ir.setlineno import SourceDump
 from .ir.synth import DefaultSynthParamSetter
 
 from .ir.analysis.usedef import UseDefDetector
-from .ir.analysis.usedef import FieldUseDef
+from .ir.analysis.fieldusedef import FieldUseDef
 from .ir.analysis.diagnostic import CFGChecker
 from .ir.analysis.loopdetector import LoopDetector
 from .ir.analysis.loopdetector import LoopInfoSetter
@@ -85,6 +85,7 @@ from .frontend.python.pure import interpret, PureCtorBuilder, PureFuncExecutor
 
 from .target.verilog.vericodegen import VerilogCodeGen
 from .target.verilog.veritestgen import VerilogTestGen
+from .target.verilog.flatten import FlattenSignals
 
 import logging
 logger = logging.getLogger()
@@ -637,15 +638,6 @@ def dumpmodule(driver, scope):
     logger.debug(str(hdlmodule))
 
 
-def genhdl(hdlmodule):
-    if not hdlmodule.scope.is_testbench():
-        vcodegen = VerilogCodeGen(hdlmodule)
-    else:
-        vcodegen = VerilogTestGen(hdlmodule)
-    vcodegen.generate()
-    return vcodegen.result()
-
-
 def dumphdl(driver, scope):
     logger.debug(driver.result(scope))
 
@@ -811,7 +803,7 @@ def compile_plan():
         buildmodule,
         dbg(dumpmodule),
         ahdlopt(ahdlcopyopt),
-        ahdlopt(reducebits),
+        #ahdlopt(reducebits),
         #ahdlopt(reducereg),
         dbg(dumpmodule),
         transformio,
@@ -906,22 +898,44 @@ def compile(plan, source, src_file=''):
                               with_class=True,
                               with_lib=True)
     # parse_targets(scopes)
-    driver = Driver(plan, scopes)
-    driver.run()
+    driver = Driver(plan, scopes, None)
+    driver.run('Compiling')
     return driver.scopes
 
 
 def compile_main(src_file, options):
     setup(src_file, options)
     main_source = read_source(src_file)
-    scopes = compile(compile_plan(), main_source, src_file)
-    output_hdl(scopes, options)
+    plan = compile_plan()
+    scopes = compile(plan, main_source, src_file)
+    output_hdl(output_plan(), scopes, options, stage_offset=len(plan))
     env.destroy()
 
 
-def output_hdl(compiled_scopes, options):
+def output_plan():
+    plan = [
+        dumpmodule,
+        ahdl_flatten_signals,
+        dumpmodule,
+        output_verilog,
+    ]
+    return plan
+
+
+def output_hdl(plan, compiled_scopes, options, stage_offset):
+    driver = Driver(plan, compiled_scopes, options, stage_offset)
+    driver.run('Output HDL')
+
+
+def ahdl_flatten_signals(driver, scope):
+    hdlmodule = env.hdlscope(scope)
+    FlattenSignals().process(hdlmodule)
+
+
+def output_verilog(driver):
+    options = driver.options
     results = []
-    for s in compiled_scopes:
+    for s in driver.scopes:
         hdlmodule = env.hdlscope(s)
         code = genhdl(hdlmodule)
         if options.debug_mode:
@@ -954,6 +968,15 @@ def output_hdl(compiled_scopes, options):
                 env.append_testbench(scope)
             else:
                 f.write('`include "./{}"\n'.format(file_name))
+
+
+def genhdl(hdlmodule):
+    if not hdlmodule.scope.is_testbench():
+        vcodegen = VerilogCodeGen(hdlmodule)
+    else:
+        vcodegen = VerilogTestGen(hdlmodule)
+    vcodegen.generate()
+    return vcodegen.result()
 
 
 def main():

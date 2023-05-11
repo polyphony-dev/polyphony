@@ -445,15 +445,6 @@ class ModelEvaluator(AHDLVisitor):
             return Integer('X', 1, False)
         assert False
 
-    def visit_AHDL_STRUCT(self, ahdl):
-        submodel = self.hdlscope2model(ahdl.hdlscope)
-        current = self.current_model
-        self.current_model = submodel
-        attr = self.visit(ahdl.attr)
-        self.current_model = current
-        return attr
-        assert False
-
     def visit_AHDL_CONCAT(self, ahdl):
         for var in ahdl.varlist:
             self.visit(var)

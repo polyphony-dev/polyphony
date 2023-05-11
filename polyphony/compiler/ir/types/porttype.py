@@ -6,31 +6,31 @@ class PortType(ScopeType):
     def __init__(self, scope, attrs, explicit=True):
         assert scope
         super().__init__('port', scope, explicit)
-        self._attrs = attrs.copy()
+        self._dtype = attrs['dtype']
+        self._direction = attrs['direction']
+        self._init = attrs['init']
+        self._assigned = attrs['assigned']
+        self._root_symbol = attrs['root_symbol']
 
     @property
     def dtype(self):
-        return self._attrs['dtype']
+        return self._dtype
 
     @property
     def direction(self):
-        return self._attrs['direction']
+        return self._direction
 
     @property
     def init(self):
-        return self._attrs['init']
+        return self._init
 
     @property
     def assigned(self):
-        return self._attrs['assigned']
+        return self._assigned
 
     @property
     def root_symbol(self):
-        return self._attrs['root_symbol']
-
-    @property
-    def owners_access(self):
-        return self._attrs['owners_access']
+        return self._root_symbol
 
     def port_owner(self):
         if self.root_symbol.scope.is_ctor():
@@ -47,7 +47,7 @@ class PortType(ScopeType):
         return self._name
 
     def __hash__(self):
-        return hash((super().__hash__(), self.dtype, self.direction, self.init, self.assigned, self.root_symbol, self.owners_access))
+        return hash((super().__hash__(), self.dtype, self.direction, self.init, self.assigned, self.root_symbol))
 
     def can_assign(self, rhs_t):
         if self._name != rhs_t._name:

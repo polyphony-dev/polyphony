@@ -100,23 +100,23 @@ class VerilogCodeGen(AHDLVisitor):
         if self.hdlmodule.scope.is_module() or self.hdlmodule.scope.is_function_module():
             ports.append('input wire clk')
             ports.append('input wire rst')
-        for sig in self.hdlmodule.inputs():
-            typ = 'reg' if sig.is_reg() else 'wire'
-            signed = 'signed' if sig.is_int() else ''
-            width = f'[{sig.width-1}:0]' if sig.width > 1 else ''
-            ports.append(f'input  {typ:4s} {signed:6s} {width:8s} {sig.name}')
-        for sig in self.hdlmodule.outputs():
-            typ = 'wire' if sig.is_net() else 'reg'
-            signed = 'signed' if sig.is_int() else ''
-            width = f'[{sig.width-1}:0]' if sig.width > 1 else ''
-            if sig.is_initializable():
-                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {sig.name} = {sig.init_value}')
+        for var in self.hdlmodule.inputs():
+            typ = 'reg' if var.sig.is_reg() else 'wire'
+            signed = 'signed' if var.sig.is_int() else ''
+            width = f'[{var.sig.width-1}:0]' if var.sig.width > 1 else ''
+            ports.append(f'input  {typ:4s} {signed:6s} {width:8s} {var.hdl_name}')
+        for var in self.hdlmodule.outputs():
+            typ = 'wire' if var.sig.is_net() else 'reg'
+            signed = 'signed' if var.sig.is_int() else ''
+            width = f'[{var.sig.width-1}:0]' if var.sig.width > 1 else ''
+            if var.sig.is_initializable():
+                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {var.hdl_name} = {var.sig.init_value}')
             else:
-                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {sig.name}')
+                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {var.hdl_name}')
         self.emit((',\n' + self.tab()).join(ports))
 
     def _generate_signal(self, sig):
-        name = self._safe_name(sig)
+        name = self._safe_name(sig.name)
         if sig.is_regarray() or sig.is_netarray():
             width = sig.width[0]
             size = sig.width[1]
@@ -180,8 +180,8 @@ class VerilogCodeGen(AHDLVisitor):
             ports = []
             ports.append('.clk(clk)')
             ports.append('.rst(rst)')
-            for sig, acc in connections:
-                ports.append(f'.{sig.name}({acc.name})')
+            for var, acc in connections:
+                ports.append(f'.{var.hdl_name}({acc.name})')
 
             self.emit(f'//{name} instance')
             if param_map:
@@ -241,20 +241,18 @@ class VerilogCodeGen(AHDLVisitor):
             return '"' + s[1:-1] + '"'
         return str(ahdl.value)
 
-    def _safe_name(self, sig):
-        if sig.is_reserved():
-            return sig.name
-        if is_verilog_keyword(sig.name):
-            return sig.name + '_'
-        if sig.name[0].isnumeric():
-            return '_' + sig.name
-        return sig.name
+    def _safe_name(self, name):
+        if is_verilog_keyword(name):
+            return name + '_'
+        if name[0].isnumeric():
+            return '_' + name
+        return name
 
     def visit_AHDL_VAR(self, ahdl):
-        return self._safe_name(ahdl.sig)
+        return self._safe_name(ahdl.hdl_name)
 
     def visit_AHDL_MEMVAR(self, ahdl):
-        return self._safe_name(ahdl.sig)
+        return self._safe_name(ahdl.hdl_name)
 
     def visit_AHDL_SUBSCRIPT(self, ahdl):
         return f'{self.visit(ahdl.memvar)}[{self.visit(ahdl.offset)}]'
@@ -263,9 +261,6 @@ class VerilogCodeGen(AHDLVisitor):
         if is_verilog_keyword(ahdl.name):
             return ahdl.name + '_'
         return ahdl.name
-
-    def visit_AHDL_STRUCT(self, ahdl):
-        return self.visit(ahdl.attr)
 
     def visit_AHDL_CONCAT(self, ahdl):
         if ahdl.op:

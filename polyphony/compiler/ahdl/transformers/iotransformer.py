@@ -33,12 +33,12 @@ class IOTransformer(AHDLTransformer):
         _, sub_module, connections, _ = self.hdlmodule.sub_modules[ahdl.instance_name]
         args = []
         returns = []
-        for sig, acc in connections:
-            if sig.is_ctrl():
+        for var, acc in connections:
+            if var.sig.is_ctrl():
                 continue
-            elif sig.is_input():
+            elif var.sig.is_input():
                 args.append(acc)
-            elif sig.is_output():
+            elif var.sig.is_output():
                 returns.append(acc)
         return self.call_sequence(step, step_n, args, returns, ahdl)
 

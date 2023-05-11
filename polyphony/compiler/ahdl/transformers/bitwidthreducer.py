@@ -61,9 +61,6 @@ class BitwidthReducer(AHDLVisitor):
     def visit_AHDL_SYMBOL(self, ahdl):
         pass
 
-    def visit_AHDL_STRUCT(self, ahdl):
-        return self.visit(ahdl.attr)
-
     def visit_AHDL_CONCAT(self, ahdl):
         return sum([self.visit(var) for var in ahdl.varlist])
 
@@ -75,7 +72,7 @@ class BitwidthReducer(AHDLVisitor):
             dst_sig = ahdl.dst.sig
         else:
             return
-        if dst_sig.is_output() or dst_sig.is_extport():
+        if dst_sig.is_output() or dst_sig.is_accessor():
             return
         stms = self.usedef.get_def_stms(dst_sig)
         if len(stms) > 1:

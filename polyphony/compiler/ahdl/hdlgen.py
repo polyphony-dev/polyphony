@@ -1,6 +1,8 @@
-from collections import defaultdict
+
 from .ahdl import *
-from .ahdlvisitor import AHDLVisitor
+from .transformers.varcollector import AHDLVarCollector
+from .transformers.varreplacer import AHDLVarReplacer
+from .hdlmodule import HDLModule
 from ..common.env import env
 from ..ir.ir import *
 from logging import getLogger
@@ -19,9 +21,39 @@ class HDLModuleBuilder(object):
         else:
             assert False
 
-    def process(self, hdlmodule):
-        self.hdlmodule = hdlmodule
+    def process(self, hdlmodule:HDLModule):
+        self.hdlmodule:HDLModule = hdlmodule
+        self._collector = AHDLVarCollector()
         self._build_module()
+
+    def _build_module(self):
+        pass
+
+    def _process_submodules(self):
+        subscopes = set()
+        self._collector.process(self.hdlmodule)
+        for vars in self._collector.submodule_vars():
+            subscopes.add((vars[0], self.hdlmodule.subscopes[vars[0]]))
+        for instance_sig, subscope in subscopes:
+            param_map = {}
+            if subscope.scope.module_param_vars:
+                for name, v in subscope.scope.module_param_vars:
+                    param_map[name] = v
+            connections = []
+            for (var, accessor_name, attrs) in subscope.accessors(instance_sig.name):
+                accessor = self.hdlmodule.gen_sig(accessor_name, var.sig.width, attrs)
+                connections.append((var, accessor))
+            self.hdlmodule.add_sub_module(instance_sig.name,
+                                          subscope,
+                                          connections,
+                                          param_map=param_map)
+            # replace port access to accessor
+            replace_table:dict[tuple, tuple] = {}
+            for var, accessor in connections:
+                vars = (instance_sig,) + var.vars
+                replace_table[vars] = (accessor,)
+            AHDLVarReplacer(replace_table).process(self.hdlmodule)
+            logger.debug(str(self.hdlmodule))
 
     def _add_callee_submodules(self, scope):
         for callee_scope, inst_names in scope.callee_instances.items():
@@ -38,28 +70,15 @@ class HDLModuleBuilder(object):
     def _add_submodule_instances(self, sub_hdlmodule, inst_names, param_map, is_internal=False):
         for inst_name in inst_names:
             connections = []
-            ios = sub_hdlmodule.inputs() + sub_hdlmodule.outputs()
-            for sig in ios:
-                if sub_hdlmodule.scope.is_module():
-                    ifname = sig.name
-                else:
-                    ifname = sig.name[len(sub_hdlmodule.name) + 1:]
-                accessor_name = f'{inst_name}_{ifname}'
-                attr = {'extport'}
-                if sig.is_input():
-                    attr.add('reg')
-                else:
-                    attr.add('net')
-                if sig.is_ctrl():
-                    attr.add('ctrl')
-                accessor = self.hdlmodule.gen_sig(accessor_name, sig.width, attr)
-                connections.append((sig, accessor))
+            for (var, accessor_name, attrs) in sub_hdlmodule.accessors(inst_name):
+                accessor = self.hdlmodule.gen_sig(accessor_name, var.sig.width, attrs)
+                connections.append((var, accessor))
             self.hdlmodule.add_sub_module(inst_name,
                                           sub_hdlmodule,
                                           connections,
                                           param_map=param_map)
 
-    def _add_roms(self, memsigs):
+    def _add_roms(self, memvars_set:set[tuple[Signal]]):
         def find_defstm(symbol):
             # use ancestor if it is imported symbol
             if symbol.scope.is_containable() and symbol.is_imported():
@@ -68,19 +87,19 @@ class HDLModuleBuilder(object):
             if defstms:
                 assert len(defstms) == 1
                 return list(defstms)[0]
-            defstms = symbol.scope.field_usedef.get_stms_defining(symbol)
+            defstms = symbol.scope.field_usedef.get_def_stms((symbol,))
             assert len(defstms) == 1
             return list(defstms)[0]
 
-        roms = [sig for sig in memsigs if sig.is_rom()]
+        roms = [memvars for memvars in memvars_set if memvars[-1].is_rom()]
         while roms:
-            output_sig = roms.pop()
-            fname = AHDL_VAR(output_sig, Ctx.STORE)
+            memvars = roms.pop()
+            fname = AHDL_VAR(memvars, Ctx.STORE)
             addr_width = 8  # TODO
-            input_sig = self.hdlmodule.gen_sig(output_sig.name + '_in', addr_width)
+            input_sig = self.hdlmodule.gen_sig(memvars[-1].name + '_in', addr_width)
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
-            array_sym = output_sig.sym
+            array_sym = memvars[-1].sym
             while True:
                 defstm = find_defstm(array_sym)
                 array = defstm.src
@@ -99,17 +118,6 @@ class HDLModuleBuilder(object):
             rom_func = AHDL_FUNCTION(fname, (input,), (case,))
             self.hdlmodule.add_function(rom_func)
 
-    def _collect_vars(self, fsm):
-        outputs = set()
-        defs = set()
-        uses = set()
-        memnodes = set()
-        collector = AHDLVarCollector(self.hdlmodule, defs, uses, outputs, memnodes)
-        for stg in fsm.stgs:
-            for state in stg.states:
-                collector.visit(state)
-        return defs, uses, outputs, memnodes
-
     def _collect_moves(self, fsm):
         moves = []
         for stg in fsm.stgs:
@@ -117,15 +125,17 @@ class HDLModuleBuilder(object):
                 moves.extend([code for code in state.traverse() if code.is_a(AHDL_MOVE)])
         return moves
 
-    def _add_reset_stms(self, fsm, defs, uses, outputs):
+    def _add_reset_stms(self, fsm, defs:set[tuple[Signal]], uses:set[tuple[Signal]], outputs:set[tuple[Signal]]):
         fsm_name = fsm.name
-        for sig in defs | outputs:
-            if sig.is_reg():
-                if sig.is_initializable():
-                    v = AHDL_CONST(sig.init_value)
+        for vars in defs | outputs:
+            if vars[0].is_dut():
+                continue
+            if vars[-1].is_reg():
+                if vars[-1].is_initializable():
+                    v = AHDL_CONST(vars[-1].init_value)
                 else:
                     v = AHDL_CONST(0)
-                mv = AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), v)
+                mv = AHDL_MOVE(AHDL_VAR(vars, Ctx.STORE), v)
                 self.hdlmodule.add_fsm_reset_stm(fsm_name, mv)
 
 
@@ -134,12 +144,15 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         assert len(self.hdlmodule.fsms) == 1
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
-        defs, uses, outputs, memnodes = self._collect_vars(fsm)
         self._add_input(scope)
         self._add_output(scope)
         self._add_callee_submodules(scope)
-        self._add_roms(memnodes)
-        self._add_reset_stms(fsm, defs, uses, outputs)
+        self._collector.process(self.hdlmodule)
+        self._add_roms(self._collector.mem_vars(fsm.name))
+        self._add_reset_stms(fsm,
+                             self._collector.def_vars(fsm.name),
+                             self._collector.use_vars(fsm.name),
+                             self._collector.output_vars(fsm.name))
 
     def _add_input(self, scope):
         if scope.is_method():
@@ -151,23 +164,23 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                 raise NotImplementedError()
             else:
                 assert False
-            self.hdlmodule.add_input(sig)
+            self.hdlmodule.add_input(AHDL_VAR(sig, Ctx.LOAD))
         module_name = self.hdlmodule.name
         sig = self.hdlmodule.gen_sig(f'{module_name}_ready', 1, {'input', 'net', 'ctrl'})
-        self.hdlmodule.add_input(sig)
+        self.hdlmodule.add_input(AHDL_VAR(sig, Ctx.LOAD))
         sig = self.hdlmodule.gen_sig(f'{module_name}_accept', 1, {'input', 'net', 'ctrl'})
-        self.hdlmodule.add_input(sig)
+        self.hdlmodule.add_input(AHDL_VAR(sig, Ctx.LOAD))
 
     def _add_output(self, scope):
         if scope.return_type.is_scalar():
             sig_name = '{}_out_0'.format(scope.base_name)
             sig = self.hdlmodule.signal(sig_name)
-            self.hdlmodule.add_output(sig)
+            self.hdlmodule.add_output(AHDL_VAR(sig, Ctx.STORE))
         elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')
         module_name = self.hdlmodule.name
         sig = self.hdlmodule.gen_sig(f'{module_name}_valid', 1, {'output', 'reg', 'ctrl'})
-        self.hdlmodule.add_output(sig)
+        self.hdlmodule.add_output(AHDL_VAR(sig, Ctx.STORE))
 
 
 class HDLTestbenchBuilder(HDLModuleBuilder):
@@ -175,35 +188,39 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         assert len(self.hdlmodule.fsms) == 1
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
-        defs, uses, outputs, memnodes = self._collect_vars(fsm)
         self._add_callee_submodules(scope)
-        for p_name, p_typ in zip(scope.param_names(), scope.param_types()):
-            if p_typ.is_object() and p_typ.scope.is_module():
-                mod_scope = p_typ.scope
-                sub_hdlmodule = env.hdlscope(mod_scope)
-                param_map = {}
-                if sub_hdlmodule.scope.module_param_vars:
-                    for name, v in sub_hdlmodule.scope.module_param_vars:
-                        param_map[name] = v
-                self._add_submodule_instances(sub_hdlmodule, [p_name], param_map=param_map)
-        self._add_roms(memnodes)
-        self._add_reset_stms(fsm, defs, uses, outputs)
+
+        self._process_submodules()
+        self._collector.process(self.hdlmodule)
+        self._add_roms(self._collector.mem_vars(fsm.name))
+        self._add_reset_stms(fsm,
+                             self._collector.def_vars(fsm.name),
+                             self._collector.use_vars(fsm.name),
+                             self._collector.output_vars(fsm.name))
+
 
 
 class HDLTopModuleBuilder(HDLModuleBuilder):
     def _process_io(self, hdlmodule):
-        for sig in hdlmodule.get_signals({'single_port'}, None, with_base=True):
-            if sig.is_input():
-                hdlmodule.add_input(sig)
-            elif sig.is_output():
-                hdlmodule.add_output(sig)
+        def collect_io(topmodule, hdlmodule, prefix_qsig):
+            for sig in hdlmodule.get_signals({'single_port'}, None, with_base=True):
+                if sig.is_input():
+                    topmodule.add_input(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
+                elif sig.is_output():
+                    topmodule.add_output(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
+            for sig in hdlmodule.get_signals({'subscope'}, None):
+                subscope = hdlmodule.subscopes[sig]
+                collect_io(topmodule, subscope, prefix_qsig + (sig,))
+        collect_io(self.hdlmodule, self.hdlmodule, tuple())
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
-        defs, uses, outputs, memnodes = self._collect_vars(fsm)
         self._add_callee_submodules(scope)
-        self._add_roms(memnodes)
-        self._add_reset_stms(fsm, defs, uses, outputs)
+        self._add_roms(self._collector.mem_vars(fsm.name))
+        self._add_reset_stms(fsm,
+                             self._collector.def_vars(fsm.name),
+                             self._collector.use_vars(fsm.name),
+                             self._collector.output_vars(fsm.name))
 
     def _build_module(self):
         assert self.hdlmodule.scope.is_module()
@@ -217,20 +234,11 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             self.hdlmodule.parameters.append((sig, val))
         self._process_io(self.hdlmodule)
 
+        self._collector.process(self.hdlmodule)
         fsms = list(self.hdlmodule.fsms.values())
         for fsm in fsms:
             if fsm.scope.is_ctor():
-                memsigs = self.hdlmodule.get_signals({'regarray', 'netarray'})
-                self._add_roms(memsigs)
-
-                #for memnode in env.memref_graph.collect_ram(self.hdlmodule.scope):
-                for sym in self.hdlmodule.scope.symbols.values():
-                    if not sym.typ.is_list() or sym.typ.ro:
-                        continue
-                    name = sym.hdl_name()
-                    width = sym.typ.element.width
-                    length = sym.typ.length
-                    sig = self.hdlmodule.gen_sig(name, (width, length), {'regarray'})
+                self._add_roms(self._collector.mem_vars(fsm.name))
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_module_defs(fsm):
                     if stm.dst.sig.is_field():
@@ -252,35 +260,3 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         return defs
 
 
-class AHDLVarCollector(AHDLVisitor):
-    '''this class collects inputs and outputs and locals'''
-    def __init__(self, hdlmodule, local_defs, local_uses, output_temps, mems):
-        self.local_defs = local_defs
-        self.local_uses = local_uses
-        self.output_temps = output_temps
-        self.module_constants = [c for c, _ in hdlmodule.constants.keys()]
-        self.mems = mems
-
-    def visit_AHDL_CONST(self, ahdl):
-        pass
-
-    def visit_AHDL_MEMVAR(self, ahdl):
-        if ahdl.ctx & Ctx.STORE:
-            self.local_defs.add(ahdl.sig)
-        else:
-            self.local_uses.add(ahdl.sig)
-        self.mems.add(ahdl.sig)
-
-    def visit_AHDL_VAR(self, ahdl):
-        if ahdl.sig.is_ctrl() or ahdl.sig in self.module_constants:
-            pass
-        elif ahdl.sig.is_input():
-            if ahdl.sig.is_single_port():
-                self.output_temps.add(ahdl.sig)
-        elif ahdl.sig.is_output():
-            self.output_temps.add(ahdl.sig)
-        else:
-            if ahdl.ctx & Ctx.STORE:
-                self.local_defs.add(ahdl.sig)
-            else:
-                self.local_uses.add(ahdl.sig)

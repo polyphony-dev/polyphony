@@ -1,5 +1,7 @@
 from ..ir import *
 from ..irvisitor import IRVisitor
+from logging import getLogger
+logger = getLogger(__name__)
 
 
 class AliasVarDetector(IRVisitor):
@@ -12,6 +14,7 @@ class AliasVarDetector(IRVisitor):
         assert ir.dst.is_a([TEMP, ATTR])
         sym = ir.dst.symbol
         if sym.is_condition() or self.scope.is_comb():
+            logger.debug(f'{sym} is alias')
             sym.add_tag('alias')
 
     def visit_MOVE(self, ir):
@@ -20,6 +23,7 @@ class AliasVarDetector(IRVisitor):
         sched = self.current_stm.block.synth_params['scheduling']
         if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
+            logger.debug(f'{sym} is alias')
             return
         if sym.is_register() or sym.is_return() or sym.typ.is_port():
             return
@@ -29,11 +33,16 @@ class AliasVarDetector(IRVisitor):
             else:
                 # TODO:
                 module = self.scope.parent
-            defstms = module.field_usedef.get_stms_defining(sym)
-            if len(defstms) > 1:
+            if sym.typ.is_object():
                 return
+            defstms = module.field_usedef.get_def_stms(ir.dst.qualified_symbol)
+            if len(defstms) == 1:
+                sym.add_tag('alias')
+                logger.debug(f'{sym} is alias')
+            return
         if sym.typ.is_tuple() and sched == 'timed':
             sym.add_tag('alias')
+            logger.debug(f'{sym} is alias')
             return
         if ir.src.is_a([TEMP, ATTR]):
             src_sym = ir.src.symbol
@@ -78,6 +87,7 @@ class AliasVarDetector(IRVisitor):
                 return
             if sched != 'parallel' and stm.block.synth_params['scheduling'] == 'parallel':
                 return
+        logger.debug(f'{sym} is alias')
         sym.add_tag('alias')
 
     def visit_PHI(self, ir):

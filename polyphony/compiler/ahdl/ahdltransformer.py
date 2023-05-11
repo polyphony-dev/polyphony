@@ -11,9 +11,21 @@ class AHDLTransformer(object):
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
         for tag, decls in hdlmodule.decls.copy().items():
-            new_decls = [self.visit(decl) for decl in decls]
-            new_decls = [decl for decl in new_decls if decl.is_a(AHDL_DECL)]
+            new_decls = []
+            for decl in decls:
+                new_decl = self.visit(decl)
+                if isinstance(new_decl, AHDL_DECL):
+                    new_decls.append(new_decl)
+                else:
+                    pass
             hdlmodule.decls[tag] = new_decls
+        for item in hdlmodule.edge_detectors.copy():
+            hdlmodule.edge_detectors.remove(item)
+            var, old, new = item
+            var_ = self.visit(var)
+            old_ = self.visit(old)
+            new_ = self.visit(new)
+            hdlmodule.add_edge_detector(var_, old_, new_)
         for fsm in hdlmodule.fsms.values():
             self.process_fsm(fsm)
 
@@ -22,7 +34,7 @@ class AHDLTransformer(object):
         new_stms = []
         for stm in fsm.reset_stms:
             new_stm = self.visit(stm)
-            if new_stm.is_a(AHDL_MOVE):
+            if isinstance(new_stm, AHDL_MOVE):
                 new_stms.append(new_stm)
         fsm.reset_stms = new_stms
         for stg in fsm.stgs:
@@ -36,6 +48,7 @@ class AHDLTransformer(object):
             if isinstance(new_state, tuple):
                 new_states.extend(new_state)
             else:
+                assert isinstance(new_state, State)
                 new_states.append(new_state)
         stg.set_states(new_states)
 
@@ -45,7 +58,10 @@ class AHDLTransformer(object):
             new_code = self.visit(code)
             if isinstance(new_code, tuple):
                 new_codes.extend(new_code)
+            elif new_code is None:
+                pass
             else:
+                assert isinstance(new_code, AHDL_STM)
                 new_codes.append(new_code)
         return tuple(new_codes)
 
@@ -65,10 +81,6 @@ class AHDLTransformer(object):
 
     def visit_AHDL_MEMVAR(self, ahdl):
         return ahdl
-
-    def visit_AHDL_STRUCT(self, ahdl):
-        attr = self.visit(ahdl.attr)
-        return dataclasses.replace(ahdl, attr=attr)
 
     def visit_AHDL_SUBSCRIPT(self, ahdl):
         memvar = self.visit(ahdl.memvar)
@@ -197,7 +209,6 @@ class AHDLTransformer(object):
         blocks = tuple([self.visit(block) for block in ahdl.blocks])
         return AHDL_TRANSITION_IF(conds, blocks)
 
-
     def visit_AHDL_PIPELINE_GUARD(self, ahdl):
         cond = self.visit(ahdl.conds[0])
         block = self.visit(ahdl.blocks[0])
@@ -231,6 +242,7 @@ class AHDLTransformer(object):
             if id(ahdl) in self.hdlmodule.ahdl2dfgnode:
                 _, node = self.hdlmodule.ahdl2dfgnode[id(ahdl)]
                 # del self.hdlmodule.ahdl2dfgnode[id(ahdl)]
-                self.hdlmodule.ahdl2dfgnode[id(new_ahdl)] = (new_ahdl, node)
+                if new_ahdl:
+                    self.hdlmodule.ahdl2dfgnode[id(new_ahdl)] = (new_ahdl, node)
         return new_ahdl
 

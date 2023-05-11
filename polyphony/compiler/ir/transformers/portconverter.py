@@ -18,7 +18,6 @@ from ...common.errors import Errors, Warnings
 #  init      ... initial value
 #  assigned    ... True | False
 #  root_symbol ... symbol
-#  owners_access   ... True | False
 #
 class PortTypeProp(TypePropagation):
     def process(self, scope):
@@ -50,7 +49,6 @@ class PortTypeProp(TypePropagation):
             assert 'direction' in attrs
             attrs['root_symbol'] = self.current_stm.dst.symbol
             attrs['assigned'] = False
-            attrs['owners_access'] = True
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
             return Type.port(callee_scope, attrs)
@@ -139,12 +137,9 @@ class PortConverter(IRTransformer):
         modules = [s for s in scopes if s.is_module() and s.is_instantiated()]
         if not modules:
             return
-        #PortTypeProp().process_all()
         for module in modules:
             scopes_ = _collect_scopes(module)
             worklist = deque(scopes_)
-            #self.union_ports = defaultdict(set)
-            #for s in scopes_:
             PortTypeProp()._process_all(worklist)
 
 
