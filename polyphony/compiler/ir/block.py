@@ -75,7 +75,13 @@ class Block(object):
         s += ' # path exp: '
         s += str(self.path_exp) + '\n'
         s += ' # code\n'
-        s += '\n'.join(['  ' + str(stm) for stm in self.stms])
+        str_stms = []
+        for stm in self.stms:
+            if stm.type_str():
+                str_stms.append(f'  {stm}  # {stm.type_str()}')
+            else:
+                str_stms.append(f'  {stm}')
+        s += '\n'.join(str_stms)
         s += '\n\n'
         return s
 

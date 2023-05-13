@@ -74,7 +74,7 @@ class AHDLVarReducer(AHDLTransformer):
             return False
         if var.sig.is_output():
             return False
-        if var.sig.is_accessor():
+        if var.sig.is_connector():
             return False
         return True
 

@@ -93,14 +93,14 @@ class HDLModule(HDLScope):
     def outputs(self) -> list[AHDL_VAR]:
         return self._outputs
 
-    def accessors(self, prefix):
+    def connectors(self, prefix):
         for var in self._inputs + self._outputs:
             if self.scope.is_module():
                 ifname = var.hdl_name
             else:
                 ifname = var.name[len(self.scope.base_name) + 1:]
-            accessor_name = f'{prefix}_{ifname}'
-            attr = {'accessor'}
+            connector_name = f'{prefix}_{ifname}'
+            attr = {'connector'}
             if var.sig.is_input():
                 attr.add('reg')
                 attr.add('initializable')
@@ -108,7 +108,7 @@ class HDLModule(HDLScope):
                 attr.add('net')
             if var.sig.is_ctrl():
                 attr.add('ctrl')
-            yield (var, accessor_name, attr)
+            yield (var, connector_name, attr)
 
     def add_task(self, task):
         self.tasks.append(task)

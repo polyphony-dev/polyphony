@@ -86,14 +86,6 @@ class Symbol(Tagged):
         self._ancestor = a
 
     def __str__(self):
-        #return '{}:{}({}:{})'.format(self.name, self.typ, self.id, self.scope.base_name)
-        #return '{}:{}({})'.format(self.name, repr(self.typ), self.tags)
-        if env.dev_debug_mode:
-            return '{}:{}'.format(self._name, self._typ)
-        return self._name
-
-    def __repr__(self):
-        #return '{}({})'.format(self.name, hex(self.__hash__()))
         return self._name
 
     def __lt__(self, other):

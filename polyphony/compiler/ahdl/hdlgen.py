@@ -40,18 +40,18 @@ class HDLModuleBuilder(object):
                 for name, v in subscope.scope.module_param_vars:
                     param_map[name] = v
             connections = []
-            for (var, accessor_name, attrs) in subscope.accessors(instance_sig.name):
-                accessor = self.hdlmodule.gen_sig(accessor_name, var.sig.width, attrs)
-                connections.append((var, accessor))
+            for (var, connector_name, attrs) in subscope.connectors(instance_sig.name):
+                connector = self.hdlmodule.gen_sig(connector_name, var.sig.width, attrs)
+                connections.append((var, connector))
             self.hdlmodule.add_sub_module(instance_sig.name,
                                           subscope,
                                           connections,
                                           param_map=param_map)
-            # replace port access to accessor
+            # replace port access to connector
             replace_table:dict[tuple, tuple] = {}
-            for var, accessor in connections:
+            for var, connector in connections:
                 vars = (instance_sig,) + var.vars
-                replace_table[vars] = (accessor,)
+                replace_table[vars] = (connector,)
             AHDLVarReplacer(replace_table).process(self.hdlmodule)
             logger.debug(str(self.hdlmodule))
 
@@ -70,9 +70,9 @@ class HDLModuleBuilder(object):
     def _add_submodule_instances(self, sub_hdlmodule, inst_names, param_map, is_internal=False):
         for inst_name in inst_names:
             connections = []
-            for (var, accessor_name, attrs) in sub_hdlmodule.accessors(inst_name):
-                accessor = self.hdlmodule.gen_sig(accessor_name, var.sig.width, attrs)
-                connections.append((var, accessor))
+            for (var, connector_name, attrs) in sub_hdlmodule.connectors(inst_name):
+                connector = self.hdlmodule.gen_sig(connector_name, var.sig.width, attrs)
+                connections.append((var, connector))
             self.hdlmodule.add_sub_module(inst_name,
                                           sub_hdlmodule,
                                           connections,

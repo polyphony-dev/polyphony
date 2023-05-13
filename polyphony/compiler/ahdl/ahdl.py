@@ -282,15 +282,13 @@ class AHDL_ASSIGN(AHDL_VAR_DECL):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
         if self.dst.is_a(AHDL_VAR):
             assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
-            name = cast(AHDL_VAR, self.dst).name
         elif self.dst.is_a(AHDL_SUBSCRIPT):
             assert cast(AHDL_SUBSCRIPT, self.dst).memvar.ctx == Ctx.STORE
-            name = cast(AHDL_SUBSCRIPT, self.dst).memvar.name
         else:
             assert False
         # Use object.__setattr__ when writing to frozen fields after __init__
         # https://docs.python.org/3/library/dataclasses.html#frozen-instances
-        object.__setattr__(self, 'name', name)
+        object.__setattr__(self, 'name', str(self.dst))
 
     def __str__(self):
         return f'{self.dst} := {self.src}'

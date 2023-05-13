@@ -52,16 +52,19 @@ class PortType(ScopeType):
     def can_assign(self, rhs_t):
         if self._name != rhs_t._name:
             return False
-        if self._scope is rhs_t._scope:
-            return True
-        elif rhs_t._scope and rhs_t._scope.is_subclassof(self._scope):
-            return True
-        return False
+        elif self._dtype != rhs_t._dtype:
+            return False
+        elif self._direction != rhs_t._direction:
+            return False
+        elif self._init != rhs_t._init:
+            return False
+        elif self._assigned != rhs_t._assigned:
+            return False
+        elif self._root_symbol != rhs_t._root_symbol:
+            return False
+        elif self._scope is not rhs_t._scope:
+            return False
+        return True
 
     def propagate(self, rhs_t):
-        lhs_t = self
-        if self._name == rhs_t._name:
-            raise NotImplementedError()
-            assert self._scope
-            lhs_t = rhs_t.clone(explicit=self.explicit)
-        return lhs_t
+        return self

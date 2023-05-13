@@ -139,7 +139,10 @@ class UNOP(IRExp):
         self._exp = exp
 
     def __str__(self):
-        return '{}{}'.format(op2sym_map[self._op], self._exp)
+        return f'{op2sym_map[self._op]}{self._exp}'
+
+    def type_str(self):
+        return f'{op2sym_map[self._op]}{self._exp.type_str()}'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, UNOP):
@@ -178,7 +181,10 @@ class BINOP(IRExp):
         self._right = right
 
     def __str__(self):
-        return '({} {} {})'.format(self._left, op2sym_map[self._op], self._right)
+        return f'({self._left} {op2sym_map[self._op]} {self._right})'
+
+    def type_str(self):
+        return f'({self._left.type_str()} {op2sym_map[self._op]} {self._right.type_str()})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, BINOP):
@@ -225,7 +231,10 @@ class RELOP(IRExp):
         self._right = right
 
     def __str__(self):
-        return '({} {} {})'.format(self._left, op2sym_map[self._op], self._right)
+        return f'({self._left} {op2sym_map[self._op]} {self._right})'
+
+    def type_str(self):
+        return f'({self._left.type_str()} {op2sym_map[self._op]} {self._right.type_str()})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, RELOP):
@@ -267,7 +276,10 @@ class CONDOP(IRExp):
         self._right = right
 
     def __str__(self):
-        return '({} ? {} : {})'.format(self._cond, self._left, self._right)
+        return f'({self._cond} ? {self._left} : {self._right})'
+
+    def type_str(self):
+        return f'({self._cond.type_str()} ? {self._left.type_str()} : {self._right.type_str()})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CONDOP):
@@ -312,7 +324,11 @@ class POLYOP(IRExp):
 
     def __str__(self):
         values = ', '.join([str(e) for e in self._values])
-        return '({} [{}])'.format(op2sym_map[self._op], values)
+        return f'({op2sym_map[self._op]} [{values}])'
+
+    def type_str(self):
+        values = ', '.join([e.type_str() for e in self._values])
+        return f'({op2sym_map[self._op]} [{values}])'
 
     def kids(self):
         assert all([v.is_a([CONST, TEMP, ATTR]) for v in self._values])
@@ -376,12 +392,20 @@ class CALL(IRCallable):
         self._kwargs = kwargs
 
     def __str__(self):
-        s = '{}('.format(self._func)
-        #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
-        s += ', '.join(['{}'.format(arg) for name, arg in self._args])
+        s = f'{self._func}('
+        s += ', '.join([str(arg) for name, arg in self._args])
         if self._kwargs:
             s += ', '
             s += ', '.join([f'{name}={value}' for name, value in self._kwargs.items()])
+        s += ")"
+        return s
+
+    def type_str(self):
+        s = f'{self._func.type_str()}('
+        s += ', '.join([arg.type_str() for name, arg in self._args])
+        if self._kwargs:
+            s += ', '
+            s += ', '.join([f'{name}={value.type_str()}' for name, value in self._kwargs.items()])
         s += ")"
         return s
 
@@ -478,12 +502,20 @@ class SYSCALL(IRCallable):
         self._kwargs = kwargs
 
     def __str__(self):
-        s = '!{}('.format(self._sym)
-        #s += ', '.join(['{}={}'.format(name, arg) for name, arg in self.args])
-        s += ', '.join(['{}'.format(arg) for name, arg in self._args])
+        s = f'!{self._sym}('
+        s += ', '.join([str(arg) for name, arg in self._args])
         if self._kwargs:
             s += ', '
             s += ', '.join([f'{name}={value}' for name, value in self._kwargs.items()])
+        s += ")"
+        return s
+
+    def type_str(self):
+        s = f'{self._sym.typ}('
+        s += ', '.join([arg.type_str() for name, arg in self._args])
+        if self._kwargs:
+            s += ', '
+            s += ', '.join([f'{name}={value.type_str()}' for name, value in self._kwargs.items()])
         s += ")"
         return s
 
@@ -548,11 +580,20 @@ class NEW(IRCallable):
         self._kwargs = kwargs
 
     def __str__(self):
-        s = '{}('.format(self._sym)
-        s += ', '.join(['{}={}'.format(name, arg) for name, arg in self._args])
+        s = f'{self._sym}('
+        s += ', '.join([f'{name}={arg}' for name, arg in self._args])
         if self._kwargs:
             s += ', '
             s += ', '.join([f'{name}={value}' for name, value in self._kwargs.items()])
+        s += ")"
+        return s
+
+    def type_str(self):
+        s = f'{self._sym.typ}('
+        s += ', '.join([f'{name}={arg.type_str()}' for name, arg in self._args])
+        if self._kwargs:
+            s += ', '
+            s += ', '.join([f'{name}={value.type_str()}' for name, value in self._kwargs.items()])
         s += ")"
         return s
 
@@ -626,6 +667,9 @@ class CONST(IRExp):
         else:
             return repr(self._value)
 
+    def type_str(self):
+        return type(self._value).__name__
+
     def __eq__(self, other):
         if other is None or not isinstance(other, CONST):
             return False
@@ -651,7 +695,10 @@ class MREF(IRExp):
         self._ctx = ctx
 
     def __str__(self):
-        return '{}[{}]'.format(self._mem, self._offset)
+        return f'{self._mem}[{self._offset}]'
+
+    def type_str(self):
+        return f'{self._mem.type_str()}[{self._offset.type_str()}]'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MREF):
@@ -693,7 +740,10 @@ class MSTORE(IRExp):
         self._exp = exp
 
     def __str__(self):
-        return 'mstore({}[{}], {})'.format(self._mem, self._offset, self._exp)
+        return f'mstore({self._mem}[{self._offset}], {self._exp})'
+
+    def type_str(self):
+        return f'mstore({self._mem.type_str()}[{self._offset.type_str()}], {self._exp.type_str()})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MSTORE):
@@ -749,6 +799,18 @@ class ARRAY(IRExp):
         s += ']' if self._is_mutable else ')'
         if not (self._repeat.is_a(CONST) and self._repeat.value == 1):
             s += ' * ' + str(self._repeat)
+        return s
+
+    def type_str(self):
+        s = '[' if self._is_mutable else '('
+        if len(self._items) > 8:
+            s += ', '.join(map(lambda item: item.type_str(), self._items[:10]))
+            s += '...'
+        else:
+            s += ', '.join(map(lambda item: item.type_str(), self._items))
+        s += ']' if self._is_mutable else ')'
+        if not (self._repeat.is_a(CONST) and self._repeat.value == 1):
+            s += ' * ' + type(self._repeat).__name__
         return s
 
     def __eq__(self, other):
@@ -819,6 +881,9 @@ class TEMP(IRExp):
     def __str__(self):
         return str(self._sym)
 
+    def type_str(self):
+        return str(self._sym.typ)
+
     def __eq__(self, other):
         if other is None or not isinstance(other, TEMP):
             return False
@@ -856,7 +921,12 @@ class ATTR(IRExp):
         self._exp._ctx = Ctx.LOAD
 
     def __str__(self):
-        return '{}->{}'.format(self.exp, self._attr)
+        return '{}.{}'.format(self.exp, self._attr)
+
+    def type_str(self):
+        if isinstance(self._attr, str):
+            return '{}.str'.format(self.exp.type_str())
+        return '{}.{}'.format(self.exp.type_str(), self._attr.typ)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, ATTR):
@@ -946,7 +1016,10 @@ class EXPR(IRStm):
         self._exp = exp
 
     def __str__(self):
-        return '{}'.format(self._exp)
+        return str(self._exp)
+
+    def type_str(self):
+        return str(self._exp.type_str())
 
     def __eq__(self, other):
         if other is None or not isinstance(other, EXPR):
@@ -978,6 +1051,9 @@ class CJUMP(IRStm):
 
     def __str__(self):
         return 'cjump {} ? {}, {}'.format(self._exp, self._true.name, self._false.name)
+
+    def type_str(self):
+        return ''
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CJUMP):
@@ -1035,6 +1111,9 @@ class MCJUMP(IRStm):
 
         return 'mcjump(\n        {})'.format(', \n        '.join([item for item in items]))
 
+    def type_str(self):
+        return ''
+
     def __eq__(self, other):
         if other is None or not isinstance(other, MCJUMP):
             return False
@@ -1079,6 +1158,9 @@ class JUMP(IRStm):
     def __str__(self):
         return "jump {} '{}'".format(self._target.name, self._typ)
 
+    def type_str(self):
+        return ''
+
     def __eq__(self, other):
         if other is None or not isinstance(other, JUMP):
             return False
@@ -1110,7 +1192,10 @@ class RET(IRStm):
         self._exp = exp
 
     def __str__(self):
-        return "return {}".format(self._exp)
+        return f"return {self._exp}"
+
+    def type_str(self):
+        return str(self._exp.type_str())
 
     def __eq__(self, other):
         if other is None or not isinstance(other, RET):
@@ -1139,7 +1224,10 @@ class MOVE(IRStm):
         self._src = src
 
     def __str__(self):
-        return '{} = {}'.format(self._dst, self._src)
+        return f'{self._dst} = {self._src}'
+
+    def type_str(self):
+        return f'{self._dst.type_str()} = {self._src.type_str()}'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MOVE):
@@ -1176,7 +1264,10 @@ class CEXPR(EXPR):
         self._cond = cond
 
     def __str__(self):
-        return "{} ? {}".format(self._cond, super().__str__())
+        return f"{self._cond} ? {super().__str__()}"
+
+    def type_str(self):
+        return f"{self._cond.type_str()} ? {super().type_str()}"
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CEXPR):
@@ -1205,7 +1296,10 @@ class CMOVE(MOVE):
         self._cond = cond
 
     def __str__(self):
-        return "{} ? {}".format(self._cond, super().__str__())
+        return f"{self._cond} ? {super().__str__()}"
+
+    def type_str(self):
+        return f"{self._cond.type_str()} ? {super().type_str()}"
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CEXPR):
@@ -1262,6 +1356,9 @@ class PHIBase(IRStm):
                 else:
                     str_args.append('_')
         return str_args
+
+    def type_str(self):
+        return ''
 
     def __eq__(self, other):
         if other is None or not isinstance(other, PHIBase):
@@ -1372,6 +1469,9 @@ class MSTM(IRStm):
 
     def __str__(self):
         return 'mstm{{{}}}'.format(', '.join([str(stm) for stm in self._stms]))
+
+    def type_str(self):
+        return ''
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MSTM):

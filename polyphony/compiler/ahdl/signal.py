@@ -11,7 +11,7 @@ class Signal(Tagged):
         'parameter', 'constant',
         'single_port',  # port is an I/O port, either input or output
         'input', 'output',
-        'accessor',     # accessor is a local signal which accessing a submodule's port
+        'connector',     # connector is a local signal which accessing a submodule's port
         'field', 'ctrl', 'onehot',
         'initializable',
         'induction',
