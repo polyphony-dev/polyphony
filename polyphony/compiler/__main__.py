@@ -716,6 +716,7 @@ def compile_plan():
         dbg(dumpscope),
         phase(env.PHASE_2),
         usedef,
+        # TODO: Enable/disable flatten
         flattenmodule,
         objssa,
         dbg(dumpscope),
@@ -915,6 +916,7 @@ def compile_main(src_file, options):
 def output_plan():
     plan = [
         dumpmodule,
+        # TODO: Enable/disable flatten
         ahdl_flatten_signals,
         dumpmodule,
         output_verilog,
