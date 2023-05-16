@@ -11,7 +11,7 @@ class IOTransformer(AHDLTransformer):
         inst_name = ahdl_call.instance_name
         valid = self.hdlmodule.signal(f'{inst_name}_valid')
         ready = self.hdlmodule.signal(f'{inst_name}_ready')
-        accept = self.hdlmodule.signal(f'{inst_name}_valid')
+        accept = self.hdlmodule.signal(f'{inst_name}_accept')
 
         if step == 0:
             seq = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(1))]
