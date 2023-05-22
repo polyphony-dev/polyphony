@@ -35,12 +35,6 @@ class STG(object):
     def is_main(self):
         return not self.parent
 
-    def get_top(self):
-        if self.parent:
-            return self.parent.get_top()
-        else:
-            return self
-
     def set_states(self, states:list[State]):
         self._state_map.clear()
         self._states.clear()

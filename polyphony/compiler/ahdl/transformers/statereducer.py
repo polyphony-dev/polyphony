@@ -100,6 +100,7 @@ class IfForwarder(AHDLTransformer):
             assert transition.is_a(AHDL_TRANSITION)
             target_state = self._get_state(transition.target_name)
             if isinstance(target_state, PipelineState):
+                blocks.append(block)
                 continue
             codes = list(block.codes)
             codes.pop()

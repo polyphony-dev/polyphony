@@ -1,15 +1,21 @@
 from polyphony import testbench
 
 
-def shell_sort(alist):
+def shell_sort():
+    alist = [54, 26, 93, 17, 77, 31, 44, 55, 20]
+
     n = len(alist) // 2
     while n > 0:
         for i in range(n):
             gap_insertion_sort(alist, i, n)
         n = n // 2
 
+    for a in alist:
+        print(a)
+    for i in range(1, 9):
+        assert alist[i - 1] < alist[i]
 
-def gap_insertion_sort(alist:list, start, gap):
+def gap_insertion_sort(alist, start, gap):
     for i in range(start + gap, len(alist), gap):
         val = alist[i]
         pos = i
@@ -22,15 +28,7 @@ def gap_insertion_sort(alist:list, start, gap):
 
 @testbench
 def test():
-    alist = [54, 26, 93, 17, 77, 31, 44, 55, 20]
-    shell_sort(alist)
-    #gap_insertion_sort(alist, 0, 1)
-
-    for a in alist:
-        print(a)
-    for i in range(1, 9):
-        assert alist[i - 1] < alist[i]
-
+    shell_sort()
 
 test()
 

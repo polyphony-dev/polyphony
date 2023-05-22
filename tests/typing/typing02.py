@@ -2,22 +2,30 @@ from polyphony import testbench
 from polyphony.typing import List, bit, int8
 
 
-def typing02_a(xs:List[bit], i:int8) -> bit:
+def bitdata(xs:List[bit], i:int8) -> bit:
     return xs[i]
 
 
-def typing02_b(xs:List[int], i:int8) -> bit:
+def intdata(xs:List[int], i:int8) -> int:
     return xs[i]
+
+
+def typing02_a(i:int8) -> bit:
+    data = [0, 1, 1, 0, 1, 0, 1, 0]  # type: List[bit]
+    return bitdata(data, i)
+
+
+def typing02_b(i:int8) -> int:
+    data = [0, 1, 1, 0, 1, 0, 1, 0]  # type: List[int]
+    return intdata(data, i)
 
 
 @testbench
 def test():
-    data = [0, 1, 1, 0,
-            1, 0, 1, 0]  # type: List[bit]
-    for i in range(len(data)):
-        d = data[i]
-        assert d == typing02_a(data, i)
-        assert d == typing02_b(data, i)
+    data = [0, 1, 1, 0, 1, 0, 1, 0]
+    for i in range(8):
+        assert data[i] == typing02_a(i)
+        assert data[i] == typing02_b(i)
 
 
 test()

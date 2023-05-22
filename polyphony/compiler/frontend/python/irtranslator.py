@@ -741,7 +741,7 @@ class CodeVisitor(ast.NodeVisitor):
             fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
         if dst.is_a(TEMP):
             sym_t = dst.symbol.typ
-            if not sym_t.is_undef():
+            if not sym_t.is_undef() and typ != sym_t:
                 fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
             dst.symbol.typ = typ
         elif dst.is_a(ATTR):

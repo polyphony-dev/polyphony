@@ -34,8 +34,7 @@ def unroll11_b(xs):
     shift_2(xs, 5)
 
 
-@testbench
-def test():
+def unroll11():
     xs = [1, 2, 3, 4, 5]
     unroll11_a(xs)
     assert 5 == xs[0]
@@ -52,5 +51,9 @@ def test():
     assert 2 == xs[3]
     assert 1 == xs[4]
 
+
+@testbench
+def test():
+    unroll11()
 
 test()

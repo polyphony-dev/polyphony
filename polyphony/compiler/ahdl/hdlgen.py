@@ -1,7 +1,7 @@
 
 from .ahdl import *
 from .transformers.varcollector import AHDLVarCollector
-from .transformers.varreplacer import AHDLVarReplacer
+from .transformers.varreplacer import AHDLSignalReplacer
 from .hdlmodule import HDLModule
 from ..common.env import env
 from ..ir.ir import *
@@ -52,7 +52,7 @@ class HDLModuleBuilder(object):
             for var, connector in connections:
                 vars = (instance_sig,) + var.vars
                 replace_table[vars] = (connector,)
-            AHDLVarReplacer(replace_table).process(self.hdlmodule)
+            AHDLSignalReplacer(replace_table).process(self.hdlmodule)
             logger.debug(str(self.hdlmodule))
 
     def _add_callee_submodules(self, scope):

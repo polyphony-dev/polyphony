@@ -34,7 +34,7 @@ class HDLScope(object):
                 s += '\n'
         return s
 
-    def gen_sig(self, name, width, tag=None, sym=None):
+    def gen_sig(self, name:str, width:int|tuple[int], tag:set[str]|None=None, sym=None) -> Signal:
         if name in self.signals:
             sig = self.signals[name]
             sig.width = width
@@ -63,15 +63,6 @@ class HDLScope(object):
                 return found
         return None
 
-    def find_scope(self, sig:Signal):
-        if self.signal(sig.name):
-            return self
-        else:
-            for subscope in self.subscopes.values():
-                if subscope.signal(sig.name):
-                    return subscope
-        return None
-
     def get_signals(self, include_tags=None, exclude_tags=None, with_base=False):
         if include_tags:
             assert isinstance(include_tags, set)
@@ -92,14 +83,6 @@ class HDLScope(object):
             else:
                 sigs.append(sig)
         return sigs
-
-    def rename_sig(self, old, new):
-        assert old in self.signals
-        sig = self.signals[old]
-        del self.signals[old]
-        sig.name = new
-        self.signals[new] = sig
-        return sig
 
     def remove_sig(self, sig):
         assert sig.name in self.signals

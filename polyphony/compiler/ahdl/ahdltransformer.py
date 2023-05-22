@@ -61,7 +61,7 @@ class AHDLTransformer(object):
             elif new_code is None:
                 pass
             else:
-                assert isinstance(new_code, AHDL_STM)
+                assert isinstance(new_code, AHDL_STM) or isinstance(new_code, State)
                 new_codes.append(new_code)
         return tuple(new_codes)
 
@@ -219,9 +219,14 @@ class AHDLTransformer(object):
         block = self.visit(state.block)
         return dataclasses.replace(state, block=block)
 
+    def visit_PipelineState(self, state):
+        self.current_state = state
+        block = self.visit(state.block)
+        return dataclasses.replace(state, block=block)
+
     def visit_PipelineStage(self, stage):
-        # TODO:
-        raise NotImplementedError()
+        block = self.visit(stage.block)
+        return dataclasses.replace(stage, block=block)
 
     def find_visitor(self, cls):
         method = 'visit_' + cls.__name__

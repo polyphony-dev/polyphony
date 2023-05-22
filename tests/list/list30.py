@@ -1,7 +1,8 @@
 from polyphony import testbench
 
 
-def list30(k0, buf0):
+def list30(k0, v):
+    buf0 = [v] * 100
     ref0 = buf0
     while True:
         buf0 = ref0
@@ -13,8 +14,7 @@ def list30(k0, buf0):
 
 @testbench
 def test():
-    buf0 = [0] * 100
-    assert 0 == list30(1, buf0)
+    assert 3 == list30(1, 3)
 
 
 test()

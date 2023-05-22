@@ -14,13 +14,18 @@ class AHDLCopyOpt(AHDLTransformer):
             self.updated = False
             self.usedef = AHDLUseDefDetector().process(hdlmodule)
             super().process(hdlmodule)
-            logger.debug(str(hdlmodule))
-
+            # logger.debug(str(hdlmodule))
             AHDLVarReducer().process(hdlmodule)
             #logger.debug('!!! after reduce')
             #logger.debug(str(hdlmodule))
 
     def _is_ignore_case(self, target:AHDL_VAR) -> bool:
+        if target.ctx != Ctx.LOAD:
+            return True
+        if not target.is_local_var():
+            return True
+        if target.sig.is_net():
+            return True
         return (target.sig.sym and
             target.sig.sym.typ.is_object() and
             target.sig.sym.typ.scope.name.startswith('polyphony.Net'))
@@ -37,12 +42,11 @@ class AHDLCopyOpt(AHDLTransformer):
         return new_src
 
     def visit_AHDL_VAR(self, ahdl:AHDL_VAR) -> AHDL_EXP:
-        if ahdl.ctx != Ctx.LOAD:
+        if self._is_ignore_case(ahdl):
             return super().visit_AHDL_VAR(ahdl)
-        if not ahdl.is_local_var():
-            return super().visit_AHDL_VAR(ahdl)
+
         src_defs = self.usedef.get_def_stms(ahdl.sig)
-        if len(src_defs) != 1 or self._is_ignore_case(ahdl):
+        if len(src_defs) != 1:
             return super().visit_AHDL_VAR(ahdl)
 
         new_src = self._get_new_src(list(src_defs)[0])

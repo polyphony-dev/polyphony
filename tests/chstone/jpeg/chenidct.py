@@ -194,8 +194,8 @@ def ChenIDct(x:list, y:list):
 
     return 0
 
-@testbench
-def test():
+
+def chen_idct_test():
     ins = [
         154, 192, 254, 239, 180, 128, 123, 110,
 	123, 180, 198, 180, 154, 136, 105, 136,
@@ -222,5 +222,10 @@ def test():
     for i in range(64):
         print(outs[i])
         assert outs[i] == expected[i]
+
+
+@testbench
+def test():
+    chen_idct_test()
 
 test()

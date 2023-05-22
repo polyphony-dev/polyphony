@@ -1,7 +1,8 @@
 from polyphony import testbench
 
 
-def list34(xs):
+def list34(x):
+    xs = [x] * 4
     ys = [None] * len(xs)
     s = 0
     for i in range(len(xs)):
@@ -13,11 +14,8 @@ def list34(xs):
 
 @testbench
 def test():
-    lst2 = [3] * 4
-    assert 4 * 4 == list34(lst2)
-
-    lst1 = [6] * 4
-    assert 7 * 4 == list34(lst1)
+    assert 4 * 4 == list34(3)
+    assert 7 * 4 == list34(6)
 
 
 test()

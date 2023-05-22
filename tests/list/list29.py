@@ -1,7 +1,9 @@
 from polyphony import testbench
 
 
-def list29(p, xs, ys):
+def list29(p, x, y):
+    xs = [x]
+    ys = [y]
     if p:
         d = xs
     else:
@@ -11,8 +13,8 @@ def list29(p, xs, ys):
 
 @testbench
 def test():
-    assert 1 == list29(True, [1], [2])
-    #assert 2 == list29(False, [1], [2])
+    assert 1 == list29(True, 1, 2)
+    assert 4 == list29(False, 3, 4)
 
 
 test()

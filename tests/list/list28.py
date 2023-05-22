@@ -1,7 +1,8 @@
 from polyphony import testbench
 
 
-def list28(xs):
+def list28():
+    xs = [1, 2, 3]
     xs[0] = 10
     x0 = xs[0]
     xs[0] = 100
@@ -15,7 +16,7 @@ def list28(xs):
 
 @testbench
 def test():
-    list28([1, 2, 3])
+    list28()
 
 
 test()

@@ -23,11 +23,14 @@ def unroll10_c(xs:list):
     return sum
 
 
-@testbench
-def test():
+def unroll10():
     assert 25 == unroll10_a([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     assert 30 == unroll10_b([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
     assert 30 == unroll10_c([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
 
+
+@testbench
+def test():
+    unroll10()
 
 test()

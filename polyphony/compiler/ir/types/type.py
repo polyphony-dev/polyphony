@@ -412,4 +412,4 @@ class Type(object):
             else:
                 s = str(t)
             ts.append(s)
-        return '_'.join(ts)
+        return ''.join(ts)

@@ -208,27 +208,14 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('')
 
     def _process_State(self, state):
-        self.current_state = state
-        code = f'{state.name}: begin'
-        self.emit(code)
-        self.set_indent(2)
-        if env.hdl_debug_mode:
-            self.emit(f'$display("%8d:STATE:{self.hdlmodule.name}  {state.name}", $time);')
-        self.visit_State(state)
-
-        self.set_indent(-2)
-        self.emit('end')
+        assert False
 
     def visit_State(self, state):
-        for code in state.codes:
-            self.visit(code)
+        assert False
 
     def visit_PipelineStage(self, stage):
         self.emit(f'/*** {stage.name} ***/')
-        if stage.enable:
-            self.visit(stage.enable)
-        for code in stage.codes:
-            self.visit(code)
+        self.visit(stage.block)
         self.emit('')
 
     def visit_AHDL_CONST(self, ahdl):

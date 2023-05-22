@@ -1,7 +1,7 @@
 from polyphony import testbench
 
 
-def rom09(p, q, zs1, zs2):
+def rom09_func(p, q, zs1, zs2):
     rom0 = [1, 2, 3, 4, 5]
     rom1 = [6, 7, 8, 9, 10]
     if p:
@@ -29,11 +29,10 @@ def rom09(p, q, zs1, zs2):
         zs2[i] += yys[i]
 
 
-@testbench
-def test():
+def rom09():
     zs1 = [0] * 5
     zs2 = [0] * 5
-    rom09(True, True, zs1, zs2)
+    rom09_func(True, True, zs1, zs2)
     assert 2 == zs1[0]
     assert 4 == zs1[1]
     assert 6 == zs1[2]
@@ -48,7 +47,7 @@ def test():
 
     zs1 = [0] * 5
     zs2 = [0] * 5
-    rom09(True, False, zs1, zs2)
+    rom09_func(True, False, zs1, zs2)
     assert 7 == zs1[0]
     assert 9 == zs1[1]
     assert 11 == zs1[2]
@@ -61,5 +60,9 @@ def test():
     assert 13 == zs2[3]
     assert 15 == zs2[4]
 
+
+@testbench
+def test():
+    rom09()
 
 test()

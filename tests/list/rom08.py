@@ -1,7 +1,7 @@
 from polyphony import testbench
 
 
-def rom08(zs1, zs2):
+def rom08_func(zs1, zs2):
     rom0 = [1, 2, 3, 4, 5]
     rom1 = [6, 7, 8, 9, 10]
     xs = rom0
@@ -15,11 +15,10 @@ def rom08(zs1, zs2):
         ys = tmp
 
 
-@testbench
-def test():
+def rom08():
     zs1 = [0] * 5
     zs2 = [0] * 5
-    rom08(zs1, zs2)
+    rom08_func(zs1, zs2)
     assert 1 == zs1[0]
     assert 7 == zs1[1]
     assert 3 == zs1[2]
@@ -32,5 +31,9 @@ def test():
     assert 4 == zs2[3]
     assert 10 == zs2[4]
 
+
+@testbench
+def test():
+    rom08()
 
 test()

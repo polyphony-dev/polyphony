@@ -2,7 +2,7 @@ from polyphony import testbench
 from polyphony import unroll
 
 
-def unroll01(xs, ys):
+def unroll_func(xs, ys):
     s = 0
     for i in unroll(range(8)):
         x = xs[i] + 1
@@ -15,12 +15,10 @@ def unroll01(xs, ys):
     return s
 
 
-@testbench
-def test():
+def unroll01():
     data = [1, 2, 3, 4, 5, 6, 7, 8]
     out_data = [0] * 8
-    s = unroll01(data, out_data)
-    print(s)
+    s = unroll_func(data, out_data)
     assert -44 == s
     assert 2 == out_data[0]
     assert 3 == out_data[1]
@@ -30,6 +28,11 @@ def test():
     assert 7 == out_data[5]
     assert 8 == out_data[6]
     assert 9 == out_data[7]
+
+
+@testbench
+def test():
+    unroll01()
 
 
 test()

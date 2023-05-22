@@ -178,8 +178,7 @@ def mips_main(imem:list, dmem:list):
 
     return n_inst
 
-@testbench
-def test():
+def mips_test():
     #+--------------------------------------------------------------------------+
     #| * Test Vectors (added for CHStone)                                       |
     #|     A : input data                                                       |
@@ -250,4 +249,8 @@ def test():
 
     assert 0 == main_result
 
+
+@testbench
+def test():
+    mips_test()
 test()

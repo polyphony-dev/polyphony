@@ -1,27 +1,36 @@
 from collections import defaultdict
+import dataclasses
+from dataclasses import dataclass
 from .ahdl import *
-from .ahdlhelper import AHDLVarReplacer
 from .stgbuilder import State, STGItemBuilder, ScheduledItemQueue
 from .analysis.ahdlusedef import AHDLUseDefDetector
-from ..ir.block import Block
-from ..ir.ir import *
+from .ahdltransformer import AHDLTransformer
+from ..ir.ir import MOVE, CJUMP
+from logging import getLogger
+logger = getLogger(__name__)
 
 
+@dataclass(frozen=True)
 class PipelineState(State):
-    def __init__(self, name, nstate, first_valid_signal, stg, is_finite_loop=False):
+    pass
+
+
+@dataclass(frozen=True)
+class PipelineStage(State):
+    has_enable:bool = False
+    has_hold:bool = False
+
+
+class PipelineStateHelper(object):
+    def __init__(self, name, nstate, first_valid_signal, stg):
         assert isinstance(name, str)
         assert 1 <= nstate
-        subblocks = [AHDL_BLOCK(str(i), []) for i in range(nstate)]
-        caseitems = [AHDL_CASE_ITEM(AHDL_CONST(i), subb) for i, subb in enumerate(subblocks)]
+        self._name = name
+        self._stg = stg
         self.substate_var = stg.hdlmodule.gen_sig(f'{name}_state',
                                                   nstate.bit_length(),
                                                   {'reg', 'pipeline_ctrl'})
         self.whole_moves = []
-        whole_moves_blk = AHDL_BLOCK('', self.whole_moves)
-        codes = [whole_moves_blk, AHDL_CASE(AHDL_VAR(self.substate_var, Ctx.LOAD), tuple(caseitems))]
-        super().__init__(name, 0, codes, stg)
-        self.substates = subblocks[:]
-        self.stages = []
         if first_valid_signal:
             self.valid_signals = {0:first_valid_signal}
         else:
@@ -31,52 +40,24 @@ class PipelineState(State):
         self.hold_signals = {}
         self.last_signals = {}
         self.exit_signals = {}
-        self.stg = stg
-        self.is_finite_loop = is_finite_loop
-        self.nstate = nstate
-        self.cur_sub_state_idx = 0
         self.moves = {}
 
-    def __str__(self):
-        s = '---------------------------------\n'
-        s += f'{self.name}\n'
-        for mv in self.whole_moves:
-            s += f'  {mv}\n'
-        for subst in self.substates:
-            for c in subst.codes:
-                if isinstance(c, PipelineStage):
-                    stage = c
-                    s += f'  ---{stage.name}---\n'
-                    for code in stage.codes:
-                        str_code = str(code)
-                        lines = str_code.split('\n')
-                        for line in lines:
-                            if line:
-                                s += '  {}\n'.format(line)
-                else:
-                    s += f'  {c}\n'
-                s += '\n'
-        else:
-            pass
-        s += '\n'
-        return s
-
-    def _pipeline_signal(self, signal_name, signals, idx, is_reg):
+    def _pipeline_signal(self, signal_name, signals, idx, is_reg) -> Signal:
         assert idx >= 0
         if idx not in signals:
-            name = f'{self.name}_{idx}_{signal_name}'
+            name = f'{self._name}_{idx}_{signal_name}'
             if is_reg:
                 tags = {'reg', 'pipeline_ctrl'}
             else:
                 tags = {'net', 'pipeline_ctrl'}
-            new_sig = self.stg.hdlmodule.gen_sig(name, 1, tags)
+            new_sig = self._stg.hdlmodule.gen_sig(name, 1, tags)
             signals[idx] = new_sig
         return signals[idx]
 
-    def valid_signal(self, idx):
+    def valid_signal(self, idx) -> Signal:
         return self._pipeline_signal('valid', self.valid_signals, idx, True)
 
-    def valid_exp(self, idx):
+    def valid_exp(self, idx)  -> AHDL_EXP:
         ready = self.ready_signal(idx)
         if idx > 0:
             # hold ? ready : ready & prev_valid
@@ -90,47 +71,25 @@ class PipelineState(State):
         else:
             return AHDL_VAR(ready, Ctx.LOAD)
 
-    def ready_signal(self, idx):
+    def ready_signal(self, idx) -> Signal:
         return self._pipeline_signal('ready', self.ready_signals, idx, False)
 
-    def enable_signal(self, idx):
+    def enable_signal(self, idx) -> Signal:
         return self._pipeline_signal('enable', self.enable_signals, idx, False)
 
-    def hold_signal(self, idx):
+    def hold_signal(self, idx) -> Signal:
         return self._pipeline_signal('hold', self.hold_signals, idx, True)
 
-    def last_signal(self, idx):
+    def last_signal(self, idx) -> Signal:
         return self._pipeline_signal('last', self.last_signals, idx, True)
 
-    def exit_signal(self, idx):
+    def exit_signal(self, idx) -> Signal:
         return self._pipeline_signal('exit', self.exit_signals, idx, True)
 
-    def new_stage(self, step, codes):
-        name = f'{self.name}_{step}'
-        s = PipelineStage(name, self.cur_sub_state_idx, step, codes, self.stg, self)
-        state = self.substates[self.cur_sub_state_idx]
-        state.codes.append(s)
-        self.stages.append(s)
-        self.cur_sub_state_idx = (self.cur_sub_state_idx + 1) % self.nstate
-        assert len(self.stages) == step + 1, f'stages {len(self.stages)} step {step}'
-        return s
-
-    def resolve_transition(self, next_state, blk2states):
-        code = self.codes[-1]
-        if code.is_a(AHDL_TRANSITION_IF):
-            for i, ahdlblk in enumerate(code.blocks):
-                transition = ahdlblk.codes[-1]
-                assert transition.is_a(AHDL_TRANSITION)
-                if isinstance(transition.target, Block):
-                    target_state = blk2states[transition.target][0]
-                    transition.target = target_state
-                else:
-                    pass
-        elif code.is_a(AHDL_TRANSITION):
-            pass
-        else:
-            assert False
-        return next_state
+    def new_stage(self, step, codes, has_enable, has_hold) -> PipelineStage:
+        stage_name = f'{self._name}_{step}'
+        stage = PipelineStage(stage_name, AHDL_BLOCK('', tuple(codes)), step, self._stg, has_enable=has_enable, has_hold=has_hold)
+        return stage
 
     def add_global_move(self, sym, mv):
         if sym in self.moves:
@@ -141,52 +100,57 @@ class PipelineState(State):
             self.whole_moves.append(mv)
 
 
-class PipelineStage(State):
-    def __init__(self, name, state_idx, step, codes, stg, parent_state):
-        super().__init__(name, step, codes, stg)
-        self.state_idx = state_idx
-        self.parent_state = parent_state
-        self.has_enable = False
-        self.enable = None
-        self.has_hold = False
-        self.is_source = False
-
-
-class PipelineStageBuilder(STGItemBuilder):
+class PipelineBuilder(STGItemBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
+        self.is_finite_loop = True
 
     def build(self, dfg, is_main):
+        self.stages:list[PipelineStage] = []
+        self.n_substate = dfg.ii
         blk_name = dfg.region.head.nametag + str(dfg.region.head.num)
-        prefix = self.stg.name + '_' + blk_name + '_P'
-        pstate = PipelineState(prefix, dfg.ii, None, self.stg, is_finite_loop=self.is_finite_loop)
+        state_name = self.stg.name + '_' + blk_name + '_P'
+        pstate_helper = PipelineStateHelper(state_name, self.n_substate, None, self.stg)
 
         self.scheduled_items = ScheduledItemQueue()
         self._build_scheduled_items(dfg)
-        self._build_pipeline_stages(prefix, pstate, is_main)
-
-        for blk in dfg.region.blocks():
-            self.blk2states[blk] = [pstate]
-
-        self.stg.states.append(pstate)
+        self._build_pipeline_stages(pstate_helper)
 
         # customize point
-        self.post_build(dfg, is_main, pstate)
+        exit_stm = self.post_build(dfg, pstate_helper)
 
-        if not pstate.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
-            pipe_end_stm = AHDL_TRANSITION(pstate)
-            pstate.codes.append(pipe_end_stm)
-
-        for i, substate in enumerate(pstate.substates):
-            if i == len(pstate.substates) - 1:
+        end_codes = [exit_stm]
+        if not exit_stm.is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
+            pipe_end_stm = AHDL_TRANSITION(state_name)
+            end_codes.append(pipe_end_stm)
+        case_items = []
+        for i in range(self.n_substate):
+            stages = []
+            for j in range(i, len(self.stages), self.n_substate):
+                stages.append(self.stages[j])
+            substate_codes:list[AHDL_STM] = stages
+            if i == self.n_substate - 1:
                 next = 0
             else:
                 next = i + 1
-            mv_next_state = AHDL_MOVE(AHDL_VAR(pstate.substate_var, Ctx.STORE),
+            mv_next_state = AHDL_MOVE(AHDL_VAR(pstate_helper.substate_var, Ctx.STORE),
                                       AHDL_CONST(next))
-            substate.codes.append(mv_next_state)
 
-    def post_build(self, dfg, is_main, pstate):
+            substate_codes.append(mv_next_state)
+            case_item = AHDL_CASE_ITEM(AHDL_CONST(i), AHDL_BLOCK('', tuple(substate_codes)))
+            case_items.append(case_item)
+        whole_moves_blk = AHDL_BLOCK('', tuple(pstate_helper.whole_moves))
+        pipeline_state_codes:tuple[AHDL_STM] = (
+            whole_moves_blk,
+            AHDL_CASE(AHDL_VAR(pstate_helper.substate_var, Ctx.LOAD), tuple(case_items)),
+         ) + tuple(end_codes)
+        pipeline_state = PipelineState(state_name, AHDL_BLOCK('', pipeline_state_codes), 0, self.stg)
+
+        for blk in dfg.region.blocks():
+            self.blk2states[blk.name] = [pipeline_state]
+        self.stg.add_states([pipeline_state])
+
+    def post_build(self, dfg, pstate_helper) -> AHDL_STM:
         pass
 
     def _is_stall_free(self):
@@ -197,7 +161,7 @@ class PipelineStageBuilder(STGItemBuilder):
                     return False
         return True
 
-    def _build_pipeline_stages(self, prefix, pstate, is_main):
+    def _build_pipeline_stages(self, pstate_helper):
         maxstep = max([step for (step, _) in self.scheduled_items.queue.items()])
         is_stall_free = self._is_stall_free()
         for step in range(maxstep + 1):
@@ -208,31 +172,43 @@ class PipelineStageBuilder(STGItemBuilder):
                     codes.append(item)
             else:
                 codes = [AHDL_NOP('empty stage')]
-            self._make_stage(pstate, step, codes, is_stall_free)
-        self._transform_wait_function(pstate)
-        for stage in pstate.stages:
-            self._add_pipeline_guard(pstate, stage)
-        if is_stall_free:
-            for stage in pstate.stages:
-                self._add_control_chain_no_stall(pstate, stage)
-        else:
-            for stage in pstate.stages:
-                self._add_control_chain(pstate, stage)
+            stage = self._make_stage(pstate_helper, step, codes, is_stall_free)
+            self.stages.append(stage)
+            assert len(self.stages) == step + 1, f'stages {len(self.stages)} step {step}'
 
-        # analysis and inserting register slices between pileline stages
-        stm2stage_num = self._make_stm2stage_num(pstate)
+        # Execute after all stages are created
+        self._transform_wait_function(pstate_helper)
+
+        # TODO: _transform_wait_functionに依存していなければStage生成と同時に行う
+        new_stages = []
+        for stage in self.stages:
+            new_stage = self._add_pipeline_guard(pstate_helper, stage)
+            if is_stall_free:
+                new_stage = self._add_control_chain_no_stall(pstate_helper, new_stage)
+            else:
+                self._add_control_chain(pstate_helper, stage)
+            new_stages.append(new_stage)
+        self.stages = new_stages
+        self._process_register_slices(pstate_helper)
+
+    def _process_register_slices(self, pstate_helper):
+        # Analysis and inserting register slices between pileline stages
+        stm2stage_num = self._make_stm2stage_num(pstate_helper)
         detector = AHDLUseDefDetector()
-        for stage in pstate.stages:
+        for stage in self.stages:
             detector.current_state = stage
             detector.visit(stage)
         usedef = detector.table
+
+        reg_slice_replace_table:dict[tuple, tuple] = {}
+        reg_slice_moves:dict[int, list] = defaultdict(list)
         for sig in usedef.get_all_def_sigs():
             if sig.is_pipeline_ctrl():
                 continue
-            defs = usedef.get_stms_defining(sig)
+            defs = usedef.get_def_stms(sig)
             d = list(defs)[0]
             d_stage_n = stm2stage_num[d]
-            uses = usedef.get_stms_using(sig)
+            uses = usedef.get_use_stms(sig)
             use_max_distances = 0
             for u in uses:
                 u_stage_n = stm2stage_num[u]
@@ -242,29 +218,48 @@ class PipelineStageBuilder(STGItemBuilder):
                     use_max_distances = distance
             if (1 < use_max_distances or
                     ((sig.is_induction() or sig.is_net()) and 0 < use_max_distances)):
-                self._insert_register_slices(sig, pstate.stages,
-                                             d_stage_n, d_stage_n + use_max_distances,
-                                             usedef, stm2stage_num)
+                logger.debug(f'process register slice for {sig}')
+                replaces, moves = self._create_register_slice_info(sig,
+                    d_stage_n, d_stage_n + use_max_distances,
+                    usedef, stm2stage_num)
+                reg_slice_replace_table.update(replaces)
+                for key, v in moves.items():
+                    reg_slice_moves[key].extend(v)
+        logger.debug(reg_slice_replace_table)
+        logger.debug(reg_slice_moves)
+        transformer = AHDLRegisterSliceTransformer(reg_slice_replace_table, reg_slice_moves, self.hdlmodule)
+        new_stages = []
+        for stage in self.stages:
+            new_stage = transformer.visit(stage)
+            new_stages.append(new_stage)
+            logger.debug(stage)
+            logger.debug('---')
+            logger.debug(new_stage)
+        self.stages = new_stages
 
-    def _make_stage(self, pstate, step, codes, is_stall_free):
-        stage = pstate.new_stage(step, codes)
-        if stage.step == 0 and pstate.is_finite_loop:
-            stage.has_enable = True
-        if stage.step > 0:
-            stage.has_hold = not is_stall_free
-        for c in stage.codes:
+    def _make_stage(self, pstate_helper, step, codes, is_stall_free) -> PipelineStage:
+        has_enable = False
+        has_hold = False
+        if step == 0 and self.is_finite_loop:
+            has_enable = True
+        elif step > 0:
+            has_hold = not is_stall_free
+        for c in codes:
             if c.find_ahdls(AHDL_META_WAIT):
-                stage.has_enable = True
+                has_enable = True
+                break
+        return pstate_helper.new_stage(step, codes, has_enable, has_hold)
 
-    def _transform_wait_function(self, pstate):
+    def _transform_wait_function(self, pstate_helper):
         multi_assign_vars = defaultdict(list)
         removes = []
-        for step, stage in enumerate(pstate.stages):
-            for code in stage.codes[:]:
+        for step, stage in enumerate(self.stages):
+            for code in stage.block.codes[:]:
                 if code.is_a(AHDL_META_WAIT):
                     assert stage.has_enable
-                    enable_sig = pstate.enable_signal(step)
+                    enable_sig = pstate_helper.enable_signal(step)
                     enable_cond = AHDL_OP(*code.args)
+                    assert False, 'TODO'
                     stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
                     removes.append((stage, code))
                 elif code.is_a([AHDL_NOP, AHDL_TRANSITION]):
@@ -280,83 +275,90 @@ class PipelineStageBuilder(STGItemBuilder):
                 continue
             for step, _, code in reversed(srcs):
                 src = code.src
-                valid = pstate.valid_signal(step)
+                valid = pstate_helper.valid_signal(step)
                 if rhs is None:
                     rhs = src
                 else:
                     rhs = AHDL_IF_EXP(AHDL_VAR(valid, Ctx.LOAD), src, rhs)
-            pstate.add_global_move(sig.name, AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), rhs))
+            pstate_helper.add_global_move(sig.name, AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), rhs))
+        # FIXME:
         for stage, code in removes:
-            stage.codes.remove(code)
+            stage.block.codes.remove(code)
 
-    def _add_pipeline_guard(self, pstate, stage):
+    def _add_pipeline_guard(self, pstate_helper, stage) -> PipelineStage:
         guarded_codes = []
-        for c in stage.codes[:]:
+        stage_codes = list(stage.block.codes)
+        for c in stage.block.codes:
             if self._check_guard_need(c):
                 guarded_codes.append(c)
-                stage.codes.remove(c)
+                stage_codes.remove(c)
         if stage.step == 0:
             if stage.has_enable:
-                guard_cond = AHDL_VAR(pstate.ready_signal(0), Ctx.LOAD)
+                guard_cond = AHDL_VAR(pstate_helper.ready_signal(0), Ctx.LOAD)
             else:
                 guard_cond = AHDL_CONST(1)
         else:
-            guard_cond = AHDL_VAR(pstate.valid_signal(stage.step - 1), Ctx.LOAD)
-        guard = AHDL_PIPELINE_GUARD(guard_cond, guarded_codes)
-        stage.codes.insert(0, guard)
+            guard_cond = AHDL_VAR(pstate_helper.valid_signal(stage.step - 1), Ctx.LOAD)
+        guard = AHDL_PIPELINE_GUARD(guard_cond, tuple(guarded_codes))
+        stage_codes.insert(0, guard)
+        return dataclasses.replace(stage, block=AHDL_BLOCK(stage.name, tuple(stage_codes)))
 
-    def _add_control_chain(self, pstate, stage):
+    def _add_control_chain(self, pstate_helper, stage):
         if stage.step == 0:
-            v_now = pstate.valid_signal(stage.step)
+            v_now = pstate_helper.valid_signal(stage.step)
             if stage.has_enable:
-                v_prev = pstate.enable_signal(stage.step)
+                v_prev = pstate_helper.enable_signal(stage.step)
             else:
                 v_prev = None
         else:
-            v_now = pstate.valid_signal(stage.step)
-            v_prev = pstate.valid_signal(stage.step - 1)
-        is_last = stage.step == len(pstate.stages) - 1
+            v_now = pstate_helper.valid_signal(stage.step)
+            v_prev = pstate_helper.valid_signal(stage.step - 1)
+        is_last = stage.step == len(self.stages) - 1
 
-        r_now = pstate.ready_signal(stage.step)
+        r_now = pstate_helper.ready_signal(stage.step)
         if not is_last:
-            r_next = AHDL_VAR(pstate.ready_signal(stage.step + 1), Ctx.LOAD)
+            r_next = AHDL_VAR(pstate_helper.ready_signal(stage.step + 1), Ctx.LOAD)
         else:
             r_next = AHDL_CONST(1)
         if stage.has_enable:
-            en = AHDL_VAR(pstate.enable_signal(stage.step), Ctx.LOAD)
-            if stage.is_source:
-                if len(pstate.stages) > (stage.step + 1):
-                    # ~next_hold & enable
-                    inv_next_hold = AHDL_OP('Invert',
-                                            AHDL_VAR(pstate.hold_signal(stage.step + 1), Ctx.LOAD))
-                    ready_rhs = AHDL_OP('BitAnd', inv_next_hold, en)
-                else:
-                    ready_rhs = en
-            else:
-                ready_rhs = AHDL_OP('BitAnd', r_next, en)
+            en = AHDL_VAR(pstate_helper.enable_signal(stage.step), Ctx.LOAD)
+            # if stage.is_source:
+            #     if len(self.stages) > (stage.step + 1):
+            #         # ~next_hold & enable
+            #         inv_next_hold = AHDL_OP('Invert',
+            #                                 AHDL_VAR(pstate_helper.hold_signal(stage.step + 1), Ctx.LOAD))
+            #         ready_rhs = AHDL_OP('BitAnd', inv_next_hold, en)
+            #     else:
+            #         ready_rhs = en
+            # else:
+            #     ready_rhs = AHDL_OP('BitAnd', r_next, en)
+            ready_rhs = AHDL_OP('BitAnd', r_next, en)
         else:
             ready_rhs = r_next
         ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE), ready_rhs)
-        stage.codes.append(ready_stm)
+        # FIXME:
+        stage.block.codes.append(ready_stm)
 
         if stage.has_hold:
             #hold = hold ? (!ready) : (valid & !ready);
-            hold = pstate.hold_signal(stage.step)
+            hold = pstate_helper.hold_signal(stage.step)
             if_lhs = AHDL_OP('Invert', AHDL_VAR(r_now, Ctx.LOAD))
             if_rhs = AHDL_OP('BitAnd',
                              AHDL_OP('Invert', AHDL_VAR(r_now, Ctx.LOAD)),
                              AHDL_VAR(v_prev, Ctx.LOAD))
             hold_rhs = AHDL_IF_EXP(AHDL_VAR(hold, Ctx.LOAD), if_lhs, if_rhs)
             hold_stm = AHDL_MOVE(AHDL_VAR(hold, Ctx.STORE), hold_rhs)
-            stage.codes.append(hold_stm)
+            # FIXME:
+            stage.block.codes.append(hold_stm)
 
         if not is_last:
-            valid_rhs = pstate.valid_exp(stage.step)
+            valid_rhs = pstate_helper.valid_exp(stage.step)
             set_valid = AHDL_MOVE(AHDL_VAR(v_now, Ctx.STORE),
                                   valid_rhs)
-            stage.codes.append(set_valid)
+            # FIXME:
+            stage.block.codes.append(set_valid)
 
-    def _make_stm2stage_num(self, pstate):
+    def _make_stm2stage_num(self, pstate_helper):
         def _make_stm2stage_num_rec(codes):
             for c in codes:
                 stm2stage_num[c] = i
@@ -367,8 +369,8 @@ class PipelineStageBuilder(STGItemBuilder):
                         else:
                             _make_stm2stage_num_rec([ahdlblk])
         stm2stage_num = {}
-        for i, s in enumerate(pstate.stages):
-            _make_stm2stage_num_rec(s.codes)
+        for i, stage in enumerate(self.stages):
+            _make_stm2stage_num_rec(stage.block.codes)
         return stm2stage_num
 
     def _check_guard_need(self, ahdl):
@@ -380,9 +382,8 @@ class PipelineStageBuilder(STGItemBuilder):
             return True
         return False
 
-    def _insert_register_slices(self, sig, stages, start_n, end_n, usedef, stm2stage_num):
-        replacer = AHDLVarReplacer(self.hdlmodule)
-        defs = usedef.get_stms_defining(sig)
+    def _create_register_slice_info(self, sig, start_n, end_n, usedef, stm2stage_num) -> tuple[dict, dict]:
+        defs = usedef.get_def_stms(sig)
         assert len(defs) == 1
         d = list(defs)[0]
         d_num = stm2stage_num[d]
@@ -400,7 +401,10 @@ class PipelineStageBuilder(STGItemBuilder):
                 tags.remove('net')
                 tags.add('reg')
             self.hdlmodule.gen_sig(new_name, sig.width, tags, sig.sym)
-        for u in usedef.get_stms_using(sig):
+
+        reg_replace_table:dict[tuple, tuple] = {}
+        reg_slice_moves:dict[int, list] = defaultdict(list)
+        for u in usedef.get_use_stms(sig):
             num = stm2stage_num[u]
             if num == d_num:
                 continue
@@ -408,7 +412,10 @@ class PipelineStageBuilder(STGItemBuilder):
                 continue
             new_name = f'{sig.name}_{num}'
             new_sig = self.hdlmodule.signal(new_name)
-            replacer.replace(u, sig, new_sig)
+
+            key = (id(u), sig)
+            assert key not in reg_replace_table
+            reg_replace_table[key] = (new_sig,)
         for num in range(start_n, end_n):
             # first slice uses original
             if num == start_n:
@@ -418,92 +425,124 @@ class PipelineStageBuilder(STGItemBuilder):
                 prev_sig = self.hdlmodule.signal(prev_name)
             cur_name = f'{sig.name}_{num + 1}'
             cur_sig = self.hdlmodule.signal(cur_name)
-            slice_stm = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
-                                  AHDL_VAR(prev_sig, Ctx.LOAD))
-            guard = stages[num].codes[0]
+            slice_move = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
+                                   AHDL_VAR(prev_sig, Ctx.LOAD))
+            guard = self.stages[num].block.codes[0]
             assert guard.is_a(AHDL_PIPELINE_GUARD)
-            guard.blocks[0].codes.append(slice_stm)
+            reg_slice_moves[id(guard)].append(slice_move)
+        return reg_replace_table, reg_slice_moves
 
 
-class LoopPipelineStageBuilder(PipelineStageBuilder):
+class AHDLRegisterSliceTransformer(AHDLTransformer):
+    def __init__(self, replace_table:dict[tuple, tuple], slice_moves:dict[int, list], hdlmodule):
+        self._replace_table = replace_table
+        self._slice_moves = slice_moves
+        self.hdlmodule = hdlmodule
+
+    def visit_AHDL_VAR(self, ahdl):
+        key = id(self.current_stm), ahdl.sig
+        if key in self._replace_table:
+            return AHDL_VAR(self._replace_table[key], ahdl.ctx)
+        else:
+            return ahdl
+
+    def visit_AHDL_PIPELINE_GUARD(self, ahdl):
+        if id(ahdl) in self._slice_moves:
+            new_ahdl = super().visit_AHDL_PIPELINE_GUARD(ahdl)
+            codes = new_ahdl.blocks[0].codes + tuple(self._slice_moves[id(ahdl)])
+            return AHDL_PIPELINE_GUARD(new_ahdl.conds[0], codes)
+        else:
+            return super().visit_AHDL_PIPELINE_GUARD(ahdl)
+
+
+class LoopPipelineBuilder(PipelineBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
         self.is_finite_loop = True
 
-    def post_build(self, dfg, is_main, pstate):
+    def post_build(self, dfg, pstate_helper) -> AHDL_STM:
         cond_defs = self.scope.usedef.get_stms_defining(dfg.region.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
 
         loop_cond = self.translator.visit(cond_def.src)
-        for stage in pstate.stages:
-            self._add_last_signal_chain(pstate, stage, loop_cond)
+
+        for i, stage in enumerate(self.stages[:]):
+            new_stage = self._add_last_signal_chain(pstate_helper, stage, loop_cond)
+            if new_stage:
+                self.stages[i] = new_stage
 
         # make the start condition of pipeline
-        enable0 = pstate.enable_signal(0)
-        loop_enable = AHDL_MOVE(AHDL_VAR(enable0, Ctx.STORE),
-                                loop_cond)
-        pstate.stages[0].enable = loop_enable
+        enable0 = pstate_helper.enable_signal(0)
+        loop_enable = AHDL_ASSIGN(AHDL_VAR(enable0, Ctx.STORE),
+                                  loop_cond)
+        self.hdlmodule.add_static_assignment(loop_enable)
+        # self.stages[0] = dataclasses.replace(self.stages[0], enable=loop_enable)
 
-        exit_signal = pstate.exit_signal(len(pstate.stages) - 1)
-        self.build_exit_detection_block(dfg, pstate, exit_signal,
-                                        cond_def, pstate.stages[-1])
-        self.build_exit_block(dfg, pstate, exit_signal)
+        exit_signal = pstate_helper.exit_signal(len(self.stages) - 1)
+        last_stage = self.build_exit_detection_block(dfg, pstate_helper, exit_signal,
+                                        cond_def, self.stages[-1])
+        self.stages[-1] = last_stage
 
-    def build_exit_detection_block(self, dfg, pstate, exit_signal, cond_def, last_stage):
+        exit_stm = self.build_exit_block(dfg, pstate_helper, exit_signal)
+        return exit_stm
+
+    def build_exit_detection_block(self, dfg, pstate_helper, exit_signal, cond_def:MOVE, last_stage:PipelineStage) -> PipelineStage:
         # make a condition for unexecutable loop
         loop_init = self.translator.visit(dfg.region.init)
         loop_cond = self.translator.visit(cond_def.src)
+        assert loop_init and loop_cond
         args = []
-        loop_cnt = self.translator._make_signal((dfg.region.counter,))
+        loop_cnt = self.translator._make_signal(self.hdlmodule, dfg.region.counter)
         for i, a in enumerate(loop_cond.args):
             if a.is_a(AHDL_VAR) and a.sig == loop_cnt:
                 args.append(loop_init)
             else:
                 args.append(a)
-        loop_cond.args = tuple(args)
+        assert loop_cond.is_a(AHDL_OP)
+        loop_cond = AHDL_OP(loop_cond.op, *args)
 
         # make the exit condition of pipeline
         if last_stage.step > 0:
-            last = pstate.last_signal(last_stage.step - 1)
-            ready = pstate.ready_signal(last_stage.step)
+            last = pstate_helper.last_signal(last_stage.step - 1)
+            ready = pstate_helper.ready_signal(last_stage.step)
             loop_end_cond1 = AHDL_OP('BitAnd',
                                      AHDL_VAR(last, Ctx.LOAD),
                                      AHDL_VAR(ready, Ctx.LOAD))
         else:
-            last = pstate.last_signal(last_stage.step)
+            last = pstate_helper.last_signal(last_stage.step)
             loop_end_cond1 = AHDL_VAR(last, Ctx.LOAD)
         loop_end_cond2 = AHDL_OP('Invert', loop_cond)
         loop_end_cond = AHDL_OP('Or', loop_end_cond1, loop_end_cond2)
-        conds = [loop_end_cond]
-        codes = [AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(1))]
-        blocks = [AHDL_BLOCK('', codes)]
+        conds = tuple([loop_end_cond])
+        codes = tuple([AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(1))])
+        blocks = tuple([AHDL_BLOCK('', codes)])
         loop_end_stm = AHDL_IF(conds, blocks)
-        last_stage.codes.append(loop_end_stm)
+        return dataclasses.replace(last_stage, block=AHDL_BLOCK('', last_stage.block.codes + (loop_end_stm,)))
 
-    def build_exit_block(self, dfg, pstate, exit_signal):
+    def build_exit_block(self, dfg, pstate_helper, exit_signal) -> AHDL_STM:
         # if (exit)
         #    exit <= 0
         #    state <= loop_exit
         conds = [AHDL_VAR(exit_signal, Ctx.LOAD)]
         codes = []
-        for i in range(len(pstate.stages)):
-            if i == len(pstate.stages) - 1 and len(pstate.stages) > 1:
+        for i in range(len(self.stages)):
+            if i == len(self.stages) - 1 and len(self.stages) > 1:
                 break
-            l = pstate.last_signal(i)
+            l = pstate_helper.last_signal(i)
             codes.append(AHDL_MOVE(AHDL_VAR(l, Ctx.STORE), AHDL_CONST(0)))
 
-        state_reg_reset = AHDL_MOVE(AHDL_VAR(pstate.substate_var, Ctx.STORE), AHDL_CONST(0))
+        state_reg_reset = AHDL_MOVE(AHDL_VAR(pstate_helper.substate_var, Ctx.STORE), AHDL_CONST(0))
         codes.append(state_reg_reset)
 
         assert len(dfg.region.exits) == 1
         codes.extend([
             AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
-            AHDL_TRANSITION(dfg.region.exits[0])
+            AHDL_TRANSITION(dfg.region.exits[0].name)
         ])
-        blocks = [AHDL_BLOCK('', codes)]
-        pipe_end_stm = AHDL_TRANSITION_IF(conds, blocks)
-        pstate.codes.append(pipe_end_stm)
+        blocks = [AHDL_BLOCK('', tuple(codes))]
+        pipe_end_stm = AHDL_TRANSITION_IF(tuple(conds), tuple(blocks))
+        return pipe_end_stm
 
     def _build_scheduled_items(self, dfg):
         nodes = []
@@ -519,54 +558,57 @@ class LoopPipelineStageBuilder(PipelineStageBuilder):
             nodes.append(n)
         super()._build_scheduled_items(nodes)
 
-    def _add_last_signal_chain(self, pstate, stage, cond):
-        is_last = stage.step == len(pstate.stages) - 1
-        last = pstate.last_signal(stage.step)
+    def _add_last_signal_chain(self, pstate_helper, stage, cond) -> PipelineStage|None:
+        is_last = stage.step == len(self.stages) - 1
+        last = pstate_helper.last_signal(stage.step)
         l_lhs = AHDL_VAR(last, Ctx.STORE)
         if stage.step == 0:
-            ready = pstate.ready_signal(stage.step)
+            ready = pstate_helper.ready_signal(stage.step)
             l_rhs = AHDL_OP('Invert', cond)
-            set_last = AHDL_MOVE(l_lhs, l_rhs)
-            stage.codes.append(set_last)
         elif not is_last:
-            prev_last = AHDL_VAR(pstate.last_signal(stage.step - 1), Ctx.LOAD)
-            ready = AHDL_VAR(pstate.ready_signal(stage.step), Ctx.LOAD)
+            prev_last = AHDL_VAR(pstate_helper.last_signal(stage.step - 1), Ctx.LOAD)
+            ready = AHDL_VAR(pstate_helper.ready_signal(stage.step), Ctx.LOAD)
             l_rhs = AHDL_OP('BitAnd', prev_last, ready)
-            set_last = AHDL_MOVE(l_lhs, l_rhs)
-            stage.codes.append(set_last)
+        else:
+            return None
+        set_last = AHDL_MOVE(l_lhs, l_rhs)
+        return dataclasses.replace(stage, block=AHDL_BLOCK('', stage.block.codes + (set_last,)))
 
-    def _add_control_chain_no_stall(self, pstate, stage):
+    def _add_control_chain_no_stall(self, pstate_helper, stage) -> PipelineStage:
         if stage.step == 0:
-            v_now = pstate.valid_signal(stage.step)
+            v_now = pstate_helper.valid_signal(stage.step)
             if stage.has_enable:
-                v_prev = pstate.enable_signal(stage.step)
+                v_prev = pstate_helper.enable_signal(stage.step)
             else:
                 v_prev = None
         else:
-            v_now = pstate.valid_signal(stage.step)
-            v_prev = pstate.valid_signal(stage.step - 1)
-        is_last = stage.step == len(pstate.stages) - 1
+            v_now = pstate_helper.valid_signal(stage.step)
+            v_prev = pstate_helper.valid_signal(stage.step - 1)
+        is_last = stage.step == len(self.stages) - 1
 
-        r_now = pstate.ready_signal(stage.step)
+        r_now = pstate_helper.ready_signal(stage.step)
         if not is_last:
-            r_next = AHDL_VAR(pstate.ready_signal(stage.step + 1), Ctx.LOAD)
+            r_next = AHDL_VAR(pstate_helper.ready_signal(stage.step + 1), Ctx.LOAD)
         else:
             r_next = AHDL_CONST(1)
         if stage.has_enable:
-            en = AHDL_VAR(pstate.enable_signal(stage.step), Ctx.LOAD)
+            en = AHDL_VAR(pstate_helper.enable_signal(stage.step), Ctx.LOAD)
             ready_rhs = AHDL_OP('BitAnd', r_next, en)
         else:
             ready_rhs = r_next
         ready_stm = AHDL_MOVE(AHDL_VAR(r_now, Ctx.STORE), ready_rhs)
-        stage.codes.append(ready_stm)
+
+        result_codes = []
+        result_codes.append(ready_stm)
 
         if not is_last:
             rhs = AHDL_VAR(v_prev, Ctx.LOAD)
             set_valid = AHDL_MOVE(AHDL_VAR(v_now, Ctx.STORE), rhs)
-            stage.codes.append(set_valid)
+            result_codes.append(set_valid)
+        return dataclasses.replace(stage, block=AHDL_BLOCK('', stage.block.codes + tuple(result_codes)))
 
 
-class WorkerPipelineStageBuilder(PipelineStageBuilder):
+class WorkerPipelineBuilder(PipelineBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
         self.is_finite_loop = False

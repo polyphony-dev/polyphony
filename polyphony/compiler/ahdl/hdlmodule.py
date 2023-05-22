@@ -139,15 +139,6 @@ class HDLModule(HDLScope):
         assert isinstance(decl, AHDL_DECL)
         self.decls[tag].remove(decl)
 
-    def remove_signal_decl(self, sig):
-        for tag, decls in self.decls.items():
-            for decl in decls[:]:
-                if isinstance(decl, AHDL_ASSIGN):
-                    if decl.dst.is_a(AHDL_VAR) and decl.dst.sig is sig:
-                        self.remove_decl(tag, decl)
-                    elif decl.dst.is_a(AHDL_SUBSCRIPT) and decl.dst.memvar.sig is sig:
-                        self.remove_decl(tag, decl)
-
     def add_sub_module(self, name:str, hdlmodule, connections:list[tuple[AHDL_VAR, Signal]], param_map=None):
         assert isinstance(name, str)
         self.sub_modules[name] = (name, hdlmodule, connections, param_map)

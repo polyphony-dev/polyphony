@@ -177,9 +177,14 @@ class AHDLVisitor(object):
         self.current_state = state
         self.visit(state.block)
 
+    def visit_PipelineState(self, state):
+        self.current_state = state
+        self.visit(state.block)
+        # raise NotImplementedError()
+
     def visit_PipelineStage(self, stage):
-        # TODO:
-        raise NotImplementedError()
+        self.visit(stage.block)
+        #raise NotImplementedError()
 
     def find_visitor(self, cls):
         method = 'visit_' + cls.__name__

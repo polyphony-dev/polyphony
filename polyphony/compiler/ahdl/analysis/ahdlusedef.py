@@ -13,6 +13,8 @@ class UseDefTable(object):
         self._use_sig2stm: dict[Signal, set[AHDL_STM]] = defaultdict(set)
         self._use_stm2sig: dict[int, set[Signal]] = defaultdict(set)
 
+        self._use_sig2var: dict[Signal, set[AHDL_VAR]] = defaultdict(set)
+
     def add_sig_def(self, sig:Signal, stm:AHDL_STM):
         self._def_sig2stm[sig].add(stm)
         self._def_stm2sig[id(stm)].add(sig)
@@ -24,6 +26,9 @@ class UseDefTable(object):
     def add_sig_use(self, sig:Signal, stm:AHDL_STM):
         self._use_sig2stm[sig].add(stm)
         self._use_stm2sig[id(stm)].add(sig)
+
+    def add_sig_use_var(self, sig:Signal, var:AHDL_VAR):
+        self._use_sig2var[sig].add(var)
 
     def remove_sig_use(self, sig:Signal, stm:AHDL_STM):
         self._use_sig2stm[sig].discard(stm)
@@ -43,6 +48,9 @@ class UseDefTable(object):
 
     def get_use_stms(self, sig:Signal) -> set[AHDL_STM]:
         return self._use_sig2stm[sig]
+
+    def get_use_vars(self, sig:Signal) -> set[AHDL_VAR]:
+        return self._use_sig2var[sig]
 
     def get_sigs_used_at(self, stm:AHDL_STM) -> set[Signal]:
         return self._use_stm2sig[id(stm)]

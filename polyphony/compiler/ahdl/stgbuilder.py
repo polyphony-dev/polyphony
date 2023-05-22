@@ -100,9 +100,9 @@ class STGBuilder(object):
             transition.update_target(target_state.name)
         elif code.is_a(AHDL_TRANSITION_IF):
             for i, ahdlblk in enumerate(code.blocks):
-                assert len(ahdlblk.codes) == 1
-                assert ahdlblk.codes[0].is_a(AHDL_TRANSITION)
-                transition = cast(AHDL_TRANSITION, ahdlblk.codes[0])
+                # assert len(ahdlblk.codes) == 1
+                assert ahdlblk.codes[-1].is_a(AHDL_TRANSITION)
+                transition = cast(AHDL_TRANSITION, ahdlblk.codes[-1])
                 assert isinstance(transition.target_name, str)
                 target_state = blk2states[transition.target_name][0]
                 transition.update_target(target_state.name)
@@ -113,21 +113,15 @@ class STGBuilder(object):
         return self.dfg2stg[dfg.parent]
 
     def _process_dfg(self, index, dfg):
-        from .stg_pipeline import LoopPipelineStageBuilder, WorkerPipelineStageBuilder
+        from .stg_pipeline import LoopPipelineBuilder, WorkerPipelineBuilder
 
         is_main = index == 0
-        if self.scope.parent and self.scope.parent.is_module() and self.scope.is_callable():
-            if is_main:
-                stg_name = self.scope.parent.base_name
-            else:
-                stg_name = f'{self.scope.parent.base_name}_L{index}'
+        if is_main:
+            stg_name = self.scope.base_name
         else:
-            if is_main:
-                stg_name = self.scope.base_name
-            else:
-                stg_name = f'{self.scope.base_name}_L{index}'
-            if self.scope.is_method():
-                stg_name = self.scope.parent.base_name + '_' + stg_name
+            stg_name = f'{self.scope.base_name}_L{index}'
+        if self.scope.is_method():
+            stg_name = self.scope.parent.base_name + '_' + stg_name
 
         parent_stg = self._get_parent_stg(dfg) if not is_main else None
         stg = STG(stg_name, parent_stg, self.hdlmodule)
@@ -135,11 +129,11 @@ class STGBuilder(object):
         if stg.scheduling == 'pipeline':
             if not is_main:
                 if self.scope.is_worker() and not dfg.region.counter:
-                    builder = WorkerPipelineStageBuilder(self.scope, stg, self.blk2states)
+                    builder = WorkerPipelineBuilder(self.scope, stg, self.blk2states)
                 else:
-                    builder = LoopPipelineStageBuilder(self.scope, stg, self.blk2states)
-            elif is_main:
-                builder = StateBuilder(self.scope, stg, self.blk2states)
+                    builder = LoopPipelineBuilder(self.scope, stg, self.blk2states)
+            else:
+                raise NotImplementedError()
         else:
             builder = StateBuilder(self.scope, stg, self.blk2states)
         builder.build(dfg, is_main)
@@ -289,7 +283,7 @@ class StateBuilder(STGItemBuilder):
         return states
 
 
-def _signal_width(sym):
+def _signal_width(sym) -> int | tuple[int]:
     width = -1
     if sym.typ.is_seq():
         width = (sym.typ.element.width, sym.typ.length)
@@ -311,7 +305,7 @@ def _signal_width(sym):
     return width
 
 
-def _tags_from_sym(sym):
+def _tags_from_sym(sym) -> set[str]:
     tags = set()
     if sym.typ.is_int():
         if sym.typ.signed:
@@ -647,7 +641,7 @@ class AHDLTranslator(IRVisitor):
             ahdl = AHDL_VAR(tuple(sigs), ir.ctx)
         return ahdl
 
-    def _make_signal(self, hdlscope, sym):
+    def _make_signal(self, hdlscope, sym) -> Signal:
         sig = hdlscope.signal(sym)
         if sig:
             return sig
@@ -665,7 +659,7 @@ class AHDLTranslator(IRVisitor):
                 sig.init_value = sym.typ.init
         return sig
 
-    def _make_signal_name(self, sym, tags):
+    def _make_signal_name(self, sym, tags) -> str:
         if sym.scope is not self.scope:
             sig_name = sym.hdl_name()
         elif self.scope.is_worker() or self.scope.is_method():
@@ -687,49 +681,6 @@ class AHDLTranslator(IRVisitor):
         else:
             sig_name = sym.hdl_name()
         return sig_name
-
-    def _make_signal_old(self, hdlscope, qsym):
-        sig = hdlscope.signal(qsym[-1])
-        if sig:
-            return sig
-        tags = _tags_from_sym(qsym[-1])
-        width = _signal_width(qsym[-1])
-
-        if len(qsym) >= 2:
-            if qsym[-1].scope.is_unflatten():
-                qsym = qsym[:-1]
-            if qsym[0].typ.is_object():
-                if qsym[0].typ.scope.is_module():
-                    assert qsym[0].name.startswith(env.self_name)
-                    tags.add('field')
-                    qsym = qsym[1:]  # skip 'self'
-                sig_name = '_'.join([sym.hdl_name() for sym in qsym])
-            elif qsym[0].typ.is_class():
-                sig_name = '_'.join([sym.hdl_name() for sym in qsym])
-            else:
-                assert False
-        else:
-            if qsym[-1].scope is not self.scope:
-                sig_name = qsym[-1].hdl_name()
-            elif self.scope.is_worker() or self.scope.is_method():
-                is_param = False
-                if self.scope.is_ctor() and self.scope.parent.is_module() and self.scope.parent.module_params:
-                    is_param = any((qsym[-1] is copy for _, copy, _ in self.scope.parent.module_params))
-                if is_param:
-                    sig_name = qsym[-1].hdl_name()
-                    tags.update({'parameter'})
-                    if 'reg' in tags:
-                        tags.remove('reg')
-                else:
-                    sig_name = f'{self.scope.base_name}_{qsym[-1].hdl_name()}'
-            elif qsym[-1].is_param():
-                sig_name = f'{self.scope.base_name}_{qsym[-1].hdl_name()}'
-            elif qsym[-1].is_return():
-                sig_name = f'{self.scope.base_name}_out_0'
-            else:
-                sig_name = qsym[-1].hdl_name()
-        sig = hdlscope.gen_sig(sig_name, width, tags, qsym[-1])
-        return sig
 
     def visit_EXPR(self, ir):
         if not (ir.exp.is_a([CALL, SYSCALL, MSTORE])):
@@ -874,8 +825,13 @@ class AHDLTranslator(IRVisitor):
         if cond.is_a(CONST) and cond.value:
             rexp = self.visit(rexp)
         else:
+            signed = False
+            # if rexp.is_a((TEMP, ATTR)) and rexp.symbol.typ.is_int():
+            #     signed = rexp.symbol.typ.signed
             lexp = self.visit(rexp)
-            rexp = AHDL_IF_EXP(cond, lexp, AHDL_SYMBOL("'bz"))
+            # FIXME: do not depends verilog
+            other = AHDL_SYMBOL("$signed('bz)") if signed else AHDL_SYMBOL("'bz")
+            rexp = AHDL_IF_EXP(cond, lexp, other)
         for arg, p in arg_p[-2::-1]:
             lexp = self.visit(arg)
             cond = self.visit(p)
