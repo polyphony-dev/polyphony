@@ -114,7 +114,7 @@ class Type(object):
         assert False
 
     @classmethod
-    def from_ir(cls, ann, explicit=False):
+    def from_ir(cls, ann, explicit=False) -> 'Type':
         from ..ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
         from ..symbol import Symbol
         assert ann
@@ -401,7 +401,6 @@ class Type(object):
                 s = f'c{name}'
             elif t.is_int():
                 s = f'i{t.width}'
-                s = 'i'
             elif t.is_bool():
                 s = f'b'
             elif t.is_str():
