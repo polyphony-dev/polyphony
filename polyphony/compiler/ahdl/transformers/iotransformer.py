@@ -12,7 +12,9 @@ class IOTransformer(AHDLTransformer):
         valid = self.hdlmodule.signal(f'{inst_name}_valid')
         ready = self.hdlmodule.signal(f'{inst_name}_ready')
         accept = self.hdlmodule.signal(f'{inst_name}_accept')
-
+        if ready is None:
+            print(f'{inst_name}_ready')
+            print('!!!', self.hdlmodule.name)
         if step == 0:
             seq = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(1))]
             for acc, arg in zip(args, ahdl_call.args):

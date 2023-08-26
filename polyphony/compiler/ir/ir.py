@@ -375,8 +375,7 @@ def find_irs_args(args, typ):
 class IRCallable(IRExp):
     @property
     def callee_scope(self):
-        if isinstance(self.symbol, str):
-            print('!')
+        assert isinstance(self.symbol, Symbol)
         func_t = self.symbol.typ
         assert func_t.has_scope()
         return func_t.scope
@@ -782,35 +781,37 @@ class MSTORE(IRExp):
 
 
 class ARRAY(IRExp):
-    def __init__(self, items, is_mutable=True, sym=None):
+    def __init__(self, items, sym=None):
         super().__init__()
         self._items = items
         self._sym = sym
         self._repeat = CONST(1)
-        self._is_mutable = is_mutable
 
     def __str__(self):
-        s = '[' if self._is_mutable else '('
+        s = '[' if self.is_mutable else '('
         if len(self._items) > 8:
             s += ', '.join(map(str, self._items[:10]))
             s += '...'
         else:
             s += ', '.join(map(str, self._items))
-        s += ']' if self._is_mutable else ')'
+        s += ']' if self.is_mutable else ')'
         if not (self._repeat.is_a(CONST) and self._repeat.value == 1):
             s += ' * ' + str(self._repeat)
         return s
 
     def type_str(self):
-        s = '[' if self._is_mutable else '('
+        s = str(self._sym.typ)
+        s += '('
+        s += '[' if self.is_mutable else '('
         if len(self._items) > 8:
             s += ', '.join(map(lambda item: item.type_str(), self._items[:10]))
             s += '...'
         else:
             s += ', '.join(map(lambda item: item.type_str(), self._items))
-        s += ']' if self._is_mutable else ')'
+        s += ']' if self.is_mutable else ')'
         if not (self._repeat.is_a(CONST) and self._repeat.value == 1):
             s += ' * ' + type(self._repeat).__name__
+        s += ')'
         return s
 
     def __eq__(self, other):
@@ -819,8 +820,7 @@ class ARRAY(IRExp):
         return (len(self._items) == len(other._items) and
                 all([item == other_item for item, other_item in zip(self._items, other._items)]) and
                 self._sym is other._sym and
-                self._repeat == other._repeat and
-                self._is_mutable == other._is_mutable)
+                self._repeat == other._repeat)
 
     def __hash__(self):
         return super().__hash__()
@@ -867,7 +867,7 @@ class ARRAY(IRExp):
 
     @property
     def is_mutable(self):
-        return self._is_mutable
+        return self._sym.typ.is_list()
 
 
 class TEMP(IRExp):

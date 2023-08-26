@@ -2,7 +2,7 @@
 import json
 import os
 import sys
-
+from collections import deque
 from .driver import Driver
 
 from .common.common import read_source
@@ -34,8 +34,8 @@ from .ir.analysis.loopdetector import LoopInfoSetter
 from .ir.analysis.loopdetector import LoopRegionSetter
 from .ir.analysis.loopdetector import LoopDependencyDetector
 from .ir.analysis.regreducer import AliasVarDetector
-from .ir.analysis.scopegraph import CallGraphBuilder
-from .ir.analysis.scopegraph import DependencyGraphBuilder
+from .ir.analysis.scopegraph import ScopeDependencyGraphBuilder
+from .ir.analysis.scopegraph import UsingScopeDetector
 from .ir.analysis.typecheck import TypeChecker
 from .ir.analysis.typecheck import EarlyTypeChecker
 from .ir.analysis.typecheck import PortAssignChecker
@@ -56,12 +56,11 @@ from .ir.transformers.iftransform import IfTransformer, IfCondTransformer
 from .ir.transformers.inlineopt import InlineOpt
 from .ir.transformers.inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
 from .ir.transformers.inlineopt import ObjectHierarchyCopier
-from .ir.transformers.inlineopt import SpecializeWorker
 from .ir.transformers.instantiator import ModuleInstantiator
 from .ir.transformers.looptransformer import LoopFlatten
 from .ir.transformers.objtransform import ObjectTransformer
 from .ir.transformers.phiopt import PHIInlining, LPHIRemover
-from .ir.transformers.portconverter import PortConverter
+from .ir.transformers.portconverter import PortTypeProp
 from .ir.transformers.portconverter import FlippedTransformer
 from .ir.transformers.portconverter import PortConnector
 from .ir.transformers.quadruplet import EarlyQuadrupleMaker
@@ -72,7 +71,6 @@ from .ir.transformers.ssa import ListSSATransformer
 from .ir.transformers.ssa import ObjectSSATransformer
 from .ir.transformers.typeprop import TypePropagation
 from .ir.transformers.typeprop import TypeSpecializer
-from .ir.transformers.typeprop import InstanceTypePropagation
 from .ir.transformers.typeprop import StaticTypePropagation
 from .ir.transformers.typeprop import TypeEvalVisitor
 from .ir.transformers.unroll import LoopUnroller
@@ -105,12 +103,66 @@ def phase(phase):
 
 def filter_scope(fn):
     def select_scope(driver):
-        for s in driver.all_scopes():
-            if fn(s):
-                driver.enable_scope(s)
-            else:
-                driver.disable_scope(s)
+        driver.set_filter(fn)
+    select_scope.__name__ = f'filter_scope_{fn.__name__}'
     return select_scope
+
+
+class ScopeSorter(object):
+    def __init__(self):
+        self._cached_scopes = []
+        self._sorted_scopes = []
+        self._scope_sort_keys: dict[Scope, tuple[int, int]] = {}
+
+    def compare(self, scopes):
+        if len(self._cached_scopes) != len(scopes):
+            return False
+        for s1, s2 in zip(self._cached_scopes, scopes):
+            if s1 != s2:
+                return False
+        return True
+
+    def update_cached_scopes(self, scopes):
+        if self.compare(scopes):
+            return False
+        self._cached_scopes = scopes[:]
+        return True
+
+    def sort_scopes(self):
+        graph_builder = ScopeDependencyGraphBuilder()
+        graph_builder.process_scopes(self._cached_scopes)
+        graph = graph_builder.depend_graph
+        self._sorted_scopes = []
+        order_map = graph.node_depth_map()
+        self._sorted_scopes = sorted(self._cached_scopes, key=lambda s: (order_map[s], s.scope_id))
+
+    def top_down(self, scopes):
+        if self.update_cached_scopes(scopes):
+            self.sort_scopes()
+        return self._sorted_scopes[:]
+
+    def bottom_up(self, scopes):
+        if self.update_cached_scopes(scopes):
+            self.sort_scopes()
+        return list(reversed(self._sorted_scopes))
+
+
+scope_sorter = ScopeSorter()
+
+
+def set_scope_order(order_func):
+    def f(driver):
+        driver.set_order_func(order_func)
+    f.__name__ = f'set_scope_order_{order_func.__name__}'
+    return f
+
+
+def bottom_up(scopes):
+    return scope_sorter.bottom_up(scopes)
+
+
+def top_down(scopes):
+    return scope_sorter.top_down(scopes)
 
 
 def is_static_scope(scope):
@@ -121,67 +173,63 @@ def is_not_static_scope(scope):
     return not is_static_scope(scope)
 
 
+def is_inlined_module(scope):
+    if scope.is_namespace():
+        return False
+    elif (scope.is_module()
+        and scope.is_instantiated()
+        and not scope.parent is Scope.global_scope()):
+        return True
+    elif is_inlined_module(scope.parent):
+        return True
+    return False
+
+
 def is_uninlined_scope(scope):
     if is_static_scope(scope):
         return False
-    if scope.is_ctor() and not scope.parent.is_module():
+    if is_inlined_module(scope):
         return False
-    return True
-
-
-def is_synthesis_target_scope(scope):
-    if scope.is_instantiated() or scope.is_function_module() or scope.is_testbench():
-        return True
-    if scope.parent and is_synthesis_target_scope(scope.parent):
-        return True
-    return False
+    return (scope.is_function_module()
+            or scope.is_ctor() and scope.parent.is_module()
+            or scope.is_worker()
+            or scope.is_testbench()
+            or scope.is_assigned()
+            or scope.is_closure() and scope.parent and is_uninlined_scope(scope.parent)
+            )
 
 
 def is_hdlmodule_scope(scope):
+    if is_inlined_module(scope):
+        return False
     return HDLModule.is_hdlmodule_scope(scope)
 
 
-def is_hdl_scope(scope):
-    if is_hdlmodule_scope(scope) or scope.is_interface() or scope.is_testbench() or scope.is_class() or scope.is_namespace():
-        return True
-    return False
-
-
-def preprocess_global(driver):
+def dump_source(driver):
     scopes = Scope.get_scopes(with_global=True, with_class=True)
     src_dump = SourceDump()
     for s in scopes:
         src_dump.process(s)
 
 
-def scopegraph(driver):
-    uncalled_scopes = CallGraphBuilder().process_all()
-    using_scopes, unused_scopes = DependencyGraphBuilder().process_all()
-    targets = {target for target, _ in env.targets}
-    for s in uncalled_scopes:
-        if s.is_namespace() or s.is_class() or s.is_worker():
-            continue
-        if s.is_ctor() and s.parent.is_module() and s.parent in driver.scopes:
-            continue
-        if s.is_instantiated():
-            continue
-        if s in targets or s.origin in targets:
-            continue
-        driver.remove_scope(s)
-        Scope.destroy(s)
-    for s in unused_scopes:
-        if s.is_namespace():
-            continue
-        if s.is_builtin() and s.is_typeclass():
-            continue
-        if s.is_instantiated():
-            continue
-        if s.name in env.scopes:
-            driver.remove_scope(s)
-            Scope.destroy(s)
+def select_using_scopes():
+    def collect_scope_symbol(scope):
+        scopes = []
+        for sym in scope.symbols.values():
+            if sym.typ.has_valid_scope():
+                s = sym.typ.scope
+                if s.is_builtin() or s.is_decorator() or s.is_typeclass() or s.is_namespace():
+                    continue
+                scopes.append(s)
+        return scopes
+
+    top = Scope.global_scope()
+    target_scopes = collect_scope_symbol(top)
+    using_scopes = UsingScopeDetector().process_scopes([top] + target_scopes)
+    return list(using_scopes)
 
 
-def iftrans(driver, scope):
+def if_trans(driver, scope):
     IfTransformer().process(scope)
 
 
@@ -189,7 +237,7 @@ def ifcondtrans(driver, scope):
     IfCondTransformer().process(scope)
 
 
-def reduceblk(driver, scope):
+def reduce_blk(driver, scope):
     BlockReducer().process(scope)
     checkcfg(driver, scope)
 
@@ -207,12 +255,14 @@ def pathexp(driver, scope):
 
 
 def hyperblock(driver, scope):
+    use_def(driver, scope)
     if not env.enable_hyperblock:
         return
     if scope.synth_params['scheduling'] == 'sequential':
         return
     HyperBlockBuilder().process(scope)
     checkcfg(driver, scope)
+    reduce_blk(driver, scope)
 
 
 def buildpurector(driver):
@@ -242,33 +292,34 @@ def connectport(driver, scope):
 
 
 def convport(driver):
-    PortConverter().process_all()
-    #PortConverter().process(scope)
+    PortTypeProp().process_scopes(driver.current_scopes)
 
 
-def earlyquadruple(driver, scope):
+def early_quadruple(driver, scope):
     EarlyQuadrupleMaker().process(scope)
 
 
-def latequadruple(driver, scope):
+def late_quadruple(driver, scope):
     LateQuadrupleMaker().process(scope)
 
 
-def usedef(driver, scope):
+def use_def(driver, scope):
     UseDefDetector().process(scope)
 
-
-def fieldusedef(driver):
-    scopes = driver.get_scopes(with_global=False,
-                               with_class=True,
-                               with_lib=False)
-    for s in scopes:
+def field_use_def(driver):
+    modules = set()
+    for s in driver.current_scopes:
         if s.is_module():
-            field_usedef = FieldUseDef()
-            field_usedef.process(s, driver)
+            modules.add(s)
+        elif s.parent and s.parent.is_module():
+            modules.add(s.parent)
+    for module in modules:
+        field_use_def = FieldUseDef()
+        field_use_def.process(module)
 
 
 def scalarssa(driver, scope):
+    use_def(driver, scope)
     ScalarSSATransformer().process(scope)
 
 
@@ -276,43 +327,44 @@ def removelphi(driver, scope):
     LPHIRemover().process(scope)
 
 
-def evaltype(driver, scope):
+def eval_type(driver, scope):
     TypeEvalVisitor().process(scope)
 
 
-def earlytypeprop(driver):
-    def static_scope(s):
-        if s.is_namespace():
-            return True
-        elif s.is_class():
-            return True
-        return False
-    StaticTypePropagation(is_strict=False).process_all()
+def early_static_type_prop(driver):
+    StaticTypePropagation(is_strict=False).process_scopes(driver.current_scopes)
+    typed_scopes = TypeSpecializer().process_scopes(driver.current_scopes)
+    scopes = driver.all_scopes()
+    for s in typed_scopes:
+        if s not in scopes:
+            driver.insert_scope(s)
+
+
+def early_type_prop(driver):
+    # TypePropagation(is_strict=False).process_scopes(driver.current_scopes)
     typed_scopes = TypeSpecializer().process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
             driver.insert_scope(s)
     for s in scopes:
-        # The namespace scope should not be removed here,
-        # since staticconstopt will be executed later
-        if s not in typed_scopes and not static_scope(s):
+        if s not in typed_scopes:
             driver.remove_scope(s)
 
 
-def typeprop(driver):
-    TypePropagation().process_all()
+def type_prop(driver):
+    TypePropagation(is_strict=False).process_all()
 
 
-def statictypeprop(driver):
-    StaticTypePropagation(is_strict=True).process_all()
+def static_type_prop(driver):
+    StaticTypePropagation(is_strict=True).process_scopes(driver.current_scopes)
 
 
-def stricttypeprop(driver):
+def strict_type_prop(driver):
     TypePropagation(is_strict=True).process_all()
 
 
-def typecheck(driver, scope):
+def type_check(driver, scope):
     TypeChecker().process(scope)
 
 
@@ -328,7 +380,7 @@ def earlyrestrictioncheck(driver, scope):
     EarlyRestrictionChecker().process(scope)
 
 
-def restrictioncheck(driver, scope):
+def restriction_check(driver, scope):
     RestrictionChecker().process(scope)
 
 
@@ -349,31 +401,30 @@ def detectrom(driver):
     #RomDetector().process_all()
     pass
 
-def specworker(driver, scope):
-    new_workers = SpecializeWorker().process(scope)
-    for w in new_workers:
-        driver.insert_scope(w)
-
 
 def instantiate(driver):
-    new_modules = ModuleInstantiator().process_all()
-    orig_scopes = set()
-    for module in new_modules:
-        assert module.name in env.scopes
-        assert module.is_module()
-        driver.insert_scope(module)
-        orig_scopes.add(module.origin)
+    scopes = [Scope.global_scope()]
+    while True:
+        new_modules = ModuleInstantiator().process_scopes(scopes)
+        if not new_modules:
+            break
+        orig_scopes = set()
+        for module in new_modules:
+            assert module.name in env.scopes
+            assert module.is_module()
+            driver.insert_scope(module)
+            orig_scopes.add(module.origin)
 
-        for s in module.collect_scope():
-            if not s.is_instantiated():
-                continue
-            driver.insert_scope(s)
-            orig_scopes.add(s.origin)
-            usedef(driver, s)
-            constopt(driver, s)
+            for s in module.collect_scope():
+                if not s.is_instantiated():
+                    continue
+                driver.insert_scope(s)
+                orig_scopes.add(s.origin)
+                earlyconstopt_nonssa(driver, s)
+        for s in orig_scopes:
+            driver.remove_scope(s)
+        scopes = [module.find_ctor() for module in new_modules]
 
-    for s in orig_scopes:
-        driver.remove_scope(s)
 
 def postinstantiate(driver):
     scopes = driver.get_scopes(with_global=False,
@@ -382,26 +433,21 @@ def postinstantiate(driver):
     scopes = [scope for scope in scopes if scope.is_instantiated()]
     if not scopes:
         return
-    #for s in scopes:
-    #    if env.config.enable_pure:
-    #        execpure(driver, s)
     for s in scopes:
-        constopt(driver, s)
+        earlyconstopt_nonssa(driver, s)
         checkcfg(driver, s)
-    TypePropagation().process_all()
-    scopegraph(driver)
+    TypePropagation(is_strict=False).process_all()
     detectrom(driver)
     for s in scopes:
-        constopt(driver, s)
+        earlyconstopt_nonssa(driver, s)
 
 
-def inlineopt(driver):
+def inline_opt(driver):
     inlineopt = InlineOpt()
     inlineopt.process_all(driver)
     for s in inlineopt.new_scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
-    scopegraph(driver)
 
 
 def setsynthparams(driver, scope):
@@ -413,21 +459,23 @@ def flattenmodule(driver, scope):
 
 
 def objssa(driver, scope):
+    use_def(driver, scope)
     TupleSSATransformer().process(scope)
-    earlyquadruple(driver, scope)
-    usedef(driver, scope)
+    early_quadruple(driver, scope)
+    use_def(driver, scope)
     ListSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
-    usedef(driver, scope)
+    use_def(driver, scope)
     ObjectSSATransformer().process(scope)
 
 
 def objcopyopt(driver, scope):
-    usedef(driver, scope)
+    use_def(driver, scope)
     ObjCopyOpt().process(scope)
 
 
 def objtrans(driver, scope):
+    use_def(driver, scope)
     ObjectTransformer().process(scope)
 
 
@@ -439,20 +487,25 @@ def scalarize(driver, scope):
     checkcfg(driver, scope)
 
 
-def staticconstopt(driver):
-    StaticConstOpt().process_all(driver)
+def static_const_opt(driver):
+    for s in driver.current_scopes:
+        UseDefDetector().process(s)
+    StaticConstOpt().process_scopes(driver.current_scopes)
 
 
 def earlyconstopt_nonssa(driver, scope):
+    use_def(driver, scope)
     EarlyConstantOptNonSSA().process(scope)
     checkcfg(driver, scope)
 
 
 def constopt(driver, scope):
+    use_def(driver, scope)
     ConstantOpt().process(scope)
 
 
 def copyopt(driver, scope):
+    use_def(driver, scope)
     CopyOpt().process(scope)
 
 
@@ -466,6 +519,7 @@ def checkcfg(driver, scope):
 
 
 def loop(driver, scope):
+    use_def(driver, scope)
     LoopDetector().process(scope)
     #LoopRegionSetter().process(scope)
     LoopInfoSetter().process(scope)
@@ -475,24 +529,21 @@ def loop(driver, scope):
 
 def looptrans(driver, scope):
     if LoopFlatten().process(scope):
-        usedef(driver, scope)
         hyperblock(driver, scope)
         loop(driver, scope)
-        reduceblk(driver, scope)
+        reduce_blk(driver, scope)
 
 
 def unroll(driver, scope):
     while LoopUnroller().process(scope):
         dumpscope(driver, scope)
-        usedef(driver, scope)
+        use_def(driver, scope)
         checkcfg(driver, scope)
-        reduceblk(driver, scope)
+        reduce_blk(driver, scope)
         PolyadConstantFolding().process(scope)
         pathexp(driver, scope)
         dumpscope(driver, scope)
-        usedef(driver, scope)
         constopt(driver, scope)
-        usedef(driver, scope)
         copyopt(driver, scope)
         deadcode(driver, scope)
         LoopInfoSetter().process(scope)
@@ -501,10 +552,12 @@ def unroll(driver, scope):
 
 
 def deadcode(driver, scope):
+    use_def(driver, scope)
     DeadCodeEliminator().process(scope)
 
 
 def aliasvar(driver, scope):
+    use_def(driver, scope)
     AliasVarDetector().process(scope)
 
 
@@ -513,6 +566,7 @@ def tempbit(driver, scope):
 
 
 def dfg(driver, scope):
+    use_def(driver, scope)
     DFGBuilder().process(scope)
 
 
@@ -520,23 +574,28 @@ def schedule(driver, scope):
     Scheduler().schedule(scope)
 
 
-def createhdlscope(driver, scope):
-    assert is_hdl_scope(scope)
-    if HDLModule.is_hdlmodule_scope(scope):
-        hdl = HDLModule(scope, scope.base_name, scope.qualified_name())
-    else:
-        hdl = HDLScope(scope, scope.base_name, scope.qualified_name())
-    env.append_hdlscope(hdl)
-    if scope.is_instantiated():
-        for b in scope.bases:
-            if env.hdlscope(b) is None:
-                basemodule = HDLModule(b, b.base_name, b.qualified_name())
-                env.append_hdlscope(basemodule)
-
-
-# def hdlmodule(scope):
-#     hdlscope = env.hdlscope(scope)
-#     HDLModule.is_hdlmodule_scope(scope)
+def createhdlscope(driver):
+    scopes = deque(driver.all_scopes())
+    visited = set()
+    while scopes:
+        scope = scopes.popleft()
+        if scope in visited:
+            continue
+        if not HDLModule.is_hdlmodule_scope(scope) and not is_static_scope(scope):
+            continue
+        if scope.parent:
+            scopes.append(scope.parent)
+        if HDLModule.is_hdlmodule_scope(scope):
+            hdl = HDLModule(scope, scope.base_name, scope.qualified_name())
+        else:
+            hdl = HDLScope(scope, scope.base_name, scope.qualified_name())
+        env.append_hdlscope(hdl)
+        visited.add(scope)
+        if scope.is_instantiated():
+            for b in scope.bases:
+                if env.hdlscope(b) is None:
+                    basemodule = HDLModule(b, b.base_name, b.qualified_name())
+                    env.append_hdlscope(basemodule)
 
 
 def stg(driver, scope):
@@ -580,7 +639,7 @@ def buildmodule(driver, scope):
     modulebuilder.process(hdlmodule)
 
 
-def ahdlusedef(driver, scope):
+def ahdluse_def(driver, scope):
     hdlmodule = env.hdlscope(scope)
     AHDLUseDefDetector().process(hdlmodule)
 
@@ -660,143 +719,103 @@ def compile_plan():
         return proc if env.config.enable_pure else None
 
     plan = [
-        preprocess_global,
+        if_trans,
+        reduce_blk,
+        early_quadruple,
+        early_type_prop,
 
-        dbg(dumpscope),
-        iftrans,
-        dbg(dumpscope),
-        reduceblk,
-        earlyquadruple,
-        dbg(dumpscope),
-        earlytypeprop,
+        set_scope_order(bottom_up),
 
         filter_scope(is_static_scope),
-        latequadruple,
-        dbg(dumpscope),
-        earlyrestrictioncheck,
-        usedef,
-        staticconstopt,
-        evaltype,
+        late_quadruple,
 
-        statictypeprop,
-        dbg(dumpscope),
-        typecheck,
-        restrictioncheck,
-        usedef,
+        earlyrestrictioncheck,
+        use_def,
+        static_const_opt,
+        eval_type,
+
+        static_type_prop,
+
+        type_check,
+        restriction_check,
+        use_def,
 
         filter_scope(is_not_static_scope),
-        scopegraph,
-        flipport,
-        dbg(dumpscope),
+
+        # flipport,
         connectport,
-        typeprop,
-        dbg(dumpscope),
+        type_prop,
+
         assigncheck,
-        latequadruple,
+        late_quadruple,
         ifcondtrans,
-        dbg(dumpscope),
+
         earlyrestrictioncheck,
         earlytypecheck,
-        typeprop,
-        specworker,
-        restrictioncheck,
-        phase(env.PHASE_1),
-        usedef,
+        type_prop,
+        restriction_check,
+
         earlyconstopt_nonssa,
+        instantiate,
+        postinstantiate,
+
+        phase(env.PHASE_1),
+
         synthcheck,
-        dbg(dumpscope),
-        inlineopt,
-        dbg(dumpscope),
+        inline_opt,
 
         filter_scope(is_uninlined_scope),
-        setsynthparams,
-        dbg(dumpscope),
-        reduceblk,
-        earlypathexp,
-        dbg(dumpscope),
-        phase(env.PHASE_2),
-        usedef,
-        # TODO: Enable/disable flatten
         flattenmodule,
+
+        setsynthparams,
+        reduce_blk,
+        earlypathexp,
+        phase(env.PHASE_2),
+        # TODO: Enable/disable flatten
+        # flattenmodule,
+
         objssa,
-        dbg(dumpscope),
         objcopyopt,
-        dbg(dumpscope),
-        usedef,
         objtrans,
-        dbg(dumpscope),
         scalarize,
-        dbg(dumpscope),
-        scopegraph,
-        dbg(dumpscope),
-        usedef,
+
         scalarssa,
-        #dumpcfgimg,
-        dbg(dumpscope),
-        usedef,
         hyperblock,
-        dbg(dumpscope),
-        reduceblk,
-        dbg(dumpscope),
-        typeprop,
-        dbg(dumpscope),
-        usedef,
+        reduce_blk,
+        type_prop,
         copyopt,
         phiopt,
-        dbg(dumpscope),
-        usedef,
         constopt,
-        usedef,
         deadcode,
-        dbg(dumpscope),
+
         phase(env.PHASE_3),
-        instantiate,
-        dbg(dumpscope),
-        fieldusedef,
-        postinstantiate,
-        filter_scope(is_synthesis_target_scope),
-        dbg(dumpscope),
-        evaltype,
-        stricttypeprop,
-        typecheck,
-        #dbg(dumpdependimg),
-        dbg(dumpscope),
-        usedef,
+        eval_type,
+        strict_type_prop,
+        type_check,
         copyopt,
-        usedef,
         constopt,
-        usedef,
         deadcode,
-        dbg(dumpscope),
-        reduceblk,
-        usedef,
+        reduce_blk,
         loop,
         looptrans,
         laterestrictioncheck,
-        dbg(dumpscope),
         unroll,
-        dbg(dumpscope),
         pathexp,
-        usedef,
         removelphi,
-        dbg(dumpscope),
+
         phase(env.PHASE_4),
-        usedef,
         convport,
-        scopegraph,
+
         phase(env.PHASE_5),
-        fieldusedef,
+        field_use_def,
         aliasvar,
         tempbit,
-        dbg(dumpscope),
         dfg,
         dbg(dumpdfg),
         schedule,
-        #dumpdfgimg,
         dbg(dumpsched),
         assertioncheck,
-        filter_scope(is_hdl_scope),
-        phase(env.PHASE_GEN_HDL),
+
         createhdlscope,
         filter_scope(is_hdlmodule_scope),
         stg,
@@ -894,14 +913,10 @@ def compile(plan, source, src_file=''):
     translator.translate(source, '')
     if env.config.enable_pure:
         interpret(source, src_file)
-    scopes = Scope.get_scopes(bottom_up=False,
-                              with_global=True,
-                              with_class=True,
-                              with_lib=True)
-    # parse_targets(scopes)
-    driver = Driver(plan, scopes, None)
-    driver.run('Compiling')
-    return driver.scopes
+    using_scopes = select_using_scopes()
+    driver = Driver(plan, using_scopes, None)
+    driver.run('Compiling scopes')
+    return driver.current_scopes
 
 
 def compile_main(src_file, options):
@@ -915,6 +930,7 @@ def compile_main(src_file, options):
 
 def output_plan():
     plan = [
+        filter_scope(is_hdlmodule_scope),
         dumpmodule,
         # TODO: Enable/disable flatten
         ahdl_flatten_signals,
@@ -937,7 +953,7 @@ def ahdl_flatten_signals(driver, scope):
 def output_verilog(driver):
     options = driver.options
     results = []
-    for s in driver.scopes:
+    for s in driver.current_scopes:
         hdlmodule = env.hdlscope(s)
         code = genhdl(hdlmodule)
         if options.debug_mode:

@@ -139,3 +139,6 @@ class LoopNestTree(Graph):
             return None
         assert len(preds) == 1
         return list(preds)[0]
+
+    def __len__(self):
+        return self.count()

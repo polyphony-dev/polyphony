@@ -22,8 +22,7 @@ class InlineOpt(object):
 
     def process_all(self, driver):
         self.processed_scopes = set()
-        scopes = driver.scopes
-        self.process_scopes(driver.scopes)
+        self.process_scopes(driver.current_scopes)
         self.process_scopes(self.new_scopes)
 
     def process_scopes(self, scopes):
@@ -454,8 +453,6 @@ class FlattenFieldAccess(IRTransformer):
         if not ir.tail().typ.is_object():
             return ir
         object_scope = ir.tail().typ.scope
-        if object_scope.is_interface():
-            return ir
         if object_scope.is_module():
             return ir
         if object_scope.is_port():
@@ -485,7 +482,7 @@ class FlattenObjectArgs(IRTransformer):
             if (arg.is_a([TEMP, ATTR])
                     and arg.symbol.typ.is_object()
                     and not arg.symbol.typ.scope.is_port()):
-                flatten_args = self._flatten_object_args(call, arg, pindex)
+                flatten_args = self._flatten_object_args(call, arg, pindex - 1)
                 args.extend(flatten_args)
             else:
                 args.append((name, arg))
@@ -509,7 +506,7 @@ class FlattenObjectArgs(IRTransformer):
                 if not new_sym:
                     new_sym = module_scope.add_sym(new_name, typ=fsym.typ)
                 new_arg = arg.clone()
-                new_arg.set_symbol(new_sym)
+                new_arg.symbol = new_sym
                 args.append((new_name, new_arg))
                 flatten_args.append((fname, fsym))
         if worker_scope not in self.params_modified_scopes:
@@ -573,7 +570,8 @@ class FlattenModule(IRVisitor):
             _, arg = ir.args[0]
             worker_scope = arg.symbol.typ.scope
             if worker_scope.is_method():
-                new_arg = self._make_new_worker(arg)
+                new_worker, new_arg = self._make_new_worker(arg)
+                new_worker.parent.register_worker(new_worker, ir.args)
                 assert self.scope.parent.is_module()
                 append_worker_sym = self.scope.parent.find_sym('append_worker')
                 assert append_worker_sym
@@ -651,7 +649,7 @@ class FlattenModule(IRVisitor):
             for sym in syms:
                 if sym.scope in scope_map.values():
                     sym.typ = sym.typ.clone(scope=new)
-        return arg
+        return new_worker, arg
 
     def _make_new_assigned_method(self, arg, assigned_scope):
         module_scope = self.scope.parent
@@ -719,89 +717,3 @@ class ObjectHierarchyCopier(object):
                 cp.block.insert_stm(cp_idx + 1, new_cp)
                 if sym.typ.is_object():
                     worklist.append(new_cp)
-
-
-class SpecializeWorker(IRTransformer):
-    '''
-    Specialize Worker with object type argument
-    '''
-    def process(self, scope):
-        self.new_workers = []
-        super().process(scope)
-        return self.new_workers
-
-    def visit_EXPR(self, ir):
-        if ir.exp.is_a(CALL):
-            callee_scope = ir.exp.callee_scope
-            if (callee_scope.is_method()
-                    and callee_scope.parent.is_module()
-                    and callee_scope.base_name == 'append_worker'):
-                self._specialize_worker(ir.exp)
-        self.new_stms.append(ir)
-
-    def _specialize_worker(self, call):
-        has_object_arg = False
-        for name, arg in call.args:
-            if arg.is_a([TEMP, ATTR]):
-                arg_t = arg.symbol.typ
-                if arg_t.is_object():
-                    has_object_arg = True
-                    break
-        if not has_object_arg:
-            return
-        arg1_t = call.args[0][1].symbol.typ
-        origin_worker = arg1_t.scope
-        new_worker = self._make_new_worker(origin_worker, call.args)
-        args = []
-        if origin_worker.is_method():
-            param_symbols = new_worker.param_symbols(with_self=True)
-        else:
-            param_symbols = (None,) + new_worker.param_symbols()
-
-        for (name, arg), sym in zip(call.args, param_symbols):
-            if (arg.is_a([TEMP, ATTR])
-                    and arg.symbol.typ.is_object()):
-                if arg.is_a(TEMP):
-                    fail(self.current_stm, Errors.WORKER_TEMP_OBJ_ARG)
-                self._subst_obj_arg(new_worker, arg, sym)
-                new_worker.remove_param(sym)
-            else:
-                args.append((name, arg))
-        call.args[:len(param_symbols)] = args[:]
-
-    def _subst_obj_arg(self, new_worker, arg, param_sym):
-        assert arg.is_a(ATTR)
-        assert arg.head().is_self()
-        assert new_worker.parent.is_module()
-        if arg.exp.is_a(ATTR):
-            arg = arg.clone()
-            arg.replace_head(new_worker.find_sym('self'))
-            rep_ir = arg
-        else:
-            assert arg.exp.is_a(TEMP)
-            rep_ir = ATTR(TEMP(new_worker.find_sym('self'), Ctx.LOAD),
-                          arg.symbol, Ctx.LOAD)
-        sym_replacer = SymbolReplacer(sym_map={param_sym:rep_ir}, attr_map={})
-        sym_replacer.process(new_worker, new_worker.entry_block)
-
-    def _make_new_worker(self, worker, args):
-        parent_module = self.scope.parent
-        new_worker = worker.clone('', str(worker.instance_number()), parent=parent_module)
-        if new_worker.is_inlinelib():
-            new_worker.del_tag('inlinelib')
-        # Convert function worker to method of module
-        if not new_worker.is_method():
-            new_worker.add_tag('method')
-            new_worker_self = new_worker.add_sym('self',
-                                                 tags={'self'},
-                                                 typ=Type.object(parent_module))
-            new_worker.add_param(new_worker_self, None)
-        # transform append_worker call
-        ctor_self = self.scope.find_sym('self')
-        new_worker_sym = parent_module.add_sym(new_worker.base_name,
-                                               typ=Type.function(new_worker))
-        worker_attr = ATTR(TEMP(ctor_self, Ctx.LOAD), new_worker_sym, Ctx.LOAD)
-        args[0] = (args[0][0], worker_attr)
-
-        self.new_workers.append(new_worker)
-        return new_worker

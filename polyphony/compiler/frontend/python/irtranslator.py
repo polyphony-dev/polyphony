@@ -29,7 +29,6 @@ INTERNAL_CLASS_DECORATORS = [
     'typeclass',
     'inlinelib',
     'unflatten',
-    'interface',
 ]
 BUILTIN_PACKAGES = (
     'polyphony',
@@ -399,7 +398,7 @@ class ScopeVisitor(ast.NodeVisitor):
 
         if self.current_scope.is_module():
             for m in ['append_worker']:
-                scope = Scope.create(self.current_scope, m, {'method', 'lib'}, node.lineno)
+                scope = Scope.create(self.current_scope, m, {'method', 'lib', 'builtin'}, node.lineno)
                 sym = self.current_scope.add_sym(m, typ=Type.function(scope))
                 blk = Block(scope)
                 scope.set_entry_block(blk)
@@ -1543,7 +1542,7 @@ class CodeVisitor(ast.NodeVisitor):
             items.append(item)
         sym = self.current_scope.add_temp('@array')
         sym.typ = Type.tuple(Type.undef(), Type.ANY_LENGTH, explicit=True)
-        return ARRAY(items, is_mutable=False, sym=sym)
+        return ARRAY(items, sym=sym)
 
     def visit_NameConstant(self, node):
         # for Python 3.4

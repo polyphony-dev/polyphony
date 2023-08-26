@@ -100,6 +100,7 @@ class AHDL_VAR(AHDL_EXP):
         if isinstance(var, Signal):
             object.__setattr__(self, 'vars', (var,))
         else:
+            assert var is not None
             object.__setattr__(self, 'vars', var)
         object.__setattr__(self, 'ctx', ctx)
 

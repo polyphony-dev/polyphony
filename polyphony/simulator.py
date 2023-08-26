@@ -827,7 +827,7 @@ class SimulationModelBuilder(object):
                 arg_and_names.append((param_names[i], v))
             for k, v in kwargs.items():
                 arg_and_names.append((k, v))
-            for param_name, defval in zip(param_names, default_values)[len(arg_and_names):]:
+            for param_name, defval in list(zip(param_names, default_values))[len(arg_and_names):]:
                 arg_and_names.append((param_name, defval.value))
             return _funcall(self.model, self.hdlmodule.name, arg_and_names)
 

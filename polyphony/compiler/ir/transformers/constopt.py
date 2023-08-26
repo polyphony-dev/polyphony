@@ -404,26 +404,6 @@ class ConstantOpt(ConstantOptBase):
                     for clos in stm.dst.symbol.scope.closures:
                         self._propagate_to_closure(clos, stm.dst, stm.src)
             elif (stm.is_a(MOVE)
-                    and stm.src.is_a(CONST)
-                    and stm.dst.is_a(ATTR)
-                    and not stm.dst.symbol.is_return()):
-                defstms = scope.usedef.get_stms_defining(stm.dst.symbol)
-                if len(defstms) != 1:
-                    continue
-                replaces = VarReplacer.replace_uses(scope, stm.dst, stm.src)
-                receiver = stm.dst.tail()
-                receiver_t = receiver.typ
-                if receiver_t.is_object() and receiver_t.scope.is_module():
-                    receiver_scope = receiver_t.scope
-                    #assert self.scope.parent is module_scope
-                    if receiver_scope.field_usedef:
-                        defstms = receiver_scope.field_usedef.get_def_stms(stm.dst.qualified_symbol)
-                        if len(defstms) == 1:
-                            receiver_scope.constants[stm.dst.symbol] = stm.src
-                for rep in replaces:
-                    if rep not in dead_stms:
-                        self.worklist.append(rep)
-            elif (stm.is_a(MOVE)
                     and stm.src.is_a(ARRAY)
                     and stm.src.repeat.is_a(CONST)):
                 src = stm.src
@@ -666,14 +646,7 @@ class StaticConstOpt(ConstantOptBase):
         self.constant_table = {}
         self.constant_array_table = {}
 
-    def process_all(self, driver):
-        scopes = driver.get_scopes(bottom_up=True,
-                                   with_global=True,
-                                   with_class=True,
-                                   with_lib=True)
-        self._process_scopes(scopes)
-
-    def _process_scopes(self, scopes):
+    def process_scopes(self, scopes):
         stms = []
         dtrees = {}
         for s in scopes:

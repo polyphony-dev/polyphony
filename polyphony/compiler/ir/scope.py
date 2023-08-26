@@ -84,6 +84,8 @@ class FunctionParams(object):
                 s += '{}:{}\n'.format(p, repr(p.typ))
         return s
 
+    def __len__(self):
+        return len(self._params)
 
 
 class Scope(Tagged):
@@ -98,7 +100,6 @@ class Scope(Tagged):
         'function_module',
         'inlinelib', 'unflatten',
         'package', 'directory',
-        'interface'
     }
     scope_id = 0
     unnamed_ids = defaultdict(int)
@@ -142,18 +143,21 @@ class Scope(Tagged):
         env.remove_scope(scope)
 
     @classmethod
+    def is_normal_scope(cls, s):
+        return (not (s.is_lib() and s.is_function())
+            and not (s.is_lib() and s.is_method())
+            and not s.is_builtin()
+            and not s.is_decorator()
+            and not s.is_typeclass()
+            and not s.is_directory())
+
+    @classmethod
     def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False):
         def ret_helper():
             scopes = cls.ordered_scopes[:]
             scopes = [s for s in scopes if not s.is_pure()]
             # Exclude an no code scope
-            scopes = [s for s in scopes
-                      if not (s.is_lib() and s.is_function())
-                      and not (s.is_lib() and s.is_method())
-                      and not s.is_builtin()
-                      and not s.is_decorator()
-                      and not s.is_typeclass()
-                      and not s.is_directory()]
+            scopes = [s for s in scopes if cls.is_normal_scope(s)]
             if not with_global:
                 scopes.remove(Scope.global_scope())
             if not with_class:
@@ -251,36 +255,45 @@ class Scope(Tagged):
         self.constants = {}
         self.branch_graph = Graph()
         self.closures = set()
+        self.module_params = []
 
     def __str__(self):
-        s = '\n================================\n'
-        tags = ", ".join([att for att in self.tags])
-        if self.parent:
-            s += "Scope: {}, parent={} ({})\n".format(self.base_name, self.parent.name, tags)
-        else:
-            s += "Scope: {} ({})\n".format(self.base_name, tags)
+        s = '================================\n'
+        tags = ", ".join([f"'{att}'" for att in self.tags])
+        s += 'Scope:\n'
+        s += f'    name: {self.name}\n'
+        s += f'    tags: {tags}\n'
 
+        s += 'Symbols:\n'
         for sym in self.symbols.values():
-            s += f'{sym} {sym.tags}\n'
-        #s += ", ".join([str(sym) for sym in self.symbols])
-        #s += "\n"
-        s += '================================\n'
-        s += 'Parameters\n'
-        #s += str(self.function_params)
-        s += "\n"
-        s += 'Return\n'
+            s += f'    {sym}:{sym.typ} {sym.tags}\n'
+
+        if self.constants:
+            s += 'Constants:\n'
+            for sym, const in self.constants.items():
+                s += f'    {sym}:{sym.typ} = {const}\n'
+
+        if self.function_params:
+            s += 'Parameters:\n'
+            ss = ['    ' + line for line in str(self.function_params).split('\n') if line]
+            s += '\n'.join(ss)
+            s += '\n'
+        s += 'Return:\n'
         if self.return_type:
-            s += '{}\n'.format(repr(self.return_type))
+            s += '    {}\n'.format(repr(self.return_type))
         else:
-            s += 'None\n'
-        s += 'Synthesis\n{}\n'.format(self.synth_params)
-        s += '================================\n'
+            s += '    None\n'
+
+        s += 'Synthesis:\n'
+        s += f'    {self.synth_params}\n'
+
+        s += 'Blocks:\n'
         for blk in self.traverse_blocks():
             s += str(blk)
-        s += '================================\n'
-        for r in self.loop_tree.traverse():
-            s += str(r)
-        s += '================================\n'
+        if self.loop_tree:
+            s += 'Loop Tree:\n'
+            for r in self.loop_tree.traverse():
+                s += f'    {r}'
         return s
 
     def dump(self):
@@ -290,12 +303,7 @@ class Scope(Tagged):
         return self.name
 
     def __lt__(self, other):
-        if self.order < other.order:
-            return True
-        elif self.order > other.order:
-            return False
-        elif self.order == other.order:
-            return self.lineno < other.lineno
+        return self.scope_id < other.scope_id
 
     def __hash__(self):
         return hash(self.name)
@@ -443,9 +451,10 @@ class Scope(Tagged):
 
     def _clone_child(self, new_class, old_class, origin_child):
         _, new_parent = new_class.find_child(origin_child.name, True)
+        # remove old child scope
         new_parent.children.remove(origin_child)
+        # clone child scope and symbol
         new_child = origin_child.clone('', '', new_parent)
-
         res = new_class.find_closure(origin_child.name)
         if res:
             _, clos_parent = res
@@ -453,8 +462,10 @@ class Scope(Tagged):
             clos_parent.closures.add(new_child)
         return new_child
 
-    def instantiate(self, inst_name, children, with_tag=True):
-        new_class = self.clone('', inst_name, self.parent)
+    def instantiate(self, inst_name, children, parent=None, with_tag=True):
+        if parent is None:
+            parent = self.parent
+        new_class = self.clone('', inst_name, parent)
         if with_tag:
             new_class.add_tag('instantiated')
         assert new_class.origin is self
@@ -478,6 +489,7 @@ class Scope(Tagged):
             if with_tag:
                 new_child.add_tag('instantiated')
             new_scopes[child] = new_child
+        # replace old scope with new scope in the instantiated scope
         for old, new in new_scopes.items():
             syms = new_class.find_scope_sym(old)
             for sym in syms:
@@ -532,6 +544,12 @@ class Scope(Tagged):
         if self.parent:
             return self.parent.find_scope(name)
         return None
+
+    def find_namespace(self):
+        if self.is_namespace():
+            return self
+        else:
+            return self.parent.find_namespace()
 
     def collect_scope(self):
         scopes = self.children[:]
@@ -774,6 +792,13 @@ class Scope(Tagged):
         if other.origin and self.is_assignable(other.origin):
             return True
         return False
+
+    def is_descendants_of(self, other):
+        if self.parent is None:
+            return False
+        elif self.parent is other:
+            return True
+        return self.parent.is_descendants_of(other)
 
     def outer_module(self):
         if self.is_module():

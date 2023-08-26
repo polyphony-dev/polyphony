@@ -1,9 +1,6 @@
 ﻿from collections import defaultdict
 from ..irvisitor import IRVisitor
 from ..ir import *
-from ..block import Block
-from ..symbol import Symbol
-from ..types.type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -104,31 +101,30 @@ class FieldUseDefDetector(IRVisitor):
 
 
 class FieldUseDef(object):
-    def process(self, module, driver):
+    def process(self, module):
         assert module.is_module()
         self.module = module
-        using_scopes = set(driver.scopes)
-        self.scopes = self._collect_scopes(module, using_scopes)
+        self.scopes = self._collect_scopes(module)
         self.usedef_tables = {}
         for scope in self.scopes:
             table = FieldUseDefDetector().process(scope)
             self.usedef_tables[scope] = table
         self.module.field_usedef = self
 
-    def _collect_scopes(self, scope, using_scopes):
+    def _collect_scopes(self, scope):
         scopes = set()
-        workers = set([w for w, _ in scope.workers]) & using_scopes
+        workers = set([w for w, _ in scope.workers])
         scopes |= workers
         for w in workers:
-            scopes |= self._collect_scopes(w, using_scopes)
-        subscopes = (set(scope.children) | scope.closures) & using_scopes
+            scopes |= self._collect_scopes(w)
+        subscopes = (set(scope.children) | scope.closures)
         for sub in subscopes:
             if sub.is_worker():  # exclude uninstantiated worker
                 continue
             if sub.is_lib():
                 continue
             scopes.add(sub)
-            scopes |= self._collect_scopes(sub, using_scopes)
+            scopes |= self._collect_scopes(sub)
         return scopes
 
     def get_def_stms(self, qsym):

@@ -10,7 +10,8 @@ from ..types.type import Type
 from ...common.common import fail, warn
 from ...common.env import env
 from ...common.errors import Errors, Warnings
-
+from logging import getLogger
+logger = getLogger(__name__)
 
 # port
 #  dtype
@@ -51,7 +52,10 @@ class PortTypeProp(TypePropagation):
             attrs['assigned'] = False
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
-            return Type.port(callee_scope, attrs)
+
+            port_t = Type.port(callee_scope, attrs)
+            logger.debug(f'{self.current_stm.dst} {port_t}')
+            return port_t
         else:
             return super().visit_NEW(ir)
 
@@ -126,21 +130,6 @@ def _collect_scopes(module):
         if caller not in scopes:
             scopes.append(caller)
     return scopes
-
-
-class PortConverter(IRTransformer):
-    def __init__(self):
-        super().__init__()
-
-    def process_all(self):
-        scopes = Scope.get_scopes(with_class=True)
-        modules = [s for s in scopes if s.is_module() and s.is_instantiated()]
-        if not modules:
-            return
-        for module in modules:
-            scopes_ = _collect_scopes(module)
-            worklist = deque(scopes_)
-            PortTypeProp()._process_all(worklist)
 
 
 class FlippedTransformer(TypePropagation):

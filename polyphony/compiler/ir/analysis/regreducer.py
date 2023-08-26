@@ -71,11 +71,12 @@ class AliasVarDetector(IRVisitor):
                 return
         elif ir.src.is_a(MREF):
             if sched == 'timed':
-                pass
+                 pass
             else:
-                typ = ir.src.mem.symbol.typ
-                if typ.is_list() and not typ.ro:
-                    return
+                stms = self.usedef.get_stms_using(ir.src.mem.symbol)
+                for stm in stms:
+                    if stm.is_a(EXPR) and stm.exp.is_a(MSTORE) and stm.exp.mem == ir.src.mem:
+                        return
         elif ir.src.is_a(ARRAY):
             return
         stms = self.usedef.get_stms_defining(sym)

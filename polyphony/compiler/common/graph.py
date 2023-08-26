@@ -1,4 +1,4 @@
-from collections import defaultdict, namedtuple
+from collections import defaultdict, namedtuple, deque
 import copy
 
 
@@ -78,7 +78,7 @@ class Graph(object):
         self.edges = SimpleOrderedSet()
         self.nodes = SimpleOrderedSet()
         self.order_map_cache = None
-        self.is_dag_cache = None
+        self.depth_map_cache = None
 
     def __str__(self):
         s = 'Nodes\n'
@@ -123,7 +123,6 @@ class Graph(object):
         self.pred_nodes[dst_node].add(src_node)
         self.edges.add(Edge(src_node, dst_node, flags))
         self.order_map_cache = None
-        self.is_dag_cache = None
 
     def has_edge(self, src_node, dst_node, flags=0):
         return Edge(src_node, dst_node, flags) in self.edges
@@ -140,7 +139,6 @@ class Graph(object):
             if not self.succs(dst_node) and not self.preds(dst_node):
                 self.nodes.discard(dst_node)
         self.order_map_cache = None
-        self.is_dag_cache = None
 
     def find_edge(self, src_node, dst_node):
         for edge in self.edges:
@@ -160,56 +158,60 @@ class Graph(object):
     def collect_sinks(self):
         return [n for n in self.nodes if not self.succs(n)]
 
-    def node_order_map(self, is_breadth_first):
-        def set_order(pred, n, bf_order, df_order, visited_edges):
-            if (pred, n) in visited_edges:
-                return df_order
-            visited_edges.add((pred, n))
-            if bf_order > bf_order_map[n]:
-                bf_order_map[n] = bf_order
-            if df_order > df_order_map[n]:
-                df_order_map[n] = df_order
-            bf_order += 1
-            df_order += 1
-            for succ in self.succs(n):
-                df_order = set_order(n, succ, bf_order, df_order, visited_edges)
-            return df_order
-        if self.order_map_cache:
-            if is_breadth_first:
-                return self.order_map_cache[0]
-            else:
-                return self.order_map_cache[1]
-        bf_order_map = {}
-        df_order_map = {}
+    def node_depth_map(self):
+        if self.depth_map_cache:
+            return self.depth_map_cache
+        visited_nodes = set()
+        depth_map = {}
         for n in self.nodes:
-            bf_order_map[n] = -1
-            df_order_map[n] = -1
-        visited_edges = set()
+            depth_map[n] = -1
         for source in self.collect_sources():
-            set_order(None, source, 0, 0, visited_edges)
-        self.order_map_cache = bf_order_map, df_order_map
-        if is_breadth_first:
-            return bf_order_map
-        else:
-            return df_order_map
+            depth_map[source] = 0
+        node_q = deque()
+        node_q.append(self.collect_sources())
+        depth = 0
+        while node_q:
+            nodes = node_q.popleft()
+            for node in nodes:
+                if node in visited_nodes:
+                    if depth_map[node] < depth:
+                        depth_map[node] = depth
+                    continue
+                depth_map[node] = depth
+                visited_nodes.add(node)
+                node_q.append(self.succs(node))
+            depth += 1
+        self.depth_map_cache = depth_map
+        return depth_map
+
+    def node_order_map(self):
+        if self.order_map_cache:
+            return self.order_map_cache
+        visited_nodes = set()
+        order_map = {}
+        for n in self.nodes:
+            order_map[n] = -1
+        node_q = deque(self.collect_sources())
+        order = 0
+        while node_q:
+            node = node_q.popleft()
+            if node in visited_nodes:
+                continue
+            order_map[node] = order
+            visited_nodes.add(node)
+            node_q.extend(self.succs(node))
+            order += 1
+        self.order_map_cache = order_map
+        return order_map
 
     # bfs(breadth-first-search)
     def bfs_ordered_nodes(self):
-        order_map = self.node_order_map(is_breadth_first=True)
+        order_map = self.node_order_map()
         return sorted(self.nodes, key=lambda n: order_map[n])
 
-    def dfs_ordered_nodes(self):
-        order_map = self.node_order_map(is_breadth_first=False)
-        return sorted(self.nodes, key=lambda n: order_map[n])
-
-    def ordered_edges(self, is_breadth_first=True):
-        order_map = self.node_order_map(is_breadth_first)
+    def ordered_edges(self):
+        order_map = self.node_order_map()
         return sorted(self.edges, key=lambda e: (order_map[e.src], order_map[e.dst]))
-
-    def is_dag(self):
-        if not self.is_dag_cache:
-            self.is_dag_cache = False if self.extract_sccs() else True
-        return self.is_dag_cache
 
     def replace_succ(self, node, old_succ, new_succ):
         self.del_edge(node, old_succ)
@@ -218,59 +220,6 @@ class Graph(object):
     def replace_pred(self, node, old_pred, new_pred):
         self.del_edge(old_pred, node)
         self.add_edge(new_pred, node)
-
-    def find_succ_node_if(self, node, predicate):
-        order_map = self.node_order_map()
-
-        def find_succ_node_if_r(start_node, node, predicate, order_map):
-            if order_map[node] < order_map[start_node]:
-                return
-            for succ in self.succs(node):
-                if predicate(succ):
-                    return succ
-                else:
-                    found = find_succ_node_if_r(start_node, succ, predicate, order_map)
-                    if found:
-                        return found
-            return None
-        return find_succ_node_if_r(node, node, predicate, order_map)
-
-    def extract_sccs(self):
-        '''
-        Extract Strongly Connected Components
-        '''
-        nodes = self.dfs_ordered_nodes()
-        return self._extract_sccs(list(reversed(nodes)))
-
-    def _extract_sccs(self, ordered_nodes):
-        sccs = []
-        for scc in self._find_scc(ordered_nodes[:]):
-            if len(scc) > 1:
-                # we have to keep the depth-first-search order
-                nodes = [n for n in ordered_nodes if n in scc]
-                sccs.append(nodes)
-            elif len(scc) == 1 and scc[0] in self.preds(scc[0]):
-                nodes = scc
-                sccs.append(nodes)
-        return sccs
-
-    def _find_scc(self, nodes):
-        sccs = []
-        visited = []
-        while nodes:
-            node = nodes[-1]
-            scc = []
-            self._find_scc_back_walk(node, nodes, visited, scc)
-            sccs.append(scc)
-        return sccs
-
-    def _find_scc_back_walk(self, node, nodes, visited, scc):
-        scc.append(node)
-        visited.append(node)
-        nodes.remove(node)
-        for pred in self.preds(node):
-            if pred not in visited and pred in nodes:
-                self._find_scc_back_walk(pred, nodes, visited, scc)
 
     def write_dot(self, name):
         from .env import env

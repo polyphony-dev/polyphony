@@ -275,7 +275,7 @@ class ObjectTransformer(object):
             defstm = list(defstms)[0]
             assert defstm.src.is_a(ARRAY)
 
-            seq_id = self.scope.add_sym(f'{seq_sym.name}__id', tags=set(), typ=Type.int(16))
+            seq_id = self.scope.add_sym(f'{seq_sym.name}{seq_sym.id}__id', tags=set(), typ=Type.int(16))
             mv = MOVE(TEMP(seq_id, Ctx.STORE),
                       CONST(seq_id.id),
                       loc=defstm.loc)

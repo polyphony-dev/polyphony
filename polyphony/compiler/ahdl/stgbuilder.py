@@ -366,8 +366,6 @@ def _tags_from_sym(sym) -> set[str]:
         elif sym_scope.orig_name == 'polyphony.Net':
             assert sym.is_alias()
             tags.add('net')
-        elif sym_scope.is_interface():
-            tags.add('interface')
         elif sym.is_alias():
             tags.add('net')
         elif sym.is_self():

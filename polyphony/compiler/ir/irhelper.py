@@ -23,7 +23,7 @@ def expr2ir(expr, name=None, scope=None):
         return ar
     elif isinstance(expr, tuple):
         items = [expr2ir(e) for e in expr]
-        ar = ARRAY(items, is_mutable=False)
+        ar = ARRAY(items)
         ar.symbol = scope.add_temp('@array', {'predefined'})
         return ar
     else:

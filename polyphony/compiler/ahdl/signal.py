@@ -18,7 +18,7 @@ class Signal(Tagged):
         'pipelined',
         'pipeline_ctrl',
         'rewritable',
-        'interface', 'subscope', 'dut',
+        'subscope', 'dut',
         'self'
     }
 
@@ -31,7 +31,7 @@ class Signal(Tagged):
         self.init_value = 0
 
     def __str__(self):
-        return f'{self.name}<{self.width}> {self.tags}'
+        return f'{self.name}<{self.width}> {sorted(self.tags)}'
 
     def __eq__(self, other):
         return self.name == other.name

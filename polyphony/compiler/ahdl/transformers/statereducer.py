@@ -76,7 +76,7 @@ class EmptyStateSkipper(AHDLTransformer):
         next_state = self._get_state(ahdl.target_name)
         if not is_empty_state(next_state):
             return ahdl
-        while is_empty_state(next_state):
+        while is_empty_state(next_state) and next_state != self.current_state:
             assert next_state.block.codes[0].is_a(AHDL_TRANSITION)
             next_transition = next_state.block.codes[-1]
             if next_transition.target_name == next_state.name:

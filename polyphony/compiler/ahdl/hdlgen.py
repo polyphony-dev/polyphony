@@ -164,6 +164,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
                 raise NotImplementedError()
             else:
                 assert False
+            assert sig
             self.hdlmodule.add_input(AHDL_VAR(sig, Ctx.LOAD))
         module_name = self.hdlmodule.name
         sig = self.hdlmodule.gen_sig(f'{module_name}_ready', 1, {'input', 'net', 'ctrl'})
@@ -175,6 +176,7 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         if scope.return_type.is_scalar():
             sig_name = '{}_out_0'.format(scope.base_name)
             sig = self.hdlmodule.signal(sig_name)
+            assert sig
             self.hdlmodule.add_output(AHDL_VAR(sig, Ctx.STORE))
         elif scope.return_type.is_seq():
             raise NotImplementedError('return of a suquence type is not implemented')
@@ -203,14 +205,15 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
 class HDLTopModuleBuilder(HDLModuleBuilder):
     def _process_io(self, hdlmodule):
         def collect_io(topmodule, hdlmodule, prefix_qsig):
-            for sig in hdlmodule.get_signals({'single_port'}, None, with_base=True):
+            for sig in hdlmodule.get_signals({'single_port'}, exclude_tags=None, with_base=True):
                 if sig.is_input():
                     topmodule.add_input(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
                 elif sig.is_output():
                     topmodule.add_output(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
-            for sig in hdlmodule.get_signals({'subscope'}, None):
+            for sig in hdlmodule.get_signals({'subscope'}, exclude_tags=None):
                 subscope = hdlmodule.subscopes[sig]
                 collect_io(topmodule, subscope, prefix_qsig + (sig,))
+
         collect_io(self.hdlmodule, self.hdlmodule, tuple())
 
     def _process_fsm(self, fsm):

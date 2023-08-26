@@ -1,5 +1,6 @@
 import inspect
 from .varreplacer import VarReplacer
+from ..builtin import builtin_symbols
 from ..scope import Scope
 from ..ir import *
 from ..irvisitor import IRVisitor
@@ -16,9 +17,8 @@ def bind_val(scope, i, value):
 
 
 class ModuleInstantiator(object):
-    def process_all(self):
-        new_modules = self._process_called_module()
-        # new_modules = self._process_module()  # instantiate for env.targets
+    def process_scopes(self, scopes):
+        new_modules = self._process_called_module(scopes)
         return new_modules
 
     def _process_module(self):
@@ -37,18 +37,16 @@ class ModuleInstantiator(object):
             new_module = self._instantiate_module(module, args)
             self._process_workers(new_module)
             new_modules.add(new_module)
-            #stm.dst.symbol.typ = Type.object(new_module)
         return new_modules
 
-    def _process_called_module(self):
-        scopes = Scope.get_scopes(bottom_up=False,
-                                  with_global=True,
-                                  with_class=False,
-                                  with_lib=False)
+    def _process_called_module(self, scopes):
         calls = []
         for s in scopes:
-            if s.is_global() or s.is_function_module():
-                calls.extend(CallCollector().process(s))
+            calls.extend(CallCollector().process(s))
+        new_modules = self._process_called_module_sub(calls)
+        return new_modules
+
+    def _process_called_module_sub(self, calls):
         new_modules = set()
         for scope, stm, call in calls:
             callee_scope = call.callee_scope
@@ -59,15 +57,6 @@ class ModuleInstantiator(object):
                 new_modules.add(new_module)
                 stm.dst.symbol.typ = Type.object(new_module)
         return new_modules
-
-    def _process_inner_scope(self, ctor):
-        calls = CallCollector().process(ctor)
-        new_scopes = set()
-        for scope, stm, call in calls:
-            new_scope = self._instantiate(call, stm.dst)
-            new_scopes.add(new_scope)
-            stm.dst.symbol.typ = Type.object(new_scope)
-        return new_scopes
 
     def _instantiate_called_module(self, scope, new, module_var):
         module = new.callee_scope
@@ -81,12 +70,17 @@ class ModuleInstantiator(object):
                     module_param_vars.append((param_names[i], arg.value))
                 else:
                     binding.append((i, arg.value))
+
         inst_name = module_var.symbol.hdl_name()
         ctor = module.find_ctor()
         children = [ctor]
         children.extend([c for c in module.collect_scope() if c.is_assigned()])
+        if scope.is_global():
+            parent = None
+        else:
+            parent = scope.parent
+        new_module = module.instantiate(inst_name, children, parent=parent)
         if binding:
-            new_module = module.instantiate(inst_name, children)
             new_module_ctor = new_module.find_ctor()
             udd = UseDefDetector()
             udd.process(new_module_ctor)
@@ -98,7 +92,6 @@ class ModuleInstantiator(object):
             for i, _ in reversed(binding):
                 new.args.pop(i)
         else:
-            new_module = module.instantiate(inst_name, children)
             new_module_sym = new.symbol.scope.inherit_sym(new.symbol, new_module.name)
             new.symbol = new_module_sym
         new.symbol.typ = new.symbol.typ.clone(scope=new_module)
@@ -128,15 +121,8 @@ class ModuleInstantiator(object):
             for i, a in binding:
                 bind_val(new_module_ctor, i, a)
             new_module_ctor.remove_param([i for i, _ in binding])
-            #new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
-            #new.sym = new_module_sym
-            #for i, _ in reversed(binding):
-            #    new.args.pop(i)
         else:
             new_module = module.instantiate(inst_name, children)
-            #new_module_sym = new.sym.scope.inherit_sym(new.sym, new_module.name)
-            #new.sym = new_module_sym
-        #new.sym.typ = new.sym.typ.clone(scope=new_module)
         new_module.inst_name = inst_name
         new_module.build_module_params(module_param_vars)
         return new_module
@@ -156,7 +142,6 @@ class ModuleInstantiator(object):
                                                 typ=Type.function(new_worker))
                 _, w = call.args[0]
                 w.symbol = new_worker_sym
-        #return new_workers
 
     def _instantiate_worker(self, call, ctor, module):
         assert len(call.args) >= 1
@@ -190,7 +175,7 @@ class ModuleInstantiator(object):
                 postfix = '{}_{}'.format(idstr, '_'.join([str(v) for _, _, v in binding]))
             else:
                 postfix = idstr
-            new_worker = worker.clone(module.inst_name, postfix, module)
+            new_worker = worker.clone('', postfix, module)
 
         if loop:
             new_worker.add_tag('loop_worker')
@@ -215,14 +200,12 @@ class ModuleInstantiator(object):
         if worker.is_instantiated():
             return new_worker, False
         else:
-            #self.new_scopes.add(new_worker)
             children = [c for c in worker.collect_scope() if c.is_closure()]
             scope_map = {worker:new_worker}
             for child in children:
                 new_child = worker._clone_child(new_worker, worker, child)
                 new_child.add_tag('instantiated')
                 scope_map[child] = new_child
-                #self.new_scopes.add(new_child)
             for old, new in scope_map.items():
                 syms = new_worker.find_scope_sym(old)
                 for sym in syms:

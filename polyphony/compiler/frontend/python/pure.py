@@ -541,7 +541,7 @@ class PureCtorBuilder(object):
             for item in v:
                 assert isinstance(item, (bool, int, str))
             items = [CONST(item) for item in v]
-            array = ARRAY(items, is_mutable=False)
+            array = ARRAY(items)
             return MOVE(dst, array)
         elif dst.symbol().typ.is_object():
             scope = dst.symbol().typ.get_scope()

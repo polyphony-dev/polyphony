@@ -1,115 +1,29 @@
 from collections import deque
-from ...common.env import env
 from ...common.graph import Graph
 from ..irvisitor import IRVisitor
 from ..scope import Scope
+from logging import getLogger
+logger = getLogger(__name__)
 
 
-class CallGraphBuilder(IRVisitor):
+class ScopeDependencyGraphBuilder(IRVisitor):
     def __init__(self):
         super().__init__()
-        env.call_graph = Graph()
-        self.call_graph = env.call_graph
 
-    def process_all(self):
-        g = Scope.global_scope()
-        # targets = [scope for scope, args in env.targets]
-        self.worklist = deque([g])
-        visited = set()
+    def process_scopes(self, scopes):
+        self.depend_graph = Graph()
+
+        self.worklist = deque(scopes)
+        self.visited = set()
         while self.worklist:
             scope = self.worklist.popleft()
-            if scope in visited:
+            self.depend_graph.add_node(scope)
+            if scope in self.visited:
                 continue
-            visited.add(scope)
+            self.visited.add(scope)
+            self.scope = scope
             self.process(scope)
-            if scope.is_class():
-                self.worklist.append(scope.find_ctor())
-        #print(self.call_graph)
-        if not self.call_graph.succs(g):
-            raise Warning(
-                "Nothing is generated because any module or function didn't called in global scope.")
-        called_scopes = set(self.call_graph.bfs_ordered_nodes())
-        uncalled_scopes = set(env.scopes.values()).difference(called_scopes)
-        return uncalled_scopes
-
-    def process(self, scope):
-        super().process(scope)
-
-    def visit_CALL(self, ir):
-        callee_scope = ir.callee_scope
-        assert callee_scope
-        self.call_graph.add_edge(self.scope, callee_scope)
-        self.worklist.append(callee_scope)
-        self.visit_args(ir.args, ir.kwargs)
-
-    def visit_NEW(self, ir):
-        callee_scope = ir.callee_scope
-        assert callee_scope
-        ctor = callee_scope.find_ctor()
-        assert ctor
-        self.call_graph.add_edge(self.scope, ctor)
-        self.worklist.append(ctor)
-        self.visit_args(ir.args, ir.kwargs)
-
-    def visit_TEMP(self, ir):
-        sym_t = ir.symbol.typ
-        if not sym_t.is_function():
-            return
-        sym_scope = sym_t.scope
-        if not sym_scope:
-            return
-        if not sym_scope.is_worker():
-            self.call_graph.add_edge(self.scope, sym_scope)
-        self.worklist.append(sym_scope)
-
-    def visit_ATTR(self, ir):
-        attr_t = ir.symbol.typ
-        if not attr_t.is_function():
-            return
-        sym_scope = attr_t.scope
-        if not sym_scope.is_worker():
-            self.call_graph.add_edge(self.scope, sym_scope)
-        self.worklist.append(sym_scope)
-
-
-class DependencyGraphBuilder(IRVisitor):
-    def __init__(self):
-        super().__init__()
-        assert env.call_graph
-        env.depend_graph = Graph()
-        self.depend_graph = env.depend_graph
-
-    def process_all(self):
-        self.worklist = deque(env.call_graph.bfs_ordered_nodes())
-        visited = set()
-        while self.worklist:
-            scope = self.worklist.popleft()
-            if scope.is_method():
-                self._add_dependency(scope, scope.parent)
-            if scope.is_lib():
-                continue
-            if scope.is_directory():
-                continue
-            if scope in visited:
-                continue
-            visited.add(scope)
-            self.process(scope)
-        #print(self.depend_graph)
-        using_scopes = set(self.depend_graph.bfs_ordered_nodes())
-        unused_scopes = set(env.scopes.values()).difference(using_scopes)
-        return using_scopes, unused_scopes
-
-    def process(self, scope):
-        self._add_dependency_for_params(scope)
-        super().process(scope)
-
-    def _add_dependency_for_params(self, scope):
-        for p_t in scope.param_types():
-            if p_t.is_object() or p_t.is_function():
-                param_scope = p_t.scope
-                assert param_scope
-                self._add_dependency(scope, param_scope)
-                self.worklist.append(param_scope)
+        return self.visited
 
     def _add_dependency(self, user, used):
         if user is used:
@@ -118,38 +32,116 @@ class DependencyGraphBuilder(IRVisitor):
             return
         self.depend_graph.add_edge(user, used)
 
+    def _add_scope(self, scope):
+        assert scope
+        if not self.scope.is_descendants_of(scope):
+            self._add_dependency(self.scope, scope)
+        if scope.is_containable():
+            for child in scope.children:
+                self._add_dependency(scope, child)
+        if scope.is_lib():
+            return
+        if scope.is_directory():
+            return
+        if scope in self.visited:
+            return
+        self.worklist.append(scope)
+
     def visit_TEMP(self, ir):
         sym_t = ir.symbol.typ
-        if sym_t.has_valid_scope():
-            receiver_scope = sym_t.scope
-        elif ir.symbol.scope is not self.scope:
-            receiver_scope = ir.symbol.ancestor.scope if ir.symbol.ancestor else ir.symbol.scope
+        if sym_t.has_scope():
+            if ir.symbol.is_self():
+                return
+            if sym_t.has_valid_scope():
+                self._add_scope(sym_t.scope)
         else:
-            return
-        assert receiver_scope
-        self._add_dependency(self.scope, receiver_scope)
-        self.worklist.append(receiver_scope)
+            if ir.symbol.is_imported():
+                import_src = ir.symbol.import_src()
+                self._add_scope(import_src.scope)
+            # If self.scope refers an external symbol with a value type, the scope of the symbol is added
+            if ir.symbol.scope is not self.scope:
+                self._add_scope(ir.symbol.scope)
 
     def visit_ATTR(self, ir):
-        attr_t = ir.symbol.typ
-        if attr_t.has_valid_scope():
-            attr_scope = attr_t.scope
-            assert attr_scope
-            self._add_dependency(self.scope, attr_scope)
-            self.worklist.append(attr_scope)
-        # object referencing is also added
         self.visit(ir.exp)
-        receiver = ir.tail()
-        receiver_t = receiver.typ
-        if not receiver_t.has_valid_scope():
-            return
-        receiver_scope = receiver_t.scope
-        assert receiver_scope
-        self._add_dependency(self.scope, receiver_scope)
-        self.worklist.append(receiver_scope)
 
     def visit_NEW(self, ir):
         sym_t = ir.symbol.typ
-        ctor = sym_t.scope.find_ctor()
-        self._add_dependency(self.scope, ctor)
+        self._add_scope(sym_t.scope)
+        self.visit_args(ir.args, ir.kwargs)
+
+
+class UsingScopeDetector(IRVisitor):
+    def __init__(self):
+        super().__init__()
+
+    def process_scopes(self, scopes):
+        self.depend_graph = Graph()
+
+        self.worklist = deque(scopes)
+        self.visited = set()
+        while self.worklist:
+            scope = self.worklist.popleft()
+            if scope in self.visited:
+                continue
+            self.visited.add(scope)
+            if scope.is_class():
+                scopes = self._collect_scope_symbol(scope)
+                for s in scopes:
+                    self._add_scope(s)
+            self.scope = scope
+            self.process(scope)
+        return self.visited
+
+    def _add_dependency(self, user, used):
+        if user is used:
+            return
+        if self.depend_graph.has_edge(user, used):
+            return
+        self.depend_graph.add_edge(user, used)
+
+    def _collect_scope_symbol(self, scope):
+        scopes = []
+        for sym in scope.symbols.values():
+            if sym.typ.has_valid_scope():
+                s = sym.typ.scope
+                scopes.append(s)
+        return scopes
+
+    def _add_scope(self, scope):
+        assert scope
+        self._add_dependency(self.scope, scope)
+        if scope in self.visited:
+            return
+        if Scope.is_normal_scope(scope) and scope not in self.worklist:
+            self.worklist.append(scope)
+
+    def visit_TEMP(self, ir):
+        sym_t = ir.symbol.typ
+        if sym_t.has_scope():
+            if ir.symbol.is_self():
+                return
+            if sym_t.has_valid_scope():
+                self._add_scope(sym_t.scope)
+        else:
+            if ir.symbol.is_imported():
+                import_src = ir.symbol.import_src()
+                self._add_scope(import_src.scope)
+            # If self.scope refers an external symbol with a value type, the scope of the symbol is added
+            if ir.symbol.scope is not self.scope:
+                self._add_scope(ir.symbol.scope)
+
+    def visit_ATTR(self, ir):
+        self.visit(ir.exp)
+        if isinstance(ir.symbol, str):
+            return
+        attr_t = ir.symbol.typ
+        if attr_t.has_valid_scope():
+            attr_scope = attr_t.scope
+            self._add_scope(attr_scope)
+
+    def visit_NEW(self, ir):
+        sym_t = ir.symbol.typ
+        self._add_scope(sym_t.scope)
+        self._add_scope(sym_t.scope.find_ctor())
         self.visit_args(ir.args, ir.kwargs)

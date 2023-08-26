@@ -12,6 +12,7 @@ def pure(func) -> None:
     pass
 
 
+@builtin
 def is_worker_running() -> bool:
     pass
 
