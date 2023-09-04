@@ -16,6 +16,9 @@ class edge01:
 
     @timed
     def w(self):
+        clkfence()
+        clkfence()
+
         self.rising_reg.wr(self.i.edge(False, True))
         clkfence()
 
@@ -35,6 +38,10 @@ m = edge01()
 @timed
 @testbench
 def test(m):
+    m.i.wr(False)
+    clkfence()
+    clkfence()
+
     m.i.wr(False)
     assert m.rising.rd() == False
     assert m.falling.rd() == False
@@ -57,6 +64,11 @@ def test(m):
     assert m.rising.rd() == False
     assert m.falling.rd() == True
     assert m.rising_reg.rd() == True
+    clkfence()
+
+    assert m.rising.rd() == True
+    assert m.falling.rd() == False
+    assert m.rising_reg.rd() == False
     clkfence()
 
 

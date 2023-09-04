@@ -1,7 +1,7 @@
 from polyphony import testbench
 
 class C:
-    i = [1, 2, 3]
+    i = (1, 2, 3)
 
 def classfield02(i):
     return C.i[i]

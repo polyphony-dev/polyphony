@@ -1,6 +1,6 @@
 from polyphony import testbench
 
-data = [2, 4, 6, 8, 10]
+data = (2, 4, 6, 8, 10)
 
 def rom05(i):
     return data[i]

@@ -5,9 +5,9 @@ b = a
 c = b
 
 if b:
-    gs0 = [1, 2, 3]
+    gs0 = (1, 2, 3)
 else:
-    gs0 = [4, 5, 6]
+    gs0 = (4, 5, 6)
 
 if c:
     gs = gs0

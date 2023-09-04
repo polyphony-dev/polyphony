@@ -1,9 +1,9 @@
 import polyphony
 from polyphony import testbench
-from polyphony.typing import bit, List
+from polyphony.typing import bit, Tuple
 
 
-bits = [1, 0]  # type: List[bit]
+bits = (1, 0)  # type: Tuple[bit, bit]
 
 @testbench
 def test():

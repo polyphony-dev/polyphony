@@ -57,6 +57,7 @@ class Errors(Enum):
     INVALID_MODULE_OBJECT_ACCESS = 818
     PRINT_TAKES_SCALAR_TYPE = 819
     MUST_BE_SINGLE_TYPE = 820
+    STATIC_LIST_NOT_ALLOWED = 821
 
     # polyphony library restrictions
     MUDULE_MUST_BE_IN_GLOBAL = 900
@@ -161,6 +162,7 @@ ERROR_MESSAGES = {
     Errors.INVALID_MODULE_OBJECT_ACCESS: "Invalid access to a module class object",
     Errors.PRINT_TAKES_SCALAR_TYPE: "print() takes only scalar type (e.g. int, str, ...) argument",
     Errors.MUST_BE_SINGLE_TYPE: "Module arguments must be a single type",
+    Errors.STATIC_LIST_NOT_ALLOWED: "list is not allowed within the global or class scope",
 
     # polyphony library restrictions
     Errors.MUDULE_MUST_BE_IN_GLOBAL: "the module class must be in the global scope",

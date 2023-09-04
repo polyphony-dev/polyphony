@@ -57,7 +57,7 @@ def fir_filter_streaming(input: int, coeff: list, previous: list) -> int:
         return temp
 
 
-coeff = [10] * TAPS
+coeff = (10,) * TAPS
 
 
 def fir():

@@ -6,7 +6,7 @@ class D:
 
 
 class C:
-    i = [D.i[2], D.i[2], D.i[0]]
+    i = (D.i[2], D.i[2], D.i[0])
 
 
 def classfield05(x):

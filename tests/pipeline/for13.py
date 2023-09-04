@@ -2,7 +2,7 @@ from polyphony import testbench
 from polyphony import pipelined
 
 
-def pipe13(xs0, xs1, xs2, xs3, ys0, ys1):
+def pipe13_func(xs0, xs1, xs2, xs3, ys0, ys1):
     for i in pipelined(range(len(xs0))):
         if i % 2 == 0:
             if i % 4 == 0:
@@ -23,15 +23,14 @@ def pipe13(xs0, xs1, xs2, xs3, ys0, ys1):
         ys1[i] = w
 
 
-@testbench
-def test():
+def pipe13():
     idata0 = [0, 16, 32, -16, -64]
     idata1 = [32, -16, -64, 8, 24]
     idata2 = [0, 16, 32, -16, -64]
     idata3 = [32, -16, -64, 8, 24]
     odata0 = [0] * 5
     odata1 = [0] * 5
-    pipe13(idata0, idata1, idata2, idata3, odata0, odata1)
+    pipe13_func(idata0, idata1, idata2, idata3, odata0, odata1)
     assert 0 == odata0[0]
     assert -16 == odata0[1]
     assert 100 == odata0[2]
@@ -44,5 +43,9 @@ def test():
     assert 200 == odata1[3]
     assert 24 == odata1[4]
 
+
+@testbench
+def test():
+    pipe13()
 
 test()

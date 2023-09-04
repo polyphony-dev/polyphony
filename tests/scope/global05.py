@@ -1,6 +1,6 @@
 from polyphony import testbench
 
-gs = [1111, 2222, 3333]
+gs = (1111, 2222, 3333)
 
 def global05():
     sum = 0

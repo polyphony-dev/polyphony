@@ -1,14 +1,14 @@
 from polyphony import testbench, module
 from polyphony.io import Port
-from polyphony.typing import int8
+from polyphony.typing import bit8
 from polyphony.timing import timed, clkfence
 
 
 @module
 class Port01:
     def __init__(self):
-        self.in0  = Port(int8, 'in')
-        self.out0 = Port(int8, 'out')
+        self.in0  = Port(bit8, 'in')
+        self.out0 = Port(bit8, 'out')
         self.v = 0
         self.append_worker(self.main)
 
@@ -30,7 +30,6 @@ class Port01:
         # 5
 
 
-
 @timed
 @testbench
 def test(p01):
@@ -45,14 +44,15 @@ def test(p01):
     clkfence()
     # 3
     print(p01.out0.rd())
-    p01.in0.wr(2)
+    assert p01.out0.rd() == 1
+    p01.in0.wr(257)
     clkfence()
     # 4
     # read and write at module
     clkfence()
     # 5
     print(p01.out0.rd())
-    #clkfence()
+    assert p01.out0.rd() == 1
 
 
 p01 = Port01()

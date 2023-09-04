@@ -1526,6 +1526,8 @@ class CodeVisitor(ast.NodeVisitor):
 
     #     | List(expr* elts, expr_context ctx)
     def visit_List(self, node):
+        if self.current_scope.is_namespace() or self.current_scope.is_class():
+            fail((env.current_filename, node.lineno), Errors.STATIC_LIST_NOT_ALLOWED)
         items = []
         for elt in node.elts:
             item = self.visit(elt)

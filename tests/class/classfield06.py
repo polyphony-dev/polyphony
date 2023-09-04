@@ -9,7 +9,7 @@ class C:
         class E:
             V3 = V1 + V2
         i = (V1, V2, E.V3)
-    i = [D.i[2], D.i[2], D.i[0]]
+    i = (D.i[2], D.i[2], D.i[0])
 
 def classfield06(x):
     return C.i[x]
