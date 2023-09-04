@@ -163,7 +163,7 @@ class ConstantOptBase(IRVisitor):
         func_t = ir.symbol.typ
         if (func_t.is_function()
                 and func_t.scope.is_lib()
-                and ir.symbol.name == 'is_worker_running'):
+                and func_t.scope.base_name == 'is_worker_running'):
             return CONST(True)
         return ir
 
