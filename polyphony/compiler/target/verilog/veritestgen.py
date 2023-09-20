@@ -33,6 +33,8 @@ class VerilogTestGen(VerilogCodeGen):
         self.set_indent(2)
         self._generate_clock_task()
         self._generate_reset_task()
+        if env.enable_verilog_dump:
+            self._generate_dump_vcd_task()
         self.set_indent(-2)
         self.emit('endmodule\n')
 
@@ -51,5 +53,22 @@ class VerilogTestGen(VerilogCodeGen):
         self.emit('rst <= 1;')
         self.emit('#INITIAL_RESET_SPAN')
         self.emit('rst <= 0;')
+        self.set_indent(-2)
+        self.emit('end')
+
+    def _generate_dump_vcd_task(self):
+        self.emit('initial begin')
+        self.set_indent(2)
+        self.emit(f'$dumpfile("{self.hdlmodule.name}.vcd");')
+        for reg in self.hdlmodule.get_signals({'reg'}, {'input', 'output'}):
+            self.emit(f'$dumpvars(0, {self._safe_name(reg.name)});')
+        for reg in self.hdlmodule.get_signals({'regarray'}, {'input', 'output'}):
+            for i in range(reg.width[1]):
+                self.emit(f'$dumpvars(0, {self._safe_name(reg.name)}[{i}]);')
+        for net in self.hdlmodule.get_signals({'net'}, {'input', 'output'}):
+            self.emit(f'$dumpvars(0, {self._safe_name(net.name)});')
+        for net in self.hdlmodule.get_signals({'netarray'}, {'input', 'output'}):
+            for i in range(net.width[1]):
+                self.emit(f'$dumpvars(0, {self._safe_name(net.name)}[{i}]);')
         self.set_indent(-2)
         self.emit('end')
