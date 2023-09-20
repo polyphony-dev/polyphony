@@ -16,6 +16,12 @@ class FSM(object):
         self.outputs:set[Signal] = set()
         self.reset_stms:list[AHDL_STM] = []
 
+    def remove_stg(self, stg):
+        self.stgs.remove(stg)
+        if stg.is_main():
+            for s in self.stgs:
+                if s.parent is stg:
+                    s.parent = None
 
 class HDLModule(HDLScope):
     #Port = namedtuple('Port', ['name', 'width'])

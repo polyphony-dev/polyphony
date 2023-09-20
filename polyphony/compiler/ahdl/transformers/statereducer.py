@@ -19,35 +19,46 @@ def is_empty_state(state):
 class StateReducer(object):
     def process(self, hdlmodule):
         IfForwarder().process(hdlmodule)
-        logger.debug(str(hdlmodule))
         EmptyStateSkipper().process(hdlmodule)
+        self._remove_unreached_state(hdlmodule)
+        self._remove_empty_init_state(hdlmodule)
+
+    def _remove_unreached_state(self, hdlmodule):
         graph = StateGraphBuilder().process(hdlmodule)
         for fsm in hdlmodule.fsms.values():
-            self._remove_unreached_state(fsm, graph)
+            for stg in fsm.stgs:
+                if len(stg.states) == 1:
+                    continue
+                for state in stg.states[1:]:  # skip initial state
+                    if not graph.has_node(state.name):
+                        logger.debug(f'Remove state {state.name}')
+                        stg.remove_state(state)
+                    elif not graph.preds(state.name):
+                        logger.debug(f'Remove state {state.name}')
+                        stg.remove_state(state)
+                    elif len(graph.preds(state.name)) == 1 and list(graph.preds(state.name))[0] == state.name:
+                        logger.debug(f'Remove state {state.name}')
+                        stg.remove_state(state)
 
-    def _remove_unreached_state(self, fsm:FSM, graph):
-        for stg in fsm.stgs:
-            if len(stg.states) == 1:
-                continue
-            for state in stg.states[1:]:  # skip initial state
-                if not graph.has_node(state.name):
-                    logger.debug(f'Remove state {state.name}')
-                    stg.remove_state(state)
-                elif not graph.preds(state.name):
-                    logger.debug(f'Remove state {state.name}')
-                    stg.remove_state(state)
-            if is_empty_state(stg.states[0]):
-                stg.remove_state(stg.states[0])
-
+    def _remove_empty_init_state(self, hdlmodule):
+        empty_stgs = []
+        for fsm in hdlmodule.fsms.values():
+            for stg in fsm.stgs:
+                if is_empty_state(stg.states[0]):
+                    stg.remove_state(stg.states[0])
+                if not stg.states:
+                    empty_stgs.append(stg)
+            for stg in empty_stgs:
+                fsm.remove_stg(stg)
 
 class StateGraph(Graph):
     def __str__(self):
         s = 'Nodes\n'
         for node in self.get_nodes():
-            s += '{}\n'.format(node.name)
+            s += '{}\n'.format(node)
         s += 'Edges\n'
         for edge in self.ordered_edges():
-            s += '{} --> {}: {}\n'.format(edge.src.name, edge.dst.name, edge.flags)
+            s += '{} --> {}: {}\n'.format(edge.src, edge.dst, edge.flags)
         return s
 
 
