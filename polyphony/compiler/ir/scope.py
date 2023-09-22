@@ -88,8 +88,118 @@ class FunctionParams(object):
         return len(self._params)
 
 
-class Scope(Tagged):
-    ordered_scopes = []
+class SymbolTable(object):
+    def __init__(self):
+        self.symbols = {}
+
+    def __str__(self):
+        s = ''
+        for sym in self.symbols.values():
+            s += f'{sym}:{sym.typ} {sym.tags}\n'
+        return s
+
+    def add_sym(self, name, tags=None, typ=None):
+        if typ is None:
+            typ = Type.undef()
+        if name in self.symbols:
+            raise RuntimeError("symbol '{}' is already registered ".format(name))
+        sym = Symbol(name, self, tags, typ)
+        self.symbols[name] = sym
+        return sym
+
+    def add_temp(self, temp_name=None, tags=None, typ=None):
+        name = Symbol.unique_name(temp_name)
+        if tags:
+            tags.add('temp')
+        else:
+            tags = {'temp'}
+        return self.add_sym(name, tags, typ)
+
+    def add_condition_sym(self):
+        return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool())
+
+    def add_param_sym(self, param_name, typ=None):
+        name = '{}_{}'.format(Symbol.param_prefix, param_name)
+        return self.add_sym(name, {'param'}, typ)
+
+    def del_sym(self, name):
+        if name in self.symbols:
+            del self.symbols[name]
+
+    def import_sym(self, sym):
+        if sym.name in self.symbols and sym is not self.symbols[sym.name]:
+            raise RuntimeError("symbol '{}' is already registered ".format(sym.name))
+        self.symbols[sym.name] = sym
+
+    def import_copy_sym(self, orig_sym, new_name):
+        if self.has_sym(new_name):
+            new_sym = self.symbols[new_name]
+        else:
+            orig_sym_t = orig_sym.typ
+            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym_t)
+            new_sym.import_from(orig_sym)
+        return new_sym
+
+    def find_sym(self, name):
+        names = name.split('.')
+        if len(names) > 1:
+            return self.find_sym_r(names)
+        if name in self.symbols:
+            return self.symbols[name]
+        return None
+
+    def find_sym_r(self, names):
+        name = names[0]
+        sym = self.find_sym(name)
+        if sym and len(names) > 1:
+            sym_t = sym.typ
+            if sym_t.is_containable():
+                return sym_t.scope.find_sym_r(names[1:])
+            else:
+                return None
+        return sym
+
+    def has_sym(self, name):
+        return name in self.symbols
+
+    def gen_sym(self, name):
+        if self.has_sym(name):
+            sym = self.symbols[name]
+        else:
+            sym = self.add_sym(name)
+        return sym
+
+    def rename_sym(self, old, new):
+        assert old in self.symbols
+        sym = self.symbols[old]
+        del self.symbols[old]
+        sym.name = new
+        self.symbols[new] = sym
+        return sym
+
+    def inherit_sym(self, orig_sym, new_name):
+        #assert orig_sym.scope is self
+        if self.has_sym(new_name):
+            new_sym = self.symbols[new_name]
+        else:
+            orig_sym_t = orig_sym.typ
+            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym_t)
+            if orig_sym.ancestor:
+                new_sym.ancestor = orig_sym.ancestor
+            else:
+                new_sym.ancestor = orig_sym
+        return new_sym
+
+    def find_scope_sym(self, obj):
+        results = []
+        for sym in self.symbols.values():
+            sym_t = sym.typ
+            if sym_t.has_scope() and sym_t.scope is obj:
+                results.append(sym)
+        return results
+
+
+class Scope(Tagged, SymbolTable):
     TAGS = {
         'global', 'function', 'class', 'method', 'ctor', 'enclosure', 'closure',
         'callable', 'returnable', 'mutable', 'inherited', 'predicate',
@@ -104,6 +214,7 @@ class Scope(Tagged):
     scope_id = 0
     unnamed_ids = defaultdict(int)
     instance_ids = defaultdict(int)
+
     @classmethod
     def create(cls, parent, name, tags, lineno=0, origin=None):
         if name is None:
@@ -152,58 +263,20 @@ class Scope(Tagged):
             and not s.is_directory())
 
     @classmethod
-    def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False):
-        def ret_helper():
-            scopes = cls.ordered_scopes[:]
-            scopes = [s for s in scopes if not s.is_pure()]
-            # Exclude an no code scope
-            scopes = [s for s in scopes if cls.is_normal_scope(s)]
-            if not with_global:
-                scopes.remove(Scope.global_scope())
-            if not with_class:
-                scopes = [s for s in scopes if not s.is_class()]
-            if not with_lib:
-                scopes = [s for s in scopes if not s.is_lib()]
-            if bottom_up:
-                scopes.reverse()
-            return scopes
-
-        cls.reorder_scopes()
-        cls.ordered_scopes = sorted(env.scopes.values())
-
-        return ret_helper()
-
-    @classmethod
-    def reorder_scopes(cls):
-        # hierarchical order
-        def set_h_order(scope, order):
-            if order > scope.order[0]:
-                scope.order = (order, -1)
-            else:
-                return
-            order += 1
-            for s in scope.children:
-                set_h_order(s, order)
-        for s in env.scopes.values():
-            s.order = (-1, 0)
-        for s in env.scopes.values():
-            if s.is_namespace():
-                s.order = (0, 0)
-                for f in s.children:
-                    set_h_order(f, 1)
-        if env.depend_graph:
-            nodes = env.depend_graph.bfs_ordered_nodes()
-            for s in nodes:
-                d_order = nodes.index(s)
-                preds = env.depend_graph.preds(s)
-                if preds:
-                    preds_max_order = max([nodes.index(p) for p in preds])
-                else:
-                    preds_max_order = 0
-                if d_order < preds_max_order:
-                    s.order = (s.order[0], d_order)
-                else:
-                    s.order = (s.order[0], preds_max_order + 1)
+    def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False) -> list['Scope']:
+        scopes:list[Scope] = sorted(env.scopes.values())
+        scopes = [s for s in scopes if not s.is_pure()]
+        # Exclude an no code scope
+        scopes = [s for s in scopes if cls.is_normal_scope(s)]
+        if not with_global:
+            scopes.remove(Scope.global_scope())
+        if not with_class:
+            scopes = [s for s in scopes if not s.is_class()]
+        if not with_lib:
+            scopes = [s for s in scopes if not s.is_lib()]
+        if bottom_up:
+            scopes.reverse()
+        return scopes
 
     @classmethod
     def get_class_scopes(cls, bottom_up=True):
@@ -218,7 +291,8 @@ class Scope(Tagged):
         return s.is_instantiated() or (s.parent and s.parent.is_instantiated())
 
     def __init__(self, parent, name, tags, lineno, scope_id):
-        super().__init__(tags)
+        Tagged.__init__(self, tags)
+        SymbolTable.__init__(self)
         if parent:
             self.name = parent.name + "." + name
             parent.append_child(self)
@@ -230,7 +304,6 @@ class Scope(Tagged):
         self.parent = parent
         self.lineno = lineno
         self.scope_id = scope_id
-        self.symbols = {}
         self.free_symbols = set()
         self.function_params = FunctionParams(self.is_method())
         self.return_type = None
@@ -244,8 +317,6 @@ class Scope(Tagged):
         self.field_usedef = None
         self.loop_tree = LoopNestTree()
         self.callee_instances = defaultdict(set)
-        #self.stgs = []
-        self.order = (-1, -1)
         self.block_count = 0
         self.workers = []
         self.worker_owner = None
@@ -256,6 +327,7 @@ class Scope(Tagged):
         self.branch_graph = Graph()
         self.closures = set()
         self.module_params = []
+        self.cloned_symbols = {}
 
     def __str__(self):
         s = '================================\n'
@@ -265,8 +337,10 @@ class Scope(Tagged):
         s += f'    tags: {tags}\n'
 
         s += 'Symbols:\n'
-        for sym in self.symbols.values():
-            s += f'    {sym}:{sym.typ} {sym.tags}\n'
+        for line in SymbolTable.__str__(self).split('\n'):
+            s += f'    {line}\n'
+        # for sym in self.symbols.values():
+        #    s += f'    {sym}:{sym.typ} {sym.tags}\n'
 
         if self.constants:
             s += 'Constants:\n'
@@ -422,20 +496,15 @@ class Scope(Tagged):
                 new_func_sym = symbol_map[func_sym]
                 new_callee_instances[new_func_sym] = copy(inst_names)
             s.callee_instances = new_callee_instances
-        s.order = self.order
 
-        if self.parent is parent.origin and hasattr(parent, 'cloned_symbols'):
+        if self.parent is parent.origin and parent.cloned_symbols:
             for sym in self.parent.symbols.values():
                 symbol_map[sym] = parent.cloned_symbols[sym]
 
         sym_replacer = SymbolReplacer(symbol_map)
         sym_replacer.process(s)
 
-        #s.parent.append_child(s)
-        #env.append_scope(s)
         s.cloned_symbols = symbol_map
-        s.cloned_blocks = block_map
-        s.cloned_stms = stm_map
 
         s.synth_params = self.synth_params.copy()
         s.closures = self.closures.copy()
@@ -557,30 +626,6 @@ class Scope(Tagged):
             scopes.extend(c.collect_scope())
         return scopes
 
-    def add_sym(self, name, tags=None, typ=None):
-        if typ is None:
-            typ = Type.undef()
-        if name in self.symbols:
-            raise RuntimeError("symbol '{}' is already registered ".format(name))
-        sym = Symbol(name, self, tags, typ)
-        self.symbols[name] = sym
-        return sym
-
-    def add_temp(self, temp_name=None, tags=None, typ=None):
-        name = Symbol.unique_name(temp_name)
-        if tags:
-            tags.add('temp')
-        else:
-            tags = {'temp'}
-        return self.add_sym(name, tags, typ)
-
-    def add_condition_sym(self):
-        return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool())
-
-    def add_param_sym(self, param_name, typ=None):
-        name = '{}_{}'.format(Symbol.param_prefix, param_name)
-        return self.add_sym(name, {'param'}, typ)
-
     def param_names(self, with_self=False):
         return self.function_params.param_names(with_self)
 
@@ -616,30 +661,10 @@ class Scope(Tagged):
     def del_free_sym(self, sym):
         self.free_symbols.discard(sym)
 
-    def del_sym(self, name):
-        if name in self.symbols:
-            del self.symbols[name]
-
-    def import_sym(self, sym):
-        if sym.name in self.symbols and sym is not self.symbols[sym.name]:
-            raise RuntimeError("symbol '{}' is already registered ".format(sym.name))
-        self.symbols[sym.name] = sym
-
-    def import_copy_sym(self, orig_sym, new_name):
-        if self.has_sym(new_name):
-            new_sym = self.symbols[new_name]
-        else:
-            orig_sym_t = orig_sym.typ
-            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym_t)
-            new_sym.import_from(orig_sym)
-        return new_sym
-
     def find_sym(self, name):
-        names = name.split('.')
-        if len(names) > 1:
-            return self.find_sym_r(names)
-        if name in self.symbols:
-            return self.symbols[name]
+        sym = SymbolTable.find_sym(self, name)
+        if sym:
+            return sym
         elif self.parent:
             if self.parent.is_class():
                 # look-up from bases
@@ -657,54 +682,8 @@ class Scope(Tagged):
             return found
         return None
 
-    def find_sym_r(self, names):
-        name = names[0]
-        sym = self.find_sym(name)
-        if sym and len(names) > 1:
-            sym_t = sym.typ
-            if sym_t.is_containable():
-                return sym_t.scope.find_sym_r(names[1:])
-            else:
-                return None
-        return sym
-
-    def has_sym(self, name):
-        return name in self.symbols
-
-    def gen_sym(self, name):
-        if self.has_sym(name):
-            sym = self.symbols[name]
-        else:
-            sym = self.add_sym(name)
-        return sym
-
-    def rename_sym(self, old, new):
-        assert old in self.symbols
-        sym = self.symbols[old]
-        del self.symbols[old]
-        sym.name = new
-        self.symbols[new] = sym
-        return sym
-
-    def inherit_sym(self, orig_sym, new_name):
-        #assert orig_sym.scope is self
-        if self.has_sym(new_name):
-            new_sym = self.symbols[new_name]
-        else:
-            orig_sym_t = orig_sym.typ
-            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym_t)
-            if orig_sym.ancestor:
-                new_sym.ancestor = orig_sym.ancestor
-            else:
-                new_sym.ancestor = orig_sym
-        return new_sym
-
     def find_scope_sym(self, obj, rec=True):
-        results = []
-        for sym in self.symbols.values():
-            sym_t = sym.typ
-            if sym_t.has_scope() and sym_t.scope is obj:
-                results.append(sym)
+        results = SymbolTable.find_scope_sym(self, obj)
         if rec:
             for c in self.children:
                 results.extend(c.find_scope_sym(obj, True))
