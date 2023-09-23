@@ -122,7 +122,6 @@ class TypePropagation(IRVisitor):
     def visit_NEW(self, ir):
         callee_scope = ir.callee_scope
         ret_t = Type.object(callee_scope)
-        callee_scope.return_type = ret_t
         ctor = callee_scope.find_ctor()
         param_symbols = ctor.param_symbols()
         arg_types = [self.visit(arg) for _, arg in ir.args]
@@ -171,15 +170,7 @@ class TypePropagation(IRVisitor):
 
     def visit_TEMP(self, ir):
         sym_t = ir.symbol.typ
-        if sym_t.is_class() and sym_t.scope and sym_t.scope.is_typeclass():
-            # Convert type classes defined in polyphony.typing to builtin scope(ex. int8 to builtin.int)
-            #
-            # t = Type.from_ir(ir)
-            # type_scope, args = Type.to_scope(t)
-            # new_sym_t = sym_t.clone(scope=type_scope, typeargs=args)
-            # ir.symbol.typ = new_sym_t
-            pass
-        elif sym_t.is_function() and ir.ctx == Ctx.LOAD:
+        if sym_t.is_function() and ir.ctx == Ctx.LOAD:
             # Cases in which a variable of function type is referenced
             func_scope = sym_t.scope
             self._add_scope(func_scope)
@@ -290,7 +281,10 @@ class TypePropagation(IRVisitor):
 
         typ = ir.symbol.typ
         if typ.is_tuple():
-            length = len(ir.items) * ir.repeat.value
+            if ir.repeat.is_a(CONST):
+                length = len(ir.items) * ir.repeat.value
+            else:
+                length = Type.ANY_LENGTH
             typ = typ.clone(element=item_t, length=length)
         else:
             if self.is_strict and ir.repeat.is_a(CONST):
@@ -471,6 +465,7 @@ class TypeSpecializer(TypePropagation):
         ret_t = callee_scope.return_type
         param_types = callee_scope.param_types()
         if param_types:
+            self._check_param_types(param_types, arg_types, ir.args, callee_scope.name)
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new = self._specialize_function_with_types(callee_scope, new_param_types)
             self._new_scopes.append(new_scope)
@@ -506,6 +501,7 @@ class TypeSpecializer(TypePropagation):
                 raise RejectPropagation(ir)
             param_types = worker.param_types()
             if param_types:
+                self._check_param_types(param_types, arg_types, ir.args[1:], callee_scope.name)
                 new_param_types = self._get_new_param_types(param_types, arg_types)
                 new_scope, is_new = self._specialize_worker_with_types(worker, new_param_types)
                 self._new_scopes.append(new_scope)
@@ -534,17 +530,19 @@ class TypeSpecializer(TypePropagation):
     def visit_NEW(self, ir):
         callee_scope = ir.callee_scope
         self._add_scope(callee_scope.parent)
+        if callee_scope.is_typeclass():
+            return Type.from_typeclass(callee_scope)
         ret_t = Type.object(callee_scope)
-        callee_scope.return_type = ret_t
         ctor = callee_scope.find_ctor()
         names = ctor.param_names()
         defvals = ctor.param_default_values()
         ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if callee_scope.is_specialized():
-            return callee_scope.return_type
+            return callee_scope.find_ctor().return_type
         param_types = ctor.param_types()
         if param_types:
+            self._check_param_types(param_types, arg_types, ir.args, callee_scope.name)
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new = self._specialize_class_with_types(callee_scope, new_param_types)
             self._new_scopes.append(new_scope)
@@ -553,7 +551,7 @@ class TypeSpecializer(TypePropagation):
                 new_scope_sym = callee_scope.parent.gen_sym(new_scope.base_name)
                 new_scope_sym.typ = Type.klass(new_scope)
                 ctor_t = Type.function(new_ctor,
-                                       new_scope.return_type,
+                                       Type.object(new_scope),
                                        tuple([new_ctor.param_types(with_self=True)[0]] + new_param_types))
                 new_ctor_sym = new_scope.find_sym(new_ctor.base_name)
                 new_ctor_sym.typ = ctor_t
@@ -561,7 +559,7 @@ class TypeSpecializer(TypePropagation):
                 self._add_scope(new_ctor)
             else:
                 new_scope_sym = callee_scope.parent.find_sym(new_scope.base_name)
-            ret_t = new_scope.return_type
+            ret_t = Type.object(new_scope)
             if ir.symbol.scope is not new_scope_sym.scope:
                 ir.symbol.scope.import_sym(new_scope_sym)
             ir.symbol = new_scope_sym
@@ -569,6 +567,21 @@ class TypeSpecializer(TypePropagation):
             self._add_scope(callee_scope)
             self._add_scope(ctor)
         return ret_t
+
+    def _check_param_types(self, param_types, arg_types, args, scope_name):
+        for param_t, arg_t, arg in zip(param_types, arg_types, args):
+            if not param_t.explicit:
+                continue
+            # Since eval_type is performed later, the expr type is not checked here
+            if arg_t.is_expr():
+                continue
+            if not param_t.can_assign(arg_t):
+                fail(self.current_stm, Errors.INCOMPATIBLE_FUNCTION_PARAMETER_TYPE,
+                     [arg[1].symbol.orig_name(),
+                      str(arg_t),
+                      arg[0],
+                      str(param_t),
+                      scope_name])
 
     def _get_new_param_types(self, param_types, arg_types):
         new_param_types = []
@@ -616,10 +629,8 @@ class TypeSpecializer(TypePropagation):
         closures = [c for c in scope.collect_scope() if c.is_closure()]
         new_scope = scope.instantiate(postfix, children + closures, with_tag=False)
         assert qualified_name == new_scope.name
-        assert new_scope.return_type is not None
-        new_scope.return_type = Type.object(new_scope)
         new_ctor = new_scope.find_ctor()
-        new_ctor.return_type = Type.object(new_ctor)
+        new_ctor.return_type = Type.object(new_scope)
 
         for sym, new_t in zip(new_ctor.param_symbols(), types):
             sym.typ = new_t.clone(explicit=True)
@@ -646,10 +657,8 @@ class TypeSpecializer(TypePropagation):
             return env.scopes[qualified_name], False
         new_scope = scope.instantiate(postfix, scope.children, with_tag=False)
         assert qualified_name == new_scope.name
-        assert new_scope.return_type is not None
-        new_scope.return_type = Type.object(new_scope)
         new_ctor = new_scope.find_ctor()
-        new_ctor.return_type = Type.object(new_ctor)
+        new_ctor.return_type = Type.object(new_scope)
         param_symbols = new_ctor.param_symbols()
         dtype_sym = param_symbols[0]
         dtype_sym.typ = typ.clone(explicit=True)
@@ -659,9 +668,9 @@ class TypeSpecializer(TypePropagation):
         new_scope.add_tag('specialized')
         for child in new_scope.children:
             for sym in child.param_symbols():
-                if sym.typ.is_class() and sym.typ.scope is None:
+                if sym.typ.is_class() and sym.typ.scope.is_object():
                     sym.typ = dtype
-            if child.return_type.is_class() and child.return_type.scope is None:
+            if child.return_type.is_object() and child.return_type.scope.is_object():
                 child.return_type = dtype
             child.add_tag('specialized')
         return new_scope, True

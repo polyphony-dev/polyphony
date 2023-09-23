@@ -371,6 +371,8 @@ class ScopeVisitor(ast.NodeVisitor):
         scope_qualified_name = (outer_scope.name + '.' + node.name)
         if scope_qualified_name == 'polyphony.io.Port':
             tags |= {'port', 'lib'}
+        elif scope_qualified_name == '__builtin__.object':
+            tags |= {'object'}
         if outer_scope.name == 'polyphony.typing':
             tags |= {'typeclass', 'lib'}
         if outer_scope.is_builtin():
@@ -575,7 +577,7 @@ class CodeVisitor(ast.NodeVisitor):
             params[0][1].add_tag('self')
 
         if self.current_scope.is_ctor():
-            self.current_scope.return_type = Type.object(self.current_scope)
+            self.current_scope.return_type = Type.object(self.current_scope.parent)
         elif node.returns:
             t = self._type_from_annotation(node.returns)
             if t:
@@ -654,8 +656,7 @@ class CodeVisitor(ast.NodeVisitor):
         for body in node.body:
             self.visit(body)
         logger.debug(node.name)
-        if (not self.current_scope.is_typeclass() and
-                not any([method.is_ctor() for method in self.current_scope.children])):
+        if not any([method.is_ctor() for method in self.current_scope.children]):
             tags = {'method', 'ctor'}
             if self.current_scope.parent.is_lib():
                 tags |= {'lib'}

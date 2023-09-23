@@ -3,9 +3,8 @@ from ...common.env import env
 
 
 class PortType(ScopeType):
-    def __init__(self, scope, attrs, explicit=True):
-        assert scope
-        super().__init__('port', scope, explicit)
+    def __init__(self, scope_name, attrs, explicit=True):
+        super().__init__('port', scope_name, explicit)
         self._dtype = attrs['dtype']
         self._direction = attrs['direction']
         self._init = attrs['init']
@@ -40,8 +39,8 @@ class PortType(ScopeType):
 
     def __str__(self):
         if env.dev_debug_mode:
-            if self._scope:
-                return f'{self._name}<{self._scope.base_name}, {self.dtype}, {self.direction}>'
+            if self.scope:
+                return f'{self._name}<{self.scope.base_name}, {self.dtype}, {self.direction}>'
             else:
                 return f'{self._name}<None>'
         return self._name

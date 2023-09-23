@@ -7,7 +7,6 @@ class IntType(Type):
         super().__init__('int', explicit)
         self._width = width
         self._signed = signed
-        self._scope = env.scopes['__builtin__.int']
 
     @property
     def width(self):
@@ -19,7 +18,8 @@ class IntType(Type):
 
     @property
     def scope(self):
-        return self._scope
+        assert '__builtin__.int' in env.scopes
+        return env.scopes['__builtin__.int']
 
     def clone(self, **args):
         clone = self.__new__(self.__class__)

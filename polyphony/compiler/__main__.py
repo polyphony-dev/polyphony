@@ -20,7 +20,7 @@ from .ahdl.transformers.iotransformer import IOTransformer
 from .ahdl.transformers.iotransformer import WaitTransformer
 from .ahdl.transformers.statereducer import StateReducer
 
-from .ir.builtin import builtin_symbols
+from .ir.builtin import builtin_symbols, clear_builtins
 from .ir.scope import Scope
 from .ir.symbol import Symbol
 from .ir.setlineno import SourceDump
@@ -480,7 +480,7 @@ def objtrans(driver, scope):
 
 
 def scalarize(driver, scope):
-    FlattenObjectArgs().process(scope)
+    #FlattenObjectArgs().process(scope)
     #dumpscope(driver, scope)
     FlattenFieldAccess().process(scope)
     #dumpscope(driver, scope)
@@ -832,6 +832,8 @@ def compile_plan():
         dbg(dumpmodule),
         transformwait,
         dbg(dumpmodule),
+        #reducestate,
+        #dbg(dumpmodule),
         canonicalize,
     ]
     plan = [p for p in plan if p is not None]
@@ -841,6 +843,7 @@ def compile_plan():
 def initialize():
     env.__init__()
     Symbol.initialize()
+    clear_builtins()
 
 
 def setup(src_file, options):

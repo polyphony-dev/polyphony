@@ -44,14 +44,18 @@ class Reg:
         self.v = initv  # meta: symbol=register
 
 
+@builtin
 class Net:
-    def __init__(self, dtype:generic, exp=None) -> object:
+    @builtin
+    def __init__(self, dtype:type, exp=None) -> object:
         pass
 
+    @builtin
     def assign(self, exp:function) -> None:
         pass
 
-    def rd(self) -> generic:
+    @builtin
+    def rd(self):
         pass
 
 
@@ -62,7 +66,7 @@ from . import typing
 @module
 @inlinelib
 class Channel:
-    def __init__(self, dtype:generic, capacity=4):
+    def __init__(self, dtype:type, capacity=4):
         self.din:dtype = 0
         self.write = False
         self.read = False

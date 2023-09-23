@@ -1,25 +1,20 @@
 @builtin
 class Port:
-    @builtin
-    def __init__(self, dtype:generic, direction:str, init=None,
+    def __init__(self, dtype:type, direction:str, init=None,
                  rewritable:bool=False) -> object:
         pass
 
-    @builtin
-    def rd(self) -> generic:
+    def rd(self) -> object:
         pass
 
     @mutable
-    @builtin
-    def wr(self, v:generic) -> None:
+    def wr(self, v) -> None:
         pass
 
-    @builtin
     def assign(self, fn:function) -> None:
         pass
 
-    @builtin
-    def edge(self, old:generic, new:generic) -> bool:
+    def edge(self, old, new) -> bool:
         pass
 
 

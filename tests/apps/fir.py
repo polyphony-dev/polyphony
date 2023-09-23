@@ -11,7 +11,7 @@ TAPS = 16
 EXPECTED_TOTAL = 44880
 
 
-def fir_filter_streaming_old(input:int, coeff:list, previous:list) -> int:
+def fir_filter_streaming_old(input:int, coeff:tuple, previous:list) -> int:
     temp = 0
     #UNROLLING THIS IMPROVES PERFROMANCE
     previous[15] = previous[14]
@@ -40,7 +40,7 @@ def fir_filter_streaming_old(input:int, coeff:list, previous:list) -> int:
         return temp
 
 
-def fir_filter_streaming(input: int, coeff: list, previous: list) -> int:
+def fir_filter_streaming(input: int, coeff: tuple, previous: list) -> int:
     N = TAPS - 1
     for j in unroll(range(N)):
         jj = N - j
@@ -66,13 +66,13 @@ def fir():
     total = 0
     for i in range(1, INPUTSIZE + 1):
         output[i - 1] = fir_filter_streaming(i, coeff, previous)
-        #output[i - 1] = fir_filter_streaming_old(i, coeff, previous)
+        # output[i - 1] = fir_filter_streaming_old(i, coeff, previous)
         total += output[i - 1]
 
     return total
 
 
-@testbench
+@testbench(target=fir)
 def test():
     assert EXPECTED_TOTAL == fir()
 

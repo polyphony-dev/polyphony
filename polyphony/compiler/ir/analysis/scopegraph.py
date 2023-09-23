@@ -142,6 +142,7 @@ class UsingScopeDetector(IRVisitor):
 
     def visit_NEW(self, ir):
         sym_t = ir.symbol.typ
-        self._add_scope(sym_t.scope)
-        self._add_scope(sym_t.scope.find_ctor())
+        if sym_t.has_valid_scope():
+            self._add_scope(sym_t.scope)
+            self._add_scope(sym_t.scope.find_ctor())
         self.visit_args(ir.args, ir.kwargs)

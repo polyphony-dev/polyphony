@@ -2,6 +2,7 @@
 from enum import IntEnum
 from .symbol import Symbol
 from ..common.utils import is_a, find_id_index
+from .types.type import Type
 
 
 op2sym_map = {
@@ -588,7 +589,7 @@ class NEW(IRCallable):
         return s
 
     def type_str(self):
-        s = f'{self._sym.typ}('
+        s = f'{Type.object(self._sym.typ.scope)}('
         s += ', '.join([f'{name}={arg.type_str()}' for name, arg in self._args])
         if self._kwargs:
             s += ', '

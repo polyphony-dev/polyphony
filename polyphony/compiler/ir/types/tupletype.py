@@ -7,7 +7,6 @@ class TupleType(Type):
         super().__init__('tuple', explicit)
         self._element = elm
         self._length= length
-        self._scope = env.scopes['__builtin__.tuple']
 
     @property
     def element(self):
@@ -19,7 +18,8 @@ class TupleType(Type):
 
     @property
     def scope(self):
-        return self._scope
+        assert '__builtin__.tuple' in env.scopes
+        return env.scopes['__builtin__.tuple']
 
     def clone(self, **args):
         clone = self.__new__(self.__class__)

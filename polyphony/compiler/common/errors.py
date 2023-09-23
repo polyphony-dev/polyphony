@@ -19,16 +19,17 @@ class Errors(Enum):
     INCOMPATIBLE_TYPES = 105
     INCOMPATIBLE_RETURN_TYPE = 106
     INCOMPATIBLE_PARAMETER_TYPE = 107
-    LEN_TAKES_ONE_ARG = 108
-    LEN_TAKES_SEQ_TYPE = 109
-    IS_NOT_CALLABLE = 110
-    IS_NOT_SUBSCRIPTABLE = 111
-    CONFLICT_TYPE_HINT = 112
-    UNSUPPORTED_ATTRIBUTE_TYPE_HINT = 113
-    UNKNOWN_TYPE_NAME = 114
-    MUST_BE_X = 115
-    GOT_UNEXPECTED_KWARGS = 116
-    UNKNOWN_X_IS_SPECIFIED = 117
+    INCOMPATIBLE_FUNCTION_PARAMETER_TYPE = 108
+    LEN_TAKES_ONE_ARG = 109
+    LEN_TAKES_SEQ_TYPE = 110
+    IS_NOT_CALLABLE = 111
+    IS_NOT_SUBSCRIPTABLE = 112
+    CONFLICT_TYPE_HINT = 113
+    UNSUPPORTED_ATTRIBUTE_TYPE_HINT = 114
+    UNKNOWN_TYPE_NAME = 115
+    MUST_BE_X = 116
+    GOT_UNEXPECTED_KWARGS = 117
+    UNKNOWN_X_IS_SPECIFIED = 118
 
     # semantic errors
     REFERENCED_BEFORE_ASSIGN = 200
@@ -123,6 +124,7 @@ ERROR_MESSAGES = {
     Errors.INCOMPATIBLE_TYPES: "{} and {} are incompatible types",
     Errors.INCOMPATIBLE_RETURN_TYPE: "Type of return value must be {}, not {}",
     Errors.INCOMPATIBLE_PARAMETER_TYPE: "'{}' is incompatible type as a parameter of {}()",
+    Errors.INCOMPATIBLE_FUNCTION_PARAMETER_TYPE: "'{}'({}) is incompatible type as a parameter '{}'({}) of {}()",
     Errors.CONFLICT_TYPE_HINT: "A type hint is conflicted",
     Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT: "A type hint for other than 'self.*' is not supported",
     Errors.UNKNOWN_TYPE_NAME: "Unknown type name '{}'",

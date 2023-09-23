@@ -206,7 +206,7 @@ class Scope(Tagged, SymbolTable):
         'testbench', 'pure', 'timed', 'comb', 'assigned',
         'module', 'worker', 'loop_worker', 'instantiated', 'specialized',
         'lib', 'namespace', 'builtin', 'decorator',
-        'port', 'typeclass',
+        'port', 'typeclass', 'object',
         'function_module',
         'inlinelib', 'unflatten',
         'package', 'directory',
@@ -932,6 +932,11 @@ class SymbolReplacer(IRVisitor):
         for item in ir.items:
             self.visit(item)
         self.visit(ir.repeat)
+
+    def visit_NEW(self, ir):
+        if ir.symbol in self.sym_map:
+            ir.symbol = self.sym_map[ir.symbol]
+        self.visit_args(ir.args, ir.kwargs)
 
 
 def write_dot(scope, tag):

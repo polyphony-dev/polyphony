@@ -88,6 +88,9 @@ class Symbol(Tagged):
     def __str__(self):
         return self._name
 
+    def __repr__(self):
+        return f'{self._name}({self._id})'
+
     def __lt__(self, other):
         return self._name < other._name
 

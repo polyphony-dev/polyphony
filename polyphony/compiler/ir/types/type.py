@@ -3,16 +3,16 @@
 class Type(object):
     ANY_LENGTH = -1
 
-    def __init__(self, name, explicit):
+    def __init__(self, name:str, explicit:bool):
         self._name = name
         self._explicit = explicit
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @property
-    def explicit(self):
+    def explicit(self) -> bool:
         return self._explicit
 
     def __getattr__(self, name):
@@ -22,99 +22,16 @@ class Type(object):
         else:
             raise AttributeError(name)
 
-    #def _with_x(self, attrname, value):
-    #    copy = Type(self.name, **self.attrs.copy())
-    #    copy.attrs[attrname] = value
-    #    return copy
-
     def clone(self, **args):
         raise NotImplementedError()
 
     @classmethod
-    def from_annotation(cls, ann, scope, is_lib=False):
-        if isinstance(ann, str):
-            t = None
-            if ann in env.all_scopes:
-                scope = env.all_scopes[ann]
-                if scope.is_typeclass():
-                    t = Type.from_typeclass(scope, explicit=True)
-                else:
-                    t = Type.object(scope, explicit=True)
-            elif ann == 'int':
-                t = Type.int(explicit=True)
-            elif ann == 'uint':
-                t = Type.int(signed=False, explicit=True)
-            elif ann == 'bool':
-                t = Type.bool(explicit=True)
-            elif ann == 'list':
-                t = Type.list(Type.undef(), explicit=True)
-            elif ann == 'tuple':
-                t = Type.tuple(Type.undef(), Type.ANY_LENGTH, explicit=True)
-            elif ann == 'object':
-                t = Type.object(None, explicit=True)
-            elif ann == 'str':
-                t = Type.str(explicit=True)
-            elif ann == 'None':
-                t = Type.none(explicit=True)
-            elif ann == 'generic':
-                t = Type.klass(None, explicit=True)
-            elif ann == '...':
-                t = Type.ellipsis_t
-            else:
-                while scope:
-                    sym = scope.find_sym(ann)
-                    if sym:
-                        break
-                    else:
-                        scope = scope.parent
-                if sym and sym.typ.has_valid_scope():
-                    type_scope = sym.typ.scope
-                    if type_scope.is_typeclass():
-                        t = Type.from_typeclass(type_scope, explicit=True)
-                    else:
-                        t = Type.object(type_scope, explicit=True)
-                else:
-                    raise NameError(ann + ' is not defined')
-            return t
-        elif isinstance(ann, tuple):
-            assert len(ann) == 2
-            first = ann[0]
-            second = ann[1]
-            if isinstance(first, tuple):  # in case of Type[T][Length]
-                t = Type.from_annotation(first, scope)
-                if t.is_seq():
-                    length = int(second)
-                    t = t.clone(length=length)
-                else:
-                    assert False
-                return t
-            elif isinstance(first, str):  # in case of Type[T]
-                sym = scope.find_sym(first)
-                if not sym:
-                    raise NameError(first + ' is not defined')
-                target_scope = sym.typ.scope
-                assert target_scope
-                if isinstance(second, tuple):
-                    elms = [Type.from_annotation(elm, scope) for elm in second]
-                    if len(elms) == 2 and elms[1].is_ellipsis():
-                        pass
-                    elif not all([elms[0] == elm for elm in elms[1:]]):
-                        raise TypeError('multiple type tuple is not supported yet')
-                elif isinstance(second, str):
-                    elms = [Type.from_annotation(second, scope)]
-                else:
-                    assert False
-                if target_scope.is_typeclass():
-                    t = Type.from_typeclass(target_scope, elms, explicit=True)
-                    if t.is_seq():
-                        t = t.clone(length=Type.ANY_LENGTH)
-                    return t
-        elif ann is None:
-            return Type.undef()
-        assert False
-
-    @classmethod
     def from_ir(cls, ann, explicit=False) -> 'Type':
+        '''
+        Interpret and return the type expressed in IR
+        Examples: TEMP('int') -> Type.int()
+                  BINOP('Add', TEMP('x'), CONST(1)) -> Type.expr(...)
+        '''
         from ..ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
         from ..symbol import Symbol
         assert ann
@@ -123,16 +40,25 @@ class Type(object):
         if ann.is_a(CONST) and ann.value is None:
             t = Type.none(explicit)
         elif ann.is_a(TEMP) and ann.symbol.typ.has_valid_scope():
-            ann_sym_type = ann.symbol.typ
+            ann_sym = ann.symbol
+            ann_sym_type = ann_sym.typ
             scope = ann_sym_type.scope
-            if scope and scope.is_typeclass():
-                t = Type.from_typeclass(scope, explicit=explicit)
+            if ann_sym_type.is_class() and scope.is_object() and not ann_sym.is_builtin():
+                # ann is a typevar (ex. dtype)
+                t = Type.expr(EXPR(ann))
+            elif scope.is_typeclass():
+                if scope.name == '__builtin__.type':
+                    t = Type.klass(env.scopes['__builtin__.object'], explicit=explicit)
+                else:
+                    t = Type.from_typeclass(scope, explicit=explicit)
             else:
                 t = Type.object(scope, explicit)
         elif ann.is_a(ATTR) and isinstance(ann.symbol, Symbol) and ann.symbol.typ.has_valid_scope():
             ann_attr_type = ann.symbol.typ
             scope = ann_attr_type.scope
-            if scope.is_typeclass():
+            if scope.is_object():
+                t = Type.object(scope, explicit)
+            elif scope.is_typeclass():
                 t = Type.from_typeclass(scope, explicit=explicit)
             else:
                 t = Type.object(scope, explicit)
@@ -181,13 +107,11 @@ class Type(object):
         elif scope.base_name == 'bit':
             return Type.int(1, signed=False, explicit=explicit)
         elif scope.base_name == 'object':
-            return Type.object(None, explicit=explicit)
-        elif scope.base_name == 'generic':
-            return Type.klass(None, explicit=explicit)
-        elif scope.base_name == 'Type':
-            raise NotImplementedError()
+            return Type.object(env.scopes['__builtin__.object'], explicit=explicit)
+        # elif scope.base_name == 'type':
+        #     return Type.object(env.scopes['__builtin__.type'], explicit=explicit)
         elif scope.base_name == 'function':
-            return Type.function(None, explicit=explicit)
+            return Type.function(env.scopes['__builtin__.object'], explicit=explicit)
         elif scope.base_name == 'str':
             return Type.str(explicit=explicit)
         elif scope.base_name == 'list':
@@ -299,29 +223,29 @@ class Type(object):
         if ret_t is None:
             ret_t = Type.undef()
         if param_ts is None:
-            param_ts = []
+            param_ts:tuple = tuple()
         from .functiontype import FunctionType
-        return FunctionType(scope, ret_t, param_ts, explicit)
+        return FunctionType(scope.name, ret_t, param_ts, explicit)
 
     @classmethod
     def object(cls, scope, explicit=False):
         from .objecttype import ObjectType
-        return ObjectType(scope, explicit)
+        return ObjectType(scope.name, explicit)
 
     @classmethod
     def klass(cls, scope, explicit=False):
         from .classtype import ClassType
-        return ClassType(scope, explicit)
+        return ClassType(scope.name, explicit)
 
     @classmethod
     def port(cls, portcls, attrs):
         from .porttype import PortType
-        return PortType(portcls, attrs)
+        return PortType(portcls.name, attrs)
 
     @classmethod
     def namespace(cls, scope, explicit=False):
         from .namespacetype import NamespaceType
-        return NamespaceType(scope, explicit)
+        return NamespaceType(scope.name, explicit)
 
     @classmethod
     def expr(cls, expr):
@@ -397,7 +321,10 @@ class Type(object):
                     elms = elm
                 s = f't_{elms}'
             elif t.is_class():
-                name = t.scope.scope_id
+                if t.scope.is_typeclass():
+                    name = t.scope.base_name
+                else:
+                    name = t.scope.scope_id
                 s = f'c{name}'
             elif t.is_int():
                 s = f'i{t.width}'

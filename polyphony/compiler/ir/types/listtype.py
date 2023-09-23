@@ -4,12 +4,11 @@ from ...common.env import env
 
 
 class ListType(Type):
-    def __init__(self, elm, length, explicit=True):
+    def __init__(self, elm: Type, length: int, explicit=True):
         super().__init__('list', explicit)
         self._element = elm
         self._length= length
         self._ro = False
-        self._scope = env.scopes['__builtin__.list']
 
     @property
     def element(self):
@@ -25,7 +24,8 @@ class ListType(Type):
 
     @property
     def scope(self):
-        return self._scope
+        assert '__builtin__.list' in env.scopes
+        return env.scopes['__builtin__.list']
 
     def is_any_length(self):
         return isinstance(self._length, ExprType) or (isinstance(self._length, int) and self._length == Type.ANY_LENGTH)
@@ -46,7 +46,7 @@ class ListType(Type):
             return False
         elif isinstance(self._length, int):
             if isinstance(rhs_t._length, int):
-                return self._length == rhs_t._length or self._length == Type.ANY_LENGTH
+                return self._length == rhs_t._length or self._length == Type.ANY_LENGTH or rhs_t._length == Type.ANY_LENGTH
             elif isinstance(rhs_t._length, ExprType):
                 return True
         elif isinstance(self._length, ExprType):

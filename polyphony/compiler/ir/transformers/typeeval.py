@@ -61,9 +61,6 @@ class TypeEvaluator(object):
     def visit_none(self, t):
         return t
 
-    def visit_generic(self, t):
-        return t
-
     def visit_undef(self, t):
         return t
 

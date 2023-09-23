@@ -110,7 +110,9 @@ class HDLModuleBuilder(object):
                 else:
                     assert False
             case_items = []
-            for i, item in enumerate(array.items):
+            assert array.repeat.is_a(CONST)
+            items = array.items * array.repeat.value
+            for i, item in enumerate(items):
                 assert item.is_a(CONST)
                 connect = AHDL_BLOCK(str(i), (AHDL_CONNECT(fname, AHDL_CONST(item.value)), ))
                 case_items.append(AHDL_CASE_ITEM(AHDL_CONST(i), connect))

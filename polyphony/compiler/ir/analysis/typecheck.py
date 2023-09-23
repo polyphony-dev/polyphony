@@ -110,6 +110,9 @@ class TypeChecker(IRVisitor):
         arg_len = len(ir.args)
 
         callee_scope = ir.callee_scope
+        if callee_scope.is_typeclass():
+            return Type.from_typeclass(callee_scope)
+
         ctor = callee_scope.find_ctor()
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,

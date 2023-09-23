@@ -26,7 +26,7 @@ class object: pass
 
 
 @typeclass
-class generic: pass
+class type: pass
 
 
 @typeclass

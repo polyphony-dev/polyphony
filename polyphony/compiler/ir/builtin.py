@@ -12,7 +12,7 @@ builtin_symbols = {}
 builtin_types = {
     'none', 'int', 'bool', 'str',
     'list', 'tuple', 'object',
-    'generic',
+    'type',
     'fuction',
 }
 
@@ -33,3 +33,6 @@ def append_builtin(namespace, scope):
         assert False
     sym = Symbol(name, namespace, {'builtin'}, t)
     builtin_symbols[name] = sym
+
+def clear_builtins():
+    builtin_symbols.clear()
