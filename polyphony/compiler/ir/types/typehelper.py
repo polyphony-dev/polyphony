@@ -33,7 +33,7 @@ def type_from_ir(ir: IR, explicit=False) -> Type:
             t = Type.expr(EXPR(ir))
     elif ir.is_a(TEMP):
         temp = cast(TEMP, ir)
-        if temp.symbol.typ.has_valid_scope():
+        if temp.symbol.typ.has_scope():
             sym = temp.symbol
             sym_type = sym.typ
             scope = sym_type.scope
@@ -51,7 +51,7 @@ def type_from_ir(ir: IR, explicit=False) -> Type:
             t = Type.expr(EXPR(ir))
     elif ir.is_a(ATTR):
         attr = cast(ATTR, ir)
-        if isinstance(attr.symbol, Symbol) and attr.symbol.typ.has_valid_scope():
+        if isinstance(attr.symbol, Symbol) and attr.symbol.typ.has_scope():
             attr_type = attr.symbol.typ
             scope = attr_type.scope
             if attr_type.is_class() and scope.is_object() and not attr.symbol.is_builtin():

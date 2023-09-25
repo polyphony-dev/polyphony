@@ -210,7 +210,7 @@ class PortConnector(IRVisitor):
         ports = []
         for sym in scope.symbols.values():
             sym_t = sym.typ
-            if sym_t.has_valid_scope() and sym_t.scope.is_port():
+            if sym_t.has_scope() and sym_t.scope.is_port():
                 ports.append(sym)
         return sorted(ports)
 
@@ -339,7 +339,7 @@ class UnusedPortCleaner(IRTransformer):
     def visit_TEMP(self, ir):
         if ir.ctx is Ctx.STORE:
             sym_t = ir.symbol.typ
-            if sym_t.has_valid_scope() and sym_t.scope.is_port():
+            if sym_t.has_scope() and sym_t.scope.is_port():
                 assert self.current_stm.is_a(MOVE)
                 self.port_syms.add(self.current_stm.dst.symbol)
         return ir

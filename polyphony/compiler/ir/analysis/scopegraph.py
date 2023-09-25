@@ -52,7 +52,7 @@ class ScopeDependencyGraphBuilder(IRVisitor):
         if sym_t.has_scope():
             if ir.symbol.is_self():
                 return
-            if sym_t.has_valid_scope():
+            if sym_t.has_scope():
                 self._add_scope(sym_t.scope)
         else:
             if ir.symbol.is_imported():
@@ -103,7 +103,7 @@ class UsingScopeDetector(IRVisitor):
     def _collect_scope_symbol(self, scope):
         scopes = []
         for sym in scope.symbols.values():
-            if sym.typ.has_valid_scope():
+            if sym.typ.has_scope():
                 s = sym.typ.scope
                 scopes.append(s)
         return scopes
@@ -121,7 +121,7 @@ class UsingScopeDetector(IRVisitor):
         if sym_t.has_scope():
             if ir.symbol.is_self():
                 return
-            if sym_t.has_valid_scope():
+            if sym_t.has_scope():
                 self._add_scope(sym_t.scope)
         else:
             if ir.symbol.is_imported():
@@ -136,13 +136,13 @@ class UsingScopeDetector(IRVisitor):
         if isinstance(ir.symbol, str):
             return
         attr_t = ir.symbol.typ
-        if attr_t.has_valid_scope():
+        if attr_t.has_scope():
             attr_scope = attr_t.scope
             self._add_scope(attr_scope)
 
     def visit_NEW(self, ir):
         sym_t = ir.symbol.typ
-        if sym_t.has_valid_scope():
+        if sym_t.has_scope():
             self._add_scope(sym_t.scope)
             self._add_scope(sym_t.scope.find_ctor())
         self.visit_args(ir.args, ir.kwargs)

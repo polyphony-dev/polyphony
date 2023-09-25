@@ -129,9 +129,6 @@ class Type(object):
     def has_scope(self):
         return self.name in ('class', 'function', 'object', 'namespace')
 
-    def has_valid_scope(self):
-        return self.has_scope() and self.scope
-
     def is_same(self, other):
         return self.name == other.name
 

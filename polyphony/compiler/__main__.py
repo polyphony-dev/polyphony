@@ -216,7 +216,7 @@ def select_using_scopes():
     def collect_scope_symbol(scope):
         scopes = []
         for sym in scope.symbols.values():
-            if sym.typ.has_valid_scope():
+            if sym.typ.has_scope():
                 s = sym.typ.scope
                 if s.is_builtin() or s.is_decorator() or s.is_typeclass() or s.is_namespace():
                     continue
