@@ -2,7 +2,7 @@ from .constopt import try_get_constant
 from ..ir import CONST, TEMP, EXPR
 from ..irvisitor import IRVisitor
 from ..types.type import Type
-
+from ..types.typehelper import type_from_typeclass
 
 class TypeEvaluator(object):
     def __init__(self, scope):
@@ -102,10 +102,7 @@ class TypeExprEvaluator(IRVisitor):
         if sym_t.is_class():
             typ_scope = sym_t.scope
             if typ_scope.is_typeclass():
-                t = Type.from_typeclass(typ_scope)
-                # if sym_t.has_typeargs():
-                #     args = sym_t.get_typeargs()
-                #     t.attrs.update(args)
+                t = type_from_typeclass(typ_scope)
                 return t
             elif typ_scope.is_function():
                 assert False

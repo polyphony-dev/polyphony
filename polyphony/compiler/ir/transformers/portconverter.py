@@ -7,6 +7,7 @@ from ..ir import Ctx, CONST, TEMP, ATTR, CALL, NEW, RET, MOVE, EXPR
 from ..irhelper import find_move_src
 from ..irvisitor import IRVisitor, IRTransformer
 from ..types.type import Type
+from ..types.typehelper import type_from_ir
 from ...common.common import fail, warn
 from ...common.env import env
 from ...common.errors import Errors, Warnings
@@ -43,7 +44,7 @@ class PortTypeProp(TypePropagation):
                     else:
                         attrs[name] = a.value
                 elif a.is_a(TEMP) and a.symbol.typ.is_class():
-                    attrs[name] = Type.from_ir(a)
+                    attrs[name] = type_from_ir(a)
                 else:
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
             assert 'dtype' in attrs

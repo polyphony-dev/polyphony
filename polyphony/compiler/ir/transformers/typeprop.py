@@ -4,6 +4,7 @@ from ..irvisitor import IRVisitor
 from ..ir import *
 from ..scope import Scope
 from ..types.type import Type
+from ..types.typehelper import type_from_ir, type_from_typeclass, type_to_scope
 from ..symbol import Symbol
 from ...common.env import env
 from ...common.common import fail
@@ -219,12 +220,12 @@ class TypePropagation(IRVisitor):
             raise RejectPropagation(ir)
 
         if mem_t.is_class() and mem_t.scope.is_typeclass():
-            t = Type.from_ir(ir)
+            t = type_from_ir(ir)
             if t.is_object():
                 mem_t = mem_t.clone(scope=t.scope)
             else:
-                type_scope, args = Type.to_scope(t)
-                mem_t = mem_t.clone(scope=type_scope, typeargs=args)
+                type_scope = type_to_scope(t)
+                mem_t = mem_t.clone(scope=type_scope)
             return mem_t
         elif not mem_t.is_seq():
             type_error(self.current_stm, Errors.IS_NOT_SUBSCRIPTABLE,
@@ -531,7 +532,7 @@ class TypeSpecializer(TypePropagation):
         callee_scope = ir.callee_scope
         self._add_scope(callee_scope.parent)
         if callee_scope.is_typeclass():
-            return Type.from_typeclass(callee_scope)
+            return type_from_typeclass(callee_scope)
         ret_t = Type.object(callee_scope)
         ctor = callee_scope.find_ctor()
         names = ctor.param_names()
@@ -642,7 +643,7 @@ class TypeSpecializer(TypePropagation):
         if typ.is_class():
             typscope = typ.scope
             if typscope.is_typeclass():
-                dtype = Type.from_typeclass(typscope)
+                dtype = type_from_typeclass(typscope)
                 #if typ.has_typeargs():
                 #    args = typ.get_typeargs()
                 #    dtype.attrs.update(args)  # FIXME

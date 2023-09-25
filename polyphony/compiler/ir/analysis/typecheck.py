@@ -1,6 +1,7 @@
 from ..irvisitor import IRVisitor
 from ..ir import *
 from ..types.type import Type
+from ..types.typehelper import type_from_typeclass
 from ...common.env import env
 from ...common.common import fail, warn
 from ...common.errors import Errors, Warnings
@@ -111,7 +112,7 @@ class TypeChecker(IRVisitor):
 
         callee_scope = ir.callee_scope
         if callee_scope.is_typeclass():
-            return Type.from_typeclass(callee_scope)
+            return type_from_typeclass(callee_scope)
 
         ctor = callee_scope.find_ctor()
         if not ctor and arg_len:

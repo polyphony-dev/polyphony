@@ -14,6 +14,7 @@ from ...ir.irhelper import op2str, eval_unop, eval_binop, eval_relop
 from ...ir.scope import Scope, FunctionParam
 from ...ir.symbol import Symbol
 from ...ir.types.type import Type
+from ...ir.types.typehelper import type_from_ir, type_from_typeclass
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -1572,7 +1573,7 @@ class CodeVisitor(ast.NodeVisitor):
         self._parsing_annotation = True
         ann_expr = self.visit(ann)
         self._parsing_annotation = False
-        t = Type.from_ir(ann_expr, explicit=True)
+        t = type_from_ir(ann_expr, explicit=True)
         return t
 
 
@@ -1690,7 +1691,7 @@ class PureScopeVisitor(ast.NodeVisitor):
             return
         sym_scope = sym_t.scope
         if sym_scope.is_typeclass():
-            t = Type.from_typeclass(sym_scope)
+            t = type_from_typeclass(sym_scope)
         else:
             t = Type.object(sym_scope)
         self._add_local_type_hint(self.scope.local_type_hints, func, t)
