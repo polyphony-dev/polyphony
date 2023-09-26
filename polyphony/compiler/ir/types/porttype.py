@@ -1,35 +1,39 @@
+from dataclasses import dataclass, field
+from dataclasses import replace as dataclasses_replace
 from .scopetype import ScopeType
 from ...common.env import env
 
 
+@dataclass(frozen=True)
 class PortType(ScopeType):
-    def __init__(self, scope_name, attrs, explicit=True):
-        super().__init__('port', scope_name, explicit)
-        self._dtype = attrs['dtype']
-        self._direction = attrs['direction']
-        self._init = attrs['init']
-        self._assigned = attrs['assigned']
-        self._root_symbol = attrs['root_symbol']
+    name: str = field(init=False, default='port')
+    attrs: dict
+
+    def clone(self, **args):
+        attrs = self.attrs.copy()
+        for k, v in args.items():
+            attrs[k] = v
+        return dataclasses_replace(self, attrs=attrs)
 
     @property
     def dtype(self):
-        return self._dtype
+        return self.attrs['dtype']
 
     @property
     def direction(self):
-        return self._direction
+        return self.attrs['direction']
 
     @property
     def init(self):
-        return self._init
+        return self.attrs['init']
 
     @property
     def assigned(self):
-        return self._assigned
+        return self.attrs['assigned']
 
     @property
     def root_symbol(self):
-        return self._root_symbol
+        return self.attrs['root_symbol']
 
     def port_owner(self):
         if self.root_symbol.scope.is_ctor():
@@ -40,28 +44,25 @@ class PortType(ScopeType):
     def __str__(self):
         if env.dev_debug_mode:
             if self.scope:
-                return f'{self._name}<{self.scope.base_name}, {self.dtype}, {self.direction}>'
+                return f'{self.name}<{self.scope.base_name}, {self.dtype}, {self.direction}>'
             else:
-                return f'{self._name}<None>'
-        return self._name
-
-    def __hash__(self):
-        return hash((super().__hash__(), self.dtype, self.direction, self.init, self.assigned, self.root_symbol))
+                return f'{self.name}<None>'
+        return self.name
 
     def can_assign(self, rhs_t):
-        if self._name != rhs_t._name:
+        if self.name != rhs_t.name:
             return False
-        elif self._dtype != rhs_t._dtype:
+        elif self.dtype != rhs_t.dtype:
             return False
-        elif self._direction != rhs_t._direction:
+        elif self.direction != rhs_t.direction:
             return False
-        elif self._init != rhs_t._init:
+        elif self.init != rhs_t.init:
             return False
-        elif self._assigned != rhs_t._assigned:
+        elif self.assigned != rhs_t.assigned:
             return False
-        elif self._root_symbol != rhs_t._root_symbol:
+        elif self.root_symbol != rhs_t.root_symbol:
             return False
-        elif self._scope is not rhs_t._scope:
+        elif self.scope is not rhs_t.scope:
             return False
         return True
 

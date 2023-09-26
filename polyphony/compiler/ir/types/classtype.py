@@ -1,17 +1,20 @@
+from dataclasses import dataclass, field
 from .scopetype import ScopeType
 from ...common.env import env
 
 
+@dataclass(frozen=True)
 class ClassType(ScopeType):
-    def __init__(self, scope_name, explicit=True):
-        super().__init__('class', scope_name, explicit)
+    name: str = field(init=False, default='class')
+
+    def __post_init__(self):
         assert self.scope.is_class() or self.scope.is_typeclass()
 
     def can_assign(self, rhs_t):
-        return self._name == rhs_t._name and (self.scope is rhs_t.scope or self.scope.is_object())
+        return self.name == rhs_t.name and (self.scope is rhs_t.scope or self.scope.is_object())
 
     def propagate(self, rhs_t):
-        if self._name == rhs_t._name and self.scope.is_object():
+        if self.name == rhs_t.name and self.scope.is_object():
             return rhs_t.clone(explicit=self.explicit)
         else:
             return self

@@ -1,19 +1,12 @@
-﻿from ...common.env import env
+﻿from dataclasses import dataclass
+from typing import ClassVar
+from ...common.env import env
 
-class Type(object):
-    ANY_LENGTH = -1
-
-    def __init__(self, name:str, explicit:bool):
-        self._name = name
-        self._explicit = explicit
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def explicit(self) -> bool:
-        return self._explicit
+@dataclass(frozen=True)
+class Type:
+    ANY_LENGTH: ClassVar[int] = -1
+    name: str
+    explicit: bool
 
     def __getattr__(self, name):
         if name.startswith('is_'):
@@ -26,16 +19,7 @@ class Type(object):
         raise NotImplementedError()
 
     def __str__(self):
-        return self._name
-
-    def __repr__(self):
-        return str(self)
-
-    def __hash__(self):
-        return hash((self._name, self._explicit))
-
-    def __eq__(self, other):
-        return hash(self) == hash(other)
+        return self.name
 
     @classmethod
     def undef(cls):
@@ -47,7 +31,7 @@ class Type(object):
         from .inttype import IntType
         if width is None:
             width = env.config.default_int_width
-        return IntType(width, signed, explicit)
+        return IntType(explicit, width, signed)
 
     @classmethod
     def bool(cls, explicit=False):
@@ -71,47 +55,47 @@ class Type(object):
     @classmethod
     def list(cls, elm_t, length=ANY_LENGTH, explicit=False):
         from .listtype import ListType
-        return ListType(elm_t, length, explicit)
+        return ListType(explicit, elm_t, length, False)
 
     @classmethod
     def tuple(cls, elm_t, length, explicit=False):
         from .tupletype import TupleType
-        return TupleType(elm_t, length, explicit)
+        return TupleType(explicit, elm_t, length)
 
     @classmethod
     def function(cls, scope, ret_t=None, param_ts=None, explicit=False):
         if ret_t is None:
             ret_t = Type.undef()
         if param_ts is None:
-            param_ts:tuple = tuple()
+            param_ts = []
         from .functiontype import FunctionType
-        return FunctionType(scope.name, ret_t, param_ts, explicit)
+        return FunctionType(explicit, scope.name, ret_t, param_ts)
 
     @classmethod
     def object(cls, scope, explicit=False):
         from .objecttype import ObjectType
-        return ObjectType(scope.name, explicit)
+        return ObjectType(explicit, scope.name)
 
     @classmethod
     def klass(cls, scope, explicit=False):
         from .classtype import ClassType
-        return ClassType(scope.name, explicit)
+        return ClassType(explicit, scope.name)
 
     @classmethod
     def port(cls, portcls, attrs):
         from .porttype import PortType
-        return PortType(portcls.name, attrs)
+        return PortType(False, portcls.name, attrs)
 
     @classmethod
     def namespace(cls, scope, explicit=False):
         from .namespacetype import NamespaceType
-        return NamespaceType(scope.name, explicit)
+        return NamespaceType(explicit, scope.name)
 
     @classmethod
     def expr(cls, expr):
         assert expr
         from .exprtype import ExprType
-        return ExprType(expr)
+        return ExprType(True, expr)
 
     @classmethod
     def union(cls, types):

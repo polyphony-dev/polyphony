@@ -1,7 +1,8 @@
+from dataclasses import dataclass, field
 from .simpletype import SimpleType
-from ...common.env import env
 
 
+@dataclass(frozen=True)
 class StrType(SimpleType):
-    def __init__(self, explicit):
-        super().__init__('str', '__builtin__.str', explicit=explicit)
+    name: str = field(init=False, default='str')
+    scope_name: str = field(init=False, default='__builtin__.str')

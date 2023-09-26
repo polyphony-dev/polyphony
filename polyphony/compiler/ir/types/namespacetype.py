@@ -1,11 +1,11 @@
+from dataclasses import dataclass, field
 from .scopetype import ScopeType
 from ...common.env import env
 
 
+@dataclass(frozen=True)
 class NamespaceType(ScopeType):
-    def __init__(self, scope, explicit=True):
-        super().__init__('namespace', scope, explicit)
-        assert self.scope.is_namespace()
+    name: str = field(init=False, default='namespace')
 
     def can_assign(self, rhs_t):
         return False

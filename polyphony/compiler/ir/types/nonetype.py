@@ -1,7 +1,8 @@
+from dataclasses import dataclass, field
 from .simpletype import SimpleType
-from ...common.env import env
 
 
+@dataclass(frozen=True)
 class NoneType(SimpleType):
-    def __init__(self, explicit):
-        super().__init__('none', '__builtin__.none', explicit=explicit)
+    name: str = field(init=False, default='none')
+    scope_name: str = field(init=False, default='__builtin__.none')
