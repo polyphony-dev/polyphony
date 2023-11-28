@@ -1,8 +1,11 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from dataclasses import replace as dataclasses_replace
 from .type import Type
 from ...common.env import env
-from ..scope import Scope
+if TYPE_CHECKING:
+    from ..scope import Scope
 
 
 @dataclass(frozen=True)
@@ -10,11 +13,12 @@ class ScopeType(Type):
     scope_name: str
 
     @property
-    def scope(self):
+    def scope(self) -> Scope:
         assert self.scope_name in env.scopes
         return env.scopes[self.scope_name]
 
     def clone(self, **args):
+        from ..scope import Scope
         new_args = {}
         for k, v in args.items():
             if k == 'scope':

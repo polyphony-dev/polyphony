@@ -1,9 +1,12 @@
-
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from dataclasses import replace as dataclasses_replace
 from .type import Type
 from ...common.env import env
-from ..scope import Scope
+if TYPE_CHECKING:
+    from ..scope import Scope
+
 
 @dataclass(frozen=True)
 class SimpleType(Type):

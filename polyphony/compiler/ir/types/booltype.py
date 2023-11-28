@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from .simpletype import SimpleType
-from ...common.env import env
 
 @dataclass(frozen=True)
 class BoolType(SimpleType):

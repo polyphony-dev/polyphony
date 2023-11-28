@@ -1,7 +1,11 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
 from .type import Type
 from ...common.env import env
+if TYPE_CHECKING:
+    from ..scope import Scope
 
 
 @dataclass(frozen=True)
@@ -11,7 +15,7 @@ class TupleType(Type):
     length: int
     
     @property
-    def scope(self):
+    def scope(self) -> Scope:
         assert '__builtin__.tuple' in env.scopes
         return env.scopes['__builtin__.tuple']
 

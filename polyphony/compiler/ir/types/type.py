@@ -1,6 +1,23 @@
-﻿from dataclasses import dataclass
-from typing import ClassVar
+﻿from __future__ import annotations
+from typing import ClassVar, TYPE_CHECKING
+from dataclasses import dataclass
 from ...common.env import env
+if TYPE_CHECKING:
+    from ..scope import Scope
+    from .booltype import BoolType
+    from .classtype import ClassType
+    from .exprtype import ExprType
+    from .functiontype import FunctionType
+    from .inttype import IntType
+    from .listtype import ListType
+    from .namespacetype import NamespaceType
+    from .nonetype import NoneType
+    from .objecttype import ObjectType
+    from .porttype import PortType
+    from .strtype import StrType
+    from .tupletype import TupleType
+    from .undefined import UndefinedType
+
 
 @dataclass(frozen=True)
 class Type:
@@ -22,29 +39,29 @@ class Type:
         return self.name
 
     @classmethod
-    def undef(cls):
+    def undef(cls) -> UndefinedType:
         from .undefined import UndefinedType
         return UndefinedType()
 
     @classmethod
-    def int(cls, width=None, signed=True, explicit=False):
+    def int(cls, width=None, signed=True, explicit=False) -> IntType:
         from .inttype import IntType
         if width is None:
             width = env.config.default_int_width
         return IntType(explicit, width, signed)
 
     @classmethod
-    def bool(cls, explicit=False):
+    def bool(cls, explicit=False) -> BoolType:
         from .booltype import BoolType
         return BoolType(explicit)
 
     @classmethod
-    def str(cls, explicit=False):
+    def str(cls, explicit=False) -> StrType:
         from .strtype import StrType
         return StrType(explicit)
 
     @classmethod
-    def none(cls, explicit=False):
+    def none(cls, explicit=False) -> NoneType:
         from .nonetype import NoneType
         return NoneType(explicit)
 
@@ -53,46 +70,66 @@ class Type:
         return Type('any')
 
     @classmethod
-    def list(cls, elm_t, length=ANY_LENGTH, explicit=False):
+    def list(cls, elm_t, length=ANY_LENGTH, explicit=False) -> ListType:
         from .listtype import ListType
         return ListType(explicit, elm_t, length, False)
 
     @classmethod
-    def tuple(cls, elm_t, length, explicit=False):
+    def tuple(cls, elm_t, length, explicit=False) -> TupleType:
         from .tupletype import TupleType
         return TupleType(explicit, elm_t, length)
 
     @classmethod
-    def function(cls, scope, ret_t=None, param_ts=None, explicit=False):
+    def function(cls, scope, ret_t=None, param_ts=None, explicit=False) -> FunctionType:
+        from ..scope import Scope
         if ret_t is None:
             ret_t = Type.undef()
         if param_ts is None:
             param_ts = []
         from .functiontype import FunctionType
-        return FunctionType(explicit, scope.name, ret_t, param_ts)
+        if isinstance(scope, Scope):
+            return FunctionType(explicit, scope.name, ret_t, param_ts)
+        else:
+            return FunctionType(explicit, scope, ret_t, param_ts)
 
     @classmethod
-    def object(cls, scope, explicit=False):
+    def object(cls, scope, explicit=False) -> ObjectType:
+        from ..scope import Scope
         from .objecttype import ObjectType
-        return ObjectType(explicit, scope.name)
+        if isinstance(scope, Scope):
+            return ObjectType(explicit, scope.name)
+        else:
+            return ObjectType(explicit, scope)
 
     @classmethod
-    def klass(cls, scope, explicit=False):
+    def klass(cls, scope, explicit=False) -> ClassType:
+        from ..scope import Scope
         from .classtype import ClassType
-        return ClassType(explicit, scope.name)
-
+        if isinstance(scope, Scope):
+            return ClassType(explicit, scope.name)
+        else:
+            return ClassType(explicit, scope)
+    
     @classmethod
-    def port(cls, portcls, attrs):
+    def port(cls, portcls, attrs) -> PortType:
+        from ..scope import Scope
         from .porttype import PortType
-        return PortType(False, portcls.name, attrs)
-
+        if isinstance(portcls, Scope):
+            return PortType(False, portcls.name, attrs)
+        else:
+            return PortType(False, portcls, attrs)
+    
     @classmethod
-    def namespace(cls, scope, explicit=False):
+    def namespace(cls, scope, explicit=False) -> NamespaceType:
+        from ..scope import Scope
         from .namespacetype import NamespaceType
-        return NamespaceType(explicit, scope.name)
+        if isinstance(scope, Scope):
+            return NamespaceType(explicit, scope.name)
+        else:
+            return NamespaceType(explicit, scope)
 
     @classmethod
-    def expr(cls, expr):
+    def expr(cls, expr) -> ExprType:
         assert expr
         from .exprtype import ExprType
         return ExprType(True, expr)
@@ -111,7 +148,8 @@ class Type:
         return self.name in ('namespace', 'class')
 
     def has_scope(self):
-        return self.name in ('class', 'function', 'object', 'namespace')
+        from .scopetype import ScopeType
+        return isinstance(self, ScopeType)
 
     def is_same(self, other):
         return self.name == other.name
@@ -124,25 +162,6 @@ class Type:
 
     def propagate(self, src):
         raise NotImplementedError()
-
-    @classmethod
-    def find_expr(cls, typ):
-        if not isinstance(typ, Type):
-            return []
-        if typ.is_expr():
-            return [typ.expr]
-        elif typ.is_list():
-            return cls.find_expr(typ.length) + cls.find_expr(typ.element)
-        elif typ.is_tuple():
-            return cls.find_expr(typ.element) + cls.find_expr(typ.length)
-        elif typ.is_function():
-            exprs = []
-            for pt in typ.param_types:
-                exprs.extend(cls.find_expr(pt))
-            exprs.extend(cls.find_expr(typ.return_type))
-            return exprs
-        else:
-            return []
 
     @classmethod
     def mangled_names(cls, types):

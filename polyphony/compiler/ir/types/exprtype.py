@@ -1,14 +1,17 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from dataclasses import dataclass, field
 from dataclasses import replace as dataclasses_replace
 from .type import Type
-from ..ir import IR
 from ...common.env import env
+if TYPE_CHECKING:
+    from ..ir import EXPR
 
 
 @dataclass(frozen=True)
 class ExprType(Type):
     name: str = field(init=False, default='expr')
-    expr: IR
+    expr: EXPR
 
     def clone(self, **args):
         return dataclasses_replace(self, **args)

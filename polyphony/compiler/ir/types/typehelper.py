@@ -1,15 +1,15 @@
-from typing import cast
+from __future__ import annotations
+from typing import cast, TYPE_CHECKING
 from ...common.env import env
-from ..scope import Scope
-from ..ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
-from ..symbol import Symbol
+from ..irhelper import qualified_symbols
 from ...common.env import env
 from .type import Type
-from .inttype import IntType
-from .booltype import BoolType
-from .strtype import StrType
+if TYPE_CHECKING:
+    from ..scope import Scope
+    from ..ir import IR, EXPR
 
-def type_from_ir(ir: IR, explicit=False) -> Type:
+
+def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
     '''
     Interpret and return the type of variable expressed by IR
     Examples: 
@@ -21,6 +21,8 @@ def type_from_ir(ir: IR, explicit=False) -> Type:
         annotation: MREF(TEMP('Int"), BINOP('Add', TEMP('s1'), TEMP('s2')))
         result:     Type.expr(MREF(TEMP('Int"), BINOP('Add', TEMP('s1'), TEMP('s2'))))
     '''
+    from ..ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
+    from ..symbol import Symbol
     
     assert ir
     assert isinstance(ir, IR)
@@ -33,11 +35,13 @@ def type_from_ir(ir: IR, explicit=False) -> Type:
             t = Type.expr(EXPR(ir))
     elif ir.is_a(TEMP):
         temp = cast(TEMP, ir)
-        if temp.symbol.typ.has_scope():
-            sym = temp.symbol
-            sym_type = sym.typ
+        temp_sym = scope.find_sym(temp.name)
+        assert isinstance(temp_sym, Symbol)
+        assert temp._sym is temp_sym  # TODO: remove this line
+        if temp_sym.typ.has_scope():
+            sym_type = temp_sym.typ
             scope = sym_type.scope
-            if sym_type.is_class() and scope.is_object() and not sym.is_builtin():
+            if sym_type.is_class() and scope.is_object() and not temp_sym.is_builtin():
                 # ir is a typevar (ex. dtype)
                 t = Type.expr(EXPR(temp))
             elif scope.is_typeclass():
@@ -51,8 +55,9 @@ def type_from_ir(ir: IR, explicit=False) -> Type:
             t = Type.expr(EXPR(ir))
     elif ir.is_a(ATTR):
         attr = cast(ATTR, ir)
-        if isinstance(attr.symbol, Symbol) and attr.symbol.typ.has_scope():
-            attr_type = attr.symbol.typ
+        qsyms = qualified_symbols(attr, scope)
+        if isinstance(qsyms[-1], Symbol) and qsyms[-1].typ.has_scope():
+            attr_type = qsyms[-1].typ
             scope = attr_type.scope
             if attr_type.is_class() and scope.is_object() and not attr.symbol.is_builtin():
                 # ir is a typevar (ex. dtype)
@@ -66,20 +71,20 @@ def type_from_ir(ir: IR, explicit=False) -> Type:
     elif ir.is_a(MREF):
         mref = cast(MREF, ir)
         if mref.mem.is_a(MREF):
-            t = type_from_ir(mref.mem, explicit)
+            t = type_from_ir(scope, mref.mem, explicit)
             if mref.offset.is_a(CONST):
                 t = t.clone(length=mref.offset.value)
             else:
-                t = t.clone(length=type_from_ir(mref.offset, explicit))
+                t = t.clone(length=type_from_ir(scope, mref.offset, explicit))
         else:
-            t = type_from_ir(mref.mem, explicit)
+            t = type_from_ir(scope, mref.mem, explicit)
             if t.is_int():
                 assert mref.offset.is_a(CONST)
                 t = t.clone(width=mref.offset.value)
             elif t.is_seq():
-                t = t.clone(element=type_from_ir(mref.offset, explicit))
+                t = t.clone(element=type_from_ir(scope, mref.offset, explicit))
             elif t.is_class():
-                elm_t = type_from_ir(mref.offset, explicit)
+                elm_t = type_from_ir(scope, mref.offset, explicit)
                 if elm_t.is_object():
                     t = t.clone(scope=elm_t.scope)
                 else:
@@ -90,7 +95,7 @@ def type_from_ir(ir: IR, explicit=False) -> Type:
         assert array.repeat.is_a(CONST) and array.repeat.value == 1
         assert array.is_mutable is False
         # FIXME: tuple should have more than one type
-        return type_from_ir(array.items[0], explicit)
+        return type_from_ir(scope, array.items[0], explicit)
     else:
         assert ir.is_a(IRExp)
         assert explicit is True
@@ -143,7 +148,12 @@ def type_from_typeclass(scope: Scope, explicit=True) -> Type:
         print(scope.name)
         assert False
 
+
 def type_to_scope(t: Type) -> Scope:
+    from .inttype import IntType
+    from .booltype import BoolType
+    from .strtype import StrType
+
     if t.is_int():
         return cast(IntType, t).scope
     elif t.is_bool():
@@ -159,3 +169,27 @@ def type_to_scope(t: Type) -> Scope:
     else:
         assert False
     return scope
+
+
+def find_expr(typ) -> list[EXPR]:
+    from .exprtype import ExprType
+    from .functiontype import FunctionType
+
+    if not isinstance(typ, Type):
+        return []
+    if typ.is_expr():
+        expr_type = cast(ExprType, typ)
+        return [expr_type.expr]
+    elif typ.is_list():
+        return find_expr(typ.length) + find_expr(typ.element)
+    elif typ.is_tuple():
+        return find_expr(typ.element) + find_expr(typ.length)
+    elif typ.is_function():
+        func_type = cast(FunctionType, typ)
+        exprs: list[EXPR] = []
+        for pt in func_type.param_types:
+            exprs.extend(find_expr(pt))
+        exprs.extend(find_expr(typ.return_type))
+        return exprs
+    else:
+        return []

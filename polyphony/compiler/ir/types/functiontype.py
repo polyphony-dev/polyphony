@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from .type import Type
 from .scopetype import ScopeType
-from ...common.env import env
 
 
 @dataclass(frozen=True)
