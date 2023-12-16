@@ -1,5 +1,12 @@
-﻿import logging
+﻿from __future__ import annotations
+from typing import TYPE_CHECKING
+import logging
+if TYPE_CHECKING:
+    from ..ir.scope import Scope
+    from ..ahdl.hdlscope import HDLScope
 
+
+type ScopeDict = dict[str, Scope]
 
 class Config(object):
     default_int_width = 32
@@ -46,8 +53,8 @@ class Env(object):
     def __init__(self):
         self.call_graph = None
         self.depend_graph = None
-        self.scopes = {}
-        self.all_scopes = {}
+        self.scopes: ScopeDict = {}
+        self.all_scopes: ScopeDict = {}
         self.compile_phase = 0
         self.logfiles = {}
         self.scope_file_map = {}
@@ -56,8 +63,8 @@ class Env(object):
         self.config = Config()
         self.runtime_info = None
         self.outermost_scope_stack = []
-        self.hdlscopes = []
-        self.scope2hdlscope = {}
+        self.hdlscopes: list[HDLScope] = []
+        self.scope2hdlscope: dict[Scope, HDLScope] = {}
         self.targets = []
         self.root_dir = ''
 
@@ -68,7 +75,7 @@ class Env(object):
     def set_current_filename(self, filename):
         self.current_filename = filename
 
-    def append_scope(self, scope):
+    def append_scope(self, scope: Scope):
         self.scope_file_map[scope] = self.current_filename
         self.scopes[scope.name] = scope
         self.all_scopes[scope.name] = scope
@@ -77,13 +84,13 @@ class Env(object):
         for logfile in self.logfiles.values():
             logfile.close()
 
-    def remove_scope(self, scope):
+    def remove_scope(self, scope: Scope):
         del self.scopes[scope.name]
 
     def append_testbench(self, testbench):
         self.testbenches.append(testbench)
 
-    def push_outermost_scope(self, scope):
+    def push_outermost_scope(self, scope: Scope):
         self.outermost_scope_stack.append(scope)
 
     def pop_outermost_scope(self):
@@ -92,17 +99,17 @@ class Env(object):
     def outermost_scope(self):
         return self.outermost_scope_stack[-1]
 
-    def append_hdlscope(self, hdlscope):
+    def append_hdlscope(self, hdlscope: HDLScope):
         self.hdlscopes.append(hdlscope)
         self.scope2hdlscope[hdlscope.scope] = hdlscope
         if hdlscope.scope.is_module():
-            for w, _ in hdlscope.scope.workers:
+            for w in hdlscope.scope.workers:
                 self.scope2hdlscope[w] = hdlscope
             ctor = hdlscope.scope.find_ctor()
             if ctor:
                 self.scope2hdlscope[ctor] = hdlscope
 
-    def hdlscope(self, scope):
+    def hdlscope(self, scope: Scope) -> HDLScope:
         assert scope in self.scope2hdlscope
         return self.scope2hdlscope[scope]
 
@@ -112,12 +119,11 @@ class Env(object):
             self.logfiles[logname] = logging.FileHandler(logname, 'w')
         return self.logfiles[logname]
 
-    def scope_log_handler(self, scope):
+    def scope_log_handler(self, scope: Scope):
         scope_log = scope.name.replace('@', '')
         logname = f'{self.debug_output_dir}/{scope_log}.log'
         if logname not in self.logfiles:
             self.logfiles[logname] = logging.FileHandler(logname, 'w')
         return self.logfiles[logname]
-
 
 env = Env()

@@ -1,7 +1,9 @@
 from collections import deque
 from ...common.graph import Graph
+from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
 from ..scope import Scope
+from ..symbol import Symbol
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -48,25 +50,30 @@ class ScopeDependencyGraphBuilder(IRVisitor):
         self.worklist.append(scope)
 
     def visit_TEMP(self, ir):
-        sym_t = ir.symbol.typ
+        sym = self.scope.find_sym(ir.name)
+        assert sym
+        sym_t = sym.typ
         if sym_t.has_scope():
-            if ir.symbol.is_self():
+            if sym.is_self():
                 return
             if sym_t.has_scope():
                 self._add_scope(sym_t.scope)
         else:
-            if ir.symbol.is_imported():
-                import_src = ir.symbol.import_src()
+            if sym.is_imported():
+                import_src = sym.import_src()
                 self._add_scope(import_src.scope)
             # If self.scope refers an external symbol with a value type, the scope of the symbol is added
-            if ir.symbol.scope is not self.scope:
-                self._add_scope(ir.symbol.scope)
+            if sym.scope is not self.scope:
+                self._add_scope(sym.scope)
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
 
     def visit_NEW(self, ir):
-        sym_t = ir.symbol.typ
+        qsyms = qualified_symbols(ir, self.scope)
+        sym = qsyms[-1]
+        assert isinstance(sym, Symbol)
+        sym_t = sym.typ
         self._add_scope(sym_t.scope)
         self.visit_args(ir.args, ir.kwargs)
 
@@ -117,31 +124,39 @@ class UsingScopeDetector(IRVisitor):
             self.worklist.append(scope)
 
     def visit_TEMP(self, ir):
-        sym_t = ir.symbol.typ
+        qsyms = qualified_symbols(ir, self.scope)
+        symbol = qsyms[-1]
+        assert isinstance(symbol, Symbol)
+        sym_t = symbol.typ
         if sym_t.has_scope():
-            if ir.symbol.is_self():
+            if symbol.is_self():
                 return
             if sym_t.has_scope():
                 self._add_scope(sym_t.scope)
         else:
-            if ir.symbol.is_imported():
-                import_src = ir.symbol.import_src()
+            if symbol.is_imported():
+                import_src = symbol.import_src()
                 self._add_scope(import_src.scope)
             # If self.scope refers an external symbol with a value type, the scope of the symbol is added
-            if ir.symbol.scope is not self.scope:
-                self._add_scope(ir.symbol.scope)
+            if symbol.scope is not self.scope:
+                self._add_scope(symbol.scope)
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
-        if isinstance(ir.symbol, str):
+        qsyms = qualified_symbols(ir, self.scope)
+        symbol = qsyms[-1]
+        if isinstance(symbol, str):
             return
-        attr_t = ir.symbol.typ
+        attr_t = symbol.typ
         if attr_t.has_scope():
             attr_scope = attr_t.scope
             self._add_scope(attr_scope)
 
     def visit_NEW(self, ir):
-        sym_t = ir.symbol.typ
+        qsyms = qualified_symbols(ir, self.scope)
+        symbol = qsyms[-1]
+        assert isinstance(symbol, Symbol)
+        sym_t = symbol.typ
         if sym_t.has_scope():
             self._add_scope(sym_t.scope)
             self._add_scope(sym_t.scope.find_ctor())

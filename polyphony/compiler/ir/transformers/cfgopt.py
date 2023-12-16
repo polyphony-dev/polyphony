@@ -1,7 +1,7 @@
 from collections import deque
 from ..block import Block
 from ..ir import *
-from ..irhelper import reduce_relexp
+from ..irhelper import reduce_relexp, irexp_type
 from ..types.type import Type
 from ..analysis.dominator import DominatorTreeBuilder
 from ..analysis.usedef import UseDefDetector
@@ -188,9 +188,9 @@ class PathExpTracer(object):
         if exp.is_a(TEMP):
             return exp
         csym = self.scope.add_condition_sym()
-        mv = MOVE(TEMP(csym, Ctx.STORE), exp)
+        mv = MOVE(TEMP(csym.name), exp)
         blk.insert_stm(insert_pos, mv)
-        return TEMP(mv.dst.symbol, Ctx.LOAD)
+        return TEMP(mv.dst.name)
 
 
 def merge_path_exp(pred, blk, idx_hint=-1):
@@ -239,6 +239,7 @@ class HyperBlockBuilder(object):
     def process(self, scope):
         self.scope = scope
         self.uddetector = UseDefDetector()
+        self.uddetector.scope = scope
         self.uddetector.table = scope.usedef
         self.reducer = BlockReducer()
         self.reducer.scope = self.scope
@@ -312,16 +313,17 @@ class HyperBlockBuilder(object):
     def _duplicate_head(self, head, branches, indices):
         new_head = Block(self.scope)
         old_mj = head.stms[-1]
-        mj = MCJUMP()
-        mj.loc = old_mj.loc
+        conds = []
+        targets = []
         for idx in indices:
             path = branches[idx]
             br = path[0]
             assert br in head.succs
             assert old_mj.targets[idx] is br
             cond = old_mj.conds[idx]
-            mj.conds.append(cond)
-            mj.targets.append(br)
+            conds.append(cond)
+            targets.append(br)
+        mj = MCJUMP(conds, targets, old_mj.loc)
         if all([mj.targets[0] is t for t in mj.targets[1:]]):
             return
         for idx in indices:
@@ -345,10 +347,9 @@ class HyperBlockBuilder(object):
             if not cj.exp.is_a(TEMP):
                 new_sym = self.scope.add_condition_sym()
                 new_sym.typ = Type.bool()
-                new_c = TEMP(new_sym, Ctx.STORE)
-                mv = MOVE(new_c, cj.exp)
+                mv = MOVE(TEMP(new_sym.name), cj.exp)
                 head.insert_stm(-1, mv)
-                cj.exp = TEMP(new_sym, Ctx.LOAD)
+                cj.exp = TEMP(new_sym.name)
             head.replace_stm(head.stms[-1], cj)
         if len(mj.targets) == 2:
             cj = CJUMP(mj.conds[0], mj.targets[0], mj.targets[1])
@@ -415,11 +416,10 @@ class HyperBlockBuilder(object):
                     else:
                         old_args.append(stm.args[idx])
                         old_ps.append(stm.ps[idx])
-                if all([new_args[0].symbol is arg.symbol for arg in new_args[1:]]):
+                if all([new_args[0].name == arg.name for arg in new_args[1:]]):
                     newsym = self.scope.add_temp()
-                    newsym.typ = stm.var.symbol.typ
-                    dst = TEMP(newsym, Ctx.STORE)
-                    mv = MOVE(dst, new_args[0])
+                    newsym.typ = irexp_type(stm.var, self.scope)
+                    mv = MOVE(TEMP(newsym.name), new_args[0])
                     new_tail.append_stm(mv)
                     self.uddetector.visit(mv)
                 else:
@@ -427,11 +427,11 @@ class HyperBlockBuilder(object):
                     new_phi.args = new_args
                     new_phi.ps = new_ps
                     newsym = self.scope.add_temp()
-                    newsym.typ = stm.var.symbol.typ
-                    new_phi.var = TEMP(newsym, Ctx.STORE)
+                    newsym.typ = irexp_type(stm.var, self.scope)
+                    new_phi.var = TEMP(newsym.name, Ctx.STORE)
                     new_tail.append_stm(new_phi)
                     self.uddetector.visit(new_phi)
-                arg = TEMP(newsym, Ctx.LOAD)
+                arg = TEMP(newsym.name)
 
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
@@ -467,7 +467,7 @@ class HyperBlockBuilder(object):
                 'polyphony.timing.wait_edge',
                 'polyphony.timing.wait_until'
             ]
-            return call.symbol.name in wait_funcs
+            return call.name in wait_funcs
         return False
 
     def _has_mem_access(self, stm):
@@ -523,7 +523,7 @@ class HyperBlockBuilder(object):
             else:
                 assert False
             stm.block.stms.remove(stm)
-            self.scope.usedef.remove_stm(stm)
+            self.scope.usedef.remove_stm(self.scope, stm)
             cstm.loc = stm.loc
             cstms.append(cstm)
             all_cstms.append((idx, cstm))

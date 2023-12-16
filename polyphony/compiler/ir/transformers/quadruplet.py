@@ -1,5 +1,7 @@
 ﻿from ..ir import *
+from ..irhelper import qualified_symbols
 from ..irvisitor import IRTransformer
+from ..symbol import Symbol
 from ...common.common import fail
 from ...common.errors import Errors
 
@@ -21,10 +23,9 @@ class EarlyQuadrupleMaker(IRTransformer):
         self.suppress_converting = False
 
     def _new_temp_move(self, ir, tmpsym):
-        t = TEMP(tmpsym, Ctx.STORE)
-        mv = MOVE(t, ir, loc=self.current_stm.loc)
+        mv = MOVE(TEMP(tmpsym.name), ir, loc=self.current_stm.loc)
         self.new_stms.append(mv)
-        return TEMP(tmpsym, Ctx.LOAD)
+        return TEMP(tmpsym.name)
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
@@ -98,6 +99,7 @@ class EarlyQuadrupleMaker(IRTransformer):
         suppress = self.suppress_converting
         self.suppress_converting = False
 
+        ir.func = self.visit(ir.func)
         self._visit_args(ir)
 
         if suppress:
@@ -109,6 +111,7 @@ class EarlyQuadrupleMaker(IRTransformer):
         suppress = self.suppress_converting
         self.suppress_converting = False
 
+        ir.func = self.visit(ir.func)
         self._visit_args(ir)
 
         if suppress:
@@ -158,7 +161,7 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        assert ir.exp.is_a(TEMP) and ir.exp.symbol.is_condition() or ir.exp.is_a(CONST)
+        assert (isinstance(ir.exp, TEMP) and self.scope.find_sym(ir.exp.name).is_condition()) or ir.exp.is_a(CONST)
         self.new_stms.append(ir)
 
     def visit_MCJUMP(self, ir):
@@ -198,14 +201,18 @@ class EarlyQuadrupleMaker(IRTransformer):
 
 class LateQuadrupleMaker(IRTransformer):
     def visit_ATTR(self, ir):
-        receiver = ir.tail()
+        qsyms = qualified_symbols(ir, self.scope)
+        attr_sym = qsyms[-1]
+        receiver = qsyms[-2]
+        assert isinstance(attr_sym, Symbol)
+        assert isinstance(receiver, Symbol)
+        attr_t = attr_sym.typ
         receiver_t = receiver.typ
-        attr_t = ir.symbol.typ
         if (receiver_t.is_class() or receiver_t.is_namespace()) and attr_t.is_scalar():
             return ir
         ir.exp = self.visit(ir.exp)
 
-        if ir.exp.is_a(TEMP) and ir.exp.symbol.typ.is_namespace():
-            ir_ = TEMP(ir.symbol, ir.ctx)
-            ir = ir_
+        # if ir.exp.is_a(TEMP) and exp_sym.typ.is_namespace():
+        #     ir_ = TEMP(attr_sym, ir.ctx)
+        #     ir = ir_
         return ir

@@ -1,4 +1,5 @@
-from .ir import IRStm, JUMP, CJUMP, MCJUMP
+from typing import cast
+from .ir import IR, IRStm, JUMP, CJUMP, MCJUMP
 
 
 class IRVisitor(object):
@@ -22,11 +23,11 @@ class IRVisitor(object):
         if block.path_exp:
             self.visit(block.path_exp)
 
-    def visit(self, ir):
+    def visit(self, ir:IR) -> IR:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
         if ir.is_a(IRStm):
-            self.current_stm = ir
+            self.current_stm:IRStm = cast(IRStm, ir)
         if visitor:
             return visitor(ir)
         else:
@@ -59,9 +60,11 @@ class IRVisitor(object):
         self.visit_args(ir.args, ir.kwargs)
 
     def visit_SYSCALL(self, ir):
+        self.visit(ir.func)
         self.visit_args(ir.args, ir.kwargs)
 
     def visit_NEW(self, ir):
+        self.visit(ir.func)
         self.visit_args(ir.args, ir.kwargs)
 
     def visit_CONST(self, ir):
@@ -187,10 +190,12 @@ class IRTransformer(IRVisitor):
         return ir
 
     def visit_SYSCALL(self, ir):
+        ir.func = self.visit(ir.func)
         self.visit_args(ir.args)
         return ir
 
     def visit_NEW(self, ir):
+        ir.func = self.visit(ir.func)
         self.visit_args(ir.args)
         return ir
 

@@ -1,7 +1,9 @@
 ﻿from collections import deque
 from ..ir import *
+from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
 from ..types.type import Type
+from ..symbol import Symbol
 from ..analysis.usedef import UseDefUpdater
 from logging import getLogger
 logger = getLogger(__name__)
@@ -14,8 +16,8 @@ class CopyOpt(IRVisitor):
     def __init__(self):
         super().__init__()
 
-    def _find_old_use(self, ir, qsym):
-        return ir.find_vars(qsym)
+    def _find_old_use(self, ir, qname: tuple[str, ...]):
+        return ir.find_vars(qname)
 
     def process(self, scope):
         self.scope = scope
@@ -27,13 +29,14 @@ class CopyOpt(IRVisitor):
         while worklist:
             cp = worklist.popleft()
             logger.debug('copy stm ' + str(cp))
-            dst_qsym = cp.dst.qualified_symbol
+            dst_qsym = qualified_symbols(cp.dst, scope)
             defs = list(scope.usedef.get_stms_defining(dst_qsym))
             if len(defs) > 1:
                 # dst must be non ssa variables
                 copies.remove(cp)
                 continue
-            orig = self._find_root_def(cp.src.qualified_symbol)
+            src_qsym = qualified_symbols(cp.src, scope)
+            orig = self._find_root_def(src_qsym)
             self._replace_copies(scope, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures:
@@ -41,7 +44,7 @@ class CopyOpt(IRVisitor):
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
-                if cp.dst.is_a(ATTR) and cp.dst.tail().typ.scope.is_module() and scope.is_ctor():
+                if cp.dst.is_a(ATTR) and qualified_symbols(cp.dst, self.scope)[-2].typ.scope.is_module() and scope.is_ctor():
                     continue
                 if cp.is_a(CMOVE) and not cp.dst.symbol.is_temp():
                     continue
@@ -50,28 +53,29 @@ class CopyOpt(IRVisitor):
     def _replace_copies(self, scope, copy_stm, orig, target, copies, worklist):
         uses = list(scope.usedef.get_stms_using(target))
         for u in uses:
-            olds = self._find_old_use(u, target)
+            qname = tuple(map(lambda s: s.name, target))
+            olds = self._find_old_use(u, qname)
             for old in olds:
                 if orig:
                     new = orig.clone()
                 else:
                     new = copy_stm.src.clone()
                 # TODO: we need the bit width propagation
-                new.symbol.typ = old.symbol.typ
                 logger.debug('replace FROM ' + str(u))
                 self.udupdater.update(u, None)
                 u.replace(old, new)
                 logger.debug('replace TO ' + str(u))
                 self.udupdater.update(None, u)
             if u.is_a(PHIBase):
-                syms = [arg.qualified_symbol for arg in u.args
-                        if arg.is_a([TEMP, ATTR]) and arg.symbol is not u.var.symbol]
-                if syms:
-                    if len(u.args) == len(syms) and all(syms[0] == s for s in syms):
+                # TODO: check
+                qsyms = [qualified_symbols(arg, self.scope) for arg in u.args
+                        if isinstance(arg, IRVariable) and arg.name != u.var.name]
+                if qsyms:
+                    if len(u.args) == len(qsyms) and all(qsyms[0] == s for s in qsyms):
                         src = u.args[0]
-                    elif len(syms) == 1 and len([arg for arg in u.args if arg.is_a([TEMP, ATTR])]) > 1:
+                    elif len(qsyms) == 1 and len([arg for arg in u.args if isinstance(arg, IRVariable)]) > 1:
                         for arg in u.args:
-                            if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol == syms[0]:
+                            if isinstance(arg, IRVariable) and qualified_symbols(arg, self.scope) == qsyms[0]:
                                 src = arg
                                 break
                         else:
@@ -83,7 +87,7 @@ class CopyOpt(IRVisitor):
                     u.block.stms[idx] = mv
                     mv.block = u.block
                     self.udupdater.update(u, mv)
-                    if mv.src.is_a([TEMP, ATTR]):
+                    if isinstance(mv.src, IRVariable):
                         worklist.append(mv)
                         copies.append(mv)
         # Deal with 'free' attribute
@@ -93,36 +97,49 @@ class CopyOpt(IRVisitor):
                 src = orig
             else:
                 src = copy_stm.src
-            if src.is_a(ATTR):
-                scope.add_free_sym(src.head())
-            elif src.is_a(TEMP):
-                scope.add_free_sym(src.symbol)
-            else:
-                assert False
+            match src:
+                case ATTR():
+                    head = qualified_symbols(src, self.scope)[0]
+                    assert isinstance(head, Symbol)
+                    scope.add_free_sym(head)
+                case TEMP():
+                    sym = self.scope.find_sym(src.name)
+                    assert sym
+                    scope.add_free_sym(sym)
+                case _:
+                    assert False
 
-    def _find_root_def(self, qsym) -> IR:
+    def _find_root_def(self, qsym) -> IR|None:
         defs = list(self.scope.usedef.get_stms_defining(qsym))
         if len(defs) != 1:
             return None
         d = defs[0]
         if d.is_a(MOVE):
-            dst_t = d.dst.symbol.typ
+            dst_sym = qualified_symbols(d.dst, self.scope)[-1]
+            assert isinstance(dst_sym, Symbol)
+            dst_t = dst_sym.typ
             if d.src.is_a(TEMP):
-                if d.src.symbol.is_param():
+                src_qsym = qualified_symbols(d.src, self.scope)
+                src_sym = src_qsym[-1]
+                assert isinstance(src_sym, Symbol)
+                if src_sym.is_param():
                     return None
-                src_t = d.src.symbol.typ
+                src_t = src_sym.typ
                 if src_t != dst_t:
                     return None
-                orig = self._find_root_def(d.src.qualified_symbol)
+                orig = self._find_root_def(src_qsym)
                 if orig:
                     return orig
                 else:
                     return d.src
             elif d.src.is_a(ATTR):
-                src_t = d.src.symbol.typ
+                src_qsym = qualified_symbols(d.src, self.scope)
+                src_sym = src_qsym[-1]
+                assert isinstance(src_sym, Symbol)
+                src_t = src_sym.typ
                 if src_t != dst_t:
                     return None
-                orig = self._find_root_def(d.src.qualified_symbol)
+                orig = self._find_root_def(src_qsym)
                 if orig:
                     return orig
                 else:
@@ -138,24 +155,30 @@ class CopyCollector(IRVisitor):
         return
 
     def visit_MOVE(self, ir):
-        dst_t = ir.dst.symbol.typ
-        if ir.dst.symbol.is_return():
+        dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
+        assert isinstance(dst_sym, Symbol)
+        dst_t = dst_sym.typ
+        if dst_sym.is_return():
             return
-        if ir.dst.symbol.is_register():
+        if dst_sym.is_register():
             return
-        if ir.dst.symbol.is_field():
+        if dst_sym.is_field():
             return
-        if ir.dst.symbol.is_free():
+        if dst_sym.is_free():
             return
         if ir.src.is_a(TEMP):
-            src_t = ir.src.symbol.typ
-            if ir.src.symbol.is_param():  # or ir.src.sym.typ.is_list():
+            src_sym = qualified_symbols(ir.src, self.scope)[-1]
+            assert isinstance(src_sym, Symbol)
+            src_t = src_sym.typ
+            if src_sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
             if src_t != dst_t:
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):
-            src_t = ir.src.symbol.typ
+            src_sym = qualified_symbols(ir.src, self.scope)[-1]
+            assert isinstance(src_sym, Symbol)
+            src_t = src_sym.typ
             if src_t.is_object() and src_t.scope.is_port():
                 self.copies.append(ir)
 
@@ -167,36 +190,43 @@ class ObjCopyOpt(CopyOpt):
     def __init__(self):
         super().__init__()
 
-    def _find_old_use(self, ir, qsym):
+    def _find_old_use(self, ir, qname: tuple[str, ...]):
         vars = []
 
-        def find_vars_rec(ir, qsym, vars):
+        def find_vars_rec(ir, qname: tuple[str, ...], vars):
             if isinstance(ir, IR):
                 if ir.is_a(ATTR):
-                    attr_t = ir.symbol.typ
+                    attr = cast(ATTR, ir)
+                    ir_qsym = qualified_symbols(attr, self.scope)
+                    attr_sym = ir_qsym[-1]
+                    assert isinstance(attr_sym, Symbol)
+                    attr_t = attr_sym.typ
                     if attr_t.is_object():
-                        if ir.qualified_symbol == qsym:
+                        if attr.qualified_name == qname:
                             vars.append(ir)
                     elif attr_t.is_seq():
-                        if ir.qualified_symbol == qsym:
+                        if attr.qualified_name == qname:
                             vars.append(ir)
-                    elif ir.exp.qualified_symbol == qsym:
-                        vars.append(ir.exp)
-                elif ir.is_a(TEMP) and len(qsym) == 1:
-                    sym_t = ir.symbol.typ
+                    elif attr.qualified_name[:-1] == qname:
+                        vars.append(attr.exp)
+                elif ir.is_a(TEMP) and len(qname) == 1:
+                    temp = cast(TEMP, ir)
+                    sym = self.scope.find_sym(temp.name)
+                    assert sym
+                    sym_t = sym.typ
                     if sym_t.is_object():
-                        if ir.symbol == qsym[0]:
+                        if temp.name == qname[0]:
                             vars.append(ir)
                     elif sym_t.is_seq():
-                        if ir.symbol == qsym[0]:
+                        if temp.name == qname[0]:
                             vars.append(ir)
                 else:
                     for k, v in ir.__dict__.items():
-                        find_vars_rec(v, qsym, vars)
+                        find_vars_rec(v, qname, vars)
             elif isinstance(ir, list) or isinstance(ir, tuple):
                 for elm in ir:
-                    find_vars_rec(elm, qsym, vars)
-        find_vars_rec(ir, qsym, vars)
+                    find_vars_rec(elm, qname, vars)
+        find_vars_rec(ir, qname, vars)
         return vars
 
 
@@ -207,18 +237,24 @@ class ObjCopyCollector(IRVisitor):
     def _is_alias_def(self, mov):
         if not mov.is_a(MOVE):
             return False
-        if not mov.src.is_a([TEMP, ATTR]):
+        if not mov.src.is_a(IRVariable):
             return False
-        if not mov.dst.is_a([TEMP, ATTR]):
+        if not mov.dst.is_a(IRVariable):
             return False
         if mov.dst.is_a(ATTR):
-            tail_t = mov.dst.tail().typ
-            if tail_t.is_object() and tail_t.scope.is_module():
+            receiver = qualified_symbols(mov.dst.exp, self.scope)[-1]
+            assert isinstance(receiver, Symbol)
+            receiver_t = receiver.typ
+            if receiver_t.is_object() and receiver_t.scope.is_module():
                 return False
         #if mov.src.symbol.is_induction() or mov.dst.symbol.is_induction():
         #    return False
-        src_t = mov.src.symbol.typ
-        dst_t = mov.dst.symbol.typ
+        src_sym = qualified_symbols(mov.src, self.scope)[-1]
+        dst_sym = qualified_symbols(mov.dst, self.scope)[-1]
+        assert isinstance(src_sym, Symbol)
+        assert isinstance(dst_sym, Symbol)
+        src_t = src_sym.typ
+        dst_t = dst_sym.typ
         if src_t.is_object() and dst_t.is_object():
             return True
         if src_t.is_seq() and dst_t.is_seq():
@@ -228,6 +264,8 @@ class ObjCopyCollector(IRVisitor):
     def visit_MOVE(self, ir):
         if not self._is_alias_def(ir):
             return
-        if ir.src.symbol.is_param():
+        src_sym = qualified_symbols(ir.src, self.scope)[-1]
+        assert isinstance(src_sym, Symbol)
+        if src_sym.is_param():
             return
         self.copies.append(ir)

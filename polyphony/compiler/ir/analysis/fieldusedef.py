@@ -1,6 +1,8 @@
 ﻿from collections import defaultdict
 from ..irvisitor import IRVisitor
 from ..ir import *
+from ..irhelper import qualified_symbols
+from ..scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -15,24 +17,28 @@ class FieldUseDefTable(object):
             qsym = qsym[1:]
         return qsym
 
-    def add_var_def(self, var, stm):
+    def add_var_def(self, scope: Scope, var, stm):
         assert var.is_a(ATTR) and stm.is_a(IRStm)
-        key = self.qsym2key(var.qualified_symbol)
+        qsym = qualified_symbols(var, scope)
+        key = self.qsym2key(qsym)
         self._def_qsym2stm[key].add(stm)
 
-    def remove_var_def(self, var, stm):
+    def remove_var_def(self, scope: Scope, var, stm):
         assert var.is_a(ATTR) and stm.is_a(IRStm)
-        key = self.qsym2key(var.qualified_symbol)
+        qsym = qualified_symbols(var, scope)
+        key = self.qsym2key(qsym)
         self._def_qsym2stm[key].discard(stm)
 
-    def add_var_use(self, var, stm):
+    def add_var_use(self, scope: Scope, var, stm):
         assert var.is_a(ATTR) and stm.is_a(IRStm)
-        key = self.qsym2key(var.qualified_symbol)
+        qsym = qualified_symbols(var, scope)
+        key = self.qsym2key(qsym)
         self._use_qsym2stm[key].add(stm)
 
-    def remove_var_use(self, var, stm):
+    def remove_var_use(self, scope: Scope, var, stm):
         assert var.is_a(ATTR) and stm.is_a(IRStm)
-        key = self.qsym2key(var.qualified_symbol)
+        qsym = qualified_symbols(var, scope)
+        key = self.qsym2key(qsym)
         self._use_qsym2stm[key].discard(stm)
 
     def get_def_stms(self, qsym):
@@ -86,16 +92,18 @@ class FieldUseDefDetector(IRVisitor):
         self._visit_args(ir)
 
     def visit_SYSCALL(self, ir):
+        self.visit(ir.func)
         self._visit_args(ir)
 
     def visit_NEW(self, ir):
+        self.visit(ir.func)
         self._visit_args(ir)
 
     def visit_ATTR(self, ir):
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
-            self.table.add_var_use(ir, self.current_stm)
+            self.table.add_var_use(self.scope, ir, self.current_stm)
         elif ir.ctx == Ctx.STORE:
-            self.table.add_var_def(ir, self.current_stm)
+            self.table.add_var_def(self.scope, ir, self.current_stm)
         else:
             assert False
 
@@ -113,7 +121,7 @@ class FieldUseDef(object):
 
     def _collect_scopes(self, scope):
         scopes = set()
-        workers = set([w for w, _ in scope.workers])
+        workers = set([w for w in scope.workers])
         scopes |= workers
         for w in workers:
             scopes |= self._collect_scopes(w)

@@ -1,9 +1,13 @@
-﻿from collections import defaultdict
-from .types.type import Type
+﻿from __future__ import annotations
+from collections import defaultdict
+from typing import TYPE_CHECKING
 from ..common.common import Tagged
 from ..common.env import env
 from logging import getLogger
+from .types.type import Type
 logger = getLogger(__name__)
+if TYPE_CHECKING:
+    from .scope import Scope
 
 
 class Symbol(Tagged):
@@ -16,7 +20,8 @@ class Symbol(Tagged):
         'temp', 'param', 'return', 'condition', 'induction', 'alias', 'free',
         'self', 'static', 'subobject', 'field',
         'builtin', 'inlined', 'flattened', 'pipelined', 'predefined',
-        'loop_counter', 'register', 'inherited', 'imported'
+        'loop_counter', 'register', 'inherited', 'imported',
+        'unresolved_scope'
     }
 
     @classmethod
@@ -26,45 +31,46 @@ class Symbol(Tagged):
         cls.import_src_symbol_map.clear()
 
     @classmethod
-    def unique_name(cls, prefix=None):
+    def unique_name(cls, prefix: str=''):
         if not prefix:
             prefix = cls.temp_prefix
         return '{}{}'.format(prefix, cls.id_counter)
 
-    return_prefix = '@function_return'
+    return_name = '@return'
     condition_prefix = '@c'
     temp_prefix = '@t'
     param_prefix = '@in'
 
-    def __init__(self, name, scope, tags, typ=None):
+    def __init__(self, name: str, scope: 'Scope', tags: set[str], typ: Type|None=None):
         super().__init__(tags)
-        if typ is None:
-            typ = Type.undef()
+        if not typ:
+            typ = Type.none()
         self._id = Symbol.id_counter
         self._name = name
         self._scope = scope
         self._typ = typ
-        self._ancestor = None
+        self._ancestor: Symbol|None = None
         Symbol.id_counter += 1
 
     @property
-    def id(self):
+    def id(self) -> int:
         return self._id
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @name.setter
-    def name(self, name):
+    def name(self, name: str):
+        # assert False
         self._name = name
 
     @property
-    def scope(self):
+    def scope(self) -> Scope:
         return self._scope
 
     @property
-    def typ(self):
+    def typ(self) -> Type:
         return self._typ
 
     @typ.setter
@@ -86,10 +92,12 @@ class Symbol(Tagged):
         self._ancestor = a
 
     def __str__(self):
+        if self.is_unresolved_scope():
+            return f'?{self._name}'
         return self._name
 
     def __repr__(self):
-        return f'{self._name}({self._id})'
+        return f'{self._name}({self._id}, {self.scope.name})'
 
     def __lt__(self, other):
         return self._name < other._name
@@ -100,7 +108,7 @@ class Symbol(Tagged):
         else:
             return self._name
 
-    def root_sym(self):
+    def root_sym(self) -> 'Symbol':
         if self._ancestor:
             return self._ancestor.root_sym()
         else:
@@ -118,19 +126,22 @@ class Symbol(Tagged):
         name = name.replace('#', '')
         return name
 
-    def clone(self, scope, postfix=''):
-        newsym = Symbol(self._name + postfix,
+    def clone(self, scope, new_name):
+        assert new_name
+        newsym = Symbol(new_name,
                         scope,
                         set(self.tags),
                         self._typ)
         newsym.ancestor = self._ancestor
+        if self.is_imported():
+            newsym.import_from(self.import_src())
         return newsym
 
-    def import_src(self):
+    def import_src(self) -> 'Symbol':
         assert self in Symbol.import_src_symbol_map
         return Symbol.import_src_symbol_map[self]
 
-    def import_from(self, import_src):
+    def import_from(self, import_src: 'Symbol'):
         self.add_tag('imported')
         Symbol.imported_symbol_map[import_src].add(self)
         Symbol.import_src_symbol_map[self] = import_src

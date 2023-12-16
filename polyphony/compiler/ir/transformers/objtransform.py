@@ -1,7 +1,7 @@
 from collections import defaultdict, deque
 from ..block import Block
-from ..builtin import builtin_symbols
 from ..ir import *
+from ..irhelper import qualified_symbols, irexp_type
 from ..types.type import Type
 from ..analysis.usedef import UseDefUpdater
 from ...common.utils import replace_item
@@ -26,24 +26,29 @@ class ObjectTransformer(object):
         for blk in self.scope.traverse_blocks():
             for stm in blk.collect_stms([MOVE, PHI, LPHI, UPHI]):
                 if stm.is_a(MOVE):
-                    qsym = stm.dst.qualified_symbol
-                    typ = qsym[-1].typ
-                    if typ.is_object():
-                        if stm.src.is_a(SYSCALL) and stm.src.symbol is builtin_symbols['$new']:
+                    dst_typ = irexp_type(stm.dst, self.scope)
+                    if dst_typ.is_object():
+                        qsym = qualified_symbols(stm.dst, self.scope)
+                        assert isinstance(qsym[-1], Symbol)
+                        if stm.src.is_a(SYSCALL) and stm.src.name == '$new':
                             self.obj_defs.add(qsym[-1])
-                        elif stm.src.is_a(TEMP) and stm.src.symbol.is_param():
+                        elif stm.src.is_a(TEMP) and self.scope.find_sym(stm.src.name).is_param():
                             pass
                         else:
                             self.obj_copies[qsym] = stm
-                    elif typ.is_seq():
+                    elif dst_typ.is_seq():
+                        assert not isinstance(stm.dst, ARRAY)
+                        qsym = qualified_symbols(stm.dst, self.scope)
+                        assert isinstance(qsym[-1], Symbol)
                         if stm.src.is_a(ARRAY):
                             self.seq_defs.add(qsym[-1])
-                        elif stm.src.is_a(TEMP) and stm.src.symbol.is_param():
+                        elif stm.src.is_a(TEMP) and self.scope.find_sym(stm.src.name).is_param():
                             pass
                         else:
                             self.seq_copies[qsym] = stm
                 elif stm.is_a(PHIBase):
-                    qsym = stm.var.qualified_symbol
+                    qsym = qualified_symbols(stm.var, self.scope)
+                    assert isinstance(qsym[-1], Symbol)
                     typ = qsym[-1].typ
                     if typ.is_object():
                         self.obj_copies[qsym] = stm
@@ -64,13 +69,14 @@ class ObjectTransformer(object):
     def qsym_name(self, qsym):
         return '_'.join([sym.name for sym in qsym])
 
+    # TODO: use qsym2var
     def qsym_to_ir(self, qsym, ctx):
-        ir = TEMP(qsym[0], Ctx.LOAD)
+        ir = TEMP(qsym[0].name)
         for i, sym in enumerate(qsym[1:]):
             if i == len(qsym) - 1:
-                ir = ATTR(ir, sym, ctx)
+                ir = ATTR(ir, sym.name, ctx)
             else:
-                ir = ATTR(ir, sym, Ctx.LOAD)
+                ir = ATTR(ir, sym.name, Ctx.LOAD)
         return ir
 
     def _collect_sources(self, copies, defs):
@@ -88,11 +94,13 @@ class ObjectTransformer(object):
         copy_sources = defaultdict(set)
         worklist = deque()
         for copy_qsym, stm in copies.items():
-            if stm.is_a(MOVE) and stm.src.is_a([TEMP, ATTR]):
-                worklist.append((stm.src.qualified_symbol, copy_qsym))
+            if stm.is_a(MOVE) and stm.src.is_a(IRVariable):
+                src_qsym = qualified_symbols(stm.src, self.scope)
+                worklist.append((src_qsym, copy_qsym))
             elif stm.is_a(PHIBase):
                 for arg in stm.args:
-                    worklist.append((arg.qualified_symbol, copy_qsym))
+                    arg_qsym = qualified_symbols(arg, self.scope)
+                    worklist.append((arg_qsym, copy_qsym))
         while worklist:
             qsym, copy_qsym = worklist.popleft()
             roots = _find_root_def(qsym, copy_qsym)
@@ -111,11 +119,13 @@ class ObjectTransformer(object):
         max_len = 0
         var = None
         for use_var in self.scope.usedef.get_vars_used_at(stm):
-            qsym_ = use_var.qualified_symbol
+            qsym_ = qualified_symbols(use_var, self.scope)
             if len(qsym_) > max_len:
                 var = use_var
                 max_len = len(qsym_)
-        if var.qualified_symbol[:-1] == qsym:
+        assert var
+        var_qsym = qualified_symbols(var, self.scope)
+        if var_qsym[:-1] == qsym:
             return var
         return None
 
@@ -123,11 +133,13 @@ class ObjectTransformer(object):
         max_len = 0
         var = None
         for def_var in self.scope.usedef.get_vars_defined_at(stm):
-            qsym_ = def_var.qualified_symbol
+            qsym_ = qualified_symbols(def_var, self.scope)
             if len(qsym_) > max_len:
                 var = def_var
                 max_len = len(qsym_)
-        if var.qualified_symbol[:-1] == qsym:
+        assert var
+        var_qsym = qualified_symbols(var, self.scope)
+        if var_qsym[:-1] == qsym:
             return var
         return None
 
@@ -142,7 +154,7 @@ class ObjectTransformer(object):
                     continue
                 if copy_stm.is_a(PHIBase) and stm.is_a(MOVE):
                     use_var = self._find_use_var(stm, copy_qsym)
-                    if use_var or stm.src.is_a(MREF) or (stm.src.is_a(SYSCALL) and stm.src.symbol.name == 'len'):
+                    if use_var or stm.src.is_a(MREF) or (stm.src.is_a(SYSCALL) and stm.src.name == 'len'):
                         # y = obj.x  -->  y = uphi(c0 ? obj0.x,
                         #                          c1 ? obj1.x)
                         self._add_uphi(stm, sources, copy_qsym)
@@ -165,22 +177,21 @@ class ObjectTransformer(object):
         self.udupdater.update(mv_stm, None)
         insert_idx = mv_stm.block.stms.index(mv_stm)
         tmp = self.scope.add_temp()
-        var = TEMP(tmp, Ctx.STORE)
+        var = TEMP(tmp.name, Ctx.STORE)
         uphi = UPHI(var)
         for src in sources:
             c = RELOP('Eq',
                       self.qsym_to_ir(copy_qsym, Ctx.LOAD), #copy_var.clone(),
-                      TEMP(src, Ctx.LOAD))
+                      TEMP(src.name))
             c_sym = self.scope.add_condition_sym()
-            tmp = TEMP(c_sym, Ctx.STORE)
-            tmp_mv = MOVE(tmp, c, loc=mv_stm.loc)
+            tmp_mv = MOVE(TEMP(c_sym.name), c, loc=mv_stm.loc)
             mv_stm.block.insert_stm(insert_idx, tmp_mv)
             insert_idx += 1
             self.udupdater.update(None, tmp_mv)
-            uphi.ps.append(TEMP(c_sym, Ctx.LOAD))
+            uphi.ps.append(TEMP(c_sym.name))
             mv_src = mv_stm.src.clone()
             #mv_src.replace(copy_var.exp, TEMP(src, Ctx.LOAD))
-            mv_src.replace(self.qsym_to_ir(copy_qsym, Ctx.LOAD), TEMP(src, Ctx.LOAD))
+            mv_src.replace(self.qsym_to_ir(copy_qsym, Ctx.LOAD), TEMP(src.name))
             uphi.args.append(mv_src)
         mv_stm.block.insert_stm(insert_idx, uphi)
         self.udupdater.update(None, uphi)
@@ -200,10 +211,9 @@ class ObjectTransformer(object):
             # Must follow Quadruplet form
             cond_rhs = RELOP('Eq',
                              self.qsym_to_ir(copy_qsym, Ctx.LOAD), #copy_var.exp.clone(),
-                             TEMP(src, Ctx.LOAD))
+                             TEMP(src.name))
             csym = self.scope.add_condition_sym()
-            cond_lhs = TEMP(csym, Ctx.STORE)
-            mv = MOVE(cond_lhs, cond_rhs, loc=mv_stm.loc)
+            mv = MOVE(TEMP(csym.name), cond_rhs, loc=mv_stm.loc)
             blk.insert_stm(stm_idx, mv)
             self.udupdater.update(None, mv)
             csyms.append(csym)
@@ -211,8 +221,8 @@ class ObjectTransformer(object):
         # add branching
         for src, csym in zip(sources, csyms):
             mv_copy = mv_stm.clone()
-            mv_copy.dst.exp = TEMP(src, Ctx.STORE)
-            new_tail = self._make_branch(TEMP(csym, Ctx.LOAD), mv_copy, blk, stm_idx)
+            mv_copy.dst.exp = TEMP(src.name, Ctx.STORE)
+            new_tail = self._make_branch(TEMP(csym.name), mv_copy, blk, stm_idx)
             stm_idx = 0
             blk = new_tail
             self.udupdater.update(None, mv_copy)
@@ -258,12 +268,12 @@ class ObjectTransformer(object):
         for src in sources:
             expr_copy = expr.clone()
             if expr_copy.exp.is_a(MSTORE):
-                expr_copy.exp.mem = TEMP(src, Ctx.LOAD)
+                expr_copy.exp.mem = TEMP(src.name)
             else:
                 raise NotImplemented
             c = RELOP('Eq',
                       self.qsym_to_ir(copy_qsym, Ctx.LOAD),
-                      TEMP(src, Ctx.LOAD))
+                      TEMP(src.name))
             cexpr = CEXPR(c, expr_copy.exp, loc=expr_copy.loc)
             expr.block.insert_stm(insert_idx, cexpr)
             self.udupdater.update(None, cexpr)
@@ -276,7 +286,7 @@ class ObjectTransformer(object):
             assert defstm.src.is_a(ARRAY)
 
             seq_id = self.scope.add_sym(f'{seq_sym.name}{seq_sym.id}__id', tags=set(), typ=Type.int(16))
-            mv = MOVE(TEMP(seq_id, Ctx.STORE),
+            mv = MOVE(TEMP(seq_id.name),
                       CONST(seq_id.id),
                       loc=defstm.loc)
             idx = defstm.block.stms.index(defstm)
@@ -286,14 +296,14 @@ class ObjectTransformer(object):
             for usestm in usestms:
                 if (usestm.is_a(MOVE)
                         and not usestm.src.is_a([MREF, SYSCALL])):
-                    usestm.replace(seq_sym, seq_id)
+                    usestm.replace(seq_sym.name, seq_id.name)
                 elif (usestm.is_a(CMOVE)
-                        and usestm.cond.find_vars((seq_sym,))):
-                    usestm.cond.replace(seq_sym, seq_id)
+                        and usestm.cond.find_vars((seq_sym.name,))):
+                    usestm.cond.replace(seq_sym.name, seq_id.name)
                 elif (usestm.is_a(CEXPR)
-                        and usestm.cond.find_vars((seq_sym,))):
-                    usestm.cond.replace(seq_sym, seq_id)
+                        and usestm.cond.find_vars((seq_sym.name,))):
+                    usestm.cond.replace(seq_sym.name, seq_id.name)
                 elif usestm.is_a([LPHI, PHI]):
-                    usestm.replace(seq_sym, seq_id)
+                    usestm.replace(seq_sym.name, seq_id.name)
         for seq_sym in self.seq_copies.keys():
             seq_sym[-1].typ = Type.int(16)

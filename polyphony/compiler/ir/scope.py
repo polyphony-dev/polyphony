@@ -1,14 +1,18 @@
 ﻿import itertools
 from collections import defaultdict, namedtuple
 from copy import copy
+from typing import NamedTuple
 from xml.dom.expatbuilder import Namespaces
+from .builtin import builtin_symbols
 from .block import Block
 from .loop import LoopNestTree
 from .symbol import Symbol
 from .synth import make_synth_params
 from .types.type import Type
+from .types import typehelper
 from .irvisitor import IRVisitor
 from .ir import *
+from .irhelper import qualified_symbols
 from ..common.common import Tagged, fail
 from ..common.errors import Errors
 from ..common.env import env
@@ -17,33 +21,37 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-FunctionParam = namedtuple('FunctionParam', ('sym', 'defval'))
+
+
+class FunctionParam(NamedTuple):
+    sym: Symbol
+    defval: IRExp|None
 
 class FunctionParams(object):
     def __init__(self, is_method=False):
-        self._params = []
-        self._is_method = is_method
+        self._params:list[FunctionParam] = []
+        self._is_method:bool = is_method
 
-    def add_param(self, sym, defval):
+    def add_param(self, sym:Symbol, defval:IRExp|None):
         self._params.append(FunctionParam(sym, defval))
 
-    def _explicit_params(self, with_self):
+    def _explicit_params(self, with_self) -> list[FunctionParam]:
         if not with_self and self._is_method:
             return self._params[1:]
         else:
             return self._params[:]
 
-    def symbols(self, with_self=False):
+    def symbols(self, with_self=False) -> tuple[Symbol, ...]:
         params = self._explicit_params(with_self)
         return tuple([sym for sym, _ in params])
 
-    def default_values(self, with_self=False):
+    def default_values(self, with_self=False) -> tuple[IRExp|None, ...]:
         params = self._explicit_params(with_self)
         return tuple([defval for _, defval in params])
 
-    def types(self, with_self=False):
+    def types(self, with_self=False) -> tuple[Type, ...]:
         params = self._explicit_params(with_self)
-        return [p.sym.typ for p in params]
+        return tuple([p.sym.typ for p in params])
 
     def _param_name(self, sym):
         l = len(Symbol.param_prefix + '_')
@@ -68,7 +76,7 @@ class FunctionParams(object):
             params.append(FunctionParam(s, v))
         self._params = params
 
-    def remove_by_index(self, indices):
+    def remove_by_indices(self, indices):
         for i in reversed(indices):
             if self._is_method:
                 self._params.pop(i + 1)
@@ -94,11 +102,13 @@ class SymbolTable(object):
 
     def __str__(self):
         s = ''
-        for sym in self.symbols.values():
-            s += f'{sym}:{sym.typ} {sym.tags}\n'
+        for name, sym in self.symbols.items():
+            s += f'{name} - {sym}:{sym.typ} {sym.tags} {sym.scope.name}\n'
+        #for sym in self.symbols.values():
+        #    s += f'{sym}:{sym.typ} {sym.tags}\n'
         return s
 
-    def add_sym(self, name, tags=None, typ=None):
+    def add_sym(self, name: str, tags: set[str], typ: Type|None):
         if typ is None:
             typ = Type.undef()
         if name in self.symbols:
@@ -107,7 +117,7 @@ class SymbolTable(object):
         self.symbols[name] = sym
         return sym
 
-    def add_temp(self, temp_name=None, tags=None, typ=None):
+    def add_temp(self, temp_name: str='', tags: set[str]=set(), typ: Type|None=None):
         name = Symbol.unique_name(temp_name)
         if tags:
             tags.add('temp')
@@ -118,9 +128,9 @@ class SymbolTable(object):
     def add_condition_sym(self):
         return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool())
 
-    def add_param_sym(self, param_name, typ=None):
+    def add_param_sym(self, param_name: str, tags: set[str], typ: Type|None=None):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
-        return self.add_sym(name, {'param'}, typ)
+        return self.add_sym(name, tags|{'param'}, typ)
 
     def del_sym(self, name):
         if name in self.symbols:
@@ -159,14 +169,21 @@ class SymbolTable(object):
                 return None
         return sym
 
-    def has_sym(self, name):
+    def find_syms_by_tags(self, tags: set[str]) -> set[Symbol]:
+        syms = set()
+        for sym in self.symbols.values():
+            if sym.tags.issuperset(tags):
+                syms.add(sym)
+        return syms
+
+    def has_sym(self, name: str) -> bool:
         return name in self.symbols
 
     def gen_sym(self, name):
         if self.has_sym(name):
             sym = self.symbols[name]
         else:
-            sym = self.add_sym(name)
+            sym = self.add_sym(name, tags=set(), typ=Type.undef())
         return sym
 
     def rename_sym(self, old, new):
@@ -178,7 +195,9 @@ class SymbolTable(object):
         return sym
 
     def inherit_sym(self, orig_sym, new_name):
-        #assert orig_sym.scope is self
+        assert orig_sym.scope is self
+        if orig_sym.is_imported():
+            print(orig_sym)
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
@@ -188,6 +207,8 @@ class SymbolTable(object):
                 new_sym.ancestor = orig_sym.ancestor
             else:
                 new_sym.ancestor = orig_sym
+            if orig_sym.is_imported():
+                new_sym.import_from(orig_sym.import_src())
         return new_sym
 
     def find_scope_sym(self, obj):
@@ -238,19 +259,21 @@ class Scope(Tagged, SymbolTable):
         tags |= {'namespace'}
         namespace = Scope.create(parent, name, tags, lineno=1)
         if not namespace.is_builtin():
-            namesym = namespace.add_sym('__name__', typ=Type.str())
+            namesym = namespace.add_sym('__name__', tags=set(), typ=Type.str())
             if namespace.is_global():
                 namespace.constants[namesym] = CONST('__main__')
             else:
                 namespace.constants[namesym] = CONST(namespace.name)
             if path:
-                filesym = namespace.add_sym('__file__', typ=Type.str())
+                filesym = namespace.add_sym('__file__', tags=set(), typ=Type.str())
                 namespace.constants[filesym] = CONST(path)
         return namespace
 
     @classmethod
     def destroy(cls, scope):
         assert scope.name in env.scopes
+        if scope.parent:
+            scope.parent.children.remove(scope)
         env.remove_scope(scope)
 
     @classmethod
@@ -306,9 +329,9 @@ class Scope(Tagged, SymbolTable):
         self.scope_id = scope_id
         self.free_symbols = set()
         self.function_params = FunctionParams(self.is_method())
-        self.return_type = None
-        self.entry_block = None
-        self.exit_block = None
+        self.return_type: Type = None
+        self.entry_block: Block = None
+        self.exit_block: Block = None
         self.children = []
         self.bases = []
         self.origin = None
@@ -416,14 +439,32 @@ class Scope(Tagged, SymbolTable):
     def unique_name(self):
         return self.name.replace('@top.', '').replace('.', '_')
 
-    def clone_symbols(self, scope, postfix=''):
+    def clone_symbols(self, scope, postfix='') -> dict[Symbol, Symbol]:
         symbol_map = {}
         for orig_sym in self.symbols.values():
-            new_sym = orig_sym.clone(scope, postfix)
+            if postfix:
+                sym_new_name = f'{orig_sym.name}{postfix}'
+            else:
+                sym_new_name = f'{orig_sym.name}'
+            new_sym = orig_sym.clone(scope, sym_new_name)
             assert new_sym.name not in scope.symbols
             scope.symbols[new_sym.name] = new_sym
             new_sym.typ = orig_sym.typ.clone()
             symbol_map[orig_sym] = new_sym
+        return symbol_map
+
+    def clone_symbols_by_name(self, scope, postfix='') -> dict[str, Symbol]:
+        symbol_map = {}
+        for orig_sym in self.symbols.values():
+            if postfix:
+                sym_new_name = f'{orig_sym.name}{postfix}'
+            else:
+                sym_new_name = f'{orig_sym.name}'
+            new_sym = orig_sym.clone(scope, sym_new_name)
+            assert new_sym.name not in scope.symbols
+            scope.symbols[new_sym.name] = new_sym
+            new_sym.typ = orig_sym.typ.clone()
+            symbol_map[orig_sym.name] = new_sym
         return symbol_map
 
     def clone_blocks(self, scope):
@@ -446,7 +487,7 @@ class Scope(Tagged, SymbolTable):
                 stm.targets = [block_map[t] for t in stm.targets]
         return block_map, stm_map
 
-    def clone(self, prefix, postfix, parent=None, sym_postfix=''):
+    def clone(self, prefix, postfix, parent=None, sym_postfix='', recursive=False):
         #if self.is_lib():
         #    return
         name = prefix + '_' if prefix else ''
@@ -456,10 +497,10 @@ class Scope(Tagged, SymbolTable):
         s = Scope.create(parent, name, set(self.tags), self.lineno, origin=self)
         logger.debug('CLONE {} {}'.format(self.name, s.name))
 
-        s.children = list(self.children)
-        # TODO: should be reconsidered the owned policy
-        #for child in s.children:
-        #    child.parent = s
+        if recursive:
+            s.children = [child.clone(prefix, postfix, s, sym_postfix, recursive) for child in self.children]
+        else:
+            s.children = list(self.children)
 
         s.bases = list(self.bases)
         s.subs = list(self.subs)
@@ -501,9 +542,6 @@ class Scope(Tagged, SymbolTable):
             for sym in self.parent.symbols.values():
                 symbol_map[sym] = parent.cloned_symbols[sym]
 
-        sym_replacer = SymbolReplacer(symbol_map)
-        sym_replacer.process(s)
-
         s.cloned_symbols = symbol_map
 
         s.synth_params = self.synth_params.copy()
@@ -539,7 +577,8 @@ class Scope(Tagged, SymbolTable):
             new_class.add_tag('instantiated')
         assert new_class.origin is self
 
-        old_class_sym = new_class.parent.find_sym(self.base_name)
+        old_class_sym = self.parent.find_sym(self.base_name)
+        assert isinstance(old_class_sym, Symbol)
         old_class_sym_t = old_class_sym.typ
         if old_class_sym_t.is_class():
             new_t = Type.klass(new_class)
@@ -620,6 +659,14 @@ class Scope(Tagged, SymbolTable):
         else:
             return self.parent.find_namespace()
 
+    def find_owner_scope(self, symbol_name: str):
+        if symbol_name in self.symbols:
+            return self
+        elif self.parent:
+            return self.parent.find_owner_scope(symbol_name)
+        else:
+            return None
+
     def collect_scope(self):
         scopes = self.children[:]
         for c in self.children:
@@ -641,18 +688,18 @@ class Scope(Tagged, SymbolTable):
     def clear_params(self):
         return self.function_params.clear()
 
-    def remove_param(self, key):
+    def remove_param(self, key:Symbol|list[int]):
         if isinstance(key, Symbol):
             return self.function_params.remove(key)
         elif isinstance(key, list):
-            return self.function_params.remove_by_index(key)
+            return self.function_params.remove_by_indices(key)
 
     def find_param_sym(self, param_name):
         name = '{}_{}'.format(Symbol.param_prefix, param_name)
         return self.find_sym(name)
 
-    def add_return_sym(self):
-        return self.add_sym(Symbol.return_prefix, ['return'])
+    def add_return_sym(self, typ: Type=Type.undef()):
+        return self.add_sym(Symbol.return_name, {'return'}, typ)
 
     def add_free_sym(self, sym):
         sym.add_tag('free')
@@ -661,25 +708,21 @@ class Scope(Tagged, SymbolTable):
     def del_free_sym(self, sym):
         self.free_symbols.discard(sym)
 
-    def find_sym(self, name):
+    def find_sym(self, name:str) -> Symbol | None:
         sym = SymbolTable.find_sym(self, name)
         if sym:
             return sym
         elif self.parent:
-            if self.parent.is_class():
-                # look-up from bases
-                for base in self.bases:
-                    found = base.find_sym(name)
-                    if found:
-                        break
-                else:
-                    # otherwise, look-up from global
-                    found = env.outermost_scope().find_sym(name)
-                    if not found:
-                        found = self.global_scope().find_sym(name)
-            else:
-                found = self.parent.find_sym(name)
+            parent = self.parent
+            # Class scope is not included in Python's LEGB search
+            while parent.is_class():
+                parent = parent.parent
+                assert parent
+            found = parent.find_sym(name)
             return found
+        else:
+            if name in builtin_symbols:
+                return builtin_symbols[name]
         return None
 
     def find_scope_sym(self, obj, rec=True):
@@ -688,6 +731,9 @@ class Scope(Tagged, SymbolTable):
             for c in self.children:
                 results.extend(c.find_scope_sym(obj, True))
         return results
+
+    def find_syms_by_tags(self, tags: set[str]) -> set[Symbol]:
+        return SymbolTable.find_syms_by_tags(self, tags)
 
     def qualified_name(self):
         if self.name.startswith(env.global_scope_name):
@@ -725,7 +771,7 @@ class Scope(Tagged, SymbolTable):
         if child_scope not in self.children:
             self.children.append(child_scope)
 
-    def add_param(self, sym, defval):
+    def add_param(self, sym:Symbol, defval:IRExp|None):
         self.function_params.add_param(sym, defval)
 
     def append_callee_instance(self, callee_scope, inst_name):
@@ -798,11 +844,11 @@ class Scope(Tagged, SymbolTable):
         class_fields.update(self.symbols)
         return class_fields
 
-    def register_worker(self, worker_scope, worker_args):
-        for i, (w, _) in enumerate(self.workers[:]):
+    def register_worker(self, worker_scope):
+        for i, w in enumerate(self.workers[:]):
             if w is worker_scope:
                 self.workers.pop(i)
-        self.workers.append((worker_scope, worker_args))
+        self.workers.append(worker_scope)
         assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
 
@@ -877,9 +923,10 @@ class Scope(Tagged, SymbolTable):
         Scope.instance_ids[self] += 1
         return n
 
-    def build_module_params(self, module_param_vars):
+    def build_module_params(self, module_param_vars: list[tuple[str, IRExp]]):
         module_params = []
         ctor = self.find_ctor()
+        assert ctor
         param_names = ctor.param_names(with_self=True)
         for i, name in enumerate(param_names):
             if name.isupper():
@@ -896,13 +943,14 @@ class SymbolReplacer(IRVisitor):
         self.sym_map = sym_map
 
     def visit_TEMP(self, ir):
-        if ir.symbol in self.sym_map:
-            ir.symbol = self.sym_map[ir.symbol]
+        sym = self.scope.find_sym(ir.name)
+        assert sym
+        if sym in self.sym_map:
+            ir.name = self.sym_map[sym].name
         else:
-            logger.debug('WARNING: not found {}'.format(ir.symbol))
-
-        sym_t = ir.symbol.typ
-        for expr in Type.find_expr(sym_t):
+            logger.debug('WARNING: not found {}'.format(sym))
+        sym_t = sym.typ
+        for expr in typehelper.find_expr(sym_t):
             assert expr.is_a(EXPR)
             old_stm = self.current_stm
             self.current_stm = expr
@@ -911,15 +959,16 @@ class SymbolReplacer(IRVisitor):
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
-        if ir.symbol in self.sym_map:
-            ir.symbol = self.sym_map[ir.symbol]
-        else:
-            logger.debug('WARNING: not found {}'.format(ir.symbol))
-
-        if isinstance(ir.symbol, str):
+        qsyms = qualified_symbols(ir, self.scope)
+        sym = qsyms[-1]
+        if isinstance(sym, str):
             return
-        attr_t = ir.symbol.typ
-        for expr in Type.find_expr(attr_t):
+        if sym in self.sym_map:
+            ir.name = self.sym_map[sym].name
+        else:
+            logger.debug('WARNING: not found {}'.format(sym))
+        attr_t = sym.typ
+        for expr in typehelper.find_expr(attr_t):
             assert expr.is_a(EXPR)
             old_stm = self.current_stm
             self.current_stm = expr
@@ -927,15 +976,16 @@ class SymbolReplacer(IRVisitor):
             self.current_stm = old_stm
 
     def visit_ARRAY(self, ir):
-        if ir.symbol in self.sym_map:
-            ir.symbol = self.sym_map[ir.symbol]
         for item in ir.items:
             self.visit(item)
         self.visit(ir.repeat)
 
     def visit_NEW(self, ir):
-        if ir.symbol in self.sym_map:
-            ir.symbol = self.sym_map[ir.symbol]
+        qsyms = qualified_symbols(ir, self.scope)
+        sym = qsyms[-1]
+        assert isinstance(sym, Symbol)
+        if sym in self.sym_map:
+            ir.name = self.sym_map[sym].name
         self.visit_args(ir.args, ir.kwargs)
 
 
@@ -954,7 +1004,7 @@ def write_dot(scope, tag):
     def get_text(blk):
         s = blk.name + '\n'
         for stm in blk.stms:
-            s += str(stm).replace('\n', '\l') + '\l'
+            s += str(stm).replace('\n', r'\l') + r'\l'
         s = s.replace(':', '_')
         return s
 

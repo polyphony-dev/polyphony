@@ -62,7 +62,7 @@ def warn(info, err_id, args=None):
 class Tagged(object):
     __slots__ = ['tags']
 
-    def __init__(self, tags):
+    def __init__(self, tags: list[str]|set[str]):
         if isinstance(tags, list):
             tags = set(tags)
         elif tags is None:

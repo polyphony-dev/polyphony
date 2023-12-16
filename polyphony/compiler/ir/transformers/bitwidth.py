@@ -5,11 +5,13 @@ logger = logging.getLogger(__name__)
 
 class TempVarWidthSetter(IRVisitor):
     def visit_TEMP(self, ir):
-        if ir.symbol.typ.is_int():
-            self.int_types.append(ir.symbol.typ)
+        sym = self.scope.find_sym(ir.name)
+        assert sym
+        if sym.typ.is_int():
+            self.int_types.append(sym.typ)
             # only append an int type temp
-            if ir.symbol.is_temp():
-                self.temps.append(ir.symbol)
+            if sym.is_temp():
+                self.temps.append(sym)
 
     def visit_MOVE(self, ir):
         self.temps = []

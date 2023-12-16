@@ -1,5 +1,12 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
 from .ir import *
 from .irvisitor import IRVisitor
+from .symbol import Symbol
+from .types.type import Type
+from .types.scopetype import ScopeType
+if TYPE_CHECKING:
+    from .scope import Scope
 
 
 def op2str(op):
@@ -18,13 +25,11 @@ def expr2ir(expr, name=None, scope=None):
         return CONST(expr)
     elif isinstance(expr, list):
         items = [expr2ir(e) for e in expr]
-        ar = ARRAY(items)
-        ar.symbol = scope.add_temp('@array', {'predefined'})
+        ar = ARRAY(items, mutable=True)
         return ar
     elif isinstance(expr, tuple):
         items = [expr2ir(e) for e in expr]
-        ar = ARRAY(items)
-        ar.symbol = scope.add_temp('@array', {'predefined'})
+        ar = ARRAY(items, mutable=False)
         return ar
     else:
         if inspect.isclass(expr):
@@ -42,15 +47,15 @@ def expr2ir(expr, name=None, scope=None):
                 sym.typ = t
             else:
                 assert False
-            return TEMP(sym, Ctx.LOAD)
+            return TEMP(sym.name)
         elif inspect.isfunction(expr):
             fsym = scope.find_sym(name)
             assert fsym.typ.is_function()
-            return TEMP(fsym, Ctx.LOAD)
+            return TEMP(name)
         elif inspect.ismethod(expr):
             fsym = scope.find_sym(name)
             assert fsym.typ.is_function()
-            return TEMP(fsym, Ctx.LOAD)
+            return TEMP(name)
         assert False
 
 
@@ -114,22 +119,23 @@ def reduce_relexp(exp):
     return exp
 
 
-def is_port_method_call(call):
+def is_port_method_call(call, scope):
     if not call.is_a(CALL):
         return False
-    calee_scope = call.callee_scope
+    calee_scope = call.get_callee_scope(scope)
+    # calee_scope = call.callee_scope
     return (calee_scope.is_method() and
             calee_scope.parent.is_port())
 
 
-def has_exclusive_function(stm):
+def has_exclusive_function(stm, scope):
     if stm.is_a(MOVE):
         call = stm.src
     elif stm.is_a(EXPR):
         call = stm.exp
     else:
         return False
-    if is_port_method_call(call):
+    if is_port_method_call(call, scope):
         if stm.block.synth_params['scheduling'] == 'timed':
             return False
         return True
@@ -140,10 +146,10 @@ def has_exclusive_function(stm):
 
 def has_clkfence(stm):
     if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-            stm.exp.symbol.name == 'polyphony.timing.clksleep'):
+            stm.exp.name == 'polyphony.timing.clksleep'):
         return True
     elif (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
-            stm.exp.symbol.name.startswith('polyphony.timing.wait_')):
+            stm.exp.name.startswith('polyphony.timing.wait_')):
         return True
     else:
         return False
@@ -244,6 +250,70 @@ def find_move_src(sym, typ):
         if stm.is_a(MOVE) and stm.src.is_a(typ):
             return stm.src
     return None
+
+
+def qualified_symbols(ir: IRNameExp, scope: Scope) -> tuple[Symbol|str, ...]:
+    assert isinstance(ir, IRNameExp)
+    qname = ir.qualified_name
+    symbol_or_names:list[Symbol|str] = []
+    for i, name in enumerate(qname):
+        symbol = scope.find_sym(name)
+        if symbol:
+            assert isinstance(symbol, Symbol)
+            symbol_or_names.append(symbol)
+            if symbol.typ.has_scope():
+                scope = cast(ScopeType, symbol.typ).scope
+            else:
+                symbol_or_names.extend(qname[i+1:])
+                break
+        else:
+            symbol_or_names.extend(qname[i:])
+            break
+    assert len(symbol_or_names) == len(qname)   
+    return tuple(symbol_or_names)
+
+
+def qsym2var(qsym: tuple[Symbol,...], ctx: Ctx) -> IRVariable:
+    assert len(qsym) > 0
+    exp = TEMP(qsym[0].name)
+    for sym in qsym[1:]:
+        exp = ATTR(exp, sym.name)
+    exp._ctx = ctx
+    return exp
+
+
+def irexp_type(ir: IRExp, scope: Scope) -> Type:
+    assert isinstance(ir, IRExp)
+    match ir:
+        case ARRAY() as array:
+            if array.items:
+                elm_typ = irexp_type(array.items[0], scope)
+            else:
+                elm_typ = Type.none()
+            if array.repeat.is_a(CONST):
+                length = len(array.items) * array.repeat.value
+            else:
+                length = Type.ANY_LENGTH
+            if array.is_mutable:
+                return Type.list(elm_typ, length)
+            else:
+                return Type.tuple(elm_typ, length)
+        case IRNameExp() as ir:
+            qsym = qualified_symbols(ir, scope)
+            assert isinstance(qsym[-1], Symbol)
+            return qsym[-1].typ
+        case MREF() as mref:
+            return irexp_type(mref.mem, scope)
+        case BINOP() as binop:
+            return irexp_type(binop.left, scope)
+        case RELOP():
+            return Type.bool()
+        case UNOP() as unop:
+            return irexp_type(unop.exp, scope)
+        case CONST():
+            return Type.int()
+        case _:
+            assert False
 
 
 class StmFinder(IRVisitor):

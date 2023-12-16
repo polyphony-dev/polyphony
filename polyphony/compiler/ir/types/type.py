@@ -90,6 +90,8 @@ class Type:
         if isinstance(scope, Scope):
             return FunctionType(explicit, scope.name, ret_t, param_ts)
         else:
+            if not scope:
+                scope = '__builtin__.object'
             return FunctionType(explicit, scope, ret_t, param_ts)
 
     @classmethod
@@ -99,6 +101,8 @@ class Type:
         if isinstance(scope, Scope):
             return ObjectType(explicit, scope.name)
         else:
+            if not scope:
+                scope = '__builtin__.object'
             return ObjectType(explicit, scope)
 
     @classmethod
@@ -108,8 +112,10 @@ class Type:
         if isinstance(scope, Scope):
             return ClassType(explicit, scope.name)
         else:
+            if not scope:
+                scope = '__builtin__.type'
             return ClassType(explicit, scope)
-    
+
     @classmethod
     def port(cls, portcls, attrs) -> PortType:
         from ..scope import Scope
@@ -118,7 +124,7 @@ class Type:
             return PortType(False, portcls.name, attrs)
         else:
             return PortType(False, portcls, attrs)
-    
+
     @classmethod
     def namespace(cls, scope, explicit=False) -> NamespaceType:
         from ..scope import Scope

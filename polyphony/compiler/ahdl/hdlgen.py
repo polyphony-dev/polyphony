@@ -5,6 +5,7 @@ from .transformers.varreplacer import AHDLSignalReplacer
 from .hdlmodule import HDLModule
 from ..common.env import env
 from ..ir.ir import *
+from ..ir.irhelper import qualified_symbols
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -105,8 +106,9 @@ class HDLModuleBuilder(object):
                 array = defstm.src
                 if array.is_a(ARRAY):
                     break
-                elif array.is_a([TEMP, ATTR]):
-                    array_sym = array.symbol
+                elif array.is_a(IRVariable):
+                    array_sym = qualified_symbols(array, array_sym.scope)[-1]
+                    # array_sym = array.symbol
                 else:
                     assert False
             case_items = []

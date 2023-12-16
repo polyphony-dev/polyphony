@@ -4,8 +4,10 @@ from ..block import Block
 from ..analysis.dominator import DominatorTreeBuilder
 from ..irvisitor import IRVisitor, IRTransformer
 from ..ir import *
-from ..irhelper import expr2ir, reduce_relexp
+from ..irhelper import expr2ir, reduce_relexp, qualified_symbols, irexp_type
 from ..irhelper import eval_unop, eval_binop, reduce_binop, eval_relop
+from ..scope import Scope
+from ..symbol import Symbol
 from ..types.type import Type
 from ..analysis.usedef import UseDefDetector
 from ..analysis.usedef import UseDefUpdater
@@ -138,10 +140,12 @@ class ConstantOptBase(IRVisitor):
                     return CONST(True)
                 else:
                     return var
-        elif (ir.left.is_a([TEMP, ATTR])
-                and ir.right.is_a([TEMP, ATTR])
-                and ir.left.qualified_symbol == ir.right.qualified_symbol):
-            v = eval_relop(ir.op, ir.left.symbol.id, ir.right.symbol.id)
+        elif (ir.left.is_a(IRVariable)
+                and ir.right.is_a(IRVariable)
+                and (left_qsym := qualified_symbols(ir.left, self.scope))
+                and (right_qsym := qualified_symbols(ir.right, self.scope))
+                and left_qsym == right_qsym):
+            v = eval_relop(ir.op, left_qsym[-1].id, right_qsym[-1].id)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return CONST(v)
@@ -160,7 +164,9 @@ class ConstantOptBase(IRVisitor):
 
     def visit_CALL(self, ir):
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
-        func_t = ir.symbol.typ
+        qsym = qualified_symbols(ir.func, self.scope)
+        assert isinstance(qsym[-1], Symbol)
+        func_t = qsym[-1].typ
         if (func_t.is_function()
                 and func_t.scope.is_lib()
                 and func_t.scope.base_name == 'is_worker_running'):
@@ -245,8 +251,10 @@ class ConstantOptBase(IRVisitor):
                     phis = succ.collect_stms(PHI)
                     for phi in phis:
                         for pi, p in enumerate(phi.ps[:]):
-                            for v in p.find_irs([TEMP, ATTR]):
-                                blks = self.scope.usedef.get_blks_defining(v.symbol)
+                            for v in p.find_irs(IRVariable):
+                                v_sym = qualified_symbols(v, self.scope)[-1]
+                                assert isinstance(v_sym, Symbol)
+                                blks = self.scope.usedef.get_blks_defining(v_sym)
                                 if blk in blks:
                                     phi.args.pop(pi)
                                     phi.ps.pop(pi)
@@ -379,12 +387,13 @@ class ConstantOpt(ConstantOptBase):
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(CONST)
                     and stm.dst.is_a(TEMP)
-                    and not stm.dst.symbol.is_return()):
+                    and (dst_sym := qualified_symbols(stm.dst, self.scope)[-1])
+                    and not dst_sym.is_return()):
                 #sanity check
-                defstms = scope.usedef.get_stms_defining(stm.dst.symbol)
+                defstms = scope.usedef.get_stms_defining(dst_sym)
                 assert len(defstms) <= 1
 
-                dst_t = stm.dst.symbol.typ
+                dst_t = dst_sym.typ
                 if dst_t.is_int() and isinstance(stm.src.value, int):
                     if dst_t.signed:
                         src = _to_signed(dst_t, stm.src)
@@ -398,16 +407,15 @@ class ConstantOpt(ConstantOptBase):
                     if rep not in dead_stms:
                         self.worklist.append(rep)
                 self.udupdater.update(stm, None)
-                scope.del_sym(stm.dst.symbol.name)
                 dead_stms.append(stm)
-                if stm.dst.symbol.is_free():
-                    for clos in stm.dst.symbol.scope.closures:
-                        self._propagate_to_closure(clos, stm.dst, stm.src)
+                if dst_sym.is_free():
+                    for clos in dst_sym.scope.closures:
+                        self._propagate_to_closure(clos, dst_sym, stm.src)
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(ARRAY)
                     and stm.src.repeat.is_a(CONST)):
                 src = stm.src
-                dst_sym = stm.dst.symbol
+                dst_sym = qualified_symbols(stm.dst, self.scope)[-1]
                 array_t = dst_sym.typ
                 assert array_t.is_seq()
                 if array_t.length == Type.ANY_LENGTH:
@@ -416,38 +424,43 @@ class ConstantOpt(ConstantOptBase):
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
 
-    def _propagate_to_closure(self, closure, dst, src):
-        target = dst.symbol
+    def _propagate_to_closure(self, closure: Scope, target: Symbol, src: IRVariable):
         UseDefDetector().process(closure)
-        replaces = VarReplacer.replace_uses(closure, TEMP(target, Ctx.LOAD), src)
+        replaces = VarReplacer.replace_uses(closure, TEMP(target.name), src)
         # Consider the case self.scope is cloned
         if not replaces and self.scope.origin:
             orig_symbols = {cloned:orig for orig, cloned in self.scope.cloned_symbols.items()}
             if target in orig_symbols:
                 target = orig_symbols[target]
-                replaces = VarReplacer.replace_uses(closure, TEMP(target, Ctx.LOAD), src)
+                replaces = VarReplacer.replace_uses(closure, TEMP(target.name), src)
 
     def visit_SYSCALL(self, ir):
-        if ir.symbol.name == 'len':
+        if ir.name == 'len':
             _, mem = ir.args[0]
-            memsym = mem.symbol
-            mem_t = memsym.typ
+            mem_t = irexp_type(mem, self.scope)
             assert mem_t.is_seq()
             if mem_t.length != Type.ANY_LENGTH:
                 return CONST(mem_t.length)
-            array = try_get_constant(mem.qualified_symbol, self.scope)
+            mem_qsym = qualified_symbols(mem, self.scope)
+            array = try_get_constant(mem_qsym, self.scope)
             if array and array.repeat.is_a(CONST):
                 length = array.repeat.value * len(array.items)
-                array.symbol.typ = array.symbol.typ.clone(length=length)
+                array_t = irexp_type(array, self.scope)
+                # TODO: check
+                assert False
+                # array.symbol.typ = array.symbol.typ.clone(length=length)
                 return CONST(length)
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):
         if not ir.offset.is_a(CONST):
             return ir
-        mem_t = ir.mem.symbol.typ
-        if ir.mem.symbol.scope.is_containable() and mem_t.is_seq():
-            array = try_get_constant(ir.mem.qualified_symbol, self.scope)
+        qsym = qualified_symbols(ir.mem, self.scope)
+        mem_sym = qsym[-1]
+        assert isinstance(mem_sym, Symbol)
+        mem_t = mem_sym.typ
+        if mem_sym.scope.is_containable() and mem_t.is_seq():
+            array = try_get_constant(qsym, self.scope)
             if array:
                 c = array.items[ir.offset.value]
                 return c
@@ -456,9 +469,11 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_TEMP(self, ir):
-        sym_t = ir.symbol.typ
-        if ir.symbol.scope.is_containable() and sym_t.is_scalar():
-            c = try_get_constant(ir.qualified_symbol, self.scope)
+        sym = self.scope.find_sym(ir.name)
+        assert sym
+        sym_t = sym.typ
+        if sym.scope.is_containable() and sym_t.is_scalar():
+            c = try_get_constant((sym,), self.scope)
             if c:
                 return c
             else:
@@ -466,11 +481,15 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_ATTR(self, ir):
-        receiver = ir.tail()
+        qsym = qualified_symbols(ir, self.scope)
+        attr = qsym[-1]
+        receiver = qsym[-2]
+        assert isinstance(attr, Symbol)
+        assert isinstance(receiver, Symbol)
+        attr_t = attr.typ
         receiver_t = receiver.typ
-        attr_t = ir.symbol.typ
         if (receiver_t.is_class() or receiver_t.is_namespace()) and attr_t.is_scalar():
-            c = try_get_constant(ir.qualified_symbol, self.scope)
+            c = try_get_constant(qsym, self.scope)
             if c:
                 return c
             else:
@@ -478,11 +497,12 @@ class ConstantOpt(ConstantOptBase):
         if receiver_t.is_object() and attr_t.is_scalar():
             objscope = receiver_t.scope
             if objscope.is_class():
+                # Check if class.attr is accessed as object.attr
                 classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():
                     objscope = objscope.origin
                     classsym = objscope.parent.find_sym(objscope.base_name)
-                c = try_get_constant((classsym, ir.symbol), self.scope)
+                c = try_get_constant((classsym, attr), self.scope)
                 if c:
                     return c
         return ir
@@ -518,7 +538,10 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         if ir.exp.is_a(CONST):
             self._process_unconditional_jump(ir, [])
             return
-        expdefs = self.scope.usedef.get_stms_defining(ir.exp.symbol)
+        assert isinstance(ir.exp, IRVariable)
+        exp_sym = qualified_symbols(ir.exp, self.scope)[-1]
+        assert isinstance(exp_sym, Symbol)
+        expdefs = self.scope.usedef.get_stms_defining(exp_sym)
         assert len(expdefs) == 1
         expdef = list(expdefs)[0]
         if expdef.src.is_a(CONST):
@@ -526,9 +549,11 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
             self._process_unconditional_jump(ir, [])
 
     def visit_TEMP(self, ir):
-        sym_t = ir.symbol.typ
-        if ir.symbol.scope.is_containable() and sym_t.is_scalar():
-            c = try_get_constant(ir.qualified_symbol, self.scope)
+        sym = self.scope.find_sym(ir.name)
+        assert sym
+        sym_t = sym.typ
+        if sym.scope.is_containable() and sym_t.is_scalar():
+            c = try_get_constant((sym,), self.scope)
             if c:
                 return c
             else:
@@ -536,11 +561,16 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         return ir
 
     def visit_ATTR(self, ir):
-        receiver = ir.tail()
+        qsyms = qualified_symbols(ir, self.scope)
+        attr = qsyms[-1]
+        receiver = qsyms[-2]
+        assert isinstance(attr, Symbol)
+        assert isinstance(receiver, Symbol)
+        attr_t = attr.typ
         receiver_t = receiver.typ
-        attr_t = ir.symbol.typ
         if (receiver_t.is_class() or receiver_t.is_namespace()) and attr_t.is_scalar():
-            c = try_get_constant(ir.qualified_symbol, self.scope)
+            qsym = qualified_symbols(ir, self.scope)
+            c = try_get_constant(qsym, self.scope)
             if c:
                 return c
             else:
@@ -548,11 +578,12 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         if receiver_t.is_object() and attr_t.is_scalar():
             objscope = receiver_t.scope
             if objscope.is_class():
+                # Check if class.attr is accessed as object.attr
                 classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():
                     objscope = objscope.bases[0]
                     classsym = objscope.parent.find_sym(objscope.base_name)
-                c = try_get_constant((classsym, ir.symbol), self.scope)
+                c = try_get_constant((classsym, attr), self.scope)
                 if c:
                     return c
         return ir
@@ -580,13 +611,16 @@ class PolyadConstantFolding(object):
                 return
             if ir.src.op not in ('Add', 'Mult'):
                 return
-            defstms = self.scope.usedef.get_stms_defining(ir.dst.symbol)
+            assert isinstance(ir.dst, IRVariable)
+            dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
+            assert isinstance(dst_sym, Symbol)
+            defstms = self.scope.usedef.get_stms_defining(dst_sym)
             if len(defstms) != 1:
                 return
-            usestms = self.scope.usedef.get_stms_using(ir.dst.symbol)
+            usestms = self.scope.usedef.get_stms_using(dst_sym)
             for usestm in usestms:
                 if self._can_inlining(usestm, ir):
-                    usestm.replace(TEMP(ir.dst.symbol, Ctx.LOAD), ir.src)
+                    usestm.replace(TEMP(ir.dst.name), ir.src)
 
     class Bin2Poly(IRTransformer):
         def visit_BINOP(self, ir):
@@ -643,8 +677,8 @@ class PolyadConstantFolding(object):
 
 class StaticConstOpt(ConstantOptBase):
     def __init__(self):
-        self.constant_table = {}
-        self.constant_array_table = {}
+        self.constant_table: dict[Symbol, CONST] = {}
+        self.constant_array_table: dict[Symbol, ARRAY] = {}
 
     def process_scopes(self, scopes):
         stms = []
@@ -673,28 +707,35 @@ class StaticConstOpt(ConstantOptBase):
             stms.extend(blk.stms)
         return stms
 
-    def visit_TEMP(self, ir):
-        if ir.symbol in self.constant_table:
-            return self.constant_table[ir.symbol]
+    def visit_TEMP(self, ir: TEMP):
+        sym = qualified_symbols(ir, self.scope)[-1]
+        if sym in self.constant_table:
+            return self.constant_table[sym]
         return ir
 
     def visit_ATTR(self, ir):
-        if ir.symbol in self.constant_table:
-            return self.constant_table[ir.symbol]
+        sym = qualified_symbols(ir, self.scope)[-1]
+        if sym in self.constant_table:
+            return self.constant_table[sym]
         return ir
 
-    def visit_MREF(self, ir):
-        offs = self.visit(ir.offset)
-        if ir.mem.symbol in self.constant_array_table:
-            array = self.constant_array_table[ir.mem.symbol]
-            return array.items[offs.value]
+    def visit_MREF(self, ir: MREF):
+        ir.offset = self.visit(ir.offset)
+        if isinstance(ir.mem, IRVariable):
+            mem_sym = qualified_symbols(ir.mem, self.scope)[-1]
+            if mem_sym in self.constant_array_table:
+                array = self.constant_array_table[mem_sym]
+                if isinstance(ir.offset, CONST):
+                    return array.items[ir.offset.value]
         return ir
 
-    def visit_MOVE(self, ir):
+    def visit_MOVE(self, ir: MOVE):
         src = self.visit(ir.src)
-        if ir.dst.is_a(TEMP):
-            if src.is_a(CONST):
-                self.constant_table[ir.dst.symbol] = src
-            elif src.is_a(ARRAY):
-                self.constant_array_table[ir.dst.symbol] = src
+        dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
+        if isinstance(dst_sym, Symbol):
+            match src:
+                case CONST():
+                    self.constant_table[dst_sym] = src
+                case ARRAY():
+                    self.constant_array_table[dst_sym] = src
         ir.src = src

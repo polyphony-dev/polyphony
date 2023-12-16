@@ -37,7 +37,6 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
         temp = cast(TEMP, ir)
         temp_sym = scope.find_sym(temp.name)
         assert isinstance(temp_sym, Symbol)
-        assert temp._sym is temp_sym  # TODO: remove this line
         if temp_sym.typ.has_scope():
             sym_type = temp_sym.typ
             scope = sym_type.scope

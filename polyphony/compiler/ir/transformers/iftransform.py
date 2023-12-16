@@ -7,44 +7,41 @@ logger = getLogger(__name__)
 
 class IfTransformer(object):
     def process(self, scope):
-        self.mcjumps = []
         for blk in scope.traverse_blocks():
             self._process_block(blk)
 
-    def _merge_else_cj(self, cj, mj):
-        #has false block elif?
+    def _merge_else_cj(self, cj, conds, targets):
         if len(cj.false.stms) == 1 and cj.false.stms[0].is_a(CJUMP):
             else_cj = cj.false.stms[0]
             cj.false.succs = []
             cj.false.preds = []
             cj.false.stms = []
 
-            mj.conds.append(else_cj.exp)
-            mj.targets.append(else_cj.true)
-            if not self._merge_else_cj(else_cj, mj):
-                mj.conds.append(CONST(1))
-                mj.targets.append(else_cj.false)
+            conds.append(else_cj.exp)
+            targets.append(else_cj.true)
+            if not self._merge_else_cj(else_cj, conds, targets):
+                conds.append(CONST(1))
+                targets.append(else_cj.false)
             return True
         return False
 
     def _process_block(self, block):
         if block.stms and block.stms[-1].is_a(CJUMP):
+            conds = []
+            targets = []
             cj = block.stms[-1]
-            mj = MCJUMP()
-            self.mcjumps.append(mj)
-            mj.conds.append(cj.exp)
-            mj.targets.append(cj.true)
-            if self._merge_else_cj(cj, mj):
+            conds.append(cj.exp)
+            targets.append(cj.true)
+            if self._merge_else_cj(cj, conds, targets):
                 block.stms.pop()
-                mj.loc = cj.loc
+                mj = MCJUMP(conds, targets, cj.loc)
                 block.append_stm(mj)
                 block.succs = []
-                for target in mj.targets:
+                for target in targets:
                     target.preds = [block]
                     block.succs.append(target)
                     logger.debug('target.block ' + target.name)
-            logger.debug(mj)
-
+                logger.debug(mj)
 
 class IfCondTransformer(object):
     def process(self, scope):
@@ -95,9 +92,7 @@ class IfCondTransformer(object):
                 else:
                     new_sym = self.scope.add_condition_sym()
                     new_sym.typ = Type.bool()
-                    new_c = TEMP(new_sym, Ctx.STORE)
-                    mv = MOVE(new_c, c)
+                    mv = MOVE(TEMP(new_sym.name), c)
                     block.insert_stm(-1, mv)
-                    new_c = TEMP(new_sym, Ctx.LOAD)
-                    new_conds.append(new_c)
+                    new_conds.append(TEMP(new_sym.name))
             mj.conds = new_conds

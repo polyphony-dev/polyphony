@@ -1,30 +1,38 @@
-﻿from ..ir import *
-from ..types.type import Type
+﻿from __future__ import annotations
+from typing import TYPE_CHECKING
+from ..ir import *
+from ..irhelper import qualified_symbols, irexp_type
+from ..types import typehelper
 from logging import getLogger
 logger = getLogger(__name__)
-
+if TYPE_CHECKING:
+    from ..scope import Scope
+    from ..analysis.usedef import UseDefTable
 
 class VarReplacer(object):
     @classmethod
-    def replace_uses(cls, scope, dst, src):
-        assert dst.is_a([TEMP, ATTR])
-        assert src.is_a([IRExp])
+    def replace_uses(cls, scope: Scope, dst: IRVariable, src: IRExp):
+        assert dst.is_a(IRVariable)
+        assert src.is_a(IRExp)
         assert scope.usedef
         usedef = scope.usedef
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
-        replacer = VarReplacer(dst, src, usedef)
-        uses = list(usedef.get_stms_using(dst.qualified_symbol))
+        replacer = VarReplacer(scope, dst, src, usedef)
+        dst_qsym = qualified_symbols(dst, scope)
+        uses = list(usedef.get_stms_using(dst_qsym))
         for use in uses:
+            scope.usedef.remove_var_use(scope, dst, use)
             replacer.visit(use)
-            scope.usedef.remove_var_use(dst, use)
+
         for blk in scope.traverse_blocks():
-            if blk.path_exp and blk.path_exp.is_a([TEMP, ATTR]):
-                if blk.path_exp.symbol is dst.symbol:
+            if blk.path_exp and blk.path_exp.is_a(IRVariable):
+                if blk.path_exp.name == dst.name:
                     blk.path_exp = src
         return replacer.replaces
 
-    def __init__(self, dst, src, usedef, enable_dst=False):
+    def __init__(self, scope: Scope, dst: IRVariable, src: IRExp, usedef: UseDefTable, enable_dst=False):
         super().__init__()
+        self.scope = scope
         self.replaces = []
         self.replace_dst = dst
         self.replace_src = src
@@ -58,10 +66,12 @@ class VarReplacer(object):
         return ir
 
     def visit_SYSCALL(self, ir):
+        ir.func = self.visit(ir.func)
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 
     def visit_NEW(self, ir):
+        ir.func = self.visit(ir.func)
         ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
         return ir
 
@@ -88,23 +98,25 @@ class VarReplacer(object):
         return ir
 
     def visit_TEMP(self, ir):
-        if ir.symbol is self.replace_dst.symbol:
+        if ir.name == self.replace_dst.name:
             self.replaced = True
             ir = self.replace_src.clone()
-        if ir.is_a([TEMP, ATTR]):
-            for expr in Type.find_expr(ir.symbol.typ):
+        if ir.is_a(IRVariable):
+            typ = irexp_type(ir, self.scope)
+            for expr in typehelper.find_expr(typ):
                 assert expr.is_a(EXPR)
                 self.visit(expr)
         return ir
 
     def visit_ATTR(self, ir):
-        if ir.qualified_symbol == self.replace_dst.qualified_symbol:
+        if ir.qualified_name == self.replace_dst.qualified_name:
             self.replaced = True
             ir = self.replace_src.clone()
         else:
             ir.exp = self.visit(ir.exp)
-        if ir.is_a([TEMP, ATTR]):
-            for expr in Type.find_expr(ir.symbol.typ):
+        if ir.is_a(IRVariable):
+            typ = irexp_type(ir, self.scope)
+            for expr in typehelper.find_expr(typ):
                 assert expr.is_a(EXPR)
                 self.visit(expr)
         return ir

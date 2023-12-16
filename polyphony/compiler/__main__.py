@@ -848,6 +848,12 @@ def initialize():
 
 def setup(src_file, options):
     initialize()
+    setup_options(options)
+    setup_builtins()
+    setup_global(src_file)
+
+
+def setup_options(options):
     env.dev_debug_mode = options.debug_mode
     env.verbose_level = options.verbose_level if options.verbose_level else 0
     env.quiet_level = options.quiet_level if options.quiet_level else 0
@@ -867,6 +873,8 @@ def setup(src_file, options):
     if env.dev_debug_mode:
         logging.basicConfig(**logging_setting)
 
+
+def setup_builtins():
     translator = IRTranslator()
     root_dir = '{0}{1}{2}{1}'.format(
         os.path.dirname(__file__),
@@ -878,6 +886,8 @@ def setup(src_file, options):
     env.set_current_filename(builtin_package_file)
     translator.translate(read_source(builtin_package_file), '__builtin__')
 
+
+def setup_global(src_file):
     env.set_current_filename(src_file)
     g = Scope.create_namespace(None, env.global_scope_name, {'global'}, src_file)
     env.push_outermost_scope(g)

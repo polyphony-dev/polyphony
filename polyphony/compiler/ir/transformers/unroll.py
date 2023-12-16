@@ -143,7 +143,7 @@ class LoopUnroller(object):
                 for sym, new_syms in new_ivs.items():
                     new_sym = new_syms[0]
                     lphi = origin_lphis[sym]
-                    arg = TEMP(new_sym, Ctx.LOAD)
+                    arg = TEMP(new_sym.name)
                     lphi.args[0] = arg
                 remain_start_blk.append_stm(EXPR(CONST(0)))  # guard from reduceblk
                 remain_start_blk.append_stm(JUMP(loop.head))
@@ -258,7 +258,7 @@ class LoopUnroller(object):
                 assert len(stm.args) == 2
                 orig_sym = stm.var.symbol
                 new_sym_0 = new_ivs[orig_sym][0]
-                dst = TEMP(new_sym_0, Ctx.STORE)
+                dst = TEMP(new_sym_0.name, Ctx.STORE)
                 src = stm.args[0]
                 iv_updates[stm.args[1].symbol] = new_ivs[orig_sym]
                 mv = MOVE(dst, src)
@@ -308,19 +308,19 @@ class LoopUnroller(object):
         new_loop_iv = new_ivs[loop.counter][0]
         tmp = self.scope.add_temp()
         tmp.typ = new_loop_iv.typ
-        mv = MOVE(TEMP(tmp, Ctx.STORE),
+        mv = MOVE(TEMP(tmp.name),
                   BINOP('Add',
-                        TEMP(new_loop_iv, Ctx.LOAD),
+                        TEMP(new_loop_iv.name),
                         CONST((factor - 1) * loop_step)))
         head_stms.append(mv)
-        cond_rhs = RELOP('Lt', TEMP(tmp, Ctx.LOAD), loop_max)
+        cond_rhs = RELOP('Lt', TEMP(tmp.name), loop_max)
         cond_sym = self.scope.add_condition_sym()
         sym_map[orig_cond_sym] = cond_sym
         cond_sym.typ = Type.bool()
-        cond_lhs = TEMP(cond_sym, Ctx.STORE)
+        cond_lhs = TEMP(cond_sym.name)
         cond_stm = MOVE(cond_lhs, cond_rhs)
         head_stms.append(cond_stm)
-        cond_exp = TEMP(cond_sym, Ctx.LOAD)
+        cond_exp = TEMP(cond_sym.name)
         cjump = CJUMP(cond_exp, None, None)
         cjump.loc = orig_cjump.loc
         head_stms.append(cjump)
@@ -345,6 +345,7 @@ class LoopUnroller(object):
             new_blk.succs_loop = []
             ivreplacer = IVReplacer(self.scope, defsyms, new_ivs, iv_updates, i)
             symreplacer = SymbolReplacer(sym_map)
+            symreplacer.scope = self.scope
             for stm in new_blk.stms:
                 ivreplacer.visit(stm)
                 symreplacer.visit(stm)

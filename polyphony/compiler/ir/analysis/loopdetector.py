@@ -1,4 +1,6 @@
 ﻿from ..ir import CONST, RELOP, TEMP, MOVE, CJUMP, PHIBase, LPHI
+from ..irhelper import qualified_symbols
+from ..symbol import Symbol
 from ..loop import Region, Loop
 from logging import getLogger
 logger = getLogger(__name__)
@@ -96,9 +98,10 @@ class LoopInfoSetter(object):
             # this loop may busy loop
             return
         cond_var = cjump.exp
-        loop.cond = cond_var.symbol
+        cond_sym = qualified_symbols(cond_var, self.scope)[-1]
+        loop.cond = cond_sym
         assert cond_var.is_a(TEMP)
-        defs = self.scope.usedef.get_stms_defining(cond_var.symbol)
+        defs = self.scope.usedef.get_stms_defining(cond_sym)
         assert len(defs) == 1
         cond_stm = list(defs)[0]
         assert cond_stm.is_a(MOVE)
@@ -106,19 +109,21 @@ class LoopInfoSetter(object):
             return
         loop_relexp = cond_stm.src
 
-        if loop_relexp.left.is_a(TEMP) and loop_relexp.left.symbol.is_induction():
+        if loop_relexp.left.is_a(TEMP) and (left_sym := self.scope.find_sym(loop_relexp.left.name)) and left_sym.is_induction():
             assert loop_relexp.right.is_a([CONST, TEMP])
-            loop.counter = loop_relexp.left.symbol
+            loop.counter = left_sym
             loop.counter.add_tag('loop_counter')
-        elif loop_relexp.right.is_a(TEMP) and loop_relexp.right.symbol.is_induction():
+        elif loop_relexp.right.is_a(TEMP) and (right_sym := self.scope.find_sym(loop_relexp.right.name)) and right_sym.is_induction():
             assert loop_relexp.left.is_a([CONST, TEMP])
-            loop.counter = loop_relexp.right.symbol
+            loop.counter = right_sym
             loop.counter.add_tag('loop_counter')
         else:
             lphis = loop.head.collect_stms(LPHI)
             for lphi in lphis:
-                if lphi.var.symbol.is_loop_counter():
-                    loop.counter = lphi.var.symbol
+                var_sym = qualified_symbols(lphi.var, self.scope)[-1]
+                assert isinstance(var_sym, Symbol)
+                if var_sym.is_loop_counter():
+                    loop.counter = var_sym
                     break
             else:
                 # this loop may busy loop

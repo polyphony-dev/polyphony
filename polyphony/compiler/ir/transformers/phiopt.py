@@ -1,5 +1,5 @@
 from ..ir import *
-from ..irhelper import reduce_relexp
+from ..irhelper import reduce_relexp, qualified_symbols
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -9,17 +9,20 @@ class PHIInlining(object):
         for blk in scope.traverse_blocks():
             phis = {}
             for phi in blk.collect_stms([PHI, UPHI]):
-                if not phi.var.symbol.is_induction():
-                    phis[phi.var.symbol] = phi
+                var_sym = qualified_symbols(phi.var, scope)[-1]
+                assert isinstance(var_sym, Symbol)
+                if not var_sym.is_induction():
+                    phis[var_sym] = phi
             phis_ = list(phis.values())
             for phi in phis_:
                 new_args = []
                 new_ps   = []
                 for i, (arg, p) in enumerate(zip(phi.args, phi.ps)):
-                    if (arg.is_a([TEMP, ATTR]) and
-                            arg.symbol in phis and
-                            phi != phis[arg.symbol]):
-                        inline_phi = phis[arg.symbol]
+                    if (arg.is_a(IRVariable) and
+                            (arg_sym := qualified_symbols(arg, scope)[-1]) and
+                            arg_sym in phis and
+                            phi != phis[arg_sym]):
+                        inline_phi = phis[arg_sym]
                         assert phi.block is inline_phi.block
                         new_args.extend(inline_phi.args)
                         for offs, ip in enumerate(inline_phi.ps):

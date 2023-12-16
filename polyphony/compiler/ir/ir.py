@@ -1,8 +1,13 @@
-﻿from collections import namedtuple
+﻿from __future__ import annotations
+import typing
+from typing import cast, TYPE_CHECKING
+from collections import namedtuple
 from enum import IntEnum
 from .symbol import Symbol
+from .types.scopetype import ScopeType
 from ..common.utils import is_a, find_id_index
-from .types.type import Type
+if TYPE_CHECKING:
+    from .scope import Scope
 
 
 op2sym_map = {
@@ -37,8 +42,17 @@ class IR(object):
     def __lt__(self, other):
         return hash(self) < hash(other)
 
+    def type_str(self, scope: Scope):
+        return ''
+
     def is_a(self, cls):
         return is_a(self, cls)
+
+    def as_a[T](self, cls:T) -> T | None:
+        if is_a(self, cls):
+            return cast(T, self)
+        else:
+            return None
 
     def clone(self, **args):
         clone = self.__new__(self.__class__)
@@ -67,6 +81,9 @@ class IR(object):
                 ret = False
                 for k, v in ir.__dict__.items():
                     if v == old:
+                        # TODO: remove this block
+                        if k == '_sym':
+                            ir.__dict__['_name'] = new.name
                         ir.__dict__[k] = new
                         ret = True
                     elif replace_rec(v, old, new):
@@ -84,31 +101,34 @@ class IR(object):
             return False
         return replace_rec(self, old, new)
 
-    def find_vars(self, qsym):
+    def find_vars(self, qname: tuple[str, ...]):
+        assert len(qname) > 0 and isinstance(qname[0], str)
         vars = []
 
-        def find_vars_rec(ir, qsym, vars):
+        def find_vars_rec(ir, qname, vars):
             if isinstance(ir, IR):
                 if ir.is_a([CALL, SYSCALL, NEW]):
-                    vars.extend(ir.find_vars(qsym))
+                    vars.extend(ir.find_vars(qname))
                 elif ir.is_a(TEMP):
-                    if ir.qualified_symbol == qsym:
+                    temp = cast(TEMP, ir)
+                    if temp.qualified_name == qname:
                         vars.append(ir)
                 elif ir.is_a(ATTR):
-                    if ir.qualified_symbol == qsym:
+                    attr = cast(ATTR, ir)
+                    if attr.qualified_name == qname:
                         vars.append(ir)
                     else:
-                        find_vars_rec(ir.exp, qsym, vars)
+                        find_vars_rec(attr.exp, qname, vars)
                 else:
                     for k, v in ir.__dict__.items():
-                        find_vars_rec(v, qsym, vars)
+                        find_vars_rec(v, qname, vars)
             elif isinstance(ir, list) or isinstance(ir, tuple):
                 for elm in ir:
-                    find_vars_rec(elm, qsym, vars)
-        find_vars_rec(self, qsym, vars)
+                    find_vars_rec(elm, qname, vars)
+        find_vars_rec(self, qname, vars)
         return vars
 
-    def find_irs(self, typ):
+    def find_irs(self, typ: typing.Type):
         irs = []
 
         def find_irs_rec(ir, typ, irs):
@@ -132,8 +152,26 @@ class IRExp(IR):
         super().__init__()
 
 
+class IRNameExp(IRExp):
+    def __init__(self, name: str):
+        super().__init__()
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @name.setter
+    def name(self, name):
+        self._name = name
+
+    @property
+    def qualified_name(self) -> tuple[str, ...]:
+        return (self.name,)
+
+
 class UNOP(IRExp):
-    def __init__(self, op, exp):
+    def __init__(self, op: str, exp: IRExp):
         assert op in {'USub', 'UAdd', 'Not', 'Invert'}
         super().__init__()
         self._op = op
@@ -142,8 +180,8 @@ class UNOP(IRExp):
     def __str__(self):
         return f'{op2sym_map[self._op]}{self._exp}'
 
-    def type_str(self):
-        return f'{op2sym_map[self._op]}{self._exp.type_str()}'
+    def type_str(self, scope: Scope):
+        return f'{op2sym_map[self._op]}{self._exp.type_str(scope)}'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, UNOP):
@@ -157,11 +195,11 @@ class UNOP(IRExp):
         return self._exp.kids()
 
     @property
-    def op(self):
+    def op(self) -> str:
         return self._op
 
     @property
-    def exp(self):
+    def exp(self) -> IRExp:
         return self._exp
 
     @exp.setter
@@ -170,7 +208,7 @@ class UNOP(IRExp):
 
 
 class BINOP(IRExp):
-    def __init__(self, op, left, right):
+    def __init__(self, op: str, left: IRExp, right: IRExp):
         assert op in {
             'Add', 'Sub', 'Mult', 'FloorDiv', 'Mod',
             'LShift', 'RShift',
@@ -184,8 +222,8 @@ class BINOP(IRExp):
     def __str__(self):
         return f'({self._left} {op2sym_map[self._op]} {self._right})'
 
-    def type_str(self):
-        return f'({self._left.type_str()} {op2sym_map[self._op]} {self._right.type_str()})'
+    def type_str(self, scope: Scope):
+        return f'({self._left.type_str(scope)} {op2sym_map[self._op]} {self._right.type_str(scope)})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, BINOP):
@@ -199,11 +237,11 @@ class BINOP(IRExp):
         return self._left.kids() + self._right.kids()
 
     @property
-    def op(self):
+    def op(self) -> str:
         return self._op
 
     @property
-    def left(self):
+    def left(self) -> IRExp:
         return self._left
 
     @left.setter
@@ -211,7 +249,7 @@ class BINOP(IRExp):
         self._left = exp
 
     @property
-    def right(self):
+    def right(self) -> IRExp:
         return self._right
 
     @right.setter
@@ -220,7 +258,7 @@ class BINOP(IRExp):
 
 
 class RELOP(IRExp):
-    def __init__(self, op, left, right):
+    def __init__(self, op: str, left: IRExp, right: IRExp):
         assert op in {
             'And', 'Or',
             'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE',
@@ -234,8 +272,8 @@ class RELOP(IRExp):
     def __str__(self):
         return f'({self._left} {op2sym_map[self._op]} {self._right})'
 
-    def type_str(self):
-        return f'({self._left.type_str()} {op2sym_map[self._op]} {self._right.type_str()})'
+    def type_str(self, scope: Scope):
+        return f'({self._left.type_str(scope)} {op2sym_map[self._op]} {self._right.type_str(scope)})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, RELOP):
@@ -249,11 +287,11 @@ class RELOP(IRExp):
         return self._left.kids() + self._right.kids()
 
     @property
-    def op(self):
+    def op(self) -> str:
         return self._op
 
     @property
-    def left(self):
+    def left(self) -> IRExp:
         return self._left
 
     @left.setter
@@ -261,7 +299,7 @@ class RELOP(IRExp):
         self._left = exp
 
     @property
-    def right(self):
+    def right(self) -> IRExp:
         return self._right
 
     @right.setter
@@ -270,7 +308,7 @@ class RELOP(IRExp):
 
 
 class CONDOP(IRExp):
-    def __init__(self, cond, left, right):
+    def __init__(self, cond: IRExp, left: IRExp, right: IRExp):
         super().__init__()
         self._cond = cond
         self._left = left
@@ -279,8 +317,8 @@ class CONDOP(IRExp):
     def __str__(self):
         return f'({self._cond} ? {self._left} : {self._right})'
 
-    def type_str(self):
-        return f'({self._cond.type_str()} ? {self._left.type_str()} : {self._right.type_str()})'
+    def type_str(self, scope: Scope):
+        return f'({self._cond.type_str(scope)} ? {self._left.type_str(scope)} : {self._right.type_str(scope)})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CONDOP):
@@ -294,7 +332,7 @@ class CONDOP(IRExp):
         return self._cond.kids() + self._left.kids() + self._right.kids()
 
     @property
-    def cond(self):
+    def cond(self) -> IRExp:
         return self._cond
 
     @cond.setter
@@ -302,7 +340,7 @@ class CONDOP(IRExp):
         self._cond = exp
 
     @property
-    def left(self):
+    def left(self) -> IRExp:
         return self._left
 
     @left.setter
@@ -310,7 +348,7 @@ class CONDOP(IRExp):
         self._left = exp
 
     @property
-    def right(self):
+    def right(self) -> IRExp:
         return self._right
 
     @right.setter
@@ -319,7 +357,7 @@ class CONDOP(IRExp):
 
 
 class POLYOP(IRExp):
-    def __init__(self, op, values):
+    def __init__(self, op: str, values: list[IRExp]):
         self._op = op
         self._values = values
 
@@ -327,8 +365,8 @@ class POLYOP(IRExp):
         values = ', '.join([str(e) for e in self._values])
         return f'({op2sym_map[self._op]} [{values}])'
 
-    def type_str(self):
-        values = ', '.join([e.type_str() for e in self._values])
+    def type_str(self, scope: Scope):
+        values = ', '.join([e.type_str(scope) for e in self._values])
         return f'({op2sym_map[self._op]} [{values}])'
 
     def kids(self):
@@ -336,15 +374,15 @@ class POLYOP(IRExp):
         return self._values
 
     @property
-    def op(self):
+    def op(self) -> str:
         return self._op
 
     @property
-    def values(self):
+    def values(self) -> list[IRExp]:
         return self._values
 
 
-def replace_args(args, old, new):
+def replace_args(args: list[tuple[str, IRExp]], old: IRExp, new: IRExp):
     ret = False
     for i, (name, arg) in enumerate(args):
         if arg == old:
@@ -355,16 +393,16 @@ def replace_args(args, old, new):
     return ret
 
 
-def find_vars_args(args, qsym):
+def find_vars_args(args: list[tuple[str, IRExp]], qname: tuple[str, ...]) -> list[IRExp]:
     vars = []
     for _, arg in args:
-        if arg.is_a([TEMP, ATTR]) and arg.qualified_symbol == qsym:
+        if ((v := arg.as_a(TEMP)) or (v := arg.as_a(ATTR))) and v.qualified_name == qname:
             vars.append(arg)
-        vars.extend(arg.find_vars(qsym))
+        vars.extend(arg.find_vars(qname))
     return vars
 
 
-def find_irs_args(args, typ):
+def find_irs_args(args: list[tuple[str, IRExp]], typ: typing.Type) -> list[IRExp]:
     irs = []
     for _, arg in args:
         if arg.is_a(typ):
@@ -373,44 +411,26 @@ def find_irs_args(args, typ):
     return irs
 
 
-class IRCallable(IRExp):
-    @property
-    def callee_scope(self):
-        assert isinstance(self.symbol, Symbol)
-        func_t = self.symbol.typ
-        assert func_t.has_scope()
-        return func_t.scope
-
-
-class CALL(IRCallable):
-    def __init__(self, func, args, kwargs):
-        super().__init__()
-        assert isinstance(func, (TEMP, ATTR))
+class IRCallable(IRNameExp):
+    def __init__(self, func:IRVariable, args:list[tuple[str, IRExp]], kwargs:dict[str, IRExp]):
+        assert isinstance(func, IRVariable)
+        super().__init__('')
         self._func = func
-        self._func._ctx = Ctx.CALL
+        self._func.ctx = Ctx.CALL
         self._args = args
         self._kwargs = kwargs
 
-    def __str__(self):
-        s = f'{self._func}('
-        s += ', '.join([str(arg) for name, arg in self._args])
+    def type_str(self, scope: Scope):
+        s = f'{self._func.type_str(scope)}('
+        s += ', '.join([arg.type_str(scope) for name, arg in self._args])
         if self._kwargs:
             s += ', '
-            s += ', '.join([f'{name}={value}' for name, value in self._kwargs.items()])
-        s += ")"
-        return s
-
-    def type_str(self):
-        s = f'{self._func.type_str()}('
-        s += ', '.join([arg.type_str() for name, arg in self._args])
-        if self._kwargs:
-            s += ', '
-            s += ', '.join([f'{name}={value.type_str()}' for name, value in self._kwargs.items()])
+            s += ', '.join([f'{name}={value.type_str(scope)}' for name, value in self._kwargs.items()])
         s += ")"
         return s
 
     def __eq__(self, other):
-        if other is None or not isinstance(other, CALL):
+        if other is None or not isinstance(other, IRCallable):
             return False
         return (self._func == other._func and
                 len(self._args) == len(other._args) and
@@ -420,6 +440,50 @@ class CALL(IRCallable):
     def __hash__(self):
         return super().__hash__()
 
+    @property
+    def name(self) -> str:
+        return self._func.name
+
+    @name.setter
+    def name(self, name):
+        self._func.name = name
+ 
+    @property
+    def qualified_name(self) -> tuple[str, ...]:
+        return self.func.qualified_name
+
+    @property
+    def func(self):
+        return self._func
+
+    @func.setter
+    def func(self, f):
+        assert isinstance(f, IRVariable)
+        if f.ctx != Ctx.CALL:
+            f.ctx = Ctx.CALL
+        self._func = f
+
+    @property
+    def args(self) -> list[tuple[str, IRExp]]:
+        return self._args
+
+    @args.setter
+    def args(self, args):
+        self._args = args
+
+    @property
+    def kwargs(self):
+        return self._kwargs
+
+    def get_callee_scope(self, current_scope) -> Scope:
+        from .irhelper import qualified_symbols
+        qsyms = qualified_symbols(self.func, current_scope)
+        symbol = qsyms[-1]
+        assert isinstance(symbol, Symbol)
+        func_t = symbol.typ
+        assert func_t.has_scope()
+        return cast(ScopeType, func_t).scope
+
     def kids(self):
         kids = []
         kids += self._func.kids()
@@ -427,15 +491,8 @@ class CALL(IRCallable):
             kids += arg.kids()
         return kids
 
-    def clone(self):
-        func = self._func.clone()
-        args = [(name, arg.clone()) for name, arg in self._args]
-        kwargs = {name:arg.clone() for name, arg in self._kwargs.items()}
-        clone = CALL(func, args, kwargs)
-        return clone
-
     def replace(self, old, new):
-        if self._func is old:
+        if self._func == old:
             self._func = new
             return True
         if self._func.replace(old, new):
@@ -450,10 +507,11 @@ class CALL(IRCallable):
                 return True
         return False
 
-    def find_vars(self, qsym):
-        vars = self._func.find_vars(qsym)
-        vars.extend(find_vars_args(self._args, qsym))
-        vars.extend(find_vars_args(self._kwargs.values(), qsym))
+    def find_vars(self, qname: tuple[str, ...]):
+        assert len(qname) > 0 and isinstance(qname[0], str)
+        vars = self._func.find_vars(qname)
+        vars.extend(find_vars_args(self._args, qname))
+        vars.extend(find_vars_args(self._kwargs.values(), qname))
         return vars
 
     def find_irs(self, typ):
@@ -462,47 +520,13 @@ class CALL(IRCallable):
         irs.extend(find_irs_args(self._kwargs.values(), typ))
         return irs
 
-    @property
-    def symbol(self):
-        return self._func.symbol
 
-    @property
-    def qualified_symbol(self):
-        return self._func.qualified_symbol
-
-    @property
-    def func(self):
-        return self._func
-
-    @func.setter
-    def func(self, f):
-        assert isinstance(f, (TEMP, ATTR))
-        if f.ctx != Ctx.CALL:
-            f._ctx = Ctx.CALL
-        self._func = f
-
-    @property
-    def args(self):
-        return self._args
-
-    @args.setter
-    def args(self, args):
-        self._args = args
-
-    @property
-    def kwargs(self):
-        return self._kwargs
-
-
-class SYSCALL(IRCallable):
-    def __init__(self, sym, args, kwargs):
-        super().__init__()
-        self._sym = sym
-        self._args = args
-        self._kwargs = kwargs
+class CALL(IRCallable):
+    def __init__(self, func:IRVariable, args:list[tuple[str, IRExp]], kwargs:dict[str, IRExp]):
+        super().__init__(func, args, kwargs)
 
     def __str__(self):
-        s = f'!{self._sym}('
+        s = f'{self._func}('
         s += ', '.join([str(arg) for name, arg in self._args])
         if self._kwargs:
             s += ', '
@@ -510,164 +534,76 @@ class SYSCALL(IRCallable):
         s += ")"
         return s
 
-    def type_str(self):
-        s = f'{self._sym.typ}('
-        s += ', '.join([arg.type_str() for name, arg in self._args])
-        if self._kwargs:
-            s += ', '
-            s += ', '.join([f'{name}={value.type_str()}' for name, value in self._kwargs.items()])
-        s += ")"
-        return s
-
-    def __eq__(self, other):
-        if other is None or not isinstance(other, SYSCALL):
-            return False
-        return (self._sym is other._sym and
-                len(self._args) == len(other._args) and
-                all([name == other_name and a == other_a
-                     for (name, a), (other_name, other_a) in zip(self._args, other._args)]))
-
-    def __hash__(self):
-        return super().__hash__()
-
-    def kids(self):
-        kids = []
-        for _, arg in self._args:
-            kids += arg.kids()
-        return kids
-
     def clone(self):
+        func = self._func.clone()
         args = [(name, arg.clone()) for name, arg in self._args]
         kwargs = {name:arg.clone() for name, arg in self._kwargs.items()}
-        clone = SYSCALL(self._sym, args, kwargs)
+        clone = CALL(func, args, kwargs)
         return clone
 
-    def replace(self, old, new):
-        return replace_args(self._args, old, new)
+    
 
-    def find_vars(self, qsym):
-        return find_vars_args(self._args, qsym)
-
-    def find_irs(self, typ):
-        return find_irs_args(self._args, typ)
-
-    @property
-    def symbol(self):
-        return self._sym
-
-    @property
-    def qualified_symbol(self):
-        return (self._sym, )
-
-    @property
-    def args(self):
-        return self._args
-
-    @args.setter
-    def args(self, args):
-        self._args = args
-
-    @property
-    def kwargs(self):
-        return self._kwargs
-
-
-class NEW(IRCallable):
-    def __init__(self, sym, args, kwargs):
-        super().__init__()
-        self._sym = sym
-        self._args = args
-        self._kwargs = kwargs
+class SYSCALL(IRCallable):
+    def __init__(self, func:IRVariable, args:list[tuple[str, IRExp]], kwargs:dict[str, IRExp]):
+        super().__init__(func, args, kwargs)
 
     def __str__(self):
-        s = f'{self._sym}('
-        s += ', '.join([f'{name}={arg}' for name, arg in self._args])
+        s = f'!{self._func}('
+        s += ', '.join([str(arg) for name, arg in self._args])
         if self._kwargs:
             s += ', '
             s += ', '.join([f'{name}={value}' for name, value in self._kwargs.items()])
         s += ")"
         return s
 
-    def type_str(self):
-        s = f'{Type.object(self._sym.typ.scope)}('
-        s += ', '.join([f'{name}={arg.type_str()}' for name, arg in self._args])
+    def clone(self):
+        func = self._func.clone()
+        args = [(name, arg.clone()) for name, arg in self._args]
+        kwargs = {name:arg.clone() for name, arg in self._kwargs.items()}
+        clone = SYSCALL(func, args, kwargs)
+        return clone
+
+
+class NEW(IRCallable):
+    def __init__(self, func:IRVariable, args:list[tuple[str, IRExp]], kwargs:dict[str, IRExp]):
+        super().__init__(func, args, kwargs)
+
+    def __str__(self):
+        s = f'${self._func}('
+        s += ', '.join([str(arg) for name, arg in self._args])
         if self._kwargs:
             s += ', '
-            s += ', '.join([f'{name}={value.type_str()}' for name, value in self._kwargs.items()])
+            s += ', '.join([f'{name}={value}' for name, value in self._kwargs.items()])
         s += ")"
         return s
 
-    def __eq__(self, other):
-        if other is None or not isinstance(other, NEW):
-            return False
-        return (self._sym is other._sym and
-                len(self._args) == len(other._args) and
-                all([name == other_name and a == other_a
-                     for (name, a), (other_name, other_a) in zip(self._args, other._args)]))
-
-    def __hash__(self):
-        return super().__hash__()
-
-    def kids(self):
-        kids = []
-        for _, arg in self._args:
-            kids += arg.kids()
-        return kids
-
     def clone(self):
+        func = self._func.clone()
         args = [(name, arg.clone()) for name, arg in self._args]
         kwargs = {name:arg.clone() for name, arg in self._kwargs.items()}
-        clone = NEW(self._sym, args, kwargs)
+        clone = NEW(func, args, kwargs)
         return clone
-
-    def replace(self, old, new):
-        return replace_args(self._args, old, new)
-
-    def find_vars(self, qsym):
-        return find_vars_args(self._args, qsym)
-
-    def find_irs(self, typ):
-        return find_irs_args(self._args, typ)
-
-    @property
-    def symbol(self):
-        return self._sym
-
-    @symbol.setter
-    def symbol(self, sym):
-        self._sym = sym
-
-    @property
-    def qualified_symbol(self):
-        return (self._sym, )
-
-    @property
-    def args(self):
-        return self._args
-
-    @args.setter
-    def args(self, args):
-        self._args = args
-
-    @property
-    def kwargs(self):
-        return self._kwargs
 
 
 class CONST(IRExp):
-    def __init__(self, value):
+    def __init__(self, value, format=None):
         super().__init__()
         self._value = value
+        self._format = format
 
     def __str__(self):
         if isinstance(self._value, bool):
             return str(self._value)
         elif isinstance(self._value, int):
-            return hex(self._value)
+            if self._format == 'hex':
+                return hex(self._value)
+            elif self._format == 'bin':
+                return bin(self._value)
+            return str(self._value)
         else:
             return repr(self._value)
 
-    def type_str(self):
+    def type_str(self, scope: Scope):
         return type(self._value).__name__
 
     def __eq__(self, other):
@@ -687,7 +623,7 @@ class CONST(IRExp):
 
 
 class MREF(IRExp):
-    def __init__(self, mem, offset, ctx=Ctx.LOAD):
+    def __init__(self, mem:IRExp, offset:IRExp, ctx=Ctx.LOAD):
         super().__init__()
         assert mem.is_a([TEMP, ATTR, MREF])
         self._mem = mem
@@ -697,13 +633,13 @@ class MREF(IRExp):
     def __str__(self):
         return f'{self._mem}[{self._offset}]'
 
-    def type_str(self):
-        return f'{self._mem.type_str()}[{self._offset.type_str()}]'
+    def type_str(self, scope: Scope):
+        return f'{self._mem.type_str(scope)}[{self._offset.type_str(scope)}]'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MREF):
             return False
-        return (self._mem == other._mem and self._offset == other._offset and self._ctx == other._ctx)
+        return (self._mem == other._mem and self._offset == other._offset and self.ctx == other.ctx)
 
     def __hash__(self):
         return super().__hash__()
@@ -742,8 +678,8 @@ class MSTORE(IRExp):
     def __str__(self):
         return f'mstore({self._mem}[{self._offset}], {self._exp})'
 
-    def type_str(self):
-        return f'mstore({self._mem.type_str()}[{self._offset.type_str()}], {self._exp.type_str()})'
+    def type_str(self, scope: Scope):
+        return f'mstore({self._mem.type_str(scope)}[{self._offset.type_str(scope)}], {self._exp.type_str(scope)})'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MSTORE):
@@ -782,11 +718,11 @@ class MSTORE(IRExp):
 
 
 class ARRAY(IRExp):
-    def __init__(self, items, sym=None):
+    def __init__(self, items, mutable: bool):
         super().__init__()
         self._items = items
-        self._sym = sym
         self._repeat = CONST(1)
+        self._mutable = mutable
 
     def __str__(self):
         s = '[' if self.is_mutable else '('
@@ -800,15 +736,16 @@ class ARRAY(IRExp):
             s += ' * ' + str(self._repeat)
         return s
 
-    def type_str(self):
-        s = str(self._sym.typ)
-        s += '('
+    def type_str(self, scope: Scope):
+        from .irhelper import irexp_type
+        typ = irexp_type(self, scope)
+        s = f'{typ}('
         s += '[' if self.is_mutable else '('
         if len(self._items) > 8:
-            s += ', '.join(map(lambda item: item.type_str(), self._items[:10]))
+            s += ', '.join(map(lambda item: item.type_str(scope), self._items[:10]))
             s += '...'
         else:
-            s += ', '.join(map(lambda item: item.type_str(), self._items))
+            s += ', '.join(map(lambda item: item.type_str(scope), self._items))
         s += ']' if self.is_mutable else ')'
         if not (self._repeat.is_a(CONST) and self._repeat.value == 1):
             s += ' * ' + type(self._repeat).__name__
@@ -820,7 +757,7 @@ class ARRAY(IRExp):
             return False
         return (len(self._items) == len(other._items) and
                 all([item == other_item for item, other_item in zip(self._items, other._items)]) and
-                self._sym is other._sym and
+                self._mutable == other._mutable and
                 self._repeat == other._repeat)
 
     def __hash__(self):
@@ -837,18 +774,6 @@ class ARRAY(IRExp):
             return len(self._items) * self._repeat.value
         else:
             return -1
-
-    @property
-    def symbol(self):
-        return self._sym
-
-    @symbol.setter
-    def symbol(self, sym):
-        self._sym = sym
-
-    @property
-    def qualified_symbol(self):
-        return (self._sym, )
 
     @property
     def items(self):
@@ -868,116 +793,104 @@ class ARRAY(IRExp):
 
     @property
     def is_mutable(self):
-        return self._sym.typ.is_list()
+        return self._mutable
 
 
-class TEMP(IRExp):
-    def __init__(self, sym, ctx=Ctx.LOAD):
-        super().__init__()
-        assert isinstance(sym, Symbol)
+class IRVariable(IRNameExp):
+    def __init__(self, name: str, ctx: Ctx):
+        assert isinstance(name, str)
         assert isinstance(ctx, int)
-        self._sym = sym
+        super().__init__(name)
         self._ctx = ctx
 
-    def __str__(self):
-        return str(self._sym)
-
-    def type_str(self):
-        return str(self._sym.typ)
-
-    def __eq__(self, other):
-        if other is None or not isinstance(other, TEMP):
-            return False
-        return (self._sym is other._sym and self._ctx == other._ctx)
-
-    def __hash__(self):
-        return super().__hash__()
-
-    def kids(self):
-        return [self]
-
-    @property
-    def symbol(self):
-        return self._sym
-
-    @symbol.setter
-    def symbol(self, sym):
-        self._sym = sym
-
-    @property
-    def qualified_symbol(self):
-        return (self._sym, )
+    def kids(self) -> tuple[IRExp]:
+        return (self,)
 
     @property
     def ctx(self):
         return self._ctx
 
+    @ctx.setter
+    def ctx(self, ctx):
+        self._ctx = ctx
 
-class ATTR(IRExp):
-    def __init__(self, exp, attr, ctx=Ctx.LOAD):
-        super().__init__()
+
+class TEMP(IRVariable):
+    def __init__(self, name: str, ctx=Ctx.LOAD):
+        super().__init__(name, ctx)
+
+    def __str__(self):
+        return self.name
+
+    def type_str(self, scope: Scope):
+        sym = scope.find_sym(self.name)
+        if sym:
+            return str(sym.typ)
+        else:
+            return 'unknown'
+
+    def __eq__(self, other):
+        if other is None or not isinstance(other, TEMP):
+            return False
+        return (self.name == other.name and self.ctx == other.ctx)
+
+    def __hash__(self):
+        return super().__hash__()
+
+
+class ATTR(IRVariable):
+    def __init__(self, exp: IRVariable, attr: str, ctx=Ctx.LOAD):
+        super().__init__(attr.name if isinstance(attr, Symbol) else attr, ctx)
         self._exp = exp
         self._attr = attr
-        self._ctx = ctx
-        self._exp._ctx = Ctx.LOAD
+        self._exp.ctx = Ctx.LOAD
 
     def __str__(self):
         return '{}.{}'.format(self.exp, self._attr)
 
-    def type_str(self):
-        if isinstance(self._attr, str):
-            return '{}.str'.format(self.exp.type_str())
-        return '{}.{}'.format(self.exp.type_str(), self._attr.typ)
+    def type_str(self, scope: Scope):
+        from .irhelper import qualified_symbols
+        qsyms = qualified_symbols(self, scope)
+        typs = [str(qsym.typ) if isinstance(qsym, Symbol) else 'unknown' for qsym in qsyms]
+        return '.'.join(typs)
+        # if isinstance(self._attr, str):
+        #     return '{}.str'.format(self.exp.type_str())
+        # return '{}.{}'.format(self.exp.type_str(), self._attr.typ)
 
     def __eq__(self, other):
         if other is None or not isinstance(other, ATTR):
             return False
         return (self._exp == other._exp and
-                self._attr is other._attr and
-                self._ctx == other._ctx)
+                self.name == other.name and
+                self.ctx == other.ctx)
 
     def __hash__(self):
         return super().__hash__()
-
-    def kids(self):
-        return [self]
 
     # a.b.c.d = (((a.b).c).d)
     #              |    |
     #             head  |
     #                  tail
-    def head(self):
+    def head_name(self) -> str:
         if self._exp.is_a(ATTR):
-            return self._exp.head()
+            return self._exp.head_name()
         elif self._exp.is_a(TEMP):
-            return self._exp.symbol
+            return self._exp.name
         else:
-            return None
+            return ''
 
-    def tail(self):
-        return self._exp.symbol
-
-    @property
-    def symbol(self):
-        return self._attr
-
-    @symbol.setter
-    def symbol(self, sym):
-        self._attr = sym
+    def tail_name(self):
+        return self._exp.name
 
     @property
-    def qualified_symbol(self):
-        return self._exp.qualified_symbol + (self._attr,)
+    def qualified_name(self) -> tuple[str, ...]:
+        return self._exp.qualified_name + (self.name,)
 
-    @property
-    def ctx(self):
-        return self._ctx
-
-    def replace_head(self, new_head):
+    def replace_head(self, new_head_name: str):
         if self._exp.is_a(ATTR):
-            self._exp.replace_head(new_head)
+            self._exp.replace_head(new_head_name)
         else:
-            self._exp.symbol = new_head
+            self._exp.name = new_head_name
         return self
 
     @property
@@ -996,13 +909,13 @@ class IRStm(IR):
             self.loc = Loc('', 0)
         else:
             self.loc = loc
-        self.block = None
+        self.block:'Block' = None
 
     def program_order(self):
         return (self.block.order, find_id_index(self.block.stms, self))
 
-    def kids(self):
-        return []
+    def kids(self) -> tuple[IRExp]:
+        return tuple()
 
     def is_mem_read(self):
         return self.is_a(MOVE) and self.src.is_a(MREF)
@@ -1019,8 +932,8 @@ class EXPR(IRStm):
     def __str__(self):
         return str(self._exp)
 
-    def type_str(self):
-        return str(self._exp.type_str())
+    def type_str(self, scope: Scope):
+        return str(self._exp.type_str(scope))
 
     def __eq__(self, other):
         if other is None or not isinstance(other, EXPR):
@@ -1030,7 +943,7 @@ class EXPR(IRStm):
     def __hash__(self):
         return super().__hash__()
 
-    def kids(self):
+    def kids(self) -> tuple[IRExp]:
         return self._exp.kids()
 
     @property
@@ -1053,7 +966,7 @@ class CJUMP(IRStm):
     def __str__(self):
         return 'cjump {} ? {}, {}'.format(self._exp, self._true.name, self._false.name)
 
-    def type_str(self):
+    def type_str(self, scope: Scope):
         return ''
 
     def __eq__(self, other):
@@ -1098,10 +1011,10 @@ class CJUMP(IRStm):
 
 
 class MCJUMP(IRStm):
-    def __init__(self, loc=None):
+    def __init__(self, conds, targets, loc=None):
         super().__init__(loc)
-        self._conds = []
-        self._targets = []
+        self._conds = conds
+        self._targets = targets
         self._loop_branch = False
 
     def __str__(self):
@@ -1112,7 +1025,7 @@ class MCJUMP(IRStm):
 
         return 'mcjump(\n        {})'.format(', \n        '.join([item for item in items]))
 
-    def type_str(self):
+    def type_str(self, scope: Scope):
         return ''
 
     def __eq__(self, other):
@@ -1159,7 +1072,7 @@ class JUMP(IRStm):
     def __str__(self):
         return "jump {} '{}'".format(self._target.name, self._typ)
 
-    def type_str(self):
+    def type_str(self, scope: Scope):
         return ''
 
     def __eq__(self, other):
@@ -1188,15 +1101,20 @@ class JUMP(IRStm):
 
 
 class RET(IRStm):
-    def __init__(self, exp, loc=None):
+    def __init__(self, exp:IRExp|str|int, loc=None):
         super().__init__(loc)
-        self._exp = exp
+        if isinstance(exp, str):
+            self._exp = name2var(exp, ctx=Ctx.LOAD)
+        elif isinstance(exp, int):
+            self._exp = CONST(exp)
+        else:
+            self._exp = exp
 
     def __str__(self):
         return f"return {self._exp}"
 
-    def type_str(self):
-        return str(self._exp.type_str())
+    def type_str(self, scope: Scope):
+        return str(self._exp.type_str(scope))
 
     def __eq__(self, other):
         if other is None or not isinstance(other, RET):
@@ -1206,7 +1124,7 @@ class RET(IRStm):
     def __hash__(self):
         return super().__hash__()
 
-    def kids(self):
+    def kids(self) -> tuple[IRExp]:
         return self._exp.kids()
 
     @property
@@ -1219,16 +1137,30 @@ class RET(IRStm):
 
 
 class MOVE(IRStm):
-    def __init__(self, dst, src, loc=None):
+    def __init__(self, dst:IRExp|str, src:IRExp|str|int, loc=None):
         super().__init__(loc)
-        self._dst = dst
-        self._src = src
+        if isinstance(dst, str):
+            self._dst = name2var(dst, ctx=Ctx.STORE)
+        elif isinstance(dst, IRVariable):
+            dst.ctx = Ctx.STORE
+            self._dst = dst
+        else:
+            self._dst = dst
+        if isinstance(src, str):
+            self._src = name2var(src, ctx=Ctx.LOAD)
+        elif isinstance(src, int):
+            self._src = CONST(src)
+        elif isinstance(src, IRVariable):
+            src.ctx = Ctx.LOAD
+            self._src = src
+        else:
+            self._src = src
 
     def __str__(self):
         return f'{self._dst} = {self._src}'
 
-    def type_str(self):
-        return f'{self._dst.type_str()} = {self._src.type_str()}'
+    def type_str(self, scope: Scope):
+        return f'{self._dst.type_str(scope)} = {self._src.type_str(scope)}'
 
     def __eq__(self, other):
         if other is None or not isinstance(other, MOVE):
@@ -1238,11 +1170,11 @@ class MOVE(IRStm):
     def __hash__(self):
         return super().__hash__()
 
-    def kids(self):
+    def kids(self) -> tuple[IRExp]:
         return self._dst.kids() + self._src.kids()
 
     @property
-    def src(self):
+    def src(self) -> IRExp:
         return self._src
 
     @src.setter
@@ -1250,7 +1182,7 @@ class MOVE(IRStm):
         self._src = src
 
     @property
-    def dst(self):
+    def dst(self) -> IRVariable:
         return self._dst
 
     @dst.setter
@@ -1267,8 +1199,8 @@ class CEXPR(EXPR):
     def __str__(self):
         return f"{self._cond} ? {super().__str__()}"
 
-    def type_str(self):
-        return f"{self._cond.type_str()} ? {super().type_str()}"
+    def type_str(self, scope: Scope):
+        return f"{self._cond.type_str(scope)} ? {super().type_str(scope)}"
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CEXPR):
@@ -1299,8 +1231,8 @@ class CMOVE(MOVE):
     def __str__(self):
         return f"{self._cond} ? {super().__str__()}"
 
-    def type_str(self):
-        return f"{self._cond.type_str()} ? {super().type_str()}"
+    def type_str(self, scope: Scope):
+        return f"{self._cond.type_str(scope)} ? {super().type_str(scope)}"
 
     def __eq__(self, other):
         if other is None or not isinstance(other, CEXPR):
@@ -1333,12 +1265,12 @@ def conds2str(conds):
 
 
 class PHIBase(IRStm):
-    def __init__(self, var):
+    def __init__(self, var: IRVariable):
         super().__init__(loc=None)
-        assert var.is_a([TEMP, ATTR])
+        assert isinstance(var, IRVariable)
         self._var = var
-        self._var._ctx = Ctx.STORE
-        self._args = []
+        self._var.ctx = Ctx.STORE
+        self._args: list[IRVariable] = []
         self._ps = []
 
     def _str_args(self, with_p=True):
@@ -1358,7 +1290,7 @@ class PHIBase(IRStm):
                     str_args.append('_')
         return str_args
 
-    def type_str(self):
+    def type_str(self, scope: Scope):
         return ''
 
     def __eq__(self, other):
@@ -1471,7 +1403,7 @@ class MSTM(IRStm):
     def __str__(self):
         return 'mstm{{{}}}'.format(', '.join([str(stm) for stm in self._stms]))
 
-    def type_str(self):
+    def type_str(self, scope: Scope):
         return ''
 
     def __eq__(self, other):
@@ -1486,3 +1418,21 @@ class MSTM(IRStm):
     def stms(self):
         return self._stms
 
+
+def name2var(name: str, ctx: Ctx=Ctx.LOAD) -> IRVariable:
+    ss = name.split('.')
+    exp = TEMP(ss[0])
+    for s in ss[1:]:
+        exp = ATTR(exp, s)
+    exp.ctx = ctx
+    return exp
+
+
+def move(src, dst):
+    if isinstance(src, str):
+        src = name2var(src, ctx=Ctx.LOAD)
+    elif isinstance(src, int):
+        src = CONST(src)
+    if isinstance(dst, str):
+        dst = name2var(dst, ctx=Ctx.STORE)
+    return MOVE(dst, src)

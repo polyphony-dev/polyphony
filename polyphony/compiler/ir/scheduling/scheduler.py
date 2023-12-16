@@ -5,7 +5,7 @@ from .latency import get_latency
 from .latency import CALL_MINIMUM_STEP
 from ..irvisitor import IRVisitor
 from ..ir import *
-from ..irhelper import has_exclusive_function, has_clkfence
+from ..irhelper import has_exclusive_function, has_clkfence, qualified_symbols
 from ..scope import Scope
 from ...common.common import fail, warn
 from ...common.errors import Errors, Warnings
@@ -51,6 +51,7 @@ class SchedulerImpl(object):
             src.priority = -1
 
         self.res_extractor = ResourceExtractor()
+        self.res_extractor.scope = scope
         for node in sorted(dfg.traverse_nodes(dfg.succs, sources, [])):
             self.res_extractor.current_node = node
             self.res_extractor.visit(node.tag)
@@ -108,10 +109,15 @@ class SchedulerImpl(object):
 
     def _find_latest_alias(self, dfg, node):
         stm = node.tag
-        if not stm.is_a([MOVE, PHIBase]):
+        if not isinstance(stm, (MOVE, PHIBase)):
             return node
-        var = node.tag.dst.symbol if node.tag.is_a(MOVE) else node.tag.var.symbol
-        if not var.is_alias():
+        match node.tag:
+            case MOVE():
+                var_sym = qualified_symbols(node.tag.dst, self.scope)[-1]
+            case PHIBase():
+                var_sym = qualified_symbols(node.tag.var, self.scope)[-1]
+        assert isinstance(var_sym, Symbol)
+        if not var_sym.is_alias():
             return node
         succs = dfg.succs_typ_without_back(node, 'DefUse')
         if not succs:
@@ -359,10 +365,10 @@ class BlockBoundedListScheduler(SchedulerImpl):
             if seq_preds:
                 #if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or (has_exclusive_function(node.tag) and not is_timed_node):
                 if node.tag.is_a([JUMP, CJUMP, MCJUMP]):
-                    latest_node = max(seq_preds, key=lambda p: p.end)
+                    latest_node = max(seq_preds, key=lambda p: (p.end, p.priority))
                     sched_time = latest_node.end
                 else:
-                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end))
+                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p.priority))
                     seq_latency = self.node_seq_latency_map[latest_node]
                     if is_timed_node and has_clkfence(node.tag) and not has_clkfence(latest_node.tag):
                         seq_latency = 0
@@ -601,7 +607,7 @@ class PipelineScheduler(SchedulerImpl):
             seq_preds = dfg.preds_typ_without_back(node, 'Seq')
             sched_times = []
             if seq_preds:
-                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag):
+                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag, self.scope):
                     latest_node = max(seq_preds, key=lambda p: p.end)
                     sched_times.append(latest_node.end)
                     logger.debug('latest_node of seq_preds ' + str(latest_node))
@@ -662,20 +668,25 @@ class ResourceExtractor(IRVisitor):
         super().visit_BINOP(ir)
 
     def visit_CALL(self, ir):
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
+        # callee_scope = ir.callee_scope
         self.ops[self.current_node][callee_scope] += 1
         func_name = callee_scope.name
         if func_name.startswith('polyphony.io.Port'):
-            inst_ = ir.func.tail()
+            qsym = qualified_symbols(ir.func, self.scope)
+            inst_ = qsym[-2]
+            assert isinstance(inst_, Symbol)
             self.ports[self.current_node].append(inst_)
         super().visit_CALL(ir)
 
     def visit_MREF(self, ir):
-        self.regarrays[self.current_node].append(ir.mem.symbol)
+        sym = qualified_symbols(ir.mem, self.scope)[-1]
+        self.regarrays[self.current_node].append(sym)
         super().visit_MREF(ir)
 
     def visit_MSTORE(self, ir):
-        self.regarrays[self.current_node].append(ir.mem.symbol)
+        sym = qualified_symbols(ir.mem, self.scope)[-1]
+        self.regarrays[self.current_node].append(sym)
         super().visit_MSTORE(ir)
 
 
@@ -898,10 +909,10 @@ class TimedScheduler:
 
     def get_clk_increment(self, stm):
         if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL)):
-            if stm.exp.symbol.name == 'polyphony.timing.clksleep':
+            if stm.exp.name == 'polyphony.timing.clksleep':
                 assert len(stm.exp.args) == 1
                 assert stm.exp.args[0][1].is_a(CONST)
                 return stm.exp.args[0][1].value
-            elif stm.exp.symbol.name.startswith('polyphony.timing.wait_'):
+            elif stm.exp.name.startswith('polyphony.timing.wait_'):
                 return 1
         return 0

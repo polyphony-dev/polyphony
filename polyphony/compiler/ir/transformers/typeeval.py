@@ -1,8 +1,11 @@
 from .constopt import try_get_constant
 from ..ir import CONST, TEMP, EXPR
+from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
 from ..types.type import Type
 from ..types.typehelper import type_from_typeclass
+from ..symbol import Symbol
+
 
 class TypeEvaluator(object):
     def __init__(self, scope):
@@ -112,25 +115,30 @@ class TypeExprEvaluator(IRVisitor):
             return None
 
     def visit_TEMP(self, ir):
-        sym_t = ir.symbol.typ
+        sym = self.scope.find_sym(ir.name)
+        assert sym
+        sym_t = sym.typ
         if sym_t.is_class():
-            typ = self.sym2type(ir.symbol)
+            typ = self.sym2type(sym)
             if typ:
                 return typ
         elif sym_t.is_scalar():
-            c = try_get_constant((ir.symbol,), self.scope)
+            c = try_get_constant((sym,), self.scope)
             if c:
                 return c
         return ir
 
     def visit_ATTR(self, ir):
-        attr_t = ir.symbol.typ
+        qsym = qualified_symbols(ir, self.scope)
+        sym = qsym[-1]
+        assert isinstance(sym, Symbol)
+        attr_t = sym.typ
         if attr_t.is_class():
-            typ = self.sym2type(ir.symbol)
+            typ = self.sym2type(sym)
             if typ:
                 return typ
         elif attr_t.is_scalar():
-            c = try_get_constant(ir.qualified_symbol, ir.symbol.scope)
+            c = try_get_constant(qsym, sym.scope)
             if c:
                 return c
         return ir

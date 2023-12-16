@@ -1,6 +1,7 @@
 from ..block import Block
 from ...common.env import env
 from ..ir import *
+from ..symbol import Symbol
 from .usedef import UseDefDetector
 
 
@@ -101,7 +102,7 @@ class CFGChecker(object):
                 if self._is_undefined_sym(sym):
                     continue
                 defblks = self.scope.usedef.get_blks_defining(sym)
-                assert defblks, '{} is not defined in this scope'.format(sym)
+                assert defblks, '{} is not defined in this scope {}'.format(sym, self.scope.name)
                 diffs = defblks - self.accessibles
                 assert not diffs, '{} is defined in an inaccesible block'.format(sym)
 
@@ -110,7 +111,9 @@ class CFGChecker(object):
                         sym.is_param() or sym.is_static() or
                         sym.is_self() or sym.is_return() or
                         sym.typ.is_function() or
+                        sym.typ.is_class() or
                         sym.is_free() or
+                        sym.is_imported() or
                         # TODO:
                         sym.is_inlined() or
                         (sym.is_subobject() and sym.is_flattened()) or

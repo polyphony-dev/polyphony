@@ -77,8 +77,8 @@ class Block(object):
         s += ' # code\n'
         str_stms = []
         for stm in self.stms:
-            if stm.type_str():
-                str_stms.append(f'  {stm}  # {stm.type_str()}')
+            if stm.type_str(self.scope):
+                str_stms.append(f'  {stm}  # {stm.type_str(self.scope)}')
             else:
                 str_stms.append(f'  {stm}')
         s += '\n'.join(str_stms)
@@ -233,10 +233,12 @@ class Block(object):
         for cond in conds:
             if cond.is_a(CONST):
                 continue
-            defstms = usedef.get_stms_defining(cond.symbol)
+            assert cond.is_a(TEMP)
+            cond_symbol = self.scope.find_sym(cond.name)
+            defstms = usedef.get_stms_defining(cond_symbol)
             assert len(defstms) == 1
             stm = defstms.pop()
-            usestms = usedef.get_stms_using(cond.symbol)
+            usestms = usedef.get_stms_using(cond_symbol)
             if len(usestms) > 1:
                 continue
             stm.block.stms.remove(stm)

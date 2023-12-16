@@ -1,5 +1,7 @@
 from ..irvisitor import IRVisitor
 from ..ir import *
+from ..irhelper import qualified_symbols, irexp_type
+from ..symbol import Symbol
 from ..types.type import Type
 from ..types.typehelper import type_from_typeclass
 from ...common.env import env
@@ -54,7 +56,7 @@ class TypeChecker(IRVisitor):
 
     def visit_CALL(self, ir):
         arg_len = len(ir.args)
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         assert callee_scope
         if callee_scope.is_lib():
             return callee_scope.return_type
@@ -72,13 +74,13 @@ class TypeChecker(IRVisitor):
         return callee_scope.return_type
 
     def visit_SYSCALL(self, ir):
-        name = ir.symbol.name
+        name = ir.name
         if name == 'len':
             if len(ir.args) != 1:
                 type_error(self.current_stm, Errors.LEN_TAKES_ONE_ARG)
             _, mem = ir.args[0]
-            mem_t = mem.symbol.typ
-            if not mem.is_a([TEMP, ATTR]) or not mem_t.is_seq():
+            mem_t = irexp_type(mem, self.scope)
+            if not mem.is_a(IRVariable) or not mem_t.is_seq():
                 type_error(self.current_stm, Errors.LEN_TAKES_SEQ_TYPE)
         elif name == 'print':
             for _, arg in ir.args:
@@ -86,12 +88,12 @@ class TypeChecker(IRVisitor):
                 if not arg_t.is_scalar():
                     type_error(self.current_stm, Errors.PRINT_TAKES_SCALAR_TYPE)
         elif name == '$new':
-            _, typ = ir.args[0]
-            typ_t = typ.symbol.typ
-            assert typ_t.is_class()
-            return Type.object(typ_t.scope)
+            _, arg0 = ir.args[0]
+            arg0_t = irexp_type(arg0, self.scope)
+            assert arg0_t.is_class()
+            return Type.object(arg0_t.scope)
         elif name in env.all_scopes:
-            syscall_scope = env.all_scopes[ir.symbol.name]
+            syscall_scope = env.all_scopes[ir.name]
             arg_len = len(ir.args)
             param_typs = tuple(syscall_scope.param_types())
             param_len = len(param_typs)
@@ -103,14 +105,14 @@ class TypeChecker(IRVisitor):
         else:
             for _, arg in ir.args:
                 self.visit(arg)
-        sym_t = ir.symbol.typ
+        sym_t = irexp_type(ir, self.scope)
         assert sym_t.is_function()
         return sym_t.return_type
 
     def visit_NEW(self, ir):
         arg_len = len(ir.args)
 
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.is_typeclass():
             return type_from_typeclass(callee_scope)
 
@@ -143,7 +145,8 @@ class TypeChecker(IRVisitor):
                        [repr(ir)])
 
     def visit_TEMP(self, ir):
-        sym = ir.symbol
+        sym = self.scope.find_sym(ir.name)
+        assert sym
         if (ir.ctx == Ctx.LOAD and
                 sym.scope is not self.scope and
                 self.scope.has_sym(sym.name) and
@@ -157,7 +160,7 @@ class TypeChecker(IRVisitor):
         return sym.typ
 
     def visit_ATTR(self, ir):
-        return ir.symbol.typ
+        return irexp_type(ir, self.scope)
 
     def visit_MREF(self, ir):
         mem_t = self.visit(ir.mem)
@@ -185,19 +188,19 @@ class TypeChecker(IRVisitor):
         return mem_t
 
     def visit_ARRAY(self, ir):
-        if self.current_stm.dst.is_a(TEMP) and self.current_stm.dst.symbol.name == '__all__':
-            return ir.symbol.typ
+        if self.current_stm.dst.is_a(TEMP) and self.current_stm.dst.name == '__all__':
+            return irexp_type(ir, self.scope)
         for item in ir.items:
             item_type = self.visit(item)
             if not (item_type.is_int() or item_type.is_bool()):
                 type_error(self.current_stm, Errors.SEQ_ITEM_MUST_BE_INT,
                            [item_type])
-        return ir.symbol.typ
+        return irexp_type(ir, self.scope)
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
         if ir.exp.is_a(CALL):
-            callee_scope = ir.exp.callee_scope
+            callee_scope = ir.exp.get_callee_scope(self.scope)
             if callee_scope.return_type and callee_scope.return_type.is_none():
                 #TODO: warning
                 pass
@@ -221,7 +224,9 @@ class TypeChecker(IRVisitor):
     def visit_MOVE(self, ir):
         src_t = self.visit(ir.src)
         dst_t = self.visit(ir.dst)
-        if ir.dst.is_a(TEMP) and ir.dst.symbol.is_return():
+        dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
+        assert isinstance(dst_sym, Symbol)
+        if ir.dst.is_a(TEMP) and dst_sym.is_return():
             assert not dst_t.is_undef()
             if not dst_t.is_same(src_t) and not dst_t.can_assign(src_t):
                 type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
@@ -239,11 +244,13 @@ class TypeChecker(IRVisitor):
                                [])
 
     def visit_PHI(self, ir):
-        assert ir.var.symbol.typ is not None
+        var_sym = qualified_symbols(ir.var, self.scope)[-1]
+        assert isinstance(var_sym, Symbol)
+        assert var_sym.typ is not None
         #assert all([arg is None or arg.symbol.typ is not None for arg, blk in ir.args])
         arg_types = [self.visit(arg) for arg in ir.args]
         var_t = self.visit(ir.var)
-        if ir.var.is_a(TEMP) and ir.var.symbol.is_return():
+        if ir.var.is_a(TEMP) and var_sym.is_return():
             assert not var_t.is_undef()
             for arg_t in arg_types:
                 if not var_t.is_same(arg_t):
@@ -275,13 +282,13 @@ class TypeChecker(IRVisitor):
             arg_t = self.visit(arg)
             if not param_t.can_assign(arg_t):
                 type_error(self.current_stm, Errors.INCOMPATIBLE_PARAMETER_TYPE,
-                           [arg.symbol.orig_name(), scope_name])
+                           [arg.name, scope_name])
 
 
 class EarlyTypeChecker(IRVisitor):
     def visit_CALL(self, ir):
         arg_len = len(ir.args)
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         assert callee_scope
         if callee_scope.is_lib():
             return callee_scope.return_type
@@ -297,25 +304,25 @@ class EarlyTypeChecker(IRVisitor):
         return callee_scope.return_type
 
     def visit_SYSCALL(self, ir):
-        if ir.symbol.name in env.all_scopes:
-            syscall_scope = env.all_scopes[ir.symbol.name]
+        if ir.name in env.all_scopes:
+            syscall_scope = env.all_scopes[ir.name]
             arg_len = len(ir.args)
             param_typs = tuple(syscall_scope.param_types())
             param_len = len(param_typs)
             # with_vararg = len(param_typs) and param_typs[-1].has_vararg()
             # TODO:
             with_vararg = False
-            self._check_param_number(arg_len, param_len, ir, ir.symbol.name, with_vararg)
+            self._check_param_number(arg_len, param_len, ir, ir.name, with_vararg)
         else:
             for _, arg in ir.args:
                 self.visit(arg)
-        sym_t = ir.symbol.typ
+        sym_t = irexp_type(ir, self.scope)
         assert sym_t.is_function()
         return sym_t.return_type
 
     def visit_NEW(self, ir):
         arg_len = len(ir.args)
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         ctor = callee_scope.find_ctor()
         if not ctor and arg_len:
             type_error(self.current_stm, Errors.TAKES_TOOMANY_ARGS,
@@ -341,7 +348,7 @@ class EarlyTypeChecker(IRVisitor):
 
 class PortAssignChecker(IRVisitor):
     def _is_assign_call(self, ir):
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.parent.is_port() and callee_scope.base_name == 'assign':
             return True
         elif callee_scope.parent.name.startswith('polyphony.Net') and callee_scope.base_name == 'assign':
@@ -351,7 +358,7 @@ class PortAssignChecker(IRVisitor):
     def visit_CALL(self, ir):
         if self._is_assign_call(ir):
             assert len(ir.args) == 1
-            arg_t = ir.args[0][1].symbol.typ
+            arg_t = irexp_type(ir.args[0][1], self.scope)
             assigned = arg_t.scope
             if (not (assigned.is_method() and assigned.parent.is_module()) and
                     not (assigned.parent.is_method() and assigned.parent.parent.is_module())):
@@ -360,7 +367,9 @@ class PortAssignChecker(IRVisitor):
             assigned.add_tag('comb')
 
     def visit_NEW(self, ir):
-        sym_t = ir.symbol.typ
+        sym = qualified_symbols(ir, self.scope)[-1]
+        assert isinstance(sym, Symbol)
+        sym_t = sym.typ
         if sym_t.scope.name.startswith('polyphony.Net'):
             if len(ir.args) == 1:
                 arg_t = ir.args[0][1].symbol.typ
@@ -374,19 +383,19 @@ class PortAssignChecker(IRVisitor):
 
 class EarlyRestrictionChecker(IRVisitor):
     def visit_SYSCALL(self, ir):
-        if ir.symbol.name in ('range', 'polyphony.unroll', 'polyphony.pipelined'):
-            fail(self.current_stm, Errors.USE_OUTSIDE_FOR, [ir.symbol.name])
+        if ir.name in ('range', 'polyphony.unroll', 'polyphony.pipelined'):
+            fail(self.current_stm, Errors.USE_OUTSIDE_FOR, [ir.name])
 
 
 class RestrictionChecker(IRVisitor):
     def visit_NEW(self, ir):
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.is_module():
             if not callee_scope.parent.is_namespace():
                 fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
             for i, (_, arg) in enumerate(ir.args):
-                if (arg.is_a([TEMP, ATTR])):
-                    arg_t = arg.symbol.typ
+                if arg.is_a(IRVariable):
+                    arg_t = irexp_type(arg, self.scope)
                     if arg_t.is_scalar() or arg_t.is_class():
                         continue
                     fail(self.current_stm, Errors.MODULE_ARG_MUST_BE_X_TYPE, [arg_t])
@@ -395,7 +404,7 @@ class RestrictionChecker(IRVisitor):
 
     def visit_CALL(self, ir):
         self.visit(ir.func)
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.is_method() and callee_scope.parent.is_module():
             if callee_scope.parent.find_child(self.scope.name, rec=True):
                 return
@@ -420,17 +429,17 @@ class RestrictionChecker(IRVisitor):
                 continue
             if arg.is_a(CONST):
                 continue
-            if (arg.is_a([TEMP, ATTR])):
-                arg_t = arg.symbol.typ
-                if arg_t.is_scalar():
+            if arg.is_a(IRVariable):
+                arg_t = irexp_type(arg, self.scope)
+                if arg_t.is_scalar() or arg_t.is_object():
                     continue
-                elif arg_t.is_object():
-                    continue
-            type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
-                       [arg_t])
+                type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
+                        [arg_t])
 
-    def visit_ATTR(self, ir):
-        head = ir.head()
+    def visit_ATTR(self, ir: ATTR):
+        syms = qualified_symbols(ir, self.scope)
+        head = syms[0]
+        assert isinstance(head, Symbol)
         head_t = head.typ
         if (head.scope is not self.scope and
                 head_t.is_object() and
@@ -448,11 +457,13 @@ class LateRestrictionChecker(IRVisitor):
             fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
 
     def visit_MSTORE(self, ir):
-        if ir.mem.symbol.is_static():
+        mem_sym = qualified_symbols(ir.mem, self.scope)[-1]
+        assert isinstance(mem_sym, Symbol)
+        if mem_sym.is_static():
             fail(self.current_stm, Errors.GLOBAL_OBJECT_CANT_BE_MUTABLE)
 
     def visit_NEW(self, ir):
-        callee_scope = ir.callee_scope
+        callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.is_port():
             if not (self.scope.is_ctor() and self.scope.parent.is_module()):
                 fail(self.current_stm, Errors.PORT_MUST_BE_IN_MODULE)
@@ -461,14 +472,14 @@ class LateRestrictionChecker(IRVisitor):
         super().visit_MOVE(ir)
         reserved_port_name = ('clk', 'rst')
         if ir.src.is_a(NEW):
-            callee_scope = ir.src.callee_scope
-            if callee_scope.is_port() and ir.dst.symbol.name in reserved_port_name:
+            callee_scope = ir.src.get_callee_scope(self.scope)
+            if callee_scope.is_port() and ir.dst.name in reserved_port_name:
                 fail(self.current_stm, Errors.RESERVED_PORT_NAME, [ir.dst.symbol.name])
 
 
 class AssertionChecker(IRVisitor):
     def visit_SYSCALL(self, ir):
-        if ir.symbol.name != 'assert':
+        if ir.name != 'assert':
             return
         _, arg = ir.args[0]
         if arg.is_a(CONST) and not arg.value:

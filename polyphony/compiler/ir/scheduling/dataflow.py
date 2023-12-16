@@ -1,6 +1,7 @@
 ﻿from collections import defaultdict, deque
 from ..ir import *
-from ..irhelper import is_port_method_call, has_exclusive_function, has_clkfence
+from ..irhelper import is_port_method_call, has_exclusive_function, has_clkfence, qualified_symbols
+from ..symbol import Symbol
 from ...common.env import env
 from ...common import utils
 from logging import getLogger
@@ -474,13 +475,15 @@ class DFGBuilder(object):
             dfg.src_nodes.add(node)
             return
         for v in usevars:
-            if v.symbol.is_param():
+            v_sym = qualified_symbols(v, self.scope)[-1]
+            assert isinstance(v_sym, Symbol)
+            if v_sym.is_param():
                 dfg.src_nodes.add(node)
                 return
-            if v.is_a(ATTR) and v.head().name == env.self_name:
+            if v.is_a(ATTR) and v.head_name() == env.self_name:
                 dfg.src_nodes.add(node)
                 return
-            defstms = usedef.get_stms_defining(v.symbol)
+            defstms = usedef.get_stms_defining(v_sym)
             for defstm in defstms:
                 # this definition stm is in the out of the section
                 if defstm.block not in blocks:
@@ -494,8 +497,11 @@ class DFGBuilder(object):
 
         def has_mem_arg(args):
             for _, a in args:
-                if a.is_a(TEMP) and a.symbol.typ.is_list():
-                    return True
+                if a.is_a(TEMP):
+                    a_sym = self.scope.find_sym(a.name)
+                    assert a_sym
+                    if a_sym.typ.is_list():
+                        return True
             return False
         call = None
         if stm.is_a(EXPR):
@@ -507,14 +513,16 @@ class DFGBuilder(object):
         if call:
             if len(call.args) == 0 or has_mem_arg(call.args):
                 dfg.src_nodes.add(node)
-        if has_exclusive_function(stm):
+        if has_exclusive_function(stm, self.scope):
             dfg.src_nodes.add(node)
 
     def _add_defuse_edges(self, stm, usenode, dfg, usedef, blocks):
         for v in usedef.get_vars_used_at(stm):
-            usenode.uses.append(v.symbol)
-            defstms = usedef.get_stms_defining(v.symbol)
-            logger.log(0, v.symbol.name + ' defstms ')
+            v_sym = qualified_symbols(v, self.scope)[-1]
+            assert isinstance(v_sym, Symbol)
+            usenode.uses.append(v_sym)
+            defstms = usedef.get_stms_defining(v_sym)
+            logger.log(0, v_sym.name + ' defstms ')
             for defstm in defstms:
                 logger.log(0, str(defstm))
 
@@ -530,8 +538,10 @@ class DFGBuilder(object):
 
     def _add_usedef_edges(self, stm, defnode, dfg, usedef, blocks):
         for v in usedef.get_vars_defined_at(stm):
-            defnode.defs.append(v.symbol)
-            usestms = usedef.get_stms_using(v.symbol)
+            v_sym = qualified_symbols(v, self.scope)[-1]
+            assert isinstance(v_sym, Symbol)
+            defnode.defs.append(v_sym)
+            usestms = usedef.get_stms_using(v_sym)
             for usestm in usestms:
                 if stm is usestm:
                     continue
@@ -543,7 +553,7 @@ class DFGBuilder(object):
                 usenode = dfg.add_stm_node(usestm)
                 dfg.add_usedef_edge(usenode, defnode)
                 visited = set()
-                if v.symbol.typ.is_scalar() and not v.symbol.is_induction():
+                if v_sym.typ.is_scalar() and not v_sym.is_induction():
                     continue
                 self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
@@ -555,7 +565,7 @@ class DFGBuilder(object):
                 return True
             elif stm.src.is_a(NEW):
                 return True
-            elif stm.src.is_a(SYSCALL) and stm.src.symbol.name == '$new':
+            elif stm.src.is_a(SYSCALL) and stm.src.name == '$new':
                 return True
         elif stm.is_a(EXPR):
             if stm.exp.is_a([CALL, SYSCALL]):
@@ -585,34 +595,36 @@ class DFGBuilder(object):
         if both of them are in the same block
         '''
         # grouping by memory
-        node_groups_by_mem = defaultdict(list)
+        node_groups_by_mem_sym = defaultdict(list)
         for node in dfg.nodes:
             if node.tag.is_a(MOVE):
                 mv = node.tag
                 if mv.src.is_a(MREF):
-                    mem_group = mv.src.mem.symbol
-                    node_groups_by_mem[mem_group].append(node)
+                    mem_sym = qualified_symbols(mv.src.mem, self.scope)[-1]
+                    node_groups_by_mem_sym[mem_sym].append(node)
                 elif mv.src.is_a(CALL):
                     for _, arg in mv.src.args:
-                        if arg.is_a(TEMP) and arg.symbol.typ.is_list():
-                            mem_group = arg.symbol
-                            node_groups_by_mem[mem_group].append(node)
-                elif mv.dst.is_a([TEMP, ATTR]):
-                    if mv.dst.symbol.typ.is_seq():
+                        if arg.is_a(TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
+                            node_groups_by_mem_sym[arg_sym].append(node)
+                else:
+                    assert mv.dst.is_a(IRVariable)
+                    dst_sym = qualified_symbols(mv.dst, self.scope)[-1]
+                    assert isinstance(dst_sym, Symbol)
+                    if dst_sym.typ.is_seq():
                         pass
             elif node.tag.is_a(EXPR):
                 expr = node.tag
                 if expr.exp.is_a(CALL):
                     for _, arg in expr.exp.args:
-                        if arg.is_a(TEMP) and arg.symbol.typ.is_list():
-                            mem_group = arg.symbol
-                            node_groups_by_mem[mem_group].append(node)
+                        if arg.is_a(TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
+                            node_groups_by_mem_sym[arg_sym].append(node)
                 elif expr.exp.is_a(MSTORE):
-                    mem_group = expr.exp.mem.symbol
-                    node_groups_by_mem[mem_group].append(node)
+                    mem_sym = qualified_symbols(expr.exp.mem, self.scope)[-1]
+                    assert isinstance(mem_sym, Symbol)
+                    node_groups_by_mem_sym[mem_sym].append(node)
         parallelizer = RegArrayParallelizer(self.scope)
-        for group, nodes in node_groups_by_mem.items():
-            if group.typ.is_tuple():
+        for mem_sym, nodes in node_groups_by_mem_sym.items():
+            if mem_sym.typ.is_tuple():
                 continue
             node_groups_by_blk = defaultdict(list)
             # grouping by block
@@ -624,7 +636,7 @@ class DFGBuilder(object):
                     n1 = sorted_nodes[i]
                     for k in range(i + 1, len(sorted_nodes)):
                         n2 = sorted_nodes[k]
-                        if parallelizer.can_be_parallel(group, n1, n2):
+                        if parallelizer.can_be_parallel(mem_sym, n1, n2):
                             continue
                         if n1.tag.is_mem_read():
                             if n2.tag.is_mem_write():
@@ -686,9 +698,11 @@ class DFGBuilder(object):
             return None
         if not call.func.is_a(ATTR):
             return None
-        receiver = call.func.tail()
+        qsyms = qualified_symbols(call.func, self.scope)
+        receiver = qsyms[-2]
+        assert isinstance(receiver, Symbol)
         if receiver.typ.is_object() or receiver.typ.is_port():
-            callee_scope = call.callee_scope
+            callee_scope = call.get_callee_scope(self.scope)
             if callee_scope.is_mutable():
                 return receiver
         return None
@@ -730,10 +744,10 @@ class DFGBuilder(object):
                 if seq_func_node:
                     if self.scope.has_branch_edge(seq_func_node.tag, node.tag):
                         continue
-                    if not has_exclusive_function(stm):
+                    if not has_exclusive_function(stm, self.scope):
                         continue
                     dfg.add_seq_edge(seq_func_node, node)
-                if has_exclusive_function(stm):
+                if has_exclusive_function(stm, self.scope):
                     seq_func_node = node
             seq_func_node = None
             for stm in reversed(block.stms):
@@ -743,10 +757,10 @@ class DFGBuilder(object):
                 if seq_func_node:
                     if self.scope.has_branch_edge(node.tag, seq_func_node.tag):
                         continue
-                    if not has_exclusive_function(stm):
+                    if not has_exclusive_function(stm, self.scope):
                         continue
                     dfg.add_seq_edge(node, seq_func_node)
-                if has_exclusive_function(stm):
+                if has_exclusive_function(stm, self.scope):
                     seq_func_node = node
 
     def _add_seq_edges_for_io(self, blocks, dfg):
@@ -760,7 +774,7 @@ class DFGBuilder(object):
                     call = stm.exp
                 else:
                     continue
-                if is_port_method_call(call):
+                if is_port_method_call(call, self.scope):
                     node = dfg.find_node(stm)
                     if port_node:
                         dfg.add_seq_edge(port_node, node)
@@ -797,9 +811,11 @@ class DFGBuilder(object):
             var = stm.var
         else:
             return
-        if not var.symbol.is_alias():
+        var_sym = qualified_symbols(var, self.scope)[-1]
+        assert isinstance(var_sym, Symbol)
+        if not var_sym.is_alias():
             return
-        for u in usedef.get_stms_using(var.symbol):
+        for u in usedef.get_stms_using(var_sym):
             if u is defnode.tag:
                 continue
             if defnode.tag.program_order() <= u.program_order():
@@ -807,7 +823,7 @@ class DFGBuilder(object):
             if u.block is not defnode.tag.block:
                 continue
             unode = dfg.add_stm_node(u)
-            if has_exclusive_function(u):
+            if has_exclusive_function(u, self.scope):
                 dfg.add_seq_edge(unode, defnode)
             elif unode.tag.is_mem_read() or unode.tag.is_mem_write():
                 dfg.add_usedef_edge(unode, defnode)
@@ -818,9 +834,14 @@ class DFGBuilder(object):
     def _remove_alias_cycle(self, dfg):
         backs = []
         for (n1, n2), (_, back) in dfg.edges.items():
-            if back and n1.tag.is_a([MOVE, PHIBase]):
-                var = n1.tag.dst.symbol if n1.tag.is_a(MOVE) else n1.tag.var.symbol
-                if var.is_alias():
+            if back and isinstance(n1.tag, (MOVE, PHIBase)):
+                match n1.tag:
+                    case MOVE():
+                        var_sym = qualified_symbols(n1.tag.dst, self.scope)[-1]
+                    case PHIBase():
+                        var_sym = qualified_symbols(n1.tag.var, self.scope)[-1]
+                assert isinstance(var_sym, Symbol)
+                if var_sym.is_alias():
                     backs.append((n1, n2))
         dones = set()
         for end, start in backs:
@@ -863,7 +884,7 @@ class DFGBuilder(object):
             call = stm.exp
         else:
             return None
-        if not is_port_method_call(call):
+        if not is_port_method_call(call, self.scope):
             return None
         return call.func.tail()
 
@@ -902,7 +923,7 @@ class RegArrayParallelizer(object):
             m = stm.exp
         else:
             return None
-        assert msym is m.mem.symbol
+        # assert msym is m.mem.symbol
         return m.offset
 
     @staticmethod
@@ -960,17 +981,19 @@ class RegArrayParallelizer(object):
         if offs1.is_a(CONST) and offs2.is_a(CONST) and offs1.value != offs2.value:
             return True
         elif offs1.is_a(TEMP) and offs2.is_a(TEMP):
-            offs1_defstms = self.scope.usedef.get_stms_defining(offs1.symbol)
-            offs2_defstms = self.scope.usedef.get_stms_defining(offs2.symbol)
+            offs1_sym = self.scope.find_sym(offs1.name)
+            offs2_sym = self.scope.find_sym(offs2.name)
+            offs1_defstms = self.scope.usedef.get_stms_defining(offs1_sym)
+            offs2_defstms = self.scope.usedef.get_stms_defining(offs2_sym)
             if len(offs1_defstms) != 1 and len(offs2_defstms) != 1:
                 return False
             offs2_stm = list(offs2_defstms)[0]
             offs1_stm = list(offs1_defstms)[0]
             if len(offs2_defstms) == 1:
-                if self._has_other_var_and_difference(offs1.symbol, offs2_stm):
+                if self._has_other_var_and_difference(offs1_sym, offs2_stm):
                     return True
             if len(offs1_defstms) == 1:
-                if self._has_other_var_and_difference(offs2.symbol, offs1_stm):
+                if self._has_other_var_and_difference(offs2_sym, offs1_stm):
                     return True
             if len(offs2_defstms) == 1 and len(offs1_defstms) == 1:
                 return self._has_same_var_and_difference(offs2_stm, offs1_stm)
