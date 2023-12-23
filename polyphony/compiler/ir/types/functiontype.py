@@ -20,7 +20,7 @@ class FunctionType(ScopeType):
         if lhs_t.name == rhs_t.name:
             if lhs_t.scope.is_object():
                 lhs_t = rhs_t.clone(explicit=self.explicit)
-            if not lhs_t.explicit and rhs_t.explicit and lhs_t.scope is rhs_t.scope:
+            if not (lhs_t.explicit and not rhs_t.explicit) and lhs_t.scope.is_assignable(rhs_t.scope):
                 param_types = [t.clone(explicit=False) for t in rhs_t.param_types]
-                lhs_t = lhs_t.clone(param_types=param_types, return_type=rhs_t.return_type.clone())
+                lhs_t = lhs_t.clone(scope_name=rhs_t.scope_name, param_types=param_types, return_type=rhs_t.return_type.clone())
         return lhs_t

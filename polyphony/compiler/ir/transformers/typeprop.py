@@ -26,7 +26,7 @@ class RejectPropagation(Exception):
 class TypePropagation(IRVisitor):
     def __init__(self, is_strict=False):
         # is_strict affects whether type propagation is strict or not
-        # In particular, it affects the length of list types. 
+        # In particular, it affects the length of list types.
         self.is_strict = is_strict
 
     def process_all(self):
@@ -114,8 +114,6 @@ class TypePropagation(IRVisitor):
         callee_scope = ir.get_callee_scope(self.scope)
         param_symbols = callee_scope.param_symbols()
         arg_types = [self.visit(arg) for _, arg in ir.args]
-        if param_symbols:
-            assert callee_scope.is_specialized()
         for sym, arg_t in zip(param_symbols, arg_types):
             self._propagate(sym, arg_t)
         self._add_scope(callee_scope)
@@ -127,8 +125,6 @@ class TypePropagation(IRVisitor):
         ctor = callee_scope.find_ctor()
         param_symbols = ctor.param_symbols()
         arg_types = [self.visit(arg) for _, arg in ir.args]
-        if param_symbols:
-            assert callee_scope.is_specialized()
         for sym, arg_t in zip(param_symbols, arg_types):
             self._propagate(sym, arg_t)
         self._add_scope(callee_scope)
@@ -246,7 +242,6 @@ class TypePropagation(IRVisitor):
         mem_t = self.visit(ir.mem)
         if mem_t.is_undef():
             raise RejectPropagation(ir)
-        
         mem_sym = qualified_symbols(ir.mem, self.scope)[-1]
         assert isinstance(mem_sym, Symbol)
         mem_sym.typ = mem_t.clone(ro=False)

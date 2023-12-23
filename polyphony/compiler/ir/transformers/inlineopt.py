@@ -1,6 +1,7 @@
 ﻿from collections import defaultdict, deque
 from collections.abc import Iterable
 from typing import cast
+from .typeprop import TypePropagation
 from ..block import Block
 from ..irvisitor import IRVisitor, IRTransformer
 from ..ir import Ctx, IR, IRExp, IRNameExp, IRVariable, IRCallable, IRStm, CONST, UNOP, TEMP, ATTR, CALL, NEW, SYSCALL, MOVE, EXPR, RET, JUMP
@@ -42,6 +43,11 @@ class InlineOpt(object):
         self.process_scopes(driver.current_scopes)
 
     def process_scopes(self, scopes):
+        while not self._process_scopes(scopes):
+            # need restart
+            TypePropagation(is_strict=False).process_scopes(scopes)
+
+    def _process_scopes(self, scopes) -> bool:
         call_graph: Callgraph = self._build_call_graph(scopes)
         callers = set()
         while call_graph:
@@ -49,15 +55,21 @@ class InlineOpt(object):
             if not leaf:
                 continue
             caller, callee, call_irs = leaf
-            if callee.is_method():
-                self._process_method(caller, callee, call_irs)
-            else:
-                self._process_func(caller, callee, call_irs)
+            if callee.is_testbench():
+                continue
+            if not env.config.perfect_inlining:
+                if caller.is_testbench() and callee.is_function_module():
+                    continue
+            if caller.is_namespace() and callee.is_method():
+                continue
+            ret = self._inlining(caller, callee, call_irs)
+            if not ret:
+                return False
             logger.debug(f"inlined {callee.name} on {caller.name}")
-            # logger.debug(scope)
             callers.add(caller)
         for c in callers:
             self._reduce_useless_move(c)
+        return True
 
     def _build_call_graph(self, scopes: list[Scope]) -> Callgraph:
         call_graph: Callgraph = {}
@@ -123,53 +135,87 @@ class InlineOpt(object):
              self_map[callee_self] = qsym2var(receiver_sym, Ctx.LOAD)
         return self_map
 
-    def _rename(self, callee: CalleeScope, caller: CallerScope):
-        '''Make all local names used in the callee unique (so that they do not match the names in the caller)'''
-        caller_name_exps = LocalVariableCollector().process(caller)
-        caller_names = set([name_exp.name for name_exp in caller_name_exps])
-        caller_names |= {'@return'}
-
-        callee_name_exps = LocalVariableCollector().process(callee)
-        name_ir_map: dict[str, list[IRNameExp]] = defaultdict(list)
+    def _import_nonlocal_symbols(self, callee: CalleeScope, caller: CallerScope):
+        callee_name_exps = NonlocalVariableCollector().process(callee)
         for name_exp in callee_name_exps:
-            name_ir_map[name_exp.name].append(name_exp)
+            sym = callee.find_sym(name_exp.name)
+            if caller.find_sym(name_exp.name) is sym:
+                continue
+            callee.import_sym(sym, sym.name)
 
-        for name, name_exps in name_ir_map.items():
-            sym = callee.find_sym(name)
-            assert isinstance(sym, Symbol)
-            # Variable 'self' is not renamed because it is referenced by a fixed name (env.self_name)
-            # by _make_replace_self_obj_map to replace it in the inlining process
-            if sym.is_self():
-                continue
-            if sym.is_builtin():
-                continue
-            if name in caller_names:
-                count = 0
-                new_name = f'{name}_{count}'
-                while new_name in caller_names or new_name in name_ir_map.keys():
-                    count += 1
+    def _collect_names_recursively(self, scope: Scope, all_vars: list[tuple[Scope, list[IRNameExp]]]):
+        vs = AllVariableCollector().process(scope)
+        all_vars.append((scope, vs))
+        for child in scope.children:
+            self._collect_names_recursively(child, all_vars)
+
+    def _rename(self, callee: CalleeScope, caller: CallerScope):
+        def make_unique_name(scopes: Scope, name: str) -> str:
+            count = 0
+            new_name = name
+            for s in scopes:
+                while s.find_sym(new_name):
                     new_name = f'{name}_{count}'
-                if callee.has_sym(name):
-                    callee.rename_sym(name, new_name)
-                for name_exp in name_exps:
-                    name_exp.name = new_name
+                    count += 1
+            return new_name
+        scope_name_exps: list[tuple[Scope, list[IRNameExp]]] = []
+        self._collect_names_recursively(callee, scope_name_exps)
+        sym_ir_map: dict[Symbol, list[IRNameExp]] = defaultdict(list)
+        for scope, name_exps in scope_name_exps:
+            for name_exp in name_exps:
+                sym = scope.find_sym(name_exp.name)
+                assert sym
+                # We interested in only callee's symbols here
+                if sym in callee.symbols.values():
+                    sym_ir_map[sym].append(name_exp)
+
+        for callee_sym, name_exps in sym_ir_map.items():
+            if callee_sym.is_self():
+                continue
+            if callee_sym.is_builtin():
+                continue
+            caller_sym = caller.find_sym(callee_sym.name)
+            if not caller_sym or callee_sym is caller_sym:
+                # no conflict
+                continue
+            # we have conflict name between caller and callee
+            # rename callee's symbol
+            new_name = make_unique_name([caller, callee], callee_sym.name)
+            if callee_sym.scope is callee:
+                callee.rename_sym(callee_sym.name, new_name)
+            else:
+                callee.rename_sym_asname(callee_sym.name, new_name)
+            for exp in name_exps:
+                exp.name = new_name
 
     def _merge_symbols(self, callee: CalleeScope, caller: CallerScope):
-        callee_name_exps = LocalVariableCollector().process(callee)
+        callee_name_exps = AllVariableCollector().process(callee)
         callee_names = set([name_exp.name for name_exp in callee_name_exps])
         for name in callee_names:
             sym = callee.find_sym(name)
             if sym and not caller.has_sym(name):
-                caller.add_sym(name, sym.tags, sym.typ)
+                if sym.scope is callee:
+                    if sym.typ.has_scope() and sym.typ.scope_name.startswith(callee.name):
+                        typ = sym.typ.clone(scope_name = f'{caller.name}.{sym.name}', explicit=True)
+                    else:
+                        typ = sym.typ.clone()
+                    caller.add_sym(name, sym.tags, typ)
+                else:
+                    # don't copy outer scope symbols
+                    caller.import_sym(sym)
 
     def _merge_children(self, callee: CalleeScope, caller: CallerScope):
+        for child in callee.children:
+            env.remove_scope(child)
+            child.parent = caller
+            env.append_scope(child)
         caller.children.extend(callee.children)
 
     def _clone_callee(self, caller: CallerScope, callee: CalleeScope) -> CalleeScope:
-        callee_clone : CalleeScope = cast(CalleeScope, callee.clone('', '#clone', parent=callee.parent, recursive=True))
+        callee_clone : CalleeScope = cast(CalleeScope, callee.clone('', f'#{self.inline_counts}', parent=callee.parent, recursive=True))
         return callee_clone
 
-    def _removet_closure_if_needed(self, caller: CallerScope):
+    def _remove_closure_if_needed(self, caller: CallerScope):
         assert caller.is_enclosure()
         caller_name_exps = LocalVariableCollector().process(caller)
         has_reference = False
@@ -190,63 +236,31 @@ class InlineOpt(object):
                     sym.del_tag('free')
             assert not caller.closures
 
-    def _process_func(self, caller: CallerScope, callee: CalleeScope, call_irs: list[CallStmPair]):
-        if callee.is_testbench():
-            return
-        if not env.config.perfect_inlining:
-            if caller.is_testbench() and callee.is_function_module():
-                return
+    def _inlining(self, caller: CallerScope, callee: CalleeScope, call_irs: list[CallStmPair]) -> bool:
         for call, call_stm in call_irs:
+            can_continue = True
             self.inline_counts += 1
             callee_clone : CalleeScope = self._clone_callee(caller, callee)
+            self._import_nonlocal_symbols(callee_clone, caller)
             self._rename(callee_clone, caller)
+
             # replace args and return
+            replace_map = {}
             replace_arg_map = self._make_replace_args_map(callee_clone, call)
-            replace_map = replace_arg_map
+            replace_map |= replace_arg_map
+            if callee.is_method():
+                replace_self_map = self._make_replace_self_obj_map(callee_clone, call, call_stm, caller)
+                replace_map |= replace_self_map
             IRReplacer(replace_map).process(callee_clone, callee_clone.entry_block)
+            for c in callee_clone.collect_scope():
+                IRReplacer(replace_map).process(c, c.entry_block)
+
             if callee.is_returnable():
                 self._replace_result_exp(call_stm, call, callee_clone)
+            if callee_clone.children:
+                self._merge_children(callee_clone, caller)
+                can_continue = False
             self._merge_symbols(callee_clone, caller)
-            self._merge_children(callee_clone, caller)
-            # make block clones on caller scope
-            block_map, _ = callee_clone.clone_blocks(caller)
-            callee_entry_blk = block_map[callee_clone.entry_block]
-            callee_exit_blk = block_map[callee_clone.exit_block]
-            assert len(callee_exit_blk.succs) <= 1
-            self._merge_blocks(call_stm, callee.is_ctor(), callee_entry_blk, callee_exit_blk)
-
-            if isinstance(call_stm, EXPR):
-                call_stm.block.stms.remove(call_stm)
-
-            if caller.is_enclosure():
-                self._removet_closure_if_needed(caller)
-
-            Scope.destroy(callee_clone)
-            callee_clone.parent.del_sym(callee_clone.base_name)
-
-    def _process_method(self, caller: CallerScope, callee: CalleeScope, call_irs: list[CallStmPair]):
-        if caller.is_namespace():
-            return
-        if callee.is_ctor() and callee.parent.is_module():
-            if caller.is_ctor() and caller.parent.is_module():
-                pass
-            else:
-                # TODO
-                pass
-        for call, call_stm in call_irs:
-            self.inline_counts += 1
-            callee_clone : CalleeScope = cast(CalleeScope, callee.clone('', '#clone', parent=callee.parent))
-            self._rename(callee_clone, caller)
-            # replace args, return and 'self'
-            replace_arg_map = self._make_replace_args_map(callee_clone, call)
-            replace_self_map = self._make_replace_self_obj_map(callee_clone, call, call_stm, caller)
-            replace_map = replace_arg_map | replace_self_map
-            IRReplacer(replace_map).process(callee_clone, callee_clone.entry_block)
-            if callee.is_returnable():
-                self._replace_result_exp(call_stm, call, callee_clone)
-
-            self._merge_symbols(callee_clone, caller)
-            self._merge_children(callee_clone, caller)
             # make block clones on caller scope
             block_map, _ = callee_clone.clone_blocks(caller)
             callee_entry_blk = block_map[callee_clone.entry_block]
@@ -264,9 +278,13 @@ class InlineOpt(object):
                 call_stm.block.stms.remove(call_stm)
 
             if caller.is_enclosure():
-                self._removet_closure_if_needed(caller)
+                self._remove_closure_if_needed(caller)
 
             Scope.destroy(callee_clone)
+            callee_clone.parent.del_sym(callee_clone.base_name)
+            if not can_continue:
+                return False
+        return True
 
     def _replace_result_exp(self, call_stm: IRStm, call: IRCallable, callee: CalleeScope):
         '''Finds the '@return' symbol (already renamed) of the callee and replace the call expression of the caller statement'''
@@ -369,6 +387,39 @@ class LocalVariableCollector(IRVisitor):
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
 
+class NonlocalVariableCollector(IRVisitor):
+    def __init__(self):
+        super().__init__()
+        self.nonlocal_vars = []
+
+    def process(self, scope):
+        super().process(scope)
+        return self.nonlocal_vars
+
+    def visit_TEMP(self, ir):
+        sym = self.scope.find_sym(ir.name)
+        if sym and sym.scope is not self.scope:
+            self.nonlocal_vars.append(ir)
+
+    def visit_ATTR(self, ir):
+        self.visit(ir.exp)
+
+class AllVariableCollector(IRVisitor):
+    def __init__(self):
+        super().__init__()
+        self.all_vars = []
+
+    def process(self, scope):
+        super().process(scope)
+        return self.all_vars
+
+    def visit_TEMP(self, ir):
+        sym = self.scope.find_sym(ir.name)
+        if sym:
+            self.all_vars.append(ir)
+
+    def visit_ATTR(self, ir):
+        self.visit(ir.exp)
 
 class IRReplacer(IRTransformer):
     def __init__(self, replace_map: ReplaceMap):

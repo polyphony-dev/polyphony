@@ -55,6 +55,9 @@ class ModuleInstantiator(object):
                 new_module = self._instantiate_called_module(scope, call, stm.dst)
                 self._process_workers(new_module)
                 self._process_objects(new_module)
+                new_module.add_tag('instantiated')
+                for s in new_module.collect_scope():
+                    s.add_tag('instantiated')
                 new_modules.add(new_module)
                 dst_sym = qualified_symbols(stm.dst, scope)[-1]
                 assert isinstance(dst_sym, Symbol)
@@ -79,9 +82,6 @@ class ModuleInstantiator(object):
         assert isinstance(module_var_sym, Symbol)
         inst_name = module_var_sym.hdl_name()
         ctor = module.find_ctor()
-        # children = [ctor]
-        # children.extend([c for c in module.collect_scope() if c.is_assigned()])
-        # collect children scopes from the module without workers
         children = []
         children.extend([c for c in module.collect_scope() if not c.is_worker()])
         if scope.is_global():
@@ -150,14 +150,6 @@ class ModuleInstantiator(object):
             if call.is_a(CALL) and callee_scope.base_name == 'append_worker':
                 new_worker, is_created = self._instantiate_worker(call, ctor, module, scope)
                 module.register_worker(new_worker)
-                if not is_created:
-                    continue
-                new_worker_sym = module.add_sym(new_worker.base_name,
-                                                #tags={'worker'},
-                                                tags=set(),
-                                                typ=Type.function(new_worker))
-                _, w = call.args[0]
-                w.symbol = new_worker_sym
 
     def _instantiate_worker(self, call, ctor, module, scope):
         assert len(call.args) >= 1
@@ -191,7 +183,7 @@ class ModuleInstantiator(object):
                 postfix = '{}_{}'.format(idstr, '_'.join([str(v) for _, v in binding]))
             else:
                 postfix = idstr
-            new_worker = worker.clone('', postfix, module)
+            new_worker = worker.clone('', postfix, module, recursive=True)
 
         if loop:
             new_worker.add_tag('loop_worker')
@@ -206,29 +198,8 @@ class ModuleInstantiator(object):
                 call.args.pop(i + 1)
         # Replace old worker references with new worker references
         call.replace(worker.base_name, new_worker.base_name)
-
-        # Replace old module references with new module references
-        module_syms = worker.find_scope_sym(module.origin)
-        for sym in module_syms:
-            new_sym = new_worker.cloned_symbols[sym]
-            new_sym.typ = new_sym.typ.clone(scope=module)
-
-        if worker.is_instantiated():
-            return new_worker, False
-        else:
-            children = [c for c in worker.collect_scope() if c.is_closure()]
-            scope_map = {worker:new_worker}
-            for child in children:
-                new_child = worker._clone_child(new_worker, worker, child)
-                new_child.add_tag('instantiated')
-                scope_map[child] = new_child
-            for old, new in scope_map.items():
-                syms = new_worker.find_scope_sym(old)
-                for sym in syms:
-                    if sym.scope in scope_map.values():
-                        sym.typ = sym.typ.clone(scope=new)
-            new_worker.add_tag('instantiated')
-            return new_worker, True
+        new_worker.add_tag('instantiated')
+        return new_worker, True
 
     def _process_objects(self, module):
         collector = CallCollector()

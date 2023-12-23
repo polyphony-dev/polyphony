@@ -91,8 +91,8 @@ class CopyOpt(IRVisitor):
                         worklist.append(mv)
                         copies.append(mv)
         # Deal with 'free' attribute
-        if target[0].is_free() and target[0] in scope.free_symbols:
-            scope.free_symbols.remove(target[0])
+        if target[0].is_free() and target[0] in scope.free_symbols():
+            target[0].del_tag('free')
             if orig:
                 src = orig
             else:
@@ -101,11 +101,11 @@ class CopyOpt(IRVisitor):
                 case ATTR():
                     head = qualified_symbols(src, self.scope)[0]
                     assert isinstance(head, Symbol)
-                    scope.add_free_sym(head)
+                    head.add_tag('free')
                 case TEMP():
                     sym = self.scope.find_sym(src.name)
                     assert sym
-                    scope.add_free_sym(sym)
+                    sym.add_tag('free')
                 case _:
                     assert False
 

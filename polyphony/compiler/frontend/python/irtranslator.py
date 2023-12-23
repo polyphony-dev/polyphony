@@ -143,9 +143,9 @@ class ImportVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         def import_to_scope(imp_sym, asname=None):
             if asname:
-                self.target_scope.import_copy_sym(imp_sym, asname)
+                self.target_scope.import_sym(imp_sym, asname)
             else:
-                self.target_scope.import_copy_sym(imp_sym, imp_sym.name)
+                self.target_scope.import_sym(imp_sym, imp_sym.name)
         if node.level == 0:
             assert node.module
             full_name = node.module
@@ -673,6 +673,8 @@ class CodeVisitor(ast.NodeVisitor):
             ctor.set_exit_block(blk)
             # add necessary symbol
             ctor.add_return_sym()
+            # add ctor symbol to class scope
+            self.current_scope.add_sym('__init__', tags=set(), typ=Type.function(ctor))
 
         self.current_scope.set_exit_block(self.current_block)
         self._leave_scope(*context)
@@ -1507,7 +1509,7 @@ class CodeVisitor(ast.NodeVisitor):
         ctx = self._nodectx2irctx(node)
         sym = self.current_scope.find_sym(node.id)
         if sym and sym.scope is not self.current_scope and not sym.scope.is_namespace():
-            self.current_scope.add_free_sym(sym)
+            sym.add_tag('free')
             self.current_scope.add_tag('closure')
             sym.scope.add_tag('enclosure')
             sym.scope.add_closure(self.current_scope)
@@ -1535,7 +1537,7 @@ class CodeVisitor(ast.NodeVisitor):
                 sym.ancestor.scope.name == 'polyphony' and
                 sym.ancestor.name == '__python__'):
             return CONST(False)
-        return TEMP(sym.name, ctx)
+        return TEMP(node.id, ctx)
 
     #     | List(expr* elts, expr_context ctx)
     def visit_List(self, node):

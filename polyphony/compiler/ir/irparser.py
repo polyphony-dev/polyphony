@@ -138,13 +138,19 @@ class IRParser(object):
             tokens = self.split(line, count=1)
             if tokens[0] != 'param':
                 break
-            name, typstr = self.split(tokens[1], ':')
+            name, rest = self.split(tokens[1], ':')
+            rests = self.split(rest, '{')
+            typstr = rests[0]
             t = self.parse_type(typstr)
-            self.deq_line()
-            if name == env.self_name:
-                tags = {'self'}
+            if len(rests) == 2:
+                tagstr = rests[1]
+                tagstr = tagstr.replace('}', '')
+                tags = set(tagstr.split())
             else:
                 tags = set()
+            self.deq_line()
+            if name == env.self_name:
+                tags |= {'self'}
             param_in = self.current_scope.add_param_sym(name, tags=tags, typ=t)
             param_cp = self.current_scope.add_sym(name, tags=tags, typ=t)
             self.current_scope.add_param(param_in, None)
@@ -619,7 +625,7 @@ class IRParser(object):
             sym = qualified_symbols(var, self.current_scope)[-1]
             if isinstance(sym, Symbol):
                 if sym.scope is not self.current_scope and not sym.scope.is_namespace():
-                    self.current_scope.add_free_sym(sym)
+                    sym.add_tag('free')
                     assert sym.scope.is_enclosure()
                     sym.scope.add_closure(self.current_scope)
         for name in names[1:]:
