@@ -31,7 +31,7 @@ class ScopeType(Type):
     def __str__(self):
         if env.dev_debug_mode:
             if self.scope:
-                return f'{self.name}<{self.scope.unique_name()}>'
+                return f'{self.name}<{self.scope.name}>'
             else:
                 return f'{self.name}<None>'
         return self.name

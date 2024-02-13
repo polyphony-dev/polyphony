@@ -44,7 +44,7 @@ class PortType(ScopeType):
     def __str__(self):
         if env.dev_debug_mode:
             if self.scope:
-                return f'{self.name}<{self.scope.base_name}, {self.dtype}, {self.direction}>'
+                return f'{self.name}<{self.scope.name}, {self.dtype}, {self.direction}>'
             else:
                 return f'{self.name}<None>'
         return self.name
