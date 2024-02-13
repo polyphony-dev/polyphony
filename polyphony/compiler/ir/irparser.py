@@ -36,6 +36,7 @@ class IRParser(object):
         self.lines = code.split('\n')
         self.current_lines = deque(self.lines)
         self.blocks = {}
+        self.import_table: list[tuple[Scope, str, Scope]] = []
 
     def peek_line(self) -> str:
         if not self.current_lines:
@@ -75,6 +76,9 @@ class IRParser(object):
                 self.current_scope.set_exit_block(block)
                 continue
             self.parse_all_blocks()
+        for from_scope, name, target_scope in self.import_table:
+            sym = from_scope.find_sym(name)
+            target_scope.import_sym(sym)
 
     def prepare_parse_scopes(self):
         self.sources = defaultdict(list)
@@ -191,6 +195,20 @@ class IRParser(object):
                 tags = set()
             self.deq_line()
             self.current_scope.add_sym(name, tags=tags, typ=t)
+
+        # import symbols
+        while True:
+            self.skip_blank_line()
+            if self.is_end():
+                return
+            line = self.peek_line()
+            tokens = self.split(line, count=1)
+            if tokens[0] != 'from':
+                break
+            from_name, _, sym_name = self.split(tokens[1], count=2)
+            from_scope = env.scopes[from_name]
+            self.import_table.append((from_scope, sym_name, self.current_scope))
+            self.deq_line()
 
     def parse_all_blocks(self):
         self.pre_parse_block()
