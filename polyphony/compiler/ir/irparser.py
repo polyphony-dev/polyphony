@@ -645,7 +645,6 @@ class IRParser(object):
                 if sym.scope is not self.current_scope and not sym.scope.is_namespace():
                     sym.add_tag('free')
                     assert sym.scope.is_enclosure()
-                    sym.scope.add_closure(self.current_scope)
         for name in names[1:]:
             var = ATTR(var, name)
         var.ctx = ctx

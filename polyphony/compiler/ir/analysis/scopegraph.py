@@ -59,9 +59,6 @@ class ScopeDependencyGraphBuilder(IRVisitor):
             if sym_t.has_scope():
                 self._add_scope(sym_t.scope)
         else:
-            if sym.is_imported():
-                import_src = sym.import_src()
-                self._add_scope(import_src.scope)
             # If self.scope refers an external symbol with a value type, the scope of the symbol is added
             if sym.scope is not self.scope:
                 self._add_scope(sym.scope)
@@ -124,22 +121,18 @@ class UsingScopeDetector(IRVisitor):
             self.worklist.append(scope)
 
     def visit_TEMP(self, ir):
-        qsyms = qualified_symbols(ir, self.scope)
-        symbol = qsyms[-1]
-        assert isinstance(symbol, Symbol)
-        sym_t = symbol.typ
+        sym = self.scope.find_sym(ir.name)
+        assert sym
+        sym_t = sym.typ
         if sym_t.has_scope():
-            if symbol.is_self():
+            if sym.is_self():
                 return
             if sym_t.has_scope():
                 self._add_scope(sym_t.scope)
         else:
-            if symbol.is_imported():
-                import_src = symbol.import_src()
-                self._add_scope(import_src.scope)
             # If self.scope refers an external symbol with a value type, the scope of the symbol is added
-            if symbol.scope is not self.scope:
-                self._add_scope(symbol.scope)
+            if sym.scope is not self.scope:
+                self._add_scope(sym.scope)
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)

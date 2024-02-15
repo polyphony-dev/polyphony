@@ -321,7 +321,6 @@ class PortConnector(IRVisitor):
             if t.symbol not in self.scope.symbols:
                 lambda_scope.add_free_sym(t.symbol)
         self.scope.add_tag('enclosure')
-        self.scope.add_closure(lambda_scope)
         return scope_sym
 
 

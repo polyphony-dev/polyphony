@@ -21,8 +21,6 @@ logger = getLogger(__name__)
 
 def _try_get_constant(qsym, scope):
     sym = qsym[-1]
-    if sym.is_imported():
-        sym = sym.import_src()
     if sym in sym.scope.constants:
         return sym.scope.constants[sym]
     return None
@@ -409,7 +407,7 @@ class ConstantOpt(ConstantOptBase):
                 self.udupdater.update(stm, None)
                 dead_stms.append(stm)
                 if dst_sym.is_free():
-                    for clos in dst_sym.scope.closures:
+                    for clos in dst_sym.scope.closures():
                         self._propagate_to_closure(clos, dst_sym, stm.src)
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(ARRAY)

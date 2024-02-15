@@ -125,7 +125,7 @@ class FieldUseDef(object):
         scopes |= workers
         for w in workers:
             scopes |= self._collect_scopes(w)
-        subscopes = (set(scope.children) | scope.closures)
+        subscopes = (set(scope.children) | set(scope.closures()))
         for sub in subscopes:
             if sub.is_worker():  # exclude uninstantiated worker
                 continue

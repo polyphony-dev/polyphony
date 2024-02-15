@@ -39,7 +39,7 @@ class CopyOpt(IRVisitor):
             orig = self._find_root_def(src_qsym)
             self._replace_copies(scope, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
-                for clos in scope.closures:
+                for clos in scope.closures():
                     self._replace_copies(clos, cp, orig, dst_qsym, copies, worklist)
         for cp in copies:
             if cp in cp.block.stms:

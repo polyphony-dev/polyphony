@@ -133,8 +133,6 @@ class Symbol(Tagged):
                         set(self.tags),
                         self._typ)
         newsym.ancestor = self._ancestor
-        if self.is_imported():
-            newsym.import_from(self.import_src())
         return newsym
 
     def import_src(self) -> 'Symbol':

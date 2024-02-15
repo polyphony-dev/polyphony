@@ -219,14 +219,12 @@ class InlineOpt(object):
         assert caller.is_enclosure()
         caller_name_exps = LocalVariableCollector().process(caller)
         has_reference = False
-        orig_closures = caller.closures.copy()
-        for clos in orig_closures:
+        for clos in caller.closures():
             for name_exp in caller_name_exps:
                 if name_exp.name == clos.base_name:
                     has_reference = True
                     break
             else:
-                caller.closures.remove(clos)
                 Scope.destroy(clos)
                 caller.del_sym(clos.base_name)
         if not has_reference:
@@ -234,7 +232,7 @@ class InlineOpt(object):
             for sym in caller.symbols.values():
                 if sym.is_free():
                     sym.del_tag('free')
-            assert not caller.closures
+            assert not caller.closures()
 
     def _inlining(self, caller: CallerScope, callee: CalleeScope, call_irs: list[CallStmPair]) -> bool:
         for call, call_stm in call_irs:
@@ -280,8 +278,10 @@ class InlineOpt(object):
             if caller.is_enclosure():
                 self._remove_closure_if_needed(caller)
 
-            Scope.destroy(callee_clone)
-            callee_clone.parent.del_sym(callee_clone.base_name)
+            # By _remove_closure_if_needed, the callee_clone may have already been removed
+            if callee_clone.name in env.scopes:
+                Scope.destroy(callee_clone)
+                callee_clone.parent.del_sym(callee_clone.base_name)
             if not can_continue:
                 return False
         return True

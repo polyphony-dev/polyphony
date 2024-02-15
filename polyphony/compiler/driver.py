@@ -110,7 +110,7 @@ class Driver(object):
                     proc(self)
                     # dump scopes
                     self.logger.debug('\ndump scopes:')
-                    for s in scopes:                  
+                    for s in scopes:
                         self.logger.debug(str(s))
                     self.end_logging_for_proc(stage, proc)
                 else:

@@ -341,19 +341,31 @@ def early_static_type_prop(driver):
 
 
 def early_type_prop(driver):
-    # TypePropagation(is_strict=False).process_scopes(driver.current_scopes)
     typed_scopes = TypeSpecializer().process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
             driver.insert_scope(s)
     for s in scopes:
-        if s not in typed_scopes:
-            driver.remove_scope(s)
+        if s in typed_scopes:
+            continue
+        if s.is_namespace():
+            continue
+        driver.remove_scope(s)
 
 
 def type_prop(driver):
-    TypePropagation(is_strict=False).process_all()
+    typed_scopes = TypePropagation(is_strict=False).process_all()
+    scopes = driver.all_scopes()
+    for s in typed_scopes:
+        if s not in scopes:
+            driver.insert_scope(s)
+    for s in scopes:
+        if s in typed_scopes:
+            continue
+        if s.is_namespace():
+            continue
+        driver.remove_scope(s)
 
 
 def static_type_prop(driver):

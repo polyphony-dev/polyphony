@@ -144,15 +144,7 @@ class SymbolTable(object):
         if name in self.symbols and sym is not self.symbols[name]:
             raise RuntimeError(f"symbol '{sym}' is already registered as {name}")
         self.symbols[name] = sym
-
-    def import_copy_sym(self, orig_sym, new_name):
-        if self.has_sym(new_name):
-            new_sym = self.symbols[new_name]
-        else:
-            orig_sym_t = orig_sym.typ
-            new_sym = self.add_sym(new_name, set(orig_sym.tags), typ=orig_sym_t)
-            new_sym.import_from(orig_sym)
-        return new_sym
+        sym.add_tag('imported')
 
     def find_sym(self, name):
         names = name.split('.')
@@ -218,8 +210,6 @@ class SymbolTable(object):
                 new_sym.ancestor = orig_sym.ancestor
             else:
                 new_sym.ancestor = orig_sym
-            if orig_sym.is_imported():
-                new_sym.import_from(orig_sym.import_src())
         return new_sym
 
     def find_scope_sym(self, obj):
@@ -362,7 +352,6 @@ class Scope(Tagged, SymbolTable):
         self.synth_params = make_synth_params()
         self.constants = {}
         self.branch_graph = Graph()
-        self.closures = set()
         self.module_params = []
         self.cloned_symbols = {}
 
@@ -576,21 +565,7 @@ class Scope(Tagged, SymbolTable):
         NameReplacer(symbol_map).process(s)
 
         s.synth_params = self.synth_params.copy()
-        s.closures = self.closures.copy()
         return s
-
-    def _clone_child(self, new_class, old_class, origin_child):
-        _, new_parent = new_class.find_child(origin_child.name, True)
-        # remove old child scope
-        new_parent.children.remove(origin_child)
-        # clone child scope and symbol
-        new_child = origin_child.clone('', '', new_parent)
-        res = new_class.find_closure(origin_child.name)
-        if res:
-            _, clos_parent = res
-            clos_parent.closures.remove(origin_child)
-            clos_parent.closures.add(new_child)
-        return new_child
 
     def instantiate(self, inst_name, children, parent=None, with_tag=True):
         if parent is None:
@@ -633,17 +608,6 @@ class Scope(Tagged, SymbolTable):
                     return child, self
         return None
 
-    def find_closure(self, name):
-        for clos in self.closures:
-            if clos.name == name:
-                return clos, self
-        for child in self.children:
-            res = child.find_closure(name)
-            if res:
-                c, p = res
-                return c, p
-        return None
-
     def find_parent_scope(self, name):
         if self.find_child(name):
             return self
@@ -669,11 +633,11 @@ class Scope(Tagged, SymbolTable):
         else:
             return self.parent.find_namespace()
 
-    def find_owner_scope(self, symbol_name: str):
-        if symbol_name in self.symbols:
+    def find_owner_scope(self, symbol: Symbol):
+        if symbol in self.symbols.values():
             return self
         elif self.parent:
-            return self.parent.find_owner_scope(symbol_name)
+            return self.parent.find_owner_scope(symbol)
         else:
             return None
 
@@ -917,9 +881,13 @@ class Scope(Tagged, SymbolTable):
         else:
             return self.branch_graph.find_edge(stm1, stm0) is not None
 
-    def add_closure(self, closure):
-        assert self.free_symbols()
-        self.closures.add(closure)
+    def closures(self):
+        clos = []
+        for child in self.children:
+            if child.is_closure():
+                clos.append(child)
+            clos.extend(child.closures())
+        return clos
 
     def instance_number(self):
         n = Scope.instance_ids[self]

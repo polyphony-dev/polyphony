@@ -1512,7 +1512,6 @@ class CodeVisitor(ast.NodeVisitor):
             sym.add_tag('free')
             self.current_scope.add_tag('closure')
             sym.scope.add_tag('enclosure')
-            sym.scope.add_closure(self.current_scope)
         if not sym:
             parent_scope = self.current_scope.find_parent_scope(node.id)
             if parent_scope:

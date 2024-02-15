@@ -39,10 +39,10 @@ class TypePropagation(IRVisitor):
         self.worklist = deque(scopes)
         while self.worklist:
             scope = self.worklist.popleft()
-            logger.debug(f'process {scope.name}')
-            # if scope.is_lib():
-            #     self.typed.append(scope)
-            #     continue
+            logger.debug(f'{self.__class__.__name__}.process {scope.name}')
+            if scope.is_lib():
+                self.typed.append(scope)
+                continue
             if scope.is_directory():
                 continue
             if scope.is_function() and scope.return_type is None:
@@ -62,7 +62,24 @@ class TypePropagation(IRVisitor):
         if scope.is_testbench() and not scope.parent.is_global():
             return
         if scope is not self.scope and scope not in self.typed and scope not in self.worklist:
-            self.worklist.append(scope)
+            self.worklist.appendleft(scope)
+            logger.debug(f'add scope {scope.name}')
+
+    def visit(self, ir:IR) -> Type:
+        method = 'visit_' + ir.__class__.__name__
+        visitor = getattr(self, method, None)
+        if ir.is_a(IRStm):
+            self.current_stm:IRStm = cast(IRStm, ir)
+        if visitor:
+            if ir.is_a(IRStm):
+                logger.debug(f'---- visit begin {ir}  # {ir.type_str(self.scope)}')
+                type = visitor(ir)
+                logger.debug(f'---- visit end   {ir}  # {ir.type_str(self.scope)}')
+            else:
+                type = visitor(ir)
+            return type
+        else:
+            return None
 
     def visit_UNOP(self, ir):
         return self.visit(ir.exp)
@@ -73,12 +90,7 @@ class TypePropagation(IRVisitor):
         if l_t.is_undef() or r_t.is_undef():
             return Type.undef()
         if l_t.is_int() and r_t.is_int():
-            if ir.op in ('Add', 'Sub'):
-                w = max(l_t.width, r_t.width) + 1
-            elif ir.op == 'Mult':
-                w = l_t.width + r_t.width
-            else:
-                w = l_t.width
+            w = max(l_t.width, r_t.width)
             if l_t.signed or r_t.signed:
                 return Type.int(w, signed=True)
             else:
@@ -147,6 +159,7 @@ class TypePropagation(IRVisitor):
             _, arg0 = ir.args[0]
             arg0_t = irexp_type(arg0, self.scope)
             assert arg0_t.is_class()
+            self._add_scope(arg0_t.scope)
             return Type.object(arg0_t.scope)
         else:
             sym_t = irexp_type(ir, self.scope)
@@ -175,8 +188,7 @@ class TypePropagation(IRVisitor):
             func_scope = sym_t.scope
             self._add_scope(func_scope)
         if sym.is_imported():
-            import_src = sym.import_src()
-            self._add_scope(import_src.scope)
+            self._add_scope(sym.scope)
         return sym.typ
 
     def visit_ATTR(self, ir):
@@ -403,7 +415,7 @@ class TypePropagation(IRVisitor):
         assert not typ.is_undef()
         sym.typ = sym_t.propagate(typ)
         if sym.typ != sym_t:
-            logger.debug(f'type propagate {sym.name}: {sym_t} -> {sym.typ}')
+            logger.debug(f'type propagate {sym.name}@{sym.scope.name}: {sym_t} -> {sym.typ}')
 
 
 class TypeSpecializer(TypePropagation):
@@ -491,16 +503,17 @@ class TypeSpecializer(TypePropagation):
                 new_scope_sym = callee_scope.parent.find_sym(new_scope.base_name)
             ret_t = new_scope.return_type
 
-            if func_sym.is_imported():
-                postfix = Type.mangled_names(new_param_types)
+            postfix = Type.mangled_names(new_param_types)
+            asname = f'{ir.name}_{postfix}'
+            owner = self.scope.find_owner_scope(func_sym)
+            if owner and func_sym.scope is not owner:
                 # new_scope_sym is created at original scope so it must be imported
-                new_sym = self.scope.import_copy_sym(new_scope_sym, f'{ir.name}_{postfix}')
-            else:
-                new_sym = new_scope_sym
+                owner.import_sym(new_scope_sym, asname)
             if ir.func.is_a(TEMP):
-                ir.func = TEMP(new_sym.name)
+                ir.func = TEMP(asname)
             elif ir.func.is_a(ATTR):
-                ir.func = ATTR(ir.func.exp, new_sym.name)
+                assert asname == new_scope_sym.name
+                ir.func = ATTR(ir.func.exp, new_scope_sym.name)
             else:
                 assert False
         else:
@@ -589,16 +602,16 @@ class TypeSpecializer(TypePropagation):
             qsym = qualified_symbols(ir.func, self.scope)
             func_sym = qsym[-1]
             assert isinstance(func_sym, Symbol)
-            if func_sym.is_imported():
-                postfix = Type.mangled_names(new_param_types)
-                # new_scope_sym is created at original scope so it must be imported
-                new_sym = self.scope.import_copy_sym(new_scope_sym, f'{ir.name}_{postfix}')
-            else:
-                new_sym = new_scope_sym
+            postfix = Type.mangled_names(new_param_types)
+            asname = f'{ir.name}_{postfix}'
+            owner = self.scope.find_owner_scope(func_sym)
+            if owner and func_sym.scope is not owner:
+                owner.import_sym(new_scope_sym, asname)
             if ir.func.is_a(TEMP):
-                ir.func = TEMP(new_sym.name)
+                ir.func = TEMP(asname)
             elif ir.func.is_a(ATTR):
-                ir.func = ATTR(ir.func.exp, new_sym.name)
+                assert asname == new_scope_sym.name
+                ir.func = ATTR(ir.func.exp, new_scope_sym.name)
             else:
                 assert False
         else:

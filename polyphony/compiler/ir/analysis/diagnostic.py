@@ -7,7 +7,7 @@ from .usedef import UseDefDetector
 
 class CFGChecker(object):
     def process(self, scope):
-        if scope.is_namespace() or scope.is_class():
+        if scope.is_namespace() or scope.is_class() or scope.is_builtin() or scope.is_lib():
             return
         if env.compile_phase > env.PHASE_1:
             UseDefDetector().process(scope)
