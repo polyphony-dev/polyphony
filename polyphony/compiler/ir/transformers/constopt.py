@@ -326,6 +326,7 @@ class ConstantOpt(ConstantOptBase):
             return
         self.scope = scope
         self.dtree = DominatorTreeBuilder(scope).process()
+        assert scope.usedef, 'UseDefDetector must be executed first'
         self.udupdater = UseDefUpdater(scope)
 
         dead_stms = []
@@ -409,6 +410,28 @@ class ConstantOpt(ConstantOptBase):
                 if dst_sym.is_free():
                     for clos in dst_sym.scope.closures():
                         self._propagate_to_closure(clos, dst_sym, stm.src)
+            elif self._can_attribute_propagate(stm):
+                #sanity check
+                dst_qsym = qualified_symbols(stm.dst, self.scope)
+                qname = stm.dst.qualified_name
+                dst_load = stm.dst.clone(ctx=Ctx.LOAD)
+                dst_store = stm.dst
+                # find next use of dst
+                found_new_def = False
+                for next in list(self.worklist):
+                    use_vars = scope.usedef.get_vars_used_at(next)
+                    for v in use_vars:
+                        if dst_load == v:
+                            next.replace(dst_load, stm.src)
+                            break
+                    # quit if found new def of dst
+                    def_vars = scope.usedef.get_vars_defined_at(next)
+                    for v in def_vars:
+                        if dst_store == v:
+                            found_new_def = True
+                            break
+                    if found_new_def:
+                        break
             elif (stm.is_a(MOVE)
                     and stm.src.is_a(ARRAY)
                     and stm.src.repeat.is_a(CONST)):
@@ -421,6 +444,17 @@ class ConstantOpt(ConstantOptBase):
         for stm in dead_stms:
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
+
+    def _can_attribute_propagate(self, stm: IRStm):
+        if not isinstance(stm, MOVE):
+            return False
+        if not isinstance(stm.src, CONST):
+            return False
+        if not isinstance(stm.dst, ATTR):
+            return False
+        if not self.scope.is_ctor():
+            return False
+        return True
 
     def _propagate_to_closure(self, closure: Scope, target: Symbol, src: IRVariable):
         UseDefDetector().process(closure)

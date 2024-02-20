@@ -35,17 +35,12 @@ type Callgraph = dict[CallerScope, CallsDict]
 class InlineOpt(object):
     inline_counts = 0
 
-    def __init__(self):
-        self.new_scopes = []
-
-    def process_all(self, driver):
-        self.processed_scopes = set()
-        self.process_scopes(driver.current_scopes)
-
     def process_scopes(self, scopes):
+        self._new_scopes = []
         while not self._process_scopes(scopes):
             # need restart
             TypePropagation(is_strict=False).process_scopes(scopes)
+        return self._new_scopes
 
     def _process_scopes(self, scopes) -> bool:
         call_graph: Callgraph = self._build_call_graph(scopes)
@@ -193,7 +188,11 @@ class InlineOpt(object):
         callee_names = set([name_exp.name for name_exp in callee_name_exps])
         for name in callee_names:
             sym = callee.find_sym(name)
-            if sym and not caller.has_sym(name):
+            if not sym:
+                continue
+            if sym.is_self():
+                continue
+            if not caller.has_sym(name):
                 if sym.scope is callee:
                     if sym.typ.has_scope() and sym.typ.scope_name.startswith(callee.name):
                         typ = sym.typ.clone(scope_name = f'{caller.name}.{sym.name}', explicit=True)
@@ -209,6 +208,7 @@ class InlineOpt(object):
             env.remove_scope(child)
             child.parent = caller
             env.append_scope(child)
+            self._new_scopes.append(child)
         caller.children.extend(callee.children)
 
     def _clone_callee(self, caller: CallerScope, callee: CalleeScope) -> CalleeScope:
@@ -739,12 +739,11 @@ class FlattenModule(IRVisitor):
     '''
     self.sub.append_worker(self.sub.worker, ...)  =>  self.append_worker(self.worker, ...)
     '''
-    def __init__(self, driver):
-        self.driver = driver
-
     def process(self, scope):
+        self._new_scopes = []
         if scope.parent and scope.parent.is_module(): # and scope is scope.parent.find_ctor():
             super().process(scope)
+        return self._new_scopes
 
     def visit_CALL(self, ir):
         callee_scope = ir.get_callee_scope(self.scope)
@@ -758,26 +757,32 @@ class FlattenModule(IRVisitor):
             worker_scope = arg_t.scope
             if worker_scope.is_method():
                 new_worker, new_arg = self._make_new_worker(arg)
-                new_worker.parent.register_worker(new_worker, ir.args)
+                self._new_scopes.append(new_worker)
+                new_worker.parent.register_worker(new_worker)
                 assert self.scope.parent.is_module()
-                append_worker_sym = self.scope.parent.find_sym('append_worker')
-                assert append_worker_sym
-                qsyms = qualified_symbols(ir.func, self.scope)
-                func_head = qsyms[0]
-                self_var = TEMP(func_head.name)
-                new_func = ATTR(self_var, append_worker_sym.name)
-                ir.func = new_func
-                ir.args[0] = (None, new_arg)
+                ir.func = ATTR(TEMP('self'), 'append_worker')
+                ir.args[0] = ('', new_arg)
             else:
                 assert self.scope.parent.is_module()
-                append_worker_sym = self.scope.parent.find_sym('append_worker')
-                assert append_worker_sym
-                qsyms = qualified_symbols(ir.func, self.scope)
-                func_head = qsyms[0]
-                self_var = TEMP(func_head.name)
-                new_func = ATTR(self_var, append_worker_sym.name)
-                ir.func = new_func
+                ir.func = ATTR(TEMP('self'), 'append_worker')
                 ir.args[0] = (None, arg)
+        elif (callee_scope.is_method() and
+                callee_scope.parent.is_port() and
+                callee_scope.base_name == 'assign' and
+                ir.func.head_name() == env.self_name and
+                len(ir.func.qualified_name) > 3):
+            _, arg = ir.args[0]
+            sym_t = irexp_type(arg, self.scope)
+            if not sym_t.is_function():
+                return
+            sym_scope = sym_t.scope
+            if not sym_scope.is_closure() and not sym_scope.is_assigned():
+                return
+            if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
+                new_method, new_arg = self._make_new_assigned_method(arg, sym_scope)
+                self._new_scopes.append(new_method)
+                ir.args[0] = ('', new_arg)
+
         else:
             super().visit_CALL(ir)
 
@@ -799,7 +804,8 @@ class FlattenModule(IRVisitor):
         if not sym_scope.is_closure() and not sym_scope.is_assigned():
             return
         if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
-            self._make_new_assigned_method(ir, sym_scope)
+            new_method, new_ir = self._make_new_assigned_method(ir, sym_scope)
+            self._new_scopes.append(new_method)
 
     def _make_new_worker(self, arg):
         parent_module = self.scope.parent
@@ -810,49 +816,23 @@ class FlattenModule(IRVisitor):
         worker_scope = arg_t.scope
         assert isinstance(arg, ATTR)
         inst_name = arg.exp.name
-        new_worker = worker_scope.clone(inst_name, str(worker_scope.instance_number()), parent=parent_module)
+        new_worker = worker_scope.clone(inst_name, '', parent=parent_module)
         if new_worker.is_inlinelib():
             new_worker.del_tag('inlinelib')
         worker_self = new_worker.find_sym('self')
         worker_self.typ = worker_self.typ.clone(scope=parent_module)
         in_self = new_worker.param_symbols(with_self=True)[0]
         in_self.typ = in_self.typ.clone(scope=parent_module)
-        new_exp = arg.exp.clone()
-        ctor_self = self.scope.find_sym('self')
-        new_exp.replace(ctor_self, worker_self)
 
-        # TODO: check
-        assert False
-        attr_map = {worker_self:new_exp}
-        sym_replacer = SymbolReplacer(sym_map={}, attr_map=attr_map)
-        sym_replacer.process(new_worker, new_worker.entry_block)
-        UseDefDetector().process(new_worker)
-
-        new_worker_sym = parent_module.add_sym(new_worker.base_name,
-                                               tags=set(),
-                                               typ=Type.function(new_worker))
-        arg.exp = TEMP(ctor_self, Ctx.LOAD)
-        arg.symbol = new_worker_sym
-        self.driver.insert_scope(new_worker)
-
-        scope_map = {worker_scope:new_worker}
-        children = [c for c in worker_scope.collect_scope() if c.is_closure()]
-        for child in children:
-            new_child = worker_scope._clone_child(new_worker, worker_scope, child)
-            scope_map[child] = new_child
-            self.driver.insert_scope(new_child)
-            sym_replacer.process(new_child, new_child.entry_block)
-            UseDefDetector().process(new_child)
-        for old, new in scope_map.items():
-            syms = new_worker.find_scope_sym(old)
-            for sym in syms:
-                if sym.scope in scope_map.values():
-                    sym.typ = sym.typ.clone(scope=new)
-        return new_worker, arg
+        replace_map: ReplaceMap = {}
+        replace_map[worker_self] = ATTR(TEMP('self'), inst_name)
+        IRReplacer(replace_map).process(new_worker, new_worker.entry_block)
+        return new_worker, ATTR(TEMP('self'), new_worker.base_name)
 
     def _make_new_assigned_method(self, arg, assigned_scope):
         module_scope = self.scope.parent
-        new_method = assigned_scope.clone('', '', parent=module_scope)
+        inst_name = arg.exp.name
+        new_method = assigned_scope.clone(inst_name, '', parent=module_scope)
         if new_method.is_inlinelib():
             new_method.del_tag('inlinelib')
         self_sym = new_method.find_sym('self')
@@ -860,24 +840,12 @@ class FlattenModule(IRVisitor):
 
         in_self = new_method.param_symbols(with_self=True)[0]
         in_self.typ = in_self.typ.clone(scope=module_scope)
-        new_exp = arg.exp.clone()
-        ctor_self = self.scope.find_sym('self')
-        new_exp.replace(ctor_self, self_sym)
 
-        # TODO: check
-        assert False
-        attr_map = {self_sym:new_exp}
-        sym_replacer = SymbolReplacer(sym_map={}, attr_map=attr_map)
-        sym_replacer.process(new_method, new_method.entry_block)
-        UseDefDetector().process(new_method)
+        replace_map: ReplaceMap = {}
+        replace_map[self_sym] = ATTR(TEMP('self'), inst_name)
+        IRReplacer(replace_map).process(new_method, new_method.entry_block)
 
-        new_method_sym = module_scope.add_sym(new_method.base_name,
-                                              tags=set(),
-                                              typ=Type.function(new_method))
-        arg.exp = TEMP(ctor_self, Ctx.LOAD)
-        arg.symbol = new_method_sym
-        self.driver.insert_scope(new_method)
-
+        return new_method, ATTR(TEMP('self'), new_method.base_name)
 
 class ObjectHierarchyCopier(object):
     def __init__(self):

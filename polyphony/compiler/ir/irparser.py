@@ -74,8 +74,10 @@ class IRParser(object):
                 block = Block(self.current_scope, nametag='')
                 self.current_scope.set_entry_block(block)
                 self.current_scope.set_exit_block(block)
+                Block.set_order(self.current_scope.entry_block, 0)
                 continue
             self.parse_all_blocks()
+            Block.set_order(self.current_scope.entry_block, 0)
         for from_scope, name, target_scope in self.import_table:
             sym = from_scope.find_sym(name)
             target_scope.import_sym(sym)
@@ -310,7 +312,7 @@ class IRParser(object):
         ops = []
         while text:
             text = text.strip()
-            m = re.match(r'[\+\-!~]?[@\w\.\d]+', text)
+            m = re.match(r'[\+\-!~]?[$@\w\.\d]+', text)
             if m:
                 text = text[m.span()[1]:]
                 ops.append(m.group(0))

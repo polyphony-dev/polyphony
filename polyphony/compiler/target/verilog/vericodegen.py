@@ -104,15 +104,17 @@ class VerilogCodeGen(AHDLVisitor):
             typ = 'reg' if var.sig.is_reg() else 'wire'
             signed = 'signed' if var.sig.is_int() else ''
             width = f'[{var.sig.width-1}:0]' if var.sig.width > 1 else ''
-            ports.append(f'input  {typ:4s} {signed:6s} {width:8s} {var.hdl_name}')
+            name = self._safe_name(var.hdl_name)
+            ports.append(f'input  {typ:4s} {signed:6s} {width:8s} {name}')
         for var in self.hdlmodule.outputs():
             typ = 'wire' if var.sig.is_net() else 'reg'
             signed = 'signed' if var.sig.is_int() else ''
             width = f'[{var.sig.width-1}:0]' if var.sig.width > 1 else ''
+            name = self._safe_name(var.hdl_name)
             if var.sig.is_initializable():
-                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {var.hdl_name} = {var.sig.init_value}')
+                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {name} = {var.sig.init_value}')
             else:
-                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {var.hdl_name}')
+                ports.append(f'output {typ:4s} {signed:6s} {width:8s} {name}')
         self.emit((',\n' + self.tab()).join(ports))
 
     def _generate_signal(self, sig):
@@ -231,6 +233,7 @@ class VerilogCodeGen(AHDLVisitor):
     def _safe_name(self, name):
         if is_verilog_keyword(name):
             return name + '_'
+        name = name.replace('#', '_')
         if name[0].isnumeric():
             return '_' + name
         return name

@@ -57,6 +57,8 @@ from .ir.transformers.inlineopt import InlineOpt
 from .ir.transformers.inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
 from .ir.transformers.inlineopt import ObjectHierarchyCopier
 from .ir.transformers.instantiator import ModuleInstantiator
+from .ir.transformers.instantiator import find_called_module
+from .ir.transformers.instantiator import ArgumentApplier
 from .ir.transformers.looptransformer import LoopFlatten
 from .ir.transformers.objtransform import ObjectTransformer
 from .ir.transformers.phiopt import PHIInlining, LPHIRemover
@@ -415,9 +417,12 @@ def detectrom(driver):
 
 
 def instantiate(driver):
-    scopes = [Scope.global_scope()]
+    modules = find_called_module([Scope.global_scope()])
+    names = [''] * len(modules)  # work around
+    for module, _ in modules:
+        module.add_tag('top_module')
     while True:
-        new_modules = ModuleInstantiator().process_scopes(scopes)
+        new_modules = ModuleInstantiator().process_modules(modules, names)
         if not new_modules:
             break
         orig_scopes = set()
@@ -432,32 +437,19 @@ def instantiate(driver):
                     continue
                 driver.insert_scope(s)
                 orig_scopes.add(s.origin)
-                earlyconstopt_nonssa(driver, s)
         for s in orig_scopes:
             driver.remove_scope(s)
         scopes = [module.find_ctor() for module in new_modules]
+        modules = find_called_module(scopes)
 
 
-def postinstantiate(driver):
-    scopes = driver.get_scopes(with_global=False,
-                               with_class=True,
-                               with_lib=False)
-    scopes = [scope for scope in scopes if scope.is_instantiated()]
-    if not scopes:
-        return
-    for s in scopes:
-        earlyconstopt_nonssa(driver, s)
-        checkcfg(driver, s)
-    TypePropagation(is_strict=False).process_all()
-    detectrom(driver)
-    for s in scopes:
-        earlyconstopt_nonssa(driver, s)
+def apply_argument(driver):
+    ArgumentApplier().process_all()
 
 
 def inline_opt(driver):
-    inlineopt = InlineOpt()
-    inlineopt.process_all(driver)
-    for s in inlineopt.new_scopes:
+    scopes = InlineOpt().process_scopes(driver.current_scopes)
+    for s in scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
 
@@ -467,7 +459,9 @@ def setsynthparams(driver, scope):
 
 
 def flattenmodule(driver, scope):
-    FlattenModule(driver).process(scope)
+    scopes = FlattenModule().process(scope)
+    for s in scopes:
+        driver.insert_scope(s)
 
 
 def objssa(driver, scope):
@@ -769,7 +763,7 @@ def compile_plan():
 
         earlyconstopt_nonssa,
         instantiate,
-        postinstantiate,
+        type_prop,
 
         phase(env.PHASE_1),
 
@@ -804,9 +798,12 @@ def compile_plan():
         eval_type,
         strict_type_prop,
         type_check,
+
+        apply_argument,
         copyopt,
         constopt,
         deadcode,
+
         reduce_blk,
         loop,
         looptrans,

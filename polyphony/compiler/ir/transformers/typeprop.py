@@ -653,7 +653,7 @@ class TypeSpecializer(TypePropagation):
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False
-        new_scope = scope.instantiate(postfix, scope.children, with_tag=False)
+        new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
         assert new_scope.return_type is not None
         new_types = []
@@ -676,9 +676,7 @@ class TypeSpecializer(TypePropagation):
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False
 
-        children = [s for s in scope.children]
-        closures = [c for c in scope.collect_scope() if c.is_closure()]
-        new_scope = scope.instantiate(postfix, children + closures, with_tag=False)
+        new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_scope)
@@ -703,7 +701,7 @@ class TypeSpecializer(TypePropagation):
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False
-        new_scope = scope.instantiate(postfix, scope.children, with_tag=False)
+        new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_scope)

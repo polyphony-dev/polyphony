@@ -43,7 +43,7 @@ class HDLModule(HDLScope):
 
     @classmethod
     def is_hdlmodule_scope(cls, scope):
-        return ((scope.is_module() and scope.is_instantiated())
+        return ((scope.is_top_module() and scope.is_instantiated())
                 or scope.is_function_module()
                 or scope.is_testbench())
 

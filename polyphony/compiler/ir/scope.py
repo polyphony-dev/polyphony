@@ -229,7 +229,7 @@ class Scope(Tagged, SymbolTable):
         'global', 'function', 'class', 'method', 'ctor', 'enclosure', 'closure',
         'callable', 'returnable', 'mutable', 'inherited', 'predicate',
         'testbench', 'pure', 'timed', 'comb', 'assigned',
-        'module', 'worker', 'loop_worker', 'instantiated', 'specialized',
+        'module', 'top_module', 'worker', 'loop_worker', 'instantiated', 'specialized',
         'lib', 'namespace', 'builtin', 'decorator',
         'port', 'typeclass', 'object',
         'function_module',
@@ -567,7 +567,7 @@ class Scope(Tagged, SymbolTable):
         s.synth_params = self.synth_params.copy()
         return s
 
-    def instantiate(self, inst_name, children, parent=None, with_tag=True):
+    def instantiate(self, inst_name, parent=None):
         if parent is None:
             parent = self.parent
         new_class = self.clone('', inst_name, parent, recursive=True, rename_children=False)
