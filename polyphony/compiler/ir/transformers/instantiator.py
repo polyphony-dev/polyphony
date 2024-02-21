@@ -120,7 +120,6 @@ class ArgumentApplier(object):
                 args = call.args[1:]
                 self._bind_args(scope, args, worker)
                 call.args[1:] = args
-                # next_scopes.append(worker)
         return next_scopes
 
     def _bind_args(self, caller_scope: Scope, args: list[tuple[str, IRExp]], callee: Scope):

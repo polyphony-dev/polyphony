@@ -552,7 +552,8 @@ class AHDLTranslator(IRVisitor):
                       'polyphony.timing.wait_value'):
             assert False, 'It must be inlined'
         elif name == 'polyphony.timing.wait_until':
-            scope_sym = ir.args[0][1].symbol
+            scope_name = ir.args[0][1]
+            scope_sym = qualified_symbols(scope_name, self.scope)[-1]
             assert scope_sym.typ.is_function()
             pred = scope_sym.typ.scope
             #assert pred.is_assigned()

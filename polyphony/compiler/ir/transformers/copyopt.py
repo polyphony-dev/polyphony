@@ -2,6 +2,7 @@
 from ..ir import *
 from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
+from ..scope import Scope
 from ..types.type import Type
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefUpdater
@@ -10,37 +11,38 @@ logger = getLogger(__name__)
 
 
 class CopyOpt(IRVisitor):
-    def _new_collector(self, copies):
+    def _new_collector(self, copies: list[MOVE]):
         return CopyCollector(copies)
 
     def __init__(self):
         super().__init__()
 
-    def _find_old_use(self, ir, qname: tuple[str, ...]):
+    def _find_old_use(self, scope, ir, qname: tuple[str, ...]):
         return ir.find_vars(qname)
 
     def process(self, scope):
         self.scope = scope
-        self.udupdater = UseDefUpdater(scope)
-        copies = []
+        copies: list[MOVE] = []
         collector = self._new_collector(copies)
         collector.process(scope)
         worklist = deque(copies)
         while worklist:
             cp = worklist.popleft()
             logger.debug('copy stm ' + str(cp))
-            dst_qsym = qualified_symbols(cp.dst, scope)
+            dst_qsym = cast(tuple[Symbol], qualified_symbols(cp.dst, scope))
             defs = list(scope.usedef.get_stms_defining(dst_qsym))
             if len(defs) > 1:
                 # dst must be non ssa variables
                 copies.remove(cp)
                 continue
-            src_qsym = qualified_symbols(cp.src, scope)
+            src_qsym = cast(tuple[Symbol], qualified_symbols(cast(IRNameExp, cp.src), scope))
             orig = self._find_root_def(src_qsym)
-            self._replace_copies(scope, cp, orig, dst_qsym, copies, worklist)
+            udupdater = UseDefUpdater(scope)
+            self._replace_copies(scope, udupdater, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures():
-                    self._replace_copies(clos, cp, orig, dst_qsym, copies, worklist)
+                    udupdater = UseDefUpdater(clos)
+                    self._replace_copies(clos, udupdater, cp, orig, dst_qsym, copies, worklist)
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
@@ -50,11 +52,11 @@ class CopyOpt(IRVisitor):
                     continue
                 cp.block.stms.remove(cp)
 
-    def _replace_copies(self, scope, copy_stm, orig, target, copies, worklist):
+    def _replace_copies(self, scope: Scope, udupdater: UseDefUpdater, copy_stm: MOVE, orig: IR|None, target: tuple[Symbol], copies: list[MOVE], worklist):
         uses = list(scope.usedef.get_stms_using(target))
         for u in uses:
             qname = tuple(map(lambda s: s.name, target))
-            olds = self._find_old_use(u, qname)
+            olds = self._find_old_use(scope, u, qname)
             for old in olds:
                 if orig:
                     new = orig.clone()
@@ -62,10 +64,10 @@ class CopyOpt(IRVisitor):
                     new = copy_stm.src.clone()
                 # TODO: we need the bit width propagation
                 logger.debug('replace FROM ' + str(u))
-                self.udupdater.update(u, None)
+                udupdater.update(u, None)
                 u.replace(old, new)
                 logger.debug('replace TO ' + str(u))
-                self.udupdater.update(None, u)
+                udupdater.update(None, u)
             if u.is_a(PHIBase):
                 # TODO: check
                 qsyms = [qualified_symbols(arg, self.scope) for arg in u.args
@@ -86,30 +88,12 @@ class CopyOpt(IRVisitor):
                     idx = u.block.stms.index(u)
                     u.block.stms[idx] = mv
                     mv.block = u.block
-                    self.udupdater.update(u, mv)
+                    udupdater.update(u, mv)
                     if isinstance(mv.src, IRVariable):
                         worklist.append(mv)
                         copies.append(mv)
-        # Deal with 'free' attribute
-        if target[0].is_free() and target[0] in scope.free_symbols():
-            target[0].del_tag('free')
-            if orig:
-                src = orig
-            else:
-                src = copy_stm.src
-            match src:
-                case ATTR():
-                    head = qualified_symbols(src, self.scope)[0]
-                    assert isinstance(head, Symbol)
-                    head.add_tag('free')
-                case TEMP():
-                    sym = self.scope.find_sym(src.name)
-                    assert sym
-                    sym.add_tag('free')
-                case _:
-                    assert False
 
-    def _find_root_def(self, qsym) -> IR|None:
+    def _find_root_def(self, qsym: tuple[Symbol]) -> IR|None:
         defs = list(self.scope.usedef.get_stms_defining(qsym))
         if len(defs) != 1:
             return None
@@ -148,8 +132,8 @@ class CopyOpt(IRVisitor):
 
 
 class CopyCollector(IRVisitor):
-    def __init__(self, copies):
-        self.copies = copies
+    def __init__(self, copies: list[MOVE]):
+        self.copies: list[MOVE] = copies
 
     def visit_CMOVE(self, ir):
         return
@@ -184,20 +168,20 @@ class CopyCollector(IRVisitor):
 
 
 class ObjCopyOpt(CopyOpt):
-    def _new_collector(self, copies):
+    def _new_collector(self, copies: list[MOVE]):
         return ObjCopyCollector(copies)
 
     def __init__(self):
         super().__init__()
 
-    def _find_old_use(self, ir, qname: tuple[str, ...]):
+    def _find_old_use(self, scope, ir, qname: tuple[str, ...]):
         vars = []
 
         def find_vars_rec(ir, qname: tuple[str, ...], vars):
             if isinstance(ir, IR):
                 if ir.is_a(ATTR):
                     attr = cast(ATTR, ir)
-                    ir_qsym = qualified_symbols(attr, self.scope)
+                    ir_qsym = qualified_symbols(attr, scope)
                     attr_sym = ir_qsym[-1]
                     assert isinstance(attr_sym, Symbol)
                     attr_t = attr_sym.typ
@@ -211,7 +195,7 @@ class ObjCopyOpt(CopyOpt):
                         vars.append(attr.exp)
                 elif ir.is_a(TEMP) and len(qname) == 1:
                     temp = cast(TEMP, ir)
-                    sym = self.scope.find_sym(temp.name)
+                    sym = scope.find_sym(temp.name)
                     assert sym
                     sym_t = sym.typ
                     if sym_t.is_object():
