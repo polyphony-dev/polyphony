@@ -484,7 +484,6 @@ class TypeSpecializer(TypePropagation):
 
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if any([atype.is_undef() for atype in arg_types]):
-            assert False
             raise RejectPropagation(ir)
         if callee_scope.is_specialized():
             # Must return after ir.args are visited

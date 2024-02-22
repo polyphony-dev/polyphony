@@ -557,7 +557,7 @@ class AHDLTranslator(IRVisitor):
             assert scope_sym.typ.is_function()
             pred = scope_sym.typ.scope
             #assert pred.is_assigned()
-            translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+            translator = AHDLCombTranslator(self.hdlmodule)
             translator.process(pred)
             for assign in translator.codes:
                 self.hdlmodule.add_static_assignment(assign)
@@ -656,6 +656,7 @@ class AHDLTranslator(IRVisitor):
         tags = _tags_from_sym(sym)
         width = _signal_width(sym)
         sig_name = self._make_signal_name(sym, tags)
+        assert not hdlscope.signal(sig_name)
         sig = hdlscope.gen_sig(sig_name, width, tags, sym)
         if sig.is_subscope() or sig.is_dut():
             hdlscope.add_subscope(sig, env.hdlscope(sym.typ.scope))
@@ -686,6 +687,8 @@ class AHDLTranslator(IRVisitor):
             sig_name = f'{self.scope.base_name}_{sym.hdl_name()}'
         elif sym.is_return():
             sig_name = f'{self.scope.base_name}_out_0'
+        elif sym.scope.is_closure():
+            sig_name = f'{sym.hdl_name()}_{sym.id}'
         else:
             sig_name = sym.hdl_name()
         return sig_name
@@ -945,7 +948,7 @@ class AHDLTranslator(IRVisitor):
         assert scope_sym.typ.is_function()
         assigned = scope_sym.typ.scope
         assert assigned.is_assigned()
-        translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+        translator = AHDLCombTranslator(self.hdlmodule)
         translator.process(assigned)
         for assign in translator.codes:
             self.hdlmodule.add_static_assignment(assign)
@@ -1006,7 +1009,7 @@ class AHDLTranslator(IRVisitor):
         assert scope_sym.typ.is_function()
         assigned = scope_sym.typ.scope
         assert assigned.is_assigned()
-        translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+        translator = AHDLCombTranslator(self.hdlmodule)
         translator.process(assigned)
         for assign in translator.codes:
             self.hdlmodule.add_static_assignment(assign)
@@ -1038,7 +1041,7 @@ class AHDLTranslator(IRVisitor):
         assert scope_sym.typ.is_function()
         assigned = scope_sym.typ.scope
         assert assigned.is_assigned()
-        translator = AHDLCombTranslator(self.hdlmodule, self.scope)
+        translator = AHDLCombTranslator(self.hdlmodule)
         translator.process(assigned)
         for assign in translator.codes:
             self.hdlmodule.add_static_assignment(assign)
@@ -1049,9 +1052,8 @@ class AHDLTranslator(IRVisitor):
 
 
 class AHDLCombTranslator(AHDLTranslator):
-    def __init__(self, hdlmodule, scope):
+    def __init__(self, hdlmodule):
         self.hdlmodule = hdlmodule
-        self.scope = scope
         self.codes = []
         self.return_var = None
 
