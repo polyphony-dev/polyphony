@@ -55,7 +55,6 @@ class ModuleInstantiator(object):
                 module.register_worker(new_worker)
         # Remove origin workers
         for worker in origin_workers:
-            module.del_sym(worker.base_name)
             Scope.destroy(worker)
 
     def _instantiate_worker(self, call, ctor, module, scope, origin_workers):

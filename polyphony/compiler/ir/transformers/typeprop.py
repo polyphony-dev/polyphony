@@ -34,6 +34,7 @@ class TypePropagation(IRVisitor):
 
     def process_scopes(self, scopes):
         self._new_scopes = []
+        self._old_scopes = set()
         self.typed = []
         self.pure_type_inferrer = PureFuncTypeInferrer()
         self.worklist = deque(scopes)
@@ -56,7 +57,7 @@ class TypePropagation(IRVisitor):
             logger.debug(f'{scope.name} is typed')
             assert scope not in self.typed
             self.typed.append(scope)
-        return self.typed
+        return self.typed, self._old_scopes
 
     def _add_scope(self, scope):
         if scope.is_testbench() and not scope.parent.is_global():
@@ -495,6 +496,7 @@ class TypeSpecializer(TypePropagation):
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new = self._specialize_function_with_types(callee_scope, new_param_types)
             self._new_scopes.append(new_scope)
+            self._old_scopes.add(callee_scope)
             if is_new:
                 new_scope_sym = callee_scope.parent.find_sym(new_scope.base_name)
                 self._add_scope(new_scope)
@@ -541,6 +543,7 @@ class TypeSpecializer(TypePropagation):
                 new_param_types = self._get_new_param_types(param_types, arg_types)
                 new_scope, is_new = self._specialize_worker_with_types(worker, new_param_types)
                 self._new_scopes.append(new_scope)
+                self._old_scopes.add(worker)
                 if is_new:
                     new_scope_sym = worker.parent.find_sym(new_scope.base_name)
                     self._add_scope(new_scope)
@@ -584,6 +587,7 @@ class TypeSpecializer(TypePropagation):
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new = self._specialize_class_with_types(callee_scope, new_param_types)
             self._new_scopes.append(new_scope)
+            self._old_scopes.add(callee_scope)
             if is_new:
                 new_ctor = new_scope.find_ctor()
                 new_scope_sym = callee_scope.parent.gen_sym(new_scope.base_name)

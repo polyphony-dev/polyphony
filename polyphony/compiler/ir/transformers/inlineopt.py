@@ -203,13 +203,14 @@ class InlineOpt(object):
                     # don't copy outer scope symbols
                     caller.import_sym(sym)
 
-    def _merge_children(self, callee: CalleeScope, caller: CallerScope):
+    def _merge_closure(self, callee: CalleeScope, caller: CallerScope):
         for child in callee.children:
-            env.remove_scope(child)
-            child.parent = caller
-            env.append_scope(child)
-            self._new_scopes.append(child)
-        caller.children.extend(callee.children)
+            if child.is_closure():
+                env.remove_scope(child)
+                child.parent = caller
+                env.append_scope(child)
+                self._new_scopes.append(child)
+                caller.append_child(child)
 
     def _clone_callee(self, caller: CallerScope, callee: CalleeScope) -> CalleeScope:
         callee_clone : CalleeScope = cast(CalleeScope, callee.clone('', f'#{self.inline_counts}', parent=callee.parent, recursive=True))
@@ -256,7 +257,7 @@ class InlineOpt(object):
             if callee.is_returnable():
                 self._replace_result_exp(call_stm, call, callee_clone)
             if callee_clone.children:
-                self._merge_children(callee_clone, caller)
+                self._merge_closure(callee_clone, caller)
                 can_continue = False
             self._merge_symbols(callee_clone, caller)
             # make block clones on caller scope
@@ -785,27 +786,6 @@ class FlattenModule(IRVisitor):
 
         else:
             super().visit_CALL(ir)
-
-    def visit_TEMP(self, ir):
-        sym_t = irexp_type(ir, self.scope)
-        if not sym_t.is_function():
-            return
-        sym_scope = sym_t.scope
-        if not sym_scope.is_closure() and not sym_scope.is_assigned():
-            return
-        if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
-            self._make_new_assigned_method(ir, sym_scope)
-
-    def visit_ATTR(self, ir):
-        attr_t = irexp_type(ir, self.scope)
-        if not attr_t.is_function():
-            return
-        sym_scope = attr_t.scope
-        if not sym_scope.is_closure() and not sym_scope.is_assigned():
-            return
-        if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
-            new_method, new_ir = self._make_new_assigned_method(ir, sym_scope)
-            self._new_scopes.append(new_method)
 
     def _make_new_worker(self, arg):
         parent_module = self.scope.parent

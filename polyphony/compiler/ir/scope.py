@@ -276,9 +276,10 @@ class Scope(Tagged, SymbolTable):
     @classmethod
     def destroy(cls, scope):
         assert scope.name in env.scopes
-        if scope.parent:
+        if scope.parent and not scope.parent.symbols[scope.base_name].is_imported():
+            scope.parent.del_sym(scope.base_name)
             scope.parent.children.remove(scope)
-        env.remove_scope(scope)
+            env.remove_scope(scope)
 
     @classmethod
     def is_normal_scope(cls, s):

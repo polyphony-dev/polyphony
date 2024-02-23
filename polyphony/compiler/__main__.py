@@ -335,7 +335,7 @@ def eval_type(driver, scope):
 
 def early_static_type_prop(driver):
     StaticTypePropagation(is_strict=False).process_scopes(driver.current_scopes)
-    typed_scopes = TypeSpecializer().process_scopes(driver.current_scopes)
+    typed_scopes, _ = TypeSpecializer().process_scopes(driver.current_scopes)
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
@@ -343,11 +343,19 @@ def early_static_type_prop(driver):
 
 
 def early_type_prop(driver):
-    typed_scopes = TypeSpecializer().process_all()
+    typed_scopes, old_scopes = TypeSpecializer().process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
             driver.insert_scope(s)
+    for s in old_scopes:
+        # Do not remove containable scope as it is used without type specialization
+        # (e.g., C is not specialized when referencing a class variable, as in v = C.VALUE)
+        if s.is_containable():
+            continue
+        Scope.destroy(s)
+        if s in scopes:
+            driver.remove_scope(s)
     for s in scopes:
         if s in typed_scopes:
             continue
@@ -357,7 +365,7 @@ def early_type_prop(driver):
 
 
 def type_prop(driver):
-    typed_scopes = TypePropagation(is_strict=False).process_all()
+    typed_scopes, _ = TypePropagation(is_strict=False).process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
