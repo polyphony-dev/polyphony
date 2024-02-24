@@ -155,7 +155,7 @@ class UseDefTable(object):
     def get_blks_using(self, sym: Symbol) -> set[Block]:
         blks = set([item.blk for item in self._use_sym2[sym]])
         return blks
-    
+
     def get_vars_defined_at(self, key: IRStm|Block) -> set[IRVariable]:
         if isinstance(key, IRStm):
             vars = set([item.var for item in self._def_stm2[key]])
@@ -218,7 +218,7 @@ class UseDefTable(object):
             return qsyms
         else:
             assert False
-    
+
     def get_all_def_syms(self):
         return self._def_sym2.keys()
 

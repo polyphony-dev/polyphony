@@ -447,7 +447,7 @@ class IRCallable(IRNameExp):
     @name.setter
     def name(self, name):
         self._func.name = name
- 
+
     @property
     def qualified_name(self) -> tuple[str, ...]:
         return self.func.qualified_name
@@ -541,7 +541,6 @@ class CALL(IRCallable):
         clone = CALL(func, args, kwargs)
         return clone
 
-    
 
 class SYSCALL(IRCallable):
     def __init__(self, func:IRVariable, args:list[tuple[str, IRExp]], kwargs:dict[str, IRExp]):

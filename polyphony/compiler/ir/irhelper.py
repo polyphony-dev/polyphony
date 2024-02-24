@@ -269,7 +269,7 @@ def qualified_symbols(ir: IRNameExp, scope: Scope) -> tuple[Symbol|str, ...]:
         else:
             symbol_or_names.extend(qname[i:])
             break
-    assert len(symbol_or_names) == len(qname)   
+    assert len(symbol_or_names) == len(qname)
     return tuple(symbol_or_names)
 
 
