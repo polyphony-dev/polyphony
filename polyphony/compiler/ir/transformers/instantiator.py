@@ -14,32 +14,43 @@ import logging
 logger = logging.getLogger()
 
 
-def find_called_module(scopes) -> list[tuple[Scope, MOVE]]:
-    called_modules: list[tuple[Scope, MOVE]] = []
+def find_called_module(scopes) -> list[tuple[Scope, Scope, MOVE]]:
+    called_modules: list[tuple[Scope, Scope, MOVE]] = []
     calls: list[tuple[Scope, IRStm, IRCallable]] = []
     for s in scopes:
         calls.extend(CallCollector().process(s))
-    for scope, stm, call in calls:
-        callee_scope = call.get_callee_scope(scope)
+    for caller_scope, stm, call in calls:
+        callee_scope = call.get_callee_scope(caller_scope)
         if stm.is_a(MOVE) and call.is_a(NEW) and callee_scope.is_module():
-            called_modules.append((callee_scope, cast(MOVE, stm)))
+            called_modules.append((callee_scope, caller_scope, cast(MOVE, stm)))
     return called_modules
 
 
 class ModuleInstantiator(object):
-    def process_modules(self, modules: list[tuple[Scope, MOVE]], names: list[str]):
+    def process_modules(self, modules: list[tuple[Scope, Scope, MOVE]], names: list[str]):
         new_modules = []
-        for (module, move), name in zip(modules, names):
+        for (module, caller, move), name in zip(modules, names):
             if not name:
                 name = f'{module.instance_number()}'
             new_module = module.instantiate(name, parent=module.parent)
+            # If the module is imported from another namespace,
+            # the symbol must be registered at the import destination.
+            new = cast(NEW, move.src)
+            qsym = qualified_symbols(new.func, caller)
+            func_sym = qsym[-1]
+            assert isinstance(func_sym, Symbol)
+            owner = caller.find_owner_scope(func_sym)
+            if owner and func_sym.scope is not owner:
+                asname = f'{new.name}_{name}'
+                new_module_sym = new_module.parent.find_sym(new_module.base_name)
+                owner.import_sym(new_module_sym, asname)
+
             self._process_workers(new_module)
             new_module.add_tag('instantiated')
             for s in new_module.collect_scope():
                 s.add_tag('instantiated')
             new_modules.append(new_module)
             assert(isinstance(move.src, NEW))
-            new = move.src
             new.replace(module.base_name, new_module.base_name)
         return new_modules
 

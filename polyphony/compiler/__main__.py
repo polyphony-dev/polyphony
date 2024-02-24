@@ -427,7 +427,7 @@ def detectrom(driver):
 def instantiate(driver):
     modules = find_called_module([Scope.global_scope()])
     names = [''] * len(modules)  # work around
-    for module, _ in modules:
+    for module, _, _ in modules:
         module.add_tag('top_module')
     while True:
         new_modules = ModuleInstantiator().process_modules(modules, names)

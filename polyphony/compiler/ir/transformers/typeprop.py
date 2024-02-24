@@ -494,7 +494,7 @@ class TypeSpecializer(TypePropagation):
         if param_types:
             self._check_param_types(param_types, arg_types, ir.args, callee_scope.name)
             new_param_types = self._get_new_param_types(param_types, arg_types)
-            new_scope, is_new = self._specialize_function_with_types(callee_scope, new_param_types)
+            new_scope, is_new, postfix = self._specialize_function_with_types(callee_scope, new_param_types)
             self._new_scopes.append(new_scope)
             self._old_scopes.add(callee_scope)
             if is_new:
@@ -503,13 +503,13 @@ class TypeSpecializer(TypePropagation):
             else:
                 new_scope_sym = callee_scope.parent.find_sym(new_scope.base_name)
             ret_t = new_scope.return_type
-
-            postfix = Type.mangled_names(new_param_types)
+            # Deal with imported scope
             asname = f'{ir.name}_{postfix}'
             owner = self.scope.find_owner_scope(func_sym)
             if owner and func_sym.scope is not owner:
                 # new_scope_sym is created at original scope so it must be imported
                 owner.import_sym(new_scope_sym, asname)
+            # Replace name expression
             if ir.func.is_a(TEMP):
                 ir.func = TEMP(asname)
             elif ir.func.is_a(ATTR):
@@ -524,41 +524,7 @@ class TypeSpecializer(TypePropagation):
     def visit_CALL_lib(self, ir):
         callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.base_name == 'append_worker':
-            arg_sym = qualified_symbols(ir.args[0][1], self.scope)[-1]
-            assert isinstance(arg_sym, Symbol)
-            arg_t = arg_sym.typ
-            if not arg_t.is_function():
-                assert False
-            worker = arg_t.scope
-            if not worker.is_worker():
-                worker.add_tag('worker')
-            if worker.is_specialized():
-                return callee_scope.return_type
-            arg_types = [self.visit(arg) for _, arg in ir.args[1:]]
-            if any([atype.is_undef() for atype in arg_types]):
-                raise RejectPropagation(ir)
-            param_types = worker.param_types()
-            if param_types:
-                self._check_param_types(param_types, arg_types, ir.args[1:], callee_scope.name)
-                new_param_types = self._get_new_param_types(param_types, arg_types)
-                new_scope, is_new = self._specialize_worker_with_types(worker, new_param_types)
-                self._new_scopes.append(new_scope)
-                self._old_scopes.add(worker)
-                if is_new:
-                    new_scope_sym = worker.parent.find_sym(new_scope.base_name)
-                    self._add_scope(new_scope)
-                else:
-                    new_scope_sym = worker.parent.find_sym(new_scope.base_name)
-                if ir.args[0][1].symbol.is_imported():
-                    assert False
-                if ir.args[0][1].is_a(TEMP):
-                    ir.args[0] = (ir.args[0][0], TEMP(new_scope_sym.name))
-                elif ir.args[0][1].is_a(ATTR):
-                    ir.args[0] = (ir.args[0][0], ATTR(ir.args[0][1].exp, new_scope_sym.name))
-                else:
-                    assert False
-            else:
-                self._add_scope(worker)
+            self.visit_CALL_append_worker(ir, callee_scope)
         elif callee_scope.base_name == 'assign':
             assert callee_scope.parent.is_port()
             _, arg = ir.args[0]
@@ -567,6 +533,46 @@ class TypeSpecializer(TypePropagation):
         assert callee_scope.return_type is not None
         assert not callee_scope.return_type.is_undef()
         return callee_scope.return_type
+
+    def visit_CALL_append_worker(self, ir, callee_scope):
+        arg_sym = qualified_symbols(ir.args[0][1], self.scope)[-1]
+        assert isinstance(arg_sym, Symbol)
+        arg_t = arg_sym.typ
+        if not arg_t.is_function():
+            assert False
+        worker = arg_t.scope
+        if not worker.is_worker():
+            worker.add_tag('worker')
+        if worker.is_specialized():
+            return callee_scope.return_type
+        arg_types = [self.visit(arg) for _, arg in ir.args[1:]]
+        if any([atype.is_undef() for atype in arg_types]):
+            raise RejectPropagation(ir)
+        param_types = worker.param_types()
+        if param_types:
+            self._check_param_types(param_types, arg_types, ir.args[1:], callee_scope.name)
+            new_param_types = self._get_new_param_types(param_types, arg_types)
+            new_scope, is_new, postfix = self._specialize_worker_with_types(worker, new_param_types)
+            self._new_scopes.append(new_scope)
+            self._old_scopes.add(worker)
+            if is_new:
+                new_scope_sym = worker.parent.find_sym(new_scope.base_name)
+                self._add_scope(new_scope)
+            else:
+                new_scope_sym = worker.parent.find_sym(new_scope.base_name)
+            asname = f'{ir.args[0][1].name}_{postfix}'
+            if arg_sym.is_imported():
+                owner = self.scope.find_owner_scope(arg_sym)
+                owner.import_sym(new_scope_sym, asname)
+            if ir.args[0][1].is_a(TEMP):
+                ir.args[0] = (ir.args[0][0], TEMP(asname))
+            elif ir.args[0][1].is_a(ATTR):
+                assert asname == new_scope_sym.name
+                ir.args[0] = (ir.args[0][0], ATTR(ir.args[0][1].exp, new_scope_sym.name))
+            else:
+                assert False
+        else:
+            self._add_scope(worker)
 
     def visit_NEW(self, ir):
         callee_scope = ir.get_callee_scope(self.scope)
@@ -585,7 +591,7 @@ class TypeSpecializer(TypePropagation):
         if param_types:
             self._check_param_types(param_types, arg_types, ir.args, callee_scope.name)
             new_param_types = self._get_new_param_types(param_types, arg_types)
-            new_scope, is_new = self._specialize_class_with_types(callee_scope, new_param_types)
+            new_scope, is_new, postfix = self._specialize_class_with_types(callee_scope, new_param_types)
             self._new_scopes.append(new_scope)
             self._old_scopes.add(callee_scope)
             if is_new:
@@ -605,11 +611,12 @@ class TypeSpecializer(TypePropagation):
             qsym = qualified_symbols(ir.func, self.scope)
             func_sym = qsym[-1]
             assert isinstance(func_sym, Symbol)
-            postfix = Type.mangled_names(new_param_types)
+            # Deal with imported scope
             asname = f'{ir.name}_{postfix}'
             owner = self.scope.find_owner_scope(func_sym)
             if owner and func_sym.scope is not owner:
                 owner.import_sym(new_scope_sym, asname)
+            # Replace name expression
             if ir.func.is_a(TEMP):
                 ir.func = TEMP(asname)
             elif ir.func.is_a(ATTR):
@@ -648,14 +655,14 @@ class TypeSpecializer(TypePropagation):
                 new_param_types.append(arg_t)
         return new_param_types
 
-    def _specialize_function_with_types(self, scope, types):
+    def _specialize_function_with_types(self, scope, types) -> tuple[Scope, bool, str]:
         assert not scope.is_specialized()
         postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
-            return env.scopes[qualified_name], False
+            return env.scopes[qualified_name], False, postfix
         new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
         assert new_scope.return_type is not None
@@ -666,9 +673,9 @@ class TypeSpecializer(TypePropagation):
         new_scope.add_tag('specialized')
         sym = new_scope.parent.find_sym(new_scope.base_name)
         sym.typ = sym.typ.clone(param_types=new_types, return_type=new_scope.return_type)
-        return new_scope, True
+        return new_scope, True, postfix
 
-    def _specialize_class_with_types(self, scope, types):
+    def _specialize_class_with_types(self, scope, types) -> tuple[Scope, bool, str]:
         assert not scope.is_specialized()
         if scope.is_port():
             return self._specialize_port_with_types(scope, types)
@@ -677,7 +684,7 @@ class TypeSpecializer(TypePropagation):
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
-            return env.scopes[qualified_name], False
+            return env.scopes[qualified_name], False, postfix
 
         new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
@@ -687,9 +694,9 @@ class TypeSpecializer(TypePropagation):
         for sym, new_t in zip(new_ctor.param_symbols(), types):
             sym.typ = new_t.clone(explicit=True)
         new_scope.add_tag('specialized')
-        return new_scope, True
+        return new_scope, True, postfix
 
-    def _specialize_port_with_types(self, scope, types):
+    def _specialize_port_with_types(self, scope, types) -> tuple[Scope, bool, str]:
         typ = types[0]
         if typ.is_class():
             typscope = typ.scope
@@ -703,7 +710,7 @@ class TypeSpecializer(TypePropagation):
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
-            return env.scopes[qualified_name], False
+            return env.scopes[qualified_name], False, postfix
         new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
         new_ctor = new_scope.find_ctor()
@@ -722,24 +729,24 @@ class TypeSpecializer(TypePropagation):
             if child.return_type.is_object() and child.return_type.scope.is_object():
                 child.return_type = dtype
             child.add_tag('specialized')
-        return new_scope, True
+        return new_scope, True, postfix
 
-    def _specialize_worker_with_types(self, scope, types):
+    def _specialize_worker_with_types(self, scope, types) -> tuple[Scope, bool, str]:
         assert not scope.is_specialized()
         postfix = Type.mangled_names(types)
         assert postfix
         name = f'{scope.base_name}_{postfix}'
         qualified_name = (scope.parent.name + '.' + name) if scope.parent else name
         if qualified_name in env.scopes:
-            return env.scopes[qualified_name], False
-        new_scope = scope.instantiate(postfix, scope.children, with_tag=False)
+            return env.scopes[qualified_name], False, postfix
+        new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
         assert new_scope.return_type is not None
         param_symbols = new_scope.param_symbols()
         for sym, new_t in zip(param_symbols, types):
             sym.typ = new_t.clone()
         new_scope.add_tag('specialized')
-        return new_scope, True
+        return new_scope, True, postfix
 
 
 class DynamicTypePropagation(TypePropagation):
