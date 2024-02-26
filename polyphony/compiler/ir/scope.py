@@ -223,14 +223,6 @@ class SymbolTable(object):
     def free_symbols(self):
         return [sym for sym in self.symbols.values() if sym.is_free()]
 
-    def make_unique_symbol_name(self, name: str) -> str:
-            count = 0
-            new_name = name
-            while self.find_sym(new_name):
-                new_name = f'{name}_{count}'
-                count += 1
-            return new_name
-
 
 class Scope(Tagged, SymbolTable):
     TAGS = {

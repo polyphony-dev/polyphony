@@ -856,8 +856,10 @@ class DFGBuilder(object):
                 dones.add(end)
             return
         if node.tag.is_a([MOVE, PHIBase]) and node.defs[0].is_alias():
-            var = node.tag.dst.symbol if node.tag.is_a(MOVE) else node.tag.var.symbol
-            if var.is_alias():
+            var = node.tag.dst if isinstance(node.tag, MOVE) else node.tag.var
+            var_sym = qualified_symbols(var, self.scope)[-1]
+            assert isinstance(var_sym, Symbol)
+            if var_sym.is_alias():
                 succs = dfg.succs_typ_without_back(node, 'DefUse')
                 for s in succs:
                     self._remove_alias_cycle_rec(dfg, s, end, dones)

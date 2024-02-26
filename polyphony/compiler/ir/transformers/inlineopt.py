@@ -147,8 +147,11 @@ class InlineOpt(object):
     def _rename(self, callee: CalleeScope, caller: CallerScope):
         def make_unique_name(scopes: list[Scope], name: str) -> str:
             new_name = name
+            count = 0
             for s in scopes:
-                new_name = s.make_unique_symbol_name(new_name)
+                while s.find_sym(new_name):
+                    new_name = f'{name}_{count}'
+                    count += 1
             return new_name
         scope_name_exps: list[tuple[Scope, list[IRNameExp]]] = []
         self._collect_names_recursively(callee, scope_name_exps)

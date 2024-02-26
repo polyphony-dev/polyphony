@@ -1,6 +1,8 @@
 from ..block import Block
 from ..ir import Ctx, CONST, UNOP, RELOP, TEMP, JUMP, PHI, LPHI
+from ..irhelper import qualified_symbols
 from ..types.type import Type
+from ..symbol import Symbol
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger
@@ -120,7 +122,9 @@ class LoopFlatten(object):
         # deal with phi for induction variables
         for lphi in subloop.head.collect_stms(LPHI):
             assert lphi.args[1].is_a(TEMP)
-            var_t = lphi.var.symbol.typ
+            sym = qualified_symbols(lphi.var, self.scope)[-1]
+            assert isinstance(sym, Symbol)
+            var_t = sym.typ
             psi_sym = self.scope.add_temp(typ=var_t)
             psi = PHI(TEMP(psi_sym.name, Ctx.STORE))
             psi.args = [
@@ -149,7 +153,9 @@ class LoopFlatten(object):
         for lphi in loop.head.collect_stms(LPHI):
             if lphi is init_lphi:
                 continue
-            psi_sym = self.scope.add_temp(typ=lphi.var.symbol.typ)
+            sym = qualified_symbols(lphi.var, self.scope)[-1]
+            assert isinstance(sym, Symbol)
+            psi_sym = self.scope.add_temp(typ=sym.typ)
             psi = PHI(TEMP(psi_sym.name, Ctx.STORE))
             psi.args = [
                 TEMP(lphi.var.name),

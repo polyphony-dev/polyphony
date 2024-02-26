@@ -264,7 +264,6 @@ def hyperblock(driver, scope):
         return
     HyperBlockBuilder().process(scope)
     checkcfg(driver, scope)
-    reduce_blk(driver, scope)
 
 
 def buildpurector(driver):

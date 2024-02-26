@@ -516,8 +516,6 @@ class IVReplacer(IRVisitor):
             new_sym = self.iv_updates[sym][self.idx + 1]
         else:
             new_name = '{}_{}'.format(sym.name, self.defsym_indexes[sym] + self.idx)
-            # new_name = self.scope.make_unique_symbol_name(sym.name)
-            # assert not self.scope.has_sym(new_name)
             new_sym = self.scope.inherit_sym(sym, new_name)
         ir.name = new_sym.name
 

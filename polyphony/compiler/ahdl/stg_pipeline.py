@@ -6,6 +6,7 @@ from .stgbuilder import State, STGItemBuilder, ScheduledItemQueue
 from .analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdltransformer import AHDLTransformer
 from ..ir.ir import MOVE, CJUMP
+from ..ir.irhelper import qualified_symbols
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -551,7 +552,8 @@ class LoopPipelineBuilder(PipelineBuilder):
                 continue
             if n.tag.is_a(CJUMP):
                 # remove cjump for the loop
-                if n.tag.exp.symbol is dfg.region.cond:
+                sym = qualified_symbols(n.tag.exp, self.scope)[-1]
+                if sym is dfg.region.cond:
                     continue
                 else:
                     assert False
