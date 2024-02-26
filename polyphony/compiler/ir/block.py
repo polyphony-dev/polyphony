@@ -1,9 +1,13 @@
-﻿from collections import deque
+﻿from __future__ import annotations
+from collections import deque
+from typing import TYPE_CHECKING
 from .ir import *
 from .synth import make_synth_params
 from ..common.utils import replace_item, remove_except_one
 from logging import getLogger
 logger = getLogger(__name__)
+if TYPE_CHECKING:
+    from .scope import Scope
 
 
 class Block(object):
@@ -171,7 +175,7 @@ class Block(object):
                     continue
                 stack.append(succ)
 
-    def clone(self, scope, stm_map, nametag=None):
+    def clone(self, scope: Scope, stm_map: dict[IRStm, IRStm], nametag=None):
         if nametag:
             b = Block(scope, nametag)
         else:

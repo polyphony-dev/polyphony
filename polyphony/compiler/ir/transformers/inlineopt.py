@@ -145,13 +145,10 @@ class InlineOpt(object):
             self._collect_names_recursively(child, all_vars)
 
     def _rename(self, callee: CalleeScope, caller: CallerScope):
-        def make_unique_name(scopes: Scope, name: str) -> str:
-            count = 0
+        def make_unique_name(scopes: list[Scope], name: str) -> str:
             new_name = name
             for s in scopes:
-                while s.find_sym(new_name):
-                    new_name = f'{name}_{count}'
-                    count += 1
+                new_name = s.make_unique_symbol_name(new_name)
             return new_name
         scope_name_exps: list[tuple[Scope, list[IRNameExp]]] = []
         self._collect_names_recursively(callee, scope_name_exps)
@@ -473,81 +470,6 @@ class IRReplacer(IRTransformer):
         for item in ir.items:
             self.visit(item)
         return ir
-
-
-class SymbolReplacer(IRVisitor):
-    def __init__(self, sym_map: SymbolMap, attr_map: AttributeMap, inst_name=None):
-        super().__init__()
-        self.sym_map = sym_map
-        self.attr_map = attr_map
-        self.inst_name = inst_name
-
-    def traverse_blocks(self, entry_block):
-        assert len(entry_block.preds) == 0
-        yield from entry_block.traverse()
-
-    def process(self, scope, entry_block):
-        self.scope = scope
-        for blk in self.traverse_blocks(entry_block):
-            self._process_block(blk)
-
-    def _qsym_to_var(self, qsym, ctx):
-        if len(qsym) == 1:
-            return TEMP(qsym[0].name, ctx)
-        else:
-            exp = self._qsym_to_var(qsym[:-1], Ctx.LOAD)
-            return ATTR(exp, qsym[-1].name, ctx)
-
-    def visit_TEMP(self, ir):
-        ret_ir = ir
-        sym = self.scope.find_sym(ir.name)
-        assert sym
-        if self.attr_map and sym in self.attr_map:
-            attr = self.attr_map[sym].clone()
-            ret_ir = attr
-        elif sym in self.sym_map:
-            rep = self.sym_map[sym]
-            if isinstance(rep, Symbol):
-                ir.name = rep.name
-                ret_ir = ir
-            elif isinstance(rep, tuple):  # qualified_symbol
-                ret_ir = self._qsym_to_var(rep, ir.ctx)
-            else:
-                assert isinstance(rep, IRExp)
-                self.current_stm.replace(ir, rep)
-                ret_ir = rep
-        if ret_ir.is_a(IRVariable):
-            ret_sym = qualified_symbols(cast(IRVariable, ret_ir), self.scope)[-1]
-            assert isinstance(ret_sym, Symbol)
-            for expr in typehelper.find_expr(ret_sym.typ):
-                assert expr.is_a(EXPR)
-                old_stm = self.current_stm
-                self.current_stm = expr
-                self.visit(expr)
-                self.current_stm = old_stm
-        return ret_ir
-
-    def visit_ATTR(self, ir):
-        exp = self.visit(ir.exp)
-        if exp:
-            ir.exp = exp
-        sym = qualified_symbols(ir, self.scope)[-1]
-        assert isinstance(sym, Symbol)
-        if sym in self.sym_map:
-            new_sym = self.sym_map[sym]
-            assert isinstance(new_sym, Symbol)
-            ir.name = new_sym.name
-        for expr in typehelper.find_expr(sym.typ):
-            assert expr.is_a(EXPR)
-            old_stm = self.current_stm
-            self.current_stm = expr
-            self.visit(expr)
-            self.current_stm = old_stm
-
-    def visit_ARRAY(self, ir):
-        self.visit(ir.repeat)
-        for item in ir.items:
-            self.visit(item)
 
 
 class FlattenFieldAccess(IRTransformer):

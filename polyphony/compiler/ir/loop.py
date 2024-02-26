@@ -1,11 +1,17 @@
+from __future__ import annotations
 from ..common.graph import Graph
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .symbol import Symbol
+    from .block import Block
+    from .ir import IRExp
 
 
 class Region(object):
-    def __init__(self, head, bodies, inner_blocks):
-        self.head = head  # Block
-        self.bodies = bodies  # List[Block]
-        self.inner_blocks = inner_blocks  # List[Block]
+    def __init__(self, head: Block, bodies: list[Block], inner_blocks: list[Block]):
+        self.head = head
+        self.bodies = bodies
+        self.inner_blocks = inner_blocks
         self.name = 'region' + str(head.num)
 
     def blocks(self):
@@ -62,15 +68,15 @@ class Region(object):
 class Loop(Region):
     def __init__(self, head, bodies, region):
         super().__init__(head, bodies, region)
-        self.counter = None  # Symbol
-        self.init = None  # IRExp
-        self.update = None  # IRExp
-        self.cond = None  # Symbol
-        self.exits = None  # Block
-        self.outer_defs = None
-        self.outer_uses = None
-        self.inner_defs = None
-        self.inner_uses = None
+        self.counter: Symbol = None
+        self.init: IRExp = None
+        self.update: IRExp = None
+        self.cond: Symbol = None
+        self.exits: list[Block] = None
+        self.outer_defs: set[Symbol] = None
+        self.outer_uses: set[Symbol] = None
+        self.inner_defs: set[Symbol] = None
+        self.inner_uses: set[Symbol] = None
 
     def __str__(self):
         s = 'Loop: {}\n'.format(self.name)

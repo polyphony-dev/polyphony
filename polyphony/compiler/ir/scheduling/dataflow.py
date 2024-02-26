@@ -873,7 +873,7 @@ class DFGBuilder(object):
                 remove_seq_pred(defnode, visited)
         for node in dfg.nodes:
             stm = node.tag
-            if stm.is_a(MOVE) and stm.dst.symbol.is_induction():
+            if stm.is_a(MOVE) and (sym := qualified_symbols(stm.dst, self.scope)[-1]) and sym.is_induction():
                 remove_seq_pred(node, set())
 
     def _get_port_sym_from_node(self, node):
@@ -944,7 +944,7 @@ class RegArrayParallelizer(object):
         # v2 = v1 + 1
         if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
                 return False
-        rhs_syms = [e.symbol for e in v2_stm.src.kids() if e.is_a(TEMP)]
+        rhs_syms = [qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if e.is_a(TEMP)]
         if len(rhs_syms) != 1:
             return False
         rhs_const = self._get_const(v2_stm.src)
@@ -966,8 +966,8 @@ class RegArrayParallelizer(object):
             return False
         if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
             return False
-        v1_rhs_syms = set([e.symbol for e in v1_stm.src.kids() if e.is_a(TEMP)])
-        v2_rhs_syms = set([e.symbol for e in v2_stm.src.kids() if e.is_a(TEMP)])
+        v1_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v1_stm.src.kids() if e.is_a(TEMP)])
+        v2_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if e.is_a(TEMP)])
         common_syms = v1_rhs_syms.intersection(v2_rhs_syms)
         if not common_syms:
             return False

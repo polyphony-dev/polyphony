@@ -650,13 +650,12 @@ class AHDLTranslator(IRVisitor):
         return ahdl
 
     def _make_signal(self, hdlscope, sym) -> Signal:
-        sig = hdlscope.signal(sym)
-        if sig:
-            return sig
         tags = _tags_from_sym(sym)
         width = _signal_width(sym)
         sig_name = self._make_signal_name(sym, tags)
-        assert not hdlscope.signal(sig_name)
+        sig = hdlscope.signal(sig_name)
+        if sig:
+            return sig
         sig = hdlscope.gen_sig(sig_name, width, tags, sym)
         if sig.is_subscope() or sig.is_dut():
             hdlscope.add_subscope(sig, env.hdlscope(sym.typ.scope))

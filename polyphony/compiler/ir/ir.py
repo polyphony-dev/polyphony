@@ -614,7 +614,7 @@ class CONST(IRExp):
         return super().__hash__()
 
     def kids(self):
-        return [self]
+        return (self,)
 
     @property
     def value(self):
@@ -1304,7 +1304,7 @@ class PHIBase(IRStm):
         kids = []
         for arg in self._args:
             kids += arg.kids()
-        return self._var.kids() + kids
+        return self._var.kids() + tuple(kids)
 
     def remove_arg(self, arg):
         idx = find_id_index(self._args, arg)

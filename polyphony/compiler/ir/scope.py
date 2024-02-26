@@ -223,6 +223,14 @@ class SymbolTable(object):
     def free_symbols(self):
         return [sym for sym in self.symbols.values() if sym.is_free()]
 
+    def make_unique_symbol_name(self, name: str) -> str:
+            count = 0
+            new_name = name
+            while self.find_sym(new_name):
+                new_name = f'{name}_{count}'
+                count += 1
+            return new_name
+
 
 class Scope(Tagged, SymbolTable):
     TAGS = {
@@ -354,7 +362,7 @@ class Scope(Tagged, SymbolTable):
         self.constants = {}
         self.branch_graph = Graph()
         self.module_params = []
-        self.cloned_symbols = {}
+        self.cloned_symbols: dict[str, Symbol] = {}
 
     def __str__(self):
         s = '================================\n'
@@ -920,58 +928,6 @@ class NameReplacer(IRVisitor):
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
-
-
-class SymbolReplacer(IRVisitor):
-    def __init__(self, sym_map):
-        super().__init__()
-        self.sym_map = sym_map
-
-    def visit_TEMP(self, ir):
-        sym = self.scope.find_sym(ir.name)
-        assert sym
-        if sym in self.sym_map:
-            ir.name = self.sym_map[sym].name
-        else:
-            logger.debug('WARNING: not found {}'.format(sym))
-        sym_t = sym.typ
-        for expr in typehelper.find_expr(sym_t):
-            assert expr.is_a(EXPR)
-            old_stm = self.current_stm
-            self.current_stm = expr
-            self.visit(expr)
-            self.current_stm = old_stm
-
-    def visit_ATTR(self, ir):
-        self.visit(ir.exp)
-        qsyms = qualified_symbols(ir, self.scope)
-        sym = qsyms[-1]
-        if isinstance(sym, str):
-            return
-        if sym in self.sym_map:
-            ir.name = self.sym_map[sym].name
-        else:
-            logger.debug('WARNING: not found {}'.format(sym))
-        attr_t = sym.typ
-        for expr in typehelper.find_expr(attr_t):
-            assert expr.is_a(EXPR)
-            old_stm = self.current_stm
-            self.current_stm = expr
-            self.visit(expr)
-            self.current_stm = old_stm
-
-    def visit_ARRAY(self, ir):
-        for item in ir.items:
-            self.visit(item)
-        self.visit(ir.repeat)
-
-    def visit_NEW(self, ir):
-        qsyms = qualified_symbols(ir, self.scope)
-        sym = qsyms[-1]
-        assert isinstance(sym, Symbol)
-        if sym in self.sym_map:
-            ir.name = self.sym_map[sym].name
-        self.visit_args(ir.args, ir.kwargs)
 
 
 def write_dot(scope, tag):
