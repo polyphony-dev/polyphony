@@ -1,8 +1,8 @@
 from polyphony import module, rule
 from polyphony import testbench
 from polyphony.timing import timed, clkfence, wait_value
-from polyphony.io import Port, Handshake
-
+from polyphony.io import Port
+from polyphony.modules import Handshake
 
 @module
 class timed02:

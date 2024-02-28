@@ -1,6 +1,7 @@
 import polyphony
 from polyphony import Channel
-from polyphony.io import Port, Handshake
+from polyphony.io import Port
+from polyphony.modules import Handshake
 from polyphony.typing import int8, uint8, uint16
 from polyphony.timing import timed, clkfence
 

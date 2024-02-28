@@ -2,11 +2,11 @@ from polyphony import testbench
 from polyphony.typing import List, bit, int8
 
 
-def bitdata(xs:List[bit][8], i:int8) -> bit:
+def bitdata(xs:List[bit], i:int8) -> bit:
     return xs[i]
 
 
-def intdata(xs:List[int][8], i:int8) -> int:
+def intdata(xs:List[int], i:int8) -> int:
     return xs[i]
 
 

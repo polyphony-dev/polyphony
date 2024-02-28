@@ -1,18 +1,17 @@
 from polyphony import testbench, module
-from polyphony.io import Port, interface
-from polyphony.typing import int8
+from polyphony.io import Port
+from polyphony.typing import int8, int16
 from polyphony.timing import timed, clkfence
 
-#@interface
-# interfaceクラスは複数のPortを持ちそれらへのアクセスをメソッドとして
-# 提供する
-# interfaceの持つPortは、interfaceクラスを生成する親moduleのPortとして展開される
-@interface
-@timed
-class TestIF:
-    def __init__(self, dtype, direction, init=None):
-        self.port = Port(dtype, direction, init)
 
+@timed
+@module
+class TestIF:
+    def __init__(self, width):
+        if width == 8:
+            self.port = Port(int8, 'in')
+        else:
+            self.port = Port(int16, 'out', 0)
     def read(self):
         return self.port.rd()
 
@@ -24,8 +23,8 @@ class TestIF:
 @module
 class interface01:
     def __init__(self):
-        self.i = TestIF(int8, 'in')
-        self.o = TestIF(int8, 'out', 0)
+        self.i = TestIF(8)
+        self.o = TestIF(16)
         self.v = 0
         self.append_worker(self.main)
 

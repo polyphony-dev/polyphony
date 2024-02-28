@@ -1,5 +1,5 @@
 from polyphony import module, testbench, is_worker_running
-from polyphony.io import Handshake
+from polyphony.modules import Handshake
 
 
 @module

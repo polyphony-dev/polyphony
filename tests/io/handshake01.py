@@ -1,5 +1,5 @@
 from polyphony import testbench, module
-from polyphony.io import Handshake
+from polyphony.modules import Handshake
 from polyphony.typing import int8
 from polyphony.timing import timed
 

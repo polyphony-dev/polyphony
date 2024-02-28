@@ -11,6 +11,12 @@ class sub4:
         self.o = Port(int, 'out')
         self.param = param
 
+
+def sub_worker(p0, p1):
+    v = p0.rd()
+    p1.wr(v + 1)
+
+
 @testbench
 def sub_test():
     pass

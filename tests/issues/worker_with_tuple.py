@@ -2,7 +2,7 @@ from polyphony import testbench
 from polyphony import module
 from polyphony.timing import timed, clkfence
 from polyphony.typing import bit8
-from polyphony.io import Handshake
+from polyphony.modules import Handshake
 
 
 @timed

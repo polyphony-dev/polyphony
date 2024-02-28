@@ -20,8 +20,8 @@ class Object:
 @module
 class object_if01:
     def __init__(self):
-        self.mode = Port(int, 'in', protocol='ready_valid')
-        self.result = Port(int, 'out', protocol='ready_valid')
+        self.mode = Port(int, 'in')
+        self.result = Port(int, 'out')
         self.a = Object()
         self.b = Object()
         self.c = Object()

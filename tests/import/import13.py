@@ -1,7 +1,7 @@
 from polyphony import module
 from polyphony import testbench
 from polyphony import is_worker_running
-from polyphony.io import Handshake
+from polyphony.modules import Handshake
 from sub4 import VALUE as Value
 from sub3 import SUB3_GLOBAL_ARRAY1 as SUB3_GLOBAL_ARRAY
 
