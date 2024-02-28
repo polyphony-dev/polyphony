@@ -31,11 +31,7 @@ class HDLModuleBuilder(object):
         pass
 
     def _process_submodules(self):
-        subscopes = set()
-        self._collector.process(self.hdlmodule)
-        for vars in self._collector.submodule_vars():
-            subscopes.add((vars[0], self.hdlmodule.subscopes[vars[0]]))
-        for instance_sig, subscope in subscopes:
+        for instance_sig, subscope in self.hdlmodule.subscopes.items():
             param_map = {}
             if subscope.scope.module_param_vars:
                 for name, v in subscope.scope.module_param_vars:
@@ -55,29 +51,6 @@ class HDLModuleBuilder(object):
                 replace_table[vars] = (connector,)
             AHDLSignalReplacer(replace_table).process(self.hdlmodule)
             logger.debug(str(self.hdlmodule))
-
-    def _add_callee_submodules(self, scope):
-        for callee_scope, inst_names in scope.callee_instances.items():
-            if callee_scope.is_port():
-                continue
-            if callee_scope.is_lib():
-                continue
-            inst_scope_name = callee_scope.base_name
-            # TODO: add primitive function hook here
-            if inst_scope_name == 'print':
-                continue
-            self._add_submodule_instances(env.hdlscope(callee_scope), inst_names, {})
-
-    def _add_submodule_instances(self, sub_hdlmodule, inst_names, param_map, is_internal=False):
-        for inst_name in inst_names:
-            connections = []
-            for (var, connector_name, attrs) in sub_hdlmodule.connectors(inst_name):
-                connector = self.hdlmodule.gen_sig(connector_name, var.sig.width, attrs)
-                connections.append((var, connector))
-            self.hdlmodule.add_sub_module(inst_name,
-                                          sub_hdlmodule,
-                                          connections,
-                                          param_map=param_map)
 
     def _add_roms(self, memvars_set:set[tuple[Signal]]):
         def find_defstm(symbol):
@@ -147,7 +120,6 @@ class HDLFunctionModuleBuilder(HDLModuleBuilder):
         scope = fsm.scope
         self._add_input(scope)
         self._add_output(scope)
-        self._add_callee_submodules(scope)
         self._collector.process(self.hdlmodule)
         self._add_roms(self._collector.mem_vars(fsm.name))
         self._add_reset_stms(fsm,
@@ -191,8 +163,6 @@ class HDLTestbenchBuilder(HDLModuleBuilder):
         assert len(self.hdlmodule.fsms) == 1
         fsm = self.hdlmodule.fsms[self.hdlmodule.name]
         scope = fsm.scope
-        self._add_callee_submodules(scope)
-
         self._process_submodules()
         self._collector.process(self.hdlmodule)
         self._add_roms(self._collector.mem_vars(fsm.name))
@@ -219,7 +189,6 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
-        self._add_callee_submodules(scope)
         self._add_roms(self._collector.mem_vars(fsm.name))
         self._add_reset_stms(fsm,
                              self._collector.def_vars(fsm.name),

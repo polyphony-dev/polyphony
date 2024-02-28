@@ -495,22 +495,19 @@ class AHDLTranslator(IRVisitor):
         signal_prefix = self.get_signal_prefix(ir)
         callargs = self._visit_args(ir)
         if not callee_scope.is_method():
-            self.scope.append_callee_instance(callee_scope, instance_name)
+            sym = qualified_symbols(ir.func, self.scope)[-1]
+            assert isinstance(sym, Symbol)
+            tags = {'dut'}
+            width = -1
+            sig = self.hdlmodule.gen_sig(instance_name, width, tags, sym)
+            assert isinstance(sig, Signal)
+            self.hdlmodule.add_subscope(sig, env.hdlscope(callee_scope))
 
         ahdl_call = AHDL_MODULECALL(callee_scope, tuple(callargs), instance_name, signal_prefix, tuple())
         return ahdl_call
 
     def visit_NEW(self, ir):
-        assert self.current_stm.is_a(MOVE)
-        mv = self.current_stm
-        instance_name = mv.dst.symbol.hdl_name()
-        signal_prefix = '{}_{}'.format(instance_name, env.ctor_name)
-        callargs = self._visit_args(ir)
-        callee_scope = ir.get_callee_scope(self.scope)
-        self.scope.append_callee_instance(callee_scope, instance_name)
-
-        ahdl_call = AHDL_MODULECALL(callee_scope, tuple(callargs), instance_name, signal_prefix, tuple())
-        return ahdl_call
+        assert False, 'It must be inlined'
 
     def translate_builtin_len(self, syscall):
         _, mem = syscall.args[0]

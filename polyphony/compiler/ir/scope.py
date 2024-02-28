@@ -345,7 +345,6 @@ class Scope(Tagged, SymbolTable):
         self.usedef = None
         self.field_usedef = None
         self.loop_tree = LoopNestTree()
-        self.callee_instances = defaultdict(set)
         self.block_count = 0
         self.workers = []
         self.worker_owner = None
@@ -354,7 +353,7 @@ class Scope(Tagged, SymbolTable):
         self.constants = {}
         self.branch_graph = Graph()
         self.module_params = []
-        self.cloned_symbols: dict[str, Symbol] = {}
+        self.module_param_vars = []
 
     def __str__(self):
         s = '================================\n'
@@ -528,7 +527,7 @@ class Scope(Tagged, SymbolTable):
                         new_child_name = name
                     symbol_map[name] = s.symbols[new_child_name]
         for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
-            s.add_param(symbol_map[p.name], defval.clone() if defval else None)
+            s.add_param(s.symbols[p.name], defval.clone() if defval else None)
 
         s.return_type = self.return_type
         block_map, stm_map = self.clone_blocks(s)
@@ -549,19 +548,6 @@ class Scope(Tagged, SymbolTable):
                     s.branch_graph.add_edge(new_n0, new_n1)
                 else:
                     s.branch_graph.add_edge(new_n1, new_n0)
-
-        if self.is_function_module():
-            new_callee_instances = defaultdict(set)
-            for func_sym, inst_names in self.callee_instances.items():
-                new_func_sym = symbol_map[func_sym.name]
-                new_callee_instances[new_func_sym] = copy(inst_names)
-            s.callee_instances = new_callee_instances
-
-        if self.parent is parent.origin and parent.cloned_symbols:
-            for sym in self.parent.symbols.values():
-                symbol_map[sym.name] = parent.cloned_symbols[sym.name]
-
-        s.cloned_symbols = symbol_map
 
         NameReplacer(symbol_map).process(s)
 
@@ -741,9 +727,6 @@ class Scope(Tagged, SymbolTable):
 
     def add_param(self, sym:Symbol, defval:IRExp|None):
         self.function_params.add_param(sym, defval)
-
-    def append_callee_instance(self, callee_scope, inst_name):
-        self.callee_instances[callee_scope].add(inst_name)
 
     def dfgs(self, bottom_up=False):
         def collect_dfg(dfg, ds):

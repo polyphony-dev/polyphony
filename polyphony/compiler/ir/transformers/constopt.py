@@ -459,12 +459,6 @@ class ConstantOpt(ConstantOptBase):
     def _propagate_to_closure(self, closure: Scope, target: Symbol, src: IRVariable):
         UseDefDetector().process(closure)
         replaces = VarReplacer.replace_uses(closure, TEMP(target.name), src)
-        # Consider the case self.scope is cloned
-        if not replaces and self.scope.origin:
-            orig_symbols = {cloned:orig for orig, cloned in self.scope.cloned_symbols.items()}
-            if target in orig_symbols:
-                target = orig_symbols[target]
-                replaces = VarReplacer.replace_uses(closure, TEMP(target.name), src)
 
     def visit_SYSCALL(self, ir):
         if ir.name == 'len':
