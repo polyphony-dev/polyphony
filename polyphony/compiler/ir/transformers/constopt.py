@@ -389,6 +389,7 @@ class ConstantOpt(ConstantOptBase):
                     and (dst_sym := qualified_symbols(stm.dst, self.scope)[-1])
                     and not dst_sym.is_return()):
                 #sanity check
+                assert isinstance(dst_sym, Symbol)
                 defstms = scope.usedef.get_stms_defining(dst_sym)
                 assert len(defstms) <= 1
 

@@ -13,7 +13,7 @@ class TupleType(Type):
     name: str = field(init=False, default='tuple')
     element: Type
     length: int
-    
+
     @property
     def scope(self) -> Scope:
         assert '__builtin__.tuple' in env.scopes

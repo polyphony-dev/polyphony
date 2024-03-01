@@ -7,7 +7,6 @@ from ...common.env import env
 @dataclass(frozen=True)
 class UndefinedType(Type):
     name: str = field(init=False, default='undef')
-    explicit: bool = field(init=False, default=False)
 
     def clone(self, **args):
         return self

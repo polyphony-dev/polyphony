@@ -1,15 +1,16 @@
 from .constopt import try_get_constant
-from ..ir import CONST, TEMP, EXPR
+from ..ir import IR, CONST, TEMP, EXPR
 from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
 from ..types.type import Type
+from ..types.exprtype import ExprType
 from ..types.typehelper import type_from_typeclass
 from ..symbol import Symbol
 
 
 class TypeEvaluator(object):
     def __init__(self, scope):
-        self.expr_evaluator = TypeExprEvaluator(scope)
+        self.expr_evaluator = TypeExprEvaluator()
 
     def visit_int(self, t):
         w = self.visit(t.width)
@@ -71,11 +72,11 @@ class TypeEvaluator(object):
         return t
 
     def visit_expr(self, t):
-        result = self.expr_evaluator.visit(t.expr)
+        result = self.expr_evaluator.visit_expr_type(t)
         if isinstance(result, Type):
             pass
         else:
-            result = Type.expr(result)
+            result = Type.expr(result, t.scope)
         result = result.clone(explicit=t.explicit)
         return result
 
@@ -91,8 +92,11 @@ class TypeEvaluator(object):
 
 
 class TypeExprEvaluator(IRVisitor):
-    def __init__(self, scope):
-        self.scope = scope
+    def visit_expr_type(self, expr_t: ExprType) -> Type|IR:
+        expr = expr_t.expr
+        assert expr.is_a(EXPR)
+        self.scope = expr_t.scope
+        return self.visit(expr)
 
     def visit_CONST(self, ir):
         return ir

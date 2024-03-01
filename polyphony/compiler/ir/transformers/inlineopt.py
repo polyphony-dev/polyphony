@@ -1,5 +1,6 @@
 ﻿from collections import defaultdict, deque
 from collections.abc import Iterable
+import dataclasses
 from typing import cast
 from .typeprop import TypePropagation
 from ..block import Block
@@ -176,22 +177,27 @@ class InlineOpt(object):
             # we have conflict name between caller and callee
             # rename callee's symbol
             new_name = make_unique_name([caller, callee], callee_sym.name)
+            old_name = callee_sym.name
             if callee_sym.scope is callee:
                 callee.rename_sym(callee_sym.name, new_name)
             else:
                 callee.rename_sym_asname(callee_sym.name, new_name)
             for exp in name_exps:
                 exp.name = new_name
+            if callee_sym.is_typevar():
+                self._rename_type_expr_var(callee, old_name, new_name)
 
     def _merge_symbols(self, callee: CalleeScope, caller: CallerScope):
         callee_name_exps = AllVariableCollector().process(callee)
         callee_names = set([name_exp.name for name_exp in callee_name_exps])
+        typevars = set()
         for name in callee_names:
             sym = callee.find_sym(name)
-            if not sym:
-                continue
+            assert isinstance(sym, Symbol)
             if sym.is_self():
                 continue
+            if sym.is_typevar():
+                typevars.add(sym)
             if not caller.has_sym(name):
                 if sym.scope is callee:
                     if sym.typ.has_scope() and sym.typ.scope_name.startswith(callee.name):
@@ -202,6 +208,37 @@ class InlineOpt(object):
                 else:
                     # don't copy outer scope symbols
                     caller.import_sym(sym)
+
+    def _replace_type_expr_scope(self, callee: CalleeScope, caller: CallerScope):
+        if not callee.is_ctor():
+            return
+        orig_callee = callee.origin
+        assert isinstance(orig_callee, Scope)
+        parent = orig_callee.parent
+        assert isinstance(parent, Scope)
+        value_map = {orig_callee.name:caller.name}
+        for field in parent.symbols.values():
+            for expr_t in typehelper.find_expr(field.typ):
+                if expr_t.scope is orig_callee:
+                    d = dataclasses.asdict(field.typ)
+                    dd = {}
+                    if typehelper.replace_type_dict(d, dd, 'scope_name', value_map):
+                        field.typ = field.typ.__class__.from_dict(dd)
+
+    def _rename_type_expr_var(self, callee: CalleeScope, old_name: str, new_name: str):
+        if not callee.is_ctor():
+            return
+        orig_callee = callee.origin
+        assert isinstance(orig_callee, Scope)
+        parent = orig_callee.parent
+        assert isinstance(parent, Scope)
+        for field in parent.symbols.values():
+            for expr_t in typehelper.find_expr(field.typ):
+                expr = expr_t.expr
+                assert isinstance(expr, EXPR)
+                for v in expr.kids():
+                    if isinstance(v, IRNameExp) and v.name == old_name:
+                        v.name = new_name
 
     def _merge_closure(self, callee: CalleeScope, caller: CallerScope):
         for child in callee.children:
@@ -259,6 +296,8 @@ class InlineOpt(object):
             if callee_clone.children:
                 self._merge_closure(callee_clone, caller)
                 can_continue = False
+            # We need replace type expr scope before merge symbols
+            self._replace_type_expr_scope(callee_clone, caller)
             self._merge_symbols(callee_clone, caller)
             # make block clones on caller scope
             block_map, _ = callee_clone.clone_blocks(caller)
@@ -446,12 +485,10 @@ class IRReplacer(IRTransformer):
         if isinstance(ret_ir, IRVariable):
             ret_sym = qualified_symbols(ret_ir, self.scope)[-1]
             if isinstance(ret_sym, Symbol):
-                for expr in typehelper.find_expr(ret_sym.typ):
+                for expr_t in typehelper.find_expr(ret_sym.typ):
+                    expr = expr_t.expr
                     assert isinstance(expr, EXPR)
-                    old_stm = self.current_stm
-                    self.current_stm = expr
-                    self.visit(expr)
-                    self.current_stm = old_stm
+                    self.visit_with_context(expr_t.scope, expr)
         return ret_ir
 
     def visit_ATTR(self, ir):
@@ -460,13 +497,21 @@ class IRReplacer(IRTransformer):
             ir.exp = exp
         sym = qualified_symbols(ir, self.scope)[-1]
         if isinstance(sym, Symbol):
-            for expr in typehelper.find_expr(sym.typ):
+            for expr_t in typehelper.find_expr(sym.typ):
+                expr = expr_t.expr
                 assert isinstance(expr, EXPR)
-                old_stm = self.current_stm
-                self.current_stm = expr
-                self.visit(expr)
-                self.current_stm = old_stm
+                self.visit_with_context(expr_t.scope, expr)
         return ir
+
+    def visit_with_context(self, scope: Scope, irstm: IRStm):
+        old_scope = self.scope
+        old_stm = self.current_stm
+        self.scope = scope
+        self.current_stm = irstm
+        self.visit(irstm)
+        self.new_stms.pop()
+        self.scope = old_scope
+        self.current_stm = old_stm
 
     def visit_ARRAY(self, ir):
         self.visit(ir.repeat)
@@ -531,24 +576,20 @@ class FlattenFieldAccess(IRTransformer):
     def visit_TEMP(self, ir):
         sym = self.scope.find_sym(ir.name)
         assert sym
-        for expr in typehelper.find_expr(sym.typ):
+        for expr_t in typehelper.find_expr(sym.typ):
+            expr = expr_t.expr
             assert isinstance(expr, EXPR)
-            old_stm = self.current_stm
-            self.current_stm = expr
-            expr.exp = self.visit(expr.exp)
-            self.current_stm = old_stm
+            self.visit_with_context(expr_t.scope, expr)
         return ir
 
     def visit_ATTR(self, ir):
         qsym = qualified_symbols(ir, self.scope)
         sym = qsym[-1]
         assert isinstance(sym, Symbol)
-        for expr in typehelper.find_expr(sym.typ):
+        for expr_t in typehelper.find_expr(sym.typ):
+            expr = expr_t.expr
             assert isinstance(expr, EXPR)
-            old_stm = self.current_stm
-            self.current_stm = expr
-            expr.exp = self.visit(expr.exp)
-            self.current_stm = old_stm
+            self.visit_with_context(expr_t.scope, expr)
 
         # don't flatten use of the other instance in the class except module
         if self.scope.is_method():
@@ -568,6 +609,16 @@ class FlattenFieldAccess(IRTransformer):
         qsym = self._make_flatten_qsym(ir)
         newattr = self._make_new_ATTR(qsym, ir)  # TODO: use qsym2var
         return newattr
+
+    def visit_with_context(self, scope: Scope, irstm: IRStm):
+        old_scope = self.scope
+        old_stm = self.current_stm
+        self.scope = scope
+        self.current_stm = irstm
+        self.visit(irstm)
+        self.new_stms.pop()
+        self.scope = old_scope
+        self.current_stm = old_stm
 
 
 class FlattenObjectArgs(IRTransformer):

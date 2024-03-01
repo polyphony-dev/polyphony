@@ -1,9 +1,11 @@
 from __future__ import annotations
-from typing import cast, TYPE_CHECKING
+import dataclasses
+from typing import cast, TYPE_CHECKING, Generator
 from ...common.env import env
 from ..irhelper import qualified_symbols
 from ...common.env import env
 from .type import Type
+from .exprtype import ExprType
 if TYPE_CHECKING:
     from ..scope import Scope
     from ..ir import IR, EXPR
@@ -23,7 +25,7 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
     '''
     from ..ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
     from ..symbol import Symbol
-    
+
     assert ir
     assert isinstance(ir, IR)
     t = None
@@ -32,41 +34,44 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
         if c.value is None:
             t = Type.none(explicit)
         else:
-            t = Type.expr(EXPR(ir))
+            t = Type.expr(EXPR(ir), scope)
     elif ir.is_a(TEMP):
         temp = cast(TEMP, ir)
         temp_sym = scope.find_sym(temp.name)
         assert isinstance(temp_sym, Symbol)
         if temp_sym.typ.has_scope():
             sym_type = temp_sym.typ
-            scope = sym_type.scope
-            if sym_type.is_class() and scope.is_object() and not temp_sym.is_builtin():
+            type_scope = sym_type.scope
+            if sym_type.is_class() and type_scope.is_object() and not temp_sym.is_builtin():
                 # ir is a typevar (ex. dtype)
-                t = Type.expr(EXPR(temp))
-            elif scope.is_typeclass():
-                if scope.name == '__builtin__.type':
+                t = Type.expr(EXPR(temp), scope)
+                temp_sym.add_tag('typevar')
+            elif type_scope.is_typeclass():
+                if type_scope.name == '__builtin__.type':
                     t = Type.klass(env.scopes['__builtin__.object'], explicit=explicit)
                 else:
-                    t = type_from_typeclass(scope, explicit=explicit)
+                    t = type_from_typeclass(type_scope, explicit=explicit)
             else:
-                t = Type.object(scope, explicit)
+                t = Type.object(type_scope, explicit)
         else:
-            t = Type.expr(EXPR(ir))
+            t = Type.expr(EXPR(ir), scope)
+            temp_sym.add_tag('typevar')
     elif ir.is_a(ATTR):
         attr = cast(ATTR, ir)
         qsyms = qualified_symbols(attr, scope)
         if isinstance(qsyms[-1], Symbol) and qsyms[-1].typ.has_scope():
             attr_type = qsyms[-1].typ
-            scope = attr_type.scope
-            if attr_type.is_class() and scope.is_object() and not attr.symbol.is_builtin():
+            type_scope = attr_type.scope
+            if attr_type.is_class() and type_scope.is_object() and not qsyms[-1].is_builtin():
                 # ir is a typevar (ex. dtype)
-                t = Type.expr(EXPR(attr))
-            elif scope.is_typeclass():
-                t = type_from_typeclass(scope, explicit=explicit)
+                t = Type.expr(EXPR(attr), scope)
+                qsyms[-1].add_tag('typevar')
+            elif type_scope.is_typeclass():
+                t = type_from_typeclass(type_scope, explicit=explicit)
             else:
-                t = Type.object(scope, explicit)
+                t = Type.object(type_scope, explicit)
         else:
-            t = Type.expr(EXPR(ir))
+            t = Type.expr(EXPR(ir), scope)
     elif ir.is_a(MREF):
         mref = cast(MREF, ir)
         if mref.mem.is_a(MREF):
@@ -98,8 +103,8 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
     else:
         assert ir.is_a(IRExp)
         assert explicit is True
-        t = Type.expr(EXPR(ir))
-    
+        t = Type.expr(EXPR(ir), scope)
+
     assert t is not None
     t = t.clone(explicit=explicit)
     return t
@@ -170,25 +175,54 @@ def type_to_scope(t: Type) -> Scope:
     return scope
 
 
-def find_expr(typ) -> list[EXPR]:
-    from .exprtype import ExprType
+def find_expr(typ) -> list[ExprType]:
     from .functiontype import FunctionType
 
     if not isinstance(typ, Type):
         return []
     if typ.is_expr():
         expr_type = cast(ExprType, typ)
-        return [expr_type.expr]
+        return [expr_type]
     elif typ.is_list():
-        return find_expr(typ.length) + find_expr(typ.element)
+        return find_expr(typ.element) + find_expr(typ.length)
     elif typ.is_tuple():
         return find_expr(typ.element) + find_expr(typ.length)
     elif typ.is_function():
         func_type = cast(FunctionType, typ)
-        exprs: list[EXPR] = []
+        exprs: list[ExprType] = []
         for pt in func_type.param_types:
             exprs.extend(find_expr(pt))
         exprs.extend(find_expr(typ.return_type))
         return exprs
     else:
         return []
+
+
+def replace_type_dict(dic, new_dic, key, value_map):
+    ret = False
+    for k, v in dic.items():
+        if isinstance(v, dict):
+            vv = {}
+            if replace_type_dict(v, vv, key, value_map):
+                ret = True
+            new_dic[k] = vv
+        elif isinstance(v, (list, tuple)):
+            vv = []
+            for e in v:
+                if isinstance(e, dict):
+                    ee = {}
+                    if replace_type_dict(e, ee, key, value_map):
+                        ret = True
+                    vv.append(ee)
+                elif e == key and e in value_map:
+                    vv.append(value_map[e])
+                    ret = True
+                else:
+                    vv.append(e)
+            new_dic[k] = v.__class__(vv)
+        elif k == key and v in value_map:
+            new_dic[k] = value_map[v]
+            ret = True
+        else:
+            new_dic[k] = v
+    return ret

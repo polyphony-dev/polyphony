@@ -1,6 +1,7 @@
 ﻿import itertools
 from collections import defaultdict, namedtuple
 from copy import copy
+import dataclasses
 from typing import NamedTuple
 from xml.dom.expatbuilder import Namespaces
 from .builtin import builtin_symbols
@@ -327,27 +328,27 @@ class Scope(Tagged, SymbolTable):
     def __init__(self, parent, name, tags, lineno, scope_id):
         Tagged.__init__(self, tags)
         SymbolTable.__init__(self)
-        self.base_name = name
-        self.parent = parent
+        self.base_name: str = name
+        self.parent: 'Scope' = parent
         if parent:
             parent.append_child(self)
-        self.orig_name = self.name
-        self.orig_base_name = name
-        self.lineno = lineno
-        self.scope_id = scope_id
+        self.orig_name: str = self.name
+        self.orig_base_name: str = name
+        self.lineno: int = lineno
+        self.scope_id: int = scope_id
         self.function_params = FunctionParams(self.is_method())
         self.return_type: Type = None
         self.entry_block: Block = None
         self.exit_block: Block = None
-        self.children = []
-        self.bases = []
-        self.origin = None
+        self.children: list['Scope'] = []
+        self.bases: list['Scope'] = []
+        self.origin: 'Scope' = None
         self.usedef = None
         self.field_usedef = None
         self.loop_tree = LoopNestTree()
         self.block_count = 0
-        self.workers = []
-        self.worker_owner = None
+        self.workers: list['Scope'] = []
+        self.worker_owner: 'Scope' = None
         self.asap_latency = -1
         self.synth_params = make_synth_params()
         self.constants = {}
@@ -440,32 +441,16 @@ class Scope(Tagged, SymbolTable):
     def unique_name(self):
         return self.name.replace('@top.', '').replace('.', '_')
 
-    def clone_symbols(self, scope, postfix='') -> dict[Symbol, Symbol]:
-        symbol_map = {}
-        for orig_sym in self.symbols.values():
-            if postfix:
-                sym_new_name = f'{orig_sym.name}{postfix}'
-            else:
-                sym_new_name = f'{orig_sym.name}'
-            new_sym = orig_sym.clone(scope, sym_new_name)
-            assert new_sym.name not in scope.symbols
-            scope.symbols[new_sym.name] = new_sym
-            new_sym.typ = orig_sym.typ.clone()
-            symbol_map[orig_sym] = new_sym
-        return symbol_map
-
-    def clone_symbols_by_name(self, scope) -> dict[str, Symbol]:
-        symbol_map = {}
-        for orig_sym in self.symbols.values():
+    def clone_symbols_by_name(self, scope):
+        for asname, orig_sym in self.symbols.items():
+            if orig_sym.scope is not self:
+               scope.import_sym(orig_sym, asname)
+               continue
             orig_name = f'{orig_sym.name}'
             if orig_name not in scope.symbols:
                 new_sym = orig_sym.clone(scope, orig_name)
                 scope.symbols[new_sym.name] = new_sym
                 new_sym.typ = orig_sym.typ.clone()
-                symbol_map[orig_name] = new_sym
-            else:
-                symbol_map[orig_name] = scope.symbols[orig_name]
-        return symbol_map
 
     def clone_blocks(self, scope):
         block_map = {}
@@ -513,8 +498,18 @@ class Scope(Tagged, SymbolTable):
 
         s.bases = list(self.bases)
 
-        symbol_map = self.clone_symbols_by_name(s)
+        self.clone_symbols_by_name(s)
+        for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
+            s.add_param(s.symbols[p.name], defval.clone() if defval else None)
+
+        s.return_type = self.return_type
+        block_map, stm_map = self.clone_blocks(s)
+        s.entry_block = block_map[self.entry_block]
+        s.exit_block = block_map[self.exit_block]
+        s.usedef = None
+
         if recursive and rename_children:
+            symbol_map = {}
             # We need to remove a symbol of original child scope
             for name, sym in s.symbols.copy().items():
                 children_names = [child.base_name for child in self.children]
@@ -526,15 +521,7 @@ class Scope(Tagged, SymbolTable):
                     else:
                         new_child_name = name
                     symbol_map[name] = s.symbols[new_child_name]
-        for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
-            s.add_param(s.symbols[p.name], defval.clone() if defval else None)
-
-        s.return_type = self.return_type
-        block_map, stm_map = self.clone_blocks(s)
-        s.entry_block = block_map[self.entry_block]
-        s.exit_block = block_map[self.exit_block]
-
-        s.usedef = None
+            NameReplacer(symbol_map).process(s)
 
         for n in self.branch_graph.nodes:
             if n in stm_map:
@@ -549,8 +536,6 @@ class Scope(Tagged, SymbolTable):
                 else:
                     s.branch_graph.add_edge(new_n1, new_n0)
 
-        NameReplacer(symbol_map).process(s)
-
         s.synth_params = self.synth_params.copy()
         return s
 
@@ -562,11 +547,12 @@ class Scope(Tagged, SymbolTable):
 
         old_class_sym = self.parent.find_sym(self.base_name)
         new_sym = new_class.parent.find_sym(new_class.base_name)
+        assert isinstance(new_sym, Symbol)
         if old_class_sym.ancestor:
             new_sym.ancestor = old_class_sym.ancestor
         else:
             new_sym.ancestor = old_class_sym
-        new_scopes = {self:new_class}
+        new_scopes: dict['Scope', 'Scope'] = {self:new_class}
         for old_child, new_child in zip(self.children, new_class.children):
             new_scopes[old_child] = new_child
         for old, new in new_scopes.items():
@@ -579,7 +565,18 @@ class Scope(Tagged, SymbolTable):
             # sanity check
             new_t = new.parent.find_sym(new.base_name).typ
             assert new_t.scope is new
+        # deal with type scope
+        self._replace_type_scope(new_scopes)
         return new_class
+
+    def _replace_type_scope(self, new_scopes: dict['Scope', 'Scope']):
+        value_map = {old.name:new.name for old, new in new_scopes.items()}
+        for new in new_scopes.values():
+            for sym in new.symbols.values():
+                d = dataclasses.asdict(sym.typ)
+                dd = {}
+                if typehelper.replace_type_dict(d, dd, 'scope_name', value_map):
+                    sym.typ = sym.typ.__class__.from_dict(dd)
 
     def find_child(self, name, rec=False):
         for child in self.children:

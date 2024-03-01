@@ -103,9 +103,10 @@ class VarReplacer(object):
             ir = self.replace_src.clone()
         if ir.is_a(IRVariable):
             typ = irexp_type(ir, self.scope)
-            for expr in typehelper.find_expr(typ):
+            for expr_t in typehelper.find_expr(typ):
+                expr = expr_t.expr
                 assert expr.is_a(EXPR)
-                self.visit(expr)
+                self.visit_with_context(expr_t.scope, expr)
         return ir
 
     def visit_ATTR(self, ir):
@@ -115,11 +116,22 @@ class VarReplacer(object):
         else:
             ir.exp = self.visit(ir.exp)
         if ir.is_a(IRVariable):
-            typ = irexp_type(ir, self.scope)
-            for expr in typehelper.find_expr(typ):
+            sym = qualified_symbols(ir, self.scope)[-1]
+            assert isinstance(sym, Symbol)
+            for expr_t in typehelper.find_expr(sym.typ):
+                expr = expr_t.expr
                 assert expr.is_a(EXPR)
-                self.visit(expr)
+                self.visit_with_context(expr_t.scope, expr)
         return ir
+
+    def visit_with_context(self, scope: Scope, irstm: IRStm):
+        old_scope = self.scope
+        old_stm = self.current_stm
+        self.scope = scope
+        self.current_stm = irstm
+        self.visit(irstm)
+        self.scope = old_scope
+        self.current_stm = old_stm
 
     def visit_EXPR(self, ir):
         self.replaced = False

@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 from typing import ClassVar, TYPE_CHECKING
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from ...common.env import env
 if TYPE_CHECKING:
     from ..scope import Scope
@@ -41,7 +41,7 @@ class Type:
     @classmethod
     def undef(cls) -> UndefinedType:
         from .undefined import UndefinedType
-        return UndefinedType()
+        return UndefinedType(explicit=False)
 
     @classmethod
     def int(cls, width=None, signed=True, explicit=False) -> IntType:
@@ -53,17 +53,17 @@ class Type:
     @classmethod
     def bool(cls, explicit=False) -> BoolType:
         from .booltype import BoolType
-        return BoolType(explicit)
+        return BoolType(explicit, scope_name='__builtin__.bool')
 
     @classmethod
     def str(cls, explicit=False) -> StrType:
         from .strtype import StrType
-        return StrType(explicit)
+        return StrType(explicit, scope_name='__builtin__.str')
 
     @classmethod
     def none(cls, explicit=False) -> NoneType:
         from .nonetype import NoneType
-        return NoneType(explicit)
+        return NoneType(explicit, scope_name='__builtin__.none')
 
     @classmethod
     def any(cls):
@@ -135,10 +135,10 @@ class Type:
             return NamespaceType(explicit, scope)
 
     @classmethod
-    def expr(cls, expr) -> ExprType:
+    def expr(cls, expr, scope) -> ExprType:
         assert expr
         from .exprtype import ExprType
-        return ExprType(True, expr)
+        return ExprType(True, scope.name, expr)
 
     @classmethod
     def union(cls, types):
@@ -201,7 +201,68 @@ class Type:
             elif t.is_object():
                 name = t.scope.scope_id
                 s = f'o{name}'
+            elif t.is_expr():
+                name = str(t.expr).replace('.', '_').replace(' ', '_')
+                s = f'e{name}'
             else:
                 s = str(t)
             ts.append(s)
         return ''.join(ts)
+
+    @classmethod
+    def type_cls_from_name(cls, name):
+        from .inttype import IntType
+        from .booltype import BoolType
+        from .strtype import StrType
+        from .listtype import ListType
+        from .tupletype import TupleType
+        from .functiontype import FunctionType
+        from .objecttype import ObjectType
+        from .namespacetype import NamespaceType
+        from .porttype import PortType
+        from .exprtype import ExprType
+        from .nonetype import NoneType
+        from .undefined import UndefinedType
+        from .classtype import ClassType
+        if name == 'int':
+            return IntType
+        elif name == 'bool':
+            return BoolType
+        elif name == 'str':
+            return StrType
+        elif name == 'list':
+            return ListType
+        elif name == 'tuple':
+            return TupleType
+        elif name == 'function':
+            return FunctionType
+        elif name == 'object':
+            return ObjectType
+        elif name == 'class':
+            return ClassType
+        elif name == 'namespace':
+            return NamespaceType
+        elif name == 'port':
+            return PortType
+        elif name == 'expr':
+            return ExprType
+        elif name == 'none':
+            return NoneType
+        elif name == 'undef':
+            return UndefinedType
+        else:
+            raise ValueError(f'Unknown type name: {name}')
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'Type':
+        field_names = {field.name for field in fields(cls)}
+        field_names.remove('name')
+        arg_dict = {}
+        for k, v in d.items():
+            if k in field_names:
+                if isinstance(v, dict):
+                    assert 'name' in v
+                    arg_dict[k] = Type.type_cls_from_name(v['name']).from_dict(v)
+                else:
+                    arg_dict[k] = v
+        return cls(**arg_dict)

@@ -425,10 +425,10 @@ def detectrom(driver):
 
 def instantiate(driver):
     modules = find_called_module([Scope.global_scope()])
-    names = [''] * len(modules)  # work around
     for module, _, _ in modules:
         module.add_tag('top_module')
     while True:
+        names = [''] * len(modules)  # work around
         new_modules = ModuleInstantiator().process_modules(modules, names)
         if not new_modules:
             break

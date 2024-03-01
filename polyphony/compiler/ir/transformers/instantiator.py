@@ -1,4 +1,3 @@
-import inspect
 from .varreplacer import VarReplacer
 from ..builtin import builtin_symbols
 from ..scope import Scope

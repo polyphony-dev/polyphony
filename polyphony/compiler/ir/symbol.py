@@ -21,7 +21,8 @@ class Symbol(Tagged):
         'self', 'static', 'subobject', 'field',
         'builtin', 'inlined', 'flattened', 'pipelined', 'predefined',
         'loop_counter', 'register', 'inherited', 'imported',
-        'unresolved_scope'
+        'unresolved_scope',
+        'typevar',
     }
 
     @classmethod

@@ -139,13 +139,15 @@ class SSATransformerBase(object):
                     self._add_new_sym(use, i)
 
                     use_t = qsym[-1].typ
-                    for expr in typehelper.find_expr(use_t):
+                    for expr_t in typehelper.find_expr(use_t):
+                        expr = expr_t.expr
                         vs = expr.find_irs(IRVariable)
                         for v in vs:
                             key = qualified_symbols(v, self.scope)
-                            if self._need_rename(key[-1], key):
-                                i, _ = stack[key][-1]
-                                self._add_new_sym(v, i)
+                            if all([isinstance(k, Symbol) for k in key]):
+                                if self._need_rename(key[-1], key):
+                                    i, _ = stack[key][-1]
+                                    self._add_new_sym(v, i)
             #this loop includes PHI
             for d in self.usedef.get_vars_defined_at(stm):
                 #print(stm, d)
@@ -161,13 +163,15 @@ class SSATransformerBase(object):
                     self._add_new_sym_rest(d.exp, stack)
 
                 d_t = key[-1].typ
-                for expr in typehelper.find_expr(d_t):
+                for expr_t in typehelper.find_expr(d_t):
+                    expr = expr_t.expr
                     vs = expr.find_irs(IRVariable)
                     for v in vs:
                         key = qualified_symbols(v, self.scope)
-                        if self._need_rename(key[-1], key):
-                            i, _ = stack[key][-1]
-                            self._add_new_sym(v, i)
+                        if all([isinstance(k, Symbol) for k in key]):
+                            if self._need_rename(key[-1], key):
+                                i, _ = stack[key][-1]
+                                self._add_new_sym(v, i)
         #into successors
         for succ in block.succs:
             phis = [phi for phi in self.phis if phi.block is succ]

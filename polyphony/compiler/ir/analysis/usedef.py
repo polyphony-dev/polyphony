@@ -325,12 +325,10 @@ class UseDefDetector(IRVisitor):
         sym = self.scope.find_sym(ir.name)
         assert sym
         sym_t = sym.typ
-        for expr in typehelper.find_expr(sym_t):
+        for expr_t in typehelper.find_expr(sym_t):
+            expr = expr_t.expr
             assert expr.is_a(EXPR)
-            old_stm = self.current_stm
-            self.current_stm = expr
-            self.visit(expr)
-            self.current_stm = old_stm
+            self.visit_with_context(expr_t.scope, expr)
 
     def visit_ATTR(self, ir):
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
@@ -341,14 +339,21 @@ class UseDefDetector(IRVisitor):
             assert False
         self.visit(ir.exp)
 
-        qsyms = qualified_symbols(ir, self.scope)
-        attr_t = qsyms[-1].typ
-        for expr in typehelper.find_expr(attr_t):
+        attr = qualified_symbols(ir, self.scope)[-1]
+        assert isinstance(attr, Symbol)
+        for expr_t in typehelper.find_expr(attr.typ):
+            expr = expr_t.expr
             assert expr.is_a(EXPR)
-            old_stm = self.current_stm
-            self.current_stm = expr
-            self.visit(expr)
-            self.current_stm = old_stm
+            self.visit_with_context(expr_t.scope, expr)
+
+    def visit_with_context(self, scope: Scope, irstm: IRStm):
+        old_scope = self.scope
+        old_stm = self.current_stm
+        self.scope = scope
+        self.current_stm = irstm
+        self.visit(irstm)
+        self.scope = old_scope
+        self.current_stm = old_stm
 
 
 class UseDefUpdater(object):
