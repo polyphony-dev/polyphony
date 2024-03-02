@@ -126,12 +126,9 @@ class VarReplacer(object):
 
     def visit_with_context(self, scope: Scope, irstm: IRStm):
         old_scope = self.scope
-        old_stm = self.current_stm
         self.scope = scope
-        self.current_stm = irstm
         self.visit(irstm)
         self.scope = old_scope
-        self.current_stm = old_stm
 
     def visit_EXPR(self, ir):
         self.replaced = False
@@ -190,7 +187,7 @@ class VarReplacer(object):
     def visit_LPHI(self, ir):
         self.visit_PHI(ir)
 
-    def visit(self, ir):
+    def visit(self, ir:IR) -> IR:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
         if visitor:
