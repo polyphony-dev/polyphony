@@ -613,6 +613,9 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.add_param(param, d)
 
         if self.current_scope.is_lib() and not self.current_scope.is_inlinelib():
+            scope_sym = self.current_scope.find_sym(self.current_scope.base_name)
+            if scope_sym:
+                scope_sym.typ = Type.function(self.current_scope, self.current_scope.return_type, self.current_scope.param_types())
             self._leave_scope(*context)
             return
         if self.current_scope.is_pure():
