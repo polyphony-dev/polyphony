@@ -701,8 +701,9 @@ class Scope(Tagged, SymbolTable):
         self.exit_block = blk
 
     def traverse_blocks(self):
-        assert len(self.entry_block.preds) == 0
-        yield from self.entry_block.traverse()
+        if self.entry_block:
+            assert len(self.entry_block.preds) == 0
+            yield from self.entry_block.traverse()
 
     def replace_block(self, old, new):
         new.preds = old.preds[:]

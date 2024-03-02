@@ -666,6 +666,11 @@ def dumpscope(driver, scope):
     driver.logger.debug(str(scope))
 
 
+def dumpscopes(driver):
+    for s in env.scopes.values():
+        driver.logger.debug(str(s))
+
+
 def printscopename(driver, scope):
     print(scope.name)
 
@@ -907,8 +912,8 @@ def setup_global(src_file):
     env.set_current_filename(src_file)
     g = Scope.create_namespace(None, env.global_scope_name, {'global'}, src_file)
     env.push_outermost_scope(g)
-    for sym in builtin_symbols.values():
-        g.import_sym(sym)
+    for asname, sym in builtin_symbols.items():
+        g.import_sym(sym, asname)
 
 
 # replace a target scope name to a scope object

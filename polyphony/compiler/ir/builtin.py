@@ -26,6 +26,7 @@ def append_builtin(namespace, scope):
         asname = scope.name
 
     sym = namespace.symbols[scope.base_name]
+    sym.add_tag('builtin')
     assert isinstance(sym, Symbol)
     builtin_symbols[asname] = sym
 
