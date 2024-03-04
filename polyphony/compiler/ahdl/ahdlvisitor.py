@@ -13,9 +13,8 @@ class AHDLVisitor(object):
 
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
-        for tag, decls in hdlmodule.decls.items():
-            for decl in decls:
-                self.visit(decl)
+        for decl in hdlmodule.decls:
+            self.visit(decl)
         for var, old, new in hdlmodule.edge_detectors:
             self.visit(var)
             self.visit(old)

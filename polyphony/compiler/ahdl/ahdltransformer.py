@@ -10,15 +10,15 @@ class AHDLTransformer(object):
 
     def process(self, hdlmodule):
         self.hdlmodule = hdlmodule
-        for tag, decls in hdlmodule.decls.copy().items():
-            new_decls = []
-            for decl in decls:
-                new_decl = self.visit(decl)
-                if isinstance(new_decl, AHDL_DECL):
-                    new_decls.append(new_decl)
-                else:
-                    pass
-            hdlmodule.decls[tag] = new_decls
+        # FIXME: hdlmodule.decls should not be rewritten directly
+        new_decls = []
+        for decl in hdlmodule.decls:
+            new_decl = self.visit(decl)
+            if isinstance(new_decl, AHDL_DECL):
+                new_decls.append(new_decl)
+            else:
+                pass
+        hdlmodule.decls = new_decls
         for item in hdlmodule.edge_detectors.copy():
             hdlmodule.edge_detectors.remove(item)
             var, old, new = item

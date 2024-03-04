@@ -165,11 +165,9 @@ class VerilogCodeGen(AHDLVisitor):
         for net in self.hdlmodule.get_signals({'net', 'netarray'}, {'input', 'output'}):
             self.emit(f'wire {self._generate_signal(net)};')
 
-        for tag, decls in sorted(self.hdlmodule.decls.items()):
-            if decls:
-                self.emit(f'//combinations: {tag}')
-                for decl in sorted(decls, key=lambda d: d.name):
-                    self.visit(decl)
+        self.emit(f'//combinations:')
+        for decl in sorted(self.hdlmodule.decls, key=lambda d: d.name):
+            self.visit(decl)
         for func in self.hdlmodule.functions:
             self.visit(func)
 
@@ -285,7 +283,8 @@ class VerilogCodeGen(AHDLVisitor):
         if isinstance(ahdl.info, AHDL):
             self.emit(f'/*{self.visit(ahdl.info)}*/')
         else:
-            self.emit(f'/*{str(ahdl.info)}*/')
+            if ahdl.info:
+                self.emit(f'/*{str(ahdl.info)}*/')
 
     def visit_AHDL_INLINE(self, ahdl):
         self.emit(ahdl.code)
@@ -355,11 +354,11 @@ class VerilogCodeGen(AHDLVisitor):
             exp = ahdl.args[0]
             exp_str = args[0]
             if exp.is_a(AHDL_VAR) and exp.sig.is_condition():
-                for tag, assign in self.hdlmodule.get_static_assignment():
+                for assign in self.hdlmodule.get_static_assignment():
                     if assign.dst.is_a(AHDL_VAR) and assign.dst.sig == exp.sig:
-                        remove_assign = (tag, assign)
+                        remove_assign = assign
                         exp_str = self.visit(assign.src)
-                        self.hdlmodule.remove_decl(*remove_assign)
+                        self.hdlmodule.remove_decl(remove_assign)
                         break
             exp_str = exp_str.replace('==', '===').replace('!=', '!==')
             self.emit(f'if (!{exp_str}) begin')

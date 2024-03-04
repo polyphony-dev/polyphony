@@ -18,6 +18,8 @@ from .ahdl.transformers.bitwidthreducer import BitwidthReducer
 from .ahdl.transformers.canonical import Canonicalizer
 from .ahdl.transformers.iotransformer import IOTransformer
 from .ahdl.transformers.iotransformer import WaitTransformer
+from .ahdl.transformers.netreducer import NetReducer
+from .ahdl.transformers.netrenamer import NetRenamer
 from .ahdl.transformers.statereducer import StateReducer
 
 from .ir.builtin import builtin_symbols, clear_builtins
@@ -660,6 +662,8 @@ def ahdluse_def(driver, scope):
 def canonicalize(driver, scope):
     hdlmodule = env.hdlscope(scope)
     Canonicalizer().process(hdlmodule)
+    NetReducer().process(hdlmodule)
+    NetRenamer().process(hdlmodule)
 
 
 def dumpscope(driver, scope):
@@ -813,6 +817,7 @@ def compile_plan():
 
         apply_argument,
         copyopt,
+        objcopyopt,
         constopt,
         deadcode,
 

@@ -21,7 +21,7 @@ class AHDL(object):
     def is_a(self, cls):
         return is_a(self, cls)
 
-    def find_ahdls(self, typ):
+    def find_ahdls(self, typ: type['AHDL']) -> list['AHDL']:
         ahdls = []
 
         def find_ahdls_rec(ahdl, typ, ahdls):

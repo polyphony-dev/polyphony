@@ -158,10 +158,10 @@ class Canonicalizer(AHDLTransformer):
     def visit_AHDL_MOVE(self, ahdl):
         if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_net():
             self.hdlmodule.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
-            return AHDL_NOP(f'{self.visit(ahdl.dst)} <= {self.visit(ahdl.src)};')
+            return AHDL_NOP('')
         elif ahdl.dst.is_a(AHDL_SUBSCRIPT) and ahdl.dst.memvar.sig.is_netarray():
             self.hdlmodule.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
-            return AHDL_NOP(f'{self.visit(ahdl.dst)} <= {self.visit(ahdl.src)};')
+            return AHDL_NOP('')
         src = self.visit(ahdl.src)
         dst = self.visit(ahdl.dst)
         return AHDL_MOVE(dst, src)

@@ -34,7 +34,7 @@ class HDLModule(HDLScope):
         self.constants = {}
         self.sub_modules = {}
         self.functions = []
-        self.decls = defaultdict(list)
+        self.decls: list[AHDL_DECL] = []
         self.fsms = {}
         self.node2if = {}
         self.edge_detectors:set[tuple[AHDL_VAR, AHDL_EXP, AHDL_EXP]] = set()
@@ -60,10 +60,8 @@ class HDLModule(HDLScope):
             for sig, acc in connections:
                 s += '    connection : .{}({}) \n'.format(sig.name, acc.name)
         s += '-- declarations --\n'
-        for tag, decls in self.decls.items():
-            s += 'tag : {}\n'.format(tag)
-            for decl in decls:
-                s += '  {}\n'.format(decl)
+        for decl in self.decls:
+            s += '  {}\n'.format(decl)
         s += '\n'
         s += '-- fsm --\n'
         for name, fsm in self.fsms.items():
@@ -126,24 +124,21 @@ class HDLModule(HDLScope):
 
     def add_static_assignment(self, assign, tag=''):
         assert isinstance(assign, AHDL_ASSIGN)
-        self.add_decl(tag, assign)
+        self.add_decl(assign)
 
-    def get_static_assignment(self):
-        assigns = []
-        for tag, decls in self.decls.items():
-            assigns.extend([(tag, decl) for decl in decls if isinstance(decl, AHDL_ASSIGN)])
+    def get_static_assignment(self) -> list[AHDL_ASSIGN]:
+        assigns = [decl for decl in self.decls if isinstance(decl, AHDL_ASSIGN)]
         return assigns
 
-    def add_decl(self, tag, decl):
+    def add_decl(self, decl):
         assert isinstance(decl, AHDL_DECL)
-        if isinstance(decl, AHDL_VAR_DECL):
-            if decl.name in (d.name for d in self.decls[tag] if type(d) == type(decl)):
-                return
-        self.decls[tag].append(decl)
+        if decl in set(self.decls):
+            return
+        self.decls.append(decl)
 
-    def remove_decl(self, tag, decl):
+    def remove_decl(self, decl):
         assert isinstance(decl, AHDL_DECL)
-        self.decls[tag].remove(decl)
+        self.decls.remove(decl)
 
     def add_sub_module(self, name:str, hdlmodule, connections:list[tuple[AHDL_VAR, Signal]], param_map=None):
         assert isinstance(name, str)

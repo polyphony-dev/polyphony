@@ -84,9 +84,13 @@ class HDLScope(object):
                 sigs.append(sig)
         return sigs
 
-    def remove_sig(self, sig):
-        assert sig.name in self.signals
-        del self.signals[sig.name]
+    def remove_sig(self, sig: str|Signal):
+        if isinstance(sig, str):
+            assert sig in self.signals
+            del self.signals[sig]
+        else:
+            assert sig.name in self.signals
+            del self.signals[sig.name]
 
     def add_subscope(self, signal:Signal, hdlscope:'HDLScope'):
         self.subscopes[signal] = hdlscope
