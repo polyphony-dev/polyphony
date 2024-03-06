@@ -38,11 +38,13 @@ class CopyOpt(IRVisitor):
             src_qsym = cast(tuple[Symbol], qualified_symbols(cast(IRNameExp, cp.src), scope))
             orig = self._find_root_def(src_qsym)
             udupdater = UseDefUpdater(scope)
-            self._replace_copies(scope, udupdater, cp, orig, dst_qsym, copies, worklist)
+            replaced = self._replace_copies(scope, udupdater, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures():
                     udupdater = UseDefUpdater(clos)
                     self._replace_copies(clos, udupdater, cp, orig, dst_qsym, copies, worklist)
+                if replaced:
+                    src_qsym[0].add_tag('free')
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
@@ -92,6 +94,7 @@ class CopyOpt(IRVisitor):
                     if isinstance(mv.src, IRVariable):
                         worklist.append(mv)
                         copies.append(mv)
+        return len(uses) > 0
 
     def _find_root_def(self, qsym: tuple[Symbol]) -> IR|None:
         defs = list(self.scope.usedef.get_stms_defining(qsym))

@@ -121,6 +121,8 @@ class InlineOpt(object):
             if isinstance(call_stm, MOVE):
                 assert call_stm.src == call
                 qsym = cast(tuple[Symbol, ...], qualified_symbols(call_stm.dst, caller))
+                if callee_self.is_free():
+                    qsym[0].add_tag('free')
                 assert all(isinstance(sym, Symbol) for sym in qsym)
                 self_map[callee_self] = qsym2var(qsym, Ctx.LOAD)
             else:
@@ -128,6 +130,8 @@ class InlineOpt(object):
         else:
              assert isinstance(call.func, ATTR)
              receiver_sym = cast(tuple[Symbol, ...], qualified_symbols(call.func.exp, caller))
+             if callee_self.is_free():
+                 receiver_sym[0].add_tag('free')
              self_map[callee_self] = qsym2var(receiver_sym, Ctx.LOAD)
         return self_map
 
@@ -241,13 +245,17 @@ class InlineOpt(object):
                         v.name = new_name
 
     def _merge_closure(self, callee: CalleeScope, caller: CallerScope):
-        for child in callee.children:
-            if child.is_closure():
-                env.remove_scope(child)
-                child.parent = caller
-                env.append_scope(child)
-                self._new_scopes.append(child)
-                caller.append_child(child)
+        closures = callee.closures()
+        if not closures:
+            return
+        assert callee.is_enclosure()
+        for clos in closures:
+            env.remove_scope(clos)
+            clos.parent = caller
+            env.append_scope(clos)
+            self._new_scopes.append(clos)
+            caller.append_child(clos)
+        caller.add_tag('enclosure')
 
     def _clone_callee(self, caller: CallerScope, callee: CalleeScope) -> CalleeScope:
         callee_clone : CalleeScope = cast(CalleeScope, callee.clone('', f'#{self.inline_counts}', parent=callee.parent, recursive=True))
