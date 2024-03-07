@@ -811,11 +811,11 @@ def compile_plan():
         deadcode,
 
         phase(env.PHASE_3),
+        apply_argument,
         eval_type,
         strict_type_prop,
         type_check,
 
-        apply_argument,
         copyopt,
         objcopyopt,
         constopt,

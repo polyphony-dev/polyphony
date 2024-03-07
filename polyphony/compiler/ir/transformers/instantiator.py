@@ -4,6 +4,7 @@ from ..scope import Scope
 from ..ir import *
 from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
+from ..scope import function2method
 from ..types.type import Type
 from ..analysis.usedef import UseDefDetector
 from ..transformers.constopt import ConstantOpt
@@ -88,12 +89,18 @@ class ModuleInstantiator(object):
         if worker.is_instantiated():
             new_worker = worker
         else:
-            new_worker = worker.clone('', f'{worker.instance_number()}', module, recursive=True)
-
+            # A worker is always a method of a module, even if it was just a function
+            new_worker = worker.clone('', f'{worker.instance_number()}', parent=module, recursive=True)
+            if new_worker.is_function():
+                function2method(new_worker, module)
+            assert new_worker.is_method()
         if loop:
             new_worker.add_tag('loop_worker')
         # Replace old worker references with new worker references
-        call.replace(worker.base_name, new_worker.base_name)
+        if worker.is_method():
+            call.replace(worker.base_name, new_worker.base_name)
+        else:
+            call.replace(TEMP(worker.base_name), ATTR(TEMP('self'), new_worker.base_name))
         new_worker.add_tag('instantiated')
         return new_worker
 

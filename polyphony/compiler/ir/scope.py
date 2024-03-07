@@ -629,6 +629,7 @@ class Scope(Tagged, SymbolTable):
         scopes = self.children[:]
         for c in self.children:
             scopes.extend(c.collect_scope())
+        assert len(set(scopes)) == len(scopes)
         return scopes
 
     def param_names(self, with_self=False):
@@ -901,6 +902,20 @@ class NameReplacer(IRVisitor):
 
     def visit_ATTR(self, ir):
         self.visit(ir.exp)
+
+
+def function2method(func_scope, class_scope):
+    assert func_scope.is_function()
+    assert class_scope.is_class()
+    assert func_scope.parent is class_scope
+    func_scope.add_tag('method')
+    func_scope.del_tag('function')
+    self_sym = func_scope.add_sym('self', {'self'}, typ=Type.object(class_scope.name))
+    params = FunctionParams(True)
+    params.add_param(self_sym, None)
+    for psym, defval in zip(func_scope.param_symbols(), func_scope.param_default_values()):
+        params.add_param(psym, defval)
+    func_scope.function_params = params
 
 
 def write_dot(scope, tag):
