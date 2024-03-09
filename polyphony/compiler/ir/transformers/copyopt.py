@@ -55,7 +55,7 @@ class CopyOpt(IRVisitor):
                 cp.block.stms.remove(cp)
 
     def _replace_copies(self, scope: Scope, udupdater: UseDefUpdater, copy_stm: MOVE, orig: IR|None, target: tuple[Symbol], copies: list[MOVE], worklist):
-        uses = list(scope.usedef.get_stms_using(target))
+        uses = sorted(list(scope.usedef.get_stms_using(target)), key=lambda u: u.loc)
         for u in uses:
             qname = tuple(map(lambda s: s.name, target))
             olds = self._find_old_use(scope, u, qname)
@@ -68,6 +68,13 @@ class CopyOpt(IRVisitor):
                 logger.debug('replace FROM ' + str(u))
                 udupdater.update(u, None)
                 u.replace(old, new)
+                if (isinstance(u, MOVE) and
+                        isinstance(u.dst, IRVariable) and
+                        isinstance(u.src, IRVariable) and
+                        u.src.qualified_name == u.dst.qualified_name):
+                    logger.debug('replace result is dead stm ' + str(u))
+                    u.block.stms.remove(u)
+                    continue
                 logger.debug('replace TO ' + str(u))
                 udupdater.update(None, u)
             if u.is_a(PHIBase):
@@ -180,22 +187,13 @@ class ObjCopyOpt(CopyOpt):
     def _find_old_use(self, scope, ir, qname: tuple[str, ...]):
         vars = []
 
-        def find_vars_rec(ir, qname: tuple[str, ...], vars):
+        def find_vars_rec(ir, qname: tuple[str, ...], vars: list[IR]):
             if isinstance(ir, IR):
                 if ir.is_a(ATTR):
                     attr = cast(ATTR, ir)
-                    ir_qsym = qualified_symbols(attr, scope)
-                    attr_sym = ir_qsym[-1]
-                    assert isinstance(attr_sym, Symbol)
-                    attr_t = attr_sym.typ
-                    if attr_t.is_object():
-                        if attr.qualified_name == qname:
-                            vars.append(ir)
-                    elif attr_t.is_seq():
-                        if attr.qualified_name == qname:
-                            vars.append(ir)
-                    elif attr.qualified_name[:-1] == qname:
-                        vars.append(attr.exp)
+                    if attr.qualified_name == qname:
+                        vars.append(attr)
+                    find_vars_rec(attr.exp, qname, vars)
                 elif ir.is_a(TEMP) and len(qname) == 1:
                     temp = cast(TEMP, ir)
                     sym = scope.find_sym(temp.name)

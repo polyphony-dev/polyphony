@@ -460,7 +460,9 @@ class TypeSpecializer(TypePropagation):
 
         assert not callee_scope.is_class()
         if (self.scope.is_testbench() and
-                callee_scope.is_function() and not callee_scope.is_inlinelib()):
+                callee_scope.is_function() and
+                not callee_scope.is_inlinelib() and
+                callee_scope.parent is not self.scope):
             callee_scope.add_tag('function_module')
 
         if callee_scope.is_pure():
