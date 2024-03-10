@@ -40,6 +40,7 @@ class InlineOpt(object):
         self._new_scopes = []
         while not self._process_scopes(scopes):
             # need restart
+            scopes = [s for s in scopes if s.name in env.scopes]
             TypePropagation(is_strict=False).process_scopes(scopes)
         return self._new_scopes
 
