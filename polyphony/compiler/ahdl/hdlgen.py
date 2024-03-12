@@ -204,7 +204,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
         if not self.hdlmodule.scope.is_instantiated():
             return
         for p in self.hdlmodule.scope.module_params:
-            sig = self.hdlmodule.signal(p.copy)
+            sig = self.hdlmodule.signal(p.sym)
             assert sig
             val = 0 if not p.defval else p.defval.value
             self.hdlmodule.parameters.append((sig, val))
@@ -216,23 +216,10 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             if fsm.scope.is_ctor():
                 self._add_roms(self._collector.mem_vars(fsm.name))
                 # remove ctor fsm and add constant parameter assigns
-                for stm in self._collect_module_defs(fsm):
-                    if stm.dst.sig.is_field():
-                        if stm.dst.sig.is_net():
-                            assign = AHDL_ASSIGN(stm.dst, stm.src)
-                            self.hdlmodule.add_static_assignment(assign, '')
+                for stm in self._collect_moves(fsm):
+                    if stm.dst.is_a(AHDL_VAR) and stm.dst.sig.is_net():
+                        assign = AHDL_ASSIGN(stm.dst, stm.src)
+                        self.hdlmodule.add_static_assignment(assign, '')
                 del self.hdlmodule.fsms[fsm.name]
             else:
                 self._process_fsm(fsm)
-
-    def _collect_module_defs(self, fsm):
-        moves = self._collect_moves(fsm)
-        defs = []
-        for mv in moves:
-            if (mv.dst.is_a(AHDL_VAR) and
-                    (mv.dst.sig.is_output() or
-                     mv.dst.sig.is_field())):
-                defs.append(mv)
-        return defs
-
-
