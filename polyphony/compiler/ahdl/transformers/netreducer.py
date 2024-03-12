@@ -59,6 +59,9 @@ class NetReducer(AHDLTransformer):
             src_sig = self._get_signal(assign.src)
             if dst_sig.width != src_sig.width or dst_sig.is_int() != src_sig.is_int():
                 continue
+            # Do not eliminate user-named signals
+            if dst_sig.is_output() or dst_sig.is_field():
+                continue
             self.var_map[dst] = assign.src
         if not self.var_map:
             return False
