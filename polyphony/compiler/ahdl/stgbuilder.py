@@ -10,6 +10,7 @@ from ..ir.block import Block
 from ..ir.ir import *
 from ..ir.irhelper import qualified_symbols, irexp_type
 from ..ir.irvisitor import IRVisitor
+from ..ir.types.type import Type
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -535,14 +536,27 @@ class AHDLTranslator(IRVisitor):
             return AHDL_CONST(dst_sym.id)
         elif name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
-            assert cycle.is_a(CONST)
-            for i in range(cycle.value):
-                self._emit(AHDL_NOP('wait a cycle'),
-                           self.sched_time + i)
+            # If sleep time is less than thredhold, simply generate an empty state
+            if cycle.is_a(CONST) and cycle.value <= env.sleep_sentinel_thredhold:
+                for i in range(cycle.value):
+                    self._emit(AHDL_NOP('wait a cycle'), self.sched_time + i)
+                return
+            # Sleep time is variable or greater than thredhold,
+            # so sleep_sentinel is used to perform wait processing.
+            cn = self.visit(cycle)
+            clkvar = AHDL_VAR(self.hdlmodule.get_clock_signal(), Ctx.LOAD)
+            start = AHDL_MOVE(AHDL_VAR(self.hdlmodule.get_sleep_sentinel_signal(), Ctx.STORE), clkvar)
+            args = ('GtE',
+                    AHDL_OP('Add',
+                            AHDL_VAR(self.hdlmodule.get_sleep_sentinel_signal(), Ctx.LOAD),
+                            cn),
+                    clkvar,
+                    )
+            self._emit(start, self.sched_time)
+            self._emit(AHDL_META_WAIT('WAIT_COND', *args), self.sched_time + 1)
             return
         elif name == 'polyphony.timing.clktime':
-            self.hdlmodule.use_clock_time()
-            return AHDL_VAR(self.hdlmodule.clock_signal, Ctx.LOAD)
+            return AHDL_VAR(self.hdlmodule.get_clock_signal(), Ctx.LOAD)
         elif name in ('polyphony.timing.wait_rising',
                       'polyphony.timing.wait_falling',
                       'polyphony.timing.wait_edge',

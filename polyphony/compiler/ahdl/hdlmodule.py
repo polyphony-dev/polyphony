@@ -40,6 +40,7 @@ class HDLModule(HDLScope):
         self.edge_detectors:set[tuple[AHDL_VAR, AHDL_EXP, AHDL_EXP]] = set()
         self.ahdl2dfgnode = {}
         self.clock_signal = None
+        self.sleep_sentinel_signal = None
 
     @classmethod
     def is_hdlmodule_scope(cls, scope):
@@ -190,6 +191,13 @@ class HDLModule(HDLScope):
                 num_of_states += len(stg.states)
         return num_of_regs, num_of_nets, num_of_states
 
-    def use_clock_time(self):
+    def get_clock_signal(self):
         if self.clock_signal is None:
             self.clock_signal = self.gen_sig(f'{self.name}_clktime', 64)
+        return self.clock_signal
+
+    def get_sleep_sentinel_signal(self):
+        if self.sleep_sentinel_signal is None:
+            self.sleep_sentinel_signal = self.gen_sig(f'{self.name}_sleep_sentinel', 64, {'reg'})
+        return self.sleep_sentinel_signal
+

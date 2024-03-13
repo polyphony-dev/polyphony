@@ -1,6 +1,7 @@
 ﻿from ..ir import *
 from ..irhelper import qualified_symbols
 from ..symbol import Symbol
+from ...common.env import env
 
 UNIT_STEP = 1
 CALL_MINIMUM_STEP = 3
@@ -40,8 +41,10 @@ def get_call_latency(call, stm, scope):
 def get_syscall_latency(call):
     if call.name == 'polyphony.timing.clksleep':
         _, cycle = call.args[0]
-        assert cycle.is_a(CONST)
-        return cycle.value
+        if cycle.is_a(CONST) and cycle.value <= env.sleep_sentinel_thredhold:
+            return cycle.value
+        else:
+            return 1
     elif call.name.startswith('polyphony.timing.wait_'):
         return 0
     if call.name in ('assert', 'print'):
