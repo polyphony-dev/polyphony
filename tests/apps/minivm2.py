@@ -25,8 +25,8 @@ class MiniVM:
         self.append_worker(self.fetch, loop=True)
         self.append_worker(self.decode, loop=True)
         self.append_worker(self.execute, loop=True)
-        self.program = [0x0001, 0x0102, 0x0200, 0x0103, 0x0200, 0xFF00,  # 1 + 2 + 3
-                        0x0002, 0x0103, 0x0400, 0x0104, 0x0400, 0xFF00]  # 2 * 3 * 4
+        self.program = (0x0001, 0x0102, 0x0200, 0x0103, 0x0200, 0xFF00,  # 1 + 2 + 3
+                        0x0002, 0x0103, 0x0400, 0x0104, 0x0400, 0xFF00)  # 2 * 3 * 4
         self.pc = start_addr
         self.end_addr = end_addr
 
