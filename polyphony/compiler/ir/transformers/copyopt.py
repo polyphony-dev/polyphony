@@ -166,7 +166,8 @@ class CopyCollector(IRVisitor):
             src_t = src_sym.typ
             if src_sym.is_param():  # or ir.src.sym.typ.is_list():
                 return
-            if src_t != dst_t:
+            # compare without explicit attribute
+            if src_t.clone(explicit=True) != dst_t.clone(explicit=True):
                 return
             self.copies.append(ir)
         elif ir.src.is_a(ATTR):
