@@ -24,7 +24,6 @@ class FSM(object):
                     s.parent = None
 
 class HDLModule(HDLScope):
-    #Port = namedtuple('Port', ['name', 'width'])
     def __init__(self, scope, name, qualified_name):
         super().__init__(scope, name, qualified_name)
         self._inputs:list[AHDL_VAR] = []
@@ -36,7 +35,6 @@ class HDLModule(HDLScope):
         self.functions = []
         self.decls: list[AHDL_DECL] = []
         self.fsms = {}
-        self.node2if = {}
         self.edge_detectors:set[tuple[AHDL_VAR, AHDL_EXP, AHDL_EXP]] = set()
         self.ahdl2dfgnode = {}
         self.clock_signal = None

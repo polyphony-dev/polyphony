@@ -43,7 +43,7 @@ def from_python(src_file, target_name, args, module_instance=None):
             continue
         hdlmodule = env.hdlscope(s)
         #print(hdlmodule)
-        model = SimulationModelBuilder(hdlmodule, py_module_instance).build()
+        model = SimulationModelBuilder().build(hdlmodule, py_module_instance)
         break
     return model
 
@@ -60,5 +60,3 @@ def import_module(code, filename):
 
 def from_object(object):
     print(vars(object))
-
-

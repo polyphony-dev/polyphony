@@ -1,11 +1,15 @@
+import inspect
 import types
 import operator
 import os
+from optparse import OptionParser
 from .compiler.common.common import Tagged
 from .compiler.common.common import get_src_text
 from .compiler.ahdl.ahdl import *
 from .compiler.ahdl.ahdlvisitor import AHDLVisitor
 from .compiler.ahdl.signal import Signal
+from .compiler.ahdl.hdlscope import HDLScope
+from .compiler.ahdl.hdlmodule import HDLModule
 from .compiler.ir.ir import Ctx
 
 
@@ -185,7 +189,7 @@ class Reg(Value):
             val = v & mask
         else:
             val = v
-        if self.sign:
+        if self.sign and isinstance(v, int):
             self.next = twos_comp(val, self.width)
         else:
             self.next = val
@@ -215,6 +219,7 @@ class Port(object):
         self._direction = direction
         self._exp = None
         self._init = init
+        self.value = None
 
     def _set_value(self, value):
         assert isinstance(value, (Net, Reg))
@@ -283,6 +288,12 @@ class ModelEvaluator(AHDLVisitor):
         self.model = model
         self.updated_sigs = set()
 
+
+    def visit(self, ahdl):
+        # if ahdl.is_a(AHDL_STM):
+        #     print('eval', ahdl)
+        return super().visit(ahdl)
+
     def eval(self):
         self._eval_decls()
         while self.updated_sigs:
@@ -293,21 +304,38 @@ class ModelEvaluator(AHDLVisitor):
             self.visit(task)
 
     def _eval_decls(self):
-        for tag, decls in self.model._decls.items():
-            for decl in decls:
-                self.visit(decl)
+        for decl in self.model._decls:
+            self.visit(decl)
+
+    def _find_model(self, ahdl):
+        assert isinstance(ahdl, AHDL_VAR)
+        model = self.model
+        for v in ahdl.vars[:-1]:
+            if v.is_subscope():
+                model = getattr(model, v.name)
+        return model
+
+    def _collect_model(self, model):
+        models = [model]
+        for v in vars(model).values():
+            if isinstance(v, Model):
+                model_core = getattr(v, '__model')
+                models.extend(self._collect_model(model_core))
+        return models
 
     def update_regs(self):
-        regs = [x for x in vars(self.model).values() if isinstance(x, Reg)]
-        for reg in regs:
-            reg.val = reg.next
-        regarrays = [x for x in vars(self.model).values() if isinstance(x, tuple) and isinstance(x[0], Reg)]
-        for regarray in regarrays:
-            for reg in regarray:
+        models = self._collect_model(self.model)
+        for model in models:
+            regs = [x for x in vars(model).values() if isinstance(x, Reg)]
+            for reg in regs:
                 reg.val = reg.next
-        regs = [x.value for x in vars(self.model).values() if isinstance(x, Port) and isinstance(x.value, Reg)]
-        for reg in regs:
-            reg.val = reg.next
+            regarrays = [x for x in vars(model).values() if isinstance(x, tuple) and isinstance(x[0], Reg)]
+            for regarray in regarrays:
+                for reg in regarray:
+                    reg.val = reg.next
+            regs = [x.value for x in vars(model).values() if isinstance(x, Port) and isinstance(x.value, Reg)]
+            for reg in regs:
+                reg.val = reg.next
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):
@@ -318,7 +346,8 @@ class ModelEvaluator(AHDLVisitor):
             assert False
 
     def visit_AHDL_VAR(self, ahdl):
-        v = getattr(self.model, ahdl.sig.name)
+        model = self._find_model(ahdl)
+        v = getattr(model, ahdl.sig.name)
         assert v is not None
         assert isinstance(v, (Reg, Net, Integer, Port))
         if ahdl.ctx is Ctx.LOAD:
@@ -326,7 +355,8 @@ class ModelEvaluator(AHDLVisitor):
         return v
 
     def visit_AHDL_MEMVAR(self, ahdl):
-        mem = getattr(self.model, ahdl.sig.name)
+        model = self._find_model(ahdl)
+        mem = getattr(model, ahdl.sig.name)
         assert mem
         assert isinstance(mem, tuple)
         return mem
@@ -658,49 +688,58 @@ class Model(object):
         return model_core._call_body(*args, **kwargs)
 
 class SimulationModelBuilder(object):
-    def __init__(self, hdlmodule, pymodule):
-        self.hdlmodule = hdlmodule
-        self.model = types.SimpleNamespace()
-        self.model.hdlmodule = hdlmodule
-        self.pymodule = pymodule
+    def build(self, hdlmodule: HDLScope, pymodule):
+        model = types.SimpleNamespace()
+        for sig, subscope in hdlmodule.subscopes.items():
+            subpymodule = getattr(pymodule, sig.name)
+            sub = self.build(subscope, subpymodule)
+            setattr(model, sig.name, sub)
 
-    def build(self):
-        self.model._tasks = self.hdlmodule.tasks
-        self.model._decls = self.hdlmodule.decls
-        if self.hdlmodule.scope.is_function_module():
-            self.build_function()
+        model.hdlmodule = hdlmodule
+        if isinstance(hdlmodule, HDLModule):
+            model._tasks = hdlmodule.tasks
+            model._decls = hdlmodule.decls
         else:
-            self.build_module()
-        return Model(self.model)
+            model._tasks = []
+            model._decls = []
+        if hdlmodule.scope.is_function_module():
+            self.build_function(hdlmodule, model)
+        else:
+            self.build_module(hdlmodule, model, pymodule)
+        return Model(model)
 
-    def build_function(self):
-        self._add_signals()
-        self._add_function_call()
-        self._make_io_object_for_function()
-        self._make_rom_function()
+    def build_function(self, hdlscope: HDLScope, model):
+        self._add_signals(hdlscope, model)
+        self._add_function_call(hdlscope, model)
+        self._make_io_object_for_function(hdlscope, model)
+        if isinstance(hdlscope, HDLModule):
+            self._make_rom_function(hdlscope, model)
 
-    def build_module(self):
-        self._add_signals()
-        self._make_io_object_for_module()
-        self._make_rom_function()
+    def build_module(self, hdlscope: HDLScope, model, pymodule):
+        self._add_signals(hdlscope, model)
+        self._make_io_object_for_module(hdlscope, model, pymodule)
+        self._add_user_method(model, pymodule)
+        if isinstance(hdlscope, HDLModule):
+            self._make_rom_function(hdlscope, model)
 
-    def _add_signals(self):
-        for sig in self.hdlmodule.get_signals({'constant', 'reg', 'net', 'regarray', 'netarray', 'rom'}, {'input', 'output'}):
+    def _add_signals(self, hdlscope: HDLScope, model):
+        for sig in hdlscope.get_signals({'constant', 'reg', 'net', 'regarray', 'netarray', 'rom'}, {'input', 'output'}):
             if sig.is_constant():
-                val = self.hdlmodule.constants[sig]
-                setattr(self.model, sig.name, Integer(val, sig.width, sign=sig.is_int()))
+                val = hdlscope.constants[sig]
+                setattr(model, sig.name, Integer(val, sig.width, sign=sig.is_int()))
                 continue
             elif sig.is_reg():
                 val = int(sig.init_value) if sig.is_initializable() else 0
-                setattr(self.model, sig.name, Reg(val, sig.width, sig))
+                if sig.width > 0:
+                    setattr(model, sig.name, Reg(val, sig.width, sig))
                 continue
             elif sig.is_net():
-                setattr(self.model, sig.name, Net(0, sig.width, sig))
+                setattr(model, sig.name, Net(0, sig.width, sig))
                 continue
             elif sig.is_regarray():
                 val = int(sig.init_value) if sig.is_initializable() else 0
                 xs = [Reg(val, sig.width[0], sig) for _ in range(sig.width[1])]
-                setattr(self.model, sig.name, tuple(xs))
+                setattr(model, sig.name, tuple(xs))
                 continue
             elif sig.is_netarray():
                 assert False
@@ -708,43 +747,35 @@ class SimulationModelBuilder(object):
                 continue
             assert False
 
-    def get_input_signals(self):
-        return [sig for sig in self.hdlmodule.get_signals({'input'})]
+    def get_input_signals(self, hdlscope: HDLScope):
+        return [sig for sig in hdlscope.get_signals({'input'})]
 
-    def get_output_signals(self):
-        return [sig for sig in self.hdlmodule.get_signals({'output'})]
+    def get_output_signals(self, hdlscope: HDLScope):
+        return [sig for sig in hdlscope.get_signals({'output'})]
 
-    def _find_port_with_suffix(self, suffix, exclude_names):
-        for k, v in vars(self.model).items():
-            if isinstance(v, Port) and k.endswith(suffix) and k not in exclude_names:
-                return k, v
-        return None, None
-
-    def _find_port(self, name):
-        for k, v in vars(self.model).items():
-            if isinstance(v, Port) and k == name:
-                return v
-        return None
-
-    def _collect_ports_from_module_object(self, m, qualified_name, ports):
-        for k, v in vars(m).items():
+    def _collect_ports_from_module_object(self, pymodule, qualified_name, ports):
+        for k, v in vars(pymodule).items():
             if isinstance(v, Port):
-                ports[qualified_name + (k,), m] = v
-            elif hasattr(v.__class__, 'interface_tag'):
+                ports[qualified_name + (k,), pymodule] = v
+            elif hasattr(v, '__dict__'):
                 self._collect_ports_from_module_object(v, qualified_name + (k,), ports)
 
-    def _make_io_object_for_module(self):
-        # add clk and rst
-        clksig = self.hdlmodule.signal('clk')
-        setattr(self.model, clksig.name, Reg(0, clksig.width, clksig))
-        rstsig = self.hdlmodule.signal('rst')
-        setattr(self.model, rstsig.name, Reg(0, rstsig.width, rstsig))
+    def _make_io_object_for_module(self, hdlscope: HDLScope, model, pymodule):
+        if isinstance(hdlscope, HDLModule):
+            # add clk and rst
+            clksig = hdlscope.signal('clk')
+            assert isinstance(clksig, Signal)
+            setattr(model, clksig.name, Reg(0, clksig.width, clksig))
+            rstsig = hdlscope.signal('rst')
+            assert isinstance(rstsig, Signal)
+            setattr(model, rstsig.name, Reg(0, rstsig.width, rstsig))
 
         # add IO ports
         ports = {}
-        self._collect_ports_from_module_object(self.pymodule, tuple(), ports)
-        in_sigs = self.get_input_signals()
-        out_sigs = self.get_output_signals()
+        if pymodule:
+            self._collect_ports_from_module_object(pymodule, tuple(), ports)
+        in_sigs = self.get_input_signals(hdlscope)
+        out_sigs = self.get_output_signals(hdlscope)
         in_sig_names = [s.name for s in in_sigs]
         out_sig_names = [s.name for s in out_sigs]
         for (names, owner), port in ports.items():
@@ -755,9 +786,9 @@ class SimulationModelBuilder(object):
                 input_object = Reg(0, sig.width, sig)
                 port._set_value(input_object)
 
-                setattr(self.model, sig.name, port)
-                if owner is not self.pymodule:
-                    setattr(self.model, names[0], owner)
+                setattr(model, sig.name, port)
+                if owner is not pymodule:
+                    setattr(model, names[0], owner)
             elif name in out_sig_names:
                 idx = out_sig_names.index(name)
                 sig = out_sigs[idx]
@@ -768,19 +799,19 @@ class SimulationModelBuilder(object):
                     output_object = Net(0, sig.width, sig)
                 port._set_value(output_object)
 
-                setattr(self.model, sig.name, port)
-                if owner is not self.pymodule:
-                    setattr(self.model, names[0], owner)
+                setattr(model, sig.name, port)
+                if owner is not pymodule:
+                    setattr(model, names[0], owner)
 
-    def _make_io_object_for_function(self):
-        for sig in self.hdlmodule.get_signals({'input', 'output'}):
+    def _make_io_object_for_function(self, hdlscope: HDLScope, model):
+        for sig in hdlscope.get_signals({'input', 'output'}):
             if sig.is_input():
                 assert sig.is_net()
                 # Input is of type net, but generated as Reg for simulation
                 input_object = Reg(0, sig.width, sig)
                 if sig.is_single_port():
                     input_object = Port(input_object)
-                setattr(self.model, sig.name, input_object)
+                setattr(model, sig.name, input_object)
             elif sig.is_output():
                 if sig.is_reg():
                     val = int(sig.init_value) if sig.is_initializable() else 0
@@ -789,12 +820,23 @@ class SimulationModelBuilder(object):
                     output_object = Net(0, sig.width, sig)
                 if sig.is_single_port():
                     output_object = Port(output_object)
-                setattr(self.model, sig.name, output_object)
+                setattr(model, sig.name, output_object)
+
+    def _add_user_method(self, model, pymodule):
+        funcs = inspect.getmembers(OptionParser, inspect.isfunction)
+        for attr_name in dir(pymodule):
+            attr = getattr(pymodule, attr_name)
+            if attr_name.startswith("__"):
+                continue
+            if not callable(attr):
+                continue
+            # attr is user defined method
+            setattr(model, attr_name, attr)
 
     def convert_py_interface_to_hdl_interface(self):
         pass
 
-    def _add_function_call(self):
+    def _add_function_call(self, hdlscope: HDLScope, model):
         def _funcall(model, fn_name, args):
             ready  = getattr(model, f'{fn_name}_ready')
             valid  = getattr(model, f'{fn_name}_valid')
@@ -821,22 +863,22 @@ class SimulationModelBuilder(object):
 
         def call_body(*args, **kwargs):
             arg_and_names = []
-            param_names = self.hdlmodule.scope.param_names()
-            default_values = self.hdlmodule.scope.param_default_values()
+            param_names = hdlscope.scope.param_names()
+            default_values = hdlscope.scope.param_default_values()
             for i, v in enumerate(args):
                 arg_and_names.append((param_names[i], v))
             for k, v in kwargs.items():
                 arg_and_names.append((k, v))
             for param_name, defval in list(zip(param_names, default_values))[len(arg_and_names):]:
                 arg_and_names.append((param_name, defval.value))
-            return _funcall(self.model, self.hdlmodule.name, arg_and_names)
+            return _funcall(model, hdlscope.name, arg_and_names)
 
-        setattr(self.model, '_call_body', call_body)
+        setattr(model, '_call_body', call_body)
 
-    def _make_rom_function(self):
-        for fn in self.hdlmodule.functions:
+    def _make_rom_function(self, hdlmodule: HDLModule, model):
+        for fn in hdlmodule.functions:
             for i in fn.inputs:
-                assert not hasattr(self.model, i.sig.name)
-                setattr(self.model, i.sig.name, Net(0, i.sig.width, i.sig))
-            assert not hasattr(self.model, fn.output.sig.name)
-            setattr(self.model, fn.output.sig.name, Net(0, fn.output.sig.width[0], fn.output.sig))
+                assert not hasattr(model, i.sig.name)
+                setattr(model, i.sig.name, Net(0, i.sig.width, i.sig))
+            assert not hasattr(model, fn.output.sig.name)
+            setattr(model, fn.output.sig.name, Net(0, fn.output.sig.width[0], fn.output.sig))

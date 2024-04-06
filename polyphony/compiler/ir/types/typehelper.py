@@ -128,6 +128,8 @@ def type_from_typeclass(scope: Scope, explicit=True) -> Type:
             return Type.list(Type.undef(), explicit=explicit)
         elif scope.base_name == 'tuple':
             return Type.tuple(Type.undef(), Type.ANY_LENGTH, explicit=explicit)
+        elif scope.base_name == 'type':
+            return Type.klass(None)
         else:
             assert False
     elif scope.parent.name == 'polyphony.typing':

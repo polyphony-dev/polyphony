@@ -496,7 +496,6 @@ def objtrans(driver, scope):
 
 def scalarize(driver, scope):
     #FlattenObjectArgs().process(scope)
-    #dumpscope(driver, scope)
     FlattenFieldAccess().process(scope)
     #dumpscope(driver, scope)
     checkcfg(driver, scope)
