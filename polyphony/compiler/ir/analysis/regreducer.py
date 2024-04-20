@@ -74,6 +74,8 @@ class AliasVarDetector(IRVisitor):
                     return
             else:
                 return
+        elif ir.src.is_a(NEW):
+            return
         elif ir.src.is_a(SYSCALL):
             if ir.src.name == '$new':
                 return

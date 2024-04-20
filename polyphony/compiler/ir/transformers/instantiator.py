@@ -108,7 +108,8 @@ class ModuleInstantiator(object):
 class ArgumentApplier(object):
     def process_all(self):
         scopes : list[Scope] = []
-        scopes.append(Scope.global_scope())
+        top = Scope.global_scope()
+        scopes = [top] + [s for s in top.children if s.is_testbench() and len(s.param_names()) == 0]
         while scopes:
             scopes = self.process_scopes(scopes)
 
@@ -139,6 +140,7 @@ class ArgumentApplier(object):
         return next_scopes
 
     def _bind_args(self, caller_scope: Scope, args: list[tuple[str, IRExp]], callee: Scope):
+        assert callee.parent.is_module()
         binding: list[tuple[int, IRExp]] = []
         module_param_vars: list[tuple[str, IRExp]] = []
         param_names = callee.param_names()
@@ -157,8 +159,8 @@ class ArgumentApplier(object):
                 args.pop(i)
             UseDefDetector().process(callee)
             ConstantOpt().process(callee)
-        if callee.parent.is_module():
-            callee.parent.build_module_params(module_param_vars)
+            callee.parent.set_bound_args(binding)
+        callee.parent.build_module_params(module_param_vars)
 
 
 class CallCollector(IRVisitor):

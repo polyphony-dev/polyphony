@@ -99,11 +99,8 @@ def add_files(lst, patterns):
 def exec_test_entry(t, options, suite_results):
     if not options.silent:
         print(t)
-    finishes = simu.exec_test(t, options)
-    if finishes:
-        suite_results[t] = ','.join(finishes)
-    else:
-        suite_results[t] = 'FAIL'
+    hdl_finishes, py_finishes = simu.exec_test(t, options)
+    suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
 
 
 def suite(options, ignores):

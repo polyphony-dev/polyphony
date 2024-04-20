@@ -30,7 +30,9 @@ class TypePropagation(IRVisitor):
         self.is_strict = is_strict
 
     def process_all(self):
-        return self.process_scopes([Scope.global_scope()])
+        top = Scope.global_scope()
+        target_scopes = [top] + [s for s in top.children if s.is_testbench() and len(s.param_names()) == 0]
+        return self.process_scopes(target_scopes)
 
     def process_scopes(self, scopes):
         self._new_scopes = []

@@ -68,6 +68,7 @@ def module(cls):
        self._kwargs = kwargs
        orig_init(self, *args, **kwargs)
     cls.__init__ = init_wrapper
+    cls._is_module = True
     return cls
 
 
@@ -90,26 +91,8 @@ Usage::
     test(m)
 ::
 '''
-def testbench(target):
-    from .compiler import from_python
-    from .simulator import Simulator
-    def _testbench(test):
-        def _wrapper(module_instance=None):
-            # Execution by exec() from inside from_python() ignores testbench
-            if target.__module__ == 'polyphony_internal_imported_module':
-                return
-            source = inspect.getsourcefile(target)
-            model = from_python(source, target.__name__, '', module_instance=module_instance)
-            simu = Simulator(model)
-            simu.begin()
-            if module_instance:
-                test(model)
-            else:
-                test.__globals__[target.__name__] = model
-                test()
-            simu.end()
-        return _wrapper
-    return _testbench
+def testbench(test):
+    return test
 
 
 # @pure decorator
@@ -153,6 +136,9 @@ def pure(func):
 def is_worker_running():
     pass
 
+def interface(cls):
+    return cls
+
 class _Rule(object):
     class _Stub(object):
         def __init__(self, **kwargs):
@@ -189,3 +175,27 @@ def unroll(seq, factor='full'):
 
 #class Net:
 #    pass
+
+
+@module
+class Channel:
+    def __init__(self, dtype:type, capacity=4):
+        pass
+
+    def put(self, v):
+        pass
+
+    def get(self):
+        pass
+
+    def full(self):
+        pass
+
+    def empty(self):
+        pass
+
+    def will_full(self):
+        pass
+
+    def will_empty(self):
+        pass

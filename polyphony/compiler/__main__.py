@@ -426,7 +426,9 @@ def detectrom(driver):
 
 
 def instantiate(driver):
-    modules = find_called_module([Scope.global_scope()])
+    top = Scope.global_scope()
+    scopes = [top] + [s for s in top.children if s.is_testbench() and len(s.param_names()) == 0]
+    modules = find_called_module(scopes)
     for module, _, _ in modules:
         module.add_tag('top_module')
     while True:

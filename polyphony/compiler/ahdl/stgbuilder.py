@@ -508,7 +508,16 @@ class AHDLTranslator(IRVisitor):
         return ahdl_call
 
     def visit_NEW(self, ir):
-        assert False, 'It must be inlined'
+        callee_scope = ir.get_callee_scope(self.scope)
+        if callee_scope.is_module():
+            assert len(ir.args) == 0
+            assert isinstance(self.current_stm, MOVE)
+            dst_sym = qualified_symbols(self.current_stm.dst, self.scope)[-1]
+            assert isinstance(dst_sym, Symbol)
+            sig = self._make_signal(self.hdlmodule, dst_sym)
+            self.hdlmodule.add_subscope(sig, env.hdlscope(callee_scope))
+        else:
+            assert False, 'It must be inlined'
 
     def translate_builtin_len(self, syscall):
         _, mem = syscall.args[0]
@@ -668,6 +677,7 @@ class AHDLTranslator(IRVisitor):
         if sig:
             return sig
         sig = hdlscope.gen_sig(sig_name, width, tags, sym)
+        # TODO: remove this
         if sig.is_subscope() or sig.is_dut():
             hdlscope.add_subscope(sig, env.hdlscope(sym.typ.scope))
         if sig.is_single_port() and sig.is_initializable():

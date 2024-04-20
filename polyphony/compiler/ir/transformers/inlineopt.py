@@ -57,6 +57,8 @@ class InlineOpt(object):
             if not env.config.perfect_inlining:
                 if caller.is_testbench() and callee.is_function_module():
                     continue
+            if caller.is_testbench() and callee.is_ctor() and callee.parent.is_module():
+                continue
             if caller.is_namespace() and callee.is_method():
                 continue
             ret = self._inlining(caller, callee, call_irs)

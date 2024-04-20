@@ -355,6 +355,7 @@ class Scope(Tagged, SymbolTable):
         self.branch_graph = Graph()
         self.module_params = []
         self.module_param_vars = []
+        self._bound_args = []
 
     def __str__(self):
         s = '================================\n'
@@ -889,6 +890,9 @@ class Scope(Tagged, SymbolTable):
             ctor.function_params.remove(sym)
         self.module_param_vars = module_param_vars
         self.module_params = module_params
+
+    def set_bound_args(self, binding: list[tuple[int, IRExp]]):
+        self._bound_args = [str(exp) for i, exp in binding]
 
 
 class NameReplacer(IRVisitor):
