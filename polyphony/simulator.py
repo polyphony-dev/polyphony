@@ -28,6 +28,7 @@ class Value(Tagged):
         self.width = width
         self.sign = sign
         self.signal = signal
+        self.val = 'X'
         self.set(val)
 
     def set(self, v):
@@ -35,11 +36,14 @@ class Value(Tagged):
             mask = (1 << self.width) - 1
             val = v & mask
             if self.sign:
-                self.val = twos_comp(val, self.width)
+                new_val = twos_comp(val, self.width)
             else:
-                self.val = val
+                new_val = val
         elif isinstance(v, str):
-            self.val = v
+            new_val = v
+        is_update = self.val != new_val
+        self.val = new_val
+        return is_update
 
     def get(self):
         return self.val
@@ -189,9 +193,12 @@ class Reg(Value):
         else:
             val = v
         if self.sign and isinstance(v, int):
-            self.next = twos_comp(val, self.width)
+            new_next = twos_comp(val, self.width)
         else:
-            self.next = val
+            new_next = val
+        is_update = self.val != new_next
+        self.next = new_next
+        return is_update
 
 
 current_simulator = None
@@ -211,10 +218,17 @@ def clktime():
         raise RuntimeError()
     return current_simulator.clock_time
 
+def clkrange(n):
+    if current_simulator is None:
+        raise RuntimeError()
+    for i in range(n):
+        yield i
+        current_simulator._period(n)
+
 
 class Port(object):
     def __init__(self, dtype, direction, init=None, **kwargs):
-        pass
+        self.value = None
 
     def _set_value(self, value):
         assert isinstance(value, (Net, Reg))
@@ -624,8 +638,8 @@ class ModelEvaluator(AHDLVisitor):
         dst = self.visit(ahdl.dst)
         assert isinstance(src, Integer)
         assert isinstance(dst, Net)
-        if dst.get() != src.get():
-            dst.set(src.get())
+        is_update = dst.set(src.get())
+        if is_update:
             self.updated_sigs.add(ahdl.dst.sig)
 
     def visit_AHDL_EVENT_TASK(self, ahdl):

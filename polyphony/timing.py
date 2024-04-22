@@ -2,7 +2,7 @@
 The polyphony.timing library provides functions for timing control.
 '''
 from . import typing
-from .simulator import clkfence, clksleep, clktime
+from .simulator import clkfence, clksleep, clktime, clkrange
 
 # @timed decorator
 def timed(cls):
