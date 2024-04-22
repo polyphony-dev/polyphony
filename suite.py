@@ -172,6 +172,7 @@ def suite_main():
     options.verilog_dump = False
     options.verilog_monitor = False
     options.with_path_name = True
+    options.enable_python = True
     if os.path.exists('.suite_ignores'):
         with open('.suite_ignores', 'r') as f:
             default_ignores.extend(f.read().splitlines())
