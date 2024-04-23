@@ -191,3 +191,20 @@ class Canonicalizer(AHDLTransformer):
         return AHDL_MOVE(AHDL_VAR(self.current_state_sig, Ctx.STORE),
                          AHDL_VAR(target_sig, Ctx.LOAD))
 
+
+class FlattenClassFieldSignals(AHDLTransformer):
+    def visit_AHDL_VAR(self, ahdl):
+        if ahdl.is_local_var():
+            return ahdl
+        if ahdl.sig.sym.is_static() and ahdl.sig.sym.scope.is_class():
+            new_sig = self.hdlmodule.gen_sig(ahdl.hdl_name, ahdl.sig.width, ahdl.sig.tags, ahdl.sig.sym)
+            return AHDL_VAR(new_sig, ahdl.ctx)
+        return ahdl
+
+    def visit_AHDL_MEMVAR(self, ahdl):
+        if ahdl.is_local_var():
+            return ahdl
+        if ahdl.sig.sym.is_static() and ahdl.sig.sym.scope.is_class():
+            new_sig = self.hdlmodule.gen_sig(ahdl.hdl_name, ahdl.sig.width, ahdl.sig.tags, ahdl.sig.sym)
+            return AHDL_MEMVAR(new_sig, ahdl.ctx)
+        return ahdl

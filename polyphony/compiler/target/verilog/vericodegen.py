@@ -356,9 +356,7 @@ class VerilogCodeGen(AHDLVisitor):
             if exp.is_a(AHDL_VAR) and exp.sig.is_condition():
                 for assign in self.hdlmodule.get_static_assignment():
                     if assign.dst.is_a(AHDL_VAR) and assign.dst.sig == exp.sig:
-                        remove_assign = assign
                         exp_str = self.visit(assign.src)
-                        self.hdlmodule.remove_decl(remove_assign)
                         break
             exp_str = exp_str.replace('==', '===').replace('!=', '!==')
             self.emit(f'if (!{exp_str}) begin')

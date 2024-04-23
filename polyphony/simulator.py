@@ -82,6 +82,9 @@ class Integer(Value):
     def __floordiv__(self, rhs):
         return self.__bin_op__(operator.floordiv, rhs)
 
+    def __mod__(self, rhs):
+        return self.__bin_op__(operator.mod, rhs)
+
     def __bit_op__(self, op, rhs):
         if self.val == 'X' or rhs.val == 'X':
             return Integer('X', 0, False)
@@ -256,6 +259,10 @@ class Port(object):
     def __repr__(self):
         return f'Port(\'{repr(self.value)}\')'
 
+    @property
+    def signal(self):
+        return self.value.signal
+
 
 class Simulator(object):
     def __init__(self, model):
@@ -323,6 +330,7 @@ class ModelEvaluator(AHDLVisitor):
 
     def eval(self):
         self._eval_decls()
+        self.updated_sigs.add(None)
         while self.updated_sigs:
             self.updated_sigs.clear()
             self._eval_decls()
@@ -522,7 +530,7 @@ class ModelEvaluator(AHDLVisitor):
         dst = self.visit(ahdl.dst)
         assert isinstance(src, Integer)
         assert isinstance(dst, (Reg, Port))
-        #print('AHDL_MOVE', f'{dst.signal.name} = {src}')
+        print(f'{dst.signal.name} = {src}')
         dst.set(src.get())
 
     def visit_AHDL_IO_READ(self, ahdl):
@@ -545,6 +553,7 @@ class ModelEvaluator(AHDLVisitor):
             if cond:
                 cv = self.visit(cond)
                 assert isinstance(cv, Integer)
+                print(f'if {cond} == {cv}')
                 if int(cv):
                     self.visit(blk)
                     break
@@ -562,6 +571,7 @@ class ModelEvaluator(AHDLVisitor):
 
     def visit_AHDL_CASE(self, ahdl):
         state_val = self.visit(ahdl.sel)
+        print(f'case {ahdl.sel} == {state_val}')
         for item in ahdl.items:
             case_val = self.visit(item.val)
             if state_val.get() == case_val.get():
@@ -856,8 +866,11 @@ class SimulationModelBuilder(object):
         def _funcall(model, fn_name, args):
             ready  = getattr(model, f'{fn_name}_ready')
             valid  = getattr(model, f'{fn_name}_valid')
-            out    = getattr(model, f'{fn_name}_out_0')
             accept = getattr(model, f'{fn_name}_accept')
+            if hasattr(model, f'{fn_name}_out_0'):
+                out = getattr(model, f'{fn_name}_out_0')
+            else:
+                out = None
 
             ready.set(1)
             for name, value in args:
@@ -869,7 +882,10 @@ class SimulationModelBuilder(object):
                 clkfence()
             ready.set(0)
 
-            out_value = out.get()
+            if out:
+                out_value = out.get()
+            else:
+                out_value = None
             accept.set(1)
             clkfence()
 

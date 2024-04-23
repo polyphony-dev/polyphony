@@ -19,6 +19,11 @@ class AHDLTransformer(object):
             else:
                 pass
         hdlmodule.decls = new_decls
+        new_funcs = []
+        for func in hdlmodule.functions:
+            new_func = self.visit(func)
+            new_funcs.append(new_func)
+        hdlmodule.functions = new_funcs
         for item in hdlmodule.edge_detectors.copy():
             hdlmodule.edge_detectors.remove(item)
             var, old, new = item

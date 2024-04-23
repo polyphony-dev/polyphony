@@ -16,6 +16,7 @@ from .ahdl.analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdl.transformers.ahdlopt import AHDLCopyOpt
 from .ahdl.transformers.bitwidthreducer import BitwidthReducer
 from .ahdl.transformers.canonical import Canonicalizer
+from .ahdl.transformers.canonical import FlattenClassFieldSignals
 from .ahdl.transformers.iotransformer import IOTransformer
 from .ahdl.transformers.iotransformer import WaitTransformer
 from .ahdl.transformers.netreducer import NetReducer
@@ -861,6 +862,8 @@ def compile_plan():
         dbg(dumpmodule),
         #reducestate,
         #dbg(dumpmodule),
+        ahdl_flatten_class_field,
+        dbg(dumpmodule),
         canonicalize,
     ]
     plan = [p for p in plan if p is not None]
@@ -983,6 +986,11 @@ def output_plan():
 def output_hdl(plan, compiled_scopes, options, stage_offset):
     driver = Driver(plan, compiled_scopes, options, stage_offset)
     driver.run('Output HDL')
+
+
+def ahdl_flatten_class_field(driver, scope):
+    hdlmodule = env.hdlscope(scope)
+    FlattenClassFieldSignals().process(hdlmodule)
 
 
 def ahdl_flatten_signals(driver, scope):

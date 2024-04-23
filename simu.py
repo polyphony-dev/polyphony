@@ -209,14 +209,14 @@ def simulate_on_python(casefile_path, source_text, scopes, simu_options):
                 test()
             finishes.append('OK')
         except AssertionError as e:
-            _, _, tb = sys.exc_info()
-            tb_info = traceback.extract_tb(tb)
-            _, line, _, _ = tb_info[-1]
-            source_lines = source_text.split('\n')
-            print(f'ASSERTION FAILED: {casename}.py:{line} {source_lines[line-1]}')
+            print(f'ASSERTION FAILED: {e.args[0]}')
             print('[PYTHON SIMULATION] FAILED:' + casefile_path)
             finishes.append('FAIL')
         except Exception as e:
+            _, _, tb = sys.exc_info()
+            tb_info = traceback.extract_tb(tb)
+            filename, line, _, code = tb_info[-1]
+            print(f'[PYTHON SIMULATION] INTERNAL ERROR: {filename}[{line}] {code}')
             print(e)
             finishes.append('FAIL')
     return finishes
@@ -226,6 +226,6 @@ if __name__ == '__main__':
     options = parse_options()
     hdl, py = exec_test(options.source, simu_options=options)
     hdl_success = True if '' not in hdl and 'FAIL' not in hdl else False
-    py_success = True if not options.enable_python and ('' not in py or 'FAIL' not in py) else False
+    py_success = True if not options.enable_python or ('' not in py and 'FAIL' not in py) else False
     if hdl_success and py_success:
         print('OK')

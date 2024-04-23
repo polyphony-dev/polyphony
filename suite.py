@@ -85,6 +85,8 @@ def parse_options():
     parser.add_argument('-s', dest='silent', action='store_true')
     parser.add_argument('-f', dest='full', action='store_true')
     parser.add_argument('-n', '--num_cpu', dest='ncpu', type=int, default=1)
+    parser.add_argument('-P', '--python', dest='enable_python', action='store_true',
+                        default=False, help='enable python simulation')
     parser.add_argument('dir', nargs='*')
     return parser.parse_args()
 
@@ -100,7 +102,10 @@ def exec_test_entry(t, options, suite_results):
     if not options.silent:
         print(t)
     hdl_finishes, py_finishes = simu.exec_test(t, options)
-    suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
+    if options.enable_python:
+        suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
+    else:
+        suite_results[t] = f'{",".join(hdl_finishes)}'
 
 
 def suite(options, ignores):
@@ -172,7 +177,6 @@ def suite_main():
     options.verilog_dump = False
     options.verilog_monitor = False
     options.with_path_name = True
-    options.enable_python = True
     if os.path.exists('.suite_ignores'):
         with open('.suite_ignores', 'r') as f:
             default_ignores.extend(f.read().splitlines())
