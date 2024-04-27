@@ -64,8 +64,8 @@ class Env(object):
         self.config = Config()
         self.runtime_info = None
         self.outermost_scope_stack = []
-        self.hdlscopes: list[HDLScope] = []
         self.scope2hdlscope: dict[Scope, HDLScope] = {}
+        self.scope2output_hdlscope: dict[Scope, HDLScope] = {}
         self.targets = []
         self.root_dir = ''
 
@@ -101,18 +101,28 @@ class Env(object):
         return self.outermost_scope_stack[-1]
 
     def append_hdlscope(self, hdlscope: HDLScope):
-        self.hdlscopes.append(hdlscope)
-        self.scope2hdlscope[hdlscope.scope] = hdlscope
+        self.append_hdlscope_core(hdlscope, self.scope2hdlscope)
+
+    def append_output_hdlscope(self, hdlscope: HDLScope):
+        self.append_hdlscope_core(hdlscope, self.scope2output_hdlscope)
+
+    def append_hdlscope_core(self, hdlscope: HDLScope, dict):
+        dict[hdlscope.scope] = hdlscope
         if hdlscope.scope.is_module():
             for w in hdlscope.scope.workers:
-                self.scope2hdlscope[w] = hdlscope
+                dict[w] = hdlscope
             ctor = hdlscope.scope.find_ctor()
             if ctor:
-                self.scope2hdlscope[ctor] = hdlscope
+                dict[ctor] = hdlscope
 
     def hdlscope(self, scope: Scope) -> HDLScope:
         assert scope in self.scope2hdlscope
         return self.scope2hdlscope[scope]
+
+    def output_hdlscope(self, scope: Scope) -> HDLScope | None:
+        if scope in self.scope2output_hdlscope:
+            return self.scope2output_hdlscope[scope]
+        return None
 
     def process_log_handler(self, stage, proc):
         logname = f'{self.debug_output_dir}/{stage}_{proc.__name__}.log'

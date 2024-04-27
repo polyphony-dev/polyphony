@@ -32,6 +32,7 @@ class Canonicalizer(AHDLTransformer):
             top_if = AHDL_IF((AHDL_VAR(rst, Ctx.LOAD), None), (reset_blk, case_blk))
             task = AHDL_EVENT_TASK(((clk, 'rising'),), top_if)
             self.hdlmodule.add_task(task)
+        self.hdlmodule.fsms.clear()
 
     def _add_state_constants(self, fsm):
         i = 0

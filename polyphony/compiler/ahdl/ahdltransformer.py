@@ -31,8 +31,17 @@ class AHDLTransformer(object):
             old_ = self.visit(old)
             new_ = self.visit(new)
             hdlmodule.add_edge_detector(var_, old_, new_)
-        for fsm in hdlmodule.fsms.values():
-            self.process_fsm(fsm)
+        if hdlmodule.fsms:
+            assert not hdlmodule.tasks
+            for fsm in hdlmodule.fsms.values():
+                self.process_fsm(fsm)
+        elif hdlmodule.tasks:
+            assert not hdlmodule.fsms
+            new_tasks = []
+            for task in hdlmodule.tasks:
+                new_task = self.visit(task)
+                new_tasks.append(new_task)
+            hdlmodule.tasks = new_tasks
 
     def process_fsm(self, fsm):
         self.current_fsm = fsm

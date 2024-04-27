@@ -1,4 +1,5 @@
 ﻿import os
+from typing import Any
 from .verilog_common import pyop2verilogop, is_verilog_keyword
 from ...ahdl.ahdl import *
 from ...ahdl.ahdlvisitor import AHDLVisitor
@@ -86,9 +87,9 @@ class VerilogCodeGen(AHDLVisitor):
         self.set_indent(-2)
         self.emit('')
 
-    def _generate_parameter_decls(self, parameters):
+    def _generate_parameter_decls(self, parameters: dict[Signal, Any]):
         params = []
-        for sig, val in parameters:
+        for sig, val in parameters.items():
             if sig.is_int():
                 params.append(f'parameter signed [{sig.width-1}:0] {sig.name} = {val}')
             else:

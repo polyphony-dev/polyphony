@@ -974,6 +974,11 @@ def compile_main(src_file, options):
 def output_plan():
     plan = [
         filter_scope(is_hdlmodule_scope),
+        # We may make our own modifications to the normalized (Interpretable)
+        # HDL module for the target output (e.g. VerilogHDL).
+        # To do so, we generate a copy of the normalized HDL module,
+        # make changes to the copy, and pass it to the output process.
+        clone_output_module,
         dumpmodule,
         # TODO: Enable/disable flatten
         ahdl_flatten_signals,
@@ -988,13 +993,22 @@ def output_hdl(plan, compiled_scopes, options, stage_offset):
     driver.run('Output HDL')
 
 
+def clone_output_module(driver, scope):
+    output_hdlmodule = env.output_hdlscope(scope)
+    if output_hdlmodule:
+        return
+    hdlmodule = env.hdlscope(scope)
+    clone = hdlmodule.clone()
+    env.append_output_hdlscope(clone)
+
+
 def ahdl_flatten_class_field(driver, scope):
     hdlmodule = env.hdlscope(scope)
     FlattenClassFieldSignals().process(hdlmodule)
 
 
 def ahdl_flatten_signals(driver, scope):
-    hdlmodule = env.hdlscope(scope)
+    hdlmodule = env.output_hdlscope(scope)
     FlattenSignals().process(hdlmodule)
 
 
@@ -1002,7 +1016,7 @@ def output_verilog(driver):
     options = driver.options
     results = []
     for s in driver.current_scopes:
-        hdlmodule = env.hdlscope(s)
+        hdlmodule = env.output_hdlscope(s)
         code = genhdl(hdlmodule)
         if options.debug_mode:
             logger.debug(code)

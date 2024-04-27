@@ -34,6 +34,27 @@ class HDLScope(object):
                 s += '\n'
         return s
 
+    def clone(self):
+        new = HDLScope(self.scope, self.name, self.qualified_name)
+        new, _ = self.clone_core(new)
+        return new
+
+    def clone_core(self, new):
+        sig_maps: dict[str, dict[Signal, Signal]] = defaultdict(dict)
+        for sig in self.signals.values():
+            new_sig = Signal(new, sig.name, sig.width, sig.tags, sig.sym)
+            new.signals[sig.name] = new_sig
+            new.sig2sym[new_sig] = new_sig.sym
+            self.sym2sigs[new_sig.sym].append(new_sig)
+            sig_maps[new.name][sig] = new_sig
+        for sig, subscope in self.subscopes.items():
+            new_sig = sig_maps[new.name][sig]
+            sub_clone = HDLScope(subscope.scope, subscope.name, subscope.qualified_name)
+            sub_clone, sub_sig_maps = subscope.clone_core(sub_clone)
+            new.subscopes[new_sig] = sub_clone
+            sig_maps.update(sub_sig_maps)
+        return new, sig_maps
+
     def gen_sig(self, name:str, width:int|tuple[int], tag:set[str]|None=None, sym=None) -> Signal:
         if name in self.signals:
             sig = self.signals[name]

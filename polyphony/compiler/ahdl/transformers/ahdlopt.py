@@ -85,23 +85,17 @@ class AHDLVarReducer(AHDLTransformer):
     def visit_AHDL_MOVE(self, ahdl):
         if self._can_reduce(ahdl.dst):
             logger.debug(f'reduce {ahdl}')
-            if self.hdlmodule.signal(ahdl.dst.sig.name):
-                self.hdlmodule.remove_sig(ahdl.dst.sig)
             return None
         return super().visit_AHDL_MOVE(ahdl)
 
     def visit_AHDL_ASSIGN(self, ahdl):
         if self._can_reduce(ahdl.dst):
             logger.debug(f'reduce {ahdl}')
-            if self.hdlmodule.signal(ahdl.dst.sig.name):
-                self.hdlmodule.remove_sig(ahdl.dst.sig)
             return None
         return super().visit_AHDL_ASSIGN(ahdl)
 
     def visit_AHDL_IO_READ(self, ahdl):
         if self._can_reduce(ahdl.dst):
             logger.debug(f'reduce {ahdl}')
-            if self.hdlmodule.signal(ahdl.dst.sig.name):
-                self.hdlmodule.remove_sig(ahdl.dst.sig)
             return None
         return super().visit_AHDL_IO_READ(ahdl)

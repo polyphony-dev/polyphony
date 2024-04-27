@@ -1,9 +1,12 @@
 ﻿from collections import defaultdict
+from copy import deepcopy
+from typing import Any
 from .ahdl import *
 from .stg import STG
 from ..common.env import env
 from .hdlscope import HDLScope
 from logging import getLogger
+from .transformers.ahdlcloner import AHDLCloner
 logger = getLogger(__name__)
 
 
@@ -22,6 +25,12 @@ class FSM(object):
             for s in self.stgs:
                 if s.parent is stg:
                     s.parent = None
+    def clone(self):
+        new = FSM(self.name, self.scope, self.state_var)
+        new.stgs = [stg.clone() for stg in self.stgs]
+        new.outputs = self.outputs.copy()
+        new.reset_stms = self.reset_stms[:]
+        return new
 
 class HDLModule(HDLScope):
     def __init__(self, scope, name, qualified_name):
@@ -29,8 +38,8 @@ class HDLModule(HDLScope):
         self._inputs:list[AHDL_VAR] = []
         self._outputs:list[AHDL_VAR] = []
         self.tasks = []
-        self.parameters = []
-        self.constants = {}
+        self.parameters: dict[Signal, Any] = {}
+        self.constants: dict[Signal, Any] = {}
         self.sub_modules = {}
         self.functions = []
         self.decls: list[AHDL_DECL] = []
@@ -83,6 +92,35 @@ class HDLModule(HDLScope):
         for var in self.outputs():
             s += f'{var.name} {var.sig}\n'
         return s
+
+    def clone(self):
+        new = HDLModule(self.scope, self.name, self.qualified_name)
+        new, sig_maps = super().clone_core(new)
+        new._inputs = self._inputs[:]
+        new._outputs = self._outputs[:]
+        new.tasks = self.tasks[:]
+        for sig, value in self.parameters.items():
+            new.parameters[sig_maps[new.name][sig]] = value
+        for sig, value in self.constants.items():
+            new.constants[sig_maps[new.name][sig]] = value
+        # We already clone subscopes in super().clone_core()
+        for name, sub_module, connections, param_map in self.sub_modules.values():
+            orig_module_sig = self.signal(name)
+            new_module_sig = sig_maps[new.name][orig_module_sig]
+            new_sub_hdlscope = new.subscopes[new_module_sig]
+            new.sub_modules[name] = (name, new_sub_hdlscope, connections, param_map)
+        new.functions = self.functions[:]
+        new.decls = self.decls[:]
+        for fsm in self.fsms.values():
+            new.fsms[fsm.name] = FSM(fsm.name, new.scope, sig_maps[new.name][fsm.state_var])
+        new.edge_detectors = self.edge_detectors.copy()
+        new.ahdl2dfgnode = self.ahdl2dfgnode.copy()
+        if self.clock_signal:
+            new.clock_signal = sig_maps[new.name][self.clock_signal]
+        if self.sleep_sentinel_signal:
+            new.sleep_sentinel_signal = sig_maps[new.name][self.sleep_sentinel_signal]
+        AHDLCloner(sig_maps).process(new)
+        return new
 
     def add_input(self, var:AHDL_VAR):
         self._inputs.append(var)

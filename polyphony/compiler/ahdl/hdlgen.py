@@ -207,7 +207,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             sig = self.hdlmodule.signal(p.sym)
             assert sig
             val = 0 if not p.defval else p.defval.value
-            self.hdlmodule.parameters.append((sig, val))
+            self.hdlmodule.parameters[sig] = val
         self._process_io(self.hdlmodule)
 
         self._collector.process(self.hdlmodule)

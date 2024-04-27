@@ -8,7 +8,7 @@ from .__main__ import compile as compile_polyphony
 from .ahdl.ahdl import *
 
 
-def from_python(src_file, target_name, args, module_instance=None):
+def from_python(src_file, target_name, args):
     from ..simulator import SimulationModelBuilder
 
     options = types.SimpleNamespace()
@@ -22,28 +22,21 @@ def from_python(src_file, target_name, args, module_instance=None):
     options.verilog_monitor = False
     options.targets = [(target_name, args)]
     setup(src_file, options)
-    main_source = read_source(src_file)
-    if not module_instance:
-        m = import_module(main_source, src_file)
-        py_module_class = getattr(m, target_name)
-        if inspect.isclass(py_module_class):
-            # TODO:
-            py_args = [None] * len(args)
-            py_module_instance = py_module_class(*py_args)
-        elif inspect.isfunction(py_module_class):
-            py_module_instance = None
-        else:
-            raise ValueError('module_instance is not a valid type')
-    else:
-        py_module_instance = module_instance
-    scopes = compile_polyphony(compile_plan(), main_source, src_file)
+    source_text = read_source(src_file)
+    scopes = compile_polyphony(compile_plan(), source_text, src_file)
+
+    main_py_module = types.ModuleType('__main__')
+    code_obj = compile(source_text, src_file, 'exec')
+    exec(code_obj, main_py_module.__dict__)
+    py_module_class = main_py_module.__dict__[target_name]
+
     model = None
     for s in scopes:
         if s.orig_base_name != target_name:
             continue
         hdlmodule = env.hdlscope(s)
         #print(hdlmodule)
-        model = SimulationModelBuilder().build(hdlmodule, py_module_instance)
+        model = SimulationModelBuilder().build_model(hdlmodule, main_py_module)
         break
     return model
 
