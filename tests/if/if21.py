@@ -23,8 +23,6 @@ def test():
     assert 10 == if21(0)
     assert 20 == if21(10)
     assert 20 == if21(20)
-    #assert 20 == if20(30)
+    assert 20 == if21(30)
     assert 102 == if21(100)
     assert 202 == if21(200)
-
-test()

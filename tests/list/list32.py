@@ -78,19 +78,17 @@ EXPECTED1 = (2, 2, 6, 4, 10, 6, 14, 8, 18, 10, 22, 12, 26, 14, 30, 16, 34, 18, 3
 
 @testbench
 def test_a():
+    print('test_a')
     list32_a()
 
 
 @testbench
 def test_b():
+    print('test_b')
     list32_b()
 
 
 @testbench
 def test_c():
+    print('test_c')
     list32_c()
-
-
-test_a()
-test_b()
-test_c()

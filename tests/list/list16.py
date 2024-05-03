@@ -23,4 +23,3 @@ def test():
     assert 0 == list16(0, 1)
     assert 4 == list16(1, 2)
     assert 2 == list16(1, 0)
-test()

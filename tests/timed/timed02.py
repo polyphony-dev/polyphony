@@ -30,7 +30,8 @@ class timed02:
 
 @rule(scheduling='timed')
 @testbench
-def test(m):
+def test():
+    m = timed02()
     clkfence()
     clkfence()
     m.i.wr(3)
@@ -43,7 +44,3 @@ def test(m):
     assert 20 == m.o.rd()
     clkfence()
     clkfence()
-
-
-m = timed02()
-test(m)

@@ -18,5 +18,3 @@ def test():
     assert 10 == call02(10)
     assert 20 == call02(20)
     assert 30 == call02(30)
-
-test()

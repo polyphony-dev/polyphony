@@ -32,6 +32,3 @@ def test():
     assert 13 == if17(0, 0)
     assert 2 == if17(1, 1)
     assert 5 == if17(2, 2)
-
-
-test()

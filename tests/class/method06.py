@@ -17,5 +17,3 @@ def test():
     assert 2 == method06(1)
     assert 6 == method06(2)
     assert 12 == method06(3)
-
-test()

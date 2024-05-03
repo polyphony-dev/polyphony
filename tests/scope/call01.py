@@ -2,7 +2,7 @@ from polyphony import testbench
 
 def f():
     return 0
-    
+
 def call01():
     def f():
         return 1
@@ -11,6 +11,3 @@ def call01():
 @testbench
 def test():
     assert 1 == call01()
-
-test()
-    

@@ -14,7 +14,7 @@ class E:
 
 def param05(p, x, y):
     c1 = C(x)
-    c2 = C(y)    
+    c2 = C(y)
     d1 = D(c1)
     d2 = D(c2)
     if p:
@@ -29,5 +29,3 @@ def test():
     assert 2 == param05(True, 2, 3)
     assert 2 == param05(False, 1, 2)
     assert 3 == param05(False, 2, 3)
-    
-test()

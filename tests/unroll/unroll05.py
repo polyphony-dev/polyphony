@@ -32,6 +32,3 @@ def test():
     assert 7 == unroll05_a()
     assert 40 == unroll05_b()
     assert 0 == unroll05_c()
-
-
-test()

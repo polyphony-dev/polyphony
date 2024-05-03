@@ -19,4 +19,3 @@ def test():
     assert 2 == if05(0, 0)
     assert 6 == if05(1, 1)
     assert 16 == if05(10, 10)
-test()

@@ -20,7 +20,3 @@ def for17(stop, p):
 @testbench
 def test():
     assert 65 == for17(10, 1)
-    
-    
-
-test()

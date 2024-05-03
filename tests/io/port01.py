@@ -5,11 +5,12 @@ from polyphony.timing import timed, clkfence
 
 
 @module
-class Port01:
-    def __init__(self):
+class port01:
+    def __init__(self, w):
         self.in0  = Port(bit8, 'in')
         self.out0 = Port(bit8, 'out')
         self.v = 0
+        self.w = w
         self.append_worker(self.main)
 
     @timed
@@ -17,7 +18,7 @@ class Port01:
         # 0
         clkfence()
         # 1
-        self.v = self.in0.rd()
+        self.v = self.in0.rd() + self.w
         clkfence()
         # 2
         self.out0.wr(self.v)
@@ -32,9 +33,12 @@ class Port01:
 
 @timed
 @testbench
-def test(p01):
+def test():
+    p01 = port01(222)
+    p02 = port01(223)
     # 0
     p01.in0.wr(1)
+    p02.in0.wr(1)
     clkfence()
     # 1
     # read from in0 at module
@@ -44,7 +48,9 @@ def test(p01):
     clkfence()
     # 3
     print(p01.out0.rd())
-    assert p01.out0.rd() == 1
+    print(p02.out0.rd())
+    assert p01.out0.rd() == 223
+    assert p02.out0.rd() == 224
     p01.in0.wr(257)
     clkfence()
     # 4
@@ -53,7 +59,3 @@ def test(p01):
     # 5
     print(p01.out0.rd())
     assert p01.out0.rd() == 1
-
-
-p01 = Port01()
-test(p01)

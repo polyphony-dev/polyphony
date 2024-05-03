@@ -33,10 +33,7 @@ class channel02:
 
 @timed
 @testbench
-def test(c):
+def test():
+    c = channel02()
     wait_value(True, c.done)
     assert clktime() == 9
-
-
-c = channel02()
-test(c)

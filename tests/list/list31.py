@@ -33,6 +33,3 @@ def list31(k0):
 @testbench
 def test():
     list31(1)
-
-
-test()

@@ -17,10 +17,8 @@ def func08_b(x):
 def test():
     assert 2 == func08(0)
     assert 4 == func08(1)
-    assert 6 == func08(2)    
+    assert 6 == func08(2)
 
     assert 8 == func08_b(0)
     assert 10 == func08_b(1)
-    assert 12 == func08_b(2)    
-
-test()
+    assert 12 == func08_b(2)

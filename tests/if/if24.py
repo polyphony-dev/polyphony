@@ -21,6 +21,3 @@ def test():
     assert 1 == if24(0)
     assert 2 == if24(1)
     assert 3 == if24(2)
-
-
-test()

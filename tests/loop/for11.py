@@ -12,4 +12,3 @@ def test():
     assert 9 == for11(0)
     assert 14 == for11(5)
     assert 19 == for11(10)
-test()

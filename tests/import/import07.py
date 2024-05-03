@@ -17,6 +17,3 @@ def test():
     print(import07_a1(10))
     assert 250 == import07_a1(10)
     assert 250 == import07_a2(10)
-
-
-test()

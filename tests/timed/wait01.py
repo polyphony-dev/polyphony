@@ -43,7 +43,8 @@ class wait01:
 
 @testbench
 @timed
-def test(m):
+def test():
+    m = wait01()
     wait_rising(m.i_ready)
     clkfence()
     clkfence()
@@ -76,7 +77,3 @@ def test(m):
     assert 222 == m.o.rd()
     clkfence()
     assert 222 == m.o.rd()
-
-
-m = wait01()
-test(m)

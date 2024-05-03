@@ -18,7 +18,3 @@ def test():
     assert 2 == kwargs02(0, spam=2, ham=3, eggs=4)
     assert 3 == kwargs02(1, spam=2, ham=3, eggs=4)
     assert 4 == kwargs02(2, spam=2, ham=3, eggs=4)
-
-
-test()
-

@@ -18,6 +18,3 @@ def test():
     assert clktime() == 14
     elapsed = clktime() - prev.v
     assert elapsed == 10
-
-
-test()

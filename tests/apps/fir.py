@@ -72,9 +72,6 @@ def fir():
     return total
 
 
-@testbench(target=fir)
+@testbench
 def test():
     assert EXPECTED_TOTAL == fir()
-
-
-test()

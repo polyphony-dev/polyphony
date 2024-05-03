@@ -14,4 +14,3 @@ def list04(x):
 def test():
     assert 1 == list04(0)
     assert 5 == list04(4)
-test()

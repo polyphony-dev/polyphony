@@ -9,5 +9,4 @@ def rom05(i):
 def test():
     assert 2 == rom05(0)
     assert 4 == rom05(1)
-    assert 6 == rom05(2)    
-test()
+    assert 6 == rom05(2)

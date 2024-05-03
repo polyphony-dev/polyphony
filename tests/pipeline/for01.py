@@ -11,7 +11,7 @@ def pipe_func(xs, ys, a, b, c):
         print(x)
         ys[i] = x
 
-def pipe01(a, b, c):
+def for01(a, b, c):
     data = [1, 2, 3, 4]
     out_data = [0] * 4
     pipe_func(data, out_data, a, b, c)
@@ -23,7 +23,4 @@ def pipe01(a, b, c):
 
 @testbench
 def test():
-    pipe01(1, 2, 3)
-
-
-test()
+    for01(1, 2, 3)

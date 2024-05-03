@@ -16,6 +16,3 @@ def import09_a1(x):
 def test():
     assert 100 == import09_a1(10)
     #assert 1000 == import09_a2(10)
-
-
-test()

@@ -10,9 +10,6 @@ def list33(a):
 
 
 @testbench
-def test():   
+def test():
     assert 3 * 4 == list33(3)
     assert 6 * 4 == list33(6)
-
-
-test()

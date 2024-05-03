@@ -38,6 +38,3 @@ def test():
     assert 1 == typing07_d(False, True)
     assert 1 == typing07_d(True, False)
     assert 2 == typing07_d(True, True)
-
-
-test()

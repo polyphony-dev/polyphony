@@ -9,4 +9,3 @@ def list14(x):
 @testbench
 def test():
     assert 4 == list14(0)
-test()

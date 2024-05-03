@@ -26,6 +26,3 @@ def test():
     for i in range(8):
         assert data[i] == typing03_a(i)
         assert data[i] == typing03_b(i)
-
-
-test()

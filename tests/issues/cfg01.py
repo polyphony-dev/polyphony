@@ -27,6 +27,3 @@ def cfg01():
 @testbench
 def test():
     assert 30 == cfg01()
-
-
-test()

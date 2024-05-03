@@ -9,7 +9,7 @@ def list09(x):
             dd[j] = t
         swap(d, 0, 1)
         swap(d, 1, 2)
-        
+
     f(data)
     return data[x]
 
@@ -18,4 +18,3 @@ def test():
     assert 1 == list09(0)
     assert 2 == list09(1)
     assert 0 == list09(2)
-test()

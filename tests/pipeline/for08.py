@@ -13,7 +13,7 @@ def pipe_func(xs, ys):
         s = s + v
 
 
-def pipe08():
+def for08():
     data = [0, 16, 32, -16, -64]
     out = [0] * 5
     pipe_func(data, out)
@@ -27,6 +27,4 @@ def pipe08():
 
 @testbench
 def test():
-    pipe08()
-
-test()
+    for08()

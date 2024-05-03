@@ -22,6 +22,3 @@ def unroll04_b():
 def test():
     assert 100 == unroll04_a()
     assert 100 == unroll04_b()
-
-
-test()

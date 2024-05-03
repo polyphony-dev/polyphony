@@ -5,7 +5,7 @@ class Stack:
     def __init__(self, size):
         self.mem = [None] * size
         self.idx = 0
-        
+
     def push(self, x):
         self.mem[self.idx] = x
         self.idx += 1
@@ -14,7 +14,7 @@ class Stack:
         self.idx -= 1
         return self.mem[self.idx]
 
-def stack_test():
+def stack():
     stack = Stack(SIZE)
     stack.push(0)
     stack.push(1)
@@ -27,6 +27,4 @@ def stack_test():
 
 @testbench
 def test():
-    stack_test()
-
-test()
+    stack()

@@ -20,4 +20,3 @@ def test():
     assert 181 == if03(0, 1)
     assert 2 == if03(1, 1)
     assert 290 == if03(0, 2)
-test()

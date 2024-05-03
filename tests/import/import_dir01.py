@@ -12,6 +12,3 @@ def import_dir01():
 @polyphony.testbench
 def test():
     assert True == import_dir01()
-
-
-test()

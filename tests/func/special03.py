@@ -9,7 +9,7 @@ def g(d:list):
 def special03(x):
     data1 = [1, 2, 3]
     data2 = [4, 5, 6]
-    
+
     x = g(data1)
     y = g(data2)
     return x + y
@@ -17,5 +17,3 @@ def special03(x):
 @testbench
 def test():
     assert 5 == special03(1)
-
-test()

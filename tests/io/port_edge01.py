@@ -4,7 +4,7 @@ from polyphony.timing import timed, clkfence
 
 
 @module
-class edge01:
+class port_edge01:
     def __init__(self):
         self.i = Port(bool, 'in')
         self.rising = Port(bool, 'out', False)
@@ -32,12 +32,10 @@ class edge01:
         clkfence()
 
 
-m = edge01()
-
-
 @timed
 @testbench
-def test(m):
+def test():
+    m = port_edge01()
     m.i.wr(False)
     clkfence()
     clkfence()
@@ -70,6 +68,3 @@ def test(m):
     assert m.falling.rd() == False
     assert m.rising_reg.rd() == False
     clkfence()
-
-
-test(m)

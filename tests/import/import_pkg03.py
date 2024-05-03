@@ -39,6 +39,3 @@ def test():
     assert 1 == import_pkg03_c2(0)
     assert 4 == import_pkg03_c1(3)
     assert 4 == import_pkg03_c2(3)
-
-
-test()

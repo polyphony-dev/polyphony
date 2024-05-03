@@ -24,6 +24,3 @@ def import_pkg05_4(x):
 def test():
     assert import_pkg05_1(10) == import_pkg05_2(10)
     assert import_pkg05_3(10) == import_pkg05_4(10)
-
-
-test()

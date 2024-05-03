@@ -5,13 +5,11 @@ def f(a):
     a += 1
 
 
-def g():
+def inline():
     a = 0
     f(a)
     return a
 
 @testbench
 def test():
-    assert 0 == g()
-
-test()
+    assert 0 == inline()

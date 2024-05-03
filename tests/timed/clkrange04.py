@@ -15,6 +15,3 @@ def test():
             assert clktime() == i * (M + 2) + 1 + j + 1
         assert clktime() == i * (M + 2) + 1 + M + 1
     assert clktime() == (N - 1) * (M + 2) + 1 + M + 2
-
-
-test()

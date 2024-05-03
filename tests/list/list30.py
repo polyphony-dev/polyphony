@@ -15,6 +15,3 @@ def list30(k0, v):
 @testbench
 def test():
     assert 3 == list30(1, 3)
-
-
-test()

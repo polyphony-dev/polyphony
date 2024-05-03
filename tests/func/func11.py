@@ -15,4 +15,3 @@ def func11():
 @testbench
 def test():
     assert 6 == func11()
-test()

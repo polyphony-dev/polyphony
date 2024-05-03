@@ -9,11 +9,9 @@ def tuple05(p, x, y):
     for t in ts:
         s += t
     return s
-        
+
 
 @testbench
 def test():
     assert 4 == tuple05(True, 1, 2)
     assert 12 == tuple05(False, 2, 3)
-
-test()

@@ -18,6 +18,3 @@ def test():
     assert 110 == classfield08(0)
     assert 220 == classfield08(1)
     assert 330 == classfield08(2)
-
-
-test()

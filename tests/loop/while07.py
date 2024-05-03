@@ -33,6 +33,3 @@ def test():
     x = 25
     result = i_while(x)
     assert result == 80
-
-
-test()

@@ -4,7 +4,7 @@ from polyphony.io import Port
 
 
 @module
-class wait01:
+class wait_until01:
     def __init__(self):
         self.i = Port(int, 'in')
         self.i_ready = Port(bool, 'out', False)
@@ -43,7 +43,8 @@ class wait01:
 
 @testbench
 @timed
-def test(m):
+def test():
+    m = wait_until01()
     wait_until(lambda:m.i_ready.edge(False, True))
     clkfence()
     clkfence()
@@ -76,7 +77,3 @@ def test(m):
     assert 222 == m.o.rd()
     clkfence()
     assert 222 == m.o.rd()
-
-
-m = wait01()
-test(m)

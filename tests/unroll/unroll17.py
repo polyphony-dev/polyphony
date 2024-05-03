@@ -19,6 +19,3 @@ def unroll17():
 @testbench
 def test():
     assert 100 == unroll17()
-
-
-test()

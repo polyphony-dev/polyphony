@@ -6,7 +6,7 @@ def func06(x):
         return a[idx]
 
     y = [1,2,3]
-    z = [2,3,4]    
+    z = [2,3,4]
     f(y, 0)
     f(y, 1)
     f(y, 2)
@@ -17,5 +17,3 @@ def test():
     assert 2 == func06(0)
     assert 4 == func06(1)
     assert 6 == func06(2)
-
-test()

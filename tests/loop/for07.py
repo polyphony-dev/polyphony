@@ -13,6 +13,3 @@ def test():
     assert 189225 == for07(0)
     assert 189226 == for07(1)
     assert 189227 == for07(2)
-
-test()
-

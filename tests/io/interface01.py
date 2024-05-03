@@ -46,8 +46,9 @@ class interface01:
 
 
 @timed
-@testbench(target=interface01)
-def test(p01):
+@testbench
+def test():
+    p01 = interface01()
     # 0
     p01.i.write(1)
     clkfence()
@@ -69,8 +70,3 @@ def test(p01):
     print(p01.o.read())
     assert 2 == p01.o.read()
     #clkfence()
-
-
-
-p01 = interface01()
-test(p01)

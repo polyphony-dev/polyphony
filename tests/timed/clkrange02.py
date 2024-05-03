@@ -12,6 +12,3 @@ def test():
         assert clktime() == i + 2
     clkfence()
     assert clktime() == N + 3
-
-
-test()

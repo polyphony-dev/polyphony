@@ -144,7 +144,7 @@ def mips_main(imem:list, dmem:list):
             elif op == LW:
                 daddr = DADDR (reg[rs] + address)
                 reg[rt] = dmem[daddr]
-                
+
             elif op == SW:
                 dmem[DADDR (reg[rs] + address)] = reg[rt]
 
@@ -253,4 +253,3 @@ def mips_test():
 @testbench
 def test():
     mips_test()
-test()

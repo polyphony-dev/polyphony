@@ -10,7 +10,6 @@ def if14(x):
         i = 2
     else:
         pass
-      
     return i
 
 
@@ -20,5 +19,3 @@ def test():
     assert 2 == if14(1)
     assert 2 == if14(2)
     assert 1 == if14(10)
-
-test()

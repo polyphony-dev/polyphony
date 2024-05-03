@@ -20,5 +20,3 @@ def typing05():
 @testbench
 def test():
     typing05()
-
-test()

@@ -23,4 +23,3 @@ def test():
     assert 7 == for10(0)
     assert 17 == for10(5)
     assert 27 == for10(10)
-test()

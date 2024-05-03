@@ -23,5 +23,3 @@ def tuple12():
 @testbench
 def test():
     tuple12()
-
-test()

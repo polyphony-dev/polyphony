@@ -13,7 +13,3 @@ def func1(x):
 @testbench
 def sub_test():
     assert 100 == func1(0)
-
-
-if __name__ == '__main__':
-    sub_test()

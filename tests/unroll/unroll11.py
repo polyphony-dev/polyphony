@@ -55,5 +55,3 @@ def unroll11():
 @testbench
 def test():
     unroll11()
-
-test()

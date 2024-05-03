@@ -10,5 +10,3 @@ def test():
     assert f(a) == a
     assert f(a) == f(a)
     print(f(a))
-
-test()

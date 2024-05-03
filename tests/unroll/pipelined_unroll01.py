@@ -30,6 +30,3 @@ def test():
     assert 7 == out_data[5]
     assert 8 == out_data[6]
     assert 9 == out_data[7]
-
-
-test()

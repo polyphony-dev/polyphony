@@ -15,7 +15,7 @@ def pipe_func(xs, ys):
         ys[i] = z
 
 
-def pipe06():
+def for06():
     data:List[int16] = [0, 16, 32, -16, -64]
     out:List[int16] = [0] * 5
     pipe_func(data, out)
@@ -27,7 +27,4 @@ def pipe06():
 
 @testbench
 def test():
-    pipe06()
-
-
-test()
+    for06()

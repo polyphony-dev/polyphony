@@ -16,9 +16,6 @@ class import12:
 
 
 @testbench
-def test(m):
+def test():
+    m = import12()
     m.sub4.i.wr(0)
-
-
-m = import12()
-test(m)

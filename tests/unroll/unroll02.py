@@ -26,7 +26,7 @@ def unroll02_factor1():
     return sum
 
 
-def no_unroll():
+def unroll02_no_unroll():
     xs = [10, 20, 30, 40, 50, 60, 70, 80]
     sum = 0
     for x in xs:
@@ -58,11 +58,6 @@ def test3():
 @rule(scheduling='sequential')
 @testbench
 def test4():
-    assert 360 == no_unroll()
+    assert 360 == unroll02_no_unroll()
     print(clktime())
     assert 13 == clktime()
- 
-test1()
-test2()
-test3()
-test4()

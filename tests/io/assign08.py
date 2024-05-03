@@ -39,12 +39,10 @@ class assign08:
         self.r = ram(size)
 
 
-m = assign08(10)
-
-
 @timed
 @testbench
-def test_ram(ram):
+def test_ram():
+    ram = assign08(10)
     ram.r.addr.wr(0)
     ram.r.we.wr(True)
     ram.r.data.wr(10)
@@ -75,6 +73,3 @@ def test_ram(ram):
     clkfence()
     clkfence()
     assert -1 == ram.r.q.rd()
-
-
-test_ram(m)

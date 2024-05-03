@@ -25,6 +25,3 @@ def nested01():
 @testbench
 def test():
     nested01()
-
-
-test()

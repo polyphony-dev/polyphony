@@ -15,7 +15,7 @@ def pipe16_func(xs0, xs1, ys0, ys1):
             ys1[i] = xs1[2] * xs0[3]
 
 
-def pipe16():
+def for16():
     idata0 = [1, 2, 3, 4]
     idata1 = [2, 3, 4, 5]
     odata0 = [0] * 5
@@ -36,6 +36,4 @@ def pipe16():
 
 @testbench
 def test():
-    pipe16()
-
-test()
+    for16()

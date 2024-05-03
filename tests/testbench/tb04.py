@@ -13,5 +13,3 @@ def test():
     assert 11 == data[0]
     assert 22 == data[1]
     assert 33 == data[2]
-
-test()

@@ -35,5 +35,3 @@ def rom08():
 @testbench
 def test():
     rom08()
-
-test()

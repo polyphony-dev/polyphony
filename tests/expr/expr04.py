@@ -9,5 +9,3 @@ def test():
     assert 0 == expr04(0x1100)
     assert 0x20 == expr04(0x2020)
     assert 0x300030 == expr04(0x303030)
-
-test()

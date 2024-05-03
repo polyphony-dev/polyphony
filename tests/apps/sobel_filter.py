@@ -1,6 +1,6 @@
 from polyphony import module
 from polyphony import is_worker_running
-from polyphony.io import Handshake
+from polyphony.modules import Handshake
 from polyphony.typing import int4, int12, List, Tuple
 from polyphony import pipelined
 

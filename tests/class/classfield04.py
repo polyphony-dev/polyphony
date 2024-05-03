@@ -22,6 +22,3 @@ def test():
     assert 1 == classfield04(0)
     assert 2 == classfield04(1)
     assert 3 == classfield04(2)
-
-
-test()

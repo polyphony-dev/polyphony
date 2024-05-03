@@ -23,6 +23,3 @@ def test():
     assert 4 == list17(1)
     assert 1 == list17(2)
     assert 4 == list17(3)
-
-
-test()

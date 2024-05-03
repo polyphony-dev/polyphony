@@ -37,7 +37,8 @@ class worker_with_tuple:
 
 
 @testbench
-def test(m):
+def test():
+    m = worker_with_tuple()
     m.i.wr(1)
     m.i.wr(2)
     m.i.wr(3)
@@ -45,7 +46,3 @@ def test(m):
     v = m.o.rd()
     print(v)
     assert 1 + 2 + 3 + 4 == v
-
-
-m = worker_with_tuple()
-test(m)

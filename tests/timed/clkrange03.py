@@ -13,6 +13,3 @@ def test():
         clkfence()
     clkfence()
     assert clktime() == N * 2 + 3
-
-
-test()

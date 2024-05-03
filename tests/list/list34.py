@@ -16,6 +16,3 @@ def list34(x):
 def test():
     assert 4 * 4 == list34(3)
     assert 7 * 4 == list34(6)
-
-
-test()

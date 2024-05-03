@@ -9,7 +9,7 @@ def pipe_func(xs, w):
         xs[i] = v
 
 
-def pipe09():
+def for09():
     data = [1, 16, 32, -16, -64]
     pipe_func(data, 2)
     print(data[0])
@@ -26,6 +26,4 @@ def pipe09():
 
 @testbench
 def test():
-    pipe09()
-
-test()
+    for09()

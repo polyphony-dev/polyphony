@@ -20,4 +20,3 @@ def test():
     assert 10 == for09(0)
     assert 35 == for09(5)
     assert 60 == for09(10)
-test()

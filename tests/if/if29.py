@@ -28,6 +28,3 @@ def test():
     assert 0 == if29(1, 2, 0)
     assert -1 == if29(1, 3, 0)
     assert 0 == if29(2, 3, 0)
-
-
-test()

@@ -17,6 +17,3 @@ def list28():
 @testbench
 def test():
     list28()
-
-
-test()

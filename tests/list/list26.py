@@ -21,6 +21,3 @@ def test():
     for i in range(len(data2)):
         d = data2[i]
         assert d == list26_b(i)
-
-
-test()

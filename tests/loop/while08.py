@@ -19,6 +19,3 @@ def while08(n):
 def test():
     assert 6 == while08(0)
     assert 10 == while08(1)
-
-
-test()

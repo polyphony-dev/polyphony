@@ -226,6 +226,3 @@ def test():
     for i in range(64):
         print(outs[i])
         assert outs[i] == expected[i]
-
-
-test()

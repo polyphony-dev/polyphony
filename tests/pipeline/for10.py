@@ -9,7 +9,7 @@ def pipe10_func(xs):
         xs[i] = v
 
 
-def pipe10():
+def for10():
     data = [0, 16, 32, -16, -64]
     pipe10_func(data)
     assert 8 == data[0]
@@ -21,6 +21,4 @@ def pipe10():
 
 @testbench
 def test():
-    pipe10()
-
-test()
+    for10()

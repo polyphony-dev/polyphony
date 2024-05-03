@@ -20,6 +20,3 @@ def test():
     assert 3 == sub1.func2(1)
     assert 0 == func2(1)
     assert 5 == import04(1)
-
-
-test()

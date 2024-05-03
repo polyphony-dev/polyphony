@@ -20,6 +20,3 @@ def unroll16(start, stop):
 def test():
     print(unroll16(0, 10))
     assert 57 == unroll16(0, 10)
-
-
-test()

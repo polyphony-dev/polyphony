@@ -19,12 +19,9 @@ class import13:
 
 
 @testbench
-def test(m):
+def test():
+    m = import13()
     assert Value + SUB3_GLOBAL_ARRAY[0] == m.o.rd()
     assert Value + SUB3_GLOBAL_ARRAY[1] == m.o.rd()
     assert Value + SUB3_GLOBAL_ARRAY[2] == m.o.rd()
     assert Value + SUB3_GLOBAL_ARRAY[3] == m.o.rd()
-
-
-m = import13()
-test(m)

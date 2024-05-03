@@ -11,5 +11,3 @@ def test():
     assert False == expr07(-1, 0)
     assert False == expr07(-2, -1)
     assert True == expr07(1, -1)
-
-test()

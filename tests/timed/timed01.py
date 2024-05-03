@@ -36,7 +36,8 @@ class timed01:
 
 @timed
 @testbench
-def test(m):
+def test():
+    m = timed01()
     # 0
     m.i.wr(3)
     clkfence()
@@ -58,7 +59,3 @@ def test(m):
     # 6
     assert 20 == m.o.rd()
     clkfence()
-
-
-m = timed01()
-test(m)

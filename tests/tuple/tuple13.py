@@ -10,6 +10,3 @@ def tuple13():
 @testbench
 def test():
     assert 3 == tuple13()
-
-
-test()

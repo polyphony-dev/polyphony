@@ -25,6 +25,3 @@ def test():
     assert 0 == unroll15_b(0, 0)
     assert 45 == unroll15_b(0, 10)
     assert 35 == unroll15_b(5, 10)
-
-
-test()

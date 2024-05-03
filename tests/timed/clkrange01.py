@@ -10,6 +10,3 @@ def test():
     for i in clkrange(N):
         assert clktime() == i + 1
     assert clktime() == N + 1
-
-
-test()

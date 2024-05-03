@@ -17,6 +17,3 @@ def while09(n):
 def test():
     assert 1 == while09(0)
     assert 2 == while09(1)
-
-
-test()

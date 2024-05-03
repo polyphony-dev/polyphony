@@ -33,6 +33,3 @@ def test():
     assert 36 == import11_d(1)
     assert 38 == import11_d(3)
     assert 4 == import11_e()
-
-
-test()

@@ -25,6 +25,3 @@ def test():
     assert 18 == tuple11(0)
     assert 21 == tuple11(1)
     assert 24 == tuple11(2)
-
-
-test()

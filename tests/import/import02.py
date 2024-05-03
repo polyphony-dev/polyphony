@@ -13,6 +13,3 @@ def import02():
 @polyphony.testbench
 def test():
     assert True == import02()
-
-
-test()

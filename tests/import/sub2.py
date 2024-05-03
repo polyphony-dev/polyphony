@@ -28,7 +28,3 @@ class SubC:
 @testbench
 def sub_test():
     assert 10 == func1(0)
-
-
-if __name__ == '__main__':
-    sub_test()

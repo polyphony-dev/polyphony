@@ -36,7 +36,8 @@ class wait02:
 
 @testbench
 @timed
-def test(m):
+def test():
+    m = wait02()
     m.flag1.wr(True)
     m.flag2.wr(True)
     m.flag3.wr(True)
@@ -66,7 +67,3 @@ def test(m):
     clkfence()
     clkfence()
     assert 4 == m.o.rd()
-
-
-m = wait02()
-test(m)

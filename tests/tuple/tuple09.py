@@ -20,6 +20,3 @@ def tuple09(x, y, z):
 def test():
     assert 1 + 2 == tuple09(1, 2, 3)
     assert 4 + 5 == tuple09(4, 5, 6)
-
-
-test()

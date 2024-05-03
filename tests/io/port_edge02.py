@@ -5,7 +5,7 @@ from polyphony.typing import bit
 
 
 @module
-class edge02:
+class port_edge02:
     def __init__(self):
         self.sub_clk = Port(bit, 'out', 0)
         self.sub_clk_posedge = Port(bit, 'out', 0)
@@ -20,12 +20,10 @@ class edge02:
             self.sub_clk.wr(0)
 
 
-m = edge02()
-
-
 @timed
 @testbench
-def test(m):
+def test():
+    m = port_edge02()
     for i in clkrange(15):
         wait_rising(m.sub_clk)
         print(clktime())
@@ -37,6 +35,3 @@ def test(m):
         assert clktime() % 2 == 1
         assert m.sub_clk_posedge.rd() == False
     assert clktime() == 62
-
-
-test(m)

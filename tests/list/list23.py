@@ -17,4 +17,3 @@ def list23(x):
 def test():
     assert 0 == list23(0)
     assert 2 == list23(1)
-test()

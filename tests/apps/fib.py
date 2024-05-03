@@ -10,5 +10,3 @@ def fib(n):
 @testbench
 def test():
     fib(1000)
-
-test()

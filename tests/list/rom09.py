@@ -64,5 +64,3 @@ def rom09():
 @testbench
 def test():
     rom09()
-
-test()

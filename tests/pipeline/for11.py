@@ -9,7 +9,7 @@ def pipe11_func(xs, ys):
         ys[i] = v
 
 
-def pipe11():
+def for11():
     idata = [0, 16, 32, -16, -64]
     odata = [0] * 5
     pipe11_func(idata, odata)
@@ -22,6 +22,4 @@ def pipe11():
 
 @testbench
 def test():
-    pipe11()
-
-test()
+    for11()

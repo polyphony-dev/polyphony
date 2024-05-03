@@ -15,5 +15,4 @@ def test():
     assert 1 == if11(1)
     assert 2 == if11(2)
     assert 3 == if11(3)
-    assert 3 == if11(4)    
-test()
+    assert 3 == if11(4)

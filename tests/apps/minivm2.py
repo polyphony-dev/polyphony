@@ -61,19 +61,12 @@ class MiniVM:
 
 
 @polyphony.testbench
-def vm0_test(vm0):
+def test():
+    vm0 = MiniVM(0, 5)
     d = vm0.dout.rd()
     assert d == 6
 
-
-@polyphony.testbench
-def vm1_test(vm1):
+    vm1 = MiniVM(6, 11)
     d = vm1.dout.rd()
     assert d == 24
 
-
-# instantiate synthesizing module
-vm0 = MiniVM(0, 5)
-#vm1 = MiniVM(6, 11)
-vm0_test(vm0)
-#vm1_test(vm1)

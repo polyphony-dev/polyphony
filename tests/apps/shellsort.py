@@ -1,7 +1,7 @@
 from polyphony import testbench
 
 
-def shell_sort():
+def shellsort():
     alist = [54, 26, 93, 17, 77, 31, 44, 55, 20]
 
     n = len(alist) // 2
@@ -28,7 +28,4 @@ def gap_insertion_sort(alist, start, gap):
 
 @testbench
 def test():
-    shell_sort()
-
-test()
-
+    shellsort()

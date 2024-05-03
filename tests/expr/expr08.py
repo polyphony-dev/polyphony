@@ -11,4 +11,3 @@ def test():
     assert False == expr08(2, 1, 0)
     assert True == expr08(-1, 0, 1)
     assert True == expr08(-2, -1, 0)
-test()

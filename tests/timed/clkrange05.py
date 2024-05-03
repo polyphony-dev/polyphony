@@ -15,6 +15,3 @@ def test():
         assert clktime() == N + 1 + i + 1
         print(clktime())
     assert clktime() == N + 1 + N + 1
-
-
-test()

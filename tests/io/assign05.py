@@ -23,12 +23,10 @@ class assign05:
         self.addr_latch = self.addr.rd()
 
 
-m = assign05(10)
-
-
 @timed
 @testbench
-def test_ram(ram):
+def test_ram():
+    ram = assign05(10)
     ram.addr.wr(0)
     ram.we.wr(True)
     ram.data.wr(10)
@@ -59,6 +57,3 @@ def test_ram(ram):
     clkfence()
     clkfence()
     assert 12 == ram.q.rd()
-
-
-test_ram(m)

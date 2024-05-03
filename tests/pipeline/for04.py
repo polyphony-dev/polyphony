@@ -11,7 +11,7 @@ def pipe_func(a, b, c):
     print(c[0], c[1], c[2], c[3])
 
 
-def pipe04():
+def for04():
     data_a = [1, 3, 5, 7, 5, 3, 1, 0]
     data_b = [1, -1, 2, -2, 3, -3, 4, -5]
     data_c = [None] * 8
@@ -24,6 +24,4 @@ def pipe04():
 
 @testbench
 def test():
-    pipe04()
-
-test()
+    for04()

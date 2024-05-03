@@ -13,7 +13,7 @@ def pipe14_func(xs0, ys0, ys1):
             ys1[i] = v
 
 
-def pipe14():
+def for14():
     idata0 = [1, 16, 32, -16, -64]
     odata0 = [0] * 5
     odata1 = [0] * 5
@@ -33,6 +33,4 @@ def pipe14():
 
 @testbench
 def test():
-    pipe14()
-
-test()
+    for14()

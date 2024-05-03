@@ -9,7 +9,7 @@ CONVERSION_CYCLE = 40
 
 @timed
 @polyphony.module
-class AD7091R_SPIC:
+class ad7091r:
     def __init__(self):
         self.sclk = Port(bit, 'out')
         self.sdo  = Port(bit, 'in')
@@ -64,10 +64,12 @@ class AD7091R_SPIC:
 
 @timed
 @polyphony.testbench
-def test(spic):
+def test():
+    spic = ad7091r()
     expected_times = (1, 120, 239, 358, 477)
     data = (0xdead, 0xbeef, 0xffff, 0x0000, 0x800)
     for i in clkrange(len(data)):
+        print(i, clktime())
         assert expected_times[i] == clktime()
         d = data[i]
         print('send: data ', d & 0x0fff, 'ch', (d & 0x7000)>>12)
@@ -88,7 +90,3 @@ def test(spic):
         print('recv: data ', spic.dout.rd(), 'ch', spic.chout.rd())
         assert spic.dout.rd() == (d & 0x0fff)
         assert spic.chout.rd() == ((d & 0x7000) >> 12)
-
-
-spic = AD7091R_SPIC()
-test(spic)

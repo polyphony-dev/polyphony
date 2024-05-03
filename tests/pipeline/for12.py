@@ -12,7 +12,7 @@ def pipe12_func(xs0, xs1, ys0):
         ys0[i] = v
 
 
-def pipe12():
+def for12():
     idata0 = [0, 16, 32, -16, -64]
     idata1 = [32, -16, -64, 8, 24]
     odata0 = [0] * 5
@@ -26,6 +26,4 @@ def pipe12():
 
 @testbench
 def test():
-    pipe12()
-
-test()
+    for12()

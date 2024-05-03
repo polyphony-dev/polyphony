@@ -22,6 +22,3 @@ def if25():
 @testbench
 def test():
     assert 1 == if25()
-
-
-test()

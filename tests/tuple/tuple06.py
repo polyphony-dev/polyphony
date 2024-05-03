@@ -9,5 +9,3 @@ def tuple06(x, i):
 def test():
     assert 11 == tuple06(10, 1)
     assert 12 == tuple06(10, 2)
-
-test()

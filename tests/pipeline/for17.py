@@ -12,7 +12,7 @@ def pipe17_func(xs0, ys0, ys1):
             ys1[i] = ys0[i]
 
 
-def pipe17():
+def for17():
     data0 = [1, 1, 0, 0, 1, 0]
     data1 = [1, 2, 3, 4, 5, 6]
     data2 = [7, 8, 9, 10, 11, 12]
@@ -34,6 +34,4 @@ def pipe17():
 
 @testbench
 def test():
-    pipe17()
-
-test()
+    for17()

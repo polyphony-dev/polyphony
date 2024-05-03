@@ -19,6 +19,3 @@ def test():
     assert 0 == for16(0, 0, 1)
     assert 7 == for16(0, 4, 2)
     assert 47 == for16(3, 10, 3)
-
-
-test()

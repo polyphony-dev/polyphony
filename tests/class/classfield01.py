@@ -10,5 +10,3 @@ def classfield01():
 @testbench
 def test():
     assert 1234 == classfield01()
-
-test()

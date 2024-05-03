@@ -22,6 +22,3 @@ def cfg03(a, b):
 @testbench
 def test():
     assert 12 == cfg03(2, 2)
-
-
-test()

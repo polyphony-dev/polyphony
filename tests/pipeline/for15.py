@@ -15,7 +15,7 @@ def pipe15_func(xs0, xs1, ys0, ys1):
             ys1[i] = ys0[i] + xs1[i]
 
 
-def pipe15():
+def for15():
     idata0 = [10, 2, 3, 4]
     idata1 = [2, 3, 4, 5]
     odata0 = [0] * 4
@@ -34,6 +34,4 @@ def pipe15():
 
 @testbench
 def test():
-    pipe15()
-
-test()
+    for15()

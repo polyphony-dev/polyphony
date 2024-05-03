@@ -32,5 +32,3 @@ def unroll09():
 @testbench
 def test():
     unroll09()
-
-test()

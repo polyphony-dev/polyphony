@@ -9,4 +9,3 @@ def test():
     assert -1 == expr02(1)
     assert -2 == expr02(2)
 
-test()

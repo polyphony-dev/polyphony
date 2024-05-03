@@ -9,6 +9,3 @@ def import03():
 @polyphony.testbench
 def test():
     assert True == import03()
-
-
-test()

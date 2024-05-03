@@ -21,6 +21,3 @@ def noreturn01():
 @testbench
 def test():
     noreturn01()
-
-
-test()

@@ -23,7 +23,7 @@ def pipe13_func(xs0, xs1, xs2, xs3, ys0, ys1):
         ys1[i] = w
 
 
-def pipe13():
+def for13():
     idata0 = [0, 16, 32, -16, -64]
     idata1 = [32, -16, -64, 8, 24]
     idata2 = [0, 16, 32, -16, -64]
@@ -46,6 +46,4 @@ def pipe13():
 
 @testbench
 def test():
-    pipe13()
-
-test()
+    for13()

@@ -13,5 +13,3 @@ def special02(x):
 @testbench
 def test():
     assert 2 == special02(1)
-
-test()

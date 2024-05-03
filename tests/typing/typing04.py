@@ -21,5 +21,3 @@ def typing04():
 @testbench
 def test():
     typing04()
-
-test()

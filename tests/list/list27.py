@@ -9,6 +9,3 @@ def list27(x):
 @testbench
 def test():
     assert 10 == list27(10)
-
-
-test()

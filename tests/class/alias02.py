@@ -27,5 +27,3 @@ def test():
     assert alias02(1)
     assert alias02(2)
     assert alias02(3)
-
-test()

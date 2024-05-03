@@ -9,5 +9,3 @@ def test():
     assert 10 == list01(0, 1)
     assert 50 == list01(2, 3)
     assert 30 == list01(3, 0)
-
-test()

@@ -22,11 +22,8 @@ class busy_loop:
 
 
 @testbench
-def test(m):
+def test():
+    m = busy_loop()
     m.i.wr(0)
     m.i.wr(1)
     m.i.wr(2)
-
-
-m = busy_loop()
-test(m)

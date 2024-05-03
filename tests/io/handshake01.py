@@ -19,10 +19,7 @@ class handshake01:
 
 @timed
 @testbench
-def test(p01):
+def test():
+    p01 = handshake01()
     p01.i.wr(2)
     assert p01.o.rd() == 4
-
-
-p01 = handshake01()
-test(p01)

@@ -15,6 +15,3 @@ def list29(p, x, y):
 def test():
     assert 1 == list29(True, 1, 2)
     assert 4 == list29(False, 3, 4)
-
-
-test()

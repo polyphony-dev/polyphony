@@ -33,6 +33,3 @@ def unroll01():
 @testbench
 def test():
     unroll01()
-
-
-test()

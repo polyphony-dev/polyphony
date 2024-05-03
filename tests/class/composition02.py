@@ -20,5 +20,3 @@ def test():
     assert 13 == composition02(1, 2)
     assert 16 == composition02(2, 4)
     assert 10 == composition02(-3, 3)
-
-test()

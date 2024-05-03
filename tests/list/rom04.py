@@ -12,4 +12,3 @@ def test():
     assert 8 == rom04(1)
     assert 16 == rom04(2)
     assert 24 == rom04(3)
-test()

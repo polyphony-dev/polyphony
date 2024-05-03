@@ -27,5 +27,3 @@ def odd_even_sort():
 @testbench
 def test():
     odd_even_sort()
-    
-test()

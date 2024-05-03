@@ -19,11 +19,9 @@ class assign04:
         return tmp
 
 
-m = assign04()
-
-
 @testbench
-def test(m):
+def test():
+    m = assign04()
     m.i0.wr(0)
     m.i1.wr(10)
     clkfence()
@@ -37,6 +35,3 @@ def test(m):
     assert 1 == m.o.rd()
 
     clkfence()
-
-
-test(m)

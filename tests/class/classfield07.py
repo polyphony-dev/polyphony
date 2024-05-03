@@ -16,6 +16,3 @@ def classfield07():
 @testbench
 def test():
     assert classfield07()
-
-
-test()

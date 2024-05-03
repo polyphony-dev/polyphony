@@ -12,5 +12,3 @@ def test():
     assert 9 == tuple02(1, 1, 1)
     assert 18 == tuple02(1, 2, 3)
     assert 0 == tuple02(-1, 0, 1)
-
-test()

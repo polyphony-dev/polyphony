@@ -15,6 +15,3 @@ def import10_b():
 def test():
     assert 111 == import10_a()
     assert 333 == import10_b()
-
-
-test()

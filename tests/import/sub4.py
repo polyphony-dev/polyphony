@@ -20,7 +20,3 @@ def sub_worker(p0, p1):
 @testbench
 def sub_test():
     pass
-
-
-if __name__ == '__main__':
-    sub_test()
