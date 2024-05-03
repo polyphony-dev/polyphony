@@ -12,9 +12,9 @@ def kwargs02(idx, spam, ham, eggs):
 
 @testbench
 def test():
-    assert 0 == kwargs02(0, spam=0, ham=1, eggs=2)
-    assert 1 == kwargs02(1, spam=0, ham=1, eggs=2)
+    assert 0 == kwargs02(0, eggs=2, spam=0, ham=1)
+    assert 1 == kwargs02(1, ham=1, eggs=2, spam=0)
     assert 2 == kwargs02(2, spam=0, ham=1, eggs=2)
-    assert 2 == kwargs02(0, spam=2, ham=3, eggs=4)
-    assert 3 == kwargs02(1, spam=2, ham=3, eggs=4)
-    assert 4 == kwargs02(2, spam=2, ham=3, eggs=4)
+    assert 2 == kwargs02(0, 2, ham=3, eggs=4)
+    assert 3 == kwargs02(1, 2, 3, eggs=4)
+    assert 4 == kwargs02(idx=2, spam=2, ham=3, eggs=4)
