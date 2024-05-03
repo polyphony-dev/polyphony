@@ -1082,6 +1082,7 @@ def main():
                         action='store_true', help='enable $monitor in testbench')
     parser.add_argument('-op', '--output_prefix', metavar='PREFIX',
                         dest='output_prefix', help='output name prefix')
+    parser.add_argument('-t', '--targets', nargs='+', dest='targets', default=list())
     from .. version import __version__
     parser.add_argument('-V', '--version', action='version',
                         version='%(prog)s ' + __version__,

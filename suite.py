@@ -101,12 +101,14 @@ def add_files(lst, patterns):
 def exec_test_entry(t, options, suite_results):
     if not options.silent:
         print(t)
-    hdl_finishes, py_finishes = simu.exec_test(t, options)
-    if options.enable_python:
-        suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
-    else:
-        suite_results[t] = f'{",".join(hdl_finishes)}'
-
+    try:
+        hdl_finishes, py_finishes = simu.exec_test(t, options)
+        if options.enable_python:
+            suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
+        else:
+            suite_results[t] = f'{",".join(hdl_finishes)}'
+    except Exception as e:
+        suite_results[t] = 'Internal Error'
 
 def suite(options, ignores):
     tests = []

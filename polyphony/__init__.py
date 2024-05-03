@@ -92,7 +92,11 @@ Usage::
 ::
 '''
 def testbench(test):
-    return test
+    def wrapper(*args, **kwargs):
+        assert getattr(test, '_execute_on_simu', False), 'Do not call @testbench function directly. It is automatically executed from simu.py.'
+        return test(*args, **kwargs)
+    wrapper._test_func = test
+    return wrapper
 
 
 # @pure decorator

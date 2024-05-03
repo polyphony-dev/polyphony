@@ -2,11 +2,11 @@
 import argparse
 import sys
 import os
+import re
 import traceback
 import subprocess
 import types
 import inspect
-
 IVERILOG_PATH = 'iverilog'
 ROOT_DIR = '.' + os.path.sep
 TEST_DIR = ROOT_DIR + 'tests'
@@ -18,7 +18,7 @@ from polyphony.compiler.common.env import env
 from polyphony.compiler.common.common import read_source
 from polyphony.compiler.__main__ import setup, compile_plan, output_hdl, output_plan
 from polyphony.compiler.__main__ import compile as compile_polyphony
-from polyphony.simulator import Simulator, SimulationModelBuilder
+from polyphony.simulator import Simulator, SimulationModelBuilder, HDLAssertionError
 
 def parse_options():
     if not os.path.exists(TMP_DIR):
@@ -109,9 +109,8 @@ def exec_compile(casefile_path, source_text, compiler_options, simu_options):
         plan = compile_plan()
         scopes = compile_polyphony(plan, source_text, casefile_path)
         output_hdl(output_plan(), scopes, compiler_options, stage_offset=len(plan))
-        # compile_main(casefile_path, compiler_options)
     except Exception as e:
-        print('[COMPILE PYTHON] FAILED:' + casefile_path)
+        print(f'[COMPILE PYTHON] FAILED: {casefile_path}')
         if env.dev_debug_mode:
             traceback.print_exc()
         print(e)
@@ -148,7 +147,7 @@ def call_iverilog(testname, casename, casefile_path, options):
     try:
         subprocess.check_call(args)
     except Exception as e:
-        print('[COMPILE HDL] FAILED:' + casefile_path)
+        print(f'[COMPILE HDL] FAILED: {casefile_path}')
         return
     try:
         out = subprocess.check_output([exec_name], timeout=3)
@@ -160,21 +159,67 @@ def call_iverilog(testname, casename, casefile_path, options):
                 raise Exception()
         return lines
     except Exception as e:
-        print('[HDL SIMULATION] FAILED:' + casefile_path)
+        print(f'[HDL SIMULATION] FAILED: {casefile_path}')
         print(e)
     return None
 
 
-def simulate_on_python(casefile_path, source_text, scopes, simu_options):
-    casename = case_name_from_path(casefile_path)
-    namespace = types.ModuleType('polyphony_simulation_module')
-    namespace.__dict__['__file__'] = casefile_path
-    exec(source_text, namespace.__dict__)
-    py_module_class = namespace.__dict__[casename]
+def model_selector_with_argv(models):
+    def model_selector(*args, **kwargs):
+        args_str = []
+        for a in args:
+            if type(a).__name__ == 'type':
+                args_str.append(a.__name__)
+            else:
+                args_str.append(str(a))
+        for model, hdlmodule in models.values():
+            if args_str == hdlmodule.scope._bound_args:
+                return model
+        raise ValueError('model not found')
+    return model_selector
 
+
+def model_selector_with_argtypes(models, name):
+    def model_selector(*args, **kwargs):
+        arg_types = []
+        for a in args:
+            if isinstance(a, bool):
+                arg_types.append('b')
+            elif isinstance(a, int):
+                arg_types.append('i')
+            else:
+                assert False, f'unsupported arg type: {type(a)}'
+        for model, hdlmodule in models.values():
+            names = hdlmodule.name.rsplit('_', 1)
+            orig_name = names[0]
+            if orig_name == name:
+                if len(names) == 1 and not arg_types:
+                    return model(*args, **kwargs)
+                module_arg_types = re.findall(r'i|b', names[-1])
+                if arg_types == module_arg_types:
+                    return model(*args, **kwargs)
+        raise ValueError('model not found')
+    return model_selector
+
+
+def simulate_on_python(casefile_path, source_text, scopes, simu_options):
     finishes = []
+    casename = case_name_from_path(casefile_path)
+    main_py_module = types.ModuleType('__main__')
+    code_obj = compile(source_text, casefile_path, 'exec')
+    try:
+        exec(code_obj, main_py_module.__dict__)
+    except Exception as e:
+        print(e)
+        finishes.append('FAIL')
+        return finishes
+    py_objects = []
+    for key, value in vars(main_py_module).items():
+        if key.startswith(casename):
+            py_objects.append(value)
+
     for testbench in env.testbenches:
-        test = getattr(namespace, testbench.base_name)
+        test = getattr(main_py_module, testbench.base_name)
         if not test:
             continue
         models = {}
@@ -182,42 +227,44 @@ def simulate_on_python(casefile_path, source_text, scopes, simu_options):
         for _, sub_hdlmodule, _, _ in test_hdlmodule.sub_modules.values():
             if sub_hdlmodule.name in models:
                 continue
-            model = SimulationModelBuilder().build_model(sub_hdlmodule, py_module_class)
+            model = SimulationModelBuilder().build_model(sub_hdlmodule, main_py_module)
             models[sub_hdlmodule.name] = (model, sub_hdlmodule)
+        # Replacing classes/functions under test with a model selector
+        for obj in py_objects:
+            if inspect.isclass(obj):
+                test._test_func.__globals__[obj.__name__] = model_selector_with_argv(models)
+            elif inspect.isfunction(obj):
+                test._test_func.__globals__[obj.__name__] = model_selector_with_argtypes(models, obj.__name__)
+            else:
+                assert False
         # exec test
-        def model_selector(*args, **kwargs):
-            args_str = []
-            for a in args:
-                if type(a).__name__ == 'type':
-                    args_str.append(a.__name__)
-                else:
-                    args_str.append(str(a))
-            for model, hdlmodule in models.values():
-                if args_str == hdlmodule.scope._bound_args:
-                    return model
-            raise ValueError('model not found')
-        if inspect.isclass(py_module_class):
-            test.__globals__[casename] = model_selector
-        elif inspect.isfunction(py_module_class):
-            assert len(models) == 1
-            test.__globals__[casename] = list(models.values())[0][0]
-        else:
-            assert False
-        simulate_models = [model for model, _ in models.values()]
         try:
+            simulate_models = [model for model, _ in models.values()]
+            test._test_func._execute_on_simu = True
             with Simulator(simulate_models):
                 test()
             finishes.append('OK')
-        except AssertionError as e:
+        except HDLAssertionError as e:  # from hdlmodule code
             print(f'ASSERTION FAILED: {e.args[0]}')
             print('[PYTHON SIMULATION] FAILED:' + casefile_path)
+            finishes.append('FAIL')
+        except AssertionError as e:  # from python test code
+            _, _, tb = sys.exc_info()
+            tb_info = traceback.extract_tb(tb)
+            filename, line, _, code = tb_info[-1]
+            if filename == casefile_path:
+                print(f'ASSERTION FAILED: {casename}.py:{line} {code}')
+                print(f'[PYTHON SIMULATION] FAILED: {filename}')
+            else:
+                print(f'[PYTHON SIMULATION] INTERNAL ERROR: {filename}:{line} {code}')
+                traceback.print_exc()
             finishes.append('FAIL')
         except Exception as e:
             _, _, tb = sys.exc_info()
             tb_info = traceback.extract_tb(tb)
             filename, line, _, code = tb_info[-1]
-            print(f'[PYTHON SIMULATION] INTERNAL ERROR: {filename}[{line}] {code}')
-            print(e)
+            print(f'[PYTHON SIMULATION] INTERNAL ERROR: {filename}:{line} {code}')
+            traceback.print_exc()
             finishes.append('FAIL')
     return finishes
 

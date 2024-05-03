@@ -33,7 +33,7 @@ def wait_edge(old, new, port):
     '''
     if not port:
         raise TypeError("wait_edge() missing required argument: 'port'")
-    if port._dtype is not typing.bit and port._dtype is not bool:
+    if port.signal.width != 1:
         raise TypeError("wait_edge() takes io.Port(bit) or io.Port(bool) instance")
     wait_until(lambda:port.edge(old, new))
 
@@ -47,7 +47,7 @@ def wait_rising(port):
     '''
     if not port:
         raise TypeError("wait_rising() missing required argument: 'port'")
-    if port._dtype is not typing.bit and port._dtype is not bool:
+    if port.signal.width != 1:
         raise TypeError("wait_rising() takes io.Port(bit) or io.Port(bool) instance")
     wait_edge(0, 1, port)
 
@@ -61,7 +61,7 @@ def wait_falling(port):
     '''
     if not port:
         raise TypeError("wait_falling() missing required argument: 'port'")
-    if port._dtype is not typing.bit and port._dtype is not bool:
+    if port.signal.width != 1:
         raise TypeError("wait_falling() takes io.Port(bit) or io.Port(bool) instance")
     wait_edge(1, 0, port)
 

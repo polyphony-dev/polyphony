@@ -499,6 +499,12 @@ class TypeSpecializer(TypePropagation):
             self._check_param_types(param_types, arg_types, ir.args, callee_scope.name)
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new, postfix = self._specialize_function_with_types(callee_scope, new_param_types)
+            if callee_scope.is_function_module():
+                for t, name in zip(new_param_types, callee_scope.param_names()):
+                    if t.is_int() or t.is_bool():
+                        continue
+                    fail(self.current_stm, Errors.UNSUPPORTED_FUNCTION_MODULE_PARAM_TYPE,
+                         [name, t])
             self._new_scopes.append(new_scope)
             self._old_scopes.add(callee_scope)
             if is_new:

@@ -1,18 +1,16 @@
 from ..ahdl import *
 from ..ahdlvisitor import AHDLVisitor
+from ..ahdltransformer import AHDLTransformer
 from ..analysis.ahdlusedef import AHDLUseDefDetector
 from ...common.env import env
 import logging
 logger = logging.getLogger(__name__)
 
 
-class BitwidthReducer(AHDLVisitor):
+class BitwidthReducer(AHDLTransformer):
     def process(self, hdlmodule):
         self.usedef = AHDLUseDefDetector().process(hdlmodule)
-        for fsm in hdlmodule.fsms.values():
-            for stg in fsm.stgs:
-                for state in stg.states:
-                    self.visit(state)
+        super().process(hdlmodule)
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):
@@ -72,7 +70,7 @@ class BitwidthReducer(AHDLVisitor):
             dst_sig = ahdl.dst.sig
         else:
             return
-        if dst_sig.is_output() or dst_sig.is_accessor():
+        if dst_sig.is_output() or dst_sig.is_connector():
             return
         stms = self.usedef.get_def_stms(dst_sig)
         if len(stms) > 1:

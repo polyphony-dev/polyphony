@@ -10,6 +10,11 @@ from .compiler.ahdl.signal import Signal
 from .compiler.ahdl.hdlscope import HDLScope
 from .compiler.ahdl.hdlmodule import HDLModule
 from .compiler.ir.ir import Ctx
+from .compiler.ir.symbol import Symbol
+
+
+class HDLAssertionError(AssertionError):
+    pass
 
 
 def twos_comp(val, bits):
@@ -225,8 +230,8 @@ def clkrange(n):
     if current_simulator is None:
         raise RuntimeError()
     for i in range(n):
+        current_simulator._period()
         yield i
-        current_simulator._period(n)
 
 
 class Port(object):
@@ -248,7 +253,7 @@ class Port(object):
         return self.value.get()
 
     def set(self, v):
-        self.value.set(v)
+        return self.value.set(v)
 
     def toInteger(self):
         return self.value.toInteger()
@@ -258,6 +263,10 @@ class Port(object):
 
     def __repr__(self):
         return f'Port(\'{repr(self.value)}\')'
+
+    def edge(self, old_v, new_v):
+        assert isinstance(self.value, Reg)
+        return self.value.val == old_v and self.value.next == new_v
 
     @property
     def signal(self):
@@ -303,7 +312,6 @@ class Simulator(object):
                 model.clk.val = 1
             for evaluator in self.evaluators:
                 evaluator.eval()
-                evaluator.update_regs()
             self.clock_time += 1
             for model in self.models:
                 model.clk.val = 0
@@ -314,6 +322,7 @@ class Simulator(object):
         self._period(count)
         for model in self.models:
             model.rst.val = 0
+        self.clock_time = 0
 
 
 class ModelEvaluator(AHDLVisitor):
@@ -329,18 +338,18 @@ class ModelEvaluator(AHDLVisitor):
         return super().visit(ahdl)
 
     def eval(self):
+        # self._eval_decls()
+        for task in self.model._tasks:
+            self.visit(task)
+        self._update_regs()
         self._eval_decls()
+
+    def _eval_decls(self):
         self.updated_sigs.add(None)
         while self.updated_sigs:
             self.updated_sigs.clear()
-            self._eval_decls()
-
-        for task in self.model._tasks:
-            self.visit(task)
-
-    def _eval_decls(self):
-        for decl in self.model._decls:
-            self.visit(decl)
+            for decl in self.model._decls:
+                self.visit(decl)
 
     def _find_model(self, ahdl):
         assert isinstance(ahdl, AHDL_VAR)
@@ -358,7 +367,7 @@ class ModelEvaluator(AHDLVisitor):
                 models.extend(self._collect_model(model_core))
         return models
 
-    def update_regs(self):
+    def _update_regs(self):
         models = self._collect_model(self.model)
         for model in models:
             regs = [x for x in vars(model).values() if isinstance(x, Reg)]
@@ -529,9 +538,9 @@ class ModelEvaluator(AHDLVisitor):
         src = self.visit(ahdl.src)
         dst = self.visit(ahdl.dst)
         assert isinstance(src, Integer)
-        assert isinstance(dst, (Reg, Port))
-        print(f'{dst.signal.name} = {src}')
-        dst.set(src.get())
+        if isinstance(dst, (Reg, Port)):
+            print(f'{dst.signal.name} = {src}')
+            dst.set(src.get())
 
     def visit_AHDL_IO_READ(self, ahdl):
         self.visit(ahdl.io)
@@ -615,7 +624,7 @@ class ModelEvaluator(AHDLVisitor):
         elif ahdl.name == '!hdl_assert':
             if not bool(args[0]):
                 src_text = self._get_source_text(ahdl)
-                raise AssertionError(src_text)
+                raise HDLAssertionError(src_text)
         else:
             raise RuntimeError('unknown function', ahdl.name)
 
@@ -647,7 +656,7 @@ class ModelEvaluator(AHDLVisitor):
         src = self.visit(ahdl.src)
         dst = self.visit(ahdl.dst)
         assert isinstance(src, Integer)
-        assert isinstance(dst, Net)
+        assert isinstance(dst, (Net, Port))
         is_update = dst.set(src.get())
         if is_update:
             self.updated_sigs.add(ahdl.dst.sig)
@@ -732,16 +741,16 @@ class Model(object):
             return self
 
 class SimulationModelBuilder(object):
-    def build_model(self, hdlmodule: HDLScope, pymodule_class):
-        core_model = self.build_core(hdlmodule, pymodule_class)
+    def build_model(self, hdlmodule: HDLScope, main_py_module):
+        core_model = self.build_core(hdlmodule, main_py_module)
         user_model = Model()
         super(Model, user_model).__setattr__('__model', core_model)
         return user_model
 
-    def build_core(self, hdlmodule: HDLScope, pymodule_class):
+    def build_core(self, hdlmodule: HDLScope, main_py_module):
         model = types.SimpleNamespace()
         for sig, subscope in hdlmodule.subscopes.items():
-            sub = self.build_model(subscope, None)
+            sub = self.build_model(subscope, main_py_module)
             setattr(model, sig.name, sub)
 
         model.hdlmodule = hdlmodule
@@ -754,7 +763,7 @@ class SimulationModelBuilder(object):
         if hdlmodule.scope.is_function_module():
             self.build_function(hdlmodule, model)
         else:
-            self.build_module(hdlmodule, model, pymodule_class)
+            self.build_module(hdlmodule, model, main_py_module)
         return model
 
     def build_function(self, hdlscope: HDLScope, model):
@@ -764,11 +773,10 @@ class SimulationModelBuilder(object):
         if isinstance(hdlscope, HDLModule):
             self._make_rom_function(hdlscope, model)
 
-    def build_module(self, hdlscope: HDLScope, model, pymodule_class):
+    def build_module(self, hdlscope: HDLScope, model, main_py_module):
         self._add_signals(hdlscope, model)
         self._make_io_object_for_module(hdlscope, model)
-        if pymodule_class:
-            self._add_user_method(model, pymodule_class)
+        self._add_user_method(model, main_py_module)
         if isinstance(hdlscope, HDLModule):
             self._make_rom_function(hdlscope, model)
 
@@ -851,13 +859,26 @@ class SimulationModelBuilder(object):
                     output_object = Port(output_object)
                 setattr(model, sig.name, output_object)
 
-    def _add_user_method(self, model, pymodule_class):
-        for name, attr in vars(pymodule_class).items():
+    def _add_user_method(self, model, main_py_module):
+        def origin_scope(scope):
+            if scope.origin:
+                return origin_scope(scope.origin)
+            return scope
+        origin_scope = origin_scope(model.hdlmodule.scope)
+        py_name = origin_scope.base_name
+        py_class = main_py_module.__dict__[py_name]
+        for name, attr in vars(py_class).items():
             if name.startswith("__"):
                 continue
             if not callable(attr):
                 continue
-            setattr(model, name, attr)
+            func_sym = origin_scope.find_sym(name)
+            assert isinstance(func_sym, Symbol)
+            func_scope = func_sym.typ.scope
+            if func_scope.is_worker():
+                continue
+            # we need to bind the function to the model instance
+            setattr(model, name, types.MethodType(attr, model))
 
     def convert_py_interface_to_hdl_interface(self):
         pass
