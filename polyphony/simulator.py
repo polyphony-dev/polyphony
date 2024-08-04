@@ -187,6 +187,7 @@ class Reg(Value):
     def __init__(self, val, width, signal):
         super().__init__(val, width, signal.is_int(), signal)
         self.val = 'X'
+        self.prev_val = 'X'
 
     def __str__(self):
         return str(self.val)
@@ -207,6 +208,10 @@ class Reg(Value):
         is_update = self.val != new_next
         self.next = new_next
         return is_update
+
+    def update(self):
+        self.prev_val = self.val
+        self.val = self.next
 
 
 current_simulator = None
@@ -268,7 +273,7 @@ class Port(object):
 
     def edge(self, old_v, new_v):
         assert isinstance(self.value, Reg)
-        return self.value.val == old_v and self.value.next == new_v
+        return self.value.prev_val == old_v and self.value.val == new_v
 
     @property
     def signal(self):
@@ -375,14 +380,14 @@ class ModelEvaluator(AHDLVisitor):
         for model in models:
             regs = [x for x in vars(model).values() if isinstance(x, Reg)]
             for reg in regs:
-                reg.val = reg.next
+                reg.update()
             regarrays = [x for x in vars(model).values() if isinstance(x, tuple) and isinstance(x[0], Reg)]
             for regarray in regarrays:
                 for reg in regarray:
-                    reg.val = reg.next
+                    reg.update()
             regs = [x.value for x in vars(model).values() if isinstance(x, Port) and isinstance(x.value, Reg)]
             for reg in regs:
-                reg.val = reg.next
+                reg.update()
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):

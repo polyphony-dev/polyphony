@@ -1,4 +1,4 @@
-from polyphony import module, testbench, Reg
+from polyphony import module, testbench
 from polyphony.timing import timed, clkfence, clktime, wait_value
 from polyphony.io import Port
 
