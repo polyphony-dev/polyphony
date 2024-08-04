@@ -141,12 +141,16 @@ class Integer(Value):
     def __lshift__(self, rhs):
         if self.val == 'X' or rhs.val == 'X':
             return Integer('X', 0, False)
+        if rhs.val > self.width or rhs.val < 0:
+            return Integer(0, self.width, self.sign)
         v = self.val << rhs.val
         return Integer(v, self.width, self.sign)
 
     def __rshift__(self, rhs):
         if self.val == 'X' or rhs.val == 'X':
             return Integer('X', 0, False)
+        if rhs.val > self.width or rhs.val < 0:
+            return Integer(0, self.width, self.sign)
         v = self.val >> rhs.val
         return Integer(v, self.width, self.sign)
 
