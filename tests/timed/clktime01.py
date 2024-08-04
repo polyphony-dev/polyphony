@@ -1,4 +1,4 @@
-from polyphony import testbench, Reg
+from polyphony import testbench
 from polyphony.timing import timed, clktime, clkfence, clksleep
 
 
@@ -12,9 +12,9 @@ def test():
     assert clktime() == 2
     clksleep(2)
     assert clktime() == 4
-    prev = Reg()
-    prev.v = clktime()
+
+    prev = clktime()  # meta: symbol=register
     clksleep(10)
     assert clktime() == 14
-    elapsed = clktime() - prev.v
+    elapsed = clktime() - prev
     assert elapsed == 10

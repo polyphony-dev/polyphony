@@ -229,9 +229,11 @@ def clktime():
 def clkrange(n):
     if current_simulator is None:
         raise RuntimeError()
-    for i in range(n):
+    if n:
+        for i in range(n):
+            current_simulator._period()
+            yield i
         current_simulator._period()
-        yield i
 
 
 class Port(object):

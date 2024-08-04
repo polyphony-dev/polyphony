@@ -1,4 +1,4 @@
-from polyphony import testbench, Reg
+from polyphony import testbench
 from polyphony.timing import timed, clktime, clkfence, clksleep
 
 
