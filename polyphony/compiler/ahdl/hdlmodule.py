@@ -71,17 +71,22 @@ class HDLModule(HDLScope):
         for decl in self.decls:
             s += '  {}\n'.format(decl)
         s += '\n'
-        s += '-- fsm --\n'
-        for name, fsm in self.fsms.items():
-            s += '---------------------------------\n'
-            s += f'{name}\n'
-            s += '---------------------------------\n'
-            s += 'reset:\n'
-            for stm in fsm.reset_stms:
-                s += f'{stm}\n'
-            for stg in fsm.stgs:
-                for state in stg.states:
-                    s += str(state)
+        if self.fsms:
+            s += '-- fsm --\n'
+            for name, fsm in self.fsms.items():
+                s += '---------------------------------\n'
+                s += f'{name}\n'
+                s += '---------------------------------\n'
+                s += 'reset:\n'
+                for stm in fsm.reset_stms:
+                    s += f'{stm}\n'
+                for stg in fsm.stgs:
+                    for state in stg.states:
+                        s += str(state)
+        if self.tasks:
+            s += '-- tasks --\n'
+            for task in self.tasks:
+                s += f'{task}\n'
         s += '\n'
         return s
 

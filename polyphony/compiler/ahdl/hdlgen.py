@@ -70,7 +70,7 @@ class HDLModuleBuilder(object):
             memvars = roms.pop()
             fname = AHDL_VAR(memvars, Ctx.STORE)
             addr_width = 8  # TODO
-            input_sig = self.hdlmodule.gen_sig(memvars[-1].name + '_in', addr_width)
+            input_sig = self.hdlmodule.gen_sig(f'{fname.hdl_name}_in', addr_width)
             input = AHDL_VAR(input_sig, Ctx.LOAD)
 
             array_sym = memvars[-1].sym

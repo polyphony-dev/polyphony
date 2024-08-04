@@ -95,7 +95,10 @@ def testbench(test):
     def wrapper(*args, **kwargs):
         assert getattr(test, '_execute_on_simu', False), 'Do not call @testbench function directly. It is automatically executed from simu.py.'
         return test(*args, **kwargs)
-    wrapper._test_func = test
+    if hasattr(test, '_orig_func'):
+        wrapper._orig_func = test._orig_func
+    else:
+        wrapper._orig_func = test
     return wrapper
 
 
@@ -157,7 +160,10 @@ class _Rule(object):
         def __call__(self, func):
             def wrapper(*args, **kwargs):
                 return func(*args, **kwargs)
-            wrapper.func = func
+            if hasattr(func, '_orig_func'):
+                wrapper._orig_func = func._orig_func
+            else:
+                wrapper._orig_func = func
             return wrapper
 
     def __call__(self, **kwargs):

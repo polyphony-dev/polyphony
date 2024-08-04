@@ -189,25 +189,58 @@ def model_selector_with_argtypes(models, name):
                 arg_types.append('i')
             else:
                 assert False, f'unsupported arg type: {type(a)}'
+        kwarg_types = {}
+        for k, v in kwargs.items():
+            if isinstance(v, bool):
+                kwarg_types[k] = 'b'
+            elif isinstance(v, int):
+                kwarg_types[k] = 'i'
+            else:
+                assert False, f'unsupported arg type: {type(v)}'
         for model, hdlmodule in models.values():
+            if hdlmodule.name == name and not arg_types and not kwarg_types:
+                return model()
             names = hdlmodule.name.rsplit('_', 1)
             orig_name = names[0]
-            if orig_name == name:
-                if len(names) == 1 and not arg_types:
-                    return model(*args, **kwargs)
-                module_arg_types = re.findall(r'i|b', names[-1])
-                if arg_types == module_arg_types:
-                    return model(*args, **kwargs)
+            if orig_name != name:
+                continue
+            if len(names) == 1 and not arg_types:
+                return model(*args, **kwargs)
+            a_types = arg_types[:]
+            module_arg_types = re.findall(r'i|b', names[-1])
+            if kwarg_types:
+                for param_name in hdlmodule.scope.param_names():
+                    if param_name in kwarg_types:
+                        a_types.append(kwarg_types[param_name])
+            if len(a_types) < len(module_arg_types):
+                values = hdlmodule.scope.param_default_values()
+                offs = len(a_types)
+                for v in values[offs:]:
+                    if isinstance(a, bool):
+                        a_types.append('b')
+                    elif isinstance(a, int):
+                        a_types.append('i')
+                    else:
+                        # no default value
+                        break
+            if a_types == module_arg_types:
+                return model(*args, **kwargs)
         raise ValueError('model not found')
     return model_selector
 
+
+import sys
+from io import StringIO
+import contextlib
 
 def simulate_on_python(casefile_path, source_text, scopes, simu_options):
     finishes = []
     casename = case_name_from_path(casefile_path)
     main_py_module = types.ModuleType('__main__')
-    code_obj = compile(source_text, casefile_path, 'exec')
     try:
+        code_obj = compile(source_text, casefile_path, 'exec')
+        casefile_dir = os.path.dirname(casefile_path)
+        sys.path.append(casefile_dir)
         exec(code_obj, main_py_module.__dict__)
     except Exception as e:
         print(e)
@@ -227,20 +260,20 @@ def simulate_on_python(casefile_path, source_text, scopes, simu_options):
         for _, sub_hdlmodule, _, _ in test_hdlmodule.sub_modules.values():
             if sub_hdlmodule.name in models:
                 continue
-            model = SimulationModelBuilder().build_model(sub_hdlmodule, main_py_module)
+            model = SimulationModelBuilder().build_model(sub_hdlmodule, main_py_module, is_top=True)
             models[sub_hdlmodule.name] = (model, sub_hdlmodule)
         # Replacing classes/functions under test with a model selector
         for obj in py_objects:
             if inspect.isclass(obj):
-                test._test_func.__globals__[obj.__name__] = model_selector_with_argv(models)
+                test._orig_func.__globals__[obj.__name__] = model_selector_with_argv(models)
             elif inspect.isfunction(obj):
-                test._test_func.__globals__[obj.__name__] = model_selector_with_argtypes(models, obj.__name__)
+                test._orig_func.__globals__[obj.__name__] = model_selector_with_argtypes(models, obj.__name__)
             else:
                 assert False
         # exec test
         try:
             simulate_models = [model for model, _ in models.values()]
-            test._test_func._execute_on_simu = True
+            test._orig_func._execute_on_simu = True
             with Simulator(simulate_models):
                 test()
             finishes.append('OK')

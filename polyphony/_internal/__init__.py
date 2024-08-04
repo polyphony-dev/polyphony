@@ -8,6 +8,10 @@ def testbench(func) -> None:
 
 
 @decorator
+def interface(func) -> None:
+    pass
+
+@decorator
 def pure(func) -> None:
     pass
 

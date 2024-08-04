@@ -14,14 +14,14 @@ class DeadCodeEliminator(object):
             dead_stms = []
             for stm in blk.stms:
                 if stm.is_a([MOVE, PHIBase]):
+                    if stm.is_a(MOVE) and stm.src.is_a(IRCallable):
+                        continue
                     if stm.is_a(MOVE) and stm.src.is_a(IRVariable):
                         src_sym = qualified_symbols(stm.src, scope)[-1]
                         assert isinstance(src_sym, Symbol)
                     else:
                         src_sym = None
                     if src_sym and src_sym.is_param():
-                        continue
-                    if stm.is_a(MOVE) and stm.src.is_a(CALL):
                         continue
                     defvars = usedef.get_vars_defined_at(stm)
                     for var in defvars:

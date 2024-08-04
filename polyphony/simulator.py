@@ -338,7 +338,6 @@ class ModelEvaluator(AHDLVisitor):
         return super().visit(ahdl)
 
     def eval(self):
-        # self._eval_decls()
         for task in self.model._tasks:
             self.visit(task)
         self._update_regs()
@@ -356,7 +355,9 @@ class ModelEvaluator(AHDLVisitor):
         model = self.model
         for v in ahdl.vars[:-1]:
             if v.is_subscope():
-                model = getattr(model, v.name)
+                user_model = getattr(model, v.name)
+                model = getattr(user_model, '__model')
+        assert isinstance(model, types.SimpleNamespace)
         return model
 
     def _collect_model(self, model):
@@ -539,7 +540,7 @@ class ModelEvaluator(AHDLVisitor):
         dst = self.visit(ahdl.dst)
         assert isinstance(src, Integer)
         if isinstance(dst, (Reg, Port)):
-            print(f'{dst.signal.name} = {src}')
+            # print(f'{dst.signal.name} = {src}')
             dst.set(src.get())
 
     def visit_AHDL_IO_READ(self, ahdl):
@@ -562,7 +563,7 @@ class ModelEvaluator(AHDLVisitor):
             if cond:
                 cv = self.visit(cond)
                 assert isinstance(cv, Integer)
-                print(f'if {cond} == {cv}')
+                # print(f'if {cond} == {cv}')
                 if int(cv):
                     self.visit(blk)
                     break
@@ -580,7 +581,7 @@ class ModelEvaluator(AHDLVisitor):
 
     def visit_AHDL_CASE(self, ahdl):
         state_val = self.visit(ahdl.sel)
-        print(f'case {ahdl.sel} == {state_val}')
+        # print(f'case {ahdl.sel} == {state_val}')
         for item in ahdl.items:
             case_val = self.visit(item.val)
             if state_val.get() == case_val.get():
@@ -741,20 +742,20 @@ class Model(object):
             return self
 
 class SimulationModelBuilder(object):
-    def build_model(self, hdlmodule: HDLScope, main_py_module):
-        core_model = self.build_core(hdlmodule, main_py_module)
+    def build_model(self, hdlmodule: HDLScope, main_py_module, is_top=False):
+        core_model = self.build_core(hdlmodule, main_py_module, is_top)
         user_model = Model()
         super(Model, user_model).__setattr__('__model', core_model)
         return user_model
 
-    def build_core(self, hdlmodule: HDLScope, main_py_module):
+    def build_core(self, hdlmodule: HDLScope, main_py_module, is_top):
         model = types.SimpleNamespace()
         for sig, subscope in hdlmodule.subscopes.items():
             sub = self.build_model(subscope, main_py_module)
             setattr(model, sig.name, sub)
 
         model.hdlmodule = hdlmodule
-        if isinstance(hdlmodule, HDLModule):
+        if is_top: # isinstance(hdlmodule, HDLModule):
             model._tasks = hdlmodule.tasks
             model._decls = hdlmodule.decls
         else:
@@ -763,7 +764,7 @@ class SimulationModelBuilder(object):
         if hdlmodule.scope.is_function_module():
             self.build_function(hdlmodule, model)
         else:
-            self.build_module(hdlmodule, model, main_py_module)
+            self.build_module(hdlmodule, model, main_py_module, is_top)
         return model
 
     def build_function(self, hdlscope: HDLScope, model):
@@ -773,10 +774,10 @@ class SimulationModelBuilder(object):
         if isinstance(hdlscope, HDLModule):
             self._make_rom_function(hdlscope, model)
 
-    def build_module(self, hdlscope: HDLScope, model, main_py_module):
+    def build_module(self, hdlscope: HDLScope, model, main_py_module, is_top):
         self._add_signals(hdlscope, model)
         self._make_io_object_for_module(hdlscope, model)
-        self._add_user_method(model, main_py_module)
+        self._add_io_method(model, main_py_module)
         if isinstance(hdlscope, HDLModule):
             self._make_rom_function(hdlscope, model)
 
@@ -859,12 +860,12 @@ class SimulationModelBuilder(object):
                     output_object = Port(output_object)
                 setattr(model, sig.name, output_object)
 
-    def _add_user_method(self, model, main_py_module):
-        def origin_scope(scope):
+    def _add_io_method(self, model, main_py_module):
+        def find_origin_scope(scope):
             if scope.origin:
-                return origin_scope(scope.origin)
+                return find_origin_scope(scope.origin)
             return scope
-        origin_scope = origin_scope(model.hdlmodule.scope)
+        origin_scope = find_origin_scope(model.hdlmodule.scope)
         py_name = origin_scope.base_name
         py_class = main_py_module.__dict__[py_name]
         for name, attr in vars(py_class).items():
@@ -872,9 +873,11 @@ class SimulationModelBuilder(object):
                 continue
             if not callable(attr):
                 continue
-            func_sym = origin_scope.find_sym(name)
-            assert isinstance(func_sym, Symbol)
-            func_scope = func_sym.typ.scope
+            for sym_name, sym in origin_scope.symbols.items():
+                if sym_name.startswith(name):
+                    func_scope = find_origin_scope(sym.typ.scope)
+                    if func_scope.base_name == name:
+                        break
             if func_scope.is_worker():
                 continue
             # we need to bind the function to the model instance

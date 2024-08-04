@@ -16,7 +16,7 @@ from .ahdl.analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdl.transformers.ahdlopt import AHDLCopyOpt
 from .ahdl.transformers.bitwidthreducer import BitwidthReducer
 from .ahdl.transformers.canonical import Canonicalizer
-from .ahdl.transformers.canonical import FlattenClassFieldSignals
+from .ahdl.transformers.canonical import FlattenStaticFieldSignals
 from .ahdl.transformers.iotransformer import IOTransformer
 from .ahdl.transformers.iotransformer import WaitTransformer
 from .ahdl.transformers.netreducer import NetReducer
@@ -862,7 +862,7 @@ def compile_plan():
         dbg(dumpmodule),
         #reducestate,
         #dbg(dumpmodule),
-        ahdl_flatten_class_field,
+        ahdl_flatten_static_field,
         dbg(dumpmodule),
         canonicalize,
     ]
@@ -1002,9 +1002,9 @@ def clone_output_module(driver, scope):
     env.append_output_hdlscope(clone)
 
 
-def ahdl_flatten_class_field(driver, scope):
+def ahdl_flatten_static_field(driver, scope):
     hdlmodule = env.hdlscope(scope)
-    FlattenClassFieldSignals().process(hdlmodule)
+    FlattenStaticFieldSignals().process(hdlmodule)
 
 
 def ahdl_flatten_signals(driver, scope):
