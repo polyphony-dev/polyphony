@@ -29,12 +29,14 @@ def parse_options():
                         default=False, help='enable python simulation')
     parser.add_argument('-c', '--config', dest='config',
                         metavar='CONFIG', help='set configration(json literal or file)')
-    parser.add_argument('-dd', '--diable_debug', dest='debug_mode',
+    parser.add_argument('-dd', '--disable_debug', dest='debug_mode',
                         action='store_false', default=True, help='disable debug mode')
     parser.add_argument('-vd', '--verilog_dump', dest='verilog_dump',
                         action='store_true', help='output vcd file in testbench')
     parser.add_argument('-vm', '--verilog_monitor', dest='verilog_monitor',
                         action='store_true', help='enable $monitor in testbench')
+    parser.add_argument('-hd', '--hdl_debug', dest='hdl_debug_mode',
+                        action='store_true', default=False, help='enable HDL debug mode')
     parser.add_argument('-p', dest='with_path_name', action='store_true')
     parser.add_argument('-t', '--targets', nargs='+', dest='targets', default=list())
     parser.add_argument('source', help='Python source file')
@@ -98,6 +100,7 @@ def setup_compiler(casefile_path, casename, simu_options):
         compiler_options.targets = targets_from_source_comment(casefile_path)
     compiler_options.config = simu_options.config
     compiler_options.debug_mode = simu_options.debug_mode
+    compiler_options.hdl_debug_mode = simu_options.hdl_debug_mode
     compiler_options.verilog_dump = simu_options.verilog_dump
     compiler_options.verilog_monitor = simu_options.verilog_monitor
     setup(casefile_path, compiler_options)

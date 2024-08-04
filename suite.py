@@ -176,6 +176,7 @@ def abnormal_test(tests, proc, options, ignores):
 def suite_main():
     options = parse_options()
     options.debug_mode = False
+    options.hdl_debug_mode = False
     options.verilog_dump = False
     options.verilog_monitor = False
     options.with_path_name = True

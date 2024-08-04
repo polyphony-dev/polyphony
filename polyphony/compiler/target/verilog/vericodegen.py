@@ -146,13 +146,14 @@ class VerilogCodeGen(AHDLVisitor):
     def _generate_net_monitor(self):
         if env.hdl_debug_mode and not self.hdlmodule.scope.is_testbench():
             self.emit('always @(posedge clk) begin')
-            self.emit(f'if (rst==0 && {self.current_state_sig.name}!=0) begin')
+            self.emit(f'if (rst==0) begin')
             for net in self.hdlmodule.get_signals({'net'}, {'input', 'output'}):
                 self.emit(f'$display("%8d:WIRE  :{self.hdlmodule.name:<10}', newline=False)
-                if net.sig.is_onehot():
-                    self.emit(f'{net.sig.name} = 0b%b", $time, {net.sig.name});')
+                name = self._safe_name(net.name)
+                if net.is_onehot():
+                    self.emit(f'{name} = 0b%b", $time, {name});')
                 else:
-                    self.emit(f'{net.sig.name} = 0x%2h (%1d)", $time, {net.sig.name}, {net.sig.name});')
+                    self.emit(f'{name} = 0x%2h (%1d)", $time, {name}, {name});')
             self.emit('end')
             self.emit('end')
             self.emit('')
