@@ -677,7 +677,7 @@ class ModelEvaluator(AHDLVisitor):
         assert isinstance(dst, (Net, Port))
         is_update = dst.set(src.get())
         if is_update:
-            self.updated_sigs.add(ahdl.dst.sig)
+            self.updated_sigs.add(dst.signal)
 
     def visit_AHDL_EVENT_TASK(self, ahdl):
         triggered = False
@@ -818,7 +818,9 @@ class SimulationModelBuilder(object):
                 setattr(model, sig.name, tuple(xs))
                 continue
             elif sig.is_netarray():
-                assert False
+                xs = [Net(val, sig.width[0], sig) for _ in range(sig.width[1])]
+                setattr(model, sig.name, tuple(xs))
+                continue
             elif sig.is_rom():
                 continue
             assert False
