@@ -8,11 +8,11 @@ def import09_a1(x):
     return get_v(Sub1(x))
 
 
-#def import09_a2(x):
-#    return get_v(Sub2(x))
+def import09_a2(x):
+    return get_v(Sub2(x))
 
 
 @polyphony.testbench
 def test():
     assert 100 == import09_a1(10)
-    #assert 1000 == import09_a2(10)
+    assert 1000 == import09_a2(10)

@@ -884,7 +884,13 @@ class SimulationModelBuilder(object):
             return scope
         origin_scope = find_origin_scope(model.hdlmodule.scope)
         py_name = origin_scope.base_name
-        py_class = main_py_module.__dict__[py_name]
+        if py_name in main_py_module.__dict__:
+            py_class = main_py_module.__dict__[py_name]
+        else:
+            # Handling of cases where a class is renamed with 'import as'
+            classes = {v.__name__: v for k, v in main_py_module.__dict__.items() if inspect.isclass(v)}
+            if py_name in classes:
+                py_class = classes[py_name]
         for name, attr in vars(py_class).items():
             if name.startswith("__"):
                 continue
