@@ -468,12 +468,16 @@ class ModelEvaluator(AHDLVisitor):
         r = self.visit(right)
         assert isinstance(l, Integer)
         assert isinstance(r, Integer)
-        if l.val == 'X' or r.val == 'X':
-            return Integer('X', 0, False)
         if op == 'And':
-            return Integer(int(l.val and r.val), 1, False)
+            if l.val and r.val:
+                return Integer(1, 1, False)
+            else:
+                return Integer(0, 1, False)
         elif op == 'Or':
-            return Integer(int(l.val or r.val), 1, False)
+            if l.val or r.val:
+                return Integer(1, 1, False)
+            else:
+                return Integer(0, 1, False)
         elif op == 'Eq':
             return l == r
         elif op == 'NotEq':
@@ -512,13 +516,13 @@ class ModelEvaluator(AHDLVisitor):
             lhs = ahdl.args[0]
             for rhs in ahdl.args[1:]:
                 lhs = self.eval_relop(ahdl.op, lhs, rhs)
-                isinstance(lhs, Integer)
+                assert isinstance(lhs, Integer)
             return lhs
         else:
             lhs = ahdl.args[0]
             for rhs in ahdl.args[1:]:
                 lhs = self.eval_binop(ahdl.op, lhs, rhs)
-                isinstance(lhs, Integer)
+                assert isinstance(lhs, Integer)
             return lhs
 
     def visit_AHDL_META_OP(self, ahdl):
@@ -575,7 +579,8 @@ class ModelEvaluator(AHDLVisitor):
                 cv = self.visit(cond)
                 assert isinstance(cv, Integer)
                 # print(f'if {cond} == {cv}')
-                if int(cv):
+                assert cv.val != 'X'
+                if int(cv.val):
                     self.visit(blk)
                     break
             else:
@@ -585,7 +590,8 @@ class ModelEvaluator(AHDLVisitor):
     def visit_AHDL_IF_EXP(self, ahdl):
         cv = self.visit(ahdl.cond)
         assert isinstance(cv, Integer)
-        if cv.val != 'X' and int(cv):
+        assert cv.val != 'X'
+        if int(cv.val):
             return self.visit(ahdl.lexp)
         else:
             return self.visit(ahdl.rexp)
