@@ -159,8 +159,10 @@ class ArgumentApplier(object):
                 args.pop(i)
             UseDefDetector().process(callee)
             ConstantOpt().process(callee)
-            callee.parent.set_bound_args(binding)
-        callee.parent.build_module_params(module_param_vars)
+            if callee.is_ctor():
+                callee.parent.set_bound_args(binding)
+        if callee.parent.is_module():
+            callee.parent.build_module_params(module_param_vars)
 
 
 class CallCollector(IRVisitor):
