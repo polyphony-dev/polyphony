@@ -140,7 +140,6 @@ class ArgumentApplier(object):
         return next_scopes
 
     def _bind_args(self, caller_scope: Scope, args: list[tuple[str, IRExp]], callee: Scope):
-        assert callee.parent.is_module()
         binding: list[tuple[int, IRExp]] = []
         module_param_vars: list[tuple[str, IRExp]] = []
         param_names = callee.param_names()
