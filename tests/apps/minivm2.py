@@ -7,7 +7,7 @@ from polyphony.timing import timed, clkfence
 
 @timed
 @polyphony.module
-class MiniVM:
+class minivm2:
     LOAD0 = 0
     LOAD1 = 1
     ADD = 2
@@ -46,27 +46,27 @@ class MiniVM:
     def execute(self):
         op = self.ch_ope.get()
         v = self.ch_value.get()
-        if op == MiniVM.LOAD0:
+        if op == minivm2.LOAD0:
             self.reg0 = v
-        elif op == MiniVM.LOAD1:
+        elif op == minivm2.LOAD1:
             self.reg1 = v
-        elif op == MiniVM.ADD:
+        elif op == minivm2.ADD:
             self.reg0 = self.reg0 + self.reg1
-        elif op == MiniVM.SUB:
+        elif op == minivm2.SUB:
             self.reg0 = self.reg0 - self.reg1
-        elif op == MiniVM.MUL:
+        elif op == minivm2.MUL:
             self.reg0 = self.reg0 * self.reg1
-        elif op == MiniVM.HALT:
+        elif op == minivm2.HALT:
             self.dout.wr(self.reg0)
 
 
 @polyphony.testbench
 def test():
-    vm0 = MiniVM(0, 5)
+    vm0 = minivm2(0, 5)
     d = vm0.dout.rd()
     assert d == 6
 
-    vm1 = MiniVM(6, 11)
+    vm1 = minivm2(6, 11)
     d = vm1.dout.rd()
     assert d == 24
 

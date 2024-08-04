@@ -1,6 +1,5 @@
 from polyphony import module
 from polyphony import testbench
-from polyphony import Reg
 from polyphony.io import Port
 from polyphony.timing import timed, clkfence
 

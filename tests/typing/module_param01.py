@@ -16,7 +16,7 @@ class AGeneric:
 
 
 @module
-class module_param00:
+class module_param01:
     def __init__(self):
         self.port = Port(bool, 'out', init=False)
         self.generic = AGeneric(bool)
@@ -39,7 +39,7 @@ class module_param00:
 # @timed
 @testbench
 def test():
-    c = module_param00()
+    c = module_param01()
     wait_value(True, c.port)
     assert clktime() == 12
 
