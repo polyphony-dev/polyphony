@@ -1075,6 +1075,8 @@ def main():
                         action='count', help='verbose output')
     parser.add_argument('-D', '--debug', dest='debug_mode',
                         action='store_true', help='enable debug mode')
+    parser.add_argument('-hd', '--hdl_debug', dest='hdl_debug_mode',
+                        action='store_true', help='enable HDL debug mode')
     parser.add_argument('-q', '--quiet', dest='quiet_level',
                         action='count', help='suppress warning/error messages')
     parser.add_argument('-vd', '--verilog_dump', dest='verilog_dump',
