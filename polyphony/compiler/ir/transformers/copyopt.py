@@ -42,9 +42,9 @@ class CopyOpt(IRVisitor):
             if dst_qsym[0].is_free():
                 for clos in scope.closures():
                     udupdater = UseDefUpdater(clos)
-                    self._replace_copies(clos, udupdater, cp, orig, dst_qsym, copies, worklist)
-                if replaced:
-                    src_qsym[0].add_tag('free')
+                    replaced = self._replace_copies(clos, udupdater, cp, orig, dst_qsym, copies, worklist)
+                    if replaced:
+                        src_qsym[0].add_tag('free')
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
