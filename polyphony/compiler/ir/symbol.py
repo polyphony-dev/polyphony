@@ -13,8 +13,6 @@ if TYPE_CHECKING:
 class Symbol(Tagged):
     __slots__ = ['_id', '_name', '_scope', '_typ', '_ancestor']
     id_counter = 0
-    imported_symbol_map = defaultdict(set)
-    import_src_symbol_map = {}
 
     TAGS = {
         'temp', 'param', 'return', 'condition', 'induction', 'alias', 'free',
@@ -28,8 +26,6 @@ class Symbol(Tagged):
     @classmethod
     def initialize(cls):
         cls.id_counter = 0
-        cls.imported_symbol_map.clear()
-        cls.import_src_symbol_map.clear()
 
     @classmethod
     def unique_name(cls, prefix: str=''):
@@ -78,10 +74,6 @@ class Symbol(Tagged):
     def typ(self, typ):
         if self._typ == typ:
             return
-        if self in Symbol.imported_symbol_map:
-            for imported_sym in Symbol.imported_symbol_map[self]:
-                assert imported_sym.is_imported()
-                imported_sym.typ = typ
         self._typ = typ
 
     @property
@@ -135,12 +127,3 @@ class Symbol(Tagged):
                         self._typ)
         newsym.ancestor = self._ancestor
         return newsym
-
-    def import_src(self) -> 'Symbol':
-        assert self in Symbol.import_src_symbol_map
-        return Symbol.import_src_symbol_map[self]
-
-    def import_from(self, import_src: 'Symbol'):
-        self.add_tag('imported')
-        Symbol.imported_symbol_map[import_src].add(self)
-        Symbol.import_src_symbol_map[self] = import_src

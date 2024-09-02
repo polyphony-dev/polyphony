@@ -9,7 +9,7 @@ class import14:
     def __init__(self):
         self.i = Handshake(int, 'in')
         self.o = Handshake(int, 'out')
-        self.append_worker(worker, self.i, self.o)
+        self.append_worker(worker, self.i, self.o, loop=True)
 
 
 @testbench

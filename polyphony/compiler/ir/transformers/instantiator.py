@@ -100,7 +100,7 @@ class ModuleInstantiator(object):
         if worker.is_method():
             call.replace(worker.base_name, new_worker.base_name)
         else:
-            call.replace(TEMP(worker.base_name), ATTR(TEMP('self'), new_worker.base_name))
+            call.replace(w, ATTR(TEMP('self'), new_worker.base_name))
         new_worker.add_tag('instantiated')
         return new_worker
 
