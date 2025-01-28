@@ -11,7 +11,7 @@ def if20(x):
         elif x < 30:
             y += 3
         else:
-            assert False
+            pass
         y += 20
     else:
         y = 100
@@ -23,8 +23,5 @@ def test():
     assert 21 == if20(0)
     assert 22 == if20(10)
     assert 23 == if20(20)
-    #assert 20 == if20(30)
+    assert 20 == if20(30)
     assert 100 == if20(100)
-
-
-test()

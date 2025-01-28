@@ -15,6 +15,3 @@ def import_pkg04_2():
 def test():
     assert 100 == import_pkg04_1()
     assert 111 == import_pkg04_2()
-
-
-test()

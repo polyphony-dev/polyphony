@@ -10,13 +10,13 @@ def typing05_b(xs:Tuple[int, ...], i:int8) -> int:
     return xs[i]
 
 
-@testbench
-def test():
+def typing05():
     data = (0, 1, 1)  # type: Tuple[bit, ...]
     for i in range(len(data)):
         d = data[i]
         assert d == typing05_a(data, i)
         assert d == typing05_b(data, i)
 
-
-test()
+@testbench
+def test():
+    typing05()

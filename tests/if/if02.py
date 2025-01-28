@@ -17,4 +17,3 @@ def test():
     assert 4 == if02(0, 1, 2)
     assert 3 == if02(2, 0, 1)
     assert 2 == if02(1, 2, 0)
-test()

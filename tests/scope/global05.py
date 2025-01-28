@@ -1,6 +1,6 @@
 from polyphony import testbench
 
-gs = [1111, 2222, 3333]
+gs = (1111, 2222, 3333)
 
 def global05():
     sum = 0
@@ -11,5 +11,3 @@ def global05():
 @testbench
 def test():
     assert 6666 == global05()
-
-test()

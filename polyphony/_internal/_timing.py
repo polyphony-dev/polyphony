@@ -1,4 +1,8 @@
-from .io import Port
+from polyphony.typing import uint64
+
+@decorator
+def timed() -> None:
+    pass
 
 
 @builtin
@@ -8,24 +12,39 @@ def clksleep(clk_cycles:int) -> None:
 
 @inlinelib
 def clkfence() -> None:
-    clksleep(0)
+    clksleep(1)
 
 
 @builtin
-def wait_edge(old:int, new:int, *ports:Port) -> None:
+def clkrange(clk_cycles:int=None) -> None:
     pass
 
 
 @builtin
-def wait_rising(*ports:Port) -> None:
+def clktime() -> uint64:
     pass
 
 
 @builtin
-def wait_falling(*ports:Port) -> None:
+def wait_until(pred:function) -> bool:
     pass
 
 
-@builtin
-def wait_value(value:int, *ports:Port) -> None:
-    pass
+@inlinelib
+def wait_edge(old, new, port) -> None:
+    wait_until(lambda: port.edge(old, new))
+
+
+@inlinelib
+def wait_rising(port) -> None:
+    wait_until(lambda: port.edge(0, 1))
+
+
+@inlinelib
+def wait_falling(port) -> None:
+    wait_until(lambda: port.edge(1, 0))
+
+
+@inlinelib
+def wait_value(value, port) -> None:
+    wait_until(lambda: port.rd() == value)

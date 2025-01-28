@@ -1,25 +1,26 @@
 import polyphony
 import sub1
-from sub3 import SUB3_GLOBAL_ARRAY, SUB3_GLOBAL_TUPLE
+from sub3 import SUB3_GLOBAL_ARRAY1
+from sub3 import SUB3_GLOBAL_ARRAY2 as array2
 
 
 def import11_a(i):
-    return sub1.SUB1_GLOBAL_ARRAY[i]
+    return sub1.SUB1_GLOBAL_ARRAY1[i]
 
 
 def import11_b(i):
-    return sub1.SUB1_GLOBAL_TUPLE[i]
+    return sub1.SUB1_GLOBAL_ARRAY2[i]
 
 
 def import11_c(i):
-    return SUB3_GLOBAL_ARRAY[i]
+    return SUB3_GLOBAL_ARRAY1[i]
 
 
 def import11_d(i):
-    return SUB3_GLOBAL_TUPLE[i]
+    return array2[i]
 
 def import11_e():
-    return len(SUB3_GLOBAL_ARRAY)
+    return len(SUB3_GLOBAL_ARRAY1)
 
 
 @polyphony.testbench
@@ -33,6 +34,3 @@ def test():
     assert 36 == import11_d(1)
     assert 38 == import11_d(3)
     assert 4 == import11_e()
-
-
-test()

@@ -2,7 +2,7 @@ from polyphony import testbench
 from polyphony import pipelined
 
 
-def pipe05(x):
+def for05(x):
     z = 0
     for i in pipelined(range(x)):
         if i > 5:
@@ -14,9 +14,6 @@ def pipe05(x):
 
 @testbench
 def test():
-    assert 0 == pipe05(0)
-    assert 10 == pipe05(5)
-    assert 16 == pipe05(10)
-
-
-test()
+    assert 0 == for05(0)
+    assert 10 == for05(5)
+    assert 16 == for05(10)

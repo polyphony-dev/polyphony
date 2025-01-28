@@ -1,13 +1,16 @@
 from polyphony import module, testbench, is_worker_running
 from polyphony.io import Port
+from polyphony.timing import clkfence
+from polyphony.modules import Handshake
 
 
+@module
 class Interface:
     def __init__(self):
         self.i0 = Port(int, 'in')
         self.i1 = Port(int, 'in')
 
-
+@module
 class Object:
     def __init__(self):
         self.inf0 = Interface()
@@ -20,8 +23,8 @@ class Object:
 @module
 class object_if01:
     def __init__(self):
-        self.mode = Port(int, 'in', protocol='ready_valid')
-        self.result = Port(int, 'out', protocol='ready_valid')
+        self.mode = Handshake(int, 'in')
+        self.result = Handshake(int, 'out')
         self.a = Object()
         self.b = Object()
         self.c = Object()
@@ -47,11 +50,9 @@ class object_if01:
             self.result.wr(ret)
 
 
-m = object_if01()
-
-
 @testbench
-def test(m):
+def test():
+    m = object_if01()
     m.a.inf0.i0.wr(10)
     m.a.inf0.i1.wr(20)
     m.a.inf1.i0.wr(30)
@@ -64,17 +65,15 @@ def test(m):
     m.c.inf0.i1.wr(100)
     m.c.inf1.i0.wr(110)
     m.c.inf1.i1.wr(120)
+
     m.mode.wr(0)
-    print(m.result.rd())
+    assert m.result.rd() == -7200
 
     m.mode.wr(1)
-    print(m.result.rd())
+    assert m.result.rd() == -13600
 
     m.mode.wr(2)
-    print(m.result.rd())
+    assert m.result.rd() == 0
 
     m.mode.wr(3)
-    print(m.result.rd())
-
-
-test(m)
+    assert m.result.rd() == 20800

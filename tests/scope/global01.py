@@ -9,5 +9,3 @@ def global01():
 @testbench
 def test():
     assert 2222 == global01()
-
-test()

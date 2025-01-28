@@ -48,6 +48,3 @@ def test():
     assert 10 == if28(0, 8, 3, 1, 1)
     assert 13 == if28(0, 9, 3, 2, 2)
     assert 14 == if28(0, 10, 4, 0, 0)
-
-
-test()

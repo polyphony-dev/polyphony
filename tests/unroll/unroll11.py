@@ -18,7 +18,7 @@ def shift_2(xs:list, x):
 
 
 # For full unroll, the argument list must specify an explicit size.
-def unroll11_a(xs:List[int][6]):
+def unroll11_a(xs:List[int][5]):
     shift_full(xs, 1)
     shift_full(xs, 2)
     shift_full(xs, 3)
@@ -34,8 +34,7 @@ def unroll11_b(xs):
     shift_2(xs, 5)
 
 
-@testbench
-def test():
+def unroll11():
     xs = [1, 2, 3, 4, 5]
     unroll11_a(xs)
     assert 5 == xs[0]
@@ -53,4 +52,6 @@ def test():
     assert 1 == xs[4]
 
 
-test()
+@testbench
+def test():
+    unroll11()

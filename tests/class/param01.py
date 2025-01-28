@@ -16,5 +16,3 @@ def test():
     assert 1 == param01(1)
     assert 4 == param01(2)
     assert 9 == param01(3)
-
-test()

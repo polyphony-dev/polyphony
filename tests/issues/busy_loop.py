@@ -1,11 +1,11 @@
 from polyphony import module, testbench, is_worker_running
-from polyphony.io import Queue
+from polyphony.modules import Handshake
 
 
 @module
 class busy_loop:
     def __init__(self):
-        self.i = Queue(int, 'in')
+        self.i = Handshake(int, 'in')
         self.append_worker(self.w)
 
     def w(self):
@@ -22,11 +22,8 @@ class busy_loop:
 
 
 @testbench
-def test(m):
+def test():
+    m = busy_loop()
     m.i.wr(0)
     m.i.wr(1)
     m.i.wr(2)
-
-
-m = busy_loop()
-test(m)

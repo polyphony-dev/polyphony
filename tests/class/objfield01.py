@@ -44,6 +44,3 @@ def objfield01(x, y):
 @testbench
 def test():
     assert 33 == objfield01(10, 20)
-
-
-test()

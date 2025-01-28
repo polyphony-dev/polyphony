@@ -16,5 +16,3 @@ def test():
     assert 13 == field02(1, 2)
     assert 15 == field02(2, 3)
     assert 17 == field02(3, 4)
-
-test()

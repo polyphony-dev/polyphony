@@ -18,6 +18,3 @@ def test():
     assert 3 == if19(3)
     assert 14 == if19(13)
     assert 30 == if19(30)
-
-
-test()

@@ -15,6 +15,4 @@ def func10(x, y, z):
 @testbench
 def test():
     assert 3 == func10(0, 2, 3)
-    assert 2 == func10(1, 2, 3)    
-
-test()
+    assert 2 == func10(1, 2, 3)

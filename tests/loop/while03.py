@@ -18,5 +18,3 @@ def test():
     assert 0 == while03(0)
     assert 3 == while03(1)
     assert 28 == while03(10)
-
-test()

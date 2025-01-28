@@ -17,6 +17,3 @@ def nested05(x):
 @testbench
 def test():
     assert 96 == nested05(10)
-
-
-test()

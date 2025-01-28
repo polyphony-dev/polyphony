@@ -27,6 +27,3 @@ def if23():
 @testbench
 def test():
     assert 30 == if23()
-
-
-test()

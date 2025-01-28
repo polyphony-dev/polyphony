@@ -29,5 +29,3 @@ def test():
     assert 262136 == bitwidth03_b(32767, 16384)
     assert 524256 == bitwidth03_b(32767, 32767)
     assert -524257 == bitwidth03_b(-32767, 32767)
-
-test()

@@ -25,5 +25,3 @@ def test():
     assert 30 == while05(0)
     assert 24 == while05(1)
     assert 22 == while05(2)
-
-test()

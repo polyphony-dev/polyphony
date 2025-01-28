@@ -28,6 +28,3 @@ def test():
     assert 11 == for18(10, 0)
     assert 14 == for18(10, 1)
     assert 15 == for18(10, 2)
-
-
-test()

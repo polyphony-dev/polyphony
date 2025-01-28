@@ -10,6 +10,3 @@ def import_pkg01():
 @polyphony.testbench
 def test():
     assert True == import_pkg01()
-
-
-test()

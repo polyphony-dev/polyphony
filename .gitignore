@@ -1,6 +1,7 @@
 .gitignore
+.*/
+.*
 __pycache__
 debug*
-tmp/
 out/
 .suite_ignores

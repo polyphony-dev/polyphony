@@ -19,6 +19,3 @@ def init01():
 @testbench
 def test():
     assert 79800 == init01()
-
-
-test()

@@ -1,15 +1,14 @@
 from polyphony import testbench
 from polyphony import module
 from polyphony.io import Port
+from polyphony.modules import Handshake
 from polyphony.typing import int12, List, Tuple
 from polyphony import rule, pipelined
 from sobel_filter import PipelinedStreamFilter as StreamFilter
 
 
-# NOTE: env.internal_ram_threshold_size = 0 is required for running this test.
 
-
-TEST_DATA_61x52:List[int12] = [
+TEST_DATA_61x52:Tuple[int12] = (
     141, 140, 137, 128, 126, 121, 119, 116, 113, 110, 114, 117, 114, 117, 124,
     128, 132, 137, 141, 143, 143, 148, 152, 146, 148, 145, 143, 142, 147, 145,
     147, 147, 144, 145, 149, 150, 149, 145, 144, 145, 141, 141, 142, 141, 143,
@@ -222,16 +221,16 @@ TEST_DATA_61x52:List[int12] = [
     167, 153, 163, 182, 199, 204, 215, 215, 214, 213, 214, 214, 213, 214, 214,
     210, 207, 206, 201, 195, 200, 210, 204, 203, 203, 207, 210, 211, 214, 217,
     220, 224, 225, 230, 227, 214, 147
-]
+)
 
-EXPECTED_DATA_9x4:List[int12] = [
+EXPECTED_DATA_9x4:Tuple[int12] = (
     114, 229, 233, 245, 255, 255, 255, 255, 255,
     255, 255, 255, 255, 255, 255, 255, 255, 247,
     255, 255, 12, 21, 37, 54, 58, 61, 62,
     255, 255, 70, 66, 72, 58, 44, 41, 34
-]
+)
 
-EXPECTED_H_DATA_61x52:List[int12] = [
+EXPECTED_H_DATA_61x52:Tuple[int12] = (
     14,  13, 124, 116, 117, 121, 121, 123, 122, 122, 129, 135, 128, 128, 138,
     139, 136, 137, 137, 134, 130, 133, 137, 126, 124, 127, 123, 125, 132, 131,
     128, 130, 125, 126, 133, 133, 128, 123, 123, 128, 125, 124, 129, 128, 129,
@@ -444,11 +443,11 @@ EXPECTED_H_DATA_61x52:List[int12] = [
     28,   6,  15,  70, 172, 255, 255, 195, 164, 145, 136, 130, 124, 121, 118,
     114, 113, 116, 118, 118, 123, 154, 137,  96, 114, 122, 131, 151, 162, 160,
     153, 153, 159, 163, 129,  55,   0
-]
+)
 
 
 
-EXPECTED_DATA_61x52:List[int12] = [
+EXPECTED_DATA_61x52:Tuple[int12] = (
     114, 229, 233, 245, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
     255, 255, 250, 241, 232, 226, 224, 219, 212, 216, 217, 222, 225, 225, 221,
     218, 218, 219, 221, 221, 216, 211, 216, 221, 221, 224, 228, 228, 227, 227,
@@ -661,23 +660,23 @@ EXPECTED_DATA_61x52:List[int12] = [
     104, 140, 134,  57,  65, 147, 126,  70,  39,  13,  12,  12,  11,  10,   8,
     9,  12,  12,  14,  23,  27,  33,  18,  27,  16,   7,   9,  27,  29,  22,
     15,  13,  17,  22,   4,  38, 167
-]
+)
 
-EXPECTED_DATA_15x4 = [
+EXPECTED_DATA_15x4 = (
     114, 229, 233, 245, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
     241, 255, 246, 244, 237, 231, 226, 215, 218, 222, 217, 224, 225, 225, 231,
     241, 244, 19, 21, 35, 47, 57, 63, 67, 70, 66, 60, 54, 56, 56,
     235, 247, 22, 16, 15, 5, 7, 12, 14, 8, 5, 8, 6, 3, 8
-]
+)
 
-EXPECTED_H_DATA_15x4 = [
+EXPECTED_H_DATA_15x4 = (
     14, 13, 124, 116, 117, 121, 121, 123, 122, 122, 129, 135, 128, 128, 138, 0, 0, 129, 113, 112, 116, 119, 127, 114, 112,
     129, 137, 125, 132, 151, 0, 0, 139, 132, 134, 130, 131, 136, 113, 114, 124, 121, 123, 136, 145, 0, 0, 130, 135, 145, 136, 132, 133, 118, 123, 123, 115, 121, 131, 134
-]
+)
 
-THRU_H_DATA_15x4 = [
+THRU_H_DATA_15x4 = (
     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 141, 140, 137, 128, 126, 121, 119, 116, 113, 110, 114, 117, 114, 117, 124, 128, 132, 137, 141, 143, 143, 148, 152, 146, 148, 145, 143, 142, 147, 145
-]
+)
 
 #W = 61
 #H = 52
@@ -689,14 +688,14 @@ H = 4
 @module
 class FilterTester:
     def __init__(self):
-        self.start = Port(bool, 'in', protocol='ready_valid')
-        self.finish = Port(bool, 'out', protocol='ready_valid')
+        self.start = Handshake(bool, 'in')
+        self.finish = Handshake(bool, 'out')
         self.sobel = StreamFilter(W, H, 2)
         self.append_worker(self.test_source)
         self.append_worker(self.test_sink)
 
     def test_source(self):
-        self.start()
+        self.start.rd()
         for y in range(H):
             for x in pipelined(range(W)):
                 idx = y * W + x
@@ -717,7 +716,7 @@ class FilterTester:
             expected = EXPECTED_DATA_15x4[i]
             print(actual, expected)
             assert actual == expected
-        self.finish(True)
+        self.finish.wr(True)
 
 
 @testbench

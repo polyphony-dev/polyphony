@@ -17,5 +17,3 @@ def list19(x):
 @testbench
 def test():
     assert 18 == list19(0)
-    
-test()

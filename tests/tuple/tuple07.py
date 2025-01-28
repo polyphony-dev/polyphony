@@ -12,7 +12,6 @@ def tuple07(p, x, y, z):
 @testbench
 def test():
     assert 1+2 == tuple07(True, 1, 2, 3)
-    assert 2+3 == tuple07(False, 1, 2, 3)    
+    assert 2+3 == tuple07(False, 1, 2, 3)
     assert 4+5 == tuple07(True, 4, 5, 6)
-    assert 5+6 == tuple07(False, 4, 5, 6)    
-test()
+    assert 5+6 == tuple07(False, 4, 5, 6)

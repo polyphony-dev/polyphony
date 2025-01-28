@@ -12,5 +12,3 @@ def global02():
 @testbench
 def test():
     assert 3333 == global02()
-
-test()

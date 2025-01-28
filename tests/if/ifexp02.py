@@ -8,5 +8,3 @@ def test():
     assert -1 == ifexp02(0, 1)
     assert 1 == ifexp02(1, 0)
     assert 0 == ifexp02(1, 1)
-
-test()

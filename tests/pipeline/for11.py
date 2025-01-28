@@ -2,18 +2,17 @@ from polyphony import testbench
 from polyphony import pipelined
 
 
-def pipe11(xs, ys):
+def pipe11_func(xs, ys):
     for i in pipelined(range(len(xs) - 1), ii=2):
         v = xs[i] + xs[i + 1]
         v >>= 1
         ys[i] = v
 
 
-@testbench
-def test():
+def for11():
     idata = [0, 16, 32, -16, -64]
     odata = [0] * 5
-    pipe11(idata, odata)
+    pipe11_func(idata, odata)
     assert 8 == odata[0]
     assert 24 == odata[1]
     assert 8 == odata[2]
@@ -21,4 +20,6 @@ def test():
     assert 0 == odata[4]
 
 
-test()
+@testbench
+def test():
+    for11()

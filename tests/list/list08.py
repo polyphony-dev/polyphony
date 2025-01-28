@@ -14,4 +14,3 @@ def test():
     assert 14 == list08(0, 1, 2)
     assert 11 == list08(1, 2, 0)
     assert 10 == list08(2, 0, 1)
-test()

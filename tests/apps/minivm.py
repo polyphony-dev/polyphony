@@ -42,5 +42,3 @@ def minivm(start_addr):
 def test():
     assert minivm(0) == 6
     assert minivm(6) == 24
-
-test()

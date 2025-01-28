@@ -8,5 +8,3 @@ def test():
     assert 3 == param01(0, 1, 2)
     assert 21 == param01(0, 1)
     assert 30 == param01(0)
-
-test()

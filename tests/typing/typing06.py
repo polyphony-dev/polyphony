@@ -22,6 +22,3 @@ def typing06(x:int4):
 def test():
     assert 2 == typing06(1)
     assert 6 == typing06(2)
-
-
-test()

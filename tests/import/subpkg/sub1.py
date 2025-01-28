@@ -1,8 +1,8 @@
 from .subsubpkg.subsub1 import func1 as sub_f1
 
 SUB1_GLOBAL = 111
-SUB1_GLOBAL_ARRAY = [1, 2, 3, 4]
-SUB1_GLOBAL_TUPLE = (5, 6, 7, 8)
+SUB1_GLOBAL_ARRAY1 = (1, 2, 3, 4)
+SUB1_GLOBAL_ARRAY2 = (5, 6, 7, 8)
 
 
 def func1(x):

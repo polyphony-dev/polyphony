@@ -25,6 +25,3 @@ def test():
     assert 1 == cfg04(1, 0)
     assert 2 == cfg04(1, 1)
     assert 3 == cfg04(1, 2)
-
-
-test()

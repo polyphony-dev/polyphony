@@ -12,5 +12,3 @@ def test():
     assert a+a == f(a)
     b = f(1) + f(1)
     assert b == f(2)
-
-test()

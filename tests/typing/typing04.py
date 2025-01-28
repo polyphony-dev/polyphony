@@ -10,8 +10,7 @@ def typing04_b(xs:Tuple[int, int, int], i:int8) -> int:
     return xs[i]
 
 
-@testbench
-def test():
+def typing04():
     data = (0, 1, 1)  # type: Tuple[bit, bit, bit]
     for i in range(len(data)):
         d = data[i]
@@ -19,4 +18,6 @@ def test():
         assert d == typing04_b(data, i)
 
 
-test()
+@testbench
+def test():
+    typing04()

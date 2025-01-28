@@ -21,5 +21,3 @@ def test():
     assert 10 == call04(10, 1)
     assert 40 == call04(20, 2)
     assert 90 == call04(30, 3)
-
-test()

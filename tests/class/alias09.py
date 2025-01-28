@@ -23,5 +23,3 @@ def test():
     assert 12 == alias09(True, 2, 3)
     assert 12 == alias09(False, 1, 2)
     assert 13 == alias09(False, 2, 3)
-
-test()

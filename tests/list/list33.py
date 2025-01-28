@@ -1,7 +1,8 @@
 from polyphony import testbench
 
 
-def list33(xs):
+def list33(a):
+    xs = [a] * 4
     s = 0
     for x in xs:
         s += x
@@ -10,11 +11,5 @@ def list33(xs):
 
 @testbench
 def test():
-    lst2 = [3] * 4
-    assert 3 * 4 == list33(lst2)
-
-    lst1 = [6] * 4
-    assert 6 * 4 == list33(lst1)
-
-
-test()
+    assert 3 * 4 == list33(3)
+    assert 6 * 4 == list33(6)

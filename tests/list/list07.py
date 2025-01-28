@@ -13,11 +13,10 @@ def list07(x):
             if b[i] != a[i]:
                 return False
         return True
-        
+
     memcpy(a, b)
     return memcheck(a, b)
 
 @testbench
 def test():
     assert 1 == list07(0)
-test()

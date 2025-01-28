@@ -29,6 +29,3 @@ def test():
     assert 2 == cfg05(0, 2, 0)
     assert 3 == cfg05(0, 1, 1)
     assert 4 == cfg05(0, 0, 4)
-
-
-test()

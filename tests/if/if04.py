@@ -22,4 +22,3 @@ def test():
     assert 10 == if04(0, 0)
     assert 2 == if04(1, 1)
     assert 4 == if04(2, 2)
-test()

@@ -20,5 +20,4 @@ def test():
     assert 1 == list22(0, 0)
     assert 1 == list22(1, 0)
     assert 0 == list22(0, 1)
-    assert 2 == list22(1, 1)    
-test()
+    assert 2 == list22(1, 1)

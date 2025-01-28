@@ -68,6 +68,3 @@ def test():
     assert 14 == if30(1, 2, 0)
     assert 15 == if30(1, 2, 1)
     assert 16 == if30(1, 3, 0)
-
-
-test()

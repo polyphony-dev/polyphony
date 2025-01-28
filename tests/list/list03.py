@@ -12,4 +12,3 @@ def list03(x, y, z):
 def test():
     assert 4 == list03(0, 1 ,2)
     assert 5 == list03(2, 1 ,3)
-test()

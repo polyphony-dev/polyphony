@@ -14,6 +14,3 @@ def f():
 @testbench
 def test():
     assert f() == True
-
-
-test()

@@ -27,4 +27,3 @@ def test():
     assert 3 == func09_b(0)
     assert 7 == func09_b(1)
     assert 11 == func09_b(2)
-test()

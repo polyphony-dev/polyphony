@@ -24,6 +24,3 @@ def test():
     assert 4050 == unroll03_a(2)
     assert 2025 == unroll03_b(1)
     assert 4050 == unroll03_b(2)
-
-
-test()

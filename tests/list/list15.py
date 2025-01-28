@@ -21,5 +21,3 @@ def test():
     assert 4 == list15(2)
     assert 4 == list15(3)
     assert 7 == list15(4)
-
-test()

@@ -8,14 +8,9 @@ def fun(data):
         break
 
 
-def noreturn01(data):
-    fun(data)
-
-
-@testbench
-def test():
+def noreturn01():
     data = [0] * 10
-    noreturn01(data)
+    fun(data)
     assert data[0] == 0
     assert data[1] == 1
     assert data[2] == 2
@@ -23,4 +18,6 @@ def test():
     assert data[4] == 0
 
 
-test()
+@testbench
+def test():
+    noreturn01()

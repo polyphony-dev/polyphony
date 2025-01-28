@@ -10,5 +10,3 @@ def test():
     assert a == b
     assert a != c
     print(a)
-
-test()

@@ -1,7 +1,7 @@
 from polyphony import testbench
 
 
-def if22(data, p):
+def func(data, p):
     if p == 0:
         data[0] = data[0] * data[1]
         return data[0]
@@ -13,14 +13,14 @@ def if22(data, p):
         return data[2]
     return 0
 
+def if22(p):
+    data = [1, 2, 3, 4]
+    return func(data, p)
+
 
 @testbench
 def test():
-    data = [1, 2, 3, 4]
-    assert 2 == if22(data, 0)
-    assert 6 == if22(data, 1)
-    assert 12 == if22(data, 2)
-    assert 0 == if22(data, 3)
-
-
-test()
+    assert 2 == if22(0)
+    assert 6 == if22(1)
+    assert 12 == if22(2)
+    assert 0 == if22(3)

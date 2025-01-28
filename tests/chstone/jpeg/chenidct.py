@@ -75,7 +75,7 @@ def ChenIDct(x:list, y:list):
     def LS(r,s):
         return r << s
     def RS(r,s):
-        return r >> s # Caution with rounding... 
+        return r >> s # Caution with rounding...
 
     def MSCALE(expr):
         return RS(expr, 9)
@@ -104,7 +104,7 @@ def ChenIDct(x:list, y:list):
 
         a2 = MSCALE((c3d8 * b2) - (c1d8 * b3))
         a3 = MSCALE((c1d8 * b2) + (c3d8 * b3))
- 
+
         b0 = a0 + a3
         b1 = a1 + a2
         b2 = a1 - a2
@@ -129,7 +129,7 @@ def ChenIDct(x:list, y:list):
         y[i + 40] = b2 - c1
         y[i + 48] = b1 - c2
         y[i + 56] = b0 - c3
-    
+
     # Loop over rows
     for i in range(8):
         idx = LS(i, 3)
@@ -194,8 +194,8 @@ def ChenIDct(x:list, y:list):
 
     return 0
 
-@testbench
-def test():
+
+def chen_idct_test():
     ins = [
         154, 192, 254, 239, 180, 128, 123, 110,
 	123, 180, 198, 180, 154, 136, 105, 136,
@@ -223,4 +223,7 @@ def test():
         print(outs[i])
         assert outs[i] == expected[i]
 
-test()
+
+@testbench
+def test():
+    chen_idct_test()

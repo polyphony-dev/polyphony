@@ -21,4 +21,3 @@ def test():
     assert 0 == if12(0, 1, 2)
     assert 2 == if12(2, 0, 1)
     assert 1 == if12(1, 2, 0)
-test()

@@ -6,7 +6,7 @@ class FIFO:
         self.mem = [None] * size
         self.ridx = 0
         self.widx = 0
-        
+
     def push(self, x):
         self.mem[self.widx] = x
         self.widx += 1
@@ -19,7 +19,7 @@ class FIFO:
             self.ridx = 0
         return x
 
-def fifo_test():
+def fifo():
     fifo = FIFO(SIZE)
     fifo2 = FIFO(SIZE*2)
     fifo.push(0)
@@ -39,6 +39,4 @@ def fifo_test():
 
 @testbench
 def test():
-    fifo_test()
-        
-test()
+    fifo()

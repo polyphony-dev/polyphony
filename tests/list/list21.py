@@ -13,4 +13,3 @@ def list21(x):
 def test():
     assert 1 == list21(0)
     assert 3 == list21(1)
-test()

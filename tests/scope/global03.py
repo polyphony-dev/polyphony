@@ -9,11 +9,9 @@ def global03():
         return g1
     def inner2():
         return g2
-    
+
     return inner1() + inner2()
 
 @testbench
 def test():
     assert 6666 == global03()
-
-test()

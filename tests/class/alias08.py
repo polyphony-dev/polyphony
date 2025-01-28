@@ -19,5 +19,3 @@ def alias08(x):
 def test():
     assert 1+2+3 == alias08(4)
     assert 0 == alias08(0)
-     
-test()

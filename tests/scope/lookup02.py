@@ -5,7 +5,7 @@ foo = 1
 
 class C:
     foo = 2
-    
+
     def __init__(self):
         print('foo', foo)
         a = foo == 1
@@ -24,7 +24,3 @@ def f():
 @testbench
 def test():
     assert f() == True
-
-
-test()
-

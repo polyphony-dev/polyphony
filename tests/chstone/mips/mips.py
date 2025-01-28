@@ -144,7 +144,7 @@ def mips_main(imem:list, dmem:list):
             elif op == LW:
                 daddr = DADDR (reg[rs] + address)
                 reg[rt] = dmem[daddr]
-                
+
             elif op == SW:
                 dmem[DADDR (reg[rs] + address)] = reg[rt]
 
@@ -178,8 +178,7 @@ def mips_main(imem:list, dmem:list):
 
     return n_inst
 
-@testbench
-def test():
+def mips_test():
     #+--------------------------------------------------------------------------+
     #| * Test Vectors (added for CHStone)                                       |
     #|     A : input data                                                       |
@@ -250,4 +249,7 @@ def test():
 
     assert 0 == main_result
 
-test()
+
+@testbench
+def test():
+    mips_test()

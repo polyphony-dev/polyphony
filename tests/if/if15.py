@@ -19,6 +19,3 @@ def if15():
 @testbench
 def test():
     assert 3 == if15()
-
-
-test()

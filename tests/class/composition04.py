@@ -24,5 +24,3 @@ def test():
     assert 2 == composition04(1)
     assert 4 == composition04(2)
     assert -6 == composition04(-3)
-
-test()

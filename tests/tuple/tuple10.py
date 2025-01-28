@@ -14,6 +14,3 @@ def tuple10(x, y):
 def test():
     assert 1 + 2 == tuple10(1, 2)
     assert 4 + 5 == tuple10(4, 5)
-
-
-test()

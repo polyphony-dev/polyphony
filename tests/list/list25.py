@@ -15,4 +15,3 @@ def list25(x):
 def test():
     assert 2 == list25(0)
     assert 1 == list25(1)
-test()

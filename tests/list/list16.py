@@ -1,7 +1,7 @@
 from polyphony import testbench
 
-def list16(data:list, x, y):
-
+def list16(x, y):
+    data = [0, 1, 2]
     while True:
         if x == 0:
             return 0
@@ -16,12 +16,10 @@ def list16(data:list, x, y):
             else:
                 d = 0
         break
-    return d
+    return d + x
 
 @testbench
 def test():
-    d = [0, 1, 2]
-    assert 0 == list16(d, 0, 1)
-    assert 2 == list16(d, 1, 2)
-    assert 2 == list16(d, 1, 0)
-test()
+    assert 0 == list16(0, 1)
+    assert 4 == list16(1, 2)
+    assert 2 == list16(1, 0)

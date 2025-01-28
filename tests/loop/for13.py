@@ -10,4 +10,3 @@ def for13(x):
 def test():
     assert 1+3+5+7+9 == for13(0)
     assert 1+3+5+7+9+10 == for13(2)
-test()

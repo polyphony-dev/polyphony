@@ -4,5 +4,3 @@ from polyphony import testbench
 def test():
     assert 1
     assert not 0
-
-test()

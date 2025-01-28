@@ -13,5 +13,3 @@ def bitwidth01(a:bit16):
 def test():
     assert 0x34 == bitwidth01(0x1234)  # This should fail in Python interpreter
 
-
-test()

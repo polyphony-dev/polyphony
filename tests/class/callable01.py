@@ -13,5 +13,3 @@ def test():
     assert 1 == call01(1)
     assert 2 == call01(2)
     assert 3 == call01(3)
-
-test()

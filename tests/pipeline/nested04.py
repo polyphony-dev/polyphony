@@ -14,6 +14,3 @@ def nested04(x):
 @testbench
 def test():
     assert 74 == nested04(10)
-
-
-test()

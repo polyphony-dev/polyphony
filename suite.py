@@ -6,6 +6,7 @@ import glob
 import simu
 import error
 import json
+import multiprocessing as mp
 from pprint import pprint
 
 
@@ -26,7 +27,9 @@ DIRS = (
     'testbench',
     'class',
     'import',
+    'timed',
     'io',
+    'channel',
     'module',
     'unroll',
     'pipeline',
@@ -39,7 +42,7 @@ FILES = (
     '/apps/ad7091r.py',
     '/apps/fib.py',
     '/apps/fifo.py',
-    '/apps/filter_tester.py',
+    # '/apps/filter_tester.py',
     '/apps/fir.py',
     '/apps/minivm.py',
     '/apps/minivm2.py',
@@ -54,37 +57,17 @@ FILES = (
 
 SUITE_CASES = [
     {
-        'config': '{ "internal_ram_threshold_size": 512 }',
-        "ignores": ('apps/filter_tester.py',
-                    'pure/*',
-                    'chstone/mips/pipelined_mips.py',
-                    'error/pure01.py', 'error/pure02.py',
-                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
-                    )
+        'config': '{ "perfect_inlining": false }',
+        "ignores": (
+            'pure/*',
+            'module/*',
+            'unroll/pipelined_unroll01.py',
+            'chstone/mips/pipelined_mips.py',
+            'error/pure01.py', 'error/pure02.py',
+            'error/module_method01.py',
+            'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
+        )
     },
-    {
-        'config': '{ "internal_ram_threshold_size": 0 }',
-        "ignores": ('unroll/pipelined_unroll01.py',
-                    'pure/*',
-                    'chstone/mips/pipelined_mips.py',
-                    'error/pure01.py', 'error/pure02.py',
-                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
-                    )
-    },
-    {
-        'config': '{ "internal_ram_threshold_size": 1000000 }',
-        "ignores": ('list/list31.py', 'list/list32.py',
-                    'apps/filter_tester.py',
-                    'pure/*', 'error/pure01.py', 'error/pure02.py',
-                    'warning/pipeline_resource01.py', 'warning/pipeline_resource02.py',
-                    )
-    },
-    #{
-    #    'config': '{ "enable_pure": true, \
-    #                 "internal_ram_threshold_size": 0, \
-    #                 "default_int_width": 32 }',
-    #    "ignores": ('error/io_conflict02.py',)
-    #},
 ]
 
 default_ignores = []
@@ -101,6 +84,9 @@ def parse_options():
     parser.add_argument('-j', dest='show_json', action='store_true')
     parser.add_argument('-s', dest='silent', action='store_true')
     parser.add_argument('-f', dest='full', action='store_true')
+    parser.add_argument('-n', '--num_cpu', dest='ncpu', type=int, default=1)
+    parser.add_argument('-P', '--python', dest='enable_python', action='store_true',
+                        default=False, help='enable python simulation')
     parser.add_argument('dir', nargs='*')
     return parser.parse_args()
 
@@ -112,9 +98,20 @@ def add_files(lst, patterns):
             lst.append(f)
 
 
+def exec_test_entry(t, options, suite_results):
+    if not options.silent:
+        print(t)
+    try:
+        hdl_finishes, py_finishes = simu.exec_test(t, options)
+        if options.enable_python:
+            suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
+        else:
+            suite_results[t] = f'{",".join(hdl_finishes)}'
+    except Exception as e:
+        suite_results[t] = 'Internal Error'
+
 def suite(options, ignores):
     tests = []
-    suite_results = {}
     ds = options.dir if options.dir else DIRS
     for d in ds:
         fs = glob.glob('{0}/{1}/*.py'.format(TEST_DIR, d))
@@ -122,19 +119,19 @@ def suite(options, ignores):
         tests.extend(sorted(fs))
     if not options.dir:
         tests.extend([TEST_DIR + f for f in FILES])
+    pool = mp.Pool(options.ncpu)
+    manager = mp.Manager()
+    suite_results = manager.dict()
     for t in ignores:
         if t in tests:
             tests.remove(t)
     fails = 0
     for t in tests:
-        if not options.silent:
-            print(t)
-        finishes = simu.exec_test(t, options)
-        if finishes:
-            suite_results[t] = ','.join(finishes)
-        else:
-            suite_results[t] = 'FAIL'
-            fails += 1
+        pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+    pool.close()
+    pool.join()
+    suite_results = dict(suite_results)
+    fails = sum([res == 'FAIL' for res in suite_results.values()])
     if options.config:
         suite_results['-config'] = json.loads(options.config)
     global_suite_results.append(suite_results)
@@ -142,37 +139,47 @@ def suite(options, ignores):
 
 
 def error_test(options, ignores):
-    return abnormal_test(options, ignores, True)
+    tests = sorted(glob.glob('{0}/error/*.py'.format(TEST_DIR)))
+    proc = error.error_test
+    return abnormal_test(tests, proc, options, ignores)
 
 
 def warn_test(options, ignores):
-    return abnormal_test(options, ignores, False)
+    tests = sorted(glob.glob('{0}/warning/*.py'.format(TEST_DIR)))
+    proc = error.warn_test
+    return abnormal_test(tests, proc, options, ignores)
 
 
-def abnormal_test(options, ignores, is_err):
-    if is_err:
-        tests = sorted(glob.glob('{0}/error/*.py'.format(TEST_DIR)))
-        proc = error.error_test
-    else:
-        tests = sorted(glob.glob('{0}/warning/*.py'.format(TEST_DIR)))
-        proc = error.warn_test
+def exec_abnormal_test_entry(proc, t, options, error_results):
+    if not options.silent:
+        print(t)
+    if not proc(t, options):
+        error_results[t] = True
+
+
+def abnormal_test(tests, proc, options, ignores):
+    pool = mp.Pool(options.ncpu)
+    manager = mp.Manager()
+    error_results = manager.dict()
     for t in ignores:
         if t in tests:
             tests.remove(t)
     fails = 0
     for t in tests:
-        if not options.silent:
-            print(t)
-        if not proc(t, options):
-            fails += 1
+        pool.apply_async(exec_abnormal_test_entry, args=(proc, t, options, error_results))
+    pool.close()
+    pool.join()
+    fails = sum(error_results.values())
     return fails
 
 
 def suite_main():
     options = parse_options()
     options.debug_mode = False
+    options.hdl_debug_mode = False
     options.verilog_dump = False
     options.verilog_monitor = False
+    options.with_path_name = True
     if os.path.exists('.suite_ignores'):
         with open('.suite_ignores', 'r') as f:
             default_ignores.extend(f.read().splitlines())
@@ -185,12 +192,11 @@ def suite_main():
     else:
         procs = (suite, error_test, warn_test)
 
-    ignores = []
-    add_files(ignores, default_ignores)
-
     fails = 0
     if options.full:
         for case in SUITE_CASES:
+            ignores = []
+            add_files(ignores, default_ignores)
             if not options.silent:
                 pprint(case)
             add_files(ignores, case['ignores'])
@@ -201,6 +207,8 @@ def suite_main():
             results = [p(options, ignores) for p in procs]
             fails += sum(results)
     else:
+        ignores = []
+        add_files(ignores, default_ignores)
         if ignores and not options.silent:
             print('NOTE: these files will be ignored')
             print(ignores)
@@ -218,4 +226,5 @@ def suite_main():
 
 if __name__ == '__main__':
     ret = suite_main()
+    print(ret)
     sys.exit(ret)

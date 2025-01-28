@@ -1,119 +1,27 @@
 '''
-The class defined in polyphony.io provides the function for passing data between the module's I / O ports or workers.
-The following classes are provided. In Polyphony these classes are called Port classes.
-
-    - polyphony.io.Port
-    - polyphony.io.Queue
+The class defined in polyphony.io provides the function for passing data between the module's I / O ports.
 '''
-import queue
-import time
-import sys
-import threading
-import inspect
+from . import base
+from .simulator import Port
 
-__all__ = [
-    'Port',
-    'Queue',
-]
+def interface(cls):
+    cls.interface_tag = True
+    return cls
 
 
-def _init_io():
-    if hasattr(sys, 'getswitchinterval'):
-        if sys.getswitchinterval() > 0.005:
-            sys.setswitchinterval(0.005)  # 5ms
+def flipped(obj):
+    pass
 
+def connect(p0, p1):
+    pass
 
-_events = []
-_conds = []
-_io_enabled = False
-_monitoring_ports = {}
-
-
-def _create_event():
-    ev = threading.Event()
-    _events.append(ev)
-    return ev
-
-
-def _create_cond():
-    cv = threading.Condition()
-    _conds.append(cv)
-    return cv
-
-
-def _remove_cond(cv):
-    _conds.remove(cv)
-
-
-def _enable():
-    global _io_enabled
-    _io_enabled = True
-    for ev in _events:
-        ev.clear()
-
-
-def _disable():
-    global _io_enabled
-    _io_enabled = False
-    for ev in _events:
-        ev.set()
-    for cv in _conds:
-        with cv:
-            cv.notify_all()
-
-
-class PolyphonyException(Exception):
+def thru(parent, child):
     pass
 
 
-class PolyphonyIOException(PolyphonyException):
-    pass
-
-
-def _portmethod(func):
-    def _portmethod_decorator(*args, **kwargs):
-        if not _io_enabled:
-            raise PolyphonyIOException()
-        return func(*args, **kwargs)
-    return _portmethod_decorator
-
-
-def _normalize_direction(di):
-    if di == 'in' or di == 'input' or di == 'i':
-        return 'in'
-    elif di == 'out' or di == 'output' or di == 'o':
-        return 'out'
-    return 'any'
-
-
-def _is_called_from_owner():
-    # TODO:
-    return False
-
-
-def _pytype_from_dtype(dtype):
-    if dtype is bool or dtype is int or dtype is str:
-        return dtype
-    elif hasattr(dtype, 'base_type'):
-        return dtype.base_type
-    else:
-        print(dtype)
-        assert False
-
-
-def _pyvalue_from_dtype(dtype):
-    if dtype is bool or dtype is int or dtype is str:
-        return dtype()
-    elif hasattr(dtype, 'base_type'):
-        return dtype.base_type()
-    else:
-        print(dtype)
-        assert False
-
-
-class Port(object):
+class old_Port(object):
     '''
-    Port class is used to an I/O port of a module class or a channel between workers.
+    Port class is used to an I/O port of a module class.
     It can read or write a value of immutable type.
 
     *Parameters:*
@@ -127,15 +35,8 @@ class Port(object):
                 - polyphony.typing.int<n>
                 - polyphony.typing.uint<n>
 
-        direction : {'any', 'input', in', 'i', 'output', 'out', 'o'}, optional
+        direction : {'in', 'out'}
             A direction of the port.
-
-        init : value of specified dtype parameter, optional
-            An initial value of the port.
-            If the direction is specified as input, this value is ignored.
-
-        protocol : {'none', 'valid', 'ready_valid'}, optional
-            A protocol of the port.
 
     *Examples:*
     ::
@@ -143,204 +44,120 @@ class Port(object):
         @module
         class M:
             def __init__(self):
-                self.din = Port(int16, direction='in', protocol='valid')
-                self.dout = Port(int32, direction='out', init=0, protocol='ready_valid')
+                self.din = Port(int16, 'in')
+                self.dout = Port(int32, 'out')
     '''
-    def __init__(self, dtype, direction, init=None, protocol='none'):
+    instances = []
+    In = 0
+    Out = ~In
+
+    def __init__(self, dtype, direction, init=None, **kwargs):
         self._dtype = dtype
-        self.__pytype = _pytype_from_dtype(dtype)
+        self.__pytype = base._pytype_from_dtype(dtype)
+        self._direction = direction
+        self._exp = None
         if init:
             self._init = init
         else:
-            self._init = _pyvalue_from_dtype(dtype)
-        self.__v = self._init
-        self._direction = _normalize_direction(direction)
-        self.__oldv = _pyvalue_from_dtype(dtype)
-        self._protocol = protocol
-        self.__cv = []
-        self.__cv_lock = threading.Lock()
-        if protocol == 'valid':
-            self.__valid_ev = _create_event()
-            self.__valid_ev.clear()
-        elif self._protocol == 'ready_valid':
-            self.__ready_ev = _create_event()
-            self.__valid_ev = _create_event()
-            self.__ready_ev.clear()
-            self.__valid_ev.clear()
-        elif self._protocol == 'none':
-            pass
-        else:
-            raise TypeError("'Unknown port protocol '{}'".format(self._protocol))
+            self._init = base._pyvalue_from_dtype(dtype)
+        self._reset()
+        Port.instances.append(self)
+        self._rewritable = False
+        if 'rewritable' in kwargs:
+            self._rewritable = kwargs['rewritable']
 
-    @_portmethod
     def rd(self):
         '''
         Read the current value from the port.
         '''
         if self._direction == 'out':
             if _is_called_from_owner():
-                raise TypeError("Reading from 'out' Port is not allowed")
-        if self._protocol == 'valid' or self._protocol == 'ready_valid':
-            while _io_enabled and not self.__valid_ev.is_set():
-                self.__valid_ev.wait()
-            self.__valid_ev.clear()
-            if self._protocol == 'ready_valid':
-                self.__ready_ev.set()
-        if not isinstance(self.__v, self.__pytype):
-            raise TypeError("Incompatible value type, got {} expected {}".format(type(self.__v), self._dtype))
+                raise RuntimeError("Reading from 'out' Port is not allowed")
         return self.__v
 
-    @_portmethod
     def wr(self, v):
         '''
         Write the value to the port.
         '''
+        if self._exp:
+            raise RuntimeError("Cannot write to the assigned port")
         if not isinstance(v, self.__pytype):
-            raise TypeError("Incompatible value type, got {} expected {}".format(type(v), self._dtype))
+            raise TypeError(f"Incompatible value type, got {type(v)} expected {self._dtype}")
         if self._direction == 'in':
             if _is_called_from_owner():
-                raise TypeError("Writing to 'in' Port is not allowed")
-        if not self.__cv:
-            self.__oldv = self.__v
-            self.__v = v
+                raise RuntimeError("Writing to 'in' Port is not allowed")
+        if not self._rewritable and self.__written:
+            raise RuntimeError("It is not allowed to write to the port more than once in the same clock cycle")
+        self.__new_v = v
+        self.__written = True
+
+    def edge(self, old_v, new_v):
+        if self._exp:
+            raise RuntimeError("Cannot use Port.edge at the assigned port")
+        return self.__old_v == old_v and self.__v == new_v
+
+    def assign(self, exp):
+        self._exp = exp
+
+    def __lshift__(self, other):
+        if self._direction == 'in' and other._direction == 'out':
+            self._exp = lambda:other.rd()
         else:
-            with self.__cv_lock:
-                self.__oldv = self.__v
-                self.__v = v
-                for cv in self.__cv:
-                    with cv:
-                        cv.notify_all()
-        if self._protocol == 'valid' or self._protocol == 'ready_valid':
-            self.__valid_ev.set()
-            if self._protocol == 'ready_valid':
-                while _io_enabled and not self.__ready_ev.is_set():
-                    self.__ready_ev.wait()
-                self.__ready_ev.clear()
-        time.sleep(0.005)
+            raise RuntimeError("The operator '<<' must be used like 'in << out'")
 
-    def __call__(self, v=None):
-        if v is None:
-            return self.rd()
+    def __rshift__(self, other):
+        if self._direction == 'out' and other._direction == 'in':
+            other._exp = lambda:self.rd()
         else:
-            self.wr(v)
+            raise RuntimeError("The operator '>>' must be used like 'out >> in'")
 
-    def __deepcopy__(self, memo):
-        return self
+    def __eq__(self, other):
+        return (self._dtype == other._dtype and
+                self._direction == other._direction and
+                self._init == other._init and
+                self._rewritable == other._rewritable)
 
-    def _add_cv(self, cv):
-        with self.__cv_lock:
-            self.__cv.append(cv)
+    def _reset(self):
+        self.__v = self._init
+        self.__new_v = self._init
+        self.__old_v = self._init
+        self.__written = False
+        self._changed = False
 
-    def _del_cv(self, cv):
-        with self.__cv_lock:
-            self.__cv.remove(cv)
-
-    def _rd_old(self):
-        return self.__oldv
-
-
-class Queue(object):
-    '''
-    Queue port class is used to an I/O port of a module class or a channel between workers.
-    It can used as FIFO(First-in First-out) buffer
-
-    *Parameters:*
-
-        dtype : an immutable type class
-            A data type of the queue port.
-            which of the below can be used.
-
-                - int
-                - bool
-                - polyphony.typing.bit
-                - polyphony.typing.int<n>
-                - polyphony.typing.uint<n>
-
-        direction : {'any', 'input', in', 'i', 'output', 'out', 'o'}, optional
-            A direction of the queue port.
-
-        maxsize : int, optional
-            The capacity of the queue
-
-    *Examples:*
-    ::
-
-        @module
-        class M:
-            def __init__(self):
-                self.in_q = Queue(uint16, direction='in', maxsize=4)
-                self.out_q = Queue(uint16, direction='out', maxsize=4)
-                tmp_q = Queue(uint16, maxsize=4)
-
-    '''
-
-    def __init__(self, dtype, direction, maxsize=1):
-        self._dtype = dtype
-        self.__pytype = _pytype_from_dtype(dtype)
-        self._direction = _normalize_direction(direction)
-        self._maxsize = maxsize
-        self.__q = queue.Queue(maxsize)
-        self.__ev_put = _create_event()
-        self.__ev_get = _create_event()
-
-    @_portmethod
-    def rd(self):
-        """Read the current value from the port."""
-        while self.__q.empty():
-            self.__ev_put.wait()
-            if _io_enabled:
-                self.__ev_put.clear()
-            else:
-                return 0
-        d = self.__q.get(block=False)
-
-        self.__ev_get.set()
-        if not isinstance(d, self.__pytype):
-            raise TypeError("Incompatible value type, got {} expected {}".format(type(self.__v), self._dtype))
-
-        if self in _monitoring_ports:
-            print(_monitoring_ports[self], 'rd', d)
-        return d
-
-    @_portmethod
-    def wr(self, v):
-        '''
-        Write the value to the port.
-        '''
-        if not isinstance(v, self.__pytype):
-            raise TypeError("Incompatible value type, got {} expected {}".format(type(v), self._dtype))
-        while self.__q.full():
-            self.__ev_get.wait()
-            if _io_enabled:
-                self.__ev_get.clear()
-            else:
-                return
-            #time.sleep(0.001)
-        self.__q.put(v, block=False)
-        self.__ev_put.set()
-        if self in _monitoring_ports:
-            print(_monitoring_ports[self], 'wr', v)
-
-    def __call__(self, v=None):
-        if v is None:
-            return self.rd()
+    def _update(self):
+        if self._exp:
+            return
+        if self.__v != self.__new_v:
+            self._changed = True
         else:
-            self.wr(v)
+            self._changed = False
+        self.__old_v = self.__v
+        self.__v = self.__new_v
+        self.__written = False
 
-    def __deepcopy__(self, memo):
-        return self
+    def _update_assigned(self):
+        if not self._exp:
+            return
+        self.__new_v = self._exp()
+        if self.__v != self.__new_v:
+            changed = True
+        else:
+            changed = False
+        self.__v = self.__new_v
+        self._changed |= changed
+        return changed
 
-    @_portmethod
-    def empty(self):
-        return self.__q.empty()
-
-    @_portmethod
-    def full(self):
-        return self.__q.full()
+    def _clear_change_flag(self):
+        self._changed = False
 
 
-def add_port_monitor(name, obj):
-    _monitoring_ports[obj] = name
+class In(Port):
+    def __init__(self, dtype):
+        super().__init__(dtype, 'in')
 
 
-_init_io()
+class Out(Port):
+    def __init__(self, dtype, init=None):
+        super().__init__(dtype, 'out', init)
+
+

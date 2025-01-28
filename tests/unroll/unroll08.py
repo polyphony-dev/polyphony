@@ -23,11 +23,12 @@ def unroll08_c(xs:list):
     return sum
 
 
-@testbench
-def test():
+def unroll08():
     assert 4 == unroll08_a([1, 2, 3, 4])
     assert 20 == unroll08_b([1, 2, 3, 4, 5, 6, 7, 8])
     assert 42 == unroll08_c([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
 
 
-test()
+@testbench
+def test():
+    unroll08()

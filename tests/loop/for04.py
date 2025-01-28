@@ -15,5 +15,3 @@ def test():
     assert 0 == for04(0)
     assert 3 == for04(1)
     assert 18 == for04(10)
-
-test()

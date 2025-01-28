@@ -11,5 +11,3 @@ def test():
     assert 1 == special01(0)
     assert 2 == special01(1)
     assert 3 == special01(2)
-
-test()

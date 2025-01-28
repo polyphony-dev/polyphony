@@ -14,5 +14,3 @@ def test():
     assert 2 == return05(2)
     assert 3 == return05(3)
     assert -1 == return05(4)
-
-test()

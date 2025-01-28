@@ -29,6 +29,3 @@ def test():
     assert 1 == unroll14_b(2)
     assert 6 == unroll14_b(4)
     assert 45 == unroll14_b(10)
-
-
-test()

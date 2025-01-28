@@ -22,5 +22,3 @@ def test():
     assert 2 == if10(0, 2, 0)
     assert 1 == if10(1, 0, 0)
     assert 2 == if10(2, 0, 0)
-    
-test()

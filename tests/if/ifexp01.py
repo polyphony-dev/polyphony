@@ -7,6 +7,4 @@ def ifexp01(x, y):
 def test():
     assert False == ifexp01(0, 1)
     assert True == ifexp01(1, 1)
-    assert False == ifexp01(True, False)    
-
-test()
+    assert False == ifexp01(True, False)

@@ -16,6 +16,3 @@ def bitwidth02(x, y) -> bit64:
 @testbench
 def test():
     assert 0x8765432112345678 == bitwidth02(0x12345678, 0x87654321)
-
-
-test()

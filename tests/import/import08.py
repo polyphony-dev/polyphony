@@ -25,6 +25,3 @@ def test():
     assert 5678 == import08_a2()
     assert 1 == import08_b1(0)
     assert 5 == import08_b2(0)
-
-
-test()

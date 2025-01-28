@@ -14,5 +14,3 @@ def test():
     assert 13500 == for08(0)
     assert 15401 == for08(1)
     assert 17402 == for08(2)
-
-test()

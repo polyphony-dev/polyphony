@@ -18,6 +18,3 @@ def if16():
 @testbench
 def test():
     assert 2 == if16()
-
-
-test()

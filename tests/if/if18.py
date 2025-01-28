@@ -20,6 +20,3 @@ def test():
     assert -10 == if18(10)
     assert 20 == if18(20)
     assert 900 == if18(30)
-
-
-test()

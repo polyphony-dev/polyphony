@@ -21,4 +21,3 @@ def test():
     assert 2 == list24(1)
     assert 3 == list24(2)
     assert 4 == list24(3)
-test()

@@ -1,33 +1,53 @@
+@typeclass
+class none: pass
 
-@builtin
+@typeclass
+class int: pass
+
+
+@typeclass
+class bool: pass
+
+
+@typeclass
+class str: pass
+
+
+@typeclass
+class list: pass
+
+
+@typeclass
+class tuple: pass
+
+
+@typeclass
+class object: pass
+
+
+@typeclass
+class type: pass
+
+
+@typeclass
+class function: pass
+
+
 def print(*args) -> None:
     pass
 
 
-@builtin
 def range(stop:int) -> None:
     pass
 
 
-@builtin
-def len() -> uint:
+def len() -> int:
     pass
 
 
-@builtin
 def _assert(expr:bool) -> None:
     pass
 
 
-@builtin
-@typeclass
-class int:
-    def __init__(self, i:int=0) -> int:
-        pass
-
-
-@builtin
-@typeclass
-class bool:
-    def __init__(self, b:bool=0) -> bool:
-        pass
+def _new(typ):
+    pass

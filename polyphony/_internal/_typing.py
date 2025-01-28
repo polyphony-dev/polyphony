@@ -386,5 +386,7 @@ class uint126: pass
 class uint127: pass
 class uint128: pass
 
+class Int: pass
 class List: pass
 class Tuple: pass
+class Type: pass

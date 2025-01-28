@@ -1,35 +1,36 @@
+@builtin
 class Port:
-    def __init__(self, dtype:generic, direction:str, init=None, protocol:str='none') -> object:
+    def __init__(self, dtype:type, direction:str, init=None,
+                 rewritable:bool=False) -> object:
         pass
 
-    def rd(self) -> generic:
+    def rd(self) -> object:
         pass
 
     @mutable
-    def wr(self, v:generic) -> None:
+    def wr(self, v) -> None:
         pass
 
-    def __call__(self, v=None) -> generic:
+    def assign(self, fn:function) -> None:
+        pass
+
+    def edge(self, old, new) -> bool:
         pass
 
 
-class Queue:
-    def __init__(self, dtype:generic, direction:str, maxsize:int=1) -> object:
-        pass
+from . import timing
 
-    def rd(self) -> generic:
-        pass
 
-    def wr(self, v:generic) -> None:
-        pass
+@builtin
+def flipped(obj:object) -> object:
+    pass
 
-    def __call__(self, v=None) -> generic:
-        pass
 
-    @predicate
-    def empty(self) -> bool:
-        pass
+@builtin
+def connect(p0:object, p1:object) -> None:
+    pass
 
-    @predicate
-    def full(self) -> bool:
-        pass
+
+@builtin
+def thru(parent:object, child:object) -> None:
+    pass

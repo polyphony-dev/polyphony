@@ -25,6 +25,3 @@ def test():
     assert 6 == if26(0, 3, 3)
     assert 8 == if26(0, 4, 4)
     assert 0 == if26(1, 1, 1)
-
-
-test()

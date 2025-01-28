@@ -10,7 +10,7 @@ class C:
 class D:
     def get_c(self, c):
         return c
-        
+
 def alias07(p, x, y):
     c0 = C(x)
     c1 = C(y)
@@ -27,5 +27,3 @@ def test():
     assert 12 == alias07(True, 2, 3)
     assert 2 == alias07(False, 1, 2)
     assert 3 == alias07(False, 2, 3)
-    
-test()

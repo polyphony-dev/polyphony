@@ -1,7 +1,10 @@
 from polyphony import testbench
 
 
-def list31(k0, buf0, buf1):
+def list31(k0):
+    buf0 = [0] * 100
+    buf1 = [0] * 100
+    
     ref0 = buf0
     ref1 = buf1
     i = 0
@@ -22,17 +25,11 @@ def list31(k0, buf0, buf1):
             i = 1 - i
         if k > 200:
             break
-
-
-@testbench
-def test():
-    buf0 = [0] * 100
-    buf1 = [0] * 100
-    list31(1, buf0, buf1)
     for i in range(100):
         assert i + 1 == buf0[i]
     for i in range(100):
         assert i + 101 == buf1[i]
 
-
-test()
+@testbench
+def test():
+    list31(1)

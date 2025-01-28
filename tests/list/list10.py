@@ -13,4 +13,3 @@ def list10(x, y):
 @testbench
 def test():
     assert 0 == list10(1, 0)
-test()

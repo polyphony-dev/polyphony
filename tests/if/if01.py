@@ -21,4 +21,3 @@ def test():
     assert 6 == if01(1, 3)
     assert 8 == if01(1, 4)
     assert 1442 == if01(0, 2)
-test()

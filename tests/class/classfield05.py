@@ -6,7 +6,7 @@ class D:
 
 
 class C:
-    i = [D.i[2], D.i[2], D.i[0]]
+    i = (D.i[2], D.i[2], D.i[0])
 
 
 def classfield05(x):
@@ -18,6 +18,3 @@ def test():
     assert 3 == classfield05(0)
     assert 3 == classfield05(1)
     assert 1 == classfield05(2)
-
-
-test()

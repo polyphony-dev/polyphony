@@ -22,19 +22,13 @@ Also, of course, it can be used to detect errors due to type at compile time.
 import abc
 
 
-__all__ = [
-    'bit',
-    'List',
-    'Tuple',
-]
-__all__ += ['bit' + str(i) for i in range(2, 129)]
-__all__ += ['int' + str(i) for i in range(2, 129)]
-__all__ += ['uint' + str(i) for i in range(2, 129)]
-
-
 class GenericMeta(abc.ABCMeta):
     def __getitem__(self, i):
         return self.__class__(self.__name__, self.__bases__, dict(self.__dict__))
+
+
+class Int(int, metaclass=GenericMeta):
+    pass
 
 
 class List(list, metaclass=GenericMeta):
@@ -42,6 +36,10 @@ class List(list, metaclass=GenericMeta):
 
 
 class Tuple(tuple, metaclass=GenericMeta):
+    pass
+
+
+class Type(type, metaclass=GenericMeta):
     pass
 
 
