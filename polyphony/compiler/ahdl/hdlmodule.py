@@ -56,46 +56,129 @@ class HDLModule(HDLScope):
                 or scope.is_testbench())
 
     def __str__(self):
-        s = '---------------------------------\n'
-        s += 'HDLModule {}\n'.format(self.name)
+        s = '=' * 60 + '\n'
+        s += f'HDLModule: {self.name}\n'
+        s += '=' * 60 + '\n'
+
+        # Signals section
         s += self.str_signals()
         s += '\n'
+
+        # I/O ports section
         s += self.str_ios()
         s += '\n'
-        s += '-- sub modules --\n'
-        for name, hdlmodule, connections, param_map in self.sub_modules.values():
-            s += '{} \n'.format(name)
-            for sig, acc in connections:
-                s += '    connection : .{}({}) \n'.format(sig.name, acc.name)
-        s += '-- declarations --\n'
-        for decl in self.decls:
-            s += '  {}\n'.format(decl)
-        s += '\n'
+
+        # Parameters section
+        if self.parameters:
+            s += '-- PARAMETERS --\n'
+            for sig, value in self.parameters.items():
+                s += f'  {sig.name} = {value}\n'
+            s += '\n'
+
+        # Constants section
+        if self.constants:
+            s += '-- CONSTANTS --\n'
+            for sig, value in self.constants.items():
+                s += f'  {sig.name} = {value}\n'
+            s += '\n'
+
+        # Sub modules section
+        if self.sub_modules:
+            s += '-- SUB MODULES --\n'
+            for name, hdlmodule, connections, param_map in self.sub_modules.values():
+                s += f'  Module: {name}\n'
+                if connections:
+                    s += '    Connections:\n'
+                    for sig, acc in connections:
+                        s += f'      .{sig.name}({acc.name})\n'
+                if param_map:
+                    s += '    Parameters:\n'
+                    for param, value in param_map.items():
+                        s += f'      {param} = {value}\n'
+                s += '\n'
+
+        # Declarations section
+        if self.decls:
+            s += '-- DECLARATIONS --\n'
+            for decl in self.decls:
+                s += f'  {decl}\n'
+            s += '\n'
+
+        # FSM section
         if self.fsms:
-            s += '-- fsm --\n'
+            s += '-- FINITE STATE MACHINES --\n'
             for name, fsm in self.fsms.items():
-                s += '---------------------------------\n'
-                s += f'{name}\n'
-                s += '---------------------------------\n'
-                s += 'reset:\n'
-                for stm in fsm.reset_stms:
-                    s += f'{stm}\n'
-                for stg in fsm.stgs:
-                    for state in stg.states:
-                        s += str(state)
+                s += f'  FSM: {name}\n'
+                s += f'    State Variable: {fsm.state_var.name}\n'
+
+                if fsm.reset_stms:
+                    s += '    Reset Statements:\n'
+                    for stm in fsm.reset_stms:
+                        s += f'      {stm}\n'
+
+                if fsm.outputs:
+                    s += '    Outputs:\n'
+                    for output in fsm.outputs:
+                        s += f'      {output.name}\n'
+
+                if fsm.stgs:
+                    s += '    State Transition Graphs:\n'
+                    for i, stg in enumerate(fsm.stgs):
+                        s += f'      STG {i}: {len(stg.states)} states\n'
+                        for state in stg.states:
+                            state_str = str(state)
+                            state_lines = state_str.split('\n')
+                            for line in state_lines:
+                                if line.strip():
+                                    s += f'        {line}\n'
+                                else:
+                                    s += '\n'
+                s += '\n'
+
+        # Tasks section
         if self.tasks:
-            s += '-- tasks --\n'
+            s += '-- TASKS --\n'
             for task in self.tasks:
-                s += f'{task}\n'
-        s += '\n'
+                s += f'  {task}\n'
+            s += '\n'
+
+        # Edge detectors section
+        if self.edge_detectors:
+            s += '-- EDGE DETECTORS --\n'
+            for var, old, new in self.edge_detectors:
+                s += f'  {var.name}: {old} -> {new}\n'
+            s += '\n'
+
+        # Resource summary
+        num_regs, num_nets, num_states = self.resources()
+        s += '-- RESOURCE SUMMARY --\n'
+        s += f'  Registers: {num_regs} bits\n'
+        s += f'  Nets: {num_nets} bits\n'
+        s += f'  States: {num_states}\n'
+
+        s += '=' * 60 + '\n'
         return s
 
     def str_ios(self):
-        s = '-- I/O ports --\n'
-        for var in self.inputs():
-            s += f'{var.name} {var.sig}\n'
-        for var in self.outputs():
-            s += f'{var.name} {var.sig}\n'
+        s = '-- I/O PORTS --\n'
+
+        # Input ports
+        inputs = self.inputs()
+        if inputs:
+            s += '  Inputs:\n'
+            for var in inputs:
+                s += f'    {var.name:<20} : {var.sig}\n'
+        else:
+            s += '  Inputs: None\n'
+
+        # Output ports
+        outputs = self.outputs()
+        if outputs:
+            s += '  Outputs:\n'
+            for var in outputs:
+                s += f'    {var.name:<20} : {var.sig}\n'
+        else:
+            s += '  Outputs: None\n'
         return s
 
     def clone(self):
@@ -219,11 +302,13 @@ class HDLModule(HDLScope):
             if sig.is_input() or sig.is_output():
                 continue
             if sig.is_reg():
-                num_of_regs += sig.width
+                if sig.width > 0:
+                    num_of_regs += sig.width
             elif sig.is_regarray():
                 num_of_regs += sig.width[0] * sig.width[1]
             elif sig.is_net():
-                num_of_nets += sig.width
+                if sig.width > 0:
+                    num_of_nets += sig.width
             elif sig.is_netarray():
                 num_of_nets += sig.width[0] * sig.width[1]
         num_of_states = 0
