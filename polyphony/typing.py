@@ -24,7 +24,7 @@ import abc
 
 class GenericMeta(abc.ABCMeta):
     def __getitem__(self, i):
-        return self.__class__(self.__name__, self.__bases__, dict(self.__dict__))
+        return self.__class_getitem__(i)
 
 
 class Int(int, metaclass=GenericMeta):
@@ -32,7 +32,21 @@ class Int(int, metaclass=GenericMeta):
 
 
 class List(list, metaclass=GenericMeta):
-    pass
+    @classmethod
+    def __class_getitem__(cls, param):
+        if not hasattr(cls, 'list_type'):
+            if not isinstance(param, type):
+                raise TypeError("List type parameter must be a type")
+            return type(f"List[{param}]", (cls,), {
+                "list_type": param
+            })
+        else:
+            if not isinstance(param, int):
+                raise TypeError("List capacity parameter must be an integer")
+            return type(f"List[{cls.list_type}][{param}]", (cls,), {
+                "list_type": cls.list_type,
+                "list_capacity": param
+            })
 
 
 class Tuple(tuple, metaclass=GenericMeta):
