@@ -30,7 +30,7 @@ line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-ignore = ["E221", "E231", "E241", "E265", "F403", "F405", "W503", "W504"]
+ignore = ["E221", "E231", "E241", "E265", "F403", "F405"]
 
 [tool.ruff.format]
 quote-style = "double"
