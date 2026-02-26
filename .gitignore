@@ -1,7 +1,32 @@
+# Hidden files and directories
 .gitignore
 .*/
 .*
-__pycache__
+
+# Debugging
 debug*
+
+# Legacy output directory
 out/
+
+# Suite ignore list
 .suite_ignores
+
+# Virtual environment (uv)
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Polyphony compiler output
+polyphony_out/
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
