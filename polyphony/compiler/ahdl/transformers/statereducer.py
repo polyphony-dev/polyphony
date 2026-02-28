@@ -41,8 +41,9 @@ class StateReducer(object):
                         stg.remove_state(state)
 
     def _remove_empty_init_state(self, hdlmodule):
-        empty_stgs = []
+        empty_fsms = []
         for fsm in hdlmodule.fsms.values():
+            empty_stgs = []
             for stg in fsm.stgs:
                 if is_empty_state(stg.states[0]):
                     stg.remove_state(stg.states[0])
@@ -50,6 +51,11 @@ class StateReducer(object):
                     empty_stgs.append(stg)
             for stg in empty_stgs:
                 fsm.remove_stg(stg)
+            if not fsm.stgs:
+                empty_fsms.append(fsm)
+        for fsm in empty_fsms:
+            hdlmodule.remove_sig(fsm.state_var)
+            del hdlmodule.fsms[fsm.name]
 
 class StateGraph(Graph):
     def __str__(self):
