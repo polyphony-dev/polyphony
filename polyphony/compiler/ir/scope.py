@@ -483,7 +483,8 @@ class Scope(Tagged, SymbolTable):
 
         name = clone_name(prefix, postfix, self.base_name)
         parent = self.parent if parent is None else parent
-        s = Scope.create(parent, name, set(self.tags), self.lineno, origin=self)
+        cloned_tags = set(self.tags) - {'superseded'}
+        s = Scope.create(parent, name, cloned_tags, self.lineno, origin=self)
 
         self_sym = self.parent.find_sym(self.base_name)
         new_sym_typ = self_sym.typ.clone(scope=s)

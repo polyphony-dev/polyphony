@@ -77,6 +77,26 @@ class TypePropagation(IRVisitor):
             self.worklist.appendleft(scope)
             logger.debug(f'add scope {scope.name}')
 
+    def _find_attr_type_from_specialized(self, scope, attr_name) -> 'Type':
+        """When a class scope's attribute type is undef,
+        look up the type from a specialized version of the scope."""
+        parent = scope.parent
+        if parent is None:
+            logger.debug(f'_find_attr_type_from_specialized: {scope.name}.{attr_name} no parent')
+            return Type.undef()
+        base_name = scope.base_name
+        logger.debug(f'_find_attr_type_from_specialized: {scope.name}.{attr_name} base={base_name} children={[c.name for c in parent.children]}')
+        for child in parent.children:
+            if (child is not scope and
+                    child.is_specialized() and
+                    child.base_name.startswith(base_name + '_') and
+                    child.has_sym(attr_name)):
+                sym = child.find_sym(attr_name)
+                logger.debug(f'  found {child.name}.{attr_name} = {sym.typ}')
+                if not sym.typ.is_undef():
+                    return sym.typ
+        return Type.undef()
+
     def visit(self, ir:IR) -> Type:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
@@ -217,6 +237,10 @@ class TypePropagation(IRVisitor):
 
             symbol = attr_scope.find_sym(ir.name)
             attr_t = symbol.typ
+            if attr_t.is_undef() and attr_scope.is_class():
+                attr_t = self._find_attr_type_from_specialized(attr_scope, ir.name)
+                if not attr_t.is_undef():
+                    symbol.typ = attr_t
             exp_sym = qualified_symbols(ir.exp, self.scope)[-1]
             assert isinstance(exp_sym, Symbol)
             assert exptyp == exp_sym.typ
