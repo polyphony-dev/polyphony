@@ -57,6 +57,18 @@ class Type(type, metaclass=GenericMeta):
     pass
 
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+    from typing import TypeAlias
+    # Polyphony uses custom subscript syntax (e.g. Tuple[int12], List[int8][16])
+    # that is not compatible with Python's standard type system.
+    Tuple: TypeAlias = Any  # type: ignore[no-redef]
+    List: TypeAlias = Any  # type: ignore[no-redef]
+    Int: TypeAlias = Any  # type: ignore[no-redef]
+    Type: TypeAlias = Any  # type: ignore[no-redef]
+
+
 class int_base:
     base_type = int
 

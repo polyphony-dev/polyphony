@@ -171,7 +171,7 @@ def model_selector_with_argv(models):
     def model_selector(*args, **kwargs):
         args_str = []
         for a in args:
-            if type(a).__name__ == 'type':
+            if type(a).__name__ == 'type' or inspect.isfunction(a):
                 args_str.append(a.__name__)
             else:
                 args_str.append(str(a))
@@ -251,7 +251,9 @@ def simulate_on_python(casefile_path, source_text, scopes, simu_options):
         return finishes
     py_objects = []
     for key, value in vars(main_py_module).items():
-        if key.startswith(casename):
+        if inspect.isclass(value) and getattr(value, '_is_module', False):
+            py_objects.append(value)
+        elif inspect.isfunction(value) and key.startswith(casename):
             py_objects.append(value)
 
     for testbench in env.testbenches:
