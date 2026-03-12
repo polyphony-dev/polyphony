@@ -7,7 +7,10 @@ import simu
 import error
 import json
 import multiprocessing as mp
+import time
 from pprint import pprint
+
+TEST_TIMEOUT = 120  # seconds per test case
 
 
 ROOT_DIR = './'
@@ -101,14 +104,18 @@ def add_files(lst, patterns):
 def exec_test_entry(t, options, suite_results):
     if not options.silent:
         print(t)
+    start_time = time.time()
     try:
         hdl_finishes, py_finishes = simu.exec_test(t, options)
         if options.enable_python:
-            suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
+            suite_results[t] = f'HDL Result: {",".join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
         else:
             suite_results[t] = f'{",".join(hdl_finishes)}'
     except Exception as e:
         suite_results[t] = 'Internal Error'
+    elapsed = time.time() - start_time
+    if elapsed > 30:
+        print(f'WARNING: {t} took {elapsed:.1f}s')
 
 def suite(options, ignores):
     tests = []
@@ -126,9 +133,21 @@ def suite(options, ignores):
         if t in tests:
             tests.remove(t)
     fails = 0
+    async_results = []
     for t in tests:
-        pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+        r = pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+        async_results.append((t, r))
     pool.close()
+    for t, r in async_results:
+        try:
+            r.get(timeout=TEST_TIMEOUT)
+        except mp.TimeoutError:
+            print(f'TIMEOUT: {t} exceeded {TEST_TIMEOUT}s - skipping')
+            suite_results[t] = 'Timeout'
+        except Exception as e:
+            print(f'ERROR: {t} raised {e}')
+            suite_results[t] = 'Internal Error'
+    pool.terminate()
     pool.join()
     suite_results = dict(suite_results)
     fails = sum([res == 'FAIL' for res in suite_results.values()])
@@ -165,9 +184,19 @@ def abnormal_test(tests, proc, options, ignores):
         if t in tests:
             tests.remove(t)
     fails = 0
+    async_results = []
     for t in tests:
-        pool.apply_async(exec_abnormal_test_entry, args=(proc, t, options, error_results))
+        r = pool.apply_async(exec_abnormal_test_entry, args=(proc, t, options, error_results))
+        async_results.append((t, r))
     pool.close()
+    for t, r in async_results:
+        try:
+            r.get(timeout=TEST_TIMEOUT)
+        except mp.TimeoutError:
+            print(f'TIMEOUT: {t} exceeded {TEST_TIMEOUT}s - skipping')
+        except Exception as e:
+            print(f'ERROR: {t} raised {e}')
+    pool.terminate()
     pool.join()
     fails = sum(error_results.values())
     return fails

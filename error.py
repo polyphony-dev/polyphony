@@ -47,6 +47,8 @@ def make_compile_options(casename, casefile_path, err_options, quiet_level):
     options.debug_mode = err_options.debug_mode
     options.verilog_dump = False
     options.verilog_monitor = False
+    options.hdl_debug_mode = False
+    options.targets = []
     return options
 
 
