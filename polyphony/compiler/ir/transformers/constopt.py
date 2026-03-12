@@ -500,13 +500,6 @@ class ConstantOpt(ConstantOptBase):
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
-        elif not mem_sym.scope.is_containable() and hasattr(self.scope, 'usedef') and self.scope.usedef:
-            defs = list(self.scope.usedef.get_stms_defining(qsym))
-            if len(defs) == 1 and defs[0].is_a(MOVE) and defs[0].src.is_a(ARRAY):
-                array = defs[0].src
-                offset = ir.offset.value
-                if 0 <= offset < len(array.items):
-                    return array.items[offset]
         return ir
 
     def visit_TEMP(self, ir):
@@ -739,8 +732,16 @@ class StaticConstOpt(ConstantOptBase):
             self.visit(stm)
         for sym, c in self.constant_table.items():
             sym.scope.constants[sym] = c
+            if sym.scope.origin:
+                origin_scope = sym.scope.origin
+                if sym.name in origin_scope.symbols:
+                    origin_scope.constants[origin_scope.symbols[sym.name]] = c
         for sym, c in self.constant_array_table.items():
             sym.scope.constants[sym] = c
+            if sym.scope.origin:
+                origin_scope = sym.scope.origin
+                if sym.name in origin_scope.symbols:
+                    origin_scope.constants[origin_scope.symbols[sym.name]] = c
 
     def collect_stms(self, scope):
         stms = []
