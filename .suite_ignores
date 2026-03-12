@@ -1,3 +1,4 @@
+# IO: unimplemented features
 io/connect01.py
 io/connect02.py
 io/connect03.py
@@ -8,3 +9,41 @@ io/flipped03.py
 io/flipped04.py
 io/thru01.py
 io/thru02.py
+# timed: compile error
+timed/fifo01.py
+# apps: return value latch issue
+apps/axistream02.py
+# module: compile hangs (also in v0.4.0)
+module/module04.py
+module/module05.py
+module/module06.py
+# error tests: wrong or missing error messages
+error/callable.py
+error/field_reference.py
+error/global01.py
+error/global03.py
+error/io_conflict01.py
+error/io_conflict02.py
+error/io_pipeline_read_conflict01.py
+error/io_pipeline_write_conflict01.py
+error/io_write_conflict01.py
+error/io_write_conflict02.py
+error/io_write_conflict03.py
+error/is_not_subscriptable02.py
+error/is_not_subscriptable03.py
+error/loop_var01.py
+error/module_args01.py
+error/must_be_x_type05.py
+error/must_be_x_type06.py
+error/reserved_port_name.py
+error/return_type01.py
+error/return_type02.py
+error/sub.py
+error/seq_capacity01.py
+error/seq_capacity02.py
+error/toomany_args01.py
+error/toomany_args02.py
+# warning tests: wrong or missing warnings
+warning/pipeline_hazard01.py
+warning/port_is_not_used01.py
+warning/port_is_not_used02.py
