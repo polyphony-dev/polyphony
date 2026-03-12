@@ -35,9 +35,13 @@ class AliasVarDetector(IRVisitor):
             if self.scope.is_worker():
                 module = self.scope.worker_owner
             else:
-                # TODO:
+                # Walk up the parent chain to find the nearest enclosing module scope
                 module = self.scope.parent
+                while module is not None and not module.is_module():
+                    module = module.parent
             if sym.typ.is_object():
+                return
+            if module is None or module.field_usedef is None:
                 return
             qsym = qualified_symbols(ir.dst, self.scope)
             defstms = module.field_usedef.get_def_stms(qsym)
