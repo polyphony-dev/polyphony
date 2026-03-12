@@ -68,6 +68,7 @@ class Env(object):
         self.scope2output_hdlscope: dict[Scope, HDLScope] = {}
         self.targets = []
         self.root_dir = ''
+        self.seq_id_to_array: dict = {}
 
     def load_config(self, config):
         for key, v in config.items():

@@ -390,7 +390,7 @@ class RestrictionChecker(IRVisitor):
             for i, (_, arg) in enumerate(ir.args):
                 if arg.is_a(IRVariable):
                     arg_t = irexp_type(arg, self.scope)
-                    if arg_t.is_scalar() or arg_t.is_class():
+                    if arg_t.is_scalar() or arg_t.is_class() or arg_t.is_function() or arg_t.is_seq():
                         continue
                     fail(self.current_stm, Errors.MODULE_ARG_MUST_BE_X_TYPE, [arg_t])
         if self.scope.is_global() and not callee_scope.is_module():

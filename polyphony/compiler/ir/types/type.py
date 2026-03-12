@@ -198,6 +198,9 @@ class Type:
                 s = f'b'
             elif t.is_str():
                 s = f's'
+            elif t.is_function():
+                name = t.scope.scope_id
+                s = f'f{name}'
             elif t.is_object():
                 name = t.scope.scope_id
                 s = f'o{name}'

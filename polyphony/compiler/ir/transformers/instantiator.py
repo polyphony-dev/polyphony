@@ -139,20 +139,43 @@ class ArgumentApplier(object):
                 call.args[1:] = args
         return next_scopes
 
+    def _resolve_seq_arg(self, arg: IRExp, caller_scope: Scope) -> IRExp:
+        """Resolve a seq-typed arg to its ARRAY when it was converted to an integer ID.
+
+        objtransform._transform_seq_ctor converts seq definitions to integer symbol IDs
+        and stores them as CONST. We recover the original ARRAY either from env.seq_id_to_array
+        (for CONST(seq_id) from testbench) or from the caller's usedef (for TEMP vars).
+        """
+        if arg.is_a(CONST) and isinstance(arg.value, int):
+            array = env.seq_id_to_array.get(arg.value)
+            if array is not None:
+                return array.clone()
+        elif arg.is_a(IRVariable) and hasattr(caller_scope, 'usedef') and caller_scope.usedef:
+            qsym = qualified_symbols(arg, caller_scope)
+            defs = list(caller_scope.usedef.get_stms_defining(qsym))
+            if len(defs) == 1 and defs[0].is_a(MOVE) and defs[0].src.is_a(ARRAY):
+                return defs[0].src.clone()
+        return arg
+
     def _bind_args(self, caller_scope: Scope, args: list[tuple[str, IRExp]], callee: Scope):
         binding: list[tuple[int, IRExp]] = []
         module_param_vars: list[tuple[str, IRExp]] = []
         param_names = callee.param_names()
+        param_syms = callee.param_symbols()
         for i, (_, arg) in enumerate(args):
             if isinstance(arg, IRExp):
                 if param_names[i].isupper():
                     module_param_vars.append((param_names[i], arg))
                 else:
+                    # Resolve seq-typed args (tuple/list) that were converted to integer IDs
+                    if i < len(param_syms) and param_syms[i].typ.is_seq():
+                        arg = self._resolve_seq_arg(arg, caller_scope)
                     binding.append((i, arg))
         if binding:
             UseDefDetector().process(callee)
             for i, arg in binding:
-                VarReplacer.replace_uses(callee, TEMP(callee.param_symbols()[i].name), arg)
+                pname = callee.param_symbols()[i].name
+                VarReplacer.replace_uses(callee, TEMP(pname), arg)
             callee.remove_param([i for i, _ in binding])
             for i, _ in reversed(binding):
                 args.pop(i)

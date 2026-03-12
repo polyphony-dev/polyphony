@@ -482,6 +482,13 @@ class ConstantOpt(ConstantOptBase):
     def visit_MREF(self, ir):
         if not ir.offset.is_a(CONST):
             return ir
+        if ir.mem.is_a(ARRAY):
+            offset = ir.offset.value
+            if 0 <= offset < len(ir.mem.items):
+                return ir.mem.items[offset]
+            return ir
+        if not isinstance(ir.mem, IRNameExp):
+            return ir
         qsym = qualified_symbols(ir.mem, self.scope)
         mem_sym = qsym[-1]
         assert isinstance(mem_sym, Symbol)
@@ -493,6 +500,13 @@ class ConstantOpt(ConstantOptBase):
                 return c
             else:
                 fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
+        elif not mem_sym.scope.is_containable() and hasattr(self.scope, 'usedef') and self.scope.usedef:
+            defs = list(self.scope.usedef.get_stms_defining(qsym))
+            if len(defs) == 1 and defs[0].is_a(MOVE) and defs[0].src.is_a(ARRAY):
+                array = defs[0].src
+                offset = ir.offset.value
+                if 0 <= offset < len(array.items):
+                    return array.items[offset]
         return ir
 
     def visit_TEMP(self, ir):

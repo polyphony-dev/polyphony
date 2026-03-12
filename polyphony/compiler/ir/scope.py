@@ -236,6 +236,7 @@ class Scope(Tagged, SymbolTable):
         'function_module',
         'inlinelib', 'unflatten',
         'package', 'directory',
+        'superseded',
     }
     scope_id = 0
     unnamed_ids = defaultdict(int)

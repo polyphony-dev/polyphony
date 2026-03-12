@@ -103,7 +103,13 @@ class CopyOpt(IRVisitor):
                         copies.append(mv)
         return len(uses) > 0
 
-    def _find_root_def(self, qsym: tuple[Symbol]) -> IR|None:
+    def _find_root_def(self, qsym: tuple[Symbol], _visited: set|None = None) -> IR|None:
+        if _visited is None:
+            _visited = set()
+        sym_key = id(qsym[-1])
+        if sym_key in _visited:
+            return None
+        _visited.add(sym_key)
         defs = list(self.scope.usedef.get_stms_defining(qsym))
         if len(defs) != 1:
             return None
@@ -121,7 +127,7 @@ class CopyOpt(IRVisitor):
                 src_t = src_sym.typ
                 if src_t != dst_t:
                     return None
-                orig = self._find_root_def(src_qsym)
+                orig = self._find_root_def(src_qsym, _visited)
                 if orig:
                     return orig
                 else:
@@ -133,7 +139,7 @@ class CopyOpt(IRVisitor):
                 src_t = src_sym.typ
                 if src_t != dst_t:
                     return None
-                orig = self._find_root_def(src_qsym)
+                orig = self._find_root_def(src_qsym, _visited)
                 if orig:
                     return orig
                 else:
@@ -159,6 +165,8 @@ class CopyCollector(IRVisitor):
         if dst_sym.is_field():
             return
         if dst_sym.is_free():
+            return
+        if dst_t.is_function():
             return
         if ir.src.is_a(TEMP):
             src_sym = qualified_symbols(ir.src, self.scope)[-1]
