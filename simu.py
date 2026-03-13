@@ -18,7 +18,7 @@ from polyphony.compiler.common.env import env
 from polyphony.compiler.common.common import read_source
 from polyphony.compiler.__main__ import setup, compile_plan, output_hdl, output_plan
 from polyphony.compiler.__main__ import compile as compile_polyphony
-from polyphony.simulator import Simulator, SimulationModelBuilder, HDLAssertionError
+from polyphony.simulator import Simulator, SimulationModelBuilder, HDLAssertionError, SimulationObserver, Model, Net, Reg, Port
 
 def parse_options():
     if not os.path.exists(TMP_DIR):
@@ -39,6 +39,8 @@ def parse_options():
                         action='store_true', default=False, help='enable HDL debug mode')
     parser.add_argument('-p', dest='with_path_name', action='store_true')
     parser.add_argument('-t', '--targets', nargs='+', dest='targets', default=list())
+    parser.add_argument('--watch', dest='watch_signals', default='',
+                        help='comma-separated signal names to watch (e.g. "m.i,m.o")')
     parser.add_argument('source', help='Python source file')
     return parser.parse_args()
 
@@ -103,6 +105,7 @@ def setup_compiler(casefile_path, casename, simu_options):
     compiler_options.hdl_debug_mode = simu_options.hdl_debug_mode
     compiler_options.verilog_dump = simu_options.verilog_dump
     compiler_options.verilog_monitor = simu_options.verilog_monitor
+    compiler_options.watch_signals = getattr(simu_options, 'watch_signals', '')
     setup(casefile_path, compiler_options)
     return compiler_options
 
@@ -236,6 +239,69 @@ import sys
 from io import StringIO
 import contextlib
 
+
+def resolve_watch_signals(simulator, watch_str):
+    """Resolve --watch signal names to (name, value) pairs.
+
+    Uses the name table built from the core model tree. Signal names like "m.i"
+    are matched by trying:
+    1. Direct lookup by name in the name table (hierarchical match)
+    2. Suffix match: look for any signal ending with the signal's leaf name,
+       where the prefix matches a subscope or instance name
+    """
+    if not watch_str:
+        return
+    from polyphony.simulator import _build_name_table
+    name_table = _build_name_table(simulator)
+    # Reverse: name -> (id, value)
+    reverse_table = {}
+    for core_model in simulator.models:
+        _build_reverse_table(core_model, reverse_table)
+    signal_names = [s.strip() for s in watch_str.split(',')]
+    for sig_name in signal_names:
+        # Try exact match in name table values
+        found = False
+        for val_id, hier_name in name_table.items():
+            if hier_name == sig_name:
+                value = reverse_table.get(val_id)
+                if value:
+                    simulator.observer.add_watch(sig_name, value)
+                    found = True
+                    break
+        if found:
+            continue
+        # Try matching leaf signal name across all models
+        parts = sig_name.split('.')
+        leaf = parts[-1] if len(parts) > 1 else sig_name
+        for core_model in simulator.models:
+            attr = getattr(core_model, leaf, None)
+            if attr is not None:
+                if isinstance(attr, Port):
+                    simulator.observer.add_watch(sig_name, attr.value)
+                    found = True
+                elif isinstance(attr, (Net, Reg)):
+                    simulator.observer.add_watch(sig_name, attr)
+                    found = True
+                break
+        if not found:
+            print(f"Warning: signal '{sig_name}' not found, skipping")
+
+
+def _build_reverse_table(core_model, table):
+    """Build {id(value): value} mapping for all signals in the model tree."""
+    for attr_name, val in vars(core_model).items():
+        if attr_name.startswith('_') or attr_name in ('hdlmodule', 'clk', 'rst'):
+            continue
+        if isinstance(val, (Net, Reg)):
+            table[id(val)] = val
+        elif isinstance(val, Port):
+            if val.value:
+                table[id(val.value)] = val.value
+        elif isinstance(val, Model):
+            sub_core = super(Model, val).__getattribute__("__model")
+            _build_reverse_table(sub_core, table)
+
+
 def simulate_on_python(casefile_path, source_text, scopes, simu_options):
     finishes = []
     casename = case_name_from_path(casefile_path)
@@ -279,7 +345,17 @@ def simulate_on_python(casefile_path, source_text, scopes, simu_options):
         try:
             simulate_models = [model for model, _ in models.values()]
             test._orig_func._execute_on_simu = True
-            with Simulator(simulate_models):
+            simulator = Simulator(simulate_models)
+            simulator.case_name = casename
+            watch_signals = getattr(simu_options, 'watch_signals', '')
+            if simu_options.verilog_dump or watch_signals:
+                vcd_path = f"{TMP_DIR}{os.sep}{casename}_py.vcd"
+                log_path = f"{TMP_DIR}{os.sep}{casename}_py.log"
+                simulator.observer = SimulationObserver(vcd_file=vcd_path, log_file=log_path)
+            with simulator:
+                if watch_signals and simulator.observer:
+                    resolve_watch_signals(simulator, watch_signals)
+                    simulator.observer.dump_initial(simulator.clock_time)
                 test()
             finishes.append('OK')
         except HDLAssertionError as e:  # from hdlmodule code

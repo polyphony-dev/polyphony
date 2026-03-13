@@ -35,6 +35,8 @@ class VerilogTestGen(VerilogCodeGen):
         self._generate_reset_task()
         if env.enable_verilog_dump:
             self._generate_dump_vcd_task()
+        if env.watch_signals:
+            self._generate_monitor_task(env.watch_signals)
         self.set_indent(-2)
         self.emit('endmodule\n')
 
@@ -70,5 +72,37 @@ class VerilogTestGen(VerilogCodeGen):
         for net in self.hdlmodule.get_signals({'netarray'}, {'input', 'output'}):
             for i in range(net.width[1]):
                 self.emit(f'$dumpvars(0, {self._safe_name(net.name)}[{i}]);')
+        self.set_indent(-2)
+        self.emit('end')
+
+    def _generate_monitor_task(self, watch_signals):
+        signal_names = [s.strip() for s in watch_signals.split(',')]
+        # Resolve Python hierarchical names to Verilog testbench signal names
+        # Python name "m.i" -> look for signal with name "m_i" in testbench scope
+        verilog_names = []
+        valid_names = []
+        all_sigs = {sig.name: sig for sig in self.hdlmodule.get_signals(
+            {'reg', 'net', 'regarray', 'netarray'}, {'input', 'output'})}
+        # Also include input/output signals
+        for sig in self.hdlmodule.get_signals({'input', 'output'}):
+            all_sigs[sig.name] = sig
+        for py_name in signal_names:
+            v_name = py_name.replace('.', '_')
+            if v_name in all_sigs:
+                verilog_names.append(self._safe_name(v_name))
+                valid_names.append(py_name)
+            else:
+                logger.warning(f"watch signal '{py_name}' not found as '{v_name}' in testbench")
+        if not valid_names:
+            return
+        fmt_parts = ["%5t:"]
+        args = ["$time"]
+        for py_name, v_name in zip(valid_names, verilog_names):
+            fmt_parts.append(f" {py_name}=%d")
+            args.append(v_name)
+        fmt_str = ''.join(fmt_parts)
+        self.emit('initial begin')
+        self.set_indent(2)
+        self.emit(f'$monitor("{fmt_str}", {", ".join(args)});')
         self.set_indent(-2)
         self.emit('end')

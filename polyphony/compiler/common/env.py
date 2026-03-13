@@ -49,6 +49,7 @@ class Env(object):
     quiet_level = 0
     enable_verilog_monitor = False
     enable_verilog_dump = False
+    watch_signals = ''
     sleep_sentinel_thredhold = 10
 
     def __init__(self):

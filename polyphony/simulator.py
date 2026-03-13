@@ -222,6 +222,146 @@ class Reg(Value):
         self.val = self.next
 
 
+class SimulationObserver:
+    def __init__(self, vcd_file=None, log_file=None):
+        self.watched = []        # [(name, value_ref), ...]
+        self.prev_values = {}    # name -> previous value
+        self._vcd_file_path = vcd_file
+        self._log_file_path = log_file
+        self._vcd_file = None
+        self._log_file = None
+        self._in_reset = False
+        self._vcd_header_written = False
+        if log_file:
+            self._log_file = open(log_file, 'w')
+        if vcd_file:
+            self._vcd_file = open(vcd_file, 'w')
+
+    def add_watch(self, name, value):
+        """Add a signal to watch list. `value` is a Net or Reg object."""
+        self.watched.append((name, value))
+        self.prev_values[name] = None
+
+    def on_reset_start(self):
+        self._in_reset = True
+
+    def on_reset_done(self, clock_time):
+        self._in_reset = False
+        if not self.watched:
+            return
+        if self._log_file:
+            parts = [f"{name}={val.val}" for name, val in self.watched]
+            self._log_file.write(f"{clock_time:>4}: [reset] {', '.join(parts)}\n")
+        if self._vcd_file:
+            self._write_vcd_header()
+            self._write_vcd_values(clock_time)
+        for name, val in self.watched:
+            self.prev_values[name] = val.val
+
+    def dump_initial(self, clock_time):
+        """Dump initial values after watches are registered (post-reset)."""
+        if not self.watched:
+            return
+        if self._log_file:
+            parts = [f"{name}={val.val}" for name, val in self.watched]
+            self._log_file.write(f"{clock_time:>4}: [init] {', '.join(parts)}\n")
+        if self._vcd_file and not self._vcd_header_written:
+            self._write_vcd_header()
+            self._write_vcd_values(clock_time)
+        for name, val in self.watched:
+            self.prev_values[name] = val.val
+
+    def on_cycle(self, clock_time):
+        if self._in_reset:
+            return
+        if not self.watched:
+            return
+        if self._log_file:
+            changes = []
+            for name, val in self.watched:
+                prev = self.prev_values.get(name)
+                cur = val.val
+                if cur != prev:
+                    changes.append(f"{name}: {prev} -> {cur}")
+            if changes:
+                self._log_file.write(f"{clock_time:>4}: {', '.join(changes)}\n")
+        if self._vcd_file:
+            if not self._vcd_header_written:
+                self._write_vcd_header()
+            self._write_vcd_values(clock_time)
+        for name, val in self.watched:
+            self.prev_values[name] = val.val
+
+    def close(self):
+        if self._log_file:
+            self._log_file.flush()
+            self._log_file.close()
+            self._log_file = None
+        if self._vcd_file:
+            self._vcd_file.flush()
+            self._vcd_file.close()
+            self._vcd_file = None
+
+    def _write_vcd_header(self):
+        self._vcd_header_written = True
+        f = self._vcd_file
+        f.write("$timescale 1ns $end\n")
+        f.write("$scope module test $end\n")
+        for i, (name, val) in enumerate(self.watched):
+            width = val.width if isinstance(val.width, int) else 32
+            sym = chr(33 + i)
+            f.write(f"$var wire {width} {sym} {name} $end\n")
+        f.write("$upscope $end\n")
+        f.write("$enddefinitions $end\n")
+
+    def _write_vcd_values(self, clock_time):
+        f = self._vcd_file
+        f.write(f"#{clock_time}\n")
+        for i, (name, val) in enumerate(self.watched):
+            width = val.width if isinstance(val.width, int) else 32
+            sym = chr(33 + i)
+            v = val.val
+            if isinstance(v, int):
+                bits = format(v & ((1 << width) - 1), f'0{width}b')
+                f.write(f"b{bits} {sym}\n")
+            else:
+                f.write(f"bx {sym}\n")
+
+
+def _build_name_table(simulator):
+    """Walk core model tree, build {id(value): hierarchical_name} mapping."""
+    table = {}
+    for core_model in simulator.models:
+        prefix = core_model.hdlmodule.name
+        _walk_core_model(core_model, prefix, table)
+    return table
+
+
+def _walk_core_model(core_model, prefix, table):
+    """Walk SimpleNamespace model tree."""
+    for attr_name, val in vars(core_model).items():
+        if attr_name.startswith('_') or attr_name in ('hdlmodule', 'clk', 'rst'):
+            continue
+        if isinstance(val, (Net, Reg)):
+            table[id(val)] = f"{prefix}.{attr_name}"
+        elif isinstance(val, Port):
+            table[id(val.value)] = f"{prefix}.{attr_name}"
+        elif isinstance(val, Model):
+            sub_core = super(Model, val).__getattribute__("__model")
+            _walk_core_model(sub_core, f"{prefix}.{attr_name}", table)
+
+
+def _resolve_hierarchical_name(simulator, port):
+    """Resolve a Port to its hierarchical name using the name table."""
+    if not hasattr(simulator, '_name_table'):
+        simulator._name_table = _build_name_table(simulator)
+    val_id = id(port.value)
+    name = simulator._name_table.get(val_id)
+    if name is None:
+        name = port.value.signal.name if port.value.signal else '?'
+    return name
+
+
 current_simulator = None
 
 
@@ -251,6 +391,23 @@ def clkrange(n):
             current_simulator._period()
             yield i
         current_simulator._period()
+
+
+def watch(*signals):
+    """Register Port signals for debug observation."""
+    sim = current_simulator
+    if not sim:
+        return
+    if not sim.observer:
+        name = getattr(sim, 'case_name', 'test')
+        vcd_path = f".tmp/{name}_py.vcd"
+        log_path = f".tmp/{name}_py.log"
+        sim.observer = SimulationObserver(vcd_file=vcd_path, log_file=log_path)
+    for port in signals:
+        if not isinstance(port, Port):
+            continue
+        hier_name = _resolve_hierarchical_name(sim, port)
+        sim.observer.add_watch(hier_name, port.value)
 
 
 class Port(object):
@@ -306,6 +463,8 @@ class Simulator(object):
 
         self.evaluators = [ModelEvaluator(model) for model in self.models]
         self.clock_time = 0
+        self.observer = None
+        self.case_name = ''
 
     def __enter__(self):
         self.begin()
@@ -326,6 +485,8 @@ class Simulator(object):
         global current_simulator
         if current_simulator is None:
             raise RuntimeError()
+        if self.observer:
+            self.observer.close()
         current_simulator = None
 
     def _period(self, count=1):
@@ -337,14 +498,20 @@ class Simulator(object):
             self.clock_time += 1
             for model in self.models:
                 model.clk.val = 0
+            if self.observer:
+                self.observer.on_cycle(self.clock_time)
 
     def _reset(self, count=1):
+        if self.observer:
+            self.observer.on_reset_start()
         for model in self.models:
             model.rst.val = 1
         self._period(count)
         for model in self.models:
             model.rst.val = 0
         self.clock_time = 0
+        if self.observer:
+            self.observer.on_reset_done(self.clock_time)
 
 
 class ModelEvaluator(AHDLVisitor):
