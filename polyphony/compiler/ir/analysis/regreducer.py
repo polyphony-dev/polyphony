@@ -1,3 +1,4 @@
+from collections import deque
 from ..ir import *
 from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
@@ -6,11 +7,68 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
+def _is_clksleep(stm):
+    """Check if stm is a clksleep call (excludes wait_until and wait_*)."""
+    return (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+            stm.exp.name == 'polyphony.timing.clksleep')
+
+
 class AliasVarDetector(IRVisitor):
     def process(self, scope):
         self.usedef = scope.usedef
         self.removes = []
         super().process(scope)
+
+    def _has_clksleep_between(self, def_stm, use_stm):
+        """Check if there is a clksleep between def_stm and use_stm."""
+        def_blk = def_stm.block
+        use_blk = use_stm.block
+        if def_blk is use_blk:
+            stms = def_blk.stms
+            in_range = False
+            for stm in stms:
+                if stm is def_stm:
+                    in_range = True
+                    continue
+                if stm is use_stm:
+                    return False
+                if in_range and _is_clksleep(stm):
+                    return True
+            return False
+        # Different blocks: check if any CFG path from def_blk to use_blk contains a clksleep
+        # First, check if def_blk has a clksleep after def_stm
+        stms = def_blk.stms
+        found_def = False
+        for stm in stms:
+            if stm is def_stm:
+                found_def = True
+                continue
+            if found_def and _is_clksleep(stm):
+                return True
+        # BFS from def_blk to use_blk
+        visited = set()
+        queue = deque(def_blk.succs)
+        while queue:
+            blk = queue.popleft()
+            if blk in visited:
+                continue
+            visited.add(blk)
+            if blk is use_blk:
+                # Check if use_blk has a clksleep before use_stm
+                for stm in blk.stms:
+                    if stm is use_stm:
+                        break
+                    if _is_clksleep(stm):
+                        return True
+                return False
+            # Intermediate block contains a clksleep
+            for stm in blk.stms:
+                if _is_clksleep(stm):
+                    return True
+            for succ in blk.succs:
+                if succ not in visited:
+                    queue.append(succ)
+        return False
 
     def visit_CMOVE(self, ir):
         assert ir.dst.is_a(IRVariable)
@@ -35,9 +93,13 @@ class AliasVarDetector(IRVisitor):
             if self.scope.is_worker():
                 module = self.scope.worker_owner
             else:
-                # TODO:
+                # Walk up the parent chain to find the nearest enclosing module scope
                 module = self.scope.parent
+                while module is not None and not module.is_module():
+                    module = module.parent
             if sym.typ.is_object():
+                return
+            if module is None or module.field_usedef is None:
                 return
             qsym = qualified_symbols(ir.dst, self.scope)
             defstms = module.field_usedef.get_def_stms(qsym)
@@ -91,11 +153,17 @@ class AliasVarDetector(IRVisitor):
                         return
         elif ir.src.is_a(ARRAY):
             return
-        stms = self.usedef.get_stms_defining(sym)
-        if len(stms) > 1:
+        def_stms = self.usedef.get_stms_defining(sym)
+        if len(def_stms) > 1:
             return
-        stms = self.usedef.get_stms_using(sym)
-        for stm in stms:
+        use_stms = self.usedef.get_stms_using(sym)
+        if sched == 'timed' and def_stms:
+            def_stm = next(iter(def_stms))
+            for use_stm in use_stms:
+                if self._has_clksleep_between(def_stm, use_stm):
+                    logger.debug(f'{sym} crosses clksleep, keeping as reg')
+                    return
+        for stm in use_stms:
             if sched != 'pipeline' and stm.block.synth_params['scheduling'] == 'pipeline':
                 return
             if sched != 'parallel' and stm.block.synth_params['scheduling'] == 'parallel':

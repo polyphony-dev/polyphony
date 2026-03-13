@@ -220,6 +220,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                     if stm.dst.is_a(AHDL_VAR) and stm.dst.sig.is_net():
                         assign = AHDL_ASSIGN(stm.dst, stm.src)
                         self.hdlmodule.add_static_assignment(assign, '')
+                self.hdlmodule.remove_sig(fsm.state_var)
                 del self.hdlmodule.fsms[fsm.name]
             else:
                 self._process_fsm(fsm)

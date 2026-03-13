@@ -13,7 +13,12 @@ class FunctionType(ScopeType):
         assert self.scope.is_function() or self.scope.is_method() or self.scope.is_object()
 
     def can_assign(self, rhs_t):
-        return self.name == rhs_t.name and self.scope.is_object()
+        if self.name != rhs_t.name:
+            return False
+        if self.scope.is_object():
+            return True
+        # Also allow assigning between compatible function types (e.g. worker parameter binding)
+        return self.scope.is_assignable(rhs_t.scope)
 
     def propagate(self, rhs_t):
         lhs_t = self

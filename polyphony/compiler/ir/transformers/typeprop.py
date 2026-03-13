@@ -37,6 +37,7 @@ class TypePropagation(IRVisitor):
     def process_scopes(self, scopes):
         self._new_scopes = []
         self._old_scopes = set()
+        self._indirect_old_scopes = set()
         self.typed = []
         self.pure_type_inferrer = PureFuncTypeInferrer()
         self.worklist = deque(scopes)
@@ -47,6 +48,9 @@ class TypePropagation(IRVisitor):
                 self.typed.append(scope)
                 continue
             if scope.is_directory():
+                continue
+            # Skip scopes that have been replaced by specialized versions
+            if scope in self._old_scopes or scope in self._indirect_old_scopes or scope.is_superseded():
                 continue
             if scope.is_function() and scope.return_type is None:
                 scope.return_type = Type.undef()
@@ -64,9 +68,34 @@ class TypePropagation(IRVisitor):
     def _add_scope(self, scope):
         if scope.is_testbench() and not scope.parent.is_global():
             return
-        if scope is not self.scope and scope not in self.typed and scope not in self.worklist:
+        if (scope is not self.scope and
+                scope not in self.typed and
+                scope not in self.worklist and
+                scope not in self._old_scopes and
+                scope not in self._indirect_old_scopes and
+                not scope.is_superseded()):
             self.worklist.appendleft(scope)
             logger.debug(f'add scope {scope.name}')
+
+    def _find_attr_type_from_specialized(self, scope, attr_name) -> 'Type':
+        """When a class scope's attribute type is undef,
+        look up the type from a specialized version of the scope."""
+        parent = scope.parent
+        if parent is None:
+            logger.debug(f'_find_attr_type_from_specialized: {scope.name}.{attr_name} no parent')
+            return Type.undef()
+        base_name = scope.base_name
+        logger.debug(f'_find_attr_type_from_specialized: {scope.name}.{attr_name} base={base_name} children={[c.name for c in parent.children]}')
+        for child in parent.children:
+            if (child is not scope and
+                    child.is_specialized() and
+                    child.base_name.startswith(base_name + '_') and
+                    child.has_sym(attr_name)):
+                sym = child.find_sym(attr_name)
+                logger.debug(f'  found {child.name}.{attr_name} = {sym.typ}')
+                if not sym.typ.is_undef():
+                    return sym.typ
+        return Type.undef()
 
     def visit(self, ir:IR) -> Type:
         method = 'visit_' + ir.__class__.__name__
@@ -208,6 +237,10 @@ class TypePropagation(IRVisitor):
 
             symbol = attr_scope.find_sym(ir.name)
             attr_t = symbol.typ
+            if attr_t.is_undef() and attr_scope.is_class():
+                attr_t = self._find_attr_type_from_specialized(attr_scope, ir.name)
+                if not attr_t.is_undef():
+                    symbol.typ = attr_t
             exp_sym = qualified_symbols(ir.exp, self.scope)[-1]
             assert isinstance(exp_sym, Symbol)
             assert exptyp == exp_sym.typ
@@ -506,7 +539,18 @@ class TypeSpecializer(TypePropagation):
                     fail(self.current_stm, Errors.UNSUPPORTED_FUNCTION_MODULE_PARAM_TYPE,
                          [name, t])
             self._new_scopes.append(new_scope)
-            self._old_scopes.add(callee_scope)
+            # Determine if this is a direct or indirect call.
+            # Direct call: func_sym is owned by callee_scope's parent (safe to replace the original).
+            # Indirect call: func_sym is a local variable (e.g., a function-typed parameter)
+            #   whose type resolves to callee_scope.  The original scope must be preserved
+            #   because it is still referenced by callers (e.g., in NEW args), but we still
+            #   need to prevent the infinite worklist loop.
+            owner = self.scope.find_owner_scope(func_sym)
+            if owner is not None and owner is not callee_scope.parent:
+                self._indirect_old_scopes.add(callee_scope)
+                callee_scope.add_tag('superseded')
+            else:
+                self._old_scopes.add(callee_scope)
             if is_new:
                 new_scope_sym = callee_scope.parent.find_sym(new_scope.base_name)
                 self._add_scope(new_scope)
@@ -515,9 +559,7 @@ class TypeSpecializer(TypePropagation):
             ret_t = new_scope.return_type
             # Deal with imported scope
             asname = f'{ir.name}_{postfix}'
-            owner = self.scope.find_owner_scope(func_sym)
-            if owner and func_sym.scope is not owner:
-                # new_scope_sym is created at original scope so it must be imported
+            if owner and (func_sym.scope is not owner or owner is not callee_scope.parent):
                 owner.import_sym(new_scope_sym, asname)
             # Replace name expression
             if ir.func.is_a(TEMP):

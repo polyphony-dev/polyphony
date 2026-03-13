@@ -1,4 +1,8 @@
 import inspect
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing import Any
+
 from . import version
 
 __version__ = version.__version__
@@ -70,6 +74,9 @@ def module(cls):
     cls.__init__ = init_wrapper
     cls._is_module = True
     return cls
+
+if TYPE_CHECKING:
+    module: Any  # type: ignore[no-redef]
 
 
 '''
@@ -174,11 +181,16 @@ rule = _Rule()
 
 
 def pipelined(seq, ii=-1):
-    pass
+    return seq
 
 
 def unroll(seq, factor='full'):
+    return seq
+
+
+def append_worker(fn, *args, loop=False):
     pass
+
 
 #class Reg:
 #    pass
@@ -187,25 +199,35 @@ def unroll(seq, factor='full'):
 #    pass
 
 
-@module
-class Channel:
-    def __init__(self, dtype:type, capacity=4):
-        pass
+if TYPE_CHECKING:
+    class Channel:
+        def __init__(self, dtype: type, capacity: int = 4) -> None: ...
+        def put(self, v: Any) -> None: ...
+        def get(self) -> Any: ...
+        def full(self) -> bool: ...
+        def empty(self) -> bool: ...
+        def will_full(self) -> bool: ...
+        def will_empty(self) -> bool: ...
+else:
+    @module
+    class Channel:
+        def __init__(self, dtype:type, capacity=4):
+            pass
 
-    def put(self, v):
-        pass
+        def put(self, v):
+            pass
 
-    def get(self):
-        pass
+        def get(self):
+            pass
 
-    def full(self):
-        pass
+        def full(self):
+            pass
 
-    def empty(self):
-        pass
+        def empty(self):
+            pass
 
-    def will_full(self):
-        pass
+        def will_full(self):
+            pass
 
-    def will_empty(self):
-        pass
+        def will_empty(self):
+            pass

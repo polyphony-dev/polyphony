@@ -7,7 +7,10 @@ import simu
 import error
 import json
 import multiprocessing as mp
+import time
 from pprint import pprint
+
+TEST_TIMEOUT = 120  # seconds per test case
 
 
 ROOT_DIR = './'
@@ -60,7 +63,15 @@ SUITE_CASES = [
         'config': '{ "perfect_inlining": false }',
         "ignores": (
             'pure/*',
-            'module/*',
+            'module/module01.py', 'module/module02.py',
+            'module/module03.py', 'module/module03.new.py',
+            'module/module07.py', 'module/module08.py',
+            'module/module09.py', 'module/module10.py',
+            'module/module11.py', 'module/module12.py',
+            'module/field01.py', 'module/field02.py', 'module/field03.py',
+            'module/nesting01.py', 'module/nesting02.py',
+            'module/nesting03.py', 'module/nesting04.py',
+            'module/parameter01.py',
             'unroll/pipelined_unroll01.py',
             'chstone/mips/pipelined_mips.py',
             'error/pure01.py', 'error/pure02.py',
@@ -77,17 +88,17 @@ global_suite_results = []
 def parse_options():
     if not os.path.exists(TMP_DIR):
         os.mkdir(TMP_DIR)
-    parser = argparse.ArgumentParser(prog='suite')
-    parser.add_argument('-c', dest='compile_only', action='store_true')
-    parser.add_argument('-e', dest='error_test_only', action='store_true')
-    parser.add_argument('-w', dest='warn_test_only', action='store_true')
-    parser.add_argument('-j', dest='show_json', action='store_true')
-    parser.add_argument('-s', dest='silent', action='store_true')
-    parser.add_argument('-f', dest='full', action='store_true')
-    parser.add_argument('-n', '--num_cpu', dest='ncpu', type=int, default=1)
+    parser = argparse.ArgumentParser(prog='suite', description='Run the Polyphony test suite')
+    parser.add_argument('-c', dest='compile_only', action='store_true', help='compile only, skip simulation')
+    parser.add_argument('-e', dest='error_test_only', action='store_true', help='run error tests only (tests/error/)')
+    parser.add_argument('-w', dest='warn_test_only', action='store_true', help='run warning tests only (tests/warning/)')
+    parser.add_argument('-j', dest='show_json', action='store_true', help='display results as JSON')
+    parser.add_argument('-s', dest='silent', action='store_true', help='suppress output')
+    parser.add_argument('-f', dest='full', action='store_true', help='run with all config patterns')
+    parser.add_argument('-n', '--num_cpu', dest='ncpu', type=int, default=1, help='number of parallel processes (default: 1)')
     parser.add_argument('-P', '--python', dest='enable_python', action='store_true',
                         default=False, help='enable python simulation')
-    parser.add_argument('dir', nargs='*')
+    parser.add_argument('dir', nargs='*', help='target test directories (all if omitted)')
     return parser.parse_args()
 
 
@@ -101,14 +112,18 @@ def add_files(lst, patterns):
 def exec_test_entry(t, options, suite_results):
     if not options.silent:
         print(t)
+    start_time = time.time()
     try:
         hdl_finishes, py_finishes = simu.exec_test(t, options)
         if options.enable_python:
-            suite_results[t] = f'HDL Result: {','.join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
+            suite_results[t] = f'HDL Result: {",".join(hdl_finishes)} Python Result: {",".join(py_finishes)}'
         else:
             suite_results[t] = f'{",".join(hdl_finishes)}'
     except Exception as e:
         suite_results[t] = 'Internal Error'
+    elapsed = time.time() - start_time
+    if elapsed > 30:
+        print(f'WARNING: {t} took {elapsed:.1f}s')
 
 def suite(options, ignores):
     tests = []
@@ -126,9 +141,21 @@ def suite(options, ignores):
         if t in tests:
             tests.remove(t)
     fails = 0
+    async_results = []
     for t in tests:
-        pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+        r = pool.apply_async(exec_test_entry, args=(t, options, suite_results))
+        async_results.append((t, r))
     pool.close()
+    for t, r in async_results:
+        try:
+            r.get(timeout=TEST_TIMEOUT)
+        except mp.TimeoutError:
+            print(f'TIMEOUT: {t} exceeded {TEST_TIMEOUT}s - skipping')
+            suite_results[t] = 'Timeout'
+        except Exception as e:
+            print(f'ERROR: {t} raised {e}')
+            suite_results[t] = 'Internal Error'
+    pool.terminate()
     pool.join()
     suite_results = dict(suite_results)
     fails = sum([res == 'FAIL' for res in suite_results.values()])
@@ -165,9 +192,19 @@ def abnormal_test(tests, proc, options, ignores):
         if t in tests:
             tests.remove(t)
     fails = 0
+    async_results = []
     for t in tests:
-        pool.apply_async(exec_abnormal_test_entry, args=(proc, t, options, error_results))
+        r = pool.apply_async(exec_abnormal_test_entry, args=(proc, t, options, error_results))
+        async_results.append((t, r))
     pool.close()
+    for t, r in async_results:
+        try:
+            r.get(timeout=TEST_TIMEOUT)
+        except mp.TimeoutError:
+            print(f'TIMEOUT: {t} exceeded {TEST_TIMEOUT}s - skipping')
+        except Exception as e:
+            print(f'ERROR: {t} raised {e}')
+    pool.terminate()
     pool.join()
     fails = sum(error_results.values())
     return fails

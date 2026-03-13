@@ -49,6 +49,7 @@ class Env(object):
     quiet_level = 0
     enable_verilog_monitor = False
     enable_verilog_dump = False
+    watch_signals = ''
     sleep_sentinel_thredhold = 10
 
     def __init__(self):
@@ -68,6 +69,7 @@ class Env(object):
         self.scope2output_hdlscope: dict[Scope, HDLScope] = {}
         self.targets = []
         self.root_dir = ''
+        self.seq_id_to_array: dict = {}
 
     def load_config(self, config):
         for key, v in config.items():

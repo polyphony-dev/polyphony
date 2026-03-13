@@ -14,10 +14,7 @@ class AHDLCopyOpt(AHDLTransformer):
             self.updated = False
             self.usedef = AHDLUseDefDetector().process(hdlmodule)
             super().process(hdlmodule)
-            # logger.debug(str(hdlmodule))
             AHDLVarReducer().process(hdlmodule)
-            #logger.debug('!!! after reduce')
-            #logger.debug(str(hdlmodule))
 
     def _is_ignore_case(self, target:AHDL_VAR) -> bool:
         if target.ctx != Ctx.LOAD:
@@ -79,6 +76,8 @@ class AHDLVarReducer(AHDLTransformer):
         if var.sig.is_output():
             return False
         if var.sig.is_connector():
+            return False
+        if var.sig.is_field():
             return False
         return True
 

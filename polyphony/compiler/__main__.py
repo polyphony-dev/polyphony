@@ -890,6 +890,7 @@ def setup_options(options):
     env.quiet_level = options.quiet_level if options.quiet_level else 0
     env.enable_verilog_dump = options.verilog_dump
     env.enable_verilog_monitor = options.verilog_monitor
+    env.watch_signals = getattr(options, 'watch_signals', '')
     env.targets = options.targets
     if options.config:
         try:

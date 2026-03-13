@@ -94,7 +94,39 @@ class WaitTransformer(AHDLTransformer):
         else:
             return new_state
 
+    def _contains_meta_wait(self, ahdl):
+        if ahdl.is_a(AHDL_META_WAIT):
+            return True
+        if ahdl.is_a(AHDL_BLOCK):
+            return any(self._contains_meta_wait(c) for c in ahdl.codes)
+        if ahdl.is_a(AHDL_IF):
+            return any(self._contains_meta_wait(b) for b in ahdl.blocks)
+        return False
+
+    def _sink_trailing_codes_into_wait_if(self, block):
+        codes = list(block.codes)
+        changed = True
+        while changed:
+            changed = False
+            for i, code in enumerate(codes):
+                if code.is_a(AHDL_IF) and self._contains_meta_wait(code) and i < len(codes) - 1:
+                    trailing = tuple(codes[i + 1:])
+                    new_blocks = []
+                    new_conds = list(code.conds)
+                    for blk in code.blocks:
+                        new_blk = AHDL_BLOCK(blk.name, blk.codes + trailing)
+                        new_blocks.append(new_blk)
+                    if code.conds[-1] is not None:
+                        new_conds.append(None)
+                        new_blocks.append(AHDL_BLOCK('', trailing))
+                    new_if = AHDL_IF(tuple(new_conds), tuple(new_blocks))
+                    codes = codes[:i] + [new_if]
+                    changed = True
+                    break
+        return AHDL_BLOCK(block.name, tuple(codes))
+
     def visit_AHDL_BLOCK(self, ahdl):
+        ahdl = self._sink_trailing_codes_into_wait_if(ahdl)
         new_block = super().visit_AHDL_BLOCK(ahdl)
         meta_waits = [c for c in new_block.codes if c.is_a(AHDL_META_WAIT)]
         if meta_waits:

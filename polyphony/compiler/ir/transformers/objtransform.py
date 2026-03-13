@@ -5,6 +5,7 @@ from ..irhelper import qualified_symbols, irexp_type
 from ..types.type import Type
 from ..analysis.usedef import UseDefUpdater
 from ...common.utils import replace_item
+from ...common.env import env
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -286,6 +287,7 @@ class ObjectTransformer(object):
             assert defstm.src.is_a(ARRAY)
 
             seq_id = self.scope.add_sym(f'{seq_sym.name}{seq_sym.id}__id', tags=set(), typ=Type.int(16))
+            env.seq_id_to_array[seq_id.id] = defstm.src.clone()
             mv = MOVE(TEMP(seq_id.name),
                       CONST(seq_id.id),
                       loc=defstm.loc)

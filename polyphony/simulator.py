@@ -19,12 +19,14 @@ class HDLAssertionError(AssertionError):
 
 def twos_comp(val, bits):
     """compute the 2's complement of int value val"""
-    if (val & (1 << (bits - 1))) != 0: # if sign bit is set e.g., 8bit: 128-255
-        val = val - (1 << bits)        # compute negative value
-    return val                         # return positive value as is
+    if (val & (1 << (bits - 1))) != 0:  # if sign bit is set e.g., 8bit: 128-255
+        val = val - (1 << bits)  # compute negative value
+    return val  # return positive value as is
+
 
 class Value(Tagged):
     TAGS = Signal.TAGS
+
     def __init__(self, val, width, sign, signal):
         if signal:
             super().__init__(signal.tags)
@@ -33,7 +35,7 @@ class Value(Tagged):
         self.width = width
         self.sign = sign
         self.signal = signal
-        self.val = 'X'
+        self.val = "X"
         self.set(val)
 
     def set(self, v):
@@ -65,11 +67,11 @@ class Integer(Value):
         return str(self.val)
 
     def __repr__(self):
-        return f'Integer[{self.width}]={self.val}'
+        return f"Integer[{self.width}]={self.val}"
 
     def __bin_op__(self, op, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         width = self.width + rhs.width
         sign = max(self.sign, rhs.sign)
         value = op(self.val, rhs.val)
@@ -91,8 +93,8 @@ class Integer(Value):
         return self.__bin_op__(operator.mod, rhs)
 
     def __bit_op__(self, op, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         width = max(self.width, rhs.width)
         value = op(self.val, rhs.val)
         return Integer(value, width, False)
@@ -115,52 +117,52 @@ class Integer(Value):
         return Integer(int(b), 1, False)
 
     def __lt__(self, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         b = self.val < rhs.val
         return Integer(int(b), 1, False)
 
     def __le__(self, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         b = self.val <= rhs.val
         return Integer(int(b), 1, False)
 
     def __gt__(self, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         b = self.val > rhs.val
         return Integer(int(b), 1, False)
 
     def __ge__(self, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         b = self.val >= rhs.val
         return Integer(int(b), 1, False)
 
     def __lshift__(self, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         if rhs.val > self.width or rhs.val < 0:
             return Integer(0, self.width, self.sign)
         v = self.val << rhs.val
         return Integer(v, self.width, self.sign)
 
     def __rshift__(self, rhs):
-        if self.val == 'X' or rhs.val == 'X':
-            return Integer('X', 0, False)
+        if self.val == "X" or rhs.val == "X":
+            return Integer("X", 0, False)
         if rhs.val > self.width or rhs.val < 0:
             return Integer(0, self.width, self.sign)
         v = self.val >> rhs.val
         return Integer(v, self.width, self.sign)
 
     def __bool__(self):
-        if self.val == 'X':
+        if self.val == "X":
             return False
         return bool(self.val)
 
     def __int__(self):
-        if self.val == 'X':
+        if self.val == "X":
             return None
         return self.val
 
@@ -168,14 +170,15 @@ class Integer(Value):
         return self
 
     def __neg__(self):
-        if self.val == 'X':
+        if self.val == "X":
             return self
         return Integer(-self.val, self.width, self.sign)
 
     def __invert__(self):
-        if self.val == 'X':
+        if self.val == "X":
             return self
         return Integer(~self.val, self.width, self.sign)
+
 
 class Net(Value):
     def __init__(self, val, width, signal):
@@ -185,19 +188,20 @@ class Net(Value):
         return str(self.val)
 
     def __repr__(self):
-        return f'Net(\'{self.signal}\')={self.val}'
+        return f"Net('{self.signal}')={self.val}"
+
 
 class Reg(Value):
     def __init__(self, val, width, signal):
         super().__init__(val, width, signal.is_int(), signal)
-        self.val = 'X'
-        self.prev_val = 'X'
+        self.val = "X"
+        self.prev_val = "X"
 
     def __str__(self):
         return str(self.val)
 
     def __repr__(self):
-        return f'Reg(\'{self.signal}\')={self.val}'
+        return f"Reg('{self.signal}')={self.val}"
 
     def set(self, v):
         if isinstance(v, int):
@@ -218,22 +222,168 @@ class Reg(Value):
         self.val = self.next
 
 
+class SimulationObserver:
+    def __init__(self, vcd_file=None, log_file=None):
+        self.watched = []        # [(name, value_ref), ...]
+        self.prev_values = {}    # name -> previous value
+        self._vcd_file_path = vcd_file
+        self._log_file_path = log_file
+        self._vcd_file = None
+        self._log_file = None
+        self._in_reset = False
+        self._vcd_header_written = False
+        if log_file:
+            os.makedirs(os.path.dirname(log_file) or '.', exist_ok=True)
+            self._log_file = open(log_file, 'w')
+        if vcd_file:
+            os.makedirs(os.path.dirname(vcd_file) or '.', exist_ok=True)
+            self._vcd_file = open(vcd_file, 'w')
+
+    def add_watch(self, name, value):
+        """Add a signal to watch list. `value` is a Net or Reg object."""
+        self.watched.append((name, value))
+        self.prev_values[name] = None
+
+    def on_reset_start(self):
+        self._in_reset = True
+
+    def on_reset_done(self, clock_time):
+        self._in_reset = False
+        if not self.watched:
+            return
+        if self._log_file:
+            parts = [f"{name}={val.val}" for name, val in self.watched]
+            self._log_file.write(f"{clock_time:>4}: [reset] {', '.join(parts)}\n")
+        if self._vcd_file:
+            self._write_vcd_header()
+            self._write_vcd_values(clock_time)
+        for name, val in self.watched:
+            self.prev_values[name] = val.val
+
+    def dump_initial(self, clock_time):
+        """Dump initial values after watches are registered (post-reset)."""
+        if not self.watched:
+            return
+        if self._log_file:
+            parts = [f"{name}={val.val}" for name, val in self.watched]
+            self._log_file.write(f"{clock_time:>4}: [init] {', '.join(parts)}\n")
+        if self._vcd_file and not self._vcd_header_written:
+            self._write_vcd_header()
+            self._write_vcd_values(clock_time)
+        for name, val in self.watched:
+            self.prev_values[name] = val.val
+
+    def on_cycle(self, clock_time):
+        if self._in_reset:
+            return
+        if not self.watched:
+            return
+        if self._log_file:
+            changes = []
+            for name, val in self.watched:
+                prev = self.prev_values.get(name)
+                cur = val.val
+                if cur != prev:
+                    changes.append(f"{name}: {prev} -> {cur}")
+            if changes:
+                self._log_file.write(f"{clock_time:>4}: {', '.join(changes)}\n")
+        if self._vcd_file:
+            if not self._vcd_header_written:
+                self._write_vcd_header()
+            self._write_vcd_values(clock_time)
+        for name, val in self.watched:
+            self.prev_values[name] = val.val
+
+    def close(self):
+        if self._log_file:
+            self._log_file.flush()
+            self._log_file.close()
+            self._log_file = None
+        if self._vcd_file:
+            self._vcd_file.flush()
+            self._vcd_file.close()
+            self._vcd_file = None
+
+    def _write_vcd_header(self):
+        self._vcd_header_written = True
+        f = self._vcd_file
+        f.write("$timescale 1ns $end\n")
+        f.write("$scope module test $end\n")
+        for i, (name, val) in enumerate(self.watched):
+            width = val.width if isinstance(val.width, int) else 32
+            sym = chr(33 + i)
+            f.write(f"$var wire {width} {sym} {name} $end\n")
+        f.write("$upscope $end\n")
+        f.write("$enddefinitions $end\n")
+
+    def _write_vcd_values(self, clock_time):
+        f = self._vcd_file
+        f.write(f"#{clock_time}\n")
+        for i, (name, val) in enumerate(self.watched):
+            width = val.width if isinstance(val.width, int) else 32
+            sym = chr(33 + i)
+            v = val.val
+            if isinstance(v, int):
+                bits = format(v & ((1 << width) - 1), f'0{width}b')
+                f.write(f"b{bits} {sym}\n")
+            else:
+                f.write(f"bx {sym}\n")
+
+
+def _build_name_table(simulator):
+    """Walk core model tree, build {id(value): hierarchical_name} mapping."""
+    table = {}
+    for core_model in simulator.models:
+        prefix = core_model.hdlmodule.name
+        _walk_core_model(core_model, prefix, table)
+    return table
+
+
+def _walk_core_model(core_model, prefix, table):
+    """Walk SimpleNamespace model tree."""
+    for attr_name, val in vars(core_model).items():
+        if attr_name.startswith('_') or attr_name in ('hdlmodule', 'clk', 'rst'):
+            continue
+        if isinstance(val, (Net, Reg)):
+            table[id(val)] = f"{prefix}.{attr_name}"
+        elif isinstance(val, Port):
+            table[id(val.value)] = f"{prefix}.{attr_name}"
+        elif isinstance(val, Model):
+            sub_core = super(Model, val).__getattribute__("__model")
+            _walk_core_model(sub_core, f"{prefix}.{attr_name}", table)
+
+
+def _resolve_hierarchical_name(simulator, port):
+    """Resolve a Port to its hierarchical name using the name table."""
+    if not hasattr(simulator, '_name_table'):
+        simulator._name_table = _build_name_table(simulator)
+    val_id = id(port.value)
+    name = simulator._name_table.get(val_id)
+    if name is None:
+        name = port.value.signal.name if port.value.signal else '?'
+    return name
+
+
 current_simulator = None
+
 
 def clkfence():
     if current_simulator is None:
         raise RuntimeError()
     current_simulator._period()
 
+
 def clksleep(n):
     if current_simulator is None:
         raise RuntimeError()
     current_simulator._period(n)
 
+
 def clktime():
     if current_simulator is None:
         raise RuntimeError()
     return current_simulator.clock_time
+
 
 def clkrange(n):
     if current_simulator is None:
@@ -243,6 +393,33 @@ def clkrange(n):
             current_simulator._period()
             yield i
         current_simulator._period()
+
+
+def watch(*signals, vcd=None, log=None):
+    """Register Port signals for debug observation.
+
+    Args:
+        *signals: Port objects to watch.
+        vcd: VCD output file path. None for default, False to disable.
+        log: Text log file path. None for default, False to disable.
+    """
+    sim = current_simulator
+    if not sim:
+        return
+    if not sim.observer:
+        name = getattr(sim, 'case_name', 'test')
+        vcd_path = vcd if vcd is not None else f".tmp/{name}_py.vcd"
+        log_path = log if log is not None else f".tmp/{name}_py.log"
+        if vcd_path is False:
+            vcd_path = None
+        if log_path is False:
+            log_path = None
+        sim.observer = SimulationObserver(vcd_file=vcd_path, log_file=log_path)
+    for port in signals:
+        if not isinstance(port, Port):
+            continue
+        hier_name = _resolve_hierarchical_name(sim, port)
+        sim.observer.add_watch(hier_name, port.value)
 
 
 class Port(object):
@@ -273,11 +450,14 @@ class Port(object):
         return str(self.value)
 
     def __repr__(self):
-        return f'Port(\'{repr(self.value)}\')'
+        return f"Port('{repr(self.value)}')"
 
     def edge(self, old_v, new_v):
         assert isinstance(self.value, Reg)
         return self.value.prev_val == old_v and self.value.val == new_v
+
+    def assign(self, func: callable):
+        pass
 
     @property
     def signal(self):
@@ -287,14 +467,16 @@ class Port(object):
 class Simulator(object):
     def __init__(self, model):
         if isinstance(model, list):
-            self.models = [getattr(m, '__model') for m in model]
+            self.models = [getattr(m, "__model") for m in model]
         elif isinstance(model, Model):
-            self.models = [getattr(model, '__model')]
+            self.models = [getattr(model, "__model")]
         else:
             assert False
 
         self.evaluators = [ModelEvaluator(model) for model in self.models]
         self.clock_time = 0
+        self.observer = None
+        self.case_name = ''
 
     def __enter__(self):
         self.begin()
@@ -315,6 +497,8 @@ class Simulator(object):
         global current_simulator
         if current_simulator is None:
             raise RuntimeError()
+        if self.observer:
+            self.observer.close()
         current_simulator = None
 
     def _period(self, count=1):
@@ -326,14 +510,20 @@ class Simulator(object):
             self.clock_time += 1
             for model in self.models:
                 model.clk.val = 0
+            if self.observer:
+                self.observer.on_cycle(self.clock_time)
 
     def _reset(self, count=1):
+        if self.observer:
+            self.observer.on_reset_start()
         for model in self.models:
             model.rst.val = 1
         self._period(count)
         for model in self.models:
             model.rst.val = 0
         self.clock_time = 0
+        if self.observer:
+            self.observer.on_reset_done(self.clock_time)
 
 
 class ModelEvaluator(AHDLVisitor):
@@ -341,7 +531,6 @@ class ModelEvaluator(AHDLVisitor):
         assert isinstance(model, types.SimpleNamespace)
         self.model = model
         self.updated_sigs = set()
-
 
     def visit(self, ahdl):
         # if ahdl.is_a(AHDL_STM):
@@ -356,10 +545,16 @@ class ModelEvaluator(AHDLVisitor):
 
     def _eval_decls(self):
         self.updated_sigs.add(None)
+        _max_iter = 1000
         while self.updated_sigs:
             self.updated_sigs.clear()
             for decl in self.model._decls:
                 self.visit(decl)
+            _max_iter -= 1
+            if _max_iter <= 0:
+                import warnings
+                warnings.warn(f'_eval_decls: iteration limit reached for {self.model}')
+                break
 
     def _find_model(self, ahdl):
         assert isinstance(ahdl, AHDL_VAR)
@@ -367,7 +562,7 @@ class ModelEvaluator(AHDLVisitor):
         for v in ahdl.vars[:-1]:
             if v.is_subscope():
                 user_model = getattr(model, v.name)
-                model = getattr(user_model, '__model')
+                model = getattr(user_model, "__model")
         assert isinstance(model, types.SimpleNamespace)
         return model
 
@@ -375,7 +570,7 @@ class ModelEvaluator(AHDLVisitor):
         models = [model]
         for v in vars(model).values():
             if isinstance(v, Model):
-                model_core = getattr(v, '__model')
+                model_core = getattr(v, "__model")
                 models.extend(self._collect_model(model_core))
         return models
 
@@ -422,11 +617,11 @@ class ModelEvaluator(AHDLVisitor):
         assert isinstance(mem, tuple)
         offs = self.visit(ahdl.offset)
         assert isinstance(offs, Integer)
-        if offs.get() == 'X':
-            return Integer('X', 1, False)
+        if offs.get() == "X":
+            return Integer("X", 1, False)
         mem_offs = offs.get()
         if mem_offs < 0 or mem_offs >= len(mem):
-            return Integer('X', 1, False)
+            return Integer("X", 1, False)
         v = mem[mem_offs]
         assert isinstance(v, (Reg, Net))
         if ahdl.memvar.ctx is Ctx.LOAD:
@@ -438,27 +633,27 @@ class ModelEvaluator(AHDLVisitor):
         r = self.visit(right)
         assert isinstance(l, Integer)
         assert isinstance(r, Integer)
-        if l.val == 'X' or r.val == 'X':
-            return Integer('X', 0, False)
-        if op == 'Add':
+        if l.val == "X" or r.val == "X":
+            return Integer("X", 0, False)
+        if op == "Add":
             return l + r
-        elif op == 'Sub':
+        elif op == "Sub":
             return l - r
-        elif op == 'Mult':
+        elif op == "Mult":
             return l * r
-        elif op == 'FloorDiv':
+        elif op == "FloorDiv":
             return l // r
-        elif op == 'Mod':
+        elif op == "Mod":
             return l % r
-        elif op == 'LShift':
+        elif op == "LShift":
             return l << r
-        elif op == 'RShift':
+        elif op == "RShift":
             return l >> r
-        elif op == 'BitOr':
+        elif op == "BitOr":
             return l | r
-        elif op == 'BitXor':
+        elif op == "BitXor":
             return l ^ r
-        elif op == 'BitAnd':
+        elif op == "BitAnd":
             return l & r
         else:
             assert False
@@ -468,45 +663,44 @@ class ModelEvaluator(AHDLVisitor):
         r = self.visit(right)
         assert isinstance(l, Integer)
         assert isinstance(r, Integer)
-        if op == 'And':
+        if op == "And":
             if l.val and r.val:
                 return Integer(1, 1, False)
             else:
                 return Integer(0, 1, False)
-        elif op == 'Or':
+        elif op == "Or":
             if l.val or r.val:
                 return Integer(1, 1, False)
             else:
                 return Integer(0, 1, False)
-        elif op == 'Eq':
+        elif op == "Eq":
             return l == r
-        elif op == 'NotEq':
+        elif op == "NotEq":
             return l != r
-        elif op == 'Lt':
+        elif op == "Lt":
             return l < r
-        elif op == 'LtE':
+        elif op == "LtE":
             return l <= r
-        elif op == 'Gt':
+        elif op == "Gt":
             return l > r
-        elif op == 'GtE':
+        elif op == "GtE":
             return l >= r
-        elif op == 'Is':
+        elif op == "Is":
             return l == r
-        elif op == 'IsNot':
+        elif op == "IsNot":
             return l != r
 
     def eval_unop(self, op, arg):
         a = self.visit(arg)
         assert isinstance(a, Integer)
-        if op == 'USub':
+        if op == "USub":
             return -a
-        elif op == 'UAdd':
+        elif op == "UAdd":
             return a
-        elif op == 'Not':
+        elif op == "Not":
             return Integer(not a.get(), 1, False)
-        elif op == 'Invert':
+        elif op == "Invert":
             return ~a
-
 
     def visit_AHDL_OP(self, ahdl):
         if ahdl.is_unop():
@@ -532,7 +726,7 @@ class ModelEvaluator(AHDLVisitor):
 
     def visit_AHDL_SYMBOL(self, ahdl):
         if ahdl.name == "'bz":
-            return Integer('X', 1, False)
+            return Integer("X", 1, False)
         assert False
 
     def visit_AHDL_CONCAT(self, ahdl):
@@ -568,7 +762,7 @@ class ModelEvaluator(AHDLVisitor):
         self.visit(ahdl.src)
 
     def visit_AHDL_SEQ(self, ahdl):
-        method = 'visit_{}'.format(ahdl.factor.__class__.__name__)
+        method = "visit_{}".format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
         return visitor(ahdl.factor)
 
@@ -579,7 +773,7 @@ class ModelEvaluator(AHDLVisitor):
                 cv = self.visit(cond)
                 assert isinstance(cv, Integer)
                 # print(f'if {cond} == {cv}')
-                assert cv.val != 'X'
+                assert cv.val != "X"
                 if int(cv.val):
                     self.visit(blk)
                     break
@@ -590,7 +784,7 @@ class ModelEvaluator(AHDLVisitor):
     def visit_AHDL_IF_EXP(self, ahdl):
         cv = self.visit(ahdl.cond)
         assert isinstance(cv, Integer)
-        assert cv.val != 'X'
+        assert cv.val != "X"
         if int(cv.val):
             return self.visit(ahdl.lexp)
         else:
@@ -636,18 +830,18 @@ class ModelEvaluator(AHDLVisitor):
 
     def visit_AHDL_PROCCALL(self, ahdl):
         args = [self.visit(arg) for arg in ahdl.args]
-        if ahdl.name == '!hdl_print':
+        if ahdl.name == "!hdl_print":
             argvs = [arg.get() for arg in args]
             print(*argvs)
-        elif ahdl.name == '!hdl_assert':
+        elif ahdl.name == "!hdl_assert":
             if not bool(args[0]):
                 src_text = self._get_source_text(ahdl)
                 raise HDLAssertionError(src_text)
         else:
-            raise RuntimeError('unknown function', ahdl.name)
+            raise RuntimeError("unknown function", ahdl.name)
 
     def visit_AHDL_META(self, ahdl):
-        method = 'visit_' + ahdl.metaid
+        method = "visit_" + ahdl.metaid
         visitor = getattr(self, method, None)
         if visitor:
             return visitor(ahdl)
@@ -683,10 +877,10 @@ class ModelEvaluator(AHDLVisitor):
         triggered = False
         for v, e in ahdl.events:
             sig = getattr(self.model, v.name)
-            if e == 'rising' and sig.val == 1:
+            if e == "rising" and sig.val == 1:
                 triggered = True
                 break
-            elif e == 'falling' and sig.val == 0:
+            elif e == "falling" and sig.val == 0:
                 triggered = True
                 break
         if triggered:
@@ -710,18 +904,18 @@ class ModelEvaluator(AHDLVisitor):
         text = text.strip()
         if not text:
             return
-        if text[-1] == '\n':
+        if text[-1] == "\n":
             text = text[:-1]
         filename = os.path.basename(node.tag.loc.filename)
-        return f'{filename} [{node.tag.loc.lineno}]: {text}'
+        return f"{filename} [{node.tag.loc.lineno}]: {text}"
 
 
 class Model(object):
     def __getattribute__(self, name):
-        model_core = super().__getattribute__('__model')
-        if name == '__model':
+        model_core = super().__getattribute__("__model")
+        if name == "__model":
             return model_core
-        if name == '__dict__':
+        if name == "__dict__":
             di = {}
             for name, v in vars(model_core).items():
                 if isinstance(v, Port):
@@ -736,33 +930,34 @@ class Model(object):
             return attr.get()
         if callable(attr):
             return attr
-        if hasattr(attr, 'interface_tag'):
+        if hasattr(attr, "interface_tag"):
             return attr
         raise AttributeError()
 
     def __setattr__(self, name, value) -> None:
-        model_core = super().__getattribute__('__model')
+        model_core = super().__getattribute__("__model")
         attr = getattr(model_core, name)
         if not attr:
             raise AttributeError()
         if isinstance(attr, Value):
             return attr.set(value)
         if isinstance(attr, Port):
-            raise AttributeError('Cannot set to port')
+            raise AttributeError("Cannot set to port")
         raise AttributeError()
 
     def __call__(self, *args, **kwargs):
-        model_core = super().__getattribute__('__model')
-        if hasattr(model_core, '_call_body'):
+        model_core = super().__getattribute__("__model")
+        if hasattr(model_core, "_call_body"):
             return model_core._call_body(*args, **kwargs)
         else:
             return self
+
 
 class SimulationModelBuilder(object):
     def build_model(self, hdlmodule: HDLScope, main_py_module, is_top=False):
         core_model = self.build_core(hdlmodule, main_py_module, is_top)
         user_model = Model()
-        super(Model, user_model).__setattr__('__model', core_model)
+        super(Model, user_model).__setattr__("__model", core_model)
         return user_model
 
     def build_core(self, hdlmodule: HDLScope, main_py_module, is_top):
@@ -772,7 +967,7 @@ class SimulationModelBuilder(object):
             setattr(model, sig.name, sub)
 
         model.hdlmodule = hdlmodule
-        if is_top: # isinstance(hdlmodule, HDLModule):
+        if is_top:  # isinstance(hdlmodule, HDLModule):
             model._tasks = hdlmodule.tasks
             model._decls = hdlmodule.decls
         else:
@@ -799,7 +994,7 @@ class SimulationModelBuilder(object):
             self._make_rom_function(hdlscope, model)
 
     def _add_signals(self, hdlscope: HDLScope, model):
-        for sig in hdlscope.get_signals({'constant', 'reg', 'net', 'regarray', 'netarray', 'rom'}, {'input', 'output'}):
+        for sig in hdlscope.get_signals({"constant", "reg", "net", "regarray", "netarray", "rom"}, {"input", "output"}):
             if sig.is_constant():
                 val = hdlscope.constants[sig]
                 setattr(model, sig.name, Integer(val, sig.width, sign=sig.is_int()))
@@ -826,17 +1021,17 @@ class SimulationModelBuilder(object):
             assert False
 
     def get_input_signals(self, hdlscope: HDLScope):
-        return [sig for sig in hdlscope.get_signals({'input'})]
+        return [sig for sig in hdlscope.get_signals({"input"})]
 
     def get_output_signals(self, hdlscope: HDLScope):
-        return [sig for sig in hdlscope.get_signals({'output'})]
+        return [sig for sig in hdlscope.get_signals({"output"})]
 
     def _make_io_object_for_module(self, hdlscope: HDLScope, model):
         # add IO ports
         in_sigs = self.get_input_signals(hdlscope)
         out_sigs = self.get_output_signals(hdlscope)
         for sig in in_sigs:
-            if sig.name in ('clk', 'rst'):
+            if sig.name in ("clk", "rst"):
                 continue
             input_value = Reg(0, sig.width, sig)
             iport = Port(None, None, None)
@@ -853,15 +1048,15 @@ class SimulationModelBuilder(object):
             setattr(model, sig.name, oport)
         if isinstance(hdlscope, HDLModule):
             # add clk and rst
-            clksig = hdlscope.signal('clk')
+            clksig = hdlscope.signal("clk")
             assert isinstance(clksig, Signal)
             setattr(model, clksig.name, Reg(0, clksig.width, clksig))
-            rstsig = hdlscope.signal('rst')
+            rstsig = hdlscope.signal("rst")
             assert isinstance(rstsig, Signal)
             setattr(model, rstsig.name, Reg(0, rstsig.width, rstsig))
 
     def _make_io_object_for_function(self, hdlscope: HDLScope, model):
-        for sig in hdlscope.get_signals({'input', 'output'}):
+        for sig in hdlscope.get_signals({"input", "output"}):
             if sig.is_input():
                 assert sig.is_net()
                 # Input is of type net, but generated as Reg for simulation
@@ -884,6 +1079,7 @@ class SimulationModelBuilder(object):
             if scope.origin:
                 return find_origin_scope(scope.origin)
             return scope
+
         origin_scope = find_origin_scope(model.hdlmodule.scope)
         py_name = origin_scope.base_name
         if py_name in main_py_module.__dict__:
@@ -913,17 +1109,17 @@ class SimulationModelBuilder(object):
 
     def _add_function_call(self, hdlscope: HDLScope, model):
         def _funcall(model, fn_name, args):
-            ready  = getattr(model, f'{fn_name}_ready')
-            valid  = getattr(model, f'{fn_name}_valid')
-            accept = getattr(model, f'{fn_name}_accept')
-            if hasattr(model, f'{fn_name}_out_0'):
-                out = getattr(model, f'{fn_name}_out_0')
+            ready = getattr(model, f"{fn_name}_ready")
+            valid = getattr(model, f"{fn_name}_valid")
+            accept = getattr(model, f"{fn_name}_accept")
+            if hasattr(model, f"{fn_name}_out_0"):
+                out = getattr(model, f"{fn_name}_out_0")
             else:
                 out = None
 
             ready.set(1)
             for name, value in args:
-                i = getattr(model, f'{fn_name}_in_{name}')
+                i = getattr(model, f"{fn_name}_in_{name}")
                 i.set(value)
             clkfence()
 
@@ -950,11 +1146,11 @@ class SimulationModelBuilder(object):
                 arg_and_names.append((param_names[i], v))
             for k, v in kwargs.items():
                 arg_and_names.append((k, v))
-            for param_name, defval in list(zip(param_names, default_values))[len(arg_and_names):]:
+            for param_name, defval in list(zip(param_names, default_values))[len(arg_and_names) :]:
                 arg_and_names.append((param_name, defval.value))
             return _funcall(model, hdlscope.name, arg_and_names)
 
-        setattr(model, '_call_body', call_body)
+        setattr(model, "_call_body", call_body)
 
     def _make_rom_function(self, hdlmodule: HDLModule, model):
         for fn in hdlmodule.functions:

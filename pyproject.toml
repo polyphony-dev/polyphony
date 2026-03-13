@@ -1,0 +1,36 @@
+[project]
+name = "polyphony"
+version = "0.4.1"
+description = "Python based High Level Synthesis compiler"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Hiroaki Kataoka", email = "ktok07b6@gmail.com" }]
+keywords = ["HLS", "High Level Synthesis", "FPGA", "HDL", "Verilog"]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+polyphony = "polyphony.compiler.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/ktok07b6/polyphony"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "ruff",
+    "pytest",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+ignore = ["E221", "E231", "E241", "E265", "F403", "F405"]
+
+[tool.ruff.format]
+quote-style = "double"

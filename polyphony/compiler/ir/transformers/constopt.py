@@ -482,6 +482,13 @@ class ConstantOpt(ConstantOptBase):
     def visit_MREF(self, ir):
         if not ir.offset.is_a(CONST):
             return ir
+        if ir.mem.is_a(ARRAY):
+            offset = ir.offset.value
+            if 0 <= offset < len(ir.mem.items):
+                return ir.mem.items[offset]
+            return ir
+        if not isinstance(ir.mem, IRNameExp):
+            return ir
         qsym = qualified_symbols(ir.mem, self.scope)
         mem_sym = qsym[-1]
         assert isinstance(mem_sym, Symbol)
@@ -725,8 +732,16 @@ class StaticConstOpt(ConstantOptBase):
             self.visit(stm)
         for sym, c in self.constant_table.items():
             sym.scope.constants[sym] = c
+            if sym.scope.origin:
+                origin_scope = sym.scope.origin
+                if sym.name in origin_scope.symbols:
+                    origin_scope.constants[origin_scope.symbols[sym.name]] = c
         for sym, c in self.constant_array_table.items():
             sym.scope.constants[sym] = c
+            if sym.scope.origin:
+                origin_scope = sym.scope.origin
+                if sym.name in origin_scope.symbols:
+                    origin_scope.constants[origin_scope.symbols[sym.name]] = c
 
     def collect_stms(self, scope):
         stms = []

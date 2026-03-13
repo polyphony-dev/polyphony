@@ -477,6 +477,7 @@ class VerilogCodeGen(AHDLVisitor):
         if text[-1] == '\n':
             text = text[:-1]
         filename = os.path.basename(node.tag.loc.filename)
+        text = text.replace('%', '%%')
         return f'{filename}:{node.tag.loc.lineno} {text}'
 
     def _emit_source_text(self, ahdl):
