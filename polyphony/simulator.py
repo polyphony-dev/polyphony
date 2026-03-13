@@ -552,6 +552,8 @@ class ModelEvaluator(AHDLVisitor):
                 self.visit(decl)
             _max_iter -= 1
             if _max_iter <= 0:
+                import warnings
+                warnings.warn(f'_eval_decls: iteration limit reached for {self.model}')
                 break
 
     def _find_model(self, ahdl):

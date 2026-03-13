@@ -264,7 +264,7 @@ def resolve_watch_signals(simulator, watch_str):
         for val_id, hier_name in name_table.items():
             if hier_name == sig_name:
                 value = reverse_table.get(val_id)
-                if value:
+                if value is not None:
                     simulator.observer.add_watch(sig_name, value)
                     found = True
                     break
@@ -314,7 +314,7 @@ def _build_reverse_table(core_model, table):
         if isinstance(val, (Net, Reg)):
             table[id(val)] = val
         elif isinstance(val, Port):
-            if val.value:
+            if val.value is not None:
                 table[id(val.value)] = val.value
         elif isinstance(val, Model):
             sub_core = super(Model, val).__getattribute__("__model")
