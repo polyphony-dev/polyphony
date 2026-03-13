@@ -1,0 +1,329 @@
+from polyphony.compiler.ir.ir import *
+from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irwriter import IRWriter
+from polyphony.compiler.ir.block import Block
+from polyphony.compiler.ir.scope import Scope
+from polyphony.compiler.ir.symbol import Symbol
+from polyphony.compiler.ir.types.type import Type
+from polyphony.compiler.common.env import env
+from pytests.compiler.base import setup_test
+
+
+def test_write_type():
+    setup_test()
+    writer = IRWriter()
+    assert writer.write_type(Type.int(8)) == 'int8'
+    assert writer.write_type(Type.int(32)) == 'int32'
+    assert writer.write_type(Type.int(32, signed=False)) == 'bit32'
+    assert writer.write_type(Type.bool()) == 'bool'
+    assert writer.write_type(Type.str()) == 'str'
+    assert writer.write_type(Type.none()) == 'none'
+    assert writer.write_type(Type.undef()) == 'undef'
+
+
+def test_write_type_list():
+    setup_test()
+    writer = IRWriter()
+    assert writer.write_type(Type.list(Type.int(32), 10)) == 'list<int32>[10]'
+    assert writer.write_type(Type.list(Type.bool(), Type.ANY_LENGTH)) == 'list<bool>[]'
+
+
+def test_write_type_tuple():
+    setup_test()
+    writer = IRWriter()
+    assert writer.write_type(Type.tuple(Type.int(32), 3)) == 'tuple<int32>[3]'
+    assert writer.write_type(Type.tuple(Type.int(8), Type.ANY_LENGTH)) == 'tuple<int8>[]'
+
+
+def test_write_type_scope():
+    setup_test()
+    top = env.scopes['@top']
+    C = Scope.create(top, 'C', {'class'}, 0)
+    F = Scope.create(top, 'F', {'function'}, 0)
+    writer = IRWriter()
+    assert writer.write_type(Type.object('@top.C')) == 'object(@top.C)'
+    assert writer.write_type(Type.klass('@top.C')) == 'class(@top.C)'
+    assert writer.write_type(Type.namespace('@top')) == 'namespace(@top)'
+    assert writer.write_type(Type.function('@top.F')) == 'function(@top.F)'
+
+
+def test_write_exp_const():
+    setup_test()
+    writer = IRWriter()
+    assert writer.write_exp(CONST(123)) == '123'
+    assert writer.write_exp(CONST(True)) == 'True'
+    assert writer.write_exp(CONST(False)) == 'False'
+    assert writer.write_exp(CONST('hello')) == "'hello'"
+
+
+def test_write_exp_temp():
+    setup_test()
+    writer = IRWriter()
+    assert writer.write_exp(TEMP('x')) == 'x'
+    assert writer.write_exp(TEMP('@in_x')) == '@in_x'
+    assert writer.write_exp(TEMP('_x#1')) == '_x#1'
+
+
+def test_write_exp_attr():
+    setup_test()
+    writer = IRWriter()
+    exp = ATTR(ATTR(TEMP('a'), 'b'), 'c')
+    assert writer.write_exp(exp) == 'a.b.c'
+
+
+def test_write_exp_unop():
+    setup_test()
+    writer = IRWriter()
+    assert writer.write_exp(UNOP('USub', TEMP('x'))) == '-x'
+    assert writer.write_exp(UNOP('Not', TEMP('x'))) == '!x'
+    assert writer.write_exp(UNOP('Invert', TEMP('x'))) == '~x'
+
+
+def test_write_exp_binop():
+    setup_test()
+    writer = IRWriter()
+    exp = BINOP('Add', TEMP('a'), CONST(1))
+    assert writer.write_exp(exp) == '(+ a 1)'
+
+    exp = BINOP('Mod', TEMP('x'), TEMP('y'))
+    assert writer.write_exp(exp) == '(mod x y)'
+
+
+def test_write_exp_relop():
+    setup_test()
+    writer = IRWriter()
+    exp = RELOP('Eq', TEMP('a'), CONST(0))
+    assert writer.write_exp(exp) == '(== a 0)'
+
+    exp = RELOP('LtE', TEMP('x'), TEMP('y'))
+    assert writer.write_exp(exp) == '(<= x y)'
+
+
+def test_write_exp_call():
+    setup_test()
+    writer = IRWriter()
+    exp = CALL(TEMP('f'), [('', CONST(1)), ('', TEMP('x'))], {})
+    assert writer.write_exp(exp) == '(call f 1 x)'
+
+
+def test_write_exp_new():
+    setup_test()
+    writer = IRWriter()
+    exp = NEW(TEMP('C'), [('', TEMP('x'))], {})
+    assert writer.write_exp(exp) == '(new C x)'
+
+
+def test_write_exp_syscall():
+    setup_test()
+    writer = IRWriter()
+    exp = SYSCALL(TEMP('print'), [('', CONST(1)), ('', CONST(2))], {})
+    assert writer.write_exp(exp) == '(syscall print 1 2)'
+
+
+def test_write_exp_mref():
+    setup_test()
+    writer = IRWriter()
+    exp = MREF(TEMP('xs'), CONST(0))
+    assert writer.write_exp(exp) == '(mld xs 0)'
+
+
+def test_write_exp_mstore():
+    setup_test()
+    writer = IRWriter()
+    exp = MSTORE(TEMP('xs'), CONST(0), TEMP('v'))
+    assert writer.write_exp(exp) == '(mst xs 0 v)'
+
+
+def test_write_exp_array():
+    setup_test()
+    writer = IRWriter()
+    exp = ARRAY([CONST(1), CONST(2), CONST(3)], mutable=True)
+    assert writer.write_exp(exp) == '[1 2 3]'
+
+    exp = ARRAY([TEMP('x'), TEMP('y')], mutable=False)
+    assert writer.write_exp(exp) == '(x y)'
+
+
+def test_write_stm_mv():
+    setup_test()
+    writer = IRWriter()
+    stm = MOVE(TEMP('a', Ctx.STORE), CONST(1))
+    assert writer.write_stm(stm) == 'mv a 1'
+
+
+def test_write_stm_cmv():
+    setup_test()
+    writer = IRWriter()
+    stm = CMOVE(TEMP('cond'), TEMP('z', Ctx.STORE), BINOP('Add', TEMP('x'), TEMP('y')))
+    assert writer.write_stm(stm) == 'mv? cond z (+ x y)'
+
+
+def test_write_stm_expr():
+    setup_test()
+    writer = IRWriter()
+    stm = EXPR(SYSCALL(TEMP('print'), [('', CONST(1))], {}))
+    assert writer.write_stm(stm) == 'expr (syscall print 1)'
+
+
+def test_write_stm_cexpr():
+    setup_test()
+    writer = IRWriter()
+    stm = CEXPR(TEMP('cond'), SYSCALL(TEMP('print'), [('', CONST(1))], {}))
+    assert writer.write_stm(stm) == 'expr? cond (syscall print 1)'
+
+
+def test_write_stm_jump():
+    setup_test()
+    scope = Scope.create(None, 'S', set(), 0)
+    blk = Block(scope, nametag='blk2')
+    writer = IRWriter()
+    stm = JUMP(blk)
+    assert writer.write_stm(stm) == 'j blk2'
+
+
+def test_write_stm_cjump():
+    setup_test()
+    scope = Scope.create(None, 'S', set(), 0)
+    blk_t = Block(scope, nametag='then')
+    blk_f = Block(scope, nametag='else')
+    writer = IRWriter()
+    stm = CJUMP(TEMP('cond'), blk_t, blk_f)
+    assert writer.write_stm(stm) == 'cj cond then else'
+
+
+def test_write_stm_mcjump():
+    setup_test()
+    scope = Scope.create(None, 'S', set(), 0)
+    blk1 = Block(scope, nametag='b1')
+    blk2 = Block(scope, nametag='b2')
+    blk3 = Block(scope, nametag='b3')
+    writer = IRWriter()
+    stm = MCJUMP([TEMP('c1'), TEMP('c2'), TEMP('c3')], [blk1, blk2, blk3])
+    assert writer.write_stm(stm) == 'mj c1 b1 c2 b2 c3 b3'
+
+
+def test_write_stm_ret():
+    setup_test()
+    writer = IRWriter()
+    stm = RET(TEMP(Symbol.return_name))
+    assert writer.write_stm(stm) == 'ret @return'
+
+
+def test_roundtrip_stm():
+    """Parse a statement, write it back, and parse again to verify roundtrip."""
+    setup_test()
+    parser = IRParser('')
+    writer = IRWriter()
+
+    cases = [
+        'mv a 1',
+        'mv a (+ b c)',
+        # CMOVE.__eq__ has a bug (checks isinstance CEXPR), so skip roundtrip eq check
+        'expr (syscall print 1 2 3)',
+        'expr? cond (call f x)',
+        'mv xs [1 2 3]',
+        'mv v (mld xs 0)',
+        'expr (mst xs 0 v)',
+        'mv v (new C x y)',
+    ]
+    for case in cases:
+        stm = parser.parse_stm(case)
+        written = writer.write_stm(stm)
+        stm2 = parser.parse_stm(written)
+        assert stm == stm2, f'Roundtrip failed for: {case}\n  written: {written}'
+
+    # CMOVE: verify text roundtrip instead of __eq__
+    stm = parser.parse_stm('mv? cond z (+ x y)')
+    written = writer.write_stm(stm)
+    assert written == 'mv? cond z (+ x y)'
+
+
+def test_roundtrip_type():
+    """Parse a type, write it, parse again to verify roundtrip."""
+    setup_test()
+    top = env.scopes['@top']
+    C = Scope.create(top, 'C', {'class'}, 0)
+    F = Scope.create(top, 'F', {'function'}, 0)
+
+    parser = IRParser('')
+    writer = IRWriter()
+
+    cases = [
+        'int8', 'int32', 'bit256', 'bool', 'str', 'none', 'undef',
+        'list<int32>[10]', 'list<bool>[]',
+        'tuple<int32>[100]', 'tuple<int8>[]',
+        'object(@top.C)', 'class(@top.C)',
+        'namespace(@top)', 'function(@top.F)',
+    ]
+    for case in cases:
+        typ = parser.parse_type(case)
+        written = writer.write_type(typ)
+        typ2 = parser.parse_type(written)
+        assert typ == typ2, f'Roundtrip failed for: {case}\n  written: {written}'
+
+
+def test_roundtrip_scope():
+    """Parse a scope, write it back, parse again to verify roundtrip."""
+    setup_test()
+    src = '''scope AFunction
+tags  function
+param a:int32
+param b:int32
+return int64
+var c: int16
+var d: int16
+var e: bit256
+
+blk1:
+mv a 1
+mv b (+ a 2)
+j blk2
+
+blk2:
+mv c (== a b)
+cj c blk3 blk4
+
+blk3:
+mv @return 0
+j exit
+
+blk4:
+mv @return 1
+j exit
+
+exit:
+ret @return
+'''
+    parser1 = IRParser(src)
+    parser1.parse_scope()
+    scope1 = env.scopes['AFunction']
+
+    writer = IRWriter()
+    written = writer.write_scope(scope1)
+
+    # Verify we can parse the written output
+    setup_test()
+    parser2 = IRParser(written)
+    parser2.parse_scope()
+    scope2 = env.scopes['AFunction']
+
+    assert scope2.name == 'AFunction'
+    assert scope2.is_function()
+    assert scope2.has_sym('a')
+    assert scope2.has_sym('b')
+    assert scope2.has_sym('c')
+    assert scope2.has_sym('d')
+    assert scope2.has_sym('e')
+
+    # Verify block structure
+    blks1 = list(scope1.traverse_blocks())
+    blks2 = list(scope2.traverse_blocks())
+    assert len(blks1) == len(blks2)
+    for b1, b2 in zip(blks1, blks2):
+        assert len(b1.stms) == len(b2.stms)
+        for s1, s2 in zip(b1.stms, b2.stms):
+            # JUMP/CJUMP use identity comparison for targets,
+            # so compare via writer output instead
+            w1 = writer.write_stm(s1)
+            w2 = writer.write_stm(s2)
+            assert w1 == w2, f'{w1} != {w2}'

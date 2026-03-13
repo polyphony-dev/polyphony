@@ -27,7 +27,7 @@ def check_int(s):
     return s.isdigit()
 
 
-class IRParser(object):
+class IRReader(object):
     def __init__(self, code: str):
         assert isinstance(code, str)
         self.current_scope: Scope = None  # type: ignore
@@ -682,7 +682,10 @@ class IRParser(object):
                          'and', 'or')
 
 
+IRParser = IRReader
+
+
 def ir_stm(scope: Scope, code: str):
-    parser = IRParser('')
-    parser.current_scope = scope
-    return parser.parse_stm(code)
+    reader = IRReader('')
+    reader.current_scope = scope
+    return reader.parse_stm(code)
