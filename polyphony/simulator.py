@@ -233,8 +233,10 @@ class SimulationObserver:
         self._in_reset = False
         self._vcd_header_written = False
         if log_file:
+            os.makedirs(os.path.dirname(log_file) or '.', exist_ok=True)
             self._log_file = open(log_file, 'w')
         if vcd_file:
+            os.makedirs(os.path.dirname(vcd_file) or '.', exist_ok=True)
             self._vcd_file = open(vcd_file, 'w')
 
     def add_watch(self, name, value):
@@ -393,15 +395,25 @@ def clkrange(n):
         current_simulator._period()
 
 
-def watch(*signals):
-    """Register Port signals for debug observation."""
+def watch(*signals, vcd=None, log=None):
+    """Register Port signals for debug observation.
+
+    Args:
+        *signals: Port objects to watch.
+        vcd: VCD output file path. None for default, False to disable.
+        log: Text log file path. None for default, False to disable.
+    """
     sim = current_simulator
     if not sim:
         return
     if not sim.observer:
         name = getattr(sim, 'case_name', 'test')
-        vcd_path = f".tmp/{name}_py.vcd"
-        log_path = f".tmp/{name}_py.log"
+        vcd_path = vcd if vcd is not None else f".tmp/{name}_py.vcd"
+        log_path = log if log is not None else f".tmp/{name}_py.log"
+        if vcd_path is False:
+            vcd_path = None
+        if log_path is False:
+            log_path = None
         sim.observer = SimulationObserver(vcd_file=vcd_path, log_file=log_path)
     for port in signals:
         if not isinstance(port, Port):

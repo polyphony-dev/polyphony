@@ -270,21 +270,40 @@ def resolve_watch_signals(simulator, watch_str):
                     break
         if found:
             continue
-        # Try matching leaf signal name across all models
+        # Walk the dot-separated path on each core model
         parts = sig_name.split('.')
-        leaf = parts[-1] if len(parts) > 1 else sig_name
+        # Skip first part (instance variable name in testbench, e.g. "s")
+        attr_path = parts[1:] if len(parts) > 1 else parts
         for core_model in simulator.models:
-            attr = getattr(core_model, leaf, None)
-            if attr is not None:
-                if isinstance(attr, Port):
-                    simulator.observer.add_watch(sig_name, attr.value)
+            obj = _walk_model_path(core_model, attr_path)
+            if obj is not None:
+                if isinstance(obj, Port):
+                    simulator.observer.add_watch(sig_name, obj.value)
                     found = True
-                elif isinstance(attr, (Net, Reg)):
-                    simulator.observer.add_watch(sig_name, attr)
+                elif isinstance(obj, (Net, Reg)):
+                    simulator.observer.add_watch(sig_name, obj)
                     found = True
                 break
         if not found:
             print(f"Warning: signal '{sig_name}' not found, skipping")
+
+
+def _walk_model_path(core_model, path_parts):
+    """Walk a dot-path like ['i', 'tvalid'] on the core model tree.
+
+    Intermediate Model objects are unwrapped to their core model.
+    Returns the final attribute (Port/Net/Reg) or None.
+    """
+    obj = core_model
+    for part in path_parts:
+        attr = getattr(obj, part, None)
+        if attr is None:
+            return None
+        if isinstance(attr, Model):
+            obj = super(Model, attr).__getattribute__("__model")
+        else:
+            return attr
+    return None
 
 
 def _build_reverse_table(core_model, table):

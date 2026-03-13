@@ -1,2 +1,2 @@
-def watch(*signals) -> None:
+def watch(*signals, vcd=None, log=None) -> None:
     pass
