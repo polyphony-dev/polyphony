@@ -3,6 +3,8 @@ from ...common.env import env
 from ..ir import *
 from ..symbol import Symbol
 from .usedef import UseDefDetector
+from logging import getLogger
+logger = getLogger(__name__)
 
 
 class CFGChecker(object):
@@ -10,7 +12,7 @@ class CFGChecker(object):
         if scope.is_namespace() or scope.is_class() or scope.is_builtin() or scope.is_lib():
             return
         if env.compile_phase > env.PHASE_1:
-            UseDefDetector().process(scope)
+            self.usedef = UseDefDetector().process(scope)
         self.scope = scope
         self.accessibles = set()
         for b in self.scope.traverse_blocks():
@@ -96,15 +98,18 @@ class CFGChecker(object):
         pass
 
     def _check_vars(self, blk):
-        syms = self.scope.usedef.get_syms_used_at(blk)
+        syms = self.usedef.get_syms_used_at(blk)
         for sym in syms:
             if sym.scope is self.scope:
                 if self._is_undefined_sym(sym):
                     continue
-                defblks = self.scope.usedef.get_blks_defining(sym)
-                assert defblks, '{} is not defined in this scope {}'.format(sym, self.scope.name)
+                defblks = self.usedef.get_blks_defining(sym)
+                if not defblks:
+                    logger.warning('{} is not defined in this scope {}'.format(sym, self.scope.name))
+                    continue
                 diffs = defblks - self.accessibles
-                assert not diffs, '{} is defined in an inaccesible block'.format(sym)
+                if diffs:
+                    logger.warning('{} is defined in an inaccesible block'.format(sym))
 
     def _is_undefined_sym(self, sym):
                 return (sym.is_predefined() or

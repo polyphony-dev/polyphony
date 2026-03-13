@@ -12,6 +12,7 @@ from ...common.graph import Graph
 from ...ir.ir import Ctx, Loc, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
 from ...ir.irhelper import expr2ir
 from ...ir.scope import Scope
+from ...ir.analysis.usedef import UseDefDetector
 from ...ir.setlineno import LineNumberSetter
 from ...ir.types.type import Type
 from ...ir.transformers.constopt import ConstantOptBase
@@ -655,6 +656,7 @@ class PureFuncExecutor(ConstantOptBase):
     def process_all(self, driver):
         scopes = Scope.get_scopes(bottom_up=True, with_global=True, with_class=True)
         for scope in scopes:
+            self.usedef = UseDefDetector().process(scope)
             self.process(scope)
 
     def _args2tuple(self, args):
@@ -669,7 +671,7 @@ class PureFuncExecutor(ConstantOptBase):
                     items = items * arg.repeat.value
                 return items
             elif isinstance(arg, TEMP):
-                stms = self.scope.usedef.get_stms_defining(arg.symbol())
+                stms = self.usedef.get_stms_defining(arg.symbol())
                 if not stms:
                     return None
                 assert len(stms) == 1

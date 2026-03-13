@@ -5,23 +5,24 @@ from ..irhelper import qualified_symbols, irexp_type
 from ..types import typehelper
 from logging import getLogger
 logger = getLogger(__name__)
+from ..analysis.usedef import UseDefDetector
 if TYPE_CHECKING:
     from ..scope import Scope
     from ..analysis.usedef import UseDefTable
 
 class VarReplacer(object):
     @classmethod
-    def replace_uses(cls, scope: Scope, dst: IRVariable, src: IRExp):
+    def replace_uses(cls, scope: Scope, dst: IRVariable, src: IRExp, usedef=None):
         assert isinstance(dst, IRVariable)
         assert isinstance(src, IRExp)
-        assert scope.usedef
-        usedef = scope.usedef
+        if usedef is None:
+            usedef = UseDefDetector().process(scope)
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(scope, dst, src, usedef)
         dst_qsym = qualified_symbols(dst, scope)
         uses = list(usedef.get_stms_using(dst_qsym))
         for use in uses:
-            scope.usedef.remove_var_use(scope, dst, use)
+            usedef.remove_var_use(scope, dst, use)
             replacer.visit(use)
 
         for blk in scope.traverse_blocks():

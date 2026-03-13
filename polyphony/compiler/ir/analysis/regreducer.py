@@ -3,6 +3,8 @@ from ..ir import *
 from ..irhelper import qualified_symbols
 from ..irvisitor import IRVisitor
 from ..symbol import Symbol
+from .usedef import UseDefDetector
+from .fieldusedef import FieldUseDef
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -15,7 +17,7 @@ def _is_clksleep(stm):
 
 class AliasVarDetector(IRVisitor):
     def process(self, scope):
-        self.usedef = scope.usedef
+        self.usedef = UseDefDetector().process(scope)
         self.removes = []
         super().process(scope)
 
@@ -99,10 +101,11 @@ class AliasVarDetector(IRVisitor):
                     module = module.parent
             if sym.typ.is_object():
                 return
-            if module is None or module.field_usedef is None:
+            if module is None:
                 return
+            field_usedef = FieldUseDef().process(module)
             qsym = qualified_symbols(ir.dst, self.scope)
-            defstms = module.field_usedef.get_def_stms(qsym)
+            defstms = field_usedef.get_def_stms(qsym)
             if len(defstms) == 1:
                 sym.add_tag('alias')
                 logger.debug(f'{sym} is alias')

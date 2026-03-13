@@ -5,7 +5,7 @@ from ..irvisitor import IRVisitor
 from ..scope import Scope
 from ..types.type import Type
 from ..symbol import Symbol
-from ..analysis.usedef import UseDefUpdater
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -22,6 +22,7 @@ class CopyOpt(IRVisitor):
 
     def process(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
         copies: list[MOVE] = []
         collector = self._new_collector(copies)
         collector.process(scope)
@@ -30,19 +31,20 @@ class CopyOpt(IRVisitor):
             cp = worklist.popleft()
             logger.debug('copy stm ' + str(cp))
             dst_qsym = cast(tuple[Symbol], qualified_symbols(cp.dst, scope))
-            defs = list(scope.usedef.get_stms_defining(dst_qsym))
+            defs = list(self.usedef.get_stms_defining(dst_qsym))
             if len(defs) > 1:
                 # dst must be non ssa variables
                 copies.remove(cp)
                 continue
             src_qsym = cast(tuple[Symbol], qualified_symbols(cast(IRNameExp, cp.src), scope))
             orig = self._find_root_def(src_qsym)
-            udupdater = UseDefUpdater(scope)
-            replaced = self._replace_copies(scope, udupdater, cp, orig, dst_qsym, copies, worklist)
+            udupdater = UseDefUpdater(scope, self.usedef)
+            replaced = self._replace_copies(scope, udupdater, self.usedef, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures():
-                    udupdater = UseDefUpdater(clos)
-                    replaced = self._replace_copies(clos, udupdater, cp, orig, dst_qsym, copies, worklist)
+                    clos_usedef = UseDefDetector().process(clos)
+                    udupdater = UseDefUpdater(clos, clos_usedef)
+                    replaced = self._replace_copies(clos, udupdater, clos_usedef, cp, orig, dst_qsym, copies, worklist)
                     if replaced:
                         src_qsym[0].add_tag('free')
         for cp in copies:
@@ -54,8 +56,8 @@ class CopyOpt(IRVisitor):
                     continue
                 cp.block.stms.remove(cp)
 
-    def _replace_copies(self, scope: Scope, udupdater: UseDefUpdater, copy_stm: MOVE, orig: IR|None, target: tuple[Symbol], copies: list[MOVE], worklist):
-        uses = sorted(list(scope.usedef.get_stms_using(target)), key=lambda u: u.loc)
+    def _replace_copies(self, scope: Scope, udupdater: UseDefUpdater, usedef, copy_stm: MOVE, orig: IR|None, target: tuple[Symbol], copies: list[MOVE], worklist):
+        uses = sorted(list(usedef.get_stms_using(target)), key=lambda u: u.loc)
         for u in uses:
             qname = tuple(map(lambda s: s.name, target))
             olds = self._find_old_use(scope, u, qname)
@@ -110,7 +112,7 @@ class CopyOpt(IRVisitor):
         if sym_key in _visited:
             return None
         _visited.add(sym_key)
-        defs = list(self.scope.usedef.get_stms_defining(qsym))
+        defs = list(self.usedef.get_stms_defining(qsym))
         if len(defs) != 1:
             return None
         d = defs[0]

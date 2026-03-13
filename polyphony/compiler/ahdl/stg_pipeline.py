@@ -7,6 +7,7 @@ from .analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdltransformer import AHDLTransformer
 from ..ir.ir import MOVE, CJUMP
 from ..ir.irhelper import qualified_symbols
+from ..ir.analysis.usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -460,9 +461,10 @@ class LoopPipelineBuilder(PipelineBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
         self.is_finite_loop = True
+        self.usedef = UseDefDetector().process(scope)
 
     def post_build(self, dfg, pstate_helper) -> AHDL_STM:
-        cond_defs = self.scope.usedef.get_stms_defining(dfg.region.cond)
+        cond_defs = self.usedef.get_stms_defining(dfg.region.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
 

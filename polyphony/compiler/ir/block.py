@@ -212,13 +212,9 @@ class Block(object):
         return [stm for stm in self.stms if isinstance(stm, typs)]
 
     def _convert_if_unidirectional(self, jmp):
-        if not self.scope.usedef:
-            return
         if isinstance(jmp, CJUMP):
-            conds = [jmp.exp]
             targets = [jmp.true, jmp.false]
         elif isinstance(jmp, MCJUMP):
-            conds = jmp.conds[:]
             targets = jmp.targets[:]
         else:
             return
@@ -230,24 +226,6 @@ class Block(object):
             self.succs = [targets[0]]
             targets[0].preds = remove_except_one(targets[0].preds, self)
             targets[0].path_exp = self.path_exp
-        else:
-            return
-
-        if self.is_hyperblock:
-            return
-        usedef = self.scope.usedef
-        for cond in conds:
-            if isinstance(cond, CONST):
-                continue
-            assert isinstance(cond, TEMP)
-            cond_symbol = self.scope.find_sym(cond.name)
-            defstms = usedef.get_stms_defining(cond_symbol)
-            assert len(defstms) == 1
-            stm = defstms.pop()
-            usestms = usedef.get_stms_using(cond_symbol)
-            if len(usestms) > 1:
-                continue
-            stm.block.stms.remove(stm)
 
     def is_loop_head(self):
         r = self.scope.find_region(self)

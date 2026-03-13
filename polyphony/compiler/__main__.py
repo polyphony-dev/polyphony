@@ -29,8 +29,6 @@ from .ir.symbol import Symbol
 from .ir.setlineno import SourceDump
 from .ir.synth import DefaultSynthParamSetter
 
-from .ir.analysis.usedef import UseDefDetector
-from .ir.analysis.fieldusedef import FieldUseDef
 from .ir.analysis.diagnostic import CFGChecker
 from .ir.analysis.loopdetector import LoopDetector
 from .ir.analysis.loopdetector import LoopInfoSetter
@@ -260,7 +258,6 @@ def pathexp(driver, scope):
 
 
 def hyperblock(driver, scope):
-    use_def(driver, scope)
     if not env.enable_hyperblock:
         return
     if scope.synth_params['scheduling'] == 'sequential':
@@ -307,23 +304,9 @@ def late_quadruple(driver, scope):
     LateQuadrupleMaker().process(scope)
 
 
-def use_def(driver, scope):
-    UseDefDetector().process(scope)
-
-def field_use_def(driver):
-    modules = set()
-    for s in driver.current_scopes:
-        if s.is_module():
-            modules.add(s)
-        elif s.parent and s.parent.is_module():
-            modules.add(s.parent)
-    for module in modules:
-        field_use_def = FieldUseDef()
-        field_use_def.process(module)
 
 
 def scalarssa(driver, scope):
-    use_def(driver, scope)
     ScalarSSATransformer().process(scope)
 
 
@@ -477,23 +460,18 @@ def flattenmodule(driver, scope):
 
 
 def objssa(driver, scope):
-    use_def(driver, scope)
     TupleSSATransformer().process(scope)
     early_quadruple(driver, scope)
-    use_def(driver, scope)
     ListSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
-    use_def(driver, scope)
     ObjectSSATransformer().process(scope)
 
 
 def objcopyopt(driver, scope):
-    use_def(driver, scope)
     ObjCopyOpt().process(scope)
 
 
 def objtrans(driver, scope):
-    use_def(driver, scope)
     ObjectTransformer().process(scope)
 
 
@@ -505,24 +483,19 @@ def scalarize(driver, scope):
 
 
 def static_const_opt(driver):
-    for s in driver.current_scopes:
-        UseDefDetector().process(s)
     StaticConstOpt().process_scopes(driver.current_scopes)
 
 
 def earlyconstopt_nonssa(driver, scope):
-    use_def(driver, scope)
     EarlyConstantOptNonSSA().process(scope)
     checkcfg(driver, scope)
 
 
 def constopt(driver, scope):
-    use_def(driver, scope)
     ConstantOpt().process(scope)
 
 
 def copyopt(driver, scope):
-    use_def(driver, scope)
     CopyOpt().process(scope)
 
 
@@ -536,7 +509,6 @@ def checkcfg(driver, scope):
 
 
 def loop(driver, scope):
-    use_def(driver, scope)
     LoopDetector().process(scope)
     #LoopRegionSetter().process(scope)
     LoopInfoSetter().process(scope)
@@ -554,7 +526,6 @@ def looptrans(driver, scope):
 def unroll(driver, scope):
     while LoopUnroller().process(scope):
         dumpscope(driver, scope)
-        use_def(driver, scope)
         checkcfg(driver, scope)
         reduce_blk(driver, scope)
         PolyadConstantFolding().process(scope)
@@ -569,12 +540,10 @@ def unroll(driver, scope):
 
 
 def deadcode(driver, scope):
-    use_def(driver, scope)
     DeadCodeEliminator().process(scope)
 
 
 def aliasvar(driver, scope):
-    use_def(driver, scope)
     AliasVarDetector().process(scope)
 
 
@@ -583,7 +552,6 @@ def tempbit(driver, scope):
 
 
 def dfg(driver, scope):
-    use_def(driver, scope)
     DFGBuilder().process(scope)
 
 
@@ -754,7 +722,6 @@ def compile_plan():
         late_quadruple,
 
         earlyrestrictioncheck,
-        use_def,
         static_const_opt,
         eval_type,
 
@@ -762,7 +729,6 @@ def compile_plan():
 
         type_check,
         restriction_check,
-        use_def,
 
         filter_scope(is_not_static_scope),
 
@@ -835,7 +801,6 @@ def compile_plan():
         convport,
 
         phase(env.PHASE_5),
-        field_use_def,
         aliasvar,
         tempbit,
         dfg,

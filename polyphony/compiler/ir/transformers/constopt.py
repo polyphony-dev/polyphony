@@ -252,7 +252,7 @@ class ConstantOptBase(IRVisitor):
                             for v in p.find_irs(IRVariable):
                                 v_sym = qualified_symbols(v, self.scope)[-1]
                                 assert isinstance(v_sym, Symbol)
-                                blks = self.scope.usedef.get_blks_defining(v_sym)
+                                blks = self.usedef.get_blks_defining(v_sym)
                                 if blk in blks:
                                     phi.args.pop(pi)
                                     phi.ps.pop(pi)
@@ -326,8 +326,8 @@ class ConstantOpt(ConstantOptBase):
             return
         self.scope = scope
         self.dtree = DominatorTreeBuilder(scope).process()
-        assert scope.usedef, 'UseDefDetector must be executed first'
-        self.udupdater = UseDefUpdater(scope)
+        self.usedef = UseDefDetector().process(scope)
+        self.udupdater = UseDefUpdater(scope, self.usedef)
 
         dead_stms = []
         self.worklist = deque()
@@ -390,7 +390,7 @@ class ConstantOpt(ConstantOptBase):
                     and not dst_sym.is_return()):
                 #sanity check
                 assert isinstance(dst_sym, Symbol)
-                defstms = scope.usedef.get_stms_defining(dst_sym)
+                defstms = self.usedef.get_stms_defining(dst_sym)
                 assert len(defstms) <= 1
 
                 dst_t = dst_sym.typ
@@ -401,7 +401,7 @@ class ConstantOpt(ConstantOptBase):
                         src = _to_unsigned(dst_t, stm.src)
                 else:
                     src = stm.src
-                replaces = VarReplacer.replace_uses(scope, stm.dst, src)
+                replaces = VarReplacer.replace_uses(scope, stm.dst, src, self.usedef)
                 for rep in replaces:
                     logger.debug(rep)
                     if rep not in dead_stms:
@@ -420,13 +420,13 @@ class ConstantOpt(ConstantOptBase):
                 # find next use of dst
                 found_new_def = False
                 for next in list(self.worklist):
-                    use_vars = scope.usedef.get_vars_used_at(next)
+                    use_vars = self.usedef.get_vars_used_at(next)
                     for v in use_vars:
                         if dst_load == v:
                             next.replace(dst_load, stm.src)
                             break
                     # quit if found new def of dst
-                    def_vars = scope.usedef.get_vars_defined_at(next)
+                    def_vars = self.usedef.get_vars_defined_at(next)
                     for v in def_vars:
                         if dst_store == v:
                             found_new_def = True
@@ -458,8 +458,8 @@ class ConstantOpt(ConstantOptBase):
         return True
 
     def _propagate_to_closure(self, closure: Scope, target: Symbol, src: IRVariable):
-        UseDefDetector().process(closure)
-        replaces = VarReplacer.replace_uses(closure, TEMP(target.name), src)
+        clos_usedef = UseDefDetector().process(closure)
+        replaces = VarReplacer.replace_uses(closure, TEMP(target.name), src, clos_usedef)
 
     def visit_SYSCALL(self, ir):
         if ir.name == 'len':
@@ -567,6 +567,10 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
     def __init__(self):
         super().__init__()
 
+    def process(self, scope):
+        self.usedef = UseDefDetector().process(scope)
+        super().process(scope)
+
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
         if isinstance(ir.exp, CONST):
@@ -575,7 +579,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         assert isinstance(ir.exp, IRVariable)
         exp_sym = qualified_symbols(ir.exp, self.scope)[-1]
         assert isinstance(exp_sym, Symbol)
-        expdefs = self.scope.usedef.get_stms_defining(exp_sym)
+        expdefs = self.usedef.get_stms_defining(exp_sym)
         assert len(expdefs) == 1
         expdef = list(expdefs)[0]
         if isinstance(expdef.src, CONST):
@@ -630,6 +634,10 @@ class PolyadConstantFolding(object):
         self.Poly2Bin().process(scope)
 
     class BinInlining(IRTransformer):
+        def process(self, scope):
+            self.usedef = UseDefDetector().process(scope)
+            super().process(scope)
+
         @staticmethod
         def _can_inlining(usestm, ir):
             return (isinstance(usestm, MOVE) and
@@ -648,10 +656,10 @@ class PolyadConstantFolding(object):
             assert isinstance(ir.dst, IRVariable)
             dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
             assert isinstance(dst_sym, Symbol)
-            defstms = self.scope.usedef.get_stms_defining(dst_sym)
+            defstms = self.usedef.get_stms_defining(dst_sym)
             if len(defstms) != 1:
                 return
-            usestms = self.scope.usedef.get_stms_using(dst_sym)
+            usestms = self.usedef.get_stms_using(dst_sym)
             for usestm in usestms:
                 if self._can_inlining(usestm, ir):
                     usestm.replace(TEMP(ir.dst.name), ir.src)

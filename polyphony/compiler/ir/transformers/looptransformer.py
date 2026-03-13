@@ -3,6 +3,7 @@ from ..ir import Ctx, CONST, UNOP, RELOP, TEMP, JUMP, PHI, LPHI
 from ..irhelper import qualified_symbols
 from ..types.type import Type
 from ..symbol import Symbol
+from ..analysis.usedef import UseDefDetector
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger
@@ -15,6 +16,7 @@ class LoopFlatten(object):
 
     def process(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
         ret = False
         for loop in self.scope.child_regions(self.scope.top_region()):
             if (not self.scope.is_leaf_region(loop) and
@@ -167,7 +169,7 @@ class LoopFlatten(object):
         logger.debug(str(self.scope))
 
     def _def_stm(self, sym):
-        defs = self.scope.usedef.get_stms_defining(sym)
+        defs = self.usedef.get_stms_defining(sym)
         assert len(defs) == 1
         return list(defs)[0]
 

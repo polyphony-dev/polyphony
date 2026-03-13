@@ -2,6 +2,7 @@
 from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from ..loop import Region, Loop
+from .usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -81,6 +82,7 @@ class LoopDetector(object):
 class LoopInfoSetter(object):
     def process(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
         for loop in self.scope.child_regions(self.scope.top_region()):
             self._set_loop_info_rec(loop)
 
@@ -101,7 +103,7 @@ class LoopInfoSetter(object):
         cond_sym = qualified_symbols(cond_var, self.scope)[-1]
         loop.cond = cond_sym
         assert isinstance(cond_var, TEMP)
-        defs = self.scope.usedef.get_stms_defining(cond_sym)
+        defs = self.usedef.get_stms_defining(cond_sym)
         assert len(defs) == 1
         cond_stm = list(defs)[0]
         assert isinstance(cond_stm, MOVE)
@@ -128,7 +130,7 @@ class LoopInfoSetter(object):
             else:
                 # this loop may busy loop
                 return
-        defs = self.scope.usedef.get_stms_defining(loop.counter)
+        defs = self.usedef.get_stms_defining(loop.counter)
         assert len(defs) == 1
         counter_def = list(defs)[0]
         isinstance(counter_def, PHIBase)
@@ -169,13 +171,14 @@ class LoopRegionSetter(object):
 # hierarchize
 class LoopDependencyDetector(object):
     def process(self, scope):
+        usedef = UseDefDetector().process(scope)
         all_blks = set([b for b in scope.traverse_blocks()])
         for loop in scope.traverse_regions(reverse=True):
             if loop is scope.top_region():
                 break
             outer_region = all_blks.difference(set(loop.inner_blocks))
             inner_region = set(loop.inner_blocks) - (set(loop.blocks()))
-            od, ou, id, iu = self._get_loop_block_dependency(scope.usedef,
+            od, ou, id, iu = self._get_loop_block_dependency(usedef,
                                                              loop,
                                                              outer_region,
                                                              inner_region)

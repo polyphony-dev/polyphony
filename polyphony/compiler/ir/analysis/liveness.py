@@ -1,5 +1,6 @@
 from collections import defaultdict
 from logging import getLogger
+from .usedef import UseDefDetector
 logger = getLogger(__name__)
 
 
@@ -9,7 +10,7 @@ class Liveness:
         self.liveouts = defaultdict(set)
 
     def process(self, scope):
-        usedef = scope.usedef
+        usedef = UseDefDetector().process(scope)
         syms = usedef.get_all_def_syms()
         for sym in syms:
             logger.log(0, sym.name + ' paths')

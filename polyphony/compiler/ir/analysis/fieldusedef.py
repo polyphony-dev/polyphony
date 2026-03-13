@@ -117,7 +117,7 @@ class FieldUseDef(object):
         for scope in self.scopes:
             table = FieldUseDefDetector().process(scope)
             self.usedef_tables[scope] = table
-        self.module.field_usedef = self
+        return self
 
     def _collect_scopes(self, scope):
         scopes = set()

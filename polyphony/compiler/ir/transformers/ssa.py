@@ -24,7 +24,7 @@ class SSATransformerBase(object):
             return
         self.scope = scope
         self.dominance_frontier = {}
-        self.usedef = scope.usedef
+        self.usedef = UseDefDetector().process(scope)
         self.phis = []
 
         self._compute_dominance_frontier()
@@ -85,7 +85,7 @@ class SSATransformerBase(object):
         phi.block = df
         phi.args = [CONST(None)] * len(df.preds)
         sym = qualified_symbols(var, self.scope)[-1]
-        defs = self.scope.usedef.get_stms_defining(sym)
+        defs = self.usedef.get_stms_defining(sym)
         for d in defs:
             if d.block is df.preds[0]:
                 phi.loc = d.loc
@@ -248,9 +248,8 @@ class SSATransformerBase(object):
         self.dominance_frontier = df_builder.process(first_block, tree)
 
     def _remove_useless_phi(self):
-        udd = UseDefDetector()
-        udd.process(self.scope)
-        usedef = self.scope.usedef
+        self.usedef = UseDefDetector().process(self.scope)
+        usedef = self.usedef
 
         def get_arg_name_if_same(phi):
             names = [arg.name for arg in phi.args
@@ -280,7 +279,7 @@ class SSATransformerBase(object):
             if name:
                 replace_var = phi.var.clone(ctx=Ctx.LOAD)
                 replace_var.name = name
-                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var)
+                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef)
                 for rep in replaces:
                     if isinstance(rep, PHI):
                         worklist.append(rep)
@@ -385,13 +384,12 @@ class TupleSSATransformer(SSATransformerBase):
         if scope.is_class() or scope.is_namespace():
             return
         super().process(scope)
-        UseDefDetector().process(scope)
         TupleTransformer().process(scope)
-        UseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         self._process_use_phi()
 
     def _process_use_phi(self):
-        usedef = self.scope.usedef
+        usedef = self.usedef
         for phi in self.phis:
             qsym = qualified_symbols(phi.var, self.scope)
             uses = usedef.get_stms_using(qsym)

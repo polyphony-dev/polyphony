@@ -240,7 +240,8 @@ class HyperBlockBuilder(object):
         self.scope = scope
         self.uddetector = UseDefDetector()
         self.uddetector.scope = scope
-        self.uddetector.table = scope.usedef
+        self.usedef = UseDefDetector().process(scope)
+        self.uddetector.table = self.usedef
         self.reducer = BlockReducer()
         self.reducer.scope = self.scope
         self.diamond_nodes = deque()
@@ -493,9 +494,9 @@ class HyperBlockBuilder(object):
                 continue
             else:
                 skip = False
-                usesyms = self.scope.usedef.get_syms_used_at(stm)
+                usesyms = self.usedef.get_syms_used_at(stm)
                 for sym in usesyms:
-                    defstms = self.scope.usedef.get_stms_defining(sym)
+                    defstms = self.usedef.get_stms_defining(sym)
                     remains_ = [s for _, s in remains]
                     intersection = defstms & set(remains_)
                     if intersection:
@@ -524,7 +525,7 @@ class HyperBlockBuilder(object):
                 case _:
                     assert False
             stm.block.stms.remove(stm)
-            self.scope.usedef.remove_stm(self.scope, stm)
+            self.usedef.remove_stm(self.scope, stm)
             cstm.loc = stm.loc
             cstms.append(cstm)
             all_cstms.append((idx, cstm))

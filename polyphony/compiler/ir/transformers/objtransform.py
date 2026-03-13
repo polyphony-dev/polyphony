@@ -3,7 +3,7 @@ from ..block import Block
 from ..ir import *
 from ..irhelper import qualified_symbols, irexp_type
 from ..types.type import Type
-from ..analysis.usedef import UseDefUpdater
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from ...common.utils import replace_item
 from ...common.env import env
 from logging import getLogger
@@ -12,8 +12,9 @@ logger = getLogger(__name__)
 
 class ObjectTransformer(object):
     def process(self, scope):
-        self.udupdater = UseDefUpdater(scope)
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
+        self.udupdater = UseDefUpdater(scope, self.usedef)
         self._collect_obj_defs()
         self._collect_copy_sources()
         self._transform_obj_access()
@@ -119,7 +120,7 @@ class ObjectTransformer(object):
     def _find_use_var(self, stm, qsym):
         max_len = 0
         var = None
-        for use_var in self.scope.usedef.get_vars_used_at(stm):
+        for use_var in self.usedef.get_vars_used_at(stm):
             qsym_ = qualified_symbols(use_var, self.scope)
             if len(qsym_) > max_len:
                 var = use_var
@@ -133,7 +134,7 @@ class ObjectTransformer(object):
     def _find_def_var(self, stm, qsym):
         max_len = 0
         var = None
-        for def_var in self.scope.usedef.get_vars_defined_at(stm):
+        for def_var in self.usedef.get_vars_defined_at(stm):
             qsym_ = qualified_symbols(def_var, self.scope)
             if len(qsym_) > max_len:
                 var = def_var
@@ -149,7 +150,7 @@ class ObjectTransformer(object):
             return
         for copy_qsym, copy_stm in copies.items():
             sources = copy_sources[self.qsym_ancestor(copy_qsym)]
-            usestms = self.scope.usedef.get_stms_using(copy_qsym).copy()
+            usestms = self.usedef.get_stms_using(copy_qsym).copy()
             for stm in usestms:
                 if not isinstance(stm, (MOVE, EXPR)):
                     continue
@@ -282,7 +283,7 @@ class ObjectTransformer(object):
 
     def _transform_seq_ctor(self):
         for seq_sym in self.seq_defs:
-            defstms = self.scope.usedef.get_stms_defining(seq_sym)
+            defstms = self.usedef.get_stms_defining(seq_sym)
             defstm = list(defstms)[0]
             assert isinstance(defstm.src, ARRAY)
 
@@ -294,7 +295,7 @@ class ObjectTransformer(object):
             idx = defstm.block.stms.index(defstm)
             defstm.block.insert_stm(idx, mv)
 
-            usestms = self.scope.usedef.get_stms_using(seq_sym)
+            usestms = self.usedef.get_stms_using(seq_sym)
             for usestm in usestms:
                 if (isinstance(usestm, MOVE)
                         and not isinstance(usestm.src, (MREF, SYSCALL))):

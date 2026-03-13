@@ -7,6 +7,7 @@ from ..common.env import env
 from ..ir.ir import *
 from ..ir.irhelper import qualified_symbols
 from ..ir.analysis.usedef import UseDefDetector
+from ..ir.analysis.fieldusedef import FieldUseDef
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -55,13 +56,16 @@ class HDLModuleBuilder(object):
 
     def _add_roms(self, memvars_set:set[tuple[Signal]]):
         def find_defstm(symbol):
-            if not symbol.scope.usedef:
-                UseDefDetector().process(symbol.scope)
-            defstms = symbol.scope.usedef.get_stms_defining(symbol)
+            usedef = UseDefDetector().process(symbol.scope)
+            defstms = usedef.get_stms_defining(symbol)
             if defstms:
                 assert len(defstms) == 1
                 return list(defstms)[0]
-            defstms = symbol.scope.field_usedef.get_def_stms((symbol,))
+            module_scope = symbol.scope
+            while module_scope is not None and not module_scope.is_module():
+                module_scope = module_scope.parent
+            field_usedef = FieldUseDef().process(module_scope)
+            defstms = field_usedef.get_def_stms((symbol,))
             assert len(defstms) == 1
             return list(defstms)[0]
 

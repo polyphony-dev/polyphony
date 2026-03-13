@@ -7,6 +7,7 @@ from ..types.typehelper import type_from_typeclass
 from ...common.env import env
 from ...common.common import fail, warn
 from ...common.errors import Errors, Warnings
+from .usedef import UseDefDetector
 import logging
 logger = logging.getLogger(__name__)
 
@@ -484,6 +485,7 @@ class AssertionChecker(IRVisitor):
 class SynthesisParamChecker(object):
     def process(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
         if scope.synth_params['scheduling'] == 'pipeline':
             if scope.is_worker() or (scope.is_closure() and scope.parent.is_worker()):
                 pass
@@ -497,11 +499,11 @@ class SynthesisParamChecker(object):
                     self._check_channel_conflict_in_pipeline(loop, scope)
 
     def _check_channel_conflict_in_pipeline(self, loop, scope):
-        syms = scope.usedef.get_all_def_syms() | scope.usedef.get_all_use_syms()
+        syms = self.usedef.get_all_def_syms() | self.usedef.get_all_use_syms()
         for sym in syms:
             if not self._is_channel(sym):
                 continue
-            usestms = sorted(scope.usedef.get_stms_using(sym), key=lambda s: s.program_order())
+            usestms = sorted(self.usedef.get_stms_using(sym), key=lambda s: s.program_order())
             usestms = [stm for stm in usestms if stm.block in loop.blocks()]
             readstms = []
             for stm in usestms:

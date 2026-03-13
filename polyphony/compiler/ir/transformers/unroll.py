@@ -6,6 +6,7 @@ from ..irvisitor import IRVisitor, IRTransformer
 from ..loop import Loop
 from ..scope import Scope, NameReplacer
 from ..types.type import Type
+from ..analysis.usedef import UseDefDetector
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger
@@ -15,6 +16,7 @@ logger = getLogger(__name__)
 class LoopUnroller(object):
     def process(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
         self.unrolled = False
         if self._unroll_loop_tree_leaf(scope.top_region()):
             # re-order blocks
@@ -99,7 +101,7 @@ class LoopUnroller(object):
             is_full_unroll = False
         #unroll_trip = initial_trip // factor
         origin_body = loop.bodies[0]
-        defsyms: set[Symbol] = self.scope.usedef.get_syms_defined_at(loop.head)
+        defsyms: set[Symbol] = self.usedef.get_syms_defined_at(loop.head)
         origin_ivs: list[Symbol] = [sym for sym in defsyms if sym.is_induction()]
         new_ivs = self._new_ivs(factor, origin_ivs, is_full_unroll)
         if is_full_unroll:
@@ -112,7 +114,7 @@ class LoopUnroller(object):
                                                                              loop_step,
                                                                              factor,
                                                                              new_ivs)
-        defsyms = self.scope.usedef.get_syms_defined_at(origin_body)
+        defsyms = self.usedef.get_syms_defined_at(origin_body)
         unroll_blks = self._make_unrolling_blocks(origin_body,
                                                   defsyms,
                                                   new_ivs,
@@ -420,7 +422,7 @@ class LoopUnroller(object):
                             index: int,
                             sym_map: dict[str, Symbol]):
         for u in loop.outer_uses:
-            usestms = self.scope.usedef.get_stms_using(u)
+            usestms = self.usedef.get_stms_using(u)
             for ustm in usestms:
                 if u in new_ivs:
                     ustm.replace(u.name, new_ivs[u][index].name)
@@ -451,7 +453,7 @@ class LoopUnroller(object):
 
     def _find_loop_max(self, loop) -> IRExp:
         loop_cond_sym = loop.cond
-        loop_cond_defs = self.scope.usedef.get_stms_defining(loop_cond_sym)
+        loop_cond_defs = self.usedef.get_stms_defining(loop_cond_sym)
         assert len(loop_cond_defs) == 1
         loop_cond_stm = list(loop_cond_defs)[0]
         assert isinstance(loop_cond_stm, MOVE)
@@ -472,7 +474,7 @@ class LoopUnroller(object):
         loop_update = loop.update
         assert isinstance(loop_update, TEMP)
         update_sym = qualified_symbols(loop_update, self.scope)[-1]
-        update_defs = self.scope.usedef.get_stms_defining(update_sym)
+        update_defs = self.usedef.get_stms_defining(update_sym)
         assert len(update_defs) == 1
         update_stm = list(update_defs)[0]
         assert isinstance(update_stm, MOVE)

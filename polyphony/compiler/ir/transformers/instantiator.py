@@ -150,9 +150,10 @@ class ArgumentApplier(object):
             array = env.seq_id_to_array.get(arg.value)
             if array is not None:
                 return array.clone()
-        elif isinstance(arg, IRVariable) and hasattr(caller_scope, 'usedef') and caller_scope.usedef:
+        elif isinstance(arg, IRVariable):
+            usedef = UseDefDetector().process(caller_scope)
             qsym = qualified_symbols(arg, caller_scope)
-            defs = list(caller_scope.usedef.get_stms_defining(qsym))
+            defs = list(usedef.get_stms_defining(qsym))
             if len(defs) == 1 and isinstance(defs[0], MOVE) and isinstance(defs[0].src, ARRAY):
                 return defs[0].src.clone()
         return arg
@@ -172,14 +173,12 @@ class ArgumentApplier(object):
                         arg = self._resolve_seq_arg(arg, caller_scope)
                     binding.append((i, arg))
         if binding:
-            UseDefDetector().process(callee)
             for i, arg in binding:
                 pname = callee.param_symbols()[i].name
                 VarReplacer.replace_uses(callee, TEMP(pname), arg)
             callee.remove_param([i for i, _ in binding])
             for i, _ in reversed(binding):
                 args.pop(i)
-            UseDefDetector().process(callee)
             ConstantOpt().process(callee)
             if callee.is_ctor():
                 callee.parent.set_bound_args(binding)

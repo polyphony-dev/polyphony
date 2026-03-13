@@ -2,6 +2,7 @@
 from ..ir import *
 from ..irhelper import is_port_method_call, has_exclusive_function, has_clkfence, qualified_symbols
 from ..symbol import Symbol
+from ..analysis.usedef import UseDefDetector
 from ...common.env import env
 from ...common import utils
 from logging import getLogger
@@ -407,6 +408,7 @@ class DFGBuilder(object):
 
     def process(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
         self.scope.top_dfg = self._process(scope.top_region(), None)
 
     def _process(self, region, parent_dfg):
@@ -440,7 +442,7 @@ class DFGBuilder(object):
     def _make_graph(self, parent_dfg, region):
         logger.debug('make graph ' + region.name)
         dfg = DataFlowGraph(self.scope, region.name, parent_dfg, region)
-        usedef = self.scope.usedef
+        usedef = self.usedef
 
         blocks = region.blocks()
         for b in blocks:
@@ -909,6 +911,7 @@ class DFGBuilder(object):
 class RegArrayParallelizer(object):
     def __init__(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
 
     def can_be_parallel(self, msym, n1, n2):
         n1_offs = self.offset_expr(n1.tag, msym)
@@ -983,8 +986,8 @@ class RegArrayParallelizer(object):
         elif isinstance(offs1, TEMP) and isinstance(offs2, TEMP):
             offs1_sym = self.scope.find_sym(offs1.name)
             offs2_sym = self.scope.find_sym(offs2.name)
-            offs1_defstms = self.scope.usedef.get_stms_defining(offs1_sym)
-            offs2_defstms = self.scope.usedef.get_stms_defining(offs2_sym)
+            offs1_defstms = self.usedef.get_stms_defining(offs1_sym)
+            offs2_defstms = self.usedef.get_stms_defining(offs2_sym)
             if len(offs1_defstms) != 1 and len(offs2_defstms) != 1:
                 return False
             offs2_stm = list(offs2_defstms)[0]

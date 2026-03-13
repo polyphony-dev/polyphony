@@ -344,8 +344,6 @@ class Scope(Tagged, SymbolTable):
         self.children: list['Scope'] = []
         self.bases: list['Scope'] = []
         self.origin: 'Scope' = None
-        self.usedef = None
-        self.field_usedef = None
         self.loop_tree = LoopNestTree()
         self.block_count = 0
         self.workers: list['Scope'] = []
@@ -509,7 +507,6 @@ class Scope(Tagged, SymbolTable):
         block_map, stm_map = self.clone_blocks(s)
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
-        s.usedef = None
 
         if recursive and rename_children:
             symbol_map = {}

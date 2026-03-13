@@ -286,8 +286,9 @@ class UseDefDetector(IRVisitor):
             self.update_var_def = self.table.remove_var_def
             self.update_var_use = self.table.remove_var_use
 
-    def _process_scope_done(self, scope):
-        scope.usedef = self.table
+    def process(self, scope):
+        super().process(scope)
+        return self.table
 
     def _process_block(self, block):
         for stm in block.stms:
@@ -357,13 +358,13 @@ class UseDefDetector(IRVisitor):
 
 
 class UseDefUpdater(object):
-    def __init__(self, scope):
+    def __init__(self, scope, usedef):
         self.adder = UseDefDetector()
         self.remover = UseDefDetector()
         self.adder.scope = scope
-        self.adder.table = scope.usedef
+        self.adder.table = usedef
         self.remover.scope = scope
-        self.remover.table = scope.usedef
+        self.remover.table = usedef
         self.adder.set_mode(UseDefDetector.ADD)
         self.remover.set_mode(UseDefDetector.REMOVE)
 
