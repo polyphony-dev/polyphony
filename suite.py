@@ -146,19 +146,22 @@ def suite(options, ignores):
         r = pool.apply_async(exec_test_entry, args=(t, options, suite_results))
         async_results.append((t, r))
     pool.close()
+    timed_out = set()
     for t, r in async_results:
         try:
             r.get(timeout=TEST_TIMEOUT)
         except mp.TimeoutError:
             print(f'TIMEOUT: {t} exceeded {TEST_TIMEOUT}s - skipping')
-            suite_results[t] = 'Timeout'
+            timed_out.add(t)
         except Exception as e:
             print(f'ERROR: {t} raised {e}')
             suite_results[t] = 'Internal Error'
     pool.terminate()
     pool.join()
     suite_results = dict(suite_results)
-    fails = sum([res == 'FAIL' for res in suite_results.values()])
+    for t in timed_out:
+        suite_results[t] = 'Timeout'
+    fails = sum(['FAIL' in res for res in suite_results.values()])
     if options.config:
         suite_results['-config'] = json.loads(options.config)
     global_suite_results.append(suite_results)
