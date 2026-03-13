@@ -2,6 +2,7 @@
 .gitignore
 .*/
 .*
+!.github/
 
 # Debugging
 debug*
