@@ -1,5 +1,5 @@
-.. image:: https://travis-ci.org/ktok07b6/polyphony.svg?branch=devel
-    :target: https://travis-ci.org/ktok07b6/polyphony
+.. image:: https://github.com/ktok07b6/polyphony/actions/workflows/test.yml/badge.svg?branch=devel
+    :target: https://github.com/ktok07b6/polyphony/actions/workflows/test.yml
 .. image:: https://badge.fury.io/py/polyphony.svg
     :target: https://badge.fury.io/py/polyphony
 
