@@ -11,8 +11,6 @@ io/thru01.py
 io/thru02.py
 # timed: compile error
 timed/fifo01.py
-# apps: return value latch issue
-apps/axistream02.py
 # module: compile hangs (also in v0.4.0)
 module/module04.py
 module/module05.py
