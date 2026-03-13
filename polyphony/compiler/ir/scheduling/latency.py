@@ -55,49 +55,47 @@ def get_syscall_latency(call):
 def _get_latency(tag):
     assert isinstance(tag, IRStm)
     scope = cast(IRStm, tag).block.scope
-    if isinstance(tag, MOVE):
-        move = cast(MOVE, tag)
-        dst_sym = qualified_symbols(move.dst, scope)[-1]
-        assert isinstance(dst_sym, Symbol)
-        if isinstance(move.dst, TEMP) and dst_sym.is_alias():
-            return 0
-        elif isinstance(move.src, CALL):
-            return get_call_latency(move.src, move, scope)
-        elif isinstance(move.src, NEW):
-            return 0
-        elif isinstance(move.src, TEMP) and scope.find_sym(move.src.name).typ.is_port():
-            return 0
-        elif isinstance(move.dst, ATTR):
+    match tag:
+        case MOVE() as move:
+            dst_sym = qualified_symbols(move.dst, scope)[-1]
+            assert isinstance(dst_sym, Symbol)
+            if isinstance(move.dst, TEMP) and dst_sym.is_alias():
+                return 0
+            elif isinstance(move.src, CALL):
+                return get_call_latency(move.src, move, scope)
+            elif isinstance(move.src, NEW):
+                return 0
+            elif isinstance(move.src, TEMP) and scope.find_sym(move.src.name).typ.is_port():
+                return 0
+            elif isinstance(move.dst, ATTR):
+                if dst_sym.is_alias():
+                    return 0
+                return UNIT_STEP * 1
+            elif isinstance(move.src, MREF):
+                return UNIT_STEP
+            elif isinstance(move.dst, TEMP) and dst_sym.typ.is_seq():
+                if isinstance(move.src, ARRAY):
+                    return UNIT_STEP
             if dst_sym.is_alias():
                 return 0
-            return UNIT_STEP * 1
-        elif isinstance(move.src, MREF):
-            return UNIT_STEP
-        elif isinstance(move.dst, TEMP) and dst_sym.typ.is_seq():
-            if isinstance(move.src, ARRAY):
-                return UNIT_STEP
-        if dst_sym.is_alias():
-            return 0
-    elif isinstance(tag, EXPR):
-        expr = cast(EXPR, tag)
-        if isinstance(expr.exp, CALL):
-            return get_call_latency(expr.exp, tag, scope)
-        elif isinstance(expr.exp, SYSCALL):
-            return get_syscall_latency(expr.exp)
-        elif isinstance(expr.exp, MSTORE):
-            return UNIT_STEP
-    elif isinstance(tag, PHI):
-        phi = cast(PHI, tag)
-        var_sym = qualified_symbols(phi.var, scope)[-1]
-        assert isinstance(var_sym, Symbol)
-        if var_sym.is_alias():
-            return 0
-    elif isinstance(tag, UPHI):
-        uphi = cast(UPHI, tag)
-        var_sym = qualified_symbols(uphi.var, scope)[-1]
-        assert isinstance(var_sym, Symbol)
-        if var_sym.is_alias():
-            return 0
+        case EXPR() as expr:
+            match expr.exp:
+                case CALL():
+                    return get_call_latency(expr.exp, tag, scope)
+                case SYSCALL():
+                    return get_syscall_latency(expr.exp)
+                case MSTORE():
+                    return UNIT_STEP
+        case PHI() as phi:
+            var_sym = qualified_symbols(phi.var, scope)[-1]
+            assert isinstance(var_sym, Symbol)
+            if var_sym.is_alias():
+                return 0
+        case UPHI() as uphi:
+            var_sym = qualified_symbols(uphi.var, scope)[-1]
+            assert isinstance(var_sym, Symbol)
+            if var_sym.is_alias():
+                return 0
     return UNIT_STEP
 
 

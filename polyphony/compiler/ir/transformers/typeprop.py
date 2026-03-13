@@ -199,17 +199,18 @@ class TypePropagation(IRVisitor):
             return sym_t.return_type
 
     def visit_CONST(self, ir):
-        if isinstance(ir.value, bool):
-            return Type.bool()
-        elif isinstance(ir.value, int):
-            return Type.int()
-        elif isinstance(ir.value, str):
-            return Type.str()
-        elif ir.value is None:
-            return Type.int()
-        else:
-            type_error(self.current_stm, Errors.UNSUPPORTED_LETERAL_TYPE,
-                       [repr(ir)])
+        match ir.value:
+            case bool():
+                return Type.bool()
+            case int():
+                return Type.int()
+            case str():
+                return Type.str()
+            case None:
+                return Type.int()
+            case _:
+                type_error(self.current_stm, Errors.UNSUPPORTED_LETERAL_TYPE,
+                           [repr(ir)])
 
     def visit_TEMP(self, ir):
         sym = self.scope.find_sym(ir.name)
@@ -369,36 +370,37 @@ class TypePropagation(IRVisitor):
             raise RejectPropagation(ir)
         dst_typ = self.visit(ir.dst)
 
-        if isinstance(ir.dst, IRVariable):
-            qsyms = qualified_symbols(ir.dst, self.scope)
-            symbol = qsyms[-1]
-            if not isinstance(symbol, Symbol):
-                # the type of object has not inferenced yet
-                raise RejectPropagation(ir)
-            self._propagate(symbol, src_typ)
-        elif isinstance(ir.dst, ARRAY):
-            if src_typ.is_undef():
-                # the type of object has not inferenced yet
-                raise RejectPropagation(ir)
-            if not src_typ.is_tuple() or not dst_typ.is_tuple():
-                raise RejectPropagation(ir)
-            elem_t = src_typ.element
-            for item in ir.dst.items:
-                assert isinstance(item, (TEMP, ATTR, MREF))
-                if isinstance(item, IRVariable):
-                    item_qsyms = qualified_symbols(item, self.scope)
-                    item_sym = item_qsyms[-1]
-                    assert isinstance(item_sym, Symbol)
-                    self._propagate(item_sym, elem_t)
-                elif isinstance(item, MREF):
-                    mem_qsyms = qualified_symbols(item.mem, self.scope)
-                    mem_sym = mem_qsyms[-1]
-                    assert isinstance(mem_sym, Symbol)
-                    mem_sym.typ = mem_sym.typ.clone(element=elem_t)
-        elif isinstance(ir.dst, MREF):
-            pass
-        else:
-            assert False
+        match ir.dst:
+            case IRVariable():
+                qsyms = qualified_symbols(ir.dst, self.scope)
+                symbol = qsyms[-1]
+                if not isinstance(symbol, Symbol):
+                    # the type of object has not inferenced yet
+                    raise RejectPropagation(ir)
+                self._propagate(symbol, src_typ)
+            case ARRAY():
+                if src_typ.is_undef():
+                    # the type of object has not inferenced yet
+                    raise RejectPropagation(ir)
+                if not src_typ.is_tuple() or not dst_typ.is_tuple():
+                    raise RejectPropagation(ir)
+                elem_t = src_typ.element
+                for item in ir.dst.items:
+                    assert isinstance(item, (TEMP, ATTR, MREF))
+                    if isinstance(item, IRVariable):
+                        item_qsyms = qualified_symbols(item, self.scope)
+                        item_sym = item_qsyms[-1]
+                        assert isinstance(item_sym, Symbol)
+                        self._propagate(item_sym, elem_t)
+                    elif isinstance(item, MREF):
+                        mem_qsyms = qualified_symbols(item.mem, self.scope)
+                        mem_sym = mem_qsyms[-1]
+                        assert isinstance(mem_sym, Symbol)
+                        mem_sym.typ = mem_sym.typ.clone(element=elem_t)
+            case MREF():
+                pass
+            case _:
+                assert False
         # check mutable method
         if (self.scope.is_method() and isinstance(ir.dst, ATTR) and
                 ir.dst.head_name() == env.self_name and

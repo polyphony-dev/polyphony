@@ -163,21 +163,21 @@ class LoopUnroller(object):
         return True
 
     def _replace_jump_target(self, block, old, new):
-        jmp = block.stms[-1]
-        if isinstance(jmp, JUMP):
-            jmp.target = new
-        elif isinstance(jmp, CJUMP):
-            if jmp.true is old:
-                jmp.true = new
-            else:
-                assert jmp.false is old
-                jmp.false = new
-        elif isinstance(jmp, MCJUMP):
-            for i, t in enumerate(jmp.targets):
-                if t is old:
-                    jmp.targets[i] = new
-        else:
-            assert False
+        match block.stms[-1]:
+            case JUMP() as jmp:
+                jmp.target = new
+            case CJUMP() as jmp:
+                if jmp.true is old:
+                    jmp.true = new
+                else:
+                    assert jmp.false is old
+                    jmp.false = new
+            case MCJUMP() as jmp:
+                for i, t in enumerate(jmp.targets):
+                    if t is old:
+                        jmp.targets[i] = new
+            case _:
+                assert False
 
     def _reconnect_full_unroll_blocks(self, loop, unroll_head, unroll_blks):
         loop_pred = loop.head.preds[0]

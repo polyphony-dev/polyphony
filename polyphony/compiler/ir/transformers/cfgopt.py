@@ -512,16 +512,17 @@ class HyperBlockBuilder(object):
         path_cstms = []
         cstms = []
         for idx, stm in path_remain_stms:
-            if isinstance(stm, CMOVE) or isinstance(stm, CEXPR):
-                cstm = stm
-            elif isinstance(stm, MOVE):
-                cstm = CMOVE(path_exp.clone(), stm.dst.clone(), stm.src.clone())
-            elif isinstance(stm, EXPR):
-                cstm = CEXPR(path_exp.clone(), stm.exp.clone())
-            elif isinstance(stm, PHIBase):
-                cstm = stm
-            else:
-                assert False
+            match stm:
+                case CMOVE() | CEXPR():
+                    cstm = stm
+                case MOVE():
+                    cstm = CMOVE(path_exp.clone(), stm.dst.clone(), stm.src.clone())
+                case EXPR():
+                    cstm = CEXPR(path_exp.clone(), stm.exp.clone())
+                case PHIBase():
+                    cstm = stm
+                case _:
+                    assert False
             stm.block.stms.remove(stm)
             self.scope.usedef.remove_stm(self.scope, stm)
             cstm.loc = stm.loc

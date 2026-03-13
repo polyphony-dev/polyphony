@@ -558,26 +558,24 @@ class DFGBuilder(object):
                 self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
     def _is_constant_stm(self, stm):
-        if isinstance(stm, MOVE):
-            if isinstance(stm.src, (CONST, ARRAY, CALL)):
+        match stm:
+            case MOVE(src=CONST() | ARRAY() | CALL()):
                 return True
-            elif isinstance(stm.src, MREF) and isinstance(stm.src.offset, CONST):
+            case MOVE(src=MREF(offset=CONST())):
                 return True
-            elif isinstance(stm.src, NEW):
+            case MOVE(src=NEW()):
                 return True
-            elif isinstance(stm.src, SYSCALL) and stm.src.name == '$new':
+            case MOVE(src=SYSCALL(name='$new')):
                 return True
-        elif isinstance(stm, EXPR):
-            if isinstance(stm.exp, (CALL, SYSCALL)):
-                call = stm.exp
+            case EXPR(exp=CALL() | SYSCALL() as call):
                 return all(isinstance(a, CONST) for _, a in call.args)
-            elif isinstance(stm.exp, MSTORE) and isinstance(stm.exp.offset, CONST) and isinstance(stm.exp.exp, CONST):
+            case EXPR(exp=MSTORE(offset=CONST(), exp=CONST())):
                 return True
-        elif isinstance(stm, CJUMP) and isinstance(stm.exp, CONST):
-            return True
-        elif isinstance(stm, MCJUMP):
-            if any(isinstance(c, CONST) for c in stm.conds[:-1]):
+            case CJUMP(exp=CONST()):
                 return True
+            case MCJUMP() as mcj:
+                if any(isinstance(c, CONST) for c in mcj.conds[:-1]):
+                    return True
         return False
 
     def _all_stms(self, blocks):
