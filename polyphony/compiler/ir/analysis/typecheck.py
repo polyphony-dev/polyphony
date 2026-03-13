@@ -131,18 +131,19 @@ class TypeChecker(IRVisitor):
         return Type.object(callee_scope)
 
     def visit_CONST(self, ir):
-        if isinstance(ir.value, bool):
-            return Type.bool()
-        elif isinstance(ir.value, int):
-            return Type.int()
-        elif isinstance(ir.value, str):
-            return Type.str()
-        elif ir.value is None:
-            # The value of 'None' is evaluated as int(0)
-            return Type.int()
-        else:
-            type_error(self.current_stm, Errors.UNSUPPORTED_LETERAL_TYPE,
-                       [repr(ir)])
+        match ir.value:
+            case bool():
+                return Type.bool()
+            case int():
+                return Type.int()
+            case str():
+                return Type.str()
+            case None:
+                # The value of 'None' is evaluated as int(0)
+                return Type.int()
+            case _:
+                type_error(self.current_stm, Errors.UNSUPPORTED_LETERAL_TYPE,
+                           [repr(ir)])
 
     def visit_TEMP(self, ir):
         sym = self.scope.find_sym(ir.name)

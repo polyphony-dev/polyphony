@@ -28,15 +28,15 @@ class AHDLCopyOpt(AHDLTransformer):
             target.sig.sym.typ.scope.name.startswith('polyphony.Net'))
 
     def _get_new_src(self, src_def:AHDL_STM) -> AHDL_EXP:
-        if isinstance(src_def, AHDL_MOVE):
-            new_src = cast(AHDL_MOVE, src_def).src
-        elif isinstance(src_def, AHDL_ASSIGN):
-            new_src = cast(AHDL_ASSIGN, src_def).src
-        elif isinstance(src_def, AHDL_IO_READ):
-            new_src = cast(AHDL_IO_READ, src_def).io
-        else:
-            assert False
-        return new_src
+        match src_def:
+            case AHDL_MOVE() as m:
+                return m.src
+            case AHDL_ASSIGN() as a:
+                return a.src
+            case AHDL_IO_READ() as r:
+                return r.io
+            case _:
+                assert False
 
     def visit_AHDL_VAR(self, ahdl:AHDL_VAR) -> AHDL_EXP:
         if self._is_ignore_case(ahdl):

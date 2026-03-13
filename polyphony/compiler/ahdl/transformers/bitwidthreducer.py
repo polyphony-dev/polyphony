@@ -13,14 +13,13 @@ class BitwidthReducer(AHDLTransformer):
         super().process(hdlmodule)
 
     def visit_AHDL_CONST(self, ahdl):
-        if isinstance(ahdl.value, int):
-            return env.config.default_int_width
-        elif isinstance(ahdl.value, str):
-            return 1
-        elif ahdl.value is None:
-            return 1
-        else:
-            type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ahdl)))
+        match ahdl.value:
+            case int():
+                return env.config.default_int_width
+            case str() | None:
+                return 1
+            case _:
+                type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ahdl)))
 
     def visit_AHDL_VAR(self, ahdl):
         return ahdl.sig.width
