@@ -2,6 +2,10 @@
     :target: https://github.com/ktok07b6/polyphony/actions/workflows/test.yml
 .. image:: https://badge.fury.io/py/polyphony.svg
     :target: https://badge.fury.io/py/polyphony
+.. image:: https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fktok07b6%2Fpolyphony%2Fmain%2Fpyproject.toml
+    :target: https://github.com/ktok07b6/polyphony
+.. image:: https://img.shields.io/github/license/ktok07b6/polyphony
+    :target: https://github.com/ktok07b6/polyphony/blob/main/LICENSE
 
 polyphony
 =========
