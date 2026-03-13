@@ -1,4 +1,4 @@
-__version__:str = '0.4.0'
+__version__:str = '0.4.1'
 __python__:bool = False
 
 
