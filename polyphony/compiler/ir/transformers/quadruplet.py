@@ -29,7 +29,7 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
-        if not ir.exp.is_a([TEMP, ATTR, CONST, MREF]):
+        if not isinstance(ir.exp, (TEMP, ATTR, CONST, MREF)):
             fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
         return ir
 
@@ -41,13 +41,13 @@ class EarlyQuadrupleMaker(IRTransformer):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
 
-        assert ir.left.is_a([TEMP, ATTR, CONST, UNOP, MREF, ARRAY])
-        assert ir.right.is_a([TEMP, ATTR, CONST, UNOP, MREF])
+        assert isinstance(ir.left, (TEMP, ATTR, CONST, UNOP, MREF, ARRAY))
+        assert isinstance(ir.right, (TEMP, ATTR, CONST, UNOP, MREF))
 
-        if ir.left.is_a(ARRAY):
+        if isinstance(ir.left, ARRAY):
             if ir.op == 'Mult':
                 array = ir.left
-                if array.repeat.is_a(CONST) and array.repeat.value == 1:
+                if isinstance(array.repeat, CONST) and array.repeat.value == 1:
                     array.repeat = ir.right
                 else:
                     array.repeat = BINOP('Mult', array.repeat, ir.right)
@@ -77,8 +77,8 @@ class EarlyQuadrupleMaker(IRTransformer):
     def _visit_args(self, ir):
         for i, (name, arg) in enumerate(ir.args):
             arg = self.visit(arg)
-            assert arg.is_a([TEMP, ATTR, CONST, UNOP, ARRAY])
-            if arg.is_a(ARRAY):
+            assert isinstance(arg, (TEMP, ATTR, CONST, UNOP, ARRAY))
+            if isinstance(arg, ARRAY):
                 arg = self._new_temp_move(arg, self.scope.add_temp())
             ir.args[i] = (name, arg)
 
@@ -124,13 +124,13 @@ class EarlyQuadrupleMaker(IRTransformer):
     def visit_MREF(self, ir):
         #suppress converting
         suppress = self.suppress_converting
-        if ir.mem.is_a(MREF):
+        if isinstance(ir.mem, MREF):
             self.suppress_converting = True
         else:
             self.suppress_converting = False
         ir.mem = self.visit(ir.mem)
         ir.offset = self.visit(ir.offset)
-        if not ir.offset.is_a([TEMP, ATTR, CONST, UNOP]):
+        if not isinstance(ir.offset, (TEMP, ATTR, CONST, UNOP)):
             fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
 
         if not suppress and ir.ctx & Ctx.LOAD:
@@ -154,20 +154,20 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def visit_EXPR(self, ir):
         #We don't convert outermost CALL
-        if ir.exp.is_a([CALL, SYSCALL, MSTORE]):
+        if isinstance(ir.exp, (CALL, SYSCALL, MSTORE)):
             self.suppress_converting = True
         ir.exp = self.visit(ir.exp)
         self.new_stms.append(ir)
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        assert (isinstance(ir.exp, TEMP) and self.scope.find_sym(ir.exp.name).is_condition()) or ir.exp.is_a(CONST)
+        assert (isinstance(ir.exp, TEMP) and self.scope.find_sym(ir.exp.name).is_condition()) or isinstance(ir.exp, CONST)
         self.new_stms.append(ir)
 
     def visit_MCJUMP(self, ir):
         for i in range(len(ir.conds)):
             ir.conds[i] = self.visit(ir.conds[i])
-            assert ir.conds[i].is_a([TEMP, CONST])
+            assert isinstance(ir.conds[i], (TEMP, CONST))
         self.new_stms.append(ir)
 
     def visit_JUMP(self, ir):
@@ -179,16 +179,16 @@ class EarlyQuadrupleMaker(IRTransformer):
 
     def visit_MOVE(self, ir):
         #We don't convert outermost BINOP or CALL
-        if ir.src.is_a([BINOP, RELOP, CALL, SYSCALL, NEW, MREF]):
+        if isinstance(ir.src, (BINOP, RELOP, CALL, SYSCALL, NEW, MREF)):
             self.suppress_converting = True
         ir.src = self.visit(ir.src)
         ir.dst = self.visit(ir.dst)
-        assert ir.src.is_a([TEMP, ATTR, CONST, UNOP,
-                            BINOP, RELOP, MREF, CALL,
-                            NEW, SYSCALL, ARRAY])
-        assert ir.dst.is_a([TEMP, ATTR, MREF, ARRAY])
+        assert isinstance(ir.src, (TEMP, ATTR, CONST, UNOP,
+                                   BINOP, RELOP, MREF, CALL,
+                                   NEW, SYSCALL, ARRAY))
+        assert isinstance(ir.dst, (TEMP, ATTR, MREF, ARRAY))
 
-        if ir.dst.is_a(MREF):
+        if isinstance(ir.dst, MREF):
             mref = ir.dst
             # the memory store is not a variable definition, so the context should be LOAD
             # mref.mem.ctx = Ctx.LOAD

@@ -196,7 +196,7 @@ class AHDLVisitor(object):
         return visitor
 
     def visit(self, ahdl):
-        if ahdl.is_a(AHDL_STM):
+        if isinstance(ahdl, AHDL_STM):
             self.current_stm = ahdl
         visitor = self.find_visitor(ahdl.__class__)
         return visitor(ahdl)

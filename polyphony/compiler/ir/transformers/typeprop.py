@@ -100,10 +100,10 @@ class TypePropagation(IRVisitor):
     def visit(self, ir:IR) -> Type:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
-        if ir.is_a(IRStm):
+        if isinstance(ir, IRStm):
             self.current_stm:IRStm = cast(IRStm, ir)
         if visitor:
-            if ir.is_a(IRStm):
+            if isinstance(ir, IRStm):
                 logger.debug(f'---- visit begin {ir}  # {ir.type_str(self.scope)}')
                 type = visitor(ir)
                 logger.debug(f'---- visit end   {ir}  # {ir.type_str(self.scope)}')
@@ -304,7 +304,7 @@ class TypePropagation(IRVisitor):
 
     def visit_ARRAY(self, ir):
         # TODO: check
-        if not ir.repeat.is_a(CONST):
+        if not isinstance(ir.repeat, CONST):
             self.visit(ir.repeat)
         item_t = None
         if isinstance(self.current_stm, MOVE) and isinstance(self.current_stm.dst, IRVariable):
@@ -329,13 +329,13 @@ class TypePropagation(IRVisitor):
 
         typ = irexp_type(ir, self.scope)
         if typ.is_tuple():
-            if ir.repeat.is_a(CONST):
+            if isinstance(ir.repeat, CONST):
                 length = len(ir.items) * ir.repeat.value
             else:
                 length = Type.ANY_LENGTH
             typ = typ.clone(element=item_t, length=length)
         else:
-            if self.is_strict and ir.repeat.is_a(CONST):
+            if self.is_strict and isinstance(ir.repeat, CONST):
                 length = len(ir.items) * ir.repeat.value
             else:
                 length = Type.ANY_LENGTH
@@ -369,14 +369,14 @@ class TypePropagation(IRVisitor):
             raise RejectPropagation(ir)
         dst_typ = self.visit(ir.dst)
 
-        if ir.dst.is_a(IRVariable):
+        if isinstance(ir.dst, IRVariable):
             qsyms = qualified_symbols(ir.dst, self.scope)
             symbol = qsyms[-1]
             if not isinstance(symbol, Symbol):
                 # the type of object has not inferenced yet
                 raise RejectPropagation(ir)
             self._propagate(symbol, src_typ)
-        elif ir.dst.is_a(ARRAY):
+        elif isinstance(ir.dst, ARRAY):
             if src_typ.is_undef():
                 # the type of object has not inferenced yet
                 raise RejectPropagation(ir)
@@ -384,23 +384,23 @@ class TypePropagation(IRVisitor):
                 raise RejectPropagation(ir)
             elem_t = src_typ.element
             for item in ir.dst.items:
-                assert item.is_a([TEMP, ATTR, MREF])
-                if item.is_a(IRVariable):
+                assert isinstance(item, (TEMP, ATTR, MREF))
+                if isinstance(item, IRVariable):
                     item_qsyms = qualified_symbols(item, self.scope)
                     item_sym = item_qsyms[-1]
                     assert isinstance(item_sym, Symbol)
                     self._propagate(item_sym, elem_t)
-                elif item.is_a(MREF):
+                elif isinstance(item, MREF):
                     mem_qsyms = qualified_symbols(item.mem, self.scope)
                     mem_sym = mem_qsyms[-1]
                     assert isinstance(mem_sym, Symbol)
                     mem_sym.typ = mem_sym.typ.clone(element=elem_t)
-        elif ir.dst.is_a(MREF):
+        elif isinstance(ir.dst, MREF):
             pass
         else:
             assert False
         # check mutable method
-        if (self.scope.is_method() and ir.dst.is_a(ATTR) and
+        if (self.scope.is_method() and isinstance(ir.dst, ATTR) and
                 ir.dst.head_name() == env.self_name and
                 not self.scope.is_mutable()):
             self.scope.add_tag('mutable')
@@ -464,7 +464,7 @@ class TypeSpecializer(TypePropagation):
         qsyms = qualified_symbols(ir.func, self.scope)
         func_sym = qsyms[-1]
         assert isinstance(func_sym, Symbol)
-        if ir.func.is_a(TEMP):
+        if isinstance(ir.func, TEMP):
             func_name = func_sym.orig_name()
             func_t = func_sym.typ
             if func_t.is_object() or func_t.is_port():
@@ -475,7 +475,7 @@ class TypeSpecializer(TypePropagation):
             else:
                 type_error(self.current_stm, Errors.IS_NOT_CALLABLE,
                            [func_name])
-        elif ir.func.is_a(ATTR):
+        elif isinstance(ir.func, ATTR):
             func_name = func_sym.orig_name()
             func_t = func_sym.typ
             if func_t.is_object() or func_t.is_port():
@@ -562,9 +562,9 @@ class TypeSpecializer(TypePropagation):
             if owner and (func_sym.scope is not owner or owner is not callee_scope.parent):
                 owner.import_sym(new_scope_sym, asname)
             # Replace name expression
-            if ir.func.is_a(TEMP):
+            if isinstance(ir.func, TEMP):
                 ir.func = TEMP(asname)
-            elif ir.func.is_a(ATTR):
+            elif isinstance(ir.func, ATTR):
                 assert asname == new_scope_sym.name
                 ir.func = ATTR(ir.func.exp, new_scope_sym.name)
             else:
@@ -616,9 +616,9 @@ class TypeSpecializer(TypePropagation):
             if arg_sym.is_imported():
                 owner = self.scope.find_owner_scope(arg_sym)
                 owner.import_sym(new_scope_sym, asname)
-            if ir.args[0][1].is_a(TEMP):
+            if isinstance(ir.args[0][1], TEMP):
                 ir.args[0] = (ir.args[0][0], TEMP(asname))
-            elif ir.args[0][1].is_a(ATTR):
+            elif isinstance(ir.args[0][1], ATTR):
                 assert asname == new_scope_sym.name
                 ir.args[0] = (ir.args[0][0], ATTR(ir.args[0][1].exp, new_scope_sym.name))
             else:
@@ -669,9 +669,9 @@ class TypeSpecializer(TypePropagation):
             if owner and func_sym.scope is not owner:
                 owner.import_sym(new_scope_sym, asname)
             # Replace name expression
-            if ir.func.is_a(TEMP):
+            if isinstance(ir.func, TEMP):
                 ir.func = TEMP(asname)
-            elif ir.func.is_a(ATTR):
+            elif isinstance(ir.func, ATTR):
                 assert asname == new_scope_sym.name
                 ir.func = ATTR(ir.func.exp, new_scope_sym.name)
             else:

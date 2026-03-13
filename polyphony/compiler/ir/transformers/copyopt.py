@@ -48,9 +48,9 @@ class CopyOpt(IRVisitor):
         for cp in copies:
             if cp in cp.block.stms:
                 # TODO: Copy propagation of module parameter should be supported
-                if cp.dst.is_a(ATTR) and qualified_symbols(cp.dst, self.scope)[-2].typ.scope.is_module() and scope.is_ctor():
+                if isinstance(cp.dst, ATTR) and qualified_symbols(cp.dst, self.scope)[-2].typ.scope.is_module() and scope.is_ctor():
                     continue
-                if cp.is_a(CMOVE) and not cp.dst.symbol.is_temp():
+                if isinstance(cp, CMOVE) and not cp.dst.symbol.is_temp():
                     continue
                 cp.block.stms.remove(cp)
 
@@ -77,7 +77,7 @@ class CopyOpt(IRVisitor):
                     continue
                 logger.debug('replace TO ' + str(u))
                 udupdater.update(None, u)
-            if u.is_a(PHIBase):
+            if isinstance(u, PHIBase):
                 # TODO: check
                 qsyms = [qualified_symbols(arg, self.scope) for arg in u.args
                         if isinstance(arg, IRVariable) and arg.name != u.var.name]
@@ -114,11 +114,11 @@ class CopyOpt(IRVisitor):
         if len(defs) != 1:
             return None
         d = defs[0]
-        if d.is_a(MOVE):
+        if isinstance(d, MOVE):
             dst_sym = qualified_symbols(d.dst, self.scope)[-1]
             assert isinstance(dst_sym, Symbol)
             dst_t = dst_sym.typ
-            if d.src.is_a(TEMP):
+            if isinstance(d.src, TEMP):
                 src_qsym = qualified_symbols(d.src, self.scope)
                 src_sym = src_qsym[-1]
                 assert isinstance(src_sym, Symbol)
@@ -132,7 +132,7 @@ class CopyOpt(IRVisitor):
                     return orig
                 else:
                     return d.src
-            elif d.src.is_a(ATTR):
+            elif isinstance(d.src, ATTR):
                 src_qsym = qualified_symbols(d.src, self.scope)
                 src_sym = src_qsym[-1]
                 assert isinstance(src_sym, Symbol)
@@ -168,7 +168,7 @@ class CopyCollector(IRVisitor):
             return
         if dst_t.is_function():
             return
-        if ir.src.is_a(TEMP):
+        if isinstance(ir.src, TEMP):
             src_sym = qualified_symbols(ir.src, self.scope)[-1]
             assert isinstance(src_sym, Symbol)
             src_t = src_sym.typ
@@ -178,7 +178,7 @@ class CopyCollector(IRVisitor):
             if src_t.clone(explicit=True) != dst_t.clone(explicit=True):
                 return
             self.copies.append(ir)
-        elif ir.src.is_a(ATTR):
+        elif isinstance(ir.src, ATTR):
             src_sym = qualified_symbols(ir.src, self.scope)[-1]
             assert isinstance(src_sym, Symbol)
             src_t = src_sym.typ
@@ -198,12 +198,12 @@ class ObjCopyOpt(CopyOpt):
 
         def find_vars_rec(ir, qname: tuple[str, ...], vars: list[IR]):
             if isinstance(ir, IR):
-                if ir.is_a(ATTR):
+                if isinstance(ir, ATTR):
                     attr = cast(ATTR, ir)
                     if attr.qualified_name == qname:
                         vars.append(attr)
                     find_vars_rec(attr.exp, qname, vars)
-                elif ir.is_a(TEMP) and len(qname) == 1:
+                elif isinstance(ir, TEMP) and len(qname) == 1:
                     temp = cast(TEMP, ir)
                     sym = scope.find_sym(temp.name)
                     assert sym
@@ -229,13 +229,13 @@ class ObjCopyCollector(IRVisitor):
         self.copies = copies
 
     def _is_alias_def(self, mov):
-        if not mov.is_a(MOVE):
+        if not isinstance(mov, MOVE):
             return False
-        if not mov.src.is_a(IRVariable):
+        if not isinstance(mov.src, IRVariable):
             return False
-        if not mov.dst.is_a(IRVariable):
+        if not isinstance(mov.dst, IRVariable):
             return False
-        if mov.dst.is_a(ATTR):
+        if isinstance(mov.dst, ATTR):
             receiver = qualified_symbols(mov.dst.exp, self.scope)[-1]
             assert isinstance(receiver, Symbol)
             receiver_t = receiver.typ

@@ -91,7 +91,7 @@ class STGBuilder(object):
 
     def _resolve_transition(self, state, next_state, blk2states: dict[str, list[State]]):
         code = state.block.codes[-1]
-        if code.is_a(AHDL_TRANSITION):
+        if isinstance(code, AHDL_TRANSITION):
             transition = cast(AHDL_TRANSITION, code)
             if transition.is_empty():
                 target_state = next_state
@@ -100,10 +100,10 @@ class STGBuilder(object):
                 assert isinstance(transition.target_name, str)
                 target_state = blk2states[transition.target_name][0]
             transition.update_target(target_state.name)
-        elif code.is_a(AHDL_TRANSITION_IF):
+        elif isinstance(code, AHDL_TRANSITION_IF):
             for i, ahdlblk in enumerate(code.blocks):
                 # assert len(ahdlblk.codes) == 1
-                assert ahdlblk.codes[-1].is_a(AHDL_TRANSITION)
+                assert isinstance(ahdlblk.codes[-1], AHDL_TRANSITION)
                 transition = cast(AHDL_TRANSITION, ahdlblk.codes[-1])
                 assert isinstance(transition.target_name, str)
                 target_state = blk2states[transition.target_name][0]
@@ -219,7 +219,7 @@ class StateBuilder(STGItemBuilder):
                     codes.append(item)
                 else:
                     assert False
-            if not codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
+            if not isinstance(codes[-1], (AHDL_TRANSITION, AHDL_TRANSITION_IF)):
                 codes.append(AHDL_TRANSITION(''))
             name = f'{state_prefix}_S{step}'
             state = self._new_state(name, step + 1, codes)
@@ -229,12 +229,12 @@ class StateBuilder(STGItemBuilder):
             codes = [AHDL_TRANSITION('')]
             states = [self._new_state(name, 1, codes)]
 
-        if blk.stms and blk.stms[-1].is_a(JUMP):
+        if blk.stms and isinstance(blk.stms[-1], JUMP):
             jump = blk.stms[-1]
             last_state = states[-1]
             trans = last_state.block.codes[-1]
-            assert trans.is_a([AHDL_TRANSITION])
-            if trans.is_a(AHDL_TRANSITION):
+            assert isinstance(trans, (AHDL_TRANSITION))
+            if isinstance(trans, AHDL_TRANSITION):
                 trans.update_target(jump.target.name)
 
         # deal with the first/last state
@@ -243,7 +243,7 @@ class StateBuilder(STGItemBuilder):
         elif self.scope.is_worker() or self.scope.is_testbench():
             if is_first:
                 init_state = states[0]
-                assert init_state.block.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
+                assert isinstance(init_state.block.codes[-1], (AHDL_TRANSITION, AHDL_TRANSITION_IF))
                 name = f'{state_prefix}_INIT'
                 states[0] = dataclasses.replace(init_state, name=name)
             if is_last:
@@ -268,7 +268,7 @@ class StateBuilder(STGItemBuilder):
             if is_first:
                 first_state = states[0]
                 block = first_state.block
-                assert block.codes[-1].is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF])
+                assert isinstance(block.codes[-1], (AHDL_TRANSITION, AHDL_TRANSITION_IF))
                 prolog = AHDL_SEQ(AHDL_CALLEE_PROLOG(self.stg.name), 0, 1)
                 codes = (prolog,) + block.codes
                 name = f'{state_prefix}_INIT'
@@ -278,7 +278,7 @@ class StateBuilder(STGItemBuilder):
                 name = f'{state_prefix}_FINISH'
                 finish_state = states[-1]
                 block = finish_state.block
-                assert block.codes[-1].is_a(AHDL_TRANSITION)
+                assert isinstance(block.codes[-1], AHDL_TRANSITION)
                 epilog = AHDL_SEQ(AHDL_CALLEE_EPILOG(self.stg.name), 0, 1)
                 new_block = AHDL_BLOCK(name, block.codes[:-1] + (epilog,) + (block.codes[-1],))
                 states[-1] = dataclasses.replace(finish_state, name=name, block=new_block)
@@ -413,7 +413,7 @@ class AHDLTranslator(IRVisitor):
         self.sched_time = sched_time
 
     def get_signal_prefix(self, ir):
-        assert ir.is_a(CALL)
+        assert isinstance(ir, CALL)
         callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.is_class():
             assert isinstance(self.current_stm, MOVE)
@@ -521,7 +521,7 @@ class AHDLTranslator(IRVisitor):
 
     def translate_builtin_len(self, syscall):
         _, mem = syscall.args[0]
-        assert mem.is_a(TEMP)
+        assert isinstance(mem, TEMP)
         mem_typ = irexp_type(mem, self.scope)
         assert mem_typ.is_seq()
         assert isinstance(mem_typ.length, int)
@@ -546,7 +546,7 @@ class AHDLTranslator(IRVisitor):
         elif name == 'polyphony.timing.clksleep':
             _, cycle = ir.args[0]
             # If sleep time is less than thredhold, simply generate an empty state
-            if cycle.is_a(CONST) and cycle.value <= env.sleep_sentinel_thredhold:
+            if isinstance(cycle, CONST) and cycle.value <= env.sleep_sentinel_thredhold:
                 for i in range(cycle.value):
                     self._emit(AHDL_NOP('wait a cycle'), self.sched_time + i)
                 return
@@ -615,7 +615,7 @@ class AHDLTranslator(IRVisitor):
         offset = cast(AHDL_EXP, self.visit(ir.offset))
         exp = cast(AHDL_EXP, self.visit(ir.exp))
         memvar = cast(AHDL_MEMVAR, self.visit(ir.mem))
-        assert memvar.is_a(AHDL_MEMVAR)
+        assert isinstance(memvar, AHDL_MEMVAR)
         memvar = AHDL_MEMVAR(memvar.vars, ctx=Ctx.STORE)
         dst = AHDL_SUBSCRIPT(memvar, offset)
         return AHDL_MOVE(dst, exp)
@@ -631,7 +631,7 @@ class AHDLTranslator(IRVisitor):
 
     def visit_ARRAY(self, ir):
         # array expansion
-        assert ir.repeat.is_a(CONST)
+        assert isinstance(ir.repeat, CONST)
         ir.items = [item.clone() for item in ir.items * ir.repeat.value]
 
         assert isinstance(self.current_stm, MOVE)
@@ -714,14 +714,14 @@ class AHDLTranslator(IRVisitor):
         return sig_name
 
     def visit_EXPR(self, ir):
-        if not (ir.exp.is_a([CALL, SYSCALL, MSTORE])):
+        if not (isinstance(ir.exp, (CALL, SYSCALL, MSTORE))):
             return
 
         if self._is_port_method(ir.exp):
             return self._make_port_access(ir.exp, None)
         elif self._is_module_method(ir.exp):
             return
-        if ir.exp.is_a(CALL):
+        if isinstance(ir.exp, CALL):
             self._call_proc(ir)
         else:
             exp = self.visit(ir.exp)
@@ -730,7 +730,7 @@ class AHDLTranslator(IRVisitor):
 
     def visit_CJUMP(self, ir):
         cond = self.visit(ir.exp)
-        if cond.is_a(AHDL_CONST) and cond.value == 1:
+        if isinstance(cond, AHDL_CONST) and cond.value == 1:
             self._emit(AHDL_TRANSITION(ir.true.name), self.sched_time)
         else:
             conds = (cond, AHDL_CONST(1))
@@ -743,7 +743,7 @@ class AHDLTranslator(IRVisitor):
 
     def visit_MCJUMP(self, ir):
         for c, target in zip(ir.conds[:-1], ir.targets[:-1]):
-            if c.is_a(CONST) and c.value == 1:
+            if isinstance(c, CONST) and c.value == 1:
                 cond = self.visit(c)
                 self._emit(AHDL_TRANSITION(target.name), self.sched_time)
                 return
@@ -760,24 +760,24 @@ class AHDLTranslator(IRVisitor):
         pass
 
     def _call_proc(self, ir):
-        if ir.is_a(MOVE):
+        if isinstance(ir, MOVE):
             call = ir.src
-        elif ir.is_a(EXPR):
+        elif isinstance(ir, EXPR):
             call = ir.exp
 
         ahdl_call = self.visit(call)
-        if call.is_a(CALL) and ir.is_a(MOVE):
+        if isinstance(call, CALL) and isinstance(ir, MOVE):
             dst = self.visit(ir.dst)
         else:
             dst = None
-        if ir.is_a(MOVE) and ir.src.is_a([NEW, CALL]):
+        if isinstance(ir, MOVE) and isinstance(ir.src, (NEW, CALL)):
             callee_scope = ir.src.get_callee_scope(self.scope)
             if callee_scope.is_module():
                 return
         self._emit_call_sequence(ahdl_call, dst, self.sched_time)
 
     def visit_MOVE(self, ir):
-        if ir.src.is_a([CALL, NEW]):
+        if isinstance(ir.src, (CALL, NEW)):
             if self._is_port_method(ir.src):
                 return self._make_port_access(ir.src, ir.dst)
             elif self._is_port_ctor(ir.src):
@@ -790,22 +790,22 @@ class AHDLTranslator(IRVisitor):
                 return
             self._call_proc(ir)
             return
-        elif ir.src.is_a(TEMP) and (sym := self.scope.find_sym(ir.src.name)) and sym.is_param():
+        elif isinstance(ir.src, TEMP) and (sym := self.scope.find_sym(ir.src.name)) and sym.is_param():
             if ir.src.name.endswith(env.self_name):
                 return
             elif sym.typ.is_object() and sym.typ.scope.is_module():
                 return
             elif sym.typ.is_port():
                 return
-        elif ir.src.is_a(IRVariable) and (sym := qualified_symbols(ir.src, self.scope)[-1]) and sym.typ.is_port():
+        elif isinstance(ir.src, IRVariable) and (sym := qualified_symbols(ir.src, self.scope)[-1]) and sym.typ.is_port():
             return
         src = self.visit(ir.src)
         dst = self.visit(ir.dst)
         if not src:
             return
-        elif src.is_a(AHDL_VAR) and dst.is_a(AHDL_VAR) and src.sig == dst.sig:
+        elif isinstance(src, AHDL_VAR) and isinstance(dst, AHDL_VAR) and src.sig == dst.sig:
             return
-        elif dst.is_a(AHDL_MEMVAR) and src.is_a(AHDL_MEMVAR):
+        elif isinstance(dst, AHDL_MEMVAR) and isinstance(src, AHDL_MEMVAR):
             src_sym = qualified_symbols(ir.src, self.scope)[-1]
             if src_sym.is_param():
                 width = src_sym.typ.element.width
@@ -825,7 +825,7 @@ class AHDLTranslator(IRVisitor):
                     self.hdlmodule.add_static_assignment(ahdl_assign)
 
                 return
-        elif dst.is_a(AHDL_VAR) and self.scope.is_ctor() and dst.sig.is_initializable():
+        elif isinstance(dst, AHDL_VAR) and self.scope.is_ctor() and dst.sig.is_initializable():
             # assert False
             dst.sig.init_value = src.value
         self._emit(AHDL_MOVE(dst, src), self.sched_time)
@@ -836,10 +836,10 @@ class AHDLTranslator(IRVisitor):
         self._emit(AHDL_MOVE(ahdl_dst, if_exp), self.sched_time)
 
     def _emit_call_sequence(self, ahdl_call, dst, sched_time):
-        assert ahdl_call.is_a(AHDL_MODULECALL)
+        assert isinstance(ahdl_call, AHDL_MODULECALL)
         returns = []
         for arg in ahdl_call.args:
-            if arg.is_a(AHDL_MEMVAR):
+            if isinstance(arg, AHDL_MEMVAR):
                 returns.append(arg)
         # TODO:
         if dst:
@@ -854,7 +854,7 @@ class AHDLTranslator(IRVisitor):
         arg_p = list(zip(ir.args, ir.ps))
         rexp, cond = arg_p[-1]
         cond = self.visit(cond)
-        if cond.is_a(CONST) and cond.value:
+        if isinstance(cond, CONST) and cond.value:
             rexp = self.visit(rexp)
         else:
             signed = False
@@ -901,25 +901,25 @@ class AHDLTranslator(IRVisitor):
             self._emit(AHDL_IF((cond,), (AHDL_BLOCK('', (ahdl,)),)), sched_time)
 
     def _is_port_method(self, ir):
-        if not ir.is_a(CALL):
+        if not isinstance(ir, CALL):
             return False
         callee_scope = ir.get_callee_scope(self.scope)
         return callee_scope.is_method() and callee_scope.parent.is_port()
 
     def _is_net_method(self, ir):
-        if not ir.is_a(CALL):
+        if not isinstance(ir, CALL):
             return False
         callee_scope = ir.get_callee_scope(self.scope)
         return callee_scope.is_method() and callee_scope.parent.name.startswith('polyphony.Net')
 
     def _is_port_ctor(self, ir):
-        if not ir.is_a(NEW):
+        if not isinstance(ir, NEW):
             return False
         callee_scope = ir.get_callee_scope(self.scope)
         return callee_scope.is_port()
 
     def _is_net_ctor(self, ir):
-        if not ir.is_a(NEW):
+        if not isinstance(ir, NEW):
             return False
         callee_scope = ir.get_callee_scope(self.scope)
         return callee_scope.name.startswith('polyphony.Net')
@@ -999,7 +999,7 @@ class AHDLTranslator(IRVisitor):
         self.visit(target)
 
     def _is_module_method(self, ir):
-        if not ir.is_a(CALL):
+        if not isinstance(ir, CALL):
             return False
         callee_scope = ir.get_callee_scope(self.scope)
         return callee_scope.is_method() and callee_scope.parent.is_module()
@@ -1078,14 +1078,14 @@ class AHDLCombTranslator(AHDLTranslator):
         self.return_var = None
 
     def _emit(self, item, sched_time=0):
-        assert item.is_a(AHDL_ASSIGN)
+        assert isinstance(item, AHDL_ASSIGN)
         self.codes.append(item)
 
     def _hooked_emit(self, ahdl, sched_time=0):
         self.hooked.append(ahdl)
 
     def _is_port_method(self, ir, method_name):
-        if not ir.is_a(CALL):
+        if not isinstance(ir, CALL):
             return False
         callee_scope = ir.get_callee_scope(self.scope)
         return (callee_scope.is_method() and
@@ -1093,7 +1093,7 @@ class AHDLCombTranslator(AHDLTranslator):
                 callee_scope.base_name == method_name)
 
     def _is_net_method(self, ir, method_name):
-        if not ir.is_a(CALL):
+        if not isinstance(ir, CALL):
             return False
         callee_scope = ir.get_callee_scope(self.scope)
         return (callee_scope.is_method() and
@@ -1103,13 +1103,13 @@ class AHDLCombTranslator(AHDLTranslator):
     def visit_CALL(self, ir):
         if self._is_port_method(ir, 'rd'):
             port_var = cast(AHDL_VAR, self.visit(ir.func.exp))
-            assert port_var.is_a(AHDL_VAR)
+            assert isinstance(port_var, AHDL_VAR)
             return AHDL_VAR(port_var.vars, Ctx.LOAD)
         elif self._is_port_method(ir, 'edge'):
             old = ir.args[0][1]
             new = ir.args[1][1]
             port_var = cast(AHDL_VAR, self.visit(ir.func.exp))
-            assert port_var.is_a(AHDL_VAR)
+            assert isinstance(port_var, AHDL_VAR)
             port_var = AHDL_VAR(port_var.vars, Ctx.LOAD)
             _old = self.visit(old)
             _new = self.visit(new)

@@ -126,15 +126,15 @@ class Block(object):
         replace_item(self.succs, old, new, all=True)
         if self.stms:
             jmp = self.stms[-1]
-            if jmp.is_a(JUMP):
+            if isinstance(jmp, JUMP):
                 jmp.target = new
-            elif jmp.is_a(CJUMP):
+            elif isinstance(jmp, CJUMP):
                 if jmp.true is old:
                     jmp.true = new
                 elif jmp.false is old:
                     jmp.false = new
                 self._convert_if_unidirectional(jmp)
-            elif jmp.is_a(MCJUMP):
+            elif isinstance(jmp, MCJUMP):
                 for i, t in enumerate(jmp.targets):
                     if t is old:
                         jmp.targets[i] = new
@@ -207,15 +207,17 @@ class Block(object):
             self.preds_loop[i] = blk_map[pred]
 
     def collect_stms(self, typs):
-        return [stm for stm in self.stms if stm.is_a(typs)]
+        if isinstance(typs, list):
+            typs = tuple(typs)
+        return [stm for stm in self.stms if isinstance(stm, typs)]
 
     def _convert_if_unidirectional(self, jmp):
         if not self.scope.usedef:
             return
-        if jmp.is_a(CJUMP):
+        if isinstance(jmp, CJUMP):
             conds = [jmp.exp]
             targets = [jmp.true, jmp.false]
-        elif jmp.is_a(MCJUMP):
+        elif isinstance(jmp, MCJUMP):
             conds = jmp.conds[:]
             targets = jmp.targets[:]
         else:
@@ -235,9 +237,9 @@ class Block(object):
             return
         usedef = self.scope.usedef
         for cond in conds:
-            if cond.is_a(CONST):
+            if isinstance(cond, CONST):
                 continue
-            assert cond.is_a(TEMP)
+            assert isinstance(cond, TEMP)
             cond_symbol = self.scope.find_sym(cond.name)
             defstms = usedef.get_stms_defining(cond_symbol)
             assert len(defstms) == 1

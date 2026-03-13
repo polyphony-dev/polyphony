@@ -5,7 +5,7 @@ from collections import namedtuple
 from enum import IntEnum
 from .symbol import Symbol
 from .types.scopetype import ScopeType
-from ..common.utils import is_a, find_id_index
+from ..common.utils import find_id_index
 if TYPE_CHECKING:
     from .scope import Scope
 
@@ -45,11 +45,8 @@ class IR(object):
     def type_str(self, scope: Scope):
         return ''
 
-    def is_a(self, cls):
-        return is_a(self, cls)
-
     def as_a[T](self, cls:T) -> T | None:
-        if is_a(self, cls):
+        if isinstance(self, cls):
             return cast(T, self)
         else:
             return None
@@ -76,7 +73,7 @@ class IR(object):
     def replace(self, old, new):
         def replace_rec(ir, old, new):
             if isinstance(ir, IR):
-                if ir.is_a([CALL, SYSCALL, NEW]):
+                if isinstance(ir, (CALL, SYSCALL, NEW)):
                     return ir.replace(old, new)
                 ret = False
                 for k, v in ir.__dict__.items():
@@ -107,13 +104,13 @@ class IR(object):
 
         def find_vars_rec(ir, qname, vars):
             if isinstance(ir, IR):
-                if ir.is_a([CALL, SYSCALL, NEW]):
+                if isinstance(ir, (CALL, SYSCALL, NEW)):
                     vars.extend(ir.find_vars(qname))
-                elif ir.is_a(TEMP):
+                elif isinstance(ir, TEMP):
                     temp = cast(TEMP, ir)
                     if temp.qualified_name == qname:
                         vars.append(ir)
-                elif ir.is_a(ATTR):
+                elif isinstance(ir, ATTR):
                     attr = cast(ATTR, ir)
                     if attr.qualified_name == qname:
                         vars.append(ir)
@@ -133,9 +130,9 @@ class IR(object):
 
         def find_irs_rec(ir, typ, irs):
             if isinstance(ir, IR):
-                if ir.is_a(typ):
+                if isinstance(ir, typ):
                     irs.append(ir)
-                if ir.is_a([CALL, SYSCALL, NEW]):
+                if isinstance(ir, (CALL, SYSCALL, NEW)):
                     irs.extend(ir.find_irs(typ))
                     return
                 for k, v in ir.__dict__.items():
@@ -370,7 +367,7 @@ class POLYOP(IRExp):
         return f'({op2sym_map[self._op]} [{values}])'
 
     def kids(self):
-        assert all([v.is_a([CONST, TEMP, ATTR]) for v in self._values])
+        assert all([isinstance(v, (CONST, TEMP, ATTR)) for v in self._values])
         return self._values
 
     @property
@@ -405,7 +402,7 @@ def find_vars_args(args: list[tuple[str, IRExp]], qname: tuple[str, ...]) -> lis
 def find_irs_args(args: list[tuple[str, IRExp]], typ: typing.Type) -> list[IRExp]:
     irs = []
     for _, arg in args:
-        if arg.is_a(typ):
+        if isinstance(arg, typ):
             irs.append(arg)
         irs.extend(arg.find_irs(typ))
     return irs
@@ -624,7 +621,7 @@ class CONST(IRExp):
 class MREF(IRExp):
     def __init__(self, mem:IRExp, offset:IRExp, ctx=Ctx.LOAD):
         super().__init__()
-        assert mem.is_a([TEMP, ATTR, MREF])
+        assert isinstance(mem, (TEMP, ATTR, MREF))
         self._mem = mem
         self._offset = offset
         self._ctx = ctx
@@ -731,7 +728,7 @@ class ARRAY(IRExp):
         else:
             s += ', '.join(map(str, self._items))
         s += ']' if self.is_mutable else ')'
-        if not (self._repeat.is_a(CONST) and self._repeat.value == 1):
+        if not (isinstance(self._repeat, CONST) and self._repeat.value == 1):
             s += ' * ' + str(self._repeat)
         return s
 
@@ -746,7 +743,7 @@ class ARRAY(IRExp):
         else:
             s += ', '.join(map(lambda item: item.type_str(scope), self._items))
         s += ']' if self.is_mutable else ')'
-        if not (self._repeat.is_a(CONST) and self._repeat.value == 1):
+        if not (isinstance(self._repeat, CONST) and self._repeat.value == 1):
             s += ' * ' + type(self._repeat).__name__
         s += ')'
         return s
@@ -769,7 +766,7 @@ class ARRAY(IRExp):
         return kids
 
     def getlen(self):
-        if self._repeat.is_a(CONST):
+        if isinstance(self._repeat, CONST):
             return len(self._items) * self._repeat.value
         else:
             return -1
@@ -871,9 +868,9 @@ class ATTR(IRVariable):
     #             head  |
     #                  tail
     def head_name(self) -> str:
-        if self._exp.is_a(ATTR):
+        if isinstance(self._exp, ATTR):
             return self._exp.head_name()
-        elif self._exp.is_a(TEMP):
+        elif isinstance(self._exp, TEMP):
             return self._exp.name
         else:
             return ''
@@ -886,7 +883,7 @@ class ATTR(IRVariable):
         return self._exp.qualified_name + (self.name,)
 
     def replace_head(self, new_head_name: str):
-        if self._exp.is_a(ATTR):
+        if isinstance(self._exp, ATTR):
             self._exp.replace_head(new_head_name)
         else:
             self._exp.name = new_head_name
@@ -917,10 +914,10 @@ class IRStm(IR):
         return tuple()
 
     def is_mem_read(self):
-        return self.is_a(MOVE) and self.src.is_a(MREF)
+        return isinstance(self, MOVE) and isinstance(self.src, MREF)
 
     def is_mem_write(self):
-        return self.is_a(EXPR) and self.exp.is_a(MSTORE)
+        return isinstance(self, EXPR) and isinstance(self.exp, MSTORE)
 
 
 class EXPR(IRStm):

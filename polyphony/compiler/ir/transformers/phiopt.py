@@ -18,7 +18,7 @@ class PHIInlining(object):
                 new_args = []
                 new_ps   = []
                 for i, (arg, p) in enumerate(zip(phi.args, phi.ps)):
-                    if (arg.is_a(IRVariable) and
+                    if (isinstance(arg, IRVariable) and
                             (arg_sym := qualified_symbols(arg, scope)[-1]) and
                             arg_sym in phis and
                             phi != phis[arg_sym]):

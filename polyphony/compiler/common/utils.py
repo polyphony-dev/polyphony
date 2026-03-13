@@ -1,17 +1,7 @@
-﻿def is_a(inst, cls):
-    if isinstance(cls, list) or isinstance(cls, tuple):
-        for c in cls:
-            if isinstance(inst, c):
-                return True
-        return False
-    else:
-        return isinstance(inst, cls)
-
-
-def find_only_one_in(typ, seq):
+﻿def find_only_one_in(typ, seq):
     it = None
     for item in seq:
-        if item.is_a(typ):
+        if isinstance(item, typ):
             assert it is None
             it = item
     return it

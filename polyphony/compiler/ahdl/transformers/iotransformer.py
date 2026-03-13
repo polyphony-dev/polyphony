@@ -18,7 +18,7 @@ class IOTransformer(AHDLTransformer):
         if step == 0:
             seq = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(1))]
             for acc, arg in zip(args, ahdl_call.args):
-                assert not arg.is_a(AHDL_MEMVAR)
+                assert not isinstance(arg, AHDL_MEMVAR)
                 seq.append(AHDL_MOVE(AHDL_VAR(acc, Ctx.STORE), arg))
         elif step == 1:
             seq = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(0))]
@@ -95,11 +95,11 @@ class WaitTransformer(AHDLTransformer):
             return new_state
 
     def _contains_meta_wait(self, ahdl):
-        if ahdl.is_a(AHDL_META_WAIT):
+        if isinstance(ahdl, AHDL_META_WAIT):
             return True
-        if ahdl.is_a(AHDL_BLOCK):
+        if isinstance(ahdl, AHDL_BLOCK):
             return any(self._contains_meta_wait(c) for c in ahdl.codes)
-        if ahdl.is_a(AHDL_IF):
+        if isinstance(ahdl, AHDL_IF):
             return any(self._contains_meta_wait(b) for b in ahdl.blocks)
         return False
 
@@ -109,7 +109,7 @@ class WaitTransformer(AHDLTransformer):
         while changed:
             changed = False
             for i, code in enumerate(codes):
-                if code.is_a(AHDL_IF) and self._contains_meta_wait(code) and i < len(codes) - 1:
+                if isinstance(code, AHDL_IF) and self._contains_meta_wait(code) and i < len(codes) - 1:
                     trailing = tuple(codes[i + 1:])
                     new_blocks = []
                     new_conds = list(code.conds)
@@ -128,7 +128,7 @@ class WaitTransformer(AHDLTransformer):
     def visit_AHDL_BLOCK(self, ahdl):
         ahdl = self._sink_trailing_codes_into_wait_if(ahdl)
         new_block = super().visit_AHDL_BLOCK(ahdl)
-        meta_waits = [c for c in new_block.codes if c.is_a(AHDL_META_WAIT)]
+        meta_waits = [c for c in new_block.codes if isinstance(c, AHDL_META_WAIT)]
         if meta_waits:
             new_block = self._transform_meta_wait(new_block, meta_waits)
         return new_block

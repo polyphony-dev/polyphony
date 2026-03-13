@@ -11,7 +11,7 @@ class IfTransformer(object):
             self._process_block(blk)
 
     def _merge_else_cj(self, cj, conds, targets):
-        if len(cj.false.stms) == 1 and cj.false.stms[0].is_a(CJUMP):
+        if len(cj.false.stms) == 1 and isinstance(cj.false.stms[0], CJUMP):
             else_cj = cj.false.stms[0]
             cj.false.succs = []
             cj.false.preds = []
@@ -26,7 +26,7 @@ class IfTransformer(object):
         return False
 
     def _process_block(self, block):
-        if block.stms and block.stms[-1].is_a(CJUMP):
+        if block.stms and isinstance(block.stms[-1], CJUMP):
             conds = []
             targets = []
             cj = block.stms[-1]
@@ -50,7 +50,7 @@ class IfCondTransformer(object):
             self._process_block(blk)
 
     def _process_block(self, block):
-        if block.stms and block.stms[-1].is_a(MCJUMP):
+        if block.stms and isinstance(block.stms[-1], MCJUMP):
             # if-elif-else conditions are converted as follows
             #
             # if p0:   ...
@@ -64,7 +64,7 @@ class IfCondTransformer(object):
             # if !p0 and !p1 and !p2: ...
             mj = block.stms[-1]
             for c in mj.conds:
-                assert c.is_a(TEMP) or c.is_a(CONST)
+                assert isinstance(c, TEMP) or isinstance(c, CONST)
             prevs = []
             new_cond_exps = []
             for c in mj.conds:
@@ -75,7 +75,7 @@ class IfCondTransformer(object):
                     else:
                         new_c = UNOP('Not', prev_c)
                 if new_c:
-                    if c.is_a(CONST):
+                    if isinstance(c, CONST):
                         assert c.value == 1
                         pass
                     else:
@@ -87,7 +87,7 @@ class IfCondTransformer(object):
             # simplify condtion expressions
             new_conds = []
             for c in new_cond_exps:
-                if c.is_a(TEMP):
+                if isinstance(c, TEMP):
                     new_conds.append(c)
                 else:
                     new_sym = self.scope.add_condition_sym()

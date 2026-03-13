@@ -485,8 +485,8 @@ class CodeVisitor(ast.NodeVisitor):
         if not block.stms:
             return True
         last = block.stms[-1]
-        return not last.is_a(JUMP) and \
-            not (last.is_a(MOVE) and last.dst.is_a(TEMP) and self.current_scope.find_sym(last.dst.name).is_return())
+        return not isinstance(last, JUMP) and \
+            not (isinstance(last, MOVE) and isinstance(last.dst, TEMP) and self.current_scope.find_sym(last.dst.name).is_return())
 
     def _new_block(self, scope, nametag='b'):
         blk = Block(scope, nametag)
@@ -705,11 +705,11 @@ class CodeVisitor(ast.NodeVisitor):
         right = self.visit(node.value)
         for target in node.targets:
             left = self.visit(target)
-            if left.is_a(TEMP) and left.name == '__all__':
-                if right.is_a(ARRAY):
+            if isinstance(left, TEMP) and left.name == '__all__':
+                if isinstance(right, ARRAY):
                     self.current_scope.all_imports = []
                     for item in right.items:
-                        if not (item.is_a(CONST) and isinstance(item.value, str)):
+                        if not (isinstance(item, CONST) and isinstance(item.value, str)):
                             fail((env.current_filename, node.lineno),
                                  Errors.MUST_BE_X, ['string literal'])
                         imp_name = item.value
@@ -748,14 +748,14 @@ class CodeVisitor(ast.NodeVisitor):
         typ = self._type_from_annotation(node.annotation)
         if not typ:
             fail((env.current_filename, node.lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
-        if dst.is_a(TEMP):
+        if isinstance(dst, TEMP):
             sym = self.current_scope.find_sym(dst.name)
             assert sym
             sym_t = sym.typ
             if not sym_t.is_undef() and typ != sym_t:
                 fail((env.current_filename, node.lineno), Errors.CONFLICT_TYPE_HINT)
             sym.typ = typ
-        elif dst.is_a(ATTR):
+        elif isinstance(dst, ATTR):
             qsyms = qualified_symbols(dst, self.current_scope)
             # if (dst.exp.is_a(TEMP) and dst.head().name == env.self_name and
             #         self.current_scope.is_method()):
@@ -792,10 +792,10 @@ class CodeVisitor(ast.NodeVisitor):
 
         condition = self.visit(node.test)
         skip_then = skip_else = False
-        if condition.is_a(CONST):
+        if isinstance(condition, CONST):
             skip_then = not condition.value
             skip_else = condition.value
-        if not condition.is_a(RELOP):
+        if not isinstance(condition, RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
 
         self.emit_to(if_head, CJUMP(condition, if_then, if_else_tmp), node)
@@ -866,7 +866,7 @@ class CodeVisitor(ast.NodeVisitor):
         # loop check part
         self.current_block = while_block
         condition = self.visit(node.test)
-        if not condition.is_a(RELOP):
+        if not isinstance(condition, RELOP):
             condition = RELOP('NotEq', condition, CONST(0))
         cjump = CJUMP(condition, body_block, else_tmp_block)
         cjump.loop_branch = True
@@ -923,14 +923,14 @@ class CodeVisitor(ast.NodeVisitor):
         #  goto loop_check
         #end:
         def make_temp_if_needed(var, stms):
-            if not var.is_a(CONST):
+            if not isinstance(var, CONST):
                 temp_sym = self.current_scope.add_temp()
                 stms += [MOVE(TEMP(temp_sym.name), var)]
                 var = TEMP(temp_sym.name)
             return var
 
         def is_iterator_func(ir):
-            return it.is_a(SYSCALL) and it.name in ('polyphony.unroll', 'polyphony.pipelined')
+            return isinstance(it, SYSCALL) and it.name in ('polyphony.unroll', 'polyphony.pipelined')
 
         var = self.visit(node.target)
         it = self.visit(node.iter)
@@ -960,7 +960,7 @@ class CodeVisitor(ast.NodeVisitor):
                 else:
                     fail((env.current_filename, node.lineno),
                          Errors.TAKES_TOOMANY_ARGS, [it.name, '2', len(it.args)])
-                if not factor.is_a(CONST):
+                if not isinstance(factor, CONST):
                     fail((env.current_filename, node.lineno), Errors.RULE_UNROLL_VARIABLE_FACTOR)
                 loop_synth_params.update({'unroll':factor.value})
             elif it.name == 'polyphony.pipelined':
@@ -990,11 +990,11 @@ class CodeVisitor(ast.NodeVisitor):
 
         # In case of range() loop
         if (self.current_scope.synth_params['scheduling'] == 'timed' and
-                not (it.is_a(SYSCALL) and it.name == 'polyphony.timing.clkrange')):
+                not (isinstance(it, SYSCALL) and it.name == 'polyphony.timing.clkrange')):
             fail((env.current_filename, node.lineno),
                  Errors.RULE_TIMED_FOR_LOOP_IS_NOT_ALLOWED)
         counter: Symbol|None = None
-        if it.is_a(SYSCALL) and it.name == 'range':
+        if isinstance(it, SYSCALL) and it.name == 'range':
             init_parts = []
             if len(it.args) == 1:
                 start = CONST(0)
@@ -1030,7 +1030,7 @@ class CodeVisitor(ast.NodeVisitor):
                            step))
             ]
             self._build_for_loop_blocks(init_parts, condition, [], continue_parts, loop_synth_params, node)
-        elif it.is_a(SYSCALL) and it.name == 'polyphony.timing.clkrange':
+        elif isinstance(it, SYSCALL) and it.name == 'polyphony.timing.clkrange':
             init_parts = []
             assert len(it.args) <= 1
             start = CONST(0)
@@ -1054,7 +1054,7 @@ class CodeVisitor(ast.NodeVisitor):
             ]
             self._build_for_loop_blocks(init_parts, condition, [], continue_parts,
                                         loop_synth_params, node)
-        elif it.is_a(IRVariable):
+        elif isinstance(it, IRVariable):
             start = CONST(0)
             end  = SYSCALL(TEMP('len'), [('seq', it.clone())], {})
             counter_name = Symbol.unique_name('@counter')
@@ -1076,7 +1076,7 @@ class CodeVisitor(ast.NodeVisitor):
                            CONST(1)))
             ]
             self._build_for_loop_blocks(init_parts, condition, body_parts, continue_parts, loop_synth_params, node)
-        elif it.is_a(ARRAY):
+        elif isinstance(it, ARRAY):
             unnamed_array = self.current_scope.add_temp('@unnamed')
             start = CONST(0)
             end  = SYSCALL(TEMP('len'), [('seq', TEMP(unnamed_array.name))], {})
@@ -1188,7 +1188,7 @@ class CodeVisitor(ast.NodeVisitor):
         old_with_blk_synth_params = None
         for item in node.items:
             expr, var = self.visit(item)
-            if expr.is_a(CALL):
+            if isinstance(expr, CALL):
                 func_t = self.current_scope.ir_type(expr)
                 if func_t.scope.name == 'polyphony.rule':
                     # merge nested params
@@ -1285,13 +1285,13 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_BinOp(self, node):
         left = self.visit(node.left)
         right = self.visit(node.right)
-        if left.is_a(CONST) and right.is_a(CONST):
+        if isinstance(left, CONST) and isinstance(right, CONST):
             return CONST(eval_binop(op2str(node.op), left.value, right.value))
         return BINOP(op2str(node.op), left, right)
 
     def visit_UnaryOp(self, node):
         exp = self.visit(node.operand)
-        if exp.is_a(CONST):
+        if isinstance(exp, CONST):
             v = eval_unop(op2str(node.op), exp.value)
             if v is None:
                 fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_OPERATOR, [unop.op])
@@ -1360,7 +1360,7 @@ class CodeVisitor(ast.NodeVisitor):
         left = self.visit(node.left)
         op = node.ops[0]
         right = self.visit(node.comparators[0])
-        if left.is_a(CONST) and right.is_a(CONST):
+        if isinstance(left, CONST) and isinstance(right, CONST):
             return CONST(eval_relop(op2str(op), left.value, right.value))
         return RELOP(op2str(op), left, right)
 
@@ -1382,7 +1382,7 @@ class CodeVisitor(ast.NodeVisitor):
 
         qsyms = qualified_symbols(func, self.current_scope)
         func_sym = qsyms[-1]
-        if func.is_a(TEMP):
+        if isinstance(func, TEMP):
             assert isinstance(func_sym, Symbol)
             func_t = func_sym.typ
             if func_t.is_class():
@@ -1399,7 +1399,7 @@ class CodeVisitor(ast.NodeVisitor):
                     return SYSCALL(func, args, kwargs)
                 elif func_scope.name in builtin_symbols:
                     return SYSCALL(TEMP(func_scope.name), args, kwargs)
-        elif func.is_a(ATTR) and func.exp.is_a(IRVariable):
+        elif isinstance(func, ATTR) and isinstance(func.exp, IRVariable):
             if isinstance(func_sym, Symbol):
                 func_t = func_sym.typ
                 if func_t.is_function():
@@ -1440,7 +1440,7 @@ class CodeVisitor(ast.NodeVisitor):
     def visit_Attribute(self, node):
         ctx = self._nodectx2irctx(node)
         value = self.visit(node.value)
-        if value.is_a(IRVariable):
+        if isinstance(value, IRVariable):
             qsyms = qualified_symbols(value, self.current_scope)
             value_sym = qsyms[-1]
         else:
@@ -1462,7 +1462,7 @@ class CodeVisitor(ast.NodeVisitor):
                 else:
                     attr_sym = scope.find_sym(node.attr)
         attr: str = node.attr
-        if value.is_a(TEMP):
+        if isinstance(value, TEMP):
             assert isinstance(value_sym, Symbol)
             value_t = value_sym.typ
             if (value_t.is_namespace()

@@ -18,25 +18,25 @@ class FieldUseDefTable(object):
         return qsym
 
     def add_var_def(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._def_qsym2stm[key].add(stm)
 
     def remove_var_def(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._def_qsym2stm[key].discard(stm)
 
     def add_var_use(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._use_qsym2stm[key].add(stm)
 
     def remove_var_use(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._use_qsym2stm[key].discard(stm)

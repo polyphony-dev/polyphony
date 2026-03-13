@@ -634,7 +634,7 @@ class PureFuncTypeInferrer(object):
         self.used_pure_node = set()
 
     def infer_type(self, stm, call, scope):
-        assert call.is_a(CALL)
+        assert isinstance(call, CALL)
         assert call.func_scope().is_pure()
         if not call.func_scope().return_type:
             call.func_scope().return_type = Type.any()
@@ -659,16 +659,16 @@ class PureFuncExecutor(ConstantOptBase):
 
     def _args2tuple(self, args):
         def arg2expr(arg):
-            if arg.is_a(CONST):
+            if isinstance(arg, CONST):
                 return arg.value
-            elif arg.is_a(ARRAY):
+            elif isinstance(arg, ARRAY):
                 items = self._args2tuple(arg.items)
                 if not items:
                     return None
                 if arg.repeat.value > 1:
                     items = items * arg.repeat.value
                 return items
-            elif arg.is_a(TEMP):
+            elif isinstance(arg, TEMP):
                 stms = self.scope.usedef.get_stms_defining(arg.symbol())
                 if not stms:
                     return None

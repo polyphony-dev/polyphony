@@ -27,14 +27,14 @@ class PortTypeProp(TypePropagation):
         super().process(scope)
 
     def visit_NEW(self, ir):
-        assert self.current_stm.is_a(MOVE)
+        assert isinstance(self.current_stm, MOVE)
         callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.is_port():
             assert self.scope.is_ctor() and self.scope.parent.is_module()
             attrs = {}
             ctor = callee_scope.find_ctor()
             for (_, a), name in zip(ir.args, ctor.param_names()):
-                if a.is_a(CONST):
+                if isinstance(a, CONST):
                     if name == 'direction':
                         di = self._normalize_direction(a.value)
                         if not di:
@@ -44,7 +44,7 @@ class PortTypeProp(TypePropagation):
                         attrs[name] = di
                     else:
                         attrs[name] = a.value
-                elif a.is_a(TEMP) and irexp_type(a, self.scope).is_class():
+                elif isinstance(a, TEMP) and irexp_type(a, self.scope).is_class():
                     attrs[name] = type_from_ir(self.scope, a)
                 else:
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
@@ -169,7 +169,7 @@ class FlippedTransformer(TypePropagation):
             return self.visit(self.current_stm.src)
         else:
             flipped_scope = self._new_scope_with_flipped_ports(arg_scope)
-            if self.current_stm.is_a(MOVE):
+            if isinstance(self.current_stm, MOVE):
                 orig_new = find_move_src(temp.symbol, NEW)
                 sym = self.scope.find_sym(flipped_scope.base_name)
                 if not sym:
@@ -345,14 +345,14 @@ class UnusedPortCleaner(IRTransformer):
         if ir.ctx is Ctx.STORE:
             sym_t = ir.symbol.typ
             if sym_t.has_scope() and sym_t.scope.is_port():
-                assert self.current_stm.is_a(MOVE)
+                assert isinstance(self.current_stm, MOVE)
                 self.port_syms.add(self.current_stm.dst.symbol)
         return ir
 
     def visit_NEW(self, ir):
         callee_scope = ir.get_callee_scope(self.scope)
         if callee_scope.is_port():
-            assert self.current_stm.is_a(MOVE)
+            assert isinstance(self.current_stm, MOVE)
             self.port_syms.add(self.current_stm.dst.symbol)
         return ir
 

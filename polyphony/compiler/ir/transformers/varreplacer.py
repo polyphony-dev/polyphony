@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 class VarReplacer(object):
     @classmethod
     def replace_uses(cls, scope: Scope, dst: IRVariable, src: IRExp):
-        assert dst.is_a(IRVariable)
-        assert src.is_a(IRExp)
+        assert isinstance(dst, IRVariable)
+        assert isinstance(src, IRExp)
         assert scope.usedef
         usedef = scope.usedef
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
@@ -25,7 +25,7 @@ class VarReplacer(object):
             replacer.visit(use)
 
         for blk in scope.traverse_blocks():
-            if blk.path_exp and blk.path_exp.is_a(IRVariable):
+            if blk.path_exp and isinstance(blk.path_exp, IRVariable):
                 if blk.path_exp.name == dst.name:
                     blk.path_exp = src
         return replacer.replaces
@@ -101,11 +101,11 @@ class VarReplacer(object):
         if ir.name == self.replace_dst.name:
             self.replaced = True
             ir = self.replace_src.clone()
-        if ir.is_a(IRVariable):
+        if isinstance(ir, IRVariable):
             typ = irexp_type(ir, self.scope)
             for expr_t in typehelper.find_expr(typ):
                 expr = expr_t.expr
-                assert expr.is_a(EXPR)
+                assert isinstance(expr, EXPR)
                 self.visit_with_context(expr_t.scope, expr)
         return ir
 
@@ -115,12 +115,12 @@ class VarReplacer(object):
             ir = self.replace_src.clone()
         else:
             ir.exp = self.visit(ir.exp)
-        if ir.is_a(IRVariable):
+        if isinstance(ir, IRVariable):
             sym = qualified_symbols(ir, self.scope)[-1]
             assert isinstance(sym, Symbol)
             for expr_t in typehelper.find_expr(sym.typ):
                 expr = expr_t.expr
-                assert expr.is_a(EXPR)
+                assert isinstance(expr, EXPR)
                 self.visit_with_context(expr_t.scope, expr)
         return ir
 

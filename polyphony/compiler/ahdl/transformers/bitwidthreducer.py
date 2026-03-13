@@ -46,7 +46,7 @@ class BitwidthReducer(AHDLTransformer):
         elif ahdl.op == 'RShift':
             assert len(ahdl.args) == 2
             width = widths[0]
-            if ahdl.args[1].is_a(AHDL_CONST) and ahdl.args[0].is_a(AHDL_VAR) and not ahdl.args[0].sig.is_int():
+            if isinstance(ahdl.args[1], AHDL_CONST) and isinstance(ahdl.args[0], AHDL_VAR) and not ahdl.args[0].sig.is_int():
                 width -= ahdl.args[1].value
         else:
             width = max(widths)
@@ -66,7 +66,7 @@ class BitwidthReducer(AHDLTransformer):
         pass
 
     def visit_AHDL_MOVE(self, ahdl):
-        if ahdl.dst.is_a(AHDL_VAR):
+        if isinstance(ahdl.dst, AHDL_VAR):
             dst_sig = ahdl.dst.sig
         else:
             return

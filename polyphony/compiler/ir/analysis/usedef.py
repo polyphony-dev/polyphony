@@ -38,7 +38,7 @@ class UseDefTable(object):
         self._use_stm2const:dict[IRStm, set[CONST]] = defaultdict(set)
 
     def add_var_def(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert var.is_a(IRVariable) and stm.is_a(IRStm)
+        assert isinstance(var, IRVariable) and isinstance(stm, IRStm)
         qsyms:tuple[Symbol] = qualified_symbols(var, scope)
         sym = qsyms[-1]
         assert isinstance(sym, Symbol)
@@ -51,7 +51,7 @@ class UseDefTable(object):
         self._def_blk2[stm.block].add(item)
 
     def remove_var_def(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert var.is_a(IRVariable) and stm.is_a(IRStm)
+        assert isinstance(var, IRVariable) and isinstance(stm, IRStm)
         qsyms:tuple[Symbol] = qualified_symbols(var, scope)
 
         sym = qsyms[-1]
@@ -64,7 +64,7 @@ class UseDefTable(object):
         self._def_blk2[stm.block].discard(item)
 
     def add_var_use(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert var.is_a(IRVariable) and stm.is_a(IRStm)
+        assert isinstance(var, IRVariable) and isinstance(stm, IRStm)
         qsyms:tuple[Symbol] = qualified_symbols(var, scope)
 
         sym = qsyms[-1]
@@ -77,7 +77,7 @@ class UseDefTable(object):
         self._use_blk2[stm.block].add(item)
 
     def remove_var_use(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert var.is_a(IRVariable) and stm.is_a(IRStm)
+        assert isinstance(var, IRVariable) and isinstance(stm, IRStm)
         qsyms: tuple[Symbol] = qualified_symbols(var, scope)
 
         sym = qsyms[-1]
@@ -90,25 +90,25 @@ class UseDefTable(object):
         self._use_blk2[stm.block].discard(item)
 
     def add_const_use(self, c: CONST, stm: IRStm):
-        assert c.is_a(CONST) and stm.is_a(IRStm)
+        assert isinstance(c, CONST) and isinstance(stm, IRStm)
         self._use_stm2const[stm].add(c)
 
     def remove_const_use(self, c: CONST, stm: IRStm):
-        assert c.is_a(CONST) and stm.is_a(IRStm)
+        assert isinstance(c, CONST) and isinstance(stm, IRStm)
         self._use_stm2const[stm].discard(c)
 
     def add_use(self, scope: Scope, v: CONST|IRVariable, stm: IRStm):
-        if v.is_a(IRVariable):
+        if isinstance(v, IRVariable):
             self.add_var_use(scope, v, stm)
-        elif v.is_a(CONST):
+        elif isinstance(v, CONST):
             self.add_const_use(v, stm)
         else:
             assert False
 
     def remove_use(self, scope: Scope, v: CONST|IRVariable, stm: IRStm):
-        if v.is_a(IRVariable):
+        if isinstance(v, IRVariable):
             self.remove_var_use(scope, v, stm)
-        elif v.is_a(CONST):
+        elif isinstance(v, CONST):
             self.remove_const_use(v, stm)
         else:
             assert False
@@ -327,7 +327,7 @@ class UseDefDetector(IRVisitor):
         sym_t = sym.typ
         for expr_t in typehelper.find_expr(sym_t):
             expr = expr_t.expr
-            assert expr.is_a(EXPR)
+            assert isinstance(expr, EXPR)
             self.visit_with_context(expr_t.scope, expr)
 
     def visit_ATTR(self, ir):
@@ -343,7 +343,7 @@ class UseDefDetector(IRVisitor):
         assert isinstance(attr, Symbol)
         for expr_t in typehelper.find_expr(attr.typ):
             expr = expr_t.expr
-            assert expr.is_a(EXPR)
+            assert isinstance(expr, EXPR)
             self.visit_with_context(expr_t.scope, expr)
 
     def visit_with_context(self, scope: Scope, irstm: IRStm):

@@ -12,7 +12,7 @@ logger = getLogger(__name__)
 def is_empty_state(state):
     return (not isinstance(state, PipelineState) and
         len(state.block.codes) == 1 and
-        state.block.codes[0].is_a(AHDL_TRANSITION) and
+        isinstance(state.block.codes[0], AHDL_TRANSITION) and
         state.block.codes[-1].target_name != state.name)
 
 
@@ -94,7 +94,7 @@ class EmptyStateSkipper(AHDLTransformer):
         if not is_empty_state(next_state):
             return ahdl
         while is_empty_state(next_state) and next_state != self.current_state:
-            assert next_state.block.codes[0].is_a(AHDL_TRANSITION)
+            assert isinstance(next_state.block.codes[0], AHDL_TRANSITION)
             next_transition = next_state.block.codes[-1]
             if next_transition.target_name == next_state.name:
                 break
@@ -114,7 +114,7 @@ class IfForwarder(AHDLTransformer):
         blocks = []
         for block in ahdl.blocks:
             transition = block.codes[-1]
-            assert transition.is_a(AHDL_TRANSITION)
+            assert isinstance(transition, AHDL_TRANSITION)
             target_state = self._get_state(transition.target_name)
             if isinstance(target_state, PipelineState):
                 blocks.append(block)

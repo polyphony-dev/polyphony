@@ -72,7 +72,7 @@ def bits2int(bits, nbit):
 def _to_signed(typ, const):
     assert typ.is_int()
     assert typ.signed is True
-    assert const.is_a(CONST)
+    assert isinstance(const, CONST)
     nbit = typ.width
     mask = (1 << nbit) - 1
     bits = (const.value & mask)
@@ -82,7 +82,7 @@ def _to_signed(typ, const):
 def _to_unsigned(typ, const):
     assert typ.is_int()
     assert typ.signed is False
-    assert const.is_a(CONST)
+    assert isinstance(const, CONST)
     nbit = typ.width
     mask = (1 << nbit) - 1
     return CONST(const.value & mask)
@@ -99,7 +99,7 @@ class ConstantOptBase(IRVisitor):
 
     def visit_UNOP(self, ir):
         ir.exp = self.visit(ir.exp)
-        if ir.exp.is_a(CONST):
+        if isinstance(ir.exp, CONST):
             v = eval_unop(ir.op, ir.exp.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
@@ -109,25 +109,25 @@ class ConstantOptBase(IRVisitor):
     def visit_BINOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        if ir.left.is_a(CONST) and ir.right.is_a(CONST):
+        if isinstance(ir.left, CONST) and isinstance(ir.right, CONST):
             v = eval_binop(ir.op, ir.left.value, ir.right.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return CONST(v)
-        elif ir.left.is_a(CONST) or ir.right.is_a(CONST):
+        elif isinstance(ir.left, CONST) or isinstance(ir.right, CONST):
             return reduce_binop(ir)
         return ir
 
     def visit_RELOP(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        if ir.left.is_a(CONST) and ir.right.is_a(CONST):
+        if isinstance(ir.left, CONST) and isinstance(ir.right, CONST):
             v = eval_relop(ir.op, ir.left.value, ir.right.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return CONST(v)
-        elif (ir.left.is_a(CONST) or ir.right.is_a(CONST)) and (ir.op == 'And' or ir.op == 'Or'):
-            const, var = (ir.left.value, ir.right) if ir.left.is_a(CONST) else (ir.right.value, ir.left)
+        elif (isinstance(ir.left, CONST) or isinstance(ir.right, CONST)) and (ir.op == 'And' or ir.op == 'Or'):
+            const, var = (ir.left.value, ir.right) if isinstance(ir.left, CONST) else (ir.right.value, ir.left)
             if ir.op == 'And':
                 if const:
                     return var
@@ -138,8 +138,8 @@ class ConstantOptBase(IRVisitor):
                     return CONST(True)
                 else:
                     return var
-        elif (ir.left.is_a(IRVariable)
-                and ir.right.is_a(IRVariable)
+        elif (isinstance(ir.left, IRVariable)
+                and isinstance(ir.right, IRVariable)
                 and (left_qsym := qualified_symbols(ir.left, self.scope))
                 and (right_qsym := qualified_symbols(ir.right, self.scope))
                 and left_qsym == right_qsym):
@@ -153,7 +153,7 @@ class ConstantOptBase(IRVisitor):
         ir.cond = self.visit(ir.cond)
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
-        if ir.cond.is_a(CONST):
+        if isinstance(ir.cond, CONST):
             if ir.cond.value:
                 return ir.left
             else:
@@ -205,12 +205,12 @@ class ConstantOptBase(IRVisitor):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        if ir.exp.is_a(CONST):
+        if isinstance(ir.exp, CONST):
             self._process_unconditional_jump(ir, [])
 
     def visit_MCJUMP(self, ir):
         ir.conds = [self.visit(cond) for cond in ir.conds]
-        conds = [c.value for c in ir.conds if c.is_a(CONST)]
+        conds = [c.value for c in ir.conds if isinstance(c, CONST)]
         if len(conds) == len(ir.conds) and conds.count(1) == 1:
             self._process_unconditional_jump(ir, [], conds)
 
@@ -270,7 +270,7 @@ class ConstantOptBase(IRVisitor):
             return
         logger.debug('unconditional block {}'.format(blk.name))
 
-        if cjump.is_a(CJUMP):
+        if isinstance(cjump, CJUMP):
             if cjump.exp.value:
                 true_idx = 0
             else:
@@ -339,12 +339,12 @@ class ConstantOpt(ConstantOptBase):
                 self.worklist.remove(stm)
             self.current_stm = stm
             self.visit(stm)
-            if stm.is_a(PHIBase):
+            if isinstance(stm, PHIBase):
                 for i, p in enumerate(stm.ps[:]):
                     stm.ps[i] = reduce_relexp(p)
                 is_move = False
                 for p in stm.ps[:]:
-                    if not stm.is_a(LPHI) and p.is_a(CONST) and p.value and stm.ps.index(p) != (len(stm.ps) - 1):
+                    if not isinstance(stm, LPHI) and isinstance(p, CONST) and p.value and stm.ps.index(p) != (len(stm.ps) - 1):
                         is_move = True
                         idx = stm.ps.index(p)
                         mv = MOVE(stm.var, stm.args[idx])
@@ -355,8 +355,8 @@ class ConstantOpt(ConstantOptBase):
                         dead_stms.append(stm)
                         break
                 for p in stm.ps[:]:
-                    if (p.is_a(CONST) and not p.value or
-                            p.is_a(UNOP) and p.op == 'Not' and p.exp.is_a(CONST) and p.exp.value):
+                    if (isinstance(p, CONST) and not p.value or
+                            isinstance(p, UNOP) and p.op == 'Not' and isinstance(p.exp, CONST) and p.exp.value):
                         idx = stm.ps.index(p)
                         stm.ps.pop(idx)
                         stm.args.pop(idx)
@@ -371,21 +371,21 @@ class ConstantOpt(ConstantOptBase):
                 elif len(stm.args) == 0:
                     # the stm in unreachble block
                     dead_stms.append(stm)
-            elif stm.is_a([CMOVE, CEXPR]):
+            elif isinstance(stm, (CMOVE, CEXPR)):
                 stm.cond = reduce_relexp(stm.cond)
-                if stm.cond.is_a(CONST):
+                if isinstance(stm.cond, CONST):
                     if stm.cond.value:
                         blk = stm.block
-                        if stm.is_a(CMOVE):
+                        if isinstance(stm, CMOVE):
                             new_stm = MOVE(stm.dst, stm.src)
                         else:
                             new_stm = EXPR(stm.exp)
                         self.udupdater.update(stm, new_stm)
                         blk.insert_stm(blk.stms.index(stm), new_stm)
                     dead_stms.append(stm)
-            elif (stm.is_a(MOVE)
-                    and stm.src.is_a(CONST)
-                    and stm.dst.is_a(TEMP)
+            elif (isinstance(stm, MOVE)
+                    and isinstance(stm.src, CONST)
+                    and isinstance(stm.dst, TEMP)
                     and (dst_sym := qualified_symbols(stm.dst, self.scope)[-1])
                     and not dst_sym.is_return()):
                 #sanity check
@@ -433,9 +433,9 @@ class ConstantOpt(ConstantOptBase):
                             break
                     if found_new_def:
                         break
-            elif (stm.is_a(MOVE)
-                    and stm.src.is_a(ARRAY)
-                    and stm.src.repeat.is_a(CONST)):
+            elif (isinstance(stm, MOVE)
+                    and isinstance(stm.src, ARRAY)
+                    and isinstance(stm.src.repeat, CONST)):
                 src = stm.src
                 dst_sym = qualified_symbols(stm.dst, self.scope)[-1]
                 array_t = dst_sym.typ
@@ -470,7 +470,7 @@ class ConstantOpt(ConstantOptBase):
                 return CONST(mem_t.length)
             mem_qsym = qualified_symbols(mem, self.scope)
             array = try_get_constant(mem_qsym, self.scope)
-            if array and array.repeat.is_a(CONST):
+            if array and isinstance(array.repeat, CONST):
                 length = array.repeat.value * len(array.items)
                 array_t = irexp_type(array, self.scope)
                 # TODO: check
@@ -480,9 +480,9 @@ class ConstantOpt(ConstantOptBase):
         return self.visit_CALL(ir)
 
     def visit_MREF(self, ir):
-        if not ir.offset.is_a(CONST):
+        if not isinstance(ir.offset, CONST):
             return ir
-        if ir.mem.is_a(ARRAY):
+        if isinstance(ir.mem, ARRAY):
             offset = ir.offset.value
             if 0 <= offset < len(ir.mem.items):
                 return ir.mem.items[offset]
@@ -553,12 +553,12 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        if ir.exp.is_a(CONST):
+        if isinstance(ir.exp, CONST):
             self._process_unconditional_jump(ir, self.worklist)
 
     def visit_MCJUMP(self, ir):
         ir.conds = [self.visit(cond) for cond in ir.conds]
-        conds = [c.value for c in ir.conds if c.is_a(CONST)]
+        conds = [c.value for c in ir.conds if isinstance(c, CONST)]
         if len(conds) == len(ir.conds) and conds.count(1) == 1:
             self._process_unconditional_jump(ir, self.worklist, conds)
 
@@ -569,7 +569,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
 
     def visit_CJUMP(self, ir):
         ir.exp = self.visit(ir.exp)
-        if ir.exp.is_a(CONST):
+        if isinstance(ir.exp, CONST):
             self._process_unconditional_jump(ir, [])
             return
         assert isinstance(ir.exp, IRVariable)
@@ -578,7 +578,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         expdefs = self.scope.usedef.get_stms_defining(exp_sym)
         assert len(expdefs) == 1
         expdef = list(expdefs)[0]
-        if expdef.src.is_a(CONST):
+        if isinstance(expdef.src, CONST):
             ir.exp = expdef.src
             self._process_unconditional_jump(ir, [])
 
@@ -632,16 +632,16 @@ class PolyadConstantFolding(object):
     class BinInlining(IRTransformer):
         @staticmethod
         def _can_inlining(usestm, ir):
-            return (usestm.is_a(MOVE) and
-                    usestm.src.is_a(BINOP) and
+            return (isinstance(usestm, MOVE) and
+                    isinstance(usestm.src, BINOP) and
                     usestm.src.op == ir.src.op and
-                    (usestm.src.left.is_a(CONST) or usestm.src.right.is_a(CONST)))
+                    (isinstance(usestm.src.left, CONST) or isinstance(usestm.src.right, CONST)))
 
         def visit_MOVE(self, ir):
             self.new_stms.append(ir)
-            if not ir.src.is_a(BINOP):
+            if not isinstance(ir.src, BINOP):
                 return
-            if not (ir.src.left.is_a(CONST) or ir.src.right.is_a(CONST)):
+            if not (isinstance(ir.src.left, CONST) or isinstance(ir.src.right, CONST)):
                 return
             if ir.src.op not in ('Add', 'Mult'):
                 return
@@ -664,14 +664,14 @@ class PolyadConstantFolding(object):
             if ir.op in ('Add', 'Mult'):
                 values = []
                 l = ir.left
-                if l.is_a([BINOP, POLYOP]):
+                if isinstance(l, (BINOP, POLYOP)):
                     assert l.op == ir.op
                     values.extend([e for e in l.kids()])
                 else:
                     values.append(l)
 
                 r = ir.right
-                if r.is_a([BINOP, POLYOP]):
+                if isinstance(r, (BINOP, POLYOP)):
                     assert l.op == ir.op
                     values.extend([e for e in r.kids()])
                 else:
@@ -689,7 +689,7 @@ class PolyadConstantFolding(object):
             vars = []
             consts = []
             for e in poly.values:
-                if e.is_a(CONST):
+                if isinstance(e, CONST):
                     consts.append(e)
                 else:
                     vars.append(e)

@@ -28,7 +28,7 @@ class TypeEvaluator(object):
         if isinstance(t.length, Type):
             assert t.length.is_expr()
             ln = self.visit(t.length)
-            if ln.is_expr() and ln.expr.is_a(EXPR) and ln.expr.exp.is_a(CONST):
+            if ln.is_expr() and isinstance(ln.expr, EXPR) and isinstance(ln.expr.exp, CONST):
                 t = t.clone(length=ln.expr.exp.value)
             else:
                 t = t.clone(length=ln)
@@ -94,7 +94,7 @@ class TypeEvaluator(object):
 class TypeExprEvaluator(IRVisitor):
     def visit_expr_type(self, expr_t: ExprType) -> Type|IR:
         expr = expr_t.expr
-        assert expr.is_a(EXPR)
+        assert isinstance(expr, EXPR)
         self.scope = expr_t.scope
         return self.visit(expr)
 
@@ -158,7 +158,7 @@ class TypeExprEvaluator(IRVisitor):
                         expr_typ = expr_typ.clone(element=elm)
                     else:
                         expr_typ = expr_typ.clone(element=Type.expr(elm))
-                elif ir.mem.is_a(TEMP):
+                elif isinstance(ir.mem, TEMP):
                     elm = self.visit(ir.offset)
                     if isinstance(elm, Type):
                         expr_typ = expr_typ.clone(element=elm)
@@ -166,18 +166,18 @@ class TypeExprEvaluator(IRVisitor):
                         expr_typ = expr_typ.clone(element=Type.expr(elm))
                 else:
                     length = self.visit(ir.offset)
-                    if length.is_a(CONST):
+                    if isinstance(length, CONST):
                         expr_typ = expr_typ.clone(length=length.value)
                     else:
                         expr_typ = expr_typ.clone(length=Type.expr(length))
             elif expr_typ.is_tuple():
-                assert ir.mem.is_a(TEMP)
+                assert isinstance(ir.mem, TEMP)
                 elms = self.visit(ir.offset)
                 expr_typ = expr_typ.clone(element=elms[0])  # TODO:
                 expr_typ = expr_typ.clone(length=len(elms))
             elif expr_typ.is_int():
                 width = self.visit(ir.offset)
-                if width.is_a(CONST):
+                if isinstance(width, CONST):
                     expr_typ = expr_typ.clone(width=width.value)
             else:
                 print(expr_typ)

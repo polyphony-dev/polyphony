@@ -26,7 +26,7 @@ class IRVisitor(object):
     def visit(self, ir:IR) -> IR:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
-        if ir.is_a(IRStm):
+        if isinstance(ir, IRStm):
             self.current_stm:IRStm = cast(IRStm, ir)
         if visitor:
             return visitor(ir)
@@ -153,7 +153,7 @@ class IRTransformer(IRVisitor):
         #set the pointer to the block to each stm
         if block.path_exp:
             block.path_exp = self.visit(block.path_exp)
-        if block.stms and block.stms[-1].is_a([JUMP, CJUMP, MCJUMP]):
+        if block.stms and isinstance(block.stms[-1], (JUMP, CJUMP, MCJUMP)):
             block.stms = block.stms[:-1] + self.new_stms + [block.stms[-1]]
         else:
             block.stms.extend(self.new_stms)

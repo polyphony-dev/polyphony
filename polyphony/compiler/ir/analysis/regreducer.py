@@ -9,7 +9,7 @@ logger = getLogger(__name__)
 
 def _is_clksleep(stm):
     """Check if stm is a clksleep call (excludes wait_until and wait_*)."""
-    return (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+    return (isinstance(stm, EXPR) and isinstance(stm.exp, SYSCALL) and
             stm.exp.name == 'polyphony.timing.clksleep')
 
 
@@ -71,7 +71,7 @@ class AliasVarDetector(IRVisitor):
         return False
 
     def visit_CMOVE(self, ir):
-        assert ir.dst.is_a(IRVariable)
+        assert isinstance(ir.dst, IRVariable)
         sym = qualified_symbols(ir.dst, self.scope)[-1]
         assert isinstance(sym, Symbol)
         if sym.is_condition() or self.scope.is_comb():
@@ -79,7 +79,7 @@ class AliasVarDetector(IRVisitor):
             sym.add_tag('alias')
 
     def visit_MOVE(self, ir):
-        assert ir.dst.is_a(IRVariable)
+        assert isinstance(ir.dst, IRVariable)
         sym = qualified_symbols(ir.dst, self.scope)[-1]
         assert isinstance(sym, Symbol)
         sched = self.current_stm.block.synth_params['scheduling']
@@ -111,14 +111,14 @@ class AliasVarDetector(IRVisitor):
             sym.add_tag('alias')
             logger.debug(f'{sym} is alias')
             return
-        if ir.src.is_a(IRVariable):
+        if isinstance(ir.src, IRVariable):
             src_sym = qualified_symbols(ir.src, self.scope)[-1]
             assert isinstance(src_sym, Symbol)
             if self.scope.is_ctor() and self.scope.parent.is_module():
                 pass
             elif src_sym.is_param() or src_sym.typ.is_port():
                 return
-        elif ir.src.is_a(CALL):
+        elif isinstance(ir.src, CALL):
             callee_scope = ir.src.get_callee_scope(self.scope)
             # callee_scope = ir.src.callee_scope
             func_name = ir.src.name
@@ -136,12 +136,12 @@ class AliasVarDetector(IRVisitor):
                     return
             else:
                 return
-        elif ir.src.is_a(NEW):
+        elif isinstance(ir.src, NEW):
             return
-        elif ir.src.is_a(SYSCALL):
+        elif isinstance(ir.src, SYSCALL):
             if ir.src.name == '$new':
                 return
-        elif ir.src.is_a(MREF):
+        elif isinstance(ir.src, MREF):
             if sched == 'timed':
                  pass
             else:
@@ -149,9 +149,9 @@ class AliasVarDetector(IRVisitor):
                 assert isinstance(mem_sym, Symbol)
                 stms = self.usedef.get_stms_using(mem_sym)
                 for stm in stms:
-                    if stm.is_a(EXPR) and stm.exp.is_a(MSTORE) and stm.exp.mem == ir.src.mem:
+                    if isinstance(stm, EXPR) and isinstance(stm.exp, MSTORE) and stm.exp.mem == ir.src.mem:
                         return
-        elif ir.src.is_a(ARRAY):
+        elif isinstance(ir.src, ARRAY):
             return
         def_stms = self.usedef.get_stms_defining(sym)
         if len(def_stms) > 1:
@@ -183,7 +183,7 @@ class AliasVarDetector(IRVisitor):
             return
         arg_syms = []
         for a in ir.args:
-            if a.is_a(TEMP):
+            if isinstance(a, TEMP):
                 arg_syms.append(qualified_symbols(a, self.scope)[-1])
         if any([sym is asym for asym in arg_syms]):
             return
@@ -201,7 +201,7 @@ class AliasVarDetector(IRVisitor):
             return
         arg_syms = []
         for a in ir.args:
-            if a.is_a(TEMP):
+            if isinstance(a, TEMP):
                 arg_syms.append(qualified_symbols(a, self.scope)[-1])
         if any([sym is asym for asym in arg_syms]):
             return

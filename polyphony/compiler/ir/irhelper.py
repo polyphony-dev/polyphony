@@ -60,26 +60,26 @@ def expr2ir(expr, name=None, scope=None):
 
 
 def reduce_relexp(exp):
-    if exp.is_a(RELOP):
+    if isinstance(exp, RELOP):
         if exp.op == 'And':
             exp.left = reduce_relexp(exp.left)
             exp.right = reduce_relexp(exp.right)
-            if exp.left.is_a(CONST):
+            if isinstance(exp.left, CONST):
                 if exp.left.value:
                     return exp.right
                 else:
                     return CONST(0)
-            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
+            elif isinstance(exp.left, UNOP) and exp.left.op == 'Not' and isinstance(exp.left.exp, CONST):
                 if exp.left.exp.value:
                     return CONST(0)
                 else:
                     return exp.right
-            elif exp.right.is_a(CONST):
+            elif isinstance(exp.right, CONST):
                 if exp.right.value:
                     return exp.left
                 else:
                     return CONST(0)
-            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
+            elif isinstance(exp.right, UNOP) and exp.right.op == 'Not' and isinstance(exp.right.exp, CONST):
                 if exp.right.exp.value:
                     return CONST(0)
                 else:
@@ -87,29 +87,29 @@ def reduce_relexp(exp):
         elif exp.op == 'Or':
             exp.left = reduce_relexp(exp.left)
             exp.right = reduce_relexp(exp.right)
-            if exp.left.is_a(CONST):
+            if isinstance(exp.left, CONST):
                 if exp.left.value:
                     return CONST(1)
                 else:
                     return exp.right
-            elif exp.left.is_a(UNOP) and exp.left.op == 'Not' and exp.left.exp.is_a(CONST):
+            elif isinstance(exp.left, UNOP) and exp.left.op == 'Not' and isinstance(exp.left.exp, CONST):
                 if exp.left.exp.value:
                     return exp.right
                 else:
                     return CONST(1)
-            elif exp.right.is_a(CONST):
+            elif isinstance(exp.right, CONST):
                 if exp.right.value:
                     return CONST(1)
                 else:
                     return exp.left
-            elif exp.right.is_a(UNOP) and exp.right.op == 'Not' and exp.right.exp.is_a(CONST):
+            elif isinstance(exp.right, UNOP) and exp.right.op == 'Not' and isinstance(exp.right.exp, CONST):
                 if exp.right.exp.value:
                     return exp.left
                 else:
                     return CONST(1)
-    elif exp.is_a(UNOP) and exp.op == 'Not':
+    elif isinstance(exp, UNOP) and exp.op == 'Not':
         nexp = reduce_relexp(exp.exp)
-        if nexp.is_a(CONST):
+        if isinstance(nexp, CONST):
             if nexp.value:
                 return CONST(0)
             else:
@@ -120,7 +120,7 @@ def reduce_relexp(exp):
 
 
 def is_port_method_call(call, scope):
-    if not call.is_a(CALL):
+    if not isinstance(call, CALL):
         return False
     calee_scope = call.get_callee_scope(scope)
     # calee_scope = call.callee_scope
@@ -129,9 +129,9 @@ def is_port_method_call(call, scope):
 
 
 def has_exclusive_function(stm, scope):
-    if stm.is_a(MOVE):
+    if isinstance(stm, MOVE):
         call = stm.src
-    elif stm.is_a(EXPR):
+    elif isinstance(stm, EXPR):
         call = stm.exp
     else:
         return False
@@ -145,10 +145,10 @@ def has_exclusive_function(stm, scope):
 
 
 def has_clkfence(stm):
-    if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+    if (isinstance(stm, EXPR) and isinstance(stm.exp, SYSCALL) and
             stm.exp.name == 'polyphony.timing.clksleep'):
         return True
-    elif (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL) and
+    elif (isinstance(stm, EXPR) and isinstance(stm.exp, SYSCALL) and
             stm.exp.name.startswith('polyphony.timing.wait_')):
         return True
     else:
@@ -197,10 +197,10 @@ def eval_binop(op, lv, rv):
 
 def reduce_binop(ir):
     op = ir.op
-    if ir.left.is_a(CONST):
+    if isinstance(ir.left, CONST):
         const = ir.left.value
         var = ir.right
-    elif ir.right.is_a(CONST):
+    elif isinstance(ir.right, CONST):
         const = ir.right.value
         var = ir.left
     else:
@@ -247,7 +247,7 @@ def find_move_src(sym, typ):
     finder = StmFinder(sym)
     finder.process(scope)
     for stm in finder.results:
-        if stm.is_a(MOVE) and stm.src.is_a(typ):
+        if isinstance(stm, MOVE) and isinstance(stm.src, typ):
             return stm.src
     return None
 
@@ -290,7 +290,7 @@ def irexp_type(ir: IRExp, scope: Scope) -> Type:
                 elm_typ = irexp_type(array.items[0], scope)
             else:
                 elm_typ = Type.none()
-            if array.repeat.is_a(CONST):
+            if isinstance(array.repeat, CONST):
                 length = len(array.items) * array.repeat.value
             else:
                 length = Type.ANY_LENGTH

@@ -77,18 +77,18 @@ class HDLModuleBuilder(object):
             while True:
                 defstm = find_defstm(array_sym)
                 array = defstm.src
-                if array.is_a(ARRAY):
+                if isinstance(array, ARRAY):
                     break
-                elif array.is_a(IRVariable):
+                elif isinstance(array, IRVariable):
                     array_sym = qualified_symbols(array, array_sym.scope)[-1]
                     # array_sym = array.symbol
                 else:
                     assert False
             case_items = []
-            assert array.repeat.is_a(CONST)
+            assert isinstance(array.repeat, CONST)
             items = array.items * array.repeat.value
             for i, item in enumerate(items):
-                assert item.is_a(CONST)
+                assert isinstance(item, CONST)
                 connect = AHDL_BLOCK(str(i), (AHDL_CONNECT(fname, AHDL_CONST(item.value)), ))
                 case_items.append(AHDL_CASE_ITEM(AHDL_CONST(i), connect))
             case = AHDL_CASE(input, tuple(case_items))
@@ -99,7 +99,7 @@ class HDLModuleBuilder(object):
         moves = []
         for stg in fsm.stgs:
             for state in stg.states:
-                moves.extend([code for code in state.traverse() if code.is_a(AHDL_MOVE)])
+                moves.extend([code for code in state.traverse() if isinstance(code, AHDL_MOVE)])
         return moves
 
     def _add_reset_stms(self, fsm, defs:set[tuple[Signal]], uses:set[tuple[Signal]], outputs:set[tuple[Signal]]):
@@ -217,7 +217,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 self._add_roms(self._collector.mem_vars(fsm.name))
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_moves(fsm):
-                    if stm.dst.is_a(AHDL_VAR) and stm.dst.sig.is_net():
+                    if isinstance(stm.dst, AHDL_VAR) and stm.dst.sig.is_net():
                         assign = AHDL_ASSIGN(stm.dst, stm.src)
                         self.hdlmodule.add_static_assignment(assign, '')
                 self.hdlmodule.remove_sig(fsm.state_var)

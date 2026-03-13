@@ -433,7 +433,7 @@ class IRParser(object):
             raise
         self.current_scope.exit_block = self.current_block
         exp = self.parse_exp(ops[0])
-        assert exp.is_a(TEMP)
+        assert isinstance(exp, TEMP)
         assert cast(TEMP, exp).name == Symbol.return_name
         return RET(exp)
 

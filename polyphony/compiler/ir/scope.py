@@ -465,12 +465,12 @@ class Scope(Tagged, SymbolTable):
 
         # jump target
         for stm in stm_map.values():
-            if stm.is_a(JUMP):
+            if isinstance(stm, JUMP):
                 stm.target = block_map[stm.target]
-            elif stm.is_a(CJUMP):
+            elif isinstance(stm, CJUMP):
                 stm.true = block_map[stm.true]
                 stm.false = block_map[stm.false]
-            elif stm.is_a(MCJUMP):
+            elif isinstance(stm, MCJUMP):
                 stm.targets = [block_map[t] for t in stm.targets]
         return block_map, stm_map
 

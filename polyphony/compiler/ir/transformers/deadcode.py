@@ -13,10 +13,10 @@ class DeadCodeEliminator(object):
         for blk in scope.traverse_blocks():
             dead_stms = []
             for stm in blk.stms:
-                if stm.is_a([MOVE, PHIBase]):
-                    if stm.is_a(MOVE) and stm.src.is_a(IRCallable):
+                if isinstance(stm, (MOVE, PHIBase)):
+                    if isinstance(stm, MOVE) and isinstance(stm.src, IRCallable):
                         continue
-                    if stm.is_a(MOVE) and stm.src.is_a(IRVariable):
+                    if isinstance(stm, MOVE) and isinstance(stm.src, IRVariable):
                         src_sym = qualified_symbols(stm.src, scope)[-1]
                         assert isinstance(src_sym, Symbol)
                     else:
@@ -25,13 +25,13 @@ class DeadCodeEliminator(object):
                         continue
                     defvars = usedef.get_vars_defined_at(stm)
                     for var in defvars:
-                        if not var.is_a(TEMP):
+                        if not isinstance(var, TEMP):
                             break
                         var_sym = scope.find_sym(var.name)
                         assert var_sym
                         if var_sym.is_free():
                             break
-                        if stm.block.path_exp.is_a(IRVariable):
+                        if isinstance(stm.block.path_exp, IRVariable):
                             path_sym = qualified_symbols(stm.block.path_exp, scope)[-1]
                             assert isinstance(path_sym, Symbol)
                         else:
@@ -43,8 +43,8 @@ class DeadCodeEliminator(object):
                             break
                     else:
                         dead_stms.append(stm)
-                elif stm.is_a(EXPR):
-                    if not stm.exp.is_a([CALL, SYSCALL, MSTORE]):
+                elif isinstance(stm, EXPR):
+                    if not isinstance(stm.exp, (CALL, SYSCALL, MSTORE)):
                         dead_stms.append(stm)
             for stm in dead_stms:
                 blk.stms.remove(stm)

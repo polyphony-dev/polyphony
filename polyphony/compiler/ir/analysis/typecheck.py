@@ -80,7 +80,7 @@ class TypeChecker(IRVisitor):
                 type_error(self.current_stm, Errors.LEN_TAKES_ONE_ARG)
             _, mem = ir.args[0]
             mem_t = irexp_type(mem, self.scope)
-            if not mem.is_a(IRVariable) or not mem_t.is_seq():
+            if not isinstance(mem, IRVariable) or not mem_t.is_seq():
                 type_error(self.current_stm, Errors.LEN_TAKES_SEQ_TYPE)
         elif name == 'print':
             for _, arg in ir.args:
@@ -182,7 +182,7 @@ class TypeChecker(IRVisitor):
         return mem_t
 
     def visit_ARRAY(self, ir):
-        if self.current_stm.dst.is_a(TEMP) and self.current_stm.dst.name == '__all__':
+        if isinstance(self.current_stm.dst, TEMP) and self.current_stm.dst.name == '__all__':
             return irexp_type(ir, self.scope)
         for item in ir.items:
             item_type = self.visit(item)
@@ -193,7 +193,7 @@ class TypeChecker(IRVisitor):
 
     def visit_EXPR(self, ir):
         self.visit(ir.exp)
-        if ir.exp.is_a(CALL):
+        if isinstance(ir.exp, CALL):
             callee_scope = ir.exp.get_callee_scope(self.scope)
             if callee_scope.return_type and callee_scope.return_type.is_none():
                 #TODO: warning
@@ -220,7 +220,7 @@ class TypeChecker(IRVisitor):
         dst_t = self.visit(ir.dst)
         dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
         assert isinstance(dst_sym, Symbol)
-        if ir.dst.is_a(TEMP) and dst_sym.is_return():
+        if isinstance(ir.dst, TEMP) and dst_sym.is_return():
             assert not dst_t.is_undef()
             if not dst_t.is_same(src_t) and not dst_t.can_assign(src_t):
                 type_error(ir, Errors.INCOMPATIBLE_RETURN_TYPE,
@@ -232,7 +232,7 @@ class TypeChecker(IRVisitor):
         if (dst_t.is_seq() and
                 isinstance(dst_t.length, int) and
                 dst_t.length != Type.ANY_LENGTH):
-            if ir.src.is_a(ARRAY):
+            if isinstance(ir.src, ARRAY):
                 if len(ir.src.items * ir.src.repeat.value) > dst_t.length:
                     type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
                                [])
@@ -244,7 +244,7 @@ class TypeChecker(IRVisitor):
         #assert all([arg is None or arg.symbol.typ is not None for arg, blk in ir.args])
         arg_types = [self.visit(arg) for arg in ir.args]
         var_t = self.visit(ir.var)
-        if ir.var.is_a(TEMP) and var_sym.is_return():
+        if isinstance(ir.var, TEMP) and var_sym.is_return():
             assert not var_t.is_undef()
             for arg_t in arg_types:
                 if not var_t.is_same(arg_t):
@@ -388,7 +388,7 @@ class RestrictionChecker(IRVisitor):
             if not callee_scope.parent.is_namespace():
                 fail(self.current_stm, Errors.MUDULE_MUST_BE_IN_GLOBAL)
             for i, (_, arg) in enumerate(ir.args):
-                if arg.is_a(IRVariable):
+                if isinstance(arg, IRVariable):
                     arg_t = irexp_type(arg, self.scope)
                     if arg_t.is_scalar() or arg_t.is_class() or arg_t.is_function() or arg_t.is_seq():
                         continue
@@ -421,9 +421,9 @@ class RestrictionChecker(IRVisitor):
                     if not self.scope.parent.is_subclassof(worker_scope.parent):
                         fail(self.current_stm, Errors.WORKER_MUST_BE_METHOD_OF_MODULE)
                 continue
-            if arg.is_a(CONST):
+            if isinstance(arg, CONST):
                 continue
-            if arg.is_a(IRVariable):
+            if isinstance(arg, IRVariable):
                 arg_t = irexp_type(arg, self.scope)
                 if arg_t.is_scalar() or arg_t.is_object():
                     continue
@@ -447,7 +447,7 @@ class RestrictionChecker(IRVisitor):
 
 class LateRestrictionChecker(IRVisitor):
     def visit_ARRAY(self, ir):
-        if not ir.repeat.is_a(CONST):
+        if not isinstance(ir.repeat, CONST):
             fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
 
     def visit_MSTORE(self, ir):
@@ -465,7 +465,7 @@ class LateRestrictionChecker(IRVisitor):
     def visit_MOVE(self, ir):
         super().visit_MOVE(ir)
         reserved_port_name = ('clk', 'rst')
-        if ir.src.is_a(NEW):
+        if isinstance(ir.src, NEW):
             callee_scope = ir.src.get_callee_scope(self.scope)
             if callee_scope.is_port() and ir.dst.name in reserved_port_name:
                 fail(self.current_stm, Errors.RESERVED_PORT_NAME, [ir.dst.symbol.name])
@@ -476,7 +476,7 @@ class AssertionChecker(IRVisitor):
         if ir.name != 'assert':
             return
         _, arg = ir.args[0]
-        if arg.is_a(CONST) and not arg.value:
+        if isinstance(arg, CONST) and not arg.value:
             warn(self.current_stm, Warnings.ASSERTION_FAILED)
 
 
@@ -504,11 +504,11 @@ class SynthesisParamChecker(object):
             usestms = [stm for stm in usestms if stm.block in loop.blocks()]
             readstms = []
             for stm in usestms:
-                if stm.is_a(MOVE) and stm.src.is_a(CALL) and stm.src.func.symbol.orig_name() == 'get':
+                if isinstance(stm, MOVE) and isinstance(stm.src, CALL) and stm.src.func.symbol.orig_name() == 'get':
                     readstms.append(stm)
             writestms = []
             for stm in usestms:
-                if stm.is_a(EXPR) and stm.exp.is_a(CALL) and stm.exp.func.symbol.orig_name() == 'put':
+                if isinstance(stm, EXPR) and isinstance(stm.exp, CALL) and stm.exp.func.symbol.orig_name() == 'put':
                     writestms.append(stm)
             if len(readstms) > 1:
                 sym = sym.ancestor if sym.ancestor else sym

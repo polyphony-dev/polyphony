@@ -40,14 +40,14 @@ class BlockReducer(object):
             if not block.stms:
                 continue
             stm = block.stms[-1]
-            if stm.is_a(CJUMP) and stm.true is stm.false:
+            if isinstance(stm, CJUMP) and stm.true is stm.false:
                 block.stms.pop()
                 block.append_stm(JUMP(stm.true))
                 block.succs = [stm.true]
                 # leave only first mathced item
                 stm.true.preds = remove_except_one(stm.true.preds, block)
                 assert 1 == stm.true.preds.count(block)
-            elif stm.is_a(MCJUMP) and len(set(stm.targets)) == 1:
+            elif isinstance(stm, MCJUMP) and len(set(stm.targets)) == 1:
                 block.stms.pop()
                 block.append_stm(JUMP(stm.targets[0]))
                 block.succs = [stm.targets[0]]
@@ -67,7 +67,7 @@ class BlockReducer(object):
 
     def merge_unidir_block(self, block):
         pred = block.preds[0]
-        assert pred.stms[-1].is_a(JUMP)
+        assert isinstance(pred.stms[-1], JUMP)
         assert pred.succs[0] is block
         assert not pred.succs_loop
 
@@ -99,7 +99,7 @@ class BlockReducer(object):
                 len(block.succs) and
                 block.succs[0].nametag == 'fortest'):
             return False
-        if block.stms and block.stms[0].is_a(JUMP):
+        if block.stms and isinstance(block.stms[0], JUMP):
             assert len(block.succs) == 1
             succ = block.succs[0]
             idx = succ.preds.index(block)
@@ -185,7 +185,7 @@ class PathExpTracer(object):
                 blk.path_exp = exp
 
     def _insert_named_exp(self, exp, blk, insert_pos):
-        if exp.is_a(TEMP):
+        if isinstance(exp, TEMP):
             return exp
         csym = self.scope.add_condition_sym()
         mv = MOVE(TEMP(csym.name), exp)
@@ -196,12 +196,12 @@ class PathExpTracer(object):
 def merge_path_exp(pred, blk, idx_hint=-1):
     jump = pred.stms[-1]
     exp = pred.path_exp
-    if jump.is_a(CJUMP):
+    if isinstance(jump, CJUMP):
         if blk is jump.true:
             exp = rel_and_exp(pred.path_exp, jump.exp)
         elif blk is jump.false:
             exp = rel_and_exp(pred.path_exp, UNOP('Not', jump.exp))
-    elif jump.is_a(MCJUMP):
+    elif isinstance(jump, MCJUMP):
         if blk in jump.targets:
             if 1 == jump.targets.count(blk):
                 idx = jump.targets.index(blk)
@@ -224,9 +224,9 @@ def rel_and_exp(exp1, exp2):
         return exp1
     exp1 = reduce_relexp(exp1)
     exp2 = reduce_relexp(exp2)
-    if exp1.is_a(CONST) and exp1.value:
+    if isinstance(exp1, CONST) and exp1.value:
         exp = exp2
-    elif exp2.is_a(CONST) and exp2.value:
+    elif isinstance(exp2, CONST) and exp2.value:
         exp = exp1
     else:
         exp = RELOP('And', exp1, exp2)
@@ -344,7 +344,7 @@ class HyperBlockBuilder(object):
         if len(old_mj.targets) == 2:
             cj = CJUMP(old_mj.conds[0], old_mj.targets[0], old_mj.targets[1])
             cj.loc = old_mj.loc
-            if not cj.exp.is_a(TEMP):
+            if not isinstance(cj.exp, TEMP):
                 new_sym = self.scope.add_condition_sym()
                 new_sym.typ = Type.bool()
                 mv = MOVE(TEMP(new_sym.name), cj.exp)
@@ -404,7 +404,7 @@ class HyperBlockBuilder(object):
         for idx, br in zip(indices, removes):
             assert tail.preds[idx] is br
         for stm in tail.stms:
-            if stm.is_a(PHIBase) and len(stm.args) == len(tail.preds):
+            if isinstance(stm, PHIBase) and len(stm.args) == len(tail.preds):
                 new_args = []
                 new_ps = []
                 old_args = []
@@ -452,13 +452,13 @@ class HyperBlockBuilder(object):
         Block.set_order(new_tail, tail.order)
 
     def _has_timing_function(self, stm):
-        if stm.is_a(MOVE):
+        if isinstance(stm, MOVE):
             call = stm.src
-        elif stm.is_a(EXPR):
+        elif isinstance(stm, EXPR):
             call = stm.exp
         else:
             return False
-        if call.is_a(SYSCALL):
+        if isinstance(call, SYSCALL):
             wait_funcs = [
                 'polyphony.timing.clksleep',
                 'polyphony.timing.wait_rising',
@@ -474,7 +474,7 @@ class HyperBlockBuilder(object):
         return stm.is_mem_read() or stm.is_mem_write()
 
     def _has_instance_var_modification(self, stm):
-        if stm.is_a(MOVE) and stm.dst.is_a(ATTR):
+        if isinstance(stm, MOVE) and isinstance(stm.dst, ATTR):
             return True
         return False
 
@@ -483,9 +483,9 @@ class HyperBlockBuilder(object):
         remains = []
         # We need to ignore the statement accessing the resource
         for idx, stm in enumerate(blk.stms[:-1]):
-            if (stm.is_a(EXPR) or
-                    stm.is_a(CEXPR) or
-                    stm.is_a(CMOVE) or
+            if (isinstance(stm, EXPR) or
+                    isinstance(stm, CEXPR) or
+                    isinstance(stm, CMOVE) or
                     self._has_timing_function(stm) or
                     self._has_mem_access(stm) or
                     self._has_instance_var_modification(stm)):
@@ -512,13 +512,13 @@ class HyperBlockBuilder(object):
         path_cstms = []
         cstms = []
         for idx, stm in path_remain_stms:
-            if stm.is_a(CMOVE) or stm.is_a(CEXPR):
+            if isinstance(stm, CMOVE) or isinstance(stm, CEXPR):
                 cstm = stm
-            elif stm.is_a(MOVE):
+            elif isinstance(stm, MOVE):
                 cstm = CMOVE(path_exp.clone(), stm.dst.clone(), stm.src.clone())
-            elif stm.is_a(EXPR):
+            elif isinstance(stm, EXPR):
                 cstm = CEXPR(path_exp.clone(), stm.exp.clone())
-            elif stm.is_a(PHIBase):
+            elif isinstance(stm, PHIBase):
                 cstm = stm
             else:
                 assert False

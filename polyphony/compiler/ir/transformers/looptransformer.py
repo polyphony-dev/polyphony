@@ -121,7 +121,7 @@ class LoopFlatten(object):
 
         # deal with phi for induction variables
         for lphi in subloop.head.collect_stms(LPHI):
-            assert lphi.args[1].is_a(TEMP)
+            assert isinstance(lphi.args[1], TEMP)
             sym = qualified_symbols(lphi.var, self.scope)[-1]
             assert isinstance(sym, Symbol)
             var_t = sym.typ

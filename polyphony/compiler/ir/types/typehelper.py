@@ -29,13 +29,13 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
     assert ir
     assert isinstance(ir, IR)
     t = None
-    if ir.is_a(CONST):
+    if isinstance(ir, CONST):
         c = cast(CONST, ir)
         if c.value is None:
             t = Type.none(explicit)
         else:
             t = Type.expr(EXPR(ir), scope)
-    elif ir.is_a(TEMP):
+    elif isinstance(ir, TEMP):
         temp = cast(TEMP, ir)
         temp_sym = scope.find_sym(temp.name)
         assert isinstance(temp_sym, Symbol)
@@ -56,7 +56,7 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
         else:
             t = Type.expr(EXPR(ir), scope)
             temp_sym.add_tag('typevar')
-    elif ir.is_a(ATTR):
+    elif isinstance(ir, ATTR):
         attr = cast(ATTR, ir)
         qsyms = qualified_symbols(attr, scope)
         if isinstance(qsyms[-1], Symbol) and qsyms[-1].typ.has_scope():
@@ -72,18 +72,18 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
                 t = Type.object(type_scope, explicit)
         else:
             t = Type.expr(EXPR(ir), scope)
-    elif ir.is_a(MREF):
+    elif isinstance(ir, MREF):
         mref = cast(MREF, ir)
-        if mref.mem.is_a(MREF):
+        if isinstance(mref.mem, MREF):
             t = type_from_ir(scope, mref.mem, explicit)
-            if mref.offset.is_a(CONST):
+            if isinstance(mref.offset, CONST):
                 t = t.clone(length=mref.offset.value)
             else:
                 t = t.clone(length=type_from_ir(scope, mref.offset, explicit))
         else:
             t = type_from_ir(scope, mref.mem, explicit)
             if t.is_int():
-                assert mref.offset.is_a(CONST)
+                assert isinstance(mref.offset, CONST)
                 t = t.clone(width=mref.offset.value)
             elif t.is_seq():
                 t = t.clone(element=type_from_ir(scope, mref.offset, explicit))
@@ -94,14 +94,14 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
                 else:
                     type_scope = type_to_scope(elm_t)
                     t = t.clone(scope=type_scope)
-    elif ir.is_a(ARRAY):
+    elif isinstance(ir, ARRAY):
         array = cast(ARRAY, ir)
-        assert array.repeat.is_a(CONST) and array.repeat.value == 1
+        assert isinstance(array.repeat, CONST) and array.repeat.value == 1
         assert array.is_mutable is False
         # FIXME: tuple should have more than one type
         return type_from_ir(scope, array.items[0], explicit)
     else:
-        assert ir.is_a(IRExp)
+        assert isinstance(ir, IRExp)
         assert explicit is True
         t = Type.expr(EXPR(ir), scope)
 

@@ -197,8 +197,8 @@ class SchedulerImpl(object):
                 if is_minimum:
                     self.node_latency_map[node] = (0, 0, 0)
                 else:
-                    if node.tag.is_a([MOVE, PHIBase]):
-                        var = node.tag.dst.symbol if node.tag.is_a(MOVE) else node.tag.var.symbol
+                    if isinstance(node.tag, (MOVE, PHIBase)):
+                        var = node.tag.dst.symbol if isinstance(node.tag, MOVE) else node.tag.var.symbol
                         if var.is_condition():
                             self.node_latency_map[node] = (0, 0, 0)
                         else:
@@ -364,7 +364,7 @@ class BlockBoundedListScheduler(SchedulerImpl):
             sched_times = []
             if seq_preds:
                 #if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or (has_exclusive_function(node.tag) and not is_timed_node):
-                if node.tag.is_a([JUMP, CJUMP, MCJUMP]):
+                if isinstance(node.tag, (JUMP, CJUMP, MCJUMP)):
                     latest_node = max(seq_preds, key=lambda p: (p.end, p.priority))
                     sched_time = latest_node.end
                 else:
@@ -607,7 +607,7 @@ class PipelineScheduler(SchedulerImpl):
             seq_preds = dfg.preds_typ_without_back(node, 'Seq')
             sched_times = []
             if seq_preds:
-                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag, self.scope):
+                if isinstance(node.tag, (JUMP, CJUMP, MCJUMP)) or has_exclusive_function(node.tag, self.scope):
                     latest_node = max(seq_preds, key=lambda p: p.end)
                     sched_times.append(latest_node.end)
                     logger.debug('latest_node of seq_preds ' + str(latest_node))
@@ -854,8 +854,8 @@ class ConflictGraphBuilder(object):
                 e = graph.find_edge(cn0, cn1)
                 if e is not None:
                     continue
-                if ((stm0.is_a(CMOVE) or stm0.is_a(CEXPR)) and
-                        (stm1.is_a(CMOVE) or stm1.is_a(CEXPR))):
+                if ((isinstance(stm0, CMOVE) or isinstance(stm0, CEXPR)) and
+                        (isinstance(stm1, CMOVE) or isinstance(stm1, CEXPR))):
                     if stm0.cond == stm1.cond:
                         vs = stm0.cond.find_irs(TEMP)
                         syms = tuple(sorted([v.symbol for v in vs]))
@@ -908,10 +908,10 @@ class TimedScheduler:
         return None
 
     def get_clk_increment(self, stm):
-        if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL)):
+        if (isinstance(stm, EXPR) and isinstance(stm.exp, SYSCALL)):
             if stm.exp.name == 'polyphony.timing.clksleep':
                 assert len(stm.exp.args) == 1
-                assert stm.exp.args[0][1].is_a(CONST)
+                assert isinstance(stm.exp.args[0][1], CONST)
                 return stm.exp.args[0][1].value
             elif stm.exp.name.startswith('polyphony.timing.wait_'):
                 return 1

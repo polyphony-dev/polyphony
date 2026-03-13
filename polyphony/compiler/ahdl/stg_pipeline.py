@@ -121,7 +121,7 @@ class PipelineBuilder(STGItemBuilder):
         exit_stm = self.post_build(dfg, pstate_helper)
 
         end_codes = [exit_stm]
-        if not exit_stm.is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
+        if not isinstance(exit_stm, (AHDL_TRANSITION, AHDL_TRANSITION_IF)):
             pipe_end_stm = AHDL_TRANSITION(state_name)
             end_codes.append(pipe_end_stm)
         case_items = []
@@ -256,16 +256,16 @@ class PipelineBuilder(STGItemBuilder):
         removes = []
         for step, stage in enumerate(self.stages):
             for code in stage.block.codes[:]:
-                if code.is_a(AHDL_META_WAIT):
+                if isinstance(code, AHDL_META_WAIT):
                     assert stage.has_enable
                     enable_sig = pstate_helper.enable_signal(step)
                     enable_cond = AHDL_OP(*code.args)
                     assert False, 'TODO'
                     stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
                     removes.append((stage, code))
-                elif code.is_a([AHDL_NOP, AHDL_TRANSITION]):
+                elif isinstance(code, (AHDL_NOP, AHDL_TRANSITION)):
                     removes.append((stage, code))
-                elif code.is_a(AHDL_MOVE) and code.dst.is_a(AHDL_VAR) and not code.dst.sig.is_net():
+                elif isinstance(code, AHDL_MOVE) and isinstance(code.dst, AHDL_VAR) and not code.dst.sig.is_net():
                     multi_assign_vars[code.dst.sig].append((step, stage, code))
         for sig, srcs in multi_assign_vars.items():
             rhs = None
@@ -363,9 +363,9 @@ class PipelineBuilder(STGItemBuilder):
         def _make_stm2stage_num_rec(codes):
             for c in codes:
                 stm2stage_num[c] = i
-                if c.is_a(AHDL_IF):
+                if isinstance(c, AHDL_IF):
                     for ahdlblk in c.blocks:
-                        if ahdlblk.is_a(AHDL_BLOCK):
+                        if isinstance(ahdlblk, AHDL_BLOCK):
                             _make_stm2stage_num_rec(ahdlblk.codes)
                         else:
                             _make_stm2stage_num_rec([ahdlblk])
@@ -375,11 +375,11 @@ class PipelineBuilder(STGItemBuilder):
         return stm2stage_num
 
     def _check_guard_need(self, ahdl):
-        if (ahdl.is_a(AHDL_PROCCALL) or
-                ahdl.is_a(AHDL_IF) or
-                (ahdl.is_a(AHDL_MOVE) and ((ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_reg()) or
-                                           ahdl.dst.is_a(AHDL_SUBSCRIPT))) or
-                ahdl.is_a(AHDL_SEQ)):
+        if (isinstance(ahdl, AHDL_PROCCALL) or
+                isinstance(ahdl, AHDL_IF) or
+                (isinstance(ahdl, AHDL_MOVE) and ((isinstance(ahdl.dst, AHDL_VAR) and ahdl.dst.sig.is_reg()) or
+                                           isinstance(ahdl.dst, AHDL_SUBSCRIPT))) or
+                isinstance(ahdl, AHDL_SEQ)):
             return True
         return False
 
@@ -429,7 +429,7 @@ class PipelineBuilder(STGItemBuilder):
             slice_move = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
                                    AHDL_VAR(prev_sig, Ctx.LOAD))
             guard = self.stages[num].block.codes[0]
-            assert guard.is_a(AHDL_PIPELINE_GUARD)
+            assert isinstance(guard, AHDL_PIPELINE_GUARD)
             reg_slice_moves[id(guard)].append(slice_move)
         return reg_replace_table, reg_slice_moves
 
@@ -496,11 +496,11 @@ class LoopPipelineBuilder(PipelineBuilder):
         args = []
         loop_cnt = self.translator._make_signal(self.hdlmodule, dfg.region.counter)
         for i, a in enumerate(loop_cond.args):
-            if a.is_a(AHDL_VAR) and a.sig == loop_cnt:
+            if isinstance(a, AHDL_VAR) and a.sig == loop_cnt:
                 args.append(loop_init)
             else:
                 args.append(a)
-        assert loop_cond.is_a(AHDL_OP)
+        assert isinstance(loop_cond, AHDL_OP)
         loop_cond = AHDL_OP(loop_cond.op, *args)
 
         # make the exit condition of pipeline
@@ -550,7 +550,7 @@ class LoopPipelineBuilder(PipelineBuilder):
         for n in dfg.get_scheduled_nodes():
             if n.begin < 0:
                 continue
-            if n.tag.is_a(CJUMP):
+            if isinstance(n.tag, CJUMP):
                 # remove cjump for the loop
                 sym = qualified_symbols(n.tag.exp, self.scope)[-1]
                 if sym is dfg.region.cond:

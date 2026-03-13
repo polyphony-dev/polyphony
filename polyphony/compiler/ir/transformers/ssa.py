@@ -95,7 +95,7 @@ class SSATransformerBase(object):
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
         if is_tail_attr:
             self.usedef.add_var_def(self.scope, var, phi)
-            if var.is_a(ATTR):
+            if isinstance(var, ATTR):
                 self._add_phi_var_to_usedef(var.exp, phi, is_tail_attr=False)
         else:
             self.usedef.add_var_use(self.scope, var, phi)
@@ -130,7 +130,7 @@ class SSATransformerBase(object):
 
     def _rename_rec(self, block, count, stack):
         for stm in block.stms:
-            if not stm.is_a(PHI):
+            if not isinstance(stm, PHI):
                 for use in self.usedef.get_vars_used_at(stm):
                     assert isinstance(use, IRVariable)
                     qsym = qualified_symbols(use, self.scope)
@@ -159,7 +159,7 @@ class SSATransformerBase(object):
                 i = count[key]
                 stack[key].append((i, d))
                 self._add_new_sym(d, i)
-                if stm.is_a(PHI) and d.is_a(ATTR):
+                if isinstance(stm, PHI) and isinstance(d, ATTR):
                     self._add_new_sym_rest(d.exp, stack)
 
                 d_t = key[-1].typ
@@ -205,7 +205,7 @@ class SSATransformerBase(object):
         else:
             self._add_new_sym(var, i)
 
-        if var.is_a(ATTR):
+        if isinstance(var, ATTR):
             self._add_new_phi_arg(phi, var.exp, stack, block, is_tail_attr=False)
 
     def _need_rename(self, sym, qsym):
@@ -271,9 +271,9 @@ class SSATransformerBase(object):
             usestms = usedef.get_stms_using(var_sym)
             if not usestms:
                 self._remove_phi(phi, usedef)
-                for a in [a for a in phi.args if a and a.is_a(TEMP)]:
+                for a in [a for a in phi.args if a and isinstance(a, TEMP)]:
                     a_sym = qualified_symbols(a, self.scope)[-1]
-                    for defphi in [defstm for defstm in usedef.get_stms_defining(a_sym) if defstm.is_a(PHI)]:
+                    for defphi in [defstm for defstm in usedef.get_stms_defining(a_sym) if isinstance(defstm, PHI)]:
                         worklist.append(defphi)
                 continue
             name = get_arg_name_if_same(phi)
@@ -282,7 +282,7 @@ class SSATransformerBase(object):
                 replace_var.name = name
                 replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var)
                 for rep in replaces:
-                    if rep.is_a(PHI):
+                    if isinstance(rep, PHI):
                         worklist.append(rep)
                     usedef.remove_use(self.scope, phi.var, rep)
                     usedef.add_use(self.scope, replace_var, rep)
@@ -346,9 +346,9 @@ class SSATransformerBase(object):
             assert isinstance(var_sym, Symbol)
             if var_sym.is_return():
                 for a in phi.args:
-                    if a.is_a(CONST):
+                    if isinstance(a, CONST):
                         print(a)
-                    if a.is_a(IRVariable):
+                    if isinstance(a, IRVariable):
                         a_sym = qualified_symbols(a, self.scope)[-1]
                         assert isinstance(a_sym, Symbol)
                         a_sym.del_tag('return')
@@ -401,7 +401,7 @@ class TupleSSATransformer(SSATransformerBase):
     def _insert_use_phi(self, phi, use_stm):
         insert_idx = use_stm.block.stms.index(use_stm)
         qname = phi.var.qualified_name
-        if use_stm.is_a(MOVE):
+        if isinstance(use_stm, MOVE):
             src_use_vars = [ir for ir in use_stm.src.find_vars(qname)]
             dst_use_vars = [ir for ir in use_stm.dst.find_vars(qname)]
             if src_use_vars:
@@ -423,7 +423,7 @@ class TupleSSATransformer(SSATransformerBase):
                     cmov = CMOVE(p.clone(), dst, use_stm.src.clone())
                     use_stm.block.insert_stm(insert_idx, cmov)
             use_stm.block.stms.remove(use_stm)
-        elif use_stm.is_a(EXPR):
+        elif isinstance(use_stm, EXPR):
             use_vars = [ir for ir in use_stm.exp.find_vars(qname)]
             assert use_vars
             use_var = use_vars[0]

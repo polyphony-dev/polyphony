@@ -94,27 +94,27 @@ class LoopInfoSetter(object):
         if loop.counter:
             return
         cjump = loop.head.stms[-1]
-        if not cjump.is_a(CJUMP):
+        if not isinstance(cjump, CJUMP):
             # this loop may busy loop
             return
         cond_var = cjump.exp
         cond_sym = qualified_symbols(cond_var, self.scope)[-1]
         loop.cond = cond_sym
-        assert cond_var.is_a(TEMP)
+        assert isinstance(cond_var, TEMP)
         defs = self.scope.usedef.get_stms_defining(cond_sym)
         assert len(defs) == 1
         cond_stm = list(defs)[0]
-        assert cond_stm.is_a(MOVE)
-        if not cond_stm.src.is_a(RELOP):
+        assert isinstance(cond_stm, MOVE)
+        if not isinstance(cond_stm.src, RELOP):
             return
         loop_relexp = cond_stm.src
 
-        if loop_relexp.left.is_a(TEMP) and (left_sym := self.scope.find_sym(loop_relexp.left.name)) and left_sym.is_induction():
-            assert loop_relexp.right.is_a([CONST, TEMP])
+        if isinstance(loop_relexp.left, TEMP) and (left_sym := self.scope.find_sym(loop_relexp.left.name)) and left_sym.is_induction():
+            assert isinstance(loop_relexp.right, (CONST, TEMP))
             loop.counter = left_sym
             loop.counter.add_tag('loop_counter')
-        elif loop_relexp.right.is_a(TEMP) and (right_sym := self.scope.find_sym(loop_relexp.right.name)) and right_sym.is_induction():
-            assert loop_relexp.left.is_a([CONST, TEMP])
+        elif isinstance(loop_relexp.right, TEMP) and (right_sym := self.scope.find_sym(loop_relexp.right.name)) and right_sym.is_induction():
+            assert isinstance(loop_relexp.left, (CONST, TEMP))
             loop.counter = right_sym
             loop.counter.add_tag('loop_counter')
         else:
@@ -131,7 +131,7 @@ class LoopInfoSetter(object):
         defs = self.scope.usedef.get_stms_defining(loop.counter)
         assert len(defs) == 1
         counter_def = list(defs)[0]
-        counter_def.is_a(PHIBase)
+        isinstance(counter_def, PHIBase)
         assert len(counter_def.args) == 2
         loop.init = counter_def.args[0]
         loop.update = counter_def.args[1]

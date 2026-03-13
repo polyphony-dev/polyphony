@@ -141,7 +141,7 @@ class LoopUnroller(object):
             self.scope.append_sibling_region(loop, new_loop)
             if has_unroll_remain:
                 assert loop.counter in new_ivs
-                origin_lphis = {s.var.name:s for s in loop.head.stms if s.is_a(LPHI)}
+                origin_lphis = {s.var.name:s for s in loop.head.stms if isinstance(s, LPHI)}
                 for sym, new_syms in new_ivs.items():
                     new_sym = new_syms[0]
                     lphi = origin_lphis[sym.name]
@@ -164,15 +164,15 @@ class LoopUnroller(object):
 
     def _replace_jump_target(self, block, old, new):
         jmp = block.stms[-1]
-        if jmp.is_a(JUMP):
+        if isinstance(jmp, JUMP):
             jmp.target = new
-        elif jmp.is_a(CJUMP):
+        elif isinstance(jmp, CJUMP):
             if jmp.true is old:
                 jmp.true = new
             else:
                 assert jmp.false is old
                 jmp.false = new
-        elif jmp.is_a(MCJUMP):
+        elif isinstance(jmp, MCJUMP):
             for i, t in enumerate(jmp.targets):
                 if t is old:
                     jmp.targets[i] = new
@@ -206,7 +206,7 @@ class LoopUnroller(object):
         loop_exit.replace_pred(loop.head, last_blk)
 
         jmp = last_blk.stms[-1]
-        assert jmp.is_a(JUMP)
+        assert isinstance(jmp, JUMP)
         jmp.typ = ''
         jmp.target = loop_exit
 
@@ -238,7 +238,7 @@ class LoopUnroller(object):
 
         unroll_head.succs.append(loop_exit)
         cjmp = unroll_head.stms[-1]
-        assert cjmp.is_a(CJUMP)
+        assert isinstance(cjmp, CJUMP)
         assert cjmp.false is None
         cjmp.false = loop_exit
 
@@ -251,7 +251,7 @@ class LoopUnroller(object):
         last_blk.succs_loop = [unroll_head]
 
         jmp = last_blk.stms[-1]
-        assert jmp.is_a(JUMP)
+        assert isinstance(jmp, JUMP)
         assert jmp.typ == 'L'
         jmp.target = unroll_head
 
@@ -278,12 +278,12 @@ class LoopUnroller(object):
                 mv = MOVE(dst, src)
                 head_stms.append(mv)
         orig_cjump_cond = unroll_head.stms[-2]
-        assert orig_cjump_cond.is_a(MOVE) and orig_cjump_cond.src.is_a(RELOP)
+        assert isinstance(orig_cjump_cond, MOVE) and isinstance(orig_cjump_cond.src, RELOP)
         src = CONST(1)
         mv = MOVE(orig_cjump_cond.dst.clone(), src)
         head_stms.append(mv)
         orig_cjump = unroll_head.stms[-1]
-        assert orig_cjump.is_a(CJUMP)
+        assert isinstance(orig_cjump, CJUMP)
         jump = JUMP(None)
         jump.loc = orig_cjump.loc
         head_stms.append(jump)
@@ -325,9 +325,9 @@ class LoopUnroller(object):
                 lphis.append(stm)
 
         orig_cjump_cond = unroll_head.stms[-2]
-        assert orig_cjump_cond.is_a(MOVE) and orig_cjump_cond.src.is_a(RELOP)
+        assert isinstance(orig_cjump_cond, MOVE) and isinstance(orig_cjump_cond.src, RELOP)
         orig_cjump = unroll_head.stms[-1]
-        assert orig_cjump.is_a(CJUMP)
+        assert isinstance(orig_cjump, CJUMP)
         new_loop_iv = new_ivs[loop.counter][0]
         tmp = self.scope.add_temp(typ=new_loop_iv.typ)
         mv = MOVE(TEMP(tmp.name),
@@ -389,10 +389,10 @@ class LoopUnroller(object):
             pred_blk.succs = [new_blk]
             jmp = pred_blk.stms[-1]
             jmp.typ = ''
-            if jmp.is_a(CJUMP):
+            if isinstance(jmp, CJUMP):
                 jmp.true = new_blk
             else:
-                assert jmp.is_a(JUMP)
+                assert isinstance(jmp, JUMP)
                 jmp.target = new_blk
             new_blk.preds = [pred_blk]
             pred_blk = new_blk
@@ -443,9 +443,9 @@ class LoopUnroller(object):
         return (loop_min, loop_max, loop_step)
 
     def _find_loop_min(self, loop) -> IRExp:
-        if loop.init.is_a(CONST):
+        if isinstance(loop.init, CONST):
             return loop.init
-        elif loop.init.is_a(TEMP):
+        elif isinstance(loop.init, TEMP):
             return loop.init
         raise NotImplementedError('unsupported loop')
 
@@ -454,35 +454,35 @@ class LoopUnroller(object):
         loop_cond_defs = self.scope.usedef.get_stms_defining(loop_cond_sym)
         assert len(loop_cond_defs) == 1
         loop_cond_stm = list(loop_cond_defs)[0]
-        assert loop_cond_stm.is_a(MOVE)
+        assert isinstance(loop_cond_stm, MOVE)
         loop_cond_rhs = loop_cond_stm.src
-        if loop_cond_rhs.is_a(RELOP):
+        if isinstance(loop_cond_rhs, RELOP):
             # We focus on simple increasing loops
             if loop_cond_rhs.op in ('Lt'):
                 sym = qualified_symbols(loop_cond_rhs.left, self.scope)[-1]
                 if sym is loop.counter:
                     may_max = loop_cond_rhs.right
-                    if may_max.is_a(CONST):
+                    if isinstance(may_max, CONST):
                         return may_max
-                    elif may_max.is_a(TEMP):
+                    elif isinstance(may_max, TEMP):
                         return may_max
         raise NotImplementedError('unsupported loop')
 
     def _find_loop_step(self, loop) -> int:
         loop_update = loop.update
-        assert loop_update.is_a(TEMP)
+        assert isinstance(loop_update, TEMP)
         update_sym = qualified_symbols(loop_update, self.scope)[-1]
         update_defs = self.scope.usedef.get_stms_defining(update_sym)
         assert len(update_defs) == 1
         update_stm = list(update_defs)[0]
-        assert update_stm.is_a(MOVE)
+        assert isinstance(update_stm, MOVE)
         update_rhs = update_stm.src
-        if update_rhs.is_a(BINOP):
+        if isinstance(update_rhs, BINOP):
             if update_rhs.op == 'Add':
                 sym = qualified_symbols(update_rhs.left, self.scope)[-1]
                 if sym is loop.counter:
                     may_step = update_rhs.right
-                    if may_step.is_a(CONST):
+                    if isinstance(may_step, CONST):
                         return may_step.value
                     else:
                         fail(update_stm, Errors.RULE_UNROLL_VARIABLE_STEP)
@@ -526,7 +526,7 @@ class PHICondRemover(IRTransformer):
 
     def visit_UNOP(self, ir):
         sym = qualified_symbols(ir.exp, self.sym.scope)[-1]
-        if ir.exp.is_a(TEMP) and sym is self.sym:
+        if isinstance(ir.exp, TEMP) and sym is self.sym:
             return CONST(1)
         return ir
 

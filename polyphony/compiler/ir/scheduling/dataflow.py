@@ -471,7 +471,7 @@ class DFGBuilder(object):
     def _add_source_node(self, node, dfg, usedef, blocks):
         stm = node.tag
         usevars = usedef.get_vars_used_at(stm)
-        if not usevars and stm.is_a(MOVE):
+        if not usevars and isinstance(stm, MOVE):
             dfg.src_nodes.add(node)
             return
         for v in usevars:
@@ -480,7 +480,7 @@ class DFGBuilder(object):
             if v_sym.is_param():
                 dfg.src_nodes.add(node)
                 return
-            if v.is_a(ATTR) and v.head_name() == env.self_name:
+            if isinstance(v, ATTR) and v.head_name() == env.self_name:
                 dfg.src_nodes.add(node)
                 return
             defstms = usedef.get_stms_defining(v_sym)
@@ -497,18 +497,18 @@ class DFGBuilder(object):
 
         def has_mem_arg(args):
             for _, a in args:
-                if a.is_a(TEMP):
+                if isinstance(a, TEMP):
                     a_sym = self.scope.find_sym(a.name)
                     assert a_sym
                     if a_sym.typ.is_list():
                         return True
             return False
         call = None
-        if stm.is_a(EXPR):
-            if stm.exp.is_a(CALL) or stm.exp.is_a(SYSCALL):
+        if isinstance(stm, EXPR):
+            if isinstance(stm.exp, CALL) or isinstance(stm.exp, SYSCALL):
                 call = stm.exp
-        elif stm.is_a(MOVE):
-            if stm.src.is_a(CALL) or stm.src.is_a(SYSCALL):
+        elif isinstance(stm, MOVE):
+            if isinstance(stm.src, CALL) or isinstance(stm.src, SYSCALL):
                 call = stm.src
         if call:
             if len(call.args) == 0 or has_mem_arg(call.args):
@@ -558,25 +558,25 @@ class DFGBuilder(object):
                 self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
 
     def _is_constant_stm(self, stm):
-        if stm.is_a(MOVE):
-            if stm.src.is_a([CONST, ARRAY, CALL]):
+        if isinstance(stm, MOVE):
+            if isinstance(stm.src, (CONST, ARRAY, CALL)):
                 return True
-            elif stm.src.is_a(MREF) and stm.src.offset.is_a(CONST):
+            elif isinstance(stm.src, MREF) and isinstance(stm.src.offset, CONST):
                 return True
-            elif stm.src.is_a(NEW):
+            elif isinstance(stm.src, NEW):
                 return True
-            elif stm.src.is_a(SYSCALL) and stm.src.name == '$new':
+            elif isinstance(stm.src, SYSCALL) and stm.src.name == '$new':
                 return True
-        elif stm.is_a(EXPR):
-            if stm.exp.is_a([CALL, SYSCALL]):
+        elif isinstance(stm, EXPR):
+            if isinstance(stm.exp, (CALL, SYSCALL)):
                 call = stm.exp
-                return all(a.is_a(CONST) for _, a in call.args)
-            elif stm.exp.is_a(MSTORE) and stm.exp.offset.is_a(CONST) and stm.exp.exp.is_a(CONST):
+                return all(isinstance(a, CONST) for _, a in call.args)
+            elif isinstance(stm.exp, MSTORE) and isinstance(stm.exp.offset, CONST) and isinstance(stm.exp.exp, CONST):
                 return True
-        elif stm.is_a(CJUMP) and stm.exp.is_a(CONST):
+        elif isinstance(stm, CJUMP) and isinstance(stm.exp, CONST):
             return True
-        elif stm.is_a(MCJUMP):
-            if any(c.is_a(CONST) for c in stm.conds[:-1]):
+        elif isinstance(stm, MCJUMP):
+            if any(isinstance(c, CONST) for c in stm.conds[:-1]):
                 return True
         return False
 
@@ -597,28 +597,28 @@ class DFGBuilder(object):
         # grouping by memory
         node_groups_by_mem_sym = defaultdict(list)
         for node in dfg.nodes:
-            if node.tag.is_a(MOVE):
+            if isinstance(node.tag, MOVE):
                 mv = node.tag
-                if mv.src.is_a(MREF):
+                if isinstance(mv.src, MREF):
                     mem_sym = qualified_symbols(mv.src.mem, self.scope)[-1]
                     node_groups_by_mem_sym[mem_sym].append(node)
-                elif mv.src.is_a(CALL):
+                elif isinstance(mv.src, CALL):
                     for _, arg in mv.src.args:
-                        if arg.is_a(TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
+                        if isinstance(arg, TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
                             node_groups_by_mem_sym[arg_sym].append(node)
                 else:
-                    assert mv.dst.is_a(IRVariable)
+                    assert isinstance(mv.dst, IRVariable)
                     dst_sym = qualified_symbols(mv.dst, self.scope)[-1]
                     assert isinstance(dst_sym, Symbol)
                     if dst_sym.typ.is_seq():
                         pass
-            elif node.tag.is_a(EXPR):
+            elif isinstance(node.tag, EXPR):
                 expr = node.tag
-                if expr.exp.is_a(CALL):
+                if isinstance(expr.exp, CALL):
                     for _, arg in expr.exp.args:
-                        if arg.is_a(TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
+                        if isinstance(arg, TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
                             node_groups_by_mem_sym[arg_sym].append(node)
-                elif expr.exp.is_a(MSTORE):
+                elif isinstance(expr.exp, MSTORE):
                     mem_sym = qualified_symbols(expr.exp.mem, self.scope)[-1]
                     assert isinstance(mem_sym, Symbol)
                     node_groups_by_mem_sym[mem_sym].append(node)
@@ -661,11 +661,11 @@ class DFGBuilder(object):
         prev_node = None
         for stm in all_stms_in_section:
             node = None
-            if stm.is_a(MOVE) and stm.src.is_a(CALL):
+            if isinstance(stm, MOVE) and isinstance(stm.src, CALL):
                 callee_scope = stm.src.callee_scope
                 if callee_scope.is_function_module():
                     node = dfg.add_stm_node(stm)
-            elif stm.is_a(EXPR) and stm.exp.is_a(CALL):
+            elif isinstance(stm, EXPR) and isinstance(stm.exp, CALL):
                 callee_scope = stm.exp.callee_scope
                 if callee_scope.is_function_module():
                     node = dfg.add_stm_node(stm)
@@ -688,15 +688,15 @@ class DFGBuilder(object):
         return n0.tag.block is n1.tag.block
 
     def _get_mutable_object_symbol(self, stm):
-        if stm.is_a(MOVE):
+        if isinstance(stm, MOVE):
             call = stm.src
-        elif stm.is_a(EXPR):
+        elif isinstance(stm, EXPR):
             call = stm.exp
         else:
             return None
-        if not call.is_a(CALL):
+        if not isinstance(call, CALL):
             return None
-        if not call.func.is_a(ATTR):
+        if not isinstance(call.func, ATTR):
             return None
         qsyms = qualified_symbols(call.func, self.scope)
         receiver = qsyms[-2]
@@ -726,7 +726,7 @@ class DFGBuilder(object):
     def _add_seq_edges_for_ctrl_branch(self, dfg):
         for node in dfg.nodes:
             stm = node.tag
-            if stm.is_a([JUMP, CJUMP, MCJUMP]):
+            if isinstance(stm, (JUMP, CJUMP, MCJUMP)):
                 #assert len(stm.block.stms) > 1
                 assert stm.block.stms[-1] is stm
                 for prev_stm in stm.block.stms[:-1]:
@@ -738,7 +738,7 @@ class DFGBuilder(object):
         for block in blocks:
             seq_func_node = None
             for stm in block.stms:
-                if stm.is_a([JUMP, CJUMP, MCJUMP]):
+                if isinstance(stm, (JUMP, CJUMP, MCJUMP)):
                     continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
@@ -751,7 +751,7 @@ class DFGBuilder(object):
                     seq_func_node = node
             seq_func_node = None
             for stm in reversed(block.stms):
-                if stm.is_a([JUMP, CJUMP, MCJUMP]):
+                if isinstance(stm, (JUMP, CJUMP, MCJUMP)):
                     continue
                 node = dfg.find_node(stm)
                 if seq_func_node:
@@ -768,9 +768,9 @@ class DFGBuilder(object):
         for block in blocks:
             port_node = None
             for stm in block.stms:
-                if stm.is_a(MOVE):
+                if isinstance(stm, MOVE):
                     call = stm.src
-                elif stm.is_a(EXPR):
+                elif isinstance(stm, EXPR):
                     call = stm.exp
                 else:
                     continue
@@ -805,9 +805,9 @@ class DFGBuilder(object):
             return
         visited.add((usenode, defnode))
         stm = usenode.tag
-        if stm.is_a(MOVE):
+        if isinstance(stm, MOVE):
             var = stm.dst
-        elif stm.is_a(PHIBase):
+        elif isinstance(stm, PHIBase):
             var = stm.var
         else:
             return
@@ -855,7 +855,7 @@ class DFGBuilder(object):
                 end.defs[0].del_tag('alias')
                 dones.add(end)
             return
-        if node.tag.is_a([MOVE, PHIBase]) and node.defs[0].is_alias():
+        if isinstance(node.tag, (MOVE, PHIBase)) and node.defs[0].is_alias():
             var = node.tag.dst if isinstance(node.tag, MOVE) else node.tag.var
             var_sym = qualified_symbols(var, self.scope)[-1]
             assert isinstance(var_sym, Symbol)
@@ -875,14 +875,14 @@ class DFGBuilder(object):
                 remove_seq_pred(defnode, visited)
         for node in dfg.nodes:
             stm = node.tag
-            if stm.is_a(MOVE) and (sym := qualified_symbols(stm.dst, self.scope)[-1]) and sym.is_induction():
+            if isinstance(stm, MOVE) and (sym := qualified_symbols(stm.dst, self.scope)[-1]) and sym.is_induction():
                 remove_seq_pred(node, set())
 
     def _get_port_sym_from_node(self, node):
         stm = node.tag
-        if stm.is_a(MOVE):
+        if isinstance(stm, MOVE):
             call = stm.src
-        elif stm.is_a(EXPR):
+        elif isinstance(stm, EXPR):
             call = stm.exp
         else:
             return None
@@ -930,10 +930,10 @@ class RegArrayParallelizer(object):
 
     @staticmethod
     def _get_const(binop):
-        assert binop.is_a(BINOP)
-        if binop.left.is_a(CONST):
+        assert isinstance(binop, BINOP)
+        if isinstance(binop.left, CONST):
             return binop.left
-        elif binop.right.is_a(CONST):
+        elif isinstance(binop.right, CONST):
             return binop.right
         return None
 
@@ -944,9 +944,9 @@ class RegArrayParallelizer(object):
         # e.g.
         # v1 = ...
         # v2 = v1 + 1
-        if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
+        if not (isinstance(v2_stm, MOVE) and isinstance(v2_stm.src, BINOP)):
                 return False
-        rhs_syms = [qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if e.is_a(TEMP)]
+        rhs_syms = [qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if isinstance(e, TEMP)]
         if len(rhs_syms) != 1:
             return False
         rhs_const = self._get_const(v2_stm.src)
@@ -964,12 +964,12 @@ class RegArrayParallelizer(object):
         # e.g.
         # v1 = x + 1
         # v2 = x + 2
-        if not (v1_stm.is_a(MOVE) and v1_stm.src.is_a(BINOP)):
+        if not (isinstance(v1_stm, MOVE) and isinstance(v1_stm.src, BINOP)):
             return False
-        if not (v2_stm.is_a(MOVE) and v2_stm.src.is_a(BINOP)):
+        if not (isinstance(v2_stm, MOVE) and isinstance(v2_stm.src, BINOP)):
             return False
-        v1_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v1_stm.src.kids() if e.is_a(TEMP)])
-        v2_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if e.is_a(TEMP)])
+        v1_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v1_stm.src.kids() if isinstance(e, TEMP)])
+        v2_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if isinstance(e, TEMP)])
         common_syms = v1_rhs_syms.intersection(v2_rhs_syms)
         if not common_syms:
             return False
@@ -980,9 +980,9 @@ class RegArrayParallelizer(object):
     def is_inequality_value(self, offs1, offs2):
         if not offs1 or not offs2:
             return False
-        if offs1.is_a(CONST) and offs2.is_a(CONST) and offs1.value != offs2.value:
+        if isinstance(offs1, CONST) and isinstance(offs2, CONST) and offs1.value != offs2.value:
             return True
-        elif offs1.is_a(TEMP) and offs2.is_a(TEMP):
+        elif isinstance(offs1, TEMP) and isinstance(offs2, TEMP):
             offs1_sym = self.scope.find_sym(offs1.name)
             offs2_sym = self.scope.find_sym(offs2.name)
             offs1_defstms = self.scope.usedef.get_stms_defining(offs1_sym)

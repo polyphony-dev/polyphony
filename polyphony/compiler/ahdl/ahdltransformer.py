@@ -253,11 +253,11 @@ class AHDLTransformer(object):
         return visitor
 
     def visit(self, ahdl):
-        if ahdl.is_a(AHDL_STM):
+        if isinstance(ahdl, AHDL_STM):
             self.current_stm = ahdl
         visitor = self.find_visitor(ahdl.__class__)
         new_ahdl = visitor(ahdl)
-        if ahdl.is_a(AHDL_STM):
+        if isinstance(ahdl, AHDL_STM):
             if id(ahdl) in self.hdlmodule.ahdl2dfgnode:
                 _, node = self.hdlmodule.ahdl2dfgnode[id(ahdl)]
                 # del self.hdlmodule.ahdl2dfgnode[id(ahdl)]

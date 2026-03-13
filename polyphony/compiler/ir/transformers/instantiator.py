@@ -21,7 +21,7 @@ def find_called_module(scopes) -> list[tuple[Scope, Scope, MOVE]]:
         calls.extend(CallCollector().process(s))
     for caller_scope, stm, call in calls:
         callee_scope = call.get_callee_scope(caller_scope)
-        if stm.is_a(MOVE) and call.is_a(NEW) and callee_scope.is_module():
+        if isinstance(stm, MOVE) and isinstance(call, NEW) and callee_scope.is_module():
             called_modules.append((callee_scope, caller_scope, cast(MOVE, stm)))
     return called_modules
 
@@ -61,7 +61,7 @@ class ModuleInstantiator(object):
         origin_workers = set()
         for scope, stm, call in calls:
             callee_scope = call.get_callee_scope(scope)
-            if call.is_a(CALL) and callee_scope.base_name == 'append_worker':
+            if isinstance(call, CALL) and callee_scope.base_name == 'append_worker':
                 new_worker = self._instantiate_worker(call, ctor, module, scope, origin_workers)
                 module.register_worker(new_worker)
         # Remove origin workers
@@ -71,7 +71,7 @@ class ModuleInstantiator(object):
     def _instantiate_worker(self, call, ctor, module, scope, origin_workers):
         assert len(call.args) >= 1
         _, w = call.args[0]
-        assert w.is_a(IRVariable)
+        assert isinstance(w, IRVariable)
         w_sym = qualified_symbols(w, scope)[-1]
         assert isinstance(w_sym, Symbol)
         assert w_sym.typ.is_function()
@@ -81,7 +81,7 @@ class ModuleInstantiator(object):
         loop = False
         for i, (name, arg) in enumerate(call.args):
             if name == 'loop':
-                assert arg.is_a(CONST) and isinstance(arg.value, bool)
+                assert isinstance(arg, CONST) and isinstance(arg.value, bool)
                 loop = arg.value
                 call.args.pop(i)
                 break
@@ -120,15 +120,15 @@ class ArgumentApplier(object):
             calls.extend(CallCollector().process(s))
         for scope, stm, call in calls:
             callee_scope = call.get_callee_scope(scope)
-            if call.is_a(NEW) and callee_scope.is_module() and callee_scope.is_instantiated():
+            if isinstance(call, NEW) and callee_scope.is_module() and callee_scope.is_instantiated():
                 ctor = callee_scope.find_ctor()
                 assert ctor
                 self._bind_args(scope, call.args, ctor)
                 next_scopes.append(ctor)
-            elif call.is_a(CALL) and callee_scope.base_name == 'append_worker':
+            elif isinstance(call, CALL) and callee_scope.base_name == 'append_worker':
                 assert len(call.args) >= 1
                 _, w = call.args[0]
-                assert w.is_a(IRVariable)
+                assert isinstance(w, IRVariable)
                 w_sym = qualified_symbols(w, scope)[-1]
                 assert isinstance(w_sym, Symbol)
                 assert w_sym.typ.is_function()
@@ -146,14 +146,14 @@ class ArgumentApplier(object):
         and stores them as CONST. We recover the original ARRAY either from env.seq_id_to_array
         (for CONST(seq_id) from testbench) or from the caller's usedef (for TEMP vars).
         """
-        if arg.is_a(CONST) and isinstance(arg.value, int):
+        if isinstance(arg, CONST) and isinstance(arg.value, int):
             array = env.seq_id_to_array.get(arg.value)
             if array is not None:
                 return array.clone()
-        elif arg.is_a(IRVariable) and hasattr(caller_scope, 'usedef') and caller_scope.usedef:
+        elif isinstance(arg, IRVariable) and hasattr(caller_scope, 'usedef') and caller_scope.usedef:
             qsym = qualified_symbols(arg, caller_scope)
             defs = list(caller_scope.usedef.get_stms_defining(qsym))
-            if len(defs) == 1 and defs[0].is_a(MOVE) and defs[0].src.is_a(ARRAY):
+            if len(defs) == 1 and isinstance(defs[0], MOVE) and isinstance(defs[0].src, ARRAY):
                 return defs[0].src.clone()
         return arg
 

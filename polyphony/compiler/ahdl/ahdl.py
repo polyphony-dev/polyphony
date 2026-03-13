@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Optional, cast
 from .signal import Signal
 from ..ir.ir import Ctx
-from ..common.utils import is_a
 
 PYTHON_OP_2_HDL_OP_MAP = {
     'And': '&&', 'Or': '||',
@@ -18,15 +17,12 @@ PYTHON_OP_2_HDL_OP_MAP = {
 
 class AHDL(object):
     '''Abstract HDL'''
-    def is_a(self, cls):
-        return is_a(self, cls)
-
     def find_ahdls(self, typ: type['AHDL']) -> list['AHDL']:
         ahdls = []
 
         def find_ahdls_rec(ahdl, typ, ahdls):
             #print(ahdl)
-            if ahdl.is_a(typ):
+            if isinstance(ahdl, typ):
                 ahdls.append(ahdl)
             for k, v in ahdl.__dict__.items():
                 if isinstance(v, AHDL):
@@ -220,7 +216,7 @@ class AHDL_BLOCK(AHDL_STM):
     def traverse(self):
         codes = []
         for c in self.codes:
-            if c.is_a(AHDL_BLOCK):
+            if isinstance(c, AHDL_BLOCK):
                 codes.extend(cast(AHDL_BLOCK, c).traverse())
             else:
                 codes.append(c)
@@ -249,17 +245,17 @@ class AHDL_MOVE(AHDL_STM):
     src: AHDL_EXP
 
     def __post_init__(self):
-        if self.src.is_a(AHDL_VAR):
+        if isinstance(self.src, AHDL_VAR):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
-        if self.dst.is_a(AHDL_VAR):
+        if isinstance(self.dst, AHDL_VAR):
             assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
-        elif self.dst.is_a(AHDL_SUBSCRIPT):
+        elif isinstance(self.dst, AHDL_SUBSCRIPT):
             assert cast(AHDL_SUBSCRIPT, self.dst).memvar.ctx == Ctx.STORE
         else:
             assert False
 
     def __str__(self):
-        if self.dst.is_a(AHDL_VAR) and cast(AHDL_VAR, self.dst).sig.is_net():
+        if isinstance(self.dst, AHDL_VAR) and cast(AHDL_VAR, self.dst).sig.is_net():
             return f'{self.dst} := {self.src}'
         return f'{self.dst} <= {self.src}'
 
@@ -279,11 +275,11 @@ class AHDL_ASSIGN(AHDL_VAR_DECL):
     name: str = field(init=False)
 
     def __post_init__(self):
-        if self.src.is_a(AHDL_VAR):
+        if isinstance(self.src, AHDL_VAR):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
-        if self.dst.is_a(AHDL_VAR):
+        if isinstance(self.dst, AHDL_VAR):
             assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
-        elif self.dst.is_a(AHDL_SUBSCRIPT):
+        elif isinstance(self.dst, AHDL_SUBSCRIPT):
             assert cast(AHDL_SUBSCRIPT, self.dst).memvar.ctx == Ctx.STORE
         else:
             assert False
