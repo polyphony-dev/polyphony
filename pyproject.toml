@@ -7,7 +7,7 @@ license = { text = "MIT" }
 authors = [{ name = "Hiroaki Kataoka", email = "ktok07b6@gmail.com" }]
 keywords = ["HLS", "High Level Synthesis", "FPGA", "HDL", "Verilog"]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["pydantic>=2.0"]
 
 [project.scripts]
 polyphony = "polyphony.compiler.__main__:main"
