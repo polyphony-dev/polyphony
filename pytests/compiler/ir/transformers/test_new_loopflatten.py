@@ -1,5 +1,5 @@
 """Tests for NewLoopFlatten."""
-from polyphony.compiler.ir.ir import CONST, TEMP, MOVE, CJUMP, BINOP, RELOP, LPHI, JUMP, RET, EXPR, Ctx
+from polyphony.compiler.ir.ir import Const, Temp, Move, CJump, BinOp, RelOp, LPhi, Jump, Ret, Expr, Ctx
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
@@ -32,23 +32,22 @@ def test_new_loop_flatten_no_pipeline():
     scope.set_entry_block(blk_entry)
     scope.set_exit_block(loop_exit)
 
-    blk_entry.append_stm(EXPR(CONST(0)))  # guard from reduceblk
-    blk_entry.append_stm(JUMP(loop_head))
+    blk_entry.append_stm(Expr(Const(0)))  # guard from reduceblk
+    blk_entry.append_stm(Jump(loop_head))
 
-    i_lphi = LPHI(TEMP('i', Ctx.STORE))
-    i_lphi.args = [TEMP('i_init'), TEMP('i_upd')]
-    i_lphi.ps = [CONST(1), CONST(1)]
+    i_lphi = LPhi(Temp('i', Ctx.STORE))
+    object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
+    object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
     loop_head.append_stm(i_lphi)
-    loop_head.append_stm(MOVE(TEMP('cond', Ctx.STORE), RELOP('Lt', TEMP('i'), CONST(10))))
-    loop_head.append_stm(CJUMP(TEMP('cond'), loop_body, loop_exit))
+    loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
 
-    loop_body.append_stm(MOVE(TEMP('i_upd', Ctx.STORE), BINOP('Add', TEMP('i'), CONST(1))))
-    jmp = JUMP(loop_head)
-    jmp.typ = 'L'
+    loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
+    jmp = Jump(loop_head, typ='L')
     loop_body.append_stm(jmp)
 
-    loop_exit.append_stm(MOVE(TEMP('@return', Ctx.STORE), TEMP('i')))
-    loop_exit.append_stm(RET(TEMP('@return')))
+    loop_exit.append_stm(Move(Temp('@return', Ctx.STORE), Temp('i')))
+    loop_exit.append_stm(Ret(Temp('@return')))
 
     blk_entry.succs = [loop_head]
     loop_head.preds = [blk_entry, loop_body]

@@ -36,17 +36,21 @@ class NewEarlyQuadrupleMaker(IrTransformer):
         return Temp(name=tmpsym.name)
 
     def visit_UnOp(self, ir):
-        ir.exp = self.visit(ir.exp)
-        if not isinstance(ir.exp, (Temp, Attr, Const, MRef)):
+        new_exp = self.visit(ir.exp)
+        if not isinstance(new_exp, (Temp, Attr, Const, MRef)):
             fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
+        if new_exp is not ir.exp:
+            return ir.model_copy(update={'exp': new_exp})
         return ir
 
     def visit_BinOp(self, ir):
         suppress = self.suppress_converting
         self.suppress_converting = False
 
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is not ir.left or new_right is not ir.right:
+            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
 
         assert isinstance(ir.left, (Temp, Attr, Const, UnOp, MRef, Array))
         assert isinstance(ir.right, (Temp, Attr, Const, UnOp, MRef))
@@ -55,10 +59,9 @@ class NewEarlyQuadrupleMaker(IrTransformer):
             if ir.op == 'Mult':
                 array = ir.left
                 if isinstance(array.repeat, Const) and array.repeat.value == 1:
-                    array.repeat = ir.right
+                    return array.model_copy(update={'repeat': ir.right})
                 else:
-                    array.repeat = BinOp(op='Mult', left=array.repeat, right=ir.right)
-                return array
+                    return array.model_copy(update={'repeat': BinOp(op='Mult', left=array.repeat, right=ir.right)})
             else:
                 fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
 
@@ -69,31 +72,42 @@ class NewEarlyQuadrupleMaker(IrTransformer):
     def visit_RelOp(self, ir):
         suppress = self.suppress_converting
         self.suppress_converting = False
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is not ir.left or new_right is not ir.right:
+            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
         if suppress:
             return ir
         return self._new_temp_move(ir, self.scope.add_condition_sym())
 
     def visit_CondOp(self, ir):
-        ir.cond = self.visit(ir.cond)
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
+        new_cond = self.visit(ir.cond)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_cond is not ir.cond or new_left is not ir.left or new_right is not ir.right:
+            ir = ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
         return self._new_temp_move(ir, self.scope.add_temp())
 
     def _visit_args(self, args):
-        for i, (name, arg) in enumerate(args):
-            arg = self.visit(arg)
-            assert isinstance(arg, (Temp, Attr, Const, UnOp, Array))
-            if isinstance(arg, Array):
-                arg = self._new_temp_move(arg, self.scope.add_temp())
-            args[i] = (name, arg)
+        new_args = []
+        changed = False
+        for name, arg in args:
+            new_arg = self.visit(arg)
+            assert isinstance(new_arg, (Temp, Attr, Const, UnOp, Array))
+            if isinstance(new_arg, Array):
+                new_arg = self._new_temp_move(new_arg, self.scope.add_temp())
+            if new_arg is not arg:
+                changed = True
+            new_args.append((name, new_arg))
+        return new_args, changed
 
     def visit_Call(self, ir):
         suppress = self.suppress_converting
         self.suppress_converting = False
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is not ir.func or args_changed:
+            ir = ir.model_copy(update={'func': new_func, 'args': new_args})
         if suppress:
             return ir
         return self._new_temp_move(ir, self.scope.add_temp())
@@ -101,8 +115,10 @@ class NewEarlyQuadrupleMaker(IrTransformer):
     def visit_SysCall(self, ir):
         suppress = self.suppress_converting
         self.suppress_converting = False
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is not ir.func or args_changed:
+            ir = ir.model_copy(update={'func': new_func, 'args': new_args})
         if suppress:
             return ir
         return self._new_temp_move(ir, self.scope.add_temp())
@@ -110,8 +126,10 @@ class NewEarlyQuadrupleMaker(IrTransformer):
     def visit_New(self, ir):
         suppress = self.suppress_converting
         self.suppress_converting = False
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is not ir.func or args_changed:
+            ir = ir.model_copy(update={'func': new_func, 'args': new_args})
         if suppress:
             return ir
         return self._new_temp_move(ir, self.scope.add_temp())
@@ -125,8 +143,10 @@ class NewEarlyQuadrupleMaker(IrTransformer):
             self.suppress_converting = True
         else:
             self.suppress_converting = False
-        ir.mem = self.visit(ir.mem)
-        ir.offset = self.visit(ir.offset)
+        new_mem = self.visit(ir.mem)
+        new_offset = self.visit(ir.offset)
+        if new_mem is not ir.mem or new_offset is not ir.offset:
+            ir = ir.model_copy(update={'mem': new_mem, 'offset': new_offset})
         if not isinstance(ir.offset, (Temp, Attr, Const, UnOp)):
             fail(self.current_stm, Errors.UNSUPPORTED_EXPR)
         if not suppress and ir.ctx & Ctx.LOAD:
@@ -137,25 +157,29 @@ class NewEarlyQuadrupleMaker(IrTransformer):
         return ir
 
     def visit_Array(self, ir):
-        for i in range(len(ir.items)):
-            ir.items[i] = self.visit(ir.items[i])
+        new_items = [self.visit(item) for item in ir.items]
+        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
+        if items_changed:
+            return ir.model_copy(update={'items': new_items})
         return ir
 
     def visit_Temp(self, ir):
         return ir
 
     def visit_Attr(self, ir):
-        ir.exp = self.visit(ir.exp)
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            return ir.model_copy(update={'exp': new_exp})
         return ir
 
     def visit_Expr(self, ir):
         if isinstance(ir.exp, (Call, SysCall, MStore)):
             self.suppress_converting = True
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_CJump(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         assert (isinstance(ir.exp, Temp) and self.scope.find_sym(ir.exp.name).is_condition()) or isinstance(ir.exp, Const)
         self.new_stms.append(ir)
 
@@ -168,8 +192,8 @@ class NewEarlyQuadrupleMaker(IrTransformer):
     def visit_Move(self, ir):
         if isinstance(ir.src, (BinOp, RelOp, Call, SysCall, New, MRef)):
             self.suppress_converting = True
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
+        object.__setattr__(ir, 'src', self.visit(ir.src))
+        object.__setattr__(ir, 'dst', self.visit(ir.dst))
         assert isinstance(ir.src, (Temp, Attr, Const, UnOp,
                                    BinOp, RelOp, MRef, Call,
                                    New, SysCall, Array))
@@ -196,5 +220,7 @@ class NewLateQuadrupleMaker(IrTransformer):
         receiver_t = receiver.typ
         if (receiver_t.is_class() or receiver_t.is_namespace()) and attr_t.is_scalar():
             return ir
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'exp': new_exp})

@@ -1,5 +1,5 @@
 """Tests for NewInlineOpt and NewFlattenModule."""
-from polyphony.compiler.ir.ir import Ctx as OldCtx, CONST, TEMP, ATTR, NEW, MOVE, EXPR, CALL, RET, JUMP
+from polyphony.compiler.ir.ir import Ctx as OldCtx, Const, Temp, Attr, New, Move, Expr, Call, Ret, Jump
 from polyphony.compiler.ir import ir as new_ir
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
@@ -35,7 +35,7 @@ def test_new_flatten_module_no_parent():
     blk = Block(F, nametag='blk1')
     F.set_entry_block(blk)
     F.set_exit_block(blk)
-    blk.append_stm(MOVE(TEMP('x', OldCtx.STORE), CONST(0)))
+    blk.append_stm(Move(Temp('x', OldCtx.STORE), Const(0)))
     Block.set_order(blk, 0)
 
     scopes = NewFlattenModule().process(F)
@@ -58,11 +58,11 @@ def test_new_inline_opt_simple_inline():
     callee_blk = Block(callee, nametag='blk1')
     callee.set_entry_block(callee_blk)
     callee.set_exit_block(callee_blk)
-    from polyphony.compiler.ir.ir import BINOP
+    from polyphony.compiler.ir.ir import BinOp
     # param copy: x = @in_x
-    callee_blk.append_stm(MOVE(TEMP('x', OldCtx.STORE), TEMP(x_param_sym.name)))
-    callee_blk.append_stm(MOVE(TEMP(ret_sym.name, OldCtx.STORE), BINOP('Add', TEMP('x'), CONST(1))))
-    callee_blk.append_stm(RET(TEMP(ret_sym.name)))
+    callee_blk.append_stm(Move(Temp('x', OldCtx.STORE), Temp(x_param_sym.name)))
+    callee_blk.append_stm(Move(Temp(ret_sym.name, OldCtx.STORE), BinOp('Add', Temp('x'), Const(1))))
+    callee_blk.append_stm(Ret(Temp(ret_sym.name)))
     Block.set_order(callee_blk, 0)
     callee_sym = top.add_sym('add1', tags=set(), typ=Type.function(callee, Type.int(), (Type.int(),)))
 
@@ -74,8 +74,8 @@ def test_new_inline_opt_simple_inline():
     caller_blk = Block(caller, nametag='blk1')
     caller.set_entry_block(caller_blk)
     caller.set_exit_block(caller_blk)
-    call = CALL(TEMP('add1'), args=[('x', CONST(5))], kwargs={})
-    caller_blk.append_stm(MOVE(TEMP('result', OldCtx.STORE), call))
+    call = Call(Temp('add1'), args=[('x', Const(5))], kwargs={})
+    caller_blk.append_stm(Move(Temp('result', OldCtx.STORE), call))
     Block.set_order(caller_blk, 0)
 
     # Run InlineOpt
@@ -88,6 +88,6 @@ def test_new_inline_opt_simple_inline():
     # Should not have any CALL to add1
     has_call = False
     for stm in all_stms:
-        if isinstance(stm, MOVE) and isinstance(stm.src, CALL):
+        if isinstance(stm, Move) and isinstance(stm.src, Call):
             has_call = True
     assert not has_call, 'CALL should have been inlined'

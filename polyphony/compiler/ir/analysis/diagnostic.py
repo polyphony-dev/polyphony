@@ -36,7 +36,7 @@ class CFGChecker(object):
 
     def _check_stms(self, blk):
         for stm in blk.stms:
-            assert isinstance(stm, IRStm)
+            assert isinstance(stm, IrStm)
             assert stm.block is blk
 
     def _check_preds(self, blk):
@@ -72,23 +72,23 @@ class CFGChecker(object):
         if blk is self.scope.exit_block:
             if self.scope.is_returnable():
                 assert blk.stms
-                assert isinstance(blk.stms[-1], RET)
+                assert isinstance(blk.stms[-1], Ret)
             return
         assert blk.stms
         jmp = blk.stms[-1]
-        assert isinstance(jmp, (JUMP, CJUMP, MCJUMP))
-        if isinstance(jmp, JUMP):
+        assert isinstance(jmp, (Jump, CJump, MCJump))
+        if isinstance(jmp, Jump):
             assert len(blk.succs) == 1
             assert jmp.target is blk.succs[0]
             if jmp.typ == 'L':
                 assert len(blk.succs_loop) == 1
                 assert jmp.target is blk.succs_loop[0]
-        elif isinstance(jmp, CJUMP):
+        elif isinstance(jmp, CJump):
             assert len(blk.succs) == 2
             assert len(blk.succs_loop) == 0
             assert jmp.true is blk.succs[0]
             assert jmp.false is blk.succs[1]
-        elif isinstance(jmp, MCJUMP):
+        elif isinstance(jmp, MCJump):
             assert len(blk.succs) > 2
             assert len(blk.succs_loop) == 0
             for i, t in enumerate(jmp.targets):

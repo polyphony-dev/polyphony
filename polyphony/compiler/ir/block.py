@@ -107,16 +107,16 @@ class Block(object):
         next_block.preds_loop.append(self)
 
     def append_stm(self, stm):
-        stm.block = self
+        object.__setattr__(stm, 'block', self)
         self.stms.append(stm)
 
     def insert_stm(self, idx, stm):
-        stm.block = self
+        object.__setattr__(stm, 'block', self)
         self.stms.insert(idx, stm)
 
     def replace_stm(self, old_stm, new_stm):
         replace_item(self.stms, old_stm, new_stm)
-        new_stm.block = self
+        object.__setattr__(new_stm, 'block', self)
 
     def stm(self, idx):
         if len(self.stms):
@@ -128,15 +128,15 @@ class Block(object):
         replace_item(self.succs, old, new, all=True)
         if self.stms:
             jmp = self.stms[-1]
-            if isinstance(jmp, JUMP):
-                jmp.target = new
-            elif isinstance(jmp, CJUMP):
+            if isinstance(jmp, Jump):
+                object.__setattr__(jmp, 'target', new)
+            elif isinstance(jmp, CJump):
                 if jmp.true is old:
-                    jmp.true = new
+                    object.__setattr__(jmp, 'true', new)
                 elif jmp.false is old:
-                    jmp.false = new
+                    object.__setattr__(jmp, 'false', new)
                 self._convert_if_unidirectional(jmp)
-            elif isinstance(jmp, MCJUMP):
+            elif isinstance(jmp, MCJump):
                 for i, t in enumerate(jmp.targets):
                     if t is old:
                         jmp.targets[i] = new
@@ -177,14 +177,14 @@ class Block(object):
                     continue
                 stack.append(succ)
 
-    def clone(self, scope: Scope, stm_map: dict[IRStm, IRStm], nametag=None):
+    def clone(self, scope: Scope, stm_map: dict[IrStm, IrStm], nametag=None):
         if nametag:
             b = Block(scope, nametag)
         else:
             b = Block(scope, self.nametag)
         for stm in self.stms:
             new_stm = stm.clone()
-            new_stm.block = b
+            object.__setattr__(new_stm, 'block', b)
             b.stms.append(new_stm)
             stm_map[stm] = new_stm
         b.order = self.order
@@ -215,16 +215,16 @@ class Block(object):
 
 
     def _convert_if_unidirectional(self, jmp):
-        if isinstance(jmp, CJUMP):
+        if isinstance(jmp, CJump):
             targets = [jmp.true, jmp.false]
-        elif isinstance(jmp, MCJUMP):
+        elif isinstance(jmp, MCJump):
             targets = jmp.targets[:]
         else:
             return
 
         if all([targets[0] is target for target in targets[1:]]):
-            newjmp = JUMP(targets[0])
-            newjmp.block = self
+            newjmp = Jump(target=targets[0])
+            object.__setattr__(newjmp, 'block', self)
             self.stms[-1] = newjmp
             self.succs = [targets[0]]
             targets[0].preds = remove_except_one(targets[0].preds, self)

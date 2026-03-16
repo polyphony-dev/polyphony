@@ -81,17 +81,17 @@ class HDLModuleBuilder(object):
             while True:
                 defstm = find_defstm(array_sym)
                 array = defstm.src
-                if isinstance(array, ARRAY):
+                if isinstance(array, Array):
                     break
-                elif isinstance(array, IRVariable):
+                elif isinstance(array, IrVariable):
                     array_sym = qualified_symbols(array, array_sym.scope)[-1]
                 else:
                     assert False
             case_items = []
-            assert isinstance(array.repeat, CONST)
+            assert isinstance(array.repeat, Const)
             items = array.items * array.repeat.value
             for i, item in enumerate(items):
-                assert isinstance(item, CONST)
+                assert isinstance(item, Const)
                 connect = AHDL_BLOCK(str(i), (AHDL_CONNECT(fname, AHDL_CONST(item.value)), ))
                 case_items.append(AHDL_CASE_ITEM(AHDL_CONST(i), connect))
             case = AHDL_CASE(input, tuple(case_items))

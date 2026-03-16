@@ -1,9 +1,7 @@
-﻿from ..ir import CONST, RELOP, TEMP, MOVE, CJUMP, PHIBase, LPHI
-from ..ir import CJump, Temp, Const, RelOp, LPhi, Move
+﻿from ..ir import CJump, Temp, Const, RelOp, LPhi, Move
 from ..ir_helper import qualified_symbols
 from ..symbol import Symbol
 from ..loop import Region, Loop
-from .usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -80,74 +78,6 @@ class LoopDetector(object):
                 self._process_back_walk(pred, blks, visited, scc)
 
 
-class LoopInfoSetter(object):
-    def process(self, scope):
-        self.scope = scope
-        self.usedef = UseDefDetector().process(scope)
-        for loop in self.scope.child_regions(self.scope.top_region()):
-            self._set_loop_info_rec(loop)
-
-    def _set_loop_info_rec(self, loop):
-        self.set_loop_info(loop)
-        for child in self.scope.child_regions(loop):
-            self._set_loop_info_rec(child)
-
-    def set_loop_info(self, loop):
-        assert isinstance(loop, Loop)
-        if loop.counter:
-            return
-        cjump = loop.head.stms[-1]
-        if not isinstance(cjump, CJUMP):
-            # this loop may busy loop
-            return
-        cond_var = cjump.exp
-        cond_sym = qualified_symbols(cond_var, self.scope)[-1]
-        loop.cond = cond_sym
-        assert isinstance(cond_var, TEMP)
-        defs = self.usedef.get_stms_defining(cond_sym)
-        assert len(defs) == 1
-        cond_stm = list(defs)[0]
-        assert isinstance(cond_stm, MOVE)
-        if not isinstance(cond_stm.src, RELOP):
-            return
-        loop_relexp = cond_stm.src
-
-        if isinstance(loop_relexp.left, TEMP) and (left_sym := self.scope.find_sym(loop_relexp.left.name)) and left_sym.is_induction():
-            assert isinstance(loop_relexp.right, (CONST, TEMP))
-            loop.counter = left_sym
-            loop.counter.add_tag('loop_counter')
-        elif isinstance(loop_relexp.right, TEMP) and (right_sym := self.scope.find_sym(loop_relexp.right.name)) and right_sym.is_induction():
-            assert isinstance(loop_relexp.left, (CONST, TEMP))
-            loop.counter = right_sym
-            loop.counter.add_tag('loop_counter')
-        else:
-            lphis = loop.head.collect_stms(LPHI)
-            for lphi in lphis:
-                var_sym = qualified_symbols(lphi.var, self.scope)[-1]
-                assert isinstance(var_sym, Symbol)
-                if var_sym.is_loop_counter():
-                    loop.counter = var_sym
-                    break
-            else:
-                # this loop may busy loop
-                return
-        defs = self.usedef.get_stms_defining(loop.counter)
-        assert len(defs) == 1
-        counter_def = list(defs)[0]
-        isinstance(counter_def, PHIBase)
-        assert len(counter_def.args) == 2
-        loop.init = counter_def.args[0]
-        loop.update = counter_def.args[1]
-        loop.exits = []
-        for blk in loop.inner_blocks:
-            for s in blk.succs:
-                if s not in loop.inner_blocks:
-                    loop.exits.append(s)
-        assert loop.update
-        assert loop.init
-        logger.debug(loop)
-
-
 class LoopRegionSetter(object):
     def process(self, scope):
         self.scope = scope
@@ -167,58 +97,6 @@ class LoopRegionSetter(object):
             for c in children:
                 loop.inner_blocks.extend(self._get_region_blks(c))
         return loop.inner_blocks
-
-
-# hierarchize
-class LoopDependencyDetector(object):
-    def process(self, scope):
-        usedef = UseDefDetector().process(scope)
-        all_blks = set([b for b in scope.traverse_blocks()])
-        for loop in scope.traverse_regions(reverse=True):
-            if loop is scope.top_region():
-                break
-            outer_region = all_blks.difference(set(loop.inner_blocks))
-            inner_region = set(loop.inner_blocks) - (set(loop.blocks()))
-            od, ou, id, iu = self._get_loop_block_dependency(usedef,
-                                                             loop,
-                                                             outer_region,
-                                                             inner_region)
-            loop.outer_defs = od
-            loop.outer_uses = ou
-            loop.inner_defs = id
-            loop.inner_uses = iu
-
-    def _get_loop_block_dependency(self, usedef, loop, outer_region, inner_region):
-        outer_defs = set()
-        outer_uses = set()
-        inner_defs = set()
-        inner_uses = set()
-        blocks = loop.blocks()
-        usesyms = set()
-        defsyms = set()
-        for blk in blocks:
-            usesyms |= usedef.get_syms_used_at(blk)
-            defsyms |= usedef.get_syms_defined_at(blk)
-        for sym in usesyms:
-            defblks = usedef.get_blks_defining(sym)
-            # Is this symbol used in the out of the loop?
-            intersect = outer_region.intersection(defblks)
-            if intersect:
-                outer_defs.add(sym)
-            intersect = inner_region.intersection(defblks)
-            if intersect:
-                inner_defs.add(sym)
-        for sym in defsyms:
-            useblks = usedef.get_blks_using(sym)
-            # Is this symbol used in the out of the loop?
-            intersect = outer_region.intersection(useblks)
-            if intersect:
-                outer_uses.add(sym)
-            intersect = inner_region.intersection(useblks)
-            if intersect:
-                inner_uses.add(sym)
-
-        return (outer_defs, outer_uses, inner_defs, inner_uses)
 
 
 class NewLoopDependencyDetector(object):

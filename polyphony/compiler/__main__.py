@@ -511,7 +511,12 @@ def looptrans(driver, scope):
 
 
 def unroll(driver, scope):
+    _unroll_count = 0
     while NewLoopUnroller().process(scope):
+        _unroll_count += 1
+        logger.debug(f'unroll iteration {_unroll_count} for {scope}')
+        if _unroll_count > 20:
+            raise RuntimeError(f'unroll infinite loop detected for {scope}')
         dumpscope(driver, scope)
         checkcfg(driver, scope)
         reduce_blk(driver, scope)

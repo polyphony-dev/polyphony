@@ -20,7 +20,7 @@ def test_visit_with_context_new_ir_expr():
     # Create new IR Expr containing Temp('x')
     new_expr = Expr(exp=Temp(name='x'))
 
-    # Create NewVarReplacer to replace x -> CONST(5)
+    # Create NewVarReplacer to replace x -> Const(5)
     replacer = NewVarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit_with_context(scope, new_expr)
 

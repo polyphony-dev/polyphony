@@ -8,7 +8,7 @@ from .type import Type
 from .exprtype import ExprType
 if TYPE_CHECKING:
     from ..scope import Scope
-    from ..ir import IR, EXPR
+    from ..ir import Ir, Expr
 
 
 def type_from_ir(scope: Scope, ir, explicit=False) -> Type:
@@ -114,8 +114,7 @@ def _type_from_new_ir(scope: Scope, ir, explicit=False) -> Type:
 
 def _type_from_old_ir(scope: Scope, ir, explicit=False) -> Type:
     """Interpret type from old IR (ir.py) types."""
-    from ..ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
-    from ..ir import Expr
+    from ..ir import Ir as IR, IrExp as IRExp, Const as CONST, Temp as TEMP, Attr as ATTR, MRef as MREF, Array as ARRAY, Expr
     from ..symbol import Symbol
 
     assert ir

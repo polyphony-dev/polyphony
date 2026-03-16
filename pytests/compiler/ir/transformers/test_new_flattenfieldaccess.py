@@ -35,8 +35,8 @@ ret @return
     # Should not change simple TEMPs
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == 'x':
-                assert isinstance(stm.src, CONST)
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == 'x':
+                assert isinstance(stm.src, Const)
                 assert stm.src.value == 10
 
 
@@ -61,5 +61,5 @@ ret @return
     # All TEMPs should remain as TEMPs
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP):
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp):
                 pass  # No assertion needed, just verify no crash

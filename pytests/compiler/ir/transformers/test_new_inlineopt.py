@@ -40,8 +40,8 @@ def test_object_copy_inserts_field_moves():
     F.add_sym('d1', tags=set(), typ=Type.object(D))
     F.add_sym('d2', tags=set(), typ=Type.object(D))
 
-    mv = MOVE(TEMP('d1', Ctx.STORE), TEMP('d2', Ctx.LOAD))
-    mv.block = blk
+    mv = Move(Temp('d1', Ctx.STORE), Temp('d2', Ctx.LOAD))
+    object.__setattr__(mv, 'block', blk)
     blk.append_stm(mv)
 
     Block.set_order(blk, 0)
@@ -58,8 +58,8 @@ def test_object_copy_inserts_field_moves():
     blk2 = Block(F2, nametag='blk1')
     F2.set_entry_block(blk2)
     F2.set_exit_block(blk2)
-    mv2 = MOVE(TEMP('d1', Ctx.STORE), TEMP('d2', Ctx.LOAD))
-    mv2.block = blk2
+    mv2 = Move(Temp('d1', Ctx.STORE), Temp('d2', Ctx.LOAD))
+    object.__setattr__(mv2, 'block', blk2)
     blk2.append_stm(mv2)
     Block.set_order(blk2, 0)
 
@@ -108,8 +108,8 @@ def test_no_copy_for_non_object_fields():
     F.set_entry_block(blk)
     F.set_exit_block(blk)
 
-    mv = MOVE(TEMP('c1', Ctx.STORE), TEMP('c2', Ctx.LOAD))
-    mv.block = blk
+    mv = Move(Temp('c1', Ctx.STORE), Temp('c2', Ctx.LOAD))
+    object.__setattr__(mv, 'block', blk)
     blk.append_stm(mv)
     Block.set_order(blk, 0)
 

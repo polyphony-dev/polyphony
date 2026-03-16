@@ -1,5 +1,5 @@
 """Tests for NewCallCollector, NewModuleInstantiator, NewArgumentApplier."""
-from polyphony.compiler.ir.ir import Ctx as OldCtx, CONST, TEMP, ATTR, NEW, MOVE, EXPR, CALL
+from polyphony.compiler.ir.ir import Ctx as OldCtx, Const, Temp, Attr, New, Move, Expr, Call
 from polyphony.compiler.ir import ir as new_ir
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
@@ -42,8 +42,8 @@ def test_new_call_collector_finds_calls():
     blk = Block(caller, nametag='blk1')
     caller.set_entry_block(blk)
     caller.set_exit_block(blk)
-    call = CALL(TEMP('callee_func'), args=[], kwargs={})
-    blk.append_stm(MOVE(TEMP('result', OldCtx.STORE), call))
+    call = Call(Temp('callee_func'), args=[], kwargs={})
+    blk.append_stm(Move(Temp('result', OldCtx.STORE), call))
     Block.set_order(blk, 0)
 
     # Convert to new IR
@@ -81,8 +81,8 @@ def test_new_call_collector_finds_new():
     blk = Block(F, nametag='blk1')
     F.set_entry_block(blk)
     F.set_exit_block(blk)
-    new_call = NEW(TEMP('MyClass'), args=[], kwargs={})
-    blk.append_stm(MOVE(TEMP('obj', OldCtx.STORE), new_call))
+    new_call = New(Temp('MyClass'), args=[], kwargs={})
+    blk.append_stm(Move(Temp('obj', OldCtx.STORE), new_call))
     Block.set_order(blk, 0)
 
     # Convert to new IR

@@ -93,8 +93,8 @@ def test_var_1():
     scope.add_sym('a', tags=set(), typ=Type.int(8))
 
     v = parser.parse_scalar('a')
-    t = cast(TEMP, v)
-    assert isinstance(t, TEMP)
+    t = cast(Temp, v)
+    assert isinstance(t, Temp)
     assert t.name == 'a'
     sym = cast(Symbol, qualified_symbols(t, scope)[-1])
     assert isinstance(sym, Symbol)
@@ -112,8 +112,8 @@ def test_var_2():
 
     parser.current_scope = Y
     x = parser.parse_scalar('x')
-    x = cast(TEMP, x)
-    assert isinstance(x, TEMP)
+    x = cast(Temp, x)
+    assert isinstance(x, Temp)
     assert x.name == 'x'
     x_sym = cast(Symbol, qualified_symbols(x, Y)[-1])
     assert x_sym.typ.is_object()
@@ -121,8 +121,8 @@ def test_var_2():
     assert x_sym.scope is Y
 
     xv = parser.parse_scalar('x.value')
-    xv = cast(ATTR, xv)
-    assert isinstance(xv, ATTR)
+    xv = cast(Attr, xv)
+    assert isinstance(xv, Attr)
     xv_sym = cast(Symbol, qualified_symbols(xv, Y)[-1])
     assert xv_sym.name == 'value'
     assert xv_sym.typ.is_int()
@@ -141,8 +141,8 @@ def test_var_3():
 
     parser.current_scope = Z
     y = parser.parse_scalar('y')
-    y = cast(TEMP, y)
-    assert isinstance(y, TEMP)
+    y = cast(Temp, y)
+    assert isinstance(y, Temp)
     y_sym = cast(Symbol, qualified_symbols(y, Z)[-1])
     assert y_sym.name == 'y'
     assert y_sym.typ.is_object()
@@ -150,9 +150,9 @@ def test_var_3():
     assert y_sym.scope is Z
 
     yx = parser.parse_scalar('y.x')
-    yx = cast(ATTR, yx)
-    assert isinstance(yx, ATTR)
-    assert isinstance(yx.exp, TEMP)
+    yx = cast(Attr, yx)
+    assert isinstance(yx, Attr)
+    assert isinstance(yx.exp, Temp)
     assert yx.exp.name == 'y'
     assert yx.name == 'x'
     yx_sym = cast(Symbol, qualified_symbols(yx, Z)[-1])
@@ -161,10 +161,10 @@ def test_var_3():
     assert yx_sym.scope is Y
 
     yxv = parser.parse_var('y.x.value', Ctx.STORE)
-    yxv = cast(ATTR, yxv)
-    assert isinstance(yxv, ATTR)
+    yxv = cast(Attr, yxv)
+    assert isinstance(yxv, Attr)
     assert yxv.ctx == Ctx.STORE
-    assert isinstance(yxv.exp, ATTR)
+    assert isinstance(yxv.exp, Attr)
     assert yxv.exp.name == 'x'
     assert yxv.exp.ctx == Ctx.LOAD
     assert yxv.exp.exp.name == 'y'
@@ -178,41 +178,41 @@ def test_var_4():
     setup_test()
     parser = IRParser('')
     v = parser.parse_scalar('123')
-    v = cast(CONST, v)
-    assert isinstance(v, CONST)
+    v = cast(Const, v)
+    assert isinstance(v, Const)
     assert v.value == 123
 
     v = parser.parse_scalar('-123')
-    v = cast(UNOP, v)
-    assert isinstance(v, UNOP)
+    v = cast(UnOp, v)
+    assert isinstance(v, UnOp)
     assert v.op == 'USub'
-    assert isinstance(v.exp, CONST)
-    assert cast(CONST, v.exp).value == 123
+    assert isinstance(v.exp, Const)
+    assert cast(Const, v.exp).value == 123
 
     v = parser.parse_scalar('+123')
-    v = cast(UNOP, v)
-    assert isinstance(v, UNOP)
+    v = cast(UnOp, v)
+    assert isinstance(v, UnOp)
     assert v.op == 'UAdd'
-    assert isinstance(v.exp, CONST)
-    assert cast(CONST, v.exp).value == 123
+    assert isinstance(v.exp, Const)
+    assert cast(Const, v.exp).value == 123
 
 
 def test_var_5():
     setup_test()
     parser = IRParser('')
     p = parser.parse_scalar('@in_x')
-    assert isinstance(p, TEMP)
-    p = cast(TEMP, p)
+    assert isinstance(p, Temp)
+    p = cast(Temp, p)
     assert p.name == '@in_x'
 
     p = parser.parse_scalar('_x#1')
-    assert isinstance(p, TEMP)
-    p = cast(TEMP, p)
+    assert isinstance(p, Temp)
+    p = cast(Temp, p)
     assert p.name == '_x#1'
 
     p = parser.parse_scalar('!assert')
-    assert isinstance(p, TEMP)
-    p = cast(TEMP, p)
+    assert isinstance(p, Temp)
+    p = cast(Temp, p)
     assert p.name == '!assert'
 
 
@@ -220,20 +220,20 @@ def test_var_6():
     setup_test()
     parser = IRParser('')
     p = parser.parse_scalar('True')
-    assert p == CONST(True)
+    assert p == Const(True)
 
     p = parser.parse_scalar('False')
-    assert p == CONST(False)
+    assert p == Const(False)
 
 
 def test_var_7():
     setup_test()
     parser = IRParser('')
     p = parser.parse_scalar("'text'")
-    assert p == CONST('text')
+    assert p == Const('text')
 
     p = parser.parse_scalar('"TEXT"')
-    assert p == CONST('TEXT')
+    assert p == Const('TEXT')
 
 
 def test_block_line():
@@ -255,40 +255,40 @@ def test_block_line():
 
     assert parser.parse_block_line()
     stm = blk.stms[0]
-    assert isinstance(stm, MOVE)
-    assert isinstance(stm.dst, TEMP)
+    assert isinstance(stm, Move)
+    assert isinstance(stm.dst, Temp)
     assert stm.dst.ctx == Ctx.STORE
     dst_sym = cast(Symbol, qualified_symbols(stm.dst, scope)[-1])
     assert dst_sym is a
-    assert isinstance(stm.src, CONST)
+    assert isinstance(stm.src, Const)
     assert stm.src.value == 1
 
     assert parser.parse_block_line()
     stm = blk.stms[1]
-    assert isinstance(stm, MOVE)
-    assert isinstance(stm.dst, TEMP)
+    assert isinstance(stm, Move)
+    assert isinstance(stm.dst, Temp)
     assert stm.dst.ctx == Ctx.STORE
     dst_sym = cast(Symbol, qualified_symbols(stm.dst, scope)[-1])
     assert dst_sym is b
-    assert isinstance(stm.src, UNOP)
+    assert isinstance(stm.src, UnOp)
     assert stm.src.op == 'USub'
-    assert isinstance(stm.src.exp, TEMP)
+    assert isinstance(stm.src.exp, Temp)
     src_sym = cast(Symbol, qualified_symbols(stm.src.exp, scope)[-1])
     assert src_sym is a
 
     assert parser.parse_block_line()
     stm = blk.stms[2]
-    assert isinstance(stm, MOVE)
-    assert isinstance(stm.dst, TEMP)
+    assert isinstance(stm, Move)
+    assert isinstance(stm.dst, Temp)
     assert stm.dst.ctx == Ctx.STORE
     dst_sym = cast(Symbol, qualified_symbols(stm.dst, scope)[-1])
     assert dst_sym is c
-    assert isinstance(stm.src, BINOP)
+    assert isinstance(stm.src, BinOp)
     assert stm.src.op == 'Add'
-    assert isinstance(stm.src.left, TEMP)
+    assert isinstance(stm.src.left, Temp)
     left_sym = cast(Symbol, qualified_symbols(stm.src.left, scope)[-1])
     assert left_sym is a
-    assert isinstance(stm.src.right, TEMP)
+    assert isinstance(stm.src.right, Temp)
     right_sym = cast(Symbol, qualified_symbols(stm.src.right, scope)[-1])
     assert right_sym is b
 
@@ -300,7 +300,7 @@ def test_exp_temp():
     parser = IRParser('')
     
     exp = parser.parse_exp('x')
-    assert isinstance(exp, TEMP)
+    assert isinstance(exp, Temp)
     assert exp.name == 'x'
     assert exp.ctx == Ctx.LOAD
 
@@ -310,7 +310,7 @@ def test_exp_attr():
     parser = IRParser('')
     
     exp = parser.parse_exp('x.y.z')
-    assert isinstance(exp, ATTR)
+    assert isinstance(exp, Attr)
     assert exp.name == 'z'
     assert exp.exp.name == 'y'
     assert exp.exp.exp.name == 'x'
@@ -326,8 +326,8 @@ def test_exp_list():
     z = scope.add_sym('z', tags=set(), typ=Type.int())
 
     exp = parser.parse_exp('[x y z]')
-    assert isinstance(exp, ARRAY)
-    array = cast(ARRAY, exp)
+    assert isinstance(exp, Array)
+    array = cast(Array, exp)
     assert array.is_mutable
     assert len(array.items) == 3
     assert array.items[0].name == 'x'
@@ -345,8 +345,8 @@ def test_exp_tuple():
     z = scope.add_sym('z', tags=set(), typ=Type.int())
 
     exp = parser.parse_exp('(x y z)')
-    assert isinstance(exp, ARRAY)
-    array = cast(ARRAY, exp)
+    assert isinstance(exp, Array)
+    array = cast(Array, exp)
     assert array.is_mutable is False
     assert len(array.items) == 3
     assert array.items[0].name == 'x'
@@ -359,12 +359,12 @@ def test_exp_binop():
     parser = IRParser('')
     
     exp = parser.parse_exp('(+ 123 _a.b)')
-    assert isinstance(exp, BINOP)
-    bin = cast(BINOP, exp)
+    assert isinstance(exp, BinOp)
+    bin = cast(BinOp, exp)
     assert bin.op == 'Add'
-    assert isinstance(bin.left, CONST)
+    assert isinstance(bin.left, Const)
     assert bin.left.value == 123
-    assert isinstance(bin.right, ATTR)
+    assert isinstance(bin.right, Attr)
     assert bin.right.name == 'b'
     assert bin.right.exp.name == '_a'
 
@@ -374,12 +374,12 @@ def test_exp_binop_2():
     parser = IRParser('')
     
     exp = parser.parse_exp('(+ "123" \'456\')')
-    assert isinstance(exp, BINOP)
-    bin = cast(BINOP, exp)
+    assert isinstance(exp, BinOp)
+    bin = cast(BinOp, exp)
     assert bin.op == 'Add'
-    assert isinstance(bin.left, CONST)
+    assert isinstance(bin.left, Const)
     assert bin.left.value == '123'
-    assert isinstance(bin.right, CONST)
+    assert isinstance(bin.right, Const)
     assert bin.right.value == '456'
 
 
@@ -388,12 +388,12 @@ def test_exp_relop():
     parser = IRParser('')
     
     exp = parser.parse_exp('(== 123 _a.b)')
-    assert isinstance(exp, RELOP)
-    rel = cast(RELOP, exp)
+    assert isinstance(exp, RelOp)
+    rel = cast(RelOp, exp)
     assert rel.op == 'Eq'
-    assert isinstance(rel.left, CONST)
+    assert isinstance(rel.left, Const)
     assert rel.left.value == 123
-    assert isinstance(rel.right, ATTR)
+    assert isinstance(rel.right, Attr)
     assert rel.right.name == 'b'
     assert rel.right.exp.name == '_a'
 
@@ -403,11 +403,11 @@ def test_exp_mld():
     parser = IRParser('')
     
     exp = parser.parse_exp('(mld xs 123)')
-    assert isinstance(exp, MREF)
-    mref = cast(MREF, exp)
-    assert isinstance(mref.mem, TEMP)
+    assert isinstance(exp, MRef)
+    mref = cast(MRef, exp)
+    assert isinstance(mref.mem, Temp)
     assert mref.mem.name == 'xs'
-    assert isinstance(mref.offset, CONST)
+    assert isinstance(mref.offset, Const)
     assert mref.offset.value == 123
 
 
@@ -416,13 +416,13 @@ def test_exp_mst():
     parser = IRParser('')
     
     exp = parser.parse_exp('(mst xs 123 y)')
-    assert isinstance(exp, MSTORE)
-    mst = cast(MSTORE, exp)
-    assert isinstance(mst.mem, TEMP)
+    assert isinstance(exp, MStore)
+    mst = cast(MStore, exp)
+    assert isinstance(mst.mem, Temp)
     assert mst.mem.name == 'xs'
-    assert isinstance(mst.offset, CONST)
+    assert isinstance(mst.offset, Const)
     assert mst.offset.value == 123
-    assert isinstance(mst.exp, TEMP)
+    assert isinstance(mst.exp, Temp)
     assert mst.exp.name == 'y'
 
 
@@ -431,19 +431,19 @@ def test_exp_call():
     parser = IRParser('')
     
     exp = parser.parse_exp('(call f (+ 1 2) _x y.z)')
-    assert isinstance(exp, CALL)
-    call = cast(CALL, exp)
-    assert isinstance(call.func, TEMP)
+    assert isinstance(exp, Call)
+    call = cast(Call, exp)
+    assert isinstance(call.func, Temp)
     assert call.func.name == 'f'
     assert call.func.ctx == Ctx.CALL
     assert len(call.args) == 3
-    assert isinstance(call.args[0][1], BINOP)
+    assert isinstance(call.args[0][1], BinOp)
     assert call.args[0][1].op == 'Add'
-    assert isinstance(call.args[0][1].left, CONST)
-    assert isinstance(call.args[0][1].right, CONST)
-    assert isinstance(call.args[1][1], TEMP)
+    assert isinstance(call.args[0][1].left, Const)
+    assert isinstance(call.args[0][1].right, Const)
+    assert isinstance(call.args[1][1], Temp)
     assert call.args[1][1].name == '_x'
-    assert isinstance(call.args[2][1], ATTR)
+    assert isinstance(call.args[2][1], Attr)
     assert call.args[2][1].name == 'z'
     assert call.args[2][1].exp.name == 'y'
 
@@ -453,19 +453,19 @@ def test_exp_new():
     parser = IRParser('')
     
     exp = parser.parse_exp('(new C (+ 1 2) _x y.z)')
-    assert isinstance(exp, NEW)
-    call = cast(NEW, exp)
-    assert isinstance(call.func, TEMP)
+    assert isinstance(exp, New)
+    call = cast(New, exp)
+    assert isinstance(call.func, Temp)
     assert call.func.name == 'C'
     assert call.func.ctx == Ctx.CALL
     assert len(call.args) == 3
-    assert isinstance(call.args[0][1], BINOP)
+    assert isinstance(call.args[0][1], BinOp)
     assert call.args[0][1].op == 'Add'
-    assert isinstance(call.args[0][1].left, CONST)
-    assert isinstance(call.args[0][1].right, CONST)
-    assert isinstance(call.args[1][1], TEMP)
+    assert isinstance(call.args[0][1].left, Const)
+    assert isinstance(call.args[0][1].right, Const)
+    assert isinstance(call.args[1][1], Temp)
     assert call.args[1][1].name == '_x'
-    assert isinstance(call.args[2][1], ATTR)
+    assert isinstance(call.args[2][1], Attr)
     assert call.args[2][1].name == 'z'
     assert call.args[2][1].exp.name == 'y'
 
@@ -475,13 +475,13 @@ def test_exp_syscall():
     parser = IRParser('')
 
     exp = parser.parse_exp('(syscall print 1 2 3)')
-    assert isinstance(exp, SYSCALL)
-    call = cast(SYSCALL, exp)
+    assert isinstance(exp, SysCall)
+    call = cast(SysCall, exp)
     assert call.name == 'print'
     assert len(call.args) == 3
-    assert isinstance(call.args[0][1], CONST)
-    assert isinstance(call.args[1][1], CONST)
-    assert isinstance(call.args[2][1], CONST)
+    assert isinstance(call.args[0][1], Const)
+    assert isinstance(call.args[1][1], Const)
+    assert isinstance(call.args[2][1], Const)
 
 
 def test_stm_cmv():
@@ -489,12 +489,12 @@ def test_stm_cmv():
     parser = IRParser('')
 
     stm = parser.parse_stm('mv? cond z (+ x y)')
-    assert isinstance(stm, CMOVE)
-    mv = cast(CMOVE, stm)
-    assert isinstance(mv.cond, TEMP)
-    assert mv.dst == TEMP('z', Ctx.STORE)
-    assert isinstance(mv.src, BINOP)
-    assert mv.src == BINOP('Add', TEMP('x'), TEMP('y'))
+    assert isinstance(stm, CMove)
+    mv = cast(CMove, stm)
+    assert isinstance(mv.cond, Temp)
+    assert mv.dst == Temp('z', Ctx.STORE)
+    assert isinstance(mv.src, BinOp)
+    assert mv.src == BinOp('Add', Temp('x'), Temp('y'))
 
 
 def test_stm_mv():
@@ -508,14 +508,14 @@ def test_stm_mv():
     scope.set_entry_block(blk)
 
     stm = parser.parse_stm('mv xs [1 2 3]')
-    assert isinstance(stm, MOVE)
-    mv = cast(MOVE, stm)
-    assert mv.dst == TEMP('xs', Ctx.STORE)
+    assert isinstance(stm, Move)
+    mv = cast(Move, stm)
+    assert mv.dst == Temp('xs', Ctx.STORE)
     dst_sym = cast(Symbol, qualified_symbols(mv.dst, scope)[-1])
     assert dst_sym is xs
-    assert isinstance(mv.src, ARRAY)
-    array = cast(ARRAY, mv.src)
-    assert array.items == [CONST(1), CONST(2), CONST(3)]
+    assert isinstance(mv.src, Array)
+    array = cast(Array, mv.src)
+    assert array.items == [Const(1), Const(2), Const(3)]
     assert array.is_mutable
 
 
@@ -524,28 +524,28 @@ def test_stm_mv_call():
     parser = IRParser('')
 
     stm = parser.parse_stm('mv v (call func 1 2 3)')
-    assert isinstance(stm, MOVE)
-    mv = cast(MOVE, stm)
-    assert mv.dst == TEMP('v', Ctx.STORE)
-    assert isinstance(mv.src, CALL)
-    call = cast(CALL, mv.src)
+    assert isinstance(stm, Move)
+    mv = cast(Move, stm)
+    assert mv.dst == Temp('v', Ctx.STORE)
+    assert isinstance(mv.src, Call)
+    call = cast(Call, mv.src)
     assert call.func.name == 'func'
-    assert call.args == [('', CONST(1)), ('', CONST(2)), ('', CONST(3))]
+    assert call.args == [('', Const(1)), ('', Const(2)), ('', Const(3))]
 
 def test_stm_mv_tuple():
     setup_test()
     parser = IRParser('')
 
     stm = parser.parse_stm('mv ((mld x 0) (mld y 0)) (call func)')
-    assert isinstance(stm, MOVE)
-    mv = cast(MOVE, stm)
-    assert mv.dst == ARRAY(
+    assert isinstance(stm, Move)
+    mv = cast(Move, stm)
+    assert mv.dst == Array(
         [
-            MREF(TEMP('x'), CONST(0), Ctx.LOAD),
-            MREF(TEMP('y'), CONST(0), Ctx.LOAD),
+            MRef(Temp('x'), Const(0), Ctx.LOAD),
+            MRef(Temp('y'), Const(0), Ctx.LOAD),
         ], mutable=False)
-    assert isinstance(mv.src, CALL)
-    call = cast(CALL, mv.src)
+    assert isinstance(mv.src, Call)
+    call = cast(Call, mv.src)
     assert call.func.name == 'func'
     assert call.args == []
 
@@ -555,9 +555,9 @@ def test_stm_expr():
     parser = IRParser('')
 
     stm = parser.parse_stm('expr (syscall print 1 2 3)')
-    assert isinstance(stm, EXPR)
-    expr = cast(EXPR, stm)
-    assert expr.exp == SYSCALL(TEMP('print'), [('', CONST(1)), ('', CONST(2)), ('', CONST(3))], {})
+    assert isinstance(stm, Expr)
+    expr = cast(Expr, stm)
+    assert expr.exp == SysCall(Temp('print'), [('', Const(1)), ('', Const(2)), ('', Const(3))], {})
 
 
 def test_stm_j():
@@ -571,8 +571,8 @@ def test_stm_j():
     parser.current_block = blk1
 
     stm = parser.parse_stm('j blk2')
-    assert isinstance(stm, JUMP)
-    jmp = cast(JUMP, stm)
+    assert isinstance(stm, Jump)
+    jmp = cast(Jump, stm)
     assert jmp.target.name == blk2.name
 
 
@@ -589,8 +589,8 @@ def test_stm_cj():
     parser.current_block = blk1
 
     stm = parser.parse_stm('cj cond blk2 blk3')
-    assert isinstance(stm, CJUMP)
-    jmp = cast(CJUMP, stm)
+    assert isinstance(stm, CJump)
+    jmp = cast(CJump, stm)
     assert jmp.exp.name == 'cond'
     assert jmp.true.name == blk2.name
     assert jmp.false.name == blk3.name
@@ -611,8 +611,8 @@ def test_stm_mj():
     parser.current_block = blk1
 
     stm = parser.parse_stm('mj c1 blk2 c2 blk3 c3 blk4')
-    assert isinstance(stm, MCJUMP)
-    jmp = cast(MCJUMP, stm)
+    assert isinstance(stm, MCJump)
+    jmp = cast(MCJump, stm)
     assert len(jmp.conds) == 3
     assert len(jmp.targets) == 3
     assert jmp.conds[0].name == 'c1'

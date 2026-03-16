@@ -475,11 +475,11 @@ class CodeVisitor(ast.NodeVisitor):
 
     def emit(self, stm, ast_node):
         self.current_block.append_stm(stm)
-        stm.loc = Loc(env.current_filename, ast_node.lineno)
+        object.__setattr__(stm, 'loc', Loc(env.current_filename, ast_node.lineno))
 
     def emit_to(self, block, stm, ast_node):
         block.append_stm(stm)
-        stm.loc = Loc(env.current_filename, ast_node.lineno)
+        object.__setattr__(stm, 'loc', Loc(env.current_filename, ast_node.lineno))
 
     def _nodectx2irctx(self, node):
         if isinstance(node.ctx, ast.Store) or isinstance(node.ctx, ast.AugStore):
@@ -739,8 +739,8 @@ class CodeVisitor(ast.NodeVisitor):
                     left_sym.typ = t
                 else:
                     fail((self.current_scope, tail_lineno), Errors.UNKNOWN_TYPE_NAME, [ann])
-            if isinstance(left, IrVariable):
-                left.ctx = Ctx.STORE
+            if isinstance(left, IrVariable) and left.ctx != Ctx.STORE:
+                left = left.model_copy(update={'ctx': Ctx.STORE})
             mv = Move(dst=left, src=right)
             if tail_lineno in self.meta_comments:
                 metainfo = self.meta_comments[tail_lineno].strip()
@@ -780,8 +780,8 @@ class CodeVisitor(ast.NodeVisitor):
             else:
                 fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_ATTRIBUTE_TYPE_HINT)
         if src:
-            if isinstance(dst, IrVariable):
-                dst.ctx = Ctx.STORE
+            if isinstance(dst, IrVariable) and dst.ctx != Ctx.STORE:
+                dst = dst.model_copy(update={'ctx': Ctx.STORE})
             self.emit(Move(dst=dst, src=src), node)
 
     def visit_If(self, node):
@@ -1201,8 +1201,8 @@ class CodeVisitor(ast.NodeVisitor):
                         assert False  # TODO: use fail()
                     break
                 elif var:
-                    if isinstance(var, IrVariable):
-                        var.ctx = Ctx.STORE
+                    if isinstance(var, IrVariable) and var.ctx != Ctx.STORE:
+                        var = var.model_copy(update={'ctx': Ctx.STORE})
                     self.emit(Move(dst=var, src=expr), node)
                 else:
                     self.emit(Expr(exp=expr), node)
@@ -1383,7 +1383,6 @@ class CodeVisitor(ast.NodeVisitor):
             assert isinstance(func_sym, Symbol)
             func_t = func_sym.typ
             if func_t.is_class():
-                func.ctx = Ctx.CALL
                 return New(name='', func=func, args=args, kwargs=kwargs)
             func_scope = func_t.scope if func_t.has_scope() else None
             if not func_scope:
@@ -1392,7 +1391,6 @@ class CodeVisitor(ast.NodeVisitor):
                                     format(node.func.id))
             else:
                 if func.name in builtin_symbols:
-                    func.ctx = Ctx.CALL
                     return SysCall(name='', func=func, args=args, kwargs=kwargs)
                 elif func_scope.name in builtin_symbols:
                     return SysCall(name='', func=Temp(name=func_scope.name, ctx=Ctx.CALL), args=args, kwargs=kwargs)
@@ -1404,7 +1402,6 @@ class CodeVisitor(ast.NodeVisitor):
                     if func_scope.name in builtin_symbols:
                         return SysCall(name='', func=Temp(name=func_scope.name, ctx=Ctx.CALL), args=args, kwargs=kwargs)
                 elif func_t.is_class():
-                    func.ctx = Ctx.CALL
                     return New(name='', func=func, args=args, kwargs=kwargs)
             else:
                 scope_sym = qsyms[-2]
@@ -1412,7 +1409,6 @@ class CodeVisitor(ast.NodeVisitor):
                     scope_sym_t = scope_sym.typ
                     if scope_sym_t.is_containable():
                          assert False
-        func.ctx = Ctx.CALL
         return Call(name='', func=func, args=args, kwargs=kwargs)
 
     def visit_Num(self, node):
@@ -1471,8 +1467,6 @@ class CodeVisitor(ast.NodeVisitor):
                     and not (attr_sym.is_static() or attr_sym.typ.is_class())):
                 fail((env.current_filename, node.lineno), Errors.UNKNOWN_ATTRIBUTE, [attr])
         # Ensure value has LOAD context for attribute access
-        if isinstance(value, IrVariable):
-            value.ctx = Ctx.LOAD
         irattr = Attr(name='', exp=value, attr=attr, ctx=ctx)
 
         if irattr.head_name() == env.self_name and not attr_sym:

@@ -138,7 +138,7 @@ class NewFlippedTransformer(NewTypePropagation):
         super().process(scope)
 
     def visit_SysCall(self, ir):
-        ir.args = self._normalize_syscall_args(ir.name, ir.args, ir.kwargs)
+        object.__setattr__(ir, 'args', self._normalize_syscall_args(ir.name, ir.args, ir.kwargs))
         for _, arg in ir.args:
             self.visit(arg)
         sym_t = irexp_type(ir, self.scope)
@@ -231,7 +231,7 @@ class NewFlippedPortsBuilder(IrVisitor):
 
     def _flip_old_new(self, ir):
         """Flip direction in old IR NEW node."""
-        from ..ir import CONST as OLD_CONST
+        from ..ir import Const as OLD_CONST
         sym_t = ir.symbol.typ
         if sym_t.scope.is_port():
             for i, (name, arg) in enumerate(ir.args):
@@ -338,15 +338,15 @@ class NewPortConnector(IrVisitor):
             else:
                 assert False
         # Append to block using old IR
-        from ..ir import EXPR as OLD_EXPR, CALL as OLD_CALL, TEMP as OLD_TEMP, ATTR as OLD_ATTR
-        from ..ir import MOVE as OLD_MOVE, RET as OLD_RET, Ctx as OldCtx
+        from ..ir import Expr as OLD_EXPR, Call as OLD_CALL, Temp as OLD_TEMP, Attr as OLD_ATTR
+        from ..ir import Move as OLD_MOVE, Ret as OLD_RET, Ctx as OldCtx
         self.current_stm.block.append_stm(
             OLD_EXPR(port_assign_call)
         )
 
     def _make_assign_call(self, p0_sym, p1_sym):
         """Create a port assign call using old IR (for block.append_stm compatibility)."""
-        from ..ir import CALL as OLD_CALL, TEMP as OLD_TEMP, ATTR as OLD_ATTR
+        from ..ir import Call as OLD_CALL, Temp as OLD_TEMP, Attr as OLD_ATTR
         p0_t = p0_sym.typ
         p1_t = p1_sym.typ
         port_scope0 = p0_t.scope
@@ -363,7 +363,7 @@ class NewPortConnector(IrVisitor):
 
     def _make_lambda(self, body):
         """Create a lambda scope for port assignment (uses old IR for block content)."""
-        from ..ir import MOVE as OLD_MOVE, RET as OLD_RET, TEMP as OLD_TEMP
+        from ..ir import Move as OLD_MOVE, Ret as OLD_RET, Temp as OLD_TEMP
         tags = {'function', 'returnable', 'comb'}
         lambda_scope = Scope.create(self.scope, None, tags, self.scope.lineno)
         lambda_scope.synth_params = self.scope.synth_params.copy()
@@ -378,7 +378,7 @@ class NewPortConnector(IrVisitor):
 
         self.scopes.append(lambda_scope)
 
-        from ..ir import TEMP as OLD_TEMP_CLASS
+        from ..ir import Temp as OLD_TEMP_CLASS
         temps = body.find_irs(OLD_TEMP_CLASS)
         for t in temps:
             if t.symbol not in self.scope.symbols:

@@ -50,125 +50,125 @@ def test_write_type_scope():
 def test_write_exp_const():
     setup_test()
     writer = IRWriter()
-    assert writer.write_exp(CONST(123)) == '123'
-    assert writer.write_exp(CONST(True)) == 'True'
-    assert writer.write_exp(CONST(False)) == 'False'
-    assert writer.write_exp(CONST('hello')) == "'hello'"
+    assert writer.write_exp(Const(123)) == '123'
+    assert writer.write_exp(Const(True)) == 'True'
+    assert writer.write_exp(Const(False)) == 'False'
+    assert writer.write_exp(Const('hello')) == "'hello'"
 
 
 def test_write_exp_temp():
     setup_test()
     writer = IRWriter()
-    assert writer.write_exp(TEMP('x')) == 'x'
-    assert writer.write_exp(TEMP('@in_x')) == '@in_x'
-    assert writer.write_exp(TEMP('_x#1')) == '_x#1'
+    assert writer.write_exp(Temp('x')) == 'x'
+    assert writer.write_exp(Temp('@in_x')) == '@in_x'
+    assert writer.write_exp(Temp('_x#1')) == '_x#1'
 
 
 def test_write_exp_attr():
     setup_test()
     writer = IRWriter()
-    exp = ATTR(ATTR(TEMP('a'), 'b'), 'c')
+    exp = Attr(Attr(Temp('a'), 'b'), 'c')
     assert writer.write_exp(exp) == 'a.b.c'
 
 
 def test_write_exp_unop():
     setup_test()
     writer = IRWriter()
-    assert writer.write_exp(UNOP('USub', TEMP('x'))) == '-x'
-    assert writer.write_exp(UNOP('Not', TEMP('x'))) == '!x'
-    assert writer.write_exp(UNOP('Invert', TEMP('x'))) == '~x'
+    assert writer.write_exp(UnOp('USub', Temp('x'))) == '-x'
+    assert writer.write_exp(UnOp('Not', Temp('x'))) == '!x'
+    assert writer.write_exp(UnOp('Invert', Temp('x'))) == '~x'
 
 
 def test_write_exp_binop():
     setup_test()
     writer = IRWriter()
-    exp = BINOP('Add', TEMP('a'), CONST(1))
+    exp = BinOp('Add', Temp('a'), Const(1))
     assert writer.write_exp(exp) == '(+ a 1)'
 
-    exp = BINOP('Mod', TEMP('x'), TEMP('y'))
+    exp = BinOp('Mod', Temp('x'), Temp('y'))
     assert writer.write_exp(exp) == '(mod x y)'
 
 
 def test_write_exp_relop():
     setup_test()
     writer = IRWriter()
-    exp = RELOP('Eq', TEMP('a'), CONST(0))
+    exp = RelOp('Eq', Temp('a'), Const(0))
     assert writer.write_exp(exp) == '(== a 0)'
 
-    exp = RELOP('LtE', TEMP('x'), TEMP('y'))
+    exp = RelOp('LtE', Temp('x'), Temp('y'))
     assert writer.write_exp(exp) == '(<= x y)'
 
 
 def test_write_exp_call():
     setup_test()
     writer = IRWriter()
-    exp = CALL(TEMP('f'), [('', CONST(1)), ('', TEMP('x'))], {})
+    exp = Call(Temp('f'), [('', Const(1)), ('', Temp('x'))], {})
     assert writer.write_exp(exp) == '(call f 1 x)'
 
 
 def test_write_exp_new():
     setup_test()
     writer = IRWriter()
-    exp = NEW(TEMP('C'), [('', TEMP('x'))], {})
+    exp = New(Temp('C'), [('', Temp('x'))], {})
     assert writer.write_exp(exp) == '(new C x)'
 
 
 def test_write_exp_syscall():
     setup_test()
     writer = IRWriter()
-    exp = SYSCALL(TEMP('print'), [('', CONST(1)), ('', CONST(2))], {})
+    exp = SysCall(Temp('print'), [('', Const(1)), ('', Const(2))], {})
     assert writer.write_exp(exp) == '(syscall print 1 2)'
 
 
 def test_write_exp_mref():
     setup_test()
     writer = IRWriter()
-    exp = MREF(TEMP('xs'), CONST(0))
+    exp = MRef(Temp('xs'), Const(0))
     assert writer.write_exp(exp) == '(mld xs 0)'
 
 
 def test_write_exp_mstore():
     setup_test()
     writer = IRWriter()
-    exp = MSTORE(TEMP('xs'), CONST(0), TEMP('v'))
+    exp = MStore(Temp('xs'), Const(0), Temp('v'))
     assert writer.write_exp(exp) == '(mst xs 0 v)'
 
 
 def test_write_exp_array():
     setup_test()
     writer = IRWriter()
-    exp = ARRAY([CONST(1), CONST(2), CONST(3)], mutable=True)
+    exp = Array([Const(1), Const(2), Const(3)], mutable=True)
     assert writer.write_exp(exp) == '[1 2 3]'
 
-    exp = ARRAY([TEMP('x'), TEMP('y')], mutable=False)
+    exp = Array([Temp('x'), Temp('y')], mutable=False)
     assert writer.write_exp(exp) == '(x y)'
 
 
 def test_write_stm_mv():
     setup_test()
     writer = IRWriter()
-    stm = MOVE(TEMP('a', Ctx.STORE), CONST(1))
+    stm = Move(Temp('a', Ctx.STORE), Const(1))
     assert writer.write_stm(stm) == 'mv a 1'
 
 
 def test_write_stm_cmv():
     setup_test()
     writer = IRWriter()
-    stm = CMOVE(TEMP('cond'), TEMP('z', Ctx.STORE), BINOP('Add', TEMP('x'), TEMP('y')))
+    stm = CMove(Temp('cond'), Temp('z', Ctx.STORE), BinOp('Add', Temp('x'), Temp('y')))
     assert writer.write_stm(stm) == 'mv? cond z (+ x y)'
 
 
 def test_write_stm_expr():
     setup_test()
     writer = IRWriter()
-    stm = EXPR(SYSCALL(TEMP('print'), [('', CONST(1))], {}))
+    stm = Expr(SysCall(Temp('print'), [('', Const(1))], {}))
     assert writer.write_stm(stm) == 'expr (syscall print 1)'
 
 
 def test_write_stm_cexpr():
     setup_test()
     writer = IRWriter()
-    stm = CEXPR(TEMP('cond'), SYSCALL(TEMP('print'), [('', CONST(1))], {}))
+    stm = CExpr(Temp('cond'), SysCall(Temp('print'), [('', Const(1))], {}))
     assert writer.write_stm(stm) == 'expr? cond (syscall print 1)'
 
 
@@ -177,7 +177,7 @@ def test_write_stm_jump():
     scope = Scope.create(None, 'S', set(), 0)
     blk = Block(scope, nametag='blk2')
     writer = IRWriter()
-    stm = JUMP(blk)
+    stm = Jump(blk)
     assert writer.write_stm(stm) == 'j blk2'
 
 
@@ -187,7 +187,7 @@ def test_write_stm_cjump():
     blk_t = Block(scope, nametag='then')
     blk_f = Block(scope, nametag='else')
     writer = IRWriter()
-    stm = CJUMP(TEMP('cond'), blk_t, blk_f)
+    stm = CJump(Temp('cond'), blk_t, blk_f)
     assert writer.write_stm(stm) == 'cj cond then else'
 
 
@@ -198,14 +198,14 @@ def test_write_stm_mcjump():
     blk2 = Block(scope, nametag='b2')
     blk3 = Block(scope, nametag='b3')
     writer = IRWriter()
-    stm = MCJUMP([TEMP('c1'), TEMP('c2'), TEMP('c3')], [blk1, blk2, blk3])
+    stm = MCJump([Temp('c1'), Temp('c2'), Temp('c3')], [blk1, blk2, blk3])
     assert writer.write_stm(stm) == 'mj c1 b1 c2 b2 c3 b3'
 
 
 def test_write_stm_ret():
     setup_test()
     writer = IRWriter()
-    stm = RET(TEMP(Symbol.return_name))
+    stm = Ret(Temp(Symbol.return_name))
     assert writer.write_stm(stm) == 'ret @return'
 
 

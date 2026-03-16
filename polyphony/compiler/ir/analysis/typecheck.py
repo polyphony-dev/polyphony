@@ -159,7 +159,7 @@ class NewTypeChecker(IrVisitor):
         # sanity check
         if sym.scope is not self.scope:
             if not (sym.scope.is_namespace() or sym.scope.is_lib()):
-                assert sym.is_free()
+                assert sym.is_free() or sym.is_imported()
         return sym.typ
 
     def visit_Attr(self, ir):

@@ -29,8 +29,8 @@ def error_info(filename, lineno):
 
 
 def print_error_info(info):
-    from ..ir.ir import IR
-    if isinstance(info, IR):
+    from ..ir.ir import Ir
+    if isinstance(info, Ir):
         ir = info
         if ir.loc and ir.loc.lineno > 0:
             print(error_info(ir.loc.filename, ir.loc.lineno))

@@ -12,6 +12,7 @@ from pytests.compiler.base import setup_test
 from pytests.compiler.base import lib_source_polyphony
 from pytests.compiler.base import lib_source_polyphony_timing
 from pytests.compiler.base import lib_source_polyphony_io
+from pytests.compiler.base import register_lib_syms
 import pytest
 
 
@@ -58,13 +59,13 @@ def test_funtion_inlining():
     with pytest.raises(StopIteration) as e:
         next(gen)
 
-    assert blk1.stms[0] == JUMP(blk2)
-    assert blk2.stms[0] == MOVE(_v('x_0'), CONST(10))
-    assert blk2.stms[1] == MOVE(_v('@return_0'), BINOP('Add', _v('x_0'), CONST(1)))
-    assert blk2.stms[2] == JUMP(blk3)
-    assert blk3.stms[0] == MOVE(_v('x'), _v('@return_0'))
-    assert blk3.stms[1] == MOVE(_v('@return'), _v('x'))
-    assert blk3.stms[2] == RET(_v('@return'))
+    assert blk1.stms[0] == Jump(blk2)
+    assert blk2.stms[0] == Move(_v('x_0'), Const(10))
+    assert blk2.stms[1] == Move(_v('@return_0'), BinOp('Add', _v('x_0'), Const(1)))
+    assert blk2.stms[2] == Jump(blk3)
+    assert blk3.stms[0] == Move(_v('x'), _v('@return_0'))
+    assert blk3.stms[1] == Move(_v('@return'), _v('x'))
+    assert blk3.stms[2] == Ret(_v('@return'))
 
 
 def test_funtion_inlining_2():
@@ -108,18 +109,18 @@ def test_funtion_inlining_2():
     with pytest.raises(StopIteration) as e:
         next(gen)
 
-    assert blk1.stms[0] == JUMP(blk2)
-    assert blk2.stms[0] == MOVE(_v('x_0'), CONST(10))
-    assert blk2.stms[1] == MOVE(_v('@return_0'), BINOP('Add', _v('x_0'), CONST(1)))
-    assert blk2.stms[2] == JUMP(blk3)
-    assert blk3.stms[0] == MOVE(_v('x'), _v('@return_0'))
-    assert blk3.stms[1] == JUMP(blk4)
-    assert blk4.stms[0] == MOVE(_v('x_1'), CONST(11))
-    assert blk4.stms[1] == MOVE(_v('@return_1'), BINOP('Add', _v('x_1'), CONST(1)))
-    assert blk4.stms[2] == JUMP(blk5)
-    assert blk5.stms[0] == MOVE(_v('y'), _v('@return_1'))
-    assert blk5.stms[1] == MOVE(_v('@return'), BINOP('Add', _v('x'), _v('y')))
-    assert blk5.stms[2] == RET(_v('@return'))
+    assert blk1.stms[0] == Jump(blk2)
+    assert blk2.stms[0] == Move(_v('x_0'), Const(10))
+    assert blk2.stms[1] == Move(_v('@return_0'), BinOp('Add', _v('x_0'), Const(1)))
+    assert blk2.stms[2] == Jump(blk3)
+    assert blk3.stms[0] == Move(_v('x'), _v('@return_0'))
+    assert blk3.stms[1] == Jump(blk4)
+    assert blk4.stms[0] == Move(_v('x_1'), Const(11))
+    assert blk4.stms[1] == Move(_v('@return_1'), BinOp('Add', _v('x_1'), Const(1)))
+    assert blk4.stms[2] == Jump(blk5)
+    assert blk5.stms[0] == Move(_v('y'), _v('@return_1'))
+    assert blk5.stms[1] == Move(_v('@return'), BinOp('Add', _v('x'), _v('y')))
+    assert blk5.stms[2] == Ret(_v('@return'))
 
 
 def test_function_inlining_3():
@@ -185,22 +186,22 @@ def test_function_inlining_3():
         next(gen)
 
     assert len(blk1.stms) == 7
-    assert blk1.stms[0] == MOVE(_v('xs'), _v('@in_xs'))
-    assert blk1.stms[1] == MOVE(_v('ys'), _v('@in_ys'))
-    assert blk1.stms[2] == MOVE(_v('i'), _v('@in_i'))
-    assert blk1.stms[3] == MOVE(_v('j'), _v('@in_j'))
-    assert blk1.stms[4] == MOVE(_v('@t1'), MREF(_v('xs'), _v('i')))
-    assert blk1.stms[5] == MOVE(_v('@t2'), MREF(_v('ys'), _v('j')))
-    assert blk1.stms[6] == JUMP(blk2)
+    assert blk1.stms[0] == Move(_v('xs'), _v('@in_xs'))
+    assert blk1.stms[1] == Move(_v('ys'), _v('@in_ys'))
+    assert blk1.stms[2] == Move(_v('i'), _v('@in_i'))
+    assert blk1.stms[3] == Move(_v('j'), _v('@in_j'))
+    assert blk1.stms[4] == Move(_v('@t1'), MRef(_v('xs'), _v('i')))
+    assert blk1.stms[5] == Move(_v('@t2'), MRef(_v('ys'), _v('j')))
+    assert blk1.stms[6] == Jump(blk2)
 
     assert len(blk2.stms) == 4
-    assert blk2.stms[0] == MOVE(_v('x'), _v('@t1'))
-    assert blk2.stms[1] == MOVE(_v('y'), _v('@t2'))
-    assert blk2.stms[2] == MOVE(_v('@return_0'), ARRAY([_v('x'), _v('y')], mutable=False))
-    assert blk2.stms[3] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('x'), _v('@t1'))
+    assert blk2.stms[1] == Move(_v('y'), _v('@t2'))
+    assert blk2.stms[2] == Move(_v('@return_0'), Array([_v('x'), _v('y')], mutable=False))
+    assert blk2.stms[3] == Jump(blk3)
 
     assert len(blk3.stms) == 1
-    assert blk3.stms[0] == MOVE(ARRAY([MREF(_v('ys'), _v('j')), MREF(_v('xs'), _v('i'))], mutable=False), _v('@return_0'))
+    assert blk3.stms[0] == Move(Array([MRef(_v('ys'), _v('j')), MRef(_v('xs'), _v('i'))], mutable=False), _v('@return_0'))
 
 
 def test_function_inlining_with_free_symbol():
@@ -286,27 +287,27 @@ def test_function_inlining_with_free_symbol():
     assert not x0_sym.is_free()
 
     assert len(blk1.stms) == 2
-    assert blk1.stms[0] == MOVE(_v('x'), _v('@in_x'))
-    assert blk1.stms[1] == JUMP(blk2)
+    assert blk1.stms[0] == Move(_v('x'), _v('@in_x'))
+    assert blk1.stms[1] == Jump(blk2)
 
     assert len(blk2.stms) == 4
-    assert blk2.stms[0] == MOVE(_v('y'), _v('x'))
-    assert blk2.stms[1] == MOVE(_v('x_0'), BINOP('Add', _v('y'), CONST(1)))
-    assert blk2.stms[2] == MOVE(_v('@t'), BINOP('Add', _v('y'), CONST(2)))
-    assert blk2.stms[3] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('y'), _v('x'))
+    assert blk2.stms[1] == Move(_v('x_0'), BinOp('Add', _v('y'), Const(1)))
+    assert blk2.stms[2] == Move(_v('@t'), BinOp('Add', _v('y'), Const(2)))
+    assert blk2.stms[3] == Jump(blk3)
 
     assert len(blk3.stms) == 3
-    assert blk3.stms[0] == MOVE(_v('z'), _v('@t'))
-    assert blk3.stms[1] == MOVE(_v('@return_0'), BINOP('Add', _v('x_0'), _v('z')))
-    assert blk3.stms[2] == JUMP(blk4)
+    assert blk3.stms[0] == Move(_v('z'), _v('@t'))
+    assert blk3.stms[1] == Move(_v('@return_0'), BinOp('Add', _v('x_0'), _v('z')))
+    assert blk3.stms[2] == Jump(blk4)
 
     assert len(blk4.stms) == 2
-    assert blk4.stms[0] == MOVE(_v('@return_1'), _v('@return_0'))
-    assert blk4.stms[1] == JUMP(blk5)
+    assert blk4.stms[0] == Move(_v('@return_1'), _v('@return_0'))
+    assert blk4.stms[1] == Jump(blk5)
 
     assert len(blk5.stms) == 2
-    assert blk5.stms[0] == MOVE(_v('@return'), _v('@return_1'))
-    assert blk5.stms[1] == RET(_v('@return'))
+    assert blk5.stms[0] == Move(_v('@return'), _v('@return_1'))
+    assert blk5.stms[1] == Ret(_v('@return'))
 
 
 def test_functor_inlining():
@@ -375,26 +376,26 @@ def test_functor_inlining():
 
 
     assert len(blk1.stms) == 1
-    assert blk1.stms[0] == JUMP(blk2)
+    assert blk1.stms[0] == Jump(blk2)
 
     assert len(blk2.stms) == 3
-    assert blk2.stms[0] == MOVE(_v('y'), _v('x'))
-    assert blk2.stms[1] == MOVE(_v('@return_0'), _v('h_#1'))
-    assert blk2.stms[2] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('y'), _v('x'))
+    assert blk2.stms[1] == Move(_v('@return_0'), _v('h_#1'))
+    assert blk2.stms[2] == Jump(blk3)
 
     assert len(blk3.stms) == 3
-    assert blk3.stms[0] == MOVE(_v('h'), _v('@return_0'))
-    assert blk3.stms[1] == MOVE(_v('@t'), BINOP('Add', _v('x'), CONST(1)))
-    assert blk3.stms[2] == JUMP(blk4)
+    assert blk3.stms[0] == Move(_v('h'), _v('@return_0'))
+    assert blk3.stms[1] == Move(_v('@t'), BinOp('Add', _v('x'), Const(1)))
+    assert blk3.stms[2] == Jump(blk4)
 
     assert len(blk4.stms) == 3
-    assert blk4.stms[0] == MOVE(_v('z'), _v('@t'))
-    assert blk4.stms[1] == MOVE(_v('@return_1'), BINOP('Add', _v('y'), _v('z')))
-    assert blk4.stms[2] == JUMP(blk5)
+    assert blk4.stms[0] == Move(_v('z'), _v('@t'))
+    assert blk4.stms[1] == Move(_v('@return_1'), BinOp('Add', _v('y'), _v('z')))
+    assert blk4.stms[2] == Jump(blk5)
 
     assert len(blk5.stms) == 2
-    assert blk5.stms[0] == MOVE(_v('@return'), _v('@return_1'))
-    assert blk5.stms[1] == RET(_v('@return'))
+    assert blk5.stms[0] == Move(_v('@return'), _v('@return_1'))
+    assert blk5.stms[1] == Ret(_v('@return'))
 
 
 def test_ctor_inlining():
@@ -447,24 +448,24 @@ def test_ctor_inlining():
     # x = 10
     # c0 = $new(C)
     # jump blk2
-    assert blk1.stms[0] == MOVE(_v('x'), CONST(10))
-    builtin_new = SYSCALL(_v('$new'), args=[('typ', _v('C'))], kwargs={})
-    assert blk1.stms[1] == MOVE(_v('c0'), builtin_new)
-    assert blk1.stms[2] == JUMP(blk2)
+    assert blk1.stms[0] == Move(_v('x'), Const(10))
+    builtin_new = SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={})
+    assert blk1.stms[1] == Move(_v('c0'), builtin_new)
+    assert blk1.stms[2] == Jump(blk2)
 
     assert len(blk2.stms) == 3
     # x_0 = x
     # c0.x = x_0
     # jump blk3
-    assert blk2.stms[0] == MOVE(_v('x_0'), _v('x'))
-    assert blk2.stms[1] == MOVE(_v('c0.x'), _v('x_0'))
-    assert blk2.stms[2] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('x_0'), _v('x'))
+    assert blk2.stms[1] == Move(_v('c0.x'), _v('x_0'))
+    assert blk2.stms[2] == Jump(blk3)
 
     assert len(blk3.stms) == 2
     # @return = c0.x
     # return @return
-    assert blk3.stms[0] == MOVE(_v('@return'),  _v('c0.x'))
-    assert blk3.stms[1] == RET(_v('@return'))
+    assert blk3.stms[0] == Move(_v('@return'),  _v('c0.x'))
+    assert blk3.stms[1] == Ret(_v('@return'))
 
 
 def test_ctor_inlining_2():
@@ -555,40 +556,40 @@ def caller_func():
     # x = 10
     # c = $new(C)
     # jump blk2
-    assert blk1.stms[0] == MOVE(_v('x'), CONST(10))
-    builtin_new = SYSCALL(_v('$new'), args=[('typ', _v('C'))], kwargs={})
-    assert blk1.stms[1] == MOVE(_v('c'), builtin_new)
-    assert blk1.stms[2] == JUMP(blk2)
+    assert blk1.stms[0] == Move(_v('x'), Const(10))
+    builtin_new = SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={})
+    assert blk1.stms[1] == Move(_v('c'), builtin_new)
+    assert blk1.stms[2] == Jump(blk2)
 
     assert len(blk2.stms) == 3
     # x_1 = x
     # c.d = $new(D)
     # jump blk3
-    assert blk2.stms[0] == MOVE(_v('x_1'), _v('x'))
-    builtin_new = SYSCALL(_v('$new'), args=[('typ', _v('D'))], kwargs={})
-    assert blk2.stms[1] == MOVE(_v('c.d'), builtin_new)
-    assert blk2.stms[2] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('x_1'), _v('x'))
+    builtin_new = SysCall(_v('$new'), args=[('typ', _v('D'))], kwargs={})
+    assert blk2.stms[1] == Move(_v('c.d'), builtin_new)
+    assert blk2.stms[2] == Jump(blk3)
 
     assert len(blk3.stms) == 3
     # x_0 = x_1
     # c.d.x = x_0
     # jump blk4
-    assert blk3.stms[0] == MOVE(_v('x_0'), _v('x_1'))
-    assert blk3.stms[1] == MOVE(_v('c.d.x'), _v('x_0'))
-    assert blk3.stms[2] == JUMP(blk4)
+    assert blk3.stms[0] == Move(_v('x_0'), _v('x_1'))
+    assert blk3.stms[1] == Move(_v('c.d.x'), _v('x_0'))
+    assert blk3.stms[2] == Jump(blk4)
 
     assert len(blk4.stms) == 1
-    assert blk4.stms[0] == JUMP(blk5)
+    assert blk4.stms[0] == Jump(blk5)
 
     # a = (c.d.x + c.d.x)
     # c.d.x = 10
     # @return = (a + c.d.x)
     # return @return
     assert len(blk5.stms) == 4
-    assert blk5.stms[0] == MOVE(_v('a'), BINOP('Add', _v('c.d.x'), _v('c.d.x')))
-    assert blk5.stms[1] == MOVE(_v('c.d.x'), CONST(10))
-    assert blk5.stms[2] == MOVE(_v('@return'), BINOP('Add', _v('a'), _v('c.d.x')))
-    assert blk5.stms[3] == RET(_v('@return'))
+    assert blk5.stms[0] == Move(_v('a'), BinOp('Add', _v('c.d.x'), _v('c.d.x')))
+    assert blk5.stms[1] == Move(_v('c.d.x'), Const(10))
+    assert blk5.stms[2] == Move(_v('@return'), BinOp('Add', _v('a'), _v('c.d.x')))
+    assert blk5.stms[3] == Ret(_v('@return'))
 
 
 def test_method_inlining():
@@ -657,40 +658,40 @@ def test_method_inlining():
     # x = 10
     # c0 = $new(C)
     # jump blk2
-    assert blk1.stms[0] == MOVE(_v('x'), CONST(10))
-    builtin_new = SYSCALL(_v('$new'), args=[('typ', _v('C'))], kwargs={})
-    assert blk1.stms[1] == MOVE(_v('c0'), builtin_new)
-    assert blk1.stms[2] == JUMP(blk2)
+    assert blk1.stms[0] == Move(_v('x'), Const(10))
+    builtin_new = SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={})
+    assert blk1.stms[1] == Move(_v('c0'), builtin_new)
+    assert blk1.stms[2] == Jump(blk2)
 
     assert len(blk2.stms) == 3
     # x_0 = x
     # c0.x = x_0
     # jump blk3
-    assert blk2.stms[0] == MOVE(_v('x_0'), _v('x'))
-    assert blk2.stms[1] == MOVE(_v('c0.x'), _v('x_0'))
-    assert blk2.stms[2] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('x_0'), _v('x'))
+    assert blk2.stms[1] == Move(_v('c0.x'), _v('x_0'))
+    assert blk2.stms[2] == Jump(blk3)
 
     assert len(blk3.stms) == 1
     # jump blk4
-    assert blk3.stms[0] == JUMP(blk4)
+    assert blk3.stms[0] == Jump(blk4)
 
     assert len(blk4.stms) == 4
     # x_1 = 10
     # c0.x = (c0.x + x_1)
     # @return_0 = c0.x
     # jump blk5
-    assert blk4.stms[0] == MOVE(_v('x_1'), CONST(10))
-    assert blk4.stms[1] == MOVE(_v('c0.x'), BINOP('Add', _v('c0.x'), _v('x_1')))
-    assert blk4.stms[2] == MOVE(_v('@return_0'), _v('c0.x'))
-    assert blk4.stms[3] == JUMP(blk5)
+    assert blk4.stms[0] == Move(_v('x_1'), Const(10))
+    assert blk4.stms[1] == Move(_v('c0.x'), BinOp('Add', _v('c0.x'), _v('x_1')))
+    assert blk4.stms[2] == Move(_v('@return_0'), _v('c0.x'))
+    assert blk4.stms[3] == Jump(blk5)
 
     assert len(blk5.stms) == 3
     # x = @return_0
     # @return = x
     # return @return
-    assert blk5.stms[0] == MOVE(_v('x'), _v('@return_0'))
-    assert blk5.stms[1] == MOVE(_v('@return'), _v('x'))
-    assert blk5.stms[2] == RET(_v('@return'))
+    assert blk5.stms[0] == Move(_v('x'), _v('@return_0'))
+    assert blk5.stms[1] == Move(_v('@return'), _v('x'))
+    assert blk5.stms[2] == Ret(_v('@return'))
 
 
 def test_method_inlining_2():
@@ -815,82 +816,82 @@ def composition04(x):
     # x = @in_x
     # c = $new(C)
     # jump blk2
-    assert blk1.stms[0] == MOVE(_v('x'), _v('@in_x'))
-    builtin_new = SYSCALL(_v('$new'), args=[('typ', _v('C'))], kwargs={})
-    assert blk1.stms[1] == MOVE(_v('c'), builtin_new)
+    assert blk1.stms[0] == Move(_v('x'), _v('@in_x'))
+    builtin_new = SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={})
+    assert blk1.stms[1] == Move(_v('c'), builtin_new)
 
     assert len(blk2.stms) == 3
     # x_1 = x
     # c.d = $new(D)
     # jump blk3
-    assert blk2.stms[0] == MOVE(_v('x_1'), _v('x'))
-    builtin_new = SYSCALL(_v('$new'), args=[('typ', _v('D'))], kwargs={})
-    assert blk2.stms[1] == MOVE(_v('c.d'), builtin_new)
+    assert blk2.stms[0] == Move(_v('x_1'), _v('x'))
+    builtin_new = SysCall(_v('$new'), args=[('typ', _v('D'))], kwargs={})
+    assert blk2.stms[1] == Move(_v('c.d'), builtin_new)
 
     assert len(blk3.stms) == 3
     # x_0 = x_1
     # c.d.x = x_0
     # jump blk4
-    assert blk3.stms[0] == MOVE(_v('x_0'), _v('x_1'))
-    assert blk3.stms[1] == MOVE(_v('c.d.x'), _v('x_0'))
-    assert blk3.stms[2] == JUMP(blk4)
+    assert blk3.stms[0] == Move(_v('x_0'), _v('x_1'))
+    assert blk3.stms[1] == Move(_v('c.d.x'), _v('x_0'))
+    assert blk3.stms[2] == Jump(blk4)
 
     assert len(blk4.stms) == 1
     # jump blk5
-    assert blk4.stms[0] == JUMP(blk5)
+    assert blk4.stms[0] == Jump(blk5)
 
     assert len(blk5.stms) == 1
     # jump blk6
-    assert blk5.stms[0] == JUMP(blk6)
+    assert blk5.stms[0] == Jump(blk6)
 
     assert len(blk6.stms) == 1
     # jump blk7
-    assert blk6.stms[0] == JUMP(blk7)
+    assert blk6.stms[0] == Jump(blk7)
 
     assert len(blk7.stms) == 2
     # @return_0 = c.d.x
     # jump blk8
-    assert blk7.stms[0] == MOVE(_v('@return_0'), _v('c.d.x'))
-    assert blk7.stms[1] == JUMP(blk8)
+    assert blk7.stms[0] == Move(_v('@return_0'), _v('c.d.x'))
+    assert blk7.stms[1] == Jump(blk8)
 
     assert len(blk8.stms) == 2
     # @return_1 = @return_0
     # jump blk9
-    assert blk8.stms[0] == MOVE(_v('@return_1'), _v('@return_0'))
-    assert blk8.stms[1] == JUMP(blk9)
+    assert blk8.stms[0] == Move(_v('@return_1'), _v('@return_0'))
+    assert blk8.stms[1] == Jump(blk9)
 
     assert len(blk9.stms) == 2
     # @t1 = @return_1
     # jump blk10
-    assert blk9.stms[0] == MOVE(_v('@t1'), _v('@return_1'))
-    assert blk9.stms[1] == JUMP(blk10)
+    assert blk9.stms[0] == Move(_v('@t1'), _v('@return_1'))
+    assert blk9.stms[1] == Jump(blk10)
 
     assert len(blk10.stms) == 1
     # jump blk11
-    assert blk10.stms[0] == JUMP(blk11)
+    assert blk10.stms[0] == Jump(blk11)
 
     assert len(blk11.stms) == 2
     # @return_0_0 = c.d.x
     # jump blk12
-    assert blk11.stms[0] == MOVE(_v('@return_0_0'), _v('c.d.x'))
-    assert blk11.stms[1] == JUMP(blk12)
+    assert blk11.stms[0] == Move(_v('@return_0_0'), _v('c.d.x'))
+    assert blk11.stms[1] == Jump(blk12)
 
     assert len(blk12.stms) == 2
     # @return_2 = @return_0_0
     # jump blk13
 
-    assert blk12.stms[0] == MOVE(_v('@return_2'), _v('@return_0_0'))
-    assert blk12.stms[1] == JUMP(blk13)
+    assert blk12.stms[0] == Move(_v('@return_2'), _v('@return_0_0'))
+    assert blk12.stms[1] == Jump(blk13)
 
     assert len(blk13.stms) == 4
     # @t2 = @return_2
     # a = (@t1 + @t2)
     # @return = a
     # return @return
-    assert blk13.stms[0] == MOVE(_v('@t2'), _v('@return_2'))
-    assert blk13.stms[1] == MOVE(_v('a'), BINOP('Add', _v('@t1'), _v('@t2')))
-    assert blk13.stms[2] == MOVE(_v('@return'), _v('a'))
-    assert blk13.stms[3] == RET(_v('@return'))
+    assert blk13.stms[0] == Move(_v('@t2'), _v('@return_2'))
+    assert blk13.stms[1] == Move(_v('a'), BinOp('Add', _v('@t1'), _v('@t2')))
+    assert blk13.stms[2] == Move(_v('@return'), _v('a'))
+    assert blk13.stms[3] == Ret(_v('@return'))
 
 
 def test_inlinelib_1():
@@ -915,10 +916,14 @@ def test_inlinelib_1():
     expr (call wait_value value port)
     """
     IRParser(block_src).parse_scope()
+    register_lib_syms()
     top = env.scopes['@top']
     top.add_sym('caller_func', tags=set(), typ=Type.function('@top.caller_func'))
-    top.add_sym('wait_value', tags=set(), typ=Type.function('polyphony.timing.wait_value'))
     top.add_sym('polyphony', tags=set(), typ=Type.namespace('polyphony'))
+    # Import wait_value and wait_until from polyphony.timing so symbols are shared
+    timing_scope = env.scopes['polyphony.timing']
+    top.import_sym(timing_scope.find_sym('wait_value'), 'wait_value')
+    top.import_sym(timing_scope.find_sym('wait_until'), 'wait_until')
 
     caller_func = env.scopes['@top.caller_func']
 
@@ -940,35 +945,35 @@ def test_inlinelib_1():
     # port = $new(Port)
     # value = 10
     # jump blk2
-    assert blk1.stms[0] == MOVE(_v('port'), NEW(_v('polyphony.io.Port'), args=[('', _v('int')), ('', CONST('input'))], kwargs={}))
-    assert blk1.stms[1] == MOVE(_v('value'), CONST(10))
-    assert blk1.stms[2] == JUMP(blk2)
+    assert blk1.stms[0] == Move(_v('port'), New(_v('polyphony.io.Port'), args=[('', _v('int')), ('', Const('input'))], kwargs={}))
+    assert blk1.stms[1] == Move(_v('value'), Const(10))
+    assert blk1.stms[2] == Jump(blk2)
 
     assert len(blk2.stms) == 4
     # value_0 = value
     # port_0 = port
     # wait_until(lambda_#1)
     # jump blk3
-    assert blk2.stms[0] == MOVE(_v('value_0'), _v('value'))
-    assert blk2.stms[1] == MOVE(_v('port_0'), _v('port'))
-    assert blk2.stms[2] == EXPR(CALL(_v('wait_until'), args=[('', _v('lambda_#1'))], kwargs={}))
-    assert blk2.stms[3] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('value_0'), _v('value'))
+    assert blk2.stms[1] == Move(_v('port_0'), _v('port'))
+    assert blk2.stms[2] == Expr(Call(_v('wait_until'), args=[('', _v('lambda_#1'))], kwargs={}))
+    assert blk2.stms[3] == Jump(blk3)
 
     assert len(blk3.stms) == 2
     # value = 20
     # jump blk4
-    assert blk3.stms[0] == MOVE(_v('value'), CONST(20))
-    assert blk3.stms[1] == JUMP(blk4)
+    assert blk3.stms[0] == Move(_v('value'), Const(20))
+    assert blk3.stms[1] == Jump(blk4)
 
     assert len(blk4.stms) == 4
     # value_1 = value
     # port_1 = port
     # wait_until(lambda_#2)
     # jump blk5
-    assert blk4.stms[0] == MOVE(_v('value_1'), _v('value'))
-    assert blk4.stms[1] == MOVE(_v('port_1'), _v('port'))
-    assert blk4.stms[2] == EXPR(CALL(_v('wait_until'), args=[('', _v('lambda_#2'))], kwargs={}))
-    assert blk4.stms[3] == JUMP(blk5)
+    assert blk4.stms[0] == Move(_v('value_1'), _v('value'))
+    assert blk4.stms[1] == Move(_v('port_1'), _v('port'))
+    assert blk4.stms[2] == Expr(Call(_v('wait_until'), args=[('', _v('lambda_#2'))], kwargs={}))
+    assert blk4.stms[3] == Jump(blk5)
 
     assert len(blk5.stms) == 0
 
@@ -1025,6 +1030,7 @@ def test_ctor_with_closure():
     """
 
     IRParser(block_src).parse_scope()
+    register_lib_syms()
     top = env.scopes['@top']
     top.add_sym('C', tags=set(), typ=Type.klass('@top.C'))
     top.add_sym('caller', tags=set(), typ=Type.function('@top.caller'))
@@ -1059,8 +1065,8 @@ def test_ctor_with_closure():
     assert len(blk1.stms) == 2
     # c = $new(C)
     # jump blk2
-    assert blk1.stms[0] == MOVE(_v('c'), SYSCALL(_v('$new'), args=[('typ', _v('C'))], kwargs={}))
-    assert blk1.stms[1] == JUMP(blk2)
+    assert blk1.stms[0] == Move(_v('c'), SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={}))
+    assert blk1.stms[1] == Jump(blk2)
 
     assert len(blk2.stms) == 5
     # param = 10
@@ -1068,11 +1074,11 @@ def test_ctor_with_closure():
     # c.o = polyphony.io.Port(int, 'out')
     # c.o.assign(lambda_#1)
     # jump blk3
-    assert blk2.stms[0] == MOVE(_v('param'), CONST(10))
-    assert blk2.stms[1] == MOVE(_v('c.i'), NEW(_v('polyphony.io.Port'), args=[('', _v('int')), ('', CONST('in'))], kwargs={}))
-    assert blk2.stms[2] == MOVE(_v('c.o'), NEW(_v('polyphony.io.Port'), args=[('', _v('int')), ('', CONST('out'))], kwargs={}))
-    assert blk2.stms[3] == EXPR(CALL(_v('c.o.assign'), args=[('', _v('lambda_#1'))], kwargs={}))
-    assert blk2.stms[4] == JUMP(blk3)
+    assert blk2.stms[0] == Move(_v('param'), Const(10))
+    assert blk2.stms[1] == Move(_v('c.i'), New(_v('polyphony.io.Port'), args=[('', _v('int')), ('', Const('in'))], kwargs={}))
+    assert blk2.stms[2] == Move(_v('c.o'), New(_v('polyphony.io.Port'), args=[('', _v('int')), ('', Const('out'))], kwargs={}))
+    assert blk2.stms[3] == Expr(Call(_v('c.o.assign'), args=[('', _v('lambda_#1'))], kwargs={}))
+    assert blk2.stms[4] == Jump(blk3)
 
     assert len(blk3.stms) == 0
 
@@ -1085,5 +1091,5 @@ def test_ctor_with_closure():
     assert len(blk1.stms) == 2
     # @return = (+ (call c.i.rd) param)
     # return @return
-    assert blk1.stms[0] == MOVE(_v('@return'), BINOP('Add', CALL(_v('c.i.rd'), args=[], kwargs={}), _v('param')))
-    assert blk1.stms[1] == RET(_v('@return'))
+    assert blk1.stms[0] == Move(_v('@return'), BinOp('Add', Call(_v('c.i.rd'), args=[], kwargs={}), _v('param')))
+    assert blk1.stms[1] == Ret(_v('@return'))

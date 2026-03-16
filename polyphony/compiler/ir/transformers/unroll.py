@@ -11,7 +11,7 @@ from ..ir import (
     Ctx, Const, Temp, BinOp, RelOp, Move, Expr, Jump, CJump, MCJump,
     LPhi, IrStm, IrExp,
 )
-from ..ir import CONST as OldCONST, TEMP as OldTEMP
+from ..ir import Const as OldCONST, Temp as OldTEMP
 from ..ir_visitor import IrVisitor, IrTransformer
 from ..ir_helper import qualified_symbols
 from ..loop import Loop
@@ -37,7 +37,7 @@ def _clone_ir_block(blk, scope, nametag=None):
     stm_map = {}
     for stm in blk.stms:
         new_stm = stm.model_copy(deep=True)
-        new_stm.block = b
+        object.__setattr__(new_stm, 'block', b)
         b.stms.append(new_stm)
         stm_map[stm] = new_stm
     b.order = blk.order
@@ -63,7 +63,9 @@ class NewLoopUnroller(object):
                 blk.order = -1
                 for stm in blk.stms:
                     assert stm.block is blk
+            logger.debug(f'Block.set_order start for {scope}')
             Block.set_order(scope.entry_block, 0)
+            logger.debug(f'Block.set_order done for {scope}')
             return True
         return False
 
@@ -181,10 +183,10 @@ class NewLoopUnroller(object):
                     lphi.args[0] = arg
                 assert remain_start_blk
                 guard = Expr(exp=Const(value=0))
-                guard.block = remain_start_blk
+                object.__setattr__(guard, 'block', remain_start_blk)
                 remain_start_blk.stms.append(guard)
                 jmp = Jump(target=loop.head)
-                jmp.block = remain_start_blk
+                object.__setattr__(jmp, 'block', remain_start_blk)
                 remain_start_blk.stms.append(jmp)
                 remain_start_blk.succs = [loop.head]
                 loop.head.preds[0] = remain_start_blk
@@ -201,13 +203,13 @@ class NewLoopUnroller(object):
     def _replace_jump_target(self, block, old, new):
         jmp = block.stms[-1]
         if isinstance(jmp, Jump):
-            jmp.target = new
+            object.__setattr__(jmp, 'target', new)
         elif isinstance(jmp, CJump):
             if jmp.true is old:
-                jmp.true = new
+                object.__setattr__(jmp, 'true', new)
             else:
                 assert jmp.false is old
-                jmp.false = new
+                object.__setattr__(jmp, 'false', new)
         elif isinstance(jmp, MCJump):
             for i, t in enumerate(jmp.targets):
                 if t is old:
@@ -238,8 +240,8 @@ class NewLoopUnroller(object):
 
         jmp = last_blk.stms[-1]
         assert isinstance(jmp, Jump)
-        jmp.typ = ''
-        jmp.target = loop_exit
+        object.__setattr__(jmp, 'typ', '')
+        object.__setattr__(jmp, 'target', loop_exit)
 
     def _reconnect_unroll_blocks(self, loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk):
         loop_pred = loop.head.preds[0]
@@ -263,7 +265,7 @@ class NewLoopUnroller(object):
         cjmp = unroll_head.stms[-1]
         assert isinstance(cjmp, CJump)
         assert cjmp.false is None
-        cjmp.false = loop_exit
+        object.__setattr__(cjmp, 'false', loop_exit)
 
         unroll_head.preds = [loop_pred, last_blk]
         unroll_head.preds_loop = [last_blk]
@@ -274,7 +276,7 @@ class NewLoopUnroller(object):
         jmp = last_blk.stms[-1]
         assert isinstance(jmp, Jump)
         assert jmp.typ == 'L'
-        jmp.target = unroll_head
+        object.__setattr__(jmp, 'target', unroll_head)
 
     def _make_full_unroll_head(self, loop, new_ivs):
         unroll_head, stm_map = _clone_ir_block(loop.head, self.scope, 'unroll_head')
@@ -302,12 +304,12 @@ class NewLoopUnroller(object):
         orig_cjump = unroll_head.stms[-1]
         assert isinstance(orig_cjump, CJump)
         jump = Jump(target=None)
-        jump.loc = orig_cjump.loc
+        object.__setattr__(jump, 'loc', orig_cjump.loc)
         head_stms.append(jump)
 
         unroll_head.stms = []
         for stm in head_stms:
-            stm.block = unroll_head
+            object.__setattr__(stm, 'block', unroll_head)
             unroll_head.stms.append(stm)
         dst_sym = qualified_symbols(orig_cjump_cond.dst, self.scope)[-1]
         assert isinstance(dst_sym, Symbol)
@@ -326,11 +328,11 @@ class NewLoopUnroller(object):
                 assert isinstance(orig_sym, Symbol)
                 new_sym_0 = new_ivs[orig_sym][0]
                 new_sym_n = new_ivs[orig_sym][factor]
-                stm.var.name = new_sym_0.name
+                object.__setattr__(stm.var, 'name', new_sym_0.name)
                 arg1_sym = qualified_symbols(stm.args[1], self.scope)[-1]
                 assert isinstance(arg1_sym, Symbol)
                 iv_updates[arg1_sym] = new_ivs[orig_sym]
-                stm.args[1].name = new_sym_n.name
+                object.__setattr__(stm.args[1], 'name', new_sym_n.name)
                 head_stms.append(stm)
                 lphis.append(stm)
 
@@ -358,7 +360,7 @@ class NewLoopUnroller(object):
 
         unroll_head.stms = []
         for stm in head_stms:
-            stm.block = unroll_head
+            object.__setattr__(stm, 'block', unroll_head)
             unroll_head.stms.append(stm)
         return unroll_head, iv_updates, lphis, sym_map
 
@@ -391,10 +393,10 @@ class NewLoopUnroller(object):
             pred_blk.succs = [new_blk]
             jmp = pred_blk.stms[-1]
             if isinstance(jmp, Jump):
-                jmp.typ = ''
-                jmp.target = new_blk
+                object.__setattr__(jmp, 'typ', '')
+                object.__setattr__(jmp, 'target', new_blk)
             elif isinstance(jmp, CJump):
-                jmp.true = new_blk
+                object.__setattr__(jmp, 'true', new_blk)
             else:
                 assert False
             new_blk.preds = [pred_blk]
@@ -521,7 +523,7 @@ class NewIVReplacer(IrVisitor):
         else:
             new_name = '{}_{}'.format(sym.name, self.defsym_indexes[sym] + self.idx)
             new_sym = self.scope.inherit_sym(sym, new_name)
-        ir.name = new_sym.name
+        object.__setattr__(ir, 'name', new_sym.name)
 
 
 class _NewNameReplacer(IrVisitor):
@@ -535,7 +537,7 @@ class _NewNameReplacer(IrVisitor):
 
     def visit_Temp(self, ir):
         if ir.name in self.sym_map:
-            ir.name = self.sym_map[ir.name].name
+            object.__setattr__(ir, 'name', self.sym_map[ir.name].name)
 
 
 class NewPHICondRemover(IrTransformer):

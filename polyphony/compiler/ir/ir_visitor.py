@@ -171,10 +171,11 @@ class IrVisitor(object):
 
 
 class IrTransformer(IrVisitor):
-    """In-place IR transformer for Phase 1 (frozen=False).
+    """Functional IR transformer (IrExp is frozen).
 
-    Each visit_* method for expressions returns the (possibly modified) node.
-    Each visit_* method for statements appends to self.new_stms.
+    Each visit_* method for expressions returns a new node (or the original if unchanged).
+    Each visit_* method for statements mutates in-place (IrStm is still mutable) and
+    appends to self.new_stms.
 
     Subclasses override specific visit_* methods to implement transformations.
     """
@@ -194,52 +195,69 @@ class IrTransformer(IrVisitor):
         else:
             block.stms.extend(self.new_stms)
         for stm in block.stms:
-            stm.block = block
+            object.__setattr__(stm, 'block', block)
 
-    # --- IrExp (return transformed node) ---
+    # --- IrExp (return transformed node, functional style) ---
 
     def visit_UnOp(self, ir):
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'exp': new_exp})
 
     def visit_BinOp(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'left': new_left, 'right': new_right})
 
     def visit_RelOp(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'left': new_left, 'right': new_right})
 
     def visit_CondOp(self, ir):
-        ir.cond = self.visit(ir.cond)
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_cond = self.visit(ir.cond)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_cond is ir.cond and new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
 
     def visit_PolyOp(self, ir):
-        ir.values = [self.visit(v) for v in ir.values]
-        return ir
+        new_values = [self.visit(v) for v in ir.values]
+        if all(nv is ov for nv, ov in zip(new_values, ir.values)):
+            return ir
+        return ir.model_copy(update={'values': new_values})
 
     def _visit_args(self, args):
-        for i, (name, arg) in enumerate(args):
-            args[i] = (name, self.visit(arg))
+        new_args = [(name, self.visit(arg)) for name, arg in args]
+        changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, args))
+        return new_args, changed
 
     def visit_Call(self, ir):
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_SysCall(self, ir):
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_New(self, ir):
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_Const(self, ir):
         return ir
@@ -248,48 +266,56 @@ class IrTransformer(IrVisitor):
         return ir
 
     def visit_Attr(self, ir):
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'exp': new_exp})
 
     def visit_MRef(self, ir):
-        ir.mem = self.visit(ir.mem)
-        ir.offset = self.visit(ir.offset)
-        return ir
+        new_mem = self.visit(ir.mem)
+        new_offset = self.visit(ir.offset)
+        if new_mem is ir.mem and new_offset is ir.offset:
+            return ir
+        return ir.model_copy(update={'mem': new_mem, 'offset': new_offset})
 
     def visit_MStore(self, ir):
-        ir.mem = self.visit(ir.mem)
-        ir.offset = self.visit(ir.offset)
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_mem = self.visit(ir.mem)
+        new_offset = self.visit(ir.offset)
+        new_exp = self.visit(ir.exp)
+        if new_mem is ir.mem and new_offset is ir.offset and new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'mem': new_mem, 'offset': new_offset, 'exp': new_exp})
 
     def visit_Array(self, ir):
-        if ir.repeat is not None:
-            ir.repeat = self.visit(ir.repeat)
-        for i, item in enumerate(ir.items):
-            ir.items[i] = self.visit(item)
-        return ir
+        new_repeat = self.visit(ir.repeat) if ir.repeat is not None else ir.repeat
+        new_items = [self.visit(item) for item in ir.items]
+        repeat_changed = new_repeat is not ir.repeat
+        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
+        if not repeat_changed and not items_changed:
+            return ir
+        return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
 
-    # --- IrStm (append to new_stms) ---
+    # --- IrStm (append to new_stms, IrStm is still mutable) ---
 
     def visit_Expr(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_CExpr(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_Expr(ir)
 
     def visit_Move(self, ir):
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
+        object.__setattr__(ir, 'src', self.visit(ir.src))
+        object.__setattr__(ir, 'dst', self.visit(ir.dst))
         self.new_stms.append(ir)
 
     def visit_CMove(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_Move(ir)
 
     def visit_CJump(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_MCJump(self, ir):
@@ -301,11 +327,11 @@ class IrTransformer(IrVisitor):
         self.new_stms.append(ir)
 
     def visit_Ret(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_Phi(self, ir):
-        ir.var = self.visit(ir.var)
+        object.__setattr__(ir, 'var', self.visit(ir.var))
         for i, arg in enumerate(ir.args):
             if arg:
                 ir.args[i] = self.visit(arg)
@@ -477,7 +503,11 @@ class IRVisitor(object):
 
 
 class IRTransformer(IRVisitor):
-    """Transformer for old IR via block.stms, with PascalCase->UPPERCASE fallback."""
+    """Transformer for old IR via block.stms, with PascalCase->UPPERCASE fallback.
+
+    IrExp visit methods use functional style (return new node if changed).
+    IrStm visit methods mutate in-place (IrStm is still mutable).
+    """
     def __init__(self):
         pass
 
@@ -494,46 +524,61 @@ class IRTransformer(IRVisitor):
         else:
             block.stms.extend(self.new_stms)
         for stm in block.stms:
-            stm.block = block
+            object.__setattr__(stm, 'block', block)
 
     def visit_UNOP(self, ir):
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'exp': new_exp})
 
     def visit_BINOP(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'left': new_left, 'right': new_right})
 
     def visit_RELOP(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'left': new_left, 'right': new_right})
 
     def visit_CONDOP(self, ir):
-        ir.cond = self.visit(ir.cond)
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_cond = self.visit(ir.cond)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_cond is ir.cond and new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
 
     def visit_args(self, args):
-        for i, (name, arg) in enumerate(args):
-            args[i] = (name, self.visit(arg))
+        new_args = [(name, self.visit(arg)) for name, arg in args]
+        changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, args))
+        return new_args, changed
 
     def visit_CALL(self, ir):
-        ir.func = self.visit(ir.func)
-        self.visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self.visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_SYSCALL(self, ir):
-        ir.func = self.visit(ir.func)
-        self.visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self.visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_NEW(self, ir):
-        ir.func = self.visit(ir.func)
-        self.visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self.visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_CONST(self, ir):
         return ir
@@ -542,32 +587,41 @@ class IRTransformer(IRVisitor):
         return ir
 
     def visit_ATTR(self, ir):
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'exp': new_exp})
 
     def visit_MREF(self, ir):
-        ir.mem = self.visit(ir.mem)
-        ir.offset = self.visit(ir.offset)
-        return ir
+        new_mem = self.visit(ir.mem)
+        new_offset = self.visit(ir.offset)
+        if new_mem is ir.mem and new_offset is ir.offset:
+            return ir
+        return ir.model_copy(update={'mem': new_mem, 'offset': new_offset})
 
     def visit_MSTORE(self, ir):
-        ir.mem = self.visit(ir.mem)
-        ir.offset = self.visit(ir.offset)
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_mem = self.visit(ir.mem)
+        new_offset = self.visit(ir.offset)
+        new_exp = self.visit(ir.exp)
+        if new_mem is ir.mem and new_offset is ir.offset and new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'mem': new_mem, 'offset': new_offset, 'exp': new_exp})
 
     def visit_ARRAY(self, ir):
-        ir.repeat = self.visit(ir.repeat)
-        for i, item in enumerate(ir.items):
-            ir.items[i] = self.visit(item)
-        return ir
+        new_repeat = self.visit(ir.repeat)
+        new_items = [self.visit(item) for item in ir.items]
+        repeat_changed = new_repeat is not ir.repeat
+        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
+        if not repeat_changed and not items_changed:
+            return ir
+        return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
 
     def visit_EXPR(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_CJUMP(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_MCJUMP(self, ir):
@@ -579,24 +633,24 @@ class IRTransformer(IRVisitor):
         self.new_stms.append(ir)
 
     def visit_RET(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_MOVE(self, ir):
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
+        object.__setattr__(ir, 'src', self.visit(ir.src))
+        object.__setattr__(ir, 'dst', self.visit(ir.dst))
         self.new_stms.append(ir)
 
     def visit_CEXPR(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_EXPR(ir)
 
     def visit_CMOVE(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_MOVE(ir)
 
     def visit_PHI(self, ir):
-        ir.var = self.visit(ir.var)
+        object.__setattr__(ir, 'var', self.visit(ir.var))
         for i, arg in enumerate(ir.args):
             ir.args[i] = self.visit(arg)
         if ir.ps:

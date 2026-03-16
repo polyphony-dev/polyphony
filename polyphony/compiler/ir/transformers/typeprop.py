@@ -8,7 +8,7 @@ from ..ir import (
     Ctx,
 )
 from ..ir_helper import qualified_symbols, irexp_type, try_get_constant
-from ..ir import IR, CONST, TEMP, EXPR
+from ..ir import Ir as IR, Const as CONST, Temp as TEMP, Expr as EXPR
 from ..ir_helper import qualified_symbols as old_qualified_symbols
 from ..ir_visitor import IRVisitor
 from ..scope import Scope
@@ -125,7 +125,7 @@ class TypeExprEvaluator(IRVisitor):
         result = self.visit(expr)
         # Propagate in-place mutation back to the Expr
         if isinstance(result, EXPR):
-            expr.exp = result.exp
+            object.__setattr__(expr, 'exp', result.exp)
         return result
 
     def visit_CONST(self, ir):
@@ -233,7 +233,7 @@ class TypeExprEvaluator(IRVisitor):
         if isinstance(result, Type):
             return result
         else:
-            ir.exp = result
+            object.__setattr__(ir, 'exp', result)
             return ir
 
 
@@ -420,7 +420,9 @@ class NewTypePropagation(IrVisitor):
             if not func_sym:
                 fail(self.current_stm, Errors.IS_NOT_CALLABLE, [clazz.name])
             assert func_sym.typ.is_function()
-            ir.func = Attr(name=fun_name, exp=ir.func, attr=fun_name, ctx=Ctx.LOAD)
+            new_func = Attr(name=fun_name, exp=ir.func, attr=fun_name, ctx=Ctx.LOAD)
+            object.__setattr__(ir, 'func', new_func)
+            object.__setattr__(ir, 'name', new_func.name)
 
     def visit_Call(self, ir):
         self.visit(ir.func)
@@ -446,7 +448,7 @@ class NewTypePropagation(IrVisitor):
 
     def visit_SysCall(self, ir):
         name = ir.name
-        ir.args = self._normalize_syscall_args(name, ir.args, ir.kwargs)
+        object.__setattr__(ir, 'args', self._normalize_syscall_args(name, ir.args, ir.kwargs))
         for _, arg in ir.args:
             self.visit(arg)
         if name == 'polyphony.io.flipped':
@@ -782,7 +784,7 @@ class NewTypeSpecializer(NewTypePropagation):
                 fail(self.current_stm, type_or_error)
         names = callee_scope.param_names()
         defvals = callee_scope.param_default_values()
-        ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
+        object.__setattr__(ir, 'args', self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs))
         if callee_scope.is_lib():
             return self.visit_Call_lib(ir)
 
@@ -821,10 +823,14 @@ class NewTypeSpecializer(NewTypePropagation):
                 owner.import_sym(new_scope_sym, asname)
             # Replace name expression
             if isinstance(ir.func, Temp):
-                ir.func = Temp(name=asname)
+                new_func = Temp(name=asname, ctx=Ctx.CALL)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             elif isinstance(ir.func, Attr):
                 assert asname == new_scope_sym.name
-                ir.func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
+                new_func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             else:
                 assert False
         else:
@@ -893,7 +899,7 @@ class NewTypeSpecializer(NewTypePropagation):
         ctor = callee_scope.find_ctor()
         names = ctor.param_names()
         defvals = ctor.param_default_values()
-        ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
+        object.__setattr__(ir, 'args', self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs))
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if callee_scope.is_specialized():
             return callee_scope.find_ctor().return_type
@@ -927,10 +933,14 @@ class NewTypeSpecializer(NewTypePropagation):
                 owner.import_sym(new_scope_sym, asname)
             # Replace name expression
             if isinstance(ir.func, Temp):
-                ir.func = Temp(name=asname)
+                new_func = Temp(name=asname, ctx=Ctx.CALL)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             elif isinstance(ir.func, Attr):
                 assert asname == new_scope_sym.name
-                ir.func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
+                new_func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             else:
                 assert False
         else:
@@ -1160,11 +1170,11 @@ class NewTypeReplacer(IrVisitor):
 # TypePropagation & TypeSpecializer (old IR, moved from typeprop.py)
 # ============================================================
 
-from ..ir import IR as OldIR, IRStm as OldIRStm, IRExp as OldIRExp, IRVariable as OldIRVariable
-from ..ir import IRCallable as OldIRCallable
-from ..ir import CONST as OldCONST, TEMP as OldTEMP, ATTR as OldATTR
-from ..ir import CALL as OldCALL, NEW as OldNEW, SYSCALL as OldSYSCALL
-from ..ir import MOVE as OldMOVE, ARRAY as OldARRAY, MREF as OldMREF
+from ..ir import Ir as OldIR, IrStm as OldIRStm, IrExp as OldIRExp, IrVariable as OldIRVariable
+from ..ir import IrCallable as OldIRCallable
+from ..ir import Const as OldCONST, Temp as OldTEMP, Attr as OldATTR
+from ..ir import Call as OldCALL, New as OldNEW, SysCall as OldSYSCALL
+from ..ir import Move as OldMOVE, Array as OldARRAY, MRef as OldMREF
 from ..ir import Ctx as OldCtx
 from ..ir_helper import irexp_type as old_irexp_type
 
@@ -1297,7 +1307,9 @@ class TypePropagation(IRVisitor):
             if not func_sym:
                 fail(self.current_stm, Errors.IS_NOT_CALLABLE, [clazz.name])
             assert func_sym.typ.is_function()
-            ir.func = OldATTR(ir.func, clazz.symbols[fun_name], OldCtx.LOAD)
+            new_func = OldATTR(ir.func, clazz.symbols[fun_name], OldCtx.LOAD)
+            object.__setattr__(ir, 'func', new_func)
+            object.__setattr__(ir, 'name', new_func.name)
 
     def visit_CALL(self, ir):
         self.visit(ir.func)
@@ -1323,7 +1335,7 @@ class TypePropagation(IRVisitor):
 
     def visit_SYSCALL(self, ir):
         name = ir.name
-        ir.args = self._normalize_syscall_args(name, ir.args, ir.kwargs)
+        object.__setattr__(ir, 'args', self._normalize_syscall_args(name, ir.args, ir.kwargs))
         for _, arg in ir.args:
             self.visit(arg)
         if name == 'polyphony.io.flipped':
@@ -1642,7 +1654,7 @@ class TypeSpecializer(TypePropagation):
                 fail(self.current_stm, type_or_error)
         names = callee_scope.param_names()
         defvals = callee_scope.param_default_values()
-        ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
+        object.__setattr__(ir, 'args', self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs))
         if callee_scope.is_lib():
             return self.visit_CALL_lib(ir)
         arg_types = [self.visit(arg) for _, arg in ir.args]
@@ -1678,10 +1690,14 @@ class TypeSpecializer(TypePropagation):
             if owner and (func_sym.scope is not owner or owner is not callee_scope.parent):
                 owner.import_sym(new_scope_sym, asname)
             if isinstance(ir.func, OldTEMP):
-                ir.func = OldTEMP(asname)
+                new_func = OldTEMP(asname)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             elif isinstance(ir.func, OldATTR):
                 assert asname == new_scope_sym.name
-                ir.func = OldATTR(ir.func.exp, new_scope_sym.name)
+                new_func = OldATTR(ir.func.exp, new_scope_sym.name)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             else:
                 assert False
         else:
@@ -1749,7 +1765,7 @@ class TypeSpecializer(TypePropagation):
         ctor = callee_scope.find_ctor()
         names = ctor.param_names()
         defvals = ctor.param_default_values()
-        ir.args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
+        object.__setattr__(ir, 'args', self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs))
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if callee_scope.is_specialized():
             return callee_scope.find_ctor().return_type
@@ -1782,10 +1798,14 @@ class TypeSpecializer(TypePropagation):
             if owner and func_sym.scope is not owner:
                 owner.import_sym(new_scope_sym, asname)
             if isinstance(ir.func, OldTEMP):
-                ir.func = OldTEMP(asname)
+                new_func = OldTEMP(asname)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             elif isinstance(ir.func, OldATTR):
                 assert asname == new_scope_sym.name
-                ir.func = OldATTR(ir.func.exp, new_scope_sym.name)
+                new_func = OldATTR(ir.func.exp, new_scope_sym.name)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
             else:
                 assert False
         else:

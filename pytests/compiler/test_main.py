@@ -1,5 +1,5 @@
 from polyphony.compiler.common.env import env
-from polyphony.compiler.ir.ir import CONST
+from polyphony.compiler.ir.ir import Const
 from pytests.compiler.base import setup_test
 
 def test_setup_test():
@@ -38,11 +38,11 @@ def test_setup_test():
     # const strings
     name = top.symbols['__name__']
     assert name.typ.is_str()
-    assert isinstance(top.constants[name], CONST)
+    assert isinstance(top.constants[name], Const)
     assert top.constants[name].value == '__main__'
     file = top.symbols['__file__']
     assert file.typ.is_str()
-    assert isinstance(top.constants[file], CONST)
+    assert isinstance(top.constants[file], Const)
     assert top.constants[file].value == 'dummy'
 
     # type class symbols

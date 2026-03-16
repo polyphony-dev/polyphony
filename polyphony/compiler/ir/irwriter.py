@@ -40,10 +40,10 @@ class IRWriter(object):
             parts.append(self.write_scope(scope))
         return '\n\n'.join(parts)
 
-    def write_stm(self, stm: IRStm) -> str:
+    def write_stm(self, stm: IrStm) -> str:
         return self._format_stm(stm)
 
-    def write_exp(self, exp: IRExp) -> str:
+    def write_exp(self, exp: IrExp) -> str:
         return self._format_exp(exp)
 
     def write_type(self, typ: Type) -> str:

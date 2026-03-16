@@ -39,7 +39,7 @@ Loc = namedtuple('Loc', ('filename', 'lineno'))
 # ============================================================
 
 class Ir(BaseModel):
-    model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     def __repr__(self):
         return self.__str__()
@@ -101,7 +101,8 @@ class Ir(BaseModel):
             for field_name in ir.model_fields:
                 v = getattr(ir, field_name, None)
                 if v == old:
-                    setattr(ir, field_name, new)
+                    # Use object.__setattr__ to bypass frozen check on IrExp
+                    object.__setattr__(ir, field_name, new)
                     ret = True
                 elif self._replace_rec(v, old, new, visited):
                     ret = True
@@ -186,10 +187,12 @@ class Ir(BaseModel):
 
 
 class IrExp(Ir):
-    pass
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
 
 class IrStm(Ir):
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
     loc: Any = None
     block: Any = None  # Block reference
 
@@ -278,16 +281,16 @@ class Attr(IrVariable):
                 kwargs['name'] = ''
         # Set exp.ctx = LOAD to match old ATTR behavior
         exp = kwargs.get('exp')
-        if exp is not None and hasattr(exp, 'ctx'):
-            exp.ctx = Ctx.LOAD
+        if exp is not None and hasattr(exp, 'ctx') and exp.ctx != Ctx.LOAD:
+            kwargs['exp'] = exp.model_copy(update={'ctx': Ctx.LOAD})
         super().__init__(**kwargs)
 
     def model_post_init(self, __context):
         if not self.name:
             if isinstance(self.attr, str):
-                self.name = self.attr
+                object.__setattr__(self, 'name', self.attr)
             else:
-                self.name = self.attr.name
+                object.__setattr__(self, 'name', self.attr.name)
 
     def __str__(self):
         return f'{self.exp}.{self.attr}'
@@ -547,8 +550,8 @@ class IrCallable(IrNameExp):
                 kwargs.setdefault('kwargs', args_pos[2])
         # Set func.ctx = CALL to match old IRCallable behavior
         func = kwargs.get('func')
-        if func is not None and hasattr(func, 'ctx'):
-            func.ctx = Ctx.CALL
+        if func is not None and hasattr(func, 'ctx') and func.ctx != Ctx.CALL:
+            kwargs['func'] = func.model_copy(update={'ctx': Ctx.CALL})
         super().__init__(**kwargs)
 
     def model_post_init(self, __context):
@@ -560,16 +563,10 @@ class IrCallable(IrNameExp):
         """
         object.__setattr__(self, 'name', self.func.name)
 
-    def __setattr__(self, attr_name, value):
-        """Match old IRCallable setter behavior:
-        - func assignment sets func.ctx = CALL
-        - name assignment delegates to func.name
-        """
-        if attr_name == 'func' and hasattr(value, 'ctx'):
-            value.ctx = Ctx.CALL
-        elif attr_name == 'name' and hasattr(self, 'func'):
-            self.func.name = value
-        super().__setattr__(attr_name, value)
+    # NOTE: No __setattr__ override needed. IrExp is frozen, so direct field
+    # assignment raises ValidationError. func.ctx=CALL is ensured in __init__,
+    # and name is synced in model_post_init. Mutations use object.__setattr__
+    # or model_copy.
 
     @property
     def qualified_name(self) -> tuple[str, ...]:
@@ -723,7 +720,7 @@ class Array(IrExp):
 
     def model_post_init(self, __context):
         if self.repeat is None:
-            self.repeat = Const(value=1)
+            object.__setattr__(self, 'repeat', Const(value=1))
 
     @property
     def is_mutable(self):
@@ -842,7 +839,8 @@ class Move(IrStm):
         if isinstance(dst, str):
             kwargs['dst'] = name2var(dst, ctx=Ctx.STORE)
         elif isinstance(dst, IrVariable) and not isinstance(dst, (MRef,)):
-            dst.ctx = Ctx.STORE
+            if dst.ctx != Ctx.STORE:
+                kwargs['dst'] = dst.model_copy(update={'ctx': Ctx.STORE})
         # Coerce src: str -> Temp chain, int -> Const, IrVariable -> set ctx to LOAD
         src = kwargs.get('src')
         if isinstance(src, str):
@@ -850,7 +848,8 @@ class Move(IrStm):
         elif isinstance(src, int) and not isinstance(src, bool):
             kwargs['src'] = Const(value=src)
         elif isinstance(src, IrVariable):
-            src.ctx = Ctx.LOAD
+            if src.ctx != Ctx.LOAD:
+                kwargs['src'] = src.model_copy(update={'ctx': Ctx.LOAD})
         super().__init__(**kwargs)
 
     def __str__(self):
@@ -1035,8 +1034,8 @@ class Phi(IrStm):
                 kwargs.setdefault('var', args_pos[0])
         # Set var.ctx = STORE to match old PHI behavior
         var = kwargs.get('var')
-        if var is not None and hasattr(var, 'ctx'):
-            var.ctx = Ctx.STORE
+        if var is not None and hasattr(var, 'ctx') and var.ctx != Ctx.STORE:
+            kwargs['var'] = var.model_copy(update={'ctx': Ctx.STORE})
         super().__init__(**kwargs)
 
     def __str__(self):
@@ -1082,8 +1081,8 @@ class Phi(IrStm):
             assert 0 <= idx < len(self.args)
             args.append(self.args[idx])
             ps.append(self.ps[idx])
-        self.args = args
-        self.ps = ps
+        object.__setattr__(self, 'args', args)
+        object.__setattr__(self, 'ps', ps)
 
 
 class UPhi(Phi):
@@ -1117,43 +1116,6 @@ class MStm(IrStm):
         return id(self)
 
 
-# ============================================================
-# Backward compatibility aliases (old UPPERCASE names)
-# ============================================================
-CONST = Const
-TEMP = Temp
-ATTR = Attr
-UNOP = UnOp
-BINOP = BinOp
-RELOP = RelOp
-CONDOP = CondOp
-POLYOP = PolyOp
-CALL = Call
-SYSCALL = SysCall
-NEW = New
-MREF = MRef
-MSTORE = MStore
-ARRAY = Array
-MOVE = Move
-CMOVE = CMove
-EXPR = Expr
-CEXPR = CExpr
-JUMP = Jump
-CJUMP = CJump
-MCJUMP = MCJump
-RET = Ret
-PHI = Phi
-UPHI = UPhi
-LPHI = LPhi
-MSTM = MStm
-IR = Ir
-IRExp = IrExp
-IRStm = IrStm
-IRVariable = IrVariable
-IRNameExp = IrNameExp
-IRCallable = IrCallable
-PHIBase = Phi  # Old PHIBase is now just Phi (the base for PHI/UPHI/LPHI)
-
 
 # ============================================================
 # Utility functions (previously in ir.py)
@@ -1161,10 +1123,12 @@ PHIBase = Phi  # Old PHIBase is now just Phi (the base for PHI/UPHI/LPHI)
 def name2var(name: str, ctx: Ctx = Ctx.LOAD) -> IrVariable:
     """Convert a dot-separated name string to a Temp/Attr chain."""
     ss = name.split('.')
+    if len(ss) == 1:
+        return Temp(name=ss[0], ctx=ctx)
     exp = Temp(name=ss[0])
-    for s in ss[1:]:
+    for s in ss[1:-1]:
         exp = Attr(exp=exp, attr=s, name=s)
-    exp.ctx = ctx
+    exp = Attr(exp=exp, attr=ss[-1], name=ss[-1], ctx=ctx)
     return exp
 
 

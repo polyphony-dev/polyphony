@@ -14,9 +14,8 @@ def _find_stm_index(stm):
     from ...common.utils import find_id_index
     idx = find_id_index(stm.block.stms, stm)
     if idx == -1:
-        from ..ir import MStm as MStmModel
         for i, s in enumerate(stm.block.stms):
-            if isinstance(s, (MSTM, MStmModel)) and any(id(c) == id(stm) for c in s.stms):
+            if isinstance(s, MStm) and any(id(c) == id(stm) for c in s.stms):
                 return i
     return idx
 
@@ -439,10 +438,10 @@ class RegArrayParallelizer(object):
 
     @staticmethod
     def _get_const(binop):
-        assert isinstance(binop, BINOP)
-        if isinstance(binop.left, CONST):
+        assert isinstance(binop, BinOp)
+        if isinstance(binop.left, Const):
             return binop.left
-        elif isinstance(binop.right, CONST):
+        elif isinstance(binop.right, Const):
             return binop.right
         return None
 
@@ -453,9 +452,9 @@ class RegArrayParallelizer(object):
         # e.g.
         # v1 = ...
         # v2 = v1 + 1
-        if not (isinstance(v2_stm, MOVE) and isinstance(v2_stm.src, BINOP)):
+        if not (isinstance(v2_stm, Move) and isinstance(v2_stm.src, BinOp)):
                 return False
-        rhs_syms = [qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if isinstance(e, TEMP)]
+        rhs_syms = [qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if isinstance(e, Temp)]
         if len(rhs_syms) != 1:
             return False
         rhs_const = self._get_const(v2_stm.src)
@@ -473,12 +472,12 @@ class RegArrayParallelizer(object):
         # e.g.
         # v1 = x + 1
         # v2 = x + 2
-        if not (isinstance(v1_stm, MOVE) and isinstance(v1_stm.src, BINOP)):
+        if not (isinstance(v1_stm, Move) and isinstance(v1_stm.src, BinOp)):
             return False
-        if not (isinstance(v2_stm, MOVE) and isinstance(v2_stm.src, BINOP)):
+        if not (isinstance(v2_stm, Move) and isinstance(v2_stm.src, BinOp)):
             return False
-        v1_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v1_stm.src.kids() if isinstance(e, TEMP)])
-        v2_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if isinstance(e, TEMP)])
+        v1_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v1_stm.src.kids() if isinstance(e, Temp)])
+        v2_rhs_syms = set([qualified_symbols(e, self.scope)[-1] for e in v2_stm.src.kids() if isinstance(e, Temp)])
         common_syms = v1_rhs_syms.intersection(v2_rhs_syms)
         if not common_syms:
             return False
@@ -489,9 +488,9 @@ class RegArrayParallelizer(object):
     def is_inequality_value(self, offs1, offs2):
         if not offs1 or not offs2:
             return False
-        if isinstance(offs1, CONST) and isinstance(offs2, CONST) and offs1.value != offs2.value:
+        if isinstance(offs1, Const) and isinstance(offs2, Const) and offs1.value != offs2.value:
             return True
-        elif isinstance(offs1, TEMP) and isinstance(offs2, TEMP):
+        elif isinstance(offs1, Temp) and isinstance(offs2, Temp):
             offs1_sym = self.scope.find_sym(offs1.name)
             offs2_sym = self.scope.find_sym(offs2.name)
             offs1_defstms = self.usedef.get_stms_defining(offs1_sym)
@@ -514,59 +513,59 @@ class RegArrayParallelizer(object):
 # --- Type dispatchers ---
 
 def _is_move(stm):
-    return isinstance(stm, (MOVE, Move))
+    return isinstance(stm, Move)
 
 
 def _is_expr(stm):
-    return isinstance(stm, (EXPR, Expr))
+    return isinstance(stm, Expr)
 
 
 def _is_const(ir):
-    return isinstance(ir, (CONST, Const))
+    return isinstance(ir, Const)
 
 
 def _is_temp(ir):
-    return isinstance(ir, (TEMP, Temp))
+    return isinstance(ir, Temp)
 
 
 def _is_attr(ir):
-    return isinstance(ir, (ATTR, Attr))
+    return isinstance(ir, Attr)
 
 
 def _is_call(ir):
-    return isinstance(ir, (CALL, Call))
+    return isinstance(ir, Call)
 
 
 def _is_syscall(ir):
-    return isinstance(ir, (SYSCALL, SysCall))
+    return isinstance(ir, SysCall)
 
 
 def _is_new(ir):
-    return isinstance(ir, (NEW, New))
+    return isinstance(ir, New)
 
 
 def _is_array(ir):
-    return isinstance(ir, (ARRAY, Array))
+    return isinstance(ir, Array)
 
 
 def _is_mref(ir):
-    return isinstance(ir, (MREF, MRef))
+    return isinstance(ir, MRef)
 
 
 def _is_mstore(ir):
-    return isinstance(ir, (MSTORE, MStore))
+    return isinstance(ir, MStore)
 
 
 def _is_jump(stm):
-    return isinstance(stm, (JUMP, Jump))
+    return isinstance(stm, Jump)
 
 
 def _is_cjump(stm):
-    return isinstance(stm, (CJUMP, CJump))
+    return isinstance(stm, CJump)
 
 
 def _is_mcjump(stm):
-    return isinstance(stm, (MCJUMP, MCJump))
+    return isinstance(stm, MCJump)
 
 
 def _is_ctrl_stm(stm):
@@ -574,11 +573,11 @@ def _is_ctrl_stm(stm):
 
 
 def _is_phi(stm):
-    return isinstance(stm, (PHIBase, Phi, UPhi))
+    return isinstance(stm, (Phi, UPhi))
 
 
 def _is_mstm(stm):
-    return isinstance(stm, (MSTM, MStm))
+    return isinstance(stm, MStm)
 
 
 def _expand_stms(stms):
@@ -593,7 +592,7 @@ def _expand_stms(stms):
 
 
 def _is_variable(ir):
-    return isinstance(ir, IRVariable)
+    return isinstance(ir, IrVariable)
 
 
 def _qualified_symbols(var, scope):
@@ -613,7 +612,7 @@ def _is_port_method_call(call, scope):
 
 
 def _head_name(ir):
-    if isinstance(ir, (ATTR, Attr)):
+    if isinstance(ir, Attr):
         return ir.head_name()
     return ''
 
@@ -1051,7 +1050,7 @@ class NewDFGBuilder(object):
         if not _is_port_method_call(call, self.scope):
             return None
         func = call.func
-        if isinstance(func, (ATTR, Attr)):
+        if isinstance(func, Attr):
             return func.tail_name()
         return None
 

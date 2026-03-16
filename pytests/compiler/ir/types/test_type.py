@@ -91,7 +91,7 @@ def test_int():
     assert not u32_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not u32_t.can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not u32_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not u32_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not u32_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     i8_t = u32_t.clone(width=8, signed=False)
     assert i8_t.width == 8
@@ -125,7 +125,7 @@ def test_bool():
     assert not bool_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not bool_t.can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not bool_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not bool_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not bool_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.bool().clone(explicit=True).explicit == True
 
@@ -155,7 +155,7 @@ def test_str():
     assert not str_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not str_t.can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not str_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not str_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not str_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.str().clone(explicit=True).explicit == True
 
@@ -185,7 +185,7 @@ def test_none():
     assert not none_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not none_t.can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not none_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not none_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not none_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.none().clone(explicit=True).explicit == True
 
@@ -206,7 +206,7 @@ def test_undef():
     assert Type.undef().propagate(Type.klass(env.scopes['__builtin__.object'])) == Type.klass(env.scopes['__builtin__.object'])
     assert Type.undef().propagate(Type.function(env.scopes['__builtin__.print'])) == Type.function(env.scopes['__builtin__.print'])
     assert Type.undef().propagate(Type.namespace(env.scopes['__builtin__'])) == Type.namespace(env.scopes['__builtin__'])
-    assert Type.undef().propagate(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__'])) == Type.expr(EXPR(CONST(1)), env.scopes['__builtin__'])
+    assert Type.undef().propagate(Type.expr(Expr(Const(1)), env.scopes['__builtin__'])) == Type.expr(Expr(Const(1)), env.scopes['__builtin__'])
 
     assert undef_t.can_assign(Type.bool())
     assert undef_t.can_assign(Type.int(16, signed=True, explicit=True))
@@ -219,7 +219,7 @@ def test_undef():
     assert undef_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert undef_t.can_assign(Type.function(env.scopes['__builtin__.print']))
     assert undef_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert undef_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert undef_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
 
 def test_list():
@@ -261,15 +261,15 @@ def test_list():
     assert not list_t.can_assign(Type.list(Type.str()))
     assert not list_t.can_assign(Type.list(Type.int(), 101))
     assert not list_t.can_assign(Type.list(Type.int(), 99))
-    assert     list_t.can_assign(Type.list(Type.int(), Type.expr(EXPR(CONST(99)), env.scopes['__builtin__'])))
-    assert     Type.list(Type.int(), Type.expr(EXPR(CONST(99)), env.scopes['__builtin__'])).can_assign(Type.list(Type.int(), 10))
+    assert     list_t.can_assign(Type.list(Type.int(), Type.expr(Expr(Const(99)), env.scopes['__builtin__'])))
+    assert     Type.list(Type.int(), Type.expr(Expr(Const(99)), env.scopes['__builtin__'])).can_assign(Type.list(Type.int(), 10))
     assert not list_t.can_assign(Type.tuple(Type.int(), 100))
     assert not Type.list(Type.int(), 100).can_assign(Type.tuple(Type.int(), 100))
     assert not list_t.can_assign(Type.object(env.scopes['__builtin__.object']))
     assert not list_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not list_t.can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not list_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not list_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not list_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.list(Type.int()).clone(explicit=True).explicit == True
     assert Type.list(Type.int()).clone(element=Type.bool()).element == Type.bool()
@@ -327,7 +327,7 @@ def test_tuple():
     assert not tuple_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not tuple_t.can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not tuple_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not tuple_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not tuple_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.tuple(Type.int(), 3).clone(explicit=True).explicit == True
     assert Type.tuple(Type.int(), 3).clone(element=Type.bool()).element == Type.bool()
@@ -390,7 +390,7 @@ def test_user_object():
     assert not Type.object(C).can_assign(Type.klass(C))
     assert not Type.object(C).can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not Type.object(C).can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not Type.object(C).can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not Type.object(C).can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     clonec = Type.object(C).clone(scope=C_instance)
     assert clonec.scope is C_instance
@@ -430,7 +430,7 @@ def test_generic_object():
     assert Type.object(Object).propagate(Type.klass(Object)) == Type.object(Object)
     assert Type.object(Object).propagate(Type.function(Object)) == Type.object(Object)
     assert Type.object(Object).propagate(Type.namespace(env.scopes['__builtin__'])) == Type.object(Object)
-    assert Type.object(Object).propagate(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__'])) == Type.object(Object)
+    assert Type.object(Object).propagate(Type.expr(Expr(Const(1)), env.scopes['__builtin__'])) == Type.object(Object)
 
     # explicit property is never propagated
     assert Type.object(Object, explicit=False).propagate(Type.object(Object, explicit=True)) == Type.object(Object, explicit=False)
@@ -452,7 +452,7 @@ def test_generic_object():
     assert not Type.object(Object).can_assign(Type.klass(Object))
     assert not Type.object(Object).can_assign(Type.function(env.scopes['__builtin__.print']))
     assert not Type.object(Object).can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not Type.object(Object).can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not Type.object(Object).can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
 
 def test_class():
@@ -494,7 +494,7 @@ def test_class():
     assert not Type.klass(C).can_assign(Type.klass(cls))
     assert     Type.klass(C).can_assign(Type.klass(C))
     assert not cls_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not cls_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not cls_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.klass(C).clone(scope=C_instance).scope is C_instance
 
@@ -550,7 +550,7 @@ def test_function():
     assert     func_t.can_assign(Type.function(F))
     assert not func_t.can_assign(Type.klass(cls))
     assert not func_t.can_assign(Type.namespace(env.scopes['__builtin__']))
-    assert not func_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not func_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.function(F).clone(scope=G).scope is G
 
@@ -587,7 +587,7 @@ def test_namespace():
     assert not ns_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not ns_t.can_assign(Type.namespace(cls))
     assert not ns_t.can_assign(Type.namespace(top))
-    assert not ns_t.can_assign(Type.expr(EXPR(CONST(1)), env.scopes['__builtin__']))
+    assert not ns_t.can_assign(Type.expr(Expr(Const(1)), env.scopes['__builtin__']))
 
     assert Type.namespace(cls).clone(scope=top).scope is top
 
@@ -598,14 +598,14 @@ def test_expr():
     top = new_scope(None, 'top', {'namespace'})
     Int = new_scope(top, 'Int', {'typeclass'})
 
-    expr_t = Type.expr(EXPR(TEMP('Int')), top)
+    expr_t = Type.expr(Expr(Temp('Int')), top)
     assert expr_t.is_expr()
     assert expr_t.explicit is True
-    assert expr_t == Type.expr(EXPR(TEMP('Int')), top)
-    assert expr_t != Type.expr(EXPR(CONST(0)), top)
+    assert expr_t == Type.expr(Expr(Temp('Int')), top)
+    assert expr_t != Type.expr(Expr(Const(0)), top)
 
-    assert Type.expr(EXPR(CONST(0)), top).propagate(Type.expr(EXPR(TEMP('Int')), top)) == Type.expr(EXPR(TEMP('Int')), top)
-    assert Type.expr(EXPR(TEMP('Int')), top).propagate(Type.expr(EXPR(CONST(0)), top)) == Type.expr(EXPR(CONST(0)), top)
+    assert Type.expr(Expr(Const(0)), top).propagate(Type.expr(Expr(Temp('Int')), top)) == Type.expr(Expr(Temp('Int')), top)
+    assert Type.expr(Expr(Temp('Int')), top).propagate(Type.expr(Expr(Const(0)), top)) == Type.expr(Expr(Const(0)), top)
 
     assert not expr_t.can_assign(Type.bool())
     assert not expr_t.can_assign(Type.int(16, signed=True, explicit=True))
@@ -620,17 +620,17 @@ def test_expr():
     assert not expr_t.can_assign(Type.klass(env.scopes['__builtin__.object']))
     assert not expr_t.can_assign(Type.namespace(env.scopes['__builtin__']))
     assert not expr_t.can_assign(Type.namespace(top))
-    assert expr_t.can_assign(Type.expr(EXPR(TEMP('Int')), top))
-    assert expr_t.can_assign(Type.expr(EXPR(CONST(0)), top))
+    assert expr_t.can_assign(Type.expr(Expr(Temp('Int')), top))
+    assert expr_t.can_assign(Type.expr(Expr(Const(0)), top))
 
-    assert Type.expr(EXPR(CONST(0)), top).clone(expr=EXPR(TEMP('Int'))).expr == EXPR(TEMP('Int'))
+    assert Type.expr(Expr(Const(0)), top).clone(expr=Expr(Temp('Int'))).expr == Expr(Temp('Int'))
 
 def test_list_length_expr():
     setup_test()
 
     top = new_scope(None, 'top', {'namespace'})
     elm_t = Type.int()
-    length = Type.expr(EXPR(TEMP('x')), top)
+    length = Type.expr(Expr(Temp('x')), top)
     list_t = Type.list(elm_t, length)
     slist = str(list_t)
     print(slist)
@@ -684,7 +684,7 @@ def test_common_function():
     assert not Type.function(cls).is_scalar()
     assert not Type.klass(cls).is_scalar()
     assert not Type.namespace(ns).is_scalar()
-    assert not Type.expr(EXPR(CONST(0)), env.scopes['__builtin__']).is_scalar()
+    assert not Type.expr(Expr(Const(0)), env.scopes['__builtin__']).is_scalar()
 
     assert not Type.int().is_seq()
     assert not Type.bool().is_seq()
@@ -697,7 +697,7 @@ def test_common_function():
     assert not Type.function(cls).is_seq()
     assert not Type.klass(cls).is_seq()
     assert not Type.namespace(ns).is_seq()
-    assert not Type.expr(EXPR(CONST(0)), env.scopes['__builtin__']).is_seq()
+    assert not Type.expr(Expr(Const(0)), env.scopes['__builtin__']).is_seq()
 
     assert not Type.int().is_containable()
     assert not Type.bool().is_containable()
@@ -710,7 +710,7 @@ def test_common_function():
     assert not Type.function(cls).is_containable()
     assert Type.klass(cls).is_containable()
     assert Type.namespace(ns).is_containable()
-    assert not Type.expr(EXPR(CONST(0)), env.scopes['__builtin__']).is_containable()
+    assert not Type.expr(Expr(Const(0)), env.scopes['__builtin__']).is_containable()
 
 
 def test_type_from_ir():
@@ -723,10 +723,10 @@ def test_type_from_ir():
     usr_sub_class = new_scope(usr_class, 'SubClass',  {'class'})
     usr_class.add_sym('Sub', set(), typ=Type.klass(usr_sub_class))
 
-    t = type_from_ir(top, CONST(None), explicit=True)
+    t = type_from_ir(top, Const(None), explicit=True)
     assert t.is_none()
 
-    t = type_from_ir(top, CONST(123), explicit=True)
+    t = type_from_ir(top, Const(123), explicit=True)
     assert t.is_expr()
     assert isinstance(t.expr, NewExpr)
     assert isinstance(t.expr.exp, NewConst)
@@ -734,33 +734,33 @@ def test_type_from_ir():
 
 
     # x: int
-    int_calss_ir = TEMP('int')
+    int_calss_ir = Temp('int')
     t = type_from_ir(top, int_calss_ir, explicit=True)
     assert t.is_int()
     assert t.explicit
 
     # x: UserClass
-    usr_calss_ir = TEMP('UserClass')
+    usr_calss_ir = Temp('UserClass')
     t = type_from_ir(top, usr_calss_ir, explicit=True)
     assert t.is_object()
     assert t.scope is usr_class
     assert t.explicit
 
     # x: str
-    str_calss_ir = TEMP('str')
+    str_calss_ir = Temp('str')
     t = type_from_ir(top, str_calss_ir, explicit=True)
     assert t.is_str()
     assert t.explicit
 
     # x: UserClass.Sub
-    usr_calss_ir = ATTR(TEMP('UserClass'), 'Sub')
+    usr_calss_ir = Attr(Temp('UserClass'), 'Sub')
     t = type_from_ir(top, usr_calss_ir, explicit=True)
     assert t.is_object()
     assert t.scope is usr_sub_class
     assert t.explicit
 
     # x: list[int]
-    list_class_ir = MREF(TEMP('list'), TEMP('int'))
+    list_class_ir = MRef(Temp('list'), Temp('int'))
     t = type_from_ir(top, list_class_ir, explicit=True)
     assert t.is_list()
     assert t.explicit
@@ -769,12 +769,12 @@ def test_type_from_ir():
     assert t.length == Type.ANY_LENGTH
 
     # x: list[int][10]
-    list_ir = MREF(
-        MREF(
-            TEMP('list'),
-            TEMP('int')
+    list_ir = MRef(
+        MRef(
+            Temp('list'),
+            Temp('int')
         ),
-        CONST(10)
+        Const(10)
     )
     t1 = type_from_ir(top, list_ir, explicit=True)
     assert t1.is_list()
@@ -788,12 +788,12 @@ def test_type_from_ir():
 
     # x: list[int][SIZE]
     top.add_sym('SIZE', set(), typ=Type.int())
-    list_ir = MREF(
-        MREF(
-            TEMP('list'),
-            TEMP('int')
+    list_ir = MRef(
+        MRef(
+            Temp('list'),
+            Temp('int')
         ),
-        TEMP('SIZE')
+        Temp('SIZE')
     )
     t1 = type_from_ir(top, list_ir, explicit=True)
     assert t1.is_list()
@@ -811,13 +811,13 @@ def test_type_from_ir():
 
     # T: type
     type_sym = top.find_sym('type')
-    t = type_from_ir(top, TEMP('type'), explicit=True)
+    t = type_from_ir(top, Temp('type'), explicit=True)
     assert t.is_class()
     assert t.scope.is_object()
 
     # x: T
     top.add_sym('T', set(), typ=Type.klass('__builtin__.object'))
-    t = type_from_ir(top, TEMP('T'), explicit=True)
+    t = type_from_ir(top, Temp('T'), explicit=True)
     assert t.is_expr()
     assert isinstance(t.expr, NewExpr)
     assert isinstance(t.expr.exp, NewTemp)

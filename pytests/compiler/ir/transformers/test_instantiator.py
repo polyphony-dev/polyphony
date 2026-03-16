@@ -55,7 +55,7 @@ def test_find_called_module():
     assert caller is top
     assert module is env.scopes['@top.C']
     assert move is top.entry_block.stms[0]
-    assert isinstance(move.src, NEW)
+    assert isinstance(move.src, New)
 
 
 def test_instantiate_no_bind():
@@ -143,7 +143,7 @@ def test_instantiate_no_bind():
 
     blk1 = top.entry_block
     assert len(blk1.stms) == 1
-    assert blk1.stms[0] == MOVE(_v('c'), NEW(_v('C_0'), [('', CONST(10))], {}))
+    assert blk1.stms[0] == Move(_v('c'), New(_v('C_0'), [('', Const(10))], {}))
     top_c = top.find_sym('c')
     assert top_c
     assert top_c.typ.is_object()
@@ -187,10 +187,10 @@ def test_instantiate_no_bind():
     assert C0_ctor.param_names() == ['size']
     blk1 = C0_ctor.entry_block
     assert len(blk1.stms) == 4
-    assert blk1.stms[0] == MOVE(_v('size'), _v('@in_size'))
-    assert blk1.stms[1] == MOVE(_v('self.a'), _v('size'))
-    assert blk1.stms[2] == EXPR(CALL(_v('self.append_worker'), [('', _v('self.main_0'))], {}))
-    assert blk1.stms[3] == EXPR(CALL(_v('self.append_worker'), [('', _v('self.main_1'))], {}))
+    assert blk1.stms[0] == Move(_v('size'), _v('@in_size'))
+    assert blk1.stms[1] == Move(_v('self.a'), _v('size'))
+    assert blk1.stms[2] == Expr(Call(_v('self.append_worker'), [('', _v('self.main_0'))], {}))
+    assert blk1.stms[3] == Expr(Call(_v('self.append_worker'), [('', _v('self.main_1'))], {}))
 
     # check method instantiation
     i = children_names.index('@top.C_0.f')
@@ -321,22 +321,22 @@ def test_bind_arguments():
     next_scopes = NewArgumentApplier().process_scopes([Scope.global_scope()])
     assert len(next_scopes) == 1
     assert next_scopes[0] is C0_ctor
-    assert top.entry_block.stms[0] == MOVE(_v('c'), NEW(_v('C_0'), [], {}))
+    assert top.entry_block.stms[0] == Move(_v('c'), New(_v('C_0'), [], {}))
 
     assert len(C0_ctor.param_names()) == 0
-    assert C0_ctor.entry_block.stms[0] == MOVE(_v('self.a'), CONST(10))
-    assert C0_ctor.entry_block.stms[1] == EXPR(CALL(_v('self.append_worker'),
+    assert C0_ctor.entry_block.stms[0] == Move(_v('self.a'), Const(10))
+    assert C0_ctor.entry_block.stms[1] == Expr(Call(_v('self.append_worker'),
                                                     [('', _v('self.main_0')),
-                                                     ('', CONST(20))],
+                                                     ('', Const(20))],
                                                     {}))
-    assert C0_ctor.entry_block.stms[2] == EXPR(CALL(_v('self.append_worker'),
+    assert C0_ctor.entry_block.stms[2] == Expr(Call(_v('self.append_worker'),
                                                     [('', _v('self.main_1')),
-                                                     ('', CONST(10))],
+                                                     ('', Const(10))],
                                                     {}))
-    assert C0_ctor.entry_block.stms[3] == MOVE(_v('self.a'), CONST(11))
-    assert C0_ctor.entry_block.stms[4] == EXPR(CALL(_v('self.append_worker'),
+    assert C0_ctor.entry_block.stms[3] == Move(_v('self.a'), Const(11))
+    assert C0_ctor.entry_block.stms[4] == Expr(Call(_v('self.append_worker'),
                                                     [('', _v('self.main_2')),
-                                                     ('', CONST(12))],
+                                                     ('', Const(12))],
                                                     {}))
 
 
@@ -345,12 +345,12 @@ def test_bind_arguments():
 
     C0_main0 = env.scopes['@top.C_0.main_0']
     assert len(C0_main0.param_names()) == 0
-    assert C0_main0.entry_block.stms[0] == MOVE(_v('self.a'), CONST(20))
+    assert C0_main0.entry_block.stms[0] == Move(_v('self.a'), Const(20))
 
     C0_main1 = env.scopes['@top.C_0.main_1']
     assert len(C0_main1.param_names()) == 0
-    assert C0_main1.entry_block.stms[0] == MOVE(_v('self.a'), CONST(10))
+    assert C0_main1.entry_block.stms[0] == Move(_v('self.a'), Const(10))
 
     C0_main2 = env.scopes['@top.C_0.main_2']
     assert len(C0_main2.param_names()) == 0
-    assert C0_main2.entry_block.stms[0] == MOVE(_v('self.a'), CONST(12))
+    assert C0_main2.entry_block.stms[0] == Move(_v('self.a'), Const(12))

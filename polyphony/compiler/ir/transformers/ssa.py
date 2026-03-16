@@ -98,7 +98,7 @@ class NewSSATransformerBase(object):
             blk.stms.remove(phi)
         phis = sorted(phis, key=lambda p: qualified_symbols(p.var, self.scope), reverse=True)
         for phi in phis:
-            phi.block = blk
+            object.__setattr__(phi, 'block', blk)
             blk.stms.insert(0, phi)
 
     def _insert_phi(self):
@@ -118,7 +118,7 @@ class NewSSATransformerBase(object):
                     phi_symbols[df].append(qsym)
                     var = self._qsym_to_var(qsym, Ctx.STORE)
                     phi = self._new_phi(var, df)
-                    phi.block = df
+                    object.__setattr__(phi, 'block', df)
                     df.stms.insert(0, phi)
                     if qsym not in self.usedef.get_qsyms_defined_at(df):
                         def_blocks.add(df)
@@ -134,7 +134,7 @@ class NewSSATransformerBase(object):
         defs = self.usedef.get_stms_defining(sym)
         for d in defs:
             if d.block is df.preds[0]:
-                phi.loc = d.loc
+                object.__setattr__(phi, 'loc', d.loc)
                 break
         return phi
 
@@ -182,7 +182,7 @@ class NewSSATransformerBase(object):
                 new_name = var.name + '#' + str(version)
                 var_sym = qsyms[-1]
                 new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
-                var.name = new_name
+                object.__setattr__(var, 'name', new_name)
 
     def _rename_rec(self, block, count, stack):
         for stm in block.stms:
@@ -245,8 +245,7 @@ class NewSSATransformerBase(object):
         i, v = stack[key][-1]
         if is_tail_attr:
             if i > 0:
-                var = var.model_copy(deep=True)
-                var.ctx = Ctx.LOAD
+                var = var.clone(ctx=Ctx.LOAD)
                 if 1 == phi.block.preds.count(block):
                     idx = phi.block.preds.index(block)
                     phi.args[idx] = var
@@ -328,9 +327,7 @@ class NewSSATransformerBase(object):
                 continue
             name = get_arg_name_if_same(phi)
             if name:
-                replace_var = phi.var.model_copy(deep=True)
-                replace_var.ctx = Ctx.LOAD
-                replace_var.name = name
+                replace_var = phi.var.model_copy(update={'ctx': Ctx.LOAD, 'name': name})
                 replaces = NewVarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef)
                 for rep in replaces:
                     if isinstance(rep, Phi):
@@ -414,7 +411,7 @@ class NewSSATransformerBase(object):
                 phi_predicates.append(p)
 
             for phi in phis:
-                phi.ps = phi_predicates[:]
+                object.__setattr__(phi, 'ps', phi_predicates[:])
                 assert len(phi.ps) == len(phi.args)
 
     def _find_loop_phi(self):
@@ -520,7 +517,7 @@ class NewTupleSSATransformer(NewSSATransformerBase):
                 from ..ir import Loc
                 uphi = UPhi(var=use_stm.dst.model_copy(deep=True),
                             block=use_stm.block, loc=use_stm.loc or Loc('', 0))
-                uphi.ps = phi.ps[:]
+                object.__setattr__(uphi, 'ps', phi.ps[:])
                 for arg in phi.args:
                     src = use_stm.src.model_copy(deep=True)
                     src.replace(use_var, arg.model_copy(deep=True))

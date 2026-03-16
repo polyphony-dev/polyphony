@@ -9,25 +9,7 @@ from ..symbol import Symbol
 
 
 class NewTupleTransformer(IrTransformer):
-    def visit_Expr(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
-
-    def visit_CJump(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
-
-    def visit_MCJump(self, ir):
-        for i in range(len(ir.conds)):
-            ir.conds[i] = self.visit(ir.conds[i])
-        self.new_stms.append(ir)
-
-    def visit_Jump(self, ir):
-        self.new_stms.append(ir)
-
-    def visit_Ret(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
+    pass
 
     def _can_direct_unpack(self, lhs, rhs):
         assert len(lhs) == len(rhs)
@@ -67,18 +49,18 @@ class NewTupleTransformer(IrTransformer):
                     mvs = self._unpack(self._make_temps(tempsyms, Ctx.STORE), ir.src.items)
                     mvs.extend(self._unpack(ir.dst.items, self._make_temps(tempsyms, Ctx.LOAD)))
                 for mv in mvs:
-                    mv.loc = ir.loc
+                    object.__setattr__(mv, 'loc', ir.loc)
                     self.new_stms.append(mv)
                 return
             elif isinstance(ir.src, IrVariable) and irexp_type(ir.src, self.scope).is_tuple():
                 mvs = self._unpack(ir.dst.items, self._make_mrefs(ir.src, len(ir.dst.items)))
                 for mv in mvs:
-                    mv.loc = ir.loc
+                    object.__setattr__(mv, 'loc', ir.loc)
                     self.new_stms.append(mv)
                 return
             elif isinstance(ir.src, Call) and self.scope.is_testbench():
                 raise NotImplementedError('Return of sequence type value is not implemented')
         else:
-            ir.src = self.visit(ir.src)
-            ir.dst = self.visit(ir.dst)
+            object.__setattr__(ir, 'src', self.visit(ir.src))
+            object.__setattr__(ir, 'dst', self.visit(ir.dst))
         self.new_stms.append(ir)

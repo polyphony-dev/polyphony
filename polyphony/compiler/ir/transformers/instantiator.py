@@ -203,6 +203,18 @@ class NewArgumentApplier(object):
                 return defs[0].src.model_copy(deep=True)
         return arg
 
+    def _import_arg_symbols(self, arg: IrExp, caller_scope: Scope, callee: Scope):
+        """Import symbols referenced by arg from caller_scope into callee."""
+        if isinstance(arg, Temp):
+            sym = caller_scope.find_sym(arg.name)
+            if sym and not callee.find_sym(arg.name):
+                callee.import_sym(sym)
+        elif isinstance(arg, Attr):
+            for name in arg.qualified_name:
+                sym = caller_scope.find_sym(name)
+                if sym and not callee.find_sym(name):
+                    callee.import_sym(sym)
+
     def _bind_args(self, caller_scope: Scope, args: list[tuple[str, IrExp]], callee: Scope):
         binding: list[tuple[int, IrExp]] = []
         module_param_vars: list[tuple[str, IrExp]] = []
@@ -218,8 +230,9 @@ class NewArgumentApplier(object):
                         arg = self._resolve_seq_arg(arg, caller_scope)
                     binding.append((i, arg))
         if binding:
-            
             for i, arg in binding:
+                # Import symbols referenced by arg from caller into callee
+                self._import_arg_symbols(arg, caller_scope, callee)
                 pname = callee.param_symbols()[i].name
                 NewVarReplacer.replace_uses(callee, Temp(name=pname), arg)
             callee.remove_param([i for i, _ in binding])

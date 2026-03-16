@@ -7,6 +7,7 @@ from polyphony.compiler.ir.builtin import builtin_symbols
 from pytests.compiler.base import setup_test, install_builtins
 from pytests.compiler.base import lib_source_polyphony
 from pytests.compiler.base import lib_source_polyphony_io
+from pytests.compiler.base import register_lib_syms
 import pytest
 
 
@@ -70,16 +71,16 @@ def test_flatten_worker():
 
     blk = m_ctor.entry_block
     assert len(blk.stms) == 3
-    assert blk.stms[0] == MOVE(_v('self.n'), SYSCALL(_v('$new'), [('', _v('N'))], {}))
-    assert blk.stms[1] == MOVE(_v('self.n.x'), CONST(10))
-    assert blk.stms[2] == EXPR(CALL(_v('self.append_worker'), [('', _v('self.n_main'))], {}))
+    assert blk.stms[0] == Move(_v('self.n'), SysCall(_v('$new'), [('', _v('N'))], {}))
+    assert blk.stms[1] == Move(_v('self.n.x'), Const(10))
+    assert blk.stms[2] == Expr(Call(_v('self.append_worker'), [('', _v('self.n_main'))], {}))
 
     assert len(scopes) == 1
     n_main = scopes[0]
     assert n_main.name == '@top.M.n_main'
     blk = n_main.entry_block
     assert len(blk.stms) == 1
-    assert blk.stms[0] == MOVE(_v('self.n.x'), _v('x'))
+    assert blk.stms[0] == Move(_v('self.n.x'), _v('x'))
 
 
 def test_flatten_assign_method():
@@ -127,6 +128,7 @@ def test_flatten_assign_method():
     """
 
     IRParser(src).parse_scope()
+    register_lib_syms()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -135,13 +137,13 @@ def test_flatten_assign_method():
 
     blk = m_ctor.entry_block
     assert len(blk.stms) == 2
-    assert blk.stms[0] == MOVE(_v('self.n'), SYSCALL(_v('$new'), [('', _v('N'))], {}))
-    assert blk.stms[1] == EXPR(CALL(_v('self.n.q.assign'), [('', _v('self.n_func'))], {}))
+    assert blk.stms[0] == Move(_v('self.n'), SysCall(_v('$new'), [('', _v('N'))], {}))
+    assert blk.stms[1] == Expr(Call(_v('self.n.q.assign'), [('', _v('self.n_func'))], {}))
 
     assert len(scopes) == 1
     n_main = scopes[0]
     assert n_main.name == '@top.M.n_func'
     blk = n_main.entry_block
     assert len(blk.stms) == 2
-    assert blk.stms[0] == MOVE(_v('@return'), MREF(_v('self.n.mem'), _v('self.n.addr')))
-    assert blk.stms[1] == RET(_v('@return'))
+    assert blk.stms[0] == Move(_v('@return'), MRef(_v('self.n.mem'), _v('self.n.addr')))
+    assert blk.stms[1] == Ret(_v('@return'))

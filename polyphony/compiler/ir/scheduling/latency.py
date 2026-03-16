@@ -1,20 +1,9 @@
-"""Latency calculation that handles both old and new IR types.
-
-Mirrors latency.py but works with both old IR (ir.py) and new IR (ir.py).
-"""
+"""Latency calculation for IR statements."""
 from ..ir import (
-    MOVE, EXPR, CONST, TEMP, ATTR, CALL, SYSCALL, NEW, ARRAY,
-    MREF, IRStm, PHI, UPHI, IRVariable,
+    Move, Expr, Const, Temp, Attr, Call, SysCall, New, Array,
+    MRef, MStore, IrStm, Phi, UPhi, IrVariable,
 )
-from ..ir import (
-    Move, Expr as ExprModel, Const as ConstModel, Temp as TempModel,
-    Attr as AttrModel, Call as CallModel, SysCall as SysCallModel,
-    New as NewModel, Array as ArrayModel, MRef as MRefModel,
-    IrStm as NewIrStm, Phi as PhiModel, UPhi as UPhiModel,
-    IrVariable as NewIrVariable, MStore as MStoreModel,
-)
-from ..ir_helper import qualified_symbols as old_qualified_symbols
-from ..ir_helper import qualified_symbols as new_qualified_symbols
+from ..ir_helper import qualified_symbols
 from ..symbol import Symbol
 from ...common.env import env
 from .dataflow import (
@@ -76,7 +65,7 @@ def _get_syscall_latency(call):
 
 def _get_latency(tag):
     """Calculate latency for a statement (handles both old and new IR)."""
-    assert isinstance(tag, (IRStm, NewIrStm))
+    assert isinstance(tag, IrStm)
     scope = tag.block.scope
 
     if _is_move(tag):
@@ -109,12 +98,12 @@ def _get_latency(tag):
             return _get_syscall_latency(exp)
         elif _is_mstore(exp):
             return UNIT_STEP
-    elif isinstance(tag, (PHI, PhiModel)):
+    elif isinstance(tag, Phi):
         var_sym = _qualified_symbols(tag.var, scope)[-1]
         assert isinstance(var_sym, Symbol)
         if var_sym.is_alias():
             return 0
-    elif isinstance(tag, (UPHI, UPhiModel)):
+    elif isinstance(tag, UPhi):
         var_sym = _qualified_symbols(tag.var, scope)[-1]
         assert isinstance(var_sym, Symbol)
         if var_sym.is_alias():

@@ -271,7 +271,7 @@ class IRReader(object):
         self.deq_line()
         return True
 
-    def parse_stm(self, stmstr: str) -> IRStm:
+    def parse_stm(self, stmstr: str) -> IrStm:
         tokens = self.split(stmstr, count=1)
         op = tokens[0]
         operands = tokens[1]
@@ -365,7 +365,7 @@ class IRReader(object):
         dst_, src_ = ops
         dst = self.parse_dst(dst_)
         src = self.parse_exp(src_)
-        return MOVE(dst, src)
+        return Move(dst, src)
 
     def parse_cmv(self, operands: str):
         ops = self.parse_operands(operands)
@@ -375,14 +375,14 @@ class IRReader(object):
         cond = self.parse_exp(cond_)
         dst  = self.parse_dst(dst_)
         src  = self.parse_exp(src_)
-        return CMOVE(cond, dst, src)
+        return CMove(cond, dst, src)
 
     def parse_expr(self, operands: str):
         ops = self.parse_operands(operands)
         if len(ops) != 1:
             raise
         exp = self.parse_exp(ops[0])
-        return EXPR(exp)
+        return Expr(exp)
 
     def parse_cexpr(self, operands: str):
         ops = self.parse_operands(operands)
@@ -391,7 +391,7 @@ class IRReader(object):
         cond_, exp_ = ops
         cond = self.parse_exp(cond_)
         exp  = self.parse_exp(exp_)
-        return CEXPR(cond, exp)
+        return CExpr(cond, exp)
 
     def parse_phi(self, operands: str):
         raise
@@ -401,7 +401,7 @@ class IRReader(object):
             raise
         next_block = self.blocks[operands]
         self.current_block.connect(next_block)
-        return JUMP(next_block)
+        return Jump(next_block)
 
     def parse_cj(self, operands: str):
         ops = self.parse_operands(operands)
@@ -417,7 +417,7 @@ class IRReader(object):
         else_blk = self.blocks[else_blk_]
         self.current_block.connect(then_blk)
         self.current_block.connect(else_blk)
-        return CJUMP(cond, then_blk, else_blk)
+        return CJump(cond, then_blk, else_blk)
 
     def parse_mj(self, operands: str):
         ops = self.parse_operands(operands)
@@ -433,7 +433,7 @@ class IRReader(object):
             blk = self.blocks[target_]
             targets.append(blk)
             self.current_block.connect(blk)
-        return MCJUMP(conds, targets)
+        return MCJump(conds, targets)
 
     def parse_ret(self, operands: str):
         ops = self.parse_operands(operands)
@@ -441,9 +441,9 @@ class IRReader(object):
             raise
         self.current_scope.exit_block = self.current_block
         exp = self.parse_exp(ops[0])
-        assert isinstance(exp, TEMP)
-        assert cast(TEMP, exp).name == Symbol.return_name
-        return RET(exp)
+        assert isinstance(exp, Temp)
+        assert cast(Temp, exp).name == Symbol.return_name
+        return Ret(exp)
 
     def parse_type(self, typstr: str) -> Type:
         if typstr.startswith('int'):
@@ -518,7 +518,7 @@ class IRReader(object):
         prefix = token[0]
         return prefix == '('
 
-    def parse_exp(self, expstr: str) -> IRExp:
+    def parse_exp(self, expstr: str) -> IrExp:
         if expstr[0] == '(':
             assert expstr[-1] == ')'
             exphead = expstr[1:-1].split()
@@ -554,7 +554,7 @@ class IRReader(object):
         left_, right_ = ops
         left  = self.parse_exp(left_)
         right = self.parse_exp(right_)
-        return BINOP(BINOP_MAP[op], left, right)
+        return BinOp(BINOP_MAP[op], left, right)
 
     def parse_rel(self, op: str, operands: str):
         ops = self.parse_operands(operands)
@@ -563,7 +563,7 @@ class IRReader(object):
         left_, right_ = ops
         left  = self.parse_exp(left_)
         right = self.parse_exp(right_)
-        return RELOP(RELOP_MAP[op], left, right)
+        return RelOp(RELOP_MAP[op], left, right)
 
     def parse_call(self, operands: str):
         ops = self.parse_operands(operands)
@@ -573,7 +573,7 @@ class IRReader(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return CALL(func, args, {})
+        return Call(func, args, {})
 
     def parse_new(self, operands: str):
         ops = self.parse_operands(operands)
@@ -583,7 +583,7 @@ class IRReader(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return NEW(func, args, {})
+        return New(func, args, {})
 
     def parse_syscall(self, operands: str):
         # FIXME:
@@ -594,7 +594,7 @@ class IRReader(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return SYSCALL(func, args, {})
+        return SysCall(func, args, {})
 
     def parse_mload(self, operands: str):
         ops = self.parse_operands(operands)
@@ -603,7 +603,7 @@ class IRReader(object):
         mem_, offs_ = ops
         mem  = self.parse_var(mem_)
         offs = self.parse_exp(offs_)
-        return MREF(mem, offs, Ctx.LOAD)
+        return MRef(mem, offs, Ctx.LOAD)
 
     def parse_mstore(self, operands: str):
         ops = self.parse_operands(operands)
@@ -613,7 +613,7 @@ class IRReader(object):
         mem  = self.parse_var(mem_)
         offs = self.parse_exp(offs_)
         src  = self.parse_exp(src_)
-        return MSTORE(mem, offs, src)
+        return MStore(mem, offs, src)
 
     def parse_list(self, s: str):
         m = re.match(r'\[(.*)\]', s)
@@ -623,7 +623,7 @@ class IRReader(object):
         for item_ in self.split(items_):
             item = self.parse_exp(item_)
             items.append(item)
-        return ARRAY(items, mutable=True)
+        return Array(items, mutable=True)
 
     def parse_tuple(self, s: str):
         m = re.match(r'\((.*)\)', s)
@@ -633,9 +633,9 @@ class IRReader(object):
         for item_ in self.parse_operands(items_):
             item = self.parse_exp(item_)
             items.append(item)
-        return ARRAY(items, mutable=False)
+        return Array(items, mutable=False)
 
-    def parse_dst(self, dststr: str) -> IRVariable|ARRAY:
+    def parse_dst(self, dststr: str) -> IrVariable|Array:
         if self.is_var(dststr):
             return self.parse_var(dststr, Ctx.STORE)
         elif self.is_tuple(dststr):
@@ -643,10 +643,10 @@ class IRReader(object):
         else:
             raise
 
-    def parse_var(self, varstr: str, ctx: Ctx = Ctx.LOAD) -> IRVariable:
+    def parse_var(self, varstr: str, ctx: Ctx = Ctx.LOAD) -> IrVariable:
         assert self.is_var(varstr)
         names = varstr.split('.')
-        var = TEMP(names[0])
+        var = Temp(names[0])
         # If IRParser methods are used partially, current_scope may be None
         if self.current_scope and self.current_scope.is_closure():
             # check if the variable is free variable
@@ -656,26 +656,27 @@ class IRReader(object):
                     sym.add_tag('free')
                     assert sym.scope.is_enclosure()
         for name in names[1:]:
-            var = ATTR(var, name)
-        var.ctx = ctx
+            var = Attr(var, name)
+        if var.ctx != ctx:
+            var = var.model_copy(update={'ctx': ctx})
         return var
 
-    def parse_scalar(self, s: str) -> IRExp:
+    def parse_scalar(self, s: str) -> IrExp:
         if s == 'True' or s == 'False':
-            return CONST(s == 'True')
+            return Const(s == 'True')
         if self.is_var(s):
             return self.parse_var(s, Ctx.LOAD)
         prefix = s[0]
         if self.is_unop(prefix):
             irop = UNOP_MAP[prefix]
             exp = self.parse_scalar(s[1:])
-            return UNOP(irop, exp)
+            return UnOp(irop, exp)
         elif s.isdigit():
-            return CONST(int(s))
+            return Const(int(s))
         elif s.startswith('"') and s.endswith('"') or s.startswith("'") and s.endswith("'"):
-            return CONST(s[1:-1])
+            return Const(s[1:-1])
         else:
-            return CONST(s)
+            return Const(s)
 
     def is_unop(self, op):
         return op in ('+', '-', '!', '~')

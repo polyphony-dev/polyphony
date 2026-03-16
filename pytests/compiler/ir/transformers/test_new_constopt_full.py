@@ -40,8 +40,8 @@ ret @return
     # After constopt, x=10 should be propagated: y=10, @return=10
     exit_blk = list(scope.traverse_blocks())[-1]
     for stm in exit_blk.stms:
-        if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == '@return':
-            assert isinstance(stm.src, CONST), f'Expected CONST but got {type(stm.src).__name__}'
+        if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+            assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
             assert stm.src.value == 10
 
 
@@ -63,8 +63,8 @@ ret @return
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == '@return':
-                assert isinstance(stm.src, CONST), f'Expected CONST but got {type(stm.src).__name__}'
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
                 assert stm.src.value == 7
 
 
@@ -86,8 +86,8 @@ ret @return
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == '@return':
-                assert isinstance(stm.src, CONST), f'Expected CONST but got {type(stm.src).__name__}'
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
                 assert stm.src.value == 7
 
 
@@ -109,8 +109,8 @@ ret @return
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == '@return':
-                assert isinstance(stm.src, CONST), f'Expected CONST but got {type(stm.src).__name__}'
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
                 assert stm.src.value == True
 
 
@@ -139,7 +139,7 @@ ret @return
 
     entry = scope.entry_block
     last_stm = entry.stms[-1]
-    assert isinstance(last_stm, (JUMP, new.Jump)), f'Expected JUMP but got {type(last_stm).__name__}'
+    assert isinstance(last_stm, Jump), f'Expected JUMP but got {type(last_stm).__name__}'
 
 
 def test_cjump_constant_false():
@@ -167,7 +167,7 @@ ret @return
 
     entry = scope.entry_block
     last_stm = entry.stms[-1]
-    assert isinstance(last_stm, (JUMP, new.Jump)), f'Expected JUMP but got {type(last_stm).__name__}'
+    assert isinstance(last_stm, Jump), f'Expected JUMP but got {type(last_stm).__name__}'
 
 
 def test_constant_folding_multiply():
@@ -188,8 +188,8 @@ ret @return
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, (MOVE, new.Move)) and isinstance(stm.dst, (TEMP, new.Temp)) and stm.dst.name == '@return':
-                assert isinstance(stm.src, (CONST, new.Const)), f'Expected CONST but got {type(stm.src).__name__}'
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
                 assert stm.src.value == 15
 
 
@@ -231,8 +231,8 @@ ret @return
     # @return should be folded to constant 10
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == '@return':
-                assert isinstance(stm.src, CONST), f'Expected CONST, got {type(stm.src).__name__}'
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST, got {type(stm.src).__name__}'
                 assert stm.src.value == 10
 
 
@@ -255,5 +255,5 @@ ret @return
     # The 'mv x 42' should be removed (dead after propagation)
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == 'x':
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == 'x':
                 assert False, 'Dead assignment to x should have been removed'

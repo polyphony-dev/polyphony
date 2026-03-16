@@ -132,10 +132,10 @@ ret @return
 # ============================================================
 
 class ConstDoubler(IrTransformer):
-    """Doubles all integer constants."""
+    """Doubles all integer constants (functional — returns new node)."""
     def visit_Const(self, ir):
         if isinstance(ir.value, int) and not isinstance(ir.value, bool):
-            ir.value = ir.value * 2
+            return ir.model_copy(update={'value': ir.value * 2})
         return ir
 
 
@@ -167,14 +167,13 @@ mv y (+ x 10)
 
 
 class VarRenamer(IrTransformer):
-    """Renames all Temp variables by adding a suffix."""
+    """Renames all Temp variables by adding a suffix (functional — returns new node)."""
     def __init__(self, suffix):
         super().__init__()
         self.suffix = suffix
 
     def visit_Temp(self, ir):
-        ir.name = ir.name + self.suffix
-        return ir
+        return ir.model_copy(update={'name': ir.name + self.suffix})
 
 
 def test_transformer_renames_vars():
@@ -212,8 +211,8 @@ class StmInserter(IrTransformer):
             src=new.Const(value=0),
         )
         self.new_stms.append(nop)
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
+        object.__setattr__(ir, 'src', self.visit(ir.src))
+        object.__setattr__(ir, 'dst', self.visit(ir.dst))
         self.new_stms.append(ir)
 
 
@@ -298,7 +297,7 @@ mv x 1
     scope = build_scope(src)
     blk = scope.entry_block
     # Simulate path_exp set by a prior pass (old IR)
-    from polyphony.compiler.ir.ir import CONST as OLD_CONST
+    from polyphony.compiler.ir.ir import Const as OLD_CONST
     blk.path_exp = OLD_CONST(1)
 
     IdentityTransformer().process(scope)
@@ -327,7 +326,7 @@ mv x 5
     AdaptedConstDoubler().process(scope)
 
     stm = scope.entry_block.stms[0]
-    assert isinstance(stm, (MOVE, new.Move))
+    assert isinstance(stm, Move)
     assert stm.src.value == 10
 
 

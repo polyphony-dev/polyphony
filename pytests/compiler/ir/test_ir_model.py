@@ -260,17 +260,28 @@ def test_model_copy_stm():
     assert m2.src == Const(value=99)
 
 
-# --- Mutation (Phase 1: frozen=False) ---
+# --- Mutation (Phase 2: IrExp frozen=True) ---
 
-def test_mutation_allowed():
+def test_irexp_frozen():
+    """IrExp subclasses are frozen — direct field assignment raises ValidationError."""
     b = BinOp(op='Add', left=Temp(name='x'), right=Const(value=1))
-    b.left = Temp(name='y')
-    assert b.left == Temp(name='y')
+    with pytest.raises(ValidationError):
+        b.left = Temp(name='y')
+    # Use model_copy instead
+    b2 = b.model_copy(update={'left': Temp(name='y')})
+    assert b2.left == Temp(name='y')
+    assert b.left == Temp(name='x')  # original unchanged
 
 
 def test_mutation_stm():
+    """IrStm is frozen=True; mutation requires object.__setattr__."""
     m = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Const(value=1))
-    m.src = Const(value=42)
+    # Direct assignment raises ValidationError
+    import pydantic_core
+    with pytest.raises(pydantic_core.ValidationError):
+        m.src = Const(value=42)
+    # Use object.__setattr__ to mutate
+    object.__setattr__(m, 'src', Const(value=42))
     assert m.src == Const(value=42)
 
 

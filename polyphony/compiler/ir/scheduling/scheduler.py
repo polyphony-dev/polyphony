@@ -12,30 +12,17 @@ from .dataflow import DFNode
 from .latency import get_latency
 from .latency import CALL_MINIMUM_STEP
 from ..ir import (
-    MOVE, EXPR, CONST, JUMP, CJUMP, MCJUMP, BINOP, MREF, MSTORE,
-    UNOP, RELOP, CONDOP,
-    IRStm, PHIBase, CALL, SYSCALL, CMOVE, CEXPR, TEMP, ATTR,
-    NEW, ARRAY, IRVariable,
-)
-from ..ir import (
-    Move, Expr as ExprModel, Const as ConstModel,
-    Jump as JumpModel, CJump as CJumpModel, MCJump as MCJumpModel,
-    IrStm as NewIrStm, Phi as PhiModel, UPhi as UPhiModel,
-    Call as CallModel, SysCall as SysCallModel,
-    CMove as CMoveModel, CExpr as CExprModel,
-    BinOp, MRef as MRefModel, MStore as MStoreModel,
+    Move, Expr, Const, Jump, CJump, MCJump, BinOp, MRef, MStore,
     UnOp, RelOp, CondOp,
-    Temp as TempModel, Attr as AttrModel,
-    New as NewModel, Array as ArrayModel,
-    IrVariable as NewIrVariable,
+    IrStm, Phi, UPhi, Call, SysCall, CMove, CExpr, Temp, Attr,
+    New, Array, IrVariable,
 )
 from .dataflow import (
     _is_move, _is_expr, _is_phi, _is_ctrl_stm,
     _is_cjump, _is_mcjump,
     _qualified_symbols, _has_exclusive_function, _has_clkfence,
 )
-from ..ir_helper import qualified_symbols as old_qualified_symbols
-from ..ir_helper import qualified_symbols as new_qualified_symbols
+from ..ir_helper import qualified_symbols
 from ..symbol import Symbol
 from ..scope import Scope
 from ...common.common import fail, warn
@@ -213,9 +200,9 @@ class NewSchedulerImpl(object):
                 else:
                     if _is_move(node.tag) or _is_phi(node.tag):
                         if _is_move(node.tag):
-                            var = node.tag.dst.symbol if isinstance(node.tag, MOVE) else node.tag.dst
+                            var = node.tag.dst
                         else:
-                            var = node.tag.var.symbol if isinstance(node.tag, PHIBase) else node.tag.var
+                            var = node.tag.var
                         # Get the symbol
                         if isinstance(var, Symbol):
                             sym = var
@@ -646,13 +633,13 @@ class NewResourceExtractor(object):
         if ir is None:
             return
         # Handle BinOp
-        if isinstance(ir, (BINOP, BinOp)):
+        if isinstance(ir, BinOp):
             self.ops[self.current_node][ir.op] += 1
             self._visit_rec(ir.left)
             self._visit_rec(ir.right)
             return
         # Handle Call
-        if isinstance(ir, (CALL, CallModel)):
+        if isinstance(ir, Call):
             callee_scope = ir.get_callee_scope(self.scope)
             self.ops[self.current_node][callee_scope] += 1
             func_name = callee_scope.name
@@ -666,14 +653,14 @@ class NewResourceExtractor(object):
                 self._visit_rec(arg)
             return
         # Handle MRef
-        if isinstance(ir, (MREF, MRefModel)):
+        if isinstance(ir, MRef):
             sym = _qualified_symbols(ir.mem, self.scope)[-1]
             self.regarrays[self.current_node].append(sym)
             self._visit_rec(ir.mem)
             self._visit_rec(ir.offset)
             return
         # Handle MStore
-        if isinstance(ir, (MSTORE, MStoreModel)):
+        if isinstance(ir, MStore):
             sym = _qualified_symbols(ir.mem, self.scope)[-1]
             self.regarrays[self.current_node].append(sym)
             self._visit_rec(ir.mem)
@@ -696,22 +683,22 @@ class NewResourceExtractor(object):
             for c in ir.conds:
                 self._visit_rec(c)
         # Handle other expressions - descend
-        elif isinstance(ir, (UNOP, UnOp)):
+        elif isinstance(ir, UnOp):
             self._visit_rec(ir.exp)
-        elif isinstance(ir, (RELOP, RelOp)):
+        elif isinstance(ir, RelOp):
             self._visit_rec(ir.left)
             self._visit_rec(ir.right)
-        elif isinstance(ir, (CONDOP, CondOp)):
+        elif isinstance(ir, CondOp):
             self._visit_rec(ir.cond)
             self._visit_rec(ir.left)
             self._visit_rec(ir.right)
-        elif isinstance(ir, (SYSCALL, SysCallModel)):
+        elif isinstance(ir, SysCall):
             for _, arg in ir.args:
                 self._visit_rec(arg)
-        elif isinstance(ir, (NEW, NewModel)):
+        elif isinstance(ir, New):
             for _, arg in ir.args:
                 self._visit_rec(arg)
-        elif isinstance(ir, (ARRAY, ArrayModel)):
+        elif isinstance(ir, Array):
             for item in ir.items:
                 self._visit_rec(item)
 
@@ -865,8 +852,8 @@ class ConflictGraphBuilder(object):
                 e = graph.find_edge(cn0, cn1)
                 if e is not None:
                     continue
-                if ((isinstance(stm0, CMOVE) or isinstance(stm0, CEXPR)) and
-                        (isinstance(stm1, CMOVE) or isinstance(stm1, CEXPR))):
+                if ((isinstance(stm0, CMove) or isinstance(stm0, CExpr)) and
+                        (isinstance(stm1, CMove) or isinstance(stm1, CExpr))):
                     if stm0.cond == stm1.cond:
                         vs = stm0.cond.find_irs(TEMP)
                         syms = tuple(sorted([v.symbol for v in vs]))

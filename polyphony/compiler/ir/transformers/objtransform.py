@@ -204,7 +204,7 @@ class NewObjectTransformer(object):
             uphi.args.append(mv_src)
         mv_stm.block.stms.insert(insert_idx, uphi)
         var_load = Temp(name=tmp.name, ctx=Ctx.LOAD)
-        mv_stm.src = var_load
+        object.__setattr__(mv_stm, 'src', var_load)
 
     def _add_branch_move(self, mv_stm, sources, copy_qsym):
         blk = mv_stm.block
@@ -224,7 +224,7 @@ class NewObjectTransformer(object):
         stm_idx = blk.stms.index(mv_stm)
         for src, csym in zip(sources, csyms):
             mv_copy = mv_stm.model_copy(deep=True)
-            mv_copy.dst.exp = Temp(name=src.name, ctx=Ctx.STORE)
+            object.__setattr__(mv_copy, 'dst', mv_copy.dst.model_copy(update={'exp': Temp(name=src.name, ctx=Ctx.STORE)}))
             new_tail = self._make_branch(Temp(name=csym.name), mv_copy, blk, stm_idx)
             stm_idx = 0
             blk = new_tail
@@ -255,7 +255,7 @@ class NewObjectTransformer(object):
             branch_blk.path_exp = cond.model_copy(deep=True)
         # Split stms
         for stm in cur_blk.stms[stm_idx:]:
-            stm.block = tail_blk
+            object.__setattr__(stm, 'block', tail_blk)
             tail_blk.stms.append(stm)
         cur_blk.stms = cur_blk.stms[:stm_idx]
 
@@ -263,7 +263,7 @@ class NewObjectTransformer(object):
                    loc=branch_stm.loc, block=cur_blk)
         cur_blk.stms.append(cj)
 
-        branch_stm.block = branch_blk
+        object.__setattr__(branch_stm, 'block', branch_blk)
         branch_blk.stms.append(branch_stm)
         jmp = Jump(target=tail_blk, loc=branch_stm.loc, block=branch_blk)
         branch_blk.stms.append(jmp)
@@ -274,7 +274,7 @@ class NewObjectTransformer(object):
         for src in sources:
             expr_copy = expr.model_copy(deep=True)
             if isinstance(expr_copy.exp, MStore):
-                expr_copy.exp.mem = Temp(name=src.name)
+                object.__setattr__(expr_copy, 'exp', expr_copy.exp.model_copy(update={'mem': Temp(name=src.name)}))
             else:
                 raise NotImplementedError
             cmp_name = self._src_cmp_name(src)

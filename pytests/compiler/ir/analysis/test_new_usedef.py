@@ -225,7 +225,7 @@ mv z (+ x y)
 
 def test_usedef_table_accepts_new_ir_stm():
     """UseDefTable query methods must accept new IR stm types.
-    This was a bug: isinstance checks only matched old IRStm."""
+    This was a bug: isinstance checks only matched old IrStm."""
     src = '''
 scope F
 tags function

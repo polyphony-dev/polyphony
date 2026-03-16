@@ -193,48 +193,63 @@ class _StmsTransformer(_StmsVisitor):
         block.stms = self.new_stms
         self.new_stms = []
         for stm in block.stms:
-            stm.block = block
+            object.__setattr__(stm, 'block', block)
 
-    # --- IrExp (return transformed node) ---
+    # --- IrExp (return transformed node, functional style) ---
 
     def visit_UnOp(self, ir):
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'exp': new_exp})
 
     def visit_BinOp(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'left': new_left, 'right': new_right})
 
     def visit_RelOp(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'left': new_left, 'right': new_right})
 
     def visit_CondOp(self, ir):
-        ir.cond = self.visit(ir.cond)
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        return ir
+        new_cond = self.visit(ir.cond)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_cond is ir.cond and new_left is ir.left and new_right is ir.right:
+            return ir
+        return ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
 
     def _visit_args(self, args):
-        for i, (name, arg) in enumerate(args):
-            args[i] = (name, self.visit(arg))
+        new_args = [(name, self.visit(arg)) for name, arg in args]
+        changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, args))
+        return new_args, changed
 
     def visit_Call(self, ir):
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_SysCall(self, ir):
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_New(self, ir):
-        ir.func = self.visit(ir.func)
-        self._visit_args(ir.args)
-        return ir
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        if new_func is ir.func and not args_changed:
+            return ir
+        return ir.model_copy(update={'func': new_func, 'args': new_args})
 
     def visit_Const(self, ir):
         return ir
@@ -243,48 +258,56 @@ class _StmsTransformer(_StmsVisitor):
         return ir
 
     def visit_Attr(self, ir):
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'exp': new_exp})
 
     def visit_MRef(self, ir):
-        ir.mem = self.visit(ir.mem)
-        ir.offset = self.visit(ir.offset)
-        return ir
+        new_mem = self.visit(ir.mem)
+        new_offset = self.visit(ir.offset)
+        if new_mem is ir.mem and new_offset is ir.offset:
+            return ir
+        return ir.model_copy(update={'mem': new_mem, 'offset': new_offset})
 
     def visit_MStore(self, ir):
-        ir.mem = self.visit(ir.mem)
-        ir.offset = self.visit(ir.offset)
-        ir.exp = self.visit(ir.exp)
-        return ir
+        new_mem = self.visit(ir.mem)
+        new_offset = self.visit(ir.offset)
+        new_exp = self.visit(ir.exp)
+        if new_mem is ir.mem and new_offset is ir.offset and new_exp is ir.exp:
+            return ir
+        return ir.model_copy(update={'mem': new_mem, 'offset': new_offset, 'exp': new_exp})
 
     def visit_Array(self, ir):
-        if ir.repeat is not None:
-            self.visit(ir.repeat)
-        for i, item in enumerate(ir.items):
-            ir.items[i] = self.visit(item)
-        return ir
+        new_repeat = self.visit(ir.repeat) if ir.repeat is not None else ir.repeat
+        new_items = [self.visit(item) for item in ir.items]
+        repeat_changed = new_repeat is not ir.repeat
+        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
+        if not repeat_changed and not items_changed:
+            return ir
+        return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
 
     # --- IrStm (append to new_stms) ---
 
     def visit_Expr(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_CExpr(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_Expr(ir)
 
     def visit_Move(self, ir):
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
+        object.__setattr__(ir, 'src', self.visit(ir.src))
+        object.__setattr__(ir, 'dst', self.visit(ir.dst))
         self.new_stms.append(ir)
 
     def visit_CMove(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_Move(ir)
 
     def visit_CJump(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_MCJump(self, ir):
@@ -296,11 +319,11 @@ class _StmsTransformer(_StmsVisitor):
         self.new_stms.append(ir)
 
     def visit_Ret(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         self.new_stms.append(ir)
 
     def visit_Phi(self, ir):
-        ir.var = self.visit(ir.var)
+        object.__setattr__(ir, 'var', self.visit(ir.var))
         for i, arg in enumerate(ir.args):
             ir.args[i] = self.visit(arg)
         if ir.ps:
@@ -430,8 +453,8 @@ class NewIRReplacer(_StmsTransformer):
 
     def visit_Attr(self, ir):
         exp = self.visit(ir.exp)
-        if exp:
-            ir.exp = exp
+        if exp and exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': exp})
         sym = qualified_symbols(ir, self.scope)[-1]
         if isinstance(sym, Symbol):
             for expr_t in typehelper.find_expr(sym.typ):
@@ -905,7 +928,7 @@ class NewInlineOpt(object):
             else:
                 callee.rename_sym_asname(callee_sym.name, new_name)
             for exp in name_exps:
-                exp.name = new_name
+                object.__setattr__(exp, 'name', new_name)
             if callee_sym.is_typevar():
                 self._rename_type_expr_var(callee, old_name, new_name)
 
@@ -959,7 +982,7 @@ class NewInlineOpt(object):
                 assert isinstance(expr, Expr)
                 for v in expr.find_irs(IrNameExp):
                     if v.name == old_name:
-                        v.name = new_name
+                        object.__setattr__(v, 'name', new_name)
 
     def _merge_closure(self, callee: CalleeScope, caller: CallerScope):
         closures = callee.closures()
@@ -1056,10 +1079,10 @@ class NewInlineOpt(object):
         match call_stm:
             case Move() as move:
                 assert move.src == call
-                move.src = result
+                object.__setattr__(move, 'src', result)
             case Expr() as expr:
                 assert expr.exp == call
-                expr.exp = result
+                object.__setattr__(expr, 'exp', result)
 
     def _merge_blocks(self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block):
         caller_scope = call_stm.block.scope
@@ -1077,7 +1100,7 @@ class NewInlineOpt(object):
             idx += 1
         late_call_blk.stms = early_call_blk.stms[idx:]
         for s in late_call_blk.stms:
-            s.block = late_call_blk
+            object.__setattr__(s, 'block', late_call_blk)
         early_call_blk.stms = early_call_blk.stms[:idx]
         early_call_blk.append_stm(Jump(callee_entry_blk))
         early_call_blk.succs = [callee_entry_blk]
@@ -1159,11 +1182,15 @@ class NewFlattenModule(IrVisitor):
                 self._new_scopes.append(new_worker)
                 new_worker.parent.register_worker(new_worker)
                 assert self.scope.parent.is_module()
-                ir.func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.LOAD)
+                new_func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.CALL)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
                 ir.args[0] = ('', new_arg)
             else:
                 assert self.scope.parent.is_module()
-                ir.func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.LOAD)
+                new_func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.CALL)
+                object.__setattr__(ir, 'func', new_func)
+                object.__setattr__(ir, 'name', new_func.name)
                 ir.args[0] = (None, arg)
         elif (callee_scope.is_method() and
                 callee_scope.parent.is_port() and

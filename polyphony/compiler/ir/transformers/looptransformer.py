@@ -56,7 +56,7 @@ class NewLoopFlatten(object):
         sub_continue.succs_loop = []
         jmp = subloop_body.stms[-1]
         if isinstance(jmp, Jump):
-            jmp.typ = ''
+            object.__setattr__(jmp, 'typ', '')
         subloop_body_else.preds = [subloop.head]
         subloop_body_else.connect(subloop_exit)
         subloop_exit.preds = [sub_continue, subloop_body_else]
@@ -66,38 +66,38 @@ class NewLoopFlatten(object):
         init_sym = self.scope.add_temp('init', {'induction'}, typ=Type.bool())
         init_update_sym = self.scope.add_temp('init_update', typ=Type.bool())
         init_lphi = LPhi(var=Temp(name=init_sym.name, ctx=Ctx.STORE))
-        init_lphi.args = [
+        object.__setattr__(init_lphi, 'args', [
             Const(value=True),
             Temp(name=init_update_sym.name)
-        ]
-        init_lphi.ps = [Const(value=1)] * 2
-        init_lphi.block = loop.head
+        ])
+        object.__setattr__(init_lphi, 'ps', [Const(value=1)] * 2)
+        object.__setattr__(init_lphi, 'block', loop.head)
         loop.head.stms.insert(-1, init_lphi)
 
         loop_continue = loop.head.preds_loop[0]
         update_phi = Phi(var=Temp(name=init_update_sym.name, ctx=Ctx.STORE))
-        update_phi.args = [
+        object.__setattr__(update_phi, 'args', [
             Const(value=False),
             Const(value=True)
-        ]
-        update_phi.ps = [
+        ])
+        object.__setattr__(update_phi, 'ps', [
             body_cond.model_copy(deep=True),
             else_cond.model_copy(deep=True)
-        ]
-        update_phi.block = loop_continue
+        ])
+        object.__setattr__(update_phi, 'block', loop_continue)
         loop_continue.stms.insert(0, update_phi)
         return init_sym, init_lphi
 
     def _lphi_to_psi(self, lphi, cond):
         psi = Phi(var=lphi.var)
-        psi.args = lphi.args[:]
-        psi.ps = [
+        object.__setattr__(psi, 'args', lphi.args[:])
+        object.__setattr__(psi, 'ps', [
             Temp(name=cond.name),
             UnOp(op='Not', exp=Temp(name=cond.name))
-        ]
+        ])
         idx = lphi.block.stms.index(lphi)
         lphi.block.stms.remove(lphi)
-        psi.block = lphi.block
+        object.__setattr__(psi, 'block', lphi.block)
         lphi.block.stms.insert(idx, psi)
 
     def _flatten(self, loop):
@@ -119,7 +119,7 @@ class NewLoopFlatten(object):
 
         # Set up else block
         jmp = Jump(target=subloop_exit)
-        jmp.block = subloop_body_else
+        object.__setattr__(jmp, 'block', subloop_body_else)
         subloop_body_else.stms = [jmp]
         self._move_stms(subloop_exit, subloop_body_else)
         subloop_exit.stms = [subloop_exit.stms[-1]]
@@ -145,16 +145,16 @@ class NewLoopFlatten(object):
             var_t = sym.typ
             psi_sym = self.scope.add_temp(typ=var_t)
             psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE))
-            psi.args = [
+            object.__setattr__(psi, 'args', [
                 lphi.args[1].model_copy(deep=True),
                 Temp(name=lphi.var.name)
-            ]
-            psi.ps = [
+            ])
+            object.__setattr__(psi, 'ps', [
                 body_cond,
                 else_cond
-            ]
+            ])
             lphi.args[1] = Temp(name=psi_sym.name)
-            psi.block = subloop_exit
+            object.__setattr__(psi, 'block', subloop_exit)
             subloop_exit.stms.insert(-1, psi)
             self._lphi_to_psi(lphi, init_flag)
 
@@ -172,14 +172,14 @@ class NewLoopFlatten(object):
             assert isinstance(sym, Symbol)
             psi_sym = self.scope.add_temp(typ=sym.typ)
             psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE))
-            psi.args = [
+            object.__setattr__(psi, 'args', [
                 Temp(name=lphi.var.name),
                 lphi.args[1].model_copy(deep=True)
-            ]
-            psi.ps = [body_cond, else_cond]
+            ])
+            object.__setattr__(psi, 'ps', [body_cond, else_cond])
             lphi.args[1] = Temp(name=psi_sym.name)
             pred_blk = loop.head.preds[1]
-            psi.block = pred_blk
+            object.__setattr__(psi, 'block', pred_blk)
             pred_blk.stms.insert(-1, psi)
         logger.debug(str(self.scope))
 
@@ -193,6 +193,6 @@ class NewLoopFlatten(object):
 
     def _move_stms(self, blk_src, blk_dst):
         for stm in blk_src.stms[:-1]:
-            stm.block = blk_dst
+            object.__setattr__(stm, 'block', blk_dst)
             blk_dst.stms.insert(-1, stm)
         blk_src.stms = [blk_src.stms[-1]]

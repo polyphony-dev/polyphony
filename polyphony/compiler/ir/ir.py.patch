@@ -1,0 +1,449 @@
+diff --git a/polyphony/compiler/ir/ir.py b/polyphony/compiler/ir/ir.py
+index d3b690d..acb64e7 100644
+--- a/polyphony/compiler/ir/ir.py
++++ b/polyphony/compiler/ir/ir.py
+@@ -30,12 +30,15 @@ class IR(object):
+     def __repr__(self):
+         return self.__str__()
+ 
+-    def __hash__(self):
+-        return super().__hash__()
+-
+     def __lt__(self, other):
+         return hash(self) < hash(other)
+ 
++    def __eq__(self, other):
++        return hash(self) == hash(other)
++
++    def __hash__(self):
++        return hash((self.__class__.__name__,))
++
+     def is_a(self, cls):
+         return is_a(self, cls)
+ 
+@@ -141,13 +144,8 @@ class UNOP(IRExp):
+     def __str__(self):
+         return '{}{}'.format(op2sym_map[self._op], self._exp)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, UNOP):
+-            return False
+-        return self._op == other._op and self._exp == other._exp
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), self.op, hash(self._exp)))
+ 
+     def kids(self):
+         return self._exp.kids()
+@@ -180,13 +178,8 @@ class BINOP(IRExp):
+     def __str__(self):
+         return '({} {} {})'.format(self._left, op2sym_map[self._op], self._right)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, BINOP):
+-            return False
+-        return (self._op == other._op and self._left == other._left and self._right == other._right)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), self.op, hash(self._left), hash(self._right)))
+ 
+     def kids(self):
+         return self._left.kids() + self._right.kids()
+@@ -227,13 +220,8 @@ class RELOP(IRExp):
+     def __str__(self):
+         return '({} {} {})'.format(self._left, op2sym_map[self._op], self._right)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, RELOP):
+-            return False
+-        return (self._op == other._op and self._left == other._left and self._right == other._right)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), self.op, hash(self._left), hash(self._right)))
+ 
+     def kids(self):
+         return self._left.kids() + self._right.kids()
+@@ -269,13 +257,8 @@ class CONDOP(IRExp):
+     def __str__(self):
+         return '({} ? {} : {})'.format(self._cond, self._left, self._right)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, CONDOP):
+-            return False
+-        return (self._cond == other._cond and self._left == other._left and self._right == other._right)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._cond), hash(self._left), hash(self._right)))
+ 
+     def kids(self):
+         return self._cond.kids() + self._left.kids() + self._right.kids()
+@@ -314,6 +297,9 @@ class POLYOP(IRExp):
+         values = ', '.join([str(e) for e in self._values])
+         return '({} [{}])'.format(op2sym_map[self._op], values)
+ 
++    def __hash__(self):
++        return hash((str(self),))
++
+     def kids(self):
+         assert all([v.is_a([CONST, TEMP, ATTR]) for v in self._values])
+         return self._values
+@@ -363,7 +349,7 @@ class IRCallable(IRExp):
+             print('!')
+         func_t = self.symbol.typ
+         assert func_t.has_scope()
+-        return func_t.get_scope()
++        return func_t.scope
+ 
+ 
+ class CALL(IRCallable):
+@@ -385,16 +371,10 @@ class CALL(IRCallable):
+         s += ")"
+         return s
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, CALL):
+-            return False
+-        return (self._func == other._func and
+-                len(self._args) == len(other._args) and
+-                all([name == other_name and a == other_a
+-                     for (name, a), (other_name, other_a) in zip(self._args, other._args)]))
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._func))
++            + tuple(hash(arg) for name, arg in self._args)
++            + tuple(hash(arg) for name, arg in self._kwargs))
+ 
+     def kids(self):
+         kids = []
+@@ -487,16 +467,10 @@ class SYSCALL(IRCallable):
+         s += ")"
+         return s
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, SYSCALL):
+-            return False
+-        return (self._sym is other._sym and
+-                len(self._args) == len(other._args) and
+-                all([name == other_name and a == other_a
+-                     for (name, a), (other_name, other_a) in zip(self._args, other._args)]))
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._sym))
++            + tuple(hash(arg) for name, arg in self._args)
++            + tuple(hash(arg) for name, arg in self._kwargs))
+ 
+     def kids(self):
+         kids = []
+@@ -556,16 +530,10 @@ class NEW(IRCallable):
+         s += ")"
+         return s
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, NEW):
+-            return False
+-        return (self._sym is other._sym and
+-                len(self._args) == len(other._args) and
+-                all([name == other_name and a == other_a
+-                     for (name, a), (other_name, other_a) in zip(self._args, other._args)]))
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._sym))
++            + tuple(hash(arg) for name, arg in self._args)
++            + tuple(hash(arg) for name, arg in self._kwargs))
+ 
+     def kids(self):
+         kids = []
+@@ -626,13 +594,8 @@ class CONST(IRExp):
+         else:
+             return repr(self._value)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, CONST):
+-            return False
+-        return self._value == other._value
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), self._value))
+ 
+     def kids(self):
+         return [self]
+@@ -643,7 +606,7 @@ class CONST(IRExp):
+ 
+ 
+ class MREF(IRExp):
+-    def __init__(self, mem, offset, ctx):
++    def __init__(self, mem, offset, ctx=Ctx.LOAD):
+         super().__init__()
+         assert mem.is_a([TEMP, ATTR, MREF])
+         self._mem = mem
+@@ -653,13 +616,8 @@ class MREF(IRExp):
+     def __str__(self):
+         return '{}[{}]'.format(self._mem, self._offset)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, MREF):
+-            return False
+-        return (self._mem == other._mem and self._offset == other._offset and self._ctx == other._ctx)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._mem), hash(self._offset), self._ctx))
+ 
+     def kids(self):
+         return self._mem.kids() + self._offset.kids()
+@@ -695,13 +653,8 @@ class MSTORE(IRExp):
+     def __str__(self):
+         return 'mstore({}[{}], {})'.format(self._mem, self._offset, self._exp)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, MSTORE):
+-            return False
+-        return (self._mem == other._mem and self._offset == other._offset and self._exp == other._exp)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._mem), hash(self._offset), hash(self._exp)))
+ 
+     def kids(self):
+         return self._mem.kids() + self._offset.kids() + self._exp.kids()
+@@ -751,17 +704,9 @@ class ARRAY(IRExp):
+             s += ' * ' + str(self._repeat)
+         return s
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, ARRAY):
+-            return False
+-        return (len(self._items) == len(other._items) and
+-                all([item == other_item for item, other_item in zip(self._items, other._items)]) and
+-                self._sym is other._sym and
+-                self._repeat == other._repeat and
+-                self._is_mutable == other._is_mutable)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._sym), hash(self._repeat), self._is_mutable)
++            + tuple(hash(item) for item in self._items))
+ 
+     def kids(self):
+         kids = []
+@@ -809,7 +754,7 @@ class ARRAY(IRExp):
+ 
+ 
+ class TEMP(IRExp):
+-    def __init__(self, sym, ctx):
++    def __init__(self, sym, ctx=Ctx.LOAD):
+         super().__init__()
+         assert isinstance(sym, Symbol)
+         assert isinstance(ctx, int)
+@@ -819,13 +764,8 @@ class TEMP(IRExp):
+     def __str__(self):
+         return str(self._sym)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, TEMP):
+-            return False
+-        return (self._sym is other._sym and self._ctx == other._ctx)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._sym), self._ctx))
+ 
+     def kids(self):
+         return [self]
+@@ -848,7 +788,7 @@ class TEMP(IRExp):
+ 
+ 
+ class ATTR(IRExp):
+-    def __init__(self, exp, attr, ctx):
++    def __init__(self, exp, attr, ctx=Ctx.LOAD):
+         super().__init__()
+         self._exp = exp
+         self._attr = attr
+@@ -858,15 +798,8 @@ class ATTR(IRExp):
+     def __str__(self):
+         return '{}.{}'.format(self.exp, self._attr)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, ATTR):
+-            return False
+-        return (self._exp == other._exp and
+-                self._attr is other._attr and
+-                self._ctx == other._ctx)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._attr), hash(self._exp), self._ctx))
+ 
+     def kids(self):
+         return [self]
+@@ -927,6 +860,10 @@ class IRStm(IR):
+             self.loc = loc
+         self.block = None
+ 
++    def __hash__(self):
++        h1 = super().__hash__()
++        return hash((h1, self.loc.filename, self.loc.lineno))
++
+     def program_order(self):
+         return (self.block.order, find_id_index(self.block.stms, self))
+ 
+@@ -948,13 +885,10 @@ class EXPR(IRStm):
+     def __str__(self):
+         return '{}'.format(self._exp)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, EXPR):
+-            return False
+-        return self._exp == other._exp
+-
+     def __hash__(self):
+-        return super().__hash__()
++        h1 = super().__hash__()
++        h2 = hash(self._exp)
++        return hash((h1, h2))
+ 
+     def kids(self):
+         return self._exp.kids()
+@@ -979,13 +913,8 @@ class CJUMP(IRStm):
+     def __str__(self):
+         return 'cjump {} ? {}, {}'.format(self._exp, self._true.name, self._false.name)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, CJUMP):
+-            return False
+-        return self._exp == other._exp and self._true is other._true and self._false is other._false
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._exp), self._true.name, self._false.name, self._loop_branch))
+ 
+     @property
+     def exp(self):
+@@ -1035,15 +964,10 @@ class MCJUMP(IRStm):
+ 
+         return 'mcjump(\n        {})'.format(', \n        '.join([item for item in items]))
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, MCJUMP):
+-            return False
+-        return (len(self._conds) == len(other._conds) and
+-                all([cond == other_cond for cond, other_cond in zip(self._conds, other._conds)]) and
+-                all([target is other_target for target, other_target in zip(self._targets, other._targets)]))
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), self._loop_branch)
++            + tuple(hash(cond) for cond in self._conds)
++            + tuple(target.name for target in self._targets))
+ 
+     @property
+     def conds(self):
+@@ -1079,13 +1003,8 @@ class JUMP(IRStm):
+     def __str__(self):
+         return "jump {} '{}'".format(self._target.name, self._typ)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, JUMP):
+-            return False
+-        return self._target is other._target
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), self._target.name, self._typ))
+ 
+     @property
+     def target(self):
+@@ -1112,13 +1031,8 @@ class RET(IRStm):
+     def __str__(self):
+         return "return {}".format(self._exp)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, RET):
+-            return False
+-        return self._exp == other._exp
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._exp)))
+ 
+     def kids(self):
+         return self._exp.kids()
+@@ -1141,13 +1055,8 @@ class MOVE(IRStm):
+     def __str__(self):
+         return '{} = {}'.format(self._dst, self._src)
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, MOVE):
+-            return False
+-        return self._dst == other._dst and self._src == other._src
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._dst), hash(self._src)))
+ 
+     def kids(self):
+         return self._dst.kids() + self._src.kids()
+@@ -1178,13 +1087,8 @@ class CEXPR(EXPR):
+     def __str__(self):
+         return "{} ? {}".format(self._cond, super().__str__())
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, CEXPR):
+-            return False
+-        return self._cond == other._cond and super().__eq__(other)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._cond)))
+ 
+     def kids(self):
+         return self._cond.kids() + super().kids()
+@@ -1207,13 +1111,8 @@ class CMOVE(MOVE):
+     def __str__(self):
+         return "{} ? {}".format(self._cond, super().__str__())
+ 
+-    def __eq__(self, other):
+-        if other is None or not isinstance(other, CEXPR):
+-            return False
+-        return self._cond == other._cond and super().__eq__(other)
+-
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(), hash(self._cond)))
+ 
+     def kids(self):
+         return self._cond.kids() + super().kids()
+@@ -1269,7 +1168,15 @@ class PHIBase(IRStm):
+         return self._var == other._var
+ 
+     def __hash__(self):
+-        return super().__hash__()
++        if self._args and self._ps:
++            return hash((super().__hash__(), hash(self._var))
++                + tuple(hash(arg) for arg in self._args)
++                + tuple(hash(p) for p in self._ps))
++        elif self._args:
++            return hash((super().__hash__(), hash(self._var))
++                + tuple(hash(arg) for arg in self._args))
++        else:
++            return hash((super().__hash__(), hash(self._var)))
+ 
+     def kids(self):
+         kids = []
+@@ -1379,7 +1286,7 @@ class MSTM(IRStm):
+         return all([a == b for a, b in zip(self._stms, other._stms)])
+ 
+     def __hash__(self):
+-        return super().__hash__()
++        return hash((super().__hash__(),) + (hash(stm) for stm in self._stms))
+ 
+     @property
+     def stms(self):

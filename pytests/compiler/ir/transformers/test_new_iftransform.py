@@ -74,7 +74,7 @@ ret @return
 
     # Still a CJUMP (not merged into MCJUMP because blk3 has >1 stm or not a CJUMP)
     last = blk1.stms[-1]
-    assert isinstance(last, (CJUMP, new.CJump))
+    assert isinstance(last, CJump)
 
 
 def test_chained_cjump_to_mcjump():
@@ -126,8 +126,8 @@ def test_chained_cjump_to_mcjump():
 
     # blk1 should now end with MCJUMP instead of CJUMP
     last = blk1.stms[-1]
-    assert isinstance(last, (MCJUMP, new.MCJump)), f'Expected MCJUMP, got {type(last).__name__}'
-    assert len(last.conds) == 3  # c1, c2, CONST(1)
+    assert isinstance(last, MCJump), f'Expected MCJUMP, got {type(last).__name__}'
+    assert len(last.conds) == 3  # c1, c2, Const(1)
     assert len(last.targets) == 3  # blk2, blk3, blk4
 
     # else1 should be emptied

@@ -37,8 +37,8 @@ class NewPHIInlining(object):
                         new_args.append(arg)
                         new_ps.append(p)
                 logger.debug('old ' + str(phi))
-                phi.args = new_args
-                phi.ps = new_ps
+                object.__setattr__(phi, 'args', new_args)
+                object.__setattr__(phi, 'ps', new_ps)
                 logger.debug('new ' + str(phi))
 
 

@@ -136,7 +136,7 @@ def test_clone_function():
     assert blk2.scope is f_clone
     assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
     assert _stm_text(blk1.stms[1]) == 'mv x (call g a)'
-    assert isinstance(blk1.stms[2], (JUMP, new.Jump))
+    assert isinstance(blk1.stms[2], Jump)
     assert blk1.stms[2].target is blk2
     assert _stm_text(blk2.stms[0]) == 'mv @return x'
     assert _stm_text(blk2.stms[1]) == 'ret @return'
@@ -208,7 +208,7 @@ def test_recursive_clone():
     blk2 = next(gen)
     assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
     assert _stm_text(blk1.stms[1]) == 'mv x (call cloned_g_cloned a)'
-    assert isinstance(blk1.stms[2], (JUMP, new.Jump))
+    assert isinstance(blk1.stms[2], Jump)
     assert blk1.stms[2].target is blk2
 
     assert _stm_text(blk2.stms[0]) == 'mv @return x'

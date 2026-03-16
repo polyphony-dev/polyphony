@@ -1,5 +1,4 @@
-﻿
-from collections import defaultdict
+﻿from collections import defaultdict
 from dataclasses import dataclass
 from ..ir_visitor import IRVisitor, IrVisitor
 from ..ir import *
@@ -13,12 +12,15 @@ def qualified_symbols(var, scope):
     if isinstance(var, NewIrVariable):
         return _new_qualified_symbols(var, scope)
     return _old_qualified_symbols(var, scope)
+
+
 from ..block import Block
 from ..symbol import Symbol
 from ..scope import Scope
 from ..types.type import Type
 from ..types import typehelper
 from logging import getLogger
+
 logger = getLogger(__name__)
 
 
@@ -26,32 +28,32 @@ logger = getLogger(__name__)
 class UseDefItem:
     sym: Symbol
     qsym: tuple[Symbol]
-    var: IRVariable
-    stm: IRStm
+    var: IrVariable
+    stm: IrStm
     blk: Block
 
 
 class UseDefTable(object):
     def __init__(self):
-        self._def_sym2:dict[Symbol, set[UseDefItem]] = defaultdict(set)
-        self._use_sym2:dict[Symbol, set[UseDefItem]] = defaultdict(set)
-        self._def_qsym2:dict[tuple[Symbol], set[UseDefItem]] = defaultdict(set)
-        self._use_qsym2:dict[tuple[Symbol], set[UseDefItem]] = defaultdict(set)
-        self._def_var2:dict[IRVariable, set[UseDefItem]] = defaultdict(set)
-        self._use_var2:dict[IRVariable, set[UseDefItem]] = defaultdict(set)
-        self._def_stm2:dict[IRStm, set[UseDefItem]] = defaultdict(set)
-        self._use_stm2:dict[IRStm, set[UseDefItem]] = defaultdict(set)
-        self._def_blk2:dict[Block, set[UseDefItem]] = defaultdict(set)
-        self._use_blk2:dict[Block, set[UseDefItem]] = defaultdict(set)
+        self._def_sym2: dict[Symbol, set[UseDefItem]] = defaultdict(set)
+        self._use_sym2: dict[Symbol, set[UseDefItem]] = defaultdict(set)
+        self._def_qsym2: dict[tuple[Symbol], set[UseDefItem]] = defaultdict(set)
+        self._use_qsym2: dict[tuple[Symbol], set[UseDefItem]] = defaultdict(set)
+        self._def_var2: dict[IrVariable, set[UseDefItem]] = defaultdict(set)
+        self._use_var2: dict[IrVariable, set[UseDefItem]] = defaultdict(set)
+        self._def_stm2: dict[IrStm, set[UseDefItem]] = defaultdict(set)
+        self._use_stm2: dict[IrStm, set[UseDefItem]] = defaultdict(set)
+        self._def_blk2: dict[Block, set[UseDefItem]] = defaultdict(set)
+        self._use_blk2: dict[Block, set[UseDefItem]] = defaultdict(set)
 
-        self._use_stm2const:dict[IRStm, set[CONST]] = defaultdict(set)
+        self._use_stm2Const: dict[IrStm, set[Const]] = defaultdict(set)
 
-    def add_var_def(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert isinstance(var, (IRVariable, NewIrVariable)) and isinstance(stm, (IRStm, NewIrStm))
-        qsyms:tuple[Symbol] = qualified_symbols(var, scope)
+    def add_var_def(self, scope: Scope, var: IrVariable, stm: IrStm):
+        assert isinstance(var, IrVariable) and isinstance(stm, IrStm)
+        qsyms: tuple[Symbol] = qualified_symbols(var, scope)
         sym = qsyms[-1]
         assert isinstance(sym, Symbol)
-        
+
         item = UseDefItem(sym, qsyms, var, stm, stm.block)
         self._def_sym2[sym].add(item)
         self._def_qsym2[qsyms].add(item)
@@ -59,9 +61,9 @@ class UseDefTable(object):
         self._def_stm2[stm].add(item)
         self._def_blk2[stm.block].add(item)
 
-    def remove_var_def(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert isinstance(var, (IRVariable, NewIrVariable)) and isinstance(stm, (IRStm, NewIrStm))
-        qsyms:tuple[Symbol] = qualified_symbols(var, scope)
+    def remove_var_def(self, scope: Scope, var: IrVariable, stm: IrStm):
+        assert isinstance(var, IrVariable) and isinstance(stm, IrStm)
+        qsyms: tuple[Symbol] = qualified_symbols(var, scope)
 
         sym = qsyms[-1]
         assert isinstance(sym, Symbol)
@@ -72,9 +74,9 @@ class UseDefTable(object):
         self._def_stm2[stm].discard(item)
         self._def_blk2[stm.block].discard(item)
 
-    def add_var_use(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert isinstance(var, (IRVariable, NewIrVariable)) and isinstance(stm, (IRStm, NewIrStm))
-        qsyms:tuple[Symbol] = qualified_symbols(var, scope)
+    def add_var_use(self, scope: Scope, var: IrVariable, stm: IrStm):
+        assert isinstance(var, IrVariable) and isinstance(stm, IrStm)
+        qsyms: tuple[Symbol] = qualified_symbols(var, scope)
 
         sym = qsyms[-1]
         assert isinstance(sym, Symbol)
@@ -85,8 +87,8 @@ class UseDefTable(object):
         self._use_stm2[stm].add(item)
         self._use_blk2[stm.block].add(item)
 
-    def remove_var_use(self, scope: Scope, var: IRVariable, stm: IRStm):
-        assert isinstance(var, (IRVariable, NewIrVariable)) and isinstance(stm, (IRStm, NewIrStm))
+    def remove_var_use(self, scope: Scope, var: IrVariable, stm: IrStm):
+        assert isinstance(var, IrVariable) and isinstance(stm, IrStm)
         qsyms: tuple[Symbol] = qualified_symbols(var, scope)
 
         sym = qsyms[-1]
@@ -98,44 +100,44 @@ class UseDefTable(object):
         self._use_stm2[stm].discard(item)
         self._use_blk2[stm.block].discard(item)
 
-    def add_const_use(self, c: CONST, stm: IRStm):
-        assert isinstance(stm, (IRStm, NewIrStm))
-        self._use_stm2const[stm].add(c)
+    def add_Const_use(self, c: Const, stm: IrStm):
+        assert isinstance(stm, IrStm)
+        self._use_stm2Const[stm].add(c)
 
-    def remove_const_use(self, c: CONST, stm: IRStm):
-        assert isinstance(stm, (IRStm, NewIrStm))
-        self._use_stm2const[stm].discard(c)
+    def remove_Const_use(self, c: Const, stm: IrStm):
+        assert isinstance(stm, IrStm)
+        self._use_stm2Const[stm].discard(c)
 
-    def add_use(self, scope: Scope, v: CONST|IRVariable, stm: IRStm):
-        if isinstance(v, (IRVariable, NewIrVariable)):
+    def add_use(self, scope: Scope, v: Const | IrVariable, stm: IrStm):
+        if isinstance(v, IrVariable):
             self.add_var_use(scope, v, stm)
-        elif isinstance(v, (CONST, NewConst)):
-            self.add_const_use(v, stm)
+        elif isinstance(v, Const):
+            self.add_Const_use(v, stm)
         else:
             assert False
 
-    def remove_use(self, scope: Scope, v: CONST|IRVariable, stm: IRStm):
-        if isinstance(v, (IRVariable, NewIrVariable)):
+    def remove_use(self, scope: Scope, v: Const | IrVariable, stm: IrStm):
+        if isinstance(v, IrVariable):
             self.remove_var_use(scope, v, stm)
-        elif isinstance(v, (CONST, NewConst)):
-            self.remove_const_use(v, stm)
+        elif isinstance(v, Const):
+            self.remove_Const_use(v, stm)
         else:
             assert False
 
-    def remove_uses(self, scope: Scope, vs: list, stm: IRStm):
+    def remove_uses(self, scope: Scope, vs: list, stm: IrStm):
         for v in vs:
             self.remove_use(scope, v, stm)
 
-    def remove_stm(self, scope: Scope, stm: IRStm):
+    def remove_stm(self, scope: Scope, stm: IrStm):
         self.remove_uses(scope, list(self.get_vars_used_at(stm)), stm)
         for v in list(self.get_vars_defined_at(stm)):
             self.remove_var_def(scope, v, stm)
 
-    def get_stms_defining(self, key: Symbol|IRVariable|tuple[Symbol]) -> set[IRStm]:
+    def get_stms_defining(self, key: Symbol | IrVariable | tuple[Symbol]) -> set[IrStm]:
         if isinstance(key, Symbol):
             stms = set([item.stm for item in self._def_sym2[key]])
             return stms
-        elif isinstance(key, (IRVariable, NewIrVariable)):
+        elif isinstance(key, IrVariable):
             stms = set([item.stm for item in self._def_var2[key]])
             return stms
         elif isinstance(key, tuple):
@@ -144,11 +146,11 @@ class UseDefTable(object):
         else:
             assert False
 
-    def get_stms_using(self, key: Symbol|IRVariable|tuple[Symbol]) -> set[IRStm]:
+    def get_stms_using(self, key: Symbol | IrVariable | tuple[Symbol]) -> set[IrStm]:
         if isinstance(key, Symbol):
             stms = set([item.stm for item in self._use_sym2[key]])
             return stms
-        elif isinstance(key, (IRVariable, NewIrVariable)):
+        elif isinstance(key, IrVariable):
             stms = set([item.stm for item in self._use_var2[key]])
             return stms
         elif isinstance(key, tuple):
@@ -165,8 +167,8 @@ class UseDefTable(object):
         blks = set([item.blk for item in self._use_sym2[sym]])
         return blks
 
-    def get_vars_defined_at(self, key: IRStm|Block) -> set[IRVariable]:
-        if isinstance(key, (IRStm, NewIrStm)):
+    def get_vars_defined_at(self, key: IrStm | Block) -> set[IrVariable]:
+        if isinstance(key, IrStm):
             vars = set([item.var for item in self._def_stm2[key]])
             return vars
         elif isinstance(key, Block):
@@ -175,8 +177,8 @@ class UseDefTable(object):
         else:
             assert False
 
-    def get_vars_used_at(self, key: IRStm|Block) -> set[IRVariable]:
-        if isinstance(key, (IRStm, NewIrStm)):
+    def get_vars_used_at(self, key: IrStm | Block) -> set[IrVariable]:
+        if isinstance(key, IrStm):
             vars = set([item.var for item in self._use_stm2[key]])
             return vars
         elif isinstance(key, Block):
@@ -185,11 +187,11 @@ class UseDefTable(object):
         else:
             assert False
 
-    def get_consts_used_at(self, stm: IRStm) -> set[CONST]:
-        return self._use_stm2const[stm]
+    def get_consts_used_at(self, stm: IrStm) -> set[Const]:
+        return self._use_stm2Const[stm]
 
-    def get_syms_defined_at(self, key: IRStm|Block) -> set[Symbol]:
-        if isinstance(key, (IRStm, NewIrStm)):
+    def get_syms_defined_at(self, key: IrStm | Block) -> set[Symbol]:
+        if isinstance(key, IrStm):
             syms = set([item.sym for item in self._def_stm2[key]])
             return syms
         elif isinstance(key, Block):
@@ -198,8 +200,8 @@ class UseDefTable(object):
         else:
             assert False
 
-    def get_syms_used_at(self, key: IRStm|Block) -> set[Symbol]:
-        if isinstance(key, (IRStm, NewIrStm)):
+    def get_syms_used_at(self, key: IrStm | Block) -> set[Symbol]:
+        if isinstance(key, IrStm):
             syms = set([item.sym for item in self._use_stm2[key]])
             return syms
         elif isinstance(key, Block):
@@ -208,8 +210,8 @@ class UseDefTable(object):
         else:
             assert False
 
-    def get_qsyms_defined_at(self, key: IRStm|Block) -> set[tuple[Symbol]]:
-        if isinstance(key, (IRStm, NewIrStm)):
+    def get_qsyms_defined_at(self, key: IrStm | Block) -> set[tuple[Symbol]]:
+        if isinstance(key, IrStm):
             qsyms = set([item.qsym for item in self._def_stm2[key]])
             return qsyms
         elif isinstance(key, Block):
@@ -218,8 +220,8 @@ class UseDefTable(object):
         else:
             assert False
 
-    def get_qsyms_used_at(self, key: IRStm|Block) -> set[tuple[Symbol]]:
-        if isinstance(key, (IRStm, NewIrStm)):
+    def get_qsyms_used_at(self, key: IrStm | Block) -> set[tuple[Symbol]]:
+        if isinstance(key, IrStm):
             qsyms = set([item.qsym for item in self._use_stm2[key]])
             return qsyms
         elif isinstance(key, Block):
@@ -245,31 +247,31 @@ class UseDefTable(object):
             yield qsym, blks
 
     def __str__(self):
-        s = ''
-        s += '--------------------------------\n'
-        s += 'statements that has symbol defs\n'
+        s = ""
+        s += "--------------------------------\n"
+        s += "statements that has symbol defs\n"
         for sym, items in self._def_sym2.items():
-            s += f'{sym}\n'
+            s += f"{sym}\n"
             for item in items:
-                s += f'    {item.stm}\n'
-        s += '--------------------------------\n'
-        s += 'blocks that has symbol defs\n'
+                s += f"    {item.stm}\n"
+        s += "--------------------------------\n"
+        s += "blocks that has symbol defs\n"
         for sym, items in self._def_sym2.items():
-            s += f'{sym}\n'
+            s += f"{sym}\n"
             for item in items:
-                s += f'    {item.blk.name}\n'
-        s += '--------------------------------\n'
-        s += 'statements that has symbol uses\n'
+                s += f"    {item.blk.name}\n"
+        s += "--------------------------------\n"
+        s += "statements that has symbol uses\n"
         for sym, items in self._use_sym2.items():
-            s += f'{sym}\n'
+            s += f"{sym}\n"
             for item in items:
-                s += f'    {item.stm}\n'
-        s += '--------------------------------\n'
-        s += 'blocks that has symbol uses\n'
+                s += f"    {item.stm}\n"
+        s += "--------------------------------\n"
+        s += "blocks that has symbol uses\n"
         for sym, items in self._use_sym2.items():
-            s += f'{sym}\n'
+            s += f"{sym}\n"
             for item in items:
-                s += f'    {item.blk.name}\n'
+                s += f"    {item.blk.name}\n"
         return s
 
     def dump(self):
@@ -287,11 +289,11 @@ class UseDefDetector(IRVisitor):
 
     def set_mode(self, mode):
         if mode == UseDefDetector.ADD:
-            self.update_const_use = self.table.add_const_use
+            self.update_Const_use = self.table.add_Const_use
             self.update_var_def = self.table.add_var_def
             self.update_var_use = self.table.add_var_use
         else:
-            self.update_const_use = self.table.remove_const_use
+            self.update_Const_use = self.table.remove_Const_use
             self.update_var_def = self.table.remove_var_def
             self.update_var_use = self.table.remove_var_use
 
@@ -303,7 +305,7 @@ class UseDefDetector(IRVisitor):
         for stm in block.stms:
             self.visit(stm)
         # Do not access to path_exp on usedef detection
-        #if block.path_exp:
+        # if block.path_exp:
         #    self.visit(block.path_exp)
 
     def _visit_args(self, ir):
@@ -322,8 +324,8 @@ class UseDefDetector(IRVisitor):
         self.visit(ir.func)
         self._visit_args(ir)
 
-    def visit_CONST(self, ir):
-        self.update_const_use(ir, self.current_stm)
+    def visit_Const(self, ir):
+        self.update_Const_use(ir, self.current_stm)
 
     def visit_TEMP(self, ir):
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
@@ -356,12 +358,12 @@ class UseDefDetector(IRVisitor):
             assert isinstance(expr, NewExpr)
             self.visit_with_context(expr_t.scope, expr)
 
-    def visit_with_context(self, scope: Scope, irstm: IRStm):
+    def visit_with_context(self, scope: Scope, IrStm: IrStm):
         old_scope = self.scope
         old_stm = self.current_stm
         self.scope = scope
-        self.current_stm = irstm
-        self.visit(irstm)
+        self.current_stm = IrStm
+        self.visit(IrStm)
         self.scope = old_scope
         self.current_stm = old_stm
 
@@ -386,6 +388,7 @@ class UseDefUpdater(object):
 
 class NewUseDefUpdater(object):
     """Incremental update handler for new IR."""
+
     def __init__(self, scope, usedef):
         self.adder = NewUseDefDetector()
         self.remover = NewUseDefDetector()
@@ -416,11 +419,11 @@ class NewUseDefDetector(IrVisitor):
         if mode == NewUseDefDetector.ADD:
             self._add_or_remove_def = self._add_def
             self._add_or_remove_use = self._add_use
-            self._add_or_remove_const = self._add_const
+            self._add_or_remove_Const = self._add_Const
         else:
             self._add_or_remove_def = self._remove_def
             self._add_or_remove_use = self._remove_use
-            self._add_or_remove_const = self._remove_const
+            self._add_or_remove_Const = self._remove_Const
 
     def process(self, scope):
         super().process(scope)
@@ -472,11 +475,11 @@ class NewUseDefDetector(IrVisitor):
         self.table._use_stm2[stm].discard(item)
         self.table._use_blk2[stm.block].discard(item)
 
-    def _add_const(self, c, stm):
-        self.table._use_stm2const[stm].add(c)
+    def _add_Const(self, c, stm):
+        self.table._use_stm2Const[stm].add(c)
 
-    def _remove_const(self, c, stm):
-        self.table._use_stm2const[stm].discard(c)
+    def _remove_Const(self, c, stm):
+        self.table._use_stm2Const[stm].discard(c)
 
     # --- Visitor methods ---
 
@@ -497,10 +500,11 @@ class NewUseDefDetector(IrVisitor):
         self._visit_args(ir.args, ir.kwargs)
 
     def visit_Const(self, ir):
-        self._add_or_remove_const(ir, self.current_stm)
+        self._add_or_remove_Const(ir, self.current_stm)
 
     def visit_Temp(self, ir):
         from ..ir_helper import qualified_symbols
+
         qsyms = qualified_symbols(ir, self.scope)
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
             self._add_or_remove_use(qsyms, ir, self.current_stm)
@@ -509,10 +513,10 @@ class NewUseDefDetector(IrVisitor):
 
     def visit_Attr(self, ir):
         from ..ir_helper import qualified_symbols
+
         qsyms = qualified_symbols(ir, self.scope)
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
             self._add_or_remove_use(qsyms, ir, self.current_stm)
         elif ir.ctx == Ctx.STORE:
             self._add_or_remove_def(qsyms, ir, self.current_stm)
         self.visit(ir.exp)
-

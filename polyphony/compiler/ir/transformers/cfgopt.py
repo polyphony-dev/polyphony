@@ -77,7 +77,7 @@ class NewBlockReducer(object):
 
         pred.stms.pop()  # remove useless jump
         for stm in block.stms:
-            stm.block = pred
+            object.__setattr__(stm, 'block', pred)
             pred.stms.append(stm)
         for succ in block.succs:
             succ.replace_pred(block, pred)
@@ -347,7 +347,7 @@ class NewHyperBlockBuilder(object):
                 new_sym.typ = Type.bool()
                 mv = Move(dst=Temp(name=new_sym.name, ctx=Ctx.STORE), src=cj.exp, loc=old_mj.loc, block=head)
                 head.stms.insert(-1, mv)
-                cj.exp = Temp(name=new_sym.name)
+                object.__setattr__(cj, 'exp', Temp(name=new_sym.name))
             head.replace_stm(head.stms[-1], cj)
         if len(mj.targets) == 2:
             cj = CJump(exp=mj.conds[0], true=mj.targets[0], false=mj.targets[1], loc=mj.loc, block=new_head)
@@ -421,29 +421,29 @@ class NewHyperBlockBuilder(object):
                     self.uddetector.visit(mv)
                 else:
                     new_phi = stm.model_copy(deep=True)
-                    new_phi.args = new_args
-                    new_phi.ps = new_ps
+                    object.__setattr__(new_phi, 'args', new_args)
+                    object.__setattr__(new_phi, 'ps', new_ps)
                     newsym = self.scope.add_temp()
                     newsym.typ = irexp_type(stm.var, self.scope)
-                    new_phi.var = Temp(name=newsym.name, ctx=Ctx.STORE)
-                    new_phi.block = new_tail
+                    object.__setattr__(new_phi, 'var', Temp(name=newsym.name, ctx=Ctx.STORE))
+                    object.__setattr__(new_phi, 'block', new_tail)
                     new_tail.stms.append(new_phi)
                     self.uddetector.visit(new_phi)
                 arg = Temp(name=newsym.name)
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
-                stm.args = old_args
-                stm.ps = old_ps
+                object.__setattr__(stm, 'args', old_args)
+                object.__setattr__(stm, 'ps', old_ps)
                 self.uddetector.visit(stm)
         for br in removes:
             old_jmp = br.stms[-1]
             if isinstance(old_jmp, Jump):
-                old_jmp.target = new_tail
+                object.__setattr__(old_jmp, 'target', new_tail)
             elif isinstance(old_jmp, CJump):
                 if old_jmp.true is tail:
-                    old_jmp.true = new_tail
+                    object.__setattr__(old_jmp, 'true', new_tail)
                 if old_jmp.false is tail:
-                    old_jmp.false = new_tail
+                    object.__setattr__(old_jmp, 'false', new_tail)
             elif isinstance(old_jmp, MCJump):
                 for i, t in enumerate(old_jmp.targets):
                     if t is tail:
@@ -531,7 +531,7 @@ class NewHyperBlockBuilder(object):
             if stm in stm.block.stms:
                 stm.block.stms.remove(stm)
             self.usedef.remove_stm(self.scope, stm)
-            cstm.loc = stm.loc
+            object.__setattr__(cstm, 'loc', stm.loc)
             cstms.append(cstm)
             all_cstms.append((idx, cstm))
             self.uddetector.visit(cstm)
@@ -560,7 +560,7 @@ class NewHyperBlockBuilder(object):
             assert len(branch_blk.succs) == 1
             stms_, remains_ = self._select_stms_for_speculation(head, branch_blk)
             for _, stm in sorted(stms_, key=lambda _: _[0]):
-                stm.block = head
+                object.__setattr__(stm, 'block', head)
                 head.stms.insert(-1, stm)
             for _, stm in stms_:
                 branch_blk.stms.remove(stm)
@@ -568,6 +568,6 @@ class NewHyperBlockBuilder(object):
                 path_exp = branch_blk.path_exp
                 cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
                 for _, stm in sorted(cstms_, key=lambda _: _[0]):
-                    stm.block = head
+                    object.__setattr__(stm, 'block', head)
                     head.stms.insert(-1, stm)
         head.is_hyperblock = True

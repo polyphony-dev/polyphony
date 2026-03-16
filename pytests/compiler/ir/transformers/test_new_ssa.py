@@ -114,10 +114,10 @@ ret @return
 
     # After SSA, stms should be valid IR
     for stm in exit_blk.stms:
-        if isinstance(stm, PHI):
+        if isinstance(stm, Phi):
             # PHI predicates (ps) should be old IR after reverse conversion
             for p in stm.ps:
-                assert isinstance(p, (IR, type(None))), (
+                assert isinstance(p, (Ir, type(None))), (
                     f'PHI predicate is not old IR: {type(p).__name__}'
                 )
 

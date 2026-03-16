@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .symbol import Symbol
     from .block import Block
-    from .ir import IRExp
+    from .ir import IrExp
 
 
 class Region(object):
@@ -69,8 +69,8 @@ class Loop(Region):
     def __init__(self, head, bodies, region):
         super().__init__(head, bodies, region)
         self.counter: Symbol = None
-        self.init: IRExp = None
-        self.update: IRExp = None
+        self.init: IrExp = None
+        self.update: IrExp = None
         self.cond: Symbol = None
         self.exits: list[Block] = None
         self.outer_defs: set[Symbol] = None

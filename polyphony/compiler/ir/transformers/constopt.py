@@ -36,8 +36,8 @@ logger = getLogger(__name__)
 # ConstantOptBase (old IR, moved from constopt.py)
 # ============================================================
 
-from ..ir import CONST as OLD_CONST, IRVariable as OLD_IRVariable, JUMP as OLD_JUMP
-from ..ir import CJUMP as OLD_CJUMP, PHI as OLD_PHI, LPHI as OLD_LPHI
+from ..ir import Const as OLD_CONST, IrVariable as OLD_IRVariable, Jump as OLD_JUMP
+from ..ir import CJump as OLD_CJUMP, Phi as OLD_PHI, LPhi as OLD_LPHI
 from ..ir_visitor import IRVisitor as OldIRVisitor
 from ..ir_helper import (
     qualified_symbols as old_qualified_symbols,
@@ -62,29 +62,35 @@ class ConstantOptBase(OldIRVisitor):
         super().process(scope)
 
     def visit_UNOP(self, ir):
-        ir.exp = self.visit(ir.exp)
-        if isinstance(ir.exp, OLD_CONST):
-            v = old_eval_unop(ir.op, ir.exp.value)
+        new_exp = self.visit(ir.exp)
+        if isinstance(new_exp, OLD_CONST):
+            v = old_eval_unop(ir.op, new_exp.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return OLD_CONST(v)
+        if new_exp is not ir.exp:
+            return ir.model_copy(update={'exp': new_exp})
         return ir
 
     def visit_BINOP(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        if isinstance(ir.left, OLD_CONST) and isinstance(ir.right, OLD_CONST):
-            v = old_eval_binop(ir.op, ir.left.value, ir.right.value)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if isinstance(new_left, OLD_CONST) and isinstance(new_right, OLD_CONST):
+            v = old_eval_binop(ir.op, new_left.value, new_right.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return OLD_CONST(v)
-        elif isinstance(ir.left, OLD_CONST) or isinstance(ir.right, OLD_CONST):
+        if new_left is not ir.left or new_right is not ir.right:
+            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
+        if isinstance(ir.left, OLD_CONST) or isinstance(ir.right, OLD_CONST):
             return old_reduce_binop(ir)
         return ir
 
     def visit_RELOP(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is not ir.left or new_right is not ir.right:
+            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
         if isinstance(ir.left, OLD_CONST) and isinstance(ir.right, OLD_CONST):
             v = old_eval_relop(ir.op, ir.left.value, ir.right.value)
             if v is None:
@@ -114,18 +120,20 @@ class ConstantOptBase(OldIRVisitor):
         return ir
 
     def visit_CONDOP(self, ir):
-        ir.cond = self.visit(ir.cond)
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        if isinstance(ir.cond, OLD_CONST):
-            if ir.cond.value:
-                return ir.left
-            else:
-                return ir.right
+        new_cond = self.visit(ir.cond)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if isinstance(new_cond, OLD_CONST):
+            return new_left if new_cond.value else new_right
+        if new_cond is not ir.cond or new_left is not ir.left or new_right is not ir.right:
+            return ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
         return ir
 
     def visit_CALL(self, ir):
-        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
+        new_args = [(name, self.visit(arg)) for name, arg in ir.args]
+        args_changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, ir.args))
+        if args_changed:
+            ir = ir.model_copy(update={'args': new_args})
         qsym = old_qualified_symbols(ir.func, self.scope)
         assert isinstance(qsym[-1], Symbol)
         func_t = qsym[-1].typ
@@ -145,17 +153,25 @@ class ConstantOptBase(OldIRVisitor):
         return ir
 
     def visit_MREF(self, ir):
-        ir.offset = self.visit(ir.offset)
+        new_offset = self.visit(ir.offset)
+        if new_offset is not ir.offset:
+            return ir.model_copy(update={'offset': new_offset})
         return ir
 
     def visit_MSTORE(self, ir):
-        ir.offset = self.visit(ir.offset)
-        ir.exp = self.visit(ir.exp)
+        new_offset = self.visit(ir.offset)
+        new_exp = self.visit(ir.exp)
+        if new_offset is not ir.offset or new_exp is not ir.exp:
+            return ir.model_copy(update={'offset': new_offset, 'exp': new_exp})
         return ir
 
     def visit_ARRAY(self, ir):
-        ir.repeat = self.visit(ir.repeat)
-        ir.items = [self.visit(item) for item in ir.items]
+        new_repeat = self.visit(ir.repeat)
+        new_items = [self.visit(item) for item in ir.items]
+        repeat_changed = new_repeat is not ir.repeat
+        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
+        if repeat_changed or items_changed:
+            return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
         return ir
 
     def visit_TEMP(self, ir):
@@ -165,15 +181,15 @@ class ConstantOptBase(OldIRVisitor):
         return ir
 
     def visit_EXPR(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
 
     def visit_CJUMP(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         if isinstance(ir.exp, OLD_CONST):
             self._process_unconditional_jump(ir, [])
 
     def visit_MCJUMP(self, ir):
-        ir.conds = [self.visit(cond) for cond in ir.conds]
+        object.__setattr__(ir, 'conds', [self.visit(cond) for cond in ir.conds])
         conds = [c.value for c in ir.conds if isinstance(c, OLD_CONST)]
         if len(conds) == len(ir.conds) and conds.count(1) == 1:
             self._process_unconditional_jump(ir, [], conds)
@@ -182,17 +198,17 @@ class ConstantOptBase(OldIRVisitor):
         pass
 
     def visit_RET(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
 
     def visit_MOVE(self, ir):
-        ir.src = self.visit(ir.src)
+        object.__setattr__(ir, 'src', self.visit(ir.src))
 
     def visit_CEXPR(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_EXPR(ir)
 
     def visit_CMOVE(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_MOVE(ir)
 
     def visit_PHI(self, ir):
@@ -271,7 +287,7 @@ class ConstantOptBase(OldIRVisitor):
                 self._remove_dominated_branch(false_blk, worklist)
 
         jump = OLD_JUMP(true_blk)
-        jump.loc = cjump.loc
+        object.__setattr__(jump, 'loc', cjump.loc)
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
             worklist.remove(cjump)
@@ -302,29 +318,35 @@ class NewConstantOptBase(IrVisitor):
         super().process(scope)
 
     def visit_UnOp(self, ir):
-        ir.exp = self.visit(ir.exp)
-        if isinstance(ir.exp, Const):
-            v = eval_unop(ir.op, ir.exp.value)
+        new_exp = self.visit(ir.exp)
+        if isinstance(new_exp, Const):
+            v = eval_unop(ir.op, new_exp.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return Const(value=v)
+        if new_exp is not ir.exp:
+            return ir.model_copy(update={'exp': new_exp})
         return ir
 
     def visit_BinOp(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        if isinstance(ir.left, Const) and isinstance(ir.right, Const):
-            v = eval_binop(ir.op, ir.left.value, ir.right.value)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if isinstance(new_left, Const) and isinstance(new_right, Const):
+            v = eval_binop(ir.op, new_left.value, new_right.value)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
             return Const(value=v)
-        elif isinstance(ir.left, Const) or isinstance(ir.right, Const):
+        if new_left is not ir.left or new_right is not ir.right:
+            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
+        if isinstance(ir.left, Const) or isinstance(ir.right, Const):
             return reduce_binop(ir)
         return ir
 
     def visit_RelOp(self, ir):
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if new_left is not ir.left or new_right is not ir.right:
+            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
         if isinstance(ir.left, Const) and isinstance(ir.right, Const):
             v = eval_relop(ir.op, ir.left.value, ir.right.value)
             if v is None:
@@ -348,15 +370,20 @@ class NewConstantOptBase(IrVisitor):
         return ir
 
     def visit_CondOp(self, ir):
-        ir.cond = self.visit(ir.cond)
-        ir.left = self.visit(ir.left)
-        ir.right = self.visit(ir.right)
-        if isinstance(ir.cond, Const):
-            return ir.left if ir.cond.value else ir.right
+        new_cond = self.visit(ir.cond)
+        new_left = self.visit(ir.left)
+        new_right = self.visit(ir.right)
+        if isinstance(new_cond, Const):
+            return new_left if new_cond.value else new_right
+        if new_cond is not ir.cond or new_left is not ir.left or new_right is not ir.right:
+            return ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
         return ir
 
     def visit_Call(self, ir):
-        ir.args = [(name, self.visit(arg)) for name, arg in ir.args]
+        new_args = [(name, self.visit(arg)) for name, arg in ir.args]
+        args_changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, ir.args))
+        if args_changed:
+            ir = ir.model_copy(update={'args': new_args})
         qsym = qualified_symbols(ir.func, self.scope)
         assert isinstance(qsym[-1], Symbol)
         func_t = qsym[-1].typ
@@ -376,17 +403,25 @@ class NewConstantOptBase(IrVisitor):
         return ir
 
     def visit_MRef(self, ir):
-        ir.offset = self.visit(ir.offset)
+        new_offset = self.visit(ir.offset)
+        if new_offset is not ir.offset:
+            return ir.model_copy(update={'offset': new_offset})
         return ir
 
     def visit_MStore(self, ir):
-        ir.offset = self.visit(ir.offset)
-        ir.exp = self.visit(ir.exp)
+        new_offset = self.visit(ir.offset)
+        new_exp = self.visit(ir.exp)
+        if new_offset is not ir.offset or new_exp is not ir.exp:
+            return ir.model_copy(update={'offset': new_offset, 'exp': new_exp})
         return ir
 
     def visit_Array(self, ir):
-        ir.repeat = self.visit(ir.repeat)
-        ir.items = [self.visit(item) for item in ir.items]
+        new_repeat = self.visit(ir.repeat)
+        new_items = [self.visit(item) for item in ir.items]
+        repeat_changed = new_repeat is not ir.repeat
+        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
+        if repeat_changed or items_changed:
+            return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
         return ir
 
     def visit_Temp(self, ir):
@@ -396,15 +431,15 @@ class NewConstantOptBase(IrVisitor):
         return ir
 
     def visit_Expr(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
 
     def visit_CJump(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         if isinstance(ir.exp, Const):
             self._process_unconditional_jump(ir, [])
 
     def visit_MCJump(self, ir):
-        ir.conds = [self.visit(cond) for cond in ir.conds]
+        object.__setattr__(ir, 'conds', [self.visit(cond) for cond in ir.conds])
         conds = [c.value for c in ir.conds if isinstance(c, Const)]
         if len(conds) == len(ir.conds) and conds.count(1) == 1:
             self._process_unconditional_jump(ir, [], conds)
@@ -413,17 +448,17 @@ class NewConstantOptBase(IrVisitor):
         pass
 
     def visit_Ret(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
 
     def visit_Move(self, ir):
-        ir.src = self.visit(ir.src)
+        object.__setattr__(ir, 'src', self.visit(ir.src))
 
     def visit_CExpr(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_Expr(ir)
 
     def visit_CMove(self, ir):
-        ir.cond = self.visit(ir.cond)
+        object.__setattr__(ir, 'cond', self.visit(ir.cond))
         self.visit_Move(ir)
 
     def visit_Phi(self, ir):
@@ -514,7 +549,7 @@ class NewEarlyConstantOptNonSSA(NewConstantOptBase):
         super().process(scope)
 
     def visit_CJump(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         if isinstance(ir.exp, Const):
             self._process_unconditional_jump(ir, [])
             return
@@ -525,7 +560,7 @@ class NewEarlyConstantOptNonSSA(NewConstantOptBase):
         assert len(expdefs) == 1
         expdef = list(expdefs)[0]
         if isinstance(expdef, Move) and isinstance(expdef.src, Const):
-            ir.exp = expdef.src
+            object.__setattr__(ir, 'exp', expdef.src)
             self._process_unconditional_jump(ir, [])
 
     def visit_Temp(self, ir):
@@ -639,7 +674,7 @@ class NewConstantOpt(NewConstantOptBase):
                 elif len(stm.args) == 0:
                     dead_stms.append(stm)
             elif isinstance(stm, (CMove, CExpr)):
-                stm.cond = reduce_relexp(stm.cond)
+                object.__setattr__(stm, 'cond', reduce_relexp(stm.cond))
                 if isinstance(stm.cond, Const):
                     if stm.cond.value:
                         blk = stm.block
@@ -812,12 +847,12 @@ class NewConstantOpt(NewConstantOptBase):
                 ir.ps.pop(idx)
 
     def visit_CJump(self, ir):
-        ir.exp = self.visit(ir.exp)
+        object.__setattr__(ir, 'exp', self.visit(ir.exp))
         if isinstance(ir.exp, Const):
             self._process_unconditional_jump(ir, self.worklist)
 
     def visit_MCJump(self, ir):
-        ir.conds = [self.visit(cond) for cond in ir.conds]
+        object.__setattr__(ir, 'conds', [self.visit(cond) for cond in ir.conds])
         conds = [c.value for c in ir.conds if isinstance(c, Const)]
         if len(conds) == len(ir.conds) and conds.count(1) == 1:
             self._process_unconditional_jump(ir, self.worklist, conds)
@@ -877,7 +912,9 @@ class NewStaticConstOpt(NewConstantOptBase):
         return ir
 
     def visit_MRef(self, ir):
-        ir.offset = self.visit(ir.offset)
+        new_offset = self.visit(ir.offset)
+        if new_offset is not ir.offset:
+            ir = ir.model_copy(update={'offset': new_offset})
         if isinstance(ir.mem, IrVariable):
             mem_sym = qualified_symbols(ir.mem, self.scope)[-1]
             if mem_sym in self.constant_array_table:
@@ -894,7 +931,7 @@ class NewStaticConstOpt(NewConstantOptBase):
                 self.constant_table[dst_sym] = src
             elif isinstance(src, Array):
                 self.constant_array_table[dst_sym] = src
-        ir.src = src
+        object.__setattr__(ir, 'src', src)
 
 
 class NewPolyadConstantFolding(object):
@@ -939,8 +976,10 @@ class NewPolyadConstantFolding(object):
 
     class _Bin2Poly(IrTransformer):
         def visit_BinOp(self, ir):
-            ir.left = self.visit(ir.left)
-            ir.right = self.visit(ir.right)
+            new_left = self.visit(ir.left)
+            new_right = self.visit(ir.right)
+            if new_left is not ir.left or new_right is not ir.right:
+                ir = ir.model_copy(update={'left': new_left, 'right': new_right})
             assert ir.left and ir.right
             if ir.op in ('Add', 'Mult'):
                 values = []

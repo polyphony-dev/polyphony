@@ -34,9 +34,9 @@ ret @return
     # Should still have a valid scope with stms
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == 'x':
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == 'x':
                 # 3 + 4 stays as BINOP (only 2 operands, no poliad needed)
-                assert isinstance(stm.src, BINOP) or isinstance(stm.src, CONST)
+                assert isinstance(stm.src, BinOp) or isinstance(stm.src, Const)
 
 
 def test_polyadconstfold_basic_mult():
@@ -57,8 +57,8 @@ ret @return
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            if isinstance(stm, MOVE) and isinstance(stm.dst, TEMP) and stm.dst.name == 'x':
-                assert isinstance(stm.src, BINOP) or isinstance(stm.src, CONST)
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == 'x':
+                assert isinstance(stm.src, BinOp) or isinstance(stm.src, Const)
 
 
 def test_polyadconstfold_simple_binop():

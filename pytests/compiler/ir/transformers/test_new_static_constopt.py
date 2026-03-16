@@ -35,7 +35,7 @@ mv x 42
     sym = scope.find_sym('x')
     assert sym in scope.constants
     c = scope.constants[sym]
-    if isinstance(c, CONST):
+    if isinstance(c, Const):
         assert c.value == 42
     else:
         assert c.value == 42

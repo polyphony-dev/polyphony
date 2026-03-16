@@ -5,7 +5,7 @@ from .ahdl import *
 from .stgbuilder import State, STGItemBuilder, ScheduledItemQueue
 from .analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdltransformer import AHDLTransformer
-from ..ir.ir import MOVE, CJUMP
+from ..ir.ir import Move, CJump
 from ..ir.ir_helper import qualified_symbols
 from ..ir.analysis.usedef import UseDefDetector
 from logging import getLogger
@@ -490,7 +490,7 @@ class LoopPipelineBuilder(PipelineBuilder):
         exit_stm = self.build_exit_block(dfg, pstate_helper, exit_signal)
         return exit_stm
 
-    def build_exit_detection_block(self, dfg, pstate_helper, exit_signal, cond_def:MOVE, last_stage:PipelineStage) -> PipelineStage:
+    def build_exit_detection_block(self, dfg, pstate_helper, exit_signal, cond_def:Move, last_stage:PipelineStage) -> PipelineStage:
         # make a condition for unexecutable loop
         loop_init = self.translator.visit(dfg.region.init)
         loop_cond = self.translator.visit(cond_def.src)
@@ -552,7 +552,7 @@ class LoopPipelineBuilder(PipelineBuilder):
         for n in dfg.get_scheduled_nodes():
             if n.begin < 0:
                 continue
-            if isinstance(n.tag, CJUMP):
+            if isinstance(n.tag, CJump):
                 # remove cjump for the loop
                 sym = qualified_symbols(n.tag.exp, self.scope)[-1]
                 if sym is dfg.region.cond:

@@ -41,27 +41,31 @@ def reduce_relexp(exp):
     """Simplify relational expressions by folding constant operands."""
     if isinstance(exp, RelOp):
         if exp.op == 'And':
-            exp.left = reduce_relexp(exp.left)
-            exp.right = reduce_relexp(exp.right)
-            if isinstance(exp.left, Const):
-                return exp.right if exp.left.value else Const(value=0)
-            elif isinstance(exp.left, UnOp) and exp.left.op == 'Not' and isinstance(exp.left.exp, Const):
-                return Const(value=0) if exp.left.exp.value else exp.right
-            elif isinstance(exp.right, Const):
-                return exp.left if exp.right.value else Const(value=0)
-            elif isinstance(exp.right, UnOp) and exp.right.op == 'Not' and isinstance(exp.right.exp, Const):
-                return Const(value=0) if exp.right.exp.value else exp.left
+            new_left = reduce_relexp(exp.left)
+            new_right = reduce_relexp(exp.right)
+            if isinstance(new_left, Const):
+                return new_right if new_left.value else Const(value=0)
+            elif isinstance(new_left, UnOp) and new_left.op == 'Not' and isinstance(new_left.exp, Const):
+                return Const(value=0) if new_left.exp.value else new_right
+            elif isinstance(new_right, Const):
+                return new_left if new_right.value else Const(value=0)
+            elif isinstance(new_right, UnOp) and new_right.op == 'Not' and isinstance(new_right.exp, Const):
+                return Const(value=0) if new_right.exp.value else new_left
+            if new_left is not exp.left or new_right is not exp.right:
+                return exp.model_copy(update={'left': new_left, 'right': new_right})
         elif exp.op == 'Or':
-            exp.left = reduce_relexp(exp.left)
-            exp.right = reduce_relexp(exp.right)
-            if isinstance(exp.left, Const):
-                return Const(value=1) if exp.left.value else exp.right
-            elif isinstance(exp.left, UnOp) and exp.left.op == 'Not' and isinstance(exp.left.exp, Const):
-                return exp.right if exp.left.exp.value else Const(value=1)
-            elif isinstance(exp.right, Const):
-                return Const(value=1) if exp.right.value else exp.left
-            elif isinstance(exp.right, UnOp) and exp.right.op == 'Not' and isinstance(exp.right.exp, Const):
-                return exp.left if exp.right.exp.value else Const(value=1)
+            new_left = reduce_relexp(exp.left)
+            new_right = reduce_relexp(exp.right)
+            if isinstance(new_left, Const):
+                return Const(value=1) if new_left.value else new_right
+            elif isinstance(new_left, UnOp) and new_left.op == 'Not' and isinstance(new_left.exp, Const):
+                return new_right if new_left.exp.value else Const(value=1)
+            elif isinstance(new_right, Const):
+                return Const(value=1) if new_right.value else new_left
+            elif isinstance(new_right, UnOp) and new_right.op == 'Not' and isinstance(new_right.exp, Const):
+                return new_left if new_right.exp.value else Const(value=1)
+            if new_left is not exp.left or new_right is not exp.right:
+                return exp.model_copy(update={'left': new_left, 'right': new_right})
     elif isinstance(exp, UnOp) and exp.op == 'Not':
         nexp = reduce_relexp(exp.exp)
         if isinstance(nexp, Const):
@@ -93,10 +97,12 @@ def reduce_binop(ir):
 def qsym2var(qsym, ctx):
     """Convert a qualified symbol tuple to an IrVariable (Temp or Attr chain)."""
     assert len(qsym) > 0
+    if len(qsym) == 1:
+        return Temp(name=qsym[0].name, ctx=ctx)
     exp = Temp(name=qsym[0].name, ctx=Ctx.LOAD)
-    for sym in qsym[1:]:
+    for sym in qsym[1:-1]:
         exp = Attr(name=sym.name, exp=exp, attr=sym.name, ctx=Ctx.LOAD)
-    exp.ctx = ctx
+    exp = Attr(name=qsym[-1].name, exp=exp, attr=qsym[-1].name, ctx=ctx)
     return exp
 
 

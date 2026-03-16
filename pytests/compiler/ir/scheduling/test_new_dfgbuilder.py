@@ -37,30 +37,30 @@ def build_scope_with_loop(src, scheduling='sequential'):
 
 def test_is_move_old_ir():
     """_is_move recognizes old IR MOVE."""
-    m = MOVE(TEMP('x', Ctx.STORE), CONST(1))
+    m = Move(Temp('x', Ctx.STORE), Const(1))
     assert _is_move(m)
 
 
 def test_is_move_not_expr():
     """_is_move rejects EXPR."""
-    e = EXPR(CONST(1))
+    e = Expr(Const(1))
     assert not _is_move(e)
 
 
 def test_is_expr_old_ir():
     """_is_expr recognizes old IR EXPR."""
-    e = EXPR(CONST(1))
+    e = Expr(Const(1))
     assert _is_expr(e)
 
 
 def test_is_const_old_ir():
     """_is_const recognizes old IR CONST."""
-    assert _is_const(CONST(42))
+    assert _is_const(Const(42))
 
 
 def test_is_temp_old_ir():
     """_is_temp recognizes old IR TEMP."""
-    assert _is_temp(TEMP('x', Ctx.LOAD))
+    assert _is_temp(Temp('x', Ctx.LOAD))
 
 
 def test_is_ctrl_stm_jump():
@@ -70,30 +70,30 @@ def test_is_ctrl_stm_jump():
     scope = Scope.create(None, 'test_scope', {'function'})
     from polyphony.compiler.ir.block import Block
     blk = Block(scope)
-    j = JUMP(blk)
+    j = Jump(blk)
     assert _is_ctrl_stm(j)
 
 
 def test_is_variable():
     """_is_variable recognizes both old and new IR variables."""
-    assert _is_variable(TEMP('x', Ctx.LOAD))
+    assert _is_variable(Temp('x', Ctx.LOAD))
 
 
 def test_is_mem_read():
     """_is_mem_read detects MOVE with MREF src."""
-    m = MOVE(TEMP('x', Ctx.STORE), MREF(TEMP('arr', Ctx.LOAD), CONST(0), Ctx.LOAD))
+    m = Move(Temp('x', Ctx.STORE), MRef(Temp('arr', Ctx.LOAD), Const(0), Ctx.LOAD))
     assert _is_mem_read(m)
 
 
 def test_is_mem_write():
     """_is_mem_write detects EXPR with MSTORE exp."""
-    e = EXPR(MSTORE(TEMP('arr', Ctx.LOAD), CONST(0), CONST(1)))
+    e = Expr(MStore(Temp('arr', Ctx.LOAD), Const(0), Const(1)))
     assert _is_mem_write(e)
 
 
 def test_is_mem_read_not_move():
     """_is_mem_read returns False for non-MOVE."""
-    e = EXPR(CONST(1))
+    e = Expr(Const(1))
     assert not _is_mem_read(e)
 
 
@@ -194,19 +194,19 @@ ret @return
 def test_is_constant_stm_move_const():
     """_is_constant_stm recognizes MOVE with CONST src."""
     builder = NewDFGBuilder()
-    m = MOVE(TEMP('x', Ctx.STORE), CONST(42))
+    m = Move(Temp('x', Ctx.STORE), Const(42))
     assert builder._is_constant_stm(m)
 
 
 def test_is_constant_stm_move_array():
     """_is_constant_stm recognizes MOVE with ARRAY src."""
     builder = NewDFGBuilder()
-    m = MOVE(TEMP('x', Ctx.STORE), ARRAY([CONST(1)], True))
+    m = Move(Temp('x', Ctx.STORE), Array([Const(1)], True))
     assert builder._is_constant_stm(m)
 
 
 def test_is_constant_stm_move_temp():
     """_is_constant_stm rejects MOVE with TEMP src."""
     builder = NewDFGBuilder()
-    m = MOVE(TEMP('x', Ctx.STORE), TEMP('y', Ctx.LOAD))
+    m = Move(Temp('x', Ctx.STORE), Temp('y', Ctx.LOAD))
     assert not builder._is_constant_stm(m)

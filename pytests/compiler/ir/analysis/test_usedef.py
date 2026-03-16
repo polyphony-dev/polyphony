@@ -501,8 +501,8 @@ mv y x
     blk = scope.entry_block
 
     old_stm = blk.stms[1]  # mv y x
-    new_stm = MOVE(TEMP('z', Ctx.STORE), CONST(42))
-    new_stm.block = blk
+    new_stm = Move(Temp('z', Ctx.STORE), Const(42))
+    object.__setattr__(new_stm, 'block', blk)
 
     updater = UseDefUpdater(scope, usedef)
     updater.update(old_stm, new_stm)
@@ -664,7 +664,7 @@ def test_add_remove_use_new_ir_types():
     table.remove_use(scope, new_const, new_stm)
 
     # Verify old IR types still work
-    old_stm = MOVE(TEMP('y', Ctx.STORE), TEMP('x'))
-    old_const = CONST(99)
+    old_stm = Move(Temp('y', Ctx.STORE), Temp('x'))
+    old_const = Const(99)
     table.add_use(scope, old_const, old_stm)
     table.remove_use(scope, old_const, old_stm)
