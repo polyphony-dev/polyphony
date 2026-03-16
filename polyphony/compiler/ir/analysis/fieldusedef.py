@@ -1,7 +1,8 @@
 ﻿from collections import defaultdict
-from ..irvisitor import IRVisitor
+from ..ir_visitor import IRVisitor
 from ..ir import *
-from ..irhelper import qualified_symbols
+from .. import ir as new_ir
+from ..ir_helper import qualified_symbols
 from ..scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)
@@ -18,25 +19,25 @@ class FieldUseDefTable(object):
         return qsym
 
     def add_var_def(self, scope: Scope, var, stm):
-        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
+        assert isinstance(var, (ATTR, new_ir.Attr)) and isinstance(stm, (IRStm, new_ir.IrStm))
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._def_qsym2stm[key].add(stm)
 
     def remove_var_def(self, scope: Scope, var, stm):
-        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
+        assert isinstance(var, (ATTR, new_ir.Attr)) and isinstance(stm, (IRStm, new_ir.IrStm))
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._def_qsym2stm[key].discard(stm)
 
     def add_var_use(self, scope: Scope, var, stm):
-        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
+        assert isinstance(var, (ATTR, new_ir.Attr)) and isinstance(stm, (IRStm, new_ir.IrStm))
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._use_qsym2stm[key].add(stm)
 
     def remove_var_use(self, scope: Scope, var, stm):
-        assert isinstance(var, ATTR) and isinstance(stm, IRStm)
+        assert isinstance(var, (ATTR, new_ir.Attr)) and isinstance(stm, (IRStm, new_ir.IrStm))
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._use_qsym2stm[key].discard(stm)

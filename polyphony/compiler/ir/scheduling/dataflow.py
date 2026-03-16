@@ -1,12 +1,24 @@
 ﻿from collections import defaultdict, deque
 from ..ir import *
-from ..irhelper import is_port_method_call, has_exclusive_function, has_clkfence, qualified_symbols
+from ..ir_helper import is_port_method_call, has_exclusive_function, has_clkfence, qualified_symbols
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefDetector
 from ...common.env import env
 from ...common import utils
 from logging import getLogger
 logger = getLogger(__name__)
+
+
+def _find_stm_index(stm):
+    """Find index of stm in its block's stms list, handling MStm children."""
+    from ...common.utils import find_id_index
+    idx = find_id_index(stm.block.stms, stm)
+    if idx == -1:
+        from ..ir import MStm as MStmModel
+        for i, s in enumerate(stm.block.stms):
+            if isinstance(s, (MSTM, MStmModel)) and any(id(c) == id(stm) for c in s.stms):
+                return i
+    return idx
 
 
 class DFNode(object):
@@ -17,7 +29,7 @@ class DFNode(object):
         self.begin = -1
         self.end = -1
         if typ == 'Stm':
-            self.stm_index = tag.block.stms.index(tag)
+            self.stm_index = _find_stm_index(tag)
         else:
             self.stm_index = 0
         self.instance_num = 0
@@ -28,7 +40,7 @@ class DFNode(object):
         if self.typ == 'Stm':
             s = '<{}> ({}) {} {}:{} {}'.format(
                 hex(self.__hash__())[-4:],
-                self.tag.loc.lineno,
+                self.tag.loc.lineno if self.tag.loc else 0,
                 self.priority,
                 self.begin,
                 self.end,
@@ -176,7 +188,7 @@ class DataFlowGraph(object):
 
     def _stm_order_gt(self, stm1, stm2):
         if stm1.block is stm2.block:
-            return stm1.block.stms.index(stm1) > stm2.block.stms.index(stm2)
+            return _find_stm_index(stm1) > _find_stm_index(stm2)
         else:
             return stm1.block.order > stm2.block.order
 
@@ -402,510 +414,6 @@ class DataFlowGraph(object):
         logger.debug('drawing dot is done')
 
 
-class DFGBuilder(object):
-    def __init__(self):
-        pass
-
-    def process(self, scope):
-        self.scope = scope
-        self.usedef = UseDefDetector().process(scope)
-        self.scope.top_dfg = self._process(scope.top_region(), None)
-
-    def _process(self, region, parent_dfg):
-        dfg = self._make_graph(parent_dfg, region)
-        for c in self.scope.loop_tree.get_children_of(region):
-            self._process(c, dfg)
-        return dfg
-
-    def _dump_dfg(self, dfg):
-        for n in dfg.nodes:
-            logger.debug('---------------------------')
-            logger.debug(n)
-            logger.debug('DefUse preds')
-            preds = dfg.preds_typ(n, 'DefUse')
-            for pred in preds:
-                logger.debug(pred)
-            logger.debug('DefUse succs')
-            succs = dfg.succs_typ(n, 'DefUse')
-            for succ in succs:
-                logger.debug(succ)
-
-            logger.debug('Seq preds')
-            preds = dfg.preds_typ(n, 'Seq')
-            for pred in preds:
-                logger.debug(pred)
-            logger.debug('Seq succs')
-            succs = dfg.succs_typ(n, 'Seq')
-            for succ in succs:
-                logger.debug(succ)
-
-    def _make_graph(self, parent_dfg, region):
-        logger.debug('make graph ' + region.name)
-        dfg = DataFlowGraph(self.scope, region.name, parent_dfg, region)
-        usedef = self.usedef
-
-        blocks = region.blocks()
-        for b in blocks:
-            for stm in b.stms:
-                logger.log(0, 'loop head ' + region.name + ' :: ' + str(stm))
-                usenode = dfg.add_stm_node(stm)
-                # collect source nodes
-                self._add_source_node(usenode, dfg, usedef, blocks)
-                # add def-use edges
-                self._add_defuse_edges(stm, usenode, dfg, usedef, blocks)
-                # add use-def edges
-                self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)
-        if region.head.synth_params['scheduling'] == 'sequential':
-            self._add_seq_edges(blocks, dfg)
-        self._add_seq_edges_for_object(blocks, dfg)
-        self._add_seq_edges_for_function(blocks, dfg)
-        #self._add_seq_edges_for_io(blocks, dfg)
-        self._add_seq_edges_for_timed(blocks, dfg)
-        self._add_mem_edges(dfg)
-        self._remove_alias_cycle(dfg)
-        if region.head.synth_params['scheduling'] == 'pipeline' and dfg.parent:
-            self._tweak_loop_var_edges_for_pipeline(dfg)
-            self._tweak_port_edges_for_pipeline(dfg)
-        if region.head.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
-            self._add_seq_edges_for_ctrl_branch(dfg)
-        return dfg
-
-    def _add_source_node(self, node, dfg, usedef, blocks):
-        stm = node.tag
-        usevars = usedef.get_vars_used_at(stm)
-        if not usevars and isinstance(stm, MOVE):
-            dfg.src_nodes.add(node)
-            return
-        for v in usevars:
-            v_sym = qualified_symbols(v, self.scope)[-1]
-            assert isinstance(v_sym, Symbol)
-            if v_sym.is_param():
-                dfg.src_nodes.add(node)
-                return
-            if isinstance(v, ATTR) and v.head_name() == env.self_name:
-                dfg.src_nodes.add(node)
-                return
-            defstms = usedef.get_stms_defining(v_sym)
-            for defstm in defstms:
-                # this definition stm is in the out of the section
-                if defstm.block not in blocks:
-                    dfg.src_nodes.add(node)
-                    return
-
-        if self._is_constant_stm(stm):
-            logger.log(0, 'add src: $use const ' + str(stm))
-            dfg.src_nodes.add(node)
-            return
-
-        def has_mem_arg(args):
-            for _, a in args:
-                if isinstance(a, TEMP):
-                    a_sym = self.scope.find_sym(a.name)
-                    assert a_sym
-                    if a_sym.typ.is_list():
-                        return True
-            return False
-        call = None
-        if isinstance(stm, EXPR):
-            if isinstance(stm.exp, CALL) or isinstance(stm.exp, SYSCALL):
-                call = stm.exp
-        elif isinstance(stm, MOVE):
-            if isinstance(stm.src, CALL) or isinstance(stm.src, SYSCALL):
-                call = stm.src
-        if call:
-            if len(call.args) == 0 or has_mem_arg(call.args):
-                dfg.src_nodes.add(node)
-        if has_exclusive_function(stm, self.scope):
-            dfg.src_nodes.add(node)
-
-    def _add_defuse_edges(self, stm, usenode, dfg, usedef, blocks):
-        for v in usedef.get_vars_used_at(stm):
-            v_sym = qualified_symbols(v, self.scope)[-1]
-            assert isinstance(v_sym, Symbol)
-            usenode.uses.append(v_sym)
-            defstms = usedef.get_stms_defining(v_sym)
-            logger.log(0, v_sym.name + ' defstms ')
-            for defstm in defstms:
-                logger.log(0, str(defstm))
-
-                if stm is defstm:
-                    continue
-                if len(defstms) > 1 and (stm.program_order() <= defstm.program_order()):
-                    continue
-                # this definition stm is in the out of the section
-                if defstm.block not in blocks:
-                    continue
-                defnode = dfg.add_stm_node(defstm)
-                dfg.add_defuse_edge(defnode, usenode)
-
-    def _add_usedef_edges(self, stm, defnode, dfg, usedef, blocks):
-        for v in usedef.get_vars_defined_at(stm):
-            v_sym = qualified_symbols(v, self.scope)[-1]
-            assert isinstance(v_sym, Symbol)
-            defnode.defs.append(v_sym)
-            usestms = usedef.get_stms_using(v_sym)
-            for usestm in usestms:
-                if stm is usestm:
-                    continue
-                if stm.program_order() <= usestm.program_order():
-                    continue
-                # this definition stm is in the out of the section
-                if usestm.block is not stm.block:
-                    continue
-                usenode = dfg.add_stm_node(usestm)
-                dfg.add_usedef_edge(usenode, defnode)
-                visited = set()
-                if v_sym.typ.is_scalar() and not v_sym.is_induction():
-                    continue
-                self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
-
-    def _is_constant_stm(self, stm):
-        match stm:
-            case MOVE(src=CONST() | ARRAY() | CALL()):
-                return True
-            case MOVE(src=MREF(offset=CONST())):
-                return True
-            case MOVE(src=NEW()):
-                return True
-            case MOVE(src=SYSCALL(name='$new')):
-                return True
-            case EXPR(exp=CALL() | SYSCALL() as call):
-                return all(isinstance(a, CONST) for _, a in call.args)
-            case EXPR(exp=MSTORE(offset=CONST(), exp=CONST())):
-                return True
-            case CJUMP(exp=CONST()):
-                return True
-            case MCJUMP() as mcj:
-                if any(isinstance(c, CONST) for c in mcj.conds[:-1]):
-                    return True
-        return False
-
-    def _all_stms(self, blocks):
-        all_stms_in_section = []
-        for b in blocks:
-            all_stms_in_section.extend(b.stms)
-        return all_stms_in_section
-
-    def _node_order_by_ctrl(self, node):
-        return (node.tag.block.order, node.tag.block.num, node.tag.block.stms.index(node.tag))
-
-    def _add_mem_edges(self, dfg):
-        '''
-        add the memory-to-memory edges
-        if both of them are in the same block
-        '''
-        # grouping by memory
-        node_groups_by_mem_sym = defaultdict(list)
-        for node in dfg.nodes:
-            if isinstance(node.tag, MOVE):
-                mv = node.tag
-                if isinstance(mv.src, MREF):
-                    mem_sym = qualified_symbols(mv.src.mem, self.scope)[-1]
-                    node_groups_by_mem_sym[mem_sym].append(node)
-                elif isinstance(mv.src, CALL):
-                    for _, arg in mv.src.args:
-                        if isinstance(arg, TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
-                            node_groups_by_mem_sym[arg_sym].append(node)
-                else:
-                    assert isinstance(mv.dst, IRVariable)
-                    dst_sym = qualified_symbols(mv.dst, self.scope)[-1]
-                    assert isinstance(dst_sym, Symbol)
-                    if dst_sym.typ.is_seq():
-                        pass
-            elif isinstance(node.tag, EXPR):
-                expr = node.tag
-                if isinstance(expr.exp, CALL):
-                    for _, arg in expr.exp.args:
-                        if isinstance(arg, TEMP) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
-                            node_groups_by_mem_sym[arg_sym].append(node)
-                elif isinstance(expr.exp, MSTORE):
-                    mem_sym = qualified_symbols(expr.exp.mem, self.scope)[-1]
-                    assert isinstance(mem_sym, Symbol)
-                    node_groups_by_mem_sym[mem_sym].append(node)
-        parallelizer = RegArrayParallelizer(self.scope)
-        for mem_sym, nodes in node_groups_by_mem_sym.items():
-            if mem_sym.typ.is_tuple():
-                continue
-            node_groups_by_blk = defaultdict(list)
-            # grouping by block
-            for n in nodes:
-                node_groups_by_blk[n.tag.block].append(n)
-            for ns in node_groups_by_blk.values():
-                sorted_nodes = sorted(ns, key=self._node_order_by_ctrl)
-                for i in range(len(sorted_nodes) - 1):
-                    n1 = sorted_nodes[i]
-                    for k in range(i + 1, len(sorted_nodes)):
-                        n2 = sorted_nodes[k]
-                        if parallelizer.can_be_parallel(mem_sym, n1, n2):
-                            continue
-                        if n1.tag.is_mem_read():
-                            if n2.tag.is_mem_write():
-                                dfg.add_usedef_edge(n1, n2)
-                            continue
-                        if self.scope.has_branch_edge(n1.tag, n2.tag):
-                            continue
-                        dfg.add_seq_edge(n1, n2)
-
-                else:
-                    for i in range(len(sorted_nodes) - 1):
-                        n1 = sorted_nodes[i]
-                        for j in range(i + 1, len(sorted_nodes)):
-                            n2 = sorted_nodes[j]
-                            if self.scope.has_branch_edge(n1.tag, n2.tag):
-                                continue
-                            dfg.add_seq_edge(n1, n2)
-
-    def _add_edges_between_func_modules(self, blocks, dfg):
-        """this function is used for testbench only"""
-        all_stms_in_section = self._all_stms(blocks)
-        prev_node = None
-        for stm in all_stms_in_section:
-            node = None
-            if isinstance(stm, MOVE) and isinstance(stm.src, CALL):
-                callee_scope = stm.src.callee_scope
-                if callee_scope.is_function_module():
-                    node = dfg.add_stm_node(stm)
-            elif isinstance(stm, EXPR) and isinstance(stm.exp, CALL):
-                callee_scope = stm.exp.callee_scope
-                if callee_scope.is_function_module():
-                    node = dfg.add_stm_node(stm)
-            if node:
-                if prev_node:
-                    if prev_node.tag.block is node.tag.block:
-                        dfg.add_seq_edge(prev_node, node)
-                prev_node = node
-
-    def _add_seq_edges(self, blocks, dfg):
-        for blk in blocks:
-            prev_node = None
-            for stm in blk.stms:
-                node = dfg.add_stm_node(stm)
-                if prev_node:
-                    dfg.add_seq_edge(prev_node, node)
-                prev_node = node
-
-    def _is_same_block_node(self, n0, n1):
-        return n0.tag.block is n1.tag.block
-
-    def _get_mutable_object_symbol(self, stm):
-        if isinstance(stm, MOVE):
-            call = stm.src
-        elif isinstance(stm, EXPR):
-            call = stm.exp
-        else:
-            return None
-        if not isinstance(call, CALL):
-            return None
-        if not isinstance(call.func, ATTR):
-            return None
-        qsyms = qualified_symbols(call.func, self.scope)
-        receiver = qsyms[-2]
-        assert isinstance(receiver, Symbol)
-        if receiver.typ.is_object() or receiver.typ.is_port():
-            callee_scope = call.get_callee_scope(self.scope)
-            if callee_scope.is_mutable():
-                return receiver
-        return None
-
-    def _add_seq_edges_for_object(self, blocks, dfg):
-        for block in blocks:
-            prevs = {}
-            for stm in block.stms:
-                sym = self._get_mutable_object_symbol(stm)
-                if not sym:
-                    continue
-                node = dfg.add_stm_node(stm)
-                if sym in prevs:
-                    prev = prevs[sym]
-                    if self._is_same_block_node(prev, node):
-                        if prev.tag.block is node.tag.block:
-                            dfg.add_seq_edge(prev, node)
-                prevs[sym] = node
-
-    # workaround
-    def _add_seq_edges_for_ctrl_branch(self, dfg):
-        for node in dfg.nodes:
-            stm = node.tag
-            if isinstance(stm, (JUMP, CJUMP, MCJUMP)):
-                #assert len(stm.block.stms) > 1
-                assert stm.block.stms[-1] is stm
-                for prev_stm in stm.block.stms[:-1]:
-                    prev_node = dfg.find_node(prev_stm)
-                    dfg.add_seq_edge(prev_node, node)
-
-    def _add_seq_edges_for_function(self, blocks, dfg):
-        '''make sequence edges between functions that are executed in an exclusive state'''
-        for block in blocks:
-            seq_func_node = None
-            for stm in block.stms:
-                if isinstance(stm, (JUMP, CJUMP, MCJUMP)):
-                    continue
-                node = dfg.find_node(stm)
-                if seq_func_node:
-                    if self.scope.has_branch_edge(seq_func_node.tag, node.tag):
-                        continue
-                    if not has_exclusive_function(stm, self.scope):
-                        continue
-                    dfg.add_seq_edge(seq_func_node, node)
-                if has_exclusive_function(stm, self.scope):
-                    seq_func_node = node
-            seq_func_node = None
-            for stm in reversed(block.stms):
-                if isinstance(stm, (JUMP, CJUMP, MCJUMP)):
-                    continue
-                node = dfg.find_node(stm)
-                if seq_func_node:
-                    if self.scope.has_branch_edge(node.tag, seq_func_node.tag):
-                        continue
-                    if not has_exclusive_function(stm, self.scope):
-                        continue
-                    dfg.add_seq_edge(node, seq_func_node)
-                if has_exclusive_function(stm, self.scope):
-                    seq_func_node = node
-
-    def _add_seq_edges_for_io(self, blocks, dfg):
-        '''make sequence edges between ports'''
-        for block in blocks:
-            port_node = None
-            for stm in block.stms:
-                if isinstance(stm, MOVE):
-                    call = stm.src
-                elif isinstance(stm, EXPR):
-                    call = stm.exp
-                else:
-                    continue
-                if is_port_method_call(call, self.scope):
-                    node = dfg.find_node(stm)
-                    if port_node:
-                        dfg.add_seq_edge(port_node, node)
-                    port_node = node
-
-    def _add_seq_edges_for_timed(self, blocks, dfg):
-        for block in blocks:
-            if block.synth_params['scheduling'] != 'timed':
-                continue
-            prev_clksleep_node = None
-            other_nodes = []
-            for stm in block.stms:
-                node = dfg.find_node(stm)
-                if has_clkfence(stm):
-                    for n in other_nodes:
-                        dfg.add_seq_edge(n, node)
-                    if prev_clksleep_node:
-                        dfg.add_seq_edge(prev_clksleep_node, node)
-                    other_nodes.clear()
-                    prev_clksleep_node = node
-                else:
-                    other_nodes.append(node)
-                    if prev_clksleep_node:
-                        dfg.add_seq_edge(prev_clksleep_node, node)
-
-    def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef, visited):
-        if (usenode, defnode) in visited:
-            return
-        visited.add((usenode, defnode))
-        stm = usenode.tag
-        if isinstance(stm, MOVE):
-            var = stm.dst
-        elif isinstance(stm, PHIBase):
-            var = stm.var
-        else:
-            return
-        var_sym = qualified_symbols(var, self.scope)[-1]
-        assert isinstance(var_sym, Symbol)
-        if not var_sym.is_alias():
-            return
-        for u in usedef.get_stms_using(var_sym):
-            if u is defnode.tag:
-                continue
-            if defnode.tag.program_order() <= u.program_order():
-                continue
-            if u.block is not defnode.tag.block:
-                continue
-            unode = dfg.add_stm_node(u)
-            if has_exclusive_function(u, self.scope):
-                dfg.add_seq_edge(unode, defnode)
-            elif unode.tag.is_mem_read() or unode.tag.is_mem_write():
-                dfg.add_usedef_edge(unode, defnode)
-            else:
-                dfg.add_usedef_edge(unode, defnode)
-            self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef, visited)
-
-    def _remove_alias_cycle(self, dfg):
-        backs = []
-        for (n1, n2), (_, back) in dfg.edges.items():
-            if back and isinstance(n1.tag, (MOVE, PHIBase)):
-                match n1.tag:
-                    case MOVE():
-                        var_sym = qualified_symbols(n1.tag.dst, self.scope)[-1]
-                    case PHIBase():
-                        var_sym = qualified_symbols(n1.tag.var, self.scope)[-1]
-                assert isinstance(var_sym, Symbol)
-                if var_sym.is_alias():
-                    backs.append((n1, n2))
-        dones = set()
-        for end, start in backs:
-            if end in dones:
-                continue
-            self._remove_alias_cycle_rec(dfg, start, end, dones)
-
-    def _remove_alias_cycle_rec(self, dfg, node, end, dones):
-        if node is end:
-            if end not in dones and end.defs[0].is_alias():
-                end.defs[0].del_tag('alias')
-                dones.add(end)
-            return
-        if isinstance(node.tag, (MOVE, PHIBase)) and node.defs[0].is_alias():
-            var = node.tag.dst if isinstance(node.tag, MOVE) else node.tag.var
-            var_sym = qualified_symbols(var, self.scope)[-1]
-            assert isinstance(var_sym, Symbol)
-            if var_sym.is_alias():
-                succs = dfg.succs_typ_without_back(node, 'DefUse')
-                for s in succs:
-                    self._remove_alias_cycle_rec(dfg, s, end, dones)
-
-    def _tweak_loop_var_edges_for_pipeline(self, dfg):
-        def remove_seq_pred(node, visited):
-            if node in visited:
-                return
-            visited.add(node)
-            for seq_pred in dfg.preds_typ(node, 'Seq'):
-                dfg.remove_edge(seq_pred, node)
-            for defnode in dfg.preds_typ(node, 'DefUse'):
-                remove_seq_pred(defnode, visited)
-        for node in dfg.nodes:
-            stm = node.tag
-            if isinstance(stm, MOVE) and (sym := qualified_symbols(stm.dst, self.scope)[-1]) and sym.is_induction():
-                remove_seq_pred(node, set())
-
-    def _get_port_sym_from_node(self, node):
-        stm = node.tag
-        if isinstance(stm, MOVE):
-            call = stm.src
-        elif isinstance(stm, EXPR):
-            call = stm.exp
-        else:
-            return None
-        if not is_port_method_call(call, self.scope):
-            return None
-        return call.func.tail()
-
-    def _tweak_port_edges_for_pipeline(self, dfg):
-        def remove_port_seq_pred(node, port):
-            for seq_pred in dfg.preds_typ(node, 'Seq'):
-                pred = self._get_port_sym_from_node(seq_pred)
-                if pred is None:  # or pred is not port:
-                    dfg.remove_edge(seq_pred, node)
-            for seq_succ in dfg.succs_typ(node, 'Seq'):
-                succ = self._get_port_sym_from_node(seq_succ)
-                if succ is None:  # or succ is not port:
-                    dfg.remove_edge(node, seq_succ)
-
-        for node in dfg.nodes:
-            p = self._get_port_sym_from_node(node)
-            if not p:
-                continue
-            remove_port_seq_pred(node, p)
 
 
 class RegArrayParallelizer(object):
@@ -1001,3 +509,565 @@ class RegArrayParallelizer(object):
             if len(offs2_defstms) == 1 and len(offs1_defstms) == 1:
                 return self._has_same_var_and_difference(offs2_stm, offs1_stm)
         return False
+
+
+# --- Type dispatchers ---
+
+def _is_move(stm):
+    return isinstance(stm, (MOVE, Move))
+
+
+def _is_expr(stm):
+    return isinstance(stm, (EXPR, Expr))
+
+
+def _is_const(ir):
+    return isinstance(ir, (CONST, Const))
+
+
+def _is_temp(ir):
+    return isinstance(ir, (TEMP, Temp))
+
+
+def _is_attr(ir):
+    return isinstance(ir, (ATTR, Attr))
+
+
+def _is_call(ir):
+    return isinstance(ir, (CALL, Call))
+
+
+def _is_syscall(ir):
+    return isinstance(ir, (SYSCALL, SysCall))
+
+
+def _is_new(ir):
+    return isinstance(ir, (NEW, New))
+
+
+def _is_array(ir):
+    return isinstance(ir, (ARRAY, Array))
+
+
+def _is_mref(ir):
+    return isinstance(ir, (MREF, MRef))
+
+
+def _is_mstore(ir):
+    return isinstance(ir, (MSTORE, MStore))
+
+
+def _is_jump(stm):
+    return isinstance(stm, (JUMP, Jump))
+
+
+def _is_cjump(stm):
+    return isinstance(stm, (CJUMP, CJump))
+
+
+def _is_mcjump(stm):
+    return isinstance(stm, (MCJUMP, MCJump))
+
+
+def _is_ctrl_stm(stm):
+    return _is_jump(stm) or _is_cjump(stm) or _is_mcjump(stm)
+
+
+def _is_phi(stm):
+    return isinstance(stm, (PHIBase, Phi, UPhi))
+
+
+def _is_mstm(stm):
+    return isinstance(stm, (MSTM, MStm))
+
+
+def _expand_stms(stms):
+    """Expand MStm into child Moves for DFG node creation."""
+    result = []
+    for stm in stms:
+        if _is_mstm(stm):
+            result.extend(stm.stms)
+        else:
+            result.append(stm)
+    return result
+
+
+def _is_variable(ir):
+    return isinstance(ir, IRVariable)
+
+
+def _qualified_symbols(var, scope):
+    return qualified_symbols(var, scope)
+
+
+def _has_exclusive_function(stm, scope):
+    return has_exclusive_function(stm, scope)
+
+
+def _has_clkfence(stm):
+    return has_clkfence(stm)
+
+
+def _is_port_method_call(call, scope):
+    return is_port_method_call(call, scope)
+
+
+def _head_name(ir):
+    if isinstance(ir, (ATTR, Attr)):
+        return ir.head_name()
+    return ''
+
+
+def _is_mem_read(stm):
+    return _is_move(stm) and _is_mref(stm.src)
+
+
+def _is_mem_write(stm):
+    return _is_expr(stm) and _is_mstore(stm.exp)
+
+
+def _program_order(stm):
+    return (stm.block.order, _find_stm_index(stm))
+
+
+class NewDFGBuilder(object):
+    """Build Data Flow Graphs."""
+
+    def __init__(self):
+        pass
+
+    def process(self, scope):
+        self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
+        self.scope.top_dfg = self._process(scope.top_region(), None)
+
+    def _process(self, region, parent_dfg):
+        dfg = self._make_graph(parent_dfg, region)
+        for c in self.scope.loop_tree.get_children_of(region):
+            self._process(c, dfg)
+        return dfg
+
+    def _make_graph(self, parent_dfg, region):
+        logger.debug('make graph ' + region.name)
+        dfg = DataFlowGraph(self.scope, region.name, parent_dfg, region)
+        usedef = self.usedef
+
+        blocks = region.blocks()
+        for b in blocks:
+            for stm in _expand_stms(b.stms):
+                logger.log(0, 'loop head ' + region.name + ' :: ' + str(stm))
+                usenode = dfg.add_stm_node(stm)
+                self._add_source_node(usenode, dfg, usedef, blocks)
+                self._add_defuse_edges(stm, usenode, dfg, usedef, blocks)
+                self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)
+        if region.head.synth_params['scheduling'] == 'sequential':
+            self._add_seq_edges(blocks, dfg)
+        self._add_seq_edges_for_object(blocks, dfg)
+        self._add_seq_edges_for_function(blocks, dfg)
+        self._add_seq_edges_for_timed(blocks, dfg)
+        self._add_mem_edges(dfg)
+        self._remove_alias_cycle(dfg)
+        if region.head.synth_params['scheduling'] == 'pipeline' and dfg.parent:
+            self._tweak_loop_var_edges_for_pipeline(dfg)
+            self._tweak_port_edges_for_pipeline(dfg)
+        if region.head.synth_params['scheduling'] != 'pipeline' or not dfg.parent:
+            self._add_seq_edges_for_ctrl_branch(dfg)
+        return dfg
+
+    def _add_source_node(self, node, dfg, usedef, blocks):
+        stm = node.tag
+        usevars = usedef.get_vars_used_at(stm)
+        if not usevars and _is_move(stm):
+            dfg.src_nodes.add(node)
+            return
+        for v in usevars:
+            v_sym = _qualified_symbols(v, self.scope)[-1]
+            assert isinstance(v_sym, Symbol)
+            if v_sym.is_param():
+                dfg.src_nodes.add(node)
+                return
+            if _is_attr(v) and _head_name(v) == env.self_name:
+                dfg.src_nodes.add(node)
+                return
+            defstms = usedef.get_stms_defining(v_sym)
+            for defstm in defstms:
+                if defstm.block not in blocks:
+                    dfg.src_nodes.add(node)
+                    return
+
+        if self._is_constant_stm(stm):
+            logger.log(0, 'add src: $use const ' + str(stm))
+            dfg.src_nodes.add(node)
+            return
+
+        def has_mem_arg(args):
+            for _, a in args:
+                if _is_temp(a):
+                    a_sym = self.scope.find_sym(a.name)
+                    assert a_sym
+                    if a_sym.typ.is_list():
+                        return True
+            return False
+
+        call = None
+        if _is_expr(stm):
+            if _is_call(stm.exp) or _is_syscall(stm.exp):
+                call = stm.exp
+        elif _is_move(stm):
+            if _is_call(stm.src) or _is_syscall(stm.src):
+                call = stm.src
+        if call:
+            if len(call.args) == 0 or has_mem_arg(call.args):
+                dfg.src_nodes.add(node)
+        if _has_exclusive_function(stm, self.scope):
+            dfg.src_nodes.add(node)
+
+    def _add_defuse_edges(self, stm, usenode, dfg, usedef, blocks):
+        for v in usedef.get_vars_used_at(stm):
+            v_sym = _qualified_symbols(v, self.scope)[-1]
+            assert isinstance(v_sym, Symbol)
+            usenode.uses.append(v_sym)
+            defstms = usedef.get_stms_defining(v_sym)
+            for defstm in defstms:
+                if stm is defstm:
+                    continue
+                if len(defstms) > 1 and (_program_order(stm) <= _program_order(defstm)):
+                    continue
+                if defstm.block not in blocks:
+                    continue
+                defnode = dfg.add_stm_node(defstm)
+                dfg.add_defuse_edge(defnode, usenode)
+
+    def _add_usedef_edges(self, stm, defnode, dfg, usedef, blocks):
+        for v in usedef.get_vars_defined_at(stm):
+            v_sym = _qualified_symbols(v, self.scope)[-1]
+            assert isinstance(v_sym, Symbol)
+            defnode.defs.append(v_sym)
+            usestms = usedef.get_stms_using(v_sym)
+            for usestm in usestms:
+                if stm is usestm:
+                    continue
+                if _program_order(stm) <= _program_order(usestm):
+                    continue
+                if usestm.block is not stm.block:
+                    continue
+                usenode = dfg.add_stm_node(usestm)
+                dfg.add_usedef_edge(usenode, defnode)
+                visited = set()
+                if v_sym.typ.is_scalar() and not v_sym.is_induction():
+                    continue
+                self._add_usedef_edges_for_alias(dfg, usenode, defnode, usedef, visited)
+
+    def _is_constant_stm(self, stm):
+        if _is_move(stm):
+            src = stm.src
+            if _is_const(src) or _is_array(src) or _is_call(src):
+                return True
+            if _is_mref(src) and _is_const(src.offset):
+                return True
+            if _is_new(src):
+                return True
+            if _is_syscall(src) and src.name == '$new':
+                return True
+        elif _is_expr(stm):
+            exp = stm.exp
+            if _is_call(exp) or _is_syscall(exp):
+                return all(_is_const(a) for _, a in exp.args)
+            if _is_mstore(exp) and _is_const(exp.offset) and _is_const(exp.exp):
+                return True
+        elif _is_cjump(stm):
+            return _is_const(stm.exp)
+        elif _is_mcjump(stm):
+            if any(_is_const(c) for c in stm.conds[:-1]):
+                return True
+        return False
+
+    def _node_order_by_ctrl(self, node):
+        stm = node.tag
+        return (stm.block.order, stm.block.num, _find_stm_index(stm))
+
+    def _add_mem_edges(self, dfg):
+        node_groups_by_mem_sym = defaultdict(list)
+        for node in dfg.nodes:
+            stm = node.tag
+            if _is_move(stm):
+                mv = stm
+                if _is_mref(mv.src):
+                    mem_sym = _qualified_symbols(mv.src.mem, self.scope)[-1]
+                    node_groups_by_mem_sym[mem_sym].append(node)
+                elif _is_call(mv.src):
+                    for _, arg in mv.src.args:
+                        if _is_temp(arg) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
+                            node_groups_by_mem_sym[arg_sym].append(node)
+                else:
+                    assert _is_variable(mv.dst)
+                    dst_sym = _qualified_symbols(mv.dst, self.scope)[-1]
+                    assert isinstance(dst_sym, Symbol)
+                    if dst_sym.typ.is_seq():
+                        pass
+            elif _is_expr(stm):
+                expr = stm
+                if _is_call(expr.exp):
+                    for _, arg in expr.exp.args:
+                        if _is_temp(arg) and (arg_sym := self.scope.find_sym(arg.name)) and arg_sym.typ.is_list():
+                            node_groups_by_mem_sym[arg_sym].append(node)
+                elif _is_mstore(expr.exp):
+                    mem_sym = _qualified_symbols(expr.exp.mem, self.scope)[-1]
+                    assert isinstance(mem_sym, Symbol)
+                    node_groups_by_mem_sym[mem_sym].append(node)
+        parallelizer = RegArrayParallelizer(self.scope)
+        for mem_sym, nodes in node_groups_by_mem_sym.items():
+            if mem_sym.typ.is_tuple():
+                continue
+            node_groups_by_blk = defaultdict(list)
+            for n in nodes:
+                node_groups_by_blk[n.tag.block].append(n)
+            for ns in node_groups_by_blk.values():
+                sorted_nodes = sorted(ns, key=self._node_order_by_ctrl)
+                for i in range(len(sorted_nodes) - 1):
+                    n1 = sorted_nodes[i]
+                    for k in range(i + 1, len(sorted_nodes)):
+                        n2 = sorted_nodes[k]
+                        if parallelizer.can_be_parallel(mem_sym, n1, n2):
+                            continue
+                        if _is_mem_read(n1.tag):
+                            if _is_mem_write(n2.tag):
+                                dfg.add_usedef_edge(n1, n2)
+                            continue
+                        if self.scope.has_branch_edge(n1.tag, n2.tag):
+                            continue
+                        dfg.add_seq_edge(n1, n2)
+                else:
+                    for i in range(len(sorted_nodes) - 1):
+                        n1 = sorted_nodes[i]
+                        for j in range(i + 1, len(sorted_nodes)):
+                            n2 = sorted_nodes[j]
+                            if self.scope.has_branch_edge(n1.tag, n2.tag):
+                                continue
+                            dfg.add_seq_edge(n1, n2)
+
+    def _add_seq_edges(self, blocks, dfg):
+        for blk in blocks:
+            prev_node = None
+            for stm in _expand_stms(blk.stms):
+                node = dfg.find_node(stm)
+                if not node:
+                    continue
+                if prev_node:
+                    dfg.add_seq_edge(prev_node, node)
+                prev_node = node
+
+    def _is_same_block_node(self, n0, n1):
+        return n0.tag.block is n1.tag.block
+
+    def _get_mutable_object_symbol(self, stm):
+        if _is_move(stm):
+            call = stm.src
+        elif _is_expr(stm):
+            call = stm.exp
+        else:
+            return None
+        if not _is_call(call):
+            return None
+        func = call.func
+        if not _is_attr(func):
+            return None
+        qsyms = _qualified_symbols(func, self.scope)
+        receiver = qsyms[-2]
+        assert isinstance(receiver, Symbol)
+        if receiver.typ.is_object() or receiver.typ.is_port():
+            callee_scope = call.get_callee_scope(self.scope)
+            if callee_scope.is_mutable():
+                return receiver
+        return None
+
+    def _add_seq_edges_for_object(self, blocks, dfg):
+        for block in blocks:
+            prevs = {}
+            for stm in _expand_stms(block.stms):
+                sym = self._get_mutable_object_symbol(stm)
+                if not sym:
+                    continue
+                node = dfg.add_stm_node(stm)
+                if sym in prevs:
+                    prev = prevs[sym]
+                    if self._is_same_block_node(prev, node):
+                        if prev.tag.block is node.tag.block:
+                            dfg.add_seq_edge(prev, node)
+                prevs[sym] = node
+
+    def _add_seq_edges_for_ctrl_branch(self, dfg):
+        for node in dfg.nodes:
+            stm = node.tag
+            if _is_ctrl_stm(stm):
+                assert stm.block.stms[-1] is stm
+                for prev_stm in _expand_stms(stm.block.stms[:-1]):
+                    prev_node = dfg.find_node(prev_stm)
+                    if prev_node:
+                        dfg.add_seq_edge(prev_node, node)
+
+    def _add_seq_edges_for_function(self, blocks, dfg):
+        for block in blocks:
+            seq_func_node = None
+            for stm in _expand_stms(block.stms):
+                if _is_ctrl_stm(stm):
+                    continue
+                node = dfg.find_node(stm)
+                if not node:
+                    continue
+                if seq_func_node:
+                    if self.scope.has_branch_edge(seq_func_node.tag, node.tag):
+                        continue
+                    if not _has_exclusive_function(stm, self.scope):
+                        continue
+                    dfg.add_seq_edge(seq_func_node, node)
+                if _has_exclusive_function(stm, self.scope):
+                    seq_func_node = node
+            seq_func_node = None
+            for stm in reversed(_expand_stms(block.stms)):
+                if _is_ctrl_stm(stm):
+                    continue
+                node = dfg.find_node(stm)
+                if not node:
+                    continue
+                if seq_func_node:
+                    if self.scope.has_branch_edge(node.tag, seq_func_node.tag):
+                        continue
+                    if not _has_exclusive_function(stm, self.scope):
+                        continue
+                    dfg.add_seq_edge(node, seq_func_node)
+                if _has_exclusive_function(stm, self.scope):
+                    seq_func_node = node
+
+    def _add_seq_edges_for_timed(self, blocks, dfg):
+        for block in blocks:
+            if block.synth_params['scheduling'] != 'timed':
+                continue
+            prev_clksleep_node = None
+            other_nodes = []
+            for stm in _expand_stms(block.stms):
+                node = dfg.find_node(stm)
+                if not node:
+                    continue
+                if _has_clkfence(stm):
+                    for n in other_nodes:
+                        dfg.add_seq_edge(n, node)
+                    if prev_clksleep_node:
+                        dfg.add_seq_edge(prev_clksleep_node, node)
+                    other_nodes.clear()
+                    prev_clksleep_node = node
+                else:
+                    other_nodes.append(node)
+                    if prev_clksleep_node:
+                        dfg.add_seq_edge(prev_clksleep_node, node)
+
+    def _add_usedef_edges_for_alias(self, dfg, usenode, defnode, usedef, visited):
+        if (usenode, defnode) in visited:
+            return
+        visited.add((usenode, defnode))
+        stm = usenode.tag
+        if _is_move(stm):
+            var = stm.dst
+        elif _is_phi(stm):
+            var = stm.var
+        else:
+            return
+        var_sym = _qualified_symbols(var, self.scope)[-1]
+        assert isinstance(var_sym, Symbol)
+        if not var_sym.is_alias():
+            return
+        for u in usedef.get_stms_using(var_sym):
+            if u is defnode.tag:
+                continue
+            if _program_order(defnode.tag) <= _program_order(u):
+                continue
+            if u.block is not defnode.tag.block:
+                continue
+            unode = dfg.add_stm_node(u)
+            if _has_exclusive_function(u, self.scope):
+                dfg.add_seq_edge(unode, defnode)
+            elif _is_mem_read(u) or _is_mem_write(u):
+                dfg.add_usedef_edge(unode, defnode)
+            else:
+                dfg.add_usedef_edge(unode, defnode)
+            self._add_usedef_edges_for_alias(dfg, unode, defnode, usedef, visited)
+
+    def _remove_alias_cycle(self, dfg):
+        backs = []
+        for (n1, n2), (_, back) in dfg.edges.items():
+            if back and (_is_move(n1.tag) or _is_phi(n1.tag)):
+                if _is_move(n1.tag):
+                    var_sym = _qualified_symbols(n1.tag.dst, self.scope)[-1]
+                elif _is_phi(n1.tag):
+                    var_sym = _qualified_symbols(n1.tag.var, self.scope)[-1]
+                assert isinstance(var_sym, Symbol)
+                if var_sym.is_alias():
+                    backs.append((n1, n2))
+        dones = set()
+        for end, start in backs:
+            if end in dones:
+                continue
+            self._remove_alias_cycle_rec(dfg, start, end, dones)
+
+    def _remove_alias_cycle_rec(self, dfg, node, end, dones):
+        if node is end:
+            if end not in dones and end.defs[0].is_alias():
+                end.defs[0].del_tag('alias')
+                dones.add(end)
+            return
+        if (_is_move(node.tag) or _is_phi(node.tag)) and node.defs[0].is_alias():
+            var = node.tag.dst if _is_move(node.tag) else node.tag.var
+            var_sym = _qualified_symbols(var, self.scope)[-1]
+            assert isinstance(var_sym, Symbol)
+            if var_sym.is_alias():
+                succs = dfg.succs_typ_without_back(node, 'DefUse')
+                for s in succs:
+                    self._remove_alias_cycle_rec(dfg, s, end, dones)
+
+    def _tweak_loop_var_edges_for_pipeline(self, dfg):
+        def remove_seq_pred(node, visited):
+            if node in visited:
+                return
+            visited.add(node)
+            for seq_pred in dfg.preds_typ(node, 'Seq'):
+                dfg.remove_edge(seq_pred, node)
+            for defnode in dfg.preds_typ(node, 'DefUse'):
+                remove_seq_pred(defnode, visited)
+        for node in dfg.nodes:
+            stm = node.tag
+            if _is_move(stm):
+                sym = _qualified_symbols(stm.dst, self.scope)[-1]
+                if isinstance(sym, Symbol) and sym.is_induction():
+                    remove_seq_pred(node, set())
+
+    def _get_port_sym_from_node(self, node):
+        stm = node.tag
+        if _is_move(stm):
+            call = stm.src
+        elif _is_expr(stm):
+            call = stm.exp
+        else:
+            return None
+        if not _is_port_method_call(call, self.scope):
+            return None
+        func = call.func
+        if isinstance(func, (ATTR, Attr)):
+            return func.tail_name()
+        return None
+
+    def _tweak_port_edges_for_pipeline(self, dfg):
+        def remove_port_seq_pred(node, port):
+            for seq_pred in dfg.preds_typ(node, 'Seq'):
+                pred = self._get_port_sym_from_node(seq_pred)
+                if pred is None:
+                    dfg.remove_edge(seq_pred, node)
+            for seq_succ in dfg.succs_typ(node, 'Seq'):
+                succ = self._get_port_sym_from_node(seq_succ)
+                if succ is None:
+                    dfg.remove_edge(node, seq_succ)
+
+        for node in dfg.nodes:
+            p = self._get_port_sym_from_node(node)
+            if not p:
+                continue
+            remove_port_seq_pred(node, p)

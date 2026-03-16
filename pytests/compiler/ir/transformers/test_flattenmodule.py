@@ -2,12 +2,13 @@ from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
 from polyphony.compiler.ir.irreader import IRReader as IRParser
-from polyphony.compiler.ir.transformers.inlineopt import FlattenModule
+from polyphony.compiler.ir.transformers.inlineopt import NewFlattenModule
 from polyphony.compiler.ir.builtin import builtin_symbols
 from pytests.compiler.base import setup_test, install_builtins
 from pytests.compiler.base import lib_source_polyphony
 from pytests.compiler.base import lib_source_polyphony_io
 import pytest
+
 
 def test_flatten_worker():
     setup_test(with_global=False)
@@ -65,7 +66,7 @@ def test_flatten_worker():
     install_builtins(top)
 
     m_ctor = env.scopes['@top.M.__init__']
-    scopes = FlattenModule().process(m_ctor)
+    scopes = NewFlattenModule().process(m_ctor)
 
     blk = m_ctor.entry_block
     assert len(blk.stms) == 3
@@ -130,7 +131,7 @@ def test_flatten_assign_method():
     install_builtins(top)
 
     m_ctor = env.scopes['@top.M.__init__']
-    scopes = FlattenModule().process(m_ctor)
+    scopes = NewFlattenModule().process(m_ctor)
 
     blk = m_ctor.entry_block
     assert len(blk.stms) == 2
@@ -144,5 +145,3 @@ def test_flatten_assign_method():
     assert len(blk.stms) == 2
     assert blk.stms[0] == MOVE(_v('@return'), MREF(_v('self.n.mem'), _v('self.n.addr')))
     assert blk.stms[1] == RET(_v('@return'))
-
-

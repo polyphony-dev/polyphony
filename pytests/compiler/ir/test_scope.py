@@ -1,12 +1,20 @@
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
+from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser, ir_stm
+from polyphony.compiler.ir.irwriter import IRWriter
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.types.type import Type
 from pytests.compiler.base import setup_test, install_builtins
 import pytest
+
+_writer = IRWriter()
+
+def _stm_text(stm):
+    """Format a statement (old or new IR) to text for comparison."""
+    return _writer.write_stm(stm)
 
 
 def test_Scope_find_sym():
@@ -126,17 +134,19 @@ def test_clone_function():
         next(gen)
     assert blk1.scope is f_clone
     assert blk2.scope is f_clone
-    assert blk1.stms[0] == MOVE(_v('a'), _v('@in_a'))
-    assert blk1.stms[1] == MOVE(_v('x'), CALL(_v('g'), [('', _v('a'))], {}))
-    assert blk1.stms[2] == JUMP(blk2)
-    assert blk2.stms[0] == MOVE(_v('@return'), _v('x'))
-    assert blk2.stms[1] == RET(_v('@return'))
+    assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
+    assert _stm_text(blk1.stms[1]) == 'mv x (call g a)'
+    assert isinstance(blk1.stms[2], (JUMP, new.Jump))
+    assert blk1.stms[2].target is blk2
+    assert _stm_text(blk2.stms[0]) == 'mv @return x'
+    assert _stm_text(blk2.stms[1]) == 'ret @return'
 
-    blk1.stms[1] = MOVE(_v('x'), CALL(_v('g'), [('', CONST(1))], {}))
+    # Mutating the clone should not affect the original
+    blk1.stms[1] = new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE), src=new.Call(func=new.Temp(name='g'), args=[('', new.Const(value=1))]), block=blk1)
 
     gen = f.traverse_blocks()
     blk1_orig = next(gen)
-    assert blk1_orig.stms[1] == MOVE(_v('x'), CALL(_v('g'), [('', _v('a'))], {}))
+    assert _stm_text(blk1_orig.stms[1]) == 'mv x (call g a)'
 
 
 def test_recursive_clone():
@@ -196,12 +206,13 @@ def test_recursive_clone():
     gen = f_clone.traverse_blocks()
     blk1 = next(gen)
     blk2 = next(gen)
-    assert blk1.stms[0] == MOVE(_v('a'), _v('@in_a'))
-    assert blk1.stms[1] == MOVE(_v('x'), CALL(_v('cloned_g_cloned'), [('', _v('a'))], {}))
-    assert blk1.stms[2] == JUMP(blk2)
+    assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
+    assert _stm_text(blk1.stms[1]) == 'mv x (call cloned_g_cloned a)'
+    assert isinstance(blk1.stms[2], (JUMP, new.Jump))
+    assert blk1.stms[2].target is blk2
 
-    assert blk2.stms[0] == MOVE(_v('@return'), _v('x'))
-    assert blk2.stms[1] == RET(_v('@return'))
+    assert _stm_text(blk2.stms[0]) == 'mv @return x'
+    assert _stm_text(blk2.stms[1]) == 'ret @return'
 
 def test_legb():
     setup_test(with_global=False)

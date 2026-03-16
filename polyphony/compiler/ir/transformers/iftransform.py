@@ -1,17 +1,22 @@
-﻿from ..ir import *
+"""If transformers using new IR (ir.py).
+
+NewIfTransformer: Merges chained if-elif-else (CJUMP chains) into MCJUMP.
+NewIfCondTransformer: Converts MCJUMP conditions to mutually exclusive form.
+"""
+from ..ir import Const, Temp, UnOp, RelOp, Move, CJump, MCJump, Ctx
 from ..types.type import Type
-from ...common.graph import Graph
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class IfTransformer(object):
+class NewIfTransformer(object):
     def process(self, scope):
         for blk in scope.traverse_blocks():
             self._process_block(blk)
 
     def _merge_else_cj(self, cj, conds, targets):
-        if len(cj.false.stms) == 1 and isinstance(cj.false.stms[0], CJUMP):
+        """Recursively merge chained else-if CJUMPs into a flat conds/targets list."""
+        if len(cj.false.stms) == 1 and isinstance(cj.false.stms[0], CJump):
             else_cj = cj.false.stms[0]
             cj.false.succs = []
             cj.false.preds = []
@@ -20,79 +25,90 @@ class IfTransformer(object):
             conds.append(else_cj.exp)
             targets.append(else_cj.true)
             if not self._merge_else_cj(else_cj, conds, targets):
-                conds.append(CONST(1))
+                conds.append(Const(value=1))
                 targets.append(else_cj.false)
             return True
         return False
 
     def _process_block(self, block):
-        if block.stms and isinstance(block.stms[-1], CJUMP):
-            conds = []
-            targets = []
-            cj = block.stms[-1]
-            conds.append(cj.exp)
-            targets.append(cj.true)
-            if self._merge_else_cj(cj, conds, targets):
-                block.stms.pop()
-                mj = MCJUMP(conds, targets, cj.loc)
-                block.append_stm(mj)
-                block.succs = []
-                for target in targets:
-                    target.preds = [block]
-                    block.succs.append(target)
-                    logger.debug('target.block ' + target.name)
-                logger.debug(mj)
+        if not block.stms:
+            return
+        last = block.stms[-1]
+        if not isinstance(last, CJump):
+            return
 
-class IfCondTransformer(object):
+        conds = []
+        targets = []
+        cj = last
+        conds.append(cj.exp)
+        targets.append(cj.true)
+        if self._merge_else_cj(cj, conds, targets):
+            block.stms.pop()
+            mj = MCJump(conds=conds, targets=targets, loc=cj.loc, block=block)
+            block.stms.append(mj)
+            block.succs = []
+            for target in targets:
+                target.preds = [block]
+                block.succs.append(target)
+                logger.debug('target.block ' + target.name)
+            logger.debug(str(mj))
+
+
+class NewIfCondTransformer(object):
+    """Converts MCJUMP conditions to mutually exclusive form.
+
+    if p0:   ...          =>  if p0:   ...
+    elif p1: ...              if !p0 and p1: ...
+    elif p2: ...              if !p0 and !p1 and p2: ...
+    else:    ...              if !p0 and !p1 and !p2: ...
+    """
     def process(self, scope):
         self.scope = scope
         for blk in scope.traverse_blocks():
             self._process_block(blk)
 
     def _process_block(self, block):
-        if block.stms and isinstance(block.stms[-1], MCJUMP):
-            # if-elif-else conditions are converted as follows
-            #
-            # if p0:   ...
-            # elif p1: ...
-            # elif p2: ...
-            # else:    ...
-            #
-            # if p0:   ...
-            # if !p0 and p1: ...
-            # if !p0 and !p1 and p2: ...
-            # if !p0 and !p1 and !p2: ...
-            mj = block.stms[-1]
-            for c in mj.conds:
-                assert isinstance(c, TEMP) or isinstance(c, CONST)
-            prevs = []
-            new_cond_exps = []
-            for c in mj.conds:
-                new_c = None
-                for prev_c in prevs:
-                    if new_c:
-                        new_c = RELOP('And', new_c, UNOP('Not', prev_c))
-                    else:
-                        new_c = UNOP('Not', prev_c)
+        if not block.stms:
+            return
+        last = block.stms[-1]
+        if not isinstance(last, MCJump):
+            return
+        mj = last
+        for c in mj.conds:
+            assert isinstance(c, (Temp, Const))
+        prevs = []
+        new_cond_exps = []
+        for c in mj.conds:
+            new_c = None
+            for prev_c in prevs:
                 if new_c:
-                    if isinstance(c, CONST):
-                        assert c.value == 1
-                        pass
-                    else:
-                        new_c = RELOP('And', new_c, c)
+                    new_c = RelOp(op='And', left=new_c, right=UnOp(op='Not', exp=prev_c))
                 else:
-                    new_c = c
-                new_cond_exps.append(new_c)
-                prevs.append(c)
-            # simplify condtion expressions
-            new_conds = []
-            for c in new_cond_exps:
-                if isinstance(c, TEMP):
-                    new_conds.append(c)
+                    new_c = UnOp(op='Not', exp=prev_c)
+            if new_c:
+                if isinstance(c, Const):
+                    assert c.value == 1
                 else:
-                    new_sym = self.scope.add_condition_sym()
-                    new_sym.typ = Type.bool()
-                    mv = MOVE(TEMP(new_sym.name), c)
-                    block.insert_stm(-1, mv)
-                    new_conds.append(TEMP(new_sym.name))
-            mj.conds = new_conds
+                    new_c = RelOp(op='And', left=new_c, right=c)
+            else:
+                new_c = c
+            new_cond_exps.append(new_c)
+            prevs.append(c)
+        new_conds = []
+        mj_idx = len(block.stms) - 1
+        insert_pos = mj_idx
+        for c in new_cond_exps:
+            if isinstance(c, Temp):
+                new_conds.append(c)
+            else:
+                new_sym = self.scope.add_condition_sym()
+                new_sym.typ = Type.bool()
+                mv = Move(
+                    dst=Temp(name=new_sym.name, ctx=Ctx.STORE),
+                    src=c,
+                    block=block,
+                )
+                block.stms.insert(insert_pos, mv)
+                insert_pos += 1
+                new_conds.append(Temp(name=new_sym.name))
+        mj.conds = new_conds

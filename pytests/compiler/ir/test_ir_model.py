@@ -1,7 +1,7 @@
 """Tests for pydantic-based IR model classes."""
 import pytest
 from pydantic import ValidationError
-from polyphony.compiler.ir.ir_model import (
+from polyphony.compiler.ir.ir import (
     Ctx, Ir, IrExp, IrStm, IrNameExp, IrVariable,
     Const, Temp, Attr, UnOp, BinOp, RelOp, CondOp, PolyOp,
     Call, SysCall, New, MRef, MStore, Array,

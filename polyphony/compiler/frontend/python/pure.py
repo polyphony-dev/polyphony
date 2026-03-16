@@ -10,7 +10,7 @@ from ...common.errors import Errors, Warnings, InterpretError
 from ...common.env import env
 from ...common.graph import Graph
 from ...ir.ir import Ctx, Loc, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
-from ...ir.irhelper import expr2ir
+from ...ir.ir_helper import expr2ir
 from ...ir.scope import Scope
 from ...ir.analysis.usedef import UseDefDetector
 from ...ir.setlineno import LineNumberSetter

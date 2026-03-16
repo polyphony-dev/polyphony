@@ -1,7 +1,8 @@
 import re
+from typing import cast
 from collections import deque, defaultdict
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irhelper import qualified_symbols
+from polyphony.compiler.ir.ir_helper import qualified_symbols
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -81,6 +82,13 @@ class IRReader(object):
         for from_scope, name, target_scope in self.import_table:
             sym = from_scope.find_sym(name)
             target_scope.import_sym(sym)
+        # Convert parsed old IR to new IR in block.stms
+        self._convert_all_to_new_ir()
+
+    def _convert_all_to_new_ir(self):
+        """Convert all block.stms from old IR to new IR after parsing.
+        Now a no-op since old IR and new IR are unified."""
+        pass
 
     def prepare_parse_scopes(self):
         self.sources = defaultdict(list)

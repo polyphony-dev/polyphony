@@ -12,6 +12,11 @@ from polyphony.compiler.ir.builtin import builtin_symbols
 from pytests.compiler.base import setup_test, install_builtins
 import pytest
 
+
+def _convert_all_to_old():
+    """No-op. Old and new IR are unified."""
+    pass
+
 def test_specialize_func():
     setup_test(with_global=False)
     '''
@@ -63,6 +68,7 @@ def test_specialize_func():
     top = env.scopes['@top']
     install_builtins(top)
 
+    _convert_all_to_old()
     TypeSpecializer().process_all()
 
     func = env.scopes['@top.func']
@@ -142,6 +148,7 @@ def test_specialize_func_2():
     top = env.scopes['@top']
     install_builtins(top)
 
+    _convert_all_to_old()
     TypeSpecializer().process_all()
     other = env.scopes['other']
 

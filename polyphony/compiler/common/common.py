@@ -32,9 +32,11 @@ def print_error_info(info):
     from ..ir.ir import IR
     if isinstance(info, IR):
         ir = info
-        print(error_info(ir.loc.filename, ir.loc.lineno))
+        if ir.loc and ir.loc.lineno > 0:
+            print(error_info(ir.loc.filename, ir.loc.lineno))
     elif isinstance(info, tuple):
-        print(error_info(info[0], info[1]))
+        if info[1] > 0:
+            print(error_info(info[0], info[1]))
 
 
 def fail(info, err_id, args=None):

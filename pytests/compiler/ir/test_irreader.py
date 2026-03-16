@@ -1,6 +1,7 @@
 from collections import deque
+from typing import cast
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irhelper import qualified_symbols
+from polyphony.compiler.ir.ir_helper import qualified_symbols
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope

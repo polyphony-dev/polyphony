@@ -1,9 +1,18 @@
+"""AliasVarDetector using new IR (ir.py).
+
+Tags variables that can be aliased (wires instead of registers).
+This is an analysis pass - reads IR and tags symbols.
+"""
 from collections import deque
-from ..ir import *
-from ..irhelper import qualified_symbols
-from ..irvisitor import IRVisitor
+from ..ir import (
+    IrVariable, Temp, Attr, Const,
+    Move, CMove, Expr, Call, SysCall, New,
+    MRef, MStore, Array, Phi, UPhi,
+)
+from ..ir_visitor import IrVisitor
+from ..ir_helper import qualified_symbols
 from ..symbol import Symbol
-from .usedef import UseDefDetector
+from .usedef import NewUseDefDetector
 from .fieldusedef import FieldUseDef
 from logging import getLogger
 logger = getLogger(__name__)
@@ -11,13 +20,15 @@ logger = getLogger(__name__)
 
 def _is_clksleep(stm):
     """Check if stm is a clksleep call (excludes wait_until and wait_*)."""
-    return (isinstance(stm, EXPR) and isinstance(stm.exp, SYSCALL) and
+    return (isinstance(stm, Expr) and isinstance(stm.exp, SysCall) and
             stm.exp.name == 'polyphony.timing.clksleep')
 
 
-class AliasVarDetector(IRVisitor):
+class NewAliasVarDetector(IrVisitor):
+    """Tag variables that can be aliased (wires instead of registers)."""
+
     def process(self, scope):
-        self.usedef = UseDefDetector().process(scope)
+        self.usedef = NewUseDefDetector().process(scope)
         self.removes = []
         super().process(scope)
 
@@ -38,7 +49,6 @@ class AliasVarDetector(IRVisitor):
                     return True
             return False
         # Different blocks: check if any CFG path from def_blk to use_blk contains a clksleep
-        # First, check if def_blk has a clksleep after def_stm
         stms = def_blk.stms
         found_def = False
         for stm in stms:
@@ -56,14 +66,12 @@ class AliasVarDetector(IRVisitor):
                 continue
             visited.add(blk)
             if blk is use_blk:
-                # Check if use_blk has a clksleep before use_stm
                 for stm in blk.stms:
                     if stm is use_stm:
                         break
                     if _is_clksleep(stm):
                         return True
                 return False
-            # Intermediate block contains a clksleep
             for stm in blk.stms:
                 if _is_clksleep(stm):
                     return True
@@ -72,16 +80,16 @@ class AliasVarDetector(IRVisitor):
                     queue.append(succ)
         return False
 
-    def visit_CMOVE(self, ir):
-        assert isinstance(ir.dst, IRVariable)
+    def visit_CMove(self, ir):
+        assert isinstance(ir.dst, IrVariable)
         sym = qualified_symbols(ir.dst, self.scope)[-1]
         assert isinstance(sym, Symbol)
         if sym.is_condition() or self.scope.is_comb():
             logger.debug(f'{sym} is alias')
             sym.add_tag('alias')
 
-    def visit_MOVE(self, ir):
-        assert isinstance(ir.dst, IRVariable)
+    def visit_Move(self, ir):
+        assert isinstance(ir.dst, IrVariable)
         sym = qualified_symbols(ir.dst, self.scope)[-1]
         assert isinstance(sym, Symbol)
         sched = self.current_stm.block.synth_params['scheduling']
@@ -95,7 +103,6 @@ class AliasVarDetector(IRVisitor):
             if self.scope.is_worker():
                 module = self.scope.worker_owner
             else:
-                # Walk up the parent chain to find the nearest enclosing module scope
                 module = self.scope.parent
                 while module is not None and not module.is_module():
                     module = module.parent
@@ -114,16 +121,15 @@ class AliasVarDetector(IRVisitor):
             sym.add_tag('alias')
             logger.debug(f'{sym} is alias')
             return
-        if isinstance(ir.src, IRVariable):
+        if isinstance(ir.src, IrVariable):
             src_sym = qualified_symbols(ir.src, self.scope)[-1]
             assert isinstance(src_sym, Symbol)
             if self.scope.is_ctor() and self.scope.parent.is_module():
                 pass
             elif src_sym.is_param() or src_sym.typ.is_port():
                 return
-        elif isinstance(ir.src, CALL):
-            callee_scope = ir.src.get_callee_scope(self.scope)
-            # callee_scope = ir.src.callee_scope
+        elif isinstance(ir.src, Call):
+            callee_scope = self._get_callee_scope(ir.src)
             func_name = ir.src.name
             if callee_scope.is_predicate():
                 return
@@ -139,22 +145,22 @@ class AliasVarDetector(IRVisitor):
                     return
             else:
                 return
-        elif isinstance(ir.src, NEW):
+        elif isinstance(ir.src, New):
             return
-        elif isinstance(ir.src, SYSCALL):
+        elif isinstance(ir.src, SysCall):
             if ir.src.name == '$new':
                 return
-        elif isinstance(ir.src, MREF):
+        elif isinstance(ir.src, MRef):
             if sched == 'timed':
-                 pass
+                pass
             else:
                 mem_sym = qualified_symbols(ir.src.mem, self.scope)[-1]
                 assert isinstance(mem_sym, Symbol)
                 stms = self.usedef.get_stms_using(mem_sym)
                 for stm in stms:
-                    if isinstance(stm, EXPR) and isinstance(stm.exp, MSTORE) and stm.exp.mem == ir.src.mem:
+                    if isinstance(stm, Expr) and isinstance(stm.exp, MStore) and stm.exp.mem == ir.src.mem:
                         return
-        elif isinstance(ir.src, ARRAY):
+        elif isinstance(ir.src, Array):
             return
         def_stms = self.usedef.get_stms_defining(sym)
         if len(def_stms) > 1:
@@ -174,7 +180,7 @@ class AliasVarDetector(IRVisitor):
         logger.debug(f'{sym} is alias')
         sym.add_tag('alias')
 
-    def visit_PHI(self, ir):
+    def visit_Phi(self, ir):
         sym = qualified_symbols(ir.var, self.scope)[-1]
         assert isinstance(sym, Symbol)
         if sym.is_condition() or self.scope.is_comb():
@@ -186,13 +192,13 @@ class AliasVarDetector(IRVisitor):
             return
         arg_syms = []
         for a in ir.args:
-            if isinstance(a, TEMP):
+            if isinstance(a, Temp):
                 arg_syms.append(qualified_symbols(a, self.scope)[-1])
         if any([sym is asym for asym in arg_syms]):
             return
         sym.add_tag('alias')
 
-    def visit_UPHI(self, ir):
+    def visit_UPhi(self, ir):
         sym = qualified_symbols(ir.var, self.scope)[-1]
         assert isinstance(sym, Symbol)
         if sym.is_condition() or self.scope.is_comb():
@@ -204,8 +210,17 @@ class AliasVarDetector(IRVisitor):
             return
         arg_syms = []
         for a in ir.args:
-            if isinstance(a, TEMP):
+            if isinstance(a, Temp):
                 arg_syms.append(qualified_symbols(a, self.scope)[-1])
         if any([sym is asym for asym in arg_syms]):
             return
         sym.add_tag('alias')
+
+    def _get_callee_scope(self, call):
+        """Get callee scope from a Call node (mirrors old IR get_callee_scope)."""
+        qsyms = qualified_symbols(call.func, self.scope)
+        symbol = qsyms[-1]
+        assert isinstance(symbol, Symbol)
+        func_t = symbol.typ
+        assert func_t.has_scope()
+        return func_t.scope

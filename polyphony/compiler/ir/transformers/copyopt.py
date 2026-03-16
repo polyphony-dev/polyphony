@@ -1,111 +1,130 @@
-﻿from collections import deque
-from ..ir import *
-from ..irhelper import qualified_symbols
-from ..irvisitor import IRVisitor
+"""CopyOpt using new IR (ir.py)."""
+from collections import deque
+from ..ir import (
+    Ir, IrVariable, IrNameExp, Temp, Attr, Move, CMove, Expr,
+    Phi, UPhi, LPhi, Ctx,
+)
+from ..ir_visitor import IrVisitor
+from ..ir_helper import qualified_symbols
 from ..scope import Scope
-from ..types.type import Type
 from ..symbol import Symbol
-from ..analysis.usedef import UseDefDetector, UseDefUpdater
+from ..analysis.usedef import NewUseDefDetector, NewUseDefUpdater
+from ..analysis.usedef import UseDefItem
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class CopyOpt(IRVisitor):
-    def _new_collector(self, copies: list[MOVE]):
-        return CopyCollector(copies)
+class NewCopyCollector(IrVisitor):
+    def __init__(self, copies):
+        self.copies = copies
 
-    def __init__(self):
-        super().__init__()
+    def visit_CMove(self, ir):
+        return
 
-    def _find_old_use(self, scope, ir, qname: tuple[str, ...]):
+    def visit_Move(self, ir):
+        dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
+        assert isinstance(dst_sym, Symbol)
+        dst_t = dst_sym.typ
+        if dst_sym.is_return() or dst_sym.is_register() or dst_sym.is_field() or dst_sym.is_free():
+            return
+        if dst_t.is_function():
+            return
+        if isinstance(ir.src, Temp):
+            src_sym = qualified_symbols(ir.src, self.scope)[-1]
+            assert isinstance(src_sym, Symbol)
+            src_t = src_sym.typ
+            if src_sym.is_param():
+                return
+            if src_t.clone(explicit=True) != dst_t.clone(explicit=True):
+                return
+            self.copies.append(ir)
+        elif isinstance(ir.src, Attr):
+            src_sym = qualified_symbols(ir.src, self.scope)[-1]
+            assert isinstance(src_sym, Symbol)
+            src_t = src_sym.typ
+            if src_t.is_object() and src_t.scope.is_port():
+                self.copies.append(ir)
+
+
+class NewCopyOpt(object):
+    def _new_collector(self, copies):
+        return NewCopyCollector(copies)
+
+    def _find_old_use(self, scope, ir, qname):
         return ir.find_vars(qname)
 
     def process(self, scope):
         self.scope = scope
-        self.usedef = UseDefDetector().process(scope)
-        copies: list[MOVE] = []
+        self.usedef = NewUseDefDetector().process(scope)
+        copies = []
         collector = self._new_collector(copies)
         collector.process(scope)
         worklist = deque(copies)
         while worklist:
             cp = worklist.popleft()
-            logger.debug('copy stm ' + str(cp))
-            dst_qsym = cast(tuple[Symbol], qualified_symbols(cp.dst, scope))
+            dst_qsym = qualified_symbols(cp.dst, scope)
             defs = list(self.usedef.get_stms_defining(dst_qsym))
             if len(defs) > 1:
-                # dst must be non ssa variables
                 copies.remove(cp)
                 continue
-            src_qsym = cast(tuple[Symbol], qualified_symbols(cast(IRNameExp, cp.src), scope))
+            src_qsym = qualified_symbols(cp.src, scope)
             orig = self._find_root_def(src_qsym)
-            udupdater = UseDefUpdater(scope, self.usedef)
+            udupdater = NewUseDefUpdater(scope, self.usedef)
             replaced = self._replace_copies(scope, udupdater, self.usedef, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures():
-                    clos_usedef = UseDefDetector().process(clos)
-                    udupdater = UseDefUpdater(clos, clos_usedef)
-                    replaced = self._replace_copies(clos, udupdater, clos_usedef, cp, orig, dst_qsym, copies, worklist)
-                    if replaced:
+                    clos_usedef = NewUseDefDetector().process(clos)
+                    clos_udupdater = NewUseDefUpdater(clos, clos_usedef)
+                    clos_replaced = self._replace_copies(clos, clos_udupdater, clos_usedef, cp, orig, dst_qsym, copies, worklist)
+                    if clos_replaced:
                         src_qsym[0].add_tag('free')
         for cp in copies:
             if cp in cp.block.stms:
-                # TODO: Copy propagation of module parameter should be supported
-                if isinstance(cp.dst, ATTR) and qualified_symbols(cp.dst, self.scope)[-2].typ.scope.is_module() and scope.is_ctor():
-                    continue
-                if isinstance(cp, CMOVE) and not cp.dst.symbol.is_temp():
+                if isinstance(cp.dst, Attr) and qualified_symbols(cp.dst, self.scope)[-2].typ.scope.is_module() and scope.is_ctor():
                     continue
                 cp.block.stms.remove(cp)
 
-    def _replace_copies(self, scope: Scope, udupdater: UseDefUpdater, usedef, copy_stm: MOVE, orig: IR|None, target: tuple[Symbol], copies: list[MOVE], worklist):
-        uses = sorted(list(usedef.get_stms_using(target)), key=lambda u: u.loc)
+    def _replace_copies(self, scope, udupdater, usedef, copy_stm, orig, target, copies, worklist):
+        uses = sorted(list(usedef.get_stms_using(target)), key=lambda u: u.loc[1] if isinstance(u.loc, tuple) and len(u.loc) >= 2 else 0)
         for u in uses:
-            qname = tuple(map(lambda s: s.name, target))
+            qname = tuple(s.name for s in target)
             olds = self._find_old_use(scope, u, qname)
             for old in olds:
-                if orig:
-                    new = orig.clone()
-                else:
-                    new = copy_stm.src.clone()
-                # TODO: we need the bit width propagation
-                logger.debug('replace FROM ' + str(u))
+                new = orig.model_copy(deep=True) if orig else copy_stm.src.model_copy(deep=True)
                 udupdater.update(u, None)
                 u.replace(old, new)
-                if (isinstance(u, MOVE) and
-                        isinstance(u.dst, IRVariable) and
-                        isinstance(u.src, IRVariable) and
+                if (isinstance(u, Move) and
+                        isinstance(u.dst, IrVariable) and
+                        isinstance(u.src, IrVariable) and
                         u.src.qualified_name == u.dst.qualified_name):
-                    logger.debug('replace result is dead stm ' + str(u))
                     u.block.stms.remove(u)
                     continue
-                logger.debug('replace TO ' + str(u))
                 udupdater.update(None, u)
-            if isinstance(u, PHIBase):
-                # TODO: check
+            if isinstance(u, (Phi, UPhi, LPhi)):
                 qsyms = [qualified_symbols(arg, self.scope) for arg in u.args
-                        if isinstance(arg, IRVariable) and arg.name != u.var.name]
+                        if isinstance(arg, IrVariable) and arg.name != u.var.name]
                 if qsyms:
                     if len(u.args) == len(qsyms) and all(qsyms[0] == s for s in qsyms):
                         src = u.args[0]
-                    elif len(qsyms) == 1 and len([arg for arg in u.args if isinstance(arg, IRVariable)]) > 1:
+                    elif len(qsyms) == 1 and len([arg for arg in u.args if isinstance(arg, IrVariable)]) > 1:
                         for arg in u.args:
-                            if isinstance(arg, IRVariable) and qualified_symbols(arg, self.scope) == qsyms[0]:
+                            if isinstance(arg, IrVariable) and qualified_symbols(arg, self.scope) == qsyms[0]:
                                 src = arg
                                 break
                         else:
                             assert False
                     else:
                         continue
-                    mv = MOVE(u.var, src)
+                    mv = Move(dst=u.var, src=src, block=u.block)
                     idx = u.block.stms.index(u)
                     u.block.stms[idx] = mv
-                    mv.block = u.block
                     udupdater.update(u, mv)
-                    if isinstance(mv.src, IRVariable):
+                    if isinstance(mv.src, IrVariable):
                         worklist.append(mv)
                         copies.append(mv)
         return len(uses) > 0
 
-    def _find_root_def(self, qsym: tuple[Symbol], _visited: set|None = None) -> IR|None:
+    def _find_root_def(self, qsym, _visited=None):
         if _visited is None:
             _visited = set()
         sym_key = id(qsym[-1])
@@ -116,152 +135,79 @@ class CopyOpt(IRVisitor):
         if len(defs) != 1:
             return None
         d = defs[0]
-        if isinstance(d, MOVE):
+        if isinstance(d, Move):
             dst_sym = qualified_symbols(d.dst, self.scope)[-1]
             assert isinstance(dst_sym, Symbol)
             dst_t = dst_sym.typ
-            if isinstance(d.src, TEMP):
+            if isinstance(d.src, (Temp, Attr)):
                 src_qsym = qualified_symbols(d.src, self.scope)
                 src_sym = src_qsym[-1]
                 assert isinstance(src_sym, Symbol)
                 if src_sym.is_param():
                     return None
-                src_t = src_sym.typ
-                if src_t != dst_t:
+                if src_sym.typ.clone(explicit=True) != dst_t.clone(explicit=True):
                     return None
                 orig = self._find_root_def(src_qsym, _visited)
-                if orig:
-                    return orig
-                else:
-                    return d.src
-            elif isinstance(d.src, ATTR):
-                src_qsym = qualified_symbols(d.src, self.scope)
-                src_sym = src_qsym[-1]
-                assert isinstance(src_sym, Symbol)
-                src_t = src_sym.typ
-                if src_t != dst_t:
-                    return None
-                orig = self._find_root_def(src_qsym, _visited)
-                if orig:
-                    return orig
-                else:
-                    return d.src
+                return orig if orig else d.src
         return None
 
 
-class CopyCollector(IRVisitor):
-    def __init__(self, copies: list[MOVE]):
-        self.copies: list[MOVE] = copies
-
-    def visit_CMOVE(self, ir):
-        return
-
-    def visit_MOVE(self, ir):
-        dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
-        assert isinstance(dst_sym, Symbol)
-        dst_t = dst_sym.typ
-        if dst_sym.is_return():
-            return
-        if dst_sym.is_register():
-            return
-        if dst_sym.is_field():
-            return
-        if dst_sym.is_free():
-            return
-        if dst_t.is_function():
-            return
-        if isinstance(ir.src, TEMP):
-            src_sym = qualified_symbols(ir.src, self.scope)[-1]
-            assert isinstance(src_sym, Symbol)
-            src_t = src_sym.typ
-            if src_sym.is_param():  # or ir.src.sym.typ.is_list():
-                return
-            # compare without explicit attribute
-            if src_t.clone(explicit=True) != dst_t.clone(explicit=True):
-                return
-            self.copies.append(ir)
-        elif isinstance(ir.src, ATTR):
-            src_sym = qualified_symbols(ir.src, self.scope)[-1]
-            assert isinstance(src_sym, Symbol)
-            src_t = src_sym.typ
-            if src_t.is_object() and src_t.scope.is_port():
-                self.copies.append(ir)
-
-
-class ObjCopyOpt(CopyOpt):
-    def _new_collector(self, copies: list[MOVE]):
-        return ObjCopyCollector(copies)
-
-    def __init__(self):
-        super().__init__()
-
-    def _find_old_use(self, scope, ir, qname: tuple[str, ...]):
-        vars = []
-
-        def find_vars_rec(ir, qname: tuple[str, ...], vars: list[IR]):
-            if isinstance(ir, IR):
-                if isinstance(ir, ATTR):
-                    attr = cast(ATTR, ir)
-                    if attr.qualified_name == qname:
-                        vars.append(attr)
-                    find_vars_rec(attr.exp, qname, vars)
-                elif isinstance(ir, TEMP) and len(qname) == 1:
-                    temp = cast(TEMP, ir)
-                    sym = scope.find_sym(temp.name)
-                    assert sym
-                    sym_t = sym.typ
-                    if sym_t.is_object():
-                        if temp.name == qname[0]:
-                            vars.append(ir)
-                    elif sym_t.is_seq():
-                        if temp.name == qname[0]:
-                            vars.append(ir)
-                else:
-                    for k, v in ir.__dict__.items():
-                        find_vars_rec(v, qname, vars)
-            elif isinstance(ir, list) or isinstance(ir, tuple):
-                for elm in ir:
-                    find_vars_rec(elm, qname, vars)
-        find_vars_rec(ir, qname, vars)
-        return vars
-
-
-class ObjCopyCollector(IRVisitor):
+class NewObjCopyCollector(IrVisitor):
     def __init__(self, copies):
         self.copies = copies
 
     def _is_alias_def(self, mov):
-        if not isinstance(mov, MOVE):
+        if not isinstance(mov, Move):
             return False
-        if not isinstance(mov.src, IRVariable):
+        if not isinstance(mov.src, IrVariable):
             return False
-        if not isinstance(mov.dst, IRVariable):
+        if not isinstance(mov.dst, IrVariable):
             return False
-        if isinstance(mov.dst, ATTR):
+        if isinstance(mov.dst, Attr):
             receiver = qualified_symbols(mov.dst.exp, self.scope)[-1]
             assert isinstance(receiver, Symbol)
             receiver_t = receiver.typ
             if receiver_t.is_object() and receiver_t.scope.is_module():
                 return False
-        #if mov.src.symbol.is_induction() or mov.dst.symbol.is_induction():
-        #    return False
-        src_sym = qualified_symbols(mov.src, self.scope)[-1]
         dst_sym = qualified_symbols(mov.dst, self.scope)[-1]
-        assert isinstance(src_sym, Symbol)
         assert isinstance(dst_sym, Symbol)
-        src_t = src_sym.typ
         dst_t = dst_sym.typ
-        if src_t.is_object() and dst_t.is_object():
-            return True
-        if src_t.is_seq() and dst_t.is_seq():
-            return True
-        return False
+        return (dst_t.is_object() or dst_t.is_seq()) and not dst_sym.is_param()
 
-    def visit_MOVE(self, ir):
-        if not self._is_alias_def(ir):
-            return
-        src_sym = qualified_symbols(ir.src, self.scope)[-1]
-        assert isinstance(src_sym, Symbol)
-        if src_sym.is_param():
-            return
-        self.copies.append(ir)
+    def visit_CMove(self, ir):
+        return
+
+    def visit_Move(self, ir):
+        if self._is_alias_def(ir):
+            if isinstance(ir.src, IrVariable):
+                src_sym = qualified_symbols(ir.src, self.scope)[-1]
+                if isinstance(src_sym, Symbol) and not src_sym.is_param():
+                        self.copies.append(ir)
+
+
+class NewObjCopyOpt(NewCopyOpt):
+    def _new_collector(self, copies):
+        return NewObjCopyCollector(copies)
+
+    def _find_old_use(self, scope, ir, qname):
+        vars = []
+        def find_vars_rec(node, qname, vars):
+            if isinstance(node, Ir):
+                if isinstance(node, Attr):
+                    if node.qualified_name == qname:
+                        vars.append(node)
+                    find_vars_rec(node.exp, qname, vars)
+                elif isinstance(node, Temp) and len(qname) == 1:
+                    sym = scope.find_sym(node.name)
+                    if sym and (sym.typ.is_object() or sym.typ.is_seq()):
+                        if node.name == qname[0]:
+                            vars.append(node)
+                else:
+                    for field_name in node.model_fields:
+                        v = getattr(node, field_name, None)
+                        find_vars_rec(v, qname, vars)
+            elif isinstance(node, (list, tuple)):
+                for elm in node:
+                    find_vars_rec(elm, qname, vars)
+        find_vars_rec(ir, qname, vars)
+        return vars

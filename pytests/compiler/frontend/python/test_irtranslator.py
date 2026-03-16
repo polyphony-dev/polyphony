@@ -1,6 +1,7 @@
 import types
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irhelper import irexp_type
+from polyphony.compiler.ir import ir as new
+from polyphony.compiler.ir.ir_helper import irexp_type
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
@@ -19,23 +20,23 @@ List[0][1]
     assert env.global_scope_name in env.scopes
     top = env.scopes[env.global_scope_name]
     stm = top.entry_block.stms[0]
-    assert isinstance(stm, EXPR)
-    assert isinstance(stm.exp, MREF)
+    assert isinstance(stm, (EXPR, new.Expr))
+    assert isinstance(stm.exp, (MREF, new.MRef))
     mref = stm.exp
-    assert isinstance(mref.mem, MREF)
-    assert isinstance(mref.offset, CONST)
+    assert isinstance(mref.mem, (MREF, new.MRef))
+    assert isinstance(mref.offset, (CONST, new.Const))
     assert mref.offset.value == 1
     mref = mref.mem
 
     list_var = mref.mem
-    assert isinstance(list_var, TEMP)
+    assert isinstance(list_var, (TEMP, new.Temp))
     assert list_var.name == 'List'
     list_t = irexp_type(list_var, top)
     assert list_t.is_class()
     list_class = list_t.scope
     assert list_class.is_typeclass()
 
-    assert isinstance(mref.offset, CONST)
+    assert isinstance(mref.offset, (CONST, new.Const))
     assert mref.offset.value == 0
 
 def test_parse_function_params():
@@ -56,8 +57,8 @@ def f(a, b=10, c=20):
     vals = scope.param_default_values()
     assert len(vals) == 3
     assert vals[0] == None
-    assert vals[1] == CONST(10)
-    assert vals[2] == CONST(20)
+    assert isinstance(vals[1], (CONST, new.Const)) and vals[1].value == 10
+    assert isinstance(vals[2], (CONST, new.Const)) and vals[2].value == 20
 
 def test_parse_class_params():
     setup_test()
@@ -82,7 +83,7 @@ class C:
     vals = scope.param_default_values()
     assert len(vals) == 2
     assert vals[0] == None
-    assert vals[1] == CONST(123)
+    assert isinstance(vals[1], (CONST, new.Const)) and vals[1].value == 123
 
 def test_parse_class_noparams():
     setup_test()

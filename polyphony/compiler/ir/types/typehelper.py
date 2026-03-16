@@ -2,7 +2,7 @@ from __future__ import annotations
 import dataclasses
 from typing import cast, TYPE_CHECKING, Generator
 from ...common.env import env
-from ..irhelper import qualified_symbols
+from ..ir_helper import qualified_symbols
 from ...common.env import env
 from .type import Type
 from .exprtype import ExprType
@@ -11,19 +11,111 @@ if TYPE_CHECKING:
     from ..ir import IR, EXPR
 
 
-def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
+def type_from_ir(scope: Scope, ir, explicit=False) -> Type:
     '''
-    Interpret and return the type of variable expressed by IR
-    Examples: 
+    Interpret and return the type of variable expressed by IR.
+    Accepts both old IR (ir.py) and new IR (ir.py) types.
+
+    Examples:
         source:     'a: int'
-        annotation: TEMP('int')
+        annotation: TEMP('int') or Temp(name='int')
         result:     Type.int()
 
         source:     'a: Int[s1 + s2]'
-        annotation: MREF(TEMP('Int"), BINOP('Add', TEMP('s1'), TEMP('s2')))
-        result:     Type.expr(MREF(TEMP('Int"), BINOP('Add', TEMP('s1'), TEMP('s2'))))
+        annotation: MREF(TEMP('Int'), BINOP(...)) or MRef(mem=Temp(...), ...)
+        result:     Type.expr(...)
     '''
+    from ..ir import Ir as NewIr
+    if isinstance(ir, NewIr):
+        return _type_from_new_ir(scope, ir, explicit)
+    return _type_from_old_ir(scope, ir, explicit)
+
+
+def _type_from_new_ir(scope: Scope, ir, explicit=False) -> Type:
+    """Interpret type from new IR (ir.py) types."""
+    from ..ir import Const, Temp, Attr, MRef, Array, IrExp, Expr
+    from ..ir_helper import qualified_symbols as new_qualified_symbols
+    from ..symbol import Symbol
+
+    assert ir
+    t = None
+    if isinstance(ir, Const):
+        if ir.value is None:
+            t = Type.none(explicit)
+        else:
+            t = Type.expr(Expr(exp=ir), scope)
+    elif isinstance(ir, Temp):
+        temp_sym = scope.find_sym(ir.name)
+        assert isinstance(temp_sym, Symbol)
+        if temp_sym.typ.has_scope():
+            sym_type = temp_sym.typ
+            type_scope = sym_type.scope
+            if sym_type.is_class() and type_scope.is_object() and not temp_sym.is_builtin():
+                t = Type.expr(Expr(exp=ir), scope)
+                temp_sym.add_tag('typevar')
+            elif type_scope.is_typeclass():
+                if type_scope.name == '__builtin__.type':
+                    t = Type.klass(env.scopes['__builtin__.object'], explicit=explicit)
+                else:
+                    t = type_from_typeclass(type_scope, explicit=explicit)
+            else:
+                t = Type.object(type_scope, explicit)
+        else:
+            t = Type.expr(Expr(exp=ir), scope)
+            temp_sym.add_tag('typevar')
+    elif isinstance(ir, Attr):
+        qsyms = new_qualified_symbols(ir, scope)
+        if isinstance(qsyms[-1], Symbol) and qsyms[-1].typ.has_scope():
+            attr_type = qsyms[-1].typ
+            type_scope = attr_type.scope
+            if attr_type.is_class() and type_scope.is_object() and not qsyms[-1].is_builtin():
+                t = Type.expr(Expr(exp=ir), scope)
+                qsyms[-1].add_tag('typevar')
+            elif type_scope.is_typeclass():
+                t = type_from_typeclass(type_scope, explicit=explicit)
+            else:
+                t = Type.object(type_scope, explicit)
+        else:
+            t = Type.expr(Expr(exp=ir), scope)
+    elif isinstance(ir, MRef):
+        if isinstance(ir.mem, MRef):
+            t = _type_from_new_ir(scope, ir.mem, explicit)
+            if isinstance(ir.offset, Const):
+                t = t.clone(length=ir.offset.value)
+            else:
+                t = t.clone(length=_type_from_new_ir(scope, ir.offset, explicit))
+        else:
+            t = _type_from_new_ir(scope, ir.mem, explicit)
+            if t.is_int():
+                assert isinstance(ir.offset, Const)
+                t = t.clone(width=ir.offset.value)
+            elif t.is_seq():
+                t = t.clone(element=_type_from_new_ir(scope, ir.offset, explicit))
+            elif t.is_class():
+                elm_t = _type_from_new_ir(scope, ir.offset, explicit)
+                if elm_t.is_object():
+                    t = t.clone(scope=elm_t.scope)
+                else:
+                    type_scope = type_to_scope(elm_t)
+                    t = t.clone(scope=type_scope)
+    elif isinstance(ir, Array):
+        assert isinstance(ir.repeat, Const) and ir.repeat.value == 1
+        assert ir.is_mutable is False
+        return _type_from_new_ir(scope, ir.items[0], explicit)
+    else:
+        assert isinstance(ir, IrExp)
+        assert explicit is True
+        t = Type.expr(Expr(exp=ir), scope)
+
+    assert t is not None
+    t = t.clone(explicit=explicit)
+    return t
+
+
+def _type_from_old_ir(scope: Scope, ir, explicit=False) -> Type:
+    """Interpret type from old IR (ir.py) types."""
     from ..ir import IR, IRExp, CONST, TEMP, ATTR, MREF, ARRAY, EXPR
+    from ..ir import Expr
     from ..symbol import Symbol
 
     assert ir
@@ -34,7 +126,7 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
         if c.value is None:
             t = Type.none(explicit)
         else:
-            t = Type.expr(EXPR(ir), scope)
+            t = Type.expr(Expr(exp=ir), scope)
     elif isinstance(ir, TEMP):
         temp = cast(TEMP, ir)
         temp_sym = scope.find_sym(temp.name)
@@ -43,8 +135,7 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
             sym_type = temp_sym.typ
             type_scope = sym_type.scope
             if sym_type.is_class() and type_scope.is_object() and not temp_sym.is_builtin():
-                # ir is a typevar (ex. dtype)
-                t = Type.expr(EXPR(temp), scope)
+                t = Type.expr(Expr(exp=temp), scope)
                 temp_sym.add_tag('typevar')
             elif type_scope.is_typeclass():
                 if type_scope.name == '__builtin__.type':
@@ -54,7 +145,7 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
             else:
                 t = Type.object(type_scope, explicit)
         else:
-            t = Type.expr(EXPR(ir), scope)
+            t = Type.expr(Expr(exp=ir), scope)
             temp_sym.add_tag('typevar')
     elif isinstance(ir, ATTR):
         attr = cast(ATTR, ir)
@@ -63,32 +154,31 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
             attr_type = qsyms[-1].typ
             type_scope = attr_type.scope
             if attr_type.is_class() and type_scope.is_object() and not qsyms[-1].is_builtin():
-                # ir is a typevar (ex. dtype)
-                t = Type.expr(EXPR(attr), scope)
+                t = Type.expr(Expr(exp=attr), scope)
                 qsyms[-1].add_tag('typevar')
             elif type_scope.is_typeclass():
                 t = type_from_typeclass(type_scope, explicit=explicit)
             else:
                 t = Type.object(type_scope, explicit)
         else:
-            t = Type.expr(EXPR(ir), scope)
+            t = Type.expr(Expr(exp=ir), scope)
     elif isinstance(ir, MREF):
         mref = cast(MREF, ir)
         if isinstance(mref.mem, MREF):
-            t = type_from_ir(scope, mref.mem, explicit)
+            t = _type_from_old_ir(scope, mref.mem, explicit)
             if isinstance(mref.offset, CONST):
                 t = t.clone(length=mref.offset.value)
             else:
-                t = t.clone(length=type_from_ir(scope, mref.offset, explicit))
+                t = t.clone(length=_type_from_old_ir(scope, mref.offset, explicit))
         else:
-            t = type_from_ir(scope, mref.mem, explicit)
+            t = _type_from_old_ir(scope, mref.mem, explicit)
             if t.is_int():
                 assert isinstance(mref.offset, CONST)
                 t = t.clone(width=mref.offset.value)
             elif t.is_seq():
-                t = t.clone(element=type_from_ir(scope, mref.offset, explicit))
+                t = t.clone(element=_type_from_old_ir(scope, mref.offset, explicit))
             elif t.is_class():
-                elm_t = type_from_ir(scope, mref.offset, explicit)
+                elm_t = _type_from_old_ir(scope, mref.offset, explicit)
                 if elm_t.is_object():
                     t = t.clone(scope=elm_t.scope)
                 else:
@@ -99,11 +189,11 @@ def type_from_ir(scope: Scope, ir: IR, explicit=False) -> Type:
         assert isinstance(array.repeat, CONST) and array.repeat.value == 1
         assert array.is_mutable is False
         # FIXME: tuple should have more than one type
-        return type_from_ir(scope, array.items[0], explicit)
+        return _type_from_old_ir(scope, array.items[0], explicit)
     else:
         assert isinstance(ir, IRExp)
         assert explicit is True
-        t = Type.expr(EXPR(ir), scope)
+        t = Type.expr(Expr(exp=ir), scope)
 
     assert t is not None
     t = t.clone(explicit=explicit)

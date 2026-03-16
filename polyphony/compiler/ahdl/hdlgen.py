@@ -5,7 +5,7 @@ from .transformers.varreplacer import AHDLSignalReplacer
 from .hdlmodule import HDLModule
 from ..common.env import env
 from ..ir.ir import *
-from ..ir.irhelper import qualified_symbols
+from ..ir.ir_helper import qualified_symbols
 from ..ir.analysis.usedef import UseDefDetector
 from ..ir.analysis.fieldusedef import FieldUseDef
 from logging import getLogger
@@ -85,7 +85,6 @@ class HDLModuleBuilder(object):
                     break
                 elif isinstance(array, IRVariable):
                     array_sym = qualified_symbols(array, array_sym.scope)[-1]
-                    # array_sym = array.symbol
                 else:
                     assert False
             case_items = []

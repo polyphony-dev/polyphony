@@ -1,4 +1,5 @@
 from polyphony.compiler.ir.ir import *
+from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -109,8 +110,38 @@ class IRWriter(object):
         for stm in blk.stms:
             self.lines.append(self._format_stm(stm))
 
-    def _format_stm(self, stm: IRStm) -> str:
+    def _format_stm(self, stm) -> str:
         match stm:
+            case new.CMove():
+                cond = self._format_exp(stm.cond)
+                dst = self._format_exp(stm.dst)
+                src = self._format_exp(stm.src)
+                return f'mv? {cond} {dst} {src}'
+            case new.Move():
+                dst = self._format_exp(stm.dst)
+                src = self._format_exp(stm.src)
+                return f'mv {dst} {src}'
+            case new.CExpr():
+                cond = self._format_exp(stm.cond)
+                exp = self._format_exp(stm.exp)
+                return f'expr? {cond} {exp}'
+            case new.Expr():
+                exp = self._format_exp(stm.exp)
+                return f'expr {exp}'
+            case new.Jump():
+                return f'j {stm.target.nametag}'
+            case new.CJump():
+                cond = self._format_exp(stm.exp)
+                return f'cj {cond} {stm.true.nametag} {stm.false.nametag}'
+            case new.MCJump():
+                parts = []
+                for cond, target in zip(stm.conds, stm.targets):
+                    parts.append(self._format_exp(cond))
+                    parts.append(target.nametag)
+                return f'mj {" ".join(parts)}'
+            case new.Ret():
+                exp = self._format_exp(stm.exp)
+                return f'ret {exp}'
             case CMOVE():
                 cond = self._format_exp(stm.cond)
                 dst = self._format_exp(stm.dst)
@@ -144,8 +175,45 @@ class IRWriter(object):
             case _:
                 raise ValueError(f'Unknown statement type: {type(stm)}')
 
-    def _format_exp(self, exp: IRExp) -> str:
+    def _format_exp(self, exp) -> str:
         match exp:
+            case new.Const():
+                return self._format_const(exp)
+            case new.Attr():
+                return self._format_attr(exp)
+            case new.Temp():
+                return exp.name
+            case new.UnOp():
+                op = UNOP_RMAP[exp.op]
+                inner = self._format_exp(exp.exp)
+                return f'{op}{inner}'
+            case new.BinOp():
+                op = BINOP_RMAP[exp.op]
+                left = self._format_exp(exp.left)
+                right = self._format_exp(exp.right)
+                return f'({op} {left} {right})'
+            case new.RelOp():
+                op = RELOP_RMAP[exp.op]
+                left = self._format_exp(exp.left)
+                right = self._format_exp(exp.right)
+                return f'({op} {left} {right})'
+            case new.Call():
+                return self._format_callable('call', exp)
+            case new.New():
+                return self._format_callable('new', exp)
+            case new.SysCall():
+                return self._format_callable('syscall', exp)
+            case new.MStore():
+                mem = self._format_exp(exp.mem)
+                offset = self._format_exp(exp.offset)
+                val = self._format_exp(exp.exp)
+                return f'(mst {mem} {offset} {val})'
+            case new.MRef():
+                mem = self._format_exp(exp.mem)
+                offset = self._format_exp(exp.offset)
+                return f'(mld {mem} {offset})'
+            case new.Array():
+                return self._format_array(exp)
             case CONST():
                 return self._format_const(exp)
             case ATTR():
@@ -186,7 +254,7 @@ class IRWriter(object):
             case _:
                 raise ValueError(f'Unknown expression type: {type(exp)}')
 
-    def _format_const(self, c: CONST) -> str:
+    def _format_const(self, c) -> str:
         if isinstance(c.value, bool):
             return str(c.value)
         elif isinstance(c.value, int):
@@ -196,18 +264,18 @@ class IRWriter(object):
         else:
             return str(c.value)
 
-    def _format_attr(self, attr: ATTR) -> str:
+    def _format_attr(self, attr) -> str:
         exp = self._format_exp(attr.exp)
         return f'{exp}.{attr.name}'
 
-    def _format_callable(self, opcode: str, call: IRCallable) -> str:
+    def _format_callable(self, opcode: str, call) -> str:
         func = self._format_exp(call.func)
         parts = [func]
         for _, arg in call.args:
             parts.append(self._format_exp(arg))
         return f'({opcode} {" ".join(parts)})'
 
-    def _format_array(self, arr: ARRAY) -> str:
+    def _format_array(self, arr) -> str:
         items = [self._format_exp(item) for item in arr.items]
         if arr.is_mutable:
             return f'[{" ".join(items)}]'

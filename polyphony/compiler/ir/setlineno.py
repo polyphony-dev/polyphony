@@ -1,5 +1,5 @@
 ﻿from collections import defaultdict
-from .irvisitor import IRVisitor
+from .ir_visitor import IRVisitor
 from ..common.common import get_src_text
 import logging
 logger = logging.getLogger()

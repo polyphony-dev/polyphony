@@ -48,6 +48,7 @@ class Block(object):
         self.synth_params = make_synth_params()
         self.is_hyperblock = False
 
+
     def _str_connection(self):
         s = ''
         bs = []
@@ -81,8 +82,9 @@ class Block(object):
         s += ' # code\n'
         str_stms = []
         for stm in self.stms:
-            if stm.type_str(self.scope):
-                str_stms.append(f'  {stm}  # {stm.type_str(self.scope)}')
+            type_str_fn = getattr(stm, 'type_str', None)
+            if type_str_fn and type_str_fn(self.scope):
+                str_stms.append(f'  {stm}  # {type_str_fn(self.scope)}')
             else:
                 str_stms.append(f'  {stm}')
         s += '\n'.join(str_stms)
@@ -210,6 +212,7 @@ class Block(object):
         if isinstance(typs, list):
             typs = tuple(typs)
         return [stm for stm in self.stms if isinstance(stm, typs)]
+
 
     def _convert_if_unidirectional(self, jmp):
         if isinstance(jmp, CJUMP):

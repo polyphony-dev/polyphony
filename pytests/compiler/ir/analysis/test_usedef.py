@@ -640,3 +640,31 @@ mv obj (new C x)
     assert stm1 in usedef.get_stms_defining(obj_sym)
     assert stm1 in usedef.get_stms_using(x_sym)
     assert stm1 in usedef.get_stms_using(C_sym)
+
+
+def test_add_remove_use_new_ir_types():
+    """UseDefTable.add_use/remove_use must dispatch correctly for new IR types
+    (IrVariable, Const) in addition to old IR types.
+    Without this fix, new IR Temp/Const falls through to assert False."""
+    from polyphony.compiler.ir.analysis.usedef import UseDefTable
+    from polyphony.compiler.ir import ir as new_ir
+    setup_test()
+    scope = Scope.create(None, 'S', set(), 0)
+    sym = scope.add_sym('x', tags=set(), typ=Type.int(8))
+
+    table = UseDefTable()
+    new_stm = new_ir.Move(dst=new_ir.Temp(name='y', ctx=new_ir.Ctx.STORE),
+                          src=new_ir.Temp(name='x'))
+
+    # add_use with new IR Const should dispatch to add_const_use, not assert
+    new_const = new_ir.Const(value=42)
+    table.add_use(scope, new_const, new_stm)
+
+    # remove_use with new IR Const should dispatch to remove_const_use
+    table.remove_use(scope, new_const, new_stm)
+
+    # Verify old IR types still work
+    old_stm = MOVE(TEMP('y', Ctx.STORE), TEMP('x'))
+    old_const = CONST(99)
+    table.add_use(scope, old_const, old_stm)
+    table.remove_use(scope, old_const, old_stm)

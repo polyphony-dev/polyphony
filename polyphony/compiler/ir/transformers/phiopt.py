@@ -1,32 +1,37 @@
-from ..ir import *
-from ..irhelper import reduce_relexp, qualified_symbols
+"""PHI optimizations using new IR (ir.py)."""
+from ..ir import Loc
+from ..ir import IrVariable, RelOp, Move, Phi, UPhi, LPhi, MStm, Ctx
+from ..ir_helper import qualified_symbols, reduce_relexp
+from ..symbol import Symbol
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class PHIInlining(object):
+class NewPHIInlining(object):
     def process(self, scope):
         for blk in scope.traverse_blocks():
             phis = {}
-            for phi in blk.collect_stms([PHI, UPHI]):
-                var_sym = qualified_symbols(phi.var, scope)[-1]
+            for stm in blk.stms:
+                if not isinstance(stm, (Phi, UPhi)):
+                    continue
+                var_sym = qualified_symbols(stm.var, scope)[-1]
                 assert isinstance(var_sym, Symbol)
                 if not var_sym.is_induction():
-                    phis[var_sym] = phi
+                    phis[var_sym] = stm
             phis_ = list(phis.values())
             for phi in phis_:
                 new_args = []
-                new_ps   = []
+                new_ps = []
                 for i, (arg, p) in enumerate(zip(phi.args, phi.ps)):
-                    if (isinstance(arg, IRVariable) and
+                    if (isinstance(arg, IrVariable) and
                             (arg_sym := qualified_symbols(arg, scope)[-1]) and
                             arg_sym in phis and
                             phi != phis[arg_sym]):
                         inline_phi = phis[arg_sym]
                         assert phi.block is inline_phi.block
                         new_args.extend(inline_phi.args)
-                        for offs, ip in enumerate(inline_phi.ps):
-                            new_p = reduce_relexp(RELOP('And', p, ip))
+                        for ip in inline_phi.ps:
+                            new_p = reduce_relexp(RelOp(op='And', left=p, right=ip))
                             new_ps.append(new_p)
                     else:
                         new_args.append(arg)
@@ -37,16 +42,16 @@ class PHIInlining(object):
                 logger.debug('new ' + str(phi))
 
 
-class LPHIRemover(object):
+class NewLPHIRemover(object):
     def process(self, scope):
         self.scope = scope
         for loop in scope.loop_tree.traverse():
-            lphis = loop.head.collect_stms(LPHI)
+            lphis = loop.head.collect_stms([LPhi])
             if not lphis:
                 continue
             assert len(loop.head.preds_loop) == 1
             update_idx = loop.head.preds.index(loop.head.preds_loop[0])
-            mstm = MSTM()
+            mstm = MStm(block=loop.head.preds_loop[0])
             for lphi in lphis:
                 lphi.block.stms.remove(lphi)
                 for i in range(len(lphi.args)):
@@ -54,10 +59,19 @@ class LPHIRemover(object):
                         continue
                     init_blk = lphi.block.preds[i]
                     init_arg = lphi.args[i]
-                    mv = MOVE(lphi.var.clone(), init_arg, loc=Loc(lphi.loc.filename, 0))
-                    init_blk.insert_stm(-1, mv)
+                    mv = Move(
+                        dst=lphi.var.model_copy(deep=True),
+                        src=init_arg,
+                        loc=Loc(lphi.loc.filename, 0) if lphi.loc else Loc('', 0),
+                        block=init_blk,
+                    )
+                    init_blk.stms.insert(-1, mv)
                 update_arg = lphi.args[update_idx]
-                mv = MOVE(lphi.var.clone(), update_arg, loc=lphi.loc)
-                mstm.append(mv)
-                mv.block = loop.head.preds_loop[0]
-            loop.head.preds_loop[0].insert_stm(-1, mstm)
+                mv = Move(
+                    dst=lphi.var.model_copy(deep=True),
+                    src=update_arg,
+                    loc=lphi.loc or Loc('', 0),
+                    block=loop.head.preds_loop[0],
+                )
+                mstm.stms.append(mv)
+            loop.head.preds_loop[0].stms.insert(-1, mstm)

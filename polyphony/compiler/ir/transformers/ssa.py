@@ -1,21 +1,75 @@
-﻿from collections import defaultdict, deque
-from .cfgopt import merge_path_exp, rel_and_exp
-from .varreplacer import VarReplacer
-from .tuple import TupleTransformer
-from ..ir import *
-from ..irhelper import qualified_symbols
+"""SSA transformers using new IR (ir.py).
+
+Converts IR to SSA form by inserting PHI nodes, renaming variables,
+and handling loop PHIs and predicates.
+"""
+from collections import defaultdict, deque
+from .cfgopt import can_merge_synth_params
+from ..ir import (
+    Ir, IrExp, IrStm, IrVariable, IrNameExp,
+    Const, Temp, Attr, Move, Expr, CExpr, Jump, CJump, MCJump,
+    Phi, UPhi, LPhi, Call, SysCall, New,
+    Ctx,
+)
+from ..ir_helper import qualified_symbols, qsym2var
+from ..ir_visitor import IrVisitor
 from ..types.type import Type
 from ..types import typehelper
 from ..analysis.dominator import DominatorTreeBuilder, DominanceFrontierBuilder
-from ..analysis.usedef import UseDefDetector
+from ..analysis.usedef import NewUseDefDetector, NewUseDefUpdater
+from ..analysis.usedef import UseDefItem
+from .varreplacer import NewVarReplacer
+from ..symbol import Symbol
 from ...common.env import env
 from ...common.utils import replace_item
-
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class SSATransformerBase(object):
+def _merge_path_exp(pred, blk, idx_hint=-1):
+    """Compute path expression for reaching blk from pred (new IR version)."""
+    from ..ir import RelOp, UnOp
+    jump = pred.stms[-1] if pred.stms else None
+    exp = pred.path_exp
+    if isinstance(jump, CJump):
+        if blk is jump.true:
+            exp = _rel_and_exp(pred.path_exp, jump.exp)
+        elif blk is jump.false:
+            exp = _rel_and_exp(pred.path_exp, UnOp(op='Not', exp=jump.exp))
+    elif isinstance(jump, MCJump):
+        if blk in jump.targets:
+            if 1 == jump.targets.count(blk):
+                idx = jump.targets.index(blk)
+                exp = _rel_and_exp(pred.path_exp, jump.conds[idx])
+            elif idx_hint >= 0:
+                exp = _rel_and_exp(pred.path_exp, jump.conds[idx_hint])
+            else:
+                from ..ir import RelOp
+                indices = [i for i, t in enumerate(jump.targets) if t is blk]
+                exp = _rel_and_exp(pred.path_exp, jump.conds[indices[0]])
+                for idx in indices[1:]:
+                    rexp = _rel_and_exp(pred.path_exp, jump.conds[idx])
+                    exp = RelOp(op='Or', left=exp, right=rexp)
+    return exp
+
+
+def _rel_and_exp(exp1, exp2):
+    from ..ir import RelOp
+    from ..ir_helper import reduce_relexp
+    if exp1 is None:
+        return exp2
+    if exp2 is None:
+        return exp1
+    exp1 = reduce_relexp(exp1)
+    exp2 = reduce_relexp(exp2)
+    if isinstance(exp1, Const) and exp1.value:
+        return exp2
+    if isinstance(exp2, Const) and exp2.value:
+        return exp1
+    return RelOp(op='And', left=exp1, right=exp2)
+
+
+class NewSSATransformerBase(object):
     def __init__(self):
         pass
 
@@ -24,7 +78,7 @@ class SSATransformerBase(object):
             return
         self.scope = scope
         self.dominance_frontier = {}
-        self.usedef = UseDefDetector().process(scope)
+        self.usedef = NewUseDefDetector().process(scope)
         self.phis = []
 
         self._compute_dominance_frontier()
@@ -37,15 +91,15 @@ class SSATransformerBase(object):
         self._deal_with_return_phi()
 
     def _sort_phi(self, blk):
-        phis = blk.collect_stms(PHI)
-        if len(phis) == 1:
+        phis = [stm for stm in blk.stms if type(stm) is Phi]
+        if len(phis) <= 1:
             return
         for phi in phis:
             blk.stms.remove(phi)
-
         phis = sorted(phis, key=lambda p: qualified_symbols(p.var, self.scope), reverse=True)
         for phi in phis:
-            blk.insert_stm(0, phi)
+            phi.block = blk
+            blk.stms.insert(0, phi)
 
     def _insert_phi(self):
         phi_symbols = defaultdict(list)
@@ -59,31 +113,23 @@ class SSATransformerBase(object):
                 if def_block not in self.dominance_frontier:
                     continue
                 for df in self.dominance_frontier[def_block]:
-                    logger.log(0, 'DF of ' + def_block.name + ' = ' + df.name)
                     if qsym in phi_symbols[df]:
                         continue
                     phi_symbols[df].append(qsym)
-                    #insert phi to df
                     var = self._qsym_to_var(qsym, Ctx.STORE)
                     phi = self._new_phi(var, df)
-                    df.insert_stm(0, phi)
-                    #The phi has the definintion of the variable
-                    #so we must add the phi to the df_blocks if needed
+                    phi.block = df
+                    df.stms.insert(0, phi)
                     if qsym not in self.usedef.get_qsyms_defined_at(df):
                         def_blocks.add(df)
-                    #this must call after the above checking
                     self._add_phi_var_to_usedef(var, phi)
                     self.phis.append(phi)
                     dfs.add(df)
-        # In objectssa, the following code is important to make
-        # hierarchical PHI definitions in the proper order.
         for df in dfs:
             self._sort_phi(df)
 
     def _new_phi(self, var, df):
-        phi = PHI(var)
-        phi.block = df
-        phi.args = [CONST(None)] * len(df.preds)
+        phi = Phi(var=var, args=[Const(value=None)] * len(df.preds))
         sym = qualified_symbols(var, self.scope)[-1]
         defs = self.usedef.get_stms_defining(sym)
         for d in defs:
@@ -93,12 +139,24 @@ class SSATransformerBase(object):
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
+        qsyms = qualified_symbols(var, self.scope)
+        sym = qsyms[-1]
+        assert isinstance(sym, Symbol)
+        item = UseDefItem(sym, qsyms, var, phi, phi.block)
         if is_tail_attr:
-            self.usedef.add_var_def(self.scope, var, phi)
-            if isinstance(var, ATTR):
+            self.usedef._def_sym2[sym].add(item)
+            self.usedef._def_qsym2[qsyms].add(item)
+            self.usedef._def_var2[var].add(item)
+            self.usedef._def_stm2[phi].add(item)
+            self.usedef._def_blk2[phi.block].add(item)
+            if isinstance(var, Attr):
                 self._add_phi_var_to_usedef(var.exp, phi, is_tail_attr=False)
         else:
-            self.usedef.add_var_use(self.scope, var, phi)
+            self.usedef._use_sym2[sym].add(item)
+            self.usedef._use_qsym2[qsyms].add(item)
+            self.usedef._use_var2[var].add(item)
+            self.usedef._use_stm2[phi].add(item)
+            self.usedef._use_blk2[phi.block].add(item)
 
     def _rename(self):
         qcount = {}
@@ -111,68 +169,64 @@ class SSATransformerBase(object):
                 using_vars.add(var)
         for var in using_vars:
             key = qualified_symbols(var, self.scope)
-            # key = var.qualified_symbol
             qcount[key] = 0
             qstack[key] = [(0, None)]
 
-        self.new_syms = set()
+        self.new_syms = []
         self._rename_rec(self.scope.entry_block, qcount, qstack)
 
         for var, version in self.new_syms:
-            assert isinstance(var, IRVariable)
+            assert isinstance(var, IrVariable)
             qsyms = qualified_symbols(var, self.scope)
             if self._need_rename(qsyms[-1], qsyms):
                 new_name = var.name + '#' + str(version)
                 var_sym = qsyms[-1]
                 new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
-                logger.debug(str(new_sym) + ' ancestor is ' + str(var_sym))
                 var.name = new_name
 
     def _rename_rec(self, block, count, stack):
         for stm in block.stms:
-            if not isinstance(stm, PHI):
+            if type(stm) is not Phi:
                 for use in self.usedef.get_vars_used_at(stm):
-                    assert isinstance(use, IRVariable)
+                    assert isinstance(use, IrVariable)
                     qsym = qualified_symbols(use, self.scope)
                     key = qsym
+                    if key not in stack or not stack[key]:
+                        continue
                     i, _ = stack[key][-1]
                     self._add_new_sym(use, i)
 
                     use_t = qsym[-1].typ
                     for expr_t in typehelper.find_expr(use_t):
                         expr = expr_t.expr
-                        vs = expr.find_irs(IRVariable)
+                        vs = expr.find_irs(IrVariable)
                         for v in vs:
                             key = qualified_symbols(v, self.scope)
-                            if all([isinstance(k, Symbol) for k in key]):
+                            if all(isinstance(k, Symbol) for k in key):
                                 if self._need_rename(key[-1], key):
                                     i, _ = stack[key][-1]
                                     self._add_new_sym(v, i)
-            #this loop includes PHI
             for d in self.usedef.get_vars_defined_at(stm):
-                #print(stm, d)
-                assert isinstance(d, IRVariable)
+                assert isinstance(d, IrVariable)
                 key = qualified_symbols(d, self.scope)
                 if self._need_rename(key[-1], key):
-                    logger.debug('count up ' + str(d) + ' ' + str(stm))
                     count[key] += 1
                 i = count[key]
                 stack[key].append((i, d))
                 self._add_new_sym(d, i)
-                if isinstance(stm, PHI) and isinstance(d, ATTR):
+                if isinstance(stm, Phi) and isinstance(d, Attr):
                     self._add_new_sym_rest(d.exp, stack)
 
                 d_t = key[-1].typ
                 for expr_t in typehelper.find_expr(d_t):
                     expr = expr_t.expr
-                    vs = expr.find_irs(IRVariable)
+                    vs = expr.find_irs(IrVariable)
                     for v in vs:
                         key = qualified_symbols(v, self.scope)
-                        if all([isinstance(k, Symbol) for k in key]):
+                        if all(isinstance(k, Symbol) for k in key):
                             if self._need_rename(key[-1], key):
                                 i, _ = stack[key][-1]
                                 self._add_new_sym(v, i)
-        #into successors
         for succ in block.succs:
             phis = [phi for phi in self.phis if phi.block is succ]
             for phi in phis:
@@ -191,7 +245,8 @@ class SSATransformerBase(object):
         i, v = stack[key][-1]
         if is_tail_attr:
             if i > 0:
-                var = var.clone(ctx=Ctx.LOAD)
+                var = var.model_copy(deep=True)
+                var.ctx = Ctx.LOAD
                 if 1 == phi.block.preds.count(block):
                     idx = phi.block.preds.index(block)
                     phi.args[idx] = var
@@ -205,42 +260,40 @@ class SSATransformerBase(object):
         else:
             self._add_new_sym(var, i)
 
-        if isinstance(var, ATTR):
+        if isinstance(var, Attr):
             self._add_new_phi_arg(phi, var.exp, stack, block, is_tail_attr=False)
 
     def _need_rename(self, sym, qsym):
         return False
 
     def _add_new_sym(self, var, version):
-        assert isinstance(var, IRVariable)
+        assert isinstance(var, IrVariable)
         qsym = qualified_symbols(var, self.scope)
         if self._need_rename(qsym[-1], qsym):
-            self.new_syms.add((var, version))
+            # Use id-based dedup to match old SSA's set behavior.
+            # Same (var object, version) should only appear once.
+            if not any(v is var and ver == version for v, ver in self.new_syms):
+                self.new_syms.append((var, version))
 
     def _add_new_sym_rest(self, var, stack):
-        assert isinstance(var, IRVariable)
+        assert isinstance(var, IrVariable)
         key = qualified_symbols(var, self.scope)
         i, _ = stack[key][-1]
-        self.new_syms.add((var, i))
-        if isinstance(var, ATTR):
+        if not any(v is var and ver == i for v, ver in self.new_syms):
+            self.new_syms.append((var, i))
+        if isinstance(var, Attr):
             self._add_new_sym_rest(var.exp, stack)
 
-    # TODO: qsym2var in irhelper.py
     def _qsym_to_var(self, qsym, ctx):
         if len(qsym) == 1:
-            return TEMP(qsym[0].name, ctx)
+            return Temp(name=qsym[0].name, ctx=ctx)
         else:
             exp = self._qsym_to_var(qsym[:-1], Ctx.LOAD)
-            return ATTR(exp, qsym[-1], ctx)
-
-    def dump_df(self):
-        for node, dfs in sorted(self.dominance_frontier.items(), key=lambda n: n[0].name):
-            logger.debug('DF of ' + node.name + ' is ...' + ', '.join([df.name for df in dfs]))
+            return Attr(name=qsym[-1].name, exp=exp, attr=qsym[-1].name, ctx=ctx)
 
     def _compute_dominance_frontier(self):
         dtree_builder = DominatorTreeBuilder(self.scope)
         tree = dtree_builder.process()
-        tree.dump()
         self.tree = tree
 
         first_block = self.scope.entry_block
@@ -248,18 +301,16 @@ class SSATransformerBase(object):
         self.dominance_frontier = df_builder.process(first_block, tree)
 
     def _remove_useless_phi(self):
-        self.usedef = UseDefDetector().process(self.scope)
+        self.usedef = NewUseDefDetector().process(self.scope)
         usedef = self.usedef
 
         def get_arg_name_if_same(phi):
             names = [arg.name for arg in phi.args
-                    if arg and
-                        isinstance(arg, IRVariable) and
-                        arg.name != phi.var.name]
+                    if arg and isinstance(arg, IrVariable) and arg.name != phi.var.name]
             if names and all(names[0] == s for s in names):
                 return names[0]
-            else:
-                return None
+            return None
+
         worklist = deque(self.phis)
         while worklist:
             phi = worklist.popleft()
@@ -270,29 +321,69 @@ class SSATransformerBase(object):
             usestms = usedef.get_stms_using(var_sym)
             if not usestms:
                 self._remove_phi(phi, usedef)
-                for a in [a for a in phi.args if a and isinstance(a, TEMP)]:
+                for a in [a for a in phi.args if a and isinstance(a, Temp)]:
                     a_sym = qualified_symbols(a, self.scope)[-1]
-                    for defphi in [defstm for defstm in usedef.get_stms_defining(a_sym) if isinstance(defstm, PHI)]:
+                    for defphi in [defstm for defstm in usedef.get_stms_defining(a_sym) if isinstance(defstm, Phi)]:
                         worklist.append(defphi)
                 continue
             name = get_arg_name_if_same(phi)
             if name:
-                replace_var = phi.var.clone(ctx=Ctx.LOAD)
+                replace_var = phi.var.model_copy(deep=True)
+                replace_var.ctx = Ctx.LOAD
                 replace_var.name = name
-                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef)
+                replaces = NewVarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef)
                 for rep in replaces:
-                    if isinstance(rep, PHI):
+                    if isinstance(rep, Phi):
                         worklist.append(rep)
-                    usedef.remove_use(self.scope, phi.var, rep)
-                    usedef.add_use(self.scope, replace_var, rep)
+                    # Update usedef: remove old var use, add new var use
+                    self._update_usedef_replace(usedef, phi.var, replace_var, rep)
                 self._remove_phi(phi, usedef)
 
+    def _update_usedef_replace(self, usedef, old_var, new_var, stm):
+        """Remove old_var use and add new_var use for stm in usedef."""
+        old_qsyms = qualified_symbols(old_var, self.scope)
+        old_sym = old_qsyms[-1]
+        if isinstance(old_sym, Symbol):
+            item = UseDefItem(old_sym, old_qsyms, old_var, stm, stm.block)
+            usedef._use_sym2[old_sym].discard(item)
+            usedef._use_qsym2[old_qsyms].discard(item)
+            usedef._use_var2[old_var].discard(item)
+            usedef._use_stm2[stm].discard(item)
+            usedef._use_blk2[stm.block].discard(item)
+        new_qsyms = qualified_symbols(new_var, self.scope)
+        new_sym = new_qsyms[-1]
+        if isinstance(new_sym, Symbol):
+            item = UseDefItem(new_sym, new_qsyms, new_var, stm, stm.block)
+            usedef._use_sym2[new_sym].add(item)
+            usedef._use_qsym2[new_qsyms].add(item)
+            usedef._use_var2[new_var].add(item)
+            usedef._use_stm2[stm].add(item)
+            usedef._use_blk2[stm.block].add(item)
+
     def _remove_phi(self, phi, usedef):
-        logger.debug('remove ' + str(phi))
         if phi in phi.block.stms:
             phi.block.stms.remove(phi)
-            usedef.remove_stm(self.scope, phi)
-            # self.scope.del_sym(phi.var.symbol.name)
+            # Remove all uses/defs of this phi from usedef
+            for var in list(usedef.get_vars_used_at(phi)):
+                qsyms = qualified_symbols(var, self.scope)
+                sym = qsyms[-1]
+                if isinstance(sym, Symbol):
+                    item = UseDefItem(sym, qsyms, var, phi, phi.block)
+                    usedef._use_sym2[sym].discard(item)
+                    usedef._use_qsym2[qsyms].discard(item)
+                    usedef._use_var2[var].discard(item)
+                    usedef._use_stm2[phi].discard(item)
+                    usedef._use_blk2[phi.block].discard(item)
+            for var in list(usedef.get_vars_defined_at(phi)):
+                qsyms = qualified_symbols(var, self.scope)
+                sym = qsyms[-1]
+                if isinstance(sym, Symbol):
+                    item = UseDefItem(sym, qsyms, var, phi, phi.block)
+                    usedef._def_sym2[sym].discard(item)
+                    usedef._def_qsym2[qsyms].discard(item)
+                    usedef._def_var2[var].discard(item)
+                    usedef._def_stm2[phi].discard(item)
+                    usedef._def_blk2[phi.block].discard(item)
 
     def _insert_predicate(self):
         for blk in self.scope.traverse_blocks():
@@ -303,10 +394,11 @@ class SSATransformerBase(object):
             dup_counts = defaultdict(int)
             for pred in blk.preds:
                 if len(pred.succs) == 1:
-                    p = pred.path_exp if pred.path_exp else CONST(1)
+                    path_exp = pred.path_exp
+                    p = path_exp if path_exp else Const(value=1)
                 else:
                     if pred.succs.count(blk) == 1:
-                        p = merge_path_exp(pred, blk)
+                        p = _merge_path_exp(pred, blk)
                     else:
                         dup_count = dup_counts[pred]
                         dup_counts[pred] += 1
@@ -315,7 +407,7 @@ class SSATransformerBase(object):
                                    if target is blk]
                         for idx, target in targets:
                             if dup_count == 0:
-                                p = rel_and_exp(pred.path_exp, jump.conds[idx])
+                                p = _rel_and_exp(pred.path_exp, jump.conds[idx])
                                 break
                             else:
                                 dup_count -= 1
@@ -330,7 +422,10 @@ class SSATransformerBase(object):
             blk = phi.block
             if not blk.preds_loop:
                 continue
-            lphi = LPHI.from_phi(phi)
+            lphi = LPhi(var=phi.var.model_copy(deep=True),
+                        args=phi.args[:],
+                        ps=[Const(value=1)] * len(phi.ps),
+                        block=phi.block, loc=phi.loc)
             replace_item(blk.stms, phi, lphi)
             replace_item(self.phis, phi, lphi)
             var_sym = qualified_symbols(lphi.var, self.scope)[-1]
@@ -345,27 +440,17 @@ class SSATransformerBase(object):
             assert isinstance(var_sym, Symbol)
             if var_sym.is_return():
                 for a in phi.args:
-                    if isinstance(a, CONST):
-                        print(a)
-                    if isinstance(a, IRVariable):
+                    if isinstance(a, IrVariable):
                         a_sym = qualified_symbols(a, self.scope)[-1]
                         assert isinstance(a_sym, Symbol)
                         a_sym.del_tag('return')
-                    #new_name = 'ret' + a.symbol.name.split('#')[1]
-                    # while new_name in self.scope.symbols:
-                    #    new_name = '_' + new_name
-                    # a.symbol.name = new_name
 
 
-class ScalarSSATransformer(SSATransformerBase):
-    def __init__(self):
-        super().__init__()
-
+class NewScalarSSATransformer(NewSSATransformerBase):
     def _need_rename(self, sym, qsym):
         if (sym.is_condition() or
                 sym.is_param() or
                 sym.is_static() or
-                #sym.is_flattened() or
                 sym.typ.name in ['function', 'class', 'object', 'tuple', 'port']):
             return False
         if len(qsym) > 1:
@@ -376,75 +461,7 @@ class ScalarSSATransformer(SSATransformerBase):
         return True
 
 
-class TupleSSATransformer(SSATransformerBase):
-    def __init__(self):
-        super().__init__()
-
-    def process(self, scope):
-        if scope.is_class() or scope.is_namespace():
-            return
-        super().process(scope)
-        TupleTransformer().process(scope)
-        self.usedef = UseDefDetector().process(scope)
-        self._process_use_phi()
-
-    def _process_use_phi(self):
-        usedef = self.usedef
-        for phi in self.phis:
-            qsym = qualified_symbols(phi.var, self.scope)
-            uses = usedef.get_stms_using(qsym)
-            for use in uses:
-                self._insert_use_phi(phi, use)
-
-    def _insert_use_phi(self, phi, use_stm):
-        insert_idx = use_stm.block.stms.index(use_stm)
-        qname = phi.var.qualified_name
-        if isinstance(use_stm, MOVE):
-            src_use_vars = [ir for ir in use_stm.src.find_vars(qname)]
-            dst_use_vars = [ir for ir in use_stm.dst.find_vars(qname)]
-            if src_use_vars:
-                use_var = src_use_vars[0]
-                uphi = UPHI(use_stm.dst.clone())
-                uphi.ps = phi.ps[:]
-                for arg in phi.args:
-                    src = use_stm.src.clone()
-                    src.replace(use_var, arg.clone())
-                    uphi.args.append(src)
-                use_stm.block.insert_stm(insert_idx, uphi)
-            else:
-                assert dst_use_vars
-                use_var = dst_use_vars[0]
-                for p, arg in zip(phi.ps, phi.args):
-                    dst = use_stm.dst.clone()
-                    dst.replace(use_var, arg.clone())
-                    assert False, 'CMOVE'
-                    cmov = CMOVE(p.clone(), dst, use_stm.src.clone())
-                    use_stm.block.insert_stm(insert_idx, cmov)
-            use_stm.block.stms.remove(use_stm)
-        elif isinstance(use_stm, EXPR):
-            use_vars = [ir for ir in use_stm.exp.find_vars(qname)]
-            assert use_vars
-            use_var = use_vars[0]
-            for p, arg in zip(phi.ps, phi.args):
-                exp = use_stm.exp.clone()
-                exp.replace(use_var, arg.clone())
-                cexp = CEXPR(p.clone(), exp)
-                use_stm.block.insert_stm(insert_idx, cexp)
-            use_stm.block.stms.remove(use_stm)
-        else:
-            assert False
-
-    def _need_rename(self, sym, qsym):
-        if sym.scope.is_namespace() or sym.scope.is_class():
-            return False
-        sym_t = sym.typ
-        return sym_t.is_tuple() and not sym.is_param()
-
-
-class ListSSATransformer(SSATransformerBase):
-    def __init__(self):
-        super().__init__()
-
+class NewListSSATransformer(NewSSATransformerBase):
     def _need_rename(self, sym, qsym):
         if sym.scope.is_namespace() or sym.scope.is_class():
             return False
@@ -452,10 +469,7 @@ class ListSSATransformer(SSATransformerBase):
         return sym_t.is_list() and not sym.is_param()
 
 
-class ObjectSSATransformer(SSATransformerBase):
-    def __init__(self):
-        super().__init__()
-
+class NewObjectSSATransformer(NewSSATransformerBase):
     def _need_rename(self, sym, qsym):
         sym_t = sym.typ
         if not sym_t.is_object():
@@ -475,3 +489,63 @@ class ObjectSSATransformer(SSATransformerBase):
             if not self._need_rename(qsym[idx - 1], qsym):
                 return False
         return True
+
+
+class NewTupleSSATransformer(NewSSATransformerBase):
+    def process(self, scope):
+        if scope.is_class() or scope.is_namespace():
+            return
+        super().process(scope)
+        from .tuple import NewTupleTransformer
+        NewTupleTransformer().process(scope)
+        self.usedef = NewUseDefDetector().process(scope)
+        self._process_use_phi()
+
+    def _process_use_phi(self):
+        usedef = self.usedef
+        for phi in self.phis:
+            qsym = qualified_symbols(phi.var, self.scope)
+            uses = usedef.get_stms_using(qsym)
+            for use in uses:
+                self._insert_use_phi(phi, use)
+
+    def _insert_use_phi(self, phi, use_stm):
+        insert_idx = use_stm.block.stms.index(use_stm)
+        qname = phi.var.qualified_name
+        if isinstance(use_stm, Move):
+            src_use_vars = use_stm.src.find_vars(qname)
+            dst_use_vars = use_stm.dst.find_vars(qname)
+            if src_use_vars:
+                use_var = src_use_vars[0]
+                from ..ir import Loc
+                uphi = UPhi(var=use_stm.dst.model_copy(deep=True),
+                            block=use_stm.block, loc=use_stm.loc or Loc('', 0))
+                uphi.ps = phi.ps[:]
+                for arg in phi.args:
+                    src = use_stm.src.model_copy(deep=True)
+                    src.replace(use_var, arg.model_copy(deep=True))
+                    uphi.args.append(src)
+                use_stm.block.stms.insert(insert_idx, uphi)
+            else:
+                assert dst_use_vars
+                assert False, 'CMOVE path not implemented'
+            use_stm.block.stms.remove(use_stm)
+        elif isinstance(use_stm, Expr):
+            use_vars = use_stm.exp.find_vars(qname)
+            assert use_vars
+            use_var = use_vars[0]
+            for p, arg in zip(phi.ps, phi.args):
+                exp = use_stm.exp.model_copy(deep=True)
+                exp.replace(use_var, arg.model_copy(deep=True))
+                cexp = CExpr(cond=p.model_copy(deep=True), exp=exp,
+                             block=use_stm.block, loc=use_stm.loc or Loc('', 0))
+                use_stm.block.stms.insert(insert_idx, cexp)
+            use_stm.block.stms.remove(use_stm)
+        else:
+            assert False
+
+    def _need_rename(self, sym, qsym):
+        if sym.scope.is_namespace() or sym.scope.is_class():
+            return False
+        sym_t = sym.typ
+        return sym_t.is_tuple() and not sym.is_param()

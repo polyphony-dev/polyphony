@@ -5,7 +5,7 @@ from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.irreader import IRReader as IRParser, ir_stm
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
-from polyphony.compiler.ir.transformers.inlineopt import InlineOpt
+from polyphony.compiler.ir.transformers.inlineopt import NewInlineOpt
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.builtin import builtin_symbols
 from pytests.compiler.base import setup_test
@@ -13,6 +13,11 @@ from pytests.compiler.base import lib_source_polyphony
 from pytests.compiler.base import lib_source_polyphony_timing
 from pytests.compiler.base import lib_source_polyphony_io
 import pytest
+
+
+def _run_inline(scopes):
+    """Run NewInlineOpt directly on block.stms (unified IR)."""
+    NewInlineOpt().process_scopes(scopes)
 
 
 def test_funtion_inlining():
@@ -44,7 +49,7 @@ def test_funtion_inlining():
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
 
     f = env.scopes['@top.f']
-    InlineOpt().process_scopes([f])
+    _run_inline([f])
 
     gen = f.traverse_blocks()
     blk1 = next(gen)
@@ -92,7 +97,7 @@ def test_funtion_inlining_2():
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
 
     f = env.scopes['@top.f']
-    InlineOpt().process_scopes([f])
+    _run_inline([f])
 
     gen = f.traverse_blocks()
     blk1 = next(gen)
@@ -163,7 +168,7 @@ def test_function_inlining_3():
     top.add_sym('func', tags=set(), typ=Type.function('@top.func'))
 
     func = env.scopes['@top.func']
-    InlineOpt().process_scopes([func])
+    _run_inline([func])
 
     ret_func = func.find_sym('@return')
     assert ret_func
@@ -258,7 +263,7 @@ def test_function_inlining_with_free_symbol():
     assert len(g.closures()) == 1
     assert g.closures()[0] is h
 
-    InlineOpt().process_scopes([f])
+    _run_inline([f])
 
     # removed enclosure tag
     assert not g.is_enclosure()
@@ -357,7 +362,7 @@ def test_functor_inlining():
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
 
     f = env.scopes['@top.f']
-    InlineOpt().process_scopes([f])
+    _run_inline([f])
 
     gen = f.traverse_blocks()
     blk1 = next(gen)
@@ -429,7 +434,7 @@ def test_ctor_inlining():
 
     caller_func = env.scopes['@top.caller_func']
 
-    InlineOpt().process_scopes([caller_func])
+    _run_inline([caller_func])
 
     gen = caller_func.traverse_blocks()
     blk1 = next(gen)
@@ -535,7 +540,7 @@ def caller_func():
 
     caller_func = env.scopes['@top.caller_func']
 
-    InlineOpt().process_scopes([caller_func])
+    _run_inline([caller_func])
 
     gen = caller_func.traverse_blocks()
     blk1 = next(gen)
@@ -637,7 +642,7 @@ def test_method_inlining():
 
     caller_func = env.scopes['@top.caller_func']
 
-    InlineOpt().process_scopes([caller_func])
+    _run_inline([caller_func])
 
     gen = caller_func.traverse_blocks()
     blk1 = next(gen)
@@ -787,7 +792,7 @@ def composition04(x):
 
     caller_func = env.scopes['@top.composition04']
 
-    InlineOpt().process_scopes([caller_func])
+    _run_inline([caller_func])
 
     gen = caller_func.traverse_blocks()
     blk1 = next(gen)
@@ -917,7 +922,7 @@ def test_inlinelib_1():
 
     caller_func = env.scopes['@top.caller_func']
 
-    InlineOpt().process_scopes([caller_func])
+    _run_inline([caller_func])
 
     inlined_lambda1 = env.scopes['@top.caller_func.lambda_#1']
     inlined_lambda2 = env.scopes['@top.caller_func.lambda_#2']
@@ -1027,7 +1032,7 @@ def test_ctor_with_closure():
 
     caller = env.scopes['@top.caller']
 
-    InlineOpt().process_scopes([caller])
+    _run_inline([caller])
     inlined_lambda1 = env.scopes['@top.caller.lambda_#1']
 
     c = caller.find_sym('c')
