@@ -15,7 +15,7 @@ from ..ir import (
     Move, Expr, Const, Jump, CJump, MCJump, BinOp, MRef, MStore,
     UnOp, RelOp, CondOp,
     IrStm, Phi, UPhi, Call, SysCall, CMove, CExpr, Temp, Attr,
-    New, Array, IrVariable,
+    New, Array, IrVariable, MStm,
 )
 from .dataflow import (
     _is_move, _is_expr, _is_phi, _is_ctrl_stm,
@@ -306,8 +306,45 @@ class BlockBoundedListScheduler(SchedulerImpl):
         longest_latency = 0
         for block, nodes in block_nodes.items():
             latency = self._list_schedule_with_block_bound(dfg, nodes, block, 0)
+            latency = self._sync_mstm_siblings(dfg, nodes, latency)
             if longest_latency < latency:
                 longest_latency = latency
+        return longest_latency
+
+    def _sync_mstm_siblings(self, dfg, nodes, longest_latency):
+        """Ensure MStm siblings are scheduled in the same step.
+
+        MStm represents simultaneous assignments (e.g., swap patterns).
+        All child moves must execute in the same clock cycle so that
+        non-blocking assignments in Verilog preserve simultaneous semantics.
+        """
+        # Build mapping from MStm id to its child DFG nodes
+        mstm_groups = defaultdict(list)
+        seen_blocks = set()
+        for node in nodes:
+            stm = node.tag
+            blk = stm.block
+            if id(blk) in seen_blocks:
+                continue
+            seen_blocks.add(id(blk))
+            for s in blk.stms:
+                if isinstance(s, MStm):
+                    for child in s.stms:
+                        child_node = dfg.find_node(child)
+                        if child_node:
+                            mstm_groups[id(s)].append(child_node)
+        # Sync begin/end times to the latest sibling
+        for mstm_id, sibling_nodes in mstm_groups.items():
+            if len(sibling_nodes) <= 1:
+                continue
+            max_begin = max(n.begin for n in sibling_nodes)
+            for node in sibling_nodes:
+                if node.begin < max_begin:
+                    _, _, latency = self.node_latency_map[node]
+                    node.begin = max_begin
+                    node.end = max_begin + latency
+                    if longest_latency < node.end:
+                        longest_latency = node.end
         return longest_latency
 
     def _list_schedule_with_block_bound(self, dfg, nodes, block, longest_latency):
