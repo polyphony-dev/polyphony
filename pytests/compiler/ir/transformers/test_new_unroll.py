@@ -1,4 +1,4 @@
-"""Tests for NewLoopUnroller."""
+"""Tests for LoopUnroller."""
 from polyphony.compiler.ir.ir import Const, Temp, Move, CJump, BinOp, RelOp, LPhi, Jump, Ret, Expr, Ctx
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
@@ -6,8 +6,8 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.analysis.loopdetector import LoopDetector, LoopRegionSetter
-from polyphony.compiler.ir.analysis.loopdetector import NewLoopInfoSetter, NewLoopDependencyDetector
-from polyphony.compiler.ir.transformers.unroll import NewLoopUnroller
+from polyphony.compiler.ir.analysis.loopdetector import LoopInfoSetter, LoopDependencyDetector
+from polyphony.compiler.ir.transformers.unroll import LoopUnroller
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -97,7 +97,7 @@ def _make_unrollable_loop_scope(trip_count=4, unroll='full'):
 
 
 def test_new_loop_unroller_no_unroll():
-    """NewLoopUnroller returns False when no unroll params set."""
+    """LoopUnroller returns False when no unroll params set."""
     setup_test()
     scope = Scope.create(None, 'NoUnroll', {'function', 'returnable'}, 0)
     scope.return_type = Type.int()
@@ -144,23 +144,23 @@ def test_new_loop_unroller_no_unroll():
     Block.set_order(blk_entry, 0)
 
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
+    LoopInfoSetter().process(scope)
     LoopRegionSetter().process(scope)
-    NewLoopDependencyDetector().process(scope)
+    LoopDependencyDetector().process(scope)
 
-    result = NewLoopUnroller().process(scope)
+    result = LoopUnroller().process(scope)
     # No unroll param => should not unroll (returns None)
 
 
 def test_new_loop_unroller_full_unroll():
-    """NewLoopUnroller fully unrolls a loop with factor='full'."""
+    """LoopUnroller fully unrolls a loop with factor='full'."""
     scope = _make_unrollable_loop_scope(trip_count=4, unroll='full')
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
+    LoopInfoSetter().process(scope)
     LoopRegionSetter().process(scope)
-    NewLoopDependencyDetector().process(scope)
+    LoopDependencyDetector().process(scope)
 
-    NewLoopUnroller().process(scope)
+    LoopUnroller().process(scope)
 
     # After full unroll, there should be no loop regions
     loops = list(scope.child_regions(scope.top_region()))
@@ -172,14 +172,14 @@ def test_new_loop_unroller_full_unroll():
 
 
 def test_new_loop_unroller_partial_unroll():
-    """NewLoopUnroller partially unrolls a loop with factor=2."""
+    """LoopUnroller partially unrolls a loop with factor=2."""
     scope = _make_unrollable_loop_scope(trip_count=4, unroll=2)
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
+    LoopInfoSetter().process(scope)
     LoopRegionSetter().process(scope)
-    NewLoopDependencyDetector().process(scope)
+    LoopDependencyDetector().process(scope)
 
-    NewLoopUnroller().process(scope)
+    LoopUnroller().process(scope)
 
     # After partial unroll (factor=2, trip=4), no remainder
     # The old loop should be removed, new loop should exist
@@ -188,7 +188,7 @@ def test_new_loop_unroller_partial_unroll():
 
 
 def test_new_loop_unroller_class_exists():
-    """NewLoopUnroller class can be imported and instantiated."""
-    from polyphony.compiler.ir.transformers.unroll import NewLoopUnroller
-    u = NewLoopUnroller()
+    """LoopUnroller class can be imported and instantiated."""
+    from polyphony.compiler.ir.transformers.unroll import LoopUnroller
+    u = LoopUnroller()
     assert u is not None

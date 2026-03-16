@@ -8,13 +8,13 @@ from ..ir_visitor import IrVisitor
 from ..ir_helper import qualified_symbols
 from ..scope import Scope
 from ..symbol import Symbol
-from ..analysis.usedef import NewUseDefDetector, NewUseDefUpdater
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from ..analysis.usedef import UseDefItem
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class NewCopyCollector(IrVisitor):
+class CopyCollector(IrVisitor):
     def __init__(self, copies):
         self.copies = copies
 
@@ -46,16 +46,16 @@ class NewCopyCollector(IrVisitor):
                 self.copies.append(ir)
 
 
-class NewCopyOpt(object):
+class CopyOpt(object):
     def _new_collector(self, copies):
-        return NewCopyCollector(copies)
+        return CopyCollector(copies)
 
     def _find_old_use(self, scope, ir, qname):
         return ir.find_vars(qname)
 
     def process(self, scope):
         self.scope = scope
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         copies = []
         collector = self._new_collector(copies)
         collector.process(scope)
@@ -69,12 +69,12 @@ class NewCopyOpt(object):
                 continue
             src_qsym = qualified_symbols(cp.src, scope)
             orig = self._find_root_def(src_qsym)
-            udupdater = NewUseDefUpdater(scope, self.usedef)
+            udupdater = UseDefUpdater(scope, self.usedef)
             replaced = self._replace_copies(scope, udupdater, self.usedef, cp, orig, dst_qsym, copies, worklist)
             if dst_qsym[0].is_free():
                 for clos in scope.closures():
-                    clos_usedef = NewUseDefDetector().process(clos)
-                    clos_udupdater = NewUseDefUpdater(clos, clos_usedef)
+                    clos_usedef = UseDefDetector().process(clos)
+                    clos_udupdater = UseDefUpdater(clos, clos_usedef)
                     clos_replaced = self._replace_copies(clos, clos_udupdater, clos_usedef, cp, orig, dst_qsym, copies, worklist)
                     if clos_replaced:
                         src_qsym[0].add_tag('free')
@@ -152,7 +152,7 @@ class NewCopyOpt(object):
         return None
 
 
-class NewObjCopyCollector(IrVisitor):
+class ObjCopyCollector(IrVisitor):
     def __init__(self, copies):
         self.copies = copies
 
@@ -185,9 +185,9 @@ class NewObjCopyCollector(IrVisitor):
                         self.copies.append(ir)
 
 
-class NewObjCopyOpt(NewCopyOpt):
+class ObjCopyOpt(CopyOpt):
     def _new_collector(self, copies):
-        return NewObjCopyCollector(copies)
+        return ObjCopyCollector(copies)
 
     def _find_old_use(self, scope, ir, qname):
         vars = []

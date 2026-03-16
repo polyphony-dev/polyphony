@@ -5,10 +5,10 @@ from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.irreader import IRReader as IRParser, ir_stm
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
-from polyphony.compiler.ir.transformers.instantiator import NewModuleInstantiator
+from polyphony.compiler.ir.transformers.instantiator import ModuleInstantiator
 from polyphony.compiler.ir.transformers.instantiator import new_find_called_module
-from polyphony.compiler.ir.transformers.instantiator import NewArgumentApplier
-from polyphony.compiler.ir.transformers.constopt import NewConstantOpt
+from polyphony.compiler.ir.transformers.instantiator import ArgumentApplier
+from polyphony.compiler.ir.transformers.constopt import ConstantOpt
 from polyphony.compiler.ir.transformers.typeprop import TypePropagation
 from polyphony.compiler.ir.analysis.usedef import UseDefDetector
 from polyphony.compiler.ir.types.type import Type
@@ -134,7 +134,7 @@ def test_instantiate_no_bind():
     C = env.scopes['@top.C']
     modules = new_find_called_module([top])
     names = [''] * len(modules)
-    new_modules = NewModuleInstantiator().process_modules(modules, names)
+    new_modules = ModuleInstantiator().process_modules(modules, names)
 
     assert len(new_modules) == 1
 
@@ -307,18 +307,18 @@ def test_bind_arguments():
     C = env.scopes['@top.C']
     modules = new_find_called_module([top])
     names = [''] * len(modules)
-    new_modules = NewModuleInstantiator().process_modules(modules, names)
+    new_modules = ModuleInstantiator().process_modules(modules, names)
 
     assert len(new_modules) == 1
     TypePropagation().process_all()
     UseDefDetector().process(top)
-    NewConstantOpt().process(top)
+    ConstantOpt().process(top)
     for child in new_modules[0].children:
         UseDefDetector().process(child)
-        NewConstantOpt().process(child)
+        ConstantOpt().process(child)
 
     C0_ctor = env.scopes['@top.C_0.__init__']
-    next_scopes = NewArgumentApplier().process_scopes([Scope.global_scope()])
+    next_scopes = ArgumentApplier().process_scopes([Scope.global_scope()])
     assert len(next_scopes) == 1
     assert next_scopes[0] is C0_ctor
     assert top.entry_block.stms[0] == Move(_v('c'), New(_v('C_0'), [], {}))
@@ -340,7 +340,7 @@ def test_bind_arguments():
                                                     {}))
 
 
-    next_scopes = NewArgumentApplier().process_scopes([C0_ctor])
+    next_scopes = ArgumentApplier().process_scopes([C0_ctor])
     assert len(next_scopes) == 0
 
     C0_main0 = env.scopes['@top.C_0.main_0']

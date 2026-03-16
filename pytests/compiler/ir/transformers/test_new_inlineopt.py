@@ -1,4 +1,4 @@
-"""Tests for NewObjectHierarchyCopier."""
+"""Tests for ObjectHierarchyCopier."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
@@ -7,7 +7,7 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.transformers.inlineopt import ObjectHierarchyCopier
-from polyphony.compiler.ir.transformers.inlineopt import NewObjectHierarchyCopier
+from polyphony.compiler.ir.transformers.inlineopt import ObjectHierarchyCopier
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -82,7 +82,7 @@ def test_object_copy_inserts_field_moves():
     blk3.stms.append(mv3)
     Block.set_order(blk3, 0)
 
-    NewObjectHierarchyCopier().process(F3)
+    ObjectHierarchyCopier().process(F3)
     new_stm_count = len(blk3.stms)
 
     # Both should have the same number of statements
@@ -113,7 +113,7 @@ def test_no_copy_for_non_object_fields():
     blk.append_stm(mv)
     Block.set_order(blk, 0)
 
-    NewObjectHierarchyCopier().process(F)
+    ObjectHierarchyCopier().process(F)
 
     # No additional stms should be inserted (x is int, not object)
     assert len(blk.stms) == 1, f'Expected 1 stm, got {len(blk.stms)}'

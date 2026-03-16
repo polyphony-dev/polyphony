@@ -32,39 +32,39 @@ from .ir.synth import DefaultSynthParamSetter
 from .ir.analysis.diagnostic import CFGChecker
 from .ir.analysis.loopdetector import LoopDetector
 from .ir.analysis.loopdetector import LoopRegionSetter
-from polyphony.compiler.ir.analysis.loopdetector import NewLoopInfoSetter, NewLoopDependencyDetector
-from .ir.analysis.regreducer import NewAliasVarDetector
+from polyphony.compiler.ir.analysis.loopdetector import LoopInfoSetter, LoopDependencyDetector
+from .ir.analysis.regreducer import AliasVarDetector
 from .ir.analysis.scopegraph import ScopeDependencyGraphBuilder
 from .ir.analysis.scopegraph import UsingScopeDetector
 from .ir.analysis.typecheck import (
-    NewTypeChecker, NewEarlyTypeChecker, NewPortAssignChecker,
-    NewEarlyRestrictionChecker, NewRestrictionChecker, NewLateRestrictionChecker,
-    NewAssertionChecker, NewSynthesisParamChecker,
+    TypeChecker, EarlyTypeChecker, PortAssignChecker,
+    EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker,
+    AssertionChecker, SynthesisParamChecker,
 )
 
-from .ir.transformers.bitwidth import NewTempVarWidthSetter
-from .ir.transformers.cfgopt import NewBlockReducer, NewPathExpTracer, NewHyperBlockBuilder
-from .ir.transformers.constopt import NewEarlyConstantOptNonSSA, NewConstantOpt, NewStaticConstOpt, NewPolyadConstantFolding
-from .ir.transformers.copyopt import NewCopyOpt, NewObjCopyOpt
-from .ir.transformers.deadcode import NewDeadCodeEliminator
-from .ir.transformers.iftransform import NewIfTransformer, NewIfCondTransformer
-from .ir.transformers.inlineopt import NewObjectHierarchyCopier, NewInlineOpt, NewFlattenModule
-from .ir.transformers.inlineopt import NewFlattenFieldAccess
-from .ir.transformers.instantiator import NewModuleInstantiator, new_find_called_module, NewArgumentApplier
-from .ir.transformers.looptransformer import NewLoopFlatten
-from .ir.transformers.objtransform import NewObjectTransformer
-from .ir.transformers.phiopt import NewPHIInlining, NewLPHIRemover
-from .ir.transformers.portconverter import NewPortTypeProp, NewFlippedTransformer, NewPortConnector
-from .ir.transformers.quadruplet import NewEarlyQuadrupleMaker, NewLateQuadrupleMaker
-from .ir.transformers.ssa import NewScalarSSATransformer, NewTupleSSATransformer, NewListSSATransformer, NewObjectSSATransformer
+from .ir.transformers.bitwidth import TempVarWidthSetter
+from .ir.transformers.cfgopt import BlockReducer, PathExpTracer, HyperBlockBuilder
+from .ir.transformers.constopt import EarlyConstantOptNonSSA, ConstantOpt, StaticConstOpt, PolyadConstantFolding
+from .ir.transformers.copyopt import CopyOpt, ObjCopyOpt
+from .ir.transformers.deadcode import DeadCodeEliminator
+from .ir.transformers.iftransform import IfTransformer, IfCondTransformer
+from .ir.transformers.inlineopt import ObjectHierarchyCopier, InlineOpt, FlattenModule
+from .ir.transformers.inlineopt import FlattenFieldAccess
+from .ir.transformers.instantiator import ModuleInstantiator, new_find_called_module, ArgumentApplier
+from .ir.transformers.looptransformer import LoopFlatten
+from .ir.transformers.objtransform import ObjectTransformer
+from .ir.transformers.phiopt import PHIInlining, LPHIRemover
+from .ir.transformers.portconverter import PortTypeProp, FlippedTransformer, PortConnector
+from .ir.transformers.quadruplet import EarlyQuadrupleMaker, LateQuadrupleMaker
+from .ir.transformers.ssa import ScalarSSATransformer, TupleSSATransformer, ListSSATransformer, ObjectSSATransformer
 from .ir.transformers.typeprop import (
-    NewTypeEvalVisitor, NewTypePropagation, NewTypeSpecializer,
-    NewStaticTypePropagation,
+    TypeEvalVisitor, TypePropagation, TypeSpecializer,
+    StaticTypePropagation,
 )
-from .ir.transformers.unroll import NewLoopUnroller
+from .ir.transformers.unroll import LoopUnroller
 
-from .ir.scheduling.dataflow import NewDFGBuilder
-from .ir.scheduling.scheduler import NewScheduler
+from .ir.scheduling.dataflow import DFGBuilder
+from .ir.scheduling.scheduler import Scheduler
 
 from .frontend.python.irtranslator import IRTranslator
 from .frontend.python.pure import interpret, PureCtorBuilder, PureFuncExecutor
@@ -219,27 +219,27 @@ def select_using_scopes():
 
 
 def if_trans(driver, scope):
-    NewIfTransformer().process(scope)
+    IfTransformer().process(scope)
 
 
 def ifcondtrans(driver, scope):
-    NewIfCondTransformer().process(scope)
+    IfCondTransformer().process(scope)
 
 
 def reduce_blk(driver, scope):
-    NewBlockReducer().process(scope)
+    BlockReducer().process(scope)
     checkcfg(driver, scope)
 
 
 def earlypathexp(driver, scope):
     LoopDetector().process(scope)
-    NewPathExpTracer().process(scope)
+    PathExpTracer().process(scope)
     checkcfg(driver, scope)
     scope.reset_loop_tree()
 
 
 def pathexp(driver, scope):
-    NewPathExpTracer().process(scope)
+    PathExpTracer().process(scope)
     checkcfg(driver, scope)
 
 
@@ -248,7 +248,7 @@ def hyperblock(driver, scope):
         return
     if scope.synth_params['scheduling'] == 'sequential':
         return
-    NewHyperBlockBuilder().process(scope)
+    HyperBlockBuilder().process(scope)
     checkcfg(driver, scope)
 
 
@@ -268,45 +268,45 @@ def execpureall(driver):
 
 
 def flipport(driver, scope):
-    NewFlippedTransformer().process(scope)
+    FlippedTransformer().process(scope)
 
 
 def connectport(driver, scope):
-    portconnector = NewPortConnector()
+    portconnector = PortConnector()
     portconnector.process(scope)
     for s in portconnector.scopes:
         driver.insert_scope(s)
 
 
 def convport(driver):
-    NewPortTypeProp().process_scopes(driver.current_scopes)
+    PortTypeProp().process_scopes(driver.current_scopes)
 
 
 def early_quadruple(driver, scope):
-    NewEarlyQuadrupleMaker().process(scope)
+    EarlyQuadrupleMaker().process(scope)
 
 
 def late_quadruple(driver, scope):
-    NewLateQuadrupleMaker().process(scope)
+    LateQuadrupleMaker().process(scope)
 
 
 
 
 def scalarssa(driver, scope):
-    NewScalarSSATransformer().process(scope)
+    ScalarSSATransformer().process(scope)
 
 
 def removelphi(driver, scope):
-    NewLPHIRemover().process(scope)
+    LPHIRemover().process(scope)
 
 
 def eval_type(driver, scope):
-    NewTypeEvalVisitor().process(scope)
+    TypeEvalVisitor().process(scope)
 
 
 def early_static_type_prop(driver):
-    NewStaticTypePropagation(is_strict=False).process_scopes(driver.current_scopes)
-    typed_scopes, _ = NewTypeSpecializer().process_all()
+    StaticTypePropagation(is_strict=False).process_scopes(driver.current_scopes)
+    typed_scopes, _ = TypeSpecializer().process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
@@ -314,7 +314,7 @@ def early_static_type_prop(driver):
 
 
 def early_type_prop(driver):
-    typed_scopes, old_scopes = NewTypeSpecializer().process_all()
+    typed_scopes, old_scopes = TypeSpecializer().process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
@@ -336,7 +336,7 @@ def early_type_prop(driver):
 
 
 def type_prop(driver):
-    typed_scopes, _ = NewTypePropagation(is_strict=False).process_all()
+    typed_scopes, _ = TypePropagation(is_strict=False).process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
@@ -350,44 +350,44 @@ def type_prop(driver):
 
 
 def static_type_prop(driver):
-    NewStaticTypePropagation(is_strict=True).process_scopes(driver.current_scopes)
+    StaticTypePropagation(is_strict=True).process_scopes(driver.current_scopes)
 
 
 def strict_type_prop(driver):
-    NewTypePropagation(is_strict=True).process_all()
+    TypePropagation(is_strict=True).process_all()
 
 
 def type_check(driver, scope):
-    NewTypeChecker().process(scope)
+    TypeChecker().process(scope)
 
 
 def earlytypecheck(driver, scope):
-    NewEarlyTypeChecker().process(scope)
+    EarlyTypeChecker().process(scope)
 
 
 def assigncheck(driver, scope):
-    NewPortAssignChecker().process(scope)
+    PortAssignChecker().process(scope)
 
 
 def earlyrestrictioncheck(driver, scope):
-    NewEarlyRestrictionChecker().process(scope)
+    EarlyRestrictionChecker().process(scope)
 
 
 def restriction_check(driver, scope):
-    NewRestrictionChecker().process(scope)
+    RestrictionChecker().process(scope)
 
 
 def laterestrictioncheck(driver, scope):
-    NewLateRestrictionChecker().process(scope)
+    LateRestrictionChecker().process(scope)
 
 
 def assertioncheck(driver, scope):
-    NewAssertionChecker().process(scope)
+    AssertionChecker().process(scope)
 
 
 def synthcheck(driver, scope):
     LoopDetector().process(scope)
-    NewSynthesisParamChecker().process(scope)
+    SynthesisParamChecker().process(scope)
     scope.reset_loop_tree()
 
 def detectrom(driver):
@@ -403,7 +403,7 @@ def instantiate(driver):
         module.add_tag('top_module')
     while True:
         names = [''] * len(modules)
-        new_modules = NewModuleInstantiator().process_modules(modules, names)
+        new_modules = ModuleInstantiator().process_modules(modules, names)
         if not new_modules:
             break
         orig_scopes = set()
@@ -425,11 +425,11 @@ def instantiate(driver):
 
 
 def apply_argument(driver):
-    NewArgumentApplier().process_all()
+    ArgumentApplier().process_all()
 
 
 def inline_opt(driver):
-    scopes = NewInlineOpt().process_scopes(driver.current_scopes)
+    scopes = InlineOpt().process_scopes(driver.current_scopes)
     for s in scopes:
         assert s.name in env.scopes
         driver.insert_scope(s)
@@ -442,53 +442,53 @@ def setsynthparams(driver, scope):
 
 
 def flattenmodule(driver, scope):
-    scopes = NewFlattenModule().process(scope)
+    scopes = FlattenModule().process(scope)
     for s in scopes:
         driver.insert_scope(s)
 
 
 def objssa(driver, scope):
-    NewTupleSSATransformer().process(scope)
+    TupleSSATransformer().process(scope)
     early_quadruple(driver, scope)
-    NewListSSATransformer().process(scope)
-    NewObjectHierarchyCopier().process(scope)
-    NewObjectSSATransformer().process(scope)
+    ListSSATransformer().process(scope)
+    ObjectHierarchyCopier().process(scope)
+    ObjectSSATransformer().process(scope)
 
 
 def objcopyopt(driver, scope):
-    NewObjCopyOpt().process(scope)
+    ObjCopyOpt().process(scope)
 
 
 def objtrans(driver, scope):
-    NewObjectTransformer().process(scope)
+    ObjectTransformer().process(scope)
 
 
 def scalarize(driver, scope):
     #FlattenObjectArgs().process(scope)
-    NewFlattenFieldAccess().process(scope)
+    FlattenFieldAccess().process(scope)
     #dumpscope(driver, scope)
     checkcfg(driver, scope)
 
 
 def static_const_opt(driver):
-    NewStaticConstOpt().process_scopes(driver.current_scopes)
+    StaticConstOpt().process_scopes(driver.current_scopes)
 
 
 def earlyconstopt_nonssa(driver, scope):
-    NewEarlyConstantOptNonSSA().process(scope)
+    EarlyConstantOptNonSSA().process(scope)
     checkcfg(driver, scope)
 
 
 def constopt(driver, scope):
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
 
 def copyopt(driver, scope):
-    NewCopyOpt().process(scope)
+    CopyOpt().process(scope)
 
 
 def phiopt(dfiver, scope):
-    NewPHIInlining().process(scope)
+    PHIInlining().process(scope)
 
 
 def checkcfg(driver, scope):
@@ -498,13 +498,13 @@ def checkcfg(driver, scope):
 
 def loop(driver, scope):
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
-    NewLoopDependencyDetector().process(scope)
+    LoopInfoSetter().process(scope)
+    LoopDependencyDetector().process(scope)
     checkcfg(driver, scope)
 
 
 def looptrans(driver, scope):
-    if NewLoopFlatten().process(scope):
+    if LoopFlatten().process(scope):
         hyperblock(driver, scope)
         loop(driver, scope)
         reduce_blk(driver, scope)
@@ -512,7 +512,7 @@ def looptrans(driver, scope):
 
 def unroll(driver, scope):
     _unroll_count = 0
-    while NewLoopUnroller().process(scope):
+    while LoopUnroller().process(scope):
         _unroll_count += 1
         logger.debug(f'unroll iteration {_unroll_count} for {scope}')
         if _unroll_count > 20:
@@ -520,35 +520,35 @@ def unroll(driver, scope):
         dumpscope(driver, scope)
         checkcfg(driver, scope)
         reduce_blk(driver, scope)
-        NewPolyadConstantFolding().process(scope)
+        PolyadConstantFolding().process(scope)
         pathexp(driver, scope)
         dumpscope(driver, scope)
         constopt(driver, scope)
         copyopt(driver, scope)
         deadcode(driver, scope)
-        NewLoopInfoSetter().process(scope)
+        LoopInfoSetter().process(scope)
         LoopRegionSetter().process(scope)
-        NewLoopDependencyDetector().process(scope)
+        LoopDependencyDetector().process(scope)
 
 
 def deadcode(driver, scope):
-    NewDeadCodeEliminator().process(scope)
+    DeadCodeEliminator().process(scope)
 
 
 def aliasvar(driver, scope):
-    NewAliasVarDetector().process(scope)
+    AliasVarDetector().process(scope)
 
 
 def tempbit(driver, scope):
-    NewTempVarWidthSetter().process(scope)
+    TempVarWidthSetter().process(scope)
 
 
 def dfg(driver, scope):
-    NewDFGBuilder().process(scope)
+    DFGBuilder().process(scope)
 
 
 def schedule(driver, scope):
-    NewScheduler().schedule(scope)
+    Scheduler().schedule(scope)
 
 
 def createhdlscope(driver):

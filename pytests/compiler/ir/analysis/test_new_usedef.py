@@ -1,4 +1,4 @@
-"""Tests for NewUseDefDetector (new IR version)."""
+"""Tests for UseDefDetector (new IR version)."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
@@ -6,7 +6,7 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.analysis.usedef import UseDefDetector
-from polyphony.compiler.ir.analysis.usedef import NewUseDefDetector
+from polyphony.compiler.ir.analysis.usedef import UseDefDetector
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -35,7 +35,7 @@ mv x 1
 '''
     scope = build_scope(src)
 
-    usedef = NewUseDefDetector().process(scope)
+    usedef = UseDefDetector().process(scope)
 
     x_sym = scope.find_sym('x')
     blk = scope.entry_block
@@ -60,7 +60,7 @@ mv y x
 '''
     scope = build_scope(src)
 
-    usedef = NewUseDefDetector().process(scope)
+    usedef = UseDefDetector().process(scope)
 
     x_sym = scope.find_sym('x')
     y_sym = scope.find_sym('y')
@@ -86,7 +86,7 @@ mv z (+ x y)
 '''
     scope = build_scope(src)
 
-    usedef = NewUseDefDetector().process(scope)
+    usedef = UseDefDetector().process(scope)
 
     x_sym = scope.find_sym('x')
     y_sym = scope.find_sym('y')
@@ -113,7 +113,7 @@ mv r (call f a)
 '''
     scope = build_scope(src)
 
-    usedef = NewUseDefDetector().process(scope)
+    usedef = UseDefDetector().process(scope)
 
     f_sym = scope.find_sym('f')
     a_sym = scope.find_sym('a')
@@ -140,7 +140,7 @@ mv z (+ x y)
 '''
     scope = build_scope(src)
 
-    usedef = NewUseDefDetector().process(scope)
+    usedef = UseDefDetector().process(scope)
 
     x_sym = scope.find_sym('x')
     y_sym = scope.find_sym('y')
@@ -177,7 +177,7 @@ mv self.x x
     scope = build_scope(src)
     ctor = env.scopes['C.__init__']
 
-    usedef = NewUseDefDetector().process(ctor)
+    usedef = UseDefDetector().process(ctor)
 
     self_sym = ctor.find_sym('self')
     x_sym = ctor.find_sym('x')
@@ -188,7 +188,7 @@ mv self.x x
 
 
 def test_matches_old_usedef():
-    """NewUseDefDetector should produce equivalent results to old UseDefDetector."""
+    """UseDefDetector should produce equivalent results to old UseDefDetector."""
     src = '''
 scope F
 tags function
@@ -207,7 +207,7 @@ mv z (+ x y)
     old_usedef = UseDefDetector().process(scope)
 
     # New detector on new IR
-    new_usedef = NewUseDefDetector().process(scope)
+    new_usedef = UseDefDetector().process(scope)
 
     x_sym = scope.find_sym('x')
     y_sym = scope.find_sym('y')
@@ -236,7 +236,7 @@ mv x 1
 '''
     scope = build_scope(src)
 
-    usedef = NewUseDefDetector().process(scope)
+    usedef = UseDefDetector().process(scope)
 
     stm = scope.entry_block.stms[0]
     # These must not raise AssertionError

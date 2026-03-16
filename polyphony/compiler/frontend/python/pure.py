@@ -684,7 +684,7 @@ class PureFuncExecutor(ConstantOptBase):
             return None
         return tuple(values)
 
-    def visit_CALL(self, ir):
+    def visit_Call(self, ir):
         if not ir.func_scope().is_pure():
             return ir
         assert env.config.enable_pure
@@ -698,8 +698,8 @@ class PureFuncExecutor(ConstantOptBase):
         expr = pyfunc(*args)
         return expr2ir(expr, scope=self.scope)
 
-    def visit_SYSCALL(self, ir):
-        return super().visit_CALL(ir)
+    def visit_SysCall(self, ir):
+        return super().visit_Call(ir)
 
-    def visit_NEW(self, ir):
-        return super().visit_CALL(ir)
+    def visit_New(self, ir):
+        return super().visit_Call(ir)

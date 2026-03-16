@@ -1,5 +1,5 @@
-﻿from collections import defaultdict
-from ..ir_visitor import IRVisitor
+from collections import defaultdict
+from ..ir_visitor import IrVisitor
 from ..ir import *
 from ..ir_helper import qualified_symbols
 from ..scope import Scope
@@ -70,7 +70,7 @@ class FieldUseDefTable(object):
         logger.debug(self)
 
 
-class FieldUseDefDetector(IRVisitor):
+class FieldUseDefDetector(IrVisitor):
     def __init__(self):
         super().__init__()
         self.table = FieldUseDefTable()
@@ -83,23 +83,23 @@ class FieldUseDefDetector(IRVisitor):
         for stm in block.stms:
             self.visit(stm)
 
-    def _visit_args(self, ir):
-        for _, arg in ir.args:
+    def _visit_args(self, ir_args, ir_kwargs=None):
+        for _, arg in ir_args:
             self.visit(arg)
 
-    def visit_CALL(self, ir):
+    def visit_Call(self, ir):
         self.visit(ir.func)
-        self._visit_args(ir)
+        self._visit_args(ir.args)
 
-    def visit_SYSCALL(self, ir):
+    def visit_SysCall(self, ir):
         self.visit(ir.func)
-        self._visit_args(ir)
+        self._visit_args(ir.args)
 
-    def visit_NEW(self, ir):
+    def visit_New(self, ir):
         self.visit(ir.func)
-        self._visit_args(ir)
+        self._visit_args(ir.args)
 
-    def visit_ATTR(self, ir):
+    def visit_Attr(self, ir):
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
             self.table.add_var_use(self.scope, ir, self.current_stm)
         elif ir.ctx == Ctx.STORE:

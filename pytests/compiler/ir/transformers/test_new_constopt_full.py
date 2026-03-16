@@ -1,4 +1,4 @@
-"""Tests for NewConstantOpt (full version with worklist)."""
+"""Tests for ConstantOpt (full version with worklist)."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
@@ -6,7 +6,7 @@ from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
-from polyphony.compiler.ir.transformers.constopt import NewConstantOpt
+from polyphony.compiler.ir.transformers.constopt import ConstantOpt
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -20,7 +20,7 @@ def build_scope(src):
 
 
 def test_constant_propagation_basic():
-    """NewConstantOpt propagates constant assignments to uses."""
+    """ConstantOpt propagates constant assignments to uses."""
     src = '''
 scope F
 tags function returnable
@@ -35,7 +35,7 @@ mv @return y
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     # After constopt, x=10 should be propagated: y=10, @return=10
     exit_blk = list(scope.traverse_blocks())[-1]
@@ -46,7 +46,7 @@ ret @return
 
 
 def test_constant_folding_binop():
-    """NewConstantOpt folds binary operations with constant operands."""
+    """ConstantOpt folds binary operations with constant operands."""
     src = '''
 scope F
 tags function returnable
@@ -59,7 +59,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
@@ -69,7 +69,7 @@ ret @return
 
 
 def test_constant_folding_subtraction():
-    """NewConstantOpt folds subtraction with constant operands."""
+    """ConstantOpt folds subtraction with constant operands."""
     src = '''
 scope F
 tags function returnable
@@ -82,7 +82,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
@@ -92,7 +92,7 @@ ret @return
 
 
 def test_constant_folding_relop():
-    """NewConstantOpt folds relational operations with constant operands."""
+    """ConstantOpt folds relational operations with constant operands."""
     src = '''
 scope F
 tags function returnable
@@ -105,7 +105,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
@@ -115,7 +115,7 @@ ret @return
 
 
 def test_cjump_constant_true():
-    """NewConstantOpt converts CJUMP with constant True to JUMP."""
+    """ConstantOpt converts CJUMP with constant True to JUMP."""
     src = '''
 scope F
 tags function returnable
@@ -135,7 +135,7 @@ mv @return 20
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     entry = scope.entry_block
     last_stm = entry.stms[-1]
@@ -143,7 +143,7 @@ ret @return
 
 
 def test_cjump_constant_false():
-    """NewConstantOpt converts CJUMP with constant False to JUMP to false branch."""
+    """ConstantOpt converts CJUMP with constant False to JUMP to false branch."""
     src = '''
 scope F
 tags function returnable
@@ -163,7 +163,7 @@ mv @return 20
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     entry = scope.entry_block
     last_stm = entry.stms[-1]
@@ -171,7 +171,7 @@ ret @return
 
 
 def test_constant_folding_multiply():
-    """NewConstantOpt folds multiplication with constant operands."""
+    """ConstantOpt folds multiplication with constant operands."""
     src = '''
 scope F
 tags function returnable
@@ -184,7 +184,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
@@ -194,7 +194,7 @@ ret @return
 
 
 def test_class_scope_skipped():
-    """NewConstantOpt skips class scopes."""
+    """ConstantOpt skips class scopes."""
     src = '''
 scope C
 tags class
@@ -205,11 +205,11 @@ mv x 10
 '''
     scope = build_scope(src)
     # Should not crash
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
 
 def test_multi_step_constant_folding():
-    """NewConstantOpt folds constants across multiple assignment steps."""
+    """ConstantOpt folds constants across multiple assignment steps."""
     src = '''
 scope F
 tags function returnable
@@ -226,7 +226,7 @@ mv @return z
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     # @return should be folded to constant 10
     for blk in scope.traverse_blocks():
@@ -237,7 +237,7 @@ ret @return
 
 
 def test_dead_code_removal():
-    """NewConstantOpt removes dead constant assignments after propagation."""
+    """ConstantOpt removes dead constant assignments after propagation."""
     src = '''
 scope F
 tags function returnable
@@ -250,7 +250,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewConstantOpt().process(scope)
+    ConstantOpt().process(scope)
 
     # The 'mv x 42' should be removed (dead after propagation)
     for blk in scope.traverse_blocks():

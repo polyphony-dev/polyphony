@@ -21,7 +21,7 @@ from ...common.common import fail
 from ...common.errors import Errors
 
 
-class NewEarlyQuadrupleMaker(IrTransformer):
+class EarlyQuadrupleMaker(IrTransformer):
     def __init__(self):
         super().__init__()
         self.suppress_converting = False
@@ -207,7 +207,7 @@ class NewEarlyQuadrupleMaker(IrTransformer):
         self.new_stms.append(ir)
 
 
-class NewLateQuadrupleMaker(IrTransformer):
+class LateQuadrupleMaker(IrTransformer):
     def visit_Attr(self, ir):
         from ..ir_helper import qualified_symbols
         from ..symbol import Symbol

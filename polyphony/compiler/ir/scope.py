@@ -11,7 +11,7 @@ from .symbol import Symbol
 from .synth import make_synth_params
 from .types.type import Type
 from .types import typehelper
-from .ir_visitor import IRVisitor
+from .ir_visitor import IrVisitor
 from .ir import *
 from .ir_helper import qualified_symbols
 from ..common.common import Tagged, fail
@@ -530,12 +530,12 @@ class Scope(Tagged, SymbolTable):
         s.bases = list(self.bases)
 
         self.clone_symbols_by_name(s)
-        from .ir import Ir as NewIr
+        from .ir import Ir
 
         for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
             if defval is None:
                 cloned_defval = None
-            elif isinstance(defval, NewIr):
+            elif isinstance(defval, Ir):
                 cloned_defval = defval.model_copy(deep=True)
             else:
                 cloned_defval = defval.clone()
@@ -933,16 +933,16 @@ class Scope(Tagged, SymbolTable):
         self._bound_args = [str(exp) for i, exp in binding]
 
 
-class NameReplacer(IRVisitor):
+class NameReplacer(IrVisitor):
     def __init__(self, name_sym_map: dict[str, Symbol]):
         super().__init__()
         self.name_sym_map = name_sym_map
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         if ir.name in self.name_sym_map:
             object.__setattr__(ir, "name", self.name_sym_map[ir.name].name)
 
-    def visit_ATTR(self, ir):
+    def visit_Attr(self, ir):
         self.visit(ir.exp)
 
 

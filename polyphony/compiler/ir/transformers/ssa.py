@@ -16,9 +16,9 @@ from ..ir_visitor import IrVisitor
 from ..types.type import Type
 from ..types import typehelper
 from ..analysis.dominator import DominatorTreeBuilder, DominanceFrontierBuilder
-from ..analysis.usedef import NewUseDefDetector, NewUseDefUpdater
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from ..analysis.usedef import UseDefItem
-from .varreplacer import NewVarReplacer
+from .varreplacer import VarReplacer
 from ..symbol import Symbol
 from ...common.env import env
 from ...common.utils import replace_item
@@ -69,7 +69,7 @@ def _rel_and_exp(exp1, exp2):
     return RelOp(op='And', left=exp1, right=exp2)
 
 
-class NewSSATransformerBase(object):
+class SSATransformerBase(object):
     def __init__(self):
         pass
 
@@ -78,7 +78,7 @@ class NewSSATransformerBase(object):
             return
         self.scope = scope
         self.dominance_frontier = {}
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         self.phis = []
 
         self._compute_dominance_frontier()
@@ -300,7 +300,7 @@ class NewSSATransformerBase(object):
         self.dominance_frontier = df_builder.process(first_block, tree)
 
     def _remove_useless_phi(self):
-        self.usedef = NewUseDefDetector().process(self.scope)
+        self.usedef = UseDefDetector().process(self.scope)
         usedef = self.usedef
 
         def get_arg_name_if_same(phi):
@@ -328,7 +328,7 @@ class NewSSATransformerBase(object):
             name = get_arg_name_if_same(phi)
             if name:
                 replace_var = phi.var.model_copy(update={'ctx': Ctx.LOAD, 'name': name})
-                replaces = NewVarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef)
+                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef)
                 for rep in replaces:
                     if isinstance(rep, Phi):
                         worklist.append(rep)
@@ -443,7 +443,7 @@ class NewSSATransformerBase(object):
                         a_sym.del_tag('return')
 
 
-class NewScalarSSATransformer(NewSSATransformerBase):
+class ScalarSSATransformer(SSATransformerBase):
     def _need_rename(self, sym, qsym):
         if (sym.is_condition() or
                 sym.is_param() or
@@ -458,7 +458,7 @@ class NewScalarSSATransformer(NewSSATransformerBase):
         return True
 
 
-class NewListSSATransformer(NewSSATransformerBase):
+class ListSSATransformer(SSATransformerBase):
     def _need_rename(self, sym, qsym):
         if sym.scope.is_namespace() or sym.scope.is_class():
             return False
@@ -466,7 +466,7 @@ class NewListSSATransformer(NewSSATransformerBase):
         return sym_t.is_list() and not sym.is_param()
 
 
-class NewObjectSSATransformer(NewSSATransformerBase):
+class ObjectSSATransformer(SSATransformerBase):
     def _need_rename(self, sym, qsym):
         sym_t = sym.typ
         if not sym_t.is_object():
@@ -488,14 +488,14 @@ class NewObjectSSATransformer(NewSSATransformerBase):
         return True
 
 
-class NewTupleSSATransformer(NewSSATransformerBase):
+class TupleSSATransformer(SSATransformerBase):
     def process(self, scope):
         if scope.is_class() or scope.is_namespace():
             return
         super().process(scope)
-        from .tuple import NewTupleTransformer
-        NewTupleTransformer().process(scope)
-        self.usedef = NewUseDefDetector().process(scope)
+        from .tuple import TupleTransformer
+        TupleTransformer().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         self._process_use_phi()
 
     def _process_use_phi(self):

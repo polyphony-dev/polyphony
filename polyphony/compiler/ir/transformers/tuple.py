@@ -8,7 +8,7 @@ from ..ir_helper import irexp_type
 from ..symbol import Symbol
 
 
-class NewTupleTransformer(IrTransformer):
+class TupleTransformer(IrTransformer):
     pass
 
     def _can_direct_unpack(self, lhs, rhs):

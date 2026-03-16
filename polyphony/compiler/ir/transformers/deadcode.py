@@ -5,7 +5,7 @@ from ..ir import (
 )
 from ..ir_helper import qualified_symbols
 from ..symbol import Symbol
-from ..analysis.usedef import NewUseDefDetector
+from ..analysis.usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -14,11 +14,11 @@ logger = getLogger(__name__)
 _PHI_TYPES = (Phi, UPhi, LPhi)
 
 
-class NewDeadCodeEliminator(object):
+class DeadCodeEliminator(object):
     def process(self, scope):
         if scope.is_namespace() or scope.is_class():
             return
-        usedef = NewUseDefDetector().process(scope)
+        usedef = UseDefDetector().process(scope)
         for blk in scope.traverse_blocks():
             dead_stms = []
             for stm in blk.stms:

@@ -1,8 +1,8 @@
-"""Tests for NewAliasVarDetector."""
+"""Tests for AliasVarDetector."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
-from polyphony.compiler.ir.analysis.regreducer import NewAliasVarDetector
+from polyphony.compiler.ir.analysis.regreducer import AliasVarDetector
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -20,7 +20,7 @@ def build_scope(src, scheduling='sequential'):
 
 
 def test_alias_condition_var():
-    """NewAliasVarDetector tags condition variables as alias."""
+    """AliasVarDetector tags condition variables as alias."""
     src = '''
 scope F
 tags function returnable
@@ -35,14 +35,14 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewAliasVarDetector().process(scope)
+    AliasVarDetector().process(scope)
 
     sym = scope.find_sym('cond')
     assert sym.is_alias(), f'Expected cond to be alias but it is not'
 
 
 def test_alias_simple_move():
-    """NewAliasVarDetector tags single-def variables as alias."""
+    """AliasVarDetector tags single-def variables as alias."""
     src = '''
 scope F
 tags function returnable
@@ -55,14 +55,14 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewAliasVarDetector().process(scope)
+    AliasVarDetector().process(scope)
 
     sym = scope.find_sym('x')
     assert sym.is_alias(), f'Expected x to be alias but it is not'
 
 
 def test_alias_not_tagged_for_return():
-    """NewAliasVarDetector does not tag return variables as alias."""
+    """AliasVarDetector does not tag return variables as alias."""
     src = '''
 scope F
 tags function returnable
@@ -75,14 +75,14 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewAliasVarDetector().process(scope)
+    AliasVarDetector().process(scope)
 
     ret_sym = scope.find_sym('@return')
     assert not ret_sym.is_alias(), f'Expected @return to NOT be alias'
 
 
 def test_alias_multiple_vars():
-    """NewAliasVarDetector tags multiple single-def variables as alias."""
+    """AliasVarDetector tags multiple single-def variables as alias."""
     src = '''
 scope F
 tags function returnable
@@ -99,7 +99,7 @@ mv @return b
 ret @return
 '''
     scope = build_scope(src)
-    NewAliasVarDetector().process(scope)
+    AliasVarDetector().process(scope)
     aliases = {sym.name for sym in scope.symbols.values() if sym.is_alias()}
     assert 'a' in aliases
     assert 'b' in aliases

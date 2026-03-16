@@ -1,7 +1,7 @@
 """If transformers using new IR (ir.py).
 
-NewIfTransformer: Merges chained if-elif-else (CJUMP chains) into MCJUMP.
-NewIfCondTransformer: Converts MCJUMP conditions to mutually exclusive form.
+IfTransformer: Merges chained if-elif-else (CJUMP chains) into MCJUMP.
+IfCondTransformer: Converts MCJUMP conditions to mutually exclusive form.
 """
 from ..ir import Const, Temp, UnOp, RelOp, Move, CJump, MCJump, Ctx
 from ..types.type import Type
@@ -9,7 +9,7 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-class NewIfTransformer(object):
+class IfTransformer(object):
     def process(self, scope):
         for blk in scope.traverse_blocks():
             self._process_block(blk)
@@ -54,7 +54,7 @@ class NewIfTransformer(object):
             logger.debug(str(mj))
 
 
-class NewIfCondTransformer(object):
+class IfCondTransformer(object):
     """Converts MCJUMP conditions to mutually exclusive form.
 
     if p0:   ...          =>  if p0:   ...

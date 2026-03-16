@@ -99,11 +99,11 @@ class LoopRegionSetter(object):
         return loop.inner_blocks
 
 
-class NewLoopDependencyDetector(object):
+class LoopDependencyDetector(object):
     """Detects data dependencies within loops using new IR."""
     def process(self, scope):
-        from .usedef import NewUseDefDetector
-        usedef = NewUseDefDetector().process(scope)
+        from .usedef import UseDefDetector
+        usedef = UseDefDetector().process(scope)
         all_blks = set(scope.traverse_blocks())
         for loop in scope.traverse_regions(reverse=True):
             if loop is scope.top_region():
@@ -147,11 +147,11 @@ class NewLoopDependencyDetector(object):
         return (outer_defs, outer_uses, inner_defs, inner_uses)
 
 
-class NewLoopInfoSetter(object):
+class LoopInfoSetter(object):
     def process(self, scope):
-        from .usedef import NewUseDefDetector
+        from .usedef import UseDefDetector
         self.scope = scope
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         for loop in self.scope.child_regions(self.scope.top_region()):
             self._set_loop_info_rec(loop)
 

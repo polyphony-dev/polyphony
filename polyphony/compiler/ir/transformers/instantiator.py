@@ -1,6 +1,6 @@
 """Module instantiation and argument application using new IR.
 
-NewCallCollector, new_find_called_module, NewModuleInstantiator, NewArgumentApplier
+CallCollector, new_find_called_module, ModuleInstantiator, ArgumentApplier
 """
 from typing import cast
 from ..ir_visitor import IrVisitor
@@ -13,9 +13,9 @@ from ..ir_helper import qualified_symbols
 from ..scope import Scope, function2method
 from ..symbol import Symbol
 from ..types.type import Type
-from ..analysis.usedef import NewUseDefDetector
-from .varreplacer import NewVarReplacer
-from .constopt import NewConstantOpt
+from ..analysis.usedef import UseDefDetector
+from .varreplacer import VarReplacer
+from .constopt import ConstantOpt
 from ...common.env import env
 import logging
 logger = logging.getLogger()
@@ -31,7 +31,7 @@ def _get_callee_scope(ir, scope):
     return func_t.scope
 
 
-class NewCallCollector(IrVisitor):
+class CallCollector(IrVisitor):
     """Collect Call/New/SysCall nodes from IR."""
 
     def __init__(self):
@@ -62,7 +62,7 @@ def new_find_called_module(scopes) -> list[tuple[Scope, Scope, Move]]:
     called_modules: list[tuple[Scope, Scope, Move]] = []
     calls: list[tuple[Scope, IrStm, IrCallable]] = []
     for s in scopes:
-        calls.extend(NewCallCollector().process(s))
+        calls.extend(CallCollector().process(s))
     for caller_scope, stm, call in calls:
         callee_scope = _get_callee_scope(call, caller_scope)
         if isinstance(stm, Move) and isinstance(call, New) and callee_scope.is_module():
@@ -70,7 +70,7 @@ def new_find_called_module(scopes) -> list[tuple[Scope, Scope, Move]]:
     return called_modules
 
 
-class NewModuleInstantiator(object):
+class ModuleInstantiator(object):
     """Instantiate modules from NEW calls using new IR."""
 
     def process_modules(self, modules: list[tuple[Scope, Scope, Move]], names: list[str]):
@@ -101,7 +101,7 @@ class NewModuleInstantiator(object):
         return new_modules
 
     def _process_workers(self, module):
-        collector = NewCallCollector()
+        collector = CallCollector()
         ctor = module.find_ctor()
         calls = collector.process(ctor)
         origin_workers = set()
@@ -153,7 +153,7 @@ class NewModuleInstantiator(object):
 
 
 
-class NewArgumentApplier(object):
+class ArgumentApplier(object):
     """Bind arguments to module/worker parameters using new IR."""
 
     def process_all(self):
@@ -167,7 +167,7 @@ class NewArgumentApplier(object):
         calls: list[tuple[Scope, IrStm, IrCallable]] = []
         next_scopes = []
         for s in scopes:
-            calls.extend(NewCallCollector().process(s))
+            calls.extend(CallCollector().process(s))
         for scope, stm, call in calls:
             callee_scope = _get_callee_scope(call, scope)
             if isinstance(call, New) and callee_scope.is_module() and callee_scope.is_instantiated():
@@ -196,7 +196,7 @@ class NewArgumentApplier(object):
             if array is not None:
                 return array.clone()
         elif isinstance(arg, IrVariable):
-            usedef = NewUseDefDetector().process(caller_scope)
+            usedef = UseDefDetector().process(caller_scope)
             qsym = qualified_symbols(arg, caller_scope)
             defs = list(usedef.get_stms_defining(qsym))
             if len(defs) == 1 and isinstance(defs[0], Move) and isinstance(defs[0].src, Array):
@@ -234,11 +234,11 @@ class NewArgumentApplier(object):
                 # Import symbols referenced by arg from caller into callee
                 self._import_arg_symbols(arg, caller_scope, callee)
                 pname = callee.param_symbols()[i].name
-                NewVarReplacer.replace_uses(callee, Temp(name=pname), arg)
+                VarReplacer.replace_uses(callee, Temp(name=pname), arg)
             callee.remove_param([i for i, _ in binding])
             for i, _ in reversed(binding):
                 args.pop(i)
-            NewConstantOpt().process(callee)
+            ConstantOpt().process(callee)
             if callee.is_ctor():
                 callee.parent.set_bound_args(binding)
         if callee.parent.is_module():

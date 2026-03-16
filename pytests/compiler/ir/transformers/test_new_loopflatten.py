@@ -1,4 +1,4 @@
-"""Tests for NewLoopFlatten."""
+"""Tests for LoopFlatten."""
 from polyphony.compiler.ir.ir import Const, Temp, Move, CJump, BinOp, RelOp, LPhi, Jump, Ret, Expr, Ctx
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
@@ -6,14 +6,14 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
-from polyphony.compiler.ir.analysis.loopdetector import NewLoopInfoSetter, NewLoopDependencyDetector
-from polyphony.compiler.ir.transformers.looptransformer import NewLoopFlatten
+from polyphony.compiler.ir.analysis.loopdetector import LoopInfoSetter, LoopDependencyDetector
+from polyphony.compiler.ir.transformers.looptransformer import LoopFlatten
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
 
 def test_new_loop_flatten_no_pipeline():
-    """NewLoopFlatten returns False when no pipeline loop exists."""
+    """LoopFlatten returns False when no pipeline loop exists."""
     setup_test()
     scope = Scope.create(None, 'FlatTest', {'function', 'returnable'}, 0)
     scope.return_type = Type.int()
@@ -60,16 +60,16 @@ def test_new_loop_flatten_no_pipeline():
 
     Block.set_order(blk_entry, 0)
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
-    NewLoopDependencyDetector().process(scope)
+    LoopInfoSetter().process(scope)
+    LoopDependencyDetector().process(scope)
 
     # No pipeline scheduling => flatten returns False
-    result = NewLoopFlatten().process(scope)
+    result = LoopFlatten().process(scope)
     assert result is None or result is False or not result
 
 
 def test_new_loop_flatten_class_exists():
-    """NewLoopFlatten class can be imported and instantiated."""
-    from polyphony.compiler.ir.transformers.looptransformer import NewLoopFlatten
-    f = NewLoopFlatten()
+    """LoopFlatten class can be imported and instantiated."""
+    from polyphony.compiler.ir.transformers.looptransformer import LoopFlatten
+    f = LoopFlatten()
     assert f is not None

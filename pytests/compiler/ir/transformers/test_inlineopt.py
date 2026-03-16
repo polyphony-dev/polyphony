@@ -5,7 +5,7 @@ from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.irreader import IRReader as IRParser, ir_stm
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
-from polyphony.compiler.ir.transformers.inlineopt import NewInlineOpt
+from polyphony.compiler.ir.transformers.inlineopt import InlineOpt
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.builtin import builtin_symbols
 from pytests.compiler.base import setup_test
@@ -17,8 +17,8 @@ import pytest
 
 
 def _run_inline(scopes):
-    """Run NewInlineOpt directly on block.stms (unified IR)."""
-    NewInlineOpt().process_scopes(scopes)
+    """Run InlineOpt directly on block.stms (unified IR)."""
+    InlineOpt().process_scopes(scopes)
 
 
 def test_funtion_inlining():

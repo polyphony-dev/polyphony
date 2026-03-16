@@ -35,7 +35,7 @@ logger = getLogger(__name__)
 MAX_FUNC_UNIT = 100
 
 
-class NewScheduler(object):
+class Scheduler(object):
     def __init__(self):
         self.done_blocks = []
 
@@ -45,13 +45,13 @@ class NewScheduler(object):
         self.scope = scope
         for dfg in self.scope.dfgs(bottom_up=True):
             if dfg.parent and dfg.synth_params['scheduling'] == 'pipeline':
-                scheduler_impl = NewPipelineScheduler()
+                scheduler_impl = PipelineScheduler()
             else:
-                scheduler_impl = NewBlockBoundedListScheduler()
+                scheduler_impl = BlockBoundedListScheduler()
             scheduler_impl.schedule(scope, dfg)
 
 
-class NewSchedulerImpl(object):
+class SchedulerImpl(object):
     def __init__(self):
         self.res_tables = {}
         self.node_latency_map = {}
@@ -66,7 +66,7 @@ class NewSchedulerImpl(object):
         for src in sources:
             src.priority = -1
 
-        self.res_extractor = NewResourceExtractor()
+        self.res_extractor = ResourceExtractor()
         self.res_extractor.scope = scope
         for node in sorted(dfg.traverse_nodes(dfg.succs, sources, [])):
             self.res_extractor.current_node = node
@@ -297,7 +297,7 @@ class NewSchedulerImpl(object):
             assert False
 
 
-class NewBlockBoundedListScheduler(NewSchedulerImpl):
+class BlockBoundedListScheduler(SchedulerImpl):
     def _schedule(self, dfg):
         self._schedule_cycles(dfg)
         self._remove_alias_if_needed(dfg)
@@ -377,7 +377,7 @@ class NewBlockBoundedListScheduler(NewSchedulerImpl):
         return scheduled_time
 
 
-class NewPipelineScheduler(NewSchedulerImpl):
+class PipelineScheduler(SchedulerImpl):
     def _schedule(self, dfg):
         self._schedule_cycles(dfg)
         self._schedule_ii(dfg)
@@ -612,7 +612,7 @@ class NewPipelineScheduler(NewSchedulerImpl):
                 node.end += gap
 
 
-class NewResourceExtractor(object):
+class ResourceExtractor(object):
     """Extract resource usage from DFG nodes. Handles both old and new IR."""
 
     def __init__(self):

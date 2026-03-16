@@ -1,4 +1,4 @@
-"""Tests for NewScalarSSATransformer."""
+"""Tests for ScalarSSATransformer."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
@@ -6,7 +6,7 @@ from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
-from polyphony.compiler.ir.transformers.ssa import NewScalarSSATransformer
+from polyphony.compiler.ir.transformers.ssa import ScalarSSATransformer
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -52,7 +52,7 @@ mv @return (+ x y)
 ret @return
 '''
     scope = build_scope(src)
-    NewScalarSSATransformer().process(scope)
+    ScalarSSATransformer().process(scope)
     syms = sorted(scope.symbols.keys())
 
     # x and y are defined in two branches, so SSA should create renamed versions
@@ -68,7 +68,7 @@ ret @return
     for _ in range(5):
         setup_test()
         scope2 = build_scope(src)
-        NewScalarSSATransformer().process(scope2)
+        ScalarSSATransformer().process(scope2)
         syms2 = sorted(scope2.symbols.keys())
         assert syms == syms2, f'Non-deterministic SSA symbol ordering detected'
 
@@ -103,7 +103,7 @@ ret @return
     scope = build_scope(src)
 
     # This should not raise ValueError about 'Unknown new IrExp type: TEMP'
-    NewScalarSSATransformer().process(scope)
+    ScalarSSATransformer().process(scope)
 
     # Verify PHIs were created and have correct structure
     exit_blk = None
@@ -150,7 +150,7 @@ ret @return
     scope = build_scope(src)
     blocks_before = list(scope.traverse_blocks())
 
-    NewScalarSSATransformer().process(scope)
+    ScalarSSATransformer().process(scope)
 
     blocks_after = list(scope.traverse_blocks())
 
@@ -199,7 +199,7 @@ mv @return 0
 ret @return
 '''
     scope = build_scope(src)
-    NewScalarSSATransformer().process(scope)
+    ScalarSSATransformer().process(scope)
 
     # After SSA, verify no #1#1 double-renamed symbols
     for name in scope.symbols:
@@ -244,8 +244,8 @@ mv a 1
     blk.stms = [phi_a, phi_b, uphi_t]
 
     # Run _sort_phi
-    from polyphony.compiler.ir.transformers.ssa import NewScalarSSATransformer
-    ssa = NewScalarSSATransformer()
+    from polyphony.compiler.ir.transformers.ssa import ScalarSSATransformer
+    ssa = ScalarSSATransformer()
     ssa.scope = blk_scope
     ssa._sort_phi(blk)
 
@@ -274,7 +274,7 @@ mv @return t
 ret @return
 '''
     scope = build_scope(src)
-    NewScalarSSATransformer().process(scope)
+    ScalarSSATransformer().process(scope)
 
     # Verify all stms have non-None loc
     for blk in scope.traverse_blocks():

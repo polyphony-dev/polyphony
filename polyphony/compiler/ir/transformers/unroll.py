@@ -1,9 +1,9 @@
 """Loop unrolling using new IR (ir.py).
 
 Contains:
-- NewLoopUnroller: main unroller
-- NewIVReplacer: induction variable replacement
-- NewPHICondRemover: removes PHI conditions after unrolling
+- LoopUnroller: main unroller
+- IVReplacer: induction variable replacement
+- PHICondRemover: removes PHI conditions after unrolling
 """
 from collections import defaultdict
 from ..block import Block
@@ -18,7 +18,7 @@ from ..loop import Loop
 from ..scope import Scope, NameReplacer
 from ..symbol import Symbol
 from ..types.type import Type
-from ..analysis.usedef import NewUseDefDetector
+from ..analysis.usedef import UseDefDetector
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger
@@ -52,10 +52,10 @@ def _clone_ir_block(blk, scope, nametag=None):
     return b, stm_map
 
 
-class NewLoopUnroller(object):
+class LoopUnroller(object):
     def process(self, scope):
         self.scope = scope
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         self.unrolled = False
         if self._unroll_loop_tree_leaf(scope.top_region()):
             # Re-order blocks
@@ -385,7 +385,7 @@ class NewLoopUnroller(object):
             new_blk, _ = _clone_ir_block(origin_block, self.scope, 'unroll_body')
             new_blk.preds_loop = []
             new_blk.succs_loop = []
-            ivreplacer = NewIVReplacer(self.scope, defsym_indexes, new_ivs, iv_updates, i)
+            ivreplacer = IVReplacer(self.scope, defsym_indexes, new_ivs, iv_updates, i)
             symreplacer = _NewNameReplacer(self.scope, sym_map)
             for stm in new_blk.stms:
                 ivreplacer.visit(stm)
@@ -426,7 +426,7 @@ class NewLoopUnroller(object):
                     ustm.replace(u.name, sym_map[u.name].name)
 
     def _remove_loop_condition(self, cond):
-        NewPHICondRemover(cond).process(self.scope)
+        PHICondRemover(cond).process(self.scope)
 
     def _find_loop_range(self, loop):
         loop_min = self._find_loop_min(loop)
@@ -495,7 +495,7 @@ class NewLoopUnroller(object):
         fail(update_stm, Errors.RULE_UNROLL_UNKNOWN_STEP)
 
 
-class NewIVReplacer(IrVisitor):
+class IVReplacer(IrVisitor):
     """Replace induction variables in unrolled loop bodies."""
     def __init__(self, scope, defsym_indexes, new_ivs, iv_updates, idx):
         self.scope = scope
@@ -540,7 +540,7 @@ class _NewNameReplacer(IrVisitor):
             object.__setattr__(ir, 'name', self.sym_map[ir.name].name)
 
 
-class NewPHICondRemover(IrTransformer):
+class PHICondRemover(IrTransformer):
     """Remove PHI conditions after full unroll by replacing cond with Const(1)."""
     def __init__(self, sym):
         self.sym = sym

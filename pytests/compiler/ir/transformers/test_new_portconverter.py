@@ -1,4 +1,4 @@
-"""Tests for NewPortTypeProp, NewFlippedTransformer, NewPortConnector."""
+"""Tests for PortTypeProp, FlippedTransformer, PortConnector."""
 from polyphony.compiler.ir.ir import Ctx as OldCtx, Const, Temp, Attr, New, Move, Expr, Call
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
@@ -6,34 +6,34 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.transformers.portconverter import (
-    NewPortTypeProp, NewFlippedTransformer, NewPortConnector,
+    PortTypeProp, FlippedTransformer, PortConnector,
 )
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
 
 def test_new_port_type_prop_imports():
-    """Verify NewPortTypeProp can be imported and inherits from NewTypePropagation."""
-    from polyphony.compiler.ir.transformers.typeprop import NewTypePropagation
-    assert issubclass(NewPortTypeProp, NewTypePropagation)
+    """Verify PortTypeProp can be imported and inherits from TypePropagation."""
+    from polyphony.compiler.ir.transformers.typeprop import TypePropagation
+    assert issubclass(PortTypeProp, TypePropagation)
 
 
 def test_new_flipped_transformer_imports():
-    """Verify NewFlippedTransformer can be imported and inherits from NewTypePropagation."""
-    from polyphony.compiler.ir.transformers.typeprop import NewTypePropagation
-    assert issubclass(NewFlippedTransformer, NewTypePropagation)
+    """Verify FlippedTransformer can be imported and inherits from TypePropagation."""
+    from polyphony.compiler.ir.transformers.typeprop import TypePropagation
+    assert issubclass(FlippedTransformer, TypePropagation)
 
 
 def test_new_port_connector_imports():
-    """Verify NewPortConnector can be imported and has scopes attribute."""
-    connector = NewPortConnector()
+    """Verify PortConnector can be imported and has scopes attribute."""
+    connector = PortConnector()
     assert hasattr(connector, 'scopes')
     assert connector.scopes == []
 
 
 def test_normalize_direction():
-    """Test direction normalization in NewPortTypeProp."""
-    prop = NewPortTypeProp()
+    """Test direction normalization in PortTypeProp."""
+    prop = PortTypeProp()
     assert prop._normalize_direction('in') == 'input'
     assert prop._normalize_direction('input') == 'input'
     assert prop._normalize_direction('i') == 'input'
@@ -46,7 +46,7 @@ def test_normalize_direction():
 
 
 def test_new_port_type_prop_basic():
-    """Test NewPortTypeProp processes a scope without errors on simple (non-port) code."""
+    """Test PortTypeProp processes a scope without errors on simple (non-port) code."""
     setup_test()
     top = Scope.global_scope()
 
@@ -61,12 +61,12 @@ def test_new_port_type_prop_basic():
     Block.set_order(blk, 0)
 
     # Should process without errors (no port-specific code to handle)
-    NewPortTypeProp().process_scopes([F])
+    PortTypeProp().process_scopes([F])
 
 
 def test_new_flipped_ports_builder():
-    """Test NewFlippedPortsBuilder flips direction in old IR NEW nodes."""
-    from polyphony.compiler.ir.transformers.portconverter import NewFlippedPortsBuilder
+    """Test FlippedPortsBuilder flips direction in old IR NEW nodes."""
+    from polyphony.compiler.ir.transformers.portconverter import FlippedPortsBuilder
     setup_test()
 
     # Create a Port scope
@@ -91,7 +91,7 @@ def test_new_flipped_ports_builder():
     Block.set_order(blk, 0)
 
     # The builder should flip 'in' to 'out'
-    NewFlippedPortsBuilder().process(ctor)
+    FlippedPortsBuilder().process(ctor)
     # Check the direction was flipped
     for stm in blk.stms:
         if isinstance(stm, Move) and isinstance(stm.src, New):

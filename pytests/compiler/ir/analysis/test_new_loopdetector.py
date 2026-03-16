@@ -1,4 +1,4 @@
-"""Tests for NewLoopInfoSetter and NewLoopDependencyDetector."""
+"""Tests for LoopInfoSetter and LoopDependencyDetector."""
 from polyphony.compiler.ir.ir import Const, Temp, Move, CJump, BinOp, RelOp, LPhi, Jump, Ret, Ctx
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
@@ -6,7 +6,7 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
-from polyphony.compiler.ir.analysis.loopdetector import NewLoopInfoSetter, NewLoopDependencyDetector
+from polyphony.compiler.ir.analysis.loopdetector import LoopInfoSetter, LoopDependencyDetector
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -101,10 +101,10 @@ def _make_simple_loop_scope():
 
 
 def test_new_loop_info_setter_basic():
-    """NewLoopInfoSetter sets counter, init, update on loop."""
+    """LoopInfoSetter sets counter, init, update on loop."""
     scope = _make_simple_loop_scope()
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
+    LoopInfoSetter().process(scope)
     loops = list(scope.child_regions(scope.top_region()))
     assert len(loops) == 1
     loop = loops[0]
@@ -116,21 +116,21 @@ def test_new_loop_info_setter_basic():
 
 
 def test_new_loop_info_setter_counter_tag():
-    """NewLoopInfoSetter adds loop_counter tag to counter symbol."""
+    """LoopInfoSetter adds loop_counter tag to counter symbol."""
     scope = _make_simple_loop_scope()
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
+    LoopInfoSetter().process(scope)
     loops = list(scope.child_regions(scope.top_region()))
     loop = loops[0]
     assert loop.counter.is_loop_counter()
 
 
 def test_new_loop_dependency_detector_basic():
-    """NewLoopDependencyDetector sets outer_defs/outer_uses/inner_defs/inner_uses."""
+    """LoopDependencyDetector sets outer_defs/outer_uses/inner_defs/inner_uses."""
     scope = _make_simple_loop_scope()
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
-    NewLoopDependencyDetector().process(scope)
+    LoopInfoSetter().process(scope)
+    LoopDependencyDetector().process(scope)
     loops = list(scope.child_regions(scope.top_region()))
     assert len(loops) == 1
     loop = loops[0]
@@ -141,11 +141,11 @@ def test_new_loop_dependency_detector_basic():
 
 
 def test_new_loop_dependency_detector_outer_uses():
-    """NewLoopDependencyDetector detects symbols used outside the loop."""
+    """LoopDependencyDetector detects symbols used outside the loop."""
     scope = _make_simple_loop_scope()
     LoopDetector().process(scope)
-    NewLoopInfoSetter().process(scope)
-    NewLoopDependencyDetector().process(scope)
+    LoopInfoSetter().process(scope)
+    LoopDependencyDetector().process(scope)
     loops = list(scope.child_regions(scope.top_region()))
     loop = loops[0]
     # x is defined in the loop head (lphi) and used in loop_exit (mv @return x)

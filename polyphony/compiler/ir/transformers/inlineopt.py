@@ -4,15 +4,15 @@ All passes operate directly on block.stms which contains unified IR types.
 No old IR conversion is used.
 
 Classes:
-  NewObjectHierarchyCopier - Copy object hierarchy for inlined objects
-  NewFlattenFieldAccess - Flatten nested attribute access chains
-  NewInlineOpt - Inline function/method/ctor calls
-  NewFlattenModule - Flatten module method calls
-  NewCallCollector - Collect Call/New nodes from stms
-  NewAllVariableCollector - Collect all variables in stms
-  NewNonlocalVariableCollector - Collect free variables in stms
-  NewLocalVariableCollector - Collect local variables in stms
-  NewIRReplacer - Replace variables in stms based on a symbol map
+  ObjectHierarchyCopier - Copy object hierarchy for inlined objects
+  FlattenFieldAccess - Flatten nested attribute access chains
+  InlineOpt - Inline function/method/ctor calls
+  FlattenModule - Flatten module method calls
+  CallCollector - Collect Call/New nodes from stms
+  AllVariableCollector - Collect all variables in stms
+  NonlocalVariableCollector - Collect free variables in stms
+  LocalVariableCollector - Collect local variables in stms
+  IRReplacer - Replace variables in stms based on a symbol map
 """
 from collections import defaultdict, deque
 import dataclasses
@@ -348,7 +348,7 @@ class _StmsTransformer(_StmsVisitor):
 # Helper visitors for InlineOpt
 # ============================================================
 
-class NewCallCollector(_StmsVisitor):
+class CallCollector(_StmsVisitor):
     """Collect Call/New nodes and their containing statements from block.stms."""
 
     def __init__(self, calls: CallsDict):
@@ -366,7 +366,7 @@ class NewCallCollector(_StmsVisitor):
         self.calls[ctor].append((ir, self.current_stm))
 
 
-class NewAllVariableCollector(_StmsVisitor):
+class AllVariableCollector(_StmsVisitor):
     """Collect all named variables that have symbols in scope."""
 
     def __init__(self):
@@ -385,7 +385,7 @@ class NewAllVariableCollector(_StmsVisitor):
         self.visit(ir.exp)
 
 
-class NewNonlocalVariableCollector(_StmsVisitor):
+class NonlocalVariableCollector(_StmsVisitor):
     """Collect variables whose symbol is defined outside the current scope."""
 
     def __init__(self):
@@ -404,7 +404,7 @@ class NewNonlocalVariableCollector(_StmsVisitor):
         self.visit(ir.exp)
 
 
-class NewLocalVariableCollector(_StmsVisitor):
+class LocalVariableCollector(_StmsVisitor):
     """Collect variables whose symbol is defined in the current scope."""
 
     def __init__(self):
@@ -423,7 +423,7 @@ class NewLocalVariableCollector(_StmsVisitor):
         self.visit(ir.exp)
 
 
-class NewIRReplacer(_StmsTransformer):
+class IRReplacer(_StmsTransformer):
     """Replace variables in block.stms based on a symbol->expression map."""
 
     def __init__(self, replace_map: ReplaceMap):
@@ -485,10 +485,10 @@ class NewIRReplacer(_StmsTransformer):
 
 
 # ============================================================
-# NewObjectHierarchyCopier
+# ObjectHierarchyCopier
 # ============================================================
 
-class NewObjectHierarchyCopier(object):
+class ObjectHierarchyCopier(object):
     def __init__(self):
         pass
 
@@ -552,10 +552,10 @@ class NewObjectHierarchyCopier(object):
 
 
 # ============================================================
-# NewFlattenFieldAccess
+# FlattenFieldAccess
 # ============================================================
 
-class NewFlattenFieldAccess(IrTransformer):
+class FlattenFieldAccess(IrTransformer):
     """Flatten nested attribute access chains using new IR.
 
     Converts e.g. self.obj.field -> self_obj_field by creating
@@ -668,7 +668,7 @@ class NewFlattenFieldAccess(IrTransformer):
 class _FlattenFieldAccessForExprType(_StmsTransformer):
     """Helper transformer for visiting ExprType expressions with flatten logic.
 
-    Applies the same flattening rules as NewFlattenFieldAccess but on a single
+    Applies the same flattening rules as FlattenFieldAccess but on a single
     expression rather than traversing all blocks.
     """
 
@@ -767,10 +767,10 @@ class _FlattenFieldAccessForExprType(_StmsTransformer):
 
 
 # ============================================================
-# NewInlineOpt - Main inline optimization
+# InlineOpt - Main inline optimization
 # ============================================================
 
-class NewInlineOpt(object):
+class InlineOpt(object):
     """Inline optimization operating directly on block.stms (unified IR).
 
     Builds a call graph, processes leaf callees first, inlines function bodies
@@ -826,7 +826,7 @@ class NewInlineOpt(object):
         if caller in call_graph:
             return
         calls: CallsDict = defaultdict(list)
-        collector = NewCallCollector(calls)
+        collector = CallCollector(calls)
         collector.process(caller)
         if calls:
             call_graph[caller] = calls
@@ -882,7 +882,7 @@ class NewInlineOpt(object):
         return self_map
 
     def _import_nonlocal_symbols(self, callee: CalleeScope, caller: CallerScope):
-        callee_name_exps = NewNonlocalVariableCollector().process(callee)
+        callee_name_exps = NonlocalVariableCollector().process(callee)
         for name_exp in callee_name_exps:
             sym = callee.find_sym(name_exp.name)
             if caller.find_sym(name_exp.name) is sym:
@@ -890,7 +890,7 @@ class NewInlineOpt(object):
             callee.import_sym(sym, sym.name)
 
     def _collect_names_recursively(self, scope: Scope, all_vars: list[tuple[Scope, list[IrNameExp]]]):
-        vs = NewAllVariableCollector().process(scope)
+        vs = AllVariableCollector().process(scope)
         all_vars.append((scope, vs))
         for child in scope.children:
             self._collect_names_recursively(child, all_vars)
@@ -933,7 +933,7 @@ class NewInlineOpt(object):
                 self._rename_type_expr_var(callee, old_name, new_name)
 
     def _merge_symbols(self, callee: CalleeScope, caller: CallerScope):
-        callee_name_exps = NewAllVariableCollector().process(callee)
+        callee_name_exps = AllVariableCollector().process(callee)
         callee_names = set([name_exp.name for name_exp in callee_name_exps])
         typevars = set()
         for name in callee_names:
@@ -1003,7 +1003,7 @@ class NewInlineOpt(object):
 
     def _remove_closure_if_needed(self, caller: CallerScope):
         assert caller.is_enclosure()
-        caller_name_exps = NewLocalVariableCollector().process(caller)
+        caller_name_exps = LocalVariableCollector().process(caller)
         has_reference = False
         for clos in caller.closures():
             for name_exp in caller_name_exps:
@@ -1034,9 +1034,9 @@ class NewInlineOpt(object):
             if callee.is_method():
                 replace_self_map = self._make_replace_self_obj_map(callee_clone, call, call_stm, caller)
                 replace_map |= replace_self_map
-            NewIRReplacer(replace_map).process(callee_clone, callee_clone.entry_block)
+            IRReplacer(replace_map).process(callee_clone, callee_clone.entry_block)
             for c in callee_clone.collect_scope():
-                NewIRReplacer(replace_map).process(c, c.entry_block)
+                IRReplacer(replace_map).process(c, c.entry_block)
 
             if callee.is_returnable():
                 self._replace_result_exp(call_stm, call, callee_clone)
@@ -1136,11 +1136,11 @@ class NewInlineOpt(object):
 
 
 # ============================================================
-# NewFlattenModule
+# FlattenModule
 # ============================================================
 
 class _NewCallCollectorForFlatten(IrVisitor):
-    """Collect Call nodes from stms for NewFlattenModule."""
+    """Collect Call nodes from stms for FlattenModule."""
 
     def __init__(self):
         super().__init__()
@@ -1154,7 +1154,7 @@ class _NewCallCollectorForFlatten(IrVisitor):
         self.calls.append((self.scope, self.current_stm, ir))
 
 
-class NewFlattenModule(IrVisitor):
+class FlattenModule(IrVisitor):
     """Flatten module method calls using new IR.
 
     Converts sub-module worker append calls:
@@ -1240,7 +1240,7 @@ class NewFlattenModule(IrVisitor):
 
         replace_map = {}
         replace_map[worker_self] = Attr(exp=Temp('self'), attr=inst_name)
-        NewIRReplacer(replace_map).process(new_worker, new_worker.entry_block)
+        IRReplacer(replace_map).process(new_worker, new_worker.entry_block)
         return new_worker, Attr(name=new_worker.base_name, exp=Temp(name='self'), attr=new_worker.base_name, ctx=Ctx.LOAD)
 
     def _make_new_assigned_method(self, arg, assigned_scope):
@@ -1257,7 +1257,7 @@ class NewFlattenModule(IrVisitor):
 
         replace_map = {}
         replace_map[self_sym] = Attr(exp=Temp('self'), attr=inst_name)
-        NewIRReplacer(replace_map).process(new_method, new_method.entry_block)
+        IRReplacer(replace_map).process(new_method, new_method.entry_block)
 
         return new_method, Attr(name=new_method.base_name, exp=Temp(name='self'), attr=new_method.base_name, ctx=Ctx.LOAD)
 
@@ -1266,6 +1266,6 @@ class NewFlattenModule(IrVisitor):
 # Backward compatibility aliases
 # ============================================================
 # These are used by existing tests and __main__.py
-InlineOpt = NewInlineOpt
-FlattenFieldAccess = NewFlattenFieldAccess
-ObjectHierarchyCopier = NewObjectHierarchyCopier
+InlineOpt = InlineOpt
+FlattenFieldAccess = FlattenFieldAccess
+ObjectHierarchyCopier = ObjectHierarchyCopier

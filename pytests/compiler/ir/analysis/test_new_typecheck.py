@@ -3,8 +3,8 @@ from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.analysis.typecheck import (
-    NewTypeChecker, NewEarlyTypeChecker, NewEarlyRestrictionChecker,
-    NewRestrictionChecker, NewLateRestrictionChecker, NewAssertionChecker,
+    TypeChecker, EarlyTypeChecker, EarlyRestrictionChecker,
+    RestrictionChecker, LateRestrictionChecker, AssertionChecker,
 )
 from polyphony.compiler.common.env import env
 from polyphony.compiler.common.errors import CompileError
@@ -24,7 +24,7 @@ def build_scope(src, scheduling='sequential'):
 
 
 def test_new_typechecker_basic():
-    """NewTypeChecker processes basic typed IR without error."""
+    """TypeChecker processes basic typed IR without error."""
     src = '''
 scope F
 tags function returnable
@@ -39,11 +39,11 @@ mv @return y
 ret @return
 '''
     scope = build_scope(src)
-    NewTypeChecker().process(scope)
+    TypeChecker().process(scope)
 
 
 def test_new_typechecker_const_types():
-    """NewTypeChecker returns correct types for constants."""
+    """TypeChecker returns correct types for constants."""
     src = '''
 scope F
 tags function returnable
@@ -56,11 +56,11 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewTypeChecker().process(scope)
+    TypeChecker().process(scope)
 
 
 def test_new_early_typechecker_basic():
-    """NewEarlyTypeChecker processes without error."""
+    """EarlyTypeChecker processes without error."""
     src = '''
 scope @top
 tags namespace
@@ -83,11 +83,11 @@ ret @return
     IRParser(src).parse_scope()
     top = env.scopes['@top']
     f = env.scopes['@top.F']
-    NewEarlyTypeChecker().process(top)
+    EarlyTypeChecker().process(top)
 
 
 def test_new_early_restriction_checker():
-    """NewEarlyRestrictionChecker detects range outside for loop."""
+    """EarlyRestrictionChecker detects range outside for loop."""
     src = '''
 scope @top
 tags namespace
@@ -108,11 +108,11 @@ ret @return
     IRParser(src).parse_scope()
     f = env.scopes['@top.F']
     with pytest.raises(CompileError):
-        NewEarlyRestrictionChecker().process(f)
+        EarlyRestrictionChecker().process(f)
 
 
 def test_new_assertion_checker_const_false():
-    """NewAssertionChecker warns on assert(False)."""
+    """AssertionChecker warns on assert(False)."""
     src = '''
 scope @top
 tags namespace
@@ -131,11 +131,11 @@ ret @return
     IRParser(src).parse_scope()
     f = env.scopes['@top.F']
     # Should not raise, just warn
-    NewAssertionChecker().process(f)
+    AssertionChecker().process(f)
 
 
 def test_new_late_restriction_checker_basic():
-    """NewLateRestrictionChecker processes basic IR without error."""
+    """LateRestrictionChecker processes basic IR without error."""
     src = '''
 scope F
 tags function returnable
@@ -148,4 +148,4 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewLateRestrictionChecker().process(scope)
+    LateRestrictionChecker().process(scope)

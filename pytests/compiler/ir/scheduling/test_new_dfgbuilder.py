@@ -1,8 +1,8 @@
-"""Tests for NewDFGBuilder."""
+"""Tests for DFGBuilder."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.scheduling.dataflow import (
-    NewDFGBuilder,
+    DFGBuilder,
     _is_move, _is_expr, _is_const, _is_temp,
     _is_call, _is_syscall, _is_mref, _is_mstore,
     _is_jump, _is_cjump, _is_mcjump, _is_ctrl_stm,
@@ -100,7 +100,7 @@ def test_is_mem_read_not_move():
 # --- DFG building tests ---
 
 def test_dfg_simple_linear():
-    """NewDFGBuilder creates DFG for linear block."""
+    """DFGBuilder creates DFG for linear block."""
     src = '''
 scope F
 tags function returnable
@@ -115,7 +115,7 @@ mv @return y
 ret @return
 '''
     scope = build_scope_with_loop(src)
-    builder = NewDFGBuilder()
+    builder = DFGBuilder()
     builder.process(scope)
 
     dfg = scope.top_dfg
@@ -125,7 +125,7 @@ ret @return
 
 
 def test_dfg_has_defuse_edges():
-    """NewDFGBuilder creates def-use edges between definitions and uses."""
+    """DFGBuilder creates def-use edges between definitions and uses."""
     src = '''
 scope F
 tags function returnable
@@ -138,7 +138,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope_with_loop(src)
-    builder = NewDFGBuilder()
+    builder = DFGBuilder()
     builder.process(scope)
 
     dfg = scope.top_dfg
@@ -147,7 +147,7 @@ ret @return
 
 
 def test_dfg_source_nodes():
-    """NewDFGBuilder identifies source nodes (constant assignments)."""
+    """DFGBuilder identifies source nodes (constant assignments)."""
     src = '''
 scope F
 tags function returnable
@@ -160,7 +160,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope_with_loop(src)
-    builder = NewDFGBuilder()
+    builder = DFGBuilder()
     builder.process(scope)
 
     dfg = scope.top_dfg
@@ -168,7 +168,7 @@ ret @return
 
 
 def test_dfg_sequential_scheduling():
-    """NewDFGBuilder adds seq edges for sequential scheduling."""
+    """DFGBuilder adds seq edges for sequential scheduling."""
     src = '''
 scope F
 tags function returnable
@@ -183,7 +183,7 @@ mv @return (+ x y)
 ret @return
 '''
     scope = build_scope_with_loop(src, scheduling='sequential')
-    builder = NewDFGBuilder()
+    builder = DFGBuilder()
     builder.process(scope)
 
     dfg = scope.top_dfg
@@ -193,20 +193,20 @@ ret @return
 
 def test_is_constant_stm_move_const():
     """_is_constant_stm recognizes MOVE with CONST src."""
-    builder = NewDFGBuilder()
+    builder = DFGBuilder()
     m = Move(Temp('x', Ctx.STORE), Const(42))
     assert builder._is_constant_stm(m)
 
 
 def test_is_constant_stm_move_array():
     """_is_constant_stm recognizes MOVE with ARRAY src."""
-    builder = NewDFGBuilder()
+    builder = DFGBuilder()
     m = Move(Temp('x', Ctx.STORE), Array([Const(1)], True))
     assert builder._is_constant_stm(m)
 
 
 def test_is_constant_stm_move_temp():
     """_is_constant_stm rejects MOVE with TEMP src."""
-    builder = NewDFGBuilder()
+    builder = DFGBuilder()
     m = Move(Temp('x', Ctx.STORE), Temp('y', Ctx.LOAD))
     assert not builder._is_constant_stm(m)

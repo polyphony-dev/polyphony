@@ -1,8 +1,8 @@
-"""Tests for NewPolyadConstantFolding."""
+"""Tests for PolyadConstantFolding."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
-from polyphony.compiler.ir.transformers.constopt import NewPolyadConstantFolding
+from polyphony.compiler.ir.transformers.constopt import PolyadConstantFolding
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -16,7 +16,7 @@ def build_scope(src):
 
 
 def test_polyadconstfold_basic_add():
-    """NewPolyadConstantFolding handles basic addition."""
+    """PolyadConstantFolding handles basic addition."""
     src = '''
 scope F
 tags function returnable
@@ -29,7 +29,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewPolyadConstantFolding().process(scope)
+    PolyadConstantFolding().process(scope)
 
     # Should still have a valid scope with stms
     for blk in scope.traverse_blocks():
@@ -40,7 +40,7 @@ ret @return
 
 
 def test_polyadconstfold_basic_mult():
-    """NewPolyadConstantFolding handles basic multiplication."""
+    """PolyadConstantFolding handles basic multiplication."""
     src = '''
 scope F
 tags function returnable
@@ -53,7 +53,7 @@ mv @return x
 ret @return
 '''
     scope = build_scope(src)
-    NewPolyadConstantFolding().process(scope)
+    PolyadConstantFolding().process(scope)
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
@@ -62,7 +62,7 @@ ret @return
 
 
 def test_polyadconstfold_simple_binop():
-    """NewPolyadConstantFolding handles a simple binary expression."""
+    """PolyadConstantFolding handles a simple binary expression."""
     src = '''
 scope F
 tags function returnable
@@ -75,7 +75,7 @@ mv @return a
 ret @return
 '''
     scope = build_scope(src)
-    NewPolyadConstantFolding().process(scope)
+    PolyadConstantFolding().process(scope)
     # Should produce valid output with binop or const
     stm_count = 0
     for blk in scope.traverse_blocks():

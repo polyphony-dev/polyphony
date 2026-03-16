@@ -1,4 +1,4 @@
-"""Tests for NewTypePropagation, NewTypeSpecializer, and NewStaticTypePropagation."""
+"""Tests for TypePropagation, TypeSpecializer, and StaticTypePropagation."""
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new_ir
@@ -6,7 +6,7 @@ from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.transformers.typeprop import (
-    NewTypePropagation, NewTypeSpecializer, NewStaticTypePropagation,
+    TypePropagation, TypeSpecializer, StaticTypePropagation,
 )
 from polyphony.compiler.ir.transformers.typeprop import TypePropagation, TypeSpecializer
 from polyphony.compiler.ir.types.type import Type
@@ -16,7 +16,7 @@ import pytest
 
 
 def test_new_type_specializer_basic():
-    """NewTypeSpecializer specializes a function called with int arg."""
+    """TypeSpecializer specializes a function called with int arg."""
     setup_test(with_global=False)
     block_src = """
     scope @top
@@ -53,7 +53,7 @@ def test_new_type_specializer_basic():
     top = env.scopes['@top']
     install_builtins(top)
 
-    NewTypeSpecializer().process_all()
+    TypeSpecializer().process_all()
 
     func_i32 = env.scopes['@top.func_i32']
     assert func_i32.is_specialized()
@@ -62,7 +62,7 @@ def test_new_type_specializer_basic():
 
 
 def test_new_type_specializer_two_modules():
-    """NewTypeSpecializer specializes functions from two namespaces."""
+    """TypeSpecializer specializes functions from two namespaces."""
     setup_test(with_global=False)
     block_src = """
     scope @top
@@ -99,7 +99,7 @@ def test_new_type_specializer_two_modules():
     top = env.scopes['@top']
     install_builtins(top)
 
-    NewTypeSpecializer().process_all()
+    TypeSpecializer().process_all()
 
     top_func_i32 = env.scopes['@top.func_i32']
     other_func_i32 = env.scopes['other.func_i32']
@@ -110,7 +110,7 @@ def test_new_type_specializer_two_modules():
 
 
 def test_new_type_propagation_basic():
-    """NewTypePropagation propagates basic int types."""
+    """TypePropagation propagates basic int types."""
     setup_test(with_global=False)
     block_src = """
     scope @top
@@ -132,7 +132,7 @@ def test_new_type_propagation_basic():
     top = env.scopes['@top']
     install_builtins(top)
 
-    typed_scopes, _ = NewTypePropagation(is_strict=False).process_all()
+    typed_scopes, _ = TypePropagation(is_strict=False).process_all()
 
     func = env.scopes['@top.func']
     assert func in typed_scopes
@@ -141,7 +141,7 @@ def test_new_type_propagation_basic():
 
 
 def test_new_static_type_propagation_basic():
-    """NewStaticTypePropagation propagates types for static scopes."""
+    """StaticTypePropagation propagates types for static scopes."""
     setup_test(with_global=False)
     block_src = """
     scope @top
@@ -154,7 +154,7 @@ def test_new_static_type_propagation_basic():
     top = env.scopes['@top']
     install_builtins(top)
 
-    NewStaticTypePropagation(is_strict=False).process_scopes([top])
+    StaticTypePropagation(is_strict=False).process_scopes([top])
 
     x_sym = top.find_sym('x')
     assert x_sym.typ.is_int()

@@ -1,7 +1,7 @@
-"""Tests for NewHyperBlockBuilder (ir-based)."""
+"""Tests for HyperBlockBuilder (ir-based)."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.transformers.cfgopt import NewHyperBlockBuilder
+from polyphony.compiler.ir.transformers.cfgopt import HyperBlockBuilder
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
@@ -23,13 +23,13 @@ def build_scope(src, scheduling='sequential'):
 
 
 def run_new(src, scheduling='timed'):
-    """Run NewHyperBlockBuilder and return the result scope."""
+    """Run HyperBlockBuilder and return the result scope."""
     scope = build_scope(src, scheduling=scheduling)
     for blk in scope.traverse_blocks():
         blk.path_exp = new.Const(value=1)
     # UseDefDetector needs old IR; convert, run, convert back
     UseDefDetector().process(scope)
-    NewHyperBlockBuilder().process(scope)
+    HyperBlockBuilder().process(scope)
     return scope
 
 

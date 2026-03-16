@@ -8,7 +8,7 @@ from ..ir import (
 )
 from ..ir_helper import reduce_relexp, irexp_type
 from ..analysis.dominator import DominatorTreeBuilder
-from ..analysis.usedef import NewUseDefDetector
+from ..analysis.usedef import UseDefDetector
 from ..types.type import Type
 from ...common.utils import remove_except_one, unique
 from logging import getLogger
@@ -19,7 +19,7 @@ def can_merge_synth_params(params1, params2):
     return params1['scheduling'] == params2['scheduling']
 
 
-class NewBlockReducer(object):
+class BlockReducer(object):
     def process(self, scope):
         self.scope = scope
         if scope.is_class():
@@ -124,7 +124,7 @@ class NewBlockReducer(object):
         self.scope.remove_block_from_region(blk)
 
 
-class NewPathExpTracer(object):
+class PathExpTracer(object):
     def process(self, scope):
         self.scope = scope
         for blk in scope.traverse_blocks():
@@ -238,20 +238,20 @@ def _rel_and_exp_new(exp1, exp2):
     return exp
 
 
-class NewHyperBlockBuilder(object):
+class HyperBlockBuilder(object):
     DEBUG = False
 
     def process(self, scope):
         self.scope = scope
-        self.uddetector = NewUseDefDetector()
+        self.uddetector = UseDefDetector()
         self.uddetector.scope = scope
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         self.uddetector.table = self.usedef
-        self.reducer = NewBlockReducer()
+        self.reducer = BlockReducer()
         self.reducer.scope = self.scope
         self.diamond_nodes = deque()
         self._visited_heads = set()
-        if NewHyperBlockBuilder.DEBUG:
+        if HyperBlockBuilder.DEBUG:
             self.count = 0
             from .scope import write_dot
             write_dot(self.scope, f'{self.count}')
@@ -375,7 +375,7 @@ class NewHyperBlockBuilder(object):
             else:
                 self._do_phi_reduction(head, tail, branches)
             diamond_nodes = self._find_diamond_nodes()
-            if NewHyperBlockBuilder.DEBUG:
+            if HyperBlockBuilder.DEBUG:
                 from .scope import write_dot
                 write_dot(self.scope, f'{self.count}')
                 self.count += 1

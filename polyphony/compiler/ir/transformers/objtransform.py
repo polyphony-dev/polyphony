@@ -9,7 +9,7 @@ from ..ir import (
 )
 from ..ir_helper import qualified_symbols, irexp_type
 from ..types.type import Type
-from ..analysis.usedef import NewUseDefDetector, NewUseDefUpdater
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from ..analysis.usedef import UseDefItem
 from ...common.utils import replace_item
 from ...common.env import env
@@ -17,11 +17,11 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-class NewObjectTransformer(object):
+class ObjectTransformer(object):
     def process(self, scope):
         self.scope = scope
         self.seq_id_map = {}
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         self._collect_obj_defs()
         self._collect_copy_sources()
         self._transform_obj_access()

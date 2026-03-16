@@ -14,7 +14,7 @@ from ..ir import (
 from ..ir_helper import qualified_symbols, irexp_type
 from ..types import typehelper
 from ..symbol import Symbol
-from ..analysis.usedef import NewUseDefDetector
+from ..analysis.usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)
 if TYPE_CHECKING:
@@ -22,15 +22,15 @@ if TYPE_CHECKING:
     from ..analysis.usedef import UseDefTable
 
 
-class NewVarReplacer(object):
+class VarReplacer(object):
     @classmethod
     def replace_uses(cls, scope, dst, src, usedef=None):
         assert isinstance(dst, IrVariable)
         assert isinstance(src, IrExp)
         if usedef is None:
-            usedef = NewUseDefDetector().process(scope)
+            usedef = UseDefDetector().process(scope)
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
-        replacer = NewVarReplacer(scope, dst, src, usedef)
+        replacer = VarReplacer(scope, dst, src, usedef)
         dst_qsym = qualified_symbols(dst, scope)
         uses = list(usedef.get_stms_using(dst_qsym))
         for use in uses:

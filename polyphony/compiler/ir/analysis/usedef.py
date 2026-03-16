@@ -1,17 +1,8 @@
 ﻿from collections import defaultdict
 from dataclasses import dataclass
-from ..ir_visitor import IRVisitor, IrVisitor
+from ..ir_visitor import IrVisitor
 from ..ir import *
-from ..ir import IrStm as NewIrStm, IrVariable as NewIrVariable, Const as NewConst, Expr as NewExpr
-from ..ir_helper import qualified_symbols as _old_qualified_symbols
-from ..ir_helper import qualified_symbols as _new_qualified_symbols
-
-
-def qualified_symbols(var, scope):
-    """Dispatch to old or new qualified_symbols based on var type."""
-    if isinstance(var, NewIrVariable):
-        return _new_qualified_symbols(var, scope)
-    return _old_qualified_symbols(var, scope)
+from ..ir_helper import qualified_symbols
 
 
 from ..block import Block
@@ -278,97 +269,10 @@ class UseDefTable(object):
         logger.debug(self)
 
 
-class UseDefDetector(IRVisitor):
-    ADD = 0
-    REMOVE = 1
-
-    def __init__(self):
-        super().__init__()
-        self.table = UseDefTable()
-        self.set_mode(UseDefDetector.ADD)
-
-    def set_mode(self, mode):
-        if mode == UseDefDetector.ADD:
-            self.update_Const_use = self.table.add_Const_use
-            self.update_var_def = self.table.add_var_def
-            self.update_var_use = self.table.add_var_use
-        else:
-            self.update_Const_use = self.table.remove_Const_use
-            self.update_var_def = self.table.remove_var_def
-            self.update_var_use = self.table.remove_var_use
-
-    def process(self, scope):
-        super().process(scope)
-        return self.table
-
-    def _process_block(self, block):
-        for stm in block.stms:
-            self.visit(stm)
-        # Do not access to path_exp on usedef detection
-        # if block.path_exp:
-        #    self.visit(block.path_exp)
-
-    def _visit_args(self, ir):
-        for _, arg in ir.args:
-            self.visit(arg)
-
-    def visit_CALL(self, ir):
-        self.visit(ir.func)
-        self._visit_args(ir)
-
-    def visit_SYSCALL(self, ir):
-        self.visit(ir.func)
-        self._visit_args(ir)
-
-    def visit_NEW(self, ir):
-        self.visit(ir.func)
-        self._visit_args(ir)
-
-    def visit_Const(self, ir):
-        self.update_Const_use(ir, self.current_stm)
-
-    def visit_TEMP(self, ir):
-        if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
-            self.update_var_use(self.scope, ir, self.current_stm)
-        elif ir.ctx == Ctx.STORE:
-            self.update_var_def(self.scope, ir, self.current_stm)
-        else:
-            assert False
-        sym = self.scope.find_sym(ir.name)
-        assert sym
-        sym_t = sym.typ
-        for expr_t in typehelper.find_expr(sym_t):
-            expr = expr_t.expr
-            assert isinstance(expr, NewExpr)
-            self.visit_with_context(expr_t.scope, expr)
-
-    def visit_ATTR(self, ir):
-        if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
-            self.update_var_use(self.scope, ir, self.current_stm)
-        elif ir.ctx == Ctx.STORE:
-            self.update_var_def(self.scope, ir, self.current_stm)
-        else:
-            assert False
-        self.visit(ir.exp)
-
-        attr = qualified_symbols(ir, self.scope)[-1]
-        assert isinstance(attr, Symbol)
-        for expr_t in typehelper.find_expr(attr.typ):
-            expr = expr_t.expr
-            assert isinstance(expr, NewExpr)
-            self.visit_with_context(expr_t.scope, expr)
-
-    def visit_with_context(self, scope: Scope, IrStm: IrStm):
-        old_scope = self.scope
-        old_stm = self.current_stm
-        self.scope = scope
-        self.current_stm = IrStm
-        self.visit(IrStm)
-        self.scope = old_scope
-        self.current_stm = old_stm
-
 
 class UseDefUpdater(object):
+    """Incremental update handler for new IR."""
+
     def __init__(self, scope, usedef):
         self.adder = UseDefDetector()
         self.remover = UseDefDetector()
@@ -386,37 +290,17 @@ class UseDefUpdater(object):
             self.adder.visit(new_stm)
 
 
-class NewUseDefUpdater(object):
-    """Incremental update handler for new IR."""
-
-    def __init__(self, scope, usedef):
-        self.adder = NewUseDefDetector()
-        self.remover = NewUseDefDetector()
-        self.adder.scope = scope
-        self.adder.table = usedef
-        self.remover.scope = scope
-        self.remover.table = usedef
-        self.adder.set_mode(NewUseDefDetector.ADD)
-        self.remover.set_mode(NewUseDefDetector.REMOVE)
-
-    def update(self, old_stm, new_stm):
-        if old_stm:
-            self.remover.visit(old_stm)
-        if new_stm:
-            self.adder.visit(new_stm)
-
-
-class NewUseDefDetector(IrVisitor):
+class UseDefDetector(IrVisitor):
     ADD = 0
     REMOVE = 1
 
     def __init__(self):
         super().__init__()
         self.table = UseDefTable()
-        self.set_mode(NewUseDefDetector.ADD)
+        self.set_mode(UseDefDetector.ADD)
 
     def set_mode(self, mode):
-        if mode == NewUseDefDetector.ADD:
+        if mode == UseDefDetector.ADD:
             self._add_or_remove_def = self._add_def
             self._add_or_remove_use = self._add_use
             self._add_or_remove_Const = self._add_Const

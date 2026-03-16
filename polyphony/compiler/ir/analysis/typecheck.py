@@ -30,7 +30,7 @@ def _get_callee_scope(ir, scope):
     return func_t.scope
 
 
-class NewTypeChecker(IrVisitor):
+class TypeChecker(IrVisitor):
     def __init__(self):
         super().__init__()
 
@@ -287,7 +287,7 @@ class NewTypeChecker(IrVisitor):
                            [arg.name, scope_name])
 
 
-class NewEarlyTypeChecker(IrVisitor):
+class EarlyTypeChecker(IrVisitor):
     def visit_Call(self, ir):
         arg_len = len(ir.args)
         callee_scope = _get_callee_scope(ir, self.scope)
@@ -345,7 +345,7 @@ class NewEarlyTypeChecker(IrVisitor):
                        [scope_name, param_len, arg_len])
 
 
-class NewPortAssignChecker(IrVisitor):
+class PortAssignChecker(IrVisitor):
     def _is_assign_call(self, ir):
         callee_scope = _get_callee_scope(ir, self.scope)
         if callee_scope.parent.is_port() and callee_scope.base_name == 'assign':
@@ -384,13 +384,13 @@ class NewPortAssignChecker(IrVisitor):
                 assigned.add_tag('comb')
 
 
-class NewEarlyRestrictionChecker(IrVisitor):
+class EarlyRestrictionChecker(IrVisitor):
     def visit_SysCall(self, ir):
         if ir.name in ('range', 'polyphony.unroll', 'polyphony.pipelined'):
             fail(self.current_stm, Errors.USE_OUTSIDE_FOR, [ir.name])
 
 
-class NewRestrictionChecker(IrVisitor):
+class RestrictionChecker(IrVisitor):
     def visit_New(self, ir):
         callee_scope = _get_callee_scope(ir, self.scope)
         if callee_scope.is_module():
@@ -455,7 +455,7 @@ class NewRestrictionChecker(IrVisitor):
                 fail(self.current_stm, Errors.INVALID_MODULE_OBJECT_ACCESS)
 
 
-class NewLateRestrictionChecker(IrVisitor):
+class LateRestrictionChecker(IrVisitor):
     def visit_Array(self, ir):
         if not isinstance(ir.repeat, Const):
             fail(self.current_stm, Errors.SEQ_MULTIPLIER_MUST_BE_CONST)
@@ -483,7 +483,7 @@ class NewLateRestrictionChecker(IrVisitor):
                 fail(self.current_stm, Errors.RESERVED_PORT_NAME, [dst_sym.name])
 
 
-class NewAssertionChecker(IrVisitor):
+class AssertionChecker(IrVisitor):
     def visit_SysCall(self, ir):
         if ir.name != 'assert':
             return
@@ -492,7 +492,7 @@ class NewAssertionChecker(IrVisitor):
             warn(self.current_stm, Warnings.ASSERTION_FAILED)
 
 
-class NewSynthesisParamChecker(object):
+class SynthesisParamChecker(object):
     """Synthesis parameter checker using new IR.
 
     This pass does not extend IrVisitor because it has custom traversal logic.
@@ -500,8 +500,8 @@ class NewSynthesisParamChecker(object):
     """
     def process(self, scope):
         self.scope = scope
-        from .usedef import NewUseDefDetector
-        self.usedef = NewUseDefDetector().process(scope)
+        from .usedef import UseDefDetector
+        self.usedef = UseDefDetector().process(scope)
         if scope.synth_params['scheduling'] == 'pipeline':
             if scope.is_worker() or (scope.is_closure() and scope.parent.is_worker()):
                 pass

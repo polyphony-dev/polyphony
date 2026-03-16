@@ -1,7 +1,7 @@
 """Tests for new IfTransformer (ir-based)."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.transformers.iftransform import NewIfTransformer
+from polyphony.compiler.ir.transformers.iftransform import IfTransformer
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.irwriter import IRWriter
 from polyphony.compiler.ir.block import Block
@@ -37,7 +37,7 @@ mv x 2
     writer = IRWriter()
     before = [writer.write_stm(s) for s in scope.entry_block.stms]
 
-    NewIfTransformer().process(scope)
+    IfTransformer().process(scope)
 
     after = [writer.write_stm(s) for s in scope.entry_block.stms]
     assert before == after
@@ -70,7 +70,7 @@ ret @return
     scope = build_scope(src)
     blk1 = scope.entry_block
 
-    NewIfTransformer().process(scope)
+    IfTransformer().process(scope)
 
     # Still a CJUMP (not merged into MCJUMP because blk3 has >1 stm or not a CJUMP)
     last = blk1.stms[-1]
@@ -122,7 +122,7 @@ def test_chained_cjump_to_mcjump():
     Block.set_order(blk1, 0)
 
     # Run new IfTransformer via adapter
-    NewIfTransformer().process(scope)
+    IfTransformer().process(scope)
 
     # blk1 should now end with MCJUMP instead of CJUMP
     last = blk1.stms[-1]

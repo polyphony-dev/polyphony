@@ -1,9 +1,9 @@
-"""Tests for NewScheduler and latency."""
+"""Tests for Scheduler and latency."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irreader import IRReader as IRParser
-from polyphony.compiler.ir.scheduling.dataflow import NewDFGBuilder
+from polyphony.compiler.ir.scheduling.dataflow import DFGBuilder
 from polyphony.compiler.ir.scheduling.scheduler import (
-    NewScheduler, NewResourceExtractor,
+    Scheduler, ResourceExtractor,
 )
 from polyphony.compiler.ir.scheduling.latency import (
     get_latency, UNIT_STEP, CALL_MINIMUM_STEP,
@@ -34,7 +34,7 @@ def build_scope_with_loop(src, scheduling='sequential'):
 
 
 def test_scheduler_simple():
-    """NewScheduler schedules a simple function."""
+    """Scheduler schedules a simple function."""
     src = '''
 scope F
 tags function returnable
@@ -47,8 +47,8 @@ mv @return x
 ret @return
 '''
     scope = build_scope_with_loop(src)
-    NewDFGBuilder().process(scope)
-    NewScheduler().schedule(scope)
+    DFGBuilder().process(scope)
+    Scheduler().schedule(scope)
 
     dfg = scope.top_dfg
     for node in dfg.nodes:
@@ -57,7 +57,7 @@ ret @return
 
 
 def test_scheduler_sets_asap_latency():
-    """NewScheduler sets scope.asap_latency."""
+    """Scheduler sets scope.asap_latency."""
     src = '''
 scope F
 tags function returnable
@@ -70,14 +70,14 @@ mv @return x
 ret @return
 '''
     scope = build_scope_with_loop(src)
-    NewDFGBuilder().process(scope)
-    NewScheduler().schedule(scope)
+    DFGBuilder().process(scope)
+    Scheduler().schedule(scope)
 
     assert scope.asap_latency >= CALL_MINIMUM_STEP
 
 
 def test_scheduler_priorities():
-    """NewScheduler assigns priority to nodes."""
+    """Scheduler assigns priority to nodes."""
     src = '''
 scope F
 tags function returnable
@@ -92,8 +92,8 @@ mv @return (+ x y)
 ret @return
 '''
     scope = build_scope_with_loop(src)
-    NewDFGBuilder().process(scope)
-    NewScheduler().schedule(scope)
+    DFGBuilder().process(scope)
+    Scheduler().schedule(scope)
 
     dfg = scope.top_dfg
     priorities = [n.priority for n in dfg.nodes]
@@ -122,7 +122,7 @@ ret @return
 
 
 def test_resource_extractor():
-    """NewResourceExtractor can visit IR without errors."""
+    """ResourceExtractor can visit IR without errors."""
     src = '''
 scope F
 tags function returnable
@@ -137,9 +137,9 @@ mv @return y
 ret @return
 '''
     scope = build_scope_with_loop(src)
-    NewDFGBuilder().process(scope)
+    DFGBuilder().process(scope)
 
-    extractor = NewResourceExtractor()
+    extractor = ResourceExtractor()
     extractor.scope = scope
     for node in scope.top_dfg.nodes:
         extractor.current_node = node
@@ -149,20 +149,20 @@ ret @return
 
 
 def test_scheduler_skips_namespace():
-    """NewScheduler skips namespace scopes."""
+    """Scheduler skips namespace scopes."""
     src = '''
 scope ns
 tags namespace
 '''
     scope = build_scope(src)
-    NewScheduler().schedule(scope)
+    Scheduler().schedule(scope)
 
 
 def test_scheduler_skips_class():
-    """NewScheduler skips class scopes."""
+    """Scheduler skips class scopes."""
     src = '''
 scope C
 tags class
 '''
     scope = build_scope(src)
-    NewScheduler().schedule(scope)
+    Scheduler().schedule(scope)

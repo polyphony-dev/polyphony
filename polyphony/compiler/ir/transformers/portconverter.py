@@ -1,11 +1,11 @@
 """Port conversion passes using new IR (ir.py).
 
-NewPortTypeProp: Propagates port types from NEW constructor calls.
-NewFlippedTransformer: Handles flipped ports (reverses direction).
-NewPortConnector: Connects ports between modules.
+PortTypeProp: Propagates port types from NEW constructor calls.
+FlippedTransformer: Handles flipped ports (reverses direction).
+PortConnector: Connects ports between modules.
 """
 from typing import cast
-from .typeprop import NewTypePropagation, RejectPropagation, _get_callee_scope
+from .typeprop import TypePropagation, RejectPropagation, _get_callee_scope
 from ..ir_visitor import IrVisitor
 from ..ir import (
     IrVariable, Temp, Attr, Const, Call, SysCall, New,
@@ -24,10 +24,10 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-class NewPortTypeProp(NewTypePropagation):
+class PortTypeProp(TypePropagation):
     """Propagate port types from NEW constructor calls.
 
-    Extends NewTypePropagation to handle Port-specific NEW and CALL patterns.
+    Extends TypePropagation to handle Port-specific NEW and CALL patterns.
     """
 
     def process(self, scope):
@@ -129,7 +129,7 @@ class NewPortTypeProp(NewTypePropagation):
         return callee_scope.return_type
 
 
-class NewFlippedTransformer(NewTypePropagation):
+class FlippedTransformer(TypePropagation):
     """Handle flipped ports by reversing port direction."""
 
     def process(self, scope):
@@ -200,11 +200,11 @@ class NewFlippedTransformer(NewTypePropagation):
             return env.scopes[qualified_name]
         new_scope = scope.instantiate('flipped', scope.children)
         new_ctor = new_scope.find_ctor()
-        NewFlippedPortsBuilder().process(new_ctor)
+        FlippedPortsBuilder().process(new_ctor)
         return new_scope
 
 
-class NewFlippedPortsBuilder(IrVisitor):
+class FlippedPortsBuilder(IrVisitor):
     """Flip direction of port NEW calls in a ctor."""
 
     def process(self, scope):
@@ -243,7 +243,7 @@ class NewFlippedPortsBuilder(IrVisitor):
                     break
 
 
-class NewPortConnector(IrVisitor):
+class PortConnector(IrVisitor):
     """Connect ports between modules."""
 
     def __init__(self):

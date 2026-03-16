@@ -1,14 +1,14 @@
 from collections import deque
 from ...common.graph import Graph
 from ..ir_helper import qualified_symbols
-from ..ir_visitor import IRVisitor
+from ..ir_visitor import IrVisitor
 from ..scope import Scope
 from ..symbol import Symbol
 from logging import getLogger
 logger = getLogger(__name__)
 
 
-class ScopeDependencyGraphBuilder(IRVisitor):
+class ScopeDependencyGraphBuilder(IrVisitor):
     def __init__(self):
         super().__init__()
 
@@ -49,7 +49,7 @@ class ScopeDependencyGraphBuilder(IRVisitor):
             return
         self.worklist.append(scope)
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         sym = self.scope.find_sym(ir.name)
         assert sym
         sym_t = sym.typ
@@ -63,19 +63,19 @@ class ScopeDependencyGraphBuilder(IRVisitor):
             if sym.scope is not self.scope:
                 self._add_scope(sym.scope)
 
-    def visit_ATTR(self, ir):
+    def visit_Attr(self, ir):
         self.visit(ir.exp)
 
-    def visit_NEW(self, ir):
+    def visit_New(self, ir):
         qsyms = qualified_symbols(ir, self.scope)
         sym = qsyms[-1]
         assert isinstance(sym, Symbol)
         sym_t = sym.typ
         self._add_scope(sym_t.scope)
-        self.visit_args(ir.args, ir.kwargs)
+        self._visit_args(ir.args, ir.kwargs)
 
 
-class UsingScopeDetector(IRVisitor):
+class UsingScopeDetector(IrVisitor):
     def __init__(self):
         super().__init__()
 
@@ -120,7 +120,7 @@ class UsingScopeDetector(IRVisitor):
         if Scope.is_normal_scope(scope) and scope not in self.worklist:
             self.worklist.append(scope)
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         sym = self.scope.find_sym(ir.name)
         assert sym
         sym_t = sym.typ
@@ -134,7 +134,7 @@ class UsingScopeDetector(IRVisitor):
             if sym.scope is not self.scope:
                 self._add_scope(sym.scope)
 
-    def visit_ATTR(self, ir):
+    def visit_Attr(self, ir):
         self.visit(ir.exp)
         qsyms = qualified_symbols(ir, self.scope)
         symbol = qsyms[-1]
@@ -145,7 +145,7 @@ class UsingScopeDetector(IRVisitor):
             attr_scope = attr_t.scope
             self._add_scope(attr_scope)
 
-    def visit_NEW(self, ir):
+    def visit_New(self, ir):
         qsyms = qualified_symbols(ir, self.scope)
         symbol = qsyms[-1]
         assert isinstance(symbol, Symbol)
@@ -153,4 +153,4 @@ class UsingScopeDetector(IRVisitor):
         if sym_t.has_scope():
             self._add_scope(sym_t.scope)
             self._add_scope(sym_t.scope.find_ctor())
-        self.visit_args(ir.args, ir.kwargs)
+        self._visit_args(ir.args, ir.kwargs)

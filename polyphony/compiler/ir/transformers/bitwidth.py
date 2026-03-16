@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class NewTempVarWidthSetter(IrVisitor):
+class TempVarWidthSetter(IrVisitor):
     def visit_Temp(self, ir):
         sym = self.scope.find_sym(ir.name)
         assert sym

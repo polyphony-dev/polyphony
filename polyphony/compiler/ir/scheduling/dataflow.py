@@ -629,7 +629,7 @@ def _program_order(stm):
     return (stm.block.order, _find_stm_index(stm))
 
 
-class NewDFGBuilder(object):
+class DFGBuilder(object):
     """Build Data Flow Graphs."""
 
     def __init__(self):

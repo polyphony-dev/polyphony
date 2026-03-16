@@ -1,9 +1,8 @@
 """Constant optimization passes using new IR (ir.py).
 
-NewConstantOptBase: shared constant folding logic.
-NewEarlyConstantOptNonSSA: pre-SSA constant optimization.
-NewConstantOpt: full constant optimization with worklist.
-ConstantOptBase: old IR constant folding base (kept for PureFuncExecutor).
+ConstantOptBase: shared constant folding logic.
+EarlyConstantOptNonSSA: pre-SSA constant optimization.
+ConstantOpt: full constant optimization with worklist.
 """
 from collections import defaultdict, deque
 from ..block import Block
@@ -22,280 +21,14 @@ from ..ir_helper import (
 from ..symbol import Symbol
 from ..types.type import Type
 from ..analysis.dominator import DominatorTreeBuilder
-from ..analysis.usedef import NewUseDefDetector, NewUseDefUpdater
-from .varreplacer import NewVarReplacer
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
+from .varreplacer import VarReplacer
 from ...common.common import fail
 from ...common.errors import Errors
 from ...common.env import env
 from ...common.utils import find_nth_item_index, remove_from_list
 from logging import getLogger
 logger = getLogger(__name__)
-
-
-# ============================================================
-# ConstantOptBase (old IR, moved from constopt.py)
-# ============================================================
-
-from ..ir import Const as OLD_CONST, IrVariable as OLD_IRVariable, Jump as OLD_JUMP
-from ..ir import CJump as OLD_CJUMP, Phi as OLD_PHI, LPhi as OLD_LPHI
-from ..ir_visitor import IRVisitor as OldIRVisitor
-from ..ir_helper import (
-    qualified_symbols as old_qualified_symbols,
-    reduce_relexp as old_reduce_relexp,
-    eval_unop as old_eval_unop,
-    eval_binop as old_eval_binop,
-    reduce_binop as old_reduce_binop,
-    eval_relop as old_eval_relop,
-)
-from ...common.utils import remove_from_list as _remove_from_list
-
-
-class ConstantOptBase(OldIRVisitor):
-    """Old IR constant folding base class, kept for PureFuncExecutor."""
-
-    def __init__(self):
-        super().__init__()
-
-    def process(self, scope):
-        Block.set_order(scope.entry_block, 0)
-        self.dtree = DominatorTreeBuilder(scope).process()
-        super().process(scope)
-
-    def visit_UNOP(self, ir):
-        new_exp = self.visit(ir.exp)
-        if isinstance(new_exp, OLD_CONST):
-            v = old_eval_unop(ir.op, new_exp.value)
-            if v is None:
-                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            return OLD_CONST(v)
-        if new_exp is not ir.exp:
-            return ir.model_copy(update={'exp': new_exp})
-        return ir
-
-    def visit_BINOP(self, ir):
-        new_left = self.visit(ir.left)
-        new_right = self.visit(ir.right)
-        if isinstance(new_left, OLD_CONST) and isinstance(new_right, OLD_CONST):
-            v = old_eval_binop(ir.op, new_left.value, new_right.value)
-            if v is None:
-                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            return OLD_CONST(v)
-        if new_left is not ir.left or new_right is not ir.right:
-            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
-        if isinstance(ir.left, OLD_CONST) or isinstance(ir.right, OLD_CONST):
-            return old_reduce_binop(ir)
-        return ir
-
-    def visit_RELOP(self, ir):
-        new_left = self.visit(ir.left)
-        new_right = self.visit(ir.right)
-        if new_left is not ir.left or new_right is not ir.right:
-            ir = ir.model_copy(update={'left': new_left, 'right': new_right})
-        if isinstance(ir.left, OLD_CONST) and isinstance(ir.right, OLD_CONST):
-            v = old_eval_relop(ir.op, ir.left.value, ir.right.value)
-            if v is None:
-                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            return OLD_CONST(v)
-        elif (isinstance(ir.left, OLD_CONST) or isinstance(ir.right, OLD_CONST)) and (ir.op == 'And' or ir.op == 'Or'):
-            const, var = (ir.left.value, ir.right) if isinstance(ir.left, OLD_CONST) else (ir.right.value, ir.left)
-            if ir.op == 'And':
-                if const:
-                    return var
-                else:
-                    return OLD_CONST(False)
-            elif ir.op == 'Or':
-                if const:
-                    return OLD_CONST(True)
-                else:
-                    return var
-        elif (isinstance(ir.left, OLD_IRVariable)
-                and isinstance(ir.right, OLD_IRVariable)
-                and (left_qsym := old_qualified_symbols(ir.left, self.scope))
-                and (right_qsym := old_qualified_symbols(ir.right, self.scope))
-                and left_qsym == right_qsym):
-            v = old_eval_relop(ir.op, left_qsym[-1].id, right_qsym[-1].id)
-            if v is None:
-                fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
-            return OLD_CONST(v)
-        return ir
-
-    def visit_CONDOP(self, ir):
-        new_cond = self.visit(ir.cond)
-        new_left = self.visit(ir.left)
-        new_right = self.visit(ir.right)
-        if isinstance(new_cond, OLD_CONST):
-            return new_left if new_cond.value else new_right
-        if new_cond is not ir.cond or new_left is not ir.left or new_right is not ir.right:
-            return ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
-        return ir
-
-    def visit_CALL(self, ir):
-        new_args = [(name, self.visit(arg)) for name, arg in ir.args]
-        args_changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, ir.args))
-        if args_changed:
-            ir = ir.model_copy(update={'args': new_args})
-        qsym = old_qualified_symbols(ir.func, self.scope)
-        assert isinstance(qsym[-1], Symbol)
-        func_t = qsym[-1].typ
-        if (func_t.is_function()
-                and func_t.scope.is_lib()
-                and func_t.scope.base_name == 'is_worker_running'):
-            return OLD_CONST(True)
-        return ir
-
-    def visit_SYSCALL(self, ir):
-        return self.visit_CALL(ir)
-
-    def visit_NEW(self, ir):
-        return self.visit_CALL(ir)
-
-    def visit_CONST(self, ir):
-        return ir
-
-    def visit_MREF(self, ir):
-        new_offset = self.visit(ir.offset)
-        if new_offset is not ir.offset:
-            return ir.model_copy(update={'offset': new_offset})
-        return ir
-
-    def visit_MSTORE(self, ir):
-        new_offset = self.visit(ir.offset)
-        new_exp = self.visit(ir.exp)
-        if new_offset is not ir.offset or new_exp is not ir.exp:
-            return ir.model_copy(update={'offset': new_offset, 'exp': new_exp})
-        return ir
-
-    def visit_ARRAY(self, ir):
-        new_repeat = self.visit(ir.repeat)
-        new_items = [self.visit(item) for item in ir.items]
-        repeat_changed = new_repeat is not ir.repeat
-        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
-        if repeat_changed or items_changed:
-            return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
-        return ir
-
-    def visit_TEMP(self, ir):
-        return ir
-
-    def visit_ATTR(self, ir):
-        return ir
-
-    def visit_EXPR(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
-
-    def visit_CJUMP(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
-        if isinstance(ir.exp, OLD_CONST):
-            self._process_unconditional_jump(ir, [])
-
-    def visit_MCJUMP(self, ir):
-        object.__setattr__(ir, 'conds', [self.visit(cond) for cond in ir.conds])
-        conds = [c.value for c in ir.conds if isinstance(c, OLD_CONST)]
-        if len(conds) == len(ir.conds) and conds.count(1) == 1:
-            self._process_unconditional_jump(ir, [], conds)
-
-    def visit_JUMP(self, ir):
-        pass
-
-    def visit_RET(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
-
-    def visit_MOVE(self, ir):
-        object.__setattr__(ir, 'src', self.visit(ir.src))
-
-    def visit_CEXPR(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
-        self.visit_EXPR(ir)
-
-    def visit_CMOVE(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
-        self.visit_MOVE(ir)
-
-    def visit_PHI(self, ir):
-        pass
-
-    def _remove_dominated_branch(self, blk, worklist):
-        blk.preds = []
-        _remove_from_list(worklist, blk.stms)
-        logger.debug('remove block {}'.format(blk.name))
-        for child in self.dtree.get_children_of(blk):
-            self._remove_dominated_branch(child, worklist)
-        for succ in blk.succs:
-            if blk in succ.preds:
-                idx = succ.preds.index(blk)
-                succ.remove_pred(blk)
-                if succ.preds:
-                    phis = succ.collect_stms(OLD_PHI)
-                    for phi in phis:
-                        for pi, p in enumerate(phi.ps[:]):
-                            for v in p.find_irs(OLD_IRVariable):
-                                v_sym = old_qualified_symbols(v, self.scope)[-1]
-                                assert isinstance(v_sym, Symbol)
-                                blks = self.usedef.get_blks_defining(v_sym)
-                                if blk in blks:
-                                    phi.args.pop(pi)
-                                    phi.ps.pop(pi)
-                                    break
-                    lphis = succ.collect_stms(OLD_LPHI)
-                    for lphi in lphis:
-                        lphi.args.pop(idx)
-                        lphi.ps.pop(idx)
-                elif succ is not self.scope.entry_block:
-                    self._remove_dominated_branch(succ, worklist)
-
-    def _process_unconditional_jump(self, cjump, worklist, conds=None):
-        blk = cjump.block
-        if not blk.preds and self.scope.entry_block is not blk:
-            return
-        logger.debug('unconditional block {}'.format(blk.name))
-
-        if isinstance(cjump, OLD_CJUMP):
-            if cjump.exp.value:
-                true_idx = 0
-            else:
-                true_idx = 1
-            targets = [cjump.true, cjump.false]
-        else:
-            true_idx = conds.index(1)
-            targets = cjump.targets[:]
-
-        counts = defaultdict(int)
-        targets_with_count = []
-        for tgt in targets:
-            targets_with_count.append((tgt, counts[tgt]))
-            counts[tgt] += 1
-        true_blk, true_i = targets_with_count[true_idx]
-        targets_with_count = targets_with_count[:true_idx] + targets_with_count[true_idx + 1:]
-        for false_blk, blk_i in reversed(targets_with_count):
-            if false_blk.preds:
-                idx = find_nth_item_index(false_blk.preds, blk, blk_i)
-                assert idx >= 0
-                false_blk.preds.pop(idx)
-                phis = false_blk.collect_stms([OLD_PHI, OLD_LPHI])
-                for phi in phis:
-                    phi.args.pop(idx)
-                    phi.ps.pop(idx)
-
-            idx = find_nth_item_index(blk.succs, false_blk, blk_i)
-            assert idx >= 0
-            blk.succs.pop(idx)
-            if self.scope.exit_block is false_blk and not false_blk.preds:
-                self.scope.exit_block = blk
-            preds = [p for p in false_blk.preds if p not in false_blk.preds_loop]
-            if (not preds and
-                    self.dtree.is_child(blk, false_blk)):
-                self._remove_dominated_branch(false_blk, worklist)
-
-        jump = OLD_JUMP(true_blk)
-        object.__setattr__(jump, 'loc', cjump.loc)
-        blk.replace_stm(cjump, jump)
-        if cjump in worklist:
-            worklist.remove(cjump)
-        logger.debug(self.scope)
-
-
-
-
 
 
 def _try_get_constant_new(qsym, scope):
@@ -308,7 +41,7 @@ def _try_get_constant_new(qsym, scope):
     return c
 
 
-class NewConstantOptBase(IrVisitor):
+class ConstantOptBase(IrVisitor):
     def __init__(self):
         super().__init__()
 
@@ -540,12 +273,12 @@ class NewConstantOptBase(IrVisitor):
         logger.debug(str(self.scope))
 
 
-class NewEarlyConstantOptNonSSA(NewConstantOptBase):
+class EarlyConstantOptNonSSA(ConstantOptBase):
     def __init__(self):
         super().__init__()
 
     def process(self, scope):
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         super().process(scope)
 
     def visit_CJump(self, ir):
@@ -620,7 +353,7 @@ def _to_unsigned(typ, const):
     return Const(value=const.value & mask)
 
 
-class NewConstantOpt(NewConstantOptBase):
+class ConstantOpt(ConstantOptBase):
     def __init__(self):
         super().__init__()
 
@@ -629,8 +362,8 @@ class NewConstantOpt(NewConstantOptBase):
             return
         self.scope = scope
         self.dtree = DominatorTreeBuilder(scope).process()
-        self.usedef = NewUseDefDetector().process(scope)
-        self.udupdater = NewUseDefUpdater(scope, self.usedef)
+        self.usedef = UseDefDetector().process(scope)
+        self.udupdater = UseDefUpdater(scope, self.usedef)
 
         dead_stms = []
         self.worklist = deque()
@@ -702,7 +435,7 @@ class NewConstantOpt(NewConstantOptBase):
                         src = _to_unsigned(dst_t, stm.src)
                 else:
                     src = stm.src
-                replaces = NewVarReplacer.replace_uses(scope, stm.dst, src, self.usedef)
+                replaces = VarReplacer.replace_uses(scope, stm.dst, src, self.usedef)
                 for rep in replaces:
                     logger.debug(rep)
                     if rep not in dead_stms:
@@ -721,7 +454,7 @@ class NewConstantOpt(NewConstantOptBase):
                     for v in use_vars:
                         if dst_load == v:
                             # Replace use in next_stm
-                            replacer = NewVarReplacer(scope, dst_load, stm.src, self.usedef)
+                            replacer = VarReplacer(scope, dst_load, stm.src, self.usedef)
                             replacer.visit(next_stm)
                             break
                     def_vars = self.usedef.get_vars_defined_at(next_stm)
@@ -756,8 +489,8 @@ class NewConstantOpt(NewConstantOptBase):
         return True
 
     def _propagate_to_closure(self, closure, target, src):
-        clos_usedef = NewUseDefDetector().process(closure)
-        NewVarReplacer.replace_uses(closure, Temp(name=target.name), src, clos_usedef)
+        clos_usedef = UseDefDetector().process(closure)
+        VarReplacer.replace_uses(closure, Temp(name=target.name), src, clos_usedef)
 
     def visit_SysCall(self, ir):
         if ir.name == 'len':
@@ -858,7 +591,7 @@ class NewConstantOpt(NewConstantOptBase):
             self._process_unconditional_jump(ir, self.worklist, conds)
 
 
-class NewStaticConstOpt(NewConstantOptBase):
+class StaticConstOpt(ConstantOptBase):
     """Propagate static constants across scopes using new IR."""
 
     def __init__(self):
@@ -934,7 +667,7 @@ class NewStaticConstOpt(NewConstantOptBase):
         object.__setattr__(ir, 'src', src)
 
 
-class NewPolyadConstantFolding(object):
+class PolyadConstantFolding(object):
     """Convert binary ops to poliad ops and fold constants, using new IR."""
 
     def process(self, scope):
@@ -944,8 +677,8 @@ class NewPolyadConstantFolding(object):
 
     class _BinInlining(IrTransformer):
         def process(self, scope):
-            from ..analysis.usedef import NewUseDefDetector
-            self.usedef = NewUseDefDetector().process(scope)
+            from ..analysis.usedef import UseDefDetector
+            self.usedef = UseDefDetector().process(scope)
             super().process(scope)
 
         @staticmethod

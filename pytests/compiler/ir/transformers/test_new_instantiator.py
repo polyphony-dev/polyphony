@@ -1,4 +1,4 @@
-"""Tests for NewCallCollector, NewModuleInstantiator, NewArgumentApplier."""
+"""Tests for CallCollector, ModuleInstantiator, ArgumentApplier."""
 from polyphony.compiler.ir.ir import Ctx as OldCtx, Const, Temp, Attr, New, Move, Expr, Call
 from polyphony.compiler.ir import ir as new_ir
 from polyphony.compiler.ir.block import Block
@@ -6,21 +6,21 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.transformers.instantiator import (
-    NewCallCollector, new_find_called_module, NewModuleInstantiator, NewArgumentApplier,
+    CallCollector, new_find_called_module, ModuleInstantiator, ArgumentApplier,
 )
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
 
 def test_new_call_collector_imports():
-    """Verify NewCallCollector can be imported."""
-    collector = NewCallCollector()
+    """Verify CallCollector can be imported."""
+    collector = CallCollector()
     assert hasattr(collector, 'calls')
     assert collector.calls == []
 
 
 def test_new_call_collector_finds_calls():
-    """NewCallCollector should find Call, New, and $new SysCall nodes in stms."""
+    """CallCollector should find Call, New, and $new SysCall nodes in stms."""
     setup_test()
     top = Scope.global_scope()
 
@@ -49,7 +49,7 @@ def test_new_call_collector_finds_calls():
     # Convert to new IR
 
     # Collect
-    results = NewCallCollector().process(caller)
+    results = CallCollector().process(caller)
     assert len(results) == 1
     scope, stm, call_ir = results[0]
     assert scope is caller
@@ -57,7 +57,7 @@ def test_new_call_collector_finds_calls():
 
 
 def test_new_call_collector_finds_new():
-    """NewCallCollector should find New nodes."""
+    """CallCollector should find New nodes."""
     setup_test()
     top = Scope.global_scope()
 
@@ -87,20 +87,20 @@ def test_new_call_collector_finds_new():
 
     # Convert to new IR
 
-    results = NewCallCollector().process(F)
+    results = CallCollector().process(F)
     assert len(results) == 1
     assert isinstance(results[0][2], new_ir.New)
 
 
 def test_new_module_instantiator_imports():
-    """Verify NewModuleInstantiator can be imported."""
-    inst = NewModuleInstantiator()
+    """Verify ModuleInstantiator can be imported."""
+    inst = ModuleInstantiator()
     assert hasattr(inst, 'process_modules')
 
 
 def test_new_argument_applier_imports():
-    """Verify NewArgumentApplier can be imported."""
-    applier = NewArgumentApplier()
+    """Verify ArgumentApplier can be imported."""
+    applier = ArgumentApplier()
     assert hasattr(applier, 'process_all')
     assert hasattr(applier, 'process_scopes')
     assert hasattr(applier, '_bind_args')

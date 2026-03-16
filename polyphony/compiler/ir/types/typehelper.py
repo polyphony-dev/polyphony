@@ -25,8 +25,8 @@ def type_from_ir(scope: Scope, ir, explicit=False) -> Type:
         annotation: MREF(TEMP('Int'), BINOP(...)) or MRef(mem=Temp(...), ...)
         result:     Type.expr(...)
     '''
-    from ..ir import Ir as NewIr
-    if isinstance(ir, NewIr):
+    from ..ir import Ir
+    if isinstance(ir, Ir):
         return _type_from_new_ir(scope, ir, explicit)
     return _type_from_old_ir(scope, ir, explicit)
 

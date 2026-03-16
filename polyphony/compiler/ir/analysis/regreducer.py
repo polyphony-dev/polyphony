@@ -12,7 +12,7 @@ from ..ir import (
 from ..ir_visitor import IrVisitor
 from ..ir_helper import qualified_symbols
 from ..symbol import Symbol
-from .usedef import NewUseDefDetector
+from .usedef import UseDefDetector
 from .fieldusedef import FieldUseDef
 from logging import getLogger
 logger = getLogger(__name__)
@@ -24,11 +24,11 @@ def _is_clksleep(stm):
             stm.exp.name == 'polyphony.timing.clksleep')
 
 
-class NewAliasVarDetector(IrVisitor):
+class AliasVarDetector(IrVisitor):
     """Tag variables that can be aliased (wires instead of registers)."""
 
     def process(self, scope):
-        self.usedef = NewUseDefDetector().process(scope)
+        self.usedef = UseDefDetector().process(scope)
         self.removes = []
         super().process(scope)
 

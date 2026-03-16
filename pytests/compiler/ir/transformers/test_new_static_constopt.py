@@ -1,4 +1,4 @@
-"""Tests for NewStaticConstOpt (static constant propagation across scopes)."""
+"""Tests for StaticConstOpt (static constant propagation across scopes)."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IRReader as IRParser
@@ -6,7 +6,7 @@ from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
-from polyphony.compiler.ir.transformers.constopt import NewStaticConstOpt
+from polyphony.compiler.ir.transformers.constopt import StaticConstOpt
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -19,7 +19,7 @@ def build_scopes(src):
 
 
 def test_static_const_propagation_basic():
-    """NewStaticConstOpt propagates constant MOVE to constant table."""
+    """StaticConstOpt propagates constant MOVE to constant table."""
     src = '''
 scope C
 tags class
@@ -29,7 +29,7 @@ blk1:
 mv x 42
 '''
     scopes = build_scopes(src)
-    NewStaticConstOpt().process_scopes(scopes)
+    StaticConstOpt().process_scopes(scopes)
 
     scope = scopes[0]
     sym = scope.find_sym('x')
@@ -42,7 +42,7 @@ mv x 42
 
 
 def test_static_const_propagation_temp_lookup():
-    """NewStaticConstOpt replaces TEMP with constant when in table."""
+    """StaticConstOpt replaces TEMP with constant when in table."""
     src = '''
 scope C
 tags class
@@ -54,7 +54,7 @@ mv x 10
 mv y x
 '''
     scopes = build_scopes(src)
-    NewStaticConstOpt().process_scopes(scopes)
+    StaticConstOpt().process_scopes(scopes)
 
     scope = scopes[0]
     sym_y = scope.find_sym('y')
@@ -62,7 +62,7 @@ mv y x
 
 
 def test_static_const_multiple_scopes():
-    """NewStaticConstOpt works across multiple scopes."""
+    """StaticConstOpt works across multiple scopes."""
     src = '''
 scope A
 tags class
@@ -79,7 +79,7 @@ blk1:
 mv y 200
 '''
     scopes = build_scopes(src)
-    NewStaticConstOpt().process_scopes(scopes)
+    StaticConstOpt().process_scopes(scopes)
 
     scope_a = scopes[0]
     scope_b = scopes[1]
@@ -90,7 +90,7 @@ mv y 200
 
 
 def test_static_const_binop_propagation():
-    """NewStaticConstOpt propagates binop result involving constants."""
+    """StaticConstOpt propagates binop result involving constants."""
     src = '''
 scope G
 tags class
@@ -102,7 +102,7 @@ mv a 5
 mv b (+ a 3)
 '''
     scopes = build_scopes(src)
-    NewStaticConstOpt().process_scopes(scopes)
+    StaticConstOpt().process_scopes(scopes)
 
     scope = scopes[0]
     sym_a = scope.find_sym('a')

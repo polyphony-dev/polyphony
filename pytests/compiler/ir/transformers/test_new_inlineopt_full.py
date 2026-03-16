@@ -1,4 +1,4 @@
-"""Tests for NewInlineOpt and NewFlattenModule."""
+"""Tests for InlineOpt and FlattenModule."""
 from polyphony.compiler.ir.ir import Ctx as OldCtx, Const, Temp, Attr, New, Move, Expr, Call, Ret, Jump
 from polyphony.compiler.ir import ir as new_ir
 from polyphony.compiler.ir.block import Block
@@ -6,26 +6,26 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.transformers.inlineopt import (
-    NewInlineOpt, NewFlattenModule,
+    InlineOpt, FlattenModule,
 )
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
 
 def test_new_inline_opt_imports():
-    """Verify NewInlineOpt can be imported and has process_scopes."""
-    opt = NewInlineOpt()
+    """Verify InlineOpt can be imported and has process_scopes."""
+    opt = InlineOpt()
     assert hasattr(opt, 'process_scopes')
 
 
 def test_new_flatten_module_imports():
-    """Verify NewFlattenModule can be imported."""
-    fm = NewFlattenModule()
+    """Verify FlattenModule can be imported."""
+    fm = FlattenModule()
     assert hasattr(fm, 'process')
 
 
 def test_new_flatten_module_no_parent():
-    """NewFlattenModule should return empty list for non-module scopes."""
+    """FlattenModule should return empty list for non-module scopes."""
     setup_test()
     top = Scope.global_scope()
 
@@ -38,12 +38,12 @@ def test_new_flatten_module_no_parent():
     blk.append_stm(Move(Temp('x', OldCtx.STORE), Const(0)))
     Block.set_order(blk, 0)
 
-    scopes = NewFlattenModule().process(F)
+    scopes = FlattenModule().process(F)
     assert scopes == [] or scopes is None or len(scopes) == 0
 
 
 def test_new_inline_opt_simple_inline():
-    """NewInlineOpt should inline a simple function call."""
+    """InlineOpt should inline a simple function call."""
     setup_test()
     top = Scope.global_scope()
 
@@ -79,7 +79,7 @@ def test_new_inline_opt_simple_inline():
     Block.set_order(caller_blk, 0)
 
     # Run InlineOpt
-    scopes = NewInlineOpt().process_scopes([caller])
+    scopes = InlineOpt().process_scopes([caller])
 
     # After inlining, the CALL should be gone from the caller
     all_stms = []

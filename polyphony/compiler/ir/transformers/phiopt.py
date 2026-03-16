@@ -7,7 +7,7 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-class NewPHIInlining(object):
+class PHIInlining(object):
     def process(self, scope):
         for blk in scope.traverse_blocks():
             phis = {}
@@ -42,7 +42,7 @@ class NewPHIInlining(object):
                 logger.debug('new ' + str(phi))
 
 
-class NewLPHIRemover(object):
+class LPHIRemover(object):
     def process(self, scope):
         self.scope = scope
         for loop in scope.loop_tree.traverse():
