@@ -3,7 +3,26 @@ import os
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.scope import Scope
+from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.builtin import builtin_symbols, clear_builtins
+
+
+# ============================================================
+# Lightweight mocks for IR unit tests
+# ============================================================
+
+class MockScope:
+    """Minimal scope-like object for Block construction without full env setup."""
+    def __init__(self, name='test'):
+        self.name = name
+        self.block_count = 0
+
+
+def make_block(scope=None, nametag='b'):
+    """Create a Block with a lightweight mock scope."""
+    if scope is None:
+        scope = MockScope()
+    return Block(scope, nametag)
 
 
 def setup_test(with_global=True):
