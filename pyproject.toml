@@ -23,6 +23,7 @@ build-backend = "hatchling.build"
 dev = [
     "ruff",
     "pytest",
+    "pytest-cov>=7.0.0",
 ]
 
 [tool.ruff]

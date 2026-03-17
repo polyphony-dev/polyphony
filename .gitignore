@@ -31,3 +31,13 @@ build/
 
 # Testing
 .pytest_cache/
+htmlcov/
+
+# Obsidian docs (symlink)
+docs/
+
+# Suite output
+suite.json
+
+# Claude Code
+CLAUDE.md
