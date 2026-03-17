@@ -133,7 +133,8 @@ class FlippedTransformer(TypePropagation):
     """Handle flipped ports by reversing port direction."""
 
     def process(self, scope):
-        self.worklist = []
+        from collections import deque
+        self.worklist = deque()
         self.typed = []
         super().process(scope)
 
@@ -313,10 +314,10 @@ class PortConnector(IrVisitor):
         p1_t = p1_sym.typ
         port_scope0 = p0_t.scope
         port_scope1 = p1_t.scope
-        init_param0 = port_scope0.find_ctor().params[3]
-        init_param1 = port_scope1.find_ctor().params[3]
-        dtype0 = init_param0.sym.typ
-        dtype1 = init_param1.sym.typ
+        dtype_sym0 = port_scope0.find_ctor().param_symbols()[0]
+        dtype_sym1 = port_scope1.find_ctor().param_symbols()[0]
+        dtype0 = dtype_sym0.typ
+        dtype1 = dtype_sym1.typ
         if not dtype0.is_same(dtype1):
             assert False
         new0 = self._find_move_src_for_port(p0_sym)
@@ -378,10 +379,10 @@ class PortConnector(IrVisitor):
 
         self.scopes.append(lambda_scope)
 
-        from ..ir import Temp as OLD_TEMP_CLASS
-        temps = body.find_irs(OLD_TEMP_CLASS)
+        temps = body.find_irs(Temp)
         for t in temps:
-            if t.symbol not in self.scope.symbols:
-                lambda_scope.add_free_sym(t.symbol)
+            sym = self.scope.find_sym(t.name)
+            if sym and sym not in self.scope.symbols.values():
+                lambda_scope.add_free_sym(sym)
         self.scope.add_tag('enclosure')
         return scope_sym
