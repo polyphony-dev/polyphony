@@ -55,6 +55,9 @@ lib_source_polyphony_io = """
 scope polyphony.io
 tags lib namespace
 var Port: class(polyphony.io.Port)
+var flipped: function(polyphony.io.flipped)
+var connect: function(polyphony.io.connect)
+var thru: function(polyphony.io.thru)
 
 scope polyphony.io.Port
 tags lib class port
@@ -62,9 +65,14 @@ var __init__: function(polyphony.io.Port.__init__)
 var rd: function(polyphony.io.Port.rd)
 var wr: function(polyphony.io.Port.wr)
 var assign: function(polyphony.io.Port.assign)
+var edge: function(polyphony.io.Port.edge)
 
 scope polyphony.io.Port.__init__
 tags lib function method ctor
+param dtype:class()
+param direction:str
+param init:int32
+param rewritable:bool
 
 scope polyphony.io.Port.rd
 tags lib function method returnable
@@ -72,9 +80,63 @@ return int32
 
 scope polyphony.io.Port.wr
 tags lib function method
+param v:int32
 
 scope polyphony.io.Port.assign
 tags lib function method
+param fn:function()
+
+scope polyphony.io.Port.edge
+tags lib function method returnable
+param old:int32
+param new:int32
+return bool
+
+scope polyphony.io.flipped
+tags lib builtin function
+param obj:object()
+return object()
+
+scope polyphony.io.connect
+tags lib builtin function
+param p0:object()
+param p1:object()
+
+scope polyphony.io.thru
+tags lib builtin function
+param parent:object()
+param child:object()
+"""
+
+lib_source_polyphony_channel = """
+scope polyphony.io.Channel
+tags lib class module
+var __init__: function(polyphony.io.Channel.__init__)
+var put: function(polyphony.io.Channel.put)
+var get: function(polyphony.io.Channel.get)
+var full: function(polyphony.io.Channel.full)
+var empty: function(polyphony.io.Channel.empty)
+
+scope polyphony.io.Channel.__init__
+tags lib function method ctor
+param dtype:class()
+param capacity:int32
+
+scope polyphony.io.Channel.put
+tags lib function method
+param v:int32
+
+scope polyphony.io.Channel.get
+tags lib function method returnable
+return int32
+
+scope polyphony.io.Channel.full
+tags lib function method returnable
+return bool
+
+scope polyphony.io.Channel.empty
+tags lib function method returnable
+return bool
 """
 
 lib_source_polyphony_timing = """
@@ -128,3 +190,7 @@ def register_lib_syms():
         polyphony_scope.add_sym('io', tags=set(), typ=Type.namespace('polyphony.io'))
     if 'polyphony.timing' in env.scopes and not polyphony_scope.find_sym('timing'):
         polyphony_scope.add_sym('timing', tags=set(), typ=Type.namespace('polyphony.timing'))
+    io_scope = env.scopes.get('polyphony.io')
+    if io_scope:
+        if 'polyphony.io.Channel' in env.scopes and not io_scope.find_sym('Channel'):
+            io_scope.add_sym('Channel', tags=set(), typ=Type.klass('polyphony.io.Channel'))
