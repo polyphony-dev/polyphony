@@ -978,8 +978,9 @@ class NamespaceScope(Scope):
     pass
 
 
-class GlobalScope(Scope):
-    pass
+class GlobalScope(NamespaceScope):
+    def is_global(self):
+        return True
 
 
 class NameReplacer(IrVisitor):

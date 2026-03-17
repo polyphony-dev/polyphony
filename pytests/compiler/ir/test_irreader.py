@@ -4,7 +4,7 @@ from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irhelper import qualified_symbols
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.block import Block
-from polyphony.compiler.ir.scope import Scope
+from polyphony.compiler.ir.scope import Scope, FunctionScope, ClassScope, NamespaceScope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.common.env import env
@@ -958,3 +958,24 @@ ret @return
     blk1 = next(gen)
     assert caller_func.entry_block is blk1
     assert caller_func.exit_block is blk1
+
+
+def test_irreader_creates_function_scope():
+    setup_test()
+    parser = IRParser("scope @top.f\ntags function\nvar x: int32\n\nblk1:\nmv x 0\n")
+    parser.parse_scope()
+    assert isinstance(env.scopes['@top.f'], FunctionScope)
+
+
+def test_irreader_creates_class_scope():
+    setup_test()
+    parser = IRParser("scope @top.C\ntags class\n")
+    parser.parse_scope()
+    assert isinstance(env.scopes['@top.C'], ClassScope)
+
+
+def test_irreader_creates_namespace_scope():
+    setup_test()
+    parser = IRParser("scope mypkg\ntags namespace\n")
+    parser.parse_scope()
+    assert isinstance(env.scopes['mypkg'], NamespaceScope)
