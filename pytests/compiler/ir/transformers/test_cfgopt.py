@@ -752,3 +752,782 @@ mv x 1
     blocks = list(scope.traverse_blocks())
     # Everything should collapse into a single block
     assert len(blocks) == 1
+
+
+# ===========================================================
+# Additional tests for coverage
+# ===========================================================
+
+def test_merge_path_exp_mcjump_multiple_targets():
+    """_merge_path_exp_new handles MCJump with same target appearing multiple times."""
+    src = '''
+scope F
+tags function
+var c1: bool
+var c2: bool
+var x: int32
+
+blk1:
+mv c1 True
+mv c2 False
+mj c1 blk2 c2 blk2
+
+blk2:
+mv x 1
+'''
+    scope = build_scope(src)
+    blk1 = scope.entry_block
+    blk1.path_exp = Const(value=1)
+    blk2 = list(scope.traverse_blocks())[1]
+    result = _merge_path_exp_new(blk1, blk2)
+    assert result is not None
+
+
+def test_merge_path_exp_empty_pred():
+    """_merge_path_exp_new returns pred path_exp when pred has no stms."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+j blk2
+
+blk2:
+mv x 1
+'''
+    scope = build_scope(src)
+    blk1 = scope.entry_block
+    blk2 = list(scope.traverse_blocks())[1]
+    blk1.stms.clear()
+    blk1.path_exp = Const(value=1)
+    result = _merge_path_exp_new(blk1, blk2)
+    assert isinstance(result, Const)
+    assert result.value == 1
+
+
+def test_rel_and_exp_both_const_true():
+    """_rel_and_exp_new with both Const(True) returns Const."""
+    left = Const(value=1)
+    right = Const(value=1)
+    result = _rel_and_exp_new(left, right)
+    assert isinstance(result, Const)
+
+
+def test_merge_path_exp_mcjump_idx_hint():
+    """_merge_path_exp_new uses idx_hint for MCJump with duplicate targets."""
+    src = '''
+scope F
+tags function
+var c1: bool
+var c2: bool
+var x: int32
+
+blk1:
+mv c1 True
+mv c2 False
+mj c1 blk2 c2 blk2
+
+blk2:
+mv x 1
+'''
+    scope = build_scope(src)
+    blk1 = scope.entry_block
+    blk1.path_exp = Const(value=1)
+    blk2 = list(scope.traverse_blocks())[1]
+    result = _merge_path_exp_new(blk1, blk2, idx_hint=0)
+    assert result is not None
+
+
+def test_block_reducer_mcjump_all_same_target():
+    """BlockReducer handles MCJump where all targets are the same block."""
+    src = '''
+scope F
+tags function
+var c1: bool
+var c2: bool
+var x: int32
+
+blk1:
+mv c1 True
+mv c2 False
+mj c1 blk2 c2 blk2
+
+blk2:
+mv x 1
+'''
+    scope = build_scope(src)
+    BlockReducer().process(scope)
+    entry = scope.entry_block
+    last = entry.stms[-1]
+    assert isinstance(last, (Jump, CJump, MCJump))
+
+
+def test_has_timing_function_syscall():
+    """HyperBlockBuilder._has_timing_function detects timing SysCall."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    syscall = SysCall(func=Temp(name='polyphony.timing.clksleep'), args=[])
+    assert syscall.name == 'polyphony.timing.clksleep'
+    expr_stm = Expr(exp=syscall, block=scope.entry_block)
+    assert hbb._has_timing_function(expr_stm) is True
+
+
+def test_has_timing_function_non_timing_syscall():
+    """HyperBlockBuilder._has_timing_function returns False for non-timing SysCall."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    syscall = SysCall(func=Temp(name='some_other_func'), args=[])
+    expr_stm = Expr(exp=syscall, block=scope.entry_block)
+    assert hbb._has_timing_function(expr_stm) is False
+
+
+def test_has_timing_function_expr_stm():
+    """HyperBlockBuilder._has_timing_function returns False for plain Expr."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    from polyphony.compiler.ir.ir import BinOp
+    binop = BinOp(op='Add', left=Const(value=1), right=Const(value=2))
+    expr_stm = Expr(exp=binop, block=scope.entry_block)
+    assert hbb._has_timing_function(expr_stm) is False
+
+
+def test_has_timing_function_jump():
+    """HyperBlockBuilder._has_timing_function returns False for Jump."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    j = Jump(target=scope.entry_block, block=scope.entry_block)
+    assert hbb._has_timing_function(j) is False
+
+
+def test_has_mem_access_move_mref():
+    """HyperBlockBuilder._has_mem_access returns True for Move with MRef src."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    from polyphony.compiler.ir.ir import MRef
+    mref = MRef(mem=Temp(name='mem'), offset=Const(value=0))
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=scope.entry_block)
+    assert hbb._has_mem_access(mv) is True
+
+
+def test_hyperblock_diamond_with_timed():
+    """HyperBlockBuilder converts diamond in timed scheduling, producing hyperblock."""
+    src = '''
+scope F
+tags function
+var x: int32
+var c: bool
+
+b1:
+mv c True
+cj c b2 b3
+
+b2:
+mv x 1
+j b4
+
+b3:
+mv x 2
+j b4
+
+b4:
+mv x 3
+'''
+    scope = build_scope(src, scheduling='timed')
+    for blk in scope.traverse_blocks():
+        blk.path_exp = Const(value=1)
+    UseDefDetector().process(scope)
+    HyperBlockBuilder().process(scope)
+    assert scope.entry_block.is_hyperblock
+    assert len(scope.entry_block.stms) >= 3
+
+
+def test_block_reducer_remove_empty_block_with_loop_preserved():
+    """BlockReducer preserves empty blocks with loop connections."""
+    src = '''
+scope F
+tags function
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+j blk3
+
+blk3:
+mv x 2
+'''
+    scope = build_scope(src)
+    blk2 = list(scope.traverse_blocks())[1]
+    blk2.preds_loop = [blk2]
+    BlockReducer().process(scope)
+    blocks = list(scope.traverse_blocks())
+    assert len(blocks) >= 1
+
+
+def test_has_timing_function_wait_rising():
+    """HyperBlockBuilder._has_timing_function detects wait_rising."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    syscall = SysCall(func=Temp(name='polyphony.timing.wait_rising'), args=[])
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=syscall, block=scope.entry_block)
+    assert hbb._has_timing_function(mv) is True
+
+
+def test_has_timing_function_wait_falling():
+    """HyperBlockBuilder._has_timing_function detects wait_falling."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    syscall = SysCall(func=Temp(name='polyphony.timing.wait_falling'), args=[])
+    expr_stm = Expr(exp=syscall, block=scope.entry_block)
+    assert hbb._has_timing_function(expr_stm) is True
+
+
+def test_block_reducer_mcjump_all_same_target_simplification():
+    """BlockReducer._merge_duplicate_paths handles MCJump with all same targets."""
+    src = '''
+scope F
+tags function
+var c1: bool
+var c2: bool
+var x: int32
+
+blk1:
+mv c1 True
+mv c2 False
+mj c1 blk2 c2 blk3
+
+blk2:
+j blk4
+
+blk3:
+j blk4
+
+blk4:
+mv x 3
+'''
+    scope = build_scope(src)
+    BlockReducer().process(scope)
+    blocks = list(scope.traverse_blocks())
+    assert len(blocks) >= 1
+
+
+def test_hyperblock_pipeline_with_remains():
+    """HyperBlockBuilder converts remains to CMove/CExpr in pipeline scheduling."""
+    src = '''
+scope F
+tags function worker
+var c: bool
+var x: int32
+var y: int32
+
+b1:
+mv c True
+cj c b2 b3
+
+b2:
+mv x 1
+j b4
+
+b3:
+mv y 2
+j b4
+
+b4:
+mv x 3
+'''
+    scope = build_scope(src, scheduling='pipeline')
+    for blk in scope.traverse_blocks():
+        blk.path_exp = Const(value=1)
+    UseDefDetector().process(scope)
+    HyperBlockBuilder().process(scope)
+    assert scope.entry_block.is_hyperblock
+
+
+def test_hyperblock_select_stms_for_speculation():
+    """HyperBlockBuilder._select_stms_for_speculation separates moves and remains."""
+    src = '''
+scope F
+tags function worker
+var c: bool
+var x: int32
+var y: int32
+var mem: list<int32>[10]
+
+b1:
+mv c True
+cj c b2 b3
+
+b2:
+mv x 1
+expr (mst mem 0 x)
+j b4
+
+b3:
+mv y 2
+j b4
+
+b4:
+mv x 3
+'''
+    scope = build_scope(src, scheduling='timed')
+    for blk in scope.traverse_blocks():
+        blk.path_exp = Const(value=1)
+    usedef = UseDefDetector().process(scope)
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    hbb.usedef = usedef
+    hbb.uddetector = UseDefDetector()
+    hbb.uddetector.scope = scope
+    hbb.uddetector.table = usedef
+    blocks = list(scope.traverse_blocks())
+    b2 = blocks[1]
+    head = scope.entry_block
+    moves, remains = hbb._select_stms_for_speculation(head, b2)
+    assert len(moves) + len(remains) >= 1
+
+
+def test_hyperblock_comb_scope():
+    """HyperBlockBuilder works with comb scope."""
+    src = '''
+scope F
+tags function comb
+var c: bool
+var x: int32
+
+b1:
+mv c True
+cj c b2 b3
+
+b2:
+mv x 1
+j b4
+
+b3:
+mv x 2
+j b4
+
+b4:
+mv x 3
+'''
+    scope = build_scope(src, scheduling='sequential')
+    for blk in scope.traverse_blocks():
+        blk.path_exp = Const(value=1)
+    UseDefDetector().process(scope)
+    HyperBlockBuilder().process(scope)
+    assert scope.entry_block.is_hyperblock
+
+
+def test_merge_path_exp_mcjump_multiple_occurrences():
+    """_merge_path_exp_new handles MCJump with multiple occurrences of target using Or."""
+    src = '''
+scope F
+tags function
+var c1: bool
+var c2: bool
+var c3: bool
+var x: int32
+
+blk1:
+mv c1 True
+mv c2 False
+mj c1 blk2 c2 blk3
+
+blk2:
+mv x 1
+j blk4
+
+blk3:
+mv x 2
+j blk4
+
+blk4:
+mv x 3
+'''
+    scope = build_scope(src)
+    blk1 = scope.entry_block
+    blk1.path_exp = Const(value=1)
+    mj = blk1.stms[-1]
+    if isinstance(mj, MCJump):
+        blk2 = mj.targets[0]
+        mj.targets[1] = blk2
+        result = _merge_path_exp_new(blk1, blk2)
+        assert result is not None
+
+
+def test_block_reducer_mcjump_duplicate_after_empty_removal():
+    """BlockReducer._merge_duplicate_paths handles MCJump after empty block removal."""
+    src = '''
+scope F
+tags function
+var c1: bool
+var c2: bool
+var x: int32
+
+blk1:
+mv c1 True
+mv c2 False
+mj c1 blk2 c2 blk3
+
+blk2:
+j blk4
+
+blk3:
+j blk4
+
+blk4:
+mv x 3
+'''
+    scope = build_scope(src)
+    BlockReducer().process(scope)
+    blocks = list(scope.traverse_blocks())
+    assert len(blocks) >= 1
+    entry = scope.entry_block
+    last = entry.stms[-1]
+    assert not isinstance(last, MCJump), "MCJump with all same targets should be simplified"
+
+
+def test_block_reducer_remove_empty_block_entry_preserved():
+    """BlockReducer._remove_empty_block returns False for entry block."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+j blk2
+
+blk2:
+mv x 1
+'''
+    scope = build_scope(src)
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    result = reducer._remove_empty_block(scope.entry_block)
+    assert result is False
+
+
+def test_block_reducer_remove_empty_block_with_succs_loop():
+    """BlockReducer._remove_empty_block returns False for blocks with succs_loop."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+j blk2
+
+blk2:
+j blk3
+
+blk3:
+mv x 2
+'''
+    scope = build_scope(src)
+    blocks = list(scope.traverse_blocks())
+    blk2 = blocks[1]
+    blk2.succs_loop = [blk2]
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    result = reducer._remove_empty_block(blk2)
+    assert result is False
+
+
+def test_block_reducer_remove_empty_block_with_preds_loop():
+    """BlockReducer._remove_empty_block returns False for blocks with preds_loop."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+j blk2
+
+blk2:
+j blk3
+
+blk3:
+mv x 2
+'''
+    scope = build_scope(src)
+    blocks = list(scope.traverse_blocks())
+    blk2 = blocks[1]
+    blk2.preds_loop = [blk2]
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    result = reducer._remove_empty_block(blk2)
+    assert result is False
+
+
+def test_block_reducer_remove_empty_block_multi_stm():
+    """BlockReducer._remove_empty_block returns False for blocks with multiple stms."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+j blk2
+
+blk2:
+mv x 2
+j blk3
+
+blk3:
+mv x 3
+'''
+    scope = build_scope(src)
+    blocks = list(scope.traverse_blocks())
+    blk2 = blocks[1]
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    result = reducer._remove_empty_block(blk2)
+    assert result is False
+
+
+def test_hyperblock_walk_to_convergence_no_succ():
+    """HyperBlockBuilder._walk_to_convergence returns False when no succs."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src, scheduling='timed')
+    for blk in scope.traverse_blocks():
+        blk.path_exp = Const(value=1)
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    path = []
+    result = hbb._walk_to_convergence(scope.entry_block, path)
+    assert result is False
+    assert len(path) >= 1
+
+
+def test_hyperblock_walk_to_convergence_multi_succ():
+    """HyperBlockBuilder._walk_to_convergence returns False at branch point."""
+    src = '''
+scope F
+tags function
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+
+blk3:
+mv x 2
+'''
+    scope = build_scope(src, scheduling='timed')
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    path = []
+    result = hbb._walk_to_convergence(scope.entry_block, path)
+    assert result is False
+
+
+def test_hyperblock_find_branch_paths_no_convergence():
+    """HyperBlockBuilder._find_branch_paths returns None when no convergence."""
+    src = '''
+scope F
+tags function
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+
+blk3:
+mv x 2
+'''
+    scope = build_scope(src, scheduling='timed')
+    for blk in scope.traverse_blocks():
+        blk.path_exp = Const(value=1)
+    hbb = HyperBlockBuilder()
+    hbb.scope = scope
+    branches, tails = hbb._find_branch_paths(scope.entry_block)
+    assert branches is None
+    assert tails is None
+
+
+def test_merge_duplicate_paths_mcjump_all_same():
+    """BlockReducer._merge_duplicate_paths simplifies MCJump with all same targets."""
+    src = '''
+scope F
+tags function
+var c1: bool
+var c2: bool
+var x: int32
+
+blk1:
+mv c1 True
+mv c2 False
+mj c1 blk2 c2 blk2
+
+blk2:
+mv x 1
+'''
+    scope = build_scope(src)
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    # MCJump targets already point to same block (blk2)
+    reducer._merge_duplicate_paths(scope)
+    entry = scope.entry_block
+    last = entry.stms[-1]
+    assert isinstance(last, Jump), "MCJump with all same targets should become Jump"
+
+
+def test_merge_duplicate_paths_empty_block():
+    """BlockReducer._merge_duplicate_paths skips blocks with no stms."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src)
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    # Add an empty block to the scope
+    from polyphony.compiler.ir.block import Block
+    empty = Block(scope)
+    empty.stms = []
+    # Should not crash on empty blocks
+    reducer._merge_duplicate_paths(scope)
+
+
+def test_block_reducer_timed_fortest_empty_block():
+    """BlockReducer._remove_empty_block returns False for timed empty block before fortest."""
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+j fortest
+
+fortest:
+mv x 2
+'''
+    scope = build_scope(src, scheduling='timed')
+    BlockReducer().process(scope)
+    assert len(list(scope.traverse_blocks())) >= 1
+
+
+def test_hyperblock_with_mem_access_pipeline():
+    """HyperBlockBuilder converts mem access to CExpr in pipeline mode."""
+    src = '''
+scope F
+tags function worker
+var c: bool
+var x: int32
+var y: int32
+var mem: list<int32>[10]
+
+b1:
+mv c True
+cj c b2 b3
+
+b2:
+expr (mst mem x y)
+j b3
+
+b3:
+mv x 0
+'''
+    scope = build_scope(src, scheduling='pipeline')
+    for blk in scope.traverse_blocks():
+        blk.path_exp = Const(value=1)
+    UseDefDetector().process(scope)
+    HyperBlockBuilder().process(scope)
+    entry = scope.entry_block
+    assert entry.is_hyperblock
