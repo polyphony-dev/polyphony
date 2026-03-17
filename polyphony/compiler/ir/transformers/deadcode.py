@@ -3,7 +3,7 @@ from ..ir import (
     Move, Expr, Temp, IrCallable, IrVariable, Call, SysCall, MStore,
     Phi, UPhi, LPhi,
 )
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefDetector
 from logging import getLogger

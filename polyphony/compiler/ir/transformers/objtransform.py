@@ -7,7 +7,7 @@ from ..ir import (
     MRef, MStore, MStm, SysCall, Array, RelOp, CJump, Jump,
     Phi, UPhi, LPhi, Ctx,
 )
-from ..ir_helper import qualified_symbols, irexp_type
+from ..irhelper import qualified_symbols, irexp_type
 from ..types.type import Type
 from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from ..analysis.usedef import UseDefItem

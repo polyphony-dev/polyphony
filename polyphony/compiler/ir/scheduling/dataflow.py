@@ -1,6 +1,6 @@
 ﻿from collections import defaultdict, deque
 from ..ir import *
-from ..ir_helper import is_port_method_call, has_exclusive_function, has_clkfence, qualified_symbols
+from ..irhelper import is_port_method_call, has_exclusive_function, has_clkfence, qualified_symbols
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefDetector
 from ...common.env import env

@@ -668,3 +668,66 @@ def test_add_remove_use_new_ir_types():
     old_const = Const(99)
     table.add_use(scope, old_const, old_stm)
     table.remove_use(scope, old_const, old_stm)
+
+
+def test_matches_old_usedef():
+    """UseDefDetector should produce equivalent results to old UseDefDetector."""
+    setup_test()
+    src = '''
+scope F
+tags function
+var x: int32
+var y: int32
+var z: int32
+
+blk1:
+mv x 1
+mv y 2
+mv z (+ x y)
+'''
+    scope = build_scope(src)
+
+    # Old detector on old IR
+    old_usedef = UseDefDetector().process(scope)
+
+    # New detector on new IR
+    new_usedef = UseDefDetector().process(scope)
+
+    x_sym = scope.find_sym('x')
+    y_sym = scope.find_sym('y')
+    z_sym = scope.find_sym('z')
+
+    # Same def/use symbols
+    assert set(old_usedef.get_all_def_syms()) == set(new_usedef.get_all_def_syms())
+    assert set(old_usedef.get_all_use_syms()) == set(new_usedef.get_all_use_syms())
+
+    # Same number of definitions per symbol
+    for sym in [x_sym, y_sym, z_sym]:
+        assert len(old_usedef.get_stms_defining(sym)) == len(new_usedef.get_stms_defining(sym))
+        assert len(old_usedef.get_stms_using(sym)) == len(new_usedef.get_stms_using(sym))
+
+
+def test_usedef_table_accepts_new_ir_stm():
+    """UseDefTable query methods must accept new IR stm types.
+    This was a bug: isinstance checks only matched old IrStm."""
+    setup_test()
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+'''
+    scope = build_scope(src)
+
+    usedef = UseDefDetector().process(scope)
+
+    stm = scope.entry_block.stms[0]
+    # These must not raise AssertionError
+    vars_def = usedef.get_vars_defined_at(stm)
+    assert len(vars_def) == 1
+    syms_def = usedef.get_syms_defined_at(stm)
+    assert len(syms_def) == 1
+    vars_used = usedef.get_vars_used_at(stm)
+    consts = usedef.get_consts_used_at(stm)

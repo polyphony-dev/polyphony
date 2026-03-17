@@ -6,12 +6,12 @@ PortConnector: Connects ports between modules.
 """
 from typing import cast
 from .typeprop import TypePropagation, RejectPropagation, _get_callee_scope
-from ..ir_visitor import IrVisitor
+from ..irvisitor import IrVisitor
 from ..ir import (
     IrVariable, Temp, Attr, Const, Call, SysCall, New,
     Move, Expr, Ret, Ctx,
 )
-from ..ir_helper import qualified_symbols, irexp_type
+from ..irhelper import qualified_symbols, irexp_type
 from ..block import Block
 from ..scope import Scope
 from ..symbol import Symbol

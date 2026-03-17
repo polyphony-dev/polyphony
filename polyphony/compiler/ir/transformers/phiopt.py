@@ -1,7 +1,7 @@
 """PHI optimizations using new IR (ir.py)."""
 from ..ir import Loc
 from ..ir import IrVariable, RelOp, Move, Phi, UPhi, LPhi, MStm, Ctx
-from ..ir_helper import qualified_symbols, reduce_relexp
+from ..irhelper import qualified_symbols, reduce_relexp
 from ..symbol import Symbol
 from logging import getLogger
 logger = getLogger(__name__)

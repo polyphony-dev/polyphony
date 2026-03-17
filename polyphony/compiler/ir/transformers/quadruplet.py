@@ -16,7 +16,7 @@ from ..ir import (
     Move, Expr, CJump, MCJump,
     Ctx,
 )
-from ..ir_visitor import IrTransformer
+from ..irvisitor import IrTransformer
 from ...common.common import fail
 from ...common.errors import Errors
 
@@ -209,7 +209,7 @@ class EarlyQuadrupleMaker(IrTransformer):
 
 class LateQuadrupleMaker(IrTransformer):
     def visit_Attr(self, ir):
-        from ..ir_helper import qualified_symbols
+        from ..irhelper import qualified_symbols
         from ..symbol import Symbol
         qsyms = qualified_symbols(ir, self.scope)
         attr_sym = qsyms[-1]

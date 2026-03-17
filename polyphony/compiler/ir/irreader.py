@@ -2,7 +2,7 @@ import re
 from typing import cast
 from collections import deque, defaultdict
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.ir_helper import qualified_symbols
+from polyphony.compiler.ir.irhelper import qualified_symbols
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol

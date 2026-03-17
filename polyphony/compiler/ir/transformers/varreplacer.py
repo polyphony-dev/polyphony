@@ -11,7 +11,7 @@ from ..ir import (
     Move, CMove, Expr, CExpr, CJump, MCJump, Jump, Ret,
     Phi, UPhi, LPhi,
 )
-from ..ir_helper import qualified_symbols, irexp_type
+from ..irhelper import qualified_symbols, irexp_type
 from ..types import typehelper
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefDetector

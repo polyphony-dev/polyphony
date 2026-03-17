@@ -12,8 +12,8 @@ from ..ir import (
     LPhi, IrStm, IrExp,
 )
 from ..ir import Const as OldCONST, Temp as OldTEMP
-from ..ir_visitor import IrVisitor, IrTransformer
-from ..ir_helper import qualified_symbols
+from ..irvisitor import IrVisitor, IrTransformer
+from ..irhelper import qualified_symbols
 from ..loop import Loop
 from ..scope import Scope, NameReplacer
 from ..symbol import Symbol

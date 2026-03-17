@@ -3,8 +3,8 @@ from ..ir import (
     IrVariable, Array, Move, Expr, CJump, MCJump, Jump, Ret,
     Temp, MRef, Const, Call, Ctx,
 )
-from ..ir_visitor import IrTransformer
-from ..ir_helper import irexp_type
+from ..irvisitor import IrTransformer
+from ..irhelper import irexp_type
 from ..symbol import Symbol
 
 

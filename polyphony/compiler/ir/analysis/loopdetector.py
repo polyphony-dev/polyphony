@@ -1,5 +1,5 @@
 ﻿from ..ir import CJump, Temp, Const, RelOp, LPhi, Move
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from ..loop import Region, Loop
 from logging import getLogger

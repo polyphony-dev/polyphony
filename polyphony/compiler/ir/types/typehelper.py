@@ -2,7 +2,7 @@ from __future__ import annotations
 import dataclasses
 from typing import cast, TYPE_CHECKING, Generator
 from ...common.env import env
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ...common.env import env
 from .type import Type
 from .exprtype import ExprType
@@ -34,7 +34,7 @@ def type_from_ir(scope: Scope, ir, explicit=False) -> Type:
 def _type_from_new_ir(scope: Scope, ir, explicit=False) -> Type:
     """Interpret type from new IR (ir.py) types."""
     from ..ir import Const, Temp, Attr, MRef, Array, IrExp, Expr
-    from ..ir_helper import qualified_symbols as new_qualified_symbols
+    from ..irhelper import qualified_symbols as new_qualified_symbols
     from ..symbol import Symbol
 
     assert ir

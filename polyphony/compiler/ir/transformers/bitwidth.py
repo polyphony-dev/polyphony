@@ -1,5 +1,5 @@
 """TempVarWidthSetter using new IR (ir.py)."""
-from ..ir_visitor import IrVisitor
+from ..irvisitor import IrVisitor
 import logging
 logger = logging.getLogger(__name__)
 

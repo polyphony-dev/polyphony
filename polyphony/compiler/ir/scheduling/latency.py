@@ -3,7 +3,7 @@ from ..ir import (
     Move, Expr, Const, Temp, Attr, Call, SysCall, New, Array,
     MRef, MStore, IrStm, Phi, UPhi, IrVariable,
 )
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from ...common.env import env
 from .dataflow import (

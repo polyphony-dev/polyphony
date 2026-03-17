@@ -1,7 +1,7 @@
 from collections import defaultdict
-from ..ir_visitor import IrVisitor
+from ..irvisitor import IrVisitor
 from ..ir import *
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ..scope import Scope
 from logging import getLogger
 logger = getLogger(__name__)

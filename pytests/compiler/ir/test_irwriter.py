@@ -327,3 +327,188 @@ ret @return
             w1 = writer.write_stm(s1)
             w2 = writer.write_stm(s2)
             assert w1 == w2, f'{w1} != {w2}'
+
+
+# ------------------------------------------------------------------
+# write_scope: no entry_block (lines 30->35)
+# ------------------------------------------------------------------
+def test_write_scope_no_entry_block():
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'Empty', {'function'}, 0)
+    writer = IRWriter()
+    result = writer.write_scope(scope)
+    assert 'scope @top.Empty' in result
+    assert 'tags' in result
+
+
+# ------------------------------------------------------------------
+# write_scope: entry_block but no stms (lines 32->35)
+# ------------------------------------------------------------------
+def test_write_scope_entry_block_no_stms():
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'EmptyBlocks', {'function'}, 0)
+    blk = Block(scope, nametag='entry')
+    scope.entry_block = blk
+    # blk has no stms
+    writer = IRWriter()
+    result = writer.write_scope(scope)
+    assert 'scope @top.EmptyBlocks' in result
+    # No block body should be written since no stms
+    assert 'entry:' not in result
+
+
+# ------------------------------------------------------------------
+# write_scopes (lines 38-41)
+# ------------------------------------------------------------------
+def test_write_scopes():
+    setup_test()
+    top = env.scopes['@top']
+    s1 = Scope.create(top, 'Func1', {'function'}, 0)
+    s2 = Scope.create(top, 'Func2', {'function'}, 0)
+    writer = IRWriter()
+    result = writer.write_scopes([s1, s2])
+    assert 'scope @top.Func1' in result
+    assert 'scope @top.Func2' in result
+    # Two scopes separated by double newline
+    assert '\n\n' in result
+
+
+# ------------------------------------------------------------------
+# param with extra tags (lines 63-64)
+# ------------------------------------------------------------------
+def test_write_scope_param_with_tags():
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'ParamTags', {'function'}, 0)
+    sym = scope.add_param_sym('x', {'free'}, typ=Type.int(32))
+    scope.add_param(sym, None)  # Register in function_params
+    writer = IRWriter()
+    result = writer.write_scope(scope)
+    # param should appear with tag { free }
+    assert 'param x:int32 { free }' in result
+
+
+# ------------------------------------------------------------------
+# return_type is none -> skip (line 69->73)
+# ------------------------------------------------------------------
+def test_write_scope_return_type_none():
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'NoRet', {'function'}, 0)
+    scope.return_type = Type.none()
+    writer = IRWriter()
+    result = writer.write_scope(scope)
+    lines = result.split('\n')
+    for line in lines:
+        assert not line.startswith('return ')
+
+
+def test_write_scope_no_return_type():
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'NoRet2', {'function'}, 0)
+    scope.return_type = None
+    writer = IRWriter()
+    result = writer.write_scope(scope)
+    lines = result.split('\n')
+    for line in lines:
+        assert not line.startswith('return ')
+
+
+# ------------------------------------------------------------------
+# imported symbol: skip in var section, emit in import section (lines 87, 100-101)
+# ------------------------------------------------------------------
+def test_write_scope_imported_symbol():
+    setup_test()
+    top = env.scopes['@top']
+    src_scope = Scope.create(top, 'Source', {'function'}, 0)
+    src_sym = src_scope.add_sym('helper', set(), typ=Type.int(32))
+
+    dst_scope = Scope.create(top, 'Dest', {'function'}, 0)
+    dst_scope.import_sym(src_sym, 'helper')
+
+    writer = IRWriter()
+    result = writer.write_scope(dst_scope)
+    # Should have 'from @top.Source import helper'
+    assert 'from @top.Source import helper' in result
+    # Should NOT have 'var helper'
+    for line in result.split('\n'):
+        assert not line.startswith('var helper')
+
+
+# ------------------------------------------------------------------
+# variable with tags (lines 91-92)
+# ------------------------------------------------------------------
+def test_write_scope_var_with_tags():
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'VarTags', {'function'}, 0)
+    scope.add_sym('counter', {'field'}, typ=Type.int(16))
+    writer = IRWriter()
+    result = writer.write_scope(scope)
+    assert 'var counter: int16 { field }' in result
+
+
+# ------------------------------------------------------------------
+# _format_const fallback (line 265) - non-bool/int/str value
+# ------------------------------------------------------------------
+def test_format_const_fallback():
+    writer = IRWriter()
+    c = Const(value=3.14)
+    result = writer.write_exp(c)
+    assert result == '3.14'
+
+    c2 = Const(value=None)
+    result2 = writer.write_exp(c2)
+    assert result2 == 'None'
+
+
+# ------------------------------------------------------------------
+# _format_type fallback else branch (line 320)
+# ------------------------------------------------------------------
+def test_format_type_fallback_else():
+    writer = IRWriter()
+    # Type('any', False) does not match any is_* check in _format_type
+    t = Type('any', False)
+    result = writer.write_type(t)
+    assert result == 'any'
+
+
+# ------------------------------------------------------------------
+# write_scope with blocks and stms (full path with entry_block + stms)
+# ------------------------------------------------------------------
+def test_write_scope_with_blocks_and_stms():
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'WithBlocks', {'function'}, 0)
+    scope.return_type = Type.int(32)
+    sym_a = scope.add_param_sym('a', set(), typ=Type.int(32))
+    scope.add_param(sym_a, None)
+    scope.add_sym('x', set(), typ=Type.int(32))
+
+    blk1 = Block(scope, nametag='entry')
+    blk2 = Block(scope, nametag='exit')
+    scope.entry_block = blk1
+    blk1.succs = [blk2]
+    blk2.preds = [blk1]
+
+    blk1.stms = [
+        Move(Temp('x', Ctx.STORE), Const(42)),
+        Jump(blk2),
+    ]
+    blk2.stms = [
+        Ret(Temp(Symbol.return_name)),
+    ]
+
+    writer = IRWriter()
+    result = writer.write_scope(scope)
+    assert 'scope @top.WithBlocks' in result
+    assert 'param a:int32' in result
+    assert 'return int32' in result
+    assert 'var x: int32' in result
+    assert 'entry:' in result
+    assert 'mv x 42' in result
+    assert 'j exit' in result
+    assert 'ret @return' in result

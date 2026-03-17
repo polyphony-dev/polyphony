@@ -1,11 +1,11 @@
 """Type checking and restriction analysis passes using new IR (ir.py)."""
-from ..ir_visitor import IrVisitor
+from ..irvisitor import IrVisitor
 from ..ir import (
     IrVariable, Temp, Attr, Const, Call, SysCall, New, Array, MRef, MStore,
     Move, Expr, Phi, UPhi, LPhi, Ret, CJump, MCJump, Jump,
     op2sym_map,
 )
-from ..ir_helper import qualified_symbols, irexp_type
+from ..irhelper import qualified_symbols, irexp_type
 from ..symbol import Symbol
 from ..types.type import Type
 from ..types.typehelper import type_from_typeclass

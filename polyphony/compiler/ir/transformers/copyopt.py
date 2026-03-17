@@ -4,8 +4,8 @@ from ..ir import (
     Ir, IrVariable, IrNameExp, Temp, Attr, Move, CMove, Expr,
     Phi, UPhi, LPhi, Ctx,
 )
-from ..ir_visitor import IrVisitor
-from ..ir_helper import qualified_symbols
+from ..irvisitor import IrVisitor
+from ..irhelper import qualified_symbols
 from ..scope import Scope
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefDetector, UseDefUpdater

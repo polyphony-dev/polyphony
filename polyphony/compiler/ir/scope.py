@@ -11,9 +11,9 @@ from .symbol import Symbol
 from .synth import make_synth_params
 from .types.type import Type
 from .types import typehelper
-from .ir_visitor import IrVisitor
+from .irvisitor import IrVisitor
 from .ir import *
-from .ir_helper import qualified_symbols
+from .irhelper import qualified_symbols
 from ..common.common import Tagged, fail
 from ..common.errors import Errors
 from ..common.env import env

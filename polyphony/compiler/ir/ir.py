@@ -590,7 +590,7 @@ class IrCallable(IrNameExp):
 
     def get_callee_scope(self, current_scope):
         """Resolve the scope of the function being called."""
-        from .ir_helper import qualified_symbols
+        from .irhelper import qualified_symbols
         from .symbol import Symbol
         from .types.scopetype import ScopeType
         qsyms = qualified_symbols(self.func, current_scope)

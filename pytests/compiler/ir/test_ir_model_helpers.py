@@ -1,11 +1,11 @@
-"""Tests for new IR helper methods and ir_helper.py functions."""
+"""Tests for new IR helper methods and irhelper.py functions."""
 from polyphony.compiler.ir.ir import (
     Ctx, Ir, IrExp, IrStm, IrVariable, IrNameExp,
     Const, Temp, Attr, UnOp, BinOp, RelOp, CondOp,
     Call, SysCall, New, MRef, MStore, Array,
     Move, Expr, CJump, Jump, Ret,
 )
-from polyphony.compiler.ir.ir_helper import (
+from polyphony.compiler.ir.irhelper import (
     qualified_symbols, irexp_type, reduce_relexp, reduce_binop, qsym2var,
 )
 from polyphony.compiler.ir.scope import Scope
@@ -86,7 +86,7 @@ def test_find_irs_attr():
 
 
 # ============================================================
-# ir_helper.qualified_symbols tests
+# irhelper.qualified_symbols tests
 # ============================================================
 
 def test_qualified_symbols_temp():
@@ -116,7 +116,7 @@ def test_qualified_symbols_attr():
 
 
 # ============================================================
-# ir_helper.reduce_relexp tests
+# irhelper.reduce_relexp tests
 # ============================================================
 
 def test_reduce_relexp_and_true():
@@ -175,7 +175,7 @@ def test_reduce_relexp_passthrough():
 
 
 # ============================================================
-# ir_helper.reduce_binop tests
+# irhelper.reduce_binop tests
 # ============================================================
 
 def test_reduce_binop_add_zero():
@@ -206,7 +206,7 @@ def test_reduce_binop_passthrough():
 
 
 # ============================================================
-# ir_helper.irexp_type tests
+# irhelper.irexp_type tests
 # ============================================================
 
 def test_irexp_type_const():
@@ -323,7 +323,7 @@ def test_replace_no_match():
 
 
 # ============================================================
-# ir_helper.qsym2var tests
+# irhelper.qsym2var tests
 # ============================================================
 
 def test_qsym2var_single():

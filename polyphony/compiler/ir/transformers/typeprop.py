@@ -1,15 +1,15 @@
 """Type propagation, specialization, and evaluation using new IR (ir.py)."""
 from collections import deque
 from typing import cast
-from ..ir_visitor import IrVisitor
+from ..irvisitor import IrVisitor
 from ..ir import (
     IrStm, IrExp, IrVariable, Temp, Attr, Const, Call, SysCall, New, Array,
     MRef, MStore, Move, Expr, Phi, UPhi, LPhi, Ret, CJump, MCJump, Jump,
     Ctx,
 )
-from ..ir_helper import qualified_symbols, irexp_type, try_get_constant
+from ..irhelper import qualified_symbols, irexp_type, try_get_constant
 from ..ir import Ir as IR, Const as CONST, Temp as TEMP
-from ..ir_helper import qualified_symbols as old_qualified_symbols
+from ..irhelper import qualified_symbols as old_qualified_symbols
 from ..scope import Scope
 from ..symbol import Symbol
 from ..types.type import Type

@@ -22,7 +22,7 @@ from .dataflow import (
     _is_cjump, _is_mcjump,
     _qualified_symbols, _has_exclusive_function, _has_clkfence,
 )
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from ..scope import Scope
 from ...common.common import fail, warn

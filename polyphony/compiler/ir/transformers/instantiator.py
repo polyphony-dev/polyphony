@@ -3,13 +3,13 @@
 CallCollector, new_find_called_module, ModuleInstantiator, ArgumentApplier
 """
 from typing import cast
-from ..ir_visitor import IrVisitor
+from ..irvisitor import IrVisitor
 from ..ir import (
     IrExp, IrStm, IrVariable, IrCallable,
     Temp, Attr, Const, Call, SysCall, New,
     Move, Expr, Ctx, Array,
 )
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ..scope import Scope, function2method
 from ..symbol import Symbol
 from ..types.type import Type

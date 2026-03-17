@@ -9,8 +9,8 @@ from ..ir import (
     Move, CMove, Expr, Call, SysCall, New,
     MRef, MStore, Array, Phi, UPhi,
 )
-from ..ir_visitor import IrVisitor
-from ..ir_helper import qualified_symbols
+from ..irvisitor import IrVisitor
+from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from .usedef import UseDefDetector
 from .fieldusedef import FieldUseDef

@@ -24,8 +24,8 @@ from ..ir import (
     MRef, MStore, Array, Jump, CJump, MCJump, Ret,
     Phi, UPhi, LPhi, MStm, CMove, CExpr,
 )
-from ..ir_visitor import IrVisitor, IrTransformer
-from ..ir_helper import qualified_symbols, irexp_type, qsym2var
+from ..irvisitor import IrVisitor, IrTransformer
+from ..irhelper import qualified_symbols, irexp_type, qsym2var
 from ..symbol import Symbol
 from ..scope import Scope
 from ..types import typehelper

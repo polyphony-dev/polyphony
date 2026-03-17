@@ -13,8 +13,8 @@ from ..ir import (
     IrExp, IrVariable, IrNameExp, IrCallable, Phi, UPhi, LPhi,
     Ctx,
 )
-from ..ir_visitor import IrVisitor, IrTransformer
-from ..ir_helper import (
+from ..irvisitor import IrVisitor, IrTransformer
+from ..irhelper import (
     qualified_symbols, reduce_binop, reduce_relexp, irexp_type,
     eval_unop, eval_binop, eval_relop,
 )
@@ -33,7 +33,7 @@ logger = getLogger(__name__)
 
 def _try_get_constant_new(qsym, scope):
     """Get constant value as new IR Const (converts from old IR if needed)."""
-    from ..ir_helper import try_get_constant
+    from ..irhelper import try_get_constant
     c = try_get_constant(qsym, scope)
     if c is None:
         return None
@@ -338,7 +338,7 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
 def _to_signed(typ, const):
     assert typ.is_int() and typ.signed is True
     assert isinstance(const, Const)
-    from ..ir_helper import bits2int
+    from ..irhelper import bits2int
     nbit = typ.width
     mask = (1 << nbit) - 1
     bits = (const.value & mask)

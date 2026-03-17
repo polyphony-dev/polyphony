@@ -17,8 +17,8 @@ from ...ir.ir import (
     Phi, UPhi, LPhi, MStm,
     IrVariable, IrExp, IrStm,
 )
-from ...ir.ir_helper import op2str, eval_unop, eval_binop, eval_relop
-from ...ir.ir_helper import qualified_symbols, irexp_type
+from ...ir.irhelper import op2str, eval_unop, eval_binop, eval_relop
+from ...ir.irhelper import qualified_symbols, irexp_type
 from ...ir.scope import Scope, FunctionParam
 from ...ir.symbol import Symbol
 from ...ir.types.type import Type

@@ -142,36 +142,6 @@ class IRWriter(object):
             case new.Ret():
                 exp = self._format_exp(stm.exp)
                 return f'ret {exp}'
-            case CMOVE():
-                cond = self._format_exp(stm.cond)
-                dst = self._format_exp(stm.dst)
-                src = self._format_exp(stm.src)
-                return f'mv? {cond} {dst} {src}'
-            case MOVE():
-                dst = self._format_exp(stm.dst)
-                src = self._format_exp(stm.src)
-                return f'mv {dst} {src}'
-            case CEXPR():
-                cond = self._format_exp(stm.cond)
-                exp = self._format_exp(stm.exp)
-                return f'expr? {cond} {exp}'
-            case EXPR():
-                exp = self._format_exp(stm.exp)
-                return f'expr {exp}'
-            case JUMP():
-                return f'j {stm.target.nametag}'
-            case CJUMP():
-                cond = self._format_exp(stm.exp)
-                return f'cj {cond} {stm.true.nametag} {stm.false.nametag}'
-            case MCJUMP():
-                parts = []
-                for cond, target in zip(stm.conds, stm.targets):
-                    parts.append(self._format_exp(cond))
-                    parts.append(target.nametag)
-                return f'mj {" ".join(parts)}'
-            case RET():
-                exp = self._format_exp(stm.exp)
-                return f'ret {exp}'
             case _:
                 raise ValueError(f'Unknown statement type: {type(stm)}')
 
@@ -213,43 +183,6 @@ class IRWriter(object):
                 offset = self._format_exp(exp.offset)
                 return f'(mld {mem} {offset})'
             case new.Array():
-                return self._format_array(exp)
-            case CONST():
-                return self._format_const(exp)
-            case ATTR():
-                return self._format_attr(exp)
-            case TEMP():
-                return exp.name
-            case UNOP():
-                op = UNOP_RMAP[exp.op]
-                inner = self._format_exp(exp.exp)
-                return f'{op}{inner}'
-            case BINOP():
-                op = BINOP_RMAP[exp.op]
-                left = self._format_exp(exp.left)
-                right = self._format_exp(exp.right)
-                return f'({op} {left} {right})'
-            case RELOP():
-                op = RELOP_RMAP[exp.op]
-                left = self._format_exp(exp.left)
-                right = self._format_exp(exp.right)
-                return f'({op} {left} {right})'
-            case CALL():
-                return self._format_callable('call', exp)
-            case NEW():
-                return self._format_callable('new', exp)
-            case SYSCALL():
-                return self._format_callable('syscall', exp)
-            case MSTORE():
-                mem = self._format_exp(exp.mem)
-                offset = self._format_exp(exp.offset)
-                val = self._format_exp(exp.exp)
-                return f'(mst {mem} {offset} {val})'
-            case MREF():
-                mem = self._format_exp(exp.mem)
-                offset = self._format_exp(exp.offset)
-                return f'(mld {mem} {offset})'
-            case ARRAY():
                 return self._format_array(exp)
             case _:
                 raise ValueError(f'Unknown expression type: {type(exp)}')

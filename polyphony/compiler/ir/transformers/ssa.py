@@ -11,8 +11,8 @@ from ..ir import (
     Phi, UPhi, LPhi, Call, SysCall, New,
     Ctx,
 )
-from ..ir_helper import qualified_symbols, qsym2var
-from ..ir_visitor import IrVisitor
+from ..irhelper import qualified_symbols, qsym2var
+from ..irvisitor import IrVisitor
 from ..types.type import Type
 from ..types import typehelper
 from ..analysis.dominator import DominatorTreeBuilder, DominanceFrontierBuilder
@@ -55,7 +55,7 @@ def _merge_path_exp(pred, blk, idx_hint=-1):
 
 def _rel_and_exp(exp1, exp2):
     from ..ir import RelOp
-    from ..ir_helper import reduce_relexp
+    from ..irhelper import reduce_relexp
     if exp1 is None:
         return exp2
     if exp2 is None:

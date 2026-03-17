@@ -9,9 +9,9 @@ from .stg import STG
 from ..common.env import env
 from ..ir.block import Block
 from ..ir.ir import *
-from ..ir.ir_helper import qualified_symbols, irexp_type
+from ..ir.irhelper import qualified_symbols, irexp_type
 from ..ir.symbol import Symbol
-from ..ir.ir_visitor import IrVisitor
+from ..ir.irvisitor import IrVisitor
 from ..ir.types.type import Type
 from logging import getLogger
 logger = getLogger(__name__)
@@ -422,7 +422,7 @@ class AHDLTranslator(IrVisitor):
 
     def _irexp_type(self, ir):
         """Resolve expression type for both old and new IR types."""
-        from ..ir.ir_helper import irexp_type as new_irexp_type
+        from ..ir.irhelper import irexp_type as new_irexp_type
         if isinstance(ir, IrExp):
             return new_irexp_type(ir, self.scope)
         return irexp_type(ir, self.scope)

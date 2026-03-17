@@ -6,7 +6,7 @@ from .stgbuilder import State, STGItemBuilder, ScheduledItemQueue
 from .analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdltransformer import AHDLTransformer
 from ..ir.ir import Move, CJump
-from ..ir.ir_helper import qualified_symbols
+from ..ir.irhelper import qualified_symbols
 from ..ir.analysis.usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)

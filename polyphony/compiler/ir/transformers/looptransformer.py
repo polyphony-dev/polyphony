@@ -7,7 +7,7 @@ from ..block import Block
 from ..ir import (
     Ctx, Const, Temp, UnOp, RelOp, Move, Jump, CJump, Phi, LPhi, Expr,
 )
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 from ..types.type import Type
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefDetector

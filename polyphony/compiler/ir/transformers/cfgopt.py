@@ -6,7 +6,7 @@ from ..ir import (
     Const, Temp, Attr, Move, Expr, CExpr, CMove, Jump, CJump, MCJump,
     Phi, UPhi, LPhi, RelOp, UnOp, Ctx, SysCall, MRef, MStore,
 )
-from ..ir_helper import reduce_relexp, irexp_type
+from ..irhelper import reduce_relexp, irexp_type
 from ..analysis.dominator import DominatorTreeBuilder
 from ..analysis.usedef import UseDefDetector
 from ..types.type import Type

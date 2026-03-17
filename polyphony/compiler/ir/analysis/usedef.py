@@ -1,8 +1,8 @@
 ﻿from collections import defaultdict
 from dataclasses import dataclass
-from ..ir_visitor import IrVisitor
+from ..irvisitor import IrVisitor
 from ..ir import *
-from ..ir_helper import qualified_symbols
+from ..irhelper import qualified_symbols
 
 
 from ..block import Block
@@ -387,7 +387,7 @@ class UseDefDetector(IrVisitor):
         self._add_or_remove_Const(ir, self.current_stm)
 
     def visit_Temp(self, ir):
-        from ..ir_helper import qualified_symbols
+        from ..irhelper import qualified_symbols
 
         qsyms = qualified_symbols(ir, self.scope)
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
@@ -396,7 +396,7 @@ class UseDefDetector(IrVisitor):
             self._add_or_remove_def(qsyms, ir, self.current_stm)
 
     def visit_Attr(self, ir):
-        from ..ir_helper import qualified_symbols
+        from ..irhelper import qualified_symbols
 
         qsyms = qualified_symbols(ir, self.scope)
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
