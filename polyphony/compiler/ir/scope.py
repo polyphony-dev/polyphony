@@ -762,16 +762,6 @@ class Scope(Tagged, SymbolTable):
             self.children.append(child_scope)
 
 
-    def dfgs(self, bottom_up=False):
-        def collect_dfg(dfg, ds):
-            ds.append(dfg)
-            for c in dfg.children:
-                collect_dfg(c, ds)
-
-        ds = []
-        collect_dfg(self.top_dfg, ds)
-        return ds
-
     def find_ctor(self):
         assert self.is_class()
         for child in self.children:
@@ -793,15 +783,6 @@ class Scope(Tagged, SymbolTable):
                 return True
             if base.is_subclassof(clazz):
                 return True
-        return False
-
-    def is_assignable(self, other):
-        if self is other:
-            return True
-        if self.origin and self.origin.is_assignable(other):
-            return True
-        if other.origin and self.is_assignable(other.origin):
-            return True
         return False
 
     def is_descendants_of(self, other):
@@ -837,6 +818,87 @@ class Scope(Tagged, SymbolTable):
         self.workers.append(worker_scope)
         assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
+
+    def add_branch_graph_edge(self, k, vs):
+        assert isinstance(vs, list)
+        self.branch_graph.add_node(k)
+        for v in itertools.chain(*vs):
+            if k < v:
+                self.branch_graph.add_edge(k, v)
+            else:
+                self.branch_graph.add_edge(v, k)
+
+    def has_branch_edge(self, stm0, stm1):
+        if stm0 < stm1:
+            return self.branch_graph.find_edge(stm0, stm1) is not None
+        else:
+            return self.branch_graph.find_edge(stm1, stm0) is not None
+
+    def is_assignable(self, other):
+        if self is other:
+            return True
+        if self.origin and self.origin.is_assignable(other):
+            return True
+        if other.origin and self.is_assignable(other.origin):
+            return True
+        return False
+
+    def closures(self):
+        clos = []
+        for child in self.children:
+            if child.is_closure():
+                clos.append(child)
+            clos.extend(child.closures())
+        return clos
+
+    def instance_number(self):
+        n = Scope.instance_ids[self]
+        Scope.instance_ids[self] += 1
+        return n
+
+    def set_bound_args(self, binding: list[tuple[int, IrExp]]):
+        self._bound_args = [str(exp) for i, exp in binding]
+
+
+class FunctionScope(Scope):
+    def __init__(self, parent, name, tags, lineno, scope_id):
+        super().__init__(parent, name, tags, lineno, scope_id)
+        self.function_params = FunctionParams(self.is_method())
+        self.return_type: Type = None
+        self.loop_tree = LoopNestTree()
+
+    def param_names(self, with_self=False):
+        return self.function_params.param_names(with_self)
+
+    def param_symbols(self, with_self=False):
+        return self.function_params.symbols(with_self)
+
+    def param_default_values(self, with_self=False):
+        return self.function_params.default_values(with_self)
+
+    def param_types(self, with_self=False):
+        return self.function_params.types(with_self)
+
+    def clear_params(self):
+        return self.function_params.clear()
+
+    def remove_param(self, key: Symbol | list[int]):
+        if isinstance(key, Symbol):
+            return self.function_params.remove(key)
+        elif isinstance(key, list):
+            return self.function_params.remove_by_indices(key)
+
+    def find_param_sym(self, param_name):
+        name = "{}_{}".format(Symbol.param_prefix, param_name)
+        return self.find_sym(name)
+
+    def add_return_sym(self, typ: Type = Type.undef()):
+        return self.add_sym(Symbol.return_name, {"return"}, typ)
+
+    def add_param(self, sym: Symbol, defval: IrExp | None):
+        self.function_params.add_param(sym, defval)
+
+    # --- Region / Loop ---
 
     def reset_loop_tree(self):
         self.loop_tree = LoopNestTree()
@@ -885,34 +947,20 @@ class Scope(Tagged, SymbolTable):
     def traverse_regions(self, reverse=False):
         return self.loop_tree.traverse(reverse)
 
-    def add_branch_graph_edge(self, k, vs):
-        assert isinstance(vs, list)
-        self.branch_graph.add_node(k)
-        for v in itertools.chain(*vs):
-            if k < v:
-                self.branch_graph.add_edge(k, v)
-            else:
-                self.branch_graph.add_edge(v, k)
+    # --- DFG / Scheduling ---
 
-    def has_branch_edge(self, stm0, stm1):
-        if stm0 < stm1:
-            return self.branch_graph.find_edge(stm0, stm1) is not None
-        else:
-            return self.branch_graph.find_edge(stm1, stm0) is not None
+    def dfgs(self, bottom_up=False):
+        def collect_dfg(dfg, ds):
+            ds.append(dfg)
+            for c in dfg.children:
+                collect_dfg(c, ds)
 
-    def closures(self):
-        clos = []
-        for child in self.children:
-            if child.is_closure():
-                clos.append(child)
-            clos.extend(child.closures())
-        return clos
+        ds = []
+        collect_dfg(self.top_dfg, ds)
+        return ds
 
-    def instance_number(self):
-        n = Scope.instance_ids[self]
-        Scope.instance_ids[self] += 1
-        return n
 
+class ClassScope(Scope):
     def build_module_params(self, module_param_vars: list[tuple[str, IrExp]]):
         module_params = []
         ctor = self.find_ctor()
@@ -928,49 +976,6 @@ class Scope(Tagged, SymbolTable):
 
     def set_bound_args(self, binding: list[tuple[int, IrExp]]):
         self._bound_args = [str(exp) for i, exp in binding]
-
-
-class FunctionScope(Scope):
-    def __init__(self, parent, name, tags, lineno, scope_id):
-        super().__init__(parent, name, tags, lineno, scope_id)
-        self.function_params = FunctionParams(self.is_method())
-        self.return_type: Type = None
-        self.loop_tree = LoopNestTree()
-
-    def param_names(self, with_self=False):
-        return self.function_params.param_names(with_self)
-
-    def param_symbols(self, with_self=False):
-        return self.function_params.symbols(with_self)
-
-    def param_default_values(self, with_self=False):
-        return self.function_params.default_values(with_self)
-
-    def param_types(self, with_self=False):
-        return self.function_params.types(with_self)
-
-    def clear_params(self):
-        return self.function_params.clear()
-
-    def remove_param(self, key: Symbol | list[int]):
-        if isinstance(key, Symbol):
-            return self.function_params.remove(key)
-        elif isinstance(key, list):
-            return self.function_params.remove_by_indices(key)
-
-    def find_param_sym(self, param_name):
-        name = "{}_{}".format(Symbol.param_prefix, param_name)
-        return self.find_sym(name)
-
-    def add_return_sym(self, typ: Type = Type.undef()):
-        return self.add_sym(Symbol.return_name, {"return"}, typ)
-
-    def add_param(self, sym: Symbol, defval: IrExp | None):
-        self.function_params.add_param(sym, defval)
-
-
-class ClassScope(Scope):
-    pass
 
 
 class NamespaceScope(Scope):
