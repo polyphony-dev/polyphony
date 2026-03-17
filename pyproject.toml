@@ -26,6 +26,13 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 
+[tool.coverage.run]
+source = ["polyphony"]
+omit = ["polyphony/_internal/*"]
+
+[tool.coverage.report]
+omit = ["polyphony/_internal/*"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"
