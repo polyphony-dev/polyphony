@@ -896,3 +896,302 @@ def test_type_from_typeclass():
     assert t.width == 8
     assert t.signed == False
 
+
+# ---- Additional coverage tests for type.py ----
+
+def test_getattr_is_dynamic():
+    """Test __getattr__ for dynamic is_* methods."""
+    setup_test()
+    int_t = Type.int()
+    assert int_t.is_int()
+    assert not int_t.is_bool()
+    assert not int_t.is_str()
+    # __getattr__ for non is_* should raise AttributeError
+    try:
+        _ = int_t.nonexistent_attr
+        assert False, "Should have raised AttributeError"
+    except AttributeError:
+        pass
+
+
+def test_clone_raises():
+    """Type base class clone raises NotImplementedError."""
+    setup_test()
+    # Type('any') has no clone override (plain Type)
+    t = Type('any', explicit=False)
+    try:
+        t.clone()
+        assert False, "Should have raised NotImplementedError"
+    except NotImplementedError:
+        pass
+
+
+def test_is_same():
+    setup_test()
+    assert Type.int().is_same(Type.int(64))
+    assert not Type.int().is_same(Type.bool())
+    assert Type.bool().is_same(Type.bool())
+
+
+def test_is_compatible():
+    setup_test()
+    # int and bool: int.can_assign(bool)=True, bool.can_assign(int)=True => compatible
+    assert Type.int().is_compatible(Type.bool())
+    assert Type.bool().is_compatible(Type.int())
+    # int and str: not compatible
+    assert not Type.int().is_compatible(Type.str())
+
+
+def test_has_scope():
+    setup_test()
+    # ScopeType subclasses (ObjectType, ClassType, etc.) have scope via ScopeType
+    cls = env.scopes['__builtin__.object']
+    assert Type.object(cls).has_scope()
+    assert Type.klass(cls).has_scope()
+    assert Type.function(cls).has_scope()
+    assert Type.namespace(env.scopes['__builtin__']).has_scope()
+    # SimpleType subclasses (BoolType, StrType, NoneType) are NOT ScopeType
+    assert not Type.bool().has_scope()
+    assert not Type.str().has_scope()
+    assert not Type.none().has_scope()
+    # IntType and UndefinedType are not ScopeType
+    assert not Type.int().has_scope()
+    assert not Type.undef().has_scope()
+
+
+def test_type_cls_from_name():
+    setup_test()
+    from polyphony.compiler.ir.types.inttype import IntType
+    from polyphony.compiler.ir.types.booltype import BoolType
+    from polyphony.compiler.ir.types.strtype import StrType
+    from polyphony.compiler.ir.types.listtype import ListType
+    from polyphony.compiler.ir.types.tupletype import TupleType
+    from polyphony.compiler.ir.types.functiontype import FunctionType
+    from polyphony.compiler.ir.types.objecttype import ObjectType
+    from polyphony.compiler.ir.types.classtype import ClassType
+    from polyphony.compiler.ir.types.namespacetype import NamespaceType
+    from polyphony.compiler.ir.types.porttype import PortType
+    from polyphony.compiler.ir.types.exprtype import ExprType
+    from polyphony.compiler.ir.types.nonetype import NoneType
+    from polyphony.compiler.ir.types.undefined import UndefinedType
+
+    assert Type.type_cls_from_name('int') is IntType
+    assert Type.type_cls_from_name('bool') is BoolType
+    assert Type.type_cls_from_name('str') is StrType
+    assert Type.type_cls_from_name('list') is ListType
+    assert Type.type_cls_from_name('tuple') is TupleType
+    assert Type.type_cls_from_name('function') is FunctionType
+    assert Type.type_cls_from_name('object') is ObjectType
+    assert Type.type_cls_from_name('class') is ClassType
+    assert Type.type_cls_from_name('namespace') is NamespaceType
+    assert Type.type_cls_from_name('port') is PortType
+    assert Type.type_cls_from_name('expr') is ExprType
+    assert Type.type_cls_from_name('none') is NoneType
+    assert Type.type_cls_from_name('undef') is UndefinedType
+
+    try:
+        Type.type_cls_from_name('nonexistent')
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+
+
+def test_from_dict_int():
+    setup_test()
+    d = {'explicit': False, 'width': 16, 'signed': True}
+    from polyphony.compiler.ir.types.inttype import IntType
+    t = IntType.from_dict(d)
+    assert t.is_int()
+    assert t.width == 16
+    assert t.signed is True
+    assert t.explicit is False
+
+
+def test_from_dict_bool():
+    setup_test()
+    d = {'explicit': True, 'scope_name': '__builtin__.bool'}
+    from polyphony.compiler.ir.types.booltype import BoolType
+    t = BoolType.from_dict(d)
+    assert t.is_bool()
+    assert t.explicit is True
+
+
+def test_from_dict_list_with_nested():
+    """from_dict with nested type dict for element."""
+    setup_test()
+    from polyphony.compiler.ir.types.listtype import ListType
+    d = {
+        'explicit': False,
+        'element': {'name': 'int', 'explicit': False, 'width': 32, 'signed': True},
+        'length': 10,
+        'ro': False,
+    }
+    t = ListType.from_dict(d)
+    assert t.is_list()
+    assert t.element.is_int()
+    assert t.element.width == 32
+    assert t.length == 10
+
+
+def test_from_dict_undef():
+    setup_test()
+    from polyphony.compiler.ir.types.undefined import UndefinedType
+    d = {'explicit': False}
+    t = UndefinedType.from_dict(d)
+    assert t.is_undef()
+
+
+def test_mangled_names_int():
+    setup_test()
+    result = Type.mangled_names([Type.int(32)])
+    assert result == 'i32'
+
+
+def test_mangled_names_bool():
+    setup_test()
+    result = Type.mangled_names([Type.bool()])
+    assert result == 'b'
+
+
+def test_mangled_names_str():
+    setup_test()
+    result = Type.mangled_names([Type.str()])
+    assert result == 's'
+
+
+def test_mangled_names_list():
+    setup_test()
+    result = Type.mangled_names([Type.list(Type.int(16), 10)])
+    assert result == 'l_i16_10'
+
+    result_any = Type.mangled_names([Type.list(Type.int(16))])
+    assert result_any == 'l_i16'
+
+
+def test_mangled_names_tuple():
+    setup_test()
+    result = Type.mangled_names([Type.tuple(Type.int(8), 3)])
+    assert result == 't_i8i8i8'
+
+    result_any = Type.mangled_names([Type.tuple(Type.int(8), Type.ANY_LENGTH)])
+    assert result_any == 't_i8'
+
+
+def test_mangled_names_class():
+    setup_test()
+    top = new_scope(None, 'top', {'namespace'})
+    C = new_scope(top, 'MyClass', {'class'})
+    result = Type.mangled_names([Type.klass(C)])
+    # non-typeclass: uses scope_id
+    assert 'c' in result
+
+
+def test_mangled_names_function():
+    setup_test()
+    top = new_scope(None, 'top', {'namespace'})
+    F = new_scope(top, 'myfunc', {'function'})
+    result = Type.mangled_names([Type.function(F)])
+    assert result.startswith('f')
+
+
+def test_mangled_names_object():
+    setup_test()
+    top = new_scope(None, 'top', {'namespace'})
+    C = new_scope(top, 'Obj', {'class'})
+    result = Type.mangled_names([Type.object(C)])
+    assert result.startswith('o')
+
+
+def test_mangled_names_expr():
+    setup_test()
+    result = Type.mangled_names([Type.expr(Expr(Const(42)), env.scopes['__builtin__'])])
+    assert result.startswith('e')
+
+
+def test_mangled_names_undef():
+    setup_test()
+    result = Type.mangled_names([Type.undef()])
+    assert result == 'undef'
+
+
+def test_mangled_names_multiple():
+    setup_test()
+    result = Type.mangled_names([Type.int(32), Type.bool(), Type.str()])
+    assert result == 'i32bs'
+
+
+def test_type_any():
+    """Type.any() factory method."""
+    t = Type('any', explicit=False)
+    assert str(t) == 'any'
+
+
+def test_function_with_empty_scope_string():
+    """Type.function with empty string scope defaults to __builtin__.object."""
+    setup_test()
+    t = Type.function('', ret_t=Type.none())
+    assert t.is_function()
+    assert t.scope_name == '__builtin__.object'
+
+
+def test_object_with_empty_scope_string():
+    """Type.object with empty string scope defaults to __builtin__.object."""
+    setup_test()
+    t = Type.object('')
+    assert t.is_object()
+    assert t.scope_name == '__builtin__.object'
+
+
+def test_klass_with_empty_scope_string():
+    """Type.klass with empty string scope defaults to __builtin__.type."""
+    setup_test()
+    t = Type.klass('')
+    assert t.is_class()
+    assert t.scope_name == '__builtin__.type'
+
+
+def test_port_with_string_scope():
+    """Type.port with string portcls."""
+    setup_test()
+    attrs = {"dtype": Type.int(), "direction": "in", "init": 0, "assigned": False, "root_symbol": None}
+    t = Type.port('some.port.class', attrs)
+    assert t.is_port()
+    assert t.scope_name == 'some.port.class'
+
+
+def test_namespace_with_string_scope():
+    """Type.namespace with string scope."""
+    setup_test()
+    t = Type.namespace('__builtin__')
+    assert t.is_namespace()
+    assert t.scope_name == '__builtin__'
+
+
+def test_can_assign_raises():
+    """Type base class can_assign raises NotImplementedError."""
+    t = Type('any', explicit=False)
+    try:
+        t.can_assign(Type('other', explicit=False))
+        assert False, "Should have raised NotImplementedError"
+    except NotImplementedError:
+        pass
+
+
+def test_propagate_raises():
+    """Type base class propagate raises NotImplementedError."""
+    t = Type('any', explicit=False)
+    try:
+        t.propagate(Type('other', explicit=False))
+        assert False, "Should have raised NotImplementedError"
+    except NotImplementedError:
+        pass
+
+
+def test_union_raises():
+    """Type.union raises NotImplementedError."""
+    try:
+        Type.union([])
+        assert False, "Should have raised NotImplementedError"
+    except NotImplementedError:
+        pass
+
