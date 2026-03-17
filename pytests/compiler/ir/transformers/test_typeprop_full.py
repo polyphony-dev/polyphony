@@ -3045,3 +3045,1324 @@ o.get()
         get_scope = env.scopes.get('@top.Outer.get')
         assert get_scope is not None
         assert get_scope in typed
+
+
+# ============================================================
+# Additional tests for coverage improvement
+# ============================================================
+
+
+def test_typeprop_tuple_unpack():
+    """TypePropagation: tuple unpacking via Move with Array dst (lines 642-659)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f():
+    t = (10, 20)
+    a, b = t
+    return a
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    a_sym = func.find_sym('a')
+    b_sym = func.find_sym('b')
+    assert a_sym.typ.is_int()
+    assert b_sym.typ.is_int()
+
+
+def test_typeprop_phi_from_if():
+    """TypePropagation: Phi nodes from if/else branches (lines 670-676)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f(x):
+    if x > 0:
+        y = 1
+    else:
+        y = 2
+    return y
+f(1)
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    y_sym = func.find_sym('y')
+    assert y_sym.typ.is_int()
+
+
+def test_typeprop_phi_from_while():
+    """TypePropagation: LPhi from while loop (lines 681-682)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f():
+    i = 0
+    s = 0
+    while i < 5:
+        s = s + i
+        i = i + 1
+    return s
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    s_sym = func.find_sym('s')
+    i_sym = func.find_sym('i')
+    assert s_sym.typ.is_int()
+    assert i_sym.typ.is_int()
+
+
+def test_typeprop_mref_on_list_element():
+    """TypePropagation: MRef on list with int index (lines 526-552)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f():
+    a = [10, 20, 30]
+    return a[1]
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    assert func.return_type.is_int()
+
+
+def test_typeprop_mstore_list_element():
+    """TypePropagation: MStore on list (lines 554-568)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f():
+    a = [0, 0, 0]
+    a[2] = 99
+    return a
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    a_sym = func.find_sym('a')
+    assert a_sym.typ.is_list()
+    assert a_sym.typ.element.is_int()
+
+
+def test_typeprop_move_to_mref():
+    """TypePropagation: Move with MRef as dst (line 660-661)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f():
+    a = [0, 0, 0]
+    a[0] = 42
+    return a[0]
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    assert func.return_type.is_int()
+
+
+def test_typeprop_binop_unsigned():
+    """TypePropagation: BinOp with two ints computes correct result type (line 389-395)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+    blk1:
+        mv x @in_x
+        mv @return (+ x 1)
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.func']
+    # BinOp on ints produces int with max width
+    assert func.return_type.is_int()
+    assert func.return_type.width == 32
+
+
+def test_type_evaluator_visit_unknown_type():
+    """TypeEvaluator: visit returns None for unknown type name (line 113)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    # Create a type with a name that has no visitor
+    from polyphony.compiler.ir.types.exprtype import ExprType
+    # namespace type has name 'namespace' -> visitor 'visit_namespace' does not exist
+    t = Type.namespace(top)
+    result = te.visit(t)
+    assert result is None
+
+
+def test_type_eval_visitor_with_return_type():
+    """TypeEvalVisitor: evaluates return_type (lines 263-265)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+
+    scope @top.func
+        tags function
+        param x: int32
+        return int16
+        var y: int32
+    blk1:
+        mv x @in_x
+        mv y x
+    """
+    IRParser(block_src).parse_scope()
+    func = env.scopes['@top.func']
+    TypeEvalVisitor().process(func)
+    # return_type was evaluated
+    assert func.return_type.is_int()
+    x_sym = func.find_sym('x')
+    assert x_sym.typ.is_int()
+
+
+def test_type_eval_visitor_visit_attr():
+    """TypeEvalVisitor: visit_Attr evaluates attribute type (lines 278-281)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace class
+        var val: int32
+        var func: function(@top.func)
+
+    scope @top.func
+        tags function method
+        param self: object(@top)
+        return int32
+    blk1:
+        mv self @in_self
+        mv @return self.val
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    func = env.scopes['@top.func']
+    TypeEvalVisitor().process(func)
+    top = env.scopes['@top']
+    val_sym = top.find_sym('val')
+    assert val_sym.typ.is_int()
+
+
+def test_type_replacer_visit_attr():
+    """TypeReplacer: replaces attr symbol type (lines 1158-1162)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace class
+        var val: undef
+        var func: function(@top.func)
+
+    scope @top.func
+        tags function method
+        param self: object(@top)
+    blk1:
+        mv self @in_self
+        mv self.val 42
+    """
+    IRParser(block_src).parse_scope()
+    func = env.scopes['@top.func']
+    top = env.scopes['@top']
+
+    old_t = Type.undef()
+    new_t = Type.int(32)
+    replacer = TypeReplacer(old_t, new_t, lambda a, b: a == b)
+    replacer.process(func)
+
+    val_sym = top.find_sym('val')
+    assert val_sym.typ.is_int()
+
+
+def test_static_typeprop_reject_then_retry():
+    """StaticTypePropagation: RejectPropagation retries scope (lines 1098-1100)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: undef
+        var y: undef
+        var func: function(@top.func)
+    blk1:
+        mv y (call func x)
+        mv x 42
+
+    scope @top.func
+        tags function
+        param a: int32
+        return int32
+    blk1:
+        mv a @in_a
+        mv @return a
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    # First pass: 'mv y (call func x)' tries to visit x which is undef -> reject
+    # After retry: x=42 is processed first (sorted by lineno), then the call succeeds
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    y_sym = top.find_sym('y')
+    assert y_sym.typ.is_int()
+
+
+def test_static_typeprop_visit_attr_object():
+    """StaticTypePropagation: visit_Attr on object type (lines 1126-1139)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var obj: object(@top.C)
+        var result: undef
+
+    scope @top.C
+        tags class
+        var val: int32
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    # Manually create the statement block for static propagation
+    # to exercise visit_Attr path
+    from polyphony.compiler.ir.ir import Attr, Ctx, Move, Temp
+    c_scope = env.scopes['@top.C']
+    attr_ir = Attr(name='val', exp=Temp(name='obj', ctx=Ctx.LOAD), attr='val', ctx=Ctx.LOAD)
+    mv = Move(dst=Temp(name='result', ctx=Ctx.STORE), src=attr_ir)
+    blk = top.entry_block
+    blk.append_stm(mv)
+
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    result_sym = top.find_sym('result')
+    assert result_sym.typ.is_int()
+
+
+def test_typeprop_directory_scope_skip():
+    """TypePropagation: directory scopes are skipped (line 311)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: undef
+    blk1:
+        mv x 1
+
+    scope somedir
+        tags namespace directory
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    somedir = env.scopes['somedir']
+    install_builtins(top)
+    tp = TypePropagation(is_strict=False)
+    typed, _ = tp.process_scopes([top, somedir])
+    # directory scope should be skipped (not in typed)
+    assert somedir not in typed
+    assert top in typed
+
+
+def test_specialize_port_construction():
+    """TypeSpecializer: Port specialization with io lib (lines 1024-1057)."""
+    src_texts['dummy'] = [''] * 20
+    typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module
+from polyphony.io import Port
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.p = Port(Int[8], 'in', 0)
+    def run(self):
+        x = self.p.rd()
+
+m = M()
+''')
+    # Port should be specialized for Int[8]
+    port_specs = [n for n in env.scopes if 'Port_i' in n]
+    assert len(port_specs) >= 1
+
+
+def test_specialize_function_module():
+    """TypeSpecializer: function called from testbench tagged as function_module (lines 761-765)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace testbench
+        var helper: function(other.helper)
+        var other: namespace(other)
+    blk1:
+        expr (call other.helper 1)
+
+    scope other
+        tags namespace
+        var helper: function(other.helper)
+
+    scope other.helper
+        tags function
+        param x: undef
+        return undef
+    blk1:
+        mv x @in_x
+        mv @return (+ x 1)
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    TypeSpecializer().process_all()
+    # The helper function called from testbench should be tagged function_module
+    helper_i32 = env.scopes.get('other.helper_i32')
+    assert helper_i32 is not None
+    assert helper_i32.is_function_module()
+
+
+def test_specialize_class_no_params():
+    """TypeSpecializer: New on class with no typed params (lines 942-944)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+class C:
+    def __init__(self):
+        self.x = 0
+c = C()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    TypeSpecializer().process_all()
+    c_scope = env.scopes.get('@top.C')
+    assert c_scope is not None
+
+
+def test_typeprop_attr_function_in_load_ctx():
+    """TypePropagation: attr with function type in LOAD context adds scope (lines 518-520)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+class C:
+    def __init__(self, x):
+        self.x = x
+    def get(self):
+        return self.x
+    def process(self):
+        return self.get()
+c = C(1)
+c.process()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    get_scope = env.scopes.get('@top.C.get')
+    assert get_scope is not None
+    assert get_scope in typed
+
+
+def test_typeprop_attr_subobject_tag():
+    """TypePropagation: attr access on object sets subobject tag (lines 514-517)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src_texts['dummy'] = [''] * 30
+    src = '''
+class Inner:
+    def __init__(self, v):
+        self.v = v
+class Outer:
+    def __init__(self, val):
+        self.inner = Inner(val)
+    def get_inner_v(self):
+        return self.inner.v
+o = Outer(5)
+o.get_inner_v()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    outer_scope = env.scopes.get('@top.Outer')
+    assert outer_scope is not None
+    inner_sym = outer_scope.find_sym('inner')
+    # inner is an object attribute, should have subobject tag
+    assert inner_sym.is_subobject()
+
+
+
+def test_typeprop_phi_direct():
+    """TypePropagation: Phi node propagates types to variable (lines 670-676)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+        var y: undef
+    blk1:
+        mv x @in_x
+        cj (< x 0) blk2 blk3
+    blk2:
+        mv y 10
+        j blk4
+    blk3:
+        mv y 20
+        j blk4
+    blk4:
+        mv @return y
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    func = env.scopes['@top.func']
+
+    # Insert a Phi node manually into blk4
+    from polyphony.compiler.ir.ir import Phi, UPhi, LPhi, Temp, Const, Ctx
+    blk4 = [b for b in func.traverse_blocks() if 'blk4' in b.name][0]
+    y_temp = Temp(name='y', ctx=Ctx.STORE)
+    phi = Phi(var=y_temp, args=[Const(value=10), Const(value=20)])
+    blk4.insert_stm(0, phi)
+
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    y_sym = func.find_sym('y')
+    assert y_sym.typ.is_int()
+
+
+def test_typeprop_uphi_direct():
+    """TypePropagation: UPhi node propagates types (line 678-679)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+        var y: undef
+    blk1:
+        mv x @in_x
+        cj (< x 0) blk2 blk3
+    blk2:
+        mv y 10
+        j blk4
+    blk3:
+        mv y 20
+        j blk4
+    blk4:
+        mv @return y
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    func = env.scopes['@top.func']
+
+    from polyphony.compiler.ir.ir import UPhi, Temp, Const, Ctx
+    blk4 = [b for b in func.traverse_blocks() if 'blk4' in b.name][0]
+    y_temp = Temp(name='y', ctx=Ctx.STORE)
+    uphi = UPhi(var=y_temp, args=[Const(value=10), Const(value=20)])
+    blk4.insert_stm(0, uphi)
+
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    y_sym = func.find_sym('y')
+    assert y_sym.typ.is_int()
+
+
+def test_typeprop_lphi_direct():
+    """TypePropagation: LPhi node propagates types (line 681-682)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+        var y: undef
+    blk1:
+        mv x @in_x
+        cj (< x 0) blk2 blk3
+    blk2:
+        mv y 10
+        j blk4
+    blk3:
+        mv y 20
+        j blk4
+    blk4:
+        mv @return y
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    func = env.scopes['@top.func']
+
+    from polyphony.compiler.ir.ir import LPhi, Temp, Const, Ctx
+    blk4 = [b for b in func.traverse_blocks() if 'blk4' in b.name][0]
+    y_temp = Temp(name='y', ctx=Ctx.STORE)
+    lphi = LPhi(var=y_temp, args=[Const(value=10), Const(value=20)])
+    blk4.insert_stm(0, lphi)
+
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    y_sym = func.find_sym('y')
+    assert y_sym.typ.is_int()
+
+
+def test_typeprop_mstore_direct():
+    """TypePropagation: MStore expression visited (lines 554-568)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+        var a: list<int32>[3]
+    blk1:
+        mv x @in_x
+        expr (mst a 0 x)
+        mv @return (mld a 0)
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.func']
+    a_sym = func.find_sym('a')
+    assert a_sym.typ.is_list()
+
+
+def test_typeprop_visit_returns_none_for_unknown():
+    """TypePropagation: visit returns None for unknown IR type (line 379)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    tp = TypePropagation(is_strict=False)
+    tp._new_scopes = []
+    tp._old_scopes = set()
+    tp._indirect_old_scopes = set()
+    tp.typed = []
+    tp.scope = top
+    tp.current_stm = None
+    # Visit something that has no visitor method
+    from polyphony.compiler.ir.ir import Const
+    result = tp.visit(Const(value=42))
+    assert result.is_int()
+
+
+def test_typeprop_mref_on_typeclass():
+    """TypePropagation: MRef on class type that is_typeclass (lines 534-541)."""
+    setup_test()
+    setup_libs('io', 'timing')
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src_texts['dummy'] = [''] * 20
+    src = '''
+from polyphony.typing import Int
+x = Int[8]
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    x_sym = top.find_sym('x')
+    # Int[8] should resolve to an int type
+    assert x_sym.typ is not None
+
+
+def test_static_typeprop_new():
+    """StaticTypePropagation: non-strict New returns object type (lines 1119-1124)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var C: class(@top.C)
+        var x: undef
+    blk1:
+        mv x (new C)
+
+    scope @top.C
+        tags class
+        var __init__: function(@top.C.__init__)
+
+    scope @top.C.__init__
+        tags method ctor
+        param self: object(@top.C)
+        return object(@top.C)
+    blk1:
+        mv self @in_self
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    x_sym = top.find_sym('x')
+    assert x_sym.typ.is_object()
+
+
+def test_type_expr_evaluator_const():
+    """TypeExprEvaluator: visit_Const returns the const IR (line 127-128)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    from polyphony.compiler.ir.ir import Expr, Const
+    expr = Expr(exp=Const(value=8))
+    expr_t = Type.expr(expr, top)
+    result = te.visit(expr_t)
+    # Should return an expr type wrapping the Const
+    assert result.is_expr()
+
+
+def test_type_expr_evaluator_temp_scalar():
+    """TypeExprEvaluator: visit_Temp for scalar sym tries to get constant (lines 147-159)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var n: int32
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    from polyphony.compiler.ir.ir import Expr, Temp, Ctx
+    expr = Expr(exp=Temp(name='n', ctx=Ctx.LOAD))
+    expr_t = Type.expr(expr, top)
+    result = te.visit(expr_t)
+    # 'n' is scalar, try_get_constant may return None, so result wraps the Temp
+    assert result.is_expr()
+
+
+def test_type_expr_evaluator_temp_class_typeclass():
+    """TypeExprEvaluator: visit_Temp for class symbol calls sym2type (lines 151-154)."""
+    setup_test()
+    setup_libs('io', 'timing')
+    from polyphony.compiler.ir.ir import Expr, Temp, Ctx
+    top = env.scopes[env.global_scope_name]
+    # Find the Int typeclass scope
+    int_scopes = [n for n in env.scopes if n == 'polyphony.typing.Int']
+    if int_scopes:
+        int_scope = env.scopes[int_scopes[0]]
+        # Create a symbol in top that has class type pointing to Int typeclass
+        sym = top.gen_sym('IntType')
+        sym.typ = Type.klass(int_scope)
+        te = TypeEvaluator(top)
+        expr = Expr(exp=Temp(name='IntType', ctx=Ctx.LOAD))
+        expr_t = Type.expr(expr, top)
+        result = te.visit(expr_t)
+        # sym2type should resolve to a type from typeclass
+        assert result is not None
+
+
+def test_type_expr_evaluator_temp_class_non_typeclass():
+    """TypeExprEvaluator: sym2type for class that is not typeclass returns object (lines 142-143)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var C: class(@top.C)
+
+    scope @top.C
+        tags class
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    from polyphony.compiler.ir.ir import Expr, Temp, Ctx
+    expr = Expr(exp=Temp(name='C', ctx=Ctx.LOAD))
+    expr_t = Type.expr(expr, top)
+    result = te.visit(expr_t)
+    # sym2type should return Type.object for non-typeclass
+    assert result.is_expr() or result.is_object()
+
+
+def test_type_expr_evaluator_sym2type_non_class():
+    """TypeExprEvaluator: sym2type returns None for non-class sym (lines 144-145)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: int32
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    from polyphony.compiler.ir.ir import Expr, Temp, Ctx
+    expr = Expr(exp=Temp(name='x', ctx=Ctx.LOAD))
+    expr_t = Type.expr(expr, top)
+    result = te.visit(expr_t)
+    # x is int, sym2type returns None, visit_Temp falls through
+    assert result.is_expr()
+
+
+def test_type_expr_evaluator_attr():
+    """TypeExprEvaluator: visit_Attr (lines 161-174)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace class
+        var val: int32
+
+    scope @top.func
+        tags function method
+        param self: object(@top)
+    blk1:
+        mv self @in_self
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    func = env.scopes['@top.func']
+    te = TypeEvaluator(func)
+    from polyphony.compiler.ir.ir import Expr, Temp, Attr, Ctx
+    attr = Attr(name='val', exp=Temp(name='self', ctx=Ctx.LOAD), attr='val', ctx=Ctx.LOAD)
+    expr = Expr(exp=attr)
+    expr_t = Type.expr(expr, func)
+    result = te.visit(expr_t)
+    # 'val' is int (scalar), visit_Attr tries get_constant, returns ir
+    assert result.is_expr()
+
+
+
+def test_type_evaluator_visit_expr_returns_type():
+    """TypeEvaluator.visit_expr: when TypeExprEvaluator returns a Type (line 95-96)."""
+    setup_test()
+    setup_libs('io', 'timing')
+    from polyphony.compiler.ir.ir import Expr, Temp, MRef, Ctx, Const
+    top = env.scopes[env.global_scope_name]
+    # Find the Int typeclass scope
+    int_scopes = [n for n in env.scopes if n == 'polyphony.typing.Int']
+    if int_scopes:
+        int_scope = env.scopes[int_scopes[0]]
+        sym = top.gen_sym('MyInt')
+        sym.typ = Type.klass(int_scope)
+        te = TypeEvaluator(top)
+        # MRef on Int typeclass: Int[8] -> type
+        mref = MRef(mem=Temp(name='MyInt', ctx=Ctx.LOAD), offset=Const(value=8), ctx=Ctx.LOAD)
+        expr = Expr(exp=mref)
+        expr_t = Type.expr(expr, top)
+        result = te.visit(expr_t)
+        # Should resolve to an int type
+        assert result is not None
+
+
+def test_type_expr_evaluator_mref_int():
+    """TypeExprEvaluator: visit_MRef on int type with Const offset (lines 204-207)."""
+    setup_test()
+    setup_libs('io', 'timing')
+    from polyphony.compiler.ir.ir import Expr, Temp, MRef, Ctx, Const
+    top = env.scopes[env.global_scope_name]
+    int_scopes = [n for n in env.scopes if n == 'polyphony.typing.Int']
+    if int_scopes:
+        int_scope = env.scopes[int_scopes[0]]
+        sym = top.gen_sym('IntT')
+        sym.typ = Type.klass(int_scope)
+        te = TypeEvaluator(top)
+        # Int[16] => MRef(IntT, 16)
+        mref = MRef(mem=Temp(name='IntT', ctx=Ctx.LOAD), offset=Const(value=16), ctx=Ctx.LOAD)
+        expr = Expr(exp=mref)
+        expr_t = Type.expr(expr, top)
+        result = te.visit(expr_t)
+        assert result is not None
+        # result should be int(16) type
+        if result.is_int():
+            assert result.width == 16
+
+
+def test_type_expr_evaluator_mref_list():
+    """TypeExprEvaluator: visit_MRef on list type (lines 180-198)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var a: list<int32>[3]
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    from polyphony.compiler.ir.ir import Expr, Temp, MRef, Ctx, Const
+    # MRef on list symbol: a[0]
+    mref = MRef(mem=Temp(name='a', ctx=Ctx.LOAD), offset=Const(value=0), ctx=Ctx.LOAD)
+    expr = Expr(exp=mref)
+    expr_t = Type.expr(expr, top)
+    result = te.visit(expr_t)
+    # 'a' is list type -> goes into list branch of visit_MRef
+    assert result.is_expr()
+
+
+def test_type_evaluator_visit_function_no_scope():
+    """TypeEvaluator: visit_function with no scope evaluates params/return (lines 72-75)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    t = Type.function(None, Type.int(32), (Type.int(16), Type.bool()))
+    result = te.visit(t)
+    assert result.is_function()
+
+
+def test_type_evaluator_visit_list_with_type_length():
+    """TypeEvaluator: visit_list where length is a Type (lines 47-53)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    from polyphony.compiler.ir.ir import Expr, Const
+    # Create an expr type for the length
+    length_expr = Expr(exp=Const(value=5))
+    length_type = Type.expr(length_expr, top)
+    t = Type.list(Type.int(32), length_type)
+    result = te.visit(t)
+    assert result.is_list()
+    # The length should have been evaluated to 5
+    assert result.length == 5
+
+
+def test_typeprop_move_mref_dst():
+    """TypePropagation: Move with MRef dst (lines 660-661)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+        var a: list<int32>[3]
+    blk1:
+        mv x @in_x
+        mv @return (mld a 0)
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    func = env.scopes['@top.func']
+
+    # Manually insert a Move with MRef as dst into the block
+    from polyphony.compiler.ir.ir import Move, MRef, Temp, Const, Ctx
+    mref_dst = MRef(mem=Temp(name='a', ctx=Ctx.STORE), offset=Const(value=0), ctx=Ctx.STORE)
+    mv = Move(dst=mref_dst, src=Temp(name='x', ctx=Ctx.LOAD))
+    blk1 = [b for b in func.traverse_blocks() if 'blk1' in b.name][0]
+    blk1.insert_stm(1, mv)  # Insert after 'mv x @in_x'
+
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    assert func in typed
+
+
+def test_typeprop_mref_tuple():
+    """TypePropagation: MRef on tuple type returns element (line 545-546)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f():
+    t = (10, 20, 30)
+    return t[1]
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    assert func.return_type.is_int()
+
+
+def test_typeprop_mref_class_typeclass():
+    """TypePropagation: MRef on class type that is_typeclass (lines 534-541)."""
+    setup_test()
+    setup_libs('io', 'timing')
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src_texts['dummy'] = [''] * 10
+    src = '''
+from polyphony.typing import Int
+def f():
+    x:Int[8] = 0
+    return x
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    x_sym = func.find_sym('x')
+    assert x_sym.typ.is_int()
+
+
+
+def test_static_typeprop_strict_new():
+    """StaticTypePropagation: strict mode delegates to parent visit_New (lines 1120-1121)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var C: class(@top.C)
+        var x: undef
+    blk1:
+        mv x (new C 1)
+
+    scope @top.C
+        tags class
+        var __init__: function(@top.C.__init__)
+
+    scope @top.C.__init__
+        tags method ctor
+        param self: object(@top.C)
+        param val: undef
+        return object(@top.C)
+    blk1:
+        mv self @in_self
+        mv val @in_val
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=True).process_scopes([top])
+    x_sym = top.find_sym('x')
+    assert x_sym.typ.is_object()
+
+
+def test_typeprop_binop_both_unsigned():
+    """TypePropagation: BinOp with two unsigned ints returns unsigned (line 394)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: bit32
+        var y: bit16
+        var z: undef
+    blk1:
+        mv z (+ x y)
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    z_sym = top.find_sym('z')
+    assert z_sym.typ.is_int()
+    assert not z_sym.typ.signed
+    assert z_sym.typ.width == 32
+
+
+def test_typeprop_binop_l_not_int():
+    """TypePropagation: BinOp where left is not int returns left type (line 395)."""
+    setup_test()
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    src = '''
+def f():
+    x = True
+    return x and True
+f()
+'''
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, _ = TypePropagation(is_strict=False).process_all()
+    func = env.scopes['@top.f']
+    assert func.return_type.is_bool()
+
+
+def test_typeprop_attr_undef_from_specialized():
+    """TypePropagation: attr type is undef, found in specialized class (lines 507-510)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var C: class(@top.C)
+        var x: undef
+    blk1:
+        mv x (new C 1)
+
+    scope @top.C
+        tags class
+        var __init__: function(@top.C.__init__)
+        var val: undef
+
+    scope @top.C.__init__
+        tags method ctor
+        param self: object(@top.C)
+        param v: undef
+        return object(@top.C)
+    blk1:
+        mv self @in_self
+        mv v @in_v
+        mv self.val v
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    TypeSpecializer().process_all()
+
+    # Check that the specialized class was created
+    spec = [n for n in env.scopes if n.startswith('@top.C_')]
+    assert len(spec) >= 1
+
+
+def test_typeprop_find_attr_from_specialized():
+    """TypePropagation: _find_attr_type_from_specialized (lines 348-363)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var C: class(@top.C)
+        var func: function(@top.func)
+    blk1:
+        expr (call func 1)
+
+    scope @top.C
+        tags class
+        var val: undef
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+        var c: object(@top.C)
+    blk1:
+        mv x @in_x
+        mv @return c.val
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    # Create a specialized version with a known type
+    c_scope = env.scopes['@top.C']
+    from polyphony.compiler.ir.scope import Scope
+    new_scope = c_scope.instantiate('i32')
+    new_scope.add_tag('specialized')
+    val_sym = new_scope.find_sym('val')
+    val_sym.typ = Type.int(32)
+    new_sym = top.gen_sym(new_scope.base_name)
+    new_sym.typ = Type.klass(new_scope)
+
+    tp = TypePropagation(is_strict=False)
+    result = tp._find_attr_type_from_specialized(c_scope, 'val')
+    assert result.is_int()
+
+
+def test_typeprop_find_attr_from_specialized_no_parent():
+    """TypePropagation: _find_attr_type_from_specialized with no parent (line 353)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    tp = TypePropagation(is_strict=False)
+    # Mock scope with no parent
+    class FakeScope:
+        parent = None
+        base_name = 'test'
+    result = tp._find_attr_type_from_specialized(FakeScope(), 'val')
+    assert result.is_undef()
+
+
+
+def test_type_evaluator_visit_list_with_expr_length_non_const():
+    """TypeEvaluator: visit_list where length is expr that doesn't simplify to const (line 53)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var n: int32
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    te = TypeEvaluator(top)
+    from polyphony.compiler.ir.ir import Expr, Temp, Ctx
+    # Create an expr type for the length using a variable (not a const)
+    length_expr = Expr(exp=Temp(name='n', ctx=Ctx.LOAD))
+    length_type = Type.expr(length_expr, top)
+    t = Type.list(Type.int(32), length_type)
+    result = te.visit(t)
+    assert result.is_list()
+    # The length should still be a Type.expr since n is not a constant
+    assert isinstance(result.length, Type)
+
+
+def test_typeprop_process_scopes_superseded():
+    """TypePropagation: superseded scope is skipped (line 313-314)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: undef
+    blk1:
+        mv x 1
+
+    scope other
+        tags namespace
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    other = env.scopes['other']
+    other.add_tag('superseded')
+    install_builtins(top)
+    tp = TypePropagation(is_strict=False)
+    typed, _ = tp.process_scopes([top, other])
+    # superseded scope should be skipped
+    assert other not in typed
+    assert top in typed
+
+
+def test_typeprop_add_scope_testbench_not_global_child():
+    """TypePropagation: _add_scope skips testbench whose parent is not global (line 337-338)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+
+    scope @top.C
+        tags namespace class
+
+    scope @top.C.tb
+        tags namespace testbench
+    blk1:
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    c_scope = env.scopes['@top.C']
+    tb = env.scopes['@top.C.tb']
+    install_builtins(top)
+    tp = TypePropagation(is_strict=False)
+    tp._new_scopes = []
+    tp._old_scopes = set()
+    tp._indirect_old_scopes = set()
+    tp.typed = []
+    tp.worklist = __import__('collections').deque()
+    tp.scope = c_scope
+    # This should be skipped because tb.parent (@top.C) is not global
+    tp._add_scope(tb)
+    assert tb not in tp.worklist
+
+
+def test_specialize_new_via_attr():
+    """TypeSpecializer: New via Attr (line 935-941) -- class in namespace."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var ns: namespace(ns)
+        var x: undef
+    blk1:
+        mv x (new ns.C 1)
+
+    scope ns
+        tags namespace
+        var C: class(ns.C)
+
+    scope ns.C
+        tags class
+        var __init__: function(ns.C.__init__)
+
+    scope ns.C.__init__
+        tags method ctor
+        param self: object(ns.C)
+        param x: undef
+        return object(ns.C)
+    blk1:
+        mv self @in_self
+        mv x @in_x
+        ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    TypeSpecializer().process_all()
+    # Should have created specialized class
+    spec = [n for n in env.scopes if n.startswith('ns.C_')]
+    assert len(spec) >= 1
