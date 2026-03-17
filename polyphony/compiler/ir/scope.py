@@ -612,10 +612,8 @@ class Scope(Tagged, SymbolTable):
                     sym.typ = sym.typ.clone(scope=new)
             if new.parent.is_namespace():
                 continue
-            # sanity check
             new_t = new.parent.find_sym(new.base_name).typ
             assert new_t.scope is new
-        # deal with type scope
         self._replace_type_scope(new_scopes)
         return new_class
 
@@ -762,28 +760,11 @@ class Scope(Tagged, SymbolTable):
             self.children.append(child_scope)
 
 
-    def find_ctor(self):
-        assert self.is_class()
-        for child in self.children:
-            if child.is_ctor():
-                return child
-        return None
-
     def is_global(self):
         return self.name == env.global_scope_name
 
     def is_containable(self):
         return self.is_namespace() or self.is_class()
-
-    def is_subclassof(self, clazz):
-        if self is clazz:
-            return True
-        for base in self.bases:
-            if base is clazz:
-                return True
-            if base.is_subclassof(clazz):
-                return True
-        return False
 
     def is_descendants_of(self, other):
         if self.parent is None:
@@ -800,16 +781,6 @@ class Scope(Tagged, SymbolTable):
                 return None
             else:
                 return self.parent.outer_module()
-
-    def class_fields(self):
-        assert self.is_class()
-        class_fields = {}
-        if self.bases:
-            for base in self.bases:
-                fields = base.class_fields()
-                class_fields.update(fields)
-        class_fields.update(self.symbols)
-        return class_fields
 
     def register_worker(self, worker_scope):
         for i, w in enumerate(self.workers[:]):
@@ -961,6 +932,31 @@ class FunctionScope(Scope):
 
 
 class ClassScope(Scope):
+    def find_ctor(self):
+        for child in self.children:
+            if child.is_ctor():
+                return child
+        return None
+
+    def is_subclassof(self, clazz):
+        if self is clazz:
+            return True
+        for base in self.bases:
+            if base is clazz:
+                return True
+            if base.is_subclassof(clazz):
+                return True
+        return False
+
+    def class_fields(self):
+        class_fields = {}
+        if self.bases:
+            for base in self.bases:
+                fields = base.class_fields()
+                class_fields.update(fields)
+        class_fields.update(self.symbols)
+        return class_fields
+
     def build_module_params(self, module_param_vars: list[tuple[str, IrExp]]):
         module_params = []
         ctor = self.find_ctor()
