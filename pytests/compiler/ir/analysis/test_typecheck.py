@@ -10,7 +10,7 @@ from polyphony.compiler.ir.analysis.typecheck import (
 from polyphony.compiler.common.env import env
 from polyphony.compiler.common.common import src_texts
 from polyphony.compiler.common.errors import CompileError
-from pytests.compiler.base import setup_test, register_lib_syms
+from pytests.compiler.base import setup_test
 import pytest
 
 
@@ -158,7 +158,6 @@ def build_scopes_noglobal(src, scheduling='sequential'):
     setup_test(with_global=False)
     parser = IRParser(src)
     parser.parse_scope()
-    register_lib_syms()
     scopes = {}
     for name in parser.sources:
         scope = env.scopes[name]

@@ -6,14 +6,13 @@ from polyphony.compiler.ir.analysis.scopegraph import (
     UsingScopeDetector,
 )
 from polyphony.compiler.common.env import env
-from pytests.compiler.base import setup_test, register_lib_syms
+from pytests.compiler.base import setup_test
 
 
 def build_scopes(src):
     setup_test(with_global=False)
     parser = IRParser(src)
     parser.parse_scope()
-    register_lib_syms()
     scopes = {}
     for name in parser.sources:
         scopes[name] = env.scopes[name]

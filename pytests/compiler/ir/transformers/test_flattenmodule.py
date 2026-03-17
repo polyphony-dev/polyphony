@@ -4,10 +4,7 @@ from polyphony.compiler.ir.ir import name2var as _v
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.transformers.inlineopt import FlattenModule
 from polyphony.compiler.ir.builtin import builtin_symbols
-from pytests.compiler.base import setup_test, install_builtins
-from pytests.compiler.base import lib_source_polyphony
-from pytests.compiler.base import lib_source_polyphony_io
-from pytests.compiler.base import register_lib_syms
+from pytests.compiler.base import setup_test, setup_libs, install_builtins
 import pytest
 
 
@@ -84,20 +81,9 @@ def test_flatten_worker():
 
 
 def test_flatten_assign_method():
-    setup_test(with_global=False)
-    src = f"""
-    {lib_source_polyphony}
-
-    {lib_source_polyphony_io}
-
-    scope @top
-    tags namespace
-    var M: class(@top.M)
-    var N: class(@top.N)
-
-    blk1:
-    mv m (new M)
-
+    setup_test()
+    setup_libs('io')
+    src = """
     scope @top.M
     tags module class instantiated
     var n: object(@top.N)
@@ -128,8 +114,10 @@ def test_flatten_assign_method():
     """
 
     IRParser(src).parse_scope()
-    register_lib_syms()
     top = env.scopes['@top']
+    from polyphony.compiler.ir.types.type import Type
+    top.add_sym('M', tags=set(), typ=Type.klass('@top.M'))
+    top.add_sym('N', tags=set(), typ=Type.klass('@top.N'))
     install_builtins(top)
 
     m_ctor = env.scopes['@top.M.__init__']

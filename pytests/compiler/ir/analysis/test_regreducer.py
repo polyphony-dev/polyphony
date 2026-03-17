@@ -3,17 +3,13 @@ from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irreader import IRReader as IRParser
 from polyphony.compiler.ir.analysis.regreducer import AliasVarDetector, _is_clksleep
 from polyphony.compiler.common.env import env
-from pytests.compiler.base import (
-    setup_test, lib_source_polyphony, lib_source_polyphony_io,
-    lib_source_polyphony_timing, register_lib_syms,
-)
+from pytests.compiler.base import setup_test
 
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
     parser = IRParser(src)
     parser.parse_scope()
-    register_lib_syms()
     name = list(parser.sources)[0]
     scope = env.scopes[name]
     for blk in scope.traverse_blocks():
@@ -25,7 +21,6 @@ def build_scopes(src, scheduling='sequential'):
     setup_test(with_global=False)
     parser = IRParser(src)
     parser.parse_scope()
-    register_lib_syms()
     scopes = {}
     for name in parser.sources:
         scope = env.scopes[name]

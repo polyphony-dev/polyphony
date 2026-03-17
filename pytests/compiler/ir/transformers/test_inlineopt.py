@@ -10,11 +10,7 @@ from polyphony.compiler.ir.transformers.inlineopt import InlineOpt
 from polyphony.compiler.ir.transformers.inlineopt import ObjectHierarchyCopier
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.ir.builtin import builtin_symbols
-from pytests.compiler.base import setup_test
-from pytests.compiler.base import lib_source_polyphony
-from pytests.compiler.base import lib_source_polyphony_timing
-from pytests.compiler.base import lib_source_polyphony_io
-from pytests.compiler.base import register_lib_syms
+from pytests.compiler.base import setup_test, setup_libs
 import pytest
 
 
@@ -898,13 +894,8 @@ def composition04(x):
 
 def test_inlinelib_1():
     setup_test()
-    block_src = f"""
-    {lib_source_polyphony}
-
-    {lib_source_polyphony_timing}
-
-    {lib_source_polyphony_io}
-
+    setup_libs('io', 'timing')
+    block_src = """
     scope @top.caller_func
     tags function_module function
     var port: object(polyphony.io.Port)
@@ -918,21 +909,23 @@ def test_inlinelib_1():
     expr (call wait_value value port)
     """
     IRParser(block_src).parse_scope()
-    register_lib_syms()
     top = env.scopes['@top']
     top.add_sym('caller_func', tags=set(), typ=Type.function('@top.caller_func'))
-    top.add_sym('polyphony', tags=set(), typ=Type.namespace('polyphony'))
+    if not top.find_sym('polyphony'):
+        top.add_sym('polyphony', tags=set(), typ=Type.namespace('polyphony'))
     # Import wait_value and wait_until from polyphony.timing so symbols are shared
     timing_scope = env.scopes['polyphony.timing']
-    top.import_sym(timing_scope.find_sym('wait_value'), 'wait_value')
-    top.import_sym(timing_scope.find_sym('wait_until'), 'wait_until')
+    if not top.find_sym('wait_value'):
+        top.import_sym(timing_scope.find_sym('wait_value'), 'wait_value')
+    if not top.find_sym('wait_until'):
+        top.import_sym(timing_scope.find_sym('wait_until'), 'wait_until')
 
     caller_func = env.scopes['@top.caller_func']
 
     _run_inline([caller_func])
 
-    inlined_lambda1 = env.scopes['@top.caller_func.lambda_#1']
-    inlined_lambda2 = env.scopes['@top.caller_func.lambda_#2']
+    inlined_lambda1 = env.scopes['@top.caller_func.0_#1']
+    inlined_lambda2 = env.scopes['@top.caller_func.0_#2']
 
     gen = caller_func.traverse_blocks()
     blk1 = next(gen)
@@ -944,21 +937,24 @@ def test_inlinelib_1():
         next(gen)
 
     assert len(blk1.stms) == 3
-    # port = $new(Port)
+    # port = New(polyphony.io.Port, int, 'input')
     # value = 10
     # jump blk2
-    assert blk1.stms[0] == Move(_v('port'), New(_v('polyphony.io.Port'), args=[('', _v('int')), ('', Const('input'))], kwargs={}))
+    assert isinstance(blk1.stms[0], Move)
+    assert isinstance(blk1.stms[0].src, New)
+    assert str(blk1.stms[0].dst) == 'port'
     assert blk1.stms[1] == Move(_v('value'), Const(10))
     assert blk1.stms[2] == Jump(blk2)
 
     assert len(blk2.stms) == 4
     # value_0 = value
     # port_0 = port
-    # wait_until(lambda_#1)
+    # polyphony.timing.wait_until(0_#1)
     # jump blk3
     assert blk2.stms[0] == Move(_v('value_0'), _v('value'))
     assert blk2.stms[1] == Move(_v('port_0'), _v('port'))
-    assert blk2.stms[2] == Expr(Call(_v('wait_until'), args=[('', _v('lambda_#1'))], kwargs={}))
+    assert isinstance(blk2.stms[2], Expr) and isinstance(blk2.stms[2].exp, SysCall)
+    assert str(blk2.stms[2].exp.func) == 'polyphony.timing.wait_until'
     assert blk2.stms[3] == Jump(blk3)
 
     assert len(blk3.stms) == 2
@@ -970,11 +966,12 @@ def test_inlinelib_1():
     assert len(blk4.stms) == 4
     # value_1 = value
     # port_1 = port
-    # wait_until(lambda_#2)
+    # polyphony.timing.wait_until(0_#2)
     # jump blk5
     assert blk4.stms[0] == Move(_v('value_1'), _v('value'))
     assert blk4.stms[1] == Move(_v('port_1'), _v('port'))
-    assert blk4.stms[2] == Expr(Call(_v('wait_until'), args=[('', _v('lambda_#2'))], kwargs={}))
+    assert isinstance(blk4.stms[2], Expr) and isinstance(blk4.stms[2].exp, SysCall)
+    assert str(blk4.stms[2].exp.func) == 'polyphony.timing.wait_until'
     assert blk4.stms[3] == Jump(blk5)
 
     assert len(blk5.stms) == 0
@@ -989,13 +986,8 @@ def test_ctor_with_closure():
     '''
 
     setup_test()
-    block_src = f"""
-    {lib_source_polyphony}
-
-    {lib_source_polyphony_timing}
-
-    {lib_source_polyphony_io}
-
+    setup_libs('io', 'timing')
+    block_src = """
     scope @top.C
     tags module class
     var __init__: function(@top.C.__init__)
@@ -1004,8 +996,8 @@ def test_ctor_with_closure():
 
     scope @top.C.__init__
     tags method ctor enclosure
-    param self:object(@top.C) {{ free }}
-    param param:int32 {{ free }}
+    param self:object(@top.C) { free }
+    param param:int32 { free }
     return object(@top.C)
     var lambda: function(@top.C.__init__.lambda)
 
@@ -1032,11 +1024,11 @@ def test_ctor_with_closure():
     """
 
     IRParser(block_src).parse_scope()
-    register_lib_syms()
     top = env.scopes['@top']
     top.add_sym('C', tags=set(), typ=Type.klass('@top.C'))
     top.add_sym('caller', tags=set(), typ=Type.function('@top.caller'))
-    top.add_sym('polyphony', tags=set(), typ=Type.namespace('polyphony'))
+    if not top.find_sym('polyphony'):
+        top.add_sym('polyphony', tags=set(), typ=Type.namespace('polyphony'))
 
     caller = env.scopes['@top.caller']
 

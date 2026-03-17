@@ -528,8 +528,8 @@ def test_resource_extractor_expr_syscall():
 
 def test_resource_extractor_move_call_via_scope():
     """ResourceExtractor extracts call resources when scope is available."""
-    from pytests.compiler.base import lib_source_polyphony, lib_source_polyphony_io, register_lib_syms
-    src = lib_source_polyphony + lib_source_polyphony_io + '''
+    from pytests.compiler.base import setup_libs
+    src = '''
 scope F
 tags function returnable
 return int32
@@ -542,10 +542,10 @@ mv @return x
 ret @return
 '''
     setup_test()
+    setup_libs('io')
     from polyphony.compiler.ir.irreader import IRReader as IRParser
     parser = IRParser(src)
     parser.parse_scope()
-    register_lib_syms()
     scope = env.scopes.get('F')
     if scope:
         for blk in scope.traverse_blocks():
