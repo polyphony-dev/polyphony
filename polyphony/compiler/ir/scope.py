@@ -374,14 +374,12 @@ class Scope(Tagged, SymbolTable):
         self.orig_base_name: str = name
         self.lineno: int = lineno
         self.scope_id: int = scope_id
-        self.function_params = FunctionParams(self.is_method())
         self.return_type: Type = None
         self.entry_block: Block = None
         self.exit_block: Block = None
         self.children: list["Scope"] = []
         self.bases: list["Scope"] = []
         self.origin: "Scope" = None
-        self.loop_tree = LoopNestTree()
         self.block_count = 0
         self.workers: list["Scope"] = []
         self.worker_owner: "Scope" = None
@@ -409,14 +407,16 @@ class Scope(Tagged, SymbolTable):
             for sym, const_val in self.constants.items():
                 s += f"    {sym}:{sym.typ} = {const_val}\n"
 
-        if self.function_params:
+        function_params = getattr(self, 'function_params', None)
+        if function_params:
             s += "Parameters:\n"
-            ss = ["    " + line for line in str(self.function_params).split("\n") if line]
+            ss = ["    " + line for line in str(function_params).split("\n") if line]
             s += "\n".join(ss)
             s += "\n"
         s += "Return:\n"
-        if self.return_type:
-            s += "    {}\n".format(repr(self.return_type))
+        return_type = getattr(self, 'return_type', None)
+        if return_type:
+            s += "    {}\n".format(repr(return_type))
         else:
             s += "    None\n"
 
@@ -426,9 +426,10 @@ class Scope(Tagged, SymbolTable):
         s += "Blocks:\n"
         for blk in self.traverse_blocks():
             s += str(blk)
-        if self.loop_tree:
+        loop_tree = getattr(self, 'loop_tree', None)
+        if loop_tree:
             s += "Loop Tree:\n"
-            for r in self.loop_tree.traverse():
+            for r in loop_tree.traverse():
                 s += f"    {r}"
         return s
 
@@ -541,16 +542,18 @@ class Scope(Tagged, SymbolTable):
         self.clone_symbols_by_name(s)
         from .ir import Ir
 
-        for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
-            if defval is None:
-                cloned_defval = None
-            elif isinstance(defval, Ir):
-                cloned_defval = defval.model_copy(deep=True)
-            else:
-                cloned_defval = defval.clone()
-            s.add_param(s.symbols[p.name], cloned_defval)
+        if hasattr(self, 'function_params'):
+            for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
+                if defval is None:
+                    cloned_defval = None
+                elif isinstance(defval, Ir):
+                    cloned_defval = defval.model_copy(deep=True)
+                else:
+                    cloned_defval = defval.clone()
+                s.add_param(s.symbols[p.name], cloned_defval)
 
-        s.return_type = self.return_type
+        if hasattr(self, 'return_type'):
+            s.return_type = self.return_type
         block_map, stm_map = self.clone_blocks(s)
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
@@ -679,33 +682,20 @@ class Scope(Tagged, SymbolTable):
         assert len(set(scopes)) == len(scopes)
         return scopes
 
+
+    # Stubs for FunctionScope-specific methods.
+    # These allow safe calls on non-function scopes without isinstance checks.
     def param_names(self, with_self=False):
-        return self.function_params.param_names(with_self)
+        return []
 
     def param_symbols(self, with_self=False):
-        return self.function_params.symbols(with_self)
+        return ()
 
     def param_default_values(self, with_self=False):
-        return self.function_params.default_values(with_self)
+        return ()
 
     def param_types(self, with_self=False):
-        return self.function_params.types(with_self)
-
-    def clear_params(self):
-        return self.function_params.clear()
-
-    def remove_param(self, key: Symbol | list[int]):
-        if isinstance(key, Symbol):
-            return self.function_params.remove(key)
-        elif isinstance(key, list):
-            return self.function_params.remove_by_indices(key)
-
-    def find_param_sym(self, param_name):
-        name = "{}_{}".format(Symbol.param_prefix, param_name)
-        return self.find_sym(name)
-
-    def add_return_sym(self, typ: Type = Type.undef()):
-        return self.add_sym(Symbol.return_name, {"return"}, typ)
+        return ()
 
     def find_sym(self, name: str) -> Symbol | None:
         sym = SymbolTable.find_sym(self, name)
@@ -771,8 +761,6 @@ class Scope(Tagged, SymbolTable):
         if child_scope not in self.children:
             self.children.append(child_scope)
 
-    def add_param(self, sym: Symbol, defval: IrExp | None):
-        self.function_params.add_param(sym, defval)
 
     def dfgs(self, bottom_up=False):
         def collect_dfg(dfg, ds):
@@ -943,7 +931,42 @@ class Scope(Tagged, SymbolTable):
 
 
 class FunctionScope(Scope):
-    pass
+    def __init__(self, parent, name, tags, lineno, scope_id):
+        super().__init__(parent, name, tags, lineno, scope_id)
+        self.function_params = FunctionParams(self.is_method())
+        self.return_type: Type = None
+        self.loop_tree = LoopNestTree()
+
+    def param_names(self, with_self=False):
+        return self.function_params.param_names(with_self)
+
+    def param_symbols(self, with_self=False):
+        return self.function_params.symbols(with_self)
+
+    def param_default_values(self, with_self=False):
+        return self.function_params.default_values(with_self)
+
+    def param_types(self, with_self=False):
+        return self.function_params.types(with_self)
+
+    def clear_params(self):
+        return self.function_params.clear()
+
+    def remove_param(self, key: Symbol | list[int]):
+        if isinstance(key, Symbol):
+            return self.function_params.remove(key)
+        elif isinstance(key, list):
+            return self.function_params.remove_by_indices(key)
+
+    def find_param_sym(self, param_name):
+        name = "{}_{}".format(Symbol.param_prefix, param_name)
+        return self.find_sym(name)
+
+    def add_return_sym(self, typ: Type = Type.undef()):
+        return self.add_sym(Symbol.return_name, {"return"}, typ)
+
+    def add_param(self, sym: Symbol, defval: IrExp | None):
+        self.function_params.add_param(sym, defval)
 
 
 class ClassScope(Scope):

@@ -59,8 +59,9 @@ class TypeEvaluator(object):
         return t
 
     def visit_function(self, t):
+        from ..scope import FunctionScope
         func = t.scope
-        if func:
+        if func and isinstance(func, FunctionScope):
             param_types = []
             for sym in func.param_symbols():
                 sym.typ = self.visit(sym.typ)

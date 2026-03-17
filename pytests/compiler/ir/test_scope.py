@@ -1083,3 +1083,38 @@ class TestScopeSubclasses:
         )
         assert isinstance(scope, Scope)
 
+
+class TestFunctionScopeFields:
+    def setup_method(self):
+        setup_test()
+
+    def test_has_function_params(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 1
+        )
+        assert hasattr(scope, 'function_params')
+        assert isinstance(scope.function_params, FunctionParams)
+
+    def test_has_return_type(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function', 'returnable'}, 1
+        )
+        assert hasattr(scope, 'return_type')
+
+    def test_has_loop_tree(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 1
+        )
+        assert hasattr(scope, 'loop_tree')
+
+    def test_namespace_no_function_params(self):
+        scope = Scope.create_namespace(None, 'ns', {'namespace'})
+        assert not hasattr(scope, 'function_params')
+        assert not hasattr(scope, 'loop_tree')
+
+    def test_class_no_function_params(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'C', {'class'}, 1
+        )
+        assert not hasattr(scope, 'function_params')
+
