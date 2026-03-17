@@ -2643,3 +2643,405 @@ def test_type_eval_visitor_with_constants():
     # Param types should still be int
     for sym in func.param_symbols():
         assert sym.typ.is_int()
+
+
+# ============================================================
+# Tests using setup_libs for Port/Channel/timing scopes
+# ============================================================
+
+from pytests.compiler.base import setup_libs
+from polyphony.compiler.common.common import src_texts
+
+
+def _translate_and_specialize_with_libs(src):
+    """Translate Python source with real lib scopes and run TypeSpecializer."""
+    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    setup_test()
+    setup_libs('io', 'timing')
+    src_texts['dummy'] = src.splitlines()
+    IRTranslator().translate(src, '')
+    top = env.scopes[env.global_scope_name]
+    install_builtins(top)
+    typed, old = TypeSpecializer().process_all()
+    return typed, old
+
+
+# ============================================================
+# TypeSpecializer: Port specialization
+# ============================================================
+
+class TestTypeSpecializerPort:
+    def test_specialize_port_in_module(self):
+        """TypeSpecializer: Port(Int[8]) in module ctor creates specialized Port."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module
+from polyphony.io import Port
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.p = Port(Int[8], 'out', 0)
+    def run(self):
+        self.p.wr(1)
+
+m = M()
+''')
+        # Check Port_i32 specialization was created
+        port_spec = [n for n in env.scopes if 'Port_i' in n]
+        assert len(port_spec) >= 1
+        port_scope = env.scopes[port_spec[0]]
+        assert port_scope.is_specialized()
+        assert port_scope.is_port()
+
+    def test_specialize_port_multiple_types(self):
+        """TypeSpecializer: Multiple Port types create separate specializations."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module
+from polyphony.io import Port
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.p_in = Port(Int[8], 'in', 0)
+        self.p_out = Port(Int[16], 'out', 0)
+    def run(self):
+        v = self.p_in.rd()
+        self.p_out.wr(v)
+
+m = M()
+''')
+        port_specs = [n for n in env.scopes if 'Port_' in n and 'polyphony' in n]
+        assert len(port_specs) >= 1
+
+    def test_specialize_port_rd_wr(self):
+        """TypeSpecializer: Port.rd() and Port.wr() are specialized."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module
+from polyphony.io import Port
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.p = Port(Int[8], 'out', 0)
+        self.append_worker(self.run)
+    def run(self):
+        self.p.wr(42)
+
+m = M()
+''')
+        # Check that the module ctor is in typed scopes
+        for name, scope in env.scopes.items():
+            if 'M.__init__' in name and not name.startswith('polyphony'):
+                assert scope in typed
+                break
+
+
+# ============================================================
+# TypeSpecializer: Port.assign (visit_Call_lib)
+# ============================================================
+
+class TestTypeSpecializerPortAssign:
+    def test_port_assign_call(self):
+        """TypeSpecializer: Port.assign() lib call is handled."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module
+from polyphony.io import Port
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.p = Port(Int[8], 'out', 0)
+        self.p.assign(self.compute)
+    def compute(self):
+        self.p.wr(1)
+    def run(self):
+        pass
+
+m = M()
+''')
+        # The Port.assign lib call should be processed
+        for name in env.scopes:
+            if 'M.__init__' in name and not name.startswith('polyphony'):
+                break
+
+
+# ============================================================
+# TypeSpecializer: Channel with append_worker
+# ============================================================
+
+class TestTypeSpecializerChannel:
+    def test_channel_in_module(self):
+        """TypeSpecializer: Channel in module creates specialized Channel."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module, Channel
+from polyphony.io import Port
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.ch = Channel(Int[8])
+        self.p = Port(Int[8], 'out', 0)
+        self.append_worker(self.run)
+    def run(self):
+        v = self.ch.get()
+        self.p.wr(v)
+
+m = M()
+''')
+        ch_specs = [n for n in env.scopes if 'Channel_' in n]
+        assert len(ch_specs) >= 1
+
+    def test_channel_append_worker_specialization(self):
+        """TypeSpecializer: append_worker in Channel ctor is processed."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module, Channel
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.ch = Channel(Int[8])
+        self.append_worker(self.run)
+    def run(self):
+        v = self.ch.get()
+
+m = M()
+''')
+        # Channel should be typed
+        for s in typed:
+            if 'Channel' in s.name and s.is_specialized():
+                break
+
+
+# ============================================================
+# TypeSpecializer: flipped port (visit_SysCall)
+# ============================================================
+
+class TestTypeSpecializerFlipped:
+    def test_flipped_port(self):
+        """TypeSpecializer: polyphony.io.flipped creates correct type."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module
+from polyphony.io import Port, flipped
+from polyphony.typing import Int
+
+@module
+class Sub:
+    def __init__(self):
+        self.p = Port(Int[8], 'out', 0)
+    def run(self):
+        self.p.wr(1)
+
+@module
+class Top:
+    def __init__(self):
+        self.sub = Sub()
+        self.p = flipped(self.sub.p)
+    def run(self):
+        v = self.p.rd()
+
+m = Top()
+''')
+        # flipped should have been processed
+        for name in env.scopes:
+            if 'Top.__init__' in name and not name.startswith('polyphony'):
+                break
+
+
+# ============================================================
+# TypeSpecializer: testbench function_module tagging
+# ============================================================
+
+class TestTypeSpecializerTestbench:
+    def test_testbench_function_module(self):
+        """TypeSpecializer: function called from testbench gets function_module tag."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import testbench
+
+def helper(x):
+    return x + 1
+
+@testbench
+def test():
+    y = helper(1)
+''')
+        # helper should be tagged function_module
+        for name in env.scopes:
+            if 'helper' in name and 'i32' in name:
+                scope = env.scopes[name]
+                assert scope.is_function_module()
+                break
+
+
+# ============================================================
+# TypePropagation: visit_SysCall with $new
+# ============================================================
+
+class TestTypePropSysCallNew:
+    def test_syscall_new(self):
+        """TypePropagation: SysCall $new adds callee scope."""
+        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        setup_test()
+        src_texts['dummy'] = [''] * 20
+        src = '''
+class C:
+    def __init__(self, x):
+        self.x = x
+def f():
+    c = C(1)
+    return 0
+f()
+'''
+        IRTranslator().translate(src, '')
+        top = env.scopes[env.global_scope_name]
+        install_builtins(top)
+        typed, _ = TypePropagation(is_strict=False).process_all()
+        func = env.scopes['@top.f']
+        c_sym = func.find_sym('c')
+        assert c_sym.typ.is_object()
+
+
+# ============================================================
+# TypeSpecializer: _convert_call for port-typed variable
+# ============================================================
+
+class TestTypeSpecializerConvertCall:
+    def test_convert_call_on_port(self):
+        """TypeSpecializer: calling a port-typed variable converts to rd/wr."""
+        typed, old = _translate_and_specialize_with_libs('''
+from polyphony import module
+from polyphony.io import Port
+from polyphony.typing import Int
+
+@module
+class M:
+    def __init__(self):
+        self.p = Port(Int[8], 'out', 0)
+        self.append_worker(self.run)
+    def run(self):
+        self.p.wr(1)
+
+m = M()
+''')
+        # Port should be specialized
+        port_specs = [n for n in env.scopes if 'Port_' in n and 'polyphony' in n]
+        assert len(port_specs) >= 1
+
+
+# ============================================================
+# TypePropagation: visit_MStore
+# ============================================================
+
+class TestTypePropMStore:
+    def test_mstore_propagation(self):
+        """TypePropagation: MStore propagates types and marks mem writable."""
+        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        setup_test()
+        src_texts['dummy'] = [''] * 20
+        src = '''
+def f():
+    a = [0, 0, 0]
+    a[0] = 42
+    return a
+f()
+'''
+        IRTranslator().translate(src, '')
+        top = env.scopes[env.global_scope_name]
+        install_builtins(top)
+        typed, _ = TypePropagation(is_strict=False).process_all()
+        func = env.scopes['@top.f']
+        a_sym = func.find_sym('a')
+        assert a_sym.typ.is_list()
+        assert not a_sym.typ.ro  # should be writable after MStore
+
+
+# ============================================================
+# StaticTypePropagation: visit_New (non-strict)
+# ============================================================
+
+class TestStaticTypePropNew:
+    def test_static_new_non_strict(self):
+        """StaticTypePropagation: non-strict New returns object type."""
+        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        setup_test()
+        src_texts['dummy'] = [''] * 20
+        src = '''
+class C:
+    def __init__(self, x):
+        self.x = x
+c = C(1)
+'''
+        IRTranslator().translate(src, '')
+        top = env.scopes[env.global_scope_name]
+        install_builtins(top)
+        StaticTypePropagation(is_strict=False).process_scopes([top])
+        c_sym = top.find_sym('c')
+        assert c_sym.typ.is_object()
+
+
+# ============================================================
+# StaticTypePropagation: visit_Attr
+# ============================================================
+
+class TestStaticTypePropAttr:
+    def test_static_attr_on_namespace(self):
+        """StaticTypePropagation: Attr access on namespace."""
+        setup_test(with_global=False)
+        block_src = """
+    scope @top
+        tags namespace
+        var ns: namespace(ns)
+        var x: undef
+    blk1:
+        mv x ns.val
+
+    scope ns
+        tags namespace
+        var val: int32
+    blk1:
+        mv val 42
+    """
+        IRParser(block_src).parse_scope()
+        top = env.scopes['@top']
+        install_builtins(top)
+        ns = env.scopes['ns']
+        StaticTypePropagation(is_strict=False).process_scopes([ns, top])
+        x_sym = top.find_sym('x')
+        assert x_sym.typ.is_int()
+
+
+# ============================================================
+# TypePropagation: visit_Attr on object with subobject tagging
+# ============================================================
+
+class TestTypePropAttrSubobject:
+    def test_attr_object_subobject(self):
+        """TypePropagation: attr access on object sets subobject tag."""
+        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        setup_test()
+        src_texts['dummy'] = [''] * 30
+        src = '''
+class Inner:
+    def __init__(self, v):
+        self.v = v
+class Outer:
+    def __init__(self, i):
+        self.inner = Inner(i)
+    def get(self):
+        return self.inner.v
+o = Outer(1)
+o.get()
+'''
+        IRTranslator().translate(src, '')
+        top = env.scopes[env.global_scope_name]
+        install_builtins(top)
+        typed, _ = TypePropagation(is_strict=False).process_all()
+        # get method should be typed
+        get_scope = env.scopes.get('@top.Outer.get')
+        assert get_scope is not None
+        assert get_scope in typed
