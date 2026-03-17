@@ -7,6 +7,10 @@ from polyphony.compiler.ir.irwriter import IRWriter
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.scope import (
     Scope,
+    FunctionScope,
+    ClassScope,
+    NamespaceScope,
+    GlobalScope,
     FunctionParam,
     FunctionParams,
     SymbolTable,
@@ -1038,4 +1042,44 @@ class TestScopeSetBoundArgs:
         scope = Scope.create(top, "ba_scope", {"function"})
         scope.set_bound_args([(0, Const(value=1)), (1, Const(value=2))])
         assert scope._bound_args == ["1", "2"]
+
+
+class TestScopeSubclasses:
+    def setup_method(self):
+        setup_test()
+
+    def test_create_function_scope(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'func', {'function'}, 1
+        )
+        assert isinstance(scope, FunctionScope)
+        assert isinstance(scope, Scope)
+
+    def test_create_method_scope(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'meth', {'method'}, 1
+        )
+        assert isinstance(scope, FunctionScope)
+
+    def test_create_class_scope(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'Cls', {'class'}, 1
+        )
+        assert isinstance(scope, ClassScope)
+
+    def test_create_namespace_scope(self):
+        scope = Scope.create_namespace(
+            None, 'pkg', {'namespace'}
+        )
+        assert isinstance(scope, NamespaceScope)
+
+    def test_create_global_scope(self):
+        gs = Scope.global_scope()
+        assert isinstance(gs, GlobalScope)
+
+    def test_isinstance_scope(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 1
+        )
+        assert isinstance(scope, Scope)
 

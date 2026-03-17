@@ -273,7 +273,16 @@ class Scope(Tagged, SymbolTable):
         if name is None:
             name = str(cls.unnamed_ids[parent])
             cls.unnamed_ids[parent] += 1
-        s = Scope(parent, name, tags, lineno, cls.scope_id)
+        FUNCTION_TAGS = {'function', 'method', 'ctor', 'worker', 'testbench',
+                         'closure', 'predicate', 'callable'}
+        if 'class' in tags:
+            s = ClassScope(parent, name, tags, lineno, cls.scope_id)
+        elif tags & FUNCTION_TAGS:
+            s = FunctionScope(parent, name, tags, lineno, cls.scope_id)
+        elif 'global' in tags:
+            s = GlobalScope(parent, name, tags, lineno, cls.scope_id)
+        else:
+            s = NamespaceScope(parent, name, tags, lineno, cls.scope_id)
         if s.name in env.scopes:
             env.append_scope(s)
             fail((env.scope_file_map[s], lineno), Errors.REDEFINED_NAME, {name})
@@ -931,6 +940,22 @@ class Scope(Tagged, SymbolTable):
 
     def set_bound_args(self, binding: list[tuple[int, IrExp]]):
         self._bound_args = [str(exp) for i, exp in binding]
+
+
+class FunctionScope(Scope):
+    pass
+
+
+class ClassScope(Scope):
+    pass
+
+
+class NamespaceScope(Scope):
+    pass
+
+
+class GlobalScope(Scope):
+    pass
 
 
 class NameReplacer(IrVisitor):
