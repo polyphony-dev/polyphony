@@ -121,7 +121,9 @@ class BlockReducer(object):
 
     def _remove_block(self, blk):
         self.removed_blks.append(blk)
-        self.scope.remove_block_from_region(blk)
+        func = self.scope.as_function()
+        if func:
+            func.remove_block_from_region(blk)
 
 
 class PathExpTracer(object):

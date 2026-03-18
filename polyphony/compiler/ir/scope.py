@@ -751,10 +751,6 @@ class Scope(Tagged, SymbolTable):
             return True
         return False
 
-    def remove_block_from_region(self, blk):
-        """No-op for scopes without loop_tree (ClassScope, NamespaceScope)."""
-        pass
-
     def closures(self):
         clos = []
         for child in self.children:
