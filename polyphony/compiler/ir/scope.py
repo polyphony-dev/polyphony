@@ -473,7 +473,10 @@ class Scope(Tagged, SymbolTable):
         return "_".join(ts)
 
     def signature(self):
-        param_signature = self._mangled_names(self.param_types())
+        if hasattr(self, 'function_params'):
+            param_signature = self._mangled_names(self.param_types())
+        else:
+            param_signature = ''
         return (self.name, param_signature)
 
     def unique_name(self):
@@ -680,20 +683,6 @@ class Scope(Tagged, SymbolTable):
         assert len(set(scopes)) == len(scopes)
         return scopes
 
-
-    # Stubs for FunctionScope-specific methods.
-    # These allow safe calls on non-function scopes without isinstance checks.
-    def param_names(self, with_self=False):
-        return []
-
-    def param_symbols(self, with_self=False):
-        return ()
-
-    def param_default_values(self, with_self=False):
-        return ()
-
-    def param_types(self, with_self=False):
-        return ()
 
     def find_sym(self, name: str) -> Symbol | None:
         sym = SymbolTable.find_sym(self, name)
