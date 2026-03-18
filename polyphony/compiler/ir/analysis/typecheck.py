@@ -537,10 +537,10 @@ class SynthesisParamChecker(object):
                     if isinstance(call_sym, Symbol) and call_sym.orig_name() == 'put':
                         writestms.append(stm)
             if len(readstms) > 1:
-                sym = sym.ancestor if sym.ancestor else sym
+                sym = env.origin_registry.sym_origin_of(sym) or sym
                 fail(readstms[1], Errors.RULE_READING_PIPELINE_IS_CONFLICTED, [sym])
             if len(writestms) > 1:
-                sym = sym.ancestor if sym.ancestor else sym
+                sym = env.origin_registry.sym_origin_of(sym) or sym
                 fail(writestms[1], Errors.RULE_WRITING_PIPELINE_IS_CONFLICTED, [sym])
             if len(readstms) >= 1 and len(writestms) >= 1:
                 assert False

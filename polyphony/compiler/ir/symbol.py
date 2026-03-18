@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 from collections import defaultdict
 from typing import TYPE_CHECKING
 from ..common.common import Tagged
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class Symbol(Tagged):
-    __slots__ = ['_id', '_name', '_scope', '_typ', '_ancestor']
+    __slots__ = ['_id', '_name', '_scope', '_typ']
     id_counter = 0
 
     TAGS = {
@@ -46,7 +46,6 @@ class Symbol(Tagged):
         self._name = name
         self._scope = scope
         self._typ = typ
-        self._ancestor: Symbol|None = None
         Symbol.id_counter += 1
 
     @property
@@ -76,14 +75,6 @@ class Symbol(Tagged):
             return
         self._typ = typ
 
-    @property
-    def ancestor(self):
-        return self._ancestor
-
-    @ancestor.setter
-    def ancestor(self, a):
-        self._ancestor = a
-
     def __str__(self):
         if self.is_unresolved_scope():
             return f'?{self._name}'
@@ -96,22 +87,19 @@ class Symbol(Tagged):
         return self._name < other._name
 
     def orig_name(self):
-        if self._ancestor:
-            return self._ancestor.orig_name()
-        else:
-            return self._name
+        return env.origin_registry.orig_name(self)
 
     def root_sym(self) -> 'Symbol':
-        if self._ancestor:
-            return self._ancestor.root_sym()
-        else:
-            return self
+        return env.origin_registry.root_sym(self)
 
     def hdl_name(self):
         if self._typ.is_port():
             name = self._name[:]
-        elif self._typ.is_object() and self._typ.scope.is_module() and self._ancestor:
-            return self._ancestor.hdl_name()
+        elif self._typ.is_object() and self._typ.scope.is_module():
+            ancestor = env.origin_registry.sym_origin_of(self)
+            if ancestor:
+                return ancestor.hdl_name()
+            name = self._name[:]
         elif self._name[0] == '@' or self._name[0] == '!':
             name = self._name[1:]
         else:
@@ -125,5 +113,7 @@ class Symbol(Tagged):
                         scope,
                         set(self.tags),
                         self._typ)
-        newsym.ancestor = self._ancestor
+        origin = env.origin_registry.sym_origin_of(self)
+        if origin:
+            env.origin_registry.set_sym_origin(newsym, origin)
         return newsym

@@ -413,9 +413,9 @@ class TestSymbolTable:
         s = scope.add_sym("orig", set(), Type.int())
         ancestor_scope = Scope.create(top, "anc_scope", {"function"})
         anc_sym = ancestor_scope.add_sym("ancestor_sym", set(), Type.int())
-        s.ancestor = anc_sym
+        env.origin_registry.set_sym_origin(s, anc_sym)
         new_sym = scope.inherit_sym(s, "new_orig")
-        assert new_sym.ancestor is anc_sym
+        assert env.origin_registry.sym_origin_of(new_sym) is anc_sym
 
     def test_free_symbols(self):
         """Cover line 225."""

@@ -236,9 +236,10 @@ class ScopeVisitor(ast.NodeVisitor):
         sym = self.current_scope.find_sym(node.id)
         if not sym:
             return None
-        if (sym.ancestor and
-                sym.ancestor.scope.name == 'polyphony' and
-                sym.ancestor.name == '__python__'):
+        ancestor = env.origin_registry.sym_origin_of(sym)
+        if (ancestor and
+                ancestor.scope.name == 'polyphony' and
+                ancestor.name == '__python__'):
             return False
         return None
 
@@ -1526,9 +1527,10 @@ class CodeVisitor(ast.NodeVisitor):
             else:
                 self.invisible_symbols.remove(sym)
         assert sym is not None
-        if (sym.ancestor and
-                sym.ancestor.scope.name == 'polyphony' and
-                sym.ancestor.name == '__python__'):
+        ancestor = env.origin_registry.sym_origin_of(sym)
+        if (ancestor and
+                ancestor.scope.name == 'polyphony' and
+                ancestor.name == '__python__'):
             return Const(value=False)
         return Temp(name=node.id, ctx=ctx)
 

@@ -71,7 +71,7 @@ class ObjectTransformer(object):
         self.seq_copy_sources = self._collect_sources(self.seq_copies, self.seq_defs)
 
     def qsym_ancestor(self, qsym):
-        return tuple(sym.ancestor for sym in qsym)
+        return tuple(env.origin_registry.sym_origin_of(sym) for sym in qsym)
 
     def qsym_name(self, qsym):
         return '_'.join(sym.name for sym in qsym)
@@ -91,9 +91,9 @@ class ObjectTransformer(object):
     def _collect_sources(self, copies, defs):
         def _find_root_def(qsym, copy_qsym):
             if qsym[-1] in defs:
-                assert copy_qsym[-1].ancestor
+                assert env.origin_registry.sym_origin_of(copy_qsym[-1])
                 return {qsym[-1]}
-            elif qsym[-1].ancestor and self.qsym_ancestor(qsym) in copy_sources:
+            elif env.origin_registry.sym_origin_of(qsym[-1]) and self.qsym_ancestor(qsym) in copy_sources:
                 return copy_sources[self.qsym_ancestor(qsym)]
             return None
 

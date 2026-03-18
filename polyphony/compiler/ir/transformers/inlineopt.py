@@ -599,7 +599,7 @@ class FlattenFieldAccess(IrTransformer):
                 for sym in qsym:
                     tags |= sym.tags
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
-                flatsym.ancestor = ancestor
+                env.origin_registry.set_sym_origin(flatsym, ancestor)
                 flatsym.add_tag('flattened')
             return head + (flatsym,) + tail
         else:
@@ -708,7 +708,7 @@ class _FlattenFieldAccessForExprType(_StmsTransformer):
                 for sym in qsym:
                     tags |= sym.tags
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
-                flatsym.ancestor = ancestor
+                env.origin_registry.set_sym_origin(flatsym, ancestor)
                 flatsym.add_tag('flattened')
             return head + (flatsym,) + tail
         else:

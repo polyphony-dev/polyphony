@@ -207,10 +207,8 @@ class SymbolTable(object):
         else:
             orig_sym_t = orig_sym.typ
             new_sym = self.add_sym(new_name, set(orig_sym.tags) | {"inherited"}, typ=orig_sym_t)
-            if orig_sym.ancestor:
-                new_sym.ancestor = orig_sym.ancestor
-            else:
-                new_sym.ancestor = orig_sym
+            origin = env.origin_registry.sym_origin_of(orig_sym)
+            env.origin_registry.set_sym_origin(new_sym, origin if origin else orig_sym)
         return new_sym
 
     def find_scope_sym(self, obj):
@@ -786,10 +784,8 @@ class Instantiable:
         old_class_sym = self.parent.find_sym(self.base_name)
         new_sym = new_class.parent.find_sym(new_class.base_name)
         assert isinstance(new_sym, Symbol)
-        if old_class_sym.ancestor:
-            new_sym.ancestor = old_class_sym.ancestor
-        else:
-            new_sym.ancestor = old_class_sym
+        origin = env.origin_registry.sym_origin_of(old_class_sym)
+        env.origin_registry.set_sym_origin(new_sym, origin if origin else old_class_sym)
         new_scopes: dict["Scope", "Scope"] = {self: new_class}
         for old_child, new_child in zip(self.children, new_class.children):
             new_scopes[old_child] = new_child

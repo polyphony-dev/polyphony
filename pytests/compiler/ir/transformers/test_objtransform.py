@@ -55,7 +55,7 @@ def test_qsym_ancestor():
 
     ot = ObjectTransformer()
     result = ot.qsym_ancestor((sym,))
-    assert result == (sym.ancestor,)
+    assert result == (env.origin_registry.sym_origin_of(sym),)
 
 
 def test_qsym_to_ir_single():
@@ -449,8 +449,8 @@ mv obj2 obj1
     # Set up SSA-like ancestors
     obj1_sym = scope.find_sym('obj1')
     obj2_sym = scope.find_sym('obj2')
-    obj2_sym.ancestor = obj2_sym  # ancestor points to itself (root)
-    obj1_sym.ancestor = obj1_sym
+    env.origin_registry.set_sym_origin(obj2_sym, obj2_sym)  # origin points to itself (root)
+    env.origin_registry.set_sym_origin(obj1_sym, obj1_sym)
 
     ot = ObjectTransformer()
     ot.scope = scope
@@ -611,8 +611,8 @@ mv arr2 arr1
     # Set up ancestors for seq copies (required by _collect_sources)
     arr1_sym = scope.find_sym('arr1')
     arr2_sym = scope.find_sym('arr2')
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
 
     ot = ObjectTransformer()
     ot.scope = scope
@@ -687,8 +687,8 @@ mv arr2 arr1
     # Set up ancestors for seq copies
     arr1_sym = scope.find_sym('arr1')
     arr2_sym = scope.find_sym('arr2')
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
 
     ot = ObjectTransformer()
     ot.scope = scope
@@ -730,8 +730,8 @@ ret @return
     # Set up ancestors for seq copies
     arr1_sym = scope.find_sym('arr1')
     arr2_sym = scope.find_sym('arr2')
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
 
     ObjectTransformer().process(scope)
     # Should complete without error
@@ -777,8 +777,8 @@ ret @return
     # Set up ancestors for proper resolution
     arr1_sym = scope.find_sym('arr1')
     arr2_sym = scope.find_sym('arr2')
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
 
     ObjectTransformer().process(scope)
     # Should complete; the copy arr2 used in MRef triggers _transform_use
@@ -810,8 +810,8 @@ expr (mst arr2 0 99)
     scope = build_scope(src)
     arr1_sym = scope.find_sym('arr1')
     arr2_sym = scope.find_sym('arr2')
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
 
     ObjectTransformer().process(scope)
     # Should complete; the MStore on arr2 triggers _add_cexpr or _transform_use
@@ -841,8 +841,8 @@ expr (mst arr2 0 42)
     scope = build_scope(src)
     arr1_sym = scope.find_sym('arr1')
     arr2_sym = scope.find_sym('arr2')
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
 
     ObjectTransformer().process(scope)
     # Test primarily checks completion without error
@@ -939,9 +939,9 @@ mv obj3 obj2
     obj1_sym = scope.find_sym('obj1')
     obj2_sym = scope.find_sym('obj2')
     obj3_sym = scope.find_sym('obj3')
-    obj1_sym.ancestor = obj1_sym
-    obj2_sym.ancestor = obj2_sym
-    obj3_sym.ancestor = obj3_sym
+    env.origin_registry.set_sym_origin(obj1_sym, obj1_sym)
+    env.origin_registry.set_sym_origin(obj2_sym, obj2_sym)
+    env.origin_registry.set_sym_origin(obj3_sym, obj3_sym)
 
     from polyphony.compiler.ir.analysis.usedef import UseDefDetector
     ot = ObjectTransformer()
@@ -973,9 +973,9 @@ def test_transform_use_with_phi_copy_mref():
     scope.add_sym('x', tags=set(), typ=Type.int())
     scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
 
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
-    arr_sel_sym.ancestor = arr_sel_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
+    env.origin_registry.set_sym_origin(arr_sel_sym, arr_sel_sym)
 
     blk1 = Block(scope, nametag='b1')
     blk2 = Block(scope, nametag='b2')
@@ -1040,9 +1040,9 @@ def test_transform_use_with_phi_copy_mstore():
     arr_sel_sym = scope.add_sym('arr_sel', tags=set(), typ=Type.list(Type.int(), 4))
     scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
 
-    arr1_sym.ancestor = arr1_sym
-    arr2_sym.ancestor = arr2_sym
-    arr_sel_sym.ancestor = arr_sel_sym
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
+    env.origin_registry.set_sym_origin(arr_sel_sym, arr_sel_sym)
 
     blk1 = Block(scope, nametag='b1')
     blk2 = Block(scope, nametag='b2')
