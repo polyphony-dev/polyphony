@@ -121,7 +121,8 @@ class FieldUseDef(object):
 
     def _collect_scopes(self, scope):
         scopes = set()
-        workers = set([w for w in scope.workers])
+        cls = scope.as_class()
+        workers = set(cls.workers) if cls else set()
         scopes |= workers
         for w in workers:
             scopes |= self._collect_scopes(w)

@@ -381,7 +381,6 @@ class Scope(Tagged, SymbolTable):
         self.bases: list["Scope"] = []
         self.origin: "Scope" = None
         self.block_count = 0
-        self.workers: list["Scope"] = []
         self.worker_owner: "Scope" = None
         self.asap_latency = -1
         self.synth_params = make_synth_params()
@@ -816,14 +815,6 @@ class Instantiable:
                 if typehelper.replace_type_dict(d, dd, "scope_name", value_map):
                     sym.typ = sym.typ.__class__.from_dict(dd)
 
-    def register_worker(self, worker_scope):
-        for i, w in enumerate(self.workers[:]):
-            if w is worker_scope:
-                self.workers.pop(i)
-        self.workers.append(worker_scope)
-        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
-        worker_scope.worker_owner = self
-
     def instance_number(self):
         n = Scope.instance_ids[self]
         Scope.instance_ids[self] += 1
@@ -934,8 +925,20 @@ class FunctionScope(Instantiable, Scope):
 
 
 class ClassScope(Instantiable, Scope):
+    def __init__(self, parent, name, tags, lineno, scope_id):
+        super().__init__(parent, name, tags, lineno, scope_id)
+        self.workers: list["Scope"] = []
+
     def as_class(self) -> "ClassScope":
         return self
+
+    def register_worker(self, worker_scope):
+        for i, w in enumerate(self.workers[:]):
+            if w is worker_scope:
+                self.workers.pop(i)
+        self.workers.append(worker_scope)
+        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
+        worker_scope.worker_owner = self
 
     def find_ctor(self):
         for child in self.children:

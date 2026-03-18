@@ -890,7 +890,7 @@ class TestScopeWorker:
         """Cover line 839."""
         setup_test()
         top = env.scopes["@top"]
-        owner = Scope.create(top, "wk_owner", {"function"})
+        owner = Scope.create(top, "wk_owner", {"class", "module"})
         worker = Scope.create(top, "wk_worker", {"function", "worker"})
         owner.register_worker(worker)
         assert worker in owner.workers
