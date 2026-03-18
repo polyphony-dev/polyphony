@@ -348,6 +348,7 @@ def test_functor_inlining():
     tags function closure
     param z:int32
     return int32
+    var y: int32
 
     blk1:
     mv z @in_z
@@ -388,7 +389,7 @@ def test_functor_inlining():
 
     assert len(blk4.stms) == 3
     assert blk4.stms[0] == Move(_v('z'), _v('@t'))
-    assert blk4.stms[1] == Move(_v('@return_1'), BinOp('Add', _v('y'), _v('z')))
+    assert blk4.stms[1] == Move(_v('@return_1'), BinOp('Add', _v('y_0'), _v('z')))
     assert blk4.stms[2] == Jump(blk5)
 
     assert len(blk5.stms) == 2
@@ -1194,3 +1195,154 @@ def test_no_copy_for_non_object_fields():
 
     # No additional stms should be inserted (x is int, not object)
     assert len(blk.stms) == 1, f'Expected 1 stm, got {len(blk.stms)}'
+
+
+def test_inline_returnable_function_in_expr():
+    """Inlining a returnable function called via Expr (discarding return value)."""
+    setup_test()
+    block_src = """
+    scope @top.f
+    tags function
+    return none
+
+    blk1:
+    expr (call g 10)
+
+    scope @top.g
+    tags function returnable
+    param x:int32
+    return int32
+
+    blk1:
+    mv x @in_x
+    mv @return (+ x 1)
+    ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
+    top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
+
+    f = env.scopes['@top.f']
+    _run_inline([f])
+
+    # After inlining, no Call nodes should remain
+    for blk in f.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Expr):
+                assert not isinstance(stm.exp, Call), 'Call should have been inlined'
+            if isinstance(stm, Move) and isinstance(stm.src, Call):
+                assert False, 'Call should have been inlined'
+
+    # The inlined body should be present
+    all_stms = []
+    for blk in f.traverse_blocks():
+        all_stms.extend(blk.stms)
+    stm_str = ' '.join(str(s) for s in all_stms)
+    assert 'x' in stm_str
+
+
+def test_inline_multiple_calls_same_callee():
+    """Inlining handles multiple calls to the same callee correctly."""
+    setup_test()
+    block_src = """
+    scope @top.f
+    tags function
+    return int32
+    var a: int32
+    var b: int32
+
+    blk1:
+    mv a (call g 10)
+    mv b (call g 20)
+    mv @return (+ a b)
+    ret @return
+
+    scope @top.g
+    tags function
+    param x:int32
+    return int32
+
+    blk1:
+    mv x @in_x
+    mv @return (+ x 1)
+    ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
+    top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
+
+    f = env.scopes['@top.f']
+    _run_inline([f])
+
+    # Both calls should be inlined
+    for blk in f.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.src, Call):
+                assert False, 'Call should have been inlined'
+
+    # Should have renamed variables for second call (x_0, x_1)
+    sym_names = list(f.symbols.keys())
+    assert any('x' in name for name in sym_names)
+
+
+def test_inline_in_conditional_branch():
+    """Inlining a call inside a conditional branch preserves block structure."""
+    setup_test()
+    block_src = """
+    scope @top.f
+    tags function
+    param x:int32
+    return int32
+    var r: int32
+
+    blk1:
+    mv x @in_x
+    cj x blk2 blk3
+
+    blk2:
+    mv r (call g x)
+    j blk4
+
+    blk3:
+    mv r 0
+    j blk4
+
+    blk4:
+    mv @return r
+    ret @return
+
+    scope @top.g
+    tags function
+    param x:int32
+    return int32
+
+    blk1:
+    mv x @in_x
+    mv @return (+ x 1)
+    ret @return
+    """
+    IRParser(block_src).parse_scope()
+    top = env.scopes['@top']
+    top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
+    top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
+
+    f = env.scopes['@top.f']
+    _run_inline([f])
+
+    # No calls should remain
+    for blk in f.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.src, Call):
+                assert False, 'Call should have been inlined'
+
+    # The inlined body should be present
+    all_stms = []
+    for blk in f.traverse_blocks():
+        all_stms.extend(blk.stms)
+    has_add = any(
+        isinstance(s, Move) and isinstance(s.src, BinOp) and s.src.op == 'Add'
+        for s in all_stms
+    )
+    assert has_add, 'Inlined body should contain Add operation'

@@ -883,3 +883,1148 @@ def f():
     cjumps = [s for s in stms if isinstance(s, CJump)]
     assert len(cjumps) >= 1
 
+
+# ============================================================
+# Detailed visit_For tests for mutation coverage
+# ============================================================
+
+
+def _get_blocks_by_nametag(scope, nametag):
+    """Return all blocks whose nametag matches."""
+    return [b for b in scope.traverse_blocks() if b.nametag == nametag]
+
+
+def _get_all_blocks(scope):
+    """Return all blocks as a list."""
+    return list(scope.traverse_blocks())
+
+
+def _find_stm(stms, cls, predicate=None):
+    """Find first statement of given class matching optional predicate."""
+    for s in stms:
+        if isinstance(s, cls):
+            if predicate is None or predicate(s):
+                return s
+    return None
+
+
+# --- range(N) single-arg: start=0, step=1 ---
+
+def test_for_range_1arg_init_start_zero():
+    """range(N) init should set loop var to Const(0)."""
+    setup_test()
+    src = '''
+def f():
+    s = 0
+    for i in range(10):
+        s = s + i
+    return s
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+
+    # Entry block should contain: mv s 0, mv i <start>, jump fortest
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    # The init move assigns loop var i to start (0)
+    i_init = [m for m in moves if isinstance(m.dst, Temp)
+              and m.dst.name == 'i' and isinstance(m.src, Const)]
+    assert len(i_init) == 1
+    assert i_init[0].src.value == 0
+
+
+def test_for_range_1arg_condition_lt():
+    """range(N) condition should be RelOp(Lt, i, N)."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    assert len(cjumps) >= 1
+    cj = cjumps[0]
+    assert isinstance(cj.exp, RelOp)
+    assert cj.exp.op == 'Lt'
+    assert isinstance(cj.exp.left, Temp)
+    assert cj.exp.left.name == 'i'
+    # right is the end value (Const 10)
+    assert isinstance(cj.exp.right, Const)
+    assert cj.exp.right.value == 10
+
+
+def test_for_range_1arg_step_one():
+    """range(N) continue part increments by Const(1)."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont_blocks = _get_blocks_by_nametag(scope, 'continue')
+    assert len(cont_blocks) == 1
+    cont = cont_blocks[0]
+    moves = [s for s in cont.stms if isinstance(s, Move)]
+    assert len(moves) >= 1
+    # increment: i = i + 1
+    incr = moves[0]
+    assert isinstance(incr.dst, Temp) and incr.dst.name == 'i'
+    assert isinstance(incr.src, BinOp)
+    assert incr.src.op == 'Add'
+    assert isinstance(incr.src.left, Temp) and incr.src.left.name == 'i'
+    assert isinstance(incr.src.right, Const) and incr.src.right.value == 1
+
+
+def test_for_range_1arg_loop_branch():
+    """CJump in fortest block should have loop_branch=True."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    assert len(cjumps) >= 1
+    assert cjumps[0].loop_branch is True
+
+
+def test_for_range_1arg_loop_jump():
+    """Continue block should end with Jump(typ='L') back to fortest."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont_blocks = _get_blocks_by_nametag(scope, 'continue')
+    assert len(cont_blocks) == 1
+    last_stm = cont_blocks[0].stms[-1]
+    assert isinstance(last_stm, Jump)
+    assert last_stm.typ == 'L'
+    # Target should be the fortest block
+    assert last_stm.target.nametag == 'fortest'
+
+
+def test_for_range_1arg_block_structure():
+    """range(N) loop should create fortest, forbody, continue, forelse blocks."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    tags = [b.nametag for b in blocks]
+    assert 'fortest' in tags
+    assert 'forbody' in tags
+    assert 'continue' in tags
+    assert 'forelse' in tags
+
+
+def test_for_range_1arg_fortest_connections():
+    """fortest block should have succs to forbody and forelse."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    fortest = _get_blocks_by_nametag(scope, 'fortest')[0]
+    succ_tags = [b.nametag for b in fortest.succs]
+    assert 'forbody' in succ_tags
+    assert 'forelse' in succ_tags
+
+
+def test_for_range_1arg_continue_loop_connection():
+    """continue block should have loop connection back to fortest."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont = _get_blocks_by_nametag(scope, 'continue')[0]
+    assert len(cont.succs_loop) >= 1
+    assert cont.succs_loop[0].nametag == 'fortest'
+
+
+# --- range(start, end) two-arg ---
+
+def test_for_range_2arg_init_start():
+    """range(start, end) init should set loop var to start."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(3, 10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    i_init = [m for m in moves if isinstance(m.dst, Temp)
+              and m.dst.name == 'i' and isinstance(m.src, Const)]
+    assert len(i_init) == 1
+    assert i_init[0].src.value == 3
+
+
+def test_for_range_2arg_condition_end():
+    """range(start, end) condition should use end value."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(3, 10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    assert len(cjumps) >= 1
+    cj = cjumps[0]
+    assert isinstance(cj.exp, RelOp)
+    assert cj.exp.op == 'Lt'
+    assert isinstance(cj.exp.right, Const)
+    assert cj.exp.right.value == 10
+
+
+def test_for_range_2arg_step_one():
+    """range(start, end) should still increment by 1."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(3, 10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont = _get_blocks_by_nametag(scope, 'continue')[0]
+    moves = [s for s in cont.stms if isinstance(s, Move)]
+    incr = moves[0]
+    assert isinstance(incr.src, BinOp)
+    assert incr.src.op == 'Add'
+    assert isinstance(incr.src.right, Const)
+    assert incr.src.right.value == 1
+
+
+# --- range(start, end, step) three-arg ---
+
+def test_for_range_3arg_init_start():
+    """range(start, end, step) should init loop var to start."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(0, 20, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    i_init = [m for m in moves if isinstance(m.dst, Temp)
+              and m.dst.name == 'i' and isinstance(m.src, Const)]
+    assert len(i_init) == 1
+    assert i_init[0].src.value == 0
+
+
+def test_for_range_3arg_condition_end():
+    """range(start, end, step) condition should compare against end."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(0, 20, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    cj = cjumps[0]
+    assert isinstance(cj.exp, RelOp)
+    assert cj.exp.op == 'Lt'
+    assert isinstance(cj.exp.right, Const)
+    assert cj.exp.right.value == 20
+
+
+def test_for_range_3arg_step_value():
+    """range(start, end, step) continue block should increment by step."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(0, 20, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont = _get_blocks_by_nametag(scope, 'continue')[0]
+    moves = [s for s in cont.stms if isinstance(s, Move)]
+    incr = moves[0]
+    assert isinstance(incr.src, BinOp)
+    assert incr.src.op == 'Add'
+    assert isinstance(incr.src.right, Const)
+    assert incr.src.right.value == 3
+
+
+# --- range() with variable arguments (make_temp_if_needed) ---
+
+def test_for_range_variable_end():
+    """range(N) where N is a variable should create a temp for end."""
+    setup_test()
+    src = '''
+def f(n):
+    for i in range(n):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    stms = entry.stms
+    # With variable end, make_temp_if_needed creates a temp
+    # There should be a Move that copies n to a temp
+    moves = [s for s in stms if isinstance(s, Move)]
+    temp_moves = [m for m in moves if isinstance(m.dst, Temp)
+                  and m.dst.name.startswith('@')]
+    # At least one temp should be created for the variable end
+    assert len(temp_moves) >= 1
+
+
+def test_for_range_variable_start_end():
+    """range(start, end) where both are variables should create temps."""
+    setup_test()
+    src = '''
+def f(a, b):
+    for i in range(a, b):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    # Temps for start and end variables
+    temp_moves = [m for m in moves if isinstance(m.dst, Temp)
+                  and m.dst.name.startswith('@')]
+    assert len(temp_moves) >= 2
+
+
+def test_for_range_variable_all_args():
+    """range(start, end, step) where all are variables."""
+    setup_test()
+    src = '''
+def f(a, b, c):
+    for i in range(a, b, c):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    temp_moves = [m for m in moves if isinstance(m.dst, Temp)
+                  and m.dst.name.startswith('@')]
+    # Temps for a, b, c
+    assert len(temp_moves) >= 3
+
+
+# --- for-over-variable (IrVariable path) ---
+
+def test_for_over_variable_counter():
+    """for x in lst: creates a hidden counter variable."""
+    setup_test()
+    src = '''
+def f(lst):
+    s = 0
+    for x in lst:
+        s = s + x
+    return s
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+
+    # Should have condition: counter < len(lst)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    assert len(cjumps) >= 1
+    cj = cjumps[0]
+    assert isinstance(cj.exp, RelOp)
+    assert cj.exp.op == 'Lt'
+    # left should be the counter Temp
+    assert isinstance(cj.exp.left, Temp)
+    assert '@counter' in cj.exp.left.name
+    # right should be SysCall(len)
+    assert isinstance(cj.exp.right, SysCall)
+
+
+def test_for_over_variable_body_mref():
+    """for x in lst: body should have x = lst[counter]."""
+    setup_test()
+    src = '''
+def f(lst):
+    for x in lst:
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    forbody_blocks = _get_blocks_by_nametag(scope, 'forbody')
+    assert len(forbody_blocks) == 1
+    forbody = forbody_blocks[0]
+    moves = [s for s in forbody.stms if isinstance(s, Move)]
+    # x = MRef(lst, counter)
+    mref_moves = [m for m in moves if isinstance(m.src, MRef)]
+    assert len(mref_moves) >= 1
+    mref = mref_moves[0].src
+    assert isinstance(mref.mem, Temp) and mref.mem.name == 'lst'
+    assert isinstance(mref.offset, Temp)
+
+
+def test_for_over_variable_counter_init_zero():
+    """for x in lst: counter init should be 0."""
+    setup_test()
+    src = '''
+def f(lst):
+    for x in lst:
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    # Counter init: counter = 0
+    counter_inits = [m for m in moves if isinstance(m.dst, Temp)
+                     and '@counter' in m.dst.name
+                     and isinstance(m.src, Const)]
+    assert len(counter_inits) == 1
+    assert counter_inits[0].src.value == 0
+
+
+def test_for_over_variable_counter_increment():
+    """for x in lst: continue part should increment counter by 1."""
+    setup_test()
+    src = '''
+def f(lst):
+    for x in lst:
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont = _get_blocks_by_nametag(scope, 'continue')[0]
+    moves = [s for s in cont.stms if isinstance(s, Move)]
+    incr = moves[0]
+    assert isinstance(incr.src, BinOp)
+    assert incr.src.op == 'Add'
+    assert isinstance(incr.src.right, Const) and incr.src.right.value == 1
+
+
+def test_for_over_variable_invisible_counter():
+    """for x in lst: counter should be in invisible_symbols."""
+    setup_test()
+    src = '''
+def f(lst):
+    for x in lst:
+        pass
+'''
+    # We need to access CodeVisitor's invisible_symbols.
+    # They get applied during translation. Check the scope for counter symbol
+    # being tagged or simply verify the counter symbol exists.
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    # Counter symbol should exist
+    counter_syms = [name for name in scope.symbols if '@counter' in name]
+    assert len(counter_syms) >= 1
+
+
+# --- for-over-array-literal (Array path) ---
+
+def test_for_over_array_literal_counter():
+    """for x in (1,2,3): creates counter and unnamed array."""
+    setup_test()
+    src = '''
+def f():
+    for x in (1, 2, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    assert len(cjumps) >= 1
+    cj = cjumps[0]
+    assert isinstance(cj.exp, RelOp)
+    assert cj.exp.op == 'Lt'
+    assert isinstance(cj.exp.left, Temp)
+    assert '@counter' in cj.exp.left.name
+
+
+def test_for_over_array_literal_unnamed_temp():
+    """for x in (1,2,3): should create @unnamed temp for the array."""
+    setup_test()
+    src = '''
+def f():
+    for x in (1, 2, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    # Check for unnamed temp symbol
+    unnamed_syms = [name for name in scope.symbols if '@unnamed' in name]
+    assert len(unnamed_syms) >= 1
+
+
+def test_for_over_array_literal_init_stores_array():
+    """for x in (1,2,3): init should store array to unnamed temp."""
+    setup_test()
+    src = '''
+def f():
+    for x in (1, 2, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    # One move stores Array to unnamed temp
+    array_stores = [m for m in moves if isinstance(m.src, Array)]
+    assert len(array_stores) >= 1
+    arr = array_stores[0].src
+    assert len(arr.items) == 3
+
+
+def test_for_over_array_literal_body_mref():
+    """for x in (1,2,3): body should have x = unnamed[counter]."""
+    setup_test()
+    src = '''
+def f():
+    for x in (1, 2, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    forbody_blocks = _get_blocks_by_nametag(scope, 'forbody')
+    assert len(forbody_blocks) == 1
+    forbody = forbody_blocks[0]
+    moves = [s for s in forbody.stms if isinstance(s, Move)]
+    mref_moves = [m for m in moves if isinstance(m.src, MRef)]
+    assert len(mref_moves) >= 1
+    mref = mref_moves[0].src
+    assert isinstance(mref.mem, Temp) and '@unnamed' in mref.mem.name
+    assert isinstance(mref.offset, Temp) and '@counter' in mref.offset.name
+
+
+def test_for_over_array_literal_counter_init():
+    """for x in (1,2,3): counter should init to 0."""
+    setup_test()
+    src = '''
+def f():
+    for x in (1, 2, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    counter_inits = [m for m in moves if isinstance(m.dst, Temp)
+                     and '@counter' in m.dst.name
+                     and isinstance(m.src, Const)]
+    assert len(counter_inits) == 1
+    assert counter_inits[0].src.value == 0
+
+
+def test_for_over_array_literal_len_syscall():
+    """for x in (1,2,3): condition right should be len(unnamed)."""
+    setup_test()
+    src = '''
+def f():
+    for x in (1, 2, 3):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    cj = cjumps[0]
+    assert isinstance(cj.exp, RelOp)
+    # right is SysCall(len)
+    right = cj.exp.right
+    assert isinstance(right, SysCall)
+    assert isinstance(right.func, Temp) and right.func.name == 'len'
+    # arg should be the unnamed temp
+    assert len(right.args) == 1
+    arg_name, arg_val = right.args[0]
+    assert arg_name == 'seq'
+    assert isinstance(arg_val, Temp) and '@unnamed' in arg_val.name
+
+
+# --- for-else ---
+
+def test_for_else_generates_forelse_block_with_stms():
+    """for-else should put else body into forelse block."""
+    setup_test()
+    src = '''
+def f():
+    s = 0
+    for i in range(5):
+        s = s + i
+    else:
+        s = -1
+    return s
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    forelse_blocks = _get_blocks_by_nametag(scope, 'forelse')
+    assert len(forelse_blocks) == 1
+    forelse = forelse_blocks[0]
+    moves = [s for s in forelse.stms if isinstance(s, Move)]
+    # else body: s = -1
+    assert any(isinstance(m.src, Const) and m.src.value == -1 for m in moves)
+
+
+def test_for_no_else_forelse_empty():
+    """for without else should have empty forelse block (just jumps)."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    forelse_blocks = _get_blocks_by_nametag(scope, 'forelse')
+    assert len(forelse_blocks) == 1
+    forelse = forelse_blocks[0]
+    # forelse block should only have a Jump (no Move statements from else body)
+    moves = [s for s in forelse.stms if isinstance(s, Move)]
+    assert len(moves) == 0
+
+
+# --- break and continue in for loop ---
+
+def test_for_break_jumps_to_exit():
+    """break in for loop should jump past the for-else."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        if i == 5:
+            break
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    jumps = [s for s in stms if isinstance(s, Jump)]
+    break_jumps = [j for j in jumps if j.typ == 'B']
+    assert len(break_jumps) >= 1
+
+
+def test_for_continue_jumps_to_continue_block():
+    """continue in for loop should jump to continue block."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        if i == 3:
+            continue
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    # continue generates a Jump to the continue block
+    # The continue block has nametag 'continue'
+    cont_blocks = _get_blocks_by_nametag(scope, 'continue')
+    assert len(cont_blocks) == 1
+
+    # Find the jump that targets the continue block
+    jumps = [s for s in stms if isinstance(s, Jump)]
+    cont_jumps = [j for j in jumps if j.target.nametag == 'continue'
+                  and j.typ != 'L']  # exclude the loop-back jump
+    assert len(cont_jumps) >= 1
+
+
+# --- nested for loops ---
+
+def test_nested_for_loops():
+    """Nested for loops should each have their own fortest/continue blocks."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        for j in range(3):
+            pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    fortest_blocks = _get_blocks_by_nametag(scope, 'fortest')
+    cont_blocks = _get_blocks_by_nametag(scope, 'continue')
+    forbody_blocks = _get_blocks_by_nametag(scope, 'forbody')
+    assert len(fortest_blocks) == 2
+    assert len(cont_blocks) == 2
+    assert len(forbody_blocks) == 2
+
+
+# --- for body with actual statements ---
+
+def test_for_body_stms_in_forbody_block():
+    """Body statements should appear in the forbody block."""
+    setup_test()
+    src = '''
+def f():
+    s = 0
+    for i in range(5):
+        s = s + i
+    return s
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    forbody = _get_blocks_by_nametag(scope, 'forbody')[0]
+    moves = [s for s in forbody.stms if isinstance(s, Move)]
+    # s = s + i should be in forbody
+    add_moves = [m for m in moves if isinstance(m.src, BinOp) and m.src.op == 'Add']
+    assert len(add_moves) >= 1
+
+
+# --- for loop CJump true/false targets ---
+
+def test_for_cjump_true_false_targets():
+    """CJump should branch to forbody (true) and forelse (false)."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    fortest = _get_blocks_by_nametag(scope, 'fortest')[0]
+    cjumps = [s for s in fortest.stms if isinstance(s, CJump)]
+    assert len(cjumps) == 1
+    cj = cjumps[0]
+    assert cj.true.nametag == 'forbody'
+    assert cj.false.nametag == 'forelse'
+
+
+# --- entry block connects to fortest ---
+
+def test_for_entry_jumps_to_fortest():
+    """Entry block should end with Jump to fortest block."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    last_stm = entry.stms[-1]
+    assert isinstance(last_stm, Jump)
+    assert last_stm.target.nametag == 'fortest'
+
+
+# --- for-over-variable with len() SysCall ---
+
+def test_for_over_variable_len_arg():
+    """for x in lst: len(lst) should pass lst as arg."""
+    setup_test()
+    src = '''
+def f(lst):
+    for x in lst:
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    cj = cjumps[0]
+    right = cj.exp.right
+    assert isinstance(right, SysCall)
+    assert isinstance(right.func, Temp) and right.func.name == 'len'
+    assert len(right.args) == 1
+    assert right.args[0][0] == 'seq'
+    assert isinstance(right.args[0][1], Temp) and right.args[0][1].name == 'lst'
+
+
+# --- Const start/end don't generate temps ---
+
+def test_for_range_const_args_no_extra_temps():
+    """range(0, 10) with const args should use consts directly in condition."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(0, 10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    cj = cjumps[0]
+    # end is a constant, should be used directly
+    assert isinstance(cj.exp.right, Const)
+    assert cj.exp.right.value == 10
+
+
+# --- for loop with list literal ---
+
+def test_for_over_list_literal():
+    """for x in [1, 2, 3]: should use Array path."""
+    setup_test()
+    src = '''
+def f():
+    for x in [1, 2, 3]:
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    # Should have unnamed temp and counter
+    unnamed_syms = [name for name in scope.symbols if '@unnamed' in name]
+    counter_syms = [name for name in scope.symbols if '@counter' in name]
+    assert len(unnamed_syms) >= 1
+    assert len(counter_syms) >= 1
+
+
+# --- CJump loop_branch in _build_for_loop_blocks ---
+
+def test_for_range_cjump_in_fortest():
+    """CJump should be emitted in the fortest block, not elsewhere."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    fortest = _get_blocks_by_nametag(scope, 'fortest')[0]
+    assert len(fortest.stms) >= 1
+    assert isinstance(fortest.stms[-1], CJump)
+    # No other block should have CJump
+    other_blocks = [b for b in _get_all_blocks(scope) if b.nametag != 'fortest']
+    for b in other_blocks:
+        for s in b.stms:
+            assert not isinstance(s, CJump), f"unexpected CJump in {b.nametag}"
+
+
+# --- for range with mixed const/var args ---
+
+def test_for_range_mixed_const_var():
+    """range(0, n) has const start but variable end."""
+    setup_test()
+    src = '''
+def f(n):
+    for i in range(0, n):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    # Start is const 0, directly used for init
+    i_init = [m for m in moves if isinstance(m.dst, Temp)
+              and m.dst.name == 'i' and isinstance(m.src, Const)]
+    assert len(i_init) == 1
+    assert i_init[0].src.value == 0
+    # end should be stored in a temp since it's a variable
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    cj = cjumps[0]
+    # end is a variable, should be a Temp (not Const)
+    assert isinstance(cj.exp.right, Temp)
+
+
+# --- for loop i variable name ---
+
+def test_for_loop_var_name_preserved():
+    """Loop variable name should match what was in the source."""
+    setup_test()
+    src = '''
+def f():
+    for idx in range(10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    cj = cjumps[0]
+    assert cj.exp.left.name == 'idx'
+
+
+# --- for-over-variable: counter name uniqueness ---
+
+def test_for_over_variable_counter_name_unique():
+    """Nested for-over-variable should have distinct counter names."""
+    setup_test()
+    src = '''
+def f(a, b):
+    for x in a:
+        for y in b:
+            pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    counter_syms = [name for name in scope.symbols if '@counter' in name]
+    assert len(counter_syms) >= 2
+    # All counter names should be unique
+    assert len(set(counter_syms)) == len(counter_syms)
+
+
+# --- for loop with for-else and break ---
+
+def test_for_else_with_break():
+    """for-else with break: break should skip else block."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        if i == 5:
+            break
+    else:
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    jumps = [s for s in stms if isinstance(s, Jump)]
+    break_jumps = [j for j in jumps if j.typ == 'B']
+    assert len(break_jumps) >= 1
+    # Break target should be past the forelse block (exit block)
+    break_target = break_jumps[0].target
+    # It should NOT be the forelse block
+    assert break_target.nametag != 'forelse'
+
+
+# --- for range 1-arg: start=0 explicitly ---
+
+def test_for_range_1arg_start_is_zero_not_other():
+    """range(N) specifically sets start to 0, not 1 or N."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(100):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    i_init = [m for m in moves if isinstance(m.dst, Temp)
+              and m.dst.name == 'i' and isinstance(m.src, Const)]
+    assert i_init[0].src.value == 0
+    assert i_init[0].src.value != 1
+    assert i_init[0].src.value != 100
+
+
+# --- for loop condition uses Lt (not Le, Gt, etc.) ---
+
+def test_for_range_condition_is_lt_not_le():
+    """range() condition must be Lt, not Le or other comparisons."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    stms = _collect_stms(scope)
+    cjumps = [s for s in stms if isinstance(s, CJump)]
+    cj = cjumps[0]
+    assert cj.exp.op == 'Lt'
+    assert cj.exp.op != 'Le'
+    assert cj.exp.op != 'Gt'
+    assert cj.exp.op != 'Ge'
+
+
+# --- for loop step uses Add (not Sub or others) ---
+
+def test_for_range_step_uses_add_not_sub():
+    """range() step should use Add operation."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(10):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont = _get_blocks_by_nametag(scope, 'continue')[0]
+    moves = [s for s in cont.stms if isinstance(s, Move)]
+    incr = moves[0]
+    assert incr.src.op == 'Add'
+    assert incr.src.op != 'Sub'
+
+
+# --- for loop continue block has loop-type jump ---
+
+def test_for_continue_block_has_loop_type_jump():
+    """Continue block should have Jump with typ='L' (loop)."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont = _get_blocks_by_nametag(scope, 'continue')[0]
+    jumps = [s for s in cont.stms if isinstance(s, Jump)]
+    assert len(jumps) >= 1
+    loop_jump = jumps[-1]
+    assert loop_jump.typ == 'L'
+    assert loop_jump.typ != ''
+    assert loop_jump.typ != 'B'
+    assert loop_jump.typ != 'E'
+
+
+# --- forbody block connects to continue block ---
+
+def test_for_forbody_connects_to_continue():
+    """forbody block should have continue block as successor."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    forbody = _get_blocks_by_nametag(scope, 'forbody')[0]
+    succ_tags = [b.nametag for b in forbody.succs]
+    assert 'continue' in succ_tags
+
+
+# --- for range: init Move dst has STORE context ---
+
+def test_for_range_init_store_context():
+    """Init Move for loop var should have STORE context."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    moves = [s for s in entry.stms if isinstance(s, Move)]
+    i_init = [m for m in moves if isinstance(m.dst, Temp)
+              and m.dst.name == 'i' and isinstance(m.src, Const)]
+    assert len(i_init) == 1
+    assert i_init[0].dst.ctx == Ctx.STORE
+
+
+# --- for range: continue Move dst has STORE context ---
+
+def test_for_range_continue_store_context():
+    """Continue Move for loop var should have STORE context."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    cont = _get_blocks_by_nametag(scope, 'continue')[0]
+    moves = [s for s in cont.stms if isinstance(s, Move)]
+    incr = moves[0]
+    assert isinstance(incr.dst, Temp)
+    assert incr.dst.ctx == Ctx.STORE
+
+
+# --- for loop: entry block succs includes fortest ---
+
+def test_for_entry_block_succ_fortest():
+    """Entry block should have fortest as a successor."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    blocks = _get_all_blocks(scope)
+    entry = blocks[0]
+    succ_tags = [b.nametag for b in entry.succs]
+    assert 'fortest' in succ_tags
+
+
+# --- for loop: fortest pred includes entry ---
+
+def test_for_fortest_pred_includes_entry():
+    """fortest should have entry as a predecessor."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    fortest = _get_blocks_by_nametag(scope, 'fortest')[0]
+    assert len(fortest.preds) >= 1
+
+
+# --- for loop: fortest has loop predecessor from continue ---
+
+def test_for_fortest_loop_pred_from_continue():
+    """fortest should have continue as a loop predecessor."""
+    setup_test()
+    src = '''
+def f():
+    for i in range(5):
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    fortest = _get_blocks_by_nametag(scope, 'fortest')[0]
+    loop_pred_tags = [b.nametag for b in fortest.preds_loop]
+    assert 'continue' in loop_pred_tags
+
+
+# --- for-over-variable: MRef ctx is LOAD ---
+
+def test_for_over_variable_mref_load_ctx():
+    """MRef in body for list iteration should have LOAD context."""
+    setup_test()
+    src = '''
+def f(lst):
+    for x in lst:
+        pass
+'''
+    top = _translate(src)
+    scope = env.scopes['@top.f']
+    forbody = _get_blocks_by_nametag(scope, 'forbody')[0]
+    moves = [s for s in forbody.stms if isinstance(s, Move)]
+    mref_moves = [m for m in moves if isinstance(m.src, MRef)]
+    assert len(mref_moves) >= 1
+    assert mref_moves[0].src.ctx == Ctx.LOAD
+

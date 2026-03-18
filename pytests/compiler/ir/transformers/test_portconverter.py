@@ -431,8 +431,7 @@ def test_port_connector_visit_syscall_connect_dispatches():
     connector.scope = ctor
 
     syscall = SysCall(
-        name='polyphony.io.connect',
-        func=Temp('connect', ctx=Ctx.LOAD),
+        func=Temp('polyphony.io.connect', ctx=Ctx.LOAD),
         args=[('', Temp('p1', ctx=Ctx.LOAD)), ('', Temp('p1', ctx=Ctx.LOAD))],
         kwargs={},
     )
@@ -457,8 +456,7 @@ def test_port_connector_visit_syscall_thru_dispatches():
     connector.scope = ctor
 
     syscall = SysCall(
-        name='polyphony.io.thru',
-        func=Temp('thru', ctx=Ctx.LOAD),
+        func=Temp('polyphony.io.thru', ctx=Ctx.LOAD),
         args=[('', Temp('p1', ctx=Ctx.LOAD)), ('', Temp('p1', ctx=Ctx.LOAD))],
         kwargs={},
     )
@@ -732,8 +730,7 @@ def test_port_connector_visit_syscall_other():
     F.set_exit_block(blk)
     # SysCall with a different name
     syscall = SysCall(
-        name='polyphony.io.other',
-        func=Temp('other', ctx=Ctx.LOAD),
+        func=Temp('polyphony.io.other', ctx=Ctx.LOAD),
         args=[],
         kwargs={},
     )
@@ -790,3 +787,190 @@ def test_flipped_ports_builder_multiple_ports():
                     directions[stm.dst.name] = arg.value
     assert directions.get('p1') == 'out', f'p1 should be out, got {directions.get("p1")}'
     assert directions.get('p2') == 'in', f'p2 should be in, got {directions.get("p2")}'
+
+
+
+# ===========================================================
+# PortConnector full connect test (lines 264-346)
+# ===========================================================
+
+def test_port_connector_connect_in_out():
+    """PortConnector connects in-port to out-port using connect syscall."""
+    setup_test()
+    setup_libs('io', 'timing')
+    top = Scope.global_scope()
+
+    # Create two modules: one with 'in' port, one with 'out' port
+    mod_in, ctor_in, blk_in = _make_module_ctor_with_ports('ModIn', [('p', 'in')])
+    mod_out, ctor_out, blk_out = _make_module_ctor_with_ports('ModOut', [('p', 'out')])
+
+    # Create a top-level scope that connects them
+    top_mod = Scope.create(top, 'Top', {'class', 'module'}, 0)
+    top_ctor = Scope.create(top_mod, '__init__', {'method', 'ctor'}, 0)
+    top_ctor.return_type = Type.none()
+    s = top_ctor.add_param_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_param(s, None)
+
+    # Add module instances
+    m_in_sym = top_ctor.add_sym('m_in', tags=set(), typ=Type.object(mod_in))
+    m_out_sym = top_ctor.add_sym('m_out', tags=set(), typ=Type.object(mod_out))
+
+    # Get port symbols from modules
+    p_in_sym = mod_in.find_sym('p')
+    p_out_sym = mod_out.find_sym('p')
+    assert p_in_sym.typ.is_port()
+    assert p_out_sym.typ.is_port()
+
+    tblk = Block(top_ctor, nametag='blk1')
+    top_ctor.set_entry_block(tblk)
+    top_ctor.set_exit_block(tblk)
+
+    # connect(m_in.p, m_out.p) syscall — using Attr for port access
+    a0 = Attr(name='p', exp=Temp('m_in', ctx=Ctx.LOAD), attr=p_in_sym, ctx=Ctx.LOAD)
+    a1 = Attr(name='p', exp=Temp('m_out', ctx=Ctx.LOAD), attr=p_out_sym, ctx=Ctx.LOAD)
+
+    syscall = SysCall(
+        func=Temp('polyphony.io.connect', ctx=Ctx.LOAD),
+        args=[('', a0), ('', a1)],
+        kwargs={},
+    )
+    expr_stm = Expr(exp=syscall)
+    tblk.append_stm(expr_stm)
+    Block.set_order(tblk, 0)
+
+    connector = PortConnector()
+    connector.process(top_ctor)
+
+    # After connection, a new lambda scope should have been created
+    assert len(connector.scopes) == 1, f'Expected 1 lambda scope, got {len(connector.scopes)}'
+    # The expr stm should be followed by the assign call
+    assert len(tblk.stms) >= 2
+
+
+def test_port_connector_connect_out_in():
+    """PortConnector connects out-port to in-port (reversed order)."""
+    setup_test()
+    setup_libs('io', 'timing')
+    top = Scope.global_scope()
+
+    mod_out, ctor_out, blk_out = _make_module_ctor_with_ports('ModOut2', [('p', 'out')])
+    mod_in, ctor_in, blk_in = _make_module_ctor_with_ports('ModIn2', [('p', 'in')])
+
+    top_mod = Scope.create(top, 'Top2', {'class', 'module'}, 0)
+    top_ctor = Scope.create(top_mod, '__init__', {'method', 'ctor'}, 0)
+    top_ctor.return_type = Type.none()
+    s = top_ctor.add_param_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_param(s, None)
+
+    m_out_sym = top_ctor.add_sym('m_out', tags=set(), typ=Type.object(mod_out))
+    m_in_sym = top_ctor.add_sym('m_in', tags=set(), typ=Type.object(mod_in))
+
+    p_out_sym = mod_out.find_sym('p')
+    p_in_sym = mod_in.find_sym('p')
+
+    tblk = Block(top_ctor, nametag='blk1')
+    top_ctor.set_entry_block(tblk)
+    top_ctor.set_exit_block(tblk)
+
+    a0 = Attr(name='p', exp=Temp('m_out', ctx=Ctx.LOAD), attr=p_out_sym, ctx=Ctx.LOAD)
+    a1 = Attr(name='p', exp=Temp('m_in', ctx=Ctx.LOAD), attr=p_in_sym, ctx=Ctx.LOAD)
+
+    syscall = SysCall(
+        func=Temp('polyphony.io.connect', ctx=Ctx.LOAD),
+        args=[('', a0), ('', a1)],
+        kwargs={},
+    )
+    tblk.append_stm(Expr(exp=syscall))
+    Block.set_order(tblk, 0)
+
+    connector = PortConnector()
+    connector.process(top_ctor)
+    assert len(connector.scopes) == 1
+
+
+def test_port_connector_thru_in_in():
+    """PortConnector thru connects two in-ports."""
+    setup_test()
+    setup_libs('io', 'timing')
+    top = Scope.global_scope()
+
+    mod1, ctor1, _ = _make_module_ctor_with_ports('ModT1', [('p', 'in')])
+    mod2, ctor2, _ = _make_module_ctor_with_ports('ModT2', [('p', 'in')])
+
+    top_mod = Scope.create(top, 'TopThru', {'class', 'module'}, 0)
+    top_ctor = Scope.create(top_mod, '__init__', {'method', 'ctor'}, 0)
+    top_ctor.return_type = Type.none()
+    s = top_ctor.add_param_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_param(s, None)
+
+    top_ctor.add_sym('m1', tags=set(), typ=Type.object(mod1))
+    top_ctor.add_sym('m2', tags=set(), typ=Type.object(mod2))
+
+    p1_sym = mod1.find_sym('p')
+    p2_sym = mod2.find_sym('p')
+
+    tblk = Block(top_ctor, nametag='blk1')
+    top_ctor.set_entry_block(tblk)
+    top_ctor.set_exit_block(tblk)
+
+    a0 = Attr(name='p', exp=Temp('m1', ctx=Ctx.LOAD), attr=p1_sym, ctx=Ctx.LOAD)
+    a1 = Attr(name='p', exp=Temp('m2', ctx=Ctx.LOAD), attr=p2_sym, ctx=Ctx.LOAD)
+
+    syscall = SysCall(
+        func=Temp('polyphony.io.thru', ctx=Ctx.LOAD),
+        args=[('', a0), ('', a1)],
+        kwargs={},
+    )
+    tblk.append_stm(Expr(exp=syscall))
+    Block.set_order(tblk, 0)
+
+    connector = PortConnector()
+    connector.process(top_ctor)
+    assert len(connector.scopes) == 1
+
+
+def test_port_connector_thru_out_out():
+    """PortConnector thru connects two out-ports."""
+    setup_test()
+    setup_libs('io', 'timing')
+    top = Scope.global_scope()
+
+    mod1, ctor1, _ = _make_module_ctor_with_ports('ModTO1', [('p', 'out')])
+    mod2, ctor2, _ = _make_module_ctor_with_ports('ModTO2', [('p', 'out')])
+
+    top_mod = Scope.create(top, 'TopThruOut', {'class', 'module'}, 0)
+    top_ctor = Scope.create(top_mod, '__init__', {'method', 'ctor'}, 0)
+    top_ctor.return_type = Type.none()
+    s = top_ctor.add_param_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_sym('self', tags={'self'}, typ=Type.object(top_mod))
+    top_ctor.add_param(s, None)
+
+    top_ctor.add_sym('m1', tags=set(), typ=Type.object(mod1))
+    top_ctor.add_sym('m2', tags=set(), typ=Type.object(mod2))
+
+    p1_sym = mod1.find_sym('p')
+    p2_sym = mod2.find_sym('p')
+
+    tblk = Block(top_ctor, nametag='blk1')
+    top_ctor.set_entry_block(tblk)
+    top_ctor.set_exit_block(tblk)
+
+    a0 = Attr(name='p', exp=Temp('m1', ctx=Ctx.LOAD), attr=p1_sym, ctx=Ctx.LOAD)
+    a1 = Attr(name='p', exp=Temp('m2', ctx=Ctx.LOAD), attr=p2_sym, ctx=Ctx.LOAD)
+
+    syscall = SysCall(
+        func=Temp('polyphony.io.thru', ctx=Ctx.LOAD),
+        args=[('', a0), ('', a1)],
+        kwargs={},
+    )
+    tblk.append_stm(Expr(exp=syscall))
+    Block.set_order(tblk, 0)
+
+    connector = PortConnector()
+    connector.process(top_ctor)
+    assert len(connector.scopes) == 1
+
+

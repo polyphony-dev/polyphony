@@ -1111,3 +1111,507 @@ def test_qsym_to_ir_three_levels():
     assert ir.exp.ctx == Ctx.LOAD
     assert isinstance(ir.exp.exp, Temp)
     assert ir.exp.exp.name == 'self'
+
+
+# ===========================================================
+# ObjectTransformer: _add_branch_move / _make_branch
+# ===========================================================
+
+def test_add_branch_move_with_phi_obj_def():
+    """_add_branch_move creates CJump branches for Phi-selected object with field write."""
+    setup_test()
+    m_scope = Scope.create(None, 'BM', {'class', 'module', 'instantiated'}, 0)
+    m_scope.add_sym('x', tags=set(), typ=Type.int())
+
+    scope = Scope.create(None, 'BrMv', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('BM', tags=set(), typ=Type.klass(m_scope.name))
+
+    obj1_sym = scope.add_sym('obj1', tags=set(), typ=Type.object(m_scope.name))
+    obj2_sym = scope.add_sym('obj2', tags=set(), typ=Type.object(m_scope.name))
+    obj_sel_sym = scope.add_sym('obj_sel', tags=set(), typ=Type.object(m_scope.name))
+    scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
+
+    env.origin_registry.set_sym_origin(obj1_sym, obj1_sym)
+    env.origin_registry.set_sym_origin(obj2_sym, obj2_sym)
+    env.origin_registry.set_sym_origin(obj_sel_sym, obj_sel_sym)
+
+    blk1 = Block(scope, nametag='b1')
+    blk2 = Block(scope, nametag='b2')
+    blk3 = Block(scope, nametag='b3')
+    blk4 = Block(scope, nametag='b4')
+
+    scope.set_entry_block(blk1)
+    scope.set_exit_block(blk4)
+
+    blk1.append_stm(Move(Temp('obj1', Ctx.STORE), SysCall(Temp('BM'), [('', Temp('BM'))], {})))
+    object.__setattr__(blk1.stms[-1].src, 'name', '$new')
+    blk1.append_stm(Move(Temp('obj2', Ctx.STORE), SysCall(Temp('BM'), [('', Temp('BM'))], {})))
+    object.__setattr__(blk1.stms[-1].src, 'name', '$new')
+    blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
+    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+
+    blk2.append_stm(Jump(blk4))
+    blk3.append_stm(Jump(blk4))
+
+    phi = Phi(Temp('obj_sel', Ctx.STORE))
+    object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
+    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    blk4.append_stm(phi)
+    # Field write on Phi-selected obj => triggers _add_branch_move
+    blk4.append_stm(Move(Attr(Temp('obj_sel', Ctx.STORE), 'x', Ctx.STORE), Const(42)))
+
+    blk1.succs = [blk2, blk3]
+    blk2.preds = [blk1]; blk2.succs = [blk4]
+    blk3.preds = [blk1]; blk3.succs = [blk4]
+    blk4.preds = [blk2, blk3]
+
+    Block.set_order(blk1, 0)
+
+    ot = ObjectTransformer()
+    ot.process(scope)
+
+    # After processing, CJump branches should be created for the field write
+    found_cjump_in_blk4 = False
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, CJump) and blk is not blk1:
+                found_cjump_in_blk4 = True
+    assert found_cjump_in_blk4, "_add_branch_move should create CJump branches"
+
+
+def test_add_branch_move_exit_block_updated():
+    """_add_branch_move updates exit_block when branching at exit."""
+    setup_test()
+    m_scope = Scope.create(None, 'BExit', {'class', 'module', 'instantiated'}, 0)
+    m_scope.add_sym('x', tags=set(), typ=Type.int())
+
+    scope = Scope.create(None, 'ExitBr', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('BExit', tags=set(), typ=Type.klass(m_scope.name))
+
+    obj1_sym = scope.add_sym('obj1', tags=set(), typ=Type.object(m_scope.name))
+    obj2_sym = scope.add_sym('obj2', tags=set(), typ=Type.object(m_scope.name))
+    obj_sel_sym = scope.add_sym('obj_sel', tags=set(), typ=Type.object(m_scope.name))
+    scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
+
+    env.origin_registry.set_sym_origin(obj1_sym, obj1_sym)
+    env.origin_registry.set_sym_origin(obj2_sym, obj2_sym)
+    env.origin_registry.set_sym_origin(obj_sel_sym, obj_sel_sym)
+
+    blk1 = Block(scope, nametag='b1')
+    blk2 = Block(scope, nametag='b2')
+    blk3 = Block(scope, nametag='b3')
+    blk4 = Block(scope, nametag='b4')
+
+    scope.set_entry_block(blk1)
+    scope.set_exit_block(blk4)  # blk4 is exit
+
+    blk1.append_stm(Move(Temp('obj1', Ctx.STORE), SysCall(Temp('BExit'), [('', Temp('BExit'))], {})))
+    object.__setattr__(blk1.stms[-1].src, 'name', '$new')
+    blk1.append_stm(Move(Temp('obj2', Ctx.STORE), SysCall(Temp('BExit'), [('', Temp('BExit'))], {})))
+    object.__setattr__(blk1.stms[-1].src, 'name', '$new')
+    blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
+    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+
+    blk2.append_stm(Jump(blk4))
+    blk3.append_stm(Jump(blk4))
+
+    phi = Phi(Temp('obj_sel', Ctx.STORE))
+    object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
+    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    blk4.append_stm(phi)
+    blk4.append_stm(Move(Attr(Temp('obj_sel', Ctx.STORE), 'x', Ctx.STORE), Const(99)))
+
+    blk1.succs = [blk2, blk3]
+    blk2.preds = [blk1]; blk2.succs = [blk4]
+    blk3.preds = [blk1]; blk3.succs = [blk4]
+    blk4.preds = [blk2, blk3]
+
+    Block.set_order(blk1, 0)
+
+    original_exit = scope.exit_block
+    ot = ObjectTransformer()
+    ot.process(scope)
+
+    # exit_block should be updated (moved to the tail block created by _make_branch)
+    assert scope.exit_block is not original_exit, "exit_block should be updated after _add_branch_move"
+
+
+# ===========================================================
+# ObjectTransformer: _build_seq_ids with CMove usage
+# ===========================================================
+
+def test_build_seq_ids_with_cmove_use():
+    """_build_seq_ids replaces seq name in CMove condition."""
+    setup_test()
+    scope = Scope.create(None, 'CMoveSeq', {'function'}, 0)
+    scope.return_type = Type.none()
+
+    arr_sym = scope.add_sym('arr', tags=set(), typ=Type.list(Type.int(), 4))
+    scope.add_sym('x', tags=set(), typ=Type.int())
+    scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    # Array definition
+    blk.append_stm(Move(Temp('arr', Ctx.STORE),
+                         Array(items=[Const(1), Const(2), Const(3), Const(4)], mutable=True)))
+    # CMove that uses arr in its condition
+    cmove = CMove(
+        cond=RelOp(op='Eq', left=Temp('arr'), right=Temp('arr')),
+        dst=Temp('x', Ctx.STORE),
+        src=Const(10),
+    )
+    blk.append_stm(cmove)
+    Block.set_order(blk, 0)
+
+    from polyphony.compiler.ir.analysis.usedef import UseDefDetector
+    ot = ObjectTransformer()
+    ot.scope = scope
+    ot.seq_id_map = {}
+    ot.usedef = UseDefDetector().process(scope)
+    ot._collect_obj_defs()
+    ot._collect_copy_sources()
+    ot._build_seq_ids()
+
+    # The CMove's condition should have arr replaced with seq_id
+    assert 'arr' in ot.seq_id_map
+    seq_id_name = ot.seq_id_map['arr']
+    # Check that the CMove condition now references the seq_id
+    found_seq_id_in_cond = False
+    for stm in blk.stms:
+        if isinstance(stm, CMove):
+            cond_vars = stm.cond.find_vars((seq_id_name,))
+            if cond_vars:
+                found_seq_id_in_cond = True
+    assert found_seq_id_in_cond, "CMove condition should reference seq_id"
+
+
+def test_build_seq_ids_with_cexpr_use():
+    """_build_seq_ids replaces seq name in CExpr condition."""
+    setup_test()
+    scope = Scope.create(None, 'CExprSeq', {'function'}, 0)
+    scope.return_type = Type.none()
+
+    arr_sym = scope.add_sym('arr', tags=set(), typ=Type.list(Type.int(), 4))
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    # Array definition
+    blk.append_stm(Move(Temp('arr', Ctx.STORE),
+                         Array(items=[Const(0), Const(0), Const(0), Const(0)], mutable=True)))
+    # CExpr that uses arr in its condition
+    cexpr = CExpr(
+        cond=RelOp(op='Eq', left=Temp('arr'), right=Temp('arr')),
+        exp=MStore(Temp('arr'), Const(0), Const(42)),
+    )
+    blk.append_stm(cexpr)
+    Block.set_order(blk, 0)
+
+    from polyphony.compiler.ir.analysis.usedef import UseDefDetector
+    ot = ObjectTransformer()
+    ot.scope = scope
+    ot.seq_id_map = {}
+    ot.usedef = UseDefDetector().process(scope)
+    ot._collect_obj_defs()
+    ot._collect_copy_sources()
+    ot._build_seq_ids()
+
+    assert 'arr' in ot.seq_id_map
+    seq_id_name = ot.seq_id_map['arr']
+    found_seq_id_in_cond = False
+    for stm in blk.stms:
+        if isinstance(stm, CExpr):
+            cond_vars = stm.cond.find_vars((seq_id_name,))
+            if cond_vars:
+                found_seq_id_in_cond = True
+    assert found_seq_id_in_cond, "CExpr condition should reference seq_id"
+
+
+# ===========================================================
+# ObjectTransformer: _collect_sources worklist stall (circular)
+# ===========================================================
+
+def test_collect_sources_circular_dependency():
+    """_collect_sources handles circular copy dependencies without infinite loop."""
+    setup_test()
+    m_scope = Scope.create(None, 'Circ', {'class', 'module', 'instantiated'}, 0)
+    m_scope.add_sym('x', tags=set(), typ=Type.int())
+
+    scope = Scope.create(None, 'CircTest', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('Circ', tags=set(), typ=Type.klass(m_scope.name))
+
+    obj1_sym = scope.add_sym('obj1', tags=set(), typ=Type.object(m_scope.name))
+    obj2_sym = scope.add_sym('obj2', tags=set(), typ=Type.object(m_scope.name))
+    scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
+
+    env.origin_registry.set_sym_origin(obj1_sym, obj1_sym)
+    env.origin_registry.set_sym_origin(obj2_sym, obj2_sym)
+
+    blk1 = Block(scope, nametag='b1')
+    blk2 = Block(scope, nametag='b2')
+
+    scope.set_entry_block(blk1)
+    scope.set_exit_block(blk2)
+
+    # obj1 = obj2; obj2 = obj1 (circular, no $new def)
+    blk1.append_stm(Move(Temp('obj1', Ctx.STORE), Temp('obj2')))
+    blk1.append_stm(Jump(blk2))
+    blk2.append_stm(Move(Temp('obj2', Ctx.STORE), Temp('obj1')))
+
+    blk1.succs = [blk2]
+    blk2.preds = [blk1]
+
+    Block.set_order(blk1, 0)
+
+    from polyphony.compiler.ir.analysis.usedef import UseDefDetector
+    ot = ObjectTransformer()
+    ot.scope = scope
+    ot.seq_id_map = {}
+    ot.usedef = UseDefDetector().process(scope)
+    ot._collect_obj_defs()
+
+    # Both are copies (no $new), no defs => _collect_sources returns None
+    assert len(ot.obj_defs) == 0
+    assert len(ot.obj_copies) == 2
+    result = ot._collect_sources(ot.obj_copies, ot.obj_defs)
+    assert result is None
+
+
+# ===========================================================
+# ObjectTransformer: _collect_sources worklist re-queue (line 124)
+# ===========================================================
+
+def test_collect_sources_worklist_requeue():
+    """_collect_sources re-queues items when root def not yet resolved."""
+    setup_test()
+    src = '''
+scope @top.MQ
+tags module class instantiated
+var x: int32
+
+scope @top.MQ.f
+tags method
+param self: object(@top.MQ)
+var MQ: class(@top.MQ)
+var obj1: object(@top.MQ)
+var obj2: object(@top.MQ)
+var obj3: object(@top.MQ)
+
+blk1:
+mv obj1 (syscall $new MQ)
+mv obj3 obj2
+mv obj2 obj1
+'''
+    IRParser(src).parse_scope()
+    scope = env.scopes['@top.MQ.f']
+
+    obj1_sym = scope.find_sym('obj1')
+    obj2_sym = scope.find_sym('obj2')
+    obj3_sym = scope.find_sym('obj3')
+    env.origin_registry.set_sym_origin(obj1_sym, obj1_sym)
+    env.origin_registry.set_sym_origin(obj2_sym, obj2_sym)
+    env.origin_registry.set_sym_origin(obj3_sym, obj3_sym)
+
+    from polyphony.compiler.ir.analysis.usedef import UseDefDetector
+    ot = ObjectTransformer()
+    ot.scope = scope
+    ot.seq_id_map = {}
+    ot.usedef = UseDefDetector().process(scope)
+    ot._collect_obj_defs()
+    ot._collect_copy_sources()
+
+    # obj3 -> obj2 -> obj1 ($new). obj3 must be re-queued since obj2 isn't resolved first.
+    assert ot.obj_copy_sources is not None
+    for key, sources in ot.obj_copy_sources.items():
+        assert obj1_sym in sources
+
+
+# ===========================================================
+# ObjectTransformer: _add_uphi with SysCall 'len' in Move.src
+# ===========================================================
+
+def test_add_uphi_with_syscall_len():
+    """_add_uphi is triggered when Move.src is SysCall with name='len'."""
+    setup_test()
+    scope = Scope.create(None, 'LenPhi', {'function', 'returnable'}, 0)
+    scope.return_type = Type.int()
+    scope.add_return_sym(Type.int())
+
+    arr1_sym = scope.add_sym('arr1', tags=set(), typ=Type.list(Type.int(), 4))
+    arr2_sym = scope.add_sym('arr2', tags=set(), typ=Type.list(Type.int(), 4))
+    arr_sel_sym = scope.add_sym('arr_sel', tags=set(), typ=Type.list(Type.int(), 4))
+    scope.add_sym('x', tags=set(), typ=Type.int())
+    scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
+
+    env.origin_registry.set_sym_origin(arr1_sym, arr1_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
+    env.origin_registry.set_sym_origin(arr_sel_sym, arr_sel_sym)
+
+    blk1 = Block(scope, nametag='b1')
+    blk2 = Block(scope, nametag='b2')
+    blk3 = Block(scope, nametag='b3')
+    blk4 = Block(scope, nametag='b4')
+
+    scope.set_entry_block(blk1)
+    scope.set_exit_block(blk4)
+
+    blk1.append_stm(Move(Temp('arr1', Ctx.STORE),
+                         Array(items=[Const(1), Const(2), Const(3), Const(4)], mutable=True)))
+    blk1.append_stm(Move(Temp('arr2', Ctx.STORE),
+                         Array(items=[Const(5), Const(6), Const(7), Const(8)], mutable=True)))
+    blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
+    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+
+    blk2.append_stm(Jump(blk4))
+    blk3.append_stm(Jump(blk4))
+
+    phi = Phi(Temp('arr_sel', Ctx.STORE))
+    object.__setattr__(phi, 'args', [Temp('arr1'), Temp('arr2')])
+    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    blk4.append_stm(phi)
+    # SysCall 'len' on the Phi-selected variable
+    len_call = SysCall(Temp('len'), [('', Temp('arr_sel'))], {})
+    object.__setattr__(len_call, 'name', 'len')
+    blk4.append_stm(Move(Temp('x', Ctx.STORE), len_call))
+    blk4.append_stm(Move(Temp('@return', Ctx.STORE), Temp('x')))
+    blk4.append_stm(Ret(Temp('@return')))
+
+    blk1.succs = [blk2, blk3]
+    blk2.preds = [blk1]; blk2.succs = [blk4]
+    blk3.preds = [blk1]; blk3.succs = [blk4]
+    blk4.preds = [blk2, blk3]
+
+    Block.set_order(blk1, 0)
+
+    ot = ObjectTransformer()
+    ot.process(scope)
+
+    # UPhi should be created for the len() use of arr_sel
+    found_uphi = False
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, UPhi):
+                found_uphi = True
+    assert found_uphi, "UPhi should be created for Phi-copy used in SysCall 'len'"
+
+
+# ===========================================================
+# ObjectTransformer: _build_seq_ids with LPhi usage
+# ===========================================================
+
+def test_build_seq_ids_with_lphi_use():
+    """_build_seq_ids replaces seq name in LPhi."""
+    setup_test()
+    scope = Scope.create(None, 'LPhiSeq', {'function'}, 0)
+    scope.return_type = Type.none()
+
+    arr_sym = scope.add_sym('arr', tags=set(), typ=Type.list(Type.int(), 4))
+    arr2_sym = scope.add_sym('arr2', tags=set(), typ=Type.list(Type.int(), 4))
+
+    env.origin_registry.set_sym_origin(arr_sym, arr_sym)
+    env.origin_registry.set_sym_origin(arr2_sym, arr2_sym)
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    blk.append_stm(Move(Temp('arr', Ctx.STORE),
+                         Array(items=[Const(0), Const(0), Const(0), Const(0)], mutable=True)))
+
+    lphi = LPhi(Temp('arr2', Ctx.STORE))
+    object.__setattr__(lphi, 'args', [Temp('arr'), Const(0)])
+    object.__setattr__(lphi, 'ps', [Const(1), Const(1)])
+    blk.append_stm(lphi)
+    Block.set_order(blk, 0)
+
+    from polyphony.compiler.ir.analysis.usedef import UseDefDetector
+    ot = ObjectTransformer()
+    ot.scope = scope
+    ot.seq_id_map = {}
+    ot.usedef = UseDefDetector().process(scope)
+    ot._collect_obj_defs()
+    ot._collect_copy_sources()
+    ot._build_seq_ids()
+
+    assert 'arr' in ot.seq_id_map
+    seq_id_name = ot.seq_id_map['arr']
+    # LPhi should have arr replaced with seq_id
+    found_replaced = False
+    for stm in blk.stms:
+        if isinstance(stm, LPhi):
+            for arg in stm.args:
+                if isinstance(arg, Temp) and arg.name == seq_id_name:
+                    found_replaced = True
+    assert found_replaced, "LPhi should have arr replaced with seq_id"
+
+
+# ===========================================================
+# ObjectTransformer: obj param passthrough (line 46)
+# ===========================================================
+
+def test_obj_param_skipped_in_collect():
+    """Object variable assigned from a param Temp is skipped (not obj_def or obj_copy)."""
+    setup_test()
+    m_scope = Scope.create(None, 'MPar', {'class', 'module', 'instantiated'}, 0)
+    m_scope.add_sym('x', tags=set(), typ=Type.int())
+
+    scope = Scope.create(None, 'ParamSkip', {'function'}, 0)
+    scope.return_type = Type.none()
+
+    # Create param sym (with 'param' tag) and a local obj var
+    param_sym = scope.add_sym('p', tags={'param'}, typ=Type.object(m_scope.name))
+    local_sym = scope.add_sym('local_obj', tags=set(), typ=Type.object(m_scope.name))
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    # mv local_obj p  (where p is a param)
+    blk.append_stm(Move(Temp('local_obj', Ctx.STORE), Temp('p')))
+    Block.set_order(blk, 0)
+
+    from polyphony.compiler.ir.analysis.usedef import UseDefDetector
+    ot = ObjectTransformer()
+    ot.scope = scope
+    ot.seq_id_map = {}
+    ot.usedef = UseDefDetector().process(scope)
+    ot._collect_obj_defs()
+
+    # p is a param, so 'mv local_obj p' should hit line 45-46 (pass)
+    assert len(ot.obj_defs) == 0
+    assert len(ot.obj_copies) == 0
+
+
+def test_seq_param_skipped_in_collect():
+    """Seq variable assigned from a param Temp is skipped (not seq_def or seq_copy)."""
+    setup_test()
+    scope = Scope.create(None, 'SeqParSkip', {'function'}, 0)
+    scope.return_type = Type.none()
+
+    param_sym = scope.add_sym('p', tags={'param'}, typ=Type.list(Type.int(), 4))
+    local_sym = scope.add_sym('local_arr', tags=set(), typ=Type.list(Type.int(), 4))
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    blk.append_stm(Move(Temp('local_arr', Ctx.STORE), Temp('p')))
+    Block.set_order(blk, 0)
+
+    from polyphony.compiler.ir.analysis.usedef import UseDefDetector
+    ot = ObjectTransformer()
+    ot.scope = scope
+    ot.seq_id_map = {}
+    ot.usedef = UseDefDetector().process(scope)
+    ot._collect_obj_defs()
+
+    # p is a param, so 'mv local_arr p' should hit line 55-56 (pass)
+    assert len(ot.seq_defs) == 0
+    assert len(ot.seq_copies) == 0

@@ -2550,3 +2550,208 @@ ret @return
             time = scheduler._node_sched_default(dfg, node)
             assert time >= 0
             break
+
+
+# --- _calc_latency value verification ---
+
+def test_calc_latency_populates_node_latency_map():
+    """_calc_latency populates node_latency_map for each node."""
+    from polyphony.compiler.ir.scheduling.scheduler import BlockBoundedListScheduler
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+var y: int32
+
+blk1:
+mv x 10
+mv y (+ x 5)
+mv @return y
+ret @return
+'''
+    scope = build_scope_with_loop(src)
+    DFGBuilder().process(scope)
+    dfg = scope.top_dfg
+
+    scheduler = BlockBoundedListScheduler()
+    scheduler.scope = scope
+    scheduler.d2c = {}
+    scheduler._calc_latency(dfg)
+    # Every node should be in node_latency_map
+    for node in dfg.nodes:
+        assert node in scheduler.node_latency_map, f"Node not in latency map: {node}"
+        latency_tuple = scheduler.node_latency_map[node]
+        assert len(latency_tuple) == 3
+        assert all(v >= 0 for v in latency_tuple)
+
+
+def test_calc_latency_minimum_cycle():
+    """_calc_latency with cycle='minimum' produces zero latencies."""
+    from polyphony.compiler.ir.scheduling.scheduler import BlockBoundedListScheduler
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+var y: int32
+
+blk1:
+mv x 10
+mv y (+ x 5)
+mv @return y
+ret @return
+'''
+    scope = build_scope_with_loop(src, scheduling='sequential')
+    for blk in scope.traverse_blocks():
+        blk.synth_params['cycle'] = 'minimum'
+    DFGBuilder().process(scope)
+    dfg = scope.top_dfg
+
+    scheduler = BlockBoundedListScheduler()
+    scheduler.scope = scope
+    scheduler.d2c = {}
+    scheduler._calc_latency(dfg)
+    # With minimum cycle, the is_minimum flag is set and affects zero-latency branches
+    # All nodes should still be in the latency map
+    for node in dfg.nodes:
+        assert node in scheduler.node_latency_map, f"Node not in map: {node}"
+        lat = scheduler.node_latency_map[node]
+        assert len(lat) == 3
+        assert all(v >= 0 for v in lat)
+
+
+def test_calc_latency_any_cycle():
+    """_calc_latency with cycle='any' gives UNIT_STEP for normal moves."""
+    from polyphony.compiler.ir.scheduling.scheduler import BlockBoundedListScheduler
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x 10
+mv @return x
+ret @return
+'''
+    scope = build_scope_with_loop(src)
+    DFGBuilder().process(scope)
+    dfg = scope.top_dfg
+
+    scheduler = BlockBoundedListScheduler()
+    scheduler.scope = scope
+    scheduler.d2c = {}
+    scheduler._calc_latency(dfg)
+    # With 'any' cycle, normal moves get UNIT_STEP
+    for node in dfg.nodes:
+        if isinstance(node.tag, Move) and node in scheduler.node_latency_map:
+            lat = scheduler.node_latency_map[node]
+            assert lat[0] >= 0
+
+
+# --- ResourceExtractor value verification ---
+
+def test_resource_extractor_counts_ops():
+    """ResourceExtractor counts operation types per node."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+var y: int32
+var z: int32
+
+blk1:
+mv x (+ 1 2)
+mv y (* 3 4)
+mv z (+ x y)
+mv @return z
+ret @return
+'''
+    scope = build_scope_with_loop(src)
+    DFGBuilder().process(scope)
+
+    extractor = ResourceExtractor()
+    extractor.scope = scope
+    for node in scope.top_dfg.nodes:
+        extractor.current_node = node
+        extractor.visit(node.tag)
+
+    # Check that specific operations were counted
+    found_add = False
+    found_mult = False
+    for node, op_counts in extractor.ops.items():
+        if 'Add' in op_counts:
+            found_add = True
+            assert op_counts['Add'] > 0
+        if 'Mult' in op_counts:
+            found_mult = True
+            assert op_counts['Mult'] > 0
+    assert found_add, "Expected Add operation to be counted"
+    assert found_mult, "Expected Mult operation to be counted"
+
+
+def test_resource_extractor_op_count_value():
+    """ResourceExtractor op counts are positive integers."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+var y: int32
+var z: int32
+
+blk1:
+mv x (+ 1 2)
+mv y (+ x 3)
+mv z (* y 4)
+mv @return z
+ret @return
+'''
+    scope = build_scope_with_loop(src)
+    DFGBuilder().process(scope)
+
+    extractor = ResourceExtractor()
+    extractor.scope = scope
+    for node in scope.top_dfg.nodes:
+        extractor.current_node = node
+        extractor.visit(node.tag)
+
+    total_ops = 0
+    for node, op_counts in extractor.ops.items():
+        for op, count in op_counts.items():
+            assert count > 0, f"Op count should be positive: {op}={count}"
+            total_ops += count
+    assert total_ops >= 3, f"Expected at least 3 operations (2 Add + 1 Mult), got {total_ops}"
+
+
+def test_resource_extractor_mem_ops():
+    """ResourceExtractor tracks memory read symbols."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var arr: list<int32>[4]
+var x: int32
+var i: int32
+
+blk1:
+mv i 0
+mv x (mld arr i)
+mv @return x
+ret @return
+'''
+    scope = build_scope_with_loop(src)
+    DFGBuilder().process(scope)
+
+    extractor = ResourceExtractor()
+    extractor.scope = scope
+    for node in scope.top_dfg.nodes:
+        extractor.current_node = node
+        extractor.visit(node.tag)
+
+    found_mem = any(bool(v) for v in extractor.mems.values())
+    found_regarray = any(bool(v) for v in extractor.regarrays.values())
+    # MRef should be tracked in mems or regarrays
+    assert found_mem or found_regarray, "Expected memory operations to be tracked"

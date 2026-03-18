@@ -549,3 +549,432 @@ ret @return
     ret_move = [m for m in moves if isinstance(m.dst, Temp) and m.dst.name == '@return']
     assert len(ret_move) == 1
     assert isinstance(ret_move[0].src, Attr)
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_Call standalone (not in Move)
+# ===========================================================
+
+def test_early_call_standalone_extracted():
+    """Call expression not inside Move is extracted to a temp move."""
+    setup_test()
+    scope = Scope.create(None, 'CallExt', {'function', 'returnable'}, 0)
+    scope.return_type = Type.int()
+    scope.add_return_sym(Type.int())
+    scope.add_sym('a', tags=set(), typ=Type.int())
+    scope.add_sym('result', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    # result = call(F) + 1  => BinOp(Call(...), Const(1))
+    # The Call inside BinOp is not suppressed => gets extracted to temp
+    call_ir = Call(Temp('@CallExt'), [('', Const(5))], {})
+    binop = BinOp(op='Add', left=call_ir, right=Const(1))
+    blk.append_stm(Move(Temp('result', Ctx.STORE), binop))
+    blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('result')))
+    blk.append_stm(Ret(Temp('@return')))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    # The Call should be extracted to a temp, then used in BinOp
+    call_moves = [m for m in moves if isinstance(m.src, Call)]
+    assert len(call_moves) >= 1, "Call should be extracted to a temp move"
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_New (lines 127-135)
+# ===========================================================
+
+def test_early_new_standalone_extracted():
+    """New expression not in a Move is extracted to a temp move."""
+    setup_test()
+    scope = Scope.create(None, 'NewExt', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('result', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    # New inside a BinOp (contrived to exercise visit_New without suppress)
+    new_ir = New(Temp('@NewExt'), [('', Const(1))], {})
+    # result = new + 0  (contrived to exercise visit_New without suppress)
+    binop = BinOp(op='Add', left=new_ir, right=Const(0))
+    blk.append_stm(Move(Temp('result', Ctx.STORE), binop))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    new_moves = [m for m in moves if isinstance(m.src, New)]
+    assert len(new_moves) >= 1, "New should be extracted to a temp move"
+
+
+def test_early_new_in_move_direct():
+    """New directly in a Move src stays as New (suppress=True)."""
+    setup_test()
+    scope = Scope.create(None, 'NewSup', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('obj', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    new_ir = New(Temp('@NewSup'), [('', Const(1))], {})
+    blk.append_stm(Move(Temp('obj', Ctx.STORE), new_ir))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    obj_move = [m for m in moves if isinstance(m.dst, Temp) and m.dst.name == 'obj']
+    assert len(obj_move) == 1
+    assert isinstance(obj_move[0].src, New)
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_BinOp with Array*N where repeat!=1
+# ===========================================================
+
+def test_early_array_mult_with_existing_repeat():
+    """Array * N where Array.repeat != Const(1) gives BinOp repeat."""
+    setup_test()
+    scope = Scope.create(None, 'ArrMult2', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('arr', tags=set(), typ=Type.list(Type.int(), 8))
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    arr = Array(items=[Const(0)], repeat=Const(2), mutable=True)
+    binop = BinOp(op='Mult', left=arr, right=Const(4))
+    blk.append_stm(Move(Temp('arr', Ctx.STORE), binop))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    arr_move = [m for m in moves if isinstance(m.dst, Temp) and m.dst.name == 'arr']
+    assert len(arr_move) == 1
+    assert isinstance(arr_move[0].src, Array)
+    # repeat should be BinOp(Mult, Const(2), Const(4))
+    assert isinstance(arr_move[0].src.repeat, BinOp)
+    assert arr_move[0].src.repeat.op == 'Mult'
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_Move with MRef as dst (lines 202-206)
+# ===========================================================
+
+def test_early_move_with_mref_dst():
+    """Move with MRef as dst is converted to Expr(MStore(...))."""
+    setup_test()
+    scope = Scope.create(None, 'MRefDst', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('arr', tags=set(), typ=Type.list(Type.int(), 4))
+    scope.add_sym('idx', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    blk.append_stm(Move(Temp('idx', Ctx.STORE), Const(0)))
+    # arr[idx] = 42 => Move(MRef(arr, idx, STORE), Const(42))
+    mref_dst = MRef(Temp('arr'), Temp('idx'), Ctx.STORE)
+    blk.append_stm(Move(mref_dst, Const(42)))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    blk = scope.entry_block
+    exprs = [s for s in blk.stms if isinstance(s, Expr)]
+    ms_exprs = [e for e in exprs if isinstance(e.exp, MStore)]
+    assert len(ms_exprs) == 1, "Move with MRef dst should be converted to Expr(MStore)"
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_SysCall standalone (not in Move)
+# ===========================================================
+
+def test_early_syscall_standalone_extracted():
+    """SysCall not inside Move is extracted to a temp move."""
+    setup_test()
+    scope = Scope.create(None, 'SysExt', {'function', 'returnable'}, 0)
+    scope.return_type = Type.int()
+    scope.add_return_sym(Type.int())
+    scope.add_sym('result', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    # result = syscall_len + 1 => BinOp(SysCall, Const(1))
+    syscall_ir = SysCall(Temp('$len'), [], {})
+    binop = BinOp(op='Add', left=syscall_ir, right=Const(1))
+    blk.append_stm(Move(Temp('result', Ctx.STORE), binop))
+    blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('result')))
+    blk.append_stm(Ret(Temp('@return')))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    syscall_moves = [m for m in moves if isinstance(m.src, SysCall)]
+    assert len(syscall_moves) >= 1, "SysCall should be extracted to a temp move"
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: _visit_args with Array argument
+# ===========================================================
+
+def test_early_visit_args_with_array_arg():
+    """Array argument in a Call is extracted to a temp move."""
+    setup_test()
+    scope = Scope.create(None, 'ArrArg', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('result', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    arr = Array(items=[Const(1), Const(2)], mutable=True)
+    call_ir = Call(Temp('@ArrArg'), [('', arr)], {})
+    blk.append_stm(Expr(call_ir))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    blk = scope.entry_block
+    moves = [s for s in blk.stms if isinstance(s, Move)]
+    # The Array arg should be extracted to a temp move
+    arr_temp_moves = [m for m in moves if isinstance(m.src, Array)]
+    assert len(arr_temp_moves) >= 1, "Array arg should be extracted to temp"
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_RelOp standalone (not suppressed)
+# ===========================================================
+
+def test_early_relop_standalone_extracted():
+    """RelOp not in a Move src is extracted to a condition temp."""
+    setup_test()
+    scope = Scope.create(None, 'RelExt', {'function', 'returnable'}, 0)
+    scope.return_type = Type.int()
+    scope.add_return_sym(Type.int())
+    scope.add_sym('a', tags=set(), typ=Type.int())
+    scope.add_sym('result', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    # result = (a < 10) + 1 => BinOp(RelOp, Const(1))
+    relop = RelOp('Lt', Temp('a'), Const(10))
+    binop = BinOp(op='Add', left=relop, right=Const(1))
+    blk.append_stm(Move(Temp('a', Ctx.STORE), Const(5)))
+    blk.append_stm(Move(Temp('result', Ctx.STORE), binop))
+    blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('result')))
+    blk.append_stm(Ret(Temp('@return')))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    relop_moves = [m for m in moves if isinstance(m.src, RelOp)]
+    assert len(relop_moves) >= 1, "RelOp should be extracted to condition temp"
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_Expr with SysCall (line 176-177)
+# ===========================================================
+
+def test_early_expr_with_syscall():
+    """SysCall in an Expr sets suppress_converting=True."""
+    setup_test()
+    scope = Scope.create(None, 'SysExpr', {'function'}, 0)
+    scope.return_type = Type.none()
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    syscall_ir = SysCall(Temp('$print'), [('', Const(42))], {})
+    blk.append_stm(Expr(syscall_ir))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    blk = scope.entry_block
+    exprs = [s for s in blk.stms if isinstance(s, Expr) and not isinstance(s, CExpr)]
+    syscall_exprs = [e for e in exprs if isinstance(e.exp, SysCall)]
+    assert len(syscall_exprs) == 1, "SysCall in Expr should stay as Expr"
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_MRef with complex offset
+# ===========================================================
+
+def test_early_mref_with_binop_offset():
+    """MRef with BinOp offset: offset is extracted to temp."""
+    setup_test()
+    scope = Scope.create(None, 'MRefOff', {'function', 'returnable'}, 0)
+    scope.return_type = Type.int()
+    scope.add_return_sym(Type.int())
+    scope.add_sym('arr', tags=set(), typ=Type.list(Type.int(), 4))
+    scope.add_sym('i', tags=set(), typ=Type.int())
+    scope.add_sym('result', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    blk.append_stm(Move(Temp('i', Ctx.STORE), Const(1)))
+    # arr[i+1] => MRef(arr, BinOp(Add, i, 1))
+    offset = BinOp(op='Add', left=Temp('i'), right=Const(1))
+    mref = MRef(Temp('arr'), offset, Ctx.LOAD)
+    blk.append_stm(Move(Temp('result', Ctx.STORE), mref))
+    blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('result')))
+    blk.append_stm(Ret(Temp('@return')))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    res_move = [m for m in moves if isinstance(m.dst, Temp) and m.dst.name == 'result']
+    assert len(res_move) == 1
+    # The MRef offset should now be a Temp (the BinOp was extracted)
+    assert isinstance(res_move[0].src, MRef)
+    assert isinstance(res_move[0].src.offset, Temp)
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_Array with changed items
+# ===========================================================
+
+def test_early_array_with_binop_items():
+    """Array items containing BinOp get extracted to temps."""
+    setup_test()
+    scope = Scope.create(None, 'ArrItem', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('arr', tags=set(), typ=Type.list(Type.int(), 2))
+    scope.add_sym('a', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    blk.append_stm(Move(Temp('a', Ctx.STORE), Const(1)))
+    # arr = [a+1, a+2] - BinOp items get extracted
+    items = [BinOp(op='Add', left=Temp('a'), right=Const(1)),
+             BinOp(op='Add', left=Temp('a'), right=Const(2))]
+    blk.append_stm(Move(Temp('arr', Ctx.STORE), Array(items=items, mutable=True)))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    arr_move = [m for m in moves if isinstance(m.dst, Temp) and m.dst.name == 'arr']
+    assert len(arr_move) == 1
+    assert isinstance(arr_move[0].src, Array)
+    # Items should now be Temp references (extracted from BinOps)
+    for item in arr_move[0].src.items:
+        assert isinstance(item, Temp), f"Array item should be Temp, got {type(item)}"
+
+
+# ===========================================================
+# LateQuadrupleMaker: visit_Attr for non-scalar attribute (lines 203-206)
+# ===========================================================
+
+def test_late_attr_nonscalar_visited():
+    """LateQuadrupleMaker visits and transforms non-scalar Attr references."""
+    setup_test()
+    src = '''
+scope @top.Inner
+tags module class instantiated
+var x: int32
+
+scope @top.Outer
+tags module class instantiated
+var inner: object(@top.Inner)
+
+scope @top.Outer.f
+tags method returnable
+param self: object(@top.Outer)
+return int32
+
+blk1:
+mv @return self.inner.x
+ret @return
+'''
+    IRParser(src).parse_scope()
+    scope = env.scopes['@top.Outer.f']
+    LateQuadrupleMaker().process(scope)
+    blk = scope.entry_block
+    moves = [s for s in blk.stms if isinstance(s, Move)]
+    ret_move = [m for m in moves if isinstance(m.dst, Temp) and m.dst.name == '@return']
+    assert len(ret_move) == 1
+    # The nested Attr for self.inner.x should be processed
+    assert isinstance(ret_move[0].src, Attr)
+
+
+def test_late_attr_class_scalar():
+    """LateQuadrupleMaker keeps class-level scalar Attr as-is."""
+    setup_test()
+    src = '''
+scope @top.NS
+tags module class instantiated namespace
+var VAL: int32
+
+scope F
+tags function returnable
+return int32
+var NS: class(@top.NS)
+
+blk1:
+mv @return NS.VAL
+ret @return
+'''
+    IRParser(src).parse_scope()
+    scope = env.scopes['F']
+    LateQuadrupleMaker().process(scope)
+    blk = scope.entry_block
+    moves = [s for s in blk.stms if isinstance(s, Move)]
+    ret_move = [m for m in moves if isinstance(m.dst, Temp) and m.dst.name == '@return']
+    assert len(ret_move) == 1
+    assert isinstance(ret_move[0].src, Attr)
+
+
+# ===========================================================
+# EarlyQuadrupleMaker: visit_CondOp with nested expressions
+# ===========================================================
+
+def test_early_condop_nested_binop():
+    """CondOp with BinOp arguments: inner expressions are extracted."""
+    setup_test()
+    scope = Scope.create(None, 'CondNest', {'function', 'returnable'}, 0)
+    scope.return_type = Type.int()
+    scope.add_return_sym(Type.int())
+    scope.add_sym('a', tags=set(), typ=Type.int())
+    scope.add_sym('b', tags=set(), typ=Type.int())
+    scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
+    scope.add_sym('result', tags=set(), typ=Type.int())
+
+    blk = Block(scope, nametag='entry')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+
+    blk.append_stm(Move(Temp('a', Ctx.STORE), Const(5)))
+    blk.append_stm(Move(Temp('b', Ctx.STORE), Const(10)))
+    blk.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('a'), Temp('b'))))
+    # CondOp with BinOp in left/right
+    condop = CondOp(
+        cond=Temp('cond'),
+        left=BinOp(op='Add', left=Temp('a'), right=Const(1)),
+        right=BinOp(op='Sub', left=Temp('b'), right=Const(1)),
+    )
+    blk.append_stm(Move(Temp('result', Ctx.STORE), condop))
+    blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('result')))
+    blk.append_stm(Ret(Temp('@return')))
+    Block.set_order(blk, 0)
+
+    EarlyQuadrupleMaker().process(scope)
+    moves = [s for s in scope.entry_block.stms if isinstance(s, Move)]
+    # BinOps inside CondOp should be extracted to temps
+    binop_moves = [m for m in moves if isinstance(m.src, BinOp)]
+    assert len(binop_moves) >= 2, "BinOps inside CondOp should be extracted"
