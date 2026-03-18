@@ -70,6 +70,8 @@ class Env(object):
         self.targets = []
         self.root_dir = ''
         self.seq_id_to_array: dict = {}
+        from ..ir.origin import OriginRegistry
+        self.origin_registry = OriginRegistry()
 
     def load_config(self, config):
         for key, v in config.items():
