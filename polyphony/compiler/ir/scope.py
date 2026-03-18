@@ -374,7 +374,6 @@ class Scope(Tagged, SymbolTable):
         self.orig_base_name: str = name
         self.lineno: int = lineno
         self.scope_id: int = scope_id
-        self.return_type: Type = None
         self.entry_block: Block = None
         self.exit_block: Block = None
         self.children: list["Scope"] = []
@@ -550,7 +549,9 @@ class Scope(Tagged, SymbolTable):
                 s_func = s.as_function()
                 if s_func:
                     s_func.add_param(s.symbols[p.name], cloned_defval)
-            s.return_type = self.return_type
+            s_func = s.as_function()
+            if s_func:
+                s_func.return_type = self.return_type
         block_map, stm_map = self.clone_blocks(s)
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
