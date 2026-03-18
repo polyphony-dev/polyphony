@@ -35,8 +35,9 @@ class HDLModuleBuilder(object):
     def _process_submodules(self):
         for instance_sig, subscope in self.hdlmodule.subscopes.items():
             param_map = {}
-            if subscope.scope.module_param_vars:
-                for name, v in subscope.scope.module_param_vars:
+            cls = subscope.scope.as_class()
+            if cls and cls.module_param_vars:
+                for name, v in cls.module_param_vars:
                     param_map[name] = v
             connections = []
             for (var, connector_name, attrs) in subscope.connectors(instance_sig.name):

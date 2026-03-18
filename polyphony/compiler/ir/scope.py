@@ -386,8 +386,6 @@ class Scope(Tagged, SymbolTable):
         self.synth_params = make_synth_params()
         self.constants = {}
         self.branch_graph = Graph()
-        self.module_params = []
-        self.module_param_vars = []
         self._bound_args = []
 
     def __str__(self):
@@ -928,6 +926,8 @@ class ClassScope(Instantiable, Scope):
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(parent, name, tags, lineno, scope_id)
         self.workers: list["Scope"] = []
+        self.module_params = []
+        self.module_param_vars = []
 
     def as_class(self) -> "ClassScope":
         return self
