@@ -589,43 +589,6 @@ class Scope(Tagged, SymbolTable):
         s.synth_params = self.synth_params.copy()
         return s
 
-    def instantiate(self, inst_name, parent=None):
-        if parent is None:
-            parent = self.parent
-        new_class = self.clone("", inst_name, parent, recursive=True, rename_children=False)
-        assert new_class.origin is self
-
-        old_class_sym = self.parent.find_sym(self.base_name)
-        new_sym = new_class.parent.find_sym(new_class.base_name)
-        assert isinstance(new_sym, Symbol)
-        if old_class_sym.ancestor:
-            new_sym.ancestor = old_class_sym.ancestor
-        else:
-            new_sym.ancestor = old_class_sym
-        new_scopes: dict["Scope", "Scope"] = {self: new_class}
-        for old_child, new_child in zip(self.children, new_class.children):
-            new_scopes[old_child] = new_child
-        for old, new in new_scopes.items():
-            syms = new_class.find_scope_sym(old)
-            for sym in syms:
-                if sym.scope in new_scopes.values():
-                    sym.typ = sym.typ.clone(scope=new)
-            if new.parent.is_namespace():
-                continue
-            new_t = new.parent.find_sym(new.base_name).typ
-            assert new_t.scope is new
-        self._replace_type_scope(new_scopes)
-        return new_class
-
-    def _replace_type_scope(self, new_scopes: dict["Scope", "Scope"]):
-        value_map = {old.name: new.name for old, new in new_scopes.items()}
-        for new in new_scopes.values():
-            for sym in new.symbols.values():
-                d = dataclasses.asdict(sym.typ)
-                dd = {}
-                if typehelper.replace_type_dict(d, dd, "scope_name", value_map):
-                    sym.typ = sym.typ.__class__.from_dict(dd)
-
     def find_child(self, name, rec=False):
         for child in self.children:
             if rec:
@@ -779,29 +742,6 @@ class Scope(Tagged, SymbolTable):
             else:
                 return self.parent.outer_module()
 
-    def register_worker(self, worker_scope):
-        for i, w in enumerate(self.workers[:]):
-            if w is worker_scope:
-                self.workers.pop(i)
-        self.workers.append(worker_scope)
-        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
-        worker_scope.worker_owner = self
-
-    def add_branch_graph_edge(self, k, vs):
-        assert isinstance(vs, list)
-        self.branch_graph.add_node(k)
-        for v in itertools.chain(*vs):
-            if k < v:
-                self.branch_graph.add_edge(k, v)
-            else:
-                self.branch_graph.add_edge(v, k)
-
-    def has_branch_edge(self, stm0, stm1):
-        if stm0 < stm1:
-            return self.branch_graph.find_edge(stm0, stm1) is not None
-        else:
-            return self.branch_graph.find_edge(stm1, stm0) is not None
-
     def is_assignable(self, other):
         if self is other:
             return True
@@ -819,16 +759,78 @@ class Scope(Tagged, SymbolTable):
             clos.extend(child.closures())
         return clos
 
+    def add_branch_graph_edge(self, k, vs):
+        assert isinstance(vs, list)
+        self.branch_graph.add_node(k)
+        for v in itertools.chain(*vs):
+            if k < v:
+                self.branch_graph.add_edge(k, v)
+            else:
+                self.branch_graph.add_edge(v, k)
+
+    def has_branch_edge(self, stm0, stm1):
+        if stm0 < stm1:
+            return self.branch_graph.find_edge(stm0, stm1) is not None
+        else:
+            return self.branch_graph.find_edge(stm1, stm0) is not None
+
+
+
+class Instantiable:
+    """Mixin for scopes that support instantiation and worker registration."""
+
+    def instantiate(self, inst_name, parent=None):
+        if parent is None:
+            parent = self.parent
+        new_class = self.clone("", inst_name, parent, recursive=True, rename_children=False)
+        assert new_class.origin is self
+
+        old_class_sym = self.parent.find_sym(self.base_name)
+        new_sym = new_class.parent.find_sym(new_class.base_name)
+        assert isinstance(new_sym, Symbol)
+        if old_class_sym.ancestor:
+            new_sym.ancestor = old_class_sym.ancestor
+        else:
+            new_sym.ancestor = old_class_sym
+        new_scopes: dict["Scope", "Scope"] = {self: new_class}
+        for old_child, new_child in zip(self.children, new_class.children):
+            new_scopes[old_child] = new_child
+        for old, new in new_scopes.items():
+            syms = new_class.find_scope_sym(old)
+            for sym in syms:
+                if sym.scope in new_scopes.values():
+                    sym.typ = sym.typ.clone(scope=new)
+            if new.parent.is_namespace():
+                continue
+            new_t = new.parent.find_sym(new.base_name).typ
+            assert new_t.scope is new
+        self._replace_type_scope(new_scopes)
+        return new_class
+
+    def _replace_type_scope(self, new_scopes: dict["Scope", "Scope"]):
+        value_map = {old.name: new.name for old, new in new_scopes.items()}
+        for new in new_scopes.values():
+            for sym in new.symbols.values():
+                d = dataclasses.asdict(sym.typ)
+                dd = {}
+                if typehelper.replace_type_dict(d, dd, "scope_name", value_map):
+                    sym.typ = sym.typ.__class__.from_dict(dd)
+
+    def register_worker(self, worker_scope):
+        for i, w in enumerate(self.workers[:]):
+            if w is worker_scope:
+                self.workers.pop(i)
+        self.workers.append(worker_scope)
+        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
+        worker_scope.worker_owner = self
+
     def instance_number(self):
         n = Scope.instance_ids[self]
         Scope.instance_ids[self] += 1
         return n
 
-    def set_bound_args(self, binding: list[tuple[int, IrExp]]):
-        self._bound_args = [str(exp) for i, exp in binding]
 
-
-class FunctionScope(Scope):
+class FunctionScope(Instantiable, Scope):
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(parent, name, tags, lineno, scope_id)
         self.function_params = FunctionParams(self.is_method())
@@ -931,7 +933,7 @@ class FunctionScope(Scope):
         return ds
 
 
-class ClassScope(Scope):
+class ClassScope(Instantiable, Scope):
     def as_class(self) -> "ClassScope":
         return self
 

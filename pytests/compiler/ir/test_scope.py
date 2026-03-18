@@ -1039,7 +1039,7 @@ class TestScopeSetBoundArgs:
         """Cover line 932-933."""
         setup_test()
         top = env.scopes["@top"]
-        scope = Scope.create(top, "ba_scope", {"function"})
+        scope = Scope.create(top, "ba_scope", {"class"})
         scope.set_bound_args([(0, Const(value=1)), (1, Const(value=2))])
         assert scope._bound_args == ["1", "2"]
 
