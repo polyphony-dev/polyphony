@@ -11,6 +11,7 @@ from .compiler.ahdl.hdlscope import HDLScope
 from .compiler.ahdl.hdlmodule import HDLModule
 from .compiler.ir.ir import Ctx
 from .compiler.ir.symbol import Symbol
+from .compiler.common.env import env
 
 
 class HDLAssertionError(AssertionError):
@@ -1076,8 +1077,9 @@ class SimulationModelBuilder(object):
 
     def _add_io_method(self, model, main_py_module):
         def find_origin_scope(scope):
-            if scope.origin:
-                return find_origin_scope(scope.origin)
+            origin = env.origin_registry.scope_origin_of(scope)
+            if origin:
+                return find_origin_scope(origin)
             return scope
 
         origin_scope = find_origin_scope(model.hdlmodule.scope)

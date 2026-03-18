@@ -117,7 +117,7 @@ def test_clone_function():
     assert f_clone is f_
     assert f_clone.parent is top
     assert f_clone.is_function()
-    assert f_clone.origin is f
+    assert env.origin_registry.scope_origin_of(f_clone) is f
     assert f_clone.orig_name == '@top.f'
 
     new_sym = top.find_sym('cloned_f_cloned')
@@ -205,7 +205,7 @@ def test_recursive_clone():
     assert g_clone is not g
     assert g_clone.parent is f_clone
     assert g_clone.is_function()
-    assert g_clone.origin is g
+    assert env.origin_registry.scope_origin_of(g_clone) is g
     assert g_clone.orig_name == '@top.f.g'
 
     new_g_sym = f_clone.find_sym('cloned_g_cloned')
@@ -1027,10 +1027,10 @@ class TestScopeIsAssignable:
         top = env.scopes["@top"]
         s1 = Scope.create(top, "asg_s1", {"function"})
         s2 = Scope.create(top, "asg_s2", {"function"})
-        s2.origin = s1
+        env.origin_registry.set_scope_origin(s2, s1)
         assert s2.is_assignable(s1) is True
         s3 = Scope.create(top, "asg_s3", {"function"})
-        s3.origin = s2
+        env.origin_registry.set_scope_origin(s3, s2)
         assert s3.is_assignable(s1) is True
 
 

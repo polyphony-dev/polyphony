@@ -411,13 +411,13 @@ def instantiate(driver):
             assert module.name in env.scopes
             assert module.is_module()
             driver.insert_scope(module)
-            orig_scopes.add(module.origin)
+            orig_scopes.add(env.origin_registry.scope_origin_of(module))
 
             for s in module.collect_scope():
                 if not s.is_instantiated():
                     continue
                 driver.insert_scope(s)
-                orig_scopes.add(s.origin)
+                orig_scopes.add(env.origin_registry.scope_origin_of(s))
         for s in orig_scopes:
             driver.remove_scope(s)
         scopes = [module.find_ctor() for module in new_modules]

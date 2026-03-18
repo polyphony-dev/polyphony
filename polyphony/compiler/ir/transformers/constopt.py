@@ -560,7 +560,7 @@ class ConstantOpt(ConstantOptBase):
             if objscope.is_class():
                 classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():
-                    objscope = objscope.origin
+                    objscope = env.origin_registry.scope_origin_of(objscope)
                     classsym = objscope.parent.find_sym(objscope.base_name)
                 c = _try_get_constant_new((classsym, attr), self.scope)
                 if c:
@@ -615,14 +615,14 @@ class StaticConstOpt(ConstantOptBase):
             self.visit(stm)
         for sym, c in self.constant_table.items():
             sym.scope.constants[sym] = c
-            if sym.scope.origin:
-                origin_scope = sym.scope.origin
+            origin_scope = env.origin_registry.scope_origin_of(sym.scope)
+            if origin_scope:
                 if sym.name in origin_scope.symbols:
                     origin_scope.constants[origin_scope.symbols[sym.name]] = c
         for sym, c in self.constant_array_table.items():
             sym.scope.constants[sym] = c
-            if sym.scope.origin:
-                origin_scope = sym.scope.origin
+            origin_scope = env.origin_registry.scope_origin_of(sym.scope)
+            if origin_scope:
                 if sym.name in origin_scope.symbols:
                     origin_scope.constants[origin_scope.symbols[sym.name]] = c
 

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from .scopetype import ScopeType
+from ...common.env import env
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,7 @@ class ObjectType(ScopeType):
             return False
         elif self.scope is rhs_t.scope:
             return True
-        elif self.scope is rhs_t.scope.origin:
+        elif self.scope is env.origin_registry.scope_origin_of(rhs_t.scope):
             return True
         elif rhs_t.scope.is_subclassof(self.scope):
             return True
@@ -31,7 +32,7 @@ class ObjectType(ScopeType):
         if self.name == rhs_t.name:
             if self.scope.is_object():
                 lhs_t = rhs_t.clone(explicit=self.explicit)
-            elif rhs_t.scope.origin is self.scope:
+            elif env.origin_registry.scope_origin_of(rhs_t.scope) is self.scope:
                 lhs_t = rhs_t.clone(explicit=self.explicit)
             elif rhs_t.scope.is_port() and self.scope.is_port():
                 lhs_t = rhs_t.clone(explicit=self.explicit)

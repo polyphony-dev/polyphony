@@ -2749,7 +2749,7 @@ def test_static_constopt_origin_scope():
     C2 = Scope.create(top, 'SCOriginInst', {'class'}, 0)
     C2.add_sym('x', tags=set(), typ=Type.int(32))
     C2.return_type = Type.none()
-    C2.origin = C
+    env.origin_registry.set_scope_origin(C2, C)
 
     blk = Block(C2, nametag='blk1')
     C2.set_entry_block(blk)
@@ -2785,7 +2785,7 @@ def test_static_constopt_array_origin():
     C2 = Scope.create(top, 'SCArrInst', {'class'}, 0)
     C2.add_sym('arr', tags=set(), typ=Type.list(Type.int(32), 3))
     C2.return_type = Type.none()
-    C2.origin = C
+    env.origin_registry.set_scope_origin(C2, C)
 
     blk = Block(C2, nametag='blk1')
     C2.set_entry_block(blk)

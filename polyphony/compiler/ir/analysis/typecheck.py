@@ -550,4 +550,4 @@ class SynthesisParamChecker(object):
         if not sym_t.is_object():
             return False
         scp = sym_t.scope
-        return scp.origin.name == 'polyphony.Channel'
+        return env.origin_registry.scope_origin_of(scp).name == 'polyphony.Channel'

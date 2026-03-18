@@ -956,7 +956,7 @@ class InlineOpt(object):
     def _replace_type_expr_scope(self, callee: CalleeScope, caller: CallerScope):
         if not callee.is_ctor():
             return
-        orig_callee = callee.origin
+        orig_callee = env.origin_registry.scope_origin_of(callee)
         assert isinstance(orig_callee, Scope)
         parent = orig_callee.parent
         assert isinstance(parent, Scope)
@@ -972,7 +972,7 @@ class InlineOpt(object):
     def _rename_type_expr_var(self, callee: CalleeScope, old_name: str, new_name: str):
         if not callee.is_ctor():
             return
-        orig_callee = callee.origin
+        orig_callee = env.origin_registry.scope_origin_of(callee)
         assert isinstance(orig_callee, Scope)
         parent = orig_callee.parent
         assert isinstance(parent, Scope)

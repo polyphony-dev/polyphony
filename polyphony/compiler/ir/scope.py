@@ -286,7 +286,7 @@ class Scope(Tagged, SymbolTable):
             fail((env.scope_file_map[s], lineno), Errors.REDEFINED_NAME, {name})
         env.append_scope(s)
         if origin:
-            s.origin = origin
+            env.origin_registry.set_scope_origin(s, origin)
             s.orig_name = origin.orig_name
             s.orig_base_name = origin.orig_base_name
             env.scope_file_map[s] = env.scope_file_map[origin]
@@ -376,7 +376,6 @@ class Scope(Tagged, SymbolTable):
         self.exit_block: Block = None
         self.children: list["Scope"] = []
         self.bases: list["Scope"] = []
-        self.origin: "Scope" = None
         self.block_count = 0
         self.worker_owner: "Scope" = None
         self.asap_latency = -1
@@ -741,9 +740,11 @@ class Scope(Tagged, SymbolTable):
     def is_assignable(self, other):
         if self is other:
             return True
-        if self.origin and self.origin.is_assignable(other):
+        self_origin = env.origin_registry.scope_origin_of(self)
+        if self_origin and self_origin.is_assignable(other):
             return True
-        if other.origin and self.is_assignable(other.origin):
+        other_origin = env.origin_registry.scope_origin_of(other)
+        if other_origin and self.is_assignable(other_origin):
             return True
         return False
 
@@ -779,7 +780,7 @@ class Instantiable:
         if parent is None:
             parent = self.parent
         new_class = self.clone("", inst_name, parent, recursive=True, rename_children=False)
-        assert new_class.origin is self
+        assert env.origin_registry.scope_origin_of(new_class) is self
 
         old_class_sym = self.parent.find_sym(self.base_name)
         new_sym = new_class.parent.find_sym(new_class.base_name)
