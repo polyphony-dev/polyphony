@@ -209,6 +209,15 @@ def abnormal_test(tests, proc, options, ignores):
             print(f'ERROR: {t} raised {e}')
     pool.terminate()
     pool.join()
+    error_results = dict(error_results)
+    # Record results: FAIL for failed tests, PASS for others
+    suite_results = {}
+    for t in tests:
+        if t in error_results:
+            suite_results[t] = 'FAIL'
+        else:
+            suite_results[t] = 'PASS'
+    global_suite_results.append(suite_results)
     fails = sum(error_results.values())
     return fails
 
