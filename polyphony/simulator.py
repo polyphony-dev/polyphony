@@ -1140,9 +1140,10 @@ class SimulationModelBuilder(object):
 
         def call_body(*args, **kwargs):
             arg_and_names = []
-            assert hasattr(hdlscope.scope, 'function_params'), f'{hdlscope.scope.name} is not a FunctionScope'
-            param_names = hdlscope.scope.param_names()
-            default_values = hdlscope.scope.param_default_values()
+            func = hdlscope.scope.as_function()
+            assert func, f'{hdlscope.scope.name} is not a FunctionScope'
+            param_names = func.param_names()
+            default_values = func.param_default_values()
             for i, v in enumerate(args):
                 arg_and_names.append((param_names[i], v))
             for k, v in kwargs.items():

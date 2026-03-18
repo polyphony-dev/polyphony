@@ -55,8 +55,9 @@ class IRWriter(object):
         self.lines.append(f'tags  {tags}')
 
         # params
-        if hasattr(scope, 'function_params'):
-            for sym in scope.param_symbols(with_self=True):
+        func = scope.as_function()
+        if func:
+            for sym in func.param_symbols(with_self=True):
                 param_name = sym.name[len(Symbol.param_prefix) + 1:]
                 typstr = self._format_type(sym.typ)
                 tags = sym.tags - {'param'}
@@ -67,14 +68,14 @@ class IRWriter(object):
                     self.lines.append(f'param {param_name}:{typstr}')
 
         # return type
-        if hasattr(scope, 'return_type') and scope.return_type and not scope.return_type.is_none():
-            self.lines.append(f'return {self._format_type(scope.return_type)}')
+        if func and func.return_type and not func.return_type.is_none():
+            self.lines.append(f'return {self._format_type(func.return_type)}')
 
         # variables (exclude params, return, imported)
-        if hasattr(scope, 'function_params'):
-            param_names = {s.name for s in scope.param_symbols(with_self=True)}
+        if func:
+            param_names = {s.name for s in func.param_symbols(with_self=True)}
             copy_names = set()
-            for sym in scope.param_symbols(with_self=True):
+            for sym in func.param_symbols(with_self=True):
                 copy_name = sym.name[len(Symbol.param_prefix) + 1:]
                 copy_names.add(copy_name)
         else:

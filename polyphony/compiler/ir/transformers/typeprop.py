@@ -283,11 +283,12 @@ class RejectPropagation(Exception):
 class TypeEvalVisitor(IrVisitor):
     def process(self, scope):
         self.type_evaluator = TypeEvaluator(scope)
-        if hasattr(scope, 'function_params'):
-            for sym in scope.param_symbols():
+        func = scope.as_function()
+        if func:
+            for sym in func.param_symbols():
                 sym.typ = self._eval(sym.typ)
-        if hasattr(scope, 'return_type') and scope.return_type:
-            scope.return_type = self._eval(scope.return_type)
+            if func.return_type:
+                func.return_type = self._eval(func.return_type)
         for sym in scope.constants.keys():
             sym.typ = self._eval(sym.typ)
         super().process(scope)

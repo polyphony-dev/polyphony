@@ -407,16 +407,15 @@ class Scope(Tagged, SymbolTable):
             for sym, const_val in self.constants.items():
                 s += f"    {sym}:{sym.typ} = {const_val}\n"
 
-        function_params = getattr(self, 'function_params', None)
-        if function_params:
+        func = self.as_function()
+        if func and func.function_params:
             s += "Parameters:\n"
-            ss = ["    " + line for line in str(function_params).split("\n") if line]
+            ss = ["    " + line for line in str(func.function_params).split("\n") if line]
             s += "\n".join(ss)
             s += "\n"
         s += "Return:\n"
-        return_type = getattr(self, 'return_type', None)
-        if return_type:
-            s += "    {}\n".format(repr(return_type))
+        if func and func.return_type:
+            s += "    {}\n".format(repr(func.return_type))
         else:
             s += "    None\n"
 
@@ -426,10 +425,9 @@ class Scope(Tagged, SymbolTable):
         s += "Blocks:\n"
         for blk in self.traverse_blocks():
             s += str(blk)
-        loop_tree = getattr(self, 'loop_tree', None)
-        if loop_tree:
+        if func and func.loop_tree:
             s += "Loop Tree:\n"
-            for r in loop_tree.traverse():
+            for r in func.loop_tree.traverse():
                 s += f"    {r}"
         return s
 
@@ -473,10 +471,8 @@ class Scope(Tagged, SymbolTable):
         return "_".join(ts)
 
     def signature(self):
-        if hasattr(self, 'function_params'):
-            param_signature = self._mangled_names(self.param_types())
-        else:
-            param_signature = ''
+        func = self.as_function()
+        param_signature = self._mangled_names(func.param_types()) if func else ''
         return (self.name, param_signature)
 
     def unique_name(self):
@@ -545,17 +541,18 @@ class Scope(Tagged, SymbolTable):
         self.clone_symbols_by_name(s)
         from .ir import Ir
 
-        if hasattr(self, 'function_params'):
-            for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
+        func = self.as_function()
+        if func:
+            for p, defval in zip(func.param_symbols(with_self=True), func.param_default_values(with_self=True)):
                 if defval is None:
                     cloned_defval = None
                 elif isinstance(defval, Ir):
                     cloned_defval = defval.model_copy(deep=True)
                 else:
                     cloned_defval = defval.clone()
-                s.add_param(s.symbols[p.name], cloned_defval)
-
-        if hasattr(self, 'return_type'):
+                s_func = s.as_function()
+                if s_func:
+                    s_func.add_param(s.symbols[p.name], cloned_defval)
             s.return_type = self.return_type
         block_map, stm_map = self.clone_blocks(s)
         s.entry_block = block_map[self.entry_block]
@@ -683,6 +680,17 @@ class Scope(Tagged, SymbolTable):
         assert len(set(scopes)) == len(scopes)
         return scopes
 
+    def as_function(self) -> "FunctionScope | None":
+        return None
+
+    def as_class(self) -> "ClassScope | None":
+        return None
+
+    def as_namespace(self) -> "NamespaceScope | None":
+        return None
+
+    def as_global(self) -> "GlobalScope | None":
+        return None
 
     def find_sym(self, name: str) -> Symbol | None:
         sym = SymbolTable.find_sym(self, name)
@@ -827,6 +835,9 @@ class FunctionScope(Scope):
         self.return_type: Type = None
         self.loop_tree = LoopNestTree()
 
+    def as_function(self) -> "FunctionScope":
+        return self
+
     def param_names(self, with_self=False):
         return self.function_params.param_names(with_self)
 
@@ -921,6 +932,9 @@ class FunctionScope(Scope):
 
 
 class ClassScope(Scope):
+    def as_class(self) -> "ClassScope":
+        return self
+
     def find_ctor(self):
         for child in self.children:
             if child.is_ctor():
@@ -964,12 +978,16 @@ class ClassScope(Scope):
 
 
 class NamespaceScope(Scope):
-    pass
+    def as_namespace(self) -> "NamespaceScope":
+        return self
 
 
 class GlobalScope(NamespaceScope):
     def is_global(self):
         return True
+
+    def as_global(self) -> "GlobalScope":
+        return self
 
 
 class NameReplacer(IrVisitor):
