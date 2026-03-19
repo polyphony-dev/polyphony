@@ -196,11 +196,11 @@ class StateBuilder(STGItemBuilder):
         blk_nodes_map = self._get_block_nodes_map(dfg)
         for i, blk in enumerate(sorted(dfg.region.blocks())):
             self.scheduled_items = ScheduledItemQueue()
-            if blk in blk_nodes_map:
-                nodes = blk_nodes_map[blk]
+            if blk.bid in blk_nodes_map:
+                nodes = blk_nodes_map[blk.bid]
                 self._build_scheduled_items(nodes)
 
-            blk_name = blk.nametag + str(blk.num)
+            blk_name = blk.bid
             prefix = self.stg.name + '_' + blk_name
             logger.debug('# BLOCK ' + prefix + ' #')
 

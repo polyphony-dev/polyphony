@@ -16,7 +16,7 @@ class CFGChecker(object):
         self.scope = scope
         self.accessibles = set()
         for b in self.scope.traverse_blocks():
-            self.accessibles.add(b)
+            self.accessibles.add(b.bid)
 
         for b in self.scope.traverse_blocks():
             if isinstance(b, Block):

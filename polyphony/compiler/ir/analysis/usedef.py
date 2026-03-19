@@ -21,7 +21,7 @@ class UseDefItem:
     qsym: tuple[Symbol]
     var: IrVariable
     stm: IrStm
-    blk: Block
+    blk: str  # block bid
 
 
 class UseDefTable(object):
@@ -34,8 +34,8 @@ class UseDefTable(object):
         self._use_var2: dict[IrVariable, set[UseDefItem]] = defaultdict(set)
         self._def_stm2: dict[IrStm, set[UseDefItem]] = defaultdict(set)
         self._use_stm2: dict[IrStm, set[UseDefItem]] = defaultdict(set)
-        self._def_blk2: dict[Block, set[UseDefItem]] = defaultdict(set)
-        self._use_blk2: dict[Block, set[UseDefItem]] = defaultdict(set)
+        self._def_blk2: dict[str, set[UseDefItem]] = defaultdict(set)  # keyed by bid
+        self._use_blk2: dict[str, set[UseDefItem]] = defaultdict(set)  # keyed by bid
 
         self._use_stm2Const: dict[IrStm, set[Const]] = defaultdict(set)
 
@@ -150,11 +150,11 @@ class UseDefTable(object):
         else:
             assert False
 
-    def get_blks_defining(self, sym: Symbol) -> set[Block]:
+    def get_blks_defining(self, sym: Symbol) -> set[str]:
         blks = set([item.blk for item in self._def_sym2[sym]])
         return blks
 
-    def get_blks_using(self, sym: Symbol) -> set[Block]:
+    def get_blks_using(self, sym: Symbol) -> set[str]:
         blks = set([item.blk for item in self._use_sym2[sym]])
         return blks
 
