@@ -28,7 +28,7 @@ def check_int(s):
     return s.isdigit()
 
 
-class IRReader(object):
+class IrReader(object):
     def __init__(self, code: str):
         assert isinstance(code, str)
         self.current_scope: Scope = None  # type: ignore
@@ -647,7 +647,7 @@ class IRReader(object):
         assert self.is_var(varstr)
         names = varstr.split('.')
         var = Temp(names[0])
-        # If IRParser methods are used partially, current_scope may be None
+        # If IrParser methods are used partially, current_scope may be None
         if self.current_scope and self.current_scope.is_closure():
             # check if the variable is free variable
             sym = qualified_symbols(var, self.current_scope)[-1]
@@ -691,10 +691,14 @@ class IRReader(object):
                          'and', 'or')
 
 
-IRParser = IRReader
+IrParser = IrReader
+
+# Backward-compatible aliases
+IRReader = IrReader
+IRParser = IrReader
 
 
 def ir_stm(scope: Scope, code: str):
-    reader = IRReader('')
+    reader = IrReader('')
     reader.current_scope = scope
     return reader.parse_stm(code)

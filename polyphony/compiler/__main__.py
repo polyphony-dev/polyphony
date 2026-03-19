@@ -66,7 +66,7 @@ from .ir.transformers.unroll import LoopUnroller
 from .ir.scheduling.dataflow import DFGBuilder
 from .ir.scheduling.scheduler import Scheduler
 
-from .frontend.python.irtranslator import IRTranslator
+from .frontend.python.irtranslator import IrTranslator
 from .frontend.python.pure import interpret, PureCtorBuilder, PureFuncExecutor
 
 from .target.verilog.vericodegen import VerilogCodeGen
@@ -864,7 +864,7 @@ def setup_options(options):
 
 
 def setup_builtins():
-    translator = IRTranslator()
+    translator = IrTranslator()
     root_dir = '{0}{1}{2}{1}'.format(
         os.path.dirname(__file__),
         os.path.sep, os.path.pardir
@@ -911,7 +911,7 @@ def parse_targets(scopes):
 
 
 def compile(plan, source, src_file=''):
-    translator = IRTranslator()
+    translator = IrTranslator()
     translator.translate(source, '')
     if env.config.enable_pure:
         interpret(source, src_file)

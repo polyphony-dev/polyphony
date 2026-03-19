@@ -12,7 +12,7 @@ Classes:
   AllVariableCollector - Collect all variables in stms
   NonlocalVariableCollector - Collect free variables in stms
   LocalVariableCollector - Collect local variables in stms
-  IRReplacer - Replace variables in stms based on a symbol map
+  IrReplacer - Replace variables in stms based on a symbol map
 """
 from collections import defaultdict, deque
 import dataclasses
@@ -423,7 +423,7 @@ class LocalVariableCollector(_StmsVisitor):
         self.visit(ir.exp)
 
 
-class IRReplacer(_StmsTransformer):
+class IrReplacer(_StmsTransformer):
     """Replace variables in block.stms based on a symbol->expression map."""
 
     def __init__(self, replace_map: ReplaceMap):
@@ -1034,9 +1034,9 @@ class InlineOpt(object):
             if callee.is_method():
                 replace_self_map = self._make_replace_self_obj_map(callee_clone, call, call_stm, caller)
                 replace_map |= replace_self_map
-            IRReplacer(replace_map).process(callee_clone, callee_clone.entry_block)
+            IrReplacer(replace_map).process(callee_clone, callee_clone.entry_block)
             for c in callee_clone.collect_scope():
-                IRReplacer(replace_map).process(c, c.entry_block)
+                IrReplacer(replace_map).process(c, c.entry_block)
 
             if callee.is_returnable():
                 self._replace_result_exp(call_stm, call, callee_clone)
@@ -1240,7 +1240,7 @@ class FlattenModule(IrVisitor):
 
         replace_map = {}
         replace_map[worker_self] = Attr(exp=Temp('self'), attr=inst_name)
-        IRReplacer(replace_map).process(new_worker, new_worker.entry_block)
+        IrReplacer(replace_map).process(new_worker, new_worker.entry_block)
         return new_worker, Attr(name=new_worker.base_name, exp=Temp(name='self'), attr=new_worker.base_name, ctx=Ctx.LOAD)
 
     def _make_new_assigned_method(self, arg, assigned_scope):
@@ -1257,7 +1257,7 @@ class FlattenModule(IrVisitor):
 
         replace_map = {}
         replace_map[self_sym] = Attr(exp=Temp('self'), attr=inst_name)
-        IRReplacer(replace_map).process(new_method, new_method.entry_block)
+        IrReplacer(replace_map).process(new_method, new_method.entry_block)
 
         return new_method, Attr(name=new_method.base_name, exp=Temp(name='self'), attr=new_method.base_name, ctx=Ctx.LOAD)
 

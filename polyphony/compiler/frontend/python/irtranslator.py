@@ -85,7 +85,7 @@ class ImportVisitor(ast.NodeVisitor):
         env.push_outermost_scope(namespace)
         for sym in builtin_symbols.values():
             namespace.import_sym(sym)
-        translator = IRTranslator()
+        translator = IrTranslator()
         translator.translate(read_source(path), '', top=namespace)
         env.pop_outermost_scope()
         env.set_current_filename(cur_filename)
@@ -226,8 +226,8 @@ class ScopeVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node):
         self.import_visitor.visit_ImportFrom(node)
 
-    def visit_Num(self, node):
-        return node.n
+    def visit_Constant(self, node):
+        return node.value
 
     def visit_Name(self, node):
         if self.current_scope.base_name == 'polyphony':
@@ -242,9 +242,6 @@ class ScopeVisitor(ast.NodeVisitor):
                 ancestor.name == '__python__'):
             return False
         return None
-
-    def visit_NameConstant(self, node):
-        return node.value
 
     def visit_BinOp(self, node):
         left = self.visit(node.left)
@@ -1412,20 +1409,15 @@ class CodeVisitor(ast.NodeVisitor):
                          assert False
         return Call(name='', func=func, args=args, kwargs=kwargs)
 
-    def visit_Num(self, node):
-        return Const(value=node.n)
-
-    def visit_Str(self, node):
-        return Const(value=node.s)
-
-    def visit_Bytes(self, node):
-        fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['bytes'])
-
-    def visit_Ellipsis(self, node):
-        if self._parsing_annotation:
-            return Const(value=...)
-        else:
-            fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ellipsis'])
+    def visit_Constant(self, node):
+        if isinstance(node.value, bytes):
+            fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['bytes'])
+        if isinstance(node.value, type(...)):
+            if self._parsing_annotation:
+                return Const(value=...)
+            else:
+                fail((env.current_filename, node.lineno), Errors.UNSUPPORTED_SYNTAX, ['ellipsis'])
+        return Const(value=node.value)
 
     #     | Attribute(expr value, identifier attr, expr_context ctx)
     def visit_Attribute(self, node):
@@ -1552,15 +1544,6 @@ class CodeVisitor(ast.NodeVisitor):
             items.append(item)
         return Array(items=items, mutable=False)
 
-    def visit_NameConstant(self, node):
-        # for Python 3.4
-        if node.value is True:
-            return Const(value=True)
-        elif node.value is False:
-            return Const(value=False)
-        elif node.value is None:
-            return Const(value=None)
-
     def visit_Slice(self, node):
         assert False
 
@@ -1604,13 +1587,14 @@ class DecoratorVisitor(ast.NodeVisitor):
     def visit_Name(self, node):
         return node.id
 
-    def visit_NameConstant(self, node):
+    def visit_Constant(self, node):
         if node.value is True:
             return 'True'
         elif node.value is False:
             return 'False'
         elif node.value is None:
             return 'None'
+        return node.value
 
     def visit_Attribute(self, node):
         value = self.visit(node.value)
@@ -1623,12 +1607,6 @@ class DecoratorVisitor(ast.NodeVisitor):
             item = self.visit(elt)
             items.append(item)
         return tuple(items)
-
-    def visit_Num(self, node):
-        return node.n
-
-    def visit_Str(self, node):
-        return node.s
 
 class PureScopeVisitor(ast.NodeVisitor):
     def __init__(self, scope, type_comments):
@@ -1742,7 +1720,7 @@ def _get_tail_lineno(node):
     return maxlineno[0]
 
 
-class IRTranslator(object):
+class IrTranslator(object):
     def __init__(self):
         pass
 
@@ -1785,3 +1763,7 @@ class IRTranslator(object):
         CodeVisitor(top_scope, type_comments, meta_comments).visit(tree)
         sys.path = orig_syspath
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
+
+
+# Backward-compatible alias
+IRTranslator = IrTranslator

@@ -6,7 +6,7 @@ from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 
 
-# Reverse maps from IRParser's maps
+# Reverse maps from IrParser's maps
 UNOP_RMAP = {'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~'}
 BINOP_RMAP = {
     'And': 'and', 'Or': 'or',
@@ -20,7 +20,7 @@ RELOP_RMAP = {
 }
 
 
-class IRWriter(object):
+class IrWriter(object):
     def __init__(self):
         self.lines: list[str] = []
 
@@ -257,3 +257,7 @@ class IRWriter(object):
             return 'undef'
         else:
             return str(typ)
+
+
+# Backward-compatible alias
+IRWriter = IrWriter

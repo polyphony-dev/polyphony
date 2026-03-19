@@ -153,8 +153,8 @@ def test_local_variable_collector():
 
 
 def test_ir_replacer():
-    """IRReplacer should replace variables based on symbol map."""
-    from polyphony.compiler.ir.transformers.inlineopt import IRReplacer
+    """IrReplacer should replace variables based on symbol map."""
+    from polyphony.compiler.ir.transformers.inlineopt import IrReplacer
 
     setup_test()
     top = Scope.global_scope()
@@ -169,7 +169,7 @@ def test_ir_replacer():
     Block.set_order(blk, 0)
 
     replace_map = {x_sym: Const(value=42)}
-    IRReplacer(replace_map).process(F, F.entry_block)
+    IrReplacer(replace_map).process(F, F.entry_block)
 
     mv = blk.stms[0]
     assert isinstance(mv.src, Const)
