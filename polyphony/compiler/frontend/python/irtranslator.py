@@ -472,12 +472,14 @@ class CodeVisitor(ast.NodeVisitor):
         self._parsing_annotation = False
 
     def emit(self, stm, ast_node):
+        loc = Loc(env.current_filename, ast_node.lineno)
+        stm = stm.model_copy(update={'loc': loc})
         self.current_block.append_stm(stm)
-        object.__setattr__(stm, 'loc', Loc(env.current_filename, ast_node.lineno))
 
     def emit_to(self, block, stm, ast_node):
+        loc = Loc(env.current_filename, ast_node.lineno)
+        stm = stm.model_copy(update={'loc': loc})
         block.append_stm(stm)
-        object.__setattr__(stm, 'loc', Loc(env.current_filename, ast_node.lineno))
 
     def _nodectx2irctx(self, node):
         if isinstance(node.ctx, ast.Store) or isinstance(node.ctx, ast.AugStore):

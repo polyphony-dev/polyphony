@@ -600,9 +600,13 @@ class StaticConstOpt(ConstantOptBase):
 
     def process_scopes(self, scopes):
         stms = []
+        stm2scope = {}
         dtrees = {}
         for s in scopes:
-            stms.extend(self._collect_stms(s))
+            scope_stms = self._collect_stms(s)
+            for stm in scope_stms:
+                stm2scope[id(stm)] = s
+            stms.extend(scope_stms)
             Block.set_order(s.entry_block, 0)
             dtree = DominatorTreeBuilder(s).process()
             dtrees[s] = dtree
@@ -610,7 +614,7 @@ class StaticConstOpt(ConstantOptBase):
         stms = sorted(stms, key=lambda s: s.loc.lineno)
         for stm in stms:
             self.current_stm = stm
-            stm_scope = next(s for s in scopes if stm.block in s.block_map and stm in s.block_map[stm.block].stms)
+            stm_scope = stm2scope[id(stm)]
             self.scope = stm_scope
             self.dtree = dtrees[stm_scope]
             self.visit(stm)
