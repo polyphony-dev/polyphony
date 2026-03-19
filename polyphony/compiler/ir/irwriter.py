@@ -110,7 +110,7 @@ class IrWriter(object):
             self.lines.append('')
 
     def _write_block(self, blk: Block):
-        self.lines.append(f'{blk.nametag}:')
+        self.lines.append(f'{blk.bid}:')
         for stm in blk.stms:
             self.lines.append(self._format_stm(stm))
 
@@ -133,15 +133,15 @@ class IrWriter(object):
                 exp = self._format_exp(stm.exp)
                 return f'expr {exp}'
             case Jump():
-                return f'j {stm.target.nametag}'
+                return f'j {stm.target.bid}'
             case CJump():
                 cond = self._format_exp(stm.exp)
-                return f'cj {cond} {stm.true.nametag} {stm.false.nametag}'
+                return f'cj {cond} {stm.true.bid} {stm.false.bid}'
             case MCJump():
                 parts = []
                 for cond, target in zip(stm.conds, stm.targets):
                     parts.append(self._format_exp(cond))
-                    parts.append(target.nametag)
+                    parts.append(target.bid)
                 return f'mj {" ".join(parts)}'
             case Ret():
                 exp = self._format_exp(stm.exp)
