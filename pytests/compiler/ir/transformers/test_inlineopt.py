@@ -3,7 +3,7 @@ from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.ir import name2var as _v
 from polyphony.compiler.ir.block import Block
-from polyphony.compiler.ir.irreader import IrReader as IrParser, ir_stm
+from polyphony.compiler.ir.irreader import IrReader, ir_stm
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.transformers.inlineopt import InlineOpt
@@ -42,7 +42,7 @@ def test_funtion_inlining():
     mv @return (+ x 1)
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
@@ -90,7 +90,7 @@ def test_funtion_inlining_2():
     mv @return (+ x 1)
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
@@ -161,7 +161,7 @@ def test_function_inlining_3():
     mv ((mld ys j) (mld xs i)) (call f @t1 @t2)
     """
 
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('func', tags=set(), typ=Type.function('@top.func'))
@@ -250,7 +250,7 @@ def test_function_inlining_with_free_symbol():
     ret @return
     """
 
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
@@ -356,7 +356,7 @@ def test_functor_inlining():
     ret @return
     """
 
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
@@ -427,7 +427,7 @@ def test_ctor_inlining():
     mv @return c0.x
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('C', tags=set(), typ=Type.klass('@top.C'))
     top.add_sym('caller_func', tags=set(), typ=Type.function('@top.caller_func'))
@@ -532,7 +532,7 @@ def caller_func():
     mv @return (+ a c.d.x)
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('D', tags=set(), typ=Type.klass('@top.D'))
     top.add_sym('C', tags=set(), typ=Type.klass('@top.C'))
@@ -635,7 +635,7 @@ def test_method_inlining():
     mv @return x
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('C', tags=set(), typ=Type.klass('@top.C'))
     top.add_sym('caller_func', tags=set(), typ=Type.function('@top.caller_func'))
@@ -784,7 +784,7 @@ def composition04(x):
     mv @return a
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('D', tags=set(), typ=Type.klass('@top.D'))
     top.add_sym('C', tags=set(), typ=Type.klass('@top.C'))
@@ -909,7 +909,7 @@ def test_inlinelib_1():
     mv value 20
     expr (call wait_value value port)
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('caller_func', tags=set(), typ=Type.function('@top.caller_func'))
     if not top.find_sym('polyphony'):
@@ -1024,7 +1024,7 @@ def test_ctor_with_closure():
     mv c (new C 10)
     """
 
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('C', tags=set(), typ=Type.klass('@top.C'))
     top.add_sym('caller', tags=set(), typ=Type.function('@top.caller'))
@@ -1218,7 +1218,7 @@ def test_inline_returnable_function_in_expr():
     mv @return (+ x 1)
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
@@ -1268,7 +1268,7 @@ def test_inline_multiple_calls_same_callee():
     mv @return (+ x 1)
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
@@ -1323,7 +1323,7 @@ def test_inline_in_conditional_branch():
     mv @return (+ x 1)
     ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))

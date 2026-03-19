@@ -1,6 +1,6 @@
 """Extended tests for scopegraph.py to improve coverage."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.analysis.scopegraph import (
     ScopeDependencyGraphBuilder,
     UsingScopeDetector,
@@ -11,7 +11,7 @@ from pytests.compiler.base import setup_test
 
 def build_scopes(src):
     setup_test(with_global=False)
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     scopes = {}
     for name in parser.sources:

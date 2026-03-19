@@ -1,7 +1,7 @@
 """Tests for CFG optimization passes (BlockReducer, PathExpTracer, helpers)."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -18,7 +18,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     for name in parser.sources:
         scope = env.scopes[name]

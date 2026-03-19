@@ -6,7 +6,7 @@ from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 
 
-# Reverse maps from IrParser's maps
+# Reverse maps from IrReader's maps
 UNOP_RMAP = {'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~'}
 BINOP_RMAP = {
     'And': 'and', 'Or': 'or',

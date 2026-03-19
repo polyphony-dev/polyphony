@@ -1,7 +1,7 @@
 """Tests for ConstantOptBase and EarlyConstantOptNonSSA."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -16,7 +16,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     for name in parser.sources:
         return env.scopes[name]
@@ -914,7 +914,7 @@ blk1:
 mv $self.x 10
 '''
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     scope = env.scopes.get('C.__init__')
     if scope:
@@ -1099,7 +1099,7 @@ mv arr [10 20 30]
 mv x (mld arr 1)
 '''
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     scopes = [env.scopes[name] for name in parser.sources]
     StaticConstOpt().process_scopes(scopes)
@@ -1123,7 +1123,7 @@ blk1:
 mv $self.x 42
 '''
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     scopes = [env.scopes[name] for name in parser.sources]
     StaticConstOpt().process_scopes(scopes)
@@ -1556,7 +1556,7 @@ blk1:
 mv x 42
 '''
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     scopes = [env.scopes[name] for name in parser.sources]
     opt = StaticConstOpt()

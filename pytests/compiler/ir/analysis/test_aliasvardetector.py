@@ -1,7 +1,7 @@
 """Tests for AliasVarDetector."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.analysis.regreducer import AliasVarDetector
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
@@ -9,7 +9,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     name = list(parser.sources)[0]
     scope = env.scopes[name]

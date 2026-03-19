@@ -1,5 +1,5 @@
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.irwriter import IrWriter
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
@@ -212,7 +212,7 @@ def test_write_stm_ret():
 def test_roundtrip_stm():
     """Parse a statement, write it back, and parse again to verify roundtrip."""
     setup_test()
-    parser = IrParser('')
+    parser = IrReader('')
     writer = IrWriter()
 
     cases = [
@@ -245,7 +245,7 @@ def test_roundtrip_type():
     C = Scope.create(top, 'C', {'class'}, 0)
     F = Scope.create(top, 'F', {'function'}, 0)
 
-    parser = IrParser('')
+    parser = IrReader('')
     writer = IrWriter()
 
     cases = [
@@ -294,7 +294,7 @@ j exit
 exit:
 ret @return
 '''
-    parser1 = IrParser(src)
+    parser1 = IrReader(src)
     parser1.parse_scope()
     scope1 = env.scopes['AFunction']
 
@@ -303,7 +303,7 @@ ret @return
 
     # Verify we can parse the written output
     setup_test()
-    parser2 = IrParser(written)
+    parser2 = IrReader(written)
     parser2.parse_scope()
     scope2 = env.scopes['AFunction']
 

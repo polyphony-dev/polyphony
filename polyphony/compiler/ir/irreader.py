@@ -639,7 +639,7 @@ class IrReader(object):
         assert self.is_var(varstr)
         names = varstr.split('.')
         var = Temp(names[0])
-        # If IrParser methods are used partially, current_scope may be None
+        # If IrReader methods are used partially, current_scope may be None
         if self.current_scope and self.current_scope.is_closure():
             # check if the variable is free variable
             sym = qualified_symbols(var, self.current_scope)[-1]
@@ -683,7 +683,6 @@ class IrReader(object):
                          'and', 'or')
 
 
-IrParser = IrReader
 
 
 def ir_stm(scope: Scope, code: str):

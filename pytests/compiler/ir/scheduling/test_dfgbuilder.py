@@ -1,6 +1,6 @@
 """Tests for DFGBuilder."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.scheduling.dataflow import (
     DFGBuilder,
     _is_move, _is_expr, _is_const, _is_temp,
@@ -17,7 +17,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     name = list(parser.sources)[0]
     scope = env.scopes[name]

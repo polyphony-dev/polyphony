@@ -2,7 +2,7 @@ from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
 from polyphony.compiler.ir.block import Block
-from polyphony.compiler.ir.irreader import IrReader as IrParser, ir_stm
+from polyphony.compiler.ir.irreader import IrReader, ir_stm
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.transformers.instantiator import ModuleInstantiator
@@ -48,7 +48,7 @@ def test_find_called_module():
     scope @top.C
     tags module class
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     modules = new_find_called_module([top])
@@ -129,7 +129,7 @@ def test_instantiate_no_bind():
     blk1:
     mv self.a 1
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -302,7 +302,7 @@ def test_bind_arguments():
     mv x @in_x
     mv self.a x
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 

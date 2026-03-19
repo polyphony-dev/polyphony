@@ -1,7 +1,7 @@
 """Tests for EarlyQuadrupleMaker and LateQuadrupleMaker."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -15,7 +15,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     for name in parser.sources:
         return env.scopes[name]
@@ -371,7 +371,7 @@ blk1:
 mv @return self.x
 ret @return
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
     EarlyQuadrupleMaker().process(scope)
     blk = scope.entry_block
@@ -433,7 +433,7 @@ var obj: object(@top.M)
 blk1:
 mv obj (syscall $new M)
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.__init__']
     EarlyQuadrupleMaker().process(scope)
     blk = scope.entry_block
@@ -541,7 +541,7 @@ blk1:
 mv @return self.x
 ret @return
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
     LateQuadrupleMaker().process(scope)
     blk = scope.entry_block
@@ -902,7 +902,7 @@ blk1:
 mv @return self.inner.x
 ret @return
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.Outer.f']
     LateQuadrupleMaker().process(scope)
     blk = scope.entry_block
@@ -930,7 +930,7 @@ blk1:
 mv @return NS.VAL
 ret @return
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['F']
     LateQuadrupleMaker().process(scope)
     blk = scope.entry_block

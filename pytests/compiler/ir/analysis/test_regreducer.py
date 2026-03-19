@@ -1,6 +1,6 @@
 """Extended tests for regreducer.py (AliasVarDetector) to improve coverage."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.analysis.regreducer import AliasVarDetector, _is_clksleep
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
@@ -8,7 +8,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     name = list(parser.sources)[0]
     scope = env.scopes[name]
@@ -19,7 +19,7 @@ def build_scope(src, scheduling='sequential'):
 
 def build_scopes(src, scheduling='sequential'):
     setup_test(with_global=False)
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     scopes = {}
     for name in parser.sources:
@@ -763,7 +763,7 @@ ret @return
 class TestMoveSysCallNew:
     def test_syscall_new_not_alias(self):
         """SysCall $new as src prevents alias.
-        We cannot easily create a $new SysCall via IrParser,
+        We cannot easily create a $new SysCall via IrReader,
         so we verify the code path by constructing IR manually."""
         src = '''
 scope C

@@ -1,7 +1,7 @@
 """Tests for ObjectTransformer."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -13,7 +13,7 @@ from pytests.compiler.base import setup_test, install_builtins
 
 def build_scope(src):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     for name in parser.sources:
         return env.scopes[name]
@@ -159,7 +159,7 @@ var obj: object(@top.M)
 blk1:
 mv obj (syscall $new M)
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.__init__']
 
     ot = ObjectTransformer()
@@ -247,7 +247,7 @@ var obj1: object(@top.M)
 blk1:
 mv obj1 (syscall $new M)
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
 
     # Should not crash (def only, no copies)
@@ -311,7 +311,7 @@ param other: object(@top.M)
 blk1:
 mv self.x 10
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
 
     ot = ObjectTransformer()
@@ -349,7 +349,7 @@ blk1:
 mv obj1 (syscall $new M)
 mv obj2 obj1
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
 
     ot = ObjectTransformer()
@@ -405,7 +405,7 @@ var arr: list<int32>[4]
 blk1:
 mv arr data
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['F']
 
     ot = ObjectTransformer()
@@ -443,7 +443,7 @@ blk1:
 mv obj1 (syscall $new M)
 mv obj2 obj1
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
 
     # Set up SSA-like ancestors
@@ -486,7 +486,7 @@ blk1:
 mv @return self.x
 ret @return
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
 
     from polyphony.compiler.ir.analysis.usedef import UseDefDetector
@@ -546,7 +546,7 @@ param self: object(@top.M)
 blk1:
 mv self.x 42
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
 
     from polyphony.compiler.ir.analysis.usedef import UseDefDetector
@@ -933,7 +933,7 @@ mv obj1 (syscall $new M)
 mv obj2 obj1
 mv obj3 obj2
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.M.f']
 
     obj1_sym = scope.find_sym('obj1')
@@ -1409,7 +1409,7 @@ mv obj1 (syscall $new MQ)
 mv obj3 obj2
 mv obj2 obj1
 '''
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     scope = env.scopes['@top.MQ.f']
 
     obj1_sym = scope.find_sym('obj1')

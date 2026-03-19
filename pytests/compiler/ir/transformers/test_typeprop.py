@@ -2,7 +2,7 @@
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new_ir
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.transformers.typeprop import (
@@ -49,7 +49,7 @@ def test_new_type_specializer_basic():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -95,7 +95,7 @@ def test_new_type_specializer_two_modules():
         mv @return (+ x 2)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -128,7 +128,7 @@ def test_new_type_propagation_basic():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -150,7 +150,7 @@ def test_new_static_type_propagation_basic():
     blk1:
         mv x 42
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -174,7 +174,7 @@ def test_type_evaluator_visit_bool():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.bool()
@@ -189,7 +189,7 @@ def test_type_evaluator_visit_str():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.str()
@@ -204,7 +204,7 @@ def test_type_evaluator_visit_none():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.none()
@@ -219,7 +219,7 @@ def test_type_evaluator_visit_undef():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.undef()
@@ -234,7 +234,7 @@ def test_type_evaluator_visit_int():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.int(width=16)
@@ -251,7 +251,7 @@ def test_type_evaluator_visit_object():
         tags namespace class
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.object(top)
@@ -266,7 +266,7 @@ def test_type_evaluator_visit_class():
         tags namespace class
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.klass(top)
@@ -281,7 +281,7 @@ def test_type_evaluator_visit_non_type():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     assert te.visit(42) == 42
@@ -297,7 +297,7 @@ def test_type_evaluator_visit_tuple():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.tuple(Type.int(32), 3)
@@ -314,7 +314,7 @@ def test_type_evaluator_visit_list():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.list(Type.int(32), 4)
@@ -340,7 +340,7 @@ def test_type_evaluator_visit_function_with_scope():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     func = env.scopes['@top.func']
     te = TypeEvaluator(top)
@@ -357,7 +357,7 @@ def test_type_evaluator_visit_function_without_scope():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.function(None, Type.int(32), (Type.int(16),))
@@ -389,7 +389,7 @@ def test_typeprop_visit_const_bool():
         mv @return True
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -417,7 +417,7 @@ def test_typeprop_visit_const_str():
         mv @return 'hello'
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -445,7 +445,7 @@ def test_typeprop_binop():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -473,7 +473,7 @@ def test_typeprop_relop():
         mv @return (< x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -501,7 +501,7 @@ def test_typeprop_unop():
         mv @return ~x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -549,7 +549,7 @@ def test_typeprop_two_assignments():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -587,7 +587,7 @@ def test_typeprop_expr_and_cjump():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -646,7 +646,7 @@ def test_typeprop_call_nested():
         mv @return (call g x)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -683,7 +683,7 @@ def test_typeprop_move_to_irvariable():
         mv x 42
         mv y x
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -715,7 +715,7 @@ def test_typeprop_jump():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -753,7 +753,7 @@ def test_type_specializer_class():
         mv x @in_x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -782,7 +782,7 @@ def test_type_specializer_no_params():
         mv @return 42
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -815,7 +815,7 @@ def test_type_specializer_attr_call():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -845,7 +845,7 @@ def test_type_replacer():
     blk1:
         mv x 1
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     old_t = Type.undef()
@@ -879,7 +879,7 @@ def test_type_eval_visitor():
         mv x @in_x
         mv y x
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     TypeEvalVisitor().process(func)
@@ -909,7 +909,7 @@ def test_static_type_prop_multiple_stms():
         mv y 20
         mv z (+ x y)
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -933,7 +933,7 @@ def test_static_type_prop_bool():
     blk1:
         mv x True
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -953,7 +953,7 @@ def test_static_type_prop_string():
     blk1:
         mv x 'hello'
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -982,7 +982,7 @@ def test_typeprop_binop_signed():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1022,7 +1022,7 @@ def test_typeprop_mcjump():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1055,7 +1055,7 @@ def test_typeprop_multi_var_propagation():
         mv @return (+ y z)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1100,7 +1100,7 @@ def test_typeprop_lib_scope_skipped():
         tags namespace lib
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     lib_ns = env.scopes['lib_ns']
     install_builtins(top)
@@ -1298,7 +1298,7 @@ def test_typeprop_binop_mixed_widths():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1321,7 +1321,7 @@ def test_static_typeprop_relop():
         mv x (< 1 2)
         mv y (== 3 3)
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1352,7 +1352,7 @@ def test_static_typeprop_call():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1389,7 +1389,7 @@ def test_typeprop_temp_function_load():
         mv @return (call helper)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1418,7 +1418,7 @@ def test_specialize_function_existing():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1501,7 +1501,7 @@ def test_specialize_attr_function_call():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1541,7 +1541,7 @@ def test_specialize_function_already_existing():
         mv @return (+ y 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1579,7 +1579,7 @@ def test_typeprop_reject_then_succeed():
         mv @return (+ y 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1632,7 +1632,7 @@ def test_typeprop_temp_imported():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1670,7 +1670,7 @@ def test_typeprop_function_in_load_ctx():
         mv @return (call helper x)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1700,7 +1700,7 @@ def test_specialize_multiple_types():
         mv @return (+ x y)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1726,7 +1726,7 @@ def test_typeprop_attr_on_namespace():
         tags namespace
         var val: int32
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1755,7 +1755,7 @@ def test_typeprop_expr_stm():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1783,7 +1783,7 @@ def test_static_typeprop_expr():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1876,7 +1876,7 @@ def test_specialize_with_explicit_param_types():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1928,7 +1928,7 @@ def test_specialize_imported_function():
         mv @return (+ x 10)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1950,7 +1950,7 @@ def test_typeprop_directory_scope_skipped():
     scope dir
         tags directory
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     dir_scope = env.scopes['dir']
     install_builtins(top)
@@ -1999,7 +1999,7 @@ def test_typeprop_propagate_updates_sym():
         mv @return z
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2062,7 +2062,7 @@ def test_typeprop_static_multi_scope():
     blk1:
         mv y 20
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     ns = env.scopes['ns']
     install_builtins(top)
@@ -2088,7 +2088,7 @@ def test_type_replacer_no_match():
     blk1:
         mv x 1
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     old_t = Type.bool()
@@ -2205,7 +2205,7 @@ def test_typeprop_superseded_scope_skipped():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2235,7 +2235,7 @@ def test_typeprop_add_scope_dedup():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2294,7 +2294,7 @@ def test_static_typeprop_attr_access():
         tags namespace
         var val: int32
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2316,7 +2316,7 @@ def test_type_expr_evaluator_const():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
 
     tee = TypeExprEvaluator()
@@ -2337,7 +2337,7 @@ def test_type_expr_evaluator_visit_expr():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
 
     tee = TypeExprEvaluator()
@@ -2355,7 +2355,7 @@ def test_type_evaluator_visit_expr_type():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
 
     te = TypeEvaluator(top)
@@ -2376,7 +2376,7 @@ def test_type_expr_evaluator_temp_scalar():
         var x: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
 
     # Set a constant for x
@@ -2422,7 +2422,7 @@ def test_type_expr_evaluator_array():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
 
     tee = TypeExprEvaluator()
@@ -2559,7 +2559,7 @@ def test_specialize_func_with_bool_arg():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2588,7 +2588,7 @@ def test_static_typeprop_strict_call():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2632,7 +2632,7 @@ def test_type_eval_visitor_with_constants():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     # Add a constant to the scope
@@ -3006,7 +3006,7 @@ class TestStaticTypePropAttr:
     blk1:
         mv val 42
     """
-        IrParser(block_src).parse_scope()
+        IrReader(block_src).parse_scope()
         top = env.scopes['@top']
         install_builtins(top)
         ns = env.scopes['ns']
@@ -3198,7 +3198,7 @@ def test_typeprop_binop_unsigned():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3216,7 +3216,7 @@ def test_type_evaluator_visit_unknown_type():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create a type with a name that has no visitor
@@ -3244,7 +3244,7 @@ def test_type_eval_visitor_with_return_type():
         mv x @in_x
         mv y x
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     func = env.scopes['@top.func']
     TypeEvalVisitor().process(func)
     # return_type was evaluated
@@ -3271,7 +3271,7 @@ def test_type_eval_visitor_visit_attr():
         mv @return self.val
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     func = env.scopes['@top.func']
     TypeEvalVisitor().process(func)
     top = env.scopes['@top']
@@ -3295,7 +3295,7 @@ def test_type_replacer_visit_attr():
         mv self @in_self
         mv self.val 42
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     func = env.scopes['@top.func']
     top = env.scopes['@top']
 
@@ -3330,7 +3330,7 @@ def test_static_typeprop_reject_then_retry():
         mv @return a
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # First pass: 'mv y (call func x)' tries to visit x which is undef -> reject
@@ -3354,7 +3354,7 @@ def test_static_typeprop_visit_attr_object():
         var val: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -3386,7 +3386,7 @@ def test_typeprop_directory_scope_skip():
         tags namespace directory
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     somedir = env.scopes['somedir']
     install_builtins(top)
@@ -3443,7 +3443,7 @@ def test_specialize_function_module():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -3552,7 +3552,7 @@ def test_typeprop_phi_direct():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -3597,7 +3597,7 @@ def test_typeprop_uphi_direct():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -3641,7 +3641,7 @@ def test_typeprop_lphi_direct():
         mv @return y
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -3678,7 +3678,7 @@ def test_typeprop_mstore_direct():
         mv @return (mld a 0)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -3696,7 +3696,7 @@ def test_typeprop_visit_returns_none_for_unknown():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -3754,7 +3754,7 @@ def test_static_typeprop_new_v2():
         mv self @in_self
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -3770,7 +3770,7 @@ def test_type_expr_evaluator_const_v2():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Const
@@ -3790,7 +3790,7 @@ def test_type_expr_evaluator_temp_scalar_v2():
         var n: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -3834,7 +3834,7 @@ def test_type_expr_evaluator_temp_class_non_typeclass():
         tags class
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -3854,7 +3854,7 @@ def test_type_expr_evaluator_sym2type_non_class():
         var x: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -3879,7 +3879,7 @@ def test_type_expr_evaluator_attr():
     blk1:
         mv self @in_self
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     func = env.scopes['@top.func']
     te = TypeEvaluator(func)
@@ -3947,7 +3947,7 @@ def test_type_expr_evaluator_mref_list():
         var a: list<int32>[3]
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, MRef, Ctx, Const
@@ -3968,7 +3968,7 @@ def test_type_evaluator_visit_function_no_scope():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.function(None, Type.int(32), (Type.int(16), Type.bool()))
@@ -3984,7 +3984,7 @@ def test_type_evaluator_visit_list_with_type_length():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Const
@@ -4018,7 +4018,7 @@ def test_typeprop_move_mref_dst_v2():
         mv @return (mld a 0)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -4100,7 +4100,7 @@ def test_static_typeprop_strict_new_v2():
         mv val @in_val
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=True).process_scopes([top])
@@ -4120,7 +4120,7 @@ def test_typeprop_binop_both_unsigned():
     blk1:
         mv z (+ x y)
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -4175,7 +4175,7 @@ def test_typeprop_attr_undef_from_specialized():
         mv self.val v
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -4210,7 +4210,7 @@ def test_typeprop_find_attr_from_specialized_v2():
         mv @return c.val
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -4237,7 +4237,7 @@ def test_typeprop_find_attr_from_specialized_no_parent():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4259,7 +4259,7 @@ def test_type_evaluator_visit_list_with_expr_length_non_const():
         var n: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -4287,7 +4287,7 @@ def test_typeprop_process_scopes_superseded():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     other = env.scopes['other']
     other.add_tag('superseded')
@@ -4313,7 +4313,7 @@ def test_typeprop_add_scope_testbench_not_global_child():
         tags namespace testbench
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     c_scope = env.scopes['@top.C']
     tb = env.scopes['@top.C.tb']
@@ -4359,7 +4359,7 @@ def test_specialize_new_via_attr():
         mv x @in_x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -4382,7 +4382,7 @@ def test_propagate_both_undef():
         var x: undef
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4401,7 +4401,7 @@ def test_typeprop_visit_unknown_ir_returns_none():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4433,7 +4433,7 @@ def test_static_typeprop_visit_attr():
         tags class
         var val: int32
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -4464,7 +4464,7 @@ def test_typeprop_syscall_new():
         mv self @in_self
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -4525,7 +4525,7 @@ def test_typeeval_visitor_no_return_type():
     blk1:
         mv x @in_x
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     func = env.scopes['@top.func']
     install_builtins(top)
@@ -4545,7 +4545,7 @@ def test_typeeval_visitor_with_constants():
         var x: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # Add a constant to the scope
@@ -4566,7 +4566,7 @@ def test_type_evaluator_visit_object_v2():
     scope @top.C
         tags class
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     c_scope = env.scopes['@top.C']
@@ -4586,7 +4586,7 @@ def test_type_evaluator_visit_class_v2():
     scope @top.C
         tags class
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     c_scope = env.scopes['@top.C']
@@ -4603,7 +4603,7 @@ def test_type_evaluator_visit_unknown_type_returns_none():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create a type with a name that has no visitor
@@ -4645,7 +4645,7 @@ def test_typeprop_mref_not_subscriptable():
     blk1:
         mv y (mld x 0)
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises(CompileError):
@@ -4684,7 +4684,7 @@ def test_typeprop_mref_list_non_int_offset():
     blk1:
         mv x (mld a idx)
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises(CompileError):
@@ -4702,7 +4702,7 @@ def test_static_typeprop_reject_propagation_in_process_scopes():
     blk1:
         mv x 42
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -4799,7 +4799,7 @@ def test_typeprop_convert_call_object():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -4815,7 +4815,7 @@ def test_typeprop_normalize_args_extra_args():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4846,7 +4846,7 @@ def test_typeprop_visit_attr_unknown_attr_error():
     scope @top.C
         tags class
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises(CompileError):
@@ -4865,7 +4865,7 @@ def test_typeprop_visit_attr_non_containable():
     blk1:
         mv y x.something
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises((CompileError, AssertionError)):
@@ -4892,7 +4892,7 @@ def test_typeprop_specialize_call_arg_undef_reject():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # y is undef, so calling func(y) should reject propagation
@@ -4933,7 +4933,7 @@ def test_typeprop_attr_object_subobject_tag():
     scope @top.D
         tags class
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -4955,7 +4955,7 @@ def test_typeprop_mref_undef_offset_reject():
         mv idx 0
         mv x (mld a idx)
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -4975,7 +4975,7 @@ def test_typeprop_mref_class_typeclass_object():
     scope @top.Int
         tags class typeclass
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # Just verify the scope setup works
@@ -5028,7 +5028,7 @@ def test_typeprop_function_module_from_testbench():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     ts = TypeSpecializer()
@@ -5058,7 +5058,7 @@ def test_typeprop_specialize_already_specialized():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5117,7 +5117,7 @@ def test_typeprop_specialize_class_already_specialized():
         mv x @in_x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5156,7 +5156,7 @@ def test_typeprop_specialize_already_specialized_func():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5185,7 +5185,7 @@ def test_typeprop_pure_function_with_return_type():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5218,7 +5218,7 @@ def test_typeprop_pure_function_disabled():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5255,7 +5255,7 @@ def test_typeprop_pure_function_not_global():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     ns = env.scopes['@top.ns']
     install_builtins(top)
@@ -5277,7 +5277,7 @@ def test_typeprop_normalize_args_default_value():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -5302,7 +5302,7 @@ def test_typeprop_normalize_args_kwargs():
         tags namespace
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -5339,7 +5339,7 @@ def test_typeprop_pure_function_infer_type():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5366,7 +5366,7 @@ def test_typeprop_normalize_args_missing_required():
     blk1:
         mv x 1
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -5406,7 +5406,7 @@ def test_typeprop_specialize_lib_call():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5475,7 +5475,7 @@ def test_typeprop_pure_function_infer_success():
         mv @return (+ a b)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5512,7 +5512,7 @@ def test_typeprop_specialize_call_second_time_same_type():
         mv @return x
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5552,7 +5552,7 @@ def test_typeprop_attr_undef_resolved_from_specialized():
         mv self.val v
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     c_scope = env.scopes['@top.C']
@@ -5592,7 +5592,7 @@ def test_typeprop_attr_function_load():
         mv @return 42
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -5609,7 +5609,7 @@ def test_type_expr_evaluator_temp_scalar_constant():
         var N: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     # Add N as a constant
     n_sym = top.find_sym('N')
@@ -5635,7 +5635,7 @@ def test_type_evaluator_visit_expr_wrapping_non_expr():
         var x: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create an expr type that resolves to a Const (non-Expr, non-Type)
@@ -5656,7 +5656,7 @@ def test_type_evaluator_visit_expr_returns_expr():
         var x: int32
     blk1:
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create an expr type that resolves to an Expr
@@ -5778,7 +5778,7 @@ def test_typeprop_import_specialization():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5814,7 +5814,7 @@ def test_typeprop_specialize_new_already_specialized():
         mv v @in_v
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5854,7 +5854,7 @@ def test_typeprop_process_scopes_directory_scope():
     scope @top.dir
         tags namespace directory
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     dir_scope = env.scopes['@top.dir']
     install_builtins(top)
@@ -5887,7 +5887,7 @@ def test_typeprop_specialize_new_no_params():
         mv self @in_self
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5933,7 +5933,7 @@ def test_specialize_func_cross_namespace():
         mv @return (+ x 1)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5982,7 +5982,7 @@ def test_specialize_func_same_name_different_namespace():
         mv @return (+ x 2)
         ret @return
     """
-    IrParser(block_src).parse_scope()
+    IrReader(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()

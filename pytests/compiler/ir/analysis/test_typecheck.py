@@ -1,7 +1,7 @@
 """Tests for new IR type checker and restriction checker passes."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.analysis.typecheck import (
     TypeChecker, EarlyTypeChecker, EarlyRestrictionChecker,
     RestrictionChecker, LateRestrictionChecker, AssertionChecker,
@@ -16,7 +16,7 @@ import pytest
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     name = list(parser.sources)[0]
     scope = env.scopes[name]
@@ -82,7 +82,7 @@ mv @return x
 ret @return
 '''
     setup_test(with_global=False)
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     top = env.scopes['@top']
     f = env.scopes['@top.F']
     EarlyTypeChecker().process(top)
@@ -107,7 +107,7 @@ mv @return x
 ret @return
 '''
     setup_test(with_global=False)
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     f = env.scopes['@top.F']
     with pytest.raises(CompileError):
         EarlyRestrictionChecker().process(f)
@@ -130,7 +130,7 @@ mv @return 0
 ret @return
 '''
     setup_test(with_global=False)
-    IrParser(src).parse_scope()
+    IrReader(src).parse_scope()
     f = env.scopes['@top.F']
     # Should not raise, just warn
     AssertionChecker().process(f)
@@ -156,7 +156,7 @@ ret @return
 def build_scopes_noglobal(src, scheduling='sequential'):
     """Build scopes without global scope (for @top definitions)."""
     setup_test(with_global=False)
-    parser = IrParser(src)
+    parser = IrReader(src)
     parser.parse_scope()
     scopes = {}
     for name in parser.sources:
@@ -541,7 +541,7 @@ blk1:
 mv x @in_x
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -565,7 +565,7 @@ mv x @in_x
 mv self.x x
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ctor = env.scopes['C.__init__']
         TypeChecker().process(ctor)
 
@@ -608,7 +608,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -628,7 +628,7 @@ param x: int32
 return int32
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -699,7 +699,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         EarlyTypeChecker().process(ns)
 
@@ -723,7 +723,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             EarlyTypeChecker().process(ns)
@@ -748,7 +748,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             EarlyTypeChecker().process(ns)
@@ -769,7 +769,7 @@ param a: int32
 return int32
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         EarlyTypeChecker().process(ns)
 
@@ -796,7 +796,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         # Add range symbol
         from polyphony.compiler.ir.types.type import Type
@@ -826,7 +826,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -847,7 +847,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -900,7 +900,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             TypeChecker().process(ns)
@@ -925,7 +925,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             TypeChecker().process(ns)
@@ -1404,7 +1404,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         EarlyTypeChecker().process(top)
 
@@ -1434,7 +1434,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         with pytest.raises(CompileError):
             EarlyTypeChecker().process(top)
@@ -2329,7 +2329,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         TypeChecker().process(f)
 
@@ -2689,7 +2689,7 @@ ret @return
 '''
         setup_test(with_global=False)
         src_texts['__test__'] = ['test line'] * 10
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         env.scope_file_map[ns] = '__test__'
         with pytest.raises(CompileError):
@@ -2836,7 +2836,7 @@ tags class
 '''
         setup_test(with_global=False)
         src_texts['__test__'] = ['test line'] * 10
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         env.scope_file_map[top] = '__test__'
         with pytest.raises(CompileError):
@@ -3027,7 +3027,7 @@ tags class
 '''
         setup_test(with_global=False)
         src_texts['__test__'] = ['test line'] * 10
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         env.scope_file_map[top] = '__test__'
         with pytest.raises(CompileError):
@@ -3110,7 +3110,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='missing required argument'):
             TypeChecker().process(ns)
@@ -3136,7 +3136,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='takes 1 positional arguments but 4 were given'):
             TypeChecker().process(ns)
@@ -3164,7 +3164,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -3197,7 +3197,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='missing required argument'):
             EarlyTypeChecker().process(ns)
@@ -3223,7 +3223,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='takes 1 positional arguments but 4 were given'):
             EarlyTypeChecker().process(ns)
@@ -3254,7 +3254,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         with pytest.raises(CompileError, match='missing required argument'):
             EarlyTypeChecker().process(top)
@@ -3285,7 +3285,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         EarlyTypeChecker().process(top)
 
@@ -3318,7 +3318,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[ns] = '__test__'
@@ -3346,7 +3346,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -3378,7 +3378,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[top] = '__test__'
@@ -3642,7 +3642,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[top] = '__test__'
@@ -3675,7 +3675,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[top] = '__test__'
@@ -3708,7 +3708,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         top = env.scopes['@top']
         TypeChecker().process(top)
 
@@ -3978,7 +3978,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -3999,7 +3999,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         # Should not raise, just warn
         AssertionChecker().process(f)
@@ -4023,7 +4023,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -4575,7 +4575,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         with pytest.raises(CompileError):
             EarlyRestrictionChecker().process(f)
@@ -4597,7 +4597,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         f = env.scopes['NS.F']
         EarlyRestrictionChecker().process(f)
 
@@ -4671,7 +4671,7 @@ param x: int32
 return int32
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -4700,7 +4700,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IrParser(src).parse_scope()
+        IrReader(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
