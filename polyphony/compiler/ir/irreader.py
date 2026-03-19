@@ -284,7 +284,11 @@ class IrReader(object):
             else:
                 return self.parse_expr(operands)
         elif op == 'phi':
-            return self.parse_phi(operands)
+            return self.parse_phi(operands, Phi)
+        elif op == 'uphi':
+            return self.parse_phi(operands, UPhi)
+        elif op == 'lphi':
+            return self.parse_phi(operands, LPhi)
         elif op == 'j':
             return self.parse_jp(operands)
         elif op == 'cj':
@@ -385,8 +389,44 @@ class IrReader(object):
         exp  = self.parse_exp(exp_)
         return CExpr(cond, exp)
 
-    def parse_phi(self, operands: str):
-        raise
+    def parse_phi(self, operands: str, cls=None):
+        """Parse phi/uphi/lphi statement.
+
+        Format: phi var (arg1 arg2 ...) (p1 p2 ...)
+                phi var (arg1 arg2 ...)          # ps omitted
+        """
+        if cls is None:
+            cls = Phi
+        # Split: first token is var, then parenthesized groups
+        tokens = self.parse_operands(operands)
+        var_str = tokens[0]
+        var = self.parse_var(var_str, Ctx.STORE)
+
+        # Find parenthesized groups using walk_to_closing_paren
+        rest = operands[len(var_str):].strip()
+        groups = []
+        while rest:
+            rest = rest.strip()
+            if not rest or rest[0] != '(':
+                break
+            inner, rest = self.walk_to_closing_paren(rest[1:], '(', ')')
+            groups.append(inner)
+
+        args = []
+        ps = []
+        if len(groups) >= 1:
+            arg_tokens = self.split(groups[0])
+            for t in arg_tokens:
+                args.append(self.parse_exp(t))
+        if len(groups) >= 2:
+            ps_tokens = self.split(groups[1])
+            for t in ps_tokens:
+                ps.append(self.parse_exp(t))
+
+        phi = cls(var=var)
+        phi.args.extend(args)
+        phi.ps.extend(ps)
+        return phi
 
     def parse_jp(self, operands: str):
         if operands not in self.blocks:

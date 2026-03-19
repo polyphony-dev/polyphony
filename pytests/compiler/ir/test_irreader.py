@@ -979,3 +979,168 @@ def test_irreader_creates_namespace_scope():
     parser = IrReader("scope mypkg\ntags namespace\n")
     parser.parse_scope()
     assert isinstance(env.scopes['mypkg'], NamespaceScope)
+
+
+# ============================================================
+# Phi / UPhi / LPhi parsing
+# ============================================================
+
+def test_phi_basic():
+    """Parse phi with args and no ps."""
+    setup_test()
+    src = '''
+scope F
+tags function returnable
+return int32
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+j exit
+
+blk3:
+mv x 2
+j exit
+
+exit:
+phi x (1 2)
+mv @return x
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+    exit_blk = None
+    for blk in scope.traverse_blocks():
+        if blk.nametag == 'exit':
+            exit_blk = blk
+            break
+    assert exit_blk is not None
+    phi_stm = exit_blk.stms[0]
+    assert isinstance(phi_stm, Phi)
+    assert phi_stm.var.name == 'x'
+    assert len(phi_stm.args) == 2
+    assert isinstance(phi_stm.args[0], Const) and phi_stm.args[0].value == 1
+    assert isinstance(phi_stm.args[1], Const) and phi_stm.args[1].value == 2
+    assert len(phi_stm.ps) == 0
+
+
+def test_phi_with_ps():
+    """Parse phi with args and path predicates."""
+    setup_test()
+    src = '''
+scope F
+tags function returnable
+return int32
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+j exit
+
+blk3:
+mv x 2
+j exit
+
+exit:
+phi x (1 2) (c True)
+mv @return x
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+    exit_blk = None
+    for blk in scope.traverse_blocks():
+        if blk.nametag == 'exit':
+            exit_blk = blk
+            break
+    assert exit_blk is not None
+    phi_stm = exit_blk.stms[0]
+    assert isinstance(phi_stm, Phi)
+    assert len(phi_stm.args) == 2
+    assert len(phi_stm.ps) == 2
+
+
+def test_uphi_parse():
+    """Parse uphi statement."""
+    setup_test()
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+uphi x (1 2)
+mv @return x
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+    phi_stm = scope.entry_block.stms[0]
+    assert isinstance(phi_stm, UPhi)
+    assert phi_stm.var.name == 'x'
+    assert len(phi_stm.args) == 2
+
+
+def test_lphi_parse():
+    """Parse lphi statement."""
+    setup_test()
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+lphi x (1 2)
+mv @return x
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+    phi_stm = scope.entry_block.stms[0]
+    assert isinstance(phi_stm, LPhi)
+    assert phi_stm.var.name == 'x'
+    assert len(phi_stm.args) == 2
+
+
+def test_phi_with_var_args():
+    """Parse phi with variable arguments."""
+    setup_test()
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+var a: int32
+var b: int32
+
+blk1:
+phi x (a b)
+mv @return x
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+    phi_stm = scope.entry_block.stms[0]
+    assert isinstance(phi_stm, Phi)
+    assert len(phi_stm.args) == 2
+    assert isinstance(phi_stm.args[0], Temp)
+    assert phi_stm.args[0].name == 'a'
+    assert isinstance(phi_stm.args[1], Temp)
+    assert phi_stm.args[1].name == 'b'

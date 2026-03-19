@@ -512,3 +512,79 @@ def test_write_scope_with_blocks_and_stms():
     assert 'mv x 42' in result
     assert 'j exit' in result
     assert 'ret @return' in result
+
+
+# ============================================================
+# Phi / UPhi / LPhi writing
+# ============================================================
+
+def test_write_phi_no_ps():
+    """IrWriter formats Phi without path predicates."""
+    writer = IrWriter()
+    phi = Phi(var=Temp('x', Ctx.STORE))
+    phi.args.extend([Const(1), Const(2)])
+    result = writer._format_stm(phi)
+    assert result == 'phi x (1 2)'
+
+
+def test_write_phi_with_ps():
+    """IrWriter formats Phi with path predicates."""
+    writer = IrWriter()
+    phi = Phi(var=Temp('x', Ctx.STORE))
+    phi.args.extend([Const(1), Const(2)])
+    phi.ps.extend([Temp('c'), Const(True)])
+    result = writer._format_stm(phi)
+    assert result == 'phi x (1 2) (c True)'
+
+
+def test_write_uphi():
+    """IrWriter formats UPhi."""
+    writer = IrWriter()
+    uphi = UPhi(var=Temp('x', Ctx.STORE))
+    uphi.args.extend([Const(1)])
+    result = writer._format_stm(uphi)
+    assert result == 'uphi x (1)'
+
+
+def test_write_lphi():
+    """IrWriter formats LPhi."""
+    writer = IrWriter()
+    lphi = LPhi(var=Temp('x', Ctx.STORE))
+    lphi.args.extend([Const(1), Const(2)])
+    result = writer._format_stm(lphi)
+    assert result == 'lphi x (1 2)'
+
+
+def test_phi_roundtrip():
+    """Phi survives IrWriter -> IrReader roundtrip."""
+    setup_test()
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+phi x (1 2)
+mv @return x
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+
+    # Re-parse the output
+    setup_test()
+    parser2 = IrReader(result)
+    parser2.parse_scope()
+    scope2 = env.scopes['F']
+
+    phi_stm = scope2.entry_block.stms[0]
+    assert isinstance(phi_stm, Phi)
+    assert phi_stm.var.name == 'x'
+    assert len(phi_stm.args) == 2
+    assert phi_stm.args[0].value == 1
+    assert phi_stm.args[1].value == 2

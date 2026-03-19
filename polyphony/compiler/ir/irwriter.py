@@ -147,8 +147,23 @@ class IrWriter(object):
             case Ret():
                 exp = self._format_exp(stm.exp)
                 return f'ret {exp}'
+            case LPhi():
+                return self._format_phi('lphi', stm)
+            case UPhi():
+                return self._format_phi('uphi', stm)
+            case Phi():
+                return self._format_phi('phi', stm)
             case _:
                 raise ValueError(f'Unknown statement type: {type(stm)}')
+
+    def _format_phi(self, keyword: str, stm) -> str:
+        var = self._format_exp(stm.var)
+        args_str = ' '.join(self._format_exp(a) for a in stm.args)
+        result = f'{keyword} {var} ({args_str})'
+        if stm.ps:
+            ps_str = ' '.join(self._format_exp(p) for p in stm.ps)
+            result += f' ({ps_str})'
+        return result
 
     def _format_exp(self, exp) -> str:
         match exp:
