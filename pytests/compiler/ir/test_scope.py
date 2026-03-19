@@ -427,6 +427,15 @@ class TestSymbolTable:
         assert s2 in free
         assert s1 not in free
 
+    def test_symbol_scope_name(self):
+        """Symbol.scope_name returns the scope name string."""
+        setup_test()
+        top = env.scopes["@top"]
+        scope = Scope.create(top, "sn_scope", {"function", "callable"})
+        sym = scope.add_sym("x", set(), Type.int(32))
+        assert sym.scope_name == scope.name
+        assert sym.scope is scope
+
 
 # ============================================================
 # Scope class tests

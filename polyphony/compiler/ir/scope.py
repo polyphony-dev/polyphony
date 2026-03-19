@@ -114,7 +114,7 @@ class SymbolTable(object):
             typ = Type.undef()
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
-        sym = Symbol(name, self, tags, typ)
+        sym = Symbol(name, self.name, tags, typ)
         self.symbols[name] = sym
         return sym
 

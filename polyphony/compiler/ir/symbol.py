@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 
 class Symbol(Tagged):
-    __slots__ = ['_id', '_name', '_scope', '_typ']
+    __slots__ = ['_id', '_name', '_scope_name', '_typ']
     id_counter = 0
 
     TAGS = {
@@ -38,13 +38,13 @@ class Symbol(Tagged):
     temp_prefix = '@t'
     param_prefix = '@in'
 
-    def __init__(self, name: str, scope: 'Scope', tags: set[str], typ: Type|None=None):
+    def __init__(self, name: str, scope_name: str, tags: set[str], typ: Type|None=None):
         super().__init__(tags)
         if not typ:
             typ = Type.none()
         self._id = Symbol.id_counter
         self._name = name
-        self._scope = scope
+        self._scope_name = scope_name
         self._typ = typ
         Symbol.id_counter += 1
 
@@ -62,8 +62,12 @@ class Symbol(Tagged):
         self._name = name
 
     @property
+    def scope_name(self) -> str:
+        return self._scope_name
+
+    @property
     def scope(self) -> Scope:
-        return self._scope
+        return env.scopes[self._scope_name]
 
     @property
     def typ(self) -> Type:
@@ -81,7 +85,7 @@ class Symbol(Tagged):
         return self._name
 
     def __repr__(self):
-        return f'{self._name}({self._id}, {self.scope.name})'
+        return f'{self._name}({self._id}, {self._scope_name})'
 
     def __lt__(self, other):
         return self._name < other._name
@@ -110,7 +114,7 @@ class Symbol(Tagged):
     def clone(self, scope, new_name):
         assert new_name
         newsym = Symbol(new_name,
-                        scope,
+                        scope.name,
                         set(self.tags),
                         self._typ)
         origin = env.origin_registry.sym_origin_of(self)
