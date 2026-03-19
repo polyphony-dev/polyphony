@@ -702,3 +702,82 @@ ret @return
     assert len(mstm.stms) == 2
     assert isinstance(mstm.stms[0], Move)
     assert isinstance(mstm.stms[1], Move)
+
+
+# ============================================================
+# ExprType / PortType writing and roundtrip
+# ============================================================
+
+def test_write_type_expr():
+    setup_test()
+    top = env.scopes['@top']
+    F = Scope.create(top, 'F', {'function'}, 0)
+    writer = IrWriter()
+    t = Type.expr(Expr(exp=Temp('x')), F)
+    assert writer.write_type(t) == 'expr(@top.F, x)'
+
+
+def test_write_type_expr_binop():
+    setup_test()
+    top = env.scopes['@top']
+    F = Scope.create(top, 'F', {'function'}, 0)
+    writer = IrWriter()
+    t = Type.expr(Expr(exp=BinOp('Add', Temp('a'), Const(1))), F)
+    assert writer.write_type(t) == 'expr(@top.F, (+ a 1))'
+
+
+def test_roundtrip_type_expr():
+    setup_test()
+    top = env.scopes['@top']
+    F = Scope.create(top, 'F', {'function'}, 0)
+    parser = IrReader('')
+    writer = IrWriter()
+
+    cases = [
+        'expr(@top.F, x)',
+        'expr(@top.F, (+ a 1))',
+    ]
+    for case in cases:
+        typ = parser.parse_type(case)
+        assert typ.is_expr()
+        written = writer.write_type(typ)
+        assert written == case, f'Roundtrip failed for: {case}\n  written: {written}'
+
+
+def test_write_type_port():
+    setup_test()
+    top = env.scopes['@top']
+    M = Scope.create(top, 'M', {'class'}, 0)
+    ctor = Scope.create(M, '__init__', {'method', 'ctor'}, 0)
+    p_sym = ctor.add_sym('p', tags=set(), typ=Type.int(32))
+    writer = IrWriter()
+    attrs = {
+        'dtype': Type.int(32),
+        'direction': 'output',
+        'init': 0,
+        'assigned': False,
+        'root_symbol': p_sym,
+    }
+    t = Type.port(M, attrs)
+    assert writer.write_type(t) == 'port(@top.M, int32, output, 0, False, @top.M.__init__:p)'
+
+
+def test_roundtrip_type_port():
+    setup_test()
+    top = env.scopes['@top']
+    M = Scope.create(top, 'M', {'class'}, 0)
+    ctor = Scope.create(M, '__init__', {'method', 'ctor'}, 0)
+    p_sym = ctor.add_sym('p', tags=set(), typ=Type.int(32))
+    parser = IrReader('')
+    writer = IrWriter()
+
+    case = 'port(@top.M, int32, output, 0, False, @top.M.__init__:p)'
+    typ = parser.parse_type(case)
+    assert typ.is_port()
+    assert typ.dtype == Type.int(32)
+    assert typ.direction == 'output'
+    assert typ.init == 0
+    assert typ.assigned is False
+    assert typ.root_symbol is p_sym
+    written = writer.write_type(typ)
+    assert written == case, f'Roundtrip failed\n  written: {written}'

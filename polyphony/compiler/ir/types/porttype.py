@@ -33,7 +33,12 @@ class PortType(ScopeType):
 
     @property
     def root_symbol(self):
-        return self.attrs['root_symbol']
+        val = self.attrs['root_symbol']
+        if isinstance(val, str):
+            # Lazy resolution: "scope_name:sym_name"
+            scope_name, sym_name = val.rsplit(':', 1)
+            return env.scopes[scope_name].find_sym(sym_name)
+        return val
 
     def port_owner(self):
         if self.root_symbol.scope.is_ctor():

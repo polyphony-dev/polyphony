@@ -279,6 +279,14 @@ class IrWriter(object):
             return f'namespace({typ.scope_name})'
         elif typ.is_function():
             return f'function({typ.scope_name})'
+        elif typ.is_port():
+            dtype_str = self._format_type(typ.dtype)
+            root_sym = typ.root_symbol
+            root_ref = f'{root_sym.scope.name}:{root_sym.name}'
+            return f'port({typ.scope_name}, {dtype_str}, {typ.direction}, {typ.init}, {typ.assigned}, {root_ref})'
+        elif typ.is_expr():
+            exp_str = self._format_exp(typ.expr.exp)
+            return f'expr({typ.scope_name}, {exp_str})'
         elif typ.is_none():
             return 'none'
         elif typ.is_undef():

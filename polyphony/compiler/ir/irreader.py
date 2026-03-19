@@ -528,9 +528,43 @@ class IrReader(object):
             m = re.match(r'\((.*)\)', element)
             assert m
             return Type.function(m.group(1), Type.undef(), tuple())
-        elif typstr.startswith('port'):
+        elif typstr.startswith('port('):
+            element = typstr[4:].strip()
+            m = re.match(r'\((.*)\)', element)
+            assert m
+            inner = m.group(1)
+            parts = [p.strip() for p in inner.split(',')]
+            assert len(parts) == 6
+            scope_name = parts[0]
+            dtype = self.parse_type(parts[1])
+            direction = parts[2]
+            init = int(parts[3])
+            assigned = parts[4] == 'True'
+            # root_symbol: lazy resolution via "scope_name:sym_name" string
+            root_symbol_ref = parts[5]
+            attrs = {
+                'dtype': dtype,
+                'direction': direction,
+                'init': init,
+                'assigned': assigned,
+                'root_symbol': root_symbol_ref,
+            }
+            return Type.port(scope_name, attrs)
+        elif typstr == 'port':
             raise NotImplementedError()
-        elif typstr.startswith('expr'):
+        elif typstr.startswith('expr('):
+            element = typstr[4:].strip()
+            m = re.match(r'\((.*)\)', element)
+            assert m
+            inner = m.group(1)
+            # Split on first comma: scope_name, exp_text
+            comma_idx = inner.index(',')
+            scope_name = inner[:comma_idx].strip()
+            exp_text = inner[comma_idx + 1:].strip()
+            exp = self.parse_exp(exp_text)
+            scope = env.scopes[scope_name]
+            return Type.expr(Expr(exp=exp), scope)
+        elif typstr == 'expr':
             raise NotImplementedError()
         elif typstr.startswith('none'):
             return Type.none()

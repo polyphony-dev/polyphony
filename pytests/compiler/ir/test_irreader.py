@@ -1327,3 +1327,88 @@ ret @return
     mv1 = cast(Move, mstm.stms[1])
     assert mv1.dst.name == 'b'
     assert mv1.src.name == 'a'
+
+
+# ============================================================
+# ExprType parsing
+# ============================================================
+
+def test_parse_type_expr():
+    setup_test()
+    top = env.scopes['@top']
+    F = Scope.create(top, 'F', {'function'}, 0)
+    parser = IrReader('')
+
+    t = parser.parse_type('expr(@top.F, x)')
+    assert t.is_expr()
+    assert t.scope_name == '@top.F'
+    assert isinstance(t.expr, Expr)
+    assert isinstance(t.expr.exp, Temp)
+    assert t.expr.exp.name == 'x'
+
+
+def test_parse_type_expr_binop():
+    setup_test()
+    top = env.scopes['@top']
+    F = Scope.create(top, 'F', {'function'}, 0)
+    parser = IrReader('')
+
+    t = parser.parse_type('expr(@top.F, (+ a 1))')
+    assert t.is_expr()
+    assert t.scope_name == '@top.F'
+    assert isinstance(t.expr.exp, BinOp)
+    assert t.expr.exp.op == 'Add'
+
+
+def test_parse_type_port():
+    setup_test()
+    top = env.scopes['@top']
+    M = Scope.create(top, 'M', {'class'}, 0)
+    ctor = Scope.create(M, '__init__', {'method', 'ctor'}, 0)
+    p_sym = ctor.add_sym('p', tags=set(), typ=Type.int(32))
+    parser = IrReader('')
+
+    t = parser.parse_type('port(@top.M, int32, output, 0, False, @top.M.__init__:p)')
+    assert t.is_port()
+    assert t.scope_name == '@top.M'
+    assert t.dtype == Type.int(32)
+    assert t.direction == 'output'
+    assert t.init == 0
+    assert t.assigned is False
+    assert t.root_symbol is p_sym
+
+
+def test_parse_type_port_input():
+    setup_test()
+    top = env.scopes['@top']
+    M = Scope.create(top, 'M', {'class'}, 0)
+    ctor = Scope.create(M, '__init__', {'method', 'ctor'}, 0)
+    q_sym = ctor.add_sym('q', tags=set(), typ=Type.int(8))
+    parser = IrReader('')
+
+    t = parser.parse_type('port(@top.M, int8, input, 42, True, @top.M.__init__:q)')
+    assert t.is_port()
+    assert t.dtype == Type.int(8)
+    assert t.direction == 'input'
+    assert t.init == 42
+    assert t.assigned is True
+    assert t.root_symbol is q_sym
+
+
+def test_parse_type_port_lazy_resolution():
+    """root_symbol is resolved lazily, so Symbol can be registered after PortType creation."""
+    setup_test()
+    top = env.scopes['@top']
+    M = Scope.create(top, 'M', {'class'}, 0)
+    ctor = Scope.create(M, '__init__', {'method', 'ctor'}, 0)
+    # Do NOT add symbol yet — simulate parse order issue
+    parser = IrReader('')
+
+    t = parser.parse_type('port(@top.M, int32, output, 0, False, @top.M.__init__:p)')
+    assert t.is_port()
+
+    # Now add the symbol after PortType was created
+    p_sym = ctor.add_sym('p', tags=set(), typ=Type.int(32))
+
+    # Lazy resolution should find it
+    assert t.root_symbol is p_sym
