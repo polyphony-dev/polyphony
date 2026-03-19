@@ -716,3 +716,44 @@ ret @return
     child_stg = STG('child', main_stg, hdl)
     assert main_stg.is_main()
     assert not child_stg.is_main()
+
+
+# ============================================================
+# AHDLTranslator / AHDLCombTranslator visit method presence
+# ============================================================
+
+from polyphony.compiler.ahdl.stgbuilder import AHDLTranslator, AHDLCombTranslator
+
+TRANSLATOR_METHODS = [
+    'UnOp', 'BinOp', 'RelOp', 'CondOp',
+    'Call', 'New', 'SysCall', 'Const',
+    'MRef', 'MStore', 'Array', 'Temp', 'Attr',
+    'Expr', 'CJump', 'Jump', 'MCJump', 'Ret', 'Move', 'Phi',
+]
+
+COMB_METHODS = [
+    'Call', 'SysCall', 'New', 'Temp', 'Attr',
+    'MRef', 'MStore', 'Array',
+    'Expr', 'CJump', 'MCJump', 'Jump', 'Ret', 'Move', 'Phi',
+    'CExpr', 'CMove',
+]
+
+
+def test_ahdl_translator_has_visit_methods():
+    """AHDLTranslator has PascalCase visit methods for all IR types."""
+    for name in TRANSLATOR_METHODS:
+        method = getattr(AHDLTranslator, f'visit_{name}', None)
+        assert method is not None, f'Missing visit_{name} on AHDLTranslator'
+
+
+def test_ahdl_comb_translator_has_visit_methods():
+    """AHDLCombTranslator has PascalCase visit methods for all IR types."""
+    for name in COMB_METHODS:
+        method = getattr(AHDLCombTranslator, f'visit_{name}', None)
+        assert method is not None, f'Missing visit_{name} on AHDLCombTranslator'
+
+
+def test_ahdl_translator_inherits_irvisitor_methods():
+    """AHDLTranslator inherits base visitor methods from IrVisitor."""
+    for name in ['UnOp', 'BinOp', 'RelOp', 'CondOp', 'Const', 'Temp', 'Attr']:
+        assert hasattr(AHDLTranslator, f'visit_{name}'), f'Missing visit_{name} on AHDLTranslator'
