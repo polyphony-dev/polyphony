@@ -102,8 +102,7 @@ class IrWriter(object):
         for name, sym in sorted(scope.symbols.items()):
             if not sym.is_imported():
                 continue
-            from_scope = sym.scope
-            self.lines.append(f'from {from_scope.name} import {sym.name}')
+            self.lines.append(f'from {sym.scope_name} import {sym.name}')
 
     def _write_all_blocks(self, scope: Scope):
         for blk in scope.traverse_blocks():
@@ -282,7 +281,7 @@ class IrWriter(object):
         elif typ.is_port():
             dtype_str = self._format_type(typ.dtype)
             root_sym = typ.root_symbol
-            root_ref = f'{root_sym.scope.name}:{root_sym.name}'
+            root_ref = f'{root_sym.scope_name}:{root_sym.name}'
             return f'port({typ.scope_name}, {dtype_str}, {typ.direction}, {typ.init}, {typ.assigned}, {root_ref})'
         elif typ.is_expr():
             exp_str = self._format_exp(typ.expr.exp)
