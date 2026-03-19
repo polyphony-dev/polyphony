@@ -16,6 +16,7 @@ class MockScope:
     def __init__(self, name='test'):
         self.name = name
         self.block_count = 0
+        self.block_map = {}
 
 
 def make_block(scope=None, nametag='b'):

@@ -47,7 +47,15 @@ class Block(object):
         self.path_exp = None
         self.synth_params = make_synth_params()
         self.is_hyperblock = False
+        if hasattr(scope, 'block_map'):
+            scope.block_map[self.bid] = self
 
+    @property
+    def bid(self) -> str:
+        """Block identifier, unique within a scope (e.g., 'b1', 'loop3', 'tmp')."""
+        if self.num < 0:
+            return self.nametag
+        return f'{self.nametag}{self.num}'
 
     def _str_connection(self):
         s = ''

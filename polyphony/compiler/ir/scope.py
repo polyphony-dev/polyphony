@@ -377,6 +377,7 @@ class Scope(Tagged, SymbolTable):
         self.children: list["Scope"] = []
         self.bases: list["Scope"] = []
         self.block_count = 0
+        self.block_map: dict[str, Block] = {}
         self.worker_owner: "Scope" = None
         self.asap_latency = -1
         self.synth_params = make_synth_params()
@@ -690,6 +691,9 @@ class Scope(Tagged, SymbolTable):
 
     def set_exit_block(self, blk):
         self.exit_block = blk
+
+    def find_block(self, bid: str) -> Block:
+        return self.block_map[bid]
 
     def traverse_blocks(self):
         if self.entry_block:

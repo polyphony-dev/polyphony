@@ -1126,3 +1126,50 @@ class TestFunctionScopeFields:
         )
         assert not hasattr(scope, 'function_params')
 
+
+class TestBlockBid:
+    def setup_method(self):
+        setup_test()
+
+    def test_block_bid_normal(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        b1 = Block(scope, 'b')
+        b2 = Block(scope, 'b')
+        b3 = Block(scope, 'loop')
+        assert b1.bid == 'b1'
+        assert b2.bid == 'b2'
+        assert b3.bid == 'loop3'
+
+    def test_block_bid_tmp(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        bt = Block(scope, 'tmp')
+        assert bt.bid == 'tmp'
+
+    def test_scope_block_map(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        b1 = Block(scope, 'b')
+        b2 = Block(scope, 'b')
+        assert scope.find_block('b1') is b1
+        assert scope.find_block('b2') is b2
+
+    def test_scope_block_map_after_clone(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        b1 = Block(scope, 'b')
+        b1.stms = [Move(Temp('x', Ctx.STORE), Const(1))]
+        scope.set_entry_block(b1)
+        scope.set_exit_block(b1)
+        new_scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f2', {'function'}, 0
+        )
+        scope.clone_blocks(new_scope)
+        for blk in new_scope.traverse_blocks():
+            assert new_scope.find_block(blk.bid) is blk
+
