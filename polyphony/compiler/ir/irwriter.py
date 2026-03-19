@@ -153,6 +153,11 @@ class IrWriter(object):
                 return self._format_phi('uphi', stm)
             case Phi():
                 return self._format_phi('phi', stm)
+            case MStm():
+                lines = ['mstm']
+                for s in stm.stms:
+                    lines.append(f'| {self._format_stm(s)}')
+                return '\n'.join(lines)
             case _:
                 raise ValueError(f'Unknown statement type: {type(stm)}')
 
@@ -204,6 +209,15 @@ class IrWriter(object):
                 return f'(mld {mem} {offset})'
             case Array():
                 return self._format_array(exp)
+            case CondOp():
+                cond = self._format_exp(exp.cond)
+                left = self._format_exp(exp.left)
+                right = self._format_exp(exp.right)
+                return f'(? {cond} {left} {right})'
+            case PolyOp():
+                op = BINOP_RMAP[exp.op]
+                values = ' '.join(self._format_exp(v) for v in exp.values)
+                return f'({op} [{values}])'
             case _:
                 raise ValueError(f'Unknown expression type: {type(exp)}')
 

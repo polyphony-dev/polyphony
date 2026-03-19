@@ -22,12 +22,6 @@ RELOP_MAP = {
     '==':'Eq', '!=':'NotEq', '<':'Lt', '<=':'LtE', '>':'Gt', '>=':'GtE',
 }
 
-def check_int(s):
-    if s[0] in ('-', '+'):
-        return s[1:].isdigit()
-    return s.isdigit()
-
-
 class IrReader(object):
     def __init__(self, code: str):
         assert isinstance(code, str)
@@ -256,16 +250,22 @@ class IrReader(object):
         op = tokens[0]
         if op[-1] == ':':  # block?
             return False
-        stm = self.parse_stm(line)
+        if op == 'mstm':
+            self.deq_line()
+            stm = self.parse_mstm()
+        else:
+            stm = self.parse_stm(line)
+            self.deq_line()
         if not stm:
             print(stm)
         self.current_block.append_stm(stm)
-        self.deq_line()
         return True
 
     def parse_stm(self, stmstr: str) -> IrStm:
         tokens = self.split(stmstr, count=1)
         op = tokens[0]
+        if op == 'mstm':
+            return self.parse_mstm()
         operands = tokens[1]
 
         if op[-1] == '?':
@@ -558,6 +558,8 @@ class IrReader(object):
             opcode = exphead[0]
             operands = expstr[1+len(opcode):-1]
             if opcode in BINOP_MAP:
+                if operands.strip().startswith('['):
+                    return self.parse_polyop(opcode, operands)
                 return self.parse_bin(opcode, operands)
             elif opcode in RELOP_MAP:
                 return self.parse_rel(opcode, operands)
@@ -571,6 +573,8 @@ class IrReader(object):
                 return self.parse_mload(operands)
             elif opcode == 'mst':
                 return self.parse_mstore(operands)
+            elif opcode == '?':
+                return self.parse_condop(operands)
             else:
                 # may be a tuple
                 return self.parse_tuple(expstr)
@@ -647,6 +651,35 @@ class IrReader(object):
         src  = self.parse_exp(src_)
         return MStore(mem, offs, src)
 
+    def parse_mstm(self):
+        stms = []
+        while not self.is_end():
+            line = self.peek_line()
+            if not line.startswith('|'):
+                break
+            self.deq_line()
+            stm_text = line[1:].strip()
+            stms.append(self.parse_stm(stm_text))
+        return MStm(stms=stms)
+
+    def parse_condop(self, operands: str):
+        ops = self.parse_operands(operands)
+        if len(ops) != 3:
+            raise
+        cond = self.parse_exp(ops[0])
+        left = self.parse_exp(ops[1])
+        right = self.parse_exp(ops[2])
+        return CondOp(cond, left, right)
+
+    def parse_polyop(self, op: str, operands: str):
+        ops = self.parse_operands(operands)
+        if len(ops) != 1 or not ops[0].startswith('['):
+            raise
+        list_body = ops[0][1:-1].strip()
+        value_tokens = self.parse_operands(list_body)
+        values = [self.parse_exp(v) for v in value_tokens]
+        return PolyOp(BINOP_MAP[op], values)
+
     def parse_list(self, s: str):
         m = re.match(r'\[(.*)\]', s)
         assert m
@@ -712,15 +745,6 @@ class IrReader(object):
 
     def is_unop(self, op):
         return op in ('+', '-', '!', '~')
-
-    def is_binop(self, op):
-        return op in ('+', '-', '*', '/', 'mod',
-                         '^', '|', '&',
-                         '<<', '>>')
-
-    def is_relop(self, op):
-        return op in ('==', '!=', '<=', '>=', '<', '>',
-                         'and', 'or')
 
 
 

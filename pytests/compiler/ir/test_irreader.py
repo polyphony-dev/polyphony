@@ -1144,3 +1144,186 @@ ret @return
     assert phi_stm.args[0].name == 'a'
     assert isinstance(phi_stm.args[1], Temp)
     assert phi_stm.args[1].name == 'b'
+
+
+# ============================================================
+# Coverage: check_int, is_binop, is_relop, ir_stm, parse_scalar fallback
+# ============================================================
+
+def test_parse_scalar_fallback():
+    """parse_scalar with unrecognized token returns Const(str)."""
+    setup_test()
+    parser = IrReader('')
+    result = parser.parse_scalar('3.14')
+    assert isinstance(result, Const)
+    assert result.value == '3.14'
+
+
+def test_ir_stm_utility():
+    """ir_stm() helper creates a statement from code string."""
+    from polyphony.compiler.ir.irreader import ir_stm
+    setup_test()
+    scope = Scope.create(None, 'S', set(), 0)
+    scope.add_sym('a', tags=set(), typ=Type.int(32))
+    stm = ir_stm(scope, 'mv a 1')
+    assert isinstance(stm, Move)
+    assert stm.dst.name == 'a'
+    assert stm.src.value == 1
+
+
+# ============================================================
+# Coverage: parse_early_scope_head, _type_from_scope_tags
+# ============================================================
+
+def test_parse_early_scope_head():
+    setup_test()
+    src = '''scope F
+tags function
+'''
+    parser = IrReader(src)
+    parser.parse_early_scope_head()
+    assert 'F' in env.scopes
+    scope = env.scopes['F']
+    assert scope.is_function()
+
+
+def test_parse_early_scope_head_nested():
+    setup_test()
+    src = '''scope @top.C
+tags class
+'''
+    parser = IrReader(src)
+    parser.parse_early_scope_head()
+    assert '@top.C' in env.scopes
+    scope = env.scopes['@top.C']
+    assert scope.is_class()
+
+
+def test_type_from_scope_tags_namespace():
+    setup_test()
+    parser = IrReader('')
+    scope = Scope.create(None, 'NS', {'namespace'}, 0)
+    typ = parser._type_from_scope_tags(scope, {'namespace'})
+    assert typ.is_namespace()
+
+
+def test_type_from_scope_tags_method():
+    setup_test()
+    parser = IrReader('')
+    scope = Scope.create(None, 'M', {'method'}, 0)
+    typ = parser._type_from_scope_tags(scope, {'method'})
+    assert typ.is_function()
+
+
+# ============================================================
+# Coverage: closure free variable detection
+# ============================================================
+
+def test_parse_var_closure_free():
+    """parse_var detects free variables in closure scope."""
+    setup_test()
+    outer = Scope.create(None, 'outer', {'function', 'enclosure'}, 0)
+    x_sym = outer.add_sym('x', tags=set(), typ=Type.int(32))
+
+    inner = Scope.create(outer, 'inner', {'function', 'closure'}, 0)
+    inner.import_sym(x_sym, 'x')
+
+    parser = IrReader('')
+    parser.current_scope = inner
+    var = parser.parse_var('x', Ctx.LOAD)
+    assert isinstance(var, Temp)
+    assert var.name == 'x'
+    # x should be tagged as 'free' since it belongs to the enclosure
+    assert 'free' in x_sym.tags
+
+
+# ============================================================
+# CondOp / PolyOp / MStm parsing
+# ============================================================
+
+def test_exp_condop():
+    setup_test()
+    parser = IrReader('')
+
+    exp = parser.parse_exp('(? c 1 2)')
+    assert isinstance(exp, CondOp)
+    assert isinstance(exp.cond, Temp)
+    assert exp.cond.name == 'c'
+    assert isinstance(exp.left, Const)
+    assert exp.left.value == 1
+    assert isinstance(exp.right, Const)
+    assert exp.right.value == 2
+
+
+def test_exp_condop_nested():
+    setup_test()
+    parser = IrReader('')
+
+    exp = parser.parse_exp('(? (== x 0) (+ a b) 0)')
+    assert isinstance(exp, CondOp)
+    assert isinstance(exp.cond, RelOp)
+    assert exp.cond.op == 'Eq'
+    assert isinstance(exp.left, BinOp)
+    assert exp.left.op == 'Add'
+    assert isinstance(exp.right, Const)
+    assert exp.right.value == 0
+
+
+def test_exp_polyop():
+    setup_test()
+    parser = IrReader('')
+
+    exp = parser.parse_exp('(+ [a b c])')
+    assert isinstance(exp, PolyOp)
+    assert exp.op == 'Add'
+    assert len(exp.values) == 3
+    assert isinstance(exp.values[0], Temp)
+    assert exp.values[0].name == 'a'
+    assert isinstance(exp.values[1], Temp)
+    assert exp.values[1].name == 'b'
+    assert isinstance(exp.values[2], Temp)
+    assert exp.values[2].name == 'c'
+
+
+def test_exp_polyop_mult():
+    setup_test()
+    parser = IrReader('')
+
+    exp = parser.parse_exp('(* [1 2 3 4])')
+    assert isinstance(exp, PolyOp)
+    assert exp.op == 'Mult'
+    assert len(exp.values) == 4
+    assert all(isinstance(v, Const) for v in exp.values)
+    assert [v.value for v in exp.values] == [1, 2, 3, 4]
+
+
+def test_stm_mstm():
+    setup_test()
+    src = '''
+scope F
+tags function
+var a: int32
+var b: int32
+
+blk1:
+mstm
+| mv a b
+| mv b a
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+
+    blk1 = scope.entry_block
+    mstm = blk1.stms[0]
+    assert isinstance(mstm, MStm)
+    assert len(mstm.stms) == 2
+    assert isinstance(mstm.stms[0], Move)
+    mv0 = cast(Move, mstm.stms[0])
+    assert mv0.dst.name == 'a'
+    assert mv0.src.name == 'b'
+    assert isinstance(mstm.stms[1], Move)
+    mv1 = cast(Move, mstm.stms[1])
+    assert mv1.dst.name == 'b'
+    assert mv1.src.name == 'a'

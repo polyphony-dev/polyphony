@@ -588,3 +588,117 @@ ret @return
     assert len(phi_stm.args) == 2
     assert phi_stm.args[0].value == 1
     assert phi_stm.args[1].value == 2
+
+
+# ============================================================
+# CondOp / PolyOp / MStm writing
+# ============================================================
+
+def test_write_exp_condop():
+    setup_test()
+    writer = IrWriter()
+    exp = CondOp(Temp('c'), Const(1), Const(2))
+    assert writer.write_exp(exp) == '(? c 1 2)'
+
+
+def test_write_exp_condop_nested():
+    setup_test()
+    writer = IrWriter()
+    exp = CondOp(RelOp('Eq', Temp('x'), Const(0)), BinOp('Add', Temp('a'), Temp('b')), Const(0))
+    assert writer.write_exp(exp) == '(? (== x 0) (+ a b) 0)'
+
+
+def test_write_exp_polyop():
+    setup_test()
+    writer = IrWriter()
+    exp = PolyOp('Add', [Temp('a'), Temp('b'), Temp('c')])
+    assert writer.write_exp(exp) == '(+ [a b c])'
+
+
+def test_write_exp_polyop_mult():
+    setup_test()
+    writer = IrWriter()
+    exp = PolyOp('Mult', [Const(1), Const(2), Const(3), Const(4)])
+    assert writer.write_exp(exp) == '(* [1 2 3 4])'
+
+
+def test_write_stm_mstm():
+    setup_test()
+    writer = IrWriter()
+    stm = MStm(stms=[
+        Move(Temp('a', Ctx.STORE), Temp('b')),
+        Move(Temp('b', Ctx.STORE), Temp('a')),
+    ])
+    assert writer.write_stm(stm) == 'mstm\n| mv a b\n| mv b a'
+
+
+# ============================================================
+# CondOp / PolyOp / MStm roundtrip
+# ============================================================
+
+def test_roundtrip_condop():
+    setup_test()
+    parser = IrReader('')
+    writer = IrWriter()
+    cases = [
+        'mv x (? c 1 2)',
+        'mv x (? (== a 0) (+ b c) 0)',
+    ]
+    for case in cases:
+        stm = parser.parse_stm(case)
+        written = writer.write_stm(stm)
+        stm2 = parser.parse_stm(written)
+        assert stm == stm2, f'Roundtrip failed for: {case}\n  written: {written}'
+
+
+def test_roundtrip_polyop():
+    setup_test()
+    parser = IrReader('')
+    writer = IrWriter()
+    cases = [
+        'mv x (+ [a b c])',
+        'mv x (* [1 2 3 4])',
+    ]
+    for case in cases:
+        stm = parser.parse_stm(case)
+        written = writer.write_stm(stm)
+        stm2 = parser.parse_stm(written)
+        assert stm == stm2, f'Roundtrip failed for: {case}\n  written: {written}'
+
+
+def test_roundtrip_mstm():
+    """MStm survives IrWriter -> IrReader roundtrip in a scope context."""
+    setup_test()
+    src = '''scope F
+tags function
+var a: int32
+var b: int32
+var tmp: int32
+
+blk1:
+mstm
+| mv a b
+| mv b a
+j exit
+
+exit:
+ret @return
+'''
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes['F']
+
+    writer = IrWriter()
+    written = writer.write_scope(scope)
+
+    setup_test()
+    parser2 = IrReader(written)
+    parser2.parse_scope()
+    scope2 = env.scopes['F']
+
+    blk1 = scope2.entry_block
+    mstm = blk1.stms[0]
+    assert isinstance(mstm, MStm)
+    assert len(mstm.stms) == 2
+    assert isinstance(mstm.stms[0], Move)
+    assert isinstance(mstm.stms[1], Move)
