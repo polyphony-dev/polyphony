@@ -210,7 +210,7 @@ class StateBuilder(STGItemBuilder):
 
             assert states
             self.stg.add_states(states)
-            self.blk2states[blk.name] = states
+            self.blk2states[blk.bid] = states
 
     def _build_states_for_block(self, state_prefix, blk, is_main, is_first, is_last) -> list[State]:
         states = []
@@ -237,7 +237,7 @@ class StateBuilder(STGItemBuilder):
             trans = last_state.block.codes[-1]
             assert isinstance(trans, (AHDL_TRANSITION))
             if isinstance(trans, AHDL_TRANSITION):
-                trans.update_target(jump.target.name)
+                trans.update_target(jump.target)
 
         # deal with the first/last state
         if not is_main:
@@ -251,7 +251,7 @@ class StateBuilder(STGItemBuilder):
             if is_last:
                 last_state = states[-1]
                 if self.scope.is_loop_worker():
-                    codes = [AHDL_TRANSITION(self.scope.entry_block.name)]
+                    codes = [AHDL_TRANSITION(self.scope.entry_block.bid)]
                 elif self.scope.is_worker():
                     codes = [AHDL_TRANSITION('')]
                 elif self.scope.is_testbench():
@@ -744,21 +744,21 @@ class AHDLTranslator(IrVisitor):
     def visit_CJump(self, ir):
         cond = self.visit(ir.exp)
         if isinstance(cond, AHDL_CONST) and cond.value == 1:
-            self._emit(AHDL_TRANSITION(ir.true.name), self.sched_time)
+            self._emit(AHDL_TRANSITION(ir.true), self.sched_time)
         else:
             conds = (cond, AHDL_CONST(1))
-            blocks = (AHDL_BLOCK('', (AHDL_TRANSITION(ir.true.name),)),
-                      AHDL_BLOCK('', (AHDL_TRANSITION(ir.false.name),)))
+            blocks = (AHDL_BLOCK('', (AHDL_TRANSITION(ir.true),)),
+                      AHDL_BLOCK('', (AHDL_TRANSITION(ir.false),)))
             self._emit(AHDL_TRANSITION_IF(conds, blocks), self.sched_time)
 
     def visit_Jump(self, ir):
-        self._emit(AHDL_TRANSITION(ir.target.name), self.sched_time)
+        self._emit(AHDL_TRANSITION(ir.target), self.sched_time)
 
     def visit_MCJump(self, ir):
         for c, target in zip(ir.conds[:-1], ir.targets[:-1]):
             if isinstance(c, Const) and c.value == 1:
                 cond = self.visit(c)
-                self._emit(AHDL_TRANSITION(target.name), self.sched_time)
+                self._emit(AHDL_TRANSITION(target), self.sched_time)
                 return
 
         cond_list = []
@@ -766,7 +766,7 @@ class AHDLTranslator(IrVisitor):
         for c, target in zip(ir.conds, ir.targets):
             cond = self.visit(c)
             cond_list.append(cond)
-            blocks.append(AHDL_BLOCK('', (AHDL_TRANSITION(target.name),)))
+            blocks.append(AHDL_BLOCK('', (AHDL_TRANSITION(target),)))
         self._emit(AHDL_TRANSITION_IF(tuple(cond_list), tuple(blocks)), self.sched_time)
 
     def visit_Ret(self, ir):

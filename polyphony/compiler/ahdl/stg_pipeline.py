@@ -149,7 +149,7 @@ class PipelineBuilder(STGItemBuilder):
         pipeline_state = PipelineState(state_name, AHDL_BLOCK('', pipeline_state_codes), 0, self.stg)
 
         for blk in dfg.region.blocks():
-            self.blk2states[blk.name] = [pipeline_state]
+            self.blk2states[blk.bid] = [pipeline_state]
         self.stg.add_states([pipeline_state])
 
     def post_build(self, dfg, pstate_helper) -> AHDL_STM:
@@ -541,7 +541,7 @@ class LoopPipelineBuilder(PipelineBuilder):
         assert len(dfg.region.exits) == 1
         codes.extend([
             AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
-            AHDL_TRANSITION(dfg.region.exits[0].name)
+            AHDL_TRANSITION(dfg.region.exits[0].bid)
         ])
         blocks = [AHDL_BLOCK('', tuple(codes))]
         pipe_end_stm = AHDL_TRANSITION_IF(tuple(conds), tuple(blocks))
