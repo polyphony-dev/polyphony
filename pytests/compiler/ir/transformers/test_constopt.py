@@ -1107,8 +1107,8 @@ mv x (mld arr 1)
     # arr should be in constant_array_table after processing
 
 
-def test_static_constopt_attr():
-    """StaticConstOpt handles Attr variables."""
+def test_static_constopt_attr_via_ir():
+    """StaticConstOpt handles Attr variables (IR text)."""
     from polyphony.compiler.ir.transformers.constopt import StaticConstOpt
     src = '''
 scope C
@@ -1507,8 +1507,8 @@ def test_visit_const_passthrough():
     assert base.visit_Const(c) is c
 
 
-def test_to_signed_16bit():
-    """_to_signed with 16-bit signed type."""
+def test_to_signed_16bit_wrap():
+    """_to_signed with 16-bit signed type wraps 0x8000."""
     t = Type.int(16, signed=True)
     c = Const(value=0x8000)
     result = _to_signed(t, c)
@@ -1516,8 +1516,8 @@ def test_to_signed_16bit():
     assert result.value == -32768
 
 
-def test_to_unsigned_16bit():
-    """_to_unsigned with 16-bit unsigned type."""
+def test_to_unsigned_16bit_overflow():
+    """_to_unsigned with 16-bit unsigned type masks overflow."""
     t = Type.int(16, signed=False)
     c = Const(value=0x10000)
     result = _to_unsigned(t, c)
@@ -1525,7 +1525,7 @@ def test_to_unsigned_16bit():
     assert result.value == 0
 
 
-def test_relop_same_variable_eq():
+def test_relop_same_variable_eq_fold():
     """RelOp with same variable on both sides folds (x == x -> True)."""
     src = '''
 scope F
@@ -3058,3 +3058,234 @@ def test_static_constopt_visit_attr_lookup():
     assert x_sym in C.constants
     assert y_sym in C.constants
     assert C.constants[y_sym].value == 55
+
+
+# ===========================================================
+# ConstantOpt full (worklist-based) tests
+# ===========================================================
+
+def test_constant_propagation_basic():
+    """ConstantOpt propagates constant assignments to uses."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+var y: int32
+
+blk1:
+mv x 10
+mv y x
+mv @return y
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    exit_blk = list(scope.traverse_blocks())[-1]
+    for stm in exit_blk.stms:
+        if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+            assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
+            assert stm.src.value == 10
+
+
+def test_constant_folding_binop():
+    """ConstantOpt folds binary operations with constant operands."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x (+ 3 4)
+mv @return x
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
+                assert stm.src.value == 7
+
+
+def test_constant_folding_subtraction():
+    """ConstantOpt folds subtraction with constant operands."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x (- 10 3)
+mv @return x
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
+                assert stm.src.value == 7
+
+
+def test_constant_folding_relop():
+    """ConstantOpt folds relational operations with constant operands."""
+    src = '''
+scope F
+tags function returnable
+return bool
+var x: bool
+
+blk1:
+mv x (< 3 5)
+mv @return x
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
+                assert stm.src.value == True
+
+
+def test_cjump_constant_true():
+    """ConstantOpt converts CJUMP with constant True to JUMP."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x 1
+cj True blk2 blk3
+
+blk2:
+mv @return 10
+ret @return
+
+blk3:
+mv @return 20
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    entry = scope.entry_block
+    last_stm = entry.stms[-1]
+    assert isinstance(last_stm, Jump), f'Expected JUMP but got {type(last_stm).__name__}'
+
+
+def test_cjump_constant_false():
+    """ConstantOpt converts CJUMP with constant False to JUMP to false branch."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x 1
+cj False blk2 blk3
+
+blk2:
+mv @return 10
+ret @return
+
+blk3:
+mv @return 20
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    entry = scope.entry_block
+    last_stm = entry.stms[-1]
+    assert isinstance(last_stm, Jump), f'Expected JUMP but got {type(last_stm).__name__}'
+
+
+def test_constant_folding_multiply():
+    """ConstantOpt folds multiplication with constant operands."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x (* 3 5)
+mv @return x
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST but got {type(stm.src).__name__}'
+                assert stm.src.value == 15
+
+
+def test_class_scope_skipped():
+    """ConstantOpt skips class scopes."""
+    src = '''
+scope C
+tags class
+var x: int32
+
+blk1:
+mv x 10
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+
+
+def test_multi_step_constant_folding():
+    """ConstantOpt folds constants across multiple assignment steps."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+var y: int32
+var z: int32
+
+blk1:
+mv x 3
+mv y (+ x 4)
+mv z (+ y x)
+mv @return z
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == '@return':
+                assert isinstance(stm.src, Const), f'Expected CONST, got {type(stm.src).__name__}'
+                assert stm.src.value == 10
+
+
+def test_dead_code_removal():
+    """ConstantOpt removes dead constant assignments after propagation."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x 42
+mv @return x
+ret @return
+'''
+    scope = build_scope(src)
+    ConstantOpt().process(scope)
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == 'x':
+                assert False, 'Dead assignment to x should have been removed'
