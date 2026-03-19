@@ -56,10 +56,10 @@ def test_funtion_inlining():
     with pytest.raises(StopIteration) as e:
         next(gen)
 
-    assert blk1.stms[0] == Jump(blk2)
+    assert blk1.stms[0] == Jump(blk2.bid)
     assert blk2.stms[0] == Move(_v('x_0'), Const(10))
     assert blk2.stms[1] == Move(_v('@return_0'), BinOp('Add', _v('x_0'), Const(1)))
-    assert blk2.stms[2] == Jump(blk3)
+    assert blk2.stms[2] == Jump(blk3.bid)
     assert blk3.stms[0] == Move(_v('x'), _v('@return_0'))
     assert blk3.stms[1] == Move(_v('@return'), _v('x'))
     assert blk3.stms[2] == Ret(_v('@return'))
@@ -106,15 +106,15 @@ def test_funtion_inlining_2():
     with pytest.raises(StopIteration) as e:
         next(gen)
 
-    assert blk1.stms[0] == Jump(blk2)
+    assert blk1.stms[0] == Jump(blk2.bid)
     assert blk2.stms[0] == Move(_v('x_0'), Const(10))
     assert blk2.stms[1] == Move(_v('@return_0'), BinOp('Add', _v('x_0'), Const(1)))
-    assert blk2.stms[2] == Jump(blk3)
+    assert blk2.stms[2] == Jump(blk3.bid)
     assert blk3.stms[0] == Move(_v('x'), _v('@return_0'))
-    assert blk3.stms[1] == Jump(blk4)
+    assert blk3.stms[1] == Jump(blk4.bid)
     assert blk4.stms[0] == Move(_v('x_1'), Const(11))
     assert blk4.stms[1] == Move(_v('@return_1'), BinOp('Add', _v('x_1'), Const(1)))
-    assert blk4.stms[2] == Jump(blk5)
+    assert blk4.stms[2] == Jump(blk5.bid)
     assert blk5.stms[0] == Move(_v('y'), _v('@return_1'))
     assert blk5.stms[1] == Move(_v('@return'), BinOp('Add', _v('x'), _v('y')))
     assert blk5.stms[2] == Ret(_v('@return'))
@@ -189,13 +189,13 @@ def test_function_inlining_3():
     assert blk1.stms[3] == Move(_v('j'), _v('@in_j'))
     assert blk1.stms[4] == Move(_v('@t1'), MRef(_v('xs'), _v('i')))
     assert blk1.stms[5] == Move(_v('@t2'), MRef(_v('ys'), _v('j')))
-    assert blk1.stms[6] == Jump(blk2)
+    assert blk1.stms[6] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 4
     assert blk2.stms[0] == Move(_v('x'), _v('@t1'))
     assert blk2.stms[1] == Move(_v('y'), _v('@t2'))
     assert blk2.stms[2] == Move(_v('@return_0'), Array([_v('x'), _v('y')], mutable=False))
-    assert blk2.stms[3] == Jump(blk3)
+    assert blk2.stms[3] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 1
     assert blk3.stms[0] == Move(Array([MRef(_v('ys'), _v('j')), MRef(_v('xs'), _v('i'))], mutable=False), _v('@return_0'))
@@ -285,22 +285,22 @@ def test_function_inlining_with_free_symbol():
 
     assert len(blk1.stms) == 2
     assert blk1.stms[0] == Move(_v('x'), _v('@in_x'))
-    assert blk1.stms[1] == Jump(blk2)
+    assert blk1.stms[1] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 4
     assert blk2.stms[0] == Move(_v('y'), _v('x'))
     assert blk2.stms[1] == Move(_v('x_0'), BinOp('Add', _v('y'), Const(1)))
     assert blk2.stms[2] == Move(_v('@t'), BinOp('Add', _v('y'), Const(2)))
-    assert blk2.stms[3] == Jump(blk3)
+    assert blk2.stms[3] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 3
     assert blk3.stms[0] == Move(_v('z'), _v('@t'))
     assert blk3.stms[1] == Move(_v('@return_0'), BinOp('Add', _v('x_0'), _v('z')))
-    assert blk3.stms[2] == Jump(blk4)
+    assert blk3.stms[2] == Jump(blk4.bid)
 
     assert len(blk4.stms) == 2
     assert blk4.stms[0] == Move(_v('@return_1'), _v('@return_0'))
-    assert blk4.stms[1] == Jump(blk5)
+    assert blk4.stms[1] == Jump(blk5.bid)
 
     assert len(blk5.stms) == 2
     assert blk5.stms[0] == Move(_v('@return'), _v('@return_1'))
@@ -374,22 +374,22 @@ def test_functor_inlining():
 
 
     assert len(blk1.stms) == 1
-    assert blk1.stms[0] == Jump(blk2)
+    assert blk1.stms[0] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 3
     assert blk2.stms[0] == Move(_v('y'), _v('x'))
     assert blk2.stms[1] == Move(_v('@return_0'), _v('h_#1'))
-    assert blk2.stms[2] == Jump(blk3)
+    assert blk2.stms[2] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 3
     assert blk3.stms[0] == Move(_v('h'), _v('@return_0'))
     assert blk3.stms[1] == Move(_v('@t'), BinOp('Add', _v('x'), Const(1)))
-    assert blk3.stms[2] == Jump(blk4)
+    assert blk3.stms[2] == Jump(blk4.bid)
 
     assert len(blk4.stms) == 3
     assert blk4.stms[0] == Move(_v('z'), _v('@t'))
     assert blk4.stms[1] == Move(_v('@return_1'), BinOp('Add', _v('y_0'), _v('z')))
-    assert blk4.stms[2] == Jump(blk5)
+    assert blk4.stms[2] == Jump(blk5.bid)
 
     assert len(blk5.stms) == 2
     assert blk5.stms[0] == Move(_v('@return'), _v('@return_1'))
@@ -449,7 +449,7 @@ def test_ctor_inlining():
     assert blk1.stms[0] == Move(_v('x'), Const(10))
     builtin_new = SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={})
     assert blk1.stms[1] == Move(_v('c0'), builtin_new)
-    assert blk1.stms[2] == Jump(blk2)
+    assert blk1.stms[2] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 3
     # x_0 = x
@@ -457,7 +457,7 @@ def test_ctor_inlining():
     # jump blk3
     assert blk2.stms[0] == Move(_v('x_0'), _v('x'))
     assert blk2.stms[1] == Move(_v('c0.x'), _v('x_0'))
-    assert blk2.stms[2] == Jump(blk3)
+    assert blk2.stms[2] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 2
     # @return = c0.x
@@ -557,7 +557,7 @@ def caller_func():
     assert blk1.stms[0] == Move(_v('x'), Const(10))
     builtin_new = SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={})
     assert blk1.stms[1] == Move(_v('c'), builtin_new)
-    assert blk1.stms[2] == Jump(blk2)
+    assert blk1.stms[2] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 3
     # x_1 = x
@@ -566,7 +566,7 @@ def caller_func():
     assert blk2.stms[0] == Move(_v('x_1'), _v('x'))
     builtin_new = SysCall(_v('$new'), args=[('typ', _v('D'))], kwargs={})
     assert blk2.stms[1] == Move(_v('c.d'), builtin_new)
-    assert blk2.stms[2] == Jump(blk3)
+    assert blk2.stms[2] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 3
     # x_0 = x_1
@@ -574,10 +574,10 @@ def caller_func():
     # jump blk4
     assert blk3.stms[0] == Move(_v('x_0'), _v('x_1'))
     assert blk3.stms[1] == Move(_v('c.d.x'), _v('x_0'))
-    assert blk3.stms[2] == Jump(blk4)
+    assert blk3.stms[2] == Jump(blk4.bid)
 
     assert len(blk4.stms) == 1
-    assert blk4.stms[0] == Jump(blk5)
+    assert blk4.stms[0] == Jump(blk5.bid)
 
     # a = (c.d.x + c.d.x)
     # c.d.x = 10
@@ -659,7 +659,7 @@ def test_method_inlining():
     assert blk1.stms[0] == Move(_v('x'), Const(10))
     builtin_new = SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={})
     assert blk1.stms[1] == Move(_v('c0'), builtin_new)
-    assert blk1.stms[2] == Jump(blk2)
+    assert blk1.stms[2] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 3
     # x_0 = x
@@ -667,11 +667,11 @@ def test_method_inlining():
     # jump blk3
     assert blk2.stms[0] == Move(_v('x_0'), _v('x'))
     assert blk2.stms[1] == Move(_v('c0.x'), _v('x_0'))
-    assert blk2.stms[2] == Jump(blk3)
+    assert blk2.stms[2] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 1
     # jump blk4
-    assert blk3.stms[0] == Jump(blk4)
+    assert blk3.stms[0] == Jump(blk4.bid)
 
     assert len(blk4.stms) == 4
     # x_1 = 10
@@ -681,7 +681,7 @@ def test_method_inlining():
     assert blk4.stms[0] == Move(_v('x_1'), Const(10))
     assert blk4.stms[1] == Move(_v('c0.x'), BinOp('Add', _v('c0.x'), _v('x_1')))
     assert blk4.stms[2] == Move(_v('@return_0'), _v('c0.x'))
-    assert blk4.stms[3] == Jump(blk5)
+    assert blk4.stms[3] == Jump(blk5.bid)
 
     assert len(blk5.stms) == 3
     # x = @return_0
@@ -832,54 +832,54 @@ def composition04(x):
     # jump blk4
     assert blk3.stms[0] == Move(_v('x_0'), _v('x_1'))
     assert blk3.stms[1] == Move(_v('c.d.x'), _v('x_0'))
-    assert blk3.stms[2] == Jump(blk4)
+    assert blk3.stms[2] == Jump(blk4.bid)
 
     assert len(blk4.stms) == 1
     # jump blk5
-    assert blk4.stms[0] == Jump(blk5)
+    assert blk4.stms[0] == Jump(blk5.bid)
 
     assert len(blk5.stms) == 1
     # jump blk6
-    assert blk5.stms[0] == Jump(blk6)
+    assert blk5.stms[0] == Jump(blk6.bid)
 
     assert len(blk6.stms) == 1
     # jump blk7
-    assert blk6.stms[0] == Jump(blk7)
+    assert blk6.stms[0] == Jump(blk7.bid)
 
     assert len(blk7.stms) == 2
     # @return_0 = c.d.x
     # jump blk8
     assert blk7.stms[0] == Move(_v('@return_0'), _v('c.d.x'))
-    assert blk7.stms[1] == Jump(blk8)
+    assert blk7.stms[1] == Jump(blk8.bid)
 
     assert len(blk8.stms) == 2
     # @return_1 = @return_0
     # jump blk9
     assert blk8.stms[0] == Move(_v('@return_1'), _v('@return_0'))
-    assert blk8.stms[1] == Jump(blk9)
+    assert blk8.stms[1] == Jump(blk9.bid)
 
     assert len(blk9.stms) == 2
     # @t1 = @return_1
     # jump blk10
     assert blk9.stms[0] == Move(_v('@t1'), _v('@return_1'))
-    assert blk9.stms[1] == Jump(blk10)
+    assert blk9.stms[1] == Jump(blk10.bid)
 
     assert len(blk10.stms) == 1
     # jump blk11
-    assert blk10.stms[0] == Jump(blk11)
+    assert blk10.stms[0] == Jump(blk11.bid)
 
     assert len(blk11.stms) == 2
     # @return_0_0 = c.d.x
     # jump blk12
     assert blk11.stms[0] == Move(_v('@return_0_0'), _v('c.d.x'))
-    assert blk11.stms[1] == Jump(blk12)
+    assert blk11.stms[1] == Jump(blk12.bid)
 
     assert len(blk12.stms) == 2
     # @return_2 = @return_0_0
     # jump blk13
 
     assert blk12.stms[0] == Move(_v('@return_2'), _v('@return_0_0'))
-    assert blk12.stms[1] == Jump(blk13)
+    assert blk12.stms[1] == Jump(blk13.bid)
 
     assert len(blk13.stms) == 4
     # @t2 = @return_2
@@ -944,7 +944,7 @@ def test_inlinelib_1():
     assert isinstance(blk1.stms[0].src, New)
     assert str(blk1.stms[0].dst) == 'port'
     assert blk1.stms[1] == Move(_v('value'), Const(10))
-    assert blk1.stms[2] == Jump(blk2)
+    assert blk1.stms[2] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 4
     # value_0 = value
@@ -955,13 +955,13 @@ def test_inlinelib_1():
     assert blk2.stms[1] == Move(_v('port_0'), _v('port'))
     assert isinstance(blk2.stms[2], Expr) and isinstance(blk2.stms[2].exp, SysCall)
     assert str(blk2.stms[2].exp.func) == 'polyphony.timing.wait_until'
-    assert blk2.stms[3] == Jump(blk3)
+    assert blk2.stms[3] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 2
     # value = 20
     # jump blk4
     assert blk3.stms[0] == Move(_v('value'), Const(20))
-    assert blk3.stms[1] == Jump(blk4)
+    assert blk3.stms[1] == Jump(blk4.bid)
 
     assert len(blk4.stms) == 4
     # value_1 = value
@@ -972,7 +972,7 @@ def test_inlinelib_1():
     assert blk4.stms[1] == Move(_v('port_1'), _v('port'))
     assert isinstance(blk4.stms[2], Expr) and isinstance(blk4.stms[2].exp, SysCall)
     assert str(blk4.stms[2].exp.func) == 'polyphony.timing.wait_until'
-    assert blk4.stms[3] == Jump(blk5)
+    assert blk4.stms[3] == Jump(blk5.bid)
 
     assert len(blk5.stms) == 0
 
@@ -1060,7 +1060,7 @@ def test_ctor_with_closure():
     # c = $new(C)
     # jump blk2
     assert blk1.stms[0] == Move(_v('c'), SysCall(_v('$new'), args=[('typ', _v('C'))], kwargs={}))
-    assert blk1.stms[1] == Jump(blk2)
+    assert blk1.stms[1] == Jump(blk2.bid)
 
     assert len(blk2.stms) == 5
     # param = 10
@@ -1072,7 +1072,7 @@ def test_ctor_with_closure():
     assert blk2.stms[1] == Move(_v('c.i'), New(_v('polyphony.io.Port'), args=[('', _v('int')), ('', Const('in'))], kwargs={}))
     assert blk2.stms[2] == Move(_v('c.o'), New(_v('polyphony.io.Port'), args=[('', _v('int')), ('', Const('out'))], kwargs={}))
     assert blk2.stms[3] == Expr(Call(_v('c.o.assign'), args=[('', _v('lambda_#1'))], kwargs={}))
-    assert blk2.stms[4] == Jump(blk3)
+    assert blk2.stms[4] == Jump(blk3.bid)
 
     assert len(blk3.stms) == 0
 
@@ -1118,7 +1118,7 @@ def test_object_copy_inserts_field_moves():
     F.add_sym('d2', tags=set(), typ=Type.object(D))
 
     mv = Move(Temp('d1', Ctx.STORE), Temp('d2', Ctx.LOAD))
-    object.__setattr__(mv, 'block', blk)
+    object.__setattr__(mv, 'block', blk.bid)
     blk.append_stm(mv)
 
     Block.set_order(blk, 0)
@@ -1136,7 +1136,7 @@ def test_object_copy_inserts_field_moves():
     F2.set_entry_block(blk2)
     F2.set_exit_block(blk2)
     mv2 = Move(Temp('d1', Ctx.STORE), Temp('d2', Ctx.LOAD))
-    object.__setattr__(mv2, 'block', blk2)
+    object.__setattr__(mv2, 'block', blk2.bid)
     blk2.append_stm(mv2)
     Block.set_order(blk2, 0)
 
@@ -1155,7 +1155,7 @@ def test_object_copy_inserts_field_moves():
     blk3 = Block(F3, nametag='blk1')
     F3.set_entry_block(blk3)
     F3.set_exit_block(blk3)
-    mv3 = Move(dst=Temp(name='d1', ctx=Ctx.STORE), src=Temp(name='d2'), block=blk3)
+    mv3 = Move(dst=Temp(name='d1', ctx=Ctx.STORE), src=Temp(name='d2'), block=blk3.bid)
     blk3.stms.append(mv3)
     Block.set_order(blk3, 0)
 
@@ -1186,7 +1186,7 @@ def test_no_copy_for_non_object_fields():
     F.set_exit_block(blk)
 
     mv = Move(Temp('c1', Ctx.STORE), Temp('c2', Ctx.LOAD))
-    object.__setattr__(mv, 'block', blk)
+    object.__setattr__(mv, 'block', blk.bid)
     blk.append_stm(mv)
     Block.set_order(blk, 0)
 
@@ -1557,46 +1557,46 @@ def test_stms_visitor_visitor_methods():
     visitor.visit(Attr(name='x', exp=Temp('y'), attr='x'))
 
     # Exercise IrStm visitor methods
-    expr_stm = Expr(exp=Temp('x'), block=blk)
+    expr_stm = Expr(exp=Temp('x'), block=blk.bid)
     visitor.visit(expr_stm)
 
-    cexpr = CExpr(cond=Const(1), exp=Temp('x'), block=blk)
+    cexpr = CExpr(cond=Const(1), exp=Temp('x'), block=blk.bid)
     visitor.visit(cexpr)
 
-    mv = Move(Temp('y', Ctx.STORE), Temp('x'), block=blk)
+    mv = Move(Temp('y', Ctx.STORE), Temp('x'), block=blk.bid)
     visitor.visit(mv)
 
-    cmove = CMove(cond=Const(1), dst=Temp('y', Ctx.STORE), src=Temp('x'), block=blk)
+    cmove = CMove(cond=Const(1), dst=Temp('y', Ctx.STORE), src=Temp('x'), block=blk.bid)
     visitor.visit(cmove)
 
     from polyphony.compiler.ir.ir import CJump
-    cjump = CJump(exp=Temp('x'), true=blk2, false=blk3, block=blk)
+    cjump = CJump(exp=Temp('x'), true=blk2.bid, false=blk3.bid, block=blk.bid)
     visitor.visit(cjump)
 
-    mcjump = MCJump(conds=[Const(1), Const(1)], targets=[blk2, blk3], block=blk)
+    mcjump = MCJump(conds=[Const(1), Const(1)], targets=[blk2.bid, blk3.bid], block=blk.bid)
     visitor.visit(mcjump)
 
-    jmp = Jump(blk2, block=blk)
+    jmp = Jump(blk2.bid, block=blk.bid)
     visitor.visit(jmp)
 
-    ret = Ret(exp=Temp('x'), block=blk)
+    ret = Ret(exp=Temp('x'), block=blk.bid)
     visitor.visit(ret)
 
     phi = Phi(var=Temp('x', Ctx.STORE),
               args=[Const(1), Const(None)],
               ps=[Const(1), Const(None)],
-              block=blk)
+              block=blk.bid)
     visitor.visit(phi)
 
-    uphi = UPhi(var=Temp('x', Ctx.STORE), args=[Const(1)], ps=[Const(1)], block=blk)
+    uphi = UPhi(var=Temp('x', Ctx.STORE), args=[Const(1)], ps=[Const(1)], block=blk.bid)
     visitor.visit(uphi)
 
-    lphi = LPhi(var=Temp('x', Ctx.STORE), args=[Const(1)], ps=[Const(1)], block=blk)
+    lphi = LPhi(var=Temp('x', Ctx.STORE), args=[Const(1)], ps=[Const(1)], block=blk.bid)
     visitor.visit(lphi)
 
     # MStm
-    inner_stm = Move(Temp('x', Ctx.STORE), Const(1), block=blk)
-    mstm = MStm(stms=[inner_stm], block=blk)
+    inner_stm = Move(Temp('x', Ctx.STORE), Const(1), block=blk.bid)
+    mstm = MStm(stms=[inner_stm], block=blk.bid)
     visitor.visit(mstm)
 
     # visit with unknown IR type (returns None)
@@ -1632,51 +1632,51 @@ def test_stms_transformer_transform_methods():
     transformer = _StmsTransformer()
 
     # Test Expr
-    expr = Expr(exp=Temp('x'), block=blk)
+    expr = Expr(exp=Temp('x'), block=blk.bid)
     blk.stms = [expr]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Test CExpr
-    cexpr = CExpr(cond=Const(1), exp=Temp('x'), block=blk)
+    cexpr = CExpr(cond=Const(1), exp=Temp('x'), block=blk.bid)
     blk.stms = [cexpr]
     transformer.process(F)
     assert len(blk.stms) == 1
     assert isinstance(blk.stms[0], CExpr)
 
     # Test Move
-    mv = Move(Temp('y', Ctx.STORE), Temp('x'), block=blk)
+    mv = Move(Temp('y', Ctx.STORE), Temp('x'), block=blk.bid)
     blk.stms = [mv]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Test CMove
-    cmove = CMove(cond=Const(1), dst=Temp('y', Ctx.STORE), src=Temp('x'), block=blk)
+    cmove = CMove(cond=Const(1), dst=Temp('y', Ctx.STORE), src=Temp('x'), block=blk.bid)
     blk.stms = [cmove]
     transformer.process(F)
     assert len(blk.stms) == 1
     assert isinstance(blk.stms[0], CMove)
 
     # Test CJump
-    cjump = CJump(exp=Temp('x'), true=blk2, false=blk3, block=blk)
+    cjump = CJump(exp=Temp('x'), true=blk2.bid, false=blk3.bid, block=blk.bid)
     blk.stms = [cjump]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Test MCJump
-    mcjump = MCJump(conds=[Const(1), Const(1)], targets=[blk2, blk3], block=blk)
+    mcjump = MCJump(conds=[Const(1), Const(1)], targets=[blk2.bid, blk3.bid], block=blk.bid)
     blk.stms = [mcjump]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Test Jump
-    jmp = Jump(blk2, block=blk)
+    jmp = Jump(blk2.bid, block=blk.bid)
     blk.stms = [jmp]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Test Ret
-    ret = Ret(exp=Temp('x'), block=blk)
+    ret = Ret(exp=Temp('x'), block=blk.bid)
     blk.stms = [ret]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1685,7 +1685,7 @@ def test_stms_transformer_transform_methods():
     phi = Phi(var=Temp('x', Ctx.STORE),
               args=[Const(1), Const(2)],
               ps=[Const(1), Const(1)],
-              block=blk)
+              block=blk.bid)
     blk.stms = [phi]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1695,7 +1695,7 @@ def test_stms_transformer_transform_methods():
     phi_no_ps = Phi(var=Temp('x', Ctx.STORE),
                     args=[Const(1)],
                     ps=[],
-                    block=blk)
+                    block=blk.bid)
     blk.stms = [phi_no_ps]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1704,7 +1704,7 @@ def test_stms_transformer_transform_methods():
     uphi = UPhi(var=Temp('x', Ctx.STORE),
                 args=[Const(1)],
                 ps=[Const(1)],
-                block=blk)
+                block=blk.bid)
     blk.stms = [uphi]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1713,14 +1713,14 @@ def test_stms_transformer_transform_methods():
     lphi = LPhi(var=Temp('x', Ctx.STORE),
                 args=[Const(1)],
                 ps=[Const(1)],
-                block=blk)
+                block=blk.bid)
     blk.stms = [lphi]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Test MStm
-    inner = Move(Temp('x', Ctx.STORE), Const(1), block=blk)
-    mstm = MStm(stms=[inner], block=blk)
+    inner = Move(Temp('x', Ctx.STORE), Const(1), block=blk.bid)
+    mstm = MStm(stms=[inner], block=blk.bid)
     blk.stms = [mstm]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1728,54 +1728,54 @@ def test_stms_transformer_transform_methods():
 
     # Test IrExp transformers: UnOp, BinOp, RelOp, CondOp, Call, SysCall, New,
     # Attr, MRef, MStore, Array (via Expr wrapping)
-    blk.stms = [Expr(exp=UnOp(op='Not', exp=Temp('x')), block=blk)]
+    blk.stms = [Expr(exp=UnOp(op='Not', exp=Temp('x')), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=BinOp(op='Add', left=Temp('x'), right=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=BinOp(op='Add', left=Temp('x'), right=Const(1)), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=RelOp(op='Eq', left=Temp('x'), right=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=RelOp(op='Eq', left=Temp('x'), right=Const(1)), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=CondOp(cond=Temp('x'), left=Const(1), right=Const(2)), block=blk)]
+    blk.stms = [Expr(exp=CondOp(cond=Temp('x'), left=Const(1), right=Const(2)), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=Call(func=Temp('fn'), args=[('', Temp('x'))], kwargs={}), block=blk)]
+    blk.stms = [Expr(exp=Call(func=Temp('fn'), args=[('', Temp('x'))], kwargs={}), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     F.add_sym('$fn', tags=set(), typ=Type.int())
-    blk.stms = [Expr(exp=SysCall(func=Temp('$fn'), args=[('', Temp('x'))], kwargs={}), block=blk)]
+    blk.stms = [Expr(exp=SysCall(func=Temp('$fn'), args=[('', Temp('x'))], kwargs={}), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     F.add_sym('C', tags=set(), typ=Type.int())
-    blk.stms = [Expr(exp=New(func=Temp('C'), args=[('', Temp('x'))], kwargs={}), block=blk)]
+    blk.stms = [Expr(exp=New(func=Temp('C'), args=[('', Temp('x'))], kwargs={}), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=Attr(name='x', exp=Temp('y'), attr='x'), block=blk)]
+    blk.stms = [Expr(exp=Attr(name='x', exp=Temp('y'), attr='x'), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=MRef(mem=Temp('x'), offset=Const(0)), block=blk)]
+    blk.stms = [Expr(exp=MRef(mem=Temp('x'), offset=Const(0)), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=MStore(mem=Temp('x'), offset=Const(0), exp=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=MStore(mem=Temp('x'), offset=Const(0), exp=Const(1)), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [Expr(exp=Array(items=[Temp('x')], repeat=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=Array(items=[Temp('x')], repeat=Const(1)), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Array with None repeat
-    blk.stms = [Expr(exp=Array(items=[Temp('x')], repeat=None), block=blk)]
+    blk.stms = [Expr(exp=Array(items=[Temp('x')], repeat=None), block=blk.bid)]
     transformer.process(F)
     assert len(blk.stms) == 1
 

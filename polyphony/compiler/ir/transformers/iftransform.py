@@ -11,16 +11,18 @@ logger = getLogger(__name__)
 
 class IfTransformer(object):
     def process(self, scope):
+        self.scope = scope
         for blk in scope.traverse_blocks():
             self._process_block(blk)
 
     def _merge_else_cj(self, cj, conds, targets):
         """Recursively merge chained else-if CJUMPs into a flat conds/targets list."""
-        if len(cj.false.stms) == 1 and isinstance(cj.false.stms[0], CJump):
-            else_cj = cj.false.stms[0]
-            cj.false.succs = []
-            cj.false.preds = []
-            cj.false.stms = []
+        false_blk = self.scope.find_block(cj.false)
+        if len(false_blk.stms) == 1 and isinstance(false_blk.stms[0], CJump):
+            else_cj = false_blk.stms[0]
+            false_blk.succs = []
+            false_blk.preds = []
+            false_blk.stms = []
 
             conds.append(else_cj.exp)
             targets.append(else_cj.true)
@@ -44,13 +46,14 @@ class IfTransformer(object):
         targets.append(cj.true)
         if self._merge_else_cj(cj, conds, targets):
             block.stms.pop()
-            mj = MCJump(conds=conds, targets=targets, loc=cj.loc, block=block)
+            mj = MCJump(conds=conds, targets=targets, loc=cj.loc, block=block.bid)
             block.stms.append(mj)
             block.succs = []
-            for target in targets:
-                target.preds = [block]
-                block.succs.append(target)
-                logger.debug('target.block ' + target.name)
+            for target_bid in targets:
+                target_blk = self.scope.find_block(target_bid)
+                target_blk.preds = [block]
+                block.succs.append(target_blk)
+                logger.debug('target.block ' + target_blk.name)
             logger.debug(str(mj))
 
 
@@ -106,7 +109,7 @@ class IfCondTransformer(object):
                 mv = Move(
                     dst=Temp(name=new_sym.name, ctx=Ctx.STORE),
                     src=c,
-                    block=block,
+                    block=block.bid,
                 )
                 block.stms.insert(insert_pos, mv)
                 insert_pos += 1

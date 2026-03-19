@@ -251,7 +251,7 @@ mv x 1
 
     for blk in scope.traverse_blocks():
         for stm in blk.stms:
-            assert stm.block is blk
+            assert stm.block == blk.bid
 
 
 class IdentityTransformer(IrTransformer):
@@ -814,7 +814,7 @@ def test_transformer_mcjump():
     blk2 = make_block()
     mcjump = MCJump(
         conds=[Const(value=True), Const(value=False)],
-        targets=[blk1, blk2],
+        targets=[blk1.bid, blk2.bid],
     )
     t.visit(mcjump)
     assert len(t.new_stms) == 1
@@ -829,7 +829,7 @@ def test_transformer_mcjump_with_replacement():
     blk2 = make_block()
     mcjump = MCJump(
         conds=[Const(value=0), Const(value=1)],
-        targets=[blk1, blk2],
+        targets=[blk1.bid, blk2.bid],
     )
     replacer.visit(mcjump)
     assert len(replacer.new_stms) == 1

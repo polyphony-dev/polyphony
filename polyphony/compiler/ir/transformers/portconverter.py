@@ -338,7 +338,7 @@ class PortConnector(IrVisitor):
             else:
                 assert False
         # Append to block
-        self.current_stm.block.append_stm(
+        self.scope.find_block(self.current_stm.block).append_stm(
             Expr(port_assign_call)
         )
 

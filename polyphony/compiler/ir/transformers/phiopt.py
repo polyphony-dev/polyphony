@@ -28,7 +28,7 @@ class PHIInlining(object):
                             arg_sym in phis and
                             phi != phis[arg_sym]):
                         inline_phi = phis[arg_sym]
-                        assert phi.block is inline_phi.block
+                        assert phi.block == inline_phi.block
                         new_args.extend(inline_phi.args)
                         for ip in inline_phi.ps:
                             new_p = reduce_relexp(RelOp(op='And', left=p, right=ip))
@@ -51,19 +51,20 @@ class LPHIRemover(object):
                 continue
             assert len(loop.head.preds_loop) == 1
             update_idx = loop.head.preds.index(loop.head.preds_loop[0])
-            mstm = MStm(block=loop.head.preds_loop[0])
+            mstm = MStm(block=loop.head.preds_loop[0].bid)
             for lphi in lphis:
-                lphi.block.stms.remove(lphi)
+                lphi_blk = scope.find_block(lphi.block)
+                lphi_blk.stms.remove(lphi)
                 for i in range(len(lphi.args)):
                     if i == update_idx:
                         continue
-                    init_blk = lphi.block.preds[i]
+                    init_blk = lphi_blk.preds[i]
                     init_arg = lphi.args[i]
                     mv = Move(
                         dst=lphi.var.model_copy(deep=True),
                         src=init_arg,
                         loc=Loc(lphi.loc.filename, 0) if lphi.loc else Loc('', 0),
-                        block=init_blk,
+                        block=init_blk.bid,
                     )
                     init_blk.stms.insert(-1, mv)
                 update_arg = lphi.args[update_idx]
@@ -71,7 +72,7 @@ class LPHIRemover(object):
                     dst=lphi.var.model_copy(deep=True),
                     src=update_arg,
                     loc=lphi.loc or Loc('', 0),
-                    block=loop.head.preds_loop[0],
+                    block=loop.head.preds_loop[0].bid,
                 )
                 mstm.stms.append(mv)
             loop.head.preds_loop[0].stms.insert(-1, mstm)

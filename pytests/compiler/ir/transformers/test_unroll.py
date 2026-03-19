@@ -54,7 +54,7 @@ def _make_unrollable_loop_scope(trip_count=4, unroll='full'):
     scope.set_exit_block(loop_exit)
 
     blk_entry.append_stm(Expr(Const(0)))  # guard from reduceblk
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     i_lphi = LPhi(Temp('i', Ctx.STORE))
     object.__setattr__(i_lphi, 'args', [Const(0), Temp('i_upd')])
@@ -67,11 +67,11 @@ def _make_unrollable_loop_scope(trip_count=4, unroll='full'):
     loop_head.append_stm(x_lphi)
 
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(trip_count))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     loop_body.append_stm(Move(Temp('x_upd', Ctx.STORE), BinOp('Add', Temp('x'), Temp('i'))))
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    jmp = Jump(loop_head)
+    jmp = Jump(loop_head.bid)
     object.__setattr__(jmp, 'typ', 'L')
     loop_body.append_stm(jmp)
 
@@ -114,17 +114,17 @@ def test_new_loop_unroller_no_unroll():
     scope.set_exit_block(loop_exit)
 
     blk_entry.append_stm(Expr(Const(0)))  # guard from reduceblk
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     i_lphi = LPhi(Temp('i', Ctx.STORE))
     object.__setattr__(i_lphi, 'args', [Const(0), Temp('i_upd')])
     object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
     loop_head.append_stm(i_lphi)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(4))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    jmp = Jump(loop_head)
+    jmp = Jump(loop_head.bid)
     object.__setattr__(jmp, 'typ', 'L')
     loop_body.append_stm(jmp)
 

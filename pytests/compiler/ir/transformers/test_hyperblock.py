@@ -124,6 +124,6 @@ mv x 0
     scope = run_new(src)
     entry = scope.entry_block
     for stm in entry.stms:
-        assert stm.block is entry, (
-            f"stm {stm} has block={stm.block.name}, expected {entry.name}"
+        assert stm.block == entry.bid, (
+            f"stm {stm} has block={stm.block}, expected {entry.bid}"
         )

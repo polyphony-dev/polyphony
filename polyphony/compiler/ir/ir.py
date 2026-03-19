@@ -194,16 +194,22 @@ class IrStm(Ir):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     loc: Any = None
-    block: Any = None  # Block reference
+    block: str = ''  # block bid (e.g., 'b1', 'loop3')
+
+    @field_validator('block', mode='before')
+    @classmethod
+    def _coerce_block(cls, v):
+        if isinstance(v, str):
+            return v
+        # Accept Block objects for backward compat - extract bid
+        if hasattr(v, 'bid'):
+            return v.bid
+        return str(v)
 
     def model_post_init(self, __context):
         """Ensure loc is never None."""
         if self.loc is None:
             object.__setattr__(self, 'loc', Loc('', 0))
-
-    def program_order(self):
-        from ..common.utils import find_id_index
-        return (self.block.order, find_id_index(self.block.stms, self))
 
     def is_mem_read(self):
         return isinstance(self, Move) and isinstance(self.src, MRef)
@@ -898,8 +904,17 @@ class CMove(Move):
 
 
 class Jump(IrStm):
-    target: Any  # Block
+    target: str  # block bid
     typ: str = ''
+
+    @field_validator('target', mode='before')
+    @classmethod
+    def _coerce_target(cls, v):
+        if isinstance(v, str):
+            return v
+        if hasattr(v, 'bid'):
+            return v.bid
+        return str(v) if v is not None else ''
 
     def __init__(self, *args, **kwargs):
         """Accept positional args: Jump(target, typ='', loc=None)"""
@@ -913,22 +928,35 @@ class Jump(IrStm):
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f"jump {self.target.name} '{self.typ}'"
+        return f"jump {self.target} '{self.typ}'"
 
     def __eq__(self, other):
         if not isinstance(other, Jump):
             return False
-        return self.target is other.target
+        return self.target == other.target
 
     def __hash__(self):
         return id(self)
 
 
+def _coerce_bid(v):
+    if isinstance(v, str):
+        return v
+    if hasattr(v, 'bid'):
+        return v.bid
+    return str(v) if v is not None else ''
+
+
 class CJump(IrStm):
     exp: IrExp
-    true: Any  # Block
-    false: Any  # Block
+    true: str   # block bid
+    false: str  # block bid
     loop_branch: bool = False
+
+    @field_validator('true', 'false', mode='before')
+    @classmethod
+    def _coerce_targets(cls, v):
+        return _coerce_bid(v)
 
     def __init__(self, *args, **kwargs):
         """Accept positional args: CJump(exp, true, false, loc=None)"""
@@ -944,12 +972,12 @@ class CJump(IrStm):
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'cjump {self.exp} ? {self.true.name}, {self.false.name}'
+        return f'cjump {self.exp} ? {self.true}, {self.false}'
 
     def __eq__(self, other):
         if not isinstance(other, CJump):
             return False
-        return self.exp == other.exp and self.true is other.true and self.false is other.false
+        return self.exp == other.exp and self.true == other.true and self.false == other.false
 
     def __hash__(self):
         return id(self)
@@ -957,8 +985,15 @@ class CJump(IrStm):
 
 class MCJump(IrStm):
     conds: list = []
-    targets: list = []
+    targets: list[str] = []  # block bids
     loop_branch: bool = False
+
+    @field_validator('targets', mode='before')
+    @classmethod
+    def _coerce_targets(cls, v):
+        if isinstance(v, list):
+            return [_coerce_bid(t) for t in v]
+        return v
 
     def __init__(self, *args, **kwargs):
         """Accept positional args: MCJump(conds, targets, loc=None)"""
@@ -974,7 +1009,7 @@ class MCJump(IrStm):
     def __str__(self):
         items = []
         for cond, target in zip(self.conds, self.targets):
-            items.append(f'{cond} ? {target.name}')
+            items.append(f'{cond} ? {target}')
         return 'mcjump(\n        {})'.format(', \n        '.join(items))
 
     def __eq__(self, other):

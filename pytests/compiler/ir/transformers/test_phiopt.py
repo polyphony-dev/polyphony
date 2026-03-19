@@ -40,17 +40,17 @@ def _build_simple_loop_scope():
     scope.set_exit_block(loop_exit)
 
     blk_entry.append_stm(Move(Temp('i_init', Ctx.STORE), Const(0)))
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     i_lphi = LPhi(Temp('i', Ctx.STORE))
     object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
     object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
     loop_head.append_stm(i_lphi)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    loop_body.append_stm(Jump(loop_head, typ='L'))
+    loop_body.append_stm(Jump(loop_head.bid, typ='L'))
 
     loop_exit.append_stm(Move(Temp('@return', Ctx.STORE), Temp('i')))
     loop_exit.append_stm(Ret(Temp('@return')))
@@ -96,7 +96,7 @@ def _build_multi_lphi_loop_scope():
 
     blk_entry.append_stm(Move(Temp('i_init', Ctx.STORE), Const(0)))
     blk_entry.append_stm(Move(Temp('acc_init', Ctx.STORE), Const(0)))
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     # LPhi for i (induction variable)
     i_lphi = LPhi(Temp('i', Ctx.STORE))
@@ -111,11 +111,11 @@ def _build_multi_lphi_loop_scope():
     loop_head.append_stm(acc_lphi)
 
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
     loop_body.append_stm(Move(Temp('acc_upd', Ctx.STORE), BinOp('Add', Temp('acc'), Temp('i'))))
-    loop_body.append_stm(Jump(loop_head, typ='L'))
+    loop_body.append_stm(Jump(loop_head.bid, typ='L'))
 
     loop_exit.append_stm(Move(Temp('@return', Ctx.STORE), Temp('acc')))
     loop_exit.append_stm(Ret(Temp('@return')))
@@ -302,7 +302,7 @@ def _build_loop_scope_no_lphi():
     scope.set_exit_block(loop_exit)
 
     blk_entry.append_stm(Move(Temp('i_init', Ctx.STORE), Const(0)))
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     # No LPhi here -- just use 'i' via a Phi (not LPhi) or direct use
     # Use a regular Phi to satisfy structure but not an LPhi
@@ -311,10 +311,10 @@ def _build_loop_scope_no_lphi():
     object.__setattr__(phi_i, 'ps', [Const(1), Const(1)])
     loop_head.append_stm(phi_i)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    loop_body.append_stm(Jump(loop_head, typ='L'))
+    loop_body.append_stm(Jump(loop_head.bid, typ='L'))
 
     loop_exit.append_stm(Move(Temp('@return', Ctx.STORE), Temp('i')))
     loop_exit.append_stm(Ret(Temp('@return')))
@@ -543,11 +543,12 @@ def test_phi_inlining_uphi_collected():
 
     PHIInlining().process(scope)
 
-    # phi_b's first arg (Temp('a')) should be inlined from uphi_a
-    assert len(phi_b.args) == 3
-    assert isinstance(phi_b.args[0], Const) and phi_b.args[0].value == 1
-    assert isinstance(phi_b.args[1], Const) and phi_b.args[1].value == 2
-    assert isinstance(phi_b.args[2], Const) and phi_b.args[2].value == 3
+    # Find the Phi for 'b' in the processed block
+    phi_b_result = next(s for s in blk.stms if isinstance(s, Phi) and s.var.name == 'b')
+    assert len(phi_b_result.args) == 3
+    assert isinstance(phi_b_result.args[0], Const) and phi_b_result.args[0].value == 1
+    assert isinstance(phi_b_result.args[1], Const) and phi_b_result.args[1].value == 2
+    assert isinstance(phi_b_result.args[2], Const) and phi_b_result.args[2].value == 3
 
 
 # ===========================================================

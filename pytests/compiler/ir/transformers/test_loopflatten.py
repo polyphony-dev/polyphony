@@ -32,17 +32,17 @@ def test_new_loop_flatten_no_pipeline():
     scope.set_exit_block(loop_exit)
 
     blk_entry.append_stm(Expr(Const(0)))  # guard from reduceblk
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     i_lphi = LPhi(Temp('i', Ctx.STORE))
     object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
     object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
     loop_head.append_stm(i_lphi)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    jmp = Jump(loop_head, typ='L')
+    jmp = Jump(loop_head.bid, typ='L')
     loop_body.append_stm(jmp)
 
     loop_exit.append_stm(Move(Temp('@return', Ctx.STORE), Temp('i')))

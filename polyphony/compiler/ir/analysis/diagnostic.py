@@ -16,7 +16,7 @@ class CFGChecker(object):
         self.scope = scope
         self.accessibles = set()
         for b in self.scope.traverse_blocks():
-            self.accessibles.add(b)
+            self.accessibles.add(b.bid)
 
         for b in self.scope.traverse_blocks():
             if isinstance(b, Block):
@@ -37,7 +37,7 @@ class CFGChecker(object):
     def _check_stms(self, blk):
         for stm in blk.stms:
             assert isinstance(stm, IrStm)
-            assert stm.block is blk
+            assert stm.block == blk.bid
 
     def _check_preds(self, blk):
         if blk is self.scope.entry_block:
@@ -79,20 +79,20 @@ class CFGChecker(object):
         assert isinstance(jmp, (Jump, CJump, MCJump))
         if isinstance(jmp, Jump):
             assert len(blk.succs) == 1
-            assert jmp.target is blk.succs[0]
+            assert jmp.target == blk.succs[0].bid
             if jmp.typ == 'L':
                 assert len(blk.succs_loop) == 1
-                assert jmp.target is blk.succs_loop[0]
+                assert jmp.target == blk.succs_loop[0].bid
         elif isinstance(jmp, CJump):
             assert len(blk.succs) == 2
             assert len(blk.succs_loop) == 0
-            assert jmp.true is blk.succs[0]
-            assert jmp.false is blk.succs[1]
+            assert jmp.true == blk.succs[0].bid
+            assert jmp.false == blk.succs[1].bid
         elif isinstance(jmp, MCJump):
             assert len(blk.succs) > 2
             assert len(blk.succs_loop) == 0
             for i, t in enumerate(jmp.targets):
-                assert t is blk.succs[i]
+                assert t == blk.succs[i].bid
 
     def _check_phi(self, blk):
         pass

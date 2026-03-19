@@ -193,7 +193,7 @@ class _StmsTransformer(_StmsVisitor):
         block.stms = self.new_stms
         self.new_stms = []
         for stm in block.stms:
-            object.__setattr__(stm, 'block', block)
+            object.__setattr__(stm, 'block', block.bid)
 
     # --- IrExp (return transformed node, functional style) ---
 
@@ -545,8 +545,9 @@ class ObjectHierarchyCopier(object):
                     ctx=Ctx.LOAD,
                 )
                 new_cp = Move(dst=new_dst, src=new_src, loc=cp.loc, block=cp.block)
-                cp_idx = cp.block.stms.index(cp)
-                cp.block.stms.insert(cp_idx + 1, new_cp)
+                cp_blk = self.scope.find_block(cp.block)
+                cp_idx = cp_blk.stms.index(cp)
+                cp_blk.stms.insert(cp_idx + 1, new_cp)
                 if sym.typ.is_object():
                     worklist.append(new_cp)
 
@@ -1049,7 +1050,7 @@ class InlineOpt(object):
             callee_entry_blk = block_map[callee_clone.entry_block]
             callee_exit_blk = block_map[callee_clone.exit_block]
             assert len(callee_exit_blk.succs) <= 1
-            self._merge_blocks(call_stm, callee.is_ctor(), callee_entry_blk, callee_exit_blk)
+            self._merge_blocks(call_stm, callee.is_ctor(), callee_entry_blk, callee_exit_blk, caller)
 
             if isinstance(call_stm, Move) and callee.is_ctor():
                 assert call_stm.src == call
@@ -1058,7 +1059,7 @@ class InlineOpt(object):
                                       kwargs={})
                 call_stm.replace(call_stm.src, builtin_new)
             elif isinstance(call_stm, Expr):
-                call_stm.block.stms.remove(call_stm)
+                caller.find_block(call_stm.block).stms.remove(call_stm)
 
             if caller.is_enclosure():
                 self._remove_closure_if_needed(caller)
@@ -1084,9 +1085,9 @@ class InlineOpt(object):
                 assert expr.exp == call
                 object.__setattr__(expr, 'exp', result)
 
-    def _merge_blocks(self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block):
-        caller_scope = call_stm.block.scope
-        early_call_blk = call_stm.block
+    def _merge_blocks(self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block, caller: 'Scope' = None):
+        caller_scope = caller if caller else self.scope
+        early_call_blk = caller_scope.find_block(call_stm.block)
         late_call_blk = Block(caller_scope)
         late_call_blk.succs = early_call_blk.succs
         late_call_blk.succs_loop = early_call_blk.succs_loop
@@ -1100,16 +1101,16 @@ class InlineOpt(object):
             idx += 1
         late_call_blk.stms = early_call_blk.stms[idx:]
         for s in late_call_blk.stms:
-            object.__setattr__(s, 'block', late_call_blk)
+            object.__setattr__(s, 'block', late_call_blk.bid)
         early_call_blk.stms = early_call_blk.stms[:idx]
-        early_call_blk.append_stm(Jump(callee_entry_blk))
+        early_call_blk.append_stm(Jump(callee_entry_blk.bid))
         early_call_blk.succs = [callee_entry_blk]
         early_call_blk.succs_loop = []
         callee_entry_blk.preds = [early_call_blk]
 
         if callee_exit_blk.stms and isinstance(callee_exit_blk.stms[-1], Ret):
             callee_exit_blk.stms.pop()
-        callee_exit_blk.append_stm(Jump(late_call_blk))
+        callee_exit_blk.append_stm(Jump(late_call_blk.bid))
         callee_exit_blk.succs = [late_call_blk]
         late_call_blk.preds = [callee_exit_blk]
 

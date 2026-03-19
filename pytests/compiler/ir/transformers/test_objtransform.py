@@ -991,13 +991,13 @@ def test_transform_use_with_phi_copy_mref():
     blk1.append_stm(Move(Temp('arr2', Ctx.STORE),
                          Array(items=[Const(5), Const(6), Const(7), Const(8)], mutable=True)))
     blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
-    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+    blk1.append_stm(CJump(Temp('cond'), blk2.bid, blk3.bid))
 
     # blk2: j blk4
-    blk2.append_stm(Jump(blk4))
+    blk2.append_stm(Jump(blk4.bid))
 
     # blk3: j blk4
-    blk3.append_stm(Jump(blk4))
+    blk3.append_stm(Jump(blk4.bid))
 
     # blk4: arr_sel = phi(arr1, arr2); x = arr_sel[0]; ret x
     phi = Phi(Temp('arr_sel', Ctx.STORE))
@@ -1057,10 +1057,10 @@ def test_transform_use_with_phi_copy_mstore():
     blk1.append_stm(Move(Temp('arr2', Ctx.STORE),
                          Array(items=[Const(0)] * 4, mutable=True)))
     blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
-    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+    blk1.append_stm(CJump(Temp('cond'), blk2.bid, blk3.bid))
 
-    blk2.append_stm(Jump(blk4))
-    blk3.append_stm(Jump(blk4))
+    blk2.append_stm(Jump(blk4.bid))
+    blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('arr_sel', Ctx.STORE))
     object.__setattr__(phi, 'args', [Temp('arr1'), Temp('arr2')])
@@ -1149,10 +1149,10 @@ def test_add_branch_move_with_phi_obj_def():
     blk1.append_stm(Move(Temp('obj2', Ctx.STORE), SysCall(Temp('BM'), [('', Temp('BM'))], {})))
     object.__setattr__(blk1.stms[-1].src, 'name', '$new')
     blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
-    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+    blk1.append_stm(CJump(Temp('cond'), blk2.bid, blk3.bid))
 
-    blk2.append_stm(Jump(blk4))
-    blk3.append_stm(Jump(blk4))
+    blk2.append_stm(Jump(blk4.bid))
+    blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('obj_sel', Ctx.STORE))
     object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
@@ -1212,10 +1212,10 @@ def test_add_branch_move_exit_block_updated():
     blk1.append_stm(Move(Temp('obj2', Ctx.STORE), SysCall(Temp('BExit'), [('', Temp('BExit'))], {})))
     object.__setattr__(blk1.stms[-1].src, 'name', '$new')
     blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
-    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+    blk1.append_stm(CJump(Temp('cond'), blk2.bid, blk3.bid))
 
-    blk2.append_stm(Jump(blk4))
-    blk3.append_stm(Jump(blk4))
+    blk2.append_stm(Jump(blk4.bid))
+    blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('obj_sel', Ctx.STORE))
     object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
@@ -1362,7 +1362,7 @@ def test_collect_sources_circular_dependency():
 
     # obj1 = obj2; obj2 = obj1 (circular, no $new def)
     blk1.append_stm(Move(Temp('obj1', Ctx.STORE), Temp('obj2')))
-    blk1.append_stm(Jump(blk2))
+    blk1.append_stm(Jump(blk2.bid))
     blk2.append_stm(Move(Temp('obj2', Ctx.STORE), Temp('obj1')))
 
     blk1.succs = [blk2]
@@ -1467,10 +1467,10 @@ def test_add_uphi_with_syscall_len():
     blk1.append_stm(Move(Temp('arr2', Ctx.STORE),
                          Array(items=[Const(5), Const(6), Const(7), Const(8)], mutable=True)))
     blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
-    blk1.append_stm(CJump(Temp('cond'), blk2, blk3))
+    blk1.append_stm(CJump(Temp('cond'), blk2.bid, blk3.bid))
 
-    blk2.append_stm(Jump(blk4))
-    blk3.append_stm(Jump(blk4))
+    blk2.append_stm(Jump(blk4.bid))
+    blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('arr_sel', Ctx.STORE))
     object.__setattr__(phi, 'args', [Temp('arr1'), Temp('arr2')])

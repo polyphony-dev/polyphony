@@ -1830,7 +1830,7 @@ ret @return
         blk = scope.entry_block
         move_stm = Move(dst=Temp(name='arr', ctx=Ctx.STORE), src=arr)
         object.__setattr__(move_stm, 'loc', blk.stms[0].loc)
-        object.__setattr__(move_stm, 'block', blk)
+        object.__setattr__(move_stm, 'block', blk.bid)
         blk.stms.insert(1, move_stm)
         with pytest.raises(CompileError):
             LateRestrictionChecker().process(scope)
@@ -2128,7 +2128,7 @@ ret @return
             args=[Temp(name='y', ctx=Ctx.LOAD), Temp(name='y', ctx=Ctx.LOAD)]
         )
         object.__setattr__(phi, 'loc', blk.stms[0].loc)
-        object.__setattr__(phi, 'block', blk)
+        object.__setattr__(phi, 'block', blk.bid)
         blk.stms.insert(0, phi)
         TypeChecker().process(scope)
 
@@ -2153,7 +2153,7 @@ ret @return
             args=[Temp(name='y', ctx=Ctx.LOAD), Temp(name='y', ctx=Ctx.LOAD)]
         )
         object.__setattr__(phi, 'loc', blk.stms[0].loc)
-        object.__setattr__(phi, 'block', blk)
+        object.__setattr__(phi, 'block', blk.bid)
         blk.stms.insert(0, phi)
         TypeChecker().process(scope)
 
@@ -3883,7 +3883,7 @@ ret @return
             args=[Temp(name='y', ctx=Ctx.LOAD), Temp(name='s', ctx=Ctx.LOAD)]
         )
         object.__setattr__(phi, 'loc', blk.stms[0].loc)
-        object.__setattr__(phi, 'block', blk)
+        object.__setattr__(phi, 'block', blk.bid)
         blk.stms.insert(2, phi)
         with pytest.raises(CompileError):
             TypeChecker().process(scope)

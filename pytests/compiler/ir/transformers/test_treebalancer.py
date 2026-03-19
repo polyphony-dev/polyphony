@@ -186,7 +186,7 @@ class TestBINOP2PLURALOP:
 
     def test_visit_Jump(self):
         blk = make_block()
-        j = Jump(target=blk)
+        j = Jump(target=blk.bid)
         result = self.visitor.visit(j)
         assert result is None
 
@@ -372,7 +372,7 @@ class TestBINOP2PLURALOP:
     def test_visit_CJump_with_temp(self):
         blk_t = make_block()
         blk_f = make_block()
-        cj = CJump(exp=_temp('flag'), true=blk_t, false=blk_f)
+        cj = CJump(exp=_temp('flag'), true=blk_t.bid, false=blk_f.bid)
         self.visitor.visit(cj)
         assert isinstance(cj.exp, Temp)
 
@@ -384,7 +384,7 @@ class TestBINOP2PLURALOP:
     def test_visit_CJump_with_binop_raises_frozen(self):
         blk_t = make_block()
         blk_f = make_block()
-        cj = CJump(exp=_binop('Add', _temp('a'), _temp('b')), true=blk_t, false=blk_f)
+        cj = CJump(exp=_binop('Add', _temp('a'), _temp('b')), true=blk_t.bid, false=blk_f.bid)
         with pytest.raises(ValidationError, match="frozen"):
             self.visitor.visit(cj)
 
@@ -424,7 +424,7 @@ class TestPLURALOP2BINOP:
 
     def test_visit_Jump(self):
         blk = make_block()
-        j = Jump(target=blk)
+        j = Jump(target=blk.bid)
         result = self.visitor.visit(j)
         assert result is None
 
@@ -531,7 +531,7 @@ class TestPLURALOP2BINOP:
     def test_visit_CJump_temp(self):
         blk_t = make_block()
         blk_f = make_block()
-        cj = CJump(exp=_temp('flag'), true=blk_t, false=blk_f)
+        cj = CJump(exp=_temp('flag'), true=blk_t.bid, false=blk_f.bid)
         self.visitor.visit(cj)
         assert isinstance(cj.exp, Temp)
 
@@ -550,7 +550,7 @@ class TestPLURALOP2BINOP:
         blk_f = make_block()
         p = PLURALOP('Add')
         p.values = [(_const(1), True)]
-        cj = CJump(exp=_const(0), true=blk_t, false=blk_f)
+        cj = CJump(exp=_const(0), true=blk_t.bid, false=blk_f.bid)
         _inject_exp(cj, p)
         self.visitor.visit(cj)
         assert isinstance(cj.exp, Const)
@@ -599,7 +599,7 @@ class TestTreeBalancer:
         scope = MockScope('test_tb')
         blk = Block(scope, 'b')
         blk2 = Block(scope, 'b')
-        j = Jump(target=blk2)
+        j = Jump(target=blk2.bid)
         blk.stms = [j]
         tb._process_Block(blk)
         assert blk in tb.done_Blocks
@@ -610,7 +610,7 @@ class TestTreeBalancer:
         blk = Block(scope, 'b')
         blk_t = Block(scope, 'b')
         blk_f = Block(scope, 'b')
-        cj = CJump(exp=_temp('flag'), true=blk_t, false=blk_f)
+        cj = CJump(exp=_temp('flag'), true=blk_t.bid, false=blk_f.bid)
         blk.stms = [cj]
         tb._process_Block(blk)
         assert isinstance(cj.exp, Temp)
@@ -713,7 +713,7 @@ class TestRoundTrip:
         p2b = PLURALOP2BINOP()
         blk_t = make_block()
         blk_f = make_block()
-        cj = CJump(exp=_temp('cond'), true=blk_t, false=blk_f)
+        cj = CJump(exp=_temp('cond'), true=blk_t.bid, false=blk_f.bid)
         b2p.visit(cj)
         p2b.visit(cj)
         assert isinstance(cj.exp, Temp)

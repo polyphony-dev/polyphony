@@ -339,7 +339,7 @@ def _insert_phi(scope, blk, phi_class, var_name, args, tags=None):
         scope.add_sym(var_name, tags=tags, typ=Type.bool())
     var = Temp(var_name)
     phi = phi_class(var, args, [], [])
-    object.__setattr__(phi, 'block', blk)
+    object.__setattr__(phi, 'block', blk.bid)
     blk.stms.insert(0, phi)
     return phi
 
@@ -443,7 +443,7 @@ ret @return
         blk = scope.entry_block
         ret_var = Temp('@return')
         uphi = UPhi(ret_var, [Const(1)], [], [])
-        object.__setattr__(uphi, 'block', blk)
+        object.__setattr__(uphi, 'block', blk.bid)
         blk.stms.insert(0, uphi)
         AliasVarDetector().process(scope)
         ret_sym = scope.find_sym('@return')
@@ -481,7 +481,7 @@ ret @return
         blk4 = list(scope.traverse_blocks())[3]
         x_var = Temp('x')
         uphi = UPhi(x_var, [Temp('x'), Const(1)], [], [])
-        object.__setattr__(uphi, 'block', blk4)
+        object.__setattr__(uphi, 'block', blk4.bid)
         blk4.stms.insert(0, uphi)
         # Exercise the code path without asserting alias state,
         # since Move handlers may independently tag or not tag.
@@ -503,7 +503,7 @@ ret @return
         blk = scope.entry_block
         arr_var = Temp('arr')
         uphi = UPhi(arr_var, [Const(0)], [], [])
-        object.__setattr__(uphi, 'block', blk)
+        object.__setattr__(uphi, 'block', blk.bid)
         blk.stms.insert(0, uphi)
         AliasVarDetector().process(scope)
         sym = scope.find_sym('arr')
@@ -539,13 +539,14 @@ ret @return
         mock_scope = MockScope('test')
         blk = make_block(mock_scope)
         stm1 = Move(Temp('x'), Const(1))
-        object.__setattr__(stm1, 'block', blk)
+        object.__setattr__(stm1, 'block', blk.bid)
         clksleep_stm = Expr(SysCall(Temp('polyphony.timing.clksleep'), [('', Const(1))], {}))
-        object.__setattr__(clksleep_stm, 'block', blk)
+        object.__setattr__(clksleep_stm, 'block', blk.bid)
         stm2 = Move(Temp('y'), Temp('x'))
-        object.__setattr__(stm2, 'block', blk)
+        object.__setattr__(stm2, 'block', blk.bid)
         blk.stms = [stm1, clksleep_stm, stm2]
         detector = AliasVarDetector()
+        detector.scope = mock_scope
         assert detector._has_clksleep_between(stm1, stm2) is True
 
     def test_has_clksleep_between_same_block_no_clksleep(self):
@@ -554,11 +555,12 @@ ret @return
         mock_scope = MockScope('test')
         blk = make_block(mock_scope)
         stm1 = Move(Temp('x'), Const(1))
-        object.__setattr__(stm1, 'block', blk)
+        object.__setattr__(stm1, 'block', blk.bid)
         stm2 = Move(Temp('y'), Temp('x'))
-        object.__setattr__(stm2, 'block', blk)
+        object.__setattr__(stm2, 'block', blk.bid)
         blk.stms = [stm1, stm2]
         detector = AliasVarDetector()
+        detector.scope = mock_scope
         assert detector._has_clksleep_between(stm1, stm2) is False
 
     def test_has_clksleep_between_different_blocks(self):
@@ -572,18 +574,19 @@ ret @return
         blk2.connect(blk3)
 
         stm_def = Move(Temp('x'), Const(1))
-        object.__setattr__(stm_def, 'block', blk1)
+        object.__setattr__(stm_def, 'block', blk1.bid)
         blk1.stms = [stm_def]
 
         clksleep_stm = Expr(SysCall(Temp('polyphony.timing.clksleep'), [('', Const(1))], {}))
-        object.__setattr__(clksleep_stm, 'block', blk2)
+        object.__setattr__(clksleep_stm, 'block', blk2.bid)
         blk2.stms = [clksleep_stm]
 
         stm_use = Move(Temp('y'), Temp('x'))
-        object.__setattr__(stm_use, 'block', blk3)
+        object.__setattr__(stm_use, 'block', blk3.bid)
         blk3.stms = [stm_use]
 
         detector = AliasVarDetector()
+        detector.scope = mock_scope
         assert detector._has_clksleep_between(stm_def, stm_use) is True
 
     def test_has_clksleep_between_different_blocks_no_clksleep(self):
@@ -597,18 +600,19 @@ ret @return
         blk2.connect(blk3)
 
         stm_def = Move(Temp('x'), Const(1))
-        object.__setattr__(stm_def, 'block', blk1)
+        object.__setattr__(stm_def, 'block', blk1.bid)
         blk1.stms = [stm_def]
 
         stm_mid = Move(Temp('z'), Const(0))
-        object.__setattr__(stm_mid, 'block', blk2)
+        object.__setattr__(stm_mid, 'block', blk2.bid)
         blk2.stms = [stm_mid]
 
         stm_use = Move(Temp('y'), Temp('x'))
-        object.__setattr__(stm_use, 'block', blk3)
+        object.__setattr__(stm_use, 'block', blk3.bid)
         blk3.stms = [stm_use]
 
         detector = AliasVarDetector()
+        detector.scope = mock_scope
         assert detector._has_clksleep_between(stm_def, stm_use) is False
 
 
@@ -859,7 +863,7 @@ ret @return
         scope.add_sym('@phi_var', tags=set(), typ=Type.int())
         phi_var = Temp('@phi_var')
         phi = Phi(phi_var, [Const(1), Const(2)], [], [])
-        object.__setattr__(phi, 'block', blk4)
+        object.__setattr__(phi, 'block', blk4.bid)
         blk4.stms.insert(0, phi)
         AliasVarDetector().process(scope)
         sym = scope.find_sym('@phi_var')
@@ -893,7 +897,7 @@ ret @return
         scope.add_sym('@phi_arr', tags=set(), typ=Type.list(Type.int(), 4))
         phi_var = Temp('@phi_arr')
         phi = Phi(phi_var, [Const(0), Const(0)], [], [])
-        object.__setattr__(phi, 'block', blk4)
+        object.__setattr__(phi, 'block', blk4.bid)
         blk4.stms.insert(0, phi)
         AliasVarDetector().process(scope)
         sym = scope.find_sym('@phi_arr')
@@ -928,7 +932,7 @@ ret @return
         blk4 = list(scope.traverse_blocks())[3]
         phi_var = Temp('y')
         phi = Phi(phi_var, [Temp('y'), Const(1)], [], [])
-        object.__setattr__(phi, 'block', blk4)
+        object.__setattr__(phi, 'block', blk4.bid)
         blk4.stms.insert(0, phi)
         # Exercises the self-ref early return in visit_Phi
         AliasVarDetector().process(scope)

@@ -223,26 +223,28 @@ class ConstantOptBase(IrVisitor):
                     self._remove_dominated_branch(succ, worklist)
 
     def _process_unconditional_jump(self, cjump, worklist, conds=None):
-        blk = cjump.block
+        blk = self.scope.find_block(cjump.block)
         if not blk.preds and self.scope.entry_block is not blk:
             return
         logger.debug('unconditional block {}'.format(blk.name))
 
         if isinstance(cjump, CJump):
             true_idx = 0 if cjump.exp.value else 1
-            targets = [cjump.true, cjump.false]
+            target_bids = [cjump.true, cjump.false]
         else:
             true_idx = conds.index(1)
-            targets = cjump.targets[:]
+            target_bids = cjump.targets[:]
 
         counts = defaultdict(int)
         targets_with_count = []
-        for tgt in targets:
-            targets_with_count.append((tgt, counts[tgt]))
-            counts[tgt] += 1
-        true_blk, true_i = targets_with_count[true_idx]
+        for tgt_bid in target_bids:
+            targets_with_count.append((tgt_bid, counts[tgt_bid]))
+            counts[tgt_bid] += 1
+        true_bid, true_i = targets_with_count[true_idx]
+        true_blk = self.scope.find_block(true_bid)
         targets_with_count = targets_with_count[:true_idx] + targets_with_count[true_idx + 1:]
-        for false_blk, blk_i in reversed(targets_with_count):
+        for false_bid, blk_i in reversed(targets_with_count):
+            false_blk = self.scope.find_block(false_bid)
             if false_blk.preds:
                 idx = find_nth_item_index(false_blk.preds, blk, blk_i)
                 assert idx >= 0
@@ -262,7 +264,7 @@ class ConstantOptBase(IrVisitor):
                     self.dtree.is_child(blk, false_blk)):
                 self._remove_dominated_branch(false_blk, worklist)
 
-        jump = Jump(target=true_blk, loc=cjump.loc, block=blk)
+        jump = Jump(target=true_bid, loc=cjump.loc, block=blk.bid)
         blk.replace_stm(cjump, jump)
         if cjump in worklist:
             worklist.remove(cjump)
@@ -380,7 +382,7 @@ class ConstantOpt(ConstantOptBase):
                         is_move = True
                         idx = stm.ps.index(p)
                         mv = Move(dst=stm.var, src=stm.args[idx], block=stm.block)
-                        blk = stm.block
+                        blk = scope.find_block(stm.block)
                         blk.stms.insert(blk.stms.index(stm), mv)
                         self.udupdater.update(stm, mv)
                         self.worklist.append(mv)
@@ -394,7 +396,7 @@ class ConstantOpt(ConstantOptBase):
                         stm.args.pop(idx)
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
-                    blk = stm.block
+                    blk = scope.find_block(stm.block)
                     mv = Move(dst=stm.var, src=arg, block=stm.block)
                     blk.stms.insert(blk.stms.index(stm), mv)
                     self.udupdater.update(stm, mv)
@@ -406,11 +408,11 @@ class ConstantOpt(ConstantOptBase):
                 object.__setattr__(stm, 'cond', reduce_relexp(stm.cond))
                 if isinstance(stm.cond, Const):
                     if stm.cond.value:
-                        blk = stm.block
+                        blk = scope.find_block(stm.block)
                         if isinstance(stm, CMove):
-                            new_stm = Move(dst=stm.dst, src=stm.src, block=blk)
+                            new_stm = Move(dst=stm.dst, src=stm.src, block=stm.block)
                         else:
-                            new_stm = Expr(exp=stm.exp, block=blk)
+                            new_stm = Expr(exp=stm.exp, block=stm.block)
                         self.udupdater.update(stm, new_stm)
                         blk.stms.insert(blk.stms.index(stm), new_stm)
                     dead_stms.append(stm)
@@ -470,8 +472,9 @@ class ConstantOpt(ConstantOptBase):
                 if array_t.length == Type.ANY_LENGTH:
                     dst_sym.typ = dst_sym.typ.clone(length=len(src.items) * src.repeat.value)
         for stm in dead_stms:
-            if stm in stm.block.stms:
-                stm.block.stms.remove(stm)
+            stm_blk = scope.find_block(stm.block)
+            if stm in stm_blk.stms:
+                stm_blk.stms.remove(stm)
 
     def _can_attribute_propagate(self, stm):
         if not isinstance(stm, Move):
@@ -565,9 +568,10 @@ class ConstantOpt(ConstantOptBase):
 
     def visit_Phi(self, ir):
         super().visit_Phi(ir)
-        if not ir.block.is_hyperblock and len(ir.block.preds) != len(ir.args):
+        ir_blk = self.scope.find_block(ir.block)
+        if not ir_blk.is_hyperblock and len(ir_blk.preds) != len(ir.args):
             remove_args = []
-            for arg, blk in zip(ir.args, ir.block.preds):
+            for arg, blk in zip(ir.args, ir_blk.preds):
                 if blk and blk is not self.scope.entry_block and not blk.preds:
                     remove_args.append(arg)
             for arg in remove_args:
@@ -596,9 +600,13 @@ class StaticConstOpt(ConstantOptBase):
 
     def process_scopes(self, scopes):
         stms = []
+        stm2scope = {}
         dtrees = {}
         for s in scopes:
-            stms.extend(self._collect_stms(s))
+            scope_stms = self._collect_stms(s)
+            for stm in scope_stms:
+                stm2scope[id(stm)] = s
+            stms.extend(scope_stms)
             Block.set_order(s.entry_block, 0)
             dtree = DominatorTreeBuilder(s).process()
             dtrees[s] = dtree
@@ -606,8 +614,9 @@ class StaticConstOpt(ConstantOptBase):
         stms = sorted(stms, key=lambda s: s.loc.lineno)
         for stm in stms:
             self.current_stm = stm
-            self.scope = stm.block.scope
-            self.dtree = dtrees[stm.block.scope]
+            stm_scope = stm2scope[id(stm)]
+            self.scope = stm_scope
+            self.dtree = dtrees[stm_scope]
             self.visit(stm)
         for sym, c in self.constant_table.items():
             sym.scope.constants[sym] = c

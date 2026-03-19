@@ -573,7 +573,7 @@ def test_stm_j():
     stm = parser.parse_stm('j blk2')
     assert isinstance(stm, Jump)
     jmp = cast(Jump, stm)
-    assert jmp.target.name == blk2.name
+    assert jmp.target == blk2.bid
 
 
 def test_stm_cj():
@@ -592,8 +592,8 @@ def test_stm_cj():
     assert isinstance(stm, CJump)
     jmp = cast(CJump, stm)
     assert jmp.exp.name == 'cond'
-    assert jmp.true.name == blk2.name
-    assert jmp.false.name == blk3.name
+    assert jmp.true == blk2.bid
+    assert jmp.false == blk3.bid
 
 
 def test_stm_mj():
@@ -616,11 +616,11 @@ def test_stm_mj():
     assert len(jmp.conds) == 3
     assert len(jmp.targets) == 3
     assert jmp.conds[0].name == 'c1'
-    assert jmp.targets[0].name == blk2.name
+    assert jmp.targets[0] == blk2.bid
     assert jmp.conds[1].name == 'c2'
-    assert jmp.targets[1].name == blk3.name
+    assert jmp.targets[1] == blk3.bid
     assert jmp.conds[2].name == 'c3'
-    assert jmp.targets[2].name == blk4.name
+    assert jmp.targets[2] == blk4.bid
 
 
 def test_stm_phi():

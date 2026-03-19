@@ -519,8 +519,10 @@ class SynthesisParamChecker(object):
         for sym in syms:
             if not self._is_channel(sym):
                 continue
-            usestms = sorted(self.usedef.get_stms_using(sym), key=lambda s: s.program_order())
-            usestms = [stm for stm in usestms if stm.block in loop.blocks()]
+            from ..irhelper import program_order
+            usestms = sorted(self.usedef.get_stms_using(sym), key=lambda s: program_order(s, self.scope))
+            loop_bids = [b.bid for b in loop.blocks()]
+            usestms = [stm for stm in usestms if stm.block in loop_bids]
             readstms = []
             for stm in usestms:
                 if isinstance(stm, Move) and isinstance(stm.src, Call):

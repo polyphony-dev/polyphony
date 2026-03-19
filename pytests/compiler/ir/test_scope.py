@@ -148,12 +148,12 @@ def test_clone_function():
     assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
     assert _stm_text(blk1.stms[1]) == 'mv x (call g a)'
     assert isinstance(blk1.stms[2], Jump)
-    assert blk1.stms[2].target is blk2
+    assert blk1.stms[2].target == blk2.bid
     assert _stm_text(blk2.stms[0]) == 'mv @return x'
     assert _stm_text(blk2.stms[1]) == 'ret @return'
 
     # Mutating the clone should not affect the original
-    blk1.stms[1] = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Call(func=Temp(name='g'), args=[('', Const(value=1))]), block=blk1)
+    blk1.stms[1] = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Call(func=Temp(name='g'), args=[('', Const(value=1))]), block=blk1.bid)
 
     gen = f.traverse_blocks()
     blk1_orig = next(gen)
@@ -220,7 +220,7 @@ def test_recursive_clone():
     assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
     assert _stm_text(blk1.stms[1]) == 'mv x (call cloned_g_cloned a)'
     assert isinstance(blk1.stms[2], Jump)
-    assert blk1.stms[2].target is blk2
+    assert blk1.stms[2].target == blk2.bid
 
     assert _stm_text(blk2.stms[0]) == 'mv @return x'
     assert _stm_text(blk2.stms[1]) == 'ret @return'
@@ -641,10 +641,11 @@ class TestScopeCloneBlocks:
         scope2 = Scope.create(top, "cj_fn2", {"function"})
         block_map, stm_map = scope.clone_blocks(scope2)
         # Verify CJump targets were remapped
+        cloned_bids = {blk.bid for blk in block_map.values()}
         for stm in stm_map.values():
             if isinstance(stm, CJump):
-                assert stm.true in block_map.values()
-                assert stm.false in block_map.values()
+                assert stm.true in cloned_bids
+                assert stm.false in cloned_bids
 
 
 class TestScopeFind:
@@ -1125,4 +1126,51 @@ class TestFunctionScopeFields:
             env.scopes[env.global_scope_name], 'C', {'class'}, 1
         )
         assert not hasattr(scope, 'function_params')
+
+
+class TestBlockBid:
+    def setup_method(self):
+        setup_test()
+
+    def test_block_bid_normal(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        b1 = Block(scope, 'b')
+        b2 = Block(scope, 'b')
+        b3 = Block(scope, 'loop')
+        assert b1.bid == 'b1'
+        assert b2.bid == 'b2'
+        assert b3.bid == 'loop3'
+
+    def test_block_bid_tmp(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        bt = Block(scope, 'tmp')
+        assert bt.bid == 'tmp'
+
+    def test_scope_block_map(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        b1 = Block(scope, 'b')
+        b2 = Block(scope, 'b')
+        assert scope.find_block('b1') is b1
+        assert scope.find_block('b2') is b2
+
+    def test_scope_block_map_after_clone(self):
+        scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f', {'function'}, 0
+        )
+        b1 = Block(scope, 'b')
+        b1.stms = [Move(Temp('x', Ctx.STORE), Const(1))]
+        scope.set_entry_block(b1)
+        scope.set_exit_block(b1)
+        new_scope = Scope.create(
+            env.scopes[env.global_scope_name], 'f2', {'function'}, 0
+        )
+        scope.clone_blocks(new_scope)
+        for blk in new_scope.traverse_blocks():
+            assert new_scope.find_block(blk.bid) is blk
 

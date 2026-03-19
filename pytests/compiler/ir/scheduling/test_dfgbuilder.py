@@ -72,7 +72,7 @@ def test_is_ctrl_stm_jump():
     scope = Scope.create(None, 'test_scope', {'function'})
     from polyphony.compiler.ir.block import Block
     blk = Block(scope)
-    j = Jump(blk)
+    j = Jump(blk.bid)
     assert _is_ctrl_stm(j)
 
 
@@ -768,7 +768,7 @@ def test_is_jump():
     scope = Scope.create(None, 'test_j', {'function'})
     from polyphony.compiler.ir.block import Block
     blk = Block(scope)
-    j = Jump(blk)
+    j = Jump(blk.bid)
     assert _is_jump(j)
 
 
@@ -780,12 +780,12 @@ def test_is_cjump_and_mcjump():
     from polyphony.compiler.ir.block import Block
     blk1 = Block(scope)
     blk2 = Block(scope)
-    cj = CJump(Const(1), blk1, blk2)
+    cj = CJump(Const(1), blk1.bid, blk2.bid)
     assert _is_cjump(cj)
     assert _is_ctrl_stm(cj)
     assert not _is_mcjump(cj)
 
-    mj = MCJump([Const(1), Const(0)], [blk1, blk2])
+    mj = MCJump([Const(1), Const(0)], [blk1.bid, blk2.bid])
     assert _is_mcjump(mj)
     assert _is_ctrl_stm(mj)
 
@@ -930,7 +930,7 @@ ret @return
     m2 = blk.stms[1]
     # Create MStm wrapping these two moves, set block via model_config workaround
     mstm = MStm(stms=[m1, m2])
-    object.__setattr__(mstm, 'block', blk)
+    object.__setattr__(mstm, 'block', blk.bid)
     blk.stms = [mstm, blk.stms[2], blk.stms[3]]
     # _find_stm_index should find m1 inside MStm at index 0
     assert _find_stm_index(m1) == 0
@@ -1073,7 +1073,7 @@ def test_is_constant_stm_cjump_const():
     blk1 = Block(scope)
     blk2 = Block(scope)
     builder = DFGBuilder()
-    cj = CJump(Const(1), blk1, blk2)
+    cj = CJump(Const(1), blk1.bid, blk2.bid)
     assert builder._is_constant_stm(cj)
 
 
@@ -1086,7 +1086,7 @@ def test_is_constant_stm_mcjump_const():
     blk1 = Block(scope)
     blk2 = Block(scope)
     builder = DFGBuilder()
-    mj = MCJump([Const(1), Temp('x', Ctx.LOAD)], [blk1, blk2])
+    mj = MCJump([Const(1), Temp('x', Ctx.LOAD)], [blk1.bid, blk2.bid])
     assert builder._is_constant_stm(mj)
 
 
@@ -1538,7 +1538,7 @@ def test_dfg_builder_is_constant_stm_mcjump_no_const():
     blk2 = Block(scope)
     builder = DFGBuilder()
     # Last condition is always true, so only check conds[:-1]
-    mj = MCJump([Temp('x', Ctx.LOAD), Const(1)], [blk1, blk2])
+    mj = MCJump([Temp('x', Ctx.LOAD), Const(1)], [blk1.bid, blk2.bid])
     assert not builder._is_constant_stm(mj)
 
 
@@ -1550,7 +1550,7 @@ def test_dfg_builder_is_constant_stm_jump():
     from polyphony.compiler.ir.block import Block
     blk = Block(scope)
     builder = DFGBuilder()
-    j = Jump(blk)
+    j = Jump(blk.bid)
     assert not builder._is_constant_stm(j)
 
 

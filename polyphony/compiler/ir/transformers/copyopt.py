@@ -79,10 +79,10 @@ class CopyOpt(object):
                     if clos_replaced:
                         src_qsym[0].add_tag('free')
         for cp in copies:
-            if cp in cp.block.stms:
+            if cp in self.scope.find_block(cp.block).stms:
                 if isinstance(cp.dst, Attr) and qualified_symbols(cp.dst, self.scope)[-2].typ.scope.is_module() and scope.is_ctor():
                     continue
-                cp.block.stms.remove(cp)
+                self.scope.find_block(cp.block).stms.remove(cp)
 
     def _replace_copies(self, scope, udupdater, usedef, copy_stm, orig, target, copies, worklist):
         uses = sorted(list(usedef.get_stms_using(target)), key=lambda u: u.loc[1] if isinstance(u.loc, tuple) and len(u.loc) >= 2 else 0)
@@ -97,7 +97,7 @@ class CopyOpt(object):
                         isinstance(u.dst, IrVariable) and
                         isinstance(u.src, IrVariable) and
                         u.src.qualified_name == u.dst.qualified_name):
-                    u.block.stms.remove(u)
+                    scope.find_block(u.block).stms.remove(u)
                     continue
                 udupdater.update(None, u)
             if isinstance(u, (Phi, UPhi, LPhi)):
@@ -116,8 +116,8 @@ class CopyOpt(object):
                     else:
                         continue
                     mv = Move(dst=u.var, src=src, block=u.block)
-                    idx = u.block.stms.index(u)
-                    u.block.stms[idx] = mv
+                    u_blk_stms = scope.find_block(u.block).stms; idx = u_blk_stms.index(u)
+                    u_blk_stms[idx] = mv
                     udupdater.update(u, mv)
                     if isinstance(mv.src, IrVariable):
                         worklist.append(mv)

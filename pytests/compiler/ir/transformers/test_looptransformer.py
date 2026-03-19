@@ -36,17 +36,17 @@ def _build_simple_loop_scope():
     scope.set_exit_block(loop_exit)
 
     blk_entry.append_stm(Move(Temp('i_init', Ctx.STORE), Const(0)))
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     i_lphi = LPhi(Temp('i', Ctx.STORE))
     object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
     object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
     loop_head.append_stm(i_lphi)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    loop_body.append_stm(Jump(loop_head, typ='L'))
+    loop_body.append_stm(Jump(loop_head.bid, typ='L'))
 
     loop_exit.append_stm(Move(Temp('@return', Ctx.STORE), Temp('i')))
     loop_exit.append_stm(Ret(Temp('@return')))
@@ -104,7 +104,7 @@ def _build_nested_loop_pipeline_scope():
     # entry
     blk_entry.append_stm(Move(Temp('i_init', Ctx.STORE), Const(0)))
     blk_entry.append_stm(Move(Temp('acc_init', Ctx.STORE), Const(0)))
-    blk_entry.append_stm(Jump(outer_head))
+    blk_entry.append_stm(Jump(outer_head.bid))
 
     # outer_head: i loop
     i_lphi = LPhi(Temp('i', Ctx.STORE))
@@ -112,7 +112,7 @@ def _build_nested_loop_pipeline_scope():
     object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
     outer_head.append_stm(i_lphi)
     outer_head.append_stm(Move(Temp('outer_cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(4))))
-    outer_head.append_stm(CJump(Temp('outer_cond'), inner_head, outer_exit))
+    outer_head.append_stm(CJump(Temp('outer_cond'), inner_head.bid, outer_exit.bid))
 
     # inner_head: j loop
     j_lphi = LPhi(Temp('j', Ctx.STORE))
@@ -121,16 +121,16 @@ def _build_nested_loop_pipeline_scope():
     inner_head.append_stm(j_lphi)
     inner_head.append_stm(Move(Temp('j_init', Ctx.STORE), Const(0)))
     inner_head.append_stm(Move(Temp('inner_cond', Ctx.STORE), RelOp('Lt', Temp('j'), Const(4))))
-    inner_head.append_stm(CJump(Temp('inner_cond'), inner_body, inner_exit))
+    inner_head.append_stm(CJump(Temp('inner_cond'), inner_body.bid, inner_exit.bid))
 
     # inner_body
     inner_body.append_stm(Move(Temp('acc', Ctx.STORE), BinOp('Add', Temp('acc'), Const(1))))
     inner_body.append_stm(Move(Temp('j_upd', Ctx.STORE), BinOp('Add', Temp('j'), Const(1))))
-    inner_body.append_stm(Jump(inner_head, typ='L'))
+    inner_body.append_stm(Jump(inner_head.bid, typ='L'))
 
     # inner_exit (= outer loop continue)
     inner_exit.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    inner_exit.append_stm(Jump(outer_head, typ='L'))
+    inner_exit.append_stm(Jump(outer_head.bid, typ='L'))
 
     # outer_exit
     outer_exit.append_stm(Move(Temp('@return', Ctx.STORE), Temp('acc')))
@@ -236,9 +236,9 @@ def test_move_stms():
 
     mv1 = Move(Temp('x', Ctx.STORE), Const(1))
     mv2 = Move(Temp('y', Ctx.STORE), Const(2))
-    jmp = Jump(dst_blk)
+    jmp = Jump(dst_blk.bid)
     src_blk.stms = [mv1, mv2, jmp]
-    dst_jmp = Jump(src_blk)
+    dst_jmp = Jump(src_blk.bid)
     dst_blk.stms = [dst_jmp]
 
     lf._move_stms(src_blk, dst_blk)

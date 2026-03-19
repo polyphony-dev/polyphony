@@ -436,7 +436,7 @@ def test_port_connector_visit_syscall_connect_dispatches():
     )
     # Just verify dispatch works without crash (actual connection would fail
     # because we need proper in/out pairing with valid ctor params)
-    connector.current_stm = Expr(exp=syscall)
+    connector.current_stm = Expr(exp=syscall, block=blk.bid)
     try:
         connector.visit_SysCall(syscall)
     except (AttributeError, AssertionError):
@@ -459,7 +459,7 @@ def test_port_connector_visit_syscall_thru_dispatches():
         args=[('', Temp('p1', ctx=Ctx.LOAD)), ('', Temp('p1', ctx=Ctx.LOAD))],
         kwargs={},
     )
-    connector.current_stm = Expr(exp=syscall)
+    connector.current_stm = Expr(exp=syscall, block=blk.bid)
     try:
         connector.visit_SysCall(syscall)
     except (AttributeError, AssertionError):

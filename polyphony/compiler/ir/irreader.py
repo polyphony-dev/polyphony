@@ -433,7 +433,7 @@ class IrReader(object):
             raise
         next_block = self.blocks[operands]
         self.current_block.connect(next_block)
-        return Jump(next_block)
+        return Jump(target=next_block.bid)
 
     def parse_cj(self, operands: str):
         ops = self.parse_operands(operands)
@@ -449,7 +449,7 @@ class IrReader(object):
         else_blk = self.blocks[else_blk_]
         self.current_block.connect(then_blk)
         self.current_block.connect(else_blk)
-        return CJump(cond, then_blk, else_blk)
+        return CJump(exp=cond, true=then_blk.bid, false=else_blk.bid)
 
     def parse_mj(self, operands: str):
         ops = self.parse_operands(operands)
@@ -463,9 +463,9 @@ class IrReader(object):
             if target_ not in self.blocks:
                 raise
             blk = self.blocks[target_]
-            targets.append(blk)
+            targets.append(blk.bid)
             self.current_block.connect(blk)
-        return MCJump(conds, targets)
+        return MCJump(conds=conds, targets=targets)
 
     def parse_ret(self, operands: str):
         ops = self.parse_operands(operands)

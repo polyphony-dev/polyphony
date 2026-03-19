@@ -165,7 +165,7 @@ def test_visit_array():
 def test_visit_move_stm():
     """VarReplacer should replace src in Move statement."""
     scope, blk = _make_scope_and_block()
-    mv = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Temp(name='x'), block=blk)
+    mv = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Temp(name='x'), block=blk.bid)
     blk.stms = [mv]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -178,7 +178,7 @@ def test_visit_move_stm():
 def test_visit_expr_stm():
     """VarReplacer should replace in Expr statement."""
     scope, blk = _make_scope_and_block()
-    expr_stm = Expr(exp=Temp(name='x'), block=blk)
+    expr_stm = Expr(exp=Temp(name='x'), block=blk.bid)
     blk.stms = [expr_stm]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -191,7 +191,7 @@ def test_visit_cexpr_stm():
     """VarReplacer should replace in CExpr (cond + exp)."""
     scope, blk = _make_scope_and_block()
     # Put x in exp so it gets tracked in replaces (visit_CExpr resets replaced before visit_Expr)
-    cexpr = CExpr(cond=Const(value=1), exp=Temp(name='x'), block=blk)
+    cexpr = CExpr(cond=Const(value=1), exp=Temp(name='x'), block=blk.bid)
     blk.stms = [cexpr]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -204,7 +204,7 @@ def test_visit_cexpr_stm():
 def test_visit_cexpr_cond_replacement():
     """VarReplacer should replace cond in CExpr."""
     scope, blk = _make_scope_and_block()
-    cexpr = CExpr(cond=Temp(name='x'), exp=Const(value=1), block=blk)
+    cexpr = CExpr(cond=Temp(name='x'), exp=Const(value=1), block=blk.bid)
     blk.stms = [cexpr]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -218,7 +218,7 @@ def test_visit_cmove_stm():
     scope, blk = _make_scope_and_block()
     # Put x in src so it gets tracked in replaces
     cmove = CMove(cond=Const(value=1), dst=Temp(name='y', ctx=Ctx.STORE),
-                       src=Temp(name='x'), block=blk)
+                       src=Temp(name='x'), block=blk.bid)
     blk.stms = [cmove]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -232,7 +232,7 @@ def test_visit_cmove_cond_replacement():
     """VarReplacer should replace cond in CMove."""
     scope, blk = _make_scope_and_block()
     cmove = CMove(cond=Temp(name='x'), dst=Temp(name='y', ctx=Ctx.STORE),
-                       src=Const(value=1), block=blk)
+                       src=Const(value=1), block=blk.bid)
     blk.stms = [cmove]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -246,7 +246,7 @@ def test_visit_cjump_stm():
     scope, blk = _make_scope_and_block()
     blk2 = Block(scope, nametag='blk2')
     blk3 = Block(scope, nametag='blk3')
-    cjump = CJump(exp=Temp(name='x'), true=blk2, false=blk3, block=blk)
+    cjump = CJump(exp=Temp(name='x'), true=blk2.bid, false=blk3.bid, block=blk.bid)
     blk.stms = [cjump]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -262,7 +262,7 @@ def test_visit_mcjump_stm():
     blk2 = Block(scope, nametag='blk2')
     blk3 = Block(scope, nametag='blk3')
     mcjump = MCJump(conds=[Temp(name='x'), Const(value=1)],
-                         targets=[blk2, blk3], block=blk)
+                         targets=[blk2.bid, blk3.bid], block=blk.bid)
     blk.stms = [mcjump]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -277,8 +277,7 @@ def test_visit_phi_stm():
     scope, blk = _make_scope_and_block()
     phi = Phi(var=Temp(name='y', ctx=Ctx.STORE),
                    args=[Temp(name='x'), Const(value=2)],
-                   ps=[Const(value=1), Temp(name='x')],
-                   block=blk)
+                   ps=[Const(value=1), Temp(name='x')], block=blk.bid)
     blk.stms = [phi]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -295,8 +294,7 @@ def test_visit_uphi_stm():
     scope, blk = _make_scope_and_block()
     uphi = UPhi(var=Temp(name='y', ctx=Ctx.STORE),
                      args=[Temp(name='x')],
-                     ps=[Const(value=1)],
-                     block=blk)
+                     ps=[Const(value=1)], block=blk.bid)
     blk.stms = [uphi]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -310,8 +308,7 @@ def test_visit_lphi_stm():
     scope, blk = _make_scope_and_block()
     lphi = LPhi(var=Temp(name='y', ctx=Ctx.STORE),
                      args=[Temp(name='x')],
-                     ps=[Const(value=1)],
-                     block=blk)
+                     ps=[Const(value=1)], block=blk.bid)
     blk.stms = [lphi]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
@@ -325,12 +322,12 @@ def test_visit_jump_and_ret():
     scope, blk = _make_scope_and_block()
     blk2 = Block(scope, nametag='blk2')
 
-    jump = Jump(blk2, block=blk)
+    jump = Jump(blk2.bid, block=blk.bid)
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     result = replacer.visit(jump)
     assert result is None
 
-    ret = Ret(exp=Temp(name='z'), block=blk)
+    ret = Ret(exp=Temp(name='z'), block=blk.bid)
     result = replacer.visit(ret)
     assert result is None
 
@@ -347,7 +344,7 @@ def test_visit_const():
 def test_replace_uses_classmethod():
     """VarReplacer.replace_uses should replace all uses in a scope."""
     scope, blk = _make_scope_and_block()
-    mv = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Temp(name='x'), block=blk)
+    mv = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Temp(name='x'), block=blk.bid)
     blk.stms = [mv]
 
     replaces = VarReplacer.replace_uses(scope, Temp(name='x'), Const(value=99))
@@ -359,7 +356,7 @@ def test_replace_uses_classmethod():
 def test_move_with_enable_dst():
     """VarReplacer with enable_dst should also replace in Move.dst."""
     scope, blk = _make_scope_and_block()
-    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk.bid)
     blk.stms = [mv]
 
     replacer = VarReplacer(scope, Temp(name='x'), Temp(name='z'), None, enable_dst=True)
@@ -372,8 +369,7 @@ def test_phi_with_enable_dst():
     scope, blk = _make_scope_and_block()
     phi = Phi(var=Temp(name='x', ctx=Ctx.STORE),
                    args=[Const(value=1)],
-                   ps=[Const(value=1)],
-                   block=blk)
+                   ps=[Const(value=1)], block=blk.bid)
     blk.stms = [phi]
 
     replacer = VarReplacer(scope, Temp(name='x'), Temp(name='z'), None, enable_dst=True)

@@ -176,7 +176,7 @@ class IrTransformer(IrVisitor):
         else:
             block.stms.extend(self.new_stms)
         for stm in block.stms:
-            object.__setattr__(stm, 'block', block)
+            object.__setattr__(stm, 'block', block.bid)
 
     # --- IrExp (return transformed node, functional style) ---
 

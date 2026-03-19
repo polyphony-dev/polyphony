@@ -14,7 +14,7 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.common.env import env
-from pytests.compiler.base import setup_test, make_block
+from pytests.compiler.base import setup_test, make_block, MockScope
 
 
 # ============================================================
@@ -462,13 +462,14 @@ class TestHasExclusiveFunction:
         call = Call(func=func, args=[], kwargs={})
         block = MagicMock()
         block.synth_params = {'scheduling': 'pipeline'}
-        stm = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=call, block=block)
+        stm = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=call, block='b1')
 
         callee_scope = MagicMock()
         callee_scope.is_method.return_value = True
         callee_scope.parent.is_port.return_value = True
 
         scope = MagicMock()
+        scope.find_block.return_value = block
         assert has_exclusive_function(stm, scope, callee_scope) is True
 
     def test_move_with_port_call_timed(self):
@@ -477,13 +478,14 @@ class TestHasExclusiveFunction:
         call = Call(func=func, args=[], kwargs={})
         block = MagicMock()
         block.synth_params = {'scheduling': 'timed'}
-        stm = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=call, block=block)
+        stm = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=call, block='b1')
 
         callee_scope = MagicMock()
         callee_scope.is_method.return_value = True
         callee_scope.parent.is_port.return_value = True
 
         scope = MagicMock()
+        scope.find_block.return_value = block
         assert has_exclusive_function(stm, scope, callee_scope) is False
 
     def test_expr_with_clkfence(self):
@@ -1069,14 +1071,18 @@ class TestProgramOrder:
     """Cover program_order."""
 
     def test_program_order(self):
-        block = make_block()
+        scope = MockScope()
+        block = make_block(scope)
         stm1 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1))
         stm2 = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Const(value=2))
-        block.append_stm(stm1)
-        block.append_stm(stm2)
+        stm1 = block.append_stm(stm1)
+        stm2 = block.append_stm(stm2)
         block.order = 5
-        assert program_order(stm1) == (5, 0)
-        assert program_order(stm2) == (5, 1)
+        # Create a mock scope with find_block
+        mock_scope = MagicMock()
+        mock_scope.find_block.return_value = block
+        assert program_order(stm1, mock_scope) == (5, 0)
+        assert program_order(stm2, mock_scope) == (5, 1)
 
 
 # ============================================================

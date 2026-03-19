@@ -877,7 +877,7 @@ mv x 1
     hbb.scope = scope
     syscall = SysCall(func=Temp(name='polyphony.timing.clksleep'), args=[])
     assert syscall.name == 'polyphony.timing.clksleep'
-    expr_stm = Expr(exp=syscall, block=scope.entry_block)
+    expr_stm = Expr(exp=syscall, block=scope.entry_block.bid)
     assert hbb._has_timing_function(expr_stm) is True
 
 
@@ -895,7 +895,7 @@ mv x 1
     hbb = HyperBlockBuilder()
     hbb.scope = scope
     syscall = SysCall(func=Temp(name='some_other_func'), args=[])
-    expr_stm = Expr(exp=syscall, block=scope.entry_block)
+    expr_stm = Expr(exp=syscall, block=scope.entry_block.bid)
     assert hbb._has_timing_function(expr_stm) is False
 
 
@@ -914,7 +914,7 @@ mv x 1
     hbb.scope = scope
     from polyphony.compiler.ir.ir import BinOp
     binop = BinOp(op='Add', left=Const(value=1), right=Const(value=2))
-    expr_stm = Expr(exp=binop, block=scope.entry_block)
+    expr_stm = Expr(exp=binop, block=scope.entry_block.bid)
     assert hbb._has_timing_function(expr_stm) is False
 
 
@@ -931,7 +931,7 @@ mv x 1
     scope = build_scope(src, scheduling='timed')
     hbb = HyperBlockBuilder()
     hbb.scope = scope
-    j = Jump(target=scope.entry_block, block=scope.entry_block)
+    j = Jump(target=scope.entry_block.bid, block=scope.entry_block.bid)
     assert hbb._has_timing_function(j) is False
 
 
@@ -950,7 +950,7 @@ mv x 1
     hbb.scope = scope
     from polyphony.compiler.ir.ir import MRef
     mref = MRef(mem=Temp(name='mem'), offset=Const(value=0))
-    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=scope.entry_block)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=scope.entry_block.bid)
     assert hbb._has_mem_access(mv) is True
 
 
@@ -1027,7 +1027,7 @@ mv x 1
     hbb = HyperBlockBuilder()
     hbb.scope = scope
     syscall = SysCall(func=Temp(name='polyphony.timing.wait_rising'), args=[])
-    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=syscall, block=scope.entry_block)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=syscall, block=scope.entry_block.bid)
     assert hbb._has_timing_function(mv) is True
 
 
@@ -1045,7 +1045,7 @@ mv x 1
     hbb = HyperBlockBuilder()
     hbb.scope = scope
     syscall = SysCall(func=Temp(name='polyphony.timing.wait_falling'), args=[])
-    expr_stm = Expr(exp=syscall, block=scope.entry_block)
+    expr_stm = Expr(exp=syscall, block=scope.entry_block.bid)
     assert hbb._has_timing_function(expr_stm) is True
 
 
@@ -1215,8 +1215,9 @@ mv x 3
     blk1.path_exp = Const(value=1)
     mj = blk1.stms[-1]
     if isinstance(mj, MCJump):
-        blk2 = mj.targets[0]
-        mj.targets[1] = blk2
+        blk2_bid = mj.targets[0]
+        blk1.stms[-1] = mj.model_copy(update={'targets': [blk2_bid, blk2_bid]})
+        blk2 = scope.find_block(blk2_bid)
         result = _merge_path_exp_new(blk1, blk2)
         assert result is not None
 
