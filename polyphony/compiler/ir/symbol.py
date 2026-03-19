@@ -67,7 +67,7 @@ class Symbol(Tagged):
 
     @property
     def scope(self) -> Scope:
-        return env.scopes[self._scope_name]
+        return env.all_scopes[self._scope_name]
 
     @property
     def typ(self) -> Type:
