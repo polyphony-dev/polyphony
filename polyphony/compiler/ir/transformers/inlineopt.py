@@ -1,7 +1,7 @@
 """Inline optimization passes using new IR (ir.py).
 
 All passes operate directly on block.stms which contains unified IR types.
-No old IR conversion is used.
+--
 
 Classes:
   ObjectHierarchyCopier - Copy object hierarchy for inlined objects

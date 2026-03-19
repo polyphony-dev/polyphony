@@ -11,7 +11,6 @@ from ..ir import (
     Ctx, Const, Temp, BinOp, RelOp, Move, Expr, Jump, CJump, MCJump,
     LPhi, IrStm, IrExp,
 )
-from ..ir import Const as OldCONST, Temp as OldTEMP
 from ..irvisitor import IrVisitor, IrTransformer
 from ..irhelper import qualified_symbols
 from ..loop import Loop
@@ -440,16 +439,8 @@ class LoopUnroller(object):
             return None
         return (loop_min, loop_max, loop_step)
 
-    def _ensure_new_ir(self, ir):
-        """Convert old IR to new IR if needed."""
-        if isinstance(ir, (Const, Temp)):
-            return ir
-        if isinstance(ir, (OldCONST, OldTEMP)):
-            return ir
-        return ir
-
     def _find_loop_min(self, loop):
-        init = self._ensure_new_ir(loop.init)
+        init = loop.init
         if isinstance(init, Const):
             return init
         elif isinstance(init, Temp):
@@ -475,7 +466,7 @@ class LoopUnroller(object):
         raise NotImplementedError('unsupported loop')
 
     def _find_loop_step(self, loop):
-        loop_update = self._ensure_new_ir(loop.update)
+        loop_update = loop.update
         assert isinstance(loop_update, Temp)
         update_sym = qualified_symbols(loop_update, self.scope)[-1]
         update_defs = self.usedef.get_stms_defining(update_sym)

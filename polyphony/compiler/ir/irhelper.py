@@ -384,7 +384,7 @@ def try_get_constant(qsym, scope):
 
     In pure mode, looks up runtime global vars.
     Otherwise, looks up scope.constants table.
-    Returns old IR expression or None.
+    Returns IR expression or None.
     """
     from ..common.env import env
     if env.config.enable_pure:

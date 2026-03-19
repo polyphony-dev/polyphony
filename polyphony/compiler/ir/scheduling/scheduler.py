@@ -1,6 +1,6 @@
 """Scheduler using both old and new IR types.
 
-Handles both old IR (ir.py) and new IR (ir.py) types for
+Handles IR types for
 scheduling DFG nodes. Works during migration and after storage switchover.
 
 This pass reads block.stms directly (not through adapted_pass) because

@@ -217,7 +217,7 @@ class AliasVarDetector(IrVisitor):
         sym.add_tag('alias')
 
     def _get_callee_scope(self, call):
-        """Get callee scope from a Call node (mirrors old IR get_callee_scope)."""
+        """Get callee scope from a Call node."""
         qsyms = qualified_symbols(call.func, self.scope)
         symbol = qsyms[-1]
         assert isinstance(symbol, Symbol)

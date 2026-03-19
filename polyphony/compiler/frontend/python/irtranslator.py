@@ -1485,14 +1485,6 @@ class CodeVisitor(ast.NodeVisitor):
 
     #     | Name(identifier id, expr_context ctx)
     def visit_Name(self, node):
-        # for Python 3.3 or older
-        if node.id == 'True':
-            return Const(value=True)
-        elif node.id == 'False':
-            return Const(value=False)
-        elif node.id == 'None':
-            return Const(value=None)
-
         ctx = self._nodectx2irctx(node)
         sym = self.current_scope.find_sym(node.id)
         if sym and sym.scope is not self.current_scope and not sym.scope.is_namespace():

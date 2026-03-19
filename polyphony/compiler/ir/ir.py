@@ -197,7 +197,7 @@ class IrStm(Ir):
     block: Any = None  # Block reference
 
     def model_post_init(self, __context):
-        """Ensure loc is never None (matches old IRStm behavior)."""
+        """Ensure loc is never None."""
         if self.loc is None:
             object.__setattr__(self, 'loc', Loc('', 0))
 
@@ -548,7 +548,7 @@ class IrCallable(IrNameExp):
                 kwargs.setdefault('args', args_pos[1])
             if len(args_pos) >= 3:
                 kwargs.setdefault('kwargs', args_pos[2])
-        # Set func.ctx = CALL to match old IRCallable behavior
+        # Set func.ctx = CALL
         func = kwargs.get('func')
         if func is not None and hasattr(func, 'ctx') and func.ctx != Ctx.CALL:
             kwargs['func'] = func.model_copy(update={'ctx': Ctx.CALL})
@@ -557,7 +557,6 @@ class IrCallable(IrNameExp):
     def model_post_init(self, __context):
         """Sync the name field from func.name.
 
-        In the old IR, IRCallable.name was a property delegating to func.name.
         In Pydantic, the inherited 'name' field from IrNameExp is a model field,
         so we sync its value from func.name after construction.
         """

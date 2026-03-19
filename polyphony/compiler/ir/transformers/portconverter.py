@@ -51,7 +51,7 @@ class PortTypeProp(TypePropagation):
                     else:
                         attrs[name] = a.value
                 elif isinstance(a, Temp) and irexp_type(a, self.scope).is_class():
-                    # type_from_ir expects old IR; convert new IR Temp to old
+                    # type_from_ir expects IR
                     attrs[name] = type_from_ir(self.scope, a)
                 else:
                     fail(self.current_stm, Errors.PORT_PARAM_MUST_BE_CONST)
@@ -231,7 +231,7 @@ class FlippedPortsBuilder(IrVisitor):
         self.visit(ir.src)
 
     def _flip_old_new(self, ir):
-        """Flip direction in old IR NEW node."""
+        """Flip direction in NEW node."""
         from ..ir import Const as OLD_CONST
         sym_t = ir.symbol.typ
         if sym_t.scope.is_port():
@@ -338,7 +338,7 @@ class PortConnector(IrVisitor):
                 port_assign_call = self._make_assign_call(p0_sym, p1_sym)
             else:
                 assert False
-        # Append to block using old IR
+        # Append to block
         from ..ir import Expr as OLD_EXPR, Call as OLD_CALL, Temp as OLD_TEMP, Attr as OLD_ATTR
         from ..ir import Move as OLD_MOVE, Ret as OLD_RET, Ctx as OldCtx
         self.current_stm.block.append_stm(
@@ -346,7 +346,7 @@ class PortConnector(IrVisitor):
         )
 
     def _make_assign_call(self, p0_sym, p1_sym):
-        """Create a port assign call using old IR (for block.append_stm compatibility)."""
+        """Create a port assign call."""
         from ..ir import Call as OLD_CALL, Temp as OLD_TEMP, Attr as OLD_ATTR
         p0_t = p0_sym.typ
         p1_t = p1_sym.typ
@@ -363,7 +363,7 @@ class PortConnector(IrVisitor):
         return port_assign_call
 
     def _make_lambda(self, body):
-        """Create a lambda scope for port assignment (uses old IR for block content)."""
+        """Create a lambda scope for port assignment."""
         from ..ir import Move as OLD_MOVE, Ret as OLD_RET, Temp as OLD_TEMP
         tags = {'function', 'returnable', 'comb'}
         lambda_scope = Scope.create(self.scope, None, tags, self.scope.lineno)

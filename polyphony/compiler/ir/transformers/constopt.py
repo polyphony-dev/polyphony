@@ -32,13 +32,9 @@ logger = getLogger(__name__)
 
 
 def _try_get_constant_new(qsym, scope):
-    """Get constant value as new IR Const (converts from old IR if needed)."""
+    """Get constant value as Const, or None."""
     from ..irhelper import try_get_constant
-    c = try_get_constant(qsym, scope)
-    if c is None:
-        return None
-    # c is old IR CONST, convert to new IR Const
-    return c
+    return try_get_constant(qsym, scope)
 
 
 class ConstantOptBase(IrVisitor):
