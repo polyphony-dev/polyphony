@@ -203,7 +203,7 @@ class ObjCopyOpt(CopyOpt):
                         if node.name == qname[0]:
                             vars.append(node)
                 else:
-                    for field_name in node.model_fields:
+                    for field_name in type(node).model_fields:
                         v = getattr(node, field_name, None)
                         find_vars_rec(v, qname, vars)
             elif isinstance(node, (list, tuple)):

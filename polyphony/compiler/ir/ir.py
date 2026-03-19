@@ -57,7 +57,7 @@ class Ir(BaseModel):
     def clone(self, **overrides):
         """Deep-copy this IR node. Recursively clones child Ir nodes and lists."""
         data = {}
-        for field_name in self.model_fields:
+        for field_name in type(self).model_fields:
             v = getattr(self, field_name, None)
             if isinstance(v, Ir):
                 data[field_name] = v.clone()
@@ -98,7 +98,7 @@ class Ir(BaseModel):
         visited.add(obj_id)
         if isinstance(ir, Ir):
             ret = False
-            for field_name in ir.model_fields:
+            for field_name in type(ir).model_fields:
                 v = getattr(ir, field_name, None)
                 if v == old:
                     # Use object.__setattr__ to bypass frozen check on IrExp
@@ -155,7 +155,7 @@ class Ir(BaseModel):
                 else:
                     self._find_vars_rec(ir.exp, qname, vars, visited)
             else:
-                for field_name in ir.model_fields:
+                for field_name in type(ir).model_fields:
                     v = getattr(ir, field_name, None)
                     self._find_vars_rec(v, qname, vars, visited)
         elif isinstance(ir, (list, tuple)):
@@ -178,7 +178,7 @@ class Ir(BaseModel):
         if isinstance(ir, Ir):
             if isinstance(ir, typ):
                 irs.append(ir)
-            for field_name in ir.model_fields:
+            for field_name in type(ir).model_fields:
                 v = getattr(ir, field_name, None)
                 self._find_irs_rec(v, typ, irs, visited)
         elif isinstance(ir, (list, tuple)):
