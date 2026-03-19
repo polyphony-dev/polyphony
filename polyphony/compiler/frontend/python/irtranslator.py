@@ -1755,7 +1755,3 @@ class IrTranslator(object):
         CodeVisitor(top_scope, type_comments, meta_comments).visit(tree)
         sys.path = orig_syspath
         #print(scope_tree_str(top_scope, top_scope.name, 'namespace', ''))
-
-
-# Backward-compatible alias
-IRTranslator = IrTranslator

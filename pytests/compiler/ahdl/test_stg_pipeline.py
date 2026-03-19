@@ -15,7 +15,7 @@ from polyphony.compiler.ahdl.stg_pipeline import (
 )
 from polyphony.compiler.ahdl.hdlmodule import HDLModule
 from polyphony.compiler.ir.ir import Ctx
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -26,7 +26,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src):
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     for name in parser.sources:
         return env.scopes[name]

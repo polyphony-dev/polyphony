@@ -257,7 +257,3 @@ class IrWriter(object):
             return 'undef'
         else:
             return str(typ)
-
-
-# Backward-compatible alias
-IRWriter = IrWriter

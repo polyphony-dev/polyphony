@@ -1,7 +1,7 @@
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.transformers.inlineopt import FlattenModule
 from polyphony.compiler.ir.builtin import builtin_symbols
 from pytests.compiler.base import setup_test, setup_libs, install_builtins
@@ -59,7 +59,7 @@ def test_flatten_worker():
     blk1:
     mv self.x x
     """
-    IRParser(src).parse_scope()
+    IrParser(src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -113,7 +113,7 @@ def test_flatten_assign_method():
     ret @return
     """
 
-    IRParser(src).parse_scope()
+    IrParser(src).parse_scope()
     top = env.scopes['@top']
     from polyphony.compiler.ir.types.type import Type
     top.add_sym('M', tags=set(), typ=Type.klass('@top.M'))

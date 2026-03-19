@@ -248,8 +248,8 @@ class TestTypeFromTypeclassExtra:
     def test_polyphony_typing_Int(self):
         """type_from_typeclass for polyphony.typing.Int."""
         setup_test()
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
-        translator = IRTranslator()
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
+        translator = IrTranslator()
         translator.translate('import polyphony.typing', '')
 
         Int_scope = env.scopes.get('polyphony.typing.Int')
@@ -260,8 +260,8 @@ class TestTypeFromTypeclassExtra:
     def test_polyphony_typing_List(self):
         """type_from_typeclass for polyphony.typing.List."""
         setup_test()
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
-        translator = IRTranslator()
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
+        translator = IrTranslator()
         translator.translate('import polyphony.typing', '')
 
         List_scope = env.scopes.get('polyphony.typing.List')
@@ -272,8 +272,8 @@ class TestTypeFromTypeclassExtra:
     def test_polyphony_typing_Tuple(self):
         """type_from_typeclass for polyphony.typing.Tuple."""
         setup_test()
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
-        translator = IRTranslator()
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
+        translator = IrTranslator()
         translator.translate('import polyphony.typing', '')
 
         Tuple_scope = env.scopes.get('polyphony.typing.Tuple')

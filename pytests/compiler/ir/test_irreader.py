@@ -2,7 +2,7 @@ from collections import deque
 from typing import cast
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irhelper import qualified_symbols
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope, FunctionScope, ClassScope, NamespaceScope
 from polyphony.compiler.ir.symbol import Symbol
@@ -14,7 +14,7 @@ import pytest
 
 def test_type_1():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     t = parser.parse_type('int8')
     assert t.is_int()
     assert t.width == 8
@@ -33,7 +33,7 @@ def test_type_1():
 
 def test_type_2():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     t = parser.parse_type('list<bool>[8]')
     assert t.is_list()
     assert t.element.is_bool()
@@ -48,7 +48,7 @@ def test_type_2():
 
 def test_type_3():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     t = parser.parse_type('list<bool>[]')
     assert t.is_list()
     assert t.element.is_bool()
@@ -63,7 +63,7 @@ def test_type_3():
 
 def test_type_4():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     top = env.scopes['@top']
     X = Scope.create(top, 'X', {'class'}, 0)
     F = Scope.create(top, 'F', {'function'}, 0)
@@ -87,7 +87,7 @@ def test_type_4():
 
 def test_var_1():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
     scope.add_sym('a', tags=set(), typ=Type.int(8))
@@ -104,7 +104,7 @@ def test_var_1():
 
 def test_var_2():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     X = Scope.create(None, 'X', {'class'}, 0)
     X.add_sym('value', tags=set(), typ=Type.int(8))
     Y = Scope.create(None, 'Y', {'class'}, 0)
@@ -131,7 +131,7 @@ def test_var_2():
 
 def test_var_3():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     X = Scope.create(None, 'X', {'class'}, 0)
     X.add_sym('value', tags=set(), typ=Type.int(8))
     Y = Scope.create(None, 'Y', {'class'}, 0)
@@ -176,7 +176,7 @@ def test_var_3():
 
 def test_var_4():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     v = parser.parse_scalar('123')
     v = cast(Const, v)
     assert isinstance(v, Const)
@@ -199,7 +199,7 @@ def test_var_4():
 
 def test_var_5():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     p = parser.parse_scalar('@in_x')
     assert isinstance(p, Temp)
     p = cast(Temp, p)
@@ -218,7 +218,7 @@ def test_var_5():
 
 def test_var_6():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     p = parser.parse_scalar('True')
     assert p == Const(True)
 
@@ -228,7 +228,7 @@ def test_var_6():
 
 def test_var_7():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     p = parser.parse_scalar("'text'")
     assert p == Const('text')
 
@@ -243,7 +243,7 @@ def test_block_line():
     mv b -a
     mv c (+ a b)
     '''
-    parser = IRParser(src)
+    parser = IrParser(src)
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
     a = scope.add_sym('a', tags=set(), typ=Type.int(8))
@@ -297,7 +297,7 @@ def test_block_line():
 
 def test_exp_temp():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('x')
     assert isinstance(exp, Temp)
@@ -307,7 +307,7 @@ def test_exp_temp():
 
 def test_exp_attr():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('x.y.z')
     assert isinstance(exp, Attr)
@@ -318,7 +318,7 @@ def test_exp_attr():
 
 def test_exp_list():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
     x = scope.add_sym('x', tags=set(), typ=Type.int())
@@ -337,7 +337,7 @@ def test_exp_list():
 
 def test_exp_tuple():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
     x = scope.add_sym('x', tags=set(), typ=Type.int())
@@ -356,7 +356,7 @@ def test_exp_tuple():
 
 def test_exp_binop():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('(+ 123 _a.b)')
     assert isinstance(exp, BinOp)
@@ -371,7 +371,7 @@ def test_exp_binop():
 
 def test_exp_binop_2():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('(+ "123" \'456\')')
     assert isinstance(exp, BinOp)
@@ -385,7 +385,7 @@ def test_exp_binop_2():
 
 def test_exp_relop():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('(== 123 _a.b)')
     assert isinstance(exp, RelOp)
@@ -400,7 +400,7 @@ def test_exp_relop():
 
 def test_exp_mld():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('(mld xs 123)')
     assert isinstance(exp, MRef)
@@ -413,7 +413,7 @@ def test_exp_mld():
 
 def test_exp_mst():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('(mst xs 123 y)')
     assert isinstance(exp, MStore)
@@ -428,7 +428,7 @@ def test_exp_mst():
 
 def test_exp_call():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('(call f (+ 1 2) _x y.z)')
     assert isinstance(exp, Call)
@@ -450,7 +450,7 @@ def test_exp_call():
 
 def test_exp_new():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     
     exp = parser.parse_exp('(new C (+ 1 2) _x y.z)')
     assert isinstance(exp, New)
@@ -472,7 +472,7 @@ def test_exp_new():
 
 def test_exp_syscall():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
 
     exp = parser.parse_exp('(syscall print 1 2 3)')
     assert isinstance(exp, SysCall)
@@ -486,7 +486,7 @@ def test_exp_syscall():
 
 def test_stm_cmv():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
 
     stm = parser.parse_stm('mv? cond z (+ x y)')
     assert isinstance(stm, CMove)
@@ -499,7 +499,7 @@ def test_stm_cmv():
 
 def test_stm_mv():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
     xs = scope.add_sym('xs', tags=set(), typ=Type.list(Type.int(), 3))
@@ -521,7 +521,7 @@ def test_stm_mv():
 
 def test_stm_mv_call():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
 
     stm = parser.parse_stm('mv v (call func 1 2 3)')
     assert isinstance(stm, Move)
@@ -534,7 +534,7 @@ def test_stm_mv_call():
 
 def test_stm_mv_tuple():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
 
     stm = parser.parse_stm('mv ((mld x 0) (mld y 0)) (call func)')
     assert isinstance(stm, Move)
@@ -552,7 +552,7 @@ def test_stm_mv_tuple():
 
 def test_stm_expr():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
 
     stm = parser.parse_stm('expr (syscall print 1 2 3)')
     assert isinstance(stm, Expr)
@@ -562,7 +562,7 @@ def test_stm_expr():
 
 def test_stm_j():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     top = env.scopes['@top']
     blk1 = Block(top)
     blk2 = Block(top)
@@ -578,7 +578,7 @@ def test_stm_j():
 
 def test_stm_cj():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     top = env.scopes['@top']
     blk1 = Block(top)
     blk2 = Block(top)
@@ -598,7 +598,7 @@ def test_stm_cj():
 
 def test_stm_mj():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     top = env.scopes['@top']
     blk1 = Block(top)
     blk2 = Block(top)
@@ -629,7 +629,7 @@ def test_stm_phi():
 
 def test_parse_operands_1():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
 
@@ -643,7 +643,7 @@ def test_parse_operands_1():
 
 def test_parse_operands_2():
     setup_test()
-    parser = IRParser('')
+    parser = IrParser('')
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
 
@@ -682,7 +682,7 @@ def test_cfg_1():
     exit:
     ret @return
     '''
-    parser = IRParser(src)
+    parser = IrParser(src)
     scope = Scope.create(None, 'S', set(), 0)
     parser.current_scope = scope
     a = scope.add_sym('a', tags=set(), typ=Type.int(8))
@@ -740,7 +740,7 @@ var c: int16
 var d :int16
 var e : bit256
 '''
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     scope = env.scopes['AFunction']
     assert scope.name == 'AFunction'
@@ -788,7 +788,7 @@ var x1 : int16 { }
 var x2 : object(__builtin__.int) { temp }
 var x3 : list<int32>[10] { temp temp free }
 '''
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     scope = env.scopes['S']
     assert scope.has_sym('@in_a')
@@ -840,7 +840,7 @@ scope C.D.E
 tags method
 
 '''
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     C = env.scopes['C']
     D = env.scopes['C.D']
@@ -869,7 +869,7 @@ scope D
 tags namespace
 var x: int32
 '''
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     C = env.scopes['C']
     D = env.scopes['D']
@@ -915,7 +915,7 @@ ret @return
 '''
     top = env.scopes['@top']
     
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
 
     # top_C = top.find_sym('C')
@@ -962,20 +962,20 @@ ret @return
 
 def test_irreader_creates_function_scope():
     setup_test()
-    parser = IRParser("scope @top.f\ntags function\nvar x: int32\n\nblk1:\nmv x 0\n")
+    parser = IrParser("scope @top.f\ntags function\nvar x: int32\n\nblk1:\nmv x 0\n")
     parser.parse_scope()
     assert isinstance(env.scopes['@top.f'], FunctionScope)
 
 
 def test_irreader_creates_class_scope():
     setup_test()
-    parser = IRParser("scope @top.C\ntags class\n")
+    parser = IrParser("scope @top.C\ntags class\n")
     parser.parse_scope()
     assert isinstance(env.scopes['@top.C'], ClassScope)
 
 
 def test_irreader_creates_namespace_scope():
     setup_test()
-    parser = IRParser("scope mypkg\ntags namespace\n")
+    parser = IrParser("scope mypkg\ntags namespace\n")
     parser.parse_scope()
     assert isinstance(env.scopes['mypkg'], NamespaceScope)

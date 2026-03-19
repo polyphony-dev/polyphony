@@ -1,6 +1,6 @@
 """Tests for latency calculation (_get_latency, get_latency)."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.scheduling.latency import (
     get_latency, _get_latency, UNIT_STEP, CALL_MINIMUM_STEP,
 )
@@ -12,7 +12,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     name = list(parser.sources)[0]
     scope = env.scopes[name]

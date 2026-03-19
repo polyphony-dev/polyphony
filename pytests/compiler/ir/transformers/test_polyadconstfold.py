@@ -1,7 +1,7 @@
 """Tests for PolyadConstantFolding."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.transformers.constopt import PolyadConstantFolding
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
@@ -9,7 +9,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src):
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     for name in parser.sources:
         return env.scopes[name]

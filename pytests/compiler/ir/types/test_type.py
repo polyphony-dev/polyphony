@@ -1,6 +1,6 @@
 from polyphony.compiler.common.env import env
 from polyphony.compiler.common.common import read_source
-from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+from polyphony.compiler.frontend.python.irtranslator import IrTranslator
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import Expr as NewExpr, Const as NewConst, Temp as NewTemp
@@ -832,7 +832,7 @@ import os
 def test_type_from_typeclass():
     setup_test()
     src = 'import polyphony.typing'
-    translator = IRTranslator()
+    translator = IrTranslator()
     translator.translate(src, '')
 
     # internal_dir = f'{env.root_dir}{os.path.sep}_internal'

@@ -685,10 +685,6 @@ class IrReader(object):
 
 IrParser = IrReader
 
-# Backward-compatible aliases
-IRReader = IrReader
-IRParser = IrReader
-
 
 def ir_stm(scope: Scope, code: str):
     reader = IrReader('')

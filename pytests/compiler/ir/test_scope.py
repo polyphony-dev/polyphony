@@ -2,8 +2,8 @@ from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IRReader as IRParser, ir_stm
-from polyphony.compiler.ir.irwriter import IRWriter
+from polyphony.compiler.ir.irreader import IrReader as IrParser, ir_stm
+from polyphony.compiler.ir.irwriter import IrWriter
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.scope import (
     Scope,
@@ -22,7 +22,7 @@ from polyphony.compiler.ir.loop import Region
 from pytests.compiler.base import setup_test, install_builtins, make_block, MockScope
 import pytest
 
-_writer = IRWriter()
+_writer = IrWriter()
 
 def _stm_text(stm):
     """Format a statement (old or new IR) to text for comparison."""
@@ -102,7 +102,7 @@ def test_clone_function():
     ret @return
     """
 
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
     top.add_sym('g', tags=set(), typ=Type.function('@top.g'))
@@ -190,7 +190,7 @@ def test_recursive_clone():
     mv @return x
     ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     top.add_sym('f', tags=set(), typ=Type.function('@top.f'))
 
@@ -243,7 +243,7 @@ def test_legb():
     tags method
     """
 
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -626,7 +626,7 @@ class TestScopeCloneBlocks:
         blk3:
         ret @return
         """
-        IRParser(block_src).parse_scope()
+        IrParser(block_src).parse_scope()
         top = env.scopes["@top"]
         top.add_sym("cj_fn", tags=set(), typ=Type.function("@top.cj_fn"))
         scope = env.scopes["@top.cj_fn"]
@@ -784,7 +784,7 @@ class TestScopeBlockOps:
         blk2:
         ret @return
         """
-        IRParser(block_src).parse_scope()
+        IrParser(block_src).parse_scope()
         top = env.scopes["@top"]
         top.add_sym("rb_fn", tags=set(), typ=Type.function("@top.rb_fn"))
         scope = env.scopes["@top.rb_fn"]

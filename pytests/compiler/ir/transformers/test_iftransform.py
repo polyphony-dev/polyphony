@@ -2,8 +2,8 @@
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.transformers.iftransform import IfTransformer, IfCondTransformer
-from polyphony.compiler.ir.irreader import IRReader as IRParser
-from polyphony.compiler.ir.irwriter import IRWriter
+from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irwriter import IrWriter
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.types.type import Type
@@ -13,7 +13,7 @@ from pytests.compiler.base import setup_test
 
 def build_scope(src):
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     for name in parser.sources:
         return env.scopes[name]
@@ -34,7 +34,7 @@ blk2:
 mv x 2
 '''
     scope = build_scope(src)
-    writer = IRWriter()
+    writer = IrWriter()
     before = [writer.write_stm(s) for s in scope.entry_block.stms]
 
     IfTransformer().process(scope)

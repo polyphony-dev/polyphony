@@ -1,7 +1,7 @@
 """Tests for new IR type checker and restriction checker passes."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.analysis.typecheck import (
     TypeChecker, EarlyTypeChecker, EarlyRestrictionChecker,
     RestrictionChecker, LateRestrictionChecker, AssertionChecker,
@@ -16,7 +16,7 @@ import pytest
 
 def build_scope(src, scheduling='sequential'):
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     name = list(parser.sources)[0]
     scope = env.scopes[name]
@@ -82,7 +82,7 @@ mv @return x
 ret @return
 '''
     setup_test(with_global=False)
-    IRParser(src).parse_scope()
+    IrParser(src).parse_scope()
     top = env.scopes['@top']
     f = env.scopes['@top.F']
     EarlyTypeChecker().process(top)
@@ -107,7 +107,7 @@ mv @return x
 ret @return
 '''
     setup_test(with_global=False)
-    IRParser(src).parse_scope()
+    IrParser(src).parse_scope()
     f = env.scopes['@top.F']
     with pytest.raises(CompileError):
         EarlyRestrictionChecker().process(f)
@@ -130,7 +130,7 @@ mv @return 0
 ret @return
 '''
     setup_test(with_global=False)
-    IRParser(src).parse_scope()
+    IrParser(src).parse_scope()
     f = env.scopes['@top.F']
     # Should not raise, just warn
     AssertionChecker().process(f)
@@ -156,7 +156,7 @@ ret @return
 def build_scopes_noglobal(src, scheduling='sequential'):
     """Build scopes without global scope (for @top definitions)."""
     setup_test(with_global=False)
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     scopes = {}
     for name in parser.sources:
@@ -541,7 +541,7 @@ blk1:
 mv x @in_x
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -565,7 +565,7 @@ mv x @in_x
 mv self.x x
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ctor = env.scopes['C.__init__']
         TypeChecker().process(ctor)
 
@@ -608,7 +608,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -628,7 +628,7 @@ param x: int32
 return int32
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -699,7 +699,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         EarlyTypeChecker().process(ns)
 
@@ -723,7 +723,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             EarlyTypeChecker().process(ns)
@@ -748,7 +748,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             EarlyTypeChecker().process(ns)
@@ -769,7 +769,7 @@ param a: int32
 return int32
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         EarlyTypeChecker().process(ns)
 
@@ -796,7 +796,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         # Add range symbol
         from polyphony.compiler.ir.types.type import Type
@@ -826,7 +826,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -847,7 +847,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -900,7 +900,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             TypeChecker().process(ns)
@@ -925,7 +925,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError):
             TypeChecker().process(ns)
@@ -995,17 +995,17 @@ ret @return
 
 
 # =========================================================
-# Helper using IRTranslator + setup_libs for Port/Channel tests
+# Helper using IrTranslator + setup_libs for Port/Channel tests
 # =========================================================
 
 def _translate_and_specialize(src):
     """Translate Python source with real lib scopes and run TypeSpecializer."""
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
     setup_test()
     setup_libs('io', 'timing')
     src_texts['dummy'] = src.splitlines()
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, old = TypeSpecializer().process_all()
@@ -1019,7 +1019,7 @@ def _translate_and_specialize(src):
 class TestTypeCheckerCondOp:
     def test_condop_compatible_types(self):
         """TypeChecker: CondOp with compatible int types passes."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src = '''
@@ -1027,7 +1027,7 @@ def f(x):
     return 1 if x else 0
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -1042,7 +1042,7 @@ f(1)
 class TestTypeCheckerSysCallNew:
     def test_syscall_new_returns_object_type(self):
         """TypeChecker: SysCall '$new' returns object type."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         src = '''
@@ -1053,7 +1053,7 @@ class C:
         return self.x
 c = C(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -1073,7 +1073,7 @@ c = C(1)
 class TestTypeCheckerNew:
     def test_new_class_with_ctor(self):
         """TypeChecker: New node on a class with ctor checks params."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         src = '''
@@ -1082,7 +1082,7 @@ class C:
         self.x = x
 c = C(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -1096,7 +1096,7 @@ c = C(1)
 class TestTypeCheckerPhi:
     def test_phi_compatible(self):
         """TypeChecker: Phi with compatible args passes."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src = '''
@@ -1108,7 +1108,7 @@ def f(x):
     return y
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -1183,7 +1183,7 @@ m = M()
 
     def test_restriction_global_non_module_instance_fails(self):
         """RestrictionChecker: non-module instance at global scope fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         src = '''
@@ -1193,7 +1193,7 @@ class C:
 c = C(1)
 '''
         src_texts['dummy'] = src.splitlines()
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -1404,7 +1404,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         EarlyTypeChecker().process(top)
 
@@ -1434,14 +1434,14 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         with pytest.raises(CompileError):
             EarlyTypeChecker().process(top)
 
     def test_early_typechecker_syscall_in_all_scopes(self):
         """EarlyTypeChecker: SysCall with name in env.all_scopes checks params."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         setup_libs('io', 'timing')
@@ -1453,7 +1453,7 @@ def f():
     clksleep(10)
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -1468,7 +1468,7 @@ f()
 class TestTypeCheckerSysCallAllScopes:
     def test_syscall_all_scopes_branch(self):
         """TypeChecker: SysCall with name in env.all_scopes checks params."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         setup_libs('io', 'timing')
@@ -1480,7 +1480,7 @@ def f():
     clksleep(10)
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -1620,7 +1620,7 @@ ret @return
 class TestTypeCheckerPhiFull:
     def test_phi_return_incompatible_fails(self):
         """TypeChecker: Phi on @return with incompatible types fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -1633,7 +1633,7 @@ def f(x):
     return y
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -1649,7 +1649,7 @@ f(1)
 class TestTypeCheckerExprCallNone:
     def test_expr_call_none_return(self):
         """TypeChecker: Expr with Call returning none."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -1661,7 +1661,7 @@ def f():
     return 0
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2052,7 +2052,7 @@ ret @return
 class TestTypeCheckerNewTypeclass:
     def test_new_typeclass_returns_type(self):
         """TypeChecker: New on typeclass returns type_from_typeclass."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         setup_libs('io', 'timing')
@@ -2065,7 +2065,7 @@ def f():
     return x
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -2080,7 +2080,7 @@ f()
 class TestTypeCheckerSysCallDollarNew:
     def test_syscall_dollar_new(self):
         """TypeChecker: SysCall '$new' returns object type."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -2095,7 +2095,7 @@ def f():
     return c.get()
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -2196,7 +2196,7 @@ ret @return
 class TestTypeCheckerCondOpFull:
     def test_condop_via_irtranslator(self):
         """TypeChecker: CondOp from ternary expression."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -2206,7 +2206,7 @@ def f(x):
     return y
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2221,7 +2221,7 @@ f(1)
 class TestTypeCheckerConstNone:
     def test_const_none_returns_int(self):
         """TypeChecker: Const(None) is evaluated as int(0)."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -2231,7 +2231,7 @@ def f():
     return 0
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2246,7 +2246,7 @@ f()
 class TestTypeCheckerSysCallElseBranch:
     def test_syscall_else_branch(self):
         """TypeChecker: SysCall with name not in special list or env.all_scopes."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -2256,7 +2256,7 @@ def f(x):
     return x
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2270,8 +2270,8 @@ f(1)
 
 class TestTypeCheckerNewTypeclassDirect:
     def test_new_typeclass(self):
-        """TypeChecker: New on typeclass (via IRTranslator typed annotation)."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        """TypeChecker: New on typeclass (via IrTranslator typed annotation)."""
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         setup_libs('io', 'timing')
@@ -2284,7 +2284,7 @@ def f():
     return a[0]
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -2329,7 +2329,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         TypeChecker().process(f)
 
@@ -2340,9 +2340,9 @@ ret @return
 
 class TestTypeCheckerArrayAll:
     def test_array_all_skips_item_check(self):
-        """TypeChecker: Array assigned to __all__ skips int check via IRReader."""
+        """TypeChecker: Array assigned to __all__ skips int check via IrReader."""
         from polyphony.compiler.ir.ir import Array as IrArray, Const, Temp, Move
-        # Use IRReader but with __all__ as a list<int32> so move check passes
+        # Use IrReader but with __all__ as a list<int32> so move check passes
         # The key is that visit_Array returns early for __all__ dst
         src = '''
 scope F
@@ -2377,7 +2377,7 @@ mv __all__ [1 2]
 class TestEarlyTypeCheckerSysCallElse:
     def test_early_typechecker_syscall_else_branch(self):
         """EarlyTypeChecker: SysCall not in all_scopes visits args (print)."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 10
@@ -2387,7 +2387,7 @@ def f(x):
     return x
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2403,7 +2403,7 @@ f(1)
 class TestEarlyRestrictionCheckerUnroll:
     def test_unroll_outside_for(self):
         """EarlyRestrictionChecker: polyphony.unroll outside for fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.ir import SysCall, Const, Temp, Expr
         from polyphony.compiler.ir.types.type import Type
@@ -2415,7 +2415,7 @@ def f():
     return x
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2433,7 +2433,7 @@ f()
 
     def test_pipelined_outside_for(self):
         """EarlyRestrictionChecker: polyphony.pipelined outside for fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.ir import SysCall, Const, Temp, Expr
         from polyphony.compiler.ir.types.type import Type
@@ -2445,7 +2445,7 @@ def f():
     return x
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2689,7 +2689,7 @@ ret @return
 '''
         setup_test(with_global=False)
         src_texts['__test__'] = ['test line'] * 10
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         env.scope_file_map[ns] = '__test__'
         with pytest.raises(CompileError):
@@ -2813,7 +2813,7 @@ m = M()
             if 'M' in name and '__init__' in name and not name.startswith('polyphony'):
                 RestrictionChecker().process(scope)
 
-    pass  # append_worker lines 414-417 are unreachable from IRTranslator code
+    pass  # append_worker lines 414-417 are unreachable from IrTranslator code
 
 
 # =========================================================
@@ -2836,7 +2836,7 @@ tags class
 '''
         setup_test(with_global=False)
         src_texts['__test__'] = ['test line'] * 10
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         env.scope_file_map[top] = '__test__'
         with pytest.raises(CompileError):
@@ -2850,7 +2850,7 @@ tags class
 class TestTypeCheckerSysCallNewDirect:
     def test_syscall_new_class(self):
         """TypeChecker: SysCall '$new' returns object type."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 10
@@ -2863,7 +2863,7 @@ class C:
 c = C(1)
 x = c.get()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2881,7 +2881,7 @@ x = c.get()
 class TestTypeCheckerMRefClassType:
     def test_mref_on_class_type_returns_class_type(self):
         """TypeChecker: MRef on a class-typed mem returns class type."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         setup_libs('io', 'timing')
@@ -2894,7 +2894,7 @@ def f():
     return a[0]
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -2903,13 +2903,13 @@ f()
 
 
 # =========================================================
-# TypeChecker: visit_Ret incompatible via IRTranslator (line 224)
+# TypeChecker: visit_Ret incompatible via IrTranslator (line 224)
 # =========================================================
 
 class TestTypeCheckerRetIncompatIRTranslator:
     def test_ret_incompatible_type(self):
         """TypeChecker: Ret with incompatible type (int vs str)."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.types.type import Type
         setup_test()
@@ -2919,7 +2919,7 @@ def f(x):
     return x
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -2940,7 +2940,7 @@ f(1)
 class TestTypeCheckerPhiReturnIncompat:
     def test_phi_return_type_mismatch(self):
         """TypeChecker: Phi on @return with mismatched types (int vs str)."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.types.type import Type
         from polyphony.compiler.ir.ir import Phi
@@ -2955,7 +2955,7 @@ def f(x):
     return y
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3027,7 +3027,7 @@ tags class
 '''
         setup_test(with_global=False)
         src_texts['__test__'] = ['test line'] * 10
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         env.scope_file_map[top] = '__test__'
         with pytest.raises(CompileError):
@@ -3045,7 +3045,7 @@ class TestSynthesisParamCheckerPipelineLoop:
 
     def test_pipeline_loop_no_channel(self):
         """SynthesisParamChecker: pipeline loop without channel passes."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
         from polyphony.compiler.ir.block import Block
@@ -3059,7 +3059,7 @@ def f():
     return s
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3110,7 +3110,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='missing required argument'):
             TypeChecker().process(ns)
@@ -3136,7 +3136,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='takes 1 positional arguments but 4 were given'):
             TypeChecker().process(ns)
@@ -3164,7 +3164,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -3197,7 +3197,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='missing required argument'):
             EarlyTypeChecker().process(ns)
@@ -3223,7 +3223,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         with pytest.raises(CompileError, match='takes 1 positional arguments but 4 were given'):
             EarlyTypeChecker().process(ns)
@@ -3254,7 +3254,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         with pytest.raises(CompileError, match='missing required argument'):
             EarlyTypeChecker().process(top)
@@ -3285,7 +3285,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         EarlyTypeChecker().process(top)
 
@@ -3318,7 +3318,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[ns] = '__test__'
@@ -3346,7 +3346,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -3378,7 +3378,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[top] = '__test__'
@@ -3393,7 +3393,7 @@ ret @return
 class TestTypeCheckerBinOpReturnValues:
     def test_binop_mult_list_returns_list(self):
         """TypeChecker: BinOp Mult with list * int returns list type."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -3403,7 +3403,7 @@ def f():
     return a[0]
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3458,7 +3458,7 @@ ret @return
 class TestTypeCheckerRelOpObject:
     def test_relop_with_object_type_valid(self):
         """TypeChecker: RelOp with object types is valid."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -3472,7 +3472,7 @@ def f():
     return a == b
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -3532,8 +3532,8 @@ ret @return
 
 class TestTypeCheckerCondOpIncompat:
     def test_condop_compatible_int_passes(self):
-        """TypeChecker: CondOp with compatible int types passes via IRTranslator."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        """TypeChecker: CondOp with compatible int types passes via IrTranslator."""
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -3542,7 +3542,7 @@ def f(x):
     return 10 if x else 20
 f(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3589,7 +3589,7 @@ ret @return
 
     def test_move_array_overflow_via_irtranslator(self):
         """TypeChecker: Array assigned to list that exceeds capacity detected."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -3602,7 +3602,7 @@ def f():
 f()
 '''
         setup_libs('io', 'timing')
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3642,7 +3642,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[top] = '__test__'
@@ -3675,7 +3675,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         src_texts['__test__'] = ['test line'] * 10
         env.scope_file_map[top] = '__test__'
@@ -3708,7 +3708,7 @@ mv x @in_x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         top = env.scopes['@top']
         TypeChecker().process(top)
 
@@ -3761,7 +3761,7 @@ expr (syscall print x y)
 
     def test_syscall_in_all_scopes_too_few_args_fails(self):
         """TypeChecker: SysCall in all_scopes with too few args fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         setup_libs('io', 'timing')
@@ -3773,7 +3773,7 @@ def f():
     clksleep()
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3783,7 +3783,7 @@ f()
 
     def test_syscall_in_all_scopes_too_many_args_fails(self):
         """TypeChecker: SysCall in all_scopes with too many args fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         setup_libs('io', 'timing')
@@ -3795,7 +3795,7 @@ def f():
     clksleep(1, 2, 3)
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3811,7 +3811,7 @@ f()
 class TestEarlyTypeCheckerSysCallBranches:
     def test_early_syscall_in_all_scopes_too_few_args(self):
         """EarlyTypeChecker: SysCall in all_scopes with too few args fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         setup_libs('io', 'timing')
@@ -3823,7 +3823,7 @@ def f():
     clksleep()
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3833,7 +3833,7 @@ f()
 
     def test_early_syscall_in_all_scopes_too_many_args(self):
         """EarlyTypeChecker: SysCall in all_scopes with too many args fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         setup_libs('io', 'timing')
@@ -3845,7 +3845,7 @@ def f():
     clksleep(1, 2, 3)
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3921,8 +3921,8 @@ ret @return
 
 class TestTypeCheckerConstDetailed:
     def test_const_none_via_irtranslator(self):
-        """TypeChecker: Const(None) handled as int(0) via IRTranslator."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        """TypeChecker: Const(None) handled as int(0) via IrTranslator."""
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -3932,7 +3932,7 @@ def f():
     return 0
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -3978,7 +3978,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -3999,7 +3999,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         # Should not raise, just warn
         AssertionChecker().process(f)
@@ -4023,7 +4023,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         AssertionChecker().process(f)
 
@@ -4127,7 +4127,7 @@ m = M()
 class TestRestrictionCheckerCallEdgeCases:
     def test_restriction_call_non_module_method_passes(self):
         """RestrictionChecker: calling a non-module method passes."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         setup_test()
         src_texts['dummy'] = [''] * 20
@@ -4142,7 +4142,7 @@ def f():
     return c.get()
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -4355,14 +4355,14 @@ class TestSynthesisParamCheckerChannelConflict:
 
     def _setup_pipeline_with_channel(self, src):
         """Helper: translate Python src, run TypeSpecializer, set up pipeline loop."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
         from polyphony.compiler.ir.block import Block
         setup_test()
         setup_libs('io', 'timing')
         src_texts['dummy'] = [''] * 50
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypeSpecializer().process_all()
@@ -4502,7 +4502,7 @@ m = M()
 class TestEarlyRestrictionCheckerAllNames:
     def test_polyphony_pipelined_outside_for_fails(self):
         """EarlyRestrictionChecker: polyphony.pipelined outside for fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.ir import SysCall, Const, Temp, Expr
         from polyphony.compiler.ir.types.type import Type
@@ -4514,7 +4514,7 @@ def f():
     return x
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -4530,7 +4530,7 @@ f()
 
     def test_polyphony_unroll_outside_for_fails(self):
         """EarlyRestrictionChecker: polyphony.unroll outside for fails."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.ir import SysCall, Const, Temp, Expr
         from polyphony.compiler.ir.types.type import Type
@@ -4542,7 +4542,7 @@ def f():
     return x
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
@@ -4557,7 +4557,7 @@ f()
             EarlyRestrictionChecker().process(func)
 
     def test_range_outside_for_fails(self):
-        """EarlyRestrictionChecker: range outside for fails via IRReader."""
+        """EarlyRestrictionChecker: range outside for fails via IrReader."""
         src = '''
 scope NS
 tags namespace
@@ -4575,7 +4575,7 @@ mv @return x
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         with pytest.raises(CompileError):
             EarlyRestrictionChecker().process(f)
@@ -4597,7 +4597,7 @@ mv @return 0
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         f = env.scopes['NS.F']
         EarlyRestrictionChecker().process(f)
 
@@ -4671,7 +4671,7 @@ param x: int32
 return int32
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 
@@ -4700,7 +4700,7 @@ mv @return a
 ret @return
 '''
         setup_test(with_global=False)
-        IRParser(src).parse_scope()
+        IrParser(src).parse_scope()
         ns = env.scopes['NS']
         TypeChecker().process(ns)
 

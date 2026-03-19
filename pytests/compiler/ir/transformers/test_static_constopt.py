@@ -1,7 +1,7 @@
 """Tests for StaticConstOpt (static constant propagation across scopes)."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -13,7 +13,7 @@ from pytests.compiler.base import setup_test
 
 def build_scopes(src):
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     return [env.scopes[name] for name in parser.sources]
 

@@ -2,7 +2,7 @@
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new_ir
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.transformers.typeprop import (
@@ -49,7 +49,7 @@ def test_new_type_specializer_basic():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -95,7 +95,7 @@ def test_new_type_specializer_two_modules():
         mv @return (+ x 2)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -128,7 +128,7 @@ def test_new_type_propagation_basic():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -150,7 +150,7 @@ def test_new_static_type_propagation_basic():
     blk1:
         mv x 42
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -174,7 +174,7 @@ def test_type_evaluator_visit_bool():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.bool()
@@ -189,7 +189,7 @@ def test_type_evaluator_visit_str():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.str()
@@ -204,7 +204,7 @@ def test_type_evaluator_visit_none():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.none()
@@ -219,7 +219,7 @@ def test_type_evaluator_visit_undef():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.undef()
@@ -234,7 +234,7 @@ def test_type_evaluator_visit_int():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.int(width=16)
@@ -251,7 +251,7 @@ def test_type_evaluator_visit_object():
         tags namespace class
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.object(top)
@@ -266,7 +266,7 @@ def test_type_evaluator_visit_class():
         tags namespace class
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.klass(top)
@@ -281,7 +281,7 @@ def test_type_evaluator_visit_non_type():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     assert te.visit(42) == 42
@@ -297,7 +297,7 @@ def test_type_evaluator_visit_tuple():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.tuple(Type.int(32), 3)
@@ -314,7 +314,7 @@ def test_type_evaluator_visit_list():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.list(Type.int(32), 4)
@@ -340,7 +340,7 @@ def test_type_evaluator_visit_function_with_scope():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     func = env.scopes['@top.func']
     te = TypeEvaluator(top)
@@ -357,7 +357,7 @@ def test_type_evaluator_visit_function_without_scope():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.function(None, Type.int(32), (Type.int(16),))
@@ -389,7 +389,7 @@ def test_typeprop_visit_const_bool():
         mv @return True
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -417,7 +417,7 @@ def test_typeprop_visit_const_str():
         mv @return 'hello'
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -445,7 +445,7 @@ def test_typeprop_binop():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -473,7 +473,7 @@ def test_typeprop_relop():
         mv @return (< x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -501,7 +501,7 @@ def test_typeprop_unop():
         mv @return ~x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -511,15 +511,15 @@ def test_typeprop_unop():
 
 
 def test_typeprop_condop():
-    """TypePropagation: CondOp returns left type (tested via IRTranslator)."""
+    """TypePropagation: CondOp returns left type (tested via IrTranslator)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f(x):
     return 1 if x else 0
 f(1)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed_scopes, _ = TypePropagation(is_strict=False).process_all()
@@ -549,7 +549,7 @@ def test_typeprop_two_assignments():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -587,7 +587,7 @@ def test_typeprop_expr_and_cjump():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -598,16 +598,16 @@ def test_typeprop_expr_and_cjump():
 
 
 def test_typeprop_array_literal():
-    """TypePropagation: Array literal propagates element type (via IRTranslator)."""
+    """TypePropagation: Array literal propagates element type (via IrTranslator)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [1, 2, 3]
     return a
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed_scopes, _ = TypePropagation(is_strict=False).process_all()
@@ -646,7 +646,7 @@ def test_typeprop_call_nested():
         mv @return (call g x)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -656,13 +656,13 @@ def test_typeprop_call_nested():
 
 
 def test_typeprop_const_none():
-    """TypePropagation: Const(None) propagates as int (via IRTranslator)."""
+    """TypePropagation: Const(None) propagates as int (via IrTranslator)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 x = None
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -683,7 +683,7 @@ def test_typeprop_move_to_irvariable():
         mv x 42
         mv y x
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -715,7 +715,7 @@ def test_typeprop_jump():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -753,7 +753,7 @@ def test_type_specializer_class():
         mv x @in_x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -782,7 +782,7 @@ def test_type_specializer_no_params():
         mv @return 42
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -815,7 +815,7 @@ def test_type_specializer_attr_call():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -845,7 +845,7 @@ def test_type_replacer():
     blk1:
         mv x 1
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     old_t = Type.undef()
@@ -879,7 +879,7 @@ def test_type_eval_visitor():
         mv x @in_x
         mv y x
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     TypeEvalVisitor().process(func)
@@ -909,7 +909,7 @@ def test_static_type_prop_multiple_stms():
         mv y 20
         mv z (+ x y)
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -933,7 +933,7 @@ def test_static_type_prop_bool():
     blk1:
         mv x True
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -953,7 +953,7 @@ def test_static_type_prop_string():
     blk1:
         mv x 'hello'
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -982,7 +982,7 @@ def test_typeprop_binop_signed():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1022,7 +1022,7 @@ def test_typeprop_mcjump():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1055,7 +1055,7 @@ def test_typeprop_multi_var_propagation():
         mv @return (+ y z)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1068,9 +1068,9 @@ def test_typeprop_multi_var_propagation():
 
 
 def test_typeprop_mutable_method():
-    """TypePropagation: method writing to self attribute is tagged mutable (via IRTranslator)."""
+    """TypePropagation: method writing to self attribute is tagged mutable (via IrTranslator)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 class C:
     def __init__(self, val):
@@ -1080,7 +1080,7 @@ class C:
 c = C(1)
 c.set_x(2)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypePropagation(is_strict=False).process_all()
@@ -1100,7 +1100,7 @@ def test_typeprop_lib_scope_skipped():
         tags namespace lib
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     lib_ns = env.scopes['lib_ns']
     install_builtins(top)
@@ -1111,14 +1111,14 @@ def test_typeprop_lib_scope_skipped():
 
 
 # ============================================================
-# Tests using IRTranslator to generate richer IR for typeprop
+# Tests using IrTranslator to generate richer IR for typeprop
 # ============================================================
 
 
 def _translate_and_propagate(src, use_specializer=False):
     """Helper: translate source and run type propagation."""
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
-    IRTranslator().translate(src, '')
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     if use_specializer:
@@ -1298,7 +1298,7 @@ def test_typeprop_binop_mixed_widths():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1321,7 +1321,7 @@ def test_static_typeprop_relop():
         mv x (< 1 2)
         mv y (== 3 3)
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1352,7 +1352,7 @@ def test_static_typeprop_call():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1389,7 +1389,7 @@ def test_typeprop_temp_function_load():
         mv @return (call helper)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1418,7 +1418,7 @@ def test_specialize_function_existing():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1501,7 +1501,7 @@ def test_specialize_attr_function_call():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1541,7 +1541,7 @@ def test_specialize_function_already_existing():
         mv @return (+ y 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1579,7 +1579,7 @@ def test_typeprop_reject_then_succeed():
         mv @return (+ y 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1632,7 +1632,7 @@ def test_typeprop_temp_imported():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1670,7 +1670,7 @@ def test_typeprop_function_in_load_ctx():
         mv @return (call helper x)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1700,7 +1700,7 @@ def test_specialize_multiple_types():
         mv @return (+ x y)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1726,7 +1726,7 @@ def test_typeprop_attr_on_namespace():
         tags namespace
         var val: int32
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1755,7 +1755,7 @@ def test_typeprop_expr_stm():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1783,7 +1783,7 @@ def test_static_typeprop_expr():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1876,7 +1876,7 @@ def test_specialize_with_explicit_param_types():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1895,8 +1895,8 @@ class C:
         self.x = x
 c = C(1)
 '''
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
-    IRTranslator().translate(src, '')
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -1928,7 +1928,7 @@ def test_specialize_imported_function():
         mv @return (+ x 10)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -1950,7 +1950,7 @@ def test_typeprop_directory_scope_skipped():
     scope dir
         tags directory
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     dir_scope = env.scopes['dir']
     install_builtins(top)
@@ -1999,7 +1999,7 @@ def test_typeprop_propagate_updates_sym():
         mv @return z
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2062,7 +2062,7 @@ def test_typeprop_static_multi_scope():
     blk1:
         mv y 20
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     ns = env.scopes['ns']
     install_builtins(top)
@@ -2088,7 +2088,7 @@ def test_type_replacer_no_match():
     blk1:
         mv x 1
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     old_t = Type.bool()
@@ -2205,7 +2205,7 @@ def test_typeprop_superseded_scope_skipped():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2235,7 +2235,7 @@ def test_typeprop_add_scope_dedup():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2294,7 +2294,7 @@ def test_static_typeprop_attr_access():
         tags namespace
         var val: int32
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2316,7 +2316,7 @@ def test_type_expr_evaluator_const():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
 
     tee = TypeExprEvaluator()
@@ -2337,7 +2337,7 @@ def test_type_expr_evaluator_visit_expr():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
 
     tee = TypeExprEvaluator()
@@ -2355,7 +2355,7 @@ def test_type_evaluator_visit_expr_type():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
 
     te = TypeEvaluator(top)
@@ -2376,7 +2376,7 @@ def test_type_expr_evaluator_temp_scalar():
         var x: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
 
     # Set a constant for x
@@ -2396,11 +2396,11 @@ def test_type_expr_evaluator_temp_scalar():
 def test_type_expr_evaluator_temp_class():
     """TypeExprEvaluator: visit_Temp with class type returns resolved type."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 from polyphony.typing import List
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     list_sym = top.find_sym('List')
     assert list_sym is not None
@@ -2422,7 +2422,7 @@ def test_type_expr_evaluator_array():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
 
     tee = TypeExprEvaluator()
@@ -2438,11 +2438,11 @@ def test_type_expr_evaluator_array():
 def test_type_expr_evaluator_mref_int():
     """TypeExprEvaluator: visit_MRef on int type returns int with width."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 from polyphony.typing import int8
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
 
     # int8 should be resolved as a typeclass
@@ -2464,14 +2464,14 @@ from polyphony.typing import int8
 def test_type_expr_eval_mref_list_type():
     """TypeExprEvaluator: List[int8] annotation resolves to list type."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 from polyphony.typing import List, int8
 def f(a: List[int8]):
     return a
 f(a=1)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     func = env.scopes.get('@top.f')
     if func:
@@ -2484,14 +2484,14 @@ f(a=1)
 def test_type_expr_eval_int_width():
     """TypeExprEvaluator: int type with explicit width."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 from polyphony.typing import int8
 def f(x: int8):
     return x
 f(1)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed_scopes, _ = TypePropagation(is_strict=False).process_all()
@@ -2505,14 +2505,14 @@ f(1)
 def test_specialize_with_typed_param():
     """TypeSpecializer: function with explicit int8 param type."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 from polyphony.typing import int8
 def f(x: int8):
     return x + 1
 f(1)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -2559,7 +2559,7 @@ def test_specialize_func_with_bool_arg():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2588,7 +2588,7 @@ def test_static_typeprop_strict_call():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -2606,8 +2606,8 @@ class C:
         self.x = x
 c = C(1)
 '''
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
-    IRTranslator().translate(src, '')
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     StaticTypePropagation(is_strict=True).process_scopes([top])
@@ -2632,7 +2632,7 @@ def test_type_eval_visitor_with_constants():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     func = env.scopes['@top.func']
 
     # Add a constant to the scope
@@ -2655,11 +2655,11 @@ from polyphony.compiler.common.common import src_texts
 
 def _translate_and_specialize_with_libs(src):
     """Translate Python source with real lib scopes and run TypeSpecializer."""
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     setup_test()
     setup_libs('io', 'timing')
     src_texts['dummy'] = src.splitlines()
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, old = TypeSpecializer().process_all()
@@ -2885,7 +2885,7 @@ def test():
 class TestTypePropSysCallNew:
     def test_syscall_new(self):
         """TypePropagation: SysCall $new adds callee scope."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         setup_test()
         src_texts['dummy'] = [''] * 20
         src = '''
@@ -2897,7 +2897,7 @@ def f():
     return 0
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         typed, _ = TypePropagation(is_strict=False).process_all()
@@ -2940,7 +2940,7 @@ m = M()
 class TestTypePropMStore:
     def test_mstore_propagation(self):
         """TypePropagation: MStore propagates types and marks mem writable."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         setup_test()
         src_texts['dummy'] = [''] * 20
         src = '''
@@ -2950,7 +2950,7 @@ def f():
     return a
 f()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         typed, _ = TypePropagation(is_strict=False).process_all()
@@ -2967,7 +2967,7 @@ f()
 class TestStaticTypePropNew:
     def test_static_new_non_strict(self):
         """StaticTypePropagation: non-strict New returns object type."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         setup_test()
         src_texts['dummy'] = [''] * 20
         src = '''
@@ -2976,7 +2976,7 @@ class C:
         self.x = x
 c = C(1)
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -3006,7 +3006,7 @@ class TestStaticTypePropAttr:
     blk1:
         mv val 42
     """
-        IRParser(block_src).parse_scope()
+        IrParser(block_src).parse_scope()
         top = env.scopes['@top']
         install_builtins(top)
         ns = env.scopes['ns']
@@ -3022,7 +3022,7 @@ class TestStaticTypePropAttr:
 class TestTypePropAttrSubobject:
     def test_attr_object_subobject(self):
         """TypePropagation: attr access on object sets subobject tag."""
-        from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+        from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         setup_test()
         src_texts['dummy'] = [''] * 30
         src = '''
@@ -3037,7 +3037,7 @@ class Outer:
 o = Outer(1)
 o.get()
 '''
-        IRTranslator().translate(src, '')
+        IrTranslator().translate(src, '')
         top = env.scopes[env.global_scope_name]
         install_builtins(top)
         typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3055,7 +3055,7 @@ o.get()
 def test_typeprop_tuple_unpack():
     """TypePropagation: tuple unpacking via Move with Array dst (lines 642-659)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     t = (10, 20)
@@ -3063,7 +3063,7 @@ def f():
     return a
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3077,7 +3077,7 @@ f()
 def test_typeprop_phi_from_if():
     """TypePropagation: Phi nodes from if/else branches (lines 670-676)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f(x):
     if x > 0:
@@ -3087,7 +3087,7 @@ def f(x):
     return y
 f(1)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3099,7 +3099,7 @@ f(1)
 def test_typeprop_phi_from_while():
     """TypePropagation: LPhi from while loop (lines 681-682)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     i = 0
@@ -3110,7 +3110,7 @@ def f():
     return s
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3124,14 +3124,14 @@ f()
 def test_typeprop_mref_on_list_element():
     """TypePropagation: MRef on list with int index (lines 526-552)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [10, 20, 30]
     return a[1]
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3142,7 +3142,7 @@ f()
 def test_typeprop_mstore_list_element():
     """TypePropagation: MStore on list (lines 554-568)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [0, 0, 0]
@@ -3150,7 +3150,7 @@ def f():
     return a
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3163,7 +3163,7 @@ f()
 def test_typeprop_move_to_mref():
     """TypePropagation: Move with MRef as dst (line 660-661)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [0, 0, 0]
@@ -3171,7 +3171,7 @@ def f():
     return a[0]
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3198,7 +3198,7 @@ def test_typeprop_binop_unsigned():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3216,7 +3216,7 @@ def test_type_evaluator_visit_unknown_type():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create a type with a name that has no visitor
@@ -3244,7 +3244,7 @@ def test_type_eval_visitor_with_return_type():
         mv x @in_x
         mv y x
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     func = env.scopes['@top.func']
     TypeEvalVisitor().process(func)
     # return_type was evaluated
@@ -3271,7 +3271,7 @@ def test_type_eval_visitor_visit_attr():
         mv @return self.val
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     func = env.scopes['@top.func']
     TypeEvalVisitor().process(func)
     top = env.scopes['@top']
@@ -3295,7 +3295,7 @@ def test_type_replacer_visit_attr():
         mv self @in_self
         mv self.val 42
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     func = env.scopes['@top.func']
     top = env.scopes['@top']
 
@@ -3330,7 +3330,7 @@ def test_static_typeprop_reject_then_retry():
         mv @return a
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # First pass: 'mv y (call func x)' tries to visit x which is undef -> reject
@@ -3354,7 +3354,7 @@ def test_static_typeprop_visit_attr_object():
         var val: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -3386,7 +3386,7 @@ def test_typeprop_directory_scope_skip():
         tags namespace directory
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     somedir = env.scopes['somedir']
     install_builtins(top)
@@ -3443,7 +3443,7 @@ def test_specialize_function_module():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -3456,14 +3456,14 @@ def test_specialize_function_module():
 def test_specialize_class_no_params_v2():
     """TypeSpecializer: New on class with no typed params (lines 942-944)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 class C:
     def __init__(self):
         self.x = 0
 c = C()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -3474,7 +3474,7 @@ c = C()
 def test_typeprop_attr_function_in_load_ctx():
     """TypePropagation: attr with function type in LOAD context adds scope (lines 518-520)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 class C:
     def __init__(self, x):
@@ -3486,7 +3486,7 @@ class C:
 c = C(1)
 c.process()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3498,7 +3498,7 @@ c.process()
 def test_typeprop_attr_subobject_tag():
     """TypePropagation: attr access on object sets subobject tag (lines 514-517)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src_texts['dummy'] = [''] * 30
     src = '''
 class Inner:
@@ -3512,7 +3512,7 @@ class Outer:
 o = Outer(5)
 o.get_inner_v()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -3552,7 +3552,7 @@ def test_typeprop_phi_direct():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -3597,7 +3597,7 @@ def test_typeprop_uphi_direct():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -3641,7 +3641,7 @@ def test_typeprop_lphi_direct():
         mv @return y
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -3678,7 +3678,7 @@ def test_typeprop_mstore_direct():
         mv @return (mld a 0)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -3696,7 +3696,7 @@ def test_typeprop_visit_returns_none_for_unknown():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -3716,13 +3716,13 @@ def test_typeprop_mref_on_typeclass():
     """TypePropagation: MRef on class type that is_typeclass (lines 534-541)."""
     setup_test()
     setup_libs('io', 'timing')
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src_texts['dummy'] = [''] * 20
     src = '''
 from polyphony.typing import Int
 x = Int[8]
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -3754,7 +3754,7 @@ def test_static_typeprop_new_v2():
         mv self @in_self
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -3770,7 +3770,7 @@ def test_type_expr_evaluator_const_v2():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Const
@@ -3790,7 +3790,7 @@ def test_type_expr_evaluator_temp_scalar_v2():
         var n: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -3834,7 +3834,7 @@ def test_type_expr_evaluator_temp_class_non_typeclass():
         tags class
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -3854,7 +3854,7 @@ def test_type_expr_evaluator_sym2type_non_class():
         var x: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -3879,7 +3879,7 @@ def test_type_expr_evaluator_attr():
     blk1:
         mv self @in_self
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     func = env.scopes['@top.func']
     te = TypeEvaluator(func)
@@ -3947,7 +3947,7 @@ def test_type_expr_evaluator_mref_list():
         var a: list<int32>[3]
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, MRef, Ctx, Const
@@ -3968,7 +3968,7 @@ def test_type_evaluator_visit_function_no_scope():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     t = Type.function(None, Type.int(32), (Type.int(16), Type.bool()))
@@ -3984,7 +3984,7 @@ def test_type_evaluator_visit_list_with_type_length():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Const
@@ -4018,7 +4018,7 @@ def test_typeprop_move_mref_dst_v2():
         mv @return (mld a 0)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     func = env.scopes['@top.func']
@@ -4037,14 +4037,14 @@ def test_typeprop_move_mref_dst_v2():
 def test_typeprop_mref_tuple():
     """TypePropagation: MRef on tuple type returns element (line 545-546)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     t = (10, 20, 30)
     return t[1]
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -4056,7 +4056,7 @@ def test_typeprop_mref_class_typeclass():
     """TypePropagation: MRef on class type that is_typeclass (lines 534-541)."""
     setup_test()
     setup_libs('io', 'timing')
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src_texts['dummy'] = [''] * 10
     src = '''
 from polyphony.typing import Int
@@ -4065,7 +4065,7 @@ def f():
     return x
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -4100,7 +4100,7 @@ def test_static_typeprop_strict_new_v2():
         mv val @in_val
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=True).process_scopes([top])
@@ -4120,7 +4120,7 @@ def test_typeprop_binop_both_unsigned():
     blk1:
         mv z (+ x y)
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -4133,14 +4133,14 @@ def test_typeprop_binop_both_unsigned():
 def test_typeprop_binop_l_not_int():
     """TypePropagation: BinOp where left is not int returns left type (line 395)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     x = True
     return x and True
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -4175,7 +4175,7 @@ def test_typeprop_attr_undef_from_specialized():
         mv self.val v
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -4210,7 +4210,7 @@ def test_typeprop_find_attr_from_specialized_v2():
         mv @return c.val
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -4237,7 +4237,7 @@ def test_typeprop_find_attr_from_specialized_no_parent():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4259,7 +4259,7 @@ def test_type_evaluator_visit_list_with_expr_length_non_const():
         var n: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     from polyphony.compiler.ir.ir import Expr, Temp, Ctx
@@ -4287,7 +4287,7 @@ def test_typeprop_process_scopes_superseded():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     other = env.scopes['other']
     other.add_tag('superseded')
@@ -4313,7 +4313,7 @@ def test_typeprop_add_scope_testbench_not_global_child():
         tags namespace testbench
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     c_scope = env.scopes['@top.C']
     tb = env.scopes['@top.C.tb']
@@ -4359,7 +4359,7 @@ def test_specialize_new_via_attr():
         mv x @in_x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -4382,7 +4382,7 @@ def test_propagate_both_undef():
         var x: undef
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4401,7 +4401,7 @@ def test_typeprop_visit_unknown_ir_returns_none():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4433,7 +4433,7 @@ def test_static_typeprop_visit_attr():
         tags class
         var val: int32
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -4464,7 +4464,7 @@ def test_typeprop_syscall_new():
         mv self @in_self
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -4477,7 +4477,7 @@ def test_typeprop_syscall_new():
 def test_typeprop_tuple_unpack_move_array_dst():
     """TypePropagation: Move with Array dst for tuple unpacking (lines 667-681)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     t = (10, 20)
@@ -4485,7 +4485,7 @@ def f():
     return a
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     # Use TypeSpecializer which exercises more code paths
@@ -4499,11 +4499,11 @@ f()
 def test_typeprop_const_str_literal():
     """TypePropagation: Const with string literal (line 507)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 x = "hello"
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -4525,7 +4525,7 @@ def test_typeeval_visitor_no_return_type():
     blk1:
         mv x @in_x
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     func = env.scopes['@top.func']
     install_builtins(top)
@@ -4545,7 +4545,7 @@ def test_typeeval_visitor_with_constants():
         var x: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # Add a constant to the scope
@@ -4566,7 +4566,7 @@ def test_type_evaluator_visit_object_v2():
     scope @top.C
         tags class
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     c_scope = env.scopes['@top.C']
@@ -4586,7 +4586,7 @@ def test_type_evaluator_visit_class_v2():
     scope @top.C
         tags class
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     c_scope = env.scopes['@top.C']
@@ -4603,7 +4603,7 @@ def test_type_evaluator_visit_unknown_type_returns_none():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create a type with a name that has no visitor
@@ -4617,7 +4617,7 @@ def test_type_evaluator_visit_unknown_type_returns_none():
 def test_typeprop_mref_tuple_via_specializer():
     """TypePropagation: MRef on tuple returns element type (line 576)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     t = (1, 2, 3)
@@ -4625,7 +4625,7 @@ def f():
     return x
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -4645,7 +4645,7 @@ def test_typeprop_mref_not_subscriptable():
     blk1:
         mv y (mld x 0)
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises(CompileError):
@@ -4655,7 +4655,7 @@ def test_typeprop_mref_not_subscriptable():
 def test_typeprop_mstore_on_list_propagates():
     """TypePropagation: MStore on list propagates type and clears ro (lines 583-595)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [0, 0, 0]
@@ -4663,7 +4663,7 @@ def f():
     return a
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypeSpecializer().process_all()
@@ -4684,7 +4684,7 @@ def test_typeprop_mref_list_non_int_offset():
     blk1:
         mv x (mld a idx)
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises(CompileError):
@@ -4702,7 +4702,7 @@ def test_static_typeprop_reject_propagation_in_process_scopes():
     blk1:
         mv x 42
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
 
@@ -4724,7 +4724,7 @@ def test_static_typeprop_reject_propagation_in_process_scopes():
 def test_typeprop_mref_undef_mem_reject():
     """TypePropagation: MRef with undef mem type raises RejectPropagation (line 560)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [10, 20, 30]
@@ -4732,7 +4732,7 @@ def f():
     return x
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     # First specialize, then run static with strict mode
@@ -4744,14 +4744,14 @@ f()
 def test_typeprop_array_strict_const_repeat():
     """TypePropagation: Array with is_strict=True and Const repeat (line 629-630)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [1, 2, 3]
     return a
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     # First specialize to get typed scopes
@@ -4799,7 +4799,7 @@ def test_typeprop_convert_call_object():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -4815,7 +4815,7 @@ def test_typeprop_normalize_args_extra_args():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -4846,7 +4846,7 @@ def test_typeprop_visit_attr_unknown_attr_error():
     scope @top.C
         tags class
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises(CompileError):
@@ -4865,7 +4865,7 @@ def test_typeprop_visit_attr_non_containable():
     blk1:
         mv y x.something
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     with pytest.raises((CompileError, AssertionError)):
@@ -4892,7 +4892,7 @@ def test_typeprop_specialize_call_arg_undef_reject():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # y is undef, so calling func(y) should reject propagation
@@ -4933,7 +4933,7 @@ def test_typeprop_attr_object_subobject_tag():
     scope @top.D
         tags class
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -4955,7 +4955,7 @@ def test_typeprop_mref_undef_offset_reject():
         mv idx 0
         mv x (mld a idx)
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     StaticTypePropagation(is_strict=False).process_scopes([top])
@@ -4975,7 +4975,7 @@ def test_typeprop_mref_class_typeclass_object():
     scope @top.Int
         tags class typeclass
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     # Just verify the scope setup works
@@ -4986,7 +4986,7 @@ def test_typeprop_mref_class_typeclass_object():
 def test_typeprop_class_method_mutable():
     """TypePropagation: method that writes to self.attr gets mutable tag (line 698)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 class C:
     def __init__(self):
@@ -4996,7 +4996,7 @@ class C:
 c = C()
 c.set_x(42)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5028,7 +5028,7 @@ def test_typeprop_function_module_from_testbench():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     ts = TypeSpecializer()
@@ -5058,7 +5058,7 @@ def test_typeprop_specialize_already_specialized():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5071,7 +5071,7 @@ def test_typeprop_specialize_already_specialized():
 def test_typeprop_specialize_call_via_attr_mutable():
     """TypeSpecializer: call via Attr on mutable method (lines 772-781)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 class C:
     def __init__(self):
@@ -5082,7 +5082,7 @@ class C:
 c = C()
 c.inc()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5117,7 +5117,7 @@ def test_typeprop_specialize_class_already_specialized():
         mv x @in_x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5156,7 +5156,7 @@ def test_typeprop_specialize_already_specialized_func():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5185,7 +5185,7 @@ def test_typeprop_pure_function_with_return_type():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5218,7 +5218,7 @@ def test_typeprop_pure_function_disabled():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5255,7 +5255,7 @@ def test_typeprop_pure_function_not_global():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     ns = env.scopes['@top.ns']
     install_builtins(top)
@@ -5277,7 +5277,7 @@ def test_typeprop_normalize_args_default_value():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -5302,7 +5302,7 @@ def test_typeprop_normalize_args_kwargs():
         tags namespace
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -5339,7 +5339,7 @@ def test_typeprop_pure_function_infer_type():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5366,7 +5366,7 @@ def test_typeprop_normalize_args_missing_required():
     blk1:
         mv x 1
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     tp = TypePropagation(is_strict=False)
@@ -5406,7 +5406,7 @@ def test_typeprop_specialize_lib_call():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5415,7 +5415,7 @@ def test_typeprop_specialize_lib_call():
 def test_typeprop_mstore_on_list_via_specializer():
     """TypeSpecializer: MStore on list sets ro=False and checks offset (lines 586-594)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     a = [0, 0, 0]
@@ -5423,7 +5423,7 @@ def f():
     return a
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     typed, _ = TypeSpecializer().process_all()
@@ -5434,7 +5434,7 @@ f()
 def test_typeprop_visit_mcjump():
     """TypePropagation: visit_MCJump visits all conditions (line 642-644)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     # Use if/elif/else which generates MCJump
     src = '''
 def f(x):
@@ -5447,7 +5447,7 @@ def f(x):
     return y
 f(1)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5475,7 +5475,7 @@ def test_typeprop_pure_function_infer_success():
         mv @return (+ a b)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     old_enable_pure = env.config.enable_pure
@@ -5512,7 +5512,7 @@ def test_typeprop_specialize_call_second_time_same_type():
         mv @return x
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5552,7 +5552,7 @@ def test_typeprop_attr_undef_resolved_from_specialized():
         mv self.val v
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     c_scope = env.scopes['@top.C']
@@ -5592,7 +5592,7 @@ def test_typeprop_attr_function_load():
         mv @return 42
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     typed, _ = TypePropagation(is_strict=False).process_all()
@@ -5609,7 +5609,7 @@ def test_type_expr_evaluator_temp_scalar_constant():
         var N: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     # Add N as a constant
     n_sym = top.find_sym('N')
@@ -5635,7 +5635,7 @@ def test_type_evaluator_visit_expr_wrapping_non_expr():
         var x: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create an expr type that resolves to a Const (non-Expr, non-Type)
@@ -5656,7 +5656,7 @@ def test_type_evaluator_visit_expr_returns_expr():
         var x: int32
     blk1:
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     te = TypeEvaluator(top)
     # Create an expr type that resolves to an Expr
@@ -5670,7 +5670,7 @@ def test_type_evaluator_visit_expr_returns_expr():
 def test_typeprop_class_with_methods_and_attrs():
     """TypeSpecializer: class with methods, attrs, subobjects, function refs."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 class Inner:
     def __init__(self):
@@ -5689,7 +5689,7 @@ o = Outer(10)
 o.set_x(20)
 y = o.get_x()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5700,7 +5700,7 @@ y = o.get_x()
 def test_typeprop_nested_function_calls():
     """TypeSpecializer: nested function calls with different types."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def add(a, b):
     return a + b
@@ -5712,7 +5712,7 @@ x = add(1, 2)
 y = mul(x, 3)
 z = add(y, x)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5727,13 +5727,13 @@ z = add(y, x)
 def test_typeprop_function_with_default_param():
     """TypeSpecializer: function with default parameter value."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f(x, y=10):
     return x + y
 f(1)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5742,13 +5742,13 @@ f(1)
 def test_typeprop_condop_v2():
     """TypePropagation: CondOp (ternary) returns type of left branch."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f(x):
     return 1 if x else 0
 f(True)
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5778,7 +5778,7 @@ def test_typeprop_import_specialization():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5814,7 +5814,7 @@ def test_typeprop_specialize_new_already_specialized():
         mv v @in_v
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5827,7 +5827,7 @@ def test_typeprop_specialize_new_already_specialized():
 def test_typeprop_const_bool_literal():
     """TypePropagation: Const with True/False (line 502-503)."""
     setup_test()
-    from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+    from polyphony.compiler.frontend.python.irtranslator import IrTranslator
     src = '''
 def f():
     x = True
@@ -5835,7 +5835,7 @@ def f():
     return x
 f()
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     top = env.scopes[env.global_scope_name]
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5854,7 +5854,7 @@ def test_typeprop_process_scopes_directory_scope():
     scope @top.dir
         tags namespace directory
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     dir_scope = env.scopes['@top.dir']
     install_builtins(top)
@@ -5887,7 +5887,7 @@ def test_typeprop_specialize_new_no_params():
         mv self @in_self
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5933,7 +5933,7 @@ def test_specialize_func_cross_namespace():
         mv @return (+ x 1)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()
@@ -5982,7 +5982,7 @@ def test_specialize_func_same_name_different_namespace():
         mv @return (+ x 2)
         ret @return
     """
-    IRParser(block_src).parse_scope()
+    IrParser(block_src).parse_scope()
     top = env.scopes['@top']
     install_builtins(top)
     TypeSpecializer().process_all()

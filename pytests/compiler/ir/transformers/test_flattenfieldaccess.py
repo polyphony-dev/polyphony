@@ -1,7 +1,7 @@
 """Tests for FlattenFieldAccess."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir import ir as new
-from polyphony.compiler.ir.irreader import IRReader as IRParser
+from polyphony.compiler.ir.irreader import IrReader as IrParser
 from polyphony.compiler.ir.transformers.inlineopt import FlattenFieldAccess
 from polyphony.compiler.ir.types.type import Type
 from polyphony.compiler.common.env import env
@@ -10,7 +10,7 @@ from pytests.compiler.base import setup_test, setup_libs
 
 def build_scope(src):
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     for name in parser.sources:
         return env.scopes[name]
@@ -19,7 +19,7 @@ def build_scope(src):
 def parse_all(src):
     """Parse all scopes and return the env."""
     setup_test()
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     return env
 
@@ -315,7 +315,7 @@ var p: object(polyphony.io.Port)
 blk1:
 expr (call p.rd)
 '''
-    parser = IRParser(src)
+    parser = IrParser(src)
     parser.parse_scope()
     top = env.scopes['@top']
     top.add_sym('func', tags=set(), typ=Type.function('@top.func'))

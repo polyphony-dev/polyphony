@@ -1,6 +1,6 @@
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.irreader import IRReader as IRParser
-from polyphony.compiler.ir.irwriter import IRWriter
+from polyphony.compiler.ir.irreader import IrReader as IrParser
+from polyphony.compiler.ir.irwriter import IrWriter
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -11,7 +11,7 @@ from pytests.compiler.base import setup_test
 
 def test_write_type():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     assert writer.write_type(Type.int(8)) == 'int8'
     assert writer.write_type(Type.int(32)) == 'int32'
     assert writer.write_type(Type.int(32, signed=False)) == 'bit32'
@@ -23,14 +23,14 @@ def test_write_type():
 
 def test_write_type_list():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     assert writer.write_type(Type.list(Type.int(32), 10)) == 'list<int32>[10]'
     assert writer.write_type(Type.list(Type.bool(), Type.ANY_LENGTH)) == 'list<bool>[]'
 
 
 def test_write_type_tuple():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     assert writer.write_type(Type.tuple(Type.int(32), 3)) == 'tuple<int32>[3]'
     assert writer.write_type(Type.tuple(Type.int(8), Type.ANY_LENGTH)) == 'tuple<int8>[]'
 
@@ -40,7 +40,7 @@ def test_write_type_scope():
     top = env.scopes['@top']
     C = Scope.create(top, 'C', {'class'}, 0)
     F = Scope.create(top, 'F', {'function'}, 0)
-    writer = IRWriter()
+    writer = IrWriter()
     assert writer.write_type(Type.object('@top.C')) == 'object(@top.C)'
     assert writer.write_type(Type.klass('@top.C')) == 'class(@top.C)'
     assert writer.write_type(Type.namespace('@top')) == 'namespace(@top)'
@@ -49,7 +49,7 @@ def test_write_type_scope():
 
 def test_write_exp_const():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     assert writer.write_exp(Const(123)) == '123'
     assert writer.write_exp(Const(True)) == 'True'
     assert writer.write_exp(Const(False)) == 'False'
@@ -58,7 +58,7 @@ def test_write_exp_const():
 
 def test_write_exp_temp():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     assert writer.write_exp(Temp('x')) == 'x'
     assert writer.write_exp(Temp('@in_x')) == '@in_x'
     assert writer.write_exp(Temp('_x#1')) == '_x#1'
@@ -66,14 +66,14 @@ def test_write_exp_temp():
 
 def test_write_exp_attr():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = Attr(Attr(Temp('a'), 'b'), 'c')
     assert writer.write_exp(exp) == 'a.b.c'
 
 
 def test_write_exp_unop():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     assert writer.write_exp(UnOp('USub', Temp('x'))) == '-x'
     assert writer.write_exp(UnOp('Not', Temp('x'))) == '!x'
     assert writer.write_exp(UnOp('Invert', Temp('x'))) == '~x'
@@ -81,7 +81,7 @@ def test_write_exp_unop():
 
 def test_write_exp_binop():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = BinOp('Add', Temp('a'), Const(1))
     assert writer.write_exp(exp) == '(+ a 1)'
 
@@ -91,7 +91,7 @@ def test_write_exp_binop():
 
 def test_write_exp_relop():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = RelOp('Eq', Temp('a'), Const(0))
     assert writer.write_exp(exp) == '(== a 0)'
 
@@ -101,42 +101,42 @@ def test_write_exp_relop():
 
 def test_write_exp_call():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = Call(Temp('f'), [('', Const(1)), ('', Temp('x'))], {})
     assert writer.write_exp(exp) == '(call f 1 x)'
 
 
 def test_write_exp_new():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = New(Temp('C'), [('', Temp('x'))], {})
     assert writer.write_exp(exp) == '(new C x)'
 
 
 def test_write_exp_syscall():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = SysCall(Temp('print'), [('', Const(1)), ('', Const(2))], {})
     assert writer.write_exp(exp) == '(syscall print 1 2)'
 
 
 def test_write_exp_mref():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = MRef(Temp('xs'), Const(0))
     assert writer.write_exp(exp) == '(mld xs 0)'
 
 
 def test_write_exp_mstore():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = MStore(Temp('xs'), Const(0), Temp('v'))
     assert writer.write_exp(exp) == '(mst xs 0 v)'
 
 
 def test_write_exp_array():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     exp = Array([Const(1), Const(2), Const(3)], mutable=True)
     assert writer.write_exp(exp) == '[1 2 3]'
 
@@ -146,28 +146,28 @@ def test_write_exp_array():
 
 def test_write_stm_mv():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     stm = Move(Temp('a', Ctx.STORE), Const(1))
     assert writer.write_stm(stm) == 'mv a 1'
 
 
 def test_write_stm_cmv():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     stm = CMove(Temp('cond'), Temp('z', Ctx.STORE), BinOp('Add', Temp('x'), Temp('y')))
     assert writer.write_stm(stm) == 'mv? cond z (+ x y)'
 
 
 def test_write_stm_expr():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     stm = Expr(SysCall(Temp('print'), [('', Const(1))], {}))
     assert writer.write_stm(stm) == 'expr (syscall print 1)'
 
 
 def test_write_stm_cexpr():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     stm = CExpr(Temp('cond'), SysCall(Temp('print'), [('', Const(1))], {}))
     assert writer.write_stm(stm) == 'expr? cond (syscall print 1)'
 
@@ -176,7 +176,7 @@ def test_write_stm_jump():
     setup_test()
     scope = Scope.create(None, 'S', set(), 0)
     blk = Block(scope, nametag='blk2')
-    writer = IRWriter()
+    writer = IrWriter()
     stm = Jump(blk)
     assert writer.write_stm(stm) == 'j blk2'
 
@@ -186,7 +186,7 @@ def test_write_stm_cjump():
     scope = Scope.create(None, 'S', set(), 0)
     blk_t = Block(scope, nametag='then')
     blk_f = Block(scope, nametag='else')
-    writer = IRWriter()
+    writer = IrWriter()
     stm = CJump(Temp('cond'), blk_t, blk_f)
     assert writer.write_stm(stm) == 'cj cond then else'
 
@@ -197,14 +197,14 @@ def test_write_stm_mcjump():
     blk1 = Block(scope, nametag='b1')
     blk2 = Block(scope, nametag='b2')
     blk3 = Block(scope, nametag='b3')
-    writer = IRWriter()
+    writer = IrWriter()
     stm = MCJump([Temp('c1'), Temp('c2'), Temp('c3')], [blk1, blk2, blk3])
     assert writer.write_stm(stm) == 'mj c1 b1 c2 b2 c3 b3'
 
 
 def test_write_stm_ret():
     setup_test()
-    writer = IRWriter()
+    writer = IrWriter()
     stm = Ret(Temp(Symbol.return_name))
     assert writer.write_stm(stm) == 'ret @return'
 
@@ -212,8 +212,8 @@ def test_write_stm_ret():
 def test_roundtrip_stm():
     """Parse a statement, write it back, and parse again to verify roundtrip."""
     setup_test()
-    parser = IRParser('')
-    writer = IRWriter()
+    parser = IrParser('')
+    writer = IrWriter()
 
     cases = [
         'mv a 1',
@@ -245,8 +245,8 @@ def test_roundtrip_type():
     C = Scope.create(top, 'C', {'class'}, 0)
     F = Scope.create(top, 'F', {'function'}, 0)
 
-    parser = IRParser('')
-    writer = IRWriter()
+    parser = IrParser('')
+    writer = IrWriter()
 
     cases = [
         'int8', 'int32', 'bit256', 'bool', 'str', 'none', 'undef',
@@ -294,16 +294,16 @@ j exit
 exit:
 ret @return
 '''
-    parser1 = IRParser(src)
+    parser1 = IrParser(src)
     parser1.parse_scope()
     scope1 = env.scopes['AFunction']
 
-    writer = IRWriter()
+    writer = IrWriter()
     written = writer.write_scope(scope1)
 
     # Verify we can parse the written output
     setup_test()
-    parser2 = IRParser(written)
+    parser2 = IrParser(written)
     parser2.parse_scope()
     scope2 = env.scopes['AFunction']
 
@@ -336,7 +336,7 @@ def test_write_scope_no_entry_block():
     setup_test()
     top = env.scopes['@top']
     scope = Scope.create(top, 'Empty', {'function'}, 0)
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(scope)
     assert 'scope @top.Empty' in result
     assert 'tags' in result
@@ -352,7 +352,7 @@ def test_write_scope_entry_block_no_stms():
     blk = Block(scope, nametag='entry')
     scope.entry_block = blk
     # blk has no stms
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(scope)
     assert 'scope @top.EmptyBlocks' in result
     # No block body should be written since no stms
@@ -367,7 +367,7 @@ def test_write_scopes():
     top = env.scopes['@top']
     s1 = Scope.create(top, 'Func1', {'function'}, 0)
     s2 = Scope.create(top, 'Func2', {'function'}, 0)
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scopes([s1, s2])
     assert 'scope @top.Func1' in result
     assert 'scope @top.Func2' in result
@@ -384,7 +384,7 @@ def test_write_scope_param_with_tags():
     scope = Scope.create(top, 'ParamTags', {'function'}, 0)
     sym = scope.add_param_sym('x', {'free'}, typ=Type.int(32))
     scope.add_param(sym, None)  # Register in function_params
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(scope)
     # param should appear with tag { free }
     assert 'param x:int32 { free }' in result
@@ -398,7 +398,7 @@ def test_write_scope_return_type_none():
     top = env.scopes['@top']
     scope = Scope.create(top, 'NoRet', {'function'}, 0)
     scope.return_type = Type.none()
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(scope)
     lines = result.split('\n')
     for line in lines:
@@ -410,7 +410,7 @@ def test_write_scope_no_return_type():
     top = env.scopes['@top']
     scope = Scope.create(top, 'NoRet2', {'function'}, 0)
     scope.return_type = None
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(scope)
     lines = result.split('\n')
     for line in lines:
@@ -429,7 +429,7 @@ def test_write_scope_imported_symbol():
     dst_scope = Scope.create(top, 'Dest', {'function'}, 0)
     dst_scope.import_sym(src_sym, 'helper')
 
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(dst_scope)
     # Should have 'from @top.Source import helper'
     assert 'from @top.Source import helper' in result
@@ -446,7 +446,7 @@ def test_write_scope_var_with_tags():
     top = env.scopes['@top']
     scope = Scope.create(top, 'VarTags', {'function'}, 0)
     scope.add_sym('counter', {'field'}, typ=Type.int(16))
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(scope)
     assert 'var counter: int16 { field }' in result
 
@@ -455,7 +455,7 @@ def test_write_scope_var_with_tags():
 # _format_const fallback (line 265) - non-bool/int/str value
 # ------------------------------------------------------------------
 def test_format_const_fallback():
-    writer = IRWriter()
+    writer = IrWriter()
     c = Const(value=3.14)
     result = writer.write_exp(c)
     assert result == '3.14'
@@ -469,7 +469,7 @@ def test_format_const_fallback():
 # _format_type fallback else branch (line 320)
 # ------------------------------------------------------------------
 def test_format_type_fallback_else():
-    writer = IRWriter()
+    writer = IrWriter()
     # Type('any', False) does not match any is_* check in _format_type
     t = Type('any', False)
     result = writer.write_type(t)
@@ -502,7 +502,7 @@ def test_write_scope_with_blocks_and_stms():
         Ret(Temp(Symbol.return_name)),
     ]
 
-    writer = IRWriter()
+    writer = IrWriter()
     result = writer.write_scope(scope)
     assert 'scope @top.WithBlocks' in result
     assert 'param a:int32' in result

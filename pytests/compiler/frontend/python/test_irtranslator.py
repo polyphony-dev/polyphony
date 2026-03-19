@@ -5,7 +5,7 @@ from polyphony.compiler.ir.irhelper import irexp_type
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
-from polyphony.compiler.frontend.python.irtranslator import IRTranslator
+from polyphony.compiler.frontend.python.irtranslator import IrTranslator
 from polyphony.compiler.common.env import env
 from pytests.compiler.base import setup_test
 
@@ -16,7 +16,7 @@ def test_parse_expr():
 from polyphony.typing import List
 List[0][1]
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     assert env.global_scope_name in env.scopes
     top = env.scopes[env.global_scope_name]
     stm = top.entry_block.stms[0]
@@ -45,7 +45,7 @@ def test_parse_function_params():
 def f(a, b=10, c=20):
     pass
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     scope = env.scopes['@top.f']
 
     syms = scope.param_symbols()
@@ -68,7 +68,7 @@ class C:
         self.a = a
         self.b = b
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     scope = env.scopes['@top.C.__init__']
     syms = scope.param_symbols(with_self=True)
     assert len(syms) == 3
@@ -91,7 +91,7 @@ def test_parse_class_noparams():
 class D:
     pass
 '''
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     D = env.scopes['@top.D']
     ctor = env.scopes['@top.D.__init__']
     ctor_sym = D.find_sym('__init__')
@@ -108,7 +108,7 @@ class D:
 # ---- helpers ----
 def _translate(src):
     """Translate source and return the top scope."""
-    IRTranslator().translate(src, '')
+    IrTranslator().translate(src, '')
     return env.scopes[env.global_scope_name]
 
 
