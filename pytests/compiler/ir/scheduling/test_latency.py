@@ -610,3 +610,367 @@ ret @return
                 assert _get_latency(stm) == UNIT_STEP
                 return
     assert False, "CJump not found"
+
+
+# ============================================================
+# _get_latency for Phi / UPhi (alias and non-alias)
+# ============================================================
+
+def test_latency_phi_normal():
+    """Phi for normal variable returns UNIT_STEP."""
+    scope = build_scope('''
+scope F
+tags function returnable
+return int32
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+j exit
+
+blk3:
+mv x 2
+j exit
+
+exit:
+phi x (1 2)
+mv @return x
+ret @return
+''')
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Phi):
+                assert _get_latency(stm) == UNIT_STEP
+                return
+    assert False, "Phi not found"
+
+
+def test_latency_phi_alias():
+    """Phi for alias variable returns 0."""
+    scope = build_scope('''
+scope F
+tags function returnable
+return int32
+var c: bool
+var a: int32 {alias}
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv a 1
+j exit
+
+blk3:
+mv a 2
+j exit
+
+exit:
+phi a (1 2)
+mv @return a
+ret @return
+''')
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Phi):
+                assert _get_latency(stm) == 0
+                return
+    assert False, "Phi not found"
+
+
+def test_latency_uphi_normal():
+    """UPhi for normal variable returns UNIT_STEP."""
+    scope = build_scope('''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+uphi x (1 2)
+mv @return x
+ret @return
+''')
+    stm = scope.entry_block.stms[0]
+    assert isinstance(stm, UPhi)
+    assert _get_latency(stm) == UNIT_STEP
+
+
+def test_latency_uphi_alias():
+    """UPhi for alias variable returns 0."""
+    scope = build_scope('''
+scope F
+tags function returnable
+return int32
+var a: int32 {alias}
+
+blk1:
+uphi a (1 2)
+mv @return a
+ret @return
+''')
+    stm = scope.entry_block.stms[0]
+    assert isinstance(stm, UPhi)
+    assert _get_latency(stm) == 0
+
+
+# ============================================================
+# _get_latency: Move edge cases
+# ============================================================
+
+def test_latency_move_seq_dst_non_array_src():
+    """Move to seq-typed dst with non-Array src falls through to UNIT_STEP."""
+    scope = build_scope('''
+scope F
+tags function returnable
+return int32
+var arr: list<int32>[4]
+var other: list<int32>[4]
+
+blk1:
+mv arr other
+mv @return 0
+ret @return
+''')
+    stm = scope.entry_block.stms[0]  # mv arr other
+    assert isinstance(stm, Move)
+    assert _get_latency(stm) == UNIT_STEP
+
+
+def test_latency_move_non_alias_fallthrough():
+    """Move that doesn't match any special case returns UNIT_STEP."""
+    scope = build_scope('''
+scope F
+tags function returnable
+return int32
+var x: int32
+
+blk1:
+mv x (+ 1 2)
+mv @return x
+ret @return
+''')
+    stm = scope.entry_block.stms[0]  # mv x (+ 1 2)
+    assert _get_latency(stm) == UNIT_STEP
+
+
+def test_latency_move_seq_alias_fallthrough():
+    """Move to alias seq dst falls through to alias check, returns 0."""
+    scope = build_scope('''
+scope F
+tags function returnable
+return int32
+var arr: list<int32>[4] {alias}
+var other: list<int32>[4]
+
+blk1:
+mv arr other
+mv @return 0
+ret @return
+''')
+    stm = scope.entry_block.stms[0]  # mv arr other
+    assert isinstance(stm, Move)
+    assert _get_latency(stm) == 0
+
+
+# ============================================================
+# _get_call_latency: Port and Net via setup_libs
+# ============================================================
+
+def _make_port_scope():
+    """Create a function scope with a Port symbol for call latency tests."""
+    from polyphony.compiler.ir.scope import Scope
+    from polyphony.compiler.ir.symbol import Symbol
+    from polyphony.compiler.ir.types.type import Type
+    from polyphony.compiler.ir.block import Block
+
+    setup_test()
+    setup_libs('io')
+    top = Scope.global_scope()
+    port_scope = env.scopes['polyphony.io.Port']
+    rd_scope = env.scopes['polyphony.io.Port.rd']
+    wr_scope = env.scopes['polyphony.io.Port.wr']
+
+    F = Scope.create(top, 'F', {'function', 'returnable'}, 0)
+    F.return_type = Type.int(32)
+    F.add_return_sym(F.return_type)
+
+    # Create port symbol
+    port_type = Type.port(port_scope, {'dtype': Type.int(32), 'direction': 'input'})
+    p_sym = F.add_sym('p', tags=set(), typ=port_type)
+
+    # Create result var
+    F.add_sym('x', tags=set(), typ=Type.int(32))
+
+    # Import rd
+    rd_sym = port_scope.find_sym('rd')
+    if rd_sym:
+        F.import_sym(rd_sym)
+
+    blk = Block(F, nametag='blk1')
+    F.set_entry_block(blk)
+    F.set_exit_block(blk)
+    for b in F.traverse_blocks():
+        b.synth_params['scheduling'] = 'sequential'
+        b.synth_params['cycle'] = 'any'
+        b.synth_params['ii'] = -1
+    Block.set_order(blk, 0)
+    return F, blk, p_sym, rd_scope, wr_scope
+
+
+def test_latency_port_rd_move():
+    """Port.rd() in Move context returns UNIT_STEP."""
+    F, blk, p_sym, rd_scope, _ = _make_port_scope()
+    # mv x (call p.rd)
+    port_rd = Attr(name='rd', exp=Temp('p'), attr='rd')
+    call = Call(func=port_rd, args=[], kwargs={})
+    mv = Move(dst=Temp('x', Ctx.STORE), src=call)
+    blk.append_stm(mv)
+    blk.append_stm(Ret(Temp('@return')))
+    lat = _get_latency(mv)
+    assert lat == UNIT_STEP
+
+
+def test_latency_port_rd_expr():
+    """Port.rd() in Expr context (dummy read) returns 0."""
+    F, blk, p_sym, rd_scope, _ = _make_port_scope()
+    # expr (call p.rd)
+    port_rd = Attr(name='rd', exp=Temp('p'), attr='rd')
+    call = Call(func=port_rd, args=[], kwargs={})
+    expr_stm = Expr(exp=call)
+    blk.append_stm(expr_stm)
+    blk.append_stm(Ret(Temp('@return')))
+    lat = _get_latency(expr_stm)
+    assert lat == 0
+
+
+def test_latency_port_wr():
+    """Port.wr() returns UNIT_STEP."""
+    F, blk, p_sym, _, wr_scope = _make_port_scope()
+    # expr (call p.wr 42)
+    port_wr = Attr(name='wr', exp=Temp('p'), attr='wr')
+    call = Call(func=port_wr, args=[('', Const(42))], kwargs={})
+    expr_stm = Expr(exp=call)
+    blk.append_stm(expr_stm)
+    blk.append_stm(Ret(Temp('@return')))
+    lat = _get_latency(expr_stm)
+    assert lat == UNIT_STEP
+
+
+def test_latency_move_port_src():
+    """Move from port-typed Temp returns 0 (line 80-81)."""
+    from polyphony.compiler.ir.scope import Scope
+    from polyphony.compiler.ir.types.type import Type
+    from polyphony.compiler.ir.block import Block
+
+    setup_test()
+    setup_libs('io')
+    top = Scope.global_scope()
+    port_scope = env.scopes['polyphony.io.Port']
+
+    F = Scope.create(top, 'F2', {'function', 'returnable'}, 0)
+    F.return_type = Type.int(32)
+    F.add_return_sym(F.return_type)
+    port_type = Type.port(port_scope, {'dtype': Type.int(32), 'direction': 'input'})
+    F.add_sym('p', tags=set(), typ=port_type)
+    F.add_sym('x', tags=set(), typ=Type.int(32))
+
+    blk = Block(F, nametag='blk1')
+    F.set_entry_block(blk)
+    F.set_exit_block(blk)
+    for b in F.traverse_blocks():
+        b.synth_params['scheduling'] = 'sequential'
+        b.synth_params['cycle'] = 'any'
+        b.synth_params['ii'] = -1
+    Block.set_order(blk, 0)
+
+    # mv x p (port-typed temp src)
+    mv = Move(dst=Temp('x', Ctx.STORE), src=Temp('p'))
+    blk.append_stm(mv)
+    blk.append_stm(Ret(Temp('@return')))
+    lat = _get_latency(mv)
+    assert lat == 0
+
+
+# ============================================================
+# _get_call_latency: Net.rd
+# ============================================================
+
+def _make_net_scope():
+    """Create a function scope with a Net symbol for call latency tests."""
+    from polyphony.compiler.ir.scope import Scope
+    from polyphony.compiler.ir.types.type import Type
+    from polyphony.compiler.ir.block import Block
+
+    setup_test()
+    setup_libs('io')
+    top = Scope.global_scope()
+    net_scope = env.scopes['polyphony.Net']
+    rd_scope = env.scopes['polyphony.Net.rd']
+
+    F = Scope.create(top, 'FN', {'function', 'returnable'}, 0)
+    F.return_type = Type.int(32)
+    F.add_return_sym(F.return_type)
+
+    # Create Net-typed symbol
+    net_type = Type.object(net_scope)
+    F.add_sym('n', tags={'alias'}, typ=net_type)
+    F.add_sym('x', tags=set(), typ=Type.int(32))
+    F.add_sym('a', tags={'alias'}, typ=Type.int(32))
+
+    # Import rd
+    rd_sym = net_scope.find_sym('rd')
+    if rd_sym:
+        F.import_sym(rd_sym)
+
+    blk = Block(F, nametag='blk1')
+    F.set_entry_block(blk)
+    F.set_exit_block(blk)
+    for b in F.traverse_blocks():
+        b.synth_params['scheduling'] = 'sequential'
+        b.synth_params['cycle'] = 'any'
+        b.synth_params['ii'] = -1
+    Block.set_order(blk, 0)
+    return F, blk
+
+
+def test_latency_net_rd_move_alias():
+    """Net.rd() in Move to alias dst returns 0."""
+    F, blk = _make_net_scope()
+    net_rd = Attr(name='rd', exp=Temp('n'), attr='rd')
+    call = Call(func=net_rd, args=[], kwargs={})
+    mv = Move(dst=Temp('a', Ctx.STORE), src=call)
+    blk.append_stm(mv)
+    blk.append_stm(Ret(Temp('@return')))
+    lat = _get_latency(mv)
+    assert lat == 0
+
+
+def test_latency_net_rd_move_non_alias():
+    """Net.rd() in Move to non-alias dst returns UNIT_STEP."""
+    F, blk = _make_net_scope()
+    net_rd = Attr(name='rd', exp=Temp('n'), attr='rd')
+    call = Call(func=net_rd, args=[], kwargs={})
+    mv = Move(dst=Temp('x', Ctx.STORE), src=call)
+    blk.append_stm(mv)
+    blk.append_stm(Ret(Temp('@return')))
+    lat = _get_latency(mv)
+    assert lat == UNIT_STEP
+
+
+def test_latency_net_rd_expr():
+    """Net.rd() in Expr context returns 0."""
+    F, blk = _make_net_scope()
+    net_rd = Attr(name='rd', exp=Temp('n'), attr='rd')
+    call = Call(func=net_rd, args=[], kwargs={})
+    expr_stm = Expr(exp=call)
+    blk.append_stm(expr_stm)
+    blk.append_stm(Ret(Temp('@return')))
+    lat = _get_latency(expr_stm)
+    assert lat == 0
