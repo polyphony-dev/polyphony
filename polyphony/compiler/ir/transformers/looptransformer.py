@@ -71,7 +71,7 @@ class LoopFlatten(object):
             Temp(name=init_update_sym.name)
         ])
         object.__setattr__(init_lphi, 'ps', [Const(value=1)] * 2)
-        object.__setattr__(init_lphi, 'block', loop.head)
+        object.__setattr__(init_lphi, 'block', loop.head.bid)
         loop.head.stms.insert(-1, init_lphi)
 
         loop_continue = loop.head.preds_loop[0]
@@ -84,7 +84,7 @@ class LoopFlatten(object):
             body_cond.model_copy(deep=True),
             else_cond.model_copy(deep=True)
         ])
-        object.__setattr__(update_phi, 'block', loop_continue)
+        object.__setattr__(update_phi, 'block', loop_continue.bid)
         loop_continue.stms.insert(0, update_phi)
         return init_sym, init_lphi
 
@@ -95,10 +95,11 @@ class LoopFlatten(object):
             Temp(name=cond.name),
             UnOp(op='Not', exp=Temp(name=cond.name))
         ])
-        idx = lphi.block.stms.index(lphi)
-        lphi.block.stms.remove(lphi)
+        lphi_blk = self.scope.find_block(lphi.block)
+        idx = lphi_blk.stms.index(lphi)
+        lphi_blk.stms.remove(lphi)
         object.__setattr__(psi, 'block', lphi.block)
-        lphi.block.stms.insert(idx, psi)
+        lphi_blk.stms.insert(idx, psi)
 
     def _flatten(self, loop):
         master_continue = loop.head.preds_loop[0]
@@ -118,8 +119,8 @@ class LoopFlatten(object):
         subloop_body, subloop_body_else, subloop_exit = self._build_diamond_block(loop, subloop)
 
         # Set up else block
-        jmp = Jump(target=subloop_exit)
-        object.__setattr__(jmp, 'block', subloop_body_else)
+        jmp = Jump(target=subloop_exit.bid)
+        object.__setattr__(jmp, 'block', subloop_body_else.bid)
         subloop_body_else.stms = [jmp]
         self._move_stms(subloop_exit, subloop_body_else)
         subloop_exit.stms = [subloop_exit.stms[-1]]
@@ -154,7 +155,7 @@ class LoopFlatten(object):
                 else_cond
             ])
             lphi.args[1] = Temp(name=psi_sym.name)
-            object.__setattr__(psi, 'block', subloop_exit)
+            object.__setattr__(psi, 'block', subloop_exit.bid)
             subloop_exit.stms.insert(-1, psi)
             self._lphi_to_psi(lphi, init_flag)
 
@@ -179,7 +180,7 @@ class LoopFlatten(object):
             object.__setattr__(psi, 'ps', [body_cond, else_cond])
             lphi.args[1] = Temp(name=psi_sym.name)
             pred_blk = loop.head.preds[1]
-            object.__setattr__(psi, 'block', pred_blk)
+            object.__setattr__(psi, 'block', pred_blk.bid)
             pred_blk.stms.insert(-1, psi)
         logger.debug(str(self.scope))
 
@@ -193,6 +194,6 @@ class LoopFlatten(object):
 
     def _move_stms(self, blk_src, blk_dst):
         for stm in blk_src.stms[:-1]:
-            object.__setattr__(stm, 'block', blk_dst)
+            object.__setattr__(stm, 'block', blk_dst.bid)
             blk_dst.stms.insert(-1, stm)
         blk_src.stms = [blk_src.stms[-1]]

@@ -133,15 +133,15 @@ class IrWriter(object):
                 exp = self._format_exp(stm.exp)
                 return f'expr {exp}'
             case Jump():
-                return f'j {stm.target.bid}'
+                return f'j {stm.target}'
             case CJump():
                 cond = self._format_exp(stm.exp)
-                return f'cj {cond} {stm.true.bid} {stm.false.bid}'
+                return f'cj {cond} {stm.true} {stm.false}'
             case MCJump():
                 parts = []
                 for cond, target in zip(stm.conds, stm.targets):
                     parts.append(self._format_exp(cond))
-                    parts.append(target.bid)
+                    parts.append(target)
                 return f'mj {" ".join(parts)}'
             case Ret():
                 exp = self._format_exp(stm.exp)

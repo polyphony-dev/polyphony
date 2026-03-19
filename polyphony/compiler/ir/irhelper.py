@@ -300,7 +300,7 @@ def has_exclusive_function(stm, scope, callee_scope=None):
     else:
         return False
     if isinstance(call, Call) and is_port_method_call(call, scope, callee_scope):
-        if stm.block.synth_params['scheduling'] == 'timed':
+        if scope.find_block(stm.block).synth_params['scheduling'] == 'timed':
             return False
         return True
     if has_clkfence(stm):
@@ -332,10 +332,11 @@ def is_mem_write(stm):
     return isinstance(stm, Expr) and isinstance(stm.exp, MStore)
 
 
-def program_order(stm):
+def program_order(stm, scope):
     """Get program order of a statement (block order, stm index in block.stms)."""
     from ..common.utils import find_id_index
-    return (stm.block.order, find_id_index(stm.block.stms, stm))
+    blk = scope.find_block(stm.block)
+    return (blk.order, find_id_index(blk.stms, stm))
 
 
 # ============================================================

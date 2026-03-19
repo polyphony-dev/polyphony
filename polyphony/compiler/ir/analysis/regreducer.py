@@ -34,8 +34,13 @@ class AliasVarDetector(IrVisitor):
 
     def _has_clksleep_between(self, def_stm, use_stm):
         """Check if there is a clksleep between def_stm and use_stm."""
-        def_blk = def_stm.block
-        use_blk = use_stm.block
+        from ..block import Block
+        if isinstance(def_stm.block, Block):
+            def_blk = def_stm.block
+            use_blk = use_stm.block
+        else:
+            def_blk = self.scope.find_block(def_stm.block)
+            use_blk = self.scope.find_block(use_stm.block)
         if def_blk is use_blk:
             stms = def_blk.stms
             in_range = False
@@ -92,7 +97,7 @@ class AliasVarDetector(IrVisitor):
         assert isinstance(ir.dst, IrVariable)
         sym = qualified_symbols(ir.dst, self.scope)[-1]
         assert isinstance(sym, Symbol)
-        sched = self.current_stm.block.synth_params['scheduling']
+        sched = self.scope.find_block(self.current_stm.block).synth_params['scheduling']
         if sym.is_condition() or self.scope.is_comb():
             sym.add_tag('alias')
             logger.debug(f'{sym} is alias')
@@ -173,9 +178,9 @@ class AliasVarDetector(IrVisitor):
                     logger.debug(f'{sym} crosses clksleep, keeping as reg')
                     return
         for stm in use_stms:
-            if sched != 'pipeline' and stm.block.synth_params['scheduling'] == 'pipeline':
+            if sched != 'pipeline' and self.scope.find_block(stm.block).synth_params['scheduling'] == 'pipeline':
                 return
-            if sched != 'parallel' and stm.block.synth_params['scheduling'] == 'parallel':
+            if sched != 'parallel' and self.scope.find_block(stm.block).synth_params['scheduling'] == 'parallel':
                 return
         logger.debug(f'{sym} is alias')
         sym.add_tag('alias')

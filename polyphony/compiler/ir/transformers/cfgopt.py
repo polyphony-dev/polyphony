@@ -45,20 +45,22 @@ class BlockReducer(object):
             if not block.stms:
                 continue
             stm = block.stms[-1]
-            if isinstance(stm, CJump) and stm.true is stm.false:
+            if isinstance(stm, CJump) and stm.true == stm.false:
                 block.stms.pop()
-                jmp = Jump(target=stm.true, block=block)
+                jmp = Jump(target=stm.true, block=block.bid)
                 block.stms.append(jmp)
-                block.succs = [stm.true]
-                stm.true.preds = remove_except_one(stm.true.preds, block)
-                assert 1 == stm.true.preds.count(block)
+                true_blk = self.scope.find_block(stm.true)
+                block.succs = [true_blk]
+                true_blk.preds = remove_except_one(true_blk.preds, block)
+                assert 1 == true_blk.preds.count(block)
             elif isinstance(stm, MCJump) and len(set(stm.targets)) == 1:
                 block.stms.pop()
-                jmp = Jump(target=stm.targets[0], block=block)
+                jmp = Jump(target=stm.targets[0], block=block.bid)
                 block.stms.append(jmp)
-                block.succs = [stm.targets[0]]
-                stm.targets[0].preds = remove_except_one(stm.targets[0].preds, block)
-                assert 1 == stm.targets[0].preds.count(block)
+                tgt_blk = self.scope.find_block(stm.targets[0])
+                block.succs = [tgt_blk]
+                tgt_blk.preds = remove_except_one(tgt_blk.preds, block)
+                assert 1 == tgt_blk.preds.count(block)
 
     def _merge_unidirectional_block(self, scope):
         for block in scope.traverse_blocks():
@@ -77,7 +79,7 @@ class BlockReducer(object):
 
         pred.stms.pop()  # remove useless jump
         for stm in block.stms:
-            object.__setattr__(stm, 'block', pred)
+            object.__setattr__(stm, 'block', pred.bid)
             pred.stms.append(stm)
         for succ in block.succs:
             succ.replace_pred(block, pred)
@@ -191,7 +193,7 @@ class PathExpTracer(object):
             return exp
         csym = self.scope.add_condition_sym()
         mv = Move(dst=Temp(name=csym.name, ctx=Ctx.STORE), src=exp,
-                 loc=Loc('', 0), block=blk)
+                 loc=Loc('', 0), block=blk.bid)
         blk.stms.insert(insert_pos, mv)
         return Temp(name=csym.name)
 
@@ -204,19 +206,19 @@ def _merge_path_exp_new(pred, blk, idx_hint=-1):
     pred_path = pred.path_exp
     exp = pred_path
     if isinstance(jump, CJump):
-        if blk is jump.true:
+        if blk.bid == jump.true:
             exp = _rel_and_exp_new(pred_path, jump.exp)
-        elif blk is jump.false:
+        elif blk.bid == jump.false:
             exp = _rel_and_exp_new(pred_path, UnOp(op='Not', exp=jump.exp))
     elif isinstance(jump, MCJump):
-        if blk in jump.targets:
-            if 1 == jump.targets.count(blk):
-                idx = jump.targets.index(blk)
+        if blk.bid in jump.targets:
+            if 1 == jump.targets.count(blk.bid):
+                idx = jump.targets.index(blk.bid)
                 exp = _rel_and_exp_new(pred_path, jump.conds[idx])
             elif idx_hint >= 0:
                 exp = _rel_and_exp_new(pred_path, jump.conds[idx_hint])
             else:
-                indices = [i for i, t in enumerate(jump.targets) if t is blk]
+                indices = [i for i, t in enumerate(jump.targets) if t == blk.bid]
                 exp = _rel_and_exp_new(pred_path, jump.conds[indices[0]])
                 for idx in indices[1:]:
                     rexp = _rel_and_exp_new(pred_path, jump.conds[idx])
@@ -320,12 +322,12 @@ class HyperBlockBuilder(object):
             path = branches[idx]
             br = path[0]
             assert br in head.succs
-            assert old_mj.targets[idx] is br
+            assert old_mj.targets[idx] == br.bid
             cond = old_mj.conds[idx]
             conds.append(cond)
             targets.append(br)
-        mj = MCJump(conds=conds, targets=targets, loc=old_mj.loc, block=new_head)
-        if all([mj.targets[0] is t for t in mj.targets[1:]]):
+        mj = MCJump(conds=conds, targets=[t.bid for t in targets], loc=old_mj.loc, block=new_head.bid)
+        if all([mj.targets[0] == t for t in mj.targets[1:]]):
             return
         for idx in indices:
             path = branches[idx]
@@ -336,23 +338,23 @@ class HyperBlockBuilder(object):
         for idx in indices[1:]:
             new_cond = RelOp(op='Or', left=new_cond, right=old_mj.conds[idx])
         old_mj.conds[indices[0]] = new_cond
-        old_mj.targets[indices[0]] = new_head
+        old_mj.targets[indices[0]] = new_head.bid
         head.succs[indices[0]] = new_head
         for idx in reversed(indices[1:]):
             old_mj.conds.pop(idx)
             old_mj.targets.pop(idx)
             head.succs.pop(idx)
         if len(old_mj.targets) == 2:
-            cj = CJump(exp=old_mj.conds[0], true=old_mj.targets[0], false=old_mj.targets[1], loc=old_mj.loc, block=head)
+            cj = CJump(exp=old_mj.conds[0], true=old_mj.targets[0], false=old_mj.targets[1], loc=old_mj.loc, block=head.bid)
             if not isinstance(cj.exp, Temp):
                 new_sym = self.scope.add_condition_sym()
                 new_sym.typ = Type.bool()
-                mv = Move(dst=Temp(name=new_sym.name, ctx=Ctx.STORE), src=cj.exp, loc=old_mj.loc, block=head)
+                mv = Move(dst=Temp(name=new_sym.name, ctx=Ctx.STORE), src=cj.exp, loc=old_mj.loc, block=head.bid)
                 head.stms.insert(-1, mv)
                 object.__setattr__(cj, 'exp', Temp(name=new_sym.name))
             head.replace_stm(head.stms[-1], cj)
         if len(mj.targets) == 2:
-            cj = CJump(exp=mj.conds[0], true=mj.targets[0], false=mj.targets[1], loc=mj.loc, block=new_head)
+            cj = CJump(exp=mj.conds[0], true=mj.targets[0], false=mj.targets[1], loc=mj.loc, block=new_head.bid)
             new_head.stms.append(cj)
         else:
             new_head.stms.append(mj)
@@ -428,7 +430,7 @@ class HyperBlockBuilder(object):
                     newsym = self.scope.add_temp()
                     newsym.typ = irexp_type(stm.var, self.scope)
                     object.__setattr__(new_phi, 'var', Temp(name=newsym.name, ctx=Ctx.STORE))
-                    object.__setattr__(new_phi, 'block', new_tail)
+                    object.__setattr__(new_phi, 'block', new_tail.bid)
                     new_tail.stms.append(new_phi)
                     self.uddetector.visit(new_phi)
                 arg = Temp(name=newsym.name)
@@ -440,21 +442,21 @@ class HyperBlockBuilder(object):
         for br in removes:
             old_jmp = br.stms[-1]
             if isinstance(old_jmp, Jump):
-                object.__setattr__(old_jmp, 'target', new_tail)
+                object.__setattr__(old_jmp, 'target', new_tail.bid)
             elif isinstance(old_jmp, CJump):
-                if old_jmp.true is tail:
-                    object.__setattr__(old_jmp, 'true', new_tail)
-                if old_jmp.false is tail:
-                    object.__setattr__(old_jmp, 'false', new_tail)
+                if old_jmp.true == tail.bid:
+                    object.__setattr__(old_jmp, 'true', new_tail.bid)
+                if old_jmp.false == tail.bid:
+                    object.__setattr__(old_jmp, 'false', new_tail.bid)
             elif isinstance(old_jmp, MCJump):
                 for i, t in enumerate(old_jmp.targets):
-                    if t is tail:
-                        old_jmp.targets[i] = new_tail
+                    if t == tail.bid:
+                        old_jmp.targets[i] = new_tail.bid
             assert br in tail.preds
             tail.preds.remove(br)
             new_tail.preds.append(br)
             br.replace_succ(tail, new_tail)
-        jmp = Jump(target=tail, block=new_tail)
+        jmp = Jump(target=tail.bid, block=new_tail.bid)
         new_tail.stms.append(jmp)
         new_tail.succs = [tail]
         tail.preds.insert(first_idx, new_tail)
@@ -530,8 +532,10 @@ class HyperBlockBuilder(object):
                     cstm = stm
                 case _:
                     assert False
-            if stm in stm.block.stms:
-                stm.block.stms.remove(stm)
+            if stm.block:
+                stm_blk = self.scope.find_block(stm.block)
+                if stm in stm_blk.stms:
+                    stm_blk.stms.remove(stm)
             self.usedef.remove_stm(self.scope, stm)
             object.__setattr__(cstm, 'loc', stm.loc)
             cstms.append(cstm)
@@ -562,7 +566,7 @@ class HyperBlockBuilder(object):
             assert len(branch_blk.succs) == 1
             stms_, remains_ = self._select_stms_for_speculation(head, branch_blk)
             for _, stm in sorted(stms_, key=lambda _: _[0]):
-                object.__setattr__(stm, 'block', head)
+                object.__setattr__(stm, 'block', head.bid)
                 head.stms.insert(-1, stm)
             for _, stm in stms_:
                 branch_blk.stms.remove(stm)
@@ -570,6 +574,6 @@ class HyperBlockBuilder(object):
                 path_exp = branch_blk.path_exp
                 cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
                 for _, stm in sorted(cstms_, key=lambda _: _[0]):
-                    object.__setattr__(stm, 'block', head)
+                    object.__setattr__(stm, 'block', head.bid)
                     head.stms.insert(-1, stm)
         head.is_hyperblock = True

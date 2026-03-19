@@ -18,6 +18,12 @@ class MockScope:
         self.block_count = 0
         self.block_map = {}
 
+    def find_block(self, bid):
+        return self.block_map[bid]
+
+    def traverse_blocks(self):
+        return self.block_map.values()
+
 
 def make_block(scope=None, nametag='b'):
     """Create a Block with a lightweight mock scope."""

@@ -492,17 +492,18 @@ class Scope(Tagged, SymbolTable):
             b_clone = block_map[b]
             b_clone.reconnect(block_map)
 
-        # jump target - handle both old and new IR types
+        # jump target - targets are bid strings, remap to cloned block bids
         from .ir import Jump, CJump, MCJump
 
+        bid_map = {old.bid: new.bid for old, new in block_map.items()}
         for stm in stm_map.values():
             if isinstance(stm, Jump):
-                object.__setattr__(stm, 'target', block_map[stm.target])
+                object.__setattr__(stm, 'target', bid_map[stm.target])
             elif isinstance(stm, CJump):
-                object.__setattr__(stm, 'true', block_map[stm.true])
-                object.__setattr__(stm, 'false', block_map[stm.false])
+                object.__setattr__(stm, 'true', bid_map[stm.true])
+                object.__setattr__(stm, 'false', bid_map[stm.false])
             elif isinstance(stm, MCJump):
-                object.__setattr__(stm, 'targets', [block_map[t] for t in stm.targets])
+                object.__setattr__(stm, 'targets', [bid_map[t] for t in stm.targets])
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None, recursive=False, rename_children=True):

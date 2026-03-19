@@ -615,7 +615,7 @@ mv a a
     collector.scope = scope
     from polyphony.compiler.ir.ir import Jump
     blk = scope.entry_block
-    j = Jump(target=blk, block=blk)
+    j = Jump(target=blk.bid, block=blk.bid)
     assert collector._is_alias_def(j) is False
 
 
@@ -779,7 +779,7 @@ mv x 10
     collector = ObjCopyCollector([])
     collector.scope = scope
     from polyphony.compiler.ir.ir import Expr as E, BinOp
-    expr = E(exp=BinOp(op='Add', left=Const(value=1), right=Const(value=2)), block=scope.entry_block)
+    expr = E(exp=BinOp(op='Add', left=Const(value=1), right=Const(value=2)), block=scope.entry_block.bid)
     assert collector._is_alias_def(expr) is False
 
 

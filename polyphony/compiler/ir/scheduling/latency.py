@@ -18,7 +18,11 @@ CALL_MINIMUM_STEP = 3
 
 def _get_call_latency(call, stm, scope):
     """Calculate latency for a call statement."""
-    is_pipelined = stm.block.synth_params['scheduling'] == 'pipeline'
+    if stm.block:
+        stm_blk = scope.find_block(stm.block)
+    else:
+        stm_blk = next((b for b in scope.traverse_blocks() if stm in b.stms), None)
+    is_pipelined = stm_blk and stm_blk.synth_params['scheduling'] == 'pipeline'
     callee_scope = call.get_callee_scope(scope)
     if callee_scope.is_method() and callee_scope.parent.is_port():
         qsym = _qualified_symbols(call.func, scope)
@@ -63,10 +67,27 @@ def _get_syscall_latency(call):
     return UNIT_STEP
 
 
-def _get_latency(tag):
+def _get_latency(tag, scope=None):
     """Calculate latency for a statement (handles both old and new IR)."""
     assert isinstance(tag, IrStm)
-    scope = tag.block.scope
+    if scope is None:
+        from ...common.env import env
+        if tag.block:
+            for s in env.scopes.values():
+                if tag.block in s.block_map:
+                    blk = s.block_map[tag.block]
+                    if tag in blk.stms:
+                        scope = s
+                        break
+        if scope is None:
+            # Fallback: search all scopes for the stm
+            for s in env.scopes.values():
+                for blk in s.traverse_blocks():
+                    if tag in blk.stms:
+                        scope = s
+                        break
+                if scope:
+                    break
 
     if _is_move(tag):
         dst_sym = _qualified_symbols(tag.dst, scope)[-1]
@@ -111,9 +132,9 @@ def _get_latency(tag):
     return UNIT_STEP
 
 
-def get_latency(tag):
+def get_latency(tag, scope=None):
     """Get (def_latency, seq_latency) for a statement."""
-    l = _get_latency(tag)
+    l = _get_latency(tag, scope)
     if isinstance(l, tuple):
         return l[0], l[1]
     else:

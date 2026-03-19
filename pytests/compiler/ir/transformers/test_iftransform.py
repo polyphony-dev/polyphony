@@ -99,23 +99,23 @@ def test_chained_cjump_to_mcjump():
     scope.set_exit_block(blk4)
 
     # blk1: cj c1 blk2 else1 (new IR in stms, post-switchover)
-    cj1 = CJump(exp=Temp(name='c1'), true=blk2, false=else1, block=blk1)
+    cj1 = CJump(exp=Temp(name='c1'), true=blk2.bid, false=else1.bid, block=blk1.bid)
     blk1.stms.append(cj1)
     blk1.connect(blk2)
     blk1.connect(else1)
 
     # else1: cj c2 blk3 blk4  (single CJUMP — should be merged)
-    cj2 = CJump(exp=Temp(name='c2'), true=blk3, false=blk4, block=else1)
+    cj2 = CJump(exp=Temp(name='c2'), true=blk3.bid, false=blk4.bid, block=else1.bid)
     else1.stms.append(cj2)
     else1.connect(blk3)
     else1.connect(blk4)
 
     # blk2, blk3, blk4: simple
-    mv2 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk2)
+    mv2 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk2.bid)
     blk2.stms.append(mv2)
-    mv3 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=2), block=blk3)
+    mv3 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=2), block=blk3.bid)
     blk3.stms.append(mv3)
-    mv4 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=3), block=blk4)
+    mv4 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=3), block=blk4.bid)
     blk4.stms.append(mv4)
 
     Block.set_order(blk1, 0)
@@ -133,9 +133,9 @@ def test_chained_cjump_to_mcjump():
     assert else1.stms == []
 
     # Verify targets
-    assert last.targets[0] is blk2
-    assert last.targets[1] is blk3
-    assert last.targets[2] is blk4
+    assert last.targets[0] == blk2.bid
+    assert last.targets[1] == blk3.bid
+    assert last.targets[2] == blk4.bid
 
     # Verify succs/preds
     assert blk2 in blk1.succs
@@ -155,9 +155,9 @@ def test_empty_block_skipped():
     scope.set_exit_block(blk2)
 
     # blk1 has stms, blk2 is empty
-    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk1)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk1.bid)
     blk1.stms.append(mv)
-    blk1.stms.append(Jump(target=blk2, block=blk1))
+    blk1.stms.append(Jump(target=blk2.bid, block=blk1.bid))
     blk1.connect(blk2)
 
     Block.set_order(blk1, 0)
@@ -195,24 +195,24 @@ def test_triple_chain_cjump():
     scope.set_exit_block(t4)
 
     # blk1: cj c1 t1 e1
-    blk1.stms.append(CJump(exp=Temp(name='c1'), true=t1, false=e1, block=blk1))
+    blk1.stms.append(CJump(exp=Temp(name='c1'), true=t1.bid, false=e1.bid, block=blk1.bid))
     blk1.connect(t1)
     blk1.connect(e1)
 
     # e1: cj c2 t2 e2 (single CJUMP)
-    e1.stms.append(CJump(exp=Temp(name='c2'), true=t2, false=e2, block=e1))
+    e1.stms.append(CJump(exp=Temp(name='c2'), true=t2.bid, false=e2.bid, block=e1.bid))
     e1.connect(t2)
     e1.connect(e2)
 
     # e2: cj c3 t3 t4 (single CJUMP)
-    e2.stms.append(CJump(exp=Temp(name='c3'), true=t3, false=t4, block=e2))
+    e2.stms.append(CJump(exp=Temp(name='c3'), true=t3.bid, false=t4.bid, block=e2.bid))
     e2.connect(t3)
     e2.connect(t4)
 
     # target blocks: simple stms
     for blk in (t1, t2, t3, t4):
         blk.stms.append(Move(dst=Temp(name='x', ctx=Ctx.STORE),
-                                 src=Const(value=0), block=blk))
+                                 src=Const(value=0), block=blk.bid))
 
     Block.set_order(blk1, 0)
     IfTransformer().process(scope)
@@ -249,7 +249,7 @@ def _build_mcjump_scope(n_conds):
     conds = [Temp(name=name) for name in cond_names]
     conds.append(Const(value=1))  # else branch
 
-    mj = MCJump(conds=conds, targets=targets, block=blk1)
+    mj = MCJump(conds=conds, targets=targets, block=blk1.bid)
     blk1.stms.append(mj)
     for t in targets:
         blk1.connect(t)
@@ -272,8 +272,8 @@ def test_ifcond_no_mcjump():
     scope.set_exit_block(blk2)
 
     blk1.stms.append(Move(dst=Temp(name='x', ctx=Ctx.STORE),
-                               src=Const(value=1), block=blk1))
-    blk1.stms.append(Jump(target=blk2, block=blk1))
+                               src=Const(value=1), block=blk1.bid))
+    blk1.stms.append(Jump(target=blk2.bid, block=blk1.bid))
     blk1.connect(blk2)
 
     Block.set_order(blk1, 0)
@@ -294,7 +294,7 @@ def test_ifcond_empty_block():
     scope.set_entry_block(blk1)
     scope.set_exit_block(blk2)
 
-    blk1.stms.append(Jump(target=blk2, block=blk1))
+    blk1.stms.append(Jump(target=blk2.bid, block=blk1.bid))
     blk1.connect(blk2)
     # blk2 is empty
 

@@ -148,12 +148,12 @@ def test_clone_function():
     assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
     assert _stm_text(blk1.stms[1]) == 'mv x (call g a)'
     assert isinstance(blk1.stms[2], Jump)
-    assert blk1.stms[2].target is blk2
+    assert blk1.stms[2].target == blk2.bid
     assert _stm_text(blk2.stms[0]) == 'mv @return x'
     assert _stm_text(blk2.stms[1]) == 'ret @return'
 
     # Mutating the clone should not affect the original
-    blk1.stms[1] = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Call(func=Temp(name='g'), args=[('', Const(value=1))]), block=blk1)
+    blk1.stms[1] = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Call(func=Temp(name='g'), args=[('', Const(value=1))]), block=blk1.bid)
 
     gen = f.traverse_blocks()
     blk1_orig = next(gen)
@@ -220,7 +220,7 @@ def test_recursive_clone():
     assert _stm_text(blk1.stms[0]) == 'mv a @in_a'
     assert _stm_text(blk1.stms[1]) == 'mv x (call cloned_g_cloned a)'
     assert isinstance(blk1.stms[2], Jump)
-    assert blk1.stms[2].target is blk2
+    assert blk1.stms[2].target == blk2.bid
 
     assert _stm_text(blk2.stms[0]) == 'mv @return x'
     assert _stm_text(blk2.stms[1]) == 'ret @return'
@@ -641,10 +641,11 @@ class TestScopeCloneBlocks:
         scope2 = Scope.create(top, "cj_fn2", {"function"})
         block_map, stm_map = scope.clone_blocks(scope2)
         # Verify CJump targets were remapped
+        cloned_bids = {blk.bid for blk in block_map.values()}
         for stm in stm_map.values():
             if isinstance(stm, CJump):
-                assert stm.true in block_map.values()
-                assert stm.false in block_map.values()
+                assert stm.true in cloned_bids
+                assert stm.false in cloned_bids
 
 
 class TestScopeFind:

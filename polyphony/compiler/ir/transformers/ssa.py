@@ -32,20 +32,20 @@ def _merge_path_exp(pred, blk, idx_hint=-1):
     jump = pred.stms[-1] if pred.stms else None
     exp = pred.path_exp
     if isinstance(jump, CJump):
-        if blk is jump.true:
+        if blk.bid == jump.true:
             exp = _rel_and_exp(pred.path_exp, jump.exp)
-        elif blk is jump.false:
+        elif blk.bid == jump.false:
             exp = _rel_and_exp(pred.path_exp, UnOp(op='Not', exp=jump.exp))
     elif isinstance(jump, MCJump):
-        if blk in jump.targets:
-            if 1 == jump.targets.count(blk):
-                idx = jump.targets.index(blk)
+        if blk.bid in jump.targets:
+            if 1 == jump.targets.count(blk.bid):
+                idx = jump.targets.index(blk.bid)
                 exp = _rel_and_exp(pred.path_exp, jump.conds[idx])
             elif idx_hint >= 0:
                 exp = _rel_and_exp(pred.path_exp, jump.conds[idx_hint])
             else:
                 from ..ir import RelOp
-                indices = [i for i, t in enumerate(jump.targets) if t is blk]
+                indices = [i for i, t in enumerate(jump.targets) if t == blk.bid]
                 exp = _rel_and_exp(pred.path_exp, jump.conds[indices[0]])
                 for idx in indices[1:]:
                     rexp = _rel_and_exp(pred.path_exp, jump.conds[idx])
@@ -98,16 +98,18 @@ class SSATransformerBase(object):
             blk.stms.remove(phi)
         phis = sorted(phis, key=lambda p: qualified_symbols(p.var, self.scope), reverse=True)
         for phi in phis:
-            object.__setattr__(phi, 'block', blk)
+            object.__setattr__(phi, 'block', blk.bid)
             blk.stms.insert(0, phi)
 
     def _insert_phi(self):
         phi_symbols = defaultdict(list)
         dfs = set()
-        for qsym, def_blocks in self.usedef.get_qsym_block_dict_items():
+        for qsym, def_block_bids in self.usedef.get_qsym_block_dict_items():
             assert isinstance(qsym, tuple)
             if not self._need_rename(qsym[-1], qsym):
                 continue
+            # Convert bid strings to Block objects for dominance frontier lookup
+            def_blocks = set(self.scope.find_block(bid) for bid in def_block_bids if bid in self.scope.block_map)
             while def_blocks:
                 def_block = def_blocks.pop()
                 if def_block not in self.dominance_frontier:
@@ -118,7 +120,7 @@ class SSATransformerBase(object):
                     phi_symbols[df].append(qsym)
                     var = self._qsym_to_var(qsym, Ctx.STORE)
                     phi = self._new_phi(var, df)
-                    object.__setattr__(phi, 'block', df)
+                    object.__setattr__(phi, 'block', df.bid)
                     df.stms.insert(0, phi)
                     if qsym not in self.usedef.get_qsyms_defined_at(df):
                         def_blocks.add(df)
@@ -133,7 +135,7 @@ class SSATransformerBase(object):
         sym = qualified_symbols(var, self.scope)[-1]
         defs = self.usedef.get_stms_defining(sym)
         for d in defs:
-            if d.block is df.preds[0]:
+            if d.block == df.preds[0].bid:
                 object.__setattr__(phi, 'loc', d.loc)
                 break
         return phi
@@ -228,7 +230,7 @@ class SSATransformerBase(object):
                                 i, _ = stack[key][-1]
                                 self._add_new_sym(v, i)
         for succ in block.succs:
-            phis = [phi for phi in self.phis if phi.block is succ]
+            phis = [phi for phi in self.phis if phi.block == succ.bid]
             for phi in phis:
                 self._add_new_phi_arg(phi, phi.var, stack, block)
 
@@ -246,12 +248,13 @@ class SSATransformerBase(object):
         if is_tail_attr:
             if i > 0:
                 var = var.clone(ctx=Ctx.LOAD)
-                if 1 == phi.block.preds.count(block):
-                    idx = phi.block.preds.index(block)
+                phi_blk = self.scope.find_block(phi.block)
+                if 1 == phi_blk.preds.count(block):
+                    idx = phi_blk.preds.index(block)
                     phi.args[idx] = var
                     self._add_new_sym(var, i)
                 else:
-                    for idx, pred in enumerate(phi.block.preds):
+                    for idx, pred in enumerate(phi_blk.preds):
                         if pred is not block:
                             continue
                         phi.args[idx] = var
@@ -358,8 +361,9 @@ class SSATransformerBase(object):
             usedef._use_blk2[stm.block].add(item)
 
     def _remove_phi(self, phi, usedef):
-        if phi in phi.block.stms:
-            phi.block.stms.remove(phi)
+        phi_blk = self.scope.find_block(phi.block)
+        if phi in phi_blk.stms:
+            phi_blk.stms.remove(phi)
             # Remove all uses/defs of this phi from usedef
             for var in list(usedef.get_vars_used_at(phi)):
                 qsyms = qualified_symbols(var, self.scope)
@@ -384,7 +388,7 @@ class SSATransformerBase(object):
 
     def _insert_predicate(self):
         for blk in self.scope.traverse_blocks():
-            phis = [phi for phi in self.phis if phi.block is blk]
+            phis = [phi for phi in self.phis if phi.block == blk.bid]
             if not phis:
                 continue
             phi_predicates = []
@@ -401,7 +405,7 @@ class SSATransformerBase(object):
                         dup_counts[pred] += 1
                         jump = pred.stms[-1]
                         targets = [(idx, target) for idx, target in enumerate(jump.targets)
-                                   if target is blk]
+                                   if target == blk.bid]
                         for idx, target in targets:
                             if dup_count == 0:
                                 p = _rel_and_exp(pred.path_exp, jump.conds[idx])
@@ -416,7 +420,7 @@ class SSATransformerBase(object):
 
     def _find_loop_phi(self):
         for phi in self.phis[:]:
-            blk = phi.block
+            blk = self.scope.find_block(phi.block)
             if not blk.preds_loop:
                 continue
             lphi = LPhi(var=phi.var.model_copy(deep=True),
@@ -507,7 +511,8 @@ class TupleSSATransformer(SSATransformerBase):
                 self._insert_use_phi(phi, use)
 
     def _insert_use_phi(self, phi, use_stm):
-        insert_idx = use_stm.block.stms.index(use_stm)
+        use_blk = self.scope.find_block(use_stm.block)
+        insert_idx = use_blk.stms.index(use_stm)
         qname = phi.var.qualified_name
         if isinstance(use_stm, Move):
             src_use_vars = use_stm.src.find_vars(qname)
@@ -522,11 +527,11 @@ class TupleSSATransformer(SSATransformerBase):
                     src = use_stm.src.model_copy(deep=True)
                     src.replace(use_var, arg.model_copy(deep=True))
                     uphi.args.append(src)
-                use_stm.block.stms.insert(insert_idx, uphi)
+                use_blk.stms.insert(insert_idx, uphi)
             else:
                 assert dst_use_vars
                 assert False, 'CMOVE path not implemented'
-            use_stm.block.stms.remove(use_stm)
+            use_blk.stms.remove(use_stm)
         elif isinstance(use_stm, Expr):
             use_vars = use_stm.exp.find_vars(qname)
             assert use_vars
@@ -536,8 +541,8 @@ class TupleSSATransformer(SSATransformerBase):
                 exp.replace(use_var, arg.model_copy(deep=True))
                 cexp = CExpr(cond=p.model_copy(deep=True), exp=exp,
                              block=use_stm.block, loc=use_stm.loc or Loc('', 0))
-                use_stm.block.stms.insert(insert_idx, cexp)
-            use_stm.block.stms.remove(use_stm)
+                use_blk.stms.insert(insert_idx, cexp)
+            use_blk.stms.remove(use_stm)
         else:
             assert False
 

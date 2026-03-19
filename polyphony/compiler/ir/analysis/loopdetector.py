@@ -123,6 +123,9 @@ class LoopDependencyDetector(object):
         inner_defs = set()
         inner_uses = set()
         blocks = loop.blocks()
+        # Convert Block object sets to bid string sets for intersection with usedef results
+        outer_bids = set(b.bid for b in outer_region)
+        inner_bids = set(b.bid for b in inner_region)
         usesyms = set()
         defsyms = set()
         for blk in blocks:
@@ -130,18 +133,18 @@ class LoopDependencyDetector(object):
             defsyms |= usedef.get_syms_defined_at(blk)
         for sym in usesyms:
             defblks = usedef.get_blks_defining(sym)
-            intersect = outer_region.intersection(defblks)
+            intersect = outer_bids.intersection(defblks)
             if intersect:
                 outer_defs.add(sym)
-            intersect = inner_region.intersection(defblks)
+            intersect = inner_bids.intersection(defblks)
             if intersect:
                 inner_defs.add(sym)
         for sym in defsyms:
             useblks = usedef.get_blks_using(sym)
-            intersect = outer_region.intersection(useblks)
+            intersect = outer_bids.intersection(useblks)
             if intersect:
                 outer_uses.add(sym)
-            intersect = inner_region.intersection(useblks)
+            intersect = inner_bids.intersection(useblks)
             if intersect:
                 inner_uses.add(sym)
         return (outer_defs, outer_uses, inner_defs, inner_uses)

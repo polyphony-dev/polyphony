@@ -36,7 +36,7 @@ def _clone_ir_block(blk, scope, nametag=None):
     stm_map = {}
     for stm in blk.stms:
         new_stm = stm.model_copy(deep=True)
-        object.__setattr__(new_stm, 'block', b)
+        object.__setattr__(new_stm, 'block', b.bid)
         b.stms.append(new_stm)
         stm_map[stm] = new_stm
     b.order = blk.order
@@ -61,7 +61,7 @@ class LoopUnroller(object):
             for blk in scope.traverse_blocks():
                 blk.order = -1
                 for stm in blk.stms:
-                    assert stm.block is blk
+                    assert stm.block == blk.bid
             logger.debug(f'Block.set_order start for {scope}')
             Block.set_order(scope.entry_block, 0)
             logger.debug(f'Block.set_order done for {scope}')
@@ -182,10 +182,10 @@ class LoopUnroller(object):
                     lphi.args[0] = arg
                 assert remain_start_blk
                 guard = Expr(exp=Const(value=0))
-                object.__setattr__(guard, 'block', remain_start_blk)
+                object.__setattr__(guard, 'block', remain_start_blk.bid)
                 remain_start_blk.stms.append(guard)
-                jmp = Jump(target=loop.head)
-                object.__setattr__(jmp, 'block', remain_start_blk)
+                jmp = Jump(target=loop.head.bid)
+                object.__setattr__(jmp, 'block', remain_start_blk.bid)
                 remain_start_blk.stms.append(jmp)
                 remain_start_blk.succs = [loop.head]
                 loop.head.preds[0] = remain_start_blk
@@ -202,17 +202,17 @@ class LoopUnroller(object):
     def _replace_jump_target(self, block, old, new):
         jmp = block.stms[-1]
         if isinstance(jmp, Jump):
-            object.__setattr__(jmp, 'target', new)
+            object.__setattr__(jmp, 'target', new.bid)
         elif isinstance(jmp, CJump):
-            if jmp.true is old:
-                object.__setattr__(jmp, 'true', new)
+            if jmp.true == old.bid:
+                object.__setattr__(jmp, 'true', new.bid)
             else:
-                assert jmp.false is old
-                object.__setattr__(jmp, 'false', new)
+                assert jmp.false == old.bid
+                object.__setattr__(jmp, 'false', new.bid)
         elif isinstance(jmp, MCJump):
             for i, t in enumerate(jmp.targets):
-                if t is old:
-                    jmp.targets[i] = new
+                if t == old.bid:
+                    jmp.targets[i] = new.bid
         else:
             assert False
 
@@ -240,7 +240,7 @@ class LoopUnroller(object):
         jmp = last_blk.stms[-1]
         assert isinstance(jmp, Jump)
         object.__setattr__(jmp, 'typ', '')
-        object.__setattr__(jmp, 'target', loop_exit)
+        object.__setattr__(jmp, 'target', loop_exit.bid)
 
     def _reconnect_unroll_blocks(self, loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk):
         loop_pred = loop.head.preds[0]
@@ -263,8 +263,8 @@ class LoopUnroller(object):
         unroll_head.succs.append(loop_exit)
         cjmp = unroll_head.stms[-1]
         assert isinstance(cjmp, CJump)
-        assert cjmp.false is None
-        object.__setattr__(cjmp, 'false', loop_exit)
+        assert cjmp.false == ''
+        object.__setattr__(cjmp, 'false', loop_exit.bid)
 
         unroll_head.preds = [loop_pred, last_blk]
         unroll_head.preds_loop = [last_blk]
@@ -275,7 +275,7 @@ class LoopUnroller(object):
         jmp = last_blk.stms[-1]
         assert isinstance(jmp, Jump)
         assert jmp.typ == 'L'
-        object.__setattr__(jmp, 'target', unroll_head)
+        object.__setattr__(jmp, 'target', unroll_head.bid)
 
     def _make_full_unroll_head(self, loop, new_ivs):
         unroll_head, stm_map = _clone_ir_block(loop.head, self.scope, 'unroll_head')
@@ -302,13 +302,13 @@ class LoopUnroller(object):
         head_stms.append(mv)
         orig_cjump = unroll_head.stms[-1]
         assert isinstance(orig_cjump, CJump)
-        jump = Jump(target=None)
+        jump = Jump(target='')
         object.__setattr__(jump, 'loc', orig_cjump.loc)
         head_stms.append(jump)
 
         unroll_head.stms = []
         for stm in head_stms:
-            object.__setattr__(stm, 'block', unroll_head)
+            object.__setattr__(stm, 'block', unroll_head.bid)
             unroll_head.stms.append(stm)
         dst_sym = qualified_symbols(orig_cjump_cond.dst, self.scope)[-1]
         assert isinstance(dst_sym, Symbol)
@@ -353,13 +353,13 @@ class LoopUnroller(object):
         cond_stm = Move(
             dst=Temp(name=cond_sym.name, ctx=Ctx.STORE),
             src=RelOp(op='Lt', left=Temp(name=tmp.name), right=loop_max.model_copy(deep=True)))
-        cjump = CJump(exp=Temp(name=cond_sym.name), true=None, false=None, loc=orig_cjump.loc)
+        cjump = CJump(exp=Temp(name=cond_sym.name), true='', false='', loc=orig_cjump.loc)
         head_stms.append(cond_stm)
         head_stms.append(cjump)
 
         unroll_head.stms = []
         for stm in head_stms:
-            object.__setattr__(stm, 'block', unroll_head)
+            object.__setattr__(stm, 'block', unroll_head.bid)
             unroll_head.stms.append(stm)
         return unroll_head, iv_updates, lphis, sym_map
 
@@ -393,9 +393,9 @@ class LoopUnroller(object):
             jmp = pred_blk.stms[-1]
             if isinstance(jmp, Jump):
                 object.__setattr__(jmp, 'typ', '')
-                object.__setattr__(jmp, 'target', new_blk)
+                object.__setattr__(jmp, 'target', new_blk.bid)
             elif isinstance(jmp, CJump):
-                object.__setattr__(jmp, 'true', new_blk)
+                object.__setattr__(jmp, 'true', new_blk.bid)
             else:
                 assert False
             new_blk.preds = [pred_blk]

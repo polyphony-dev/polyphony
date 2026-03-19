@@ -177,7 +177,7 @@ def test_write_stm_jump():
     scope = Scope.create(None, 'S', set(), 0)
     blk = Block(scope, nametag='b')
     writer = IrWriter()
-    stm = Jump(blk)
+    stm = Jump(blk.bid)
     assert writer.write_stm(stm) == f'j {blk.bid}'
 
 
@@ -187,7 +187,7 @@ def test_write_stm_cjump():
     blk_t = Block(scope, nametag='t')
     blk_f = Block(scope, nametag='f')
     writer = IrWriter()
-    stm = CJump(Temp('cond'), blk_t, blk_f)
+    stm = CJump(Temp('cond'), blk_t.bid, blk_f.bid)
     assert writer.write_stm(stm) == f'cj cond {blk_t.bid} {blk_f.bid}'
 
 
@@ -198,7 +198,7 @@ def test_write_stm_mcjump():
     blk2 = Block(scope, nametag='b')
     blk3 = Block(scope, nametag='b')
     writer = IrWriter()
-    stm = MCJump([Temp('c1'), Temp('c2'), Temp('c3')], [blk1, blk2, blk3])
+    stm = MCJump([Temp('c1'), Temp('c2'), Temp('c3')], [blk1.bid, blk2.bid, blk3.bid])
     assert writer.write_stm(stm) == f'mj c1 {blk1.bid} c2 {blk2.bid} c3 {blk3.bid}'
 
 
@@ -500,7 +500,7 @@ def test_write_scope_with_blocks_and_stms():
 
     blk1.stms = [
         Move(Temp('x', Ctx.STORE), Const(42)),
-        Jump(blk2),
+        Jump(blk2.bid),
     ]
     blk2.stms = [
         Ret(Temp(Symbol.return_name)),
@@ -805,8 +805,8 @@ def test_write_scope_multiple_blocks_unique_labels():
     b1.connect(b2)
     b2.connect(b3)
 
-    b1.stms = [Move(Temp('x', Ctx.STORE), Const(1)), Jump(b2)]
-    b2.stms = [Move(Temp('y', Ctx.STORE), Const(2)), Jump(b3)]
+    b1.stms = [Move(Temp('x', Ctx.STORE), Const(1)), Jump(b2.bid)]
+    b2.stms = [Move(Temp('y', Ctx.STORE), Const(2)), Jump(b3.bid)]
     b3.stms = [Ret(Temp(Symbol.return_name))]
 
     writer = IrWriter()

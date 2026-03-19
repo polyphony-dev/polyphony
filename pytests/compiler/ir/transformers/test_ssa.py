@@ -159,8 +159,8 @@ ret @return
     # All stms have correct block references
     for blk in blocks_after:
         for stm in blk.stms:
-            assert stm.block is blk, (
-                f'stm.block mismatch: stm in {blk.name} but stm.block is {stm.block.name}'
+            assert stm.block == blk.bid, (
+                f'stm.block mismatch: stm in {blk.name} but stm.block is {stm.block}'
             )
 
 
@@ -341,7 +341,7 @@ def test_merge_path_exp_cjump_true_branch():
     true_blk = Block(scope, nametag='true')
     false_blk = Block(scope, nametag='false')
     cond = Temp(name='c')
-    cjump = CJump(exp=cond, true=true_blk, false=false_blk)
+    cjump = CJump(exp=cond, true=true_blk.bid, false=false_blk.bid)
     object.__setattr__(cjump, 'block', pred)
     pred.stms = [cjump]
     pred.path_exp = None
@@ -370,7 +370,7 @@ def test_merge_path_exp_mcjump_single_target():
     blk_b = Block(scope, nametag='b')
     cond_a = Temp(name='ca')
     cond_b = Temp(name='cb')
-    mcjump = MCJump(conds=[cond_a, cond_b], targets=[blk_a, blk_b])
+    mcjump = MCJump(conds=[cond_a, cond_b], targets=[blk_a.bid, blk_b.bid])
     object.__setattr__(mcjump, 'block', pred)
     pred.stms = [mcjump]
     pred.path_exp = None
@@ -392,7 +392,7 @@ def test_merge_path_exp_mcjump_dup_target_no_hint():
     cond_0 = Temp(name='c0')
     cond_1 = Temp(name='c1')
     # blk_a appears twice as target
-    mcjump = MCJump(conds=[cond_0, cond_1], targets=[blk_a, blk_a])
+    mcjump = MCJump(conds=[cond_0, cond_1], targets=[blk_a.bid, blk_a.bid])
     object.__setattr__(mcjump, 'block', pred)
     pred.stms = [mcjump]
     pred.path_exp = None
@@ -414,7 +414,7 @@ def test_merge_path_exp_mcjump_with_idx_hint():
     blk_a = Block(scope, nametag='a')
     cond_0 = Temp(name='c0')
     cond_1 = Temp(name='c1')
-    mcjump = MCJump(conds=[cond_0, cond_1], targets=[blk_a, blk_a])
+    mcjump = MCJump(conds=[cond_0, cond_1], targets=[blk_a.bid, blk_a.bid])
     object.__setattr__(mcjump, 'block', pred)
     pred.stms = [mcjump]
     pred.path_exp = None
@@ -433,7 +433,7 @@ def test_merge_path_exp_jump_no_branch():
     scope = MockScope('test')
     pred = Block(scope, nametag='pred')
     blk = Block(scope, nametag='blk')
-    jump = Jump(blk)
+    jump = Jump(blk.bid)
     object.__setattr__(jump, 'block', pred)
     pred.stms = [jump]
     pred.path_exp = Const(value=1)
@@ -2326,7 +2326,7 @@ def test_merge_path_exp_mcjump_blk_not_in_targets():
     blk_other = Block(scope, nametag='other')
     cond_a = Temp(name='ca')
     cond_b = Temp(name='cb')
-    mcjump = MCJump(conds=[cond_a, cond_b], targets=[blk_a, blk_b])
+    mcjump = MCJump(conds=[cond_a, cond_b], targets=[blk_a.bid, blk_b.bid])
     object.__setattr__(mcjump, 'block', pred)
     pred.stms = [mcjump]
     pred.path_exp = Const(value=42)

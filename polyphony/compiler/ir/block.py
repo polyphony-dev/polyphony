@@ -115,16 +115,22 @@ class Block(object):
         next_block.preds_loop.append(self)
 
     def append_stm(self, stm):
-        object.__setattr__(stm, 'block', self)
+        if stm.block != self.bid:
+            stm = stm.model_copy(update={'block': self.bid})
         self.stms.append(stm)
+        return stm
 
     def insert_stm(self, idx, stm):
-        object.__setattr__(stm, 'block', self)
+        if stm.block != self.bid:
+            stm = stm.model_copy(update={'block': self.bid})
         self.stms.insert(idx, stm)
+        return stm
 
     def replace_stm(self, old_stm, new_stm):
+        if new_stm.block != self.bid:
+            new_stm = new_stm.model_copy(update={'block': self.bid})
         replace_item(self.stms, old_stm, new_stm)
-        object.__setattr__(new_stm, 'block', self)
+        return new_stm
 
     def stm(self, idx):
         if len(self.stms):
@@ -137,18 +143,22 @@ class Block(object):
         if self.stms:
             jmp = self.stms[-1]
             if isinstance(jmp, Jump):
-                object.__setattr__(jmp, 'target', new)
+                if jmp.target == old.bid:
+                    self.stms[-1] = jmp.model_copy(update={'target': new.bid})
             elif isinstance(jmp, CJump):
-                if jmp.true is old:
-                    object.__setattr__(jmp, 'true', new)
-                elif jmp.false is old:
-                    object.__setattr__(jmp, 'false', new)
-                self._convert_if_unidirectional(jmp)
+                updates = {}
+                if jmp.true == old.bid:
+                    updates['true'] = new.bid
+                if jmp.false == old.bid:
+                    updates['false'] = new.bid
+                if updates:
+                    self.stms[-1] = jmp.model_copy(update=updates)
+                self._convert_if_unidirectional(self.stms[-1])
             elif isinstance(jmp, MCJump):
-                for i, t in enumerate(jmp.targets):
-                    if t is old:
-                        jmp.targets[i] = new
-                self._convert_if_unidirectional(jmp)
+                new_targets = [new.bid if t == old.bid else t for t in jmp.targets]
+                if new_targets != list(jmp.targets):
+                    self.stms[-1] = jmp.model_copy(update={'targets': new_targets})
+                self._convert_if_unidirectional(self.stms[-1])
 
     def replace_succ_loop(self, old, new):
         replace_item(self.succs_loop, old, new, all=True)
@@ -192,7 +202,7 @@ class Block(object):
             b = Block(scope, self.nametag)
         for stm in self.stms:
             new_stm = stm.clone()
-            object.__setattr__(new_stm, 'block', b)
+            new_stm = new_stm.model_copy(update={'block': b.bid})
             b.stms.append(new_stm)
             stm_map[stm] = new_stm
         b.order = self.order
@@ -230,13 +240,13 @@ class Block(object):
         else:
             return
 
-        if all([targets[0] is target for target in targets[1:]]):
-            newjmp = Jump(target=targets[0])
-            object.__setattr__(newjmp, 'block', self)
+        if all(targets[0] == t for t in targets[1:]):
+            newjmp = Jump(target=targets[0], block=self.bid)
             self.stms[-1] = newjmp
-            self.succs = [targets[0]]
-            targets[0].preds = remove_except_one(targets[0].preds, self)
-            targets[0].path_exp = self.path_exp
+            target_block = self.scope.find_block(targets[0])
+            self.succs = [target_block]
+            target_block.preds = remove_except_one(target_block.preds, self)
+            target_block.path_exp = self.path_exp
 
     def is_loop_head(self):
         r = self.scope.find_region(self)

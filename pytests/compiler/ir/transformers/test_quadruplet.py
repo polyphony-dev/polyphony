@@ -280,7 +280,7 @@ def test_early_cjump_condition():
 
     blk1.append_stm(Move(Temp('a', Ctx.STORE), Const(5)))
     blk1.append_stm(Move(Temp(cond_sym.name, Ctx.STORE), RelOp('Lt', Temp('a'), Const(10))))
-    blk1.append_stm(CJump(Temp(cond_sym.name), blk2, blk3))
+    blk1.append_stm(CJump(Temp(cond_sym.name), blk2.bid, blk3.bid))
     blk1.connect(blk2)
     blk1.connect(blk3)
 

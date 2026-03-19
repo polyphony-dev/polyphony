@@ -502,7 +502,7 @@ mv y x
 
     old_stm = blk.stms[1]  # mv y x
     new_stm = Move(Temp('z', Ctx.STORE), Const(42))
-    object.__setattr__(new_stm, 'block', blk)
+    object.__setattr__(new_stm, 'block', blk.bid)
 
     updater = UseDefUpdater(scope, usedef)
     updater.update(old_stm, new_stm)

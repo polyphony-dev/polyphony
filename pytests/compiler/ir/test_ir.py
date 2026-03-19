@@ -6,7 +6,7 @@ from polyphony.compiler.ir.ir import (
     Ctx, Ir, IrExp, IrStm, IrNameExp, IrVariable,
     name2var, move_ir, conds2str,
 )
-from pytests.compiler.base import make_block
+from pytests.compiler.base import make_block, MockScope
 
 
 # ============================================================
@@ -449,21 +449,21 @@ def test_cmove_str():
 
 def test_jump_str():
     blk = make_block()
-    j = Jump(blk)
+    j = Jump(blk.bid)
     assert 'jump' in str(j)
 
 
 def test_cjump_str():
     blk_t = make_block()
     blk_f = make_block()
-    cj = CJump(Temp('cond'), blk_t, blk_f)
+    cj = CJump(Temp('cond'), blk_t.bid, blk_f.bid)
     assert 'cjump' in str(cj)
 
 
 def test_mcjump_str():
     blk1 = make_block()
     blk2 = make_block()
-    mj = MCJump([Const(1), Const(0)], [blk1, blk2])
+    mj = MCJump([Const(1), Const(0)], [blk1.bid, blk2.bid])
     s = str(mj)
     assert 'mcjump' in s
 
@@ -575,33 +575,38 @@ def test_cexpr_eq():
 
 
 def test_jump_eq():
-    blk1 = make_block()
-    blk2 = make_block()
-    j1 = Jump(blk1)
-    j2 = Jump(blk1)
-    j3 = Jump(blk2)
+    scope = MockScope()
+    blk1 = make_block(scope)
+    blk2 = make_block(scope)
+    j1 = Jump(blk1.bid)
+    j2 = Jump(blk1.bid)
+    j3 = Jump(blk2.bid)
     assert j1 == j2
     assert j1 != j3
     assert j1 != Const(0)
 
 
 def test_cjump_eq():
-    blk_t = make_block()
-    blk_f = make_block()
-    cj1 = CJump(Temp('c'), blk_t, blk_f)
-    cj2 = CJump(Temp('c'), blk_t, blk_f)
-    cj3 = CJump(Temp('d'), blk_t, blk_f)
+    scope = MockScope()
+    blk_t = make_block(scope)
+    blk_f = make_block(scope)
+    cj1 = CJump(Temp('c'), blk_t.bid, blk_f.bid)
+    cj2 = CJump(Temp('c'), blk_t.bid, blk_f.bid)
+    cj3 = CJump(Temp('d'), blk_t.bid, blk_f.bid)
     assert cj1 == cj2
     assert cj1 != cj3
     assert cj1 != Const(0)
 
 
 def test_mcjump_eq():
-    blk1 = make_block()
-    blk2 = make_block()
-    m1 = MCJump([Const(1)], [blk1])
-    m2 = MCJump([Const(1)], [blk1])
-    m3 = MCJump([Const(0)], [blk2])
+    scope = MockScope()
+    blk1 = make_block(scope)
+    blk2 = make_block(scope)
+    bid1 = blk1.bid
+    bid2 = blk2.bid
+    m1 = MCJump([Const(1)], [bid1])
+    m2 = MCJump([Const(1)], [bid1])
+    m3 = MCJump([Const(0)], [bid2])
     assert m1 == m2
     assert m1 != m3
     assert m1 != Const(0)

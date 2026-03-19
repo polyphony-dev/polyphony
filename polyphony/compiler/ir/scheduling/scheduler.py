@@ -209,11 +209,11 @@ class SchedulerImpl(object):
     def _calc_latency(self, dfg):
         is_minimum = dfg.synth_params["cycle"] == "minimum"
         for node in dfg.get_priority_ordered_nodes():
-            def_l, seq_l = get_latency(node.tag)
-            if node.tag.block.synth_params["scheduling"] == "timed":
+            def_l, seq_l = get_latency(node.tag, self.scope)
+            if self.scope.find_block(node.tag.block).synth_params["scheduling"] == "timed":
                 used_by_untimed = False
                 for succ_node in dfg.succs(node):
-                    if succ_node.tag.block.synth_params["scheduling"] != "timed":
+                    if self.scope.find_block(succ_node.tag.block).synth_params["scheduling"] != "timed":
                         used_by_untimed = True
                         break
                 if _has_clkfence(node.tag) or used_by_untimed:
@@ -351,10 +351,11 @@ class BlockBoundedListScheduler(SchedulerImpl):
         seen_blocks = set()
         for node in nodes:
             stm = node.tag
-            blk = stm.block
-            if id(blk) in seen_blocks:
+            blk_bid = stm.block
+            if blk_bid in seen_blocks:
                 continue
-            seen_blocks.add(id(blk))
+            seen_blocks.add(blk_bid)
+            blk = self.scope.find_block(blk_bid)
             for s in blk.stms:
                 if isinstance(s, MStm):
                     for child in s.stms:
@@ -379,7 +380,7 @@ class BlockBoundedListScheduler(SchedulerImpl):
         while True:
             next_candidates = set()
             for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
-                if n.tag.block is not block:
+                if n.tag.block != block:
                     continue
                 scheduled_time = self._node_sched_with_block_bound(dfg, n, block)
                 _, _, latency = self.node_latency_map[n]
@@ -398,16 +399,16 @@ class BlockBoundedListScheduler(SchedulerImpl):
 
     def _node_sched_with_block_bound(self, dfg, node, block):
         preds = dfg.preds_without_back(node)
-        preds = [p for p in preds if p.tag.block is block]
-        is_timed_node = block.synth_params["scheduling"] == "timed"
+        preds = [p for p in preds if p.tag.block == block]
+        is_timed_node = self.scope.find_block(block).synth_params["scheduling"] == "timed"
         logger.debug("scheduling for " + str(node))
         if preds:
             defuse_preds = dfg.preds_typ_without_back(node, "DefUse")
-            defuse_preds = [p for p in defuse_preds if p.tag.block is block]
+            defuse_preds = [p for p in defuse_preds if p.tag.block == block]
             usedef_preds = dfg.preds_typ_without_back(node, "UseDef")
-            usedef_preds = [p for p in usedef_preds if p.tag.block is block]
+            usedef_preds = [p for p in usedef_preds if p.tag.block == block]
             seq_preds = dfg.preds_typ_without_back(node, "Seq")
-            seq_preds = [p for p in seq_preds if p.tag.block is block]
+            seq_preds = [p for p in seq_preds if p.tag.block == block]
             sched_times = []
             if seq_preds:
                 if _is_ctrl_stm(node.tag):

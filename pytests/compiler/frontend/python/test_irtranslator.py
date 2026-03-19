@@ -1012,7 +1012,7 @@ def f():
     assert isinstance(last_stm, Jump)
     assert last_stm.typ == 'L'
     # Target should be the fortest block
-    assert last_stm.target.nametag == 'fortest'
+    assert last_stm.target.startswith('fortest')
 
 
 def test_for_range_1arg_block_structure():
@@ -1557,7 +1557,7 @@ def f():
 
     # Find the jump that targets the continue block
     jumps = [s for s in stms if isinstance(s, Jump)]
-    cont_jumps = [j for j in jumps if j.target.nametag == 'continue'
+    cont_jumps = [j for j in jumps if j.target.startswith('continue')
                   and j.typ != 'L']  # exclude the loop-back jump
     assert len(cont_jumps) >= 1
 
@@ -1620,8 +1620,8 @@ def f():
     cjumps = [s for s in fortest.stms if isinstance(s, CJump)]
     assert len(cjumps) == 1
     cj = cjumps[0]
-    assert cj.true.nametag == 'forbody'
-    assert cj.false.nametag == 'forelse'
+    assert cj.true.startswith('forbody')
+    assert cj.false.startswith('forelse')
 
 
 # --- entry block connects to fortest ---
@@ -1640,7 +1640,7 @@ def f():
     entry = blocks[0]
     last_stm = entry.stms[-1]
     assert isinstance(last_stm, Jump)
-    assert last_stm.target.nametag == 'fortest'
+    assert last_stm.target.startswith('fortest')
 
 
 # --- for-over-variable with len() SysCall ---
@@ -1814,7 +1814,7 @@ def f():
     # Break target should be past the forelse block (exit block)
     break_target = break_jumps[0].target
     # It should NOT be the forelse block
-    assert break_target.nametag != 'forelse'
+    assert not break_target.startswith('forelse')
 
 
 # --- for range 1-arg: start=0 explicitly ---

@@ -1128,7 +1128,7 @@ class StaticTypePropagation(TypePropagation):
             stms = sorted(stms, key=lambda s: s.loc.lineno)
             for stm in stms:
                 self.current_stm = stm
-                self.scope = stm.block.scope
+                self.scope = s
                 try:
                     self.visit(stm)
                 except RejectPropagation as r:

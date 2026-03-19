@@ -9,12 +9,23 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-def _find_stm_index(stm):
+def _find_stm_index(stm, scope=None):
     """Find index of stm in its block's stms list, handling MStm children."""
     from ...common.utils import find_id_index
-    idx = find_id_index(stm.block.stms, stm)
+    from ...common.env import env
+    if scope:
+        blk = scope.find_block(stm.block)
+    else:
+        # Search all scopes for the block
+        for s in env.scopes.values():
+            if stm.block in s.block_map:
+                blk = s.block_map[stm.block]
+                break
+        else:
+            return -1
+    idx = find_id_index(blk.stms, stm)
     if idx == -1:
-        for i, s in enumerate(stm.block.stms):
+        for i, s in enumerate(blk.stms):
             if isinstance(s, MStm) and any(id(c) == id(stm) for c in s.stms):
                 return i
     return idx
@@ -186,10 +197,10 @@ class DataFlowGraph(object):
         return node.tag
 
     def _stm_order_gt(self, stm1, stm2):
-        if stm1.block is stm2.block:
-            return _find_stm_index(stm1) > _find_stm_index(stm2)
+        if stm1.block == stm2.block:
+            return _find_stm_index(stm1, self.scope) > _find_stm_index(stm2, self.scope)
         else:
-            return stm1.block.order > stm2.block.order
+            return self.scope.find_block(stm1.block).order > self.scope.find_block(stm2.block).order
 
     def succs(self, node):
         succs = []
@@ -306,7 +317,7 @@ class DataFlowGraph(object):
     def get_scheduled_nodes(self):
         node_dict = defaultdict(list)
         for n in self.nodes:
-            node_dict[n.tag.block.num].append(n)
+            node_dict[self.scope.find_block(n.tag.block).num].append(n)
         result = []
         for ns in node_dict.values():
             result.extend(sorted(ns))
@@ -358,13 +369,13 @@ class DataFlowGraph(object):
             dotn2 = node_map[n2]
             if typ == "DefUse":
                 if back:
-                    if n1.tag.block is n2.tag.block:
+                    if n1.tag.block == n2.tag.block:
                         latency = n1.end - n1.begin
                         g.add_edge(pydot.Edge(dotn1, dotn2, color='red', label=latency))
                     else:
                         g.add_edge(pydot.Edge(dotn1, dotn2, color='red'))
                 else:
-                    if n1.tag.block is n2.tag.block:
+                    if n1.tag.block == n2.tag.block:
                         latency = n2.begin - n1.begin
                         g.add_edge(pydot.Edge(dotn1, dotn2, label=latency))
                     else:
@@ -625,8 +636,18 @@ def _is_mem_write(stm):
     return _is_expr(stm) and _is_mstore(stm.exp)
 
 
-def _program_order(stm):
-    return (stm.block.order, _find_stm_index(stm))
+def _program_order(stm, scope=None):
+    if scope:
+        blk = scope.find_block(stm.block)
+    else:
+        from ...common.env import env
+        for s in env.scopes.values():
+            if stm.block in s.block_map:
+                blk = s.block_map[stm.block]
+                break
+        else:
+            return (0, 0)
+    return (blk.order, _find_stm_index(stm, scope))
 
 
 class DFGBuilder(object):
@@ -690,7 +711,7 @@ class DFGBuilder(object):
                 return
             defstms = usedef.get_stms_defining(v_sym)
             for defstm in defstms:
-                if defstm.block not in blocks:
+                if defstm.block not in [b.bid for b in blocks]:
                     dfg.src_nodes.add(node)
                     return
 
@@ -730,9 +751,9 @@ class DFGBuilder(object):
             for defstm in defstms:
                 if stm is defstm:
                     continue
-                if len(defstms) > 1 and (_program_order(stm) <= _program_order(defstm)):
+                if len(defstms) > 1 and (_program_order(stm, self.scope) <= _program_order(defstm, self.scope)):
                     continue
-                if defstm.block not in blocks:
+                if defstm.block not in [b.bid for b in blocks]:
                     continue
                 defnode = dfg.add_stm_node(defstm)
                 dfg.add_defuse_edge(defnode, usenode)
@@ -746,9 +767,9 @@ class DFGBuilder(object):
             for usestm in usestms:
                 if stm is usestm:
                     continue
-                if _program_order(stm) <= _program_order(usestm):
+                if _program_order(stm, self.scope) <= _program_order(usestm, self.scope):
                     continue
-                if usestm.block is not stm.block:
+                if usestm.block != stm.block:
                     continue
                 usenode = dfg.add_stm_node(usestm)
                 dfg.add_usedef_edge(usenode, defnode)
@@ -783,7 +804,7 @@ class DFGBuilder(object):
 
     def _node_order_by_ctrl(self, node):
         stm = node.tag
-        return (stm.block.order, stm.block.num, _find_stm_index(stm))
+        return (self.scope.find_block(stm.block).order, self.scope.find_block(stm.block).num, _find_stm_index(stm, self.scope))
 
     def _add_mem_edges(self, dfg):
         node_groups_by_mem_sym = defaultdict(list)
@@ -857,7 +878,7 @@ class DFGBuilder(object):
                 prev_node = node
 
     def _is_same_block_node(self, n0, n1):
-        return n0.tag.block is n1.tag.block
+        return n0.tag.block == n1.tag.block
 
     def _get_mutable_object_symbol(self, stm):
         if _is_move(stm):
@@ -891,7 +912,7 @@ class DFGBuilder(object):
                 if sym in prevs:
                     prev = prevs[sym]
                     if self._is_same_block_node(prev, node):
-                        if prev.tag.block is node.tag.block:
+                        if prev.tag.block == node.tag.block:
                             dfg.add_seq_edge(prev, node)
                 prevs[sym] = node
 
@@ -899,8 +920,8 @@ class DFGBuilder(object):
         for node in dfg.nodes:
             stm = node.tag
             if _is_ctrl_stm(stm):
-                assert stm.block.stms[-1] is stm
-                for prev_stm in _expand_stms(stm.block.stms[:-1]):
+                assert self.scope.find_block(stm.block).stms[-1] is stm
+                for prev_stm in _expand_stms(self.scope.find_block(stm.block).stms[:-1]):
                     prev_node = dfg.find_node(prev_stm)
                     if prev_node:
                         dfg.add_seq_edge(prev_node, node)
@@ -978,9 +999,9 @@ class DFGBuilder(object):
         for u in usedef.get_stms_using(var_sym):
             if u is defnode.tag:
                 continue
-            if _program_order(defnode.tag) <= _program_order(u):
+            if _program_order(defnode.tag, self.scope) <= _program_order(u, self.scope):
                 continue
-            if u.block is not defnode.tag.block:
+            if u.block != defnode.tag.block:
                 continue
             unode = dfg.add_stm_node(u)
             if _has_exclusive_function(u, self.scope):

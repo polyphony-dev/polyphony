@@ -481,7 +481,7 @@ def test_resource_extractor_cjump():
     blk2 = Block(scope)
     extractor = ResourceExtractor()
     extractor.scope = scope
-    cj = CJump(Const(1), blk1, blk2)
+    cj = CJump(Const(1), blk1.bid, blk2.bid)
     extractor.current_node = None
     extractor._visit_rec(cj)
 
@@ -496,7 +496,7 @@ def test_resource_extractor_mcjump():
     blk2 = Block(scope)
     extractor = ResourceExtractor()
     extractor.scope = scope
-    mj = MCJump([Const(1), Const(0)], [blk1, blk2])
+    mj = MCJump([Const(1), Const(0)], [blk1.bid, blk2.bid])
     extractor.current_node = None
     extractor._visit_rec(mj)
 
@@ -1526,7 +1526,7 @@ ret @return
     m1 = blk.stms[0]  # mv x 10
     m2 = blk.stms[1]  # mv y 20
     mstm = MStm(stms=[m1, m2])
-    object.__setattr__(mstm, 'block', blk)
+    object.__setattr__(mstm, 'block', blk.bid)
     blk.stms = [mstm] + blk.stms[2:]
 
     # Find the DFG nodes for m1 and m2

@@ -1030,7 +1030,7 @@ ret @return
     # Manually insert a CondOp: cval = True ? 10 : 20
     blk = scope.entry_block
     condop = CondOp(cond=Const(value=True), left=Const(value=10), right=Const(value=20))
-    mv = Move(dst=Temp(name='cval', ctx=Ctx.STORE), src=condop, block=blk)
+    mv = Move(dst=Temp(name='cval', ctx=Ctx.STORE), src=condop, block=blk.bid)
     blk.stms.insert(0, mv)
     ConstantOpt().process(scope)
     # After folding, cval should be 10 and propagated or removed
@@ -1223,7 +1223,7 @@ ret @return
     scope = build_scope(src)
     blk = scope.entry_block
     condop = CondOp(cond=Const(value=False), left=Const(value=10), right=Const(value=20))
-    mv = Move(dst=Temp(name='cval', ctx=Ctx.STORE), src=condop, block=blk)
+    mv = Move(dst=Temp(name='cval', ctx=Ctx.STORE), src=condop, block=blk.bid)
     blk.stms.insert(0, mv)
     ConstantOpt().process(scope)
 
@@ -1277,7 +1277,7 @@ ret @return
     blk = scope.entry_block
     arr = Array(items=[Const(value=100), Const(value=200), Const(value=300)], repeat=Const(value=1))
     mref = MRef(mem=arr, offset=Const(value=1))
-    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=blk)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=blk.bid)
     blk.stms.insert(0, mv)
     ConstantOpt().process(scope)
 
@@ -1299,7 +1299,7 @@ ret @return
     blk = scope.entry_block
     arr = Array(items=[Const(value=100)], repeat=Const(value=1))
     mref = MRef(mem=arr, offset=Const(value=5))
-    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=blk)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=blk.bid)
     blk.stms.insert(0, mv)
     ConstantOpt().process(scope)
 
@@ -1459,20 +1459,16 @@ def test_polyadconstantfolding_bin_inlining_can_inlining():
     """PolyadConstantFolding._BinInlining._can_inlining checks correctly."""
     from polyphony.compiler.ir.transformers.constopt import PolyadConstantFolding
     from polyphony.compiler.ir.ir import BinOp
-    blk = None
     ir = Move(dst=Temp(name='a', ctx=Ctx.STORE),
-              src=BinOp(op='Add', left=Const(value=1), right=Temp(name='x')),
-              block=blk)
+              src=BinOp(op='Add', left=Const(value=1), right=Temp(name='x')))
     usestm = Move(dst=Temp(name='b', ctx=Ctx.STORE),
-                  src=BinOp(op='Add', left=Temp(name='a'), right=Const(value=2)),
-                  block=blk)
+                  src=BinOp(op='Add', left=Temp(name='a'), right=Const(value=2)))
     assert PolyadConstantFolding._BinInlining._can_inlining(usestm, ir) is True
     usestm2 = Move(dst=Temp(name='b', ctx=Ctx.STORE),
-                   src=BinOp(op='Sub', left=Temp(name='a'), right=Const(value=2)),
-                   block=blk)
+                   src=BinOp(op='Sub', left=Temp(name='a'), right=Const(value=2)))
     assert PolyadConstantFolding._BinInlining._can_inlining(usestm2, ir) is False
     from polyphony.compiler.ir.ir import Expr as E
-    usestm3 = E(exp=Temp(name='a'), block=blk)
+    usestm3 = E(exp=Temp(name='a'))
     assert PolyadConstantFolding._BinInlining._can_inlining(usestm3, ir) is False
 
 
@@ -1580,7 +1576,7 @@ ret @return
     blk = scope.entry_block
     binop = BinOp(op='Add', left=Const(value=1), right=Const(value=2))
     mref = MRef(mem=binop, offset=Const(value=0))
-    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=blk)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=mref, block=blk.bid)
     blk.stms.insert(0, mv)
     ConstantOpt().process(scope)
 
@@ -2336,10 +2332,10 @@ def test_phi_with_const_false_predicate_removed():
               args=[Temp(name='a', ctx=Ctx.LOAD), Temp(name='b', ctx=Ctx.LOAD)],
               ps=[Const(value=False), Const(value=True)])
     blk2.stms.insert(0, phi)
-    object.__setattr__(phi, 'block', blk2)
+    object.__setattr__(phi, 'block', blk2.bid)
     blk2.append_stm(Move(dst=Temp(name='@return', ctx=Ctx.STORE), src=Temp(name='x', ctx=Ctx.LOAD)))
     blk2.append_stm(Ret(exp=Temp(name='@return', ctx=Ctx.LOAD)))
-    blk1.append_stm(Jump(target=blk2))
+    blk1.append_stm(Jump(target=blk2.bid))
     Block.set_order(blk1, 0)
 
     ConstantOpt().process(F)
@@ -2652,10 +2648,10 @@ def test_phi_const_true_predicate_becomes_move():
               args=[Temp(name='a', ctx=Ctx.LOAD), Temp(name='b', ctx=Ctx.LOAD)],
               ps=[Const(value=True), Const(value=False)])
     blk2.stms.insert(0, phi)
-    object.__setattr__(phi, 'block', blk2)
+    object.__setattr__(phi, 'block', blk2.bid)
     blk2.append_stm(Move(dst=Temp(name='@return', ctx=Ctx.STORE), src=Temp(name='x', ctx=Ctx.LOAD)))
     blk2.append_stm(Ret(exp=Temp(name='@return', ctx=Ctx.LOAD)))
-    blk1.append_stm(Jump(target=blk2))
+    blk1.append_stm(Jump(target=blk2.bid))
     Block.set_order(blk1, 0)
 
     ConstantOpt().process(F)
@@ -2689,10 +2685,10 @@ def test_phi_all_false_predicates_dead():
               args=[Temp(name='a', ctx=Ctx.LOAD)],
               ps=[Const(value=False)])
     blk2.stms.insert(0, phi)
-    object.__setattr__(phi, 'block', blk2)
+    object.__setattr__(phi, 'block', blk2.bid)
     blk2.append_stm(Move(dst=Temp(name='@return', ctx=Ctx.STORE), src=Const(value=0)))
     blk2.append_stm(Ret(exp=Temp(name='@return', ctx=Ctx.LOAD)))
-    blk1.append_stm(Jump(target=blk2))
+    blk1.append_stm(Jump(target=blk2.bid))
     Block.set_order(blk1, 0)
 
     ConstantOpt().process(F)

@@ -184,7 +184,7 @@ class ObjectTransformer(object):
                     self._add_cexpr(stm, sources, copy_qsym)
 
     def _add_uphi(self, mv_stm, sources, copy_qsym):
-        insert_idx = mv_stm.block.stms.index(mv_stm)
+        insert_idx = self.scope.find_block(mv_stm.block).stms.index(mv_stm)
         tmp = self.scope.add_temp()
         var = Temp(name=tmp.name, ctx=Ctx.STORE)
         uphi = UPhi(var=var, block=mv_stm.block, loc=mv_stm.loc or Loc('', 0))
@@ -196,18 +196,18 @@ class ObjectTransformer(object):
             c_sym = self.scope.add_condition_sym()
             tmp_mv = Move(dst=Temp(name=c_sym.name, ctx=Ctx.STORE), src=c,
                          loc=mv_stm.loc, block=mv_stm.block)
-            mv_stm.block.stms.insert(insert_idx, tmp_mv)
+            self.scope.find_block(mv_stm.block).stms.insert(insert_idx, tmp_mv)
             insert_idx += 1
             uphi.ps.append(Temp(name=c_sym.name))
             mv_src = mv_stm.src.model_copy(deep=True)
             mv_src.replace(self.qsym_to_ir(copy_qsym, Ctx.LOAD), Temp(name=src.name))
             uphi.args.append(mv_src)
-        mv_stm.block.stms.insert(insert_idx, uphi)
+        self.scope.find_block(mv_stm.block).stms.insert(insert_idx, uphi)
         var_load = Temp(name=tmp.name, ctx=Ctx.LOAD)
         object.__setattr__(mv_stm, 'src', var_load)
 
     def _add_branch_move(self, mv_stm, sources, copy_qsym):
-        blk = mv_stm.block
+        blk = self.scope.find_block(mv_stm.block)
         is_exit = self.scope.exit_block is blk
         stm_idx = blk.stms.index(mv_stm)
         csyms = []
@@ -228,7 +228,7 @@ class ObjectTransformer(object):
             new_tail = self._make_branch(Temp(name=csym.name), mv_copy, blk, stm_idx)
             stm_idx = 0
             blk = new_tail
-        mv_stm.block.stms.remove(mv_stm)
+        self.scope.find_block(mv_stm.block).stms.remove(mv_stm)
         if is_exit:
             self.scope.exit_block = blk
 
@@ -255,22 +255,22 @@ class ObjectTransformer(object):
             branch_blk.path_exp = cond.model_copy(deep=True)
         # Split stms
         for stm in cur_blk.stms[stm_idx:]:
-            object.__setattr__(stm, 'block', tail_blk)
+            object.__setattr__(stm, 'block', tail_blk.bid)
             tail_blk.stms.append(stm)
         cur_blk.stms = cur_blk.stms[:stm_idx]
 
-        cj = CJump(exp=cond, true=branch_blk, false=tail_blk,
-                   loc=branch_stm.loc, block=cur_blk)
+        cj = CJump(exp=cond, true=branch_blk.bid, false=tail_blk.bid,
+                   loc=branch_stm.loc, block=cur_blk.bid)
         cur_blk.stms.append(cj)
 
-        object.__setattr__(branch_stm, 'block', branch_blk)
+        object.__setattr__(branch_stm, 'block', branch_blk.bid)
         branch_blk.stms.append(branch_stm)
-        jmp = Jump(target=tail_blk, loc=branch_stm.loc, block=branch_blk)
+        jmp = Jump(target=tail_blk.bid, loc=branch_stm.loc, block=branch_blk.bid)
         branch_blk.stms.append(jmp)
         return tail_blk
 
     def _add_cexpr(self, expr, sources, copy_qsym):
-        insert_idx = expr.block.stms.index(expr)
+        insert_idx = self.scope.find_block(expr.block).stms.index(expr)
         for src in sources:
             expr_copy = expr.model_copy(deep=True)
             if isinstance(expr_copy.exp, MStore):
@@ -283,8 +283,8 @@ class ObjectTransformer(object):
                       right=Temp(name=cmp_name))
             cexpr = CExpr(cond=c, exp=expr_copy.exp, loc=expr_copy.loc,
                          block=expr.block)
-            expr.block.stms.insert(insert_idx, cexpr)
-        expr.block.stms.remove(expr)
+            self.scope.find_block(expr.block).stms.insert(insert_idx, cexpr)
+        self.scope.find_block(expr.block).stms.remove(expr)
 
     def _build_seq_ids(self):
         """Create seq_id symbols and MOVEs, build seq_id_map for _transform_use."""
@@ -298,8 +298,8 @@ class ObjectTransformer(object):
             mv = Move(dst=Temp(name=seq_id.name, ctx=Ctx.STORE),
                      src=Const(value=seq_id.id),
                      loc=defstm.loc, block=defstm.block)
-            idx = defstm.block.stms.index(defstm)
-            defstm.block.stms.insert(idx, mv)
+            idx = self.scope.find_block(defstm.block).stms.index(defstm)
+            self.scope.find_block(defstm.block).stms.insert(idx, mv)
             self.seq_id_map[seq_sym.name] = seq_id.name
 
             usestms = self.usedef.get_stms_using(seq_sym)

@@ -59,7 +59,7 @@ def _make_simple_loop_scope():
     # blk_entry stms
     blk_entry.append_stm(Move(Temp('i_init', Ctx.STORE), Const(0)))
     blk_entry.append_stm(Move(Temp('x_init', Ctx.STORE), Const(0)))
-    blk_entry.append_stm(Jump(loop_head))
+    blk_entry.append_stm(Jump(loop_head.bid))
 
     # loop_head stms
     i_lphi = LPhi(Temp('i', Ctx.STORE))
@@ -73,12 +73,12 @@ def _make_simple_loop_scope():
     loop_head.append_stm(x_lphi)
 
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
-    loop_head.append_stm(CJump(Temp('cond'), loop_body, loop_exit))
+    loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
 
     # loop_body stms
     loop_body.append_stm(Move(Temp('x_upd', Ctx.STORE), BinOp('Add', Temp('x'), Temp('i'))))
     loop_body.append_stm(Move(Temp('i_upd', Ctx.STORE), BinOp('Add', Temp('i'), Const(1))))
-    jmp = Jump(loop_head, typ='L')
+    jmp = Jump(loop_head.bid, typ='L')
     loop_body.append_stm(jmp)
 
     # loop_exit stms
