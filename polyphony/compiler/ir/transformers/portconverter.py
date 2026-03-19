@@ -232,15 +232,14 @@ class FlippedPortsBuilder(IrVisitor):
 
     def _flip_old_new(self, ir):
         """Flip direction in NEW node."""
-        from ..ir import Const as OLD_CONST
         sym_t = ir.symbol.typ
         if sym_t.scope.is_port():
             for i, (name, arg) in enumerate(ir.args):
                 if name == 'direction':
                     if arg.value == 'in':
-                        ir.args[i] = ('direction', OLD_CONST('out'))
+                        ir.args[i] = ('direction', Const('out'))
                     elif arg.value == 'out':
-                        ir.args[i] = ('direction', OLD_CONST('in'))
+                        ir.args[i] = ('direction', Const('in'))
                     break
 
 
@@ -339,32 +338,28 @@ class PortConnector(IrVisitor):
             else:
                 assert False
         # Append to block
-        from ..ir import Expr as OLD_EXPR, Call as OLD_CALL, Temp as OLD_TEMP, Attr as OLD_ATTR
-        from ..ir import Move as OLD_MOVE, Ret as OLD_RET, Ctx as OldCtx
         self.current_stm.block.append_stm(
-            OLD_EXPR(port_assign_call)
+            Expr(port_assign_call)
         )
 
     def _make_assign_call(self, p0_sym, p1_sym):
         """Create a port assign call."""
-        from ..ir import Call as OLD_CALL, Temp as OLD_TEMP, Attr as OLD_ATTR
         p0_t = p0_sym.typ
         p1_t = p1_sym.typ
         port_scope0 = p0_t.scope
         port_scope1 = p1_t.scope
         rd_sym = port_scope1.find_sym('rd')
-        port_rd = OLD_ATTR(OLD_TEMP(p1_sym.name), rd_sym.name)
-        port_rd_call = OLD_CALL(port_rd, args=[], kwargs={})
+        port_rd = Attr(Temp(p1_sym.name), rd_sym.name)
+        port_rd_call = Call(port_rd, args=[], kwargs={})
         lambda_sym = self._make_lambda(port_rd_call)
         assign_sym = port_scope0.find_sym('assign')
-        port_assign = OLD_ATTR(OLD_TEMP(p0_sym.name), assign_sym.name)
-        port_assign_call = OLD_CALL(port_assign,
-                                    args=[('fn', OLD_TEMP(lambda_sym.name))], kwargs={})
+        port_assign = Attr(Temp(p0_sym.name), assign_sym.name)
+        port_assign_call = Call(port_assign,
+                                    args=[('fn', Temp(lambda_sym.name))], kwargs={})
         return port_assign_call
 
     def _make_lambda(self, body):
         """Create a lambda scope for port assignment."""
-        from ..ir import Move as OLD_MOVE, Ret as OLD_RET, Temp as OLD_TEMP
         tags = {'function', 'returnable', 'comb'}
         lambda_scope = Scope.create(self.scope, None, tags, self.scope.lineno)
         lambda_scope.synth_params = self.scope.synth_params.copy()
@@ -373,8 +368,8 @@ class PortConnector(IrVisitor):
         lambda_scope.set_exit_block(new_block)
         lambda_scope.return_type = Type.undef()
         ret_sym = lambda_scope.add_return_sym()
-        new_block.append_stm(OLD_MOVE(OLD_TEMP(ret_sym.name), body))
-        new_block.append_stm(OLD_RET(OLD_TEMP(ret_sym.name)))
+        new_block.append_stm(Move(Temp(ret_sym.name), body))
+        new_block.append_stm(Ret(Temp(ret_sym.name)))
         scope_sym = self.scope.add_sym(lambda_scope.base_name, tags=set(), typ=Type.function(lambda_scope))
 
         self.scopes.append(lambda_scope)

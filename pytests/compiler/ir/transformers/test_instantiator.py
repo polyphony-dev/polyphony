@@ -9,7 +9,6 @@ from polyphony.compiler.ir.transformers.instantiator import ModuleInstantiator
 from polyphony.compiler.ir.transformers.instantiator import new_find_called_module
 from polyphony.compiler.ir.transformers.instantiator import ArgumentApplier
 from polyphony.compiler.ir.transformers.instantiator import CallCollector
-from polyphony.compiler.ir import ir as new_ir
 from polyphony.compiler.ir.transformers.constopt import ConstantOpt
 from polyphony.compiler.ir.transformers.typeprop import TypePropagation
 from polyphony.compiler.ir.analysis.usedef import UseDefDetector
@@ -397,7 +396,7 @@ def test_new_call_collector_finds_calls():
     assert len(results) == 1
     scope, stm, call_ir = results[0]
     assert scope is caller
-    assert isinstance(call_ir, new_ir.Call)
+    assert isinstance(call_ir, Call)
 
 
 def test_new_call_collector_finds_new():
@@ -431,7 +430,7 @@ def test_new_call_collector_finds_new():
 
     results = CallCollector().process(F)
     assert len(results) == 1
-    assert isinstance(results[0][2], new_ir.New)
+    assert isinstance(results[0][2], New)
 
 
 def test_new_module_instantiator_imports():

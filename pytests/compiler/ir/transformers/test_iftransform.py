@@ -1,6 +1,5 @@
 """Tests for new IfTransformer and IfCondTransformer (ir-based)."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.transformers.iftransform import IfTransformer, IfCondTransformer
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.irwriter import IrWriter
@@ -100,23 +99,23 @@ def test_chained_cjump_to_mcjump():
     scope.set_exit_block(blk4)
 
     # blk1: cj c1 blk2 else1 (new IR in stms, post-switchover)
-    cj1 = new.CJump(exp=new.Temp(name='c1'), true=blk2, false=else1, block=blk1)
+    cj1 = CJump(exp=Temp(name='c1'), true=blk2, false=else1, block=blk1)
     blk1.stms.append(cj1)
     blk1.connect(blk2)
     blk1.connect(else1)
 
     # else1: cj c2 blk3 blk4  (single CJUMP — should be merged)
-    cj2 = new.CJump(exp=new.Temp(name='c2'), true=blk3, false=blk4, block=else1)
+    cj2 = CJump(exp=Temp(name='c2'), true=blk3, false=blk4, block=else1)
     else1.stms.append(cj2)
     else1.connect(blk3)
     else1.connect(blk4)
 
     # blk2, blk3, blk4: simple
-    mv2 = new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE), src=new.Const(value=1), block=blk2)
+    mv2 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk2)
     blk2.stms.append(mv2)
-    mv3 = new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE), src=new.Const(value=2), block=blk3)
+    mv3 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=2), block=blk3)
     blk3.stms.append(mv3)
-    mv4 = new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE), src=new.Const(value=3), block=blk4)
+    mv4 = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=3), block=blk4)
     blk4.stms.append(mv4)
 
     Block.set_order(blk1, 0)
@@ -156,9 +155,9 @@ def test_empty_block_skipped():
     scope.set_exit_block(blk2)
 
     # blk1 has stms, blk2 is empty
-    mv = new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE), src=new.Const(value=1), block=blk1)
+    mv = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Const(value=1), block=blk1)
     blk1.stms.append(mv)
-    blk1.stms.append(new.Jump(target=blk2, block=blk1))
+    blk1.stms.append(Jump(target=blk2, block=blk1))
     blk1.connect(blk2)
 
     Block.set_order(blk1, 0)
@@ -196,24 +195,24 @@ def test_triple_chain_cjump():
     scope.set_exit_block(t4)
 
     # blk1: cj c1 t1 e1
-    blk1.stms.append(new.CJump(exp=new.Temp(name='c1'), true=t1, false=e1, block=blk1))
+    blk1.stms.append(CJump(exp=Temp(name='c1'), true=t1, false=e1, block=blk1))
     blk1.connect(t1)
     blk1.connect(e1)
 
     # e1: cj c2 t2 e2 (single CJUMP)
-    e1.stms.append(new.CJump(exp=new.Temp(name='c2'), true=t2, false=e2, block=e1))
+    e1.stms.append(CJump(exp=Temp(name='c2'), true=t2, false=e2, block=e1))
     e1.connect(t2)
     e1.connect(e2)
 
     # e2: cj c3 t3 t4 (single CJUMP)
-    e2.stms.append(new.CJump(exp=new.Temp(name='c3'), true=t3, false=t4, block=e2))
+    e2.stms.append(CJump(exp=Temp(name='c3'), true=t3, false=t4, block=e2))
     e2.connect(t3)
     e2.connect(t4)
 
     # target blocks: simple stms
     for blk in (t1, t2, t3, t4):
-        blk.stms.append(new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE),
-                                 src=new.Const(value=0), block=blk))
+        blk.stms.append(Move(dst=Temp(name='x', ctx=Ctx.STORE),
+                                 src=Const(value=0), block=blk))
 
     Block.set_order(blk1, 0)
     IfTransformer().process(scope)
@@ -222,7 +221,7 @@ def test_triple_chain_cjump():
     assert isinstance(last, MCJump)
     assert len(last.conds) == 4  # c1, c2, c3, Const(1)
     assert len(last.targets) == 4  # t1, t2, t3, t4
-    assert isinstance(last.conds[-1], new.Const)
+    assert isinstance(last.conds[-1], Const)
     assert last.conds[-1].value == 1
 
 
@@ -247,15 +246,15 @@ def _build_mcjump_scope(n_conds):
     scope.set_entry_block(blk1)
     scope.set_exit_block(targets[-1])
 
-    conds = [new.Temp(name=name) for name in cond_names]
-    conds.append(new.Const(value=1))  # else branch
+    conds = [Temp(name=name) for name in cond_names]
+    conds.append(Const(value=1))  # else branch
 
-    mj = new.MCJump(conds=conds, targets=targets, block=blk1)
+    mj = MCJump(conds=conds, targets=targets, block=blk1)
     blk1.stms.append(mj)
     for t in targets:
         blk1.connect(t)
-        t.stms.append(new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE),
-                                src=new.Const(value=0), block=t))
+        t.stms.append(Move(dst=Temp(name='x', ctx=Ctx.STORE),
+                                src=Const(value=0), block=t))
 
     Block.set_order(blk1, 0)
     return scope, blk1, mj, targets
@@ -272,9 +271,9 @@ def test_ifcond_no_mcjump():
     scope.set_entry_block(blk1)
     scope.set_exit_block(blk2)
 
-    blk1.stms.append(new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE),
-                               src=new.Const(value=1), block=blk1))
-    blk1.stms.append(new.Jump(target=blk2, block=blk1))
+    blk1.stms.append(Move(dst=Temp(name='x', ctx=Ctx.STORE),
+                               src=Const(value=1), block=blk1))
+    blk1.stms.append(Jump(target=blk2, block=blk1))
     blk1.connect(blk2)
 
     Block.set_order(blk1, 0)
@@ -282,7 +281,7 @@ def test_ifcond_no_mcjump():
 
     # No changes
     assert len(blk1.stms) == 2
-    assert isinstance(blk1.stms[-1], new.Jump)
+    assert isinstance(blk1.stms[-1], Jump)
 
 
 def test_ifcond_empty_block():
@@ -295,7 +294,7 @@ def test_ifcond_empty_block():
     scope.set_entry_block(blk1)
     scope.set_exit_block(blk2)
 
-    blk1.stms.append(new.Jump(target=blk2, block=blk1))
+    blk1.stms.append(Jump(target=blk2, block=blk1))
     blk1.connect(blk2)
     # blk2 is empty
 
@@ -317,13 +316,13 @@ def test_ifcond_two_conds():
     # The MCJump should now have 2 conditions
     assert len(mj.conds) == 2
     # First cond is original Temp (stays as Temp)
-    assert isinstance(mj.conds[0], new.Temp)
+    assert isinstance(mj.conds[0], Temp)
     assert mj.conds[0].name == 'c0'
     # Second cond should be a new condition temp (from the Move)
-    assert isinstance(mj.conds[1], new.Temp)
+    assert isinstance(mj.conds[1], Temp)
     # A Move should have been inserted before the MCJUMP
     assert len(blk1.stms) >= 2
-    assert isinstance(blk1.stms[-2], new.Move)
+    assert isinstance(blk1.stms[-2], Move)
 
 
 def test_ifcond_three_conds():
@@ -338,15 +337,15 @@ def test_ifcond_three_conds():
 
     assert len(mj.conds) == 3
     # First cond stays as Temp
-    assert isinstance(mj.conds[0], new.Temp)
+    assert isinstance(mj.conds[0], Temp)
     assert mj.conds[0].name == 'c0'
     # Other conds are new condition temps (from Moves)
-    assert isinstance(mj.conds[1], new.Temp)
-    assert isinstance(mj.conds[2], new.Temp)
+    assert isinstance(mj.conds[1], Temp)
+    assert isinstance(mj.conds[2], Temp)
 
     # Two Moves should have been inserted before the MCJUMP
     # (cond 0 is a simple Temp, no Move needed; conds 1 and 2 need Moves)
-    moves_before_mj = [s for s in blk1.stms[:-1] if isinstance(s, new.Move)]
+    moves_before_mj = [s for s in blk1.stms[:-1] if isinstance(s, Move)]
     assert len(moves_before_mj) == 2
 
 
@@ -359,8 +358,8 @@ def test_ifcond_four_conds():
     assert len(mj.conds) == 4
     # All conds should be Temp references
     for c in mj.conds:
-        assert isinstance(c, new.Temp)
+        assert isinstance(c, Temp)
 
     # 3 Moves should have been inserted (cond 0 stays as-is)
-    moves_before_mj = [s for s in blk1.stms[:-1] if isinstance(s, new.Move)]
+    moves_before_mj = [s for s in blk1.stms[:-1] if isinstance(s, Move)]
     assert len(moves_before_mj) == 3

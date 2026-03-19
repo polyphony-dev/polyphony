@@ -1,6 +1,5 @@
 import types
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irhelper import irexp_type
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol

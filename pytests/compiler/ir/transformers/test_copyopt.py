@@ -1,6 +1,5 @@
 """Tests for CopyOpt and ObjCopyOpt."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope

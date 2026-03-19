@@ -647,17 +647,16 @@ def test_add_remove_use_new_ir_types():
     (IrVariable, Const) in addition to old IR types.
     Without this fix, new IR Temp/Const falls through to assert False."""
     from polyphony.compiler.ir.analysis.usedef import UseDefTable
-    from polyphony.compiler.ir import ir as new_ir
     setup_test()
     scope = Scope.create(None, 'S', set(), 0)
     sym = scope.add_sym('x', tags=set(), typ=Type.int(8))
 
     table = UseDefTable()
-    new_stm = new_ir.Move(dst=new_ir.Temp(name='y', ctx=new_ir.Ctx.STORE),
-                          src=new_ir.Temp(name='x'))
+    new_stm = Move(dst=Temp(name='y', ctx=Ctx.STORE),
+                          src=Temp(name='x'))
 
     # add_use with new IR Const should dispatch to add_const_use, not assert
-    new_const = new_ir.Const(value=42)
+    new_const = Const(value=42)
     table.add_use(scope, new_const, new_stm)
 
     # remove_use with new IR Const should dispatch to remove_const_use

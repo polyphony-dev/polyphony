@@ -421,10 +421,7 @@ class AHDLTranslator(IrVisitor):
         return qualified_symbols(ir, self.scope)
 
     def _irexp_type(self, ir):
-        """Resolve expression type for both old and new IR types."""
-        from ..ir.irhelper import irexp_type as new_irexp_type
-        if isinstance(ir, IrExp):
-            return new_irexp_type(ir, self.scope)
+        """Resolve expression type."""
         return irexp_type(ir, self.scope)
 
     def get_signal_prefix(self, ir):

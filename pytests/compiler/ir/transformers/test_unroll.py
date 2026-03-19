@@ -1,6 +1,5 @@
 """Tests for LoopUnroller."""
 from polyphony.compiler.ir.ir import Const, Temp, Move, CJump, BinOp, RelOp, LPhi, Jump, Ret, Expr, Ctx
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol

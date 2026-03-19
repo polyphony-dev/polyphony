@@ -1,7 +1,6 @@
 """Tests for TypePropagation, TypeSpecializer, and StaticTypePropagation."""
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new_ir
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol

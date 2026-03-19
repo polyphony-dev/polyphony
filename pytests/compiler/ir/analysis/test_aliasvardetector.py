@@ -1,6 +1,5 @@
 """Tests for AliasVarDetector."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.analysis.regreducer import AliasVarDetector
 from polyphony.compiler.common.env import env

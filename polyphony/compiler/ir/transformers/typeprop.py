@@ -1,9 +1,10 @@
-﻿"""Type propagation, specialization, and evaluation using new IR (ir.py)."""
+﻿"""Type propagation, specialization, and evaluation using new Ir (ir.py)."""
 
 from collections import deque
 from typing import cast
 from ..irvisitor import IrVisitor
 from ..ir import (
+    Ir,
     IrStm,
     IrExp,
     IrVariable,
@@ -28,8 +29,6 @@ from ..ir import (
     Ctx,
 )
 from ..irhelper import qualified_symbols, irexp_type, try_get_constant
-from ..ir import Ir as IR, Const as CONST, Temp as TEMP
-from ..irhelper import qualified_symbols as old_qualified_symbols
 from ..scope import Scope
 from ..symbol import Symbol
 from ..types.type import Type
@@ -121,7 +120,7 @@ class TypeEvaluator(object):
         elif isinstance(result, Expr):
             result = Type.expr(result, t.scope)
         else:
-            # Expression node -- wrap in new IR Expr
+            # Expression node -- wrap in new Ir Expr
             result = Type.expr(Expr(exp=result), t.scope)
         result = result.clone(explicit=t.explicit)
         return result
@@ -138,7 +137,7 @@ class TypeEvaluator(object):
 
 
 class TypeExprEvaluator(IrVisitor):
-    def visit_expr_type(self, expr_t: ExprType) -> "Type|IR":
+    def visit_expr_type(self, expr_t: ExprType) -> "Type|Ir":
         expr = expr_t.expr
         assert isinstance(expr, Expr)
         self.scope = expr_t.scope
@@ -183,7 +182,7 @@ class TypeExprEvaluator(IrVisitor):
         return ir
 
     def visit_Attr(self, ir):
-        qsym = old_qualified_symbols(ir, self.scope)
+        qsym = qualified_symbols(ir, self.scope)
         sym = qsym[-1]
         assert isinstance(sym, Symbol)
         attr_t = sym.typ
@@ -208,7 +207,7 @@ class TypeExprEvaluator(IrVisitor):
                         expr_typ = expr_typ.clone(element=elm)
                     else:
                         expr_typ = expr_typ.clone(element=Type.expr(elm))
-                elif isinstance(ir.mem, TEMP):
+                elif isinstance(ir.mem, Temp):
                     elm = self.visit(ir.offset)
                     if isinstance(elm, Type):
                         expr_typ = expr_typ.clone(element=elm)
@@ -216,18 +215,18 @@ class TypeExprEvaluator(IrVisitor):
                         expr_typ = expr_typ.clone(element=Type.expr(elm))
                 else:
                     length = self.visit(ir.offset)
-                    if isinstance(length, CONST):
+                    if isinstance(length, Const):
                         expr_typ = expr_typ.clone(length=length.value)
                     else:
                         expr_typ = expr_typ.clone(length=Type.expr(length))
             elif expr_typ.is_tuple():
-                assert isinstance(ir.mem, TEMP)
+                assert isinstance(ir.mem, Temp)
                 elms = self.visit(ir.offset)
                 expr_typ = expr_typ.clone(element=elms[0])  # TODO:
                 expr_typ = expr_typ.clone(length=len(elms))
             elif expr_typ.is_int():
                 width = self.visit(ir.offset)
-                if isinstance(width, CONST):
+                if isinstance(width, Const):
                     expr_typ = expr_typ.clone(width=width.value)
             else:
                 print(expr_typ)
@@ -239,7 +238,7 @@ class TypeExprEvaluator(IrVisitor):
         types = []
         for item in ir.items:
             types.append(self.visit(item))
-        if isinstance(types[-1], CONST) and types[-1].value is ...:
+        if isinstance(types[-1], Const) and types[-1].value is ...:
             # FIXME: tuple should have more than one type
             return types[0]
         if all([isinstance(t, Type) for t in types]):
@@ -1124,7 +1123,7 @@ class StaticTypePropagation(TypePropagation):
         while worklist:
             s = worklist.popleft()
             stms = self.collect_stms(s)
-            # FIXME: Since lineno is not essential information for IR,
+            # FIXME: Since lineno is not essential information for Ir,
             #        It should not be used as sort key
             stms = sorted(stms, key=lambda s: s.loc.lineno)
             for stm in stms:

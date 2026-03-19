@@ -1,6 +1,5 @@
 """Tests for PolyadConstantFolding."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.transformers.constopt import PolyadConstantFolding
 from polyphony.compiler.common.env import env

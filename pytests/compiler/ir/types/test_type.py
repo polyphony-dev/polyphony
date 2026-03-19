@@ -3,7 +3,6 @@ from polyphony.compiler.common.common import read_source
 from polyphony.compiler.frontend.python.irtranslator import IrTranslator
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir.ir import Expr as NewExpr, Const as NewConst, Temp as NewTemp
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
@@ -728,8 +727,8 @@ def test_type_from_ir():
 
     t = type_from_ir(top, Const(123), explicit=True)
     assert t.is_expr()
-    assert isinstance(t.expr, NewExpr)
-    assert isinstance(t.expr.exp, NewConst)
+    assert isinstance(t.expr, Expr)
+    assert isinstance(t.expr.exp, Const)
     assert t.expr.exp.value == 123
 
 
@@ -800,8 +799,8 @@ def test_type_from_ir():
     assert t1.explicit
     length = t1.length
     assert length.is_expr()
-    assert isinstance(length.expr, NewExpr)
-    assert isinstance(length.expr.exp, NewTemp)
+    assert isinstance(length.expr, Expr)
+    assert isinstance(length.expr.exp, Temp)
 
     t2 = t1.element
     assert t2.is_int()
@@ -819,8 +818,8 @@ def test_type_from_ir():
     top.add_sym('T', set(), typ=Type.klass('__builtin__.object'))
     t = type_from_ir(top, Temp('T'), explicit=True)
     assert t.is_expr()
-    assert isinstance(t.expr, NewExpr)
-    assert isinstance(t.expr.exp, NewTemp)
+    assert isinstance(t.expr, Expr)
+    assert isinstance(t.expr.exp, Temp)
     assert t.expr.exp.name == 'T'
 
 

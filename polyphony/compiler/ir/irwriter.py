@@ -1,5 +1,4 @@
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -118,34 +117,34 @@ class IrWriter(object):
 
     def _format_stm(self, stm) -> str:
         match stm:
-            case new.CMove():
+            case CMove():
                 cond = self._format_exp(stm.cond)
                 dst = self._format_exp(stm.dst)
                 src = self._format_exp(stm.src)
                 return f'mv? {cond} {dst} {src}'
-            case new.Move():
+            case Move():
                 dst = self._format_exp(stm.dst)
                 src = self._format_exp(stm.src)
                 return f'mv {dst} {src}'
-            case new.CExpr():
+            case CExpr():
                 cond = self._format_exp(stm.cond)
                 exp = self._format_exp(stm.exp)
                 return f'expr? {cond} {exp}'
-            case new.Expr():
+            case Expr():
                 exp = self._format_exp(stm.exp)
                 return f'expr {exp}'
-            case new.Jump():
+            case Jump():
                 return f'j {stm.target.nametag}'
-            case new.CJump():
+            case CJump():
                 cond = self._format_exp(stm.exp)
                 return f'cj {cond} {stm.true.nametag} {stm.false.nametag}'
-            case new.MCJump():
+            case MCJump():
                 parts = []
                 for cond, target in zip(stm.conds, stm.targets):
                     parts.append(self._format_exp(cond))
                     parts.append(target.nametag)
                 return f'mj {" ".join(parts)}'
-            case new.Ret():
+            case Ret():
                 exp = self._format_exp(stm.exp)
                 return f'ret {exp}'
             case _:
@@ -153,42 +152,42 @@ class IrWriter(object):
 
     def _format_exp(self, exp) -> str:
         match exp:
-            case new.Const():
+            case Const():
                 return self._format_const(exp)
-            case new.Attr():
+            case Attr():
                 return self._format_attr(exp)
-            case new.Temp():
+            case Temp():
                 return exp.name
-            case new.UnOp():
+            case UnOp():
                 op = UNOP_RMAP[exp.op]
                 inner = self._format_exp(exp.exp)
                 return f'{op}{inner}'
-            case new.BinOp():
+            case BinOp():
                 op = BINOP_RMAP[exp.op]
                 left = self._format_exp(exp.left)
                 right = self._format_exp(exp.right)
                 return f'({op} {left} {right})'
-            case new.RelOp():
+            case RelOp():
                 op = RELOP_RMAP[exp.op]
                 left = self._format_exp(exp.left)
                 right = self._format_exp(exp.right)
                 return f'({op} {left} {right})'
-            case new.Call():
+            case Call():
                 return self._format_callable('call', exp)
-            case new.New():
+            case New():
                 return self._format_callable('new', exp)
-            case new.SysCall():
+            case SysCall():
                 return self._format_callable('syscall', exp)
-            case new.MStore():
+            case MStore():
                 mem = self._format_exp(exp.mem)
                 offset = self._format_exp(exp.offset)
                 val = self._format_exp(exp.exp)
                 return f'(mst {mem} {offset} {val})'
-            case new.MRef():
+            case MRef():
                 mem = self._format_exp(exp.mem)
                 offset = self._format_exp(exp.offset)
                 return f'(mld {mem} {offset})'
-            case new.Array():
+            case Array():
                 return self._format_array(exp)
             case _:
                 raise ValueError(f'Unknown expression type: {type(exp)}')

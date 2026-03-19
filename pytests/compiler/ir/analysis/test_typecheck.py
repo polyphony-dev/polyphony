@@ -1,6 +1,5 @@
 """Tests for new IR type checker and restriction checker passes."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.analysis.typecheck import (
     TypeChecker, EarlyTypeChecker, EarlyRestrictionChecker,

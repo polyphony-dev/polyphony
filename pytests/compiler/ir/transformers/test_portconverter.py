@@ -1,8 +1,7 @@
 """Tests for PortTypeProp, FlippedTransformer, PortConnector."""
 from polyphony.compiler.ir.ir import (
-    Ctx as OldCtx, Const, Temp, Attr, New, Move, Expr, Call, SysCall, Ret, Jump, Ctx,
+    Const, Temp, Attr, New, Move, Expr, Call, SysCall, Ret, Jump, Ctx,
 )
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
@@ -93,7 +92,7 @@ def test_new_port_type_prop_basic():
     blk = Block(F, nametag='blk1')
     F.set_entry_block(blk)
     F.set_exit_block(blk)
-    blk.append_stm(Move(Temp('x', OldCtx.STORE), Const(42)))
+    blk.append_stm(Move(Temp('x', Ctx.STORE), Const(42)))
     Block.set_order(blk, 0)
 
     # Should process without errors (no port-specific code to handle)
@@ -123,7 +122,7 @@ def test_new_flipped_ports_builder():
     # NEW Port with direction 'in'
     dtype_sym = ctor.add_sym('@dtype', tags={'predefined'}, typ=Type.klass(env.scopes.get('__builtin__.int', Scope.create(None, 'int', {'class', 'typeclass'}, 0))))
     new_call = New(port_sym, [('dtype', Temp('@dtype')), ('direction', Const('in'))], {})
-    blk.append_stm(Move(Temp('p', OldCtx.STORE), new_call))
+    blk.append_stm(Move(Temp('p', Ctx.STORE), new_call))
     Block.set_order(blk, 0)
 
     # The builder should flip 'in' to 'out'

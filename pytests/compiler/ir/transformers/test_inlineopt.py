@@ -1,6 +1,5 @@
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.ir import name2var as _v
 from polyphony.compiler.ir.block import Block
 from polyphony.compiler.ir.irreader import IrReader, ir_stm
@@ -1156,7 +1155,7 @@ def test_object_copy_inserts_field_moves():
     blk3 = Block(F3, nametag='blk1')
     F3.set_entry_block(blk3)
     F3.set_exit_block(blk3)
-    mv3 = new.Move(dst=new.Temp(name='d1', ctx=new.Ctx.STORE), src=new.Temp(name='d2'), block=blk3)
+    mv3 = Move(dst=Temp(name='d1', ctx=Ctx.STORE), src=Temp(name='d2'), block=blk3)
     blk3.stms.append(mv3)
     Block.set_order(blk3, 0)
 
@@ -1523,8 +1522,8 @@ def test_stms_visitor_visitor_methods():
     from polyphony.compiler.ir.transformers.inlineopt import _StmsVisitor
     from polyphony.compiler.ir.ir import (
         UnOp, BinOp, RelOp, CondOp, MRef, MStore, Array,
-        CExpr, CMove, MCJump, Phi, UPhi, LPhi, MStm, Expr, Ret as RetIr,
-        Attr as AttrIr,
+        CExpr, CMove, MCJump, Phi, UPhi, LPhi, MStm, Expr, Ret,
+        Attr,
     )
 
     setup_test()
@@ -1555,7 +1554,7 @@ def test_stms_visitor_visitor_methods():
     visitor.visit(Array(items=[Temp('x')], repeat=None))
     visitor.visit(Const(value=42))
     visitor.visit(Temp(name='x'))
-    visitor.visit(AttrIr(name='x', exp=Temp('y'), attr='x'))
+    visitor.visit(Attr(name='x', exp=Temp('y'), attr='x'))
 
     # Exercise IrStm visitor methods
     expr_stm = Expr(exp=Temp('x'), block=blk)
@@ -1570,8 +1569,8 @@ def test_stms_visitor_visitor_methods():
     cmove = CMove(cond=Const(1), dst=Temp('y', Ctx.STORE), src=Temp('x'), block=blk)
     visitor.visit(cmove)
 
-    from polyphony.compiler.ir.ir import CJump as CJumpIr
-    cjump = CJumpIr(exp=Temp('x'), true=blk2, false=blk3, block=blk)
+    from polyphony.compiler.ir.ir import CJump
+    cjump = CJump(exp=Temp('x'), true=blk2, false=blk3, block=blk)
     visitor.visit(cjump)
 
     mcjump = MCJump(conds=[Const(1), Const(1)], targets=[blk2, blk3], block=blk)
@@ -1580,7 +1579,7 @@ def test_stms_visitor_visitor_methods():
     jmp = Jump(blk2, block=blk)
     visitor.visit(jmp)
 
-    ret = RetIr(exp=Temp('x'), block=blk)
+    ret = Ret(exp=Temp('x'), block=blk)
     visitor.visit(ret)
 
     phi = Phi(var=Temp('x', Ctx.STORE),
@@ -1611,10 +1610,10 @@ def test_stms_transformer_transform_methods():
     """_StmsTransformer should process various statement types."""
     from polyphony.compiler.ir.transformers.inlineopt import _StmsTransformer
     from polyphony.compiler.ir.ir import (
-        CExpr, CMove, MCJump as MCJumpIr, Phi, UPhi, LPhi, MStm,
-        CJump as CJumpIr, Ret as RetIr, Expr as ExprIr,
-        Attr as AttrIr, UnOp, BinOp, RelOp, CondOp,
-        MRef, MStore, Array, Call as CallIr, SysCall, New as NewIr,
+        CExpr, CMove, MCJump, Phi, UPhi, LPhi, MStm,
+        CJump, Ret, Expr,
+        Attr, UnOp, BinOp, RelOp, CondOp,
+        MRef, MStore, Array, Call, SysCall, New,
     )
 
     setup_test()
@@ -1633,7 +1632,7 @@ def test_stms_transformer_transform_methods():
     transformer = _StmsTransformer()
 
     # Test Expr
-    expr = ExprIr(exp=Temp('x'), block=blk)
+    expr = Expr(exp=Temp('x'), block=blk)
     blk.stms = [expr]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1659,13 +1658,13 @@ def test_stms_transformer_transform_methods():
     assert isinstance(blk.stms[0], CMove)
 
     # Test CJump
-    cjump = CJumpIr(exp=Temp('x'), true=blk2, false=blk3, block=blk)
+    cjump = CJump(exp=Temp('x'), true=blk2, false=blk3, block=blk)
     blk.stms = [cjump]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Test MCJump
-    mcjump = MCJumpIr(conds=[Const(1), Const(1)], targets=[blk2, blk3], block=blk)
+    mcjump = MCJump(conds=[Const(1), Const(1)], targets=[blk2, blk3], block=blk)
     blk.stms = [mcjump]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1677,7 +1676,7 @@ def test_stms_transformer_transform_methods():
     assert len(blk.stms) == 1
 
     # Test Ret
-    ret = RetIr(exp=Temp('x'), block=blk)
+    ret = Ret(exp=Temp('x'), block=blk)
     blk.stms = [ret]
     transformer.process(F)
     assert len(blk.stms) == 1
@@ -1729,54 +1728,54 @@ def test_stms_transformer_transform_methods():
 
     # Test IrExp transformers: UnOp, BinOp, RelOp, CondOp, Call, SysCall, New,
     # Attr, MRef, MStore, Array (via Expr wrapping)
-    blk.stms = [ExprIr(exp=UnOp(op='Not', exp=Temp('x')), block=blk)]
+    blk.stms = [Expr(exp=UnOp(op='Not', exp=Temp('x')), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=BinOp(op='Add', left=Temp('x'), right=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=BinOp(op='Add', left=Temp('x'), right=Const(1)), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=RelOp(op='Eq', left=Temp('x'), right=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=RelOp(op='Eq', left=Temp('x'), right=Const(1)), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=CondOp(cond=Temp('x'), left=Const(1), right=Const(2)), block=blk)]
+    blk.stms = [Expr(exp=CondOp(cond=Temp('x'), left=Const(1), right=Const(2)), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=CallIr(func=Temp('fn'), args=[('', Temp('x'))], kwargs={}), block=blk)]
+    blk.stms = [Expr(exp=Call(func=Temp('fn'), args=[('', Temp('x'))], kwargs={}), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     F.add_sym('$fn', tags=set(), typ=Type.int())
-    blk.stms = [ExprIr(exp=SysCall(func=Temp('$fn'), args=[('', Temp('x'))], kwargs={}), block=blk)]
+    blk.stms = [Expr(exp=SysCall(func=Temp('$fn'), args=[('', Temp('x'))], kwargs={}), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     F.add_sym('C', tags=set(), typ=Type.int())
-    blk.stms = [ExprIr(exp=NewIr(func=Temp('C'), args=[('', Temp('x'))], kwargs={}), block=blk)]
+    blk.stms = [Expr(exp=New(func=Temp('C'), args=[('', Temp('x'))], kwargs={}), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=AttrIr(name='x', exp=Temp('y'), attr='x'), block=blk)]
+    blk.stms = [Expr(exp=Attr(name='x', exp=Temp('y'), attr='x'), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=MRef(mem=Temp('x'), offset=Const(0)), block=blk)]
+    blk.stms = [Expr(exp=MRef(mem=Temp('x'), offset=Const(0)), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=MStore(mem=Temp('x'), offset=Const(0), exp=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=MStore(mem=Temp('x'), offset=Const(0), exp=Const(1)), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
-    blk.stms = [ExprIr(exp=Array(items=[Temp('x')], repeat=Const(1)), block=blk)]
+    blk.stms = [Expr(exp=Array(items=[Temp('x')], repeat=Const(1)), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 
     # Array with None repeat
-    blk.stms = [ExprIr(exp=Array(items=[Temp('x')], repeat=None), block=blk)]
+    blk.stms = [Expr(exp=Array(items=[Temp('x')], repeat=None), block=blk)]
     transformer.process(F)
     assert len(blk.stms) == 1
 

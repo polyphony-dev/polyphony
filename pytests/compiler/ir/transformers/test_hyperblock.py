@@ -1,6 +1,5 @@
 """Tests for HyperBlockBuilder (ir-based)."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.transformers.cfgopt import HyperBlockBuilder
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.block import Block
@@ -26,7 +25,7 @@ def run_new(src, scheduling='timed'):
     """Run HyperBlockBuilder and return the result scope."""
     scope = build_scope(src, scheduling=scheduling)
     for blk in scope.traverse_blocks():
-        blk.path_exp = new.Const(value=1)
+        blk.path_exp = Const(value=1)
     # UseDefDetector needs old IR; convert, run, convert back
     UseDefDetector().process(scope)
     HyperBlockBuilder().process(scope)

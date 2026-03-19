@@ -1,7 +1,6 @@
 from polyphony.compiler.common.env import env
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.ir import name2var as _v
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irreader import IrReader, ir_stm
 from polyphony.compiler.ir.irwriter import IrWriter
 from polyphony.compiler.ir.symbol import Symbol
@@ -154,7 +153,7 @@ def test_clone_function():
     assert _stm_text(blk2.stms[1]) == 'ret @return'
 
     # Mutating the clone should not affect the original
-    blk1.stms[1] = new.Move(dst=new.Temp(name='x', ctx=new.Ctx.STORE), src=new.Call(func=new.Temp(name='g'), args=[('', new.Const(value=1))]), block=blk1)
+    blk1.stms[1] = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Call(func=Temp(name='g'), args=[('', Const(value=1))]), block=blk1)
 
     gen = f.traverse_blocks()
     blk1_orig = next(gen)

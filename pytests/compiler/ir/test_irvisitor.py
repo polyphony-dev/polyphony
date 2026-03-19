@@ -1,6 +1,5 @@
 """Tests for new IrVisitor and IrTransformer."""
 from polyphony.compiler.ir.ir import *
-from polyphony.compiler.ir import ir as new
 from polyphony.compiler.ir.irvisitor import IrVisitor, IrTransformer
 from polyphony.compiler.ir.irreader import IrReader
 from polyphony.compiler.ir.irwriter import IrWriter
@@ -66,7 +65,7 @@ class UseCollector(IrVisitor):
         self.used_names = set()
 
     def visit_Temp(self, ir):
-        if ir.ctx == new.Ctx.LOAD:
+        if ir.ctx == Ctx.LOAD:
             self.used_names.add(ir.name)
 
 
@@ -157,12 +156,12 @@ mv y (+ x 10)
     blk = scope.entry_block
     # mv x 5 -> mv x 10
     stm0 = blk.stms[0]
-    assert isinstance(stm0, new.Move)
+    assert isinstance(stm0, Move)
     assert stm0.src.value == 10
     # mv y (+ x 10) -> mv y (+ x 20)
     stm1 = blk.stms[1]
-    assert isinstance(stm1, new.Move)
-    assert isinstance(stm1.src, new.BinOp)
+    assert isinstance(stm1, Move)
+    assert isinstance(stm1.src, BinOp)
     assert stm1.src.right.value == 20
 
 
@@ -206,9 +205,9 @@ mv y x
 class StmInserter(IrTransformer):
     """Inserts a NOP (mv _nop 0) before each Move statement."""
     def visit_Move(self, ir):
-        nop = new.Move(
-            dst=new.Temp(name='_nop', ctx=new.Ctx.STORE),
-            src=new.Const(value=0),
+        nop = Move(
+            dst=Temp(name='_nop', ctx=Ctx.STORE),
+            src=Const(value=0),
         )
         self.new_stms.append(nop)
         object.__setattr__(ir, 'src', self.visit(ir.src))
@@ -297,14 +296,14 @@ mv x 1
     scope = build_scope(src)
     blk = scope.entry_block
     # Simulate path_exp set by a prior pass (old IR)
-    from polyphony.compiler.ir.ir import Const as OLD_CONST
-    blk.path_exp = OLD_CONST(1)
+    # Const already imported via wildcard
+    blk.path_exp = Const(1)
 
     IdentityTransformer().process(scope)
 
     # path_exp must still be the old CONST, not None or new Const
     assert blk.path_exp is not None
-    assert isinstance(blk.path_exp, OLD_CONST)
+    assert isinstance(blk.path_exp, Const)
     assert blk.path_exp.value == 1
 
 
@@ -346,7 +345,7 @@ mv r (call f 3)
     ConstDoubler().process(scope)
 
     stm = scope.entry_block.stms[0]
-    assert isinstance(stm.src, new.Call)
+    assert isinstance(stm.src, Call)
     assert stm.src.args[0][1].value == 6  # 3 * 2
 
 
