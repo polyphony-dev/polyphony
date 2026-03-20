@@ -1238,6 +1238,73 @@ def test_add_branch_move_exit_block_updated():
     assert scope.exit_block is not original_exit, "exit_block should be updated after _add_branch_move"
 
 
+def test_make_branch_with_non_const_path_exp():
+    """_make_branch propagates non-Const path_exp with And to branch block."""
+    setup_test()
+    m_scope = Scope.create(None, 'BPath', {'class', 'module', 'instantiated'}, 0)
+    m_scope.add_sym('x', tags=set(), typ=Type.int())
+
+    scope = Scope.create(None, 'PathBr', {'function'}, 0)
+    scope.return_type = Type.none()
+    scope.add_sym('BPath', tags=set(), typ=Type.klass(m_scope.name))
+
+    obj1_sym = scope.add_sym('obj1', tags=set(), typ=Type.object(m_scope.name))
+    obj2_sym = scope.add_sym('obj2', tags=set(), typ=Type.object(m_scope.name))
+    obj_sel_sym = scope.add_sym('obj_sel', tags=set(), typ=Type.object(m_scope.name))
+    scope.add_sym('cond', tags={'condition'}, typ=Type.bool())
+
+    env.origin_registry.set_sym_origin(obj1_sym, obj1_sym)
+    env.origin_registry.set_sym_origin(obj2_sym, obj2_sym)
+    env.origin_registry.set_sym_origin(obj_sel_sym, obj_sel_sym)
+
+    blk1 = Block(scope, nametag='b1')
+    blk2 = Block(scope, nametag='b2')
+    blk3 = Block(scope, nametag='b3')
+    blk4 = Block(scope, nametag='b4')
+    blk5 = Block(scope, nametag='b5')
+
+    scope.set_entry_block(blk1)
+    scope.set_exit_block(blk5)
+
+    blk1.append_stm(Move(Temp('obj1', Ctx.STORE), SysCall(Temp('BPath'), [('', Temp('BPath'))], {})))
+    object.__setattr__(blk1.stms[-1].src, 'name', '$new')
+    blk1.append_stm(Move(Temp('obj2', Ctx.STORE), SysCall(Temp('BPath'), [('', Temp('BPath'))], {})))
+    object.__setattr__(blk1.stms[-1].src, 'name', '$new')
+    blk1.append_stm(Move(Temp('cond', Ctx.STORE), Const(1)))
+    blk1.append_stm(CJump(Temp('cond'), blk2.bid, blk3.bid))
+
+    blk2.append_stm(Jump(blk4.bid))
+    blk3.append_stm(Jump(blk4.bid))
+
+    phi = Phi(Temp('obj_sel', Ctx.STORE))
+    object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
+    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    blk4.append_stm(phi)
+    blk4.append_stm(Move(Attr(Temp('obj_sel', Ctx.STORE), 'x', Ctx.STORE), Const(42)))
+    blk4.append_stm(Jump(blk5.bid))
+
+    # Set non-Const path_exp on blk4 — this is the key difference
+    blk4.path_exp = RelOp(op='Eq', left=Temp('cond'), right=Const(1))
+
+    blk1.succs = [blk2, blk3]
+    blk2.preds = [blk1]; blk2.succs = [blk4]
+    blk3.preds = [blk1]; blk3.succs = [blk4]
+    blk4.preds = [blk2, blk3]; blk4.succs = [blk5]
+    blk5.preds = [blk4]
+
+    Block.set_order(blk1, 0)
+
+    ot = ObjectTransformer()
+    ot.process(scope)
+
+    # Verify that branch blocks have And path_exp (non-Const propagation)
+    found_and_path = False
+    for blk in scope.traverse_blocks():
+        if blk.path_exp and isinstance(blk.path_exp, RelOp) and blk.path_exp.op == 'And':
+            found_and_path = True
+    assert found_and_path, "_make_branch should create And path_exp when cur_blk has non-Const path"
+
+
 # ===========================================================
 # ObjectTransformer: _build_seq_ids with CMove usage
 # ===========================================================
