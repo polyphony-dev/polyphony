@@ -19,7 +19,7 @@ class BitwidthReducer(AHDLTransformer):
             case str() | None:
                 return 1
             case _:
-                type_error(self.current_stm, 'unsupported literal type {}'.format(repr(ahdl)))
+                assert False, 'unsupported literal type {}'.format(repr(ahdl))
 
     def visit_AHDL_VAR(self, ahdl):
         return ahdl.sig.width

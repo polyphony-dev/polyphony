@@ -23,7 +23,7 @@ class AHDLCopyOpt(AHDLTransformer):
             return True
         if target.sig.is_net():
             return True
-        return (target.sig.sym and
+        return bool(target.sig.sym and
             target.sig.sym.typ.is_object() and
             target.sig.sym.typ.scope.name.startswith('polyphony.Net'))
 

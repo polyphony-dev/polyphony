@@ -3,6 +3,7 @@
 Replaces all uses of a variable with a given expression.
 """
 from __future__ import annotations
+from dataclasses import replace as dataclasses_replace
 from typing import TYPE_CHECKING
 from ..ir import (
     Ir, IrExp, IrStm, IrVariable, IrNameExp,
@@ -13,6 +14,7 @@ from ..ir import (
 )
 from ..irhelper import qualified_symbols, irexp_type
 from ..types import typehelper
+from ..types.exprtype import ExprType
 from ..symbol import Symbol
 from ..analysis.usedef import UseDefDetector
 from logging import getLogger
@@ -20,6 +22,26 @@ logger = getLogger(__name__)
 if TYPE_CHECKING:
     from ..scope import Scope
     from ..analysis.usedef import UseDefTable
+
+
+def _replace_exprtype_in_typ(typ, old_expr_t: ExprType, new_expr_t: ExprType):
+    """Replace old_expr_t with new_expr_t in the type tree, returning updated type."""
+    if typ is old_expr_t:
+        return new_expr_t
+    if typ.is_list():
+        new_element = _replace_exprtype_in_typ(typ.element, old_expr_t, new_expr_t)
+        new_length = typ.length
+        if isinstance(typ.length, ExprType):
+            new_length = _replace_exprtype_in_typ(typ.length, old_expr_t, new_expr_t)
+        if new_element is typ.element and new_length is typ.length:
+            return typ
+        return typ.clone(element=new_element, length=new_length)
+    if typ.is_tuple():
+        new_element = _replace_exprtype_in_typ(typ.element, old_expr_t, new_expr_t)
+        if new_element is typ.element:
+            return typ
+        return typ.clone(element=new_element)
+    return typ
 
 
 class VarReplacer(object):
@@ -53,6 +75,26 @@ class VarReplacer(object):
         self.usedef = usedef
         self.replaced = False
         self.enable_dst_replacing = enable_dst
+
+    def _replace_stm_in_block(self, old_stm: IrStm, new_stm: IrStm) -> IrStm:
+        """Replace old_stm with new_stm in its block and update usedef.
+
+        Returns new_stm unchanged if old_stm has no block (orphan, e.g. ExprType.expr).
+        """
+        if not old_stm.block:
+            return new_stm
+        blk = self.scope.find_block(old_stm.block)
+        new_stm = blk.replace_stm(old_stm, new_stm)
+        if self.usedef:
+            self.usedef.replace_stm(old_stm, new_stm)
+        return new_stm
+
+    def _replace_stm(self, old_ir: IrStm, new_ir: IrStm) -> IrStm:
+        """Replace and record stm; skip block/usedef update if old_ir is an orphan (no block)."""
+        new_ir = self._replace_stm_in_block(old_ir, new_ir)
+        if old_ir.block:
+            self.replaces.append(new_ir)
+        return new_ir
 
     def visit_UnOp(self, ir):
         new_exp = self.visit(ir.exp)
@@ -177,34 +219,42 @@ class VarReplacer(object):
                     expr = expr_t.expr
                     old_scope = self.scope
                     self.scope = expr_t.scope
-                    self.replaced = False
-                    object.__setattr__(expr, 'exp', self.visit(expr.exp))
+                    new_exp = self.visit(expr.exp)
                     self.scope = old_scope
+                    if new_exp is expr.exp:
+                        continue
+                    new_expr = expr.model_copy(update={'exp': new_exp})
+                    new_expr_t = dataclasses_replace(expr_t, expr=new_expr)
+                    sym.typ = _replace_exprtype_in_typ(sym.typ, expr_t, new_expr_t)
+                    if expr.block:
+                        blk = scope.find_block(expr.block)
+                        blk.replace_stm(expr, new_expr)
 
     def visit_with_context(self, scope, irstm):
         # ExprType.expr is now new IR Expr — visit directly
         old_scope = self.scope
         self.scope = scope
-        self.visit(irstm)
+        new_irstm = self.visit(irstm)
         self.scope = old_scope
+        return new_irstm
 
     def visit_Expr(self, ir):
-        self.replaced = False
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
-        if self.replaced:
-            self.replaces.append(ir)
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return self._replace_stm(ir, ir.model_copy(update={'exp': new_exp}))
 
     def visit_CJump(self, ir):
-        self.replaced = False
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
-        if self.replaced:
-            self.replaces.append(ir)
+        new_exp = self.visit(ir.exp)
+        if new_exp is ir.exp:
+            return ir
+        return self._replace_stm(ir, ir.model_copy(update={'exp': new_exp}))
 
     def visit_MCJump(self, ir):
-        self.replaced = False
-        object.__setattr__(ir, 'conds', tuple(self.visit(cond) for cond in ir.conds))
-        if self.replaced:
-            self.replaces.append(ir)
+        new_conds = tuple(self.visit(cond) for cond in ir.conds)
+        if all(nc is oc for nc, oc in zip(new_conds, ir.conds)):
+            return ir
+        return self._replace_stm(ir, ir.model_copy(update={'conds': new_conds}))
 
     def visit_Jump(self, ir):
         pass
@@ -213,37 +263,67 @@ class VarReplacer(object):
         pass
 
     def visit_Move(self, ir):
-        self.replaced = False
-        object.__setattr__(ir, 'src', self.visit(ir.src))
-        if self.enable_dst_replacing:
-            object.__setattr__(ir, 'dst', self.visit(ir.dst))
-        if self.replaced:
-            self.replaces.append(ir)
+        new_src = self.visit(ir.src)
+        new_dst = self.visit(ir.dst) if self.enable_dst_replacing else ir.dst
+        if new_src is ir.src and new_dst is ir.dst:
+            return ir
+        updates = {}
+        if new_src is not ir.src:
+            updates['src'] = new_src
+        if new_dst is not ir.dst:
+            updates['dst'] = new_dst
+        return self._replace_stm(ir, ir.model_copy(update=updates))
 
     def visit_CExpr(self, ir):
-        self.replaced = False
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
-        self.visit_Expr(ir)
+        new_cond = self.visit(ir.cond)
+        new_exp = self.visit(ir.exp)
+        if new_cond is ir.cond and new_exp is ir.exp:
+            return ir
+        updates = {}
+        if new_cond is not ir.cond:
+            updates['cond'] = new_cond
+        if new_exp is not ir.exp:
+            updates['exp'] = new_exp
+        return self._replace_stm(ir, ir.model_copy(update=updates))
 
     def visit_CMove(self, ir):
-        self.replaced = False
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
-        self.visit_Move(ir)
+        new_cond = self.visit(ir.cond)
+        new_src = self.visit(ir.src)
+        new_dst = self.visit(ir.dst) if self.enable_dst_replacing else ir.dst
+        if new_cond is ir.cond and new_src is ir.src and new_dst is ir.dst:
+            return ir
+        updates = {}
+        if new_cond is not ir.cond:
+            updates['cond'] = new_cond
+        if new_src is not ir.src:
+            updates['src'] = new_src
+        if new_dst is not ir.dst:
+            updates['dst'] = new_dst
+        return self._replace_stm(ir, ir.model_copy(update=updates))
 
     def visit_Phi(self, ir):
-        self.replaced = False
-        if self.enable_dst_replacing:
-            object.__setattr__(ir, 'var', self.visit(ir.var))
-        object.__setattr__(ir, 'args', tuple(self.visit(arg) for arg in ir.args))
-        object.__setattr__(ir, 'ps', tuple(self.visit(p) for p in ir.ps))
-        if self.replaced:
-            self.replaces.append(ir)
+        new_var = self.visit(ir.var) if self.enable_dst_replacing else ir.var
+        new_args = tuple(self.visit(arg) for arg in ir.args)
+        new_ps = tuple(self.visit(p) for p in ir.ps)
+        var_changed = new_var is not ir.var
+        args_changed = any(na is not oa for na, oa in zip(new_args, ir.args))
+        ps_changed = any(np_ is not op for np_, op in zip(new_ps, ir.ps))
+        if not var_changed and not args_changed and not ps_changed:
+            return ir
+        updates = {}
+        if var_changed:
+            updates['var'] = new_var
+        if args_changed:
+            updates['args'] = new_args
+        if ps_changed:
+            updates['ps'] = new_ps
+        return self._replace_stm(ir, ir.model_copy(update=updates))
 
     def visit_UPhi(self, ir):
-        self.visit_Phi(ir)
+        return self.visit_Phi(ir)
 
     def visit_LPhi(self, ir):
-        self.visit_Phi(ir)
+        return self.visit_Phi(ir)
 
     def visit(self, ir):
         method = 'visit_' + ir.__class__.__name__

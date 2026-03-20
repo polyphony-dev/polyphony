@@ -46,4 +46,5 @@ class Signal(Tagged):
         return "Signal(\'{}\', {}, {})".format(self.name, self.width, self.tags)
 
     def prefix(self):
+        assert self.sym is not None
         return self.name[:-len(self.sym.hdl_name())]

@@ -480,6 +480,13 @@ class ConstantOpt(ConstantOptBase):
                     and not dst_sym.is_return()):
                 assert isinstance(dst_sym, Symbol)
                 defstms = self.usedef.get_stms_defining(dst_sym)
+                if len(defstms) > 1:
+                    import sys
+                    print(f'[DEBUG] stm={stm}', file=sys.stderr)
+                    print(f'[DEBUG] dst_sym={dst_sym}', file=sys.stderr)
+                    for d in defstms:
+                        print(f'[DEBUG] defstm={d!r} block={d.block}', file=sys.stderr)
+                    print(f'[DEBUG] stm in block? {stm in self.scope.find_block(stm.block).stms if stm.block else "no block"}', file=sys.stderr)
                 assert len(defstms) <= 1
 
                 dst_t = dst_sym.typ
@@ -503,22 +510,38 @@ class ConstantOpt(ConstantOptBase):
             elif self._can_attribute_propagate(stm):
                 dst_load = stm.dst.model_copy(update={'ctx': Ctx.LOAD})
                 dst_store = stm.dst
+                blk = scope.find_block(stm.block)
+                try:
+                    stm_idx = blk.stms.index(stm)
+                except ValueError:
+                    continue  # stm no longer in block; skip propagation
                 found_new_def = False
-                for next_stm in list(self.worklist):
+                i = stm_idx + 1
+                while i < len(blk.stms):
+                    next_stm = blk.stms[i]
                     use_vars = self.usedef.get_vars_used_at(next_stm)
+                    replaced_stm = next_stm
                     for v in use_vars:
                         if dst_load == v:
-                            # Replace use in next_stm
+                            # Replace use in next_stm; capture new stm for def-check and worklist update
                             replacer = VarReplacer(scope, dst_load, stm.src, self.usedef)
-                            replacer.visit(next_stm)
+                            new_next_stm = replacer.visit(next_stm)
+                            if new_next_stm is not None and new_next_stm is not next_stm:
+                                replaced_stm = new_next_stm
+                                try:
+                                    wl_idx = self.worklist.index(next_stm)
+                                    self.worklist[wl_idx] = new_next_stm
+                                except ValueError:
+                                    self.worklist.append(new_next_stm)
                             break
-                    def_vars = self.usedef.get_vars_defined_at(next_stm)
+                    def_vars = self.usedef.get_vars_defined_at(replaced_stm)
                     for v in def_vars:
                         if dst_store == v:
                             found_new_def = True
                             break
                     if found_new_def:
                         break
+                    i += 1
             elif (isinstance(stm, Move)
                     and isinstance(stm.src, Array)
                     and isinstance(stm.src.repeat, Const)):

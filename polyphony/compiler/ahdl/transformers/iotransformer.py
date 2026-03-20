@@ -16,7 +16,7 @@ class IOTransformer(AHDLTransformer):
             print(f'{inst_name}_ready')
             print('!!!', self.hdlmodule.name)
         if step == 0:
-            seq = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(1))]
+            seq: list[AHDL_STM] = [AHDL_MOVE(AHDL_VAR(ready, Ctx.STORE), AHDL_CONST(1))]
             for acc, arg in zip(args, ahdl_call.args):
                 assert not isinstance(arg, AHDL_MEMVAR)
                 seq.append(AHDL_MOVE(AHDL_VAR(acc, Ctx.STORE), arg))

@@ -2,7 +2,7 @@
 from collections import defaultdict, namedtuple
 from copy import copy
 import dataclasses
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from xml.dom.expatbuilder import Namespaces
 from .builtin import builtin_symbols
 from .block import Block
@@ -99,7 +99,7 @@ class FunctionParams(object):
 
 class SymbolTable(object):
     def __init__(self):
-        self.symbols = {}
+        self.symbols: dict[str, Symbol] = {}
 
     def __str__(self):
         s = ""
@@ -114,7 +114,7 @@ class SymbolTable(object):
             typ = Type.undef()
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
-        sym = Symbol(name, self.name, tags, typ)
+        sym = Symbol(name, self.name, tags, typ)  # type: ignore[attr-defined]
         self.symbols[name] = sym
         return sym
 
@@ -161,7 +161,7 @@ class SymbolTable(object):
         if sym and len(names) > 1:
             sym_t = sym.typ
             if sym_t.is_containable():
-                return sym_t.scope.find_sym_r(names[1:])
+                return sym_t.scope.find_sym_r(names[1:])  # type: ignore[union-attr]
             else:
                 return None
         return sym
@@ -372,13 +372,13 @@ class Scope(Tagged, SymbolTable):
         self.orig_base_name: str = name
         self.lineno: int = lineno
         self.scope_id: int = scope_id
-        self.entry_block: Block = None
-        self.exit_block: Block = None
+        self.entry_block: Block | None = None
+        self.exit_block: Block | None = None
         self.children: list["Scope"] = []
         self.bases: list["Scope"] = []
         self.block_count = 0
         self.block_map: dict[str, Block] = {}
-        self.worker_owner: "Scope" = None
+        self.worker_owner: "Scope | None" = None
         self.asap_latency = -1
         self.synth_params = make_synth_params()
         self.constants = {}
@@ -523,6 +523,7 @@ class Scope(Tagged, SymbolTable):
         s = Scope.create(parent, name, cloned_tags, self.lineno, origin=self)
 
         self_sym = self.parent.find_sym(self.base_name)
+        assert self_sym is not None
         new_sym_typ = self_sym.typ.clone(scope=s)
         parent.add_sym(s.base_name, set(self_sym.tags), typ=new_sym_typ)
         logger.debug("CLONE {} {}".format(self.name, s.name))
@@ -535,7 +536,7 @@ class Scope(Tagged, SymbolTable):
         else:
             s.children = list(self.children)
 
-        s.bases = list(self.bases)
+        s.bases = list(self.bases)  # type: ignore[assignment]
 
         self.clone_symbols_by_name(s)
         from .ir import Ir
@@ -554,8 +555,10 @@ class Scope(Tagged, SymbolTable):
                     s_func.add_param(s.symbols[p.name], cloned_defval)
             s_func = s.as_function()
             if s_func:
-                s_func.return_type = self.return_type
+                s_func.return_type = func.return_type
         block_map, stm_map = self.clone_blocks(s)
+        assert self.entry_block is not None
+        assert self.exit_block is not None
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
 
@@ -787,17 +790,18 @@ class Instantiable:
 
     def instantiate(self, inst_name, parent=None):
         if parent is None:
-            parent = self.parent
-        new_class = self.clone("", inst_name, parent, recursive=True, rename_children=False)
+            parent = self.parent  # type: ignore[attr-defined]
+        new_class = self.clone("", inst_name, parent, recursive=True, rename_children=False)  # type: ignore[attr-defined]
         assert env.origin_registry.scope_origin_of(new_class) is self
 
-        old_class_sym = self.parent.find_sym(self.base_name)
+        old_class_sym = self.parent.find_sym(self.base_name)  # type: ignore[attr-defined]
+        assert old_class_sym is not None
         new_sym = new_class.parent.find_sym(new_class.base_name)
         assert isinstance(new_sym, Symbol)
         origin = env.origin_registry.sym_origin_of(old_class_sym)
         env.origin_registry.set_sym_origin(new_sym, origin if origin else old_class_sym)
-        new_scopes: dict["Scope", "Scope"] = {self: new_class}
-        for old_child, new_child in zip(self.children, new_class.children):
+        new_scopes: dict["Scope", "Scope"] = {self: new_class}  # type: ignore[dict-item]
+        for old_child, new_child in zip(self.children, new_class.children):  # type: ignore[attr-defined]
             new_scopes[old_child] = new_child
         for old, new in new_scopes.items():
             syms = new_class.find_scope_sym(old)
@@ -806,8 +810,9 @@ class Instantiable:
                     sym.typ = sym.typ.clone(scope=new)
             if new.parent.is_namespace():
                 continue
-            new_t = new.parent.find_sym(new.base_name).typ
-            assert new_t.scope is new
+            new_sym2 = new.parent.find_sym(new.base_name)
+            assert new_sym2 is not None
+            assert new_sym2.typ.scope is new
         self._replace_type_scope(new_scopes)
         return new_class
 
@@ -830,7 +835,7 @@ class FunctionScope(Instantiable, Scope):
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(parent, name, tags, lineno, scope_id)
         self.function_params = FunctionParams(self.is_method())
-        self.return_type: Type = None
+        self.return_type: Type | None = None
         self.loop_tree = LoopNestTree()
 
     def as_function(self) -> "FunctionScope":
@@ -908,6 +913,8 @@ class FunctionScope(Instantiable, Scope):
         if not self.loop_tree.root:
             return
         r = self.find_region(blk)
+        if r is None:
+            return
         r.remove_body(blk)
 
     def is_leaf_region(self, r):
@@ -932,6 +939,7 @@ class FunctionScope(Instantiable, Scope):
 class ClassScope(Instantiable, Scope):
     def __init__(self, parent, name, tags, lineno, scope_id):
         super().__init__(parent, name, tags, lineno, scope_id)
+        self.bases: list["ClassScope"] = []  # type: ignore[assignment]  # override: bases are always ClassScope
         self.workers: list["Scope"] = []
         self.module_params = []
         self.module_param_vars = []
@@ -947,10 +955,10 @@ class ClassScope(Instantiable, Scope):
         assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
         worker_scope.worker_owner = self
 
-    def find_ctor(self):
+    def find_ctor(self) -> "FunctionScope | None":
         for child in self.children:
             if child.is_ctor():
-                return child
+                return child.as_function()
         return None
 
     def is_subclassof(self, clazz):

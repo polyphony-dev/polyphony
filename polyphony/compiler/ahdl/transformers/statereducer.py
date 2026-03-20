@@ -93,9 +93,11 @@ class EmptyStateSkipper(AHDLTransformer):
         next_state = self._get_state(ahdl.target_name)
         if not is_empty_state(next_state):
             return ahdl
+        next_transition: AHDL_TRANSITION = ahdl
         while is_empty_state(next_state) and next_state != self.current_state:
             assert isinstance(next_state.block.codes[0], AHDL_TRANSITION)
-            next_transition = next_state.block.codes[-1]
+            next_transition = next_state.block.codes[-1]  # type: ignore[assignment]
+            assert isinstance(next_transition, AHDL_TRANSITION)
             if next_transition.target_name == next_state.name:
                 break
             logger.debug(f'{self.current_state.name}: Skip {ahdl.target_name} -> {next_transition.target_name}')
@@ -130,5 +132,5 @@ class IfForwarder(AHDLTransformer):
         logger.debug(f'{new_ahdl}')
         return self.visit(new_ahdl)
 
-    def visit_PipelineState(self, ahdl):
-        return ahdl
+    def visit_PipelineState(self, state):
+        return state

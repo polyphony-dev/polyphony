@@ -130,6 +130,7 @@ def expr2ir(expr, name=None, scope=None):
         ar = Array(items=items, mutable=False)
         return ar
     else:
+        assert scope is not None, "scope is required for class/function expressions"
         if inspect.isclass(expr):
             if expr.__module__ == 'polyphony.typing':
                 klass_name = expr.__module__ + '.' + expr.__name__
@@ -254,6 +255,8 @@ def irexp_type(ir: IrExp, scope) -> Type:
             return irexp_type(unop.exp, scope)
         case Const():
             return Type.int()
+        case _:
+            return Type.undef()
 
 
 def is_port_method_call(call, scope, callee_scope=None):
@@ -366,6 +369,7 @@ def _try_get_constant_pure(qsym, scope):
             if name in vars:
                 return vars[name]
         return None
+    assert env.runtime_info is not None
     vars = env.runtime_info.global_vars
     names = [sym if isinstance(sym, str) else sym.name for sym in qsym]
     if qsym[0].scope.is_global():

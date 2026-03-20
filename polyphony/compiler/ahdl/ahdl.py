@@ -53,7 +53,7 @@ class AHDL_OP(AHDL_EXP):
     op: str
     args: tuple[AHDL_EXP, ...]
 
-    def __init__(self, op, *args):
+    def __init__(self, op: str, *args: AHDL_EXP):
         object.__setattr__(self, 'op', op)
         object.__setattr__(self, 'args', args)
 
@@ -63,7 +63,7 @@ class AHDL_OP(AHDL_EXP):
             str_args = [str(a) for a in self.args]
             return f'({op.join(str_args)})'
         else:
-            return f'({PYTHON_OP_2_HDL_OP_MAP[self.op]}{self.args[0]})'
+            return f'({PYTHON_OP_2_HDL_OP_MAP[self.op]}{self.args[0]})'  # type: ignore[index]
 
     def is_relop(self):
         return self.op in ('And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE', 'Is', 'IsNot')
@@ -100,7 +100,7 @@ class AHDL_VAR(AHDL_EXP):
             object.__setattr__(self, 'vars', var)
         object.__setattr__(self, 'ctx', ctx)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return '.'.join([s.name for s in self.vars])
 
     @property
@@ -124,7 +124,7 @@ class AHDL_MEMVAR(AHDL_VAR):
     def __init__(self, var: Signal | tuple, ctx: Ctx):
         super().__init__(var, ctx)
 
-    def __str__(self):
+    def __str__(self) -> str:  # type: ignore[override]
         return super().__str__() + f'[{self.vars[-1].width}]'
 
 

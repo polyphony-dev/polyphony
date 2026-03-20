@@ -1,6 +1,6 @@
 ﻿from .signal import Signal
 from ..ir.ir import Ctx
-from ..common.utils import is_a
+from ..common.utils import is_a  # type: ignore[attr-defined]
 
 PYTHON_OP_2_HDL_OP_MAP = {
     'And': '&&', 'Or': '||',
@@ -68,7 +68,7 @@ class AHDL_OP(AHDL_EXP):
             str_args = [str(a) for a in self.args]
             return '({})'.format(op.join(str_args))
         else:
-            return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.args[0])
+            return '({}{})'.format(PYTHON_OP_2_HDL_OP_MAP[self.op], self.args[0])  # type: ignore
 
     def __repr__(self):
         args = ', '.join([repr(arg) for arg in self.args])
@@ -164,12 +164,12 @@ class AHDL_RECORD(AHDL_EXP):
 
     @property
     def sig(self):
-        return self.attr.sig
+        return self.attr.sig  # type: ignore[union-attr]
 
     @property
     def tail(self):
-        if self.attr.is_a(AHDL_RECORD):
-            return self.attr.tail
+        if self.attr.is_a(AHDL_RECORD):  # type: ignore[union-attr]
+            return self.attr.tail  # type: ignore[union-attr]
         else:
             return self.attr
 

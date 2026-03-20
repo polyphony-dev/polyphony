@@ -124,6 +124,36 @@ class UseDefTable(object):
         for v in list(self.get_vars_defined_at(stm)):
             self.remove_var_def(scope, v, stm)
 
+    def replace_stm(self, old_stm: IrStm, new_stm: IrStm):
+        """Migrate all def/use entries from old_stm to new_stm."""
+        for item in list(self._def_stm2.get(old_stm, set())):
+            self._def_sym2[item.sym].discard(item)
+            self._def_qsym2[item.qsym].discard(item)
+            self._def_var2[item.var].discard(item)
+            self._def_stm2[old_stm].discard(item)
+            self._def_blk2[item.blk].discard(item)
+            new_item = UseDefItem(item.sym, item.qsym, item.var, new_stm, new_stm.block)
+            self._def_sym2[new_item.sym].add(new_item)
+            self._def_qsym2[new_item.qsym].add(new_item)
+            self._def_var2[new_item.var].add(new_item)
+            self._def_stm2[new_stm].add(new_item)
+            self._def_blk2[new_item.blk].add(new_item)
+        for item in list(self._use_stm2.get(old_stm, set())):
+            self._use_sym2[item.sym].discard(item)
+            self._use_qsym2[item.qsym].discard(item)
+            self._use_var2[item.var].discard(item)
+            self._use_stm2[old_stm].discard(item)
+            self._use_blk2[item.blk].discard(item)
+            new_item = UseDefItem(item.sym, item.qsym, item.var, new_stm, new_stm.block)
+            self._use_sym2[new_item.sym].add(new_item)
+            self._use_qsym2[new_item.qsym].add(new_item)
+            self._use_var2[new_item.var].add(new_item)
+            self._use_stm2[new_stm].add(new_item)
+            self._use_blk2[new_item.blk].add(new_item)
+        consts = self._use_stm2Const.pop(old_stm, set())
+        if consts:
+            self._use_stm2Const[new_stm].update(consts)
+
     def get_stms_defining(self, key: Symbol | IrVariable | tuple[Symbol]) -> set[IrStm]:
         if isinstance(key, Symbol):
             stms = set([item.stm for item in self._def_sym2[key]])

@@ -3,7 +3,9 @@
 Unified IR using pydantic BaseModel. Old and new IR are now the same.
 """
 from __future__ import annotations
-from typing import Any
+from typing import Any, TYPE_CHECKING, cast
+if TYPE_CHECKING:
+    from .scope import Scope
 from collections import namedtuple
 from enum import IntEnum
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -207,6 +209,14 @@ class Ir(BaseModel):
 class IrExp(Ir):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
+    def kids(self) -> tuple:
+        """Return the leaf variable nodes reachable from this expression.
+
+        Subclasses override this; the base returns an empty tuple for non-variable
+        expression types that do not decompose into named children.
+        """
+        return ()
+
 
 class IrStm(Ir):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
@@ -329,7 +339,7 @@ class Attr(IrVariable):
 
     @property
     def qualified_name(self) -> tuple[str, ...]:
-        return self.exp.qualified_name + (self.name,)
+        return self.exp.qualified_name + (self.name,)  # type: ignore
 
     def head_name(self) -> str:
         if isinstance(self.exp, Attr):
@@ -339,7 +349,7 @@ class Attr(IrVariable):
         return ''
 
     def tail_name(self) -> str:
-        return self.exp.name
+        return self.exp.name  # type: ignore
 
 
 # ============================================================
@@ -615,17 +625,20 @@ class IrCallable(IrNameExp):
             kids += list(arg.kids())
         return tuple(kids)
 
-    def get_callee_scope(self, current_scope):
+    def get_callee_scope(self, current_scope) -> "Scope":
         """Resolve the scope of the function being called."""
         from .irhelper import qualified_symbols
         from .symbol import Symbol
         from .types.scopetype import ScopeType
+        from .scope import Scope
         qsyms = qualified_symbols(self.func, current_scope)
         symbol = qsyms[-1]
         assert isinstance(symbol, Symbol)
         func_t = symbol.typ
         assert func_t.has_scope()
-        return func_t.scope
+        scope = cast(ScopeType, func_t).scope
+        assert isinstance(scope, Scope)
+        return scope
 
 
 class Call(IrCallable):

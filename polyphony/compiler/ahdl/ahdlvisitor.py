@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Optional
 from .ahdl import AHDL, AHDL_STM, State
 from .stg import STG
 from .hdlmodule import FSM
@@ -11,7 +11,7 @@ class AHDLVisitor(object):
         self.current_state: State = None  # type: ignore
         self.current_stm: AHDL_STM = None  # type: ignore
 
-    def process(self, hdlmodule):
+    def process(self, hdlmodule) -> Any:
         self.hdlmodule = hdlmodule
         for decl in hdlmodule.decls:
             self.visit(decl)
@@ -34,158 +34,159 @@ class AHDLVisitor(object):
         for state in stg.states:
             self.visit(state)
 
-    def visit_AHDL_CONST(self, ahdl):
+    def visit_AHDL_CONST(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_OP(self, ahdl):
+    def visit_AHDL_OP(self, ahdl) -> Any:
         for a in ahdl.args:
             self.visit(a)
 
-    def visit_AHDL_META_OP(self, ahdl):
+    def visit_AHDL_META_OP(self, ahdl) -> Any:
         for a in ahdl.args:
             if isinstance(a, AHDL):
                 self.visit(a)
 
-    def visit_AHDL_VAR(self, ahdl):
+    def visit_AHDL_VAR(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_MEMVAR(self, ahdl):
+    def visit_AHDL_MEMVAR(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_SUBSCRIPT(self, ahdl):
+    def visit_AHDL_SUBSCRIPT(self, ahdl) -> Any:
         self.visit(ahdl.memvar)
         self.visit(ahdl.offset)
 
-    def visit_AHDL_SYMBOL(self, ahdl):
+    def visit_AHDL_SYMBOL(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_CONCAT(self, ahdl):
+    def visit_AHDL_CONCAT(self, ahdl) -> Any:
         for var in ahdl.varlist:
             self.visit(var)
 
-    def visit_AHDL_SLICE(self, ahdl):
+    def visit_AHDL_SLICE(self, ahdl) -> Any:
         self.visit(ahdl.var)
         self.visit(ahdl.hi)
         self.visit(ahdl.lo)
 
-    def visit_AHDL_FUNCALL(self, ahdl):
+    def visit_AHDL_FUNCALL(self, ahdl) -> Any:
         self.visit(ahdl.name)
         for arg in ahdl.args:
             self.visit(arg)
 
-    def visit_AHDL_IF_EXP(self, ahdl):
+    def visit_AHDL_IF_EXP(self, ahdl) -> Any:
         self.visit(ahdl.cond)
         self.visit(ahdl.lexp)
         self.visit(ahdl.rexp)
 
-    def visit_AHDL_BLOCK(self, ahdl):
+    def visit_AHDL_BLOCK(self, ahdl) -> Any:
         for c in ahdl.codes:
             self.visit(c)
 
-    def visit_AHDL_NOP(self, ahdl):
+    def visit_AHDL_NOP(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_INLINE(self, ahdl):
+    def visit_AHDL_INLINE(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_MOVE(self, ahdl):
+    def visit_AHDL_MOVE(self, ahdl) -> Any:
         self.visit(ahdl.src)
         self.visit(ahdl.dst)
 
-    def visit_AHDL_ASSIGN(self, ahdl):
+    def visit_AHDL_ASSIGN(self, ahdl) -> Any:
         self.visit(ahdl.src)
         self.visit(ahdl.dst)
 
-    def visit_AHDL_FUNCTION(self, ahdl):
+    def visit_AHDL_FUNCTION(self, ahdl) -> Any:
         self.visit(ahdl.output)
         for inp in ahdl.inputs:
             self.visit(inp)
         for stm in ahdl.stms:
             self.visit(stm)
 
-    def visit_AHDL_COMB(self, ahdl):
+    def visit_AHDL_COMB(self, ahdl) -> Any:
         for stm in ahdl.stms:
             self.visit(stm)
 
-    def visit_AHDL_EVENT_TASK(self, ahdl):
+    def visit_AHDL_EVENT_TASK(self, ahdl) -> Any:
         self.visit(ahdl.stm)
 
-    def visit_AHDL_CONNECT(self, ahdl):
+    def visit_AHDL_CONNECT(self, ahdl) -> Any:
         self.visit(ahdl.src)
         self.visit(ahdl.dst)
 
-    def visit_AHDL_IO_READ(self, ahdl):
+    def visit_AHDL_IO_READ(self, ahdl) -> Any:
         self.visit(ahdl.io)
         if ahdl.dst:
             self.visit(ahdl.dst)
 
-    def visit_AHDL_IO_WRITE(self, ahdl):
+    def visit_AHDL_IO_WRITE(self, ahdl) -> Any:
         self.visit(ahdl.io)
         self.visit(ahdl.src)
 
-    def visit_AHDL_SEQ(self, ahdl):
+    def visit_AHDL_SEQ(self, ahdl) -> Any:
         method = 'visit_{}'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
+        assert visitor is not None
         return visitor(ahdl.factor)
 
-    def visit_AHDL_IF(self, ahdl):
+    def visit_AHDL_IF(self, ahdl) -> Any:
         for cond in ahdl.conds:
             if cond:
                 self.visit(cond)
         for ahdlblk in ahdl.blocks:
             self.visit(ahdlblk)
 
-    def visit_AHDL_MODULECALL(self, ahdl):
+    def visit_AHDL_MODULECALL(self, ahdl) -> Any:
         for arg in ahdl.args:
             self.visit(arg)
 
-    def visit_AHDL_CALLEE_PROLOG(self, ahdl):
+    def visit_AHDL_CALLEE_PROLOG(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_CALLEE_EPILOG(self, ahdl):
+    def visit_AHDL_CALLEE_EPILOG(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_PROCCALL(self, ahdl):
+    def visit_AHDL_PROCCALL(self, ahdl) -> Any:
         for arg in ahdl.args:
             self.visit(arg)
 
-    def visit_AHDL_META_WAIT(self, ahdl):
+    def visit_AHDL_META_WAIT(self, ahdl) -> Any:
         for arg in ahdl.args:
             if isinstance(arg, AHDL):
                 self.visit(arg)
 
-    def visit_AHDL_CASE_ITEM(self, ahdl):
+    def visit_AHDL_CASE_ITEM(self, ahdl) -> Any:
         self.visit(ahdl.val)
         self.visit(ahdl.block)
 
-    def visit_AHDL_CASE(self, ahdl):
+    def visit_AHDL_CASE(self, ahdl) -> Any:
         self.visit(ahdl.sel)
         for item in ahdl.items:
             self.visit(item)
 
-    def visit_AHDL_TRANSITION(self, ahdl):
+    def visit_AHDL_TRANSITION(self, ahdl) -> Any:
         pass
 
-    def visit_AHDL_TRANSITION_IF(self, ahdl):
+    def visit_AHDL_TRANSITION_IF(self, ahdl) -> Any:
         self.visit_AHDL_IF(ahdl)
 
-    def visit_AHDL_PIPELINE_GUARD(self, ahdl):
+    def visit_AHDL_PIPELINE_GUARD(self, ahdl) -> Any:
         self.visit_AHDL_IF(ahdl)
 
-    def visit_State(self, state):
+    def visit_State(self, state) -> Any:
         self.current_state = state
         self.visit(state.block)
 
-    def visit_PipelineState(self, state):
+    def visit_PipelineState(self, state) -> Any:
         self.current_state = state
         self.visit(state.block)
         # raise NotImplementedError()
 
-    def visit_PipelineStage(self, stage):
+    def visit_PipelineStage(self, stage) -> Any:
         self.visit(stage.block)
         #raise NotImplementedError()
 
-    def find_visitor(self, cls):
+    def find_visitor(self, cls) -> Any:
         method = 'visit_' + cls.__name__
         visitor = getattr(self, method, None)
         if not visitor:
@@ -195,10 +196,11 @@ class AHDLVisitor(object):
                     break
         return visitor
 
-    def visit(self, ahdl):
+    def visit(self, ahdl) -> Any:
         if isinstance(ahdl, AHDL_STM):
             self.current_stm = ahdl
         visitor = self.find_visitor(ahdl.__class__)
+        assert visitor is not None
         return visitor(ahdl)
 
 
@@ -208,7 +210,7 @@ class AHDLCollector(AHDLVisitor):
         self.ahdl_cls = ahdl_cls
         self.results = defaultdict(list)
 
-    def visit(self, ahdl):
+    def visit(self, ahdl) -> Any:
         if ahdl.__class__ is self.ahdl_cls:
             self.results[self.current_state].append(ahdl)
         super().visit(ahdl)

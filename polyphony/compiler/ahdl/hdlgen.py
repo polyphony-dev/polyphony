@@ -40,7 +40,7 @@ class HDLModuleBuilder(object):
                 for name, v in cls.module_param_vars:
                     param_map[name] = v
             connections = []
-            for (var, connector_name, attrs) in subscope.connectors(instance_sig.name):
+            for (var, connector_name, attrs) in cast(HDLModule, subscope).connectors(instance_sig.name):
                 connector = self.hdlmodule.gen_sig(connector_name, var.sig.width, attrs)
                 connections.append((var, connector))
             self.hdlmodule.add_sub_module(instance_sig.name,

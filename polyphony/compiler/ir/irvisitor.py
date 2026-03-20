@@ -3,6 +3,7 @@
 IrVisitor / IrTransformer: traversal of IR via block.stms (PascalCase visit methods).
 Dispatch is based on class name: visit(ir) calls visit_<ClassName>(ir).
 """
+from typing import Any
 from .ir import (
     Ir, IrExp, IrStm, Jump, CJump, MCJump,
 )
@@ -30,7 +31,7 @@ class IrVisitor(object):
         if block.path_exp:
             self.visit(block.path_exp)
 
-    def visit(self, ir):
+    def visit(self, ir) -> Any:
         method = 'visit_' + ir.__class__.__name__
         visitor = getattr(self, method, None)
         if isinstance(ir, IrStm):
@@ -41,63 +42,63 @@ class IrVisitor(object):
 
     # --- IrExp ---
 
-    def visit_UnOp(self, ir):
+    def visit_UnOp(self, ir) -> Any:
         self.visit(ir.exp)
 
-    def visit_BinOp(self, ir):
+    def visit_BinOp(self, ir) -> Any:
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_RelOp(self, ir):
+    def visit_RelOp(self, ir) -> Any:
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_CondOp(self, ir):
+    def visit_CondOp(self, ir) -> Any:
         self.visit(ir.cond)
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_PolyOp(self, ir):
+    def visit_PolyOp(self, ir) -> Any:
         for v in ir.values:
             self.visit(v)
 
-    def _visit_args(self, args, kwargs):
+    def _visit_args(self, args, kwargs) -> Any:
         for _, arg in args:
             self.visit(arg)
         for kwarg in kwargs.values():
             self.visit(kwarg)
 
-    def visit_Call(self, ir):
+    def visit_Call(self, ir) -> Any:
         self.visit(ir.func)
         self._visit_args(ir.args, ir.kwargs)
 
-    def visit_SysCall(self, ir):
+    def visit_SysCall(self, ir) -> Any:
         self.visit(ir.func)
         self._visit_args(ir.args, ir.kwargs)
 
-    def visit_New(self, ir):
+    def visit_New(self, ir) -> Any:
         self.visit(ir.func)
         self._visit_args(ir.args, ir.kwargs)
 
-    def visit_Const(self, ir):
+    def visit_Const(self, ir) -> Any:
         pass
 
-    def visit_Temp(self, ir):
+    def visit_Temp(self, ir) -> Any:
         pass
 
-    def visit_Attr(self, ir):
+    def visit_Attr(self, ir) -> Any:
         self.visit(ir.exp)
 
-    def visit_MRef(self, ir):
+    def visit_MRef(self, ir) -> Any:
         self.visit(ir.mem)
         self.visit(ir.offset)
 
-    def visit_MStore(self, ir):
+    def visit_MStore(self, ir) -> Any:
         self.visit(ir.mem)
         self.visit(ir.offset)
         self.visit(ir.exp)
 
-    def visit_Array(self, ir):
+    def visit_Array(self, ir) -> Any:
         if ir.repeat is not None:
             self.visit(ir.repeat)
         for item in ir.items:
@@ -105,35 +106,35 @@ class IrVisitor(object):
 
     # --- IrStm ---
 
-    def visit_Expr(self, ir):
+    def visit_Expr(self, ir) -> Any:
         self.visit(ir.exp)
 
-    def visit_CExpr(self, ir):
+    def visit_CExpr(self, ir) -> Any:
         self.visit(ir.cond)
         self.visit_Expr(ir)
 
-    def visit_Move(self, ir):
+    def visit_Move(self, ir) -> Any:
         self.visit(ir.src)
         self.visit(ir.dst)
 
-    def visit_CMove(self, ir):
+    def visit_CMove(self, ir) -> Any:
         self.visit(ir.cond)
         self.visit_Move(ir)
 
-    def visit_CJump(self, ir):
+    def visit_CJump(self, ir) -> Any:
         self.visit(ir.exp)
 
-    def visit_MCJump(self, ir):
+    def visit_MCJump(self, ir) -> Any:
         for cond in ir.conds:
             self.visit(cond)
 
-    def visit_Jump(self, ir):
+    def visit_Jump(self, ir) -> Any:
         pass
 
-    def visit_Ret(self, ir):
+    def visit_Ret(self, ir) -> Any:
         self.visit(ir.exp)
 
-    def visit_Phi(self, ir):
+    def visit_Phi(self, ir) -> Any:
         self.visit(ir.var)
         for arg in ir.args:
             if arg:
@@ -142,13 +143,13 @@ class IrVisitor(object):
             if p:
                 self.visit(p)
 
-    def visit_UPhi(self, ir):
+    def visit_UPhi(self, ir) -> Any:
         self.visit_Phi(ir)
 
-    def visit_LPhi(self, ir):
+    def visit_LPhi(self, ir) -> Any:
         self.visit_Phi(ir)
 
-    def visit_MStm(self, ir):
+    def visit_MStm(self, ir) -> Any:
         for stm in ir.stms:
             self.visit(stm)
 
@@ -215,7 +216,7 @@ class IrTransformer(IrVisitor):
             return ir
         return ir.model_copy(update={'values': new_values})
 
-    def _visit_args(self, args):
+    def _visit_args(self, args, kwargs=None):  # type: ignore
         new_args = tuple((name, self.visit(arg)) for name, arg in args)
         changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, args))
         return new_args, changed

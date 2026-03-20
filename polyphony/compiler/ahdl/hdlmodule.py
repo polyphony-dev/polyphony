@@ -27,7 +27,7 @@ class FSM(object):
                     s.parent = None
     def clone(self):
         new = FSM(self.name, self.scope, self.state_var)
-        new.stgs = [stg.clone() for stg in self.stgs]
+        new.stgs = [stg.clone() for stg in self.stgs]  # type: ignore[attr-defined]
         new.outputs = self.outputs.copy()
         new.reset_stms = self.reset_stms[:]
         return new
@@ -194,6 +194,7 @@ class HDLModule(HDLScope):
         # We already clone subscopes in super().clone_core()
         for name, sub_module, connections, param_map in self.sub_modules.values():
             orig_module_sig = self.signal(name)
+            assert orig_module_sig is not None
             new_module_sig = sig_maps[new.name][orig_module_sig]
             new_sub_hdlscope = new.subscopes[new_module_sig]
             new.sub_modules[name] = (name, new_sub_hdlscope, connections, param_map)

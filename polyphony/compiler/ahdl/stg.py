@@ -7,7 +7,7 @@ class STG(object):
     "State Transition Graph"
     def __init__(self, name, parent, hdlmodule):
         self.name:str = name
-        self.parent:STG = parent
+        self.parent: STG | None = parent
         self._states:list[State] = []
         self._state_map:dict[str, State] = {}
         self.hdlmodule = hdlmodule
@@ -20,7 +20,7 @@ class STG(object):
         return s
 
     @property
-    def states(self) -> tuple[State]:
+    def states(self) -> tuple[State, ...]:
         return tuple(self._states)
 
     def new_state(self, name: str, block: AHDL_BLOCK, step: int) -> State:
