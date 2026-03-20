@@ -525,8 +525,7 @@ def test_write_scope_with_blocks_and_stms():
 def test_write_phi_no_ps():
     """IrWriter formats Phi without path predicates."""
     writer = IrWriter()
-    phi = Phi(var=Temp('x', Ctx.STORE))
-    phi.args.extend([Const(1), Const(2)])
+    phi = Phi(var=Temp('x', Ctx.STORE), args=(Const(1), Const(2)))
     result = writer._format_stm(phi)
     assert result == 'phi x (1 2)'
 
@@ -534,9 +533,7 @@ def test_write_phi_no_ps():
 def test_write_phi_with_ps():
     """IrWriter formats Phi with path predicates."""
     writer = IrWriter()
-    phi = Phi(var=Temp('x', Ctx.STORE))
-    phi.args.extend([Const(1), Const(2)])
-    phi.ps.extend([Temp('c'), Const(True)])
+    phi = Phi(var=Temp('x', Ctx.STORE), args=(Const(1), Const(2)), ps=(Temp('c'), Const(True)))
     result = writer._format_stm(phi)
     assert result == 'phi x (1 2) (c True)'
 
@@ -544,8 +541,7 @@ def test_write_phi_with_ps():
 def test_write_uphi():
     """IrWriter formats UPhi."""
     writer = IrWriter()
-    uphi = UPhi(var=Temp('x', Ctx.STORE))
-    uphi.args.extend([Const(1)])
+    uphi = UPhi(var=Temp('x', Ctx.STORE), args=(Const(1),))
     result = writer._format_stm(uphi)
     assert result == 'uphi x (1)'
 
@@ -553,8 +549,7 @@ def test_write_uphi():
 def test_write_lphi():
     """IrWriter formats LPhi."""
     writer = IrWriter()
-    lphi = LPhi(var=Temp('x', Ctx.STORE))
-    lphi.args.extend([Const(1), Const(2)])
+    lphi = LPhi(var=Temp('x', Ctx.STORE), args=(Const(1), Const(2)))
     result = writer._format_stm(lphi)
     assert result == 'lphi x (1 2)'
 

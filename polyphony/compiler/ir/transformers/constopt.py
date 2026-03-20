@@ -246,19 +246,19 @@ class ConstantOptBase(IrVisitor):
                 if succ.preds:
                     phis = succ.collect_stms([Phi])
                     for phi in phis:
-                        for pi, p in enumerate(phi.ps[:]):
+                        for pi, p in enumerate(phi.ps):
                             if isinstance(p, IrVariable):
                                 v_sym = qualified_symbols(p, self.scope)[-1]
                                 assert isinstance(v_sym, Symbol)
                                 blks = self.usedef.get_blks_defining(v_sym)
                                 if blk in blks:
-                                    phi.args.pop(pi)
-                                    phi.ps.pop(pi)
+                                    object.__setattr__(phi, 'args', phi.args[:pi] + phi.args[pi + 1:])
+                                    object.__setattr__(phi, 'ps', phi.ps[:pi] + phi.ps[pi + 1:])
                                     break
                     lphis = succ.collect_stms([LPhi])
                     for lphi in lphis:
-                        lphi.args.pop(idx)
-                        lphi.ps.pop(idx)
+                        object.__setattr__(lphi, 'args', lphi.args[:idx] + lphi.args[idx + 1:])
+                        object.__setattr__(lphi, 'ps', lphi.ps[:idx] + lphi.ps[idx + 1:])
                 elif succ is not self.scope.entry_block:
                     self._remove_dominated_branch(succ, worklist)
 
@@ -291,8 +291,8 @@ class ConstantOptBase(IrVisitor):
                 false_blk.preds.pop(idx)
                 phis = false_blk.collect_stms([Phi, LPhi])
                 for phi in phis:
-                    phi.args.pop(idx)
-                    phi.ps.pop(idx)
+                    object.__setattr__(phi, 'args', phi.args[:idx] + phi.args[idx + 1:])
+                    object.__setattr__(phi, 'ps', phi.ps[:idx] + phi.ps[idx + 1:])
 
             idx = find_nth_item_index(blk.succs, false_blk, blk_i)
             assert idx >= 0
@@ -425,10 +425,11 @@ class ConstantOpt(ConstantOptBase):
                     blk.stms[blk.stms.index(stm)] = result
                 stm = result
             if isinstance(stm, (Phi, UPhi, LPhi)):
-                for i, p in enumerate(stm.ps[:]):
-                    stm.ps[i] = reduce_relexp(p)
+                new_ps = tuple(reduce_relexp(p) for p in stm.ps)
+                if new_ps != stm.ps:
+                    object.__setattr__(stm, 'ps', new_ps)
                 is_move = False
-                for p in stm.ps[:]:
+                for p in stm.ps:
                     if not isinstance(stm, LPhi) and isinstance(p, Const) and p.value and stm.ps.index(p) != (len(stm.ps) - 1):
                         is_move = True
                         idx = stm.ps.index(p)
@@ -439,12 +440,12 @@ class ConstantOpt(ConstantOptBase):
                         self.worklist.append(mv)
                         dead_stms.append(stm)
                         break
-                for p in stm.ps[:]:
+                for p in stm.ps:
                     if (isinstance(p, Const) and not p.value or
                             isinstance(p, UnOp) and p.op == 'Not' and isinstance(p.exp, Const) and p.exp.value):
                         idx = stm.ps.index(p)
-                        stm.ps.pop(idx)
-                        stm.args.pop(idx)
+                        object.__setattr__(stm, 'args', stm.args[:idx] + stm.args[idx + 1:])
+                        object.__setattr__(stm, 'ps', stm.ps[:idx] + stm.ps[idx + 1:])
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = scope.find_block(stm.block)
@@ -632,8 +633,8 @@ class ConstantOpt(ConstantOptBase):
                     remove_args.append(arg)
             for arg in remove_args:
                 idx = ir.args.index(arg)
-                ir.args.pop(idx)
-                ir.ps.pop(idx)
+                object.__setattr__(ir, 'args', ir.args[:idx] + ir.args[idx + 1:])
+                object.__setattr__(ir, 'ps', ir.ps[:idx] + ir.ps[idx + 1:])
 
     def visit_CJump(self, ir):
         new_exp = self.visit(ir.exp)

@@ -187,7 +187,8 @@ class ObjectTransformer(object):
         insert_idx = self.scope.find_block(mv_stm.block).stms.index(mv_stm)
         tmp = self.scope.add_temp()
         var = Temp(name=tmp.name, ctx=Ctx.STORE)
-        uphi = UPhi(var=var, block=mv_stm.block, loc=mv_stm.loc or Loc('', 0))
+        new_ps = []
+        new_args = []
         for src in sources:
             cmp_name = self._src_cmp_name(src)
             c = RelOp(op='Eq',
@@ -198,9 +199,11 @@ class ObjectTransformer(object):
                          loc=mv_stm.loc, block=mv_stm.block)
             self.scope.find_block(mv_stm.block).stms.insert(insert_idx, tmp_mv)
             insert_idx += 1
-            uphi.ps.append(Temp(name=c_sym.name))
+            new_ps.append(Temp(name=c_sym.name))
             mv_src = mv_stm.src.subst(self.qsym_to_ir(copy_qsym, Ctx.LOAD), Temp(name=src.name))
-            uphi.args.append(mv_src)
+            new_args.append(mv_src)
+        uphi = UPhi(var=var, args=tuple(new_args), ps=tuple(new_ps),
+                    block=mv_stm.block, loc=mv_stm.loc or Loc('', 0))
         self.scope.find_block(mv_stm.block).stms.insert(insert_idx, uphi)
         var_load = Temp(name=tmp.name, ctx=Ctx.LOAD)
         object.__setattr__(mv_stm, 'src', var_load)

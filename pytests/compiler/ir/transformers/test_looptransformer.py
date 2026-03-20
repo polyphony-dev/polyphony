@@ -39,8 +39,8 @@ def _build_simple_loop_scope():
     blk_entry.append_stm(Jump(loop_head.bid))
 
     i_lphi = LPhi(Temp('i', Ctx.STORE))
-    object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
-    object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(i_lphi, 'args', (Temp('i_init'), Temp('i_upd')))
+    object.__setattr__(i_lphi, 'ps', (Const(1), Const(1)))
     loop_head.append_stm(i_lphi)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
     loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
@@ -108,16 +108,16 @@ def _build_nested_loop_pipeline_scope():
 
     # outer_head: i loop
     i_lphi = LPhi(Temp('i', Ctx.STORE))
-    object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
-    object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(i_lphi, 'args', (Temp('i_init'), Temp('i_upd')))
+    object.__setattr__(i_lphi, 'ps', (Const(1), Const(1)))
     outer_head.append_stm(i_lphi)
     outer_head.append_stm(Move(Temp('outer_cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(4))))
     outer_head.append_stm(CJump(Temp('outer_cond'), inner_head.bid, outer_exit.bid))
 
     # inner_head: j loop
     j_lphi = LPhi(Temp('j', Ctx.STORE))
-    object.__setattr__(j_lphi, 'args', [Temp('j_init'), Temp('j_upd')])
-    object.__setattr__(j_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(j_lphi, 'args', (Temp('j_init'), Temp('j_upd')))
+    object.__setattr__(j_lphi, 'ps', (Const(1), Const(1)))
     inner_head.append_stm(j_lphi)
     inner_head.append_stm(Move(Temp('j_init', Ctx.STORE), Const(0)))
     inner_head.append_stm(Move(Temp('inner_cond', Ctx.STORE), RelOp('Lt', Temp('j'), Const(4))))

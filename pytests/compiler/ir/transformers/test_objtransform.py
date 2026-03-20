@@ -870,8 +870,8 @@ def test_collect_obj_defs_with_phi():
     scope.set_exit_block(blk)
 
     phi = Phi(Temp('obj', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Const(0), Const(1)])
-    object.__setattr__(phi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi, 'args', (Const(0), Const(1)))
+    object.__setattr__(phi, 'ps', (Const(1), Const(1)))
     blk.append_stm(phi)
     Block.set_order(blk, 0)
 
@@ -897,8 +897,8 @@ def test_collect_obj_defs_with_seq_phi():
     scope.set_exit_block(blk)
 
     phi = Phi(Temp('arr', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Const(0), Const(1)])
-    object.__setattr__(phi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi, 'args', (Const(0), Const(1)))
+    object.__setattr__(phi, 'ps', (Const(1), Const(1)))
     blk.append_stm(phi)
     Block.set_order(blk, 0)
 
@@ -1001,8 +1001,8 @@ def test_transform_use_with_phi_copy_mref():
 
     # blk4: arr_sel = phi(arr1, arr2); x = arr_sel[0]; ret x
     phi = Phi(Temp('arr_sel', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Temp('arr1'), Temp('arr2')])
-    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    object.__setattr__(phi, 'args', (Temp('arr1'), Temp('arr2')))
+    object.__setattr__(phi, 'ps', (Temp('cond'), Const(1)))
     blk4.append_stm(phi)
     blk4.append_stm(Move(Temp('x', Ctx.STORE), MRef(Temp('arr_sel'), Const(0), Ctx.LOAD)))
     blk4.append_stm(Move(Temp('@return', Ctx.STORE), Temp('x')))
@@ -1063,8 +1063,8 @@ def test_transform_use_with_phi_copy_mstore():
     blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('arr_sel', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Temp('arr1'), Temp('arr2')])
-    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    object.__setattr__(phi, 'args', (Temp('arr1'), Temp('arr2')))
+    object.__setattr__(phi, 'ps', (Temp('cond'), Const(1)))
     blk4.append_stm(phi)
     blk4.append_stm(Expr(MStore(Temp('arr_sel'), Const(0), Const(99))))
 
@@ -1155,8 +1155,8 @@ def test_add_branch_move_with_phi_obj_def():
     blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('obj_sel', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
-    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    object.__setattr__(phi, 'args', (Temp('obj1'), Temp('obj2')))
+    object.__setattr__(phi, 'ps', (Temp('cond'), Const(1)))
     blk4.append_stm(phi)
     # Field write on Phi-selected obj => triggers _add_branch_move
     blk4.append_stm(Move(Attr(Temp('obj_sel', Ctx.STORE), 'x', Ctx.STORE), Const(42)))
@@ -1218,8 +1218,8 @@ def test_add_branch_move_exit_block_updated():
     blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('obj_sel', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
-    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    object.__setattr__(phi, 'args', (Temp('obj1'), Temp('obj2')))
+    object.__setattr__(phi, 'ps', (Temp('cond'), Const(1)))
     blk4.append_stm(phi)
     blk4.append_stm(Move(Attr(Temp('obj_sel', Ctx.STORE), 'x', Ctx.STORE), Const(99)))
 
@@ -1277,8 +1277,8 @@ def test_make_branch_with_non_const_path_exp():
     blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('obj_sel', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Temp('obj1'), Temp('obj2')])
-    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    object.__setattr__(phi, 'args', (Temp('obj1'), Temp('obj2')))
+    object.__setattr__(phi, 'ps', (Temp('cond'), Const(1)))
     blk4.append_stm(phi)
     blk4.append_stm(Move(Attr(Temp('obj_sel', Ctx.STORE), 'x', Ctx.STORE), Const(42)))
     blk4.append_stm(Jump(blk5.bid))
@@ -1540,8 +1540,8 @@ def test_add_uphi_with_syscall_len():
     blk3.append_stm(Jump(blk4.bid))
 
     phi = Phi(Temp('arr_sel', Ctx.STORE))
-    object.__setattr__(phi, 'args', [Temp('arr1'), Temp('arr2')])
-    object.__setattr__(phi, 'ps', [Temp('cond'), Const(1)])
+    object.__setattr__(phi, 'args', (Temp('arr1'), Temp('arr2')))
+    object.__setattr__(phi, 'ps', (Temp('cond'), Const(1)))
     blk4.append_stm(phi)
     # SysCall 'len' on the Phi-selected variable
     len_call = SysCall(Temp('len'), [('', Temp('arr_sel'))], {})
@@ -1593,8 +1593,8 @@ def test_build_seq_ids_with_lphi_use():
                          Array(items=[Const(0), Const(0), Const(0), Const(0)], mutable=True)))
 
     lphi = LPhi(Temp('arr2', Ctx.STORE))
-    object.__setattr__(lphi, 'args', [Temp('arr'), Const(0)])
-    object.__setattr__(lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(lphi, 'args', (Temp('arr'), Const(0)))
+    object.__setattr__(lphi, 'ps', (Const(1), Const(1)))
     blk.append_stm(lphi)
     Block.set_order(blk, 0)
 

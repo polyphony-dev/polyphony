@@ -469,31 +469,26 @@ def test_mcjump_str():
 
 
 def test_phi_str():
-    p = Phi(Temp('x'))
-    p.args.extend([Const(1), Const(2)])
+    p = Phi(Temp('x'), args=(Const(1), Const(2)))
     assert 'phi(' in str(p)
 
 
 def test_phi_str_with_ps():
-    p = Phi(Temp('x'))
     blk1 = make_block()
     blk2 = make_block()
-    p.args.extend([Const(1), Const(2)])
-    p.ps.extend([blk1, blk2])
+    p = Phi(Temp('x'), args=(Const(1), Const(2)), ps=(blk1, blk2))
     s = str(p)
     assert 'phi(' in s
     assert '?' in s
 
 
 def test_uphi_str():
-    u = UPhi(Temp('x'))
-    u.args.append(Const(1))
+    u = UPhi(Temp('x'), args=(Const(1),))
     assert 'uphi(' in str(u)
 
 
 def test_lphi_str():
-    lp = LPhi(Temp('x'))
-    lp.args.append(Const(1))
+    lp = LPhi(Temp('x'), args=(Const(1),))
     assert 'lphi(' in str(lp)
 
 
@@ -686,8 +681,7 @@ def test_ret_kids():
 
 
 def test_phi_kids():
-    p = Phi(Temp('x'))
-    p.args.extend([Const(1), None, Const(2)])
+    p = Phi(Temp('x'), args=(Const(1), None, Const(2)))
     kids = p.kids()
     # var(1) + arg1(1) + arg3(1), None is skipped
     assert len(kids) == 3
@@ -722,8 +716,7 @@ def test_clone_with_override():
 
 
 def test_clone_with_list():
-    p = Phi(Temp('x'))
-    p.args.extend([Const(1), Const(2)])
+    p = Phi(Temp('x'), args=(Const(1), Const(2)))
     p2 = p.clone()
     assert p2.var == p.var
     assert len(p2.args) == 2
@@ -888,29 +881,25 @@ def test_conds2str_with_items():
 # ============================================================
 
 def test_phi_remove_arg():
-    p = Phi(Temp('x'))
     a1 = Const(1)
     a2 = Const(2)
     blk1 = make_block()
     blk2 = make_block()
-    p.args.extend([a1, a2])
-    p.ps.extend([blk1, blk2])
-    p.remove_arg(a1)
-    assert len(p.args) == 1
-    assert p.args[0] is a2
-    assert len(p.ps) == 1
+    p = Phi(Temp('x'), args=(a1, a2), ps=(blk1, blk2))
+    p2 = p.remove_arg(a1)
+    assert len(p2.args) == 1
+    assert p2.args[0] is a2
+    assert len(p2.ps) == 1
 
 
 def test_phi_reorder_args():
-    p = Phi(Temp('x'))
     a1 = Const(1)
     a2 = Const(2)
     a3 = Const(3)
     blk1 = make_block()
     blk2 = make_block()
     blk3 = make_block()
-    p.args.extend([a1, a2, a3])
-    p.ps.extend([blk1, blk2, blk3])
+    p = Phi(Temp('x'), args=(a1, a2, a3), ps=(blk1, blk2, blk3))
     p = p.reorder_args([2, 0, 1])
     assert p.args[0] is a3
     assert p.args[1] is a1

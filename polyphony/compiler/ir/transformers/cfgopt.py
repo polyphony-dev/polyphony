@@ -337,13 +337,17 @@ class HyperBlockBuilder(object):
         new_cond = old_mj.conds[indices[0]]
         for idx in indices[1:]:
             new_cond = RelOp(op='Or', left=new_cond, right=old_mj.conds[idx])
-        old_mj.conds[indices[0]] = new_cond
-        old_mj.targets[indices[0]] = new_head.bid
+        new_conds = list(old_mj.conds)
+        new_targets = list(old_mj.targets)
+        new_conds[indices[0]] = new_cond
+        new_targets[indices[0]] = new_head.bid
         head.succs[indices[0]] = new_head
         for idx in reversed(indices[1:]):
-            old_mj.conds.pop(idx)
-            old_mj.targets.pop(idx)
+            del new_conds[idx]
+            del new_targets[idx]
             head.succs.pop(idx)
+        old_mj = old_mj.model_copy(update={'conds': tuple(new_conds), 'targets': tuple(new_targets)})
+        head.replace_stm(head.stms[-1], old_mj)
         if len(old_mj.targets) == 2:
             cj = CJump(exp=old_mj.conds[0], true=old_mj.targets[0], false=old_mj.targets[1], loc=old_mj.loc, block=head.bid)
             if not isinstance(cj.exp, Temp):
@@ -425,8 +429,8 @@ class HyperBlockBuilder(object):
                     self.uddetector.visit(mv)
                 else:
                     new_phi = stm.model_copy(deep=True)
-                    object.__setattr__(new_phi, 'args', new_args)
-                    object.__setattr__(new_phi, 'ps', new_ps)
+                    object.__setattr__(new_phi, 'args', tuple(new_args))
+                    object.__setattr__(new_phi, 'ps', tuple(new_ps))
                     newsym = self.scope.add_temp()
                     newsym.typ = irexp_type(stm.var, self.scope)
                     object.__setattr__(new_phi, 'var', Temp(name=newsym.name, ctx=Ctx.STORE))
@@ -436,8 +440,8 @@ class HyperBlockBuilder(object):
                 arg = Temp(name=newsym.name)
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
-                object.__setattr__(stm, 'args', old_args)
-                object.__setattr__(stm, 'ps', old_ps)
+                object.__setattr__(stm, 'args', tuple(old_args))
+                object.__setattr__(stm, 'ps', tuple(old_ps))
                 self.uddetector.visit(stm)
         for br in removes:
             old_jmp = br.stms[-1]
@@ -449,9 +453,9 @@ class HyperBlockBuilder(object):
                 if old_jmp.false == tail.bid:
                     object.__setattr__(old_jmp, 'false', new_tail.bid)
             elif isinstance(old_jmp, MCJump):
-                for i, t in enumerate(old_jmp.targets):
-                    if t == tail.bid:
-                        old_jmp.targets[i] = new_tail.bid
+                new_targets = tuple(new_tail.bid if t == tail.bid else t for t in old_jmp.targets)
+                new_jmp = old_jmp.model_copy(update={'targets': new_targets})
+                br.replace_stm(old_jmp, new_jmp)
             assert br in tail.preds
             tail.preds.remove(br)
             new_tail.preds.append(br)

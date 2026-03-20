@@ -37,7 +37,7 @@ class PHIInlining(object):
                         new_args.append(arg)
                         new_ps.append(p)
                 logger.debug('old ' + str(phi))
-                new_phi = phi.model_copy(update={'args': new_args, 'ps': new_ps})
+                new_phi = phi.model_copy(update={'args': tuple(new_args), 'ps': tuple(new_ps)})
                 idx = blk.stms.index(phi)
                 blk.stms[idx] = new_phi
                 phi_var_sym = qualified_symbols(phi.var, scope)[-1]

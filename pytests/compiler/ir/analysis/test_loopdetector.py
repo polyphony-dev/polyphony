@@ -63,13 +63,13 @@ def _make_simple_loop_scope():
 
     # loop_head stms
     i_lphi = LPhi(Temp('i', Ctx.STORE))
-    object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
-    object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(i_lphi, 'args', (Temp('i_init'), Temp('i_upd')))
+    object.__setattr__(i_lphi, 'ps', (Const(1), Const(1)))
     loop_head.append_stm(i_lphi)
 
     x_lphi = LPhi(Temp('x', Ctx.STORE))
-    object.__setattr__(x_lphi, 'args', [Temp('x_init'), Temp('x_upd')])
-    object.__setattr__(x_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(x_lphi, 'args', (Temp('x_init'), Temp('x_upd')))
+    object.__setattr__(x_lphi, 'ps', (Const(1), Const(1)))
     loop_head.append_stm(x_lphi)
 
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))

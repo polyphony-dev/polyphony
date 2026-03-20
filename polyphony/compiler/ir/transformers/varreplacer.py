@@ -202,7 +202,7 @@ class VarReplacer(object):
 
     def visit_MCJump(self, ir):
         self.replaced = False
-        object.__setattr__(ir, 'conds', [self.visit(cond) for cond in ir.conds])
+        object.__setattr__(ir, 'conds', tuple(self.visit(cond) for cond in ir.conds))
         if self.replaced:
             self.replaces.append(ir)
 
@@ -234,8 +234,8 @@ class VarReplacer(object):
         self.replaced = False
         if self.enable_dst_replacing:
             object.__setattr__(ir, 'var', self.visit(ir.var))
-        object.__setattr__(ir, 'args', [self.visit(arg) for arg in ir.args])
-        object.__setattr__(ir, 'ps', [self.visit(p) for p in ir.ps])
+        object.__setattr__(ir, 'args', tuple(self.visit(arg) for arg in ir.args))
+        object.__setattr__(ir, 'ps', tuple(self.visit(p) for p in ir.ps))
         if self.replaced:
             self.replaces.append(ir)
 

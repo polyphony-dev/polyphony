@@ -332,8 +332,8 @@ class IrTransformer(IrVisitor):
 
     def visit_Phi(self, ir):
         new_var = self.visit(ir.var)
-        new_args = [self.visit(arg) if arg else arg for arg in ir.args]
-        new_ps = [self.visit(p) if p else p for p in ir.ps] if ir.ps else ir.ps
+        new_args = tuple(self.visit(arg) if arg else arg for arg in ir.args)
+        new_ps = tuple(self.visit(p) if p else p for p in ir.ps) if ir.ps else ir.ps
         updates = {}
         if new_var is not ir.var:
             updates['var'] = new_var

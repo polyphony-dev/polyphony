@@ -423,9 +423,7 @@ class IrReader(object):
             for t in ps_tokens:
                 ps.append(self.parse_exp(t))
 
-        phi = cls(var=var)
-        phi.args.extend(args)
-        phi.ps.extend(ps)
+        phi = cls(var=var, args=tuple(args), ps=tuple(ps))
         return phi
 
     def parse_jp(self, operands: str):

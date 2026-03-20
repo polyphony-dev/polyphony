@@ -43,8 +43,8 @@ def _build_simple_loop_scope():
     blk_entry.append_stm(Jump(loop_head.bid))
 
     i_lphi = LPhi(Temp('i', Ctx.STORE))
-    object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
-    object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(i_lphi, 'args', (Temp('i_init'), Temp('i_upd')))
+    object.__setattr__(i_lphi, 'ps', (Const(1), Const(1)))
     loop_head.append_stm(i_lphi)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
     loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
@@ -100,14 +100,14 @@ def _build_multi_lphi_loop_scope():
 
     # LPhi for i (induction variable)
     i_lphi = LPhi(Temp('i', Ctx.STORE))
-    object.__setattr__(i_lphi, 'args', [Temp('i_init'), Temp('i_upd')])
-    object.__setattr__(i_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(i_lphi, 'args', (Temp('i_init'), Temp('i_upd')))
+    object.__setattr__(i_lphi, 'ps', (Const(1), Const(1)))
     loop_head.append_stm(i_lphi)
 
     # LPhi for acc (non-induction)
     acc_lphi = LPhi(Temp('acc', Ctx.STORE))
-    object.__setattr__(acc_lphi, 'args', [Temp('acc_init'), Temp('acc_upd')])
-    object.__setattr__(acc_lphi, 'ps', [Const(1), Const(1)])
+    object.__setattr__(acc_lphi, 'args', (Temp('acc_init'), Temp('acc_upd')))
+    object.__setattr__(acc_lphi, 'ps', (Const(1), Const(1)))
     loop_head.append_stm(acc_lphi)
 
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
@@ -171,8 +171,8 @@ def _build_phi_scope_with_induction_phi():
 
     # A Phi for an induction variable -- PHIInlining should skip it
     phi_i = Phi(Temp('i', Ctx.STORE))
-    object.__setattr__(phi_i, 'args', [Const(0), Const(1)])
-    object.__setattr__(phi_i, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi_i, 'args', (Const(0), Const(1)))
+    object.__setattr__(phi_i, 'ps', (Const(1), Const(1)))
     blk.append_stm(phi_i)
     blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('i')))
     blk.append_stm(Ret(Temp('@return')))
@@ -197,8 +197,8 @@ def _build_phi_scope_with_non_induction_phi():
 
     # Phi for non-induction 'a'
     phi_a = Phi(Temp('a', Ctx.STORE))
-    object.__setattr__(phi_a, 'args', [Const(10), Const(20)])
-    object.__setattr__(phi_a, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi_a, 'args', (Const(10), Const(20)))
+    object.__setattr__(phi_a, 'ps', (Const(1), Const(1)))
     blk.append_stm(phi_a)
 
     blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('a')))
@@ -231,15 +231,15 @@ def _build_phi_scope_with_inlining():
 
     # Phi for 'a': a = phi(10, 20) with predicates p1, p2
     phi_a = Phi(Temp('a', Ctx.STORE))
-    object.__setattr__(phi_a, 'args', [Const(10), Const(20)])
-    object.__setattr__(phi_a, 'ps', [p1, p2])
+    object.__setattr__(phi_a, 'args', (Const(10), Const(20)))
+    object.__setattr__(phi_a, 'ps', (p1, p2))
     blk.append_stm(phi_a)
 
     # Phi for 'b': b = phi(a, 30) with predicates p3, Const(1)
     # Since arg 'a' is a Temp referencing Phi 'a', this should be inlined
     phi_b = UPhi(Temp('b', Ctx.STORE))
-    object.__setattr__(phi_b, 'args', [Temp('a'), Const(30)])
-    object.__setattr__(phi_b, 'ps', [p3, Const(1)])
+    object.__setattr__(phi_b, 'args', (Temp('a'), Const(30)))
+    object.__setattr__(phi_b, 'ps', (p3, Const(1)))
     blk.append_stm(phi_b)
 
     blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('b')))
@@ -266,8 +266,8 @@ def _build_phi_scope_const_args():
     c1 = Temp('c1')
 
     phi_x = Phi(Temp('x', Ctx.STORE))
-    object.__setattr__(phi_x, 'args', [Const(1), Const(2)])
-    object.__setattr__(phi_x, 'ps', [c1, Const(1)])
+    object.__setattr__(phi_x, 'args', (Const(1), Const(2)))
+    object.__setattr__(phi_x, 'ps', (c1, Const(1)))
     blk.append_stm(phi_x)
 
     blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('x')))
@@ -307,8 +307,8 @@ def _build_loop_scope_no_lphi():
     # No LPhi here -- just use 'i' via a Phi (not LPhi) or direct use
     # Use a regular Phi to satisfy structure but not an LPhi
     phi_i = Phi(Temp('i', Ctx.STORE))
-    object.__setattr__(phi_i, 'args', [Temp('i_init'), Temp('i_upd')])
-    object.__setattr__(phi_i, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi_i, 'args', (Temp('i_init'), Temp('i_upd')))
+    object.__setattr__(phi_i, 'ps', (Const(1), Const(1)))
     loop_head.append_stm(phi_i)
     loop_head.append_stm(Move(Temp('cond', Ctx.STORE), RelOp('Lt', Temp('i'), Const(10))))
     loop_head.append_stm(CJump(Temp('cond'), loop_body.bid, loop_exit.bid))
@@ -367,8 +367,8 @@ def test_phi_inlining_skips_induction_var():
     assert isinstance(phi, Phi)
 
     # Capture args before
-    args_before = list(phi.args)
-    ps_before = list(phi.ps)
+    args_before = tuple(phi.args)
+    ps_before = tuple(phi.ps)
 
     PHIInlining().process(scope)
 
@@ -387,7 +387,7 @@ def test_phi_inlining_collects_non_induction_phi():
 
     # Only one phi with const args, no inlining will happen, but it should
     # be processed without error (const args don't reference other phis)
-    args_before = list(phi_a.args)
+    args_before = tuple(phi_a.args)
 
     PHIInlining().process(scope)
 
@@ -435,8 +435,8 @@ def test_phi_inlining_const_args_no_change():
     phi_x = blk.stms[0]
     assert isinstance(phi_x, Phi)
 
-    args_before = list(phi_x.args)
-    ps_before = list(phi_x.ps)
+    args_before = tuple(phi_x.args)
+    ps_before = tuple(phi_x.ps)
 
     PHIInlining().process(scope)
 
@@ -461,15 +461,15 @@ def test_phi_inlining_self_reference_not_inlined():
 
     # Phi for 'a' that references itself
     phi_a = Phi(Temp('a', Ctx.STORE))
-    object.__setattr__(phi_a, 'args', [Temp('a'), Const(5)])
-    object.__setattr__(phi_a, 'ps', [Temp('c'), Const(1)])
+    object.__setattr__(phi_a, 'args', (Temp('a'), Const(5)))
+    object.__setattr__(phi_a, 'ps', (Temp('c'), Const(1)))
     blk.append_stm(phi_a)
     blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('a')))
     blk.append_stm(Ret(Temp('@return')))
 
     Block.set_order(blk, 0)
 
-    args_before = list(phi_a.args)
+    args_before = tuple(phi_a.args)
     PHIInlining().process(scope)
 
     # Self-referencing phi should not be inlined (phi == phis[arg_sym])
@@ -491,14 +491,14 @@ def test_phi_inlining_mixed_induction_and_non_induction():
 
     # Phi for induction 'i'
     phi_i = Phi(Temp('i', Ctx.STORE))
-    object.__setattr__(phi_i, 'args', [Const(0), Const(1)])
-    object.__setattr__(phi_i, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi_i, 'args', (Const(0), Const(1)))
+    object.__setattr__(phi_i, 'ps', (Const(1), Const(1)))
     blk.append_stm(phi_i)
 
     # Phi for non-induction 'x' referencing 'i'
     phi_x = Phi(Temp('x', Ctx.STORE))
-    object.__setattr__(phi_x, 'args', [Temp('i'), Const(99)])
-    object.__setattr__(phi_x, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi_x, 'args', (Temp('i'), Const(99)))
+    object.__setattr__(phi_x, 'ps', (Const(1), Const(1)))
     blk.append_stm(phi_x)
 
     blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('x')))
@@ -530,14 +530,14 @@ def test_phi_inlining_uphi_collected():
 
     # UPhi for 'a'
     uphi_a = UPhi(Temp('a', Ctx.STORE))
-    object.__setattr__(uphi_a, 'args', [Const(1), Const(2)])
-    object.__setattr__(uphi_a, 'ps', [Temp('c1'), Temp('c2')])
+    object.__setattr__(uphi_a, 'args', (Const(1), Const(2)))
+    object.__setattr__(uphi_a, 'ps', (Temp('c1'), Temp('c2')))
     blk.append_stm(uphi_a)
 
     # Phi for 'b' that references 'a'
     phi_b = Phi(Temp('b', Ctx.STORE))
-    object.__setattr__(phi_b, 'args', [Temp('a'), Const(3)])
-    object.__setattr__(phi_b, 'ps', [Const(1), Const(1)])
+    object.__setattr__(phi_b, 'args', (Temp('a'), Const(3)))
+    object.__setattr__(phi_b, 'ps', (Const(1), Const(1)))
     blk.append_stm(phi_b)
 
     blk.append_stm(Move(Temp('@return', Ctx.STORE), Temp('b')))

@@ -2149,7 +2149,7 @@ ret @return
         test_phi = phis[0]
         # Save original args, then clear
         original_args = test_phi.args[:]
-        object.__setattr__(test_phi, 'args', [])
+        object.__setattr__(test_phi, 'args', ())
 
         # Re-detect usedef and run removal
         ssa.usedef = UseDefDetector().process(scope)
@@ -2228,8 +2228,7 @@ ret @return
         # Make all args point to the same SSA-renamed variable
         first_arg = target_phi.args[0]
         if isinstance(first_arg, (Temp, Attr)):
-            for i in range(len(target_phi.args)):
-                target_phi.args[i] = first_arg.model_copy(deep=True)
+            object.__setattr__(target_phi, 'args', tuple(first_arg.model_copy(deep=True) for _ in target_phi.args))
 
     ssa._remove_useless_phi()
 

@@ -133,7 +133,7 @@ class SSATransformerBase(object):
             self._sort_phi(df)
 
     def _new_phi(self, var, df):
-        phi = Phi(var=var, args=[Const(value=None)] * len(df.preds))
+        phi = Phi(var=var, args=tuple(Const(value=None) for _ in df.preds))
         sym = qualified_symbols(var, self.scope)[-1]
         defs = self.usedef.get_stms_defining(sym)
         for d in defs:
@@ -255,13 +255,13 @@ class SSATransformerBase(object):
                 phi_blk = self.scope.find_block(phi.block)
                 if 1 == phi_blk.preds.count(block):
                     idx = phi_blk.preds.index(block)
-                    phi.args[idx] = var
+                    object.__setattr__(phi, 'args', phi.args[:idx] + (var,) + phi.args[idx + 1:])
                     self._add_new_sym(var, i)
                 else:
                     for idx, pred in enumerate(phi_blk.preds):
                         if pred is not block:
                             continue
-                        phi.args[idx] = var
+                        object.__setattr__(phi, 'args', phi.args[:idx] + (var,) + phi.args[idx + 1:])
                         self._add_new_sym(var, i)
         else:
             self._add_new_sym(var, i)
@@ -419,7 +419,7 @@ class SSATransformerBase(object):
                 phi_predicates.append(p)
 
             for phi in phis:
-                object.__setattr__(phi, 'ps', phi_predicates[:])
+                object.__setattr__(phi, 'ps', tuple(phi_predicates))
                 assert len(phi.ps) == len(phi.args)
 
     def _find_loop_phi(self):
@@ -428,8 +428,8 @@ class SSATransformerBase(object):
             if not blk.preds_loop:
                 continue
             lphi = LPhi(var=phi.var.model_copy(deep=True),
-                        args=phi.args[:],
-                        ps=[Const(value=1)] * len(phi.ps),
+                        args=phi.args,
+                        ps=tuple(Const(value=1) for _ in phi.ps),
                         block=phi.block, loc=phi.loc)
             replace_item(blk.stms, phi, lphi)
             replace_item(self.phis, phi, lphi)
@@ -524,12 +524,10 @@ class TupleSSATransformer(SSATransformerBase):
             if src_use_vars:
                 use_var = src_use_vars[0]
                 from ..ir import Loc
+                new_args = tuple(use_stm.src.subst(use_var, arg) for arg in phi.args)
                 uphi = UPhi(var=use_stm.dst.model_copy(deep=True),
+                            args=new_args, ps=phi.ps,
                             block=use_stm.block, loc=use_stm.loc or Loc('', 0))
-                object.__setattr__(uphi, 'ps', phi.ps[:])
-                for arg in phi.args:
-                    src = use_stm.src.subst(use_var, arg)
-                    uphi.args.append(src)
                 use_blk.stms.insert(insert_idx, uphi)
             else:
                 assert dst_use_vars

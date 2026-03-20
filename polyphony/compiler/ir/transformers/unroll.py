@@ -180,7 +180,7 @@ class LoopUnroller(object):
                     new_sym = new_syms[0]
                     lphi = origin_lphis[sym.name]
                     arg = Temp(name=new_sym.name)
-                    lphi.args[0] = arg
+                    object.__setattr__(lphi, 'args', (arg,) + lphi.args[1:])
                 assert remain_start_blk
                 guard = Expr(exp=Const(value=0))
                 object.__setattr__(guard, 'block', remain_start_blk.bid)
@@ -211,9 +211,9 @@ class LoopUnroller(object):
                 assert jmp.false == old.bid
                 object.__setattr__(jmp, 'false', new.bid)
         elif isinstance(jmp, MCJump):
-            for i, t in enumerate(jmp.targets):
-                if t == old.bid:
-                    jmp.targets[i] = new.bid
+            new_targets = tuple(new.bid if t == old.bid else t for t in jmp.targets)
+            new_jmp = jmp.model_copy(update={'targets': new_targets})
+            block.replace_stm(jmp, new_jmp)
         else:
             assert False
 

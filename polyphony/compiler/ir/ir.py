@@ -997,15 +997,22 @@ class CJump(IrStm):
 
 
 class MCJump(IrStm):
-    conds: list = []
-    targets: list[str] = []  # block bids
+    conds: tuple = ()
+    targets: tuple[str, ...] = ()  # block bids
     loop_branch: bool = False
+
+    @field_validator('conds', mode='before')
+    @classmethod
+    def _coerce_conds(cls, v):
+        if isinstance(v, (list, tuple)):
+            return tuple(v)
+        return v
 
     @field_validator('targets', mode='before')
     @classmethod
     def _coerce_targets(cls, v):
-        if isinstance(v, list):
-            return [_coerce_bid(t) for t in v]
+        if isinstance(v, (list, tuple)):
+            return tuple(_coerce_bid(t) for t in v)
         return v
 
     def __init__(self, *args, **kwargs):
@@ -1071,8 +1078,8 @@ class Ret(IrStm):
 
 class Phi(IrStm):
     var: IrVariable
-    args: list = []
-    ps: list = []
+    args: tuple = ()
+    ps: tuple = ()
 
     def __init__(self, *args_pos, **kwargs):
         """Accept positional args: Phi(var)"""
@@ -1083,6 +1090,11 @@ class Phi(IrStm):
         var = kwargs.get('var')
         if var is not None and hasattr(var, 'ctx') and var.ctx != Ctx.STORE:
             kwargs['var'] = var.model_copy(update={'ctx': Ctx.STORE})
+        # Coerce list to tuple for args and ps
+        if 'args' in kwargs and isinstance(kwargs['args'], list):
+            kwargs['args'] = tuple(kwargs['args'])
+        if 'ps' in kwargs and isinstance(kwargs['ps'], list):
+            kwargs['ps'] = tuple(kwargs['ps'])
         super().__init__(**kwargs)
 
     def __str__(self):
@@ -1112,22 +1124,20 @@ class Phi(IrStm):
         return tuple(kids)
 
     def remove_arg(self, arg):
-        """Remove an arg (and its corresponding ps entry) by identity."""
+        """Remove an arg (and its corresponding ps entry) by identity. Returns a new Phi."""
         from ..common.utils import find_id_index
         idx = find_id_index(self.args, arg)
+        new_args = self.args[:idx] + self.args[idx + 1:]
         if self.ps:
             assert len(self.args) == len(self.ps)
-            self.ps.pop(idx)
-        self.args.pop(idx)
+            new_ps = self.ps[:idx] + self.ps[idx + 1:]
+            return self.model_copy(update={'args': new_args, 'ps': new_ps})
+        return self.model_copy(update={'args': new_args})
 
     def reorder_args(self, indices):
         """Reorder args and ps by the given index sequence. Returns a new Phi."""
-        args = []
-        ps = []
-        for idx in indices:
-            assert 0 <= idx < len(self.args)
-            args.append(self.args[idx])
-            ps.append(self.ps[idx])
+        args = tuple(self.args[idx] for idx in indices)
+        ps = tuple(self.ps[idx] for idx in indices)
         return self.model_copy(update={'args': args, 'ps': ps})
 
 

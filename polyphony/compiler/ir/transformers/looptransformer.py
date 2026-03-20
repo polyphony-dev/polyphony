@@ -65,36 +65,24 @@ class LoopFlatten(object):
     def _insert_init_flag(self, loop, body_cond, else_cond):
         init_sym = self.scope.add_temp('init', {'induction'}, typ=Type.bool())
         init_update_sym = self.scope.add_temp('init_update', typ=Type.bool())
-        init_lphi = LPhi(var=Temp(name=init_sym.name, ctx=Ctx.STORE))
-        object.__setattr__(init_lphi, 'args', [
-            Const(value=True),
-            Temp(name=init_update_sym.name)
-        ])
-        object.__setattr__(init_lphi, 'ps', [Const(value=1)] * 2)
+        init_lphi = LPhi(var=Temp(name=init_sym.name, ctx=Ctx.STORE),
+                         args=(Const(value=True), Temp(name=init_update_sym.name)),
+                         ps=(Const(value=1), Const(value=1)))
         object.__setattr__(init_lphi, 'block', loop.head.bid)
         loop.head.stms.insert(-1, init_lphi)
 
         loop_continue = loop.head.preds_loop[0]
-        update_phi = Phi(var=Temp(name=init_update_sym.name, ctx=Ctx.STORE))
-        object.__setattr__(update_phi, 'args', [
-            Const(value=False),
-            Const(value=True)
-        ])
-        object.__setattr__(update_phi, 'ps', [
-            body_cond.model_copy(deep=True),
-            else_cond.model_copy(deep=True)
-        ])
+        update_phi = Phi(var=Temp(name=init_update_sym.name, ctx=Ctx.STORE),
+                         args=(Const(value=False), Const(value=True)),
+                         ps=(body_cond.model_copy(deep=True), else_cond.model_copy(deep=True)))
         object.__setattr__(update_phi, 'block', loop_continue.bid)
         loop_continue.stms.insert(0, update_phi)
         return init_sym, init_lphi
 
     def _lphi_to_psi(self, lphi, cond):
-        psi = Phi(var=lphi.var)
-        object.__setattr__(psi, 'args', lphi.args[:])
-        object.__setattr__(psi, 'ps', [
-            Temp(name=cond.name),
-            UnOp(op='Not', exp=Temp(name=cond.name))
-        ])
+        psi = Phi(var=lphi.var,
+                  args=lphi.args,
+                  ps=(Temp(name=cond.name), UnOp(op='Not', exp=Temp(name=cond.name))))
         lphi_blk = self.scope.find_block(lphi.block)
         idx = lphi_blk.stms.index(lphi)
         lphi_blk.stms.remove(lphi)
@@ -145,16 +133,10 @@ class LoopFlatten(object):
             assert isinstance(sym, Symbol)
             var_t = sym.typ
             psi_sym = self.scope.add_temp(typ=var_t)
-            psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE))
-            object.__setattr__(psi, 'args', [
-                lphi.args[1].model_copy(deep=True),
-                Temp(name=lphi.var.name)
-            ])
-            object.__setattr__(psi, 'ps', [
-                body_cond,
-                else_cond
-            ])
-            lphi.args[1] = Temp(name=psi_sym.name)
+            psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE),
+                      args=(lphi.args[1].model_copy(deep=True), Temp(name=lphi.var.name)),
+                      ps=(body_cond, else_cond))
+            object.__setattr__(lphi, 'args', lphi.args[:1] + (Temp(name=psi_sym.name),) + lphi.args[2:])
             object.__setattr__(psi, 'block', subloop_exit.bid)
             subloop_exit.stms.insert(-1, psi)
             self._lphi_to_psi(lphi, init_flag)
@@ -172,13 +154,10 @@ class LoopFlatten(object):
             sym = qualified_symbols(lphi.var, self.scope)[-1]
             assert isinstance(sym, Symbol)
             psi_sym = self.scope.add_temp(typ=sym.typ)
-            psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE))
-            object.__setattr__(psi, 'args', [
-                Temp(name=lphi.var.name),
-                lphi.args[1].model_copy(deep=True)
-            ])
-            object.__setattr__(psi, 'ps', [body_cond, else_cond])
-            lphi.args[1] = Temp(name=psi_sym.name)
+            psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE),
+                      args=(Temp(name=lphi.var.name), lphi.args[1].model_copy(deep=True)),
+                      ps=(body_cond, else_cond))
+            object.__setattr__(lphi, 'args', lphi.args[:1] + (Temp(name=psi_sym.name),) + lphi.args[2:])
             pred_blk = loop.head.preds[1]
             object.__setattr__(psi, 'block', pred_blk.bid)
             pred_blk.stms.insert(-1, psi)
