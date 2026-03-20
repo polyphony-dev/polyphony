@@ -1149,7 +1149,7 @@ class LPhi(Phi):
 
 
 class MStm(IrStm):
-    stms: list = []
+    stms: tuple = ()
 
     def __str__(self):
         return 'mstm{{{}}}'.format(', '.join([str(stm) for stm in self.stms]))

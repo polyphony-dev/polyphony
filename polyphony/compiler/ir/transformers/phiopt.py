@@ -54,7 +54,7 @@ class LPHIRemover(object):
                 continue
             assert len(loop.head.preds_loop) == 1
             update_idx = loop.head.preds.index(loop.head.preds_loop[0])
-            mstm = MStm(block=loop.head.preds_loop[0].bid)
+            mstm_stms = []
             for lphi in lphis:
                 lphi_blk = scope.find_block(lphi.block)
                 lphi_blk.stms.remove(lphi)
@@ -77,5 +77,6 @@ class LPHIRemover(object):
                     loc=lphi.loc or Loc('', 0),
                     block=loop.head.preds_loop[0].bid,
                 )
-                mstm.stms.append(mv)
+                mstm_stms.append(mv)
+            mstm = MStm(stms=tuple(mstm_stms), block=loop.head.preds_loop[0].bid)
             loop.head.preds_loop[0].stms.insert(-1, mstm)

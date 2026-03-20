@@ -694,7 +694,7 @@ class IrReader(object):
             self.deq_line()
             stm_text = line[1:].strip()
             stms.append(self.parse_stm(stm_text))
-        return MStm(stms=stms)
+        return MStm(stms=tuple(stms))
 
     def parse_condop(self, operands: str):
         ops = self.parse_operands(operands)
