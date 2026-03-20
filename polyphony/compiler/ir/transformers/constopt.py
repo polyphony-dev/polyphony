@@ -415,8 +415,9 @@ class ConstantOpt(ConstantOptBase):
             self.worklist.extend(blk.stms)
         while self.worklist:
             stm = self.worklist.popleft()
-            while stm in self.worklist:
-                self.worklist.remove(stm)
+            # Use identity comparison: Phi.__eq__ is var-only, so value-based removal
+            # would incorrectly remove newer phi versions that share the same var.
+            self.worklist = deque(s for s in self.worklist if s is not stm)
             self.current_stm = stm
             result = self.visit(stm)
             if isinstance(result, IrStm) and result is not stm:
@@ -425,6 +426,11 @@ class ConstantOpt(ConstantOptBase):
                     blk.stms[blk.stms.index(stm)] = result
                 stm = result
             if isinstance(stm, (Phi, UPhi, LPhi)):
+                # Skip stale phi: VarReplacer may have replaced this phi with a new
+                # model_copy; if it's no longer in the block by identity, skip it.
+                blk = scope.find_block(stm.block)
+                if not any(s is stm for s in blk.stms):
+                    continue
                 new_ps = tuple(reduce_relexp(p) for p in stm.ps)
                 if new_ps != stm.ps:
                     object.__setattr__(stm, 'ps', new_ps)
@@ -480,13 +486,6 @@ class ConstantOpt(ConstantOptBase):
                     and not dst_sym.is_return()):
                 assert isinstance(dst_sym, Symbol)
                 defstms = self.usedef.get_stms_defining(dst_sym)
-                if len(defstms) > 1:
-                    import sys
-                    print(f'[DEBUG] stm={stm}', file=sys.stderr)
-                    print(f'[DEBUG] dst_sym={dst_sym}', file=sys.stderr)
-                    for d in defstms:
-                        print(f'[DEBUG] defstm={d!r} block={d.block}', file=sys.stderr)
-                    print(f'[DEBUG] stm in block? {stm in self.scope.find_block(stm.block).stms if stm.block else "no block"}', file=sys.stderr)
                 assert len(defstms) <= 1
 
                 dst_t = dst_sym.typ
