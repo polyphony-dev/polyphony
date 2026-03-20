@@ -14,28 +14,38 @@ Classes:
   LocalVariableCollector - Collect local variables in stms
   IrReplacer - Replace variables in stms based on a symbol map
 """
+
 from collections import defaultdict, deque
 import dataclasses
 from typing import cast
 from ..ir import (
-    Ir, IrExp, IrStm, IrVariable, IrNameExp, IrCallable,
-    Move, Attr, Temp, Ctx, Expr, Call, New, SysCall,
-    Const, UnOp, BinOp, RelOp, CondOp,
-    MRef, MStore, Array, Jump, CJump, MCJump, Ret,
-    Phi, UPhi, LPhi, MStm, CMove, CExpr,
+    Ir,
+    IrExp,
+    IrStm,
+    IrVariable,
+    IrNameExp,
+    IrCallable,
+    Move,
+    Attr,
+    Temp,
+    Ctx,
+    Expr,
+    SysCall,
+    Const,
+    UnOp,
+    Jump,
+    Ret,
 )
 from ..irvisitor import IrVisitor, IrTransformer
 from ..irhelper import qualified_symbols, irexp_type, qsym2var
 from ..symbol import Symbol
 from ..scope import Scope
 from ..types import typehelper
-from ..types.type import Type
 from ..block import Block
 from ..synth import merge_synth_params
 from ...common.env import env
-from ...common.common import fail
-from ...common.errors import Errors
 import logging
+
 logger = logging.getLogger()
 
 type ReplaceMap = dict[Symbol, IrExp]
@@ -54,12 +64,10 @@ type CallsDict = dict[CalleeScope, list[CallStmPair]]
 type Callgraph = dict[CallerScope, CallsDict]
 
 
-# _StmsVisitor / _StmsTransformer removed — use IrVisitor / IrTransformer from irvisitor.py
-# (subclasses now inherit directly from IrVisitor/IrTransformer)
-
 # ============================================================
 # Helper visitors for InlineOpt
 # ============================================================
+
 
 class CallCollector(IrVisitor):
     """Collect Call/New nodes and their containing statements from block.stms."""
@@ -167,7 +175,7 @@ class IrReplacer(IrTransformer):
     def visit_Attr(self, ir):
         exp = self.visit(ir.exp)
         if exp and exp is not ir.exp:
-            ir = ir.model_copy(update={'exp': exp})
+            ir = ir.model_copy(update={"exp": exp})
         sym = qualified_symbols(ir, self.scope)[-1]
         if isinstance(sym, Symbol):
             for expr_t in typehelper.find_expr(sym.typ):
@@ -201,6 +209,7 @@ class IrReplacer(IrTransformer):
 # ObjectHierarchyCopier
 # ============================================================
 
+
 class ObjectHierarchyCopier(object):
     def __init__(self):
         pass
@@ -210,10 +219,7 @@ class ObjectHierarchyCopier(object):
             qsym = qualified_symbols(ir, self.scope)
             sym = qsym[-1]
             assert isinstance(sym, Symbol)
-            return (not sym.is_param() and
-                    sym.typ.is_object() and
-                    sym.typ.scope and
-                    not sym.typ.scope.is_module())
+            return not sym.is_param() and sym.typ.is_object() and sym.typ.scope and not sym.typ.scope.is_module()
         return False
 
     def _is_object_copy(self, mov):
@@ -269,6 +275,7 @@ class ObjectHierarchyCopier(object):
 # FlattenFieldAccess
 # ============================================================
 
+
 class FlattenFieldAccess(IrTransformer):
     """Flatten nested attribute access chains using new IR.
 
@@ -278,7 +285,7 @@ class FlattenFieldAccess(IrTransformer):
 
     def _make_flatname(self, qsym):
         qnames = [sym.name for sym in qsym if sym.name != env.self_name]
-        return '_'.join(qnames)
+        return "_".join(qnames)
 
     def _make_flatten_qsym(self, ir):
         assert isinstance(ir, Attr)
@@ -294,10 +301,9 @@ class FlattenFieldAccess(IrTransformer):
 
         ancestor = qsyms[-1]
         for i, sym in enumerate(qsyms):
-            if (sym.typ.is_object() and not sym.is_subobject() and
-                    sym.typ.scope.is_module()):
-                flatname = self._make_flatname(qsyms[i + 1:])
-                head = qsyms[:i + 1]
+            if sym.typ.is_object() and not sym.is_subobject() and sym.typ.scope.is_module():
+                flatname = self._make_flatname(qsyms[i + 1 :])
+                head = qsyms[: i + 1]
                 scope = sym.typ.scope
                 break
         else:
@@ -314,15 +320,17 @@ class FlattenFieldAccess(IrTransformer):
                     tags |= sym.tags
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
                 env.origin_registry.set_sym_origin(flatsym, ancestor)
-                flatsym.add_tag('flattened')
+                flatsym.add_tag("flattened")
             return head + (flatsym,) + tail
         else:
             return head + tail
 
     def _make_new_attr(self, qsym, ir):
         """Build a new Attr/Temp chain from the flattened qsym."""
+
         def context(i):
             return ir.ctx if i == len(qsym) - 1 else Ctx.LOAD
+
         newir = Temp(name=qsym[0].name, ctx=context(0))
         for i in range(1, len(qsym)):
             newir = Attr(name=qsym[i].name, exp=newir, attr=qsym[i], ctx=context(i))
@@ -388,7 +396,7 @@ class _FlattenFieldAccessForExprType(IrTransformer):
 
     def _make_flatname(self, qsym):
         qnames = [sym.name for sym in qsym if sym.name != env.self_name]
-        return '_'.join(qnames)
+        return "_".join(qnames)
 
     def _make_flatten_qsym(self, ir):
         assert isinstance(ir, Attr)
@@ -403,10 +411,9 @@ class _FlattenFieldAccessForExprType(IrTransformer):
             tail = tuple()
         ancestor = qsyms[-1]
         for i, sym in enumerate(qsyms):
-            if (sym.typ.is_object() and not sym.is_subobject() and
-                    sym.typ.scope.is_module()):
-                flatname = self._make_flatname(qsyms[i + 1:])
-                head = qsyms[:i + 1]
+            if sym.typ.is_object() and not sym.is_subobject() and sym.typ.scope.is_module():
+                flatname = self._make_flatname(qsyms[i + 1 :])
+                head = qsyms[: i + 1]
                 scope = sym.typ.scope
                 break
         else:
@@ -423,7 +430,7 @@ class _FlattenFieldAccessForExprType(IrTransformer):
                     tags |= sym.tags
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
                 env.origin_registry.set_sym_origin(flatsym, ancestor)
-                flatsym.add_tag('flattened')
+                flatsym.add_tag("flattened")
             return head + (flatsym,) + tail
         else:
             return head + tail
@@ -431,6 +438,7 @@ class _FlattenFieldAccessForExprType(IrTransformer):
     def _make_new_attr(self, qsym, ir):
         def context(i):
             return ir.ctx if i == len(qsym) - 1 else Ctx.LOAD
+
         newir = Temp(name=qsym[0].name, ctx=context(0))
         for i in range(1, len(qsym)):
             newir = Attr(name=qsym[i].name, exp=newir, attr=qsym[i], ctx=context(i))
@@ -484,6 +492,7 @@ class _FlattenFieldAccessForExprType(IrTransformer):
 # InlineOpt - Main inline optimization
 # ============================================================
 
+
 class InlineOpt(object):
     """Inline optimization operating directly on block.stms (unified IR).
 
@@ -491,10 +500,12 @@ class InlineOpt(object):
     into callers by cloning callee blocks and merging them into the caller's
     block structure.
     """
+
     inline_counts = 0
 
     def process_scopes(self, scopes):
         from .typeprop import TypePropagation
+
         self._new_scopes = []
         while True:
             ret = self._process_scopes(scopes)
@@ -569,10 +580,12 @@ class InlineOpt(object):
             if isinstance(arg, (Temp, Attr, Const, UnOp)):
                 arg_map[param] = arg
             else:
-                assert False, 'CALL is not quadruple form'
+                assert False, "CALL is not quadruple form"
         return arg_map
 
-    def _make_replace_self_obj_map(self, callee: CalleeScope, call: IrCallable, call_stm: IrStm, caller: CallerScope) -> ReplaceMap:
+    def _make_replace_self_obj_map(
+        self, callee: CalleeScope, call: IrCallable, call_stm: IrStm, caller: CallerScope
+    ) -> ReplaceMap:
         self_map: ReplaceMap = {}
         callee_self = callee.find_sym(env.self_name)
         assert callee_self
@@ -582,7 +595,7 @@ class InlineOpt(object):
                 assert call_stm.src == call
                 qsym = cast(tuple[Symbol, ...], qualified_symbols(call_stm.dst, caller))
                 if callee_self.is_free():
-                    qsym[0].add_tag('free')
+                    qsym[0].add_tag("free")
                 assert all(isinstance(sym, Symbol) for sym in qsym)
                 self_map[callee_self] = qsym2var(qsym, Ctx.LOAD)
             else:
@@ -591,7 +604,7 @@ class InlineOpt(object):
             assert isinstance(call.func, Attr)
             receiver_sym = cast(tuple[Symbol, ...], qualified_symbols(call.func.exp, caller))
             if callee_self.is_free():
-                receiver_sym[0].add_tag('free')
+                receiver_sym[0].add_tag("free")
             self_map[callee_self] = qsym2var(receiver_sym, Ctx.LOAD)
         return self_map
 
@@ -615,9 +628,10 @@ class InlineOpt(object):
             count = 0
             for s in scopes:
                 while s.find_sym(new_name):
-                    new_name = f'{name}_{count}'
+                    new_name = f"{name}_{count}"
                     count += 1
             return new_name
+
         scope_name_exps: list[tuple[Scope, list[IrNameExp]]] = []
         self._collect_names_recursively(callee, scope_name_exps)
         sym_ir_map: dict[Symbol, list[IrNameExp]] = defaultdict(list)
@@ -642,7 +656,7 @@ class InlineOpt(object):
             else:
                 callee.rename_sym_asname(callee_sym.name, new_name)
             for exp in name_exps:
-                object.__setattr__(exp, 'name', new_name)
+                object.__setattr__(exp, "name", new_name)
             if callee_sym.is_typevar():
                 self._rename_type_expr_var(callee, old_name, new_name)
 
@@ -660,7 +674,7 @@ class InlineOpt(object):
             if not caller.has_sym(name):
                 if sym.scope is callee:
                     if sym.typ.has_scope() and sym.typ.scope_name.startswith(callee.name):
-                        typ = sym.typ.clone(scope_name=f'{caller.name}.{sym.name}', explicit=True)
+                        typ = sym.typ.clone(scope_name=f"{caller.name}.{sym.name}", explicit=True)
                     else:
                         typ = sym.typ.clone()
                     caller.add_sym(name, sym.tags, typ)
@@ -680,7 +694,7 @@ class InlineOpt(object):
                 if expr_t.scope is orig_callee:
                     d = dataclasses.asdict(field.typ)
                     dd = {}
-                    if typehelper.replace_type_dict(d, dd, 'scope_name', value_map):
+                    if typehelper.replace_type_dict(d, dd, "scope_name", value_map):
                         field.typ = field.typ.__class__.from_dict(dd)
 
     def _rename_type_expr_var(self, callee: CalleeScope, old_name: str, new_name: str):
@@ -696,7 +710,7 @@ class InlineOpt(object):
                 assert isinstance(expr, Expr)
                 for v in expr.find_irs(IrNameExp):
                     if v.name == old_name:
-                        object.__setattr__(v, 'name', new_name)
+                        object.__setattr__(v, "name", new_name)
 
     def _merge_closure(self, callee: CalleeScope, caller: CallerScope):
         closures = callee.closures()
@@ -709,10 +723,12 @@ class InlineOpt(object):
             env.append_scope(clos)
             self._new_scopes.append(clos)
             caller.append_child(clos)
-        caller.add_tag('enclosure')
+        caller.add_tag("enclosure")
 
     def _clone_callee(self, caller: CallerScope, callee: CalleeScope) -> CalleeScope:
-        callee_clone: CalleeScope = cast(CalleeScope, callee.clone('', f'#{self.inline_counts}', parent=callee.parent, recursive=True))
+        callee_clone: CalleeScope = cast(
+            CalleeScope, callee.clone("", f"#{self.inline_counts}", parent=callee.parent, recursive=True)
+        )
         return callee_clone
 
     def _remove_closure_if_needed(self, caller: CallerScope):
@@ -728,10 +744,10 @@ class InlineOpt(object):
                 Scope.destroy(clos)
                 caller.del_sym(clos.base_name)
         if not has_reference:
-            caller.del_tag('enclosure')
+            caller.del_tag("enclosure")
             for sym in caller.symbols.values():
                 if sym.is_free():
-                    sym.del_tag('free')
+                    sym.del_tag("free")
             assert not caller.closures()
 
     def _inlining(self, caller: CallerScope, callee: CalleeScope, call_irs: list[CallStmPair]) -> bool:
@@ -769,9 +785,7 @@ class InlineOpt(object):
 
             if isinstance(call_stm, Move) and callee.is_ctor():
                 assert call_stm.src == call
-                builtin_new = SysCall(Temp('$new'),
-                                      args=[('typ', call.func.clone(ctx=Ctx.LOAD))],
-                                      kwargs={})
+                builtin_new = SysCall(Temp("$new"), args=[("typ", call.func.clone(ctx=Ctx.LOAD))], kwargs={})
                 call_stm.replace(call_stm.src, builtin_new)
             elif isinstance(call_stm, Expr):
                 caller.find_block(call_stm.block).stms.remove(call_stm)
@@ -787,24 +801,26 @@ class InlineOpt(object):
         return True
 
     def _replace_result_exp(self, call_stm: IrStm, call: IrCallable, callee: CalleeScope, caller: CallerScope):
-        syms = callee.find_syms_by_tags({'return'})
+        syms = callee.find_syms_by_tags({"return"})
         assert len(syms) == 1
         result_sym = syms.pop()
-        result_sym.del_tag('return')
+        result_sym.del_tag("return")
         result = Temp(result_sym.name)
         match call_stm:
             case Move() as move:
                 assert move.src == call
-                new_stm = move.model_copy(update={'src': result})
+                new_stm = move.model_copy(update={"src": result})
             case Expr() as expr:
                 assert expr.exp == call
-                new_stm = expr.model_copy(update={'exp': result})
+                new_stm = expr.model_copy(update={"exp": result})
             case _:
                 return
         blk = caller.find_block(call_stm.block)
         return blk.replace_stm(call_stm, new_stm)
 
-    def _merge_blocks(self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block, caller: 'Scope' = None):
+    def _merge_blocks(
+        self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block, caller: "Scope" = None
+    ):
         caller_scope = caller if caller else self.scope
         early_call_blk = caller_scope.find_block(call_stm.block)
         late_call_blk = Block(caller_scope)
@@ -821,7 +837,7 @@ class InlineOpt(object):
         late_call_blk.stms = early_call_blk.stms[idx:]
         # In-place block update required: calls list holds stm references
         for s in late_call_blk.stms:
-            object.__setattr__(s, 'block', late_call_blk.bid)
+            object.__setattr__(s, "block", late_call_blk.bid)
         early_call_blk.stms = early_call_blk.stms[:idx]
         early_call_blk.append_stm(Jump(callee_entry_blk.bid))
         early_call_blk.succs = [callee_entry_blk]
@@ -850,7 +866,12 @@ class InlineOpt(object):
         for block in scope.traverse_blocks():
             removes = []
             for stm in block.stms:
-                if isinstance(stm, Move) and isinstance(stm.dst, Temp) and isinstance(stm.src, Temp) and stm.dst.name == stm.src.name:
+                if (
+                    isinstance(stm, Move)
+                    and isinstance(stm.dst, Temp)
+                    and isinstance(stm.src, Temp)
+                    and stm.dst.name == stm.src.name
+                ):
                     removes.append(stm)
             for rm in removes:
                 block.stms.remove(rm)
@@ -859,22 +880,6 @@ class InlineOpt(object):
 # ============================================================
 # FlattenModule
 # ============================================================
-
-class _NewCallCollectorForFlatten(IrVisitor):
-    """Collect Call nodes from stms for FlattenModule."""
-
-    def __init__(self):
-        super().__init__()
-        self.calls: list[tuple[Scope, IrStm, Call]] = []
-
-    def process(self, scope):
-        super().process(scope)
-        return self.calls
-
-    def visit_Call(self, ir):
-        self.calls.append((self.scope, self.current_stm, ir))
-
-
 class FlattenModule(IrVisitor):
     """Flatten module method calls using new IR.
 
@@ -891,11 +896,12 @@ class FlattenModule(IrVisitor):
     def _update_current_stm(self, new_call):
         """Update current_stm's Call/SysCall field with the new model_copy'd call."""
         from ..ir import Move, Expr
+
         stm = self.current_stm
         if isinstance(stm, Move):
-            new_stm = stm.model_copy(update={'src': new_call})
+            new_stm = stm.model_copy(update={"src": new_call})
         elif isinstance(stm, Expr):
-            new_stm = stm.model_copy(update={'exp': new_call})
+            new_stm = stm.model_copy(update={"exp": new_call})
         else:
             return
         blk = self.scope.find_block(stm.block)
@@ -904,11 +910,13 @@ class FlattenModule(IrVisitor):
 
     def visit_Call(self, ir):
         callee_scope = self._get_callee_scope(ir)
-        if (callee_scope.is_method() and
-                callee_scope.parent.is_module() and
-                callee_scope.base_name == 'append_worker' and
-                ir.func.head_name() == env.self_name and
-                len(ir.func.qualified_name) > 2):
+        if (
+            callee_scope.is_method()
+            and callee_scope.parent.is_module()
+            and callee_scope.base_name == "append_worker"
+            and ir.func.head_name() == env.self_name
+            and len(ir.func.qualified_name) > 2
+        ):
             _, arg = ir.args[0]
             arg_t = irexp_type(arg, self.scope)
             worker_scope = arg_t.scope
@@ -917,23 +925,25 @@ class FlattenModule(IrVisitor):
                 self._new_scopes.append(new_worker)
                 new_worker.parent.register_worker(new_worker)
                 assert self.scope.parent.is_module()
-                new_func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.CALL)
+                new_func = Attr(name="append_worker", exp=Temp(name="self"), attr="append_worker", ctx=Ctx.CALL)
                 new_args = list(ir.args)
-                new_args[0] = ('', new_arg)
-                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name, 'args': new_args})
+                new_args[0] = ("", new_arg)
+                ir = ir.model_copy(update={"func": new_func, "name": new_func.name, "args": new_args})
                 self._update_current_stm(ir)
             else:
                 assert self.scope.parent.is_module()
-                new_func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.CALL)
+                new_func = Attr(name="append_worker", exp=Temp(name="self"), attr="append_worker", ctx=Ctx.CALL)
                 new_args = list(ir.args)
                 new_args[0] = (None, arg)
-                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name, 'args': new_args})
+                ir = ir.model_copy(update={"func": new_func, "name": new_func.name, "args": new_args})
                 self._update_current_stm(ir)
-        elif (callee_scope.is_method() and
-                callee_scope.parent.is_port() and
-                callee_scope.base_name == 'assign' and
-                ir.func.head_name() == env.self_name and
-                len(ir.func.qualified_name) > 3):
+        elif (
+            callee_scope.is_method()
+            and callee_scope.parent.is_port()
+            and callee_scope.base_name == "assign"
+            and ir.func.head_name() == env.self_name
+            and len(ir.func.qualified_name) > 3
+        ):
             _, arg = ir.args[0]
             sym_t = irexp_type(arg, self.scope)
             if not sym_t.is_function():
@@ -944,7 +954,7 @@ class FlattenModule(IrVisitor):
             if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
                 new_method, new_arg = self._make_new_assigned_method(arg, sym_scope)
                 self._new_scopes.append(new_method)
-                ir.args[0] = ('', new_arg)
+                ir.args[0] = ("", new_arg)
         else:
             # Visit args
             for _, arg in ir.args:
@@ -967,42 +977,37 @@ class FlattenModule(IrVisitor):
         worker_scope = arg_t.scope
         assert isinstance(arg, Attr)
         inst_name = arg.exp.name
-        new_worker = worker_scope.clone(inst_name, '', parent=parent_module)
+        new_worker = worker_scope.clone(inst_name, "", parent=parent_module)
         if new_worker.is_inlinelib():
-            new_worker.del_tag('inlinelib')
-        worker_self = new_worker.find_sym('self')
+            new_worker.del_tag("inlinelib")
+        worker_self = new_worker.find_sym("self")
         worker_self.typ = worker_self.typ.clone(scope=parent_module)
         in_self = new_worker.param_symbols(with_self=True)[0]
         in_self.typ = in_self.typ.clone(scope=parent_module)
 
         replace_map = {}
-        replace_map[worker_self] = Attr(exp=Temp('self'), attr=inst_name)
+        replace_map[worker_self] = Attr(exp=Temp("self"), attr=inst_name)
         IrReplacer(replace_map).process(new_worker, new_worker.entry_block)
-        return new_worker, Attr(name=new_worker.base_name, exp=Temp(name='self'), attr=new_worker.base_name, ctx=Ctx.LOAD)
+        return new_worker, Attr(
+            name=new_worker.base_name, exp=Temp(name="self"), attr=new_worker.base_name, ctx=Ctx.LOAD
+        )
 
     def _make_new_assigned_method(self, arg, assigned_scope):
         module_scope = self.scope.parent
         inst_name = arg.exp.name
-        new_method = assigned_scope.clone(inst_name, '', parent=module_scope)
+        new_method = assigned_scope.clone(inst_name, "", parent=module_scope)
         if new_method.is_inlinelib():
-            new_method.del_tag('inlinelib')
-        self_sym = new_method.find_sym('self')
+            new_method.del_tag("inlinelib")
+        self_sym = new_method.find_sym("self")
         self_sym.typ = self_sym.typ.clone(scope=module_scope)
 
         in_self = new_method.param_symbols(with_self=True)[0]
         in_self.typ = in_self.typ.clone(scope=module_scope)
 
         replace_map = {}
-        replace_map[self_sym] = Attr(exp=Temp('self'), attr=inst_name)
+        replace_map[self_sym] = Attr(exp=Temp("self"), attr=inst_name)
         IrReplacer(replace_map).process(new_method, new_method.entry_block)
 
-        return new_method, Attr(name=new_method.base_name, exp=Temp(name='self'), attr=new_method.base_name, ctx=Ctx.LOAD)
-
-
-# ============================================================
-# Backward compatibility aliases
-# ============================================================
-# These are used by existing tests and __main__.py
-InlineOpt = InlineOpt
-FlattenFieldAccess = FlattenFieldAccess
-ObjectHierarchyCopier = ObjectHierarchyCopier
+        return new_method, Attr(
+            name=new_method.base_name, exp=Temp(name="self"), attr=new_method.base_name, ctx=Ctx.LOAD
+        )
