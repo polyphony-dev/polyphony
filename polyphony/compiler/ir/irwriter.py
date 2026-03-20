@@ -284,7 +284,7 @@ class IrWriter(object):
             root_ref = f'{root_sym.scope_name}:{root_sym.name}'
             return f'port({typ.scope_name}, {dtype_str}, {typ.direction}, {typ.init}, {typ.assigned}, {root_ref})'
         elif typ.is_expr():
-            exp_str = self._format_exp(typ.expr.exp)
+            exp_str = self._format_exp(typ.expr.exp)  # type: ignore[attr-defined]
             return f'expr({typ.scope_name}, {exp_str})'
         elif typ.is_none():
             return 'none'

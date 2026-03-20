@@ -42,7 +42,7 @@ class CallCollector(IrVisitor):
         for stm in block.stms:
             self.visit(stm)
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         super().process(scope)
         return self.calls
 

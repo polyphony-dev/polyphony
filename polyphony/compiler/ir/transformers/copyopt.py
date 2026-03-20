@@ -1,5 +1,6 @@
 """CopyOpt using new IR (ir.py)."""
 from collections import deque
+from typing import cast
 from ..ir import (
     Ir, IrVariable, IrNameExp, Temp, Attr, Move, CMove, Expr,
     Phi, UPhi, LPhi, Ctx,
@@ -76,12 +77,12 @@ class CopyOpt(object):
         worklist = deque(copies)
         while worklist:
             cp = worklist.popleft()
-            dst_qsym = qualified_symbols(cp.dst, scope)
+            dst_qsym = cast(tuple[Symbol, ...], qualified_symbols(cp.dst, scope))
             defs = list(self.usedef.get_stms_defining(dst_qsym))
             if len(defs) > 1:
                 copies.remove(cp)
                 continue
-            src_qsym = qualified_symbols(cp.src, scope)
+            src_qsym = cast(tuple[Symbol, ...], qualified_symbols(cp.src, scope))
             orig = self._find_root_def(src_qsym)
             udupdater = UseDefUpdater(scope, self.usedef)
             replaced = self._replace_copies(scope, udupdater, self.usedef, cp, orig, dst_qsym, copies, worklist)
@@ -94,7 +95,7 @@ class CopyOpt(object):
                         src_qsym[0].add_tag('free')
         for cp in copies:
             if cp in self.scope.find_block(cp.block).stms:
-                if isinstance(cp.dst, Attr) and qualified_symbols(cp.dst, self.scope)[-2].typ.scope.is_module() and scope.is_ctor():
+                if isinstance(cp.dst, Attr) and cast(tuple[Symbol, ...], qualified_symbols(cp.dst, self.scope))[-2].typ.scope.is_module() and scope.is_ctor():
                     continue
                 self.scope.find_block(cp.block).stms.remove(cp)
 
@@ -156,7 +157,7 @@ class CopyOpt(object):
             return None
         d = defs[0]
         if isinstance(d, Move):
-            dst_sym = qualified_symbols(d.dst, self.scope)[-1]
+            dst_sym = qualified_symbols(cast(IrNameExp, d.dst), self.scope)[-1]
             assert isinstance(dst_sym, Symbol)
             dst_t = dst_sym.typ
             if isinstance(d.src, (Temp, Attr)):
@@ -184,7 +185,7 @@ class ObjCopyCollector(IrVisitor):
         if not isinstance(mov.dst, IrVariable):
             return False
         if isinstance(mov.dst, Attr):
-            receiver = qualified_symbols(mov.dst.exp, self.scope)[-1]
+            receiver = qualified_symbols(cast(IrNameExp, mov.dst.exp), self.scope)[-1]
             assert isinstance(receiver, Symbol)
             receiver_t = receiver.typ
             if receiver_t.is_object() and receiver_t.scope.is_module():
@@ -206,7 +207,7 @@ class ObjCopyCollector(IrVisitor):
 
 
 class ObjCopyOpt(CopyOpt):
-    def _new_collector(self, copies):
+    def _new_collector(self, copies):  # type: ignore[override]
         return ObjCopyCollector(copies)
 
     def _find_old_use(self, scope, ir, qname):

@@ -150,7 +150,7 @@ class IrReplacer(IrTransformer):
     def __init__(self, replace_map: ReplaceMap):
         self.replace_map = replace_map
 
-    def process(self, scope, entry_block):
+    def process(self, scope, entry_block):  # type: ignore[override]
         self.scope = scope
         for blk in entry_block.traverse():
             self._process_block(blk)
@@ -293,7 +293,7 @@ class FlattenFieldAccess(IrTransformer):
     def _make_flatten_qsym(self, ir):
         assert isinstance(ir, Attr)
         flatname = None
-        qsyms = qualified_symbols(ir, self.scope)
+        qsyms = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
         head = qsyms[0]
         inlining_scope = head.scope
         if qsyms[-1].typ.is_function():
@@ -318,7 +318,7 @@ class FlattenFieldAccess(IrTransformer):
                 flatsym = scope.find_sym(flatname)
             else:
                 tags = set()
-                qsym = qualified_symbols(ir, self.scope)
+                qsym = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
                 for sym in qsym:
                     tags |= sym.tags
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
@@ -348,7 +348,7 @@ class FlattenFieldAccess(IrTransformer):
         return ir
 
     def visit_Attr(self, ir):
-        qsym = qualified_symbols(ir, self.scope)
+        qsym = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
         sym = qsym[-1]
         assert isinstance(sym, Symbol)
         for expr_t in typehelper.find_expr(sym.typ):
@@ -404,7 +404,7 @@ class _FlattenFieldAccessForExprType(IrTransformer):
     def _make_flatten_qsym(self, ir):
         assert isinstance(ir, Attr)
         flatname = None
-        qsyms = qualified_symbols(ir, self.scope)
+        qsyms = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
         head = qsyms[0]
         inlining_scope = head.scope
         if qsyms[-1].typ.is_function():
@@ -428,7 +428,7 @@ class _FlattenFieldAccessForExprType(IrTransformer):
                 flatsym = scope.find_sym(flatname)
             else:
                 tags = set()
-                qsym = qualified_symbols(ir, self.scope)
+                qsym = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
                 for sym in qsym:
                     tags |= sym.tags
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
@@ -462,7 +462,7 @@ class _FlattenFieldAccessForExprType(IrTransformer):
         return ir
 
     def visit_Attr(self, ir):
-        qsym = qualified_symbols(ir, self.scope)
+        qsym = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
         sym = qsym[-1]
         assert isinstance(sym, Symbol)
         for expr_t in typehelper.find_expr(sym.typ):
@@ -575,7 +575,7 @@ class InlineOpt(object):
 
     def _make_replace_args_map(self, callee: CalleeScope, call: IrCallable) -> ReplaceMap:
         arg_map: ReplaceMap = {}
-        for i, (param, defval) in enumerate(zip(callee.param_symbols(), callee.param_default_values())):
+        for i, (param, defval) in enumerate(zip(callee.param_symbols(), callee.param_default_values())):  # type: ignore[arg-type]
             if len(call.args) > i:
                 _, arg = call.args[i]
             else:
@@ -596,7 +596,7 @@ class InlineOpt(object):
             assert not callee.is_returnable()
             if isinstance(call_stm, Move):
                 assert call_stm.src == call
-                qsym = cast(tuple[Symbol, ...], qualified_symbols(call_stm.dst, caller))
+                qsym = cast(tuple[Symbol, ...], qualified_symbols(cast(IrNameExp, call_stm.dst), caller))
                 if callee_self.is_free():
                     qsym[0].add_tag("free")
                 assert all(isinstance(sym, Symbol) for sym in qsym)
@@ -605,7 +605,7 @@ class InlineOpt(object):
                 logger.error(f"cannot inline {callee.name} because of statement is not MOVE")
         else:
             assert isinstance(call.func, Attr)
-            receiver_sym = cast(tuple[Symbol, ...], qualified_symbols(call.func.exp, caller))
+            receiver_sym = cast(tuple[Symbol, ...], qualified_symbols(cast(IrNameExp, call.func.exp), caller))
             if callee_self.is_free():
                 receiver_sym[0].add_tag("free")
             self_map[callee_self] = qsym2var(receiver_sym, Ctx.LOAD)
@@ -617,6 +617,7 @@ class InlineOpt(object):
             sym = callee.find_sym(name_exp.name)
             if caller.find_sym(name_exp.name) is sym:
                 continue
+            assert sym is not None
             callee.import_sym(sym, sym.name)
 
     def _collect_names_recursively(self, scope: Scope, all_vars: list[tuple[Scope, list[IrNameExp]]]):
@@ -788,7 +789,7 @@ class InlineOpt(object):
 
             if isinstance(call_stm, Move) and callee.is_ctor():
                 assert call_stm.src == call
-                builtin_new = SysCall(Temp("$new"), args=[("typ", call.func.clone(ctx=Ctx.LOAD))], kwargs={})
+                builtin_new = SysCall(func=Temp("$new"), args=(("typ", call.func.clone(ctx=Ctx.LOAD)),), kwargs={})
                 new_call_stm = call_stm.subst(call_stm.src, builtin_new)
                 if new_call_stm is not call_stm:
                     caller.find_block(call_stm.block).replace_stm(call_stm, new_call_stm)
@@ -824,9 +825,9 @@ class InlineOpt(object):
         return blk.replace_stm(call_stm, new_stm)
 
     def _merge_blocks(
-        self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block, caller: "Scope" = None
+        self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block, caller: "Scope | None" = None
     ):
-        caller_scope = caller if caller else self.scope
+        caller_scope = caller if caller else self.scope  # type: ignore[attr-defined]
         early_call_blk = caller_scope.find_block(call_stm.block)
         late_call_blk = Block(caller_scope)
         late_call_blk.succs = early_call_blk.succs
@@ -984,7 +985,7 @@ class FlattenModule(IrVisitor):
         arg_t = arg_sym.typ
         worker_scope = arg_t.scope
         assert isinstance(arg, Attr)
-        inst_name = arg.exp.name
+        inst_name = cast(IrNameExp, arg.exp).name
         new_worker = worker_scope.clone(inst_name, "", parent=parent_module)
         if new_worker.is_inlinelib():
             new_worker.del_tag("inlinelib")

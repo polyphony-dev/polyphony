@@ -1,5 +1,6 @@
 """ObjectTransformer using new IR (ir.py)."""
 from collections import defaultdict, deque
+from typing import cast
 from ..block import Block
 from ..ir import Loc
 from ..ir import (
@@ -7,6 +8,7 @@ from ..ir import (
     MRef, MStore, MStm, SysCall, Array, RelOp, CJump, Jump,
     Phi, UPhi, LPhi, Ctx,
 )
+from ..symbol import Symbol
 from ..irhelper import qualified_symbols, irexp_type
 from ..types.type import Type
 from ..analysis.usedef import UseDefDetector, UseDefUpdater
@@ -38,7 +40,7 @@ class ObjectTransformer(object):
                 if isinstance(stm, Move):
                     dst_typ = irexp_type(stm.dst, self.scope)
                     if dst_typ.is_object():
-                        qsym = qualified_symbols(stm.dst, self.scope)
+                        qsym = cast(tuple[Symbol, ...], qualified_symbols(cast(IrNameExp, stm.dst), self.scope))
                         assert isinstance(qsym[-1], Symbol)
                         if isinstance(stm.src, SysCall) and stm.src.name == '$new':
                             self.obj_defs.add(qsym[-1])
@@ -48,7 +50,7 @@ class ObjectTransformer(object):
                             self.obj_copies[qsym] = stm
                     elif dst_typ.is_seq():
                         assert not isinstance(stm.dst, Array)
-                        qsym = qualified_symbols(stm.dst, self.scope)
+                        qsym = cast(tuple[Symbol, ...], qualified_symbols(cast(IrNameExp, stm.dst), self.scope))
                         assert isinstance(qsym[-1], Symbol)
                         if isinstance(stm.src, Array):
                             self.seq_defs.add(qsym[-1])
@@ -293,6 +295,7 @@ class ObjectTransformer(object):
         for seq_sym in self.seq_defs:
             defstms = self.usedef.get_stms_defining(seq_sym)
             defstm = list(defstms)[0]
+            assert isinstance(defstm, Move)
             assert isinstance(defstm.src, Array)
 
             seq_id = self.scope.add_sym(f'{seq_sym.name}{seq_sym.id}__id', tags=set(), typ=Type.int(16))

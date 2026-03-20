@@ -6,7 +6,7 @@ and handling loop PHIs and predicates.
 from collections import defaultdict, deque
 from .cfgopt import can_merge_synth_params
 from ..ir import (
-    Ir, IrExp, IrStm, IrVariable, IrNameExp,
+    Ir, IrExp, IrStm, IrVariable, IrNameExp, Loc,
     Const, Temp, Attr, Move, Expr, CExpr, Jump, CJump, MCJump,
     Phi, UPhi, LPhi, Call, SysCall, New,
     Ctx,
@@ -135,6 +135,7 @@ class SSATransformerBase(object):
     def _new_phi(self, var, df):
         phi = Phi(var=var, args=tuple(Const(value=None) for _ in df.preds))
         sym = qualified_symbols(var, self.scope)[-1]
+        assert isinstance(sym, Symbol)
         defs = self.usedef.get_stms_defining(sym)
         for d in defs:
             if d.block == df.preds[0].bid:
@@ -185,6 +186,7 @@ class SSATransformerBase(object):
             if self._need_rename(qsyms[-1], qsyms):
                 new_name = var.name + '#' + str(version)
                 var_sym = qsyms[-1]
+                assert isinstance(var_sym, Symbol)
                 new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
                 # Note: mutating var.name in-place is required here because usedef
                 # tracks references to this var object. model_copy would break those references.
@@ -202,7 +204,9 @@ class SSATransformerBase(object):
                     i, _ = stack[key][-1]
                     self._add_new_sym(use, i)
 
-                    use_t = qsym[-1].typ
+                    use_t_sym = qsym[-1]
+                    assert isinstance(use_t_sym, Symbol)
+                    use_t = use_t_sym.typ
                     for expr_t in typehelper.find_expr(use_t):
                         expr = expr_t.expr
                         vs = expr.find_irs(IrVariable)
@@ -223,7 +227,9 @@ class SSATransformerBase(object):
                 if isinstance(stm, Phi) and isinstance(d, Attr):
                     self._add_new_sym_rest(d.exp, stack)
 
-                d_t = key[-1].typ
+                d_t_sym = key[-1]
+                assert isinstance(d_t_sym, Symbol)
+                d_t = d_t_sym.typ
                 for expr_t in typehelper.find_expr(d_t):
                     expr = expr_t.expr
                     vs = expr.find_irs(IrVariable)
@@ -269,7 +275,7 @@ class SSATransformerBase(object):
         if isinstance(var, Attr):
             self._add_new_phi_arg(phi, var.exp, stack, block, is_tail_attr=False)
 
-    def _need_rename(self, sym, qsym):
+    def _need_rename(self, sym, qsym) -> bool:
         return False
 
     def _add_new_sym(self, var, version):
@@ -324,11 +330,13 @@ class SSATransformerBase(object):
                 self._remove_phi(phi, usedef)
                 continue
             var_sym = qualified_symbols(phi.var, self.scope)[-1]
+            assert isinstance(var_sym, Symbol)
             usestms = usedef.get_stms_using(var_sym)
             if not usestms:
                 self._remove_phi(phi, usedef)
                 for a in [a for a in phi.args if a and isinstance(a, Temp)]:
                     a_sym = qualified_symbols(a, self.scope)[-1]
+                    assert isinstance(a_sym, Symbol)
                     for defphi in [defstm for defstm in usedef.get_stms_defining(a_sym) if isinstance(defstm, Phi)]:
                         worklist.append(defphi)
                 continue
@@ -397,6 +405,7 @@ class SSATransformerBase(object):
                 continue
             phi_predicates = []
             dup_counts = defaultdict(int)
+            p = Const(value=1)
             for pred in blk.preds:
                 if len(pred.succs) == 1:
                     path_exp = pred.path_exp
@@ -523,8 +532,8 @@ class TupleSSATransformer(SSATransformerBase):
             dst_use_vars = use_stm.dst.find_vars(qname)
             if src_use_vars:
                 use_var = src_use_vars[0]
-                from ..ir import Loc
                 new_args = tuple(use_stm.src.subst(use_var, arg) for arg in phi.args)
+                assert isinstance(use_stm.dst, IrVariable)
                 uphi = UPhi(var=use_stm.dst.model_copy(deep=True),
                             args=new_args, ps=phi.ps,
                             block=use_stm.block, loc=use_stm.loc or Loc('', 0))

@@ -163,11 +163,11 @@ class IrReader(object):
             typstr = tokens[1]
             if not self.current_scope.is_ctor():
                 self.current_scope.tags.add('returnable')
-            self.current_scope.return_type = self.parse_type(typstr)
+            self.current_scope.return_type = self.parse_type(typstr)  # type: ignore[attr-defined]
             self.current_scope.add_return_sym(self.current_scope.return_type)
             line = self.deq_line()
         else:
-            self.current_scope.return_type = Type.none()
+            self.current_scope.return_type = Type.none()  # type: ignore[attr-defined]
 
         # symbols
         while True:
@@ -641,7 +641,7 @@ class IrReader(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return Call(func, args, {})
+        return Call(func=func, args=tuple(args), kwargs={})
 
     def parse_new(self, operands: str):
         ops = self.parse_operands(operands)
@@ -651,7 +651,7 @@ class IrReader(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return New(func, args, {})
+        return New(func=func, args=tuple(args), kwargs={})
 
     def parse_syscall(self, operands: str):
         # FIXME:
@@ -662,7 +662,7 @@ class IrReader(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return SysCall(func, args, {})
+        return SysCall(func=func, args=tuple(args), kwargs={})
 
     def parse_mload(self, operands: str):
         ops = self.parse_operands(operands)

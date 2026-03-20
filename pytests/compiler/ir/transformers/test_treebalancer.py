@@ -1,12 +1,10 @@
 """Tests for TreeBalancer, PLURALOP, BINOP2PLURALOP, and PLURALOP2BINOP.
 
-NOTE: treebalancer.py has two known issues with the new Pydantic-based IR:
+NOTE: treebalancer.py has one known issue with the new Pydantic-based IR:
 1. BINOP2PLURALOP.visit_BinOp uses direct attribute assignment (ir.left = ...)
    on frozen Pydantic models, raising ValidationError.
-2. PLURALOP2BINOP._rebuild_tree references undefined name BINOP (should be BinOp).
 
-Tests document these behaviors via pytest.raises where needed and exercise
-all reachable code paths for maximum coverage.
+Tests exercise all reachable code paths for maximum coverage.
 """
 import pytest
 from pydantic_core import ValidationError
@@ -460,9 +458,9 @@ class TestPLURALOP2BINOP:
         with pytest.raises(AssertionError):
             self.visitor.rebuild_tree('Add', [(_temp('a'), False)])
 
-    def test_rebuild_tree_two_values_hits_BINOP_bug(self):
-        with pytest.raises(NameError, match="BINOP"):
-            self.visitor.rebuild_tree('Add', [(_temp('a'), True), (_temp('b'), True)])
+    def test_rebuild_tree_two_values_returns_BinOp(self):
+        result = self.visitor.rebuild_tree('Add', [(_temp('a'), True), (_temp('b'), True)])
+        assert isinstance(result, BinOp)
 
     def test_rebuild_tree_sorts_by_polarity(self):
         """Sorting puts True-polarity items first (sorted by str(True) > str(False))."""
@@ -474,17 +472,17 @@ class TestPLURALOP2BINOP:
         assert isinstance(result, Temp)
         assert result.name == 'z'
 
-    def test_rebuild_tree_internal_two_hits_BINOP(self):
-        with pytest.raises(NameError, match="BINOP"):
-            self.visitor._rebuild_tree(
-                [(_temp('a'), True), (_temp('b'), True)], 'Add'
-            )
+    def test_rebuild_tree_internal_two_returns_BinOp(self):
+        result = self.visitor._rebuild_tree(
+            [(_temp('a'), True), (_temp('b'), True)], 'Add'
+        )
+        assert isinstance(result, BinOp)
 
-    def test_rebuild_tree_internal_odd_count_hits_BINOP(self):
-        with pytest.raises(NameError, match="BINOP"):
-            self.visitor._rebuild_tree(
-                [(_temp('a'), True), (_temp('b'), True), (_temp('c'), True)], 'Add'
-            )
+    def test_rebuild_tree_internal_odd_count_returns_BinOp(self):
+        result = self.visitor._rebuild_tree(
+            [(_temp('a'), True), (_temp('b'), True), (_temp('c'), True)], 'Add'
+        )
+        assert isinstance(result, BinOp)
 
     # --- visit_PolyOp (dispatched via PLURALOP class name) ---
     def test_visit_PLURALOP_single_value(self):
@@ -501,11 +499,11 @@ class TestPLURALOP2BINOP:
         assert isinstance(result, Const)
         assert result.value == 99
 
-    def test_visit_PLURALOP_multiple_values_hits_BINOP_bug(self):
+    def test_visit_PLURALOP_multiple_values_returns_BinOp(self):
         p = PLURALOP('Add')
         p.values = [(_temp('a'), True), (_temp('b'), True)]
-        with pytest.raises(NameError, match="BINOP"):
-            self.visitor.visit(p)
+        result = self.visitor.visit(p)
+        assert isinstance(result, BinOp)
 
     def test_visit_PLURALOP_nested_single(self):
         """PLURALOP containing a nested PLURALOP with single value."""
@@ -555,13 +553,14 @@ class TestPLURALOP2BINOP:
         cj = self.visitor.visit(cj)
         assert isinstance(cj.exp, Const)
 
-    def test_visit_Move_with_pluralop_multi_hits_BINOP(self):
+    def test_visit_Move_with_pluralop_multi_returns_Move_with_BinOp_src(self):
         p = PLURALOP('Add')
         p.values = [(_temp('a'), True), (_temp('b'), True)]
         mv = Move(dst=_temp('x'), src=_const(0))
         _inject_src(mv, p)
-        with pytest.raises(NameError, match="BINOP"):
-            self.visitor.visit(mv)
+        result = self.visitor.visit(mv)
+        assert isinstance(result, Move)
+        assert isinstance(result.src, BinOp)
 
 
 # ============================================================

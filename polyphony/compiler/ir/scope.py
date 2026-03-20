@@ -1037,7 +1037,7 @@ def function2method(func_scope, class_scope):
 
 def write_dot(scope, tag):
     try:
-        import pydot
+        import pydot  # type: ignore[import]
     except ImportError:
         raise
     # force disable debug mode to simplify the caption

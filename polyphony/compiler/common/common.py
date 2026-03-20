@@ -1,4 +1,5 @@
 ﻿import logging
+from typing import Any
 from .env import env, Env
 from .errors import CompileError
 
@@ -63,6 +64,7 @@ def warn(info, err_id, args=None):
 
 class Tagged(object):
     __slots__ = ['tags']
+    tags: set[str]
 
     def __init__(self, tags: list[str]|set[str]):
         if isinstance(tags, list):
@@ -73,7 +75,7 @@ class Tagged(object):
         self.tags = tags
         assert self.tags.issubset(self.TAGS)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name) -> Any:
         if name.startswith('is_'):
             tag = name[3:]
             if tag not in self.TAGS:

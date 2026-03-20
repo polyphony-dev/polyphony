@@ -5,6 +5,7 @@ EarlyConstantOptNonSSA: pre-SSA constant optimization.
 ConstantOpt: full constant optimization with worklist.
 """
 from collections import defaultdict, deque
+from typing import cast
 from ..block import Block
 from ..ir import (
     Const, Temp, Attr, UnOp, BinOp, RelOp, CondOp, PolyOp,
@@ -21,7 +22,7 @@ from ..irhelper import (
 from ..symbol import Symbol
 from ..types.type import Type
 from ..analysis.dominator import DominatorTreeBuilder
-from ..analysis.usedef import UseDefDetector, UseDefUpdater
+from ..analysis.usedef import UseDefDetector, UseDefUpdater, UseDefTable
 from .varreplacer import VarReplacer
 from ...common.common import fail
 from ...common.errors import Errors
@@ -38,6 +39,8 @@ def _try_get_constant_new(qsym, scope):
 
 
 class ConstantOptBase(IrVisitor):
+    usedef: UseDefTable
+
     def __init__(self):
         super().__init__()
 
@@ -92,6 +95,7 @@ class ConstantOptBase(IrVisitor):
                 and (left_qsym := qualified_symbols(ir.left, self.scope))
                 and (right_qsym := qualified_symbols(ir.right, self.scope))
                 and left_qsym == right_qsym):
+            assert isinstance(left_qsym[-1], Symbol) and isinstance(right_qsym[-1], Symbol)
             v = eval_relop(ir.op, left_qsym[-1].id, right_qsym[-1].id)
             if v is None:
                 fail(self.current_stm, Errors.UNSUPPORTED_OPERATOR, [ir.op])
@@ -269,9 +273,11 @@ class ConstantOptBase(IrVisitor):
         logger.debug('unconditional block {}'.format(blk.name))
 
         if isinstance(cjump, CJump):
+            assert isinstance(cjump.exp, Const)
             true_idx = 0 if cjump.exp.value else 1
             target_bids = [cjump.true, cjump.false]
         else:
+            assert conds is not None
             true_idx = conds.index(1)
             target_bids = cjump.targets[:]
 
@@ -482,9 +488,8 @@ class ConstantOpt(ConstantOptBase):
             elif (isinstance(stm, Move)
                     and isinstance(stm.src, Const)
                     and isinstance(stm.dst, Temp)
-                    and (dst_sym := qualified_symbols(stm.dst, self.scope)[-1])
+                    and isinstance((dst_sym := qualified_symbols(stm.dst, self.scope)[-1]), Symbol)
                     and not dst_sym.is_return()):
-                assert isinstance(dst_sym, Symbol)
                 defstms = self.usedef.get_stms_defining(dst_sym)
                 assert len(defstms) <= 1
 
@@ -507,6 +512,7 @@ class ConstantOpt(ConstantOptBase):
                     for clos in dst_sym.scope.closures():
                         self._propagate_to_closure(clos, dst_sym, stm.src)
             elif self._can_attribute_propagate(stm):
+                assert isinstance(stm, Move)
                 dst_load = stm.dst.model_copy(update={'ctx': Ctx.LOAD})
                 dst_store = stm.dst
                 blk = scope.find_block(stm.block)
@@ -545,7 +551,8 @@ class ConstantOpt(ConstantOptBase):
                     and isinstance(stm.src, Array)
                     and isinstance(stm.src.repeat, Const)):
                 src = stm.src
-                dst_sym = qualified_symbols(stm.dst, self.scope)[-1]
+                dst_sym = qualified_symbols(cast(IrNameExp, stm.dst), self.scope)[-1]
+                assert isinstance(dst_sym, Symbol)
                 array_t = dst_sym.typ
                 assert array_t.is_seq()
                 if array_t.length == Type.ANY_LENGTH:
@@ -639,7 +646,8 @@ class ConstantOpt(ConstantOptBase):
                 classsym = objscope.parent.find_sym(objscope.base_name)
                 if not classsym and objscope.is_instantiated():
                     objscope = env.origin_registry.scope_origin_of(objscope)
-                    classsym = objscope.parent.find_sym(objscope.base_name)
+                    if objscope is not None and objscope.parent is not None:
+                        classsym = objscope.parent.find_sym(objscope.base_name)
                 c = _try_get_constant_new((classsym, attr), self.scope)
                 if c:
                     return c
@@ -847,6 +855,7 @@ class PolyadConstantFolding(object):
                     consts.append(e)
                 else:
                     vars.append(e)
+            const_result = 0
             if poly.op == 'Add':
                 const_result = 0
                 for c in consts:

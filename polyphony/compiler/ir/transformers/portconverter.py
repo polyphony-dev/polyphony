@@ -8,7 +8,7 @@ from typing import cast
 from .typeprop import TypePropagation, RejectPropagation, _get_callee_scope
 from ..irvisitor import IrVisitor
 from ..ir import (
-    IrVariable, Temp, Attr, Const, Call, SysCall, New,
+    IrVariable, IrNameExp, Temp, Attr, Const, Call, SysCall, New,
     Move, Expr, Ret, Ctx,
 )
 from ..irhelper import qualified_symbols, irexp_type
@@ -33,7 +33,7 @@ class PortTypeProp(TypePropagation):
     def process(self, scope):
         super().process(scope)
 
-    def visit_New(self, ir):
+    def visit_New(self, ir):  # type: ignore[override]
         callee_scope = _get_callee_scope(ir, self.scope)
         if callee_scope.is_port():
             assert self.scope.is_ctor() and self.scope.parent.is_module()
@@ -58,7 +58,7 @@ class PortTypeProp(TypePropagation):
             assert 'dtype' in attrs
             assert 'direction' in attrs
             attrs['root_symbol'] = qualified_symbols(
-                cast(Move, self.current_stm).dst, self.scope)[-1]
+                cast(IrNameExp, cast(Move, self.current_stm).dst), self.scope)[-1]
             attrs['assigned'] = False
             if 'init' not in attrs or attrs['init'] is None:
                 attrs['init'] = 0
@@ -159,9 +159,11 @@ class FlippedTransformer(TypePropagation):
         assert arg_scope.is_class()
         if arg_scope.is_port():
             orig_new = self._find_move_src_new(temp.name, New)
+            assert isinstance(orig_new, New)
             _, arg = orig_new.args[1]
+            assert isinstance(arg, Const)
             direction = 'in' if arg.value == 'out' else 'out'
-            args = orig_new.args[0:1] + [('direction', Const(value=direction))] + orig_new.args[2:]
+            args = orig_new.args[0:1] + (('direction', Const(value=direction)),) + orig_new.args[2:]
             cast(Move, self.current_stm).src = New(
                 func=orig_new.func.model_copy(deep=True),
                 args=args,
@@ -172,6 +174,7 @@ class FlippedTransformer(TypePropagation):
             flipped_scope = self._new_scope_with_flipped_ports(arg_scope)
             if isinstance(self.current_stm, Move):
                 orig_new = self._find_move_src_new(temp.name, New)
+                assert isinstance(orig_new, New)
                 sym = self.scope.find_sym(flipped_scope.base_name)
                 if not sym:
                     # Look up the original NEW's class symbol tags
@@ -318,8 +321,10 @@ class PortConnector(IrVisitor):
             assert False
         new0 = self._find_move_src_for_port(p0_sym)
         new1 = self._find_move_src_for_port(p1_sym)
+        assert isinstance(new0, New) and isinstance(new1, New)
         dir0 = new0.args[1][1]
         dir1 = new1.args[1][1]
+        port_assign_call = None
         if func == 'connect':
             if dir0.value == 'in' and dir1.value == 'out':
                 port_assign_call = self._make_assign_call(p0_sym, p1_sym)
@@ -347,12 +352,12 @@ class PortConnector(IrVisitor):
         port_scope1 = p1_t.scope
         rd_sym = port_scope1.find_sym('rd')
         port_rd = Attr(Temp(p1_sym.name), rd_sym.name)
-        port_rd_call = Call(port_rd, args=[], kwargs={})
+        port_rd_call = Call(func=port_rd, args=(), kwargs={})
         lambda_sym = self._make_lambda(port_rd_call)
         assign_sym = port_scope0.find_sym('assign')
         port_assign = Attr(Temp(p0_sym.name), assign_sym.name)
-        port_assign_call = Call(port_assign,
-                                    args=[('fn', Temp(lambda_sym.name))], kwargs={})
+        port_assign_call = Call(func=port_assign,
+                                    args=(('fn', Temp(lambda_sym.name)),), kwargs={})
         return port_assign_call
 
     def _make_lambda(self, body):
@@ -363,7 +368,7 @@ class PortConnector(IrVisitor):
         new_block = Block(lambda_scope)
         lambda_scope.set_entry_block(new_block)
         lambda_scope.set_exit_block(new_block)
-        lambda_scope.return_type = Type.undef()
+        lambda_scope.return_type = Type.undef()  # type: ignore[attr-defined]
         ret_sym = lambda_scope.add_return_sym()
         new_block.append_stm(Move(Temp(ret_sym.name), body))
         new_block.append_stm(Ret(Temp(ret_sym.name)))

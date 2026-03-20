@@ -257,7 +257,7 @@ class HyperBlockBuilder(object):
         self._visited_heads = set()
         if HyperBlockBuilder.DEBUG:
             self.count = 0
-            from .scope import write_dot
+            from .scope import write_dot  # type: ignore[import]
             write_dot(self.scope, f'{self.count}')
             self.count += 1
         diamond_nodes = self._find_diamond_nodes()
@@ -300,7 +300,7 @@ class HyperBlockBuilder(object):
             if blk in self._visited_heads:
                 continue
             branches, tails = self._find_branch_paths(blk)
-            if not branches or tails is None:
+            if branches is None or tails is None or not branches:
                 continue
             if all([tails[0] is b for b in tails[1:]]):
                 if len(blk.succs) == len(tails):
@@ -384,7 +384,7 @@ class HyperBlockBuilder(object):
                 self._do_phi_reduction(head, tail, branches)
             diamond_nodes = self._find_diamond_nodes()
             if HyperBlockBuilder.DEBUG:
-                from .scope import write_dot
+                from .scope import write_dot  # type: ignore[import]
                 write_dot(self.scope, f'{self.count}')
                 self.count += 1
 

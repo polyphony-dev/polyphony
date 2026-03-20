@@ -88,7 +88,7 @@ class EarlyQuadrupleMaker(IrTransformer):
             ir = ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
         return self._new_temp_move(ir, self.scope.add_temp())
 
-    def _visit_args(self, args):
+    def _visit_args(self, args):  # type: ignore[override]
         new_args = []
         changed = False
         for name, arg in args:
@@ -184,7 +184,8 @@ class EarlyQuadrupleMaker(IrTransformer):
         new_exp = self.visit(ir.exp)
         if new_exp is not ir.exp:
             ir = ir.model_copy(update={'exp': new_exp})
-        assert (isinstance(ir.exp, Temp) and self.scope.find_sym(ir.exp.name).is_condition()) or isinstance(ir.exp, Const)
+        sym = self.scope.find_sym(ir.exp.name) if isinstance(ir.exp, Temp) else None
+        assert (sym is not None and sym.is_condition()) or isinstance(ir.exp, Const)
         self.new_stms.append(ir)
 
     def visit_MCJump(self, ir):

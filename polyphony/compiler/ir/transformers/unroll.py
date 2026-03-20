@@ -6,10 +6,11 @@ Contains:
 - PHICondRemover: removes PHI conditions after unrolling
 """
 from collections import defaultdict
+from typing import cast
 from ..block import Block
 from ..ir import (
     Ctx, Const, Temp, BinOp, RelOp, Move, Expr, Jump, CJump, MCJump,
-    LPhi, IrStm, IrExp,
+    LPhi, IrStm, IrExp, IrNameExp,
 )
 from ..irvisitor import IrVisitor, IrTransformer
 from ..irhelper import qualified_symbols
@@ -144,6 +145,8 @@ class LoopUnroller(object):
         defsyms = self.usedef.get_syms_defined_at(loop.head)
         origin_ivs = [sym for sym in defsyms if sym.is_induction()]
         new_ivs = self._new_ivs(factor, origin_ivs, is_full_unroll)
+        loop_cond = None
+        lphis = None
         if is_full_unroll:
             unroll_head, iv_updates, loop_cond = self._make_full_unroll_head(
                 loop, new_ivs)
@@ -161,6 +164,7 @@ class LoopUnroller(object):
             for b in [unroll_head] + unroll_blks:
                 parent.append_body(b)
             self.scope.remove_region(loop)
+            assert loop_cond is not None
             self._remove_loop_condition(loop_cond)
             for blk in [unroll_head] + unroll_blks:
                 blk.synth_params = unroll_head.preds[0].synth_params.copy()
@@ -170,6 +174,7 @@ class LoopUnroller(object):
             else:
                 remain_start_blk = None
             new_loop = Loop(unroll_head, unroll_blks, [unroll_head] + unroll_blks)
+            assert lphis is not None
             self._reconnect_unroll_blocks(
                 loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk)
             self.scope.append_sibling_region(loop, new_loop)
@@ -311,7 +316,7 @@ class LoopUnroller(object):
         for stm in head_stms:
             object.__setattr__(stm, 'block', unroll_head.bid)
             unroll_head.stms.append(stm)
-        dst_sym = qualified_symbols(orig_cjump_cond.dst, self.scope)[-1]
+        dst_sym = qualified_symbols(cast(IrNameExp, orig_cjump_cond.dst), self.scope)[-1]
         assert isinstance(dst_sym, Symbol)
         return unroll_head, iv_updates, dst_sym
 
@@ -350,7 +355,7 @@ class LoopUnroller(object):
                 right=Const(value=(factor - 1) * loop_step)))
         head_stms.append(mv)
         cond_sym = self.scope.add_condition_sym()
-        sym_map[orig_cjump_cond.dst.name] = cond_sym
+        sym_map[cast(IrNameExp, orig_cjump_cond.dst).name] = cond_sym
         cond_stm = Move(
             dst=Temp(name=cond_sym.name, ctx=Ctx.STORE),
             src=RelOp(op='Lt', left=Temp(name=tmp.name), right=loop_max.model_copy(deep=True)))
@@ -463,7 +468,7 @@ class LoopUnroller(object):
         loop_cond_rhs = loop_cond_stm.src
         if isinstance(loop_cond_rhs, RelOp):
             if loop_cond_rhs.op in ('Lt',):
-                sym = qualified_symbols(loop_cond_rhs.left, self.scope)[-1]
+                sym = qualified_symbols(cast(IrNameExp, loop_cond_rhs.left), self.scope)[-1]
                 if sym is loop.counter:
                     may_max = loop_cond_rhs.right
                     if isinstance(may_max, Const):
@@ -476,6 +481,7 @@ class LoopUnroller(object):
         loop_update = loop.update
         assert isinstance(loop_update, Temp)
         update_sym = qualified_symbols(loop_update, self.scope)[-1]
+        assert isinstance(update_sym, Symbol)
         update_defs = self.usedef.get_stms_defining(update_sym)
         assert len(update_defs) == 1
         update_stm = list(update_defs)[0]
@@ -483,7 +489,7 @@ class LoopUnroller(object):
         update_rhs = update_stm.src
         if isinstance(update_rhs, BinOp):
             if update_rhs.op == 'Add':
-                sym = qualified_symbols(update_rhs.left, self.scope)[-1]
+                sym = qualified_symbols(cast(IrNameExp, update_rhs.left), self.scope)[-1]
                 if sym is loop.counter:
                     may_step = update_rhs.right
                     if isinstance(may_step, Const):

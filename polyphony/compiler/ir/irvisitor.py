@@ -3,13 +3,17 @@
 IrVisitor / IrTransformer: traversal of IR via block.stms (PascalCase visit methods).
 Dispatch is based on class name: visit(ir) calls visit_<ClassName>(ir).
 """
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from .ir import (
     Ir, IrExp, IrStm, Jump, CJump, MCJump,
 )
+if TYPE_CHECKING:
+    from .scope import Scope
 
 
 class IrVisitor(object):
+    scope: 'Scope'
+
     def __init__(self):
         pass
 

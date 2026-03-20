@@ -9,6 +9,7 @@ from ..ir import (
     IrStm,
     IrExp,
     IrVariable,
+    IrNameExp,
     Temp,
     Attr,
     Const,
@@ -118,7 +119,7 @@ class TypeEvaluator(object):
         if isinstance(t.length, Type):
             assert t.length.is_expr()
             ln = self.visit(t.length)
-            if ln.is_expr() and isinstance(ln.expr, Expr) and isinstance(ln.expr.exp, Const):
+            if ln is not None and ln.is_expr() and isinstance(ln.expr, Expr) and isinstance(ln.expr.exp, Const):
                 t = t.clone(length=ln.expr.exp.value)
             else:
                 t = t.clone(length=ln)
@@ -253,19 +254,19 @@ class TypeExprEvaluator(IrVisitor):
                     if isinstance(elm, Type):
                         expr_typ = expr_typ.clone(element=elm)
                     else:
-                        expr_typ = expr_typ.clone(element=Type.expr(elm))
+                        expr_typ = expr_typ.clone(element=Type.expr(elm, self.scope))
                 elif isinstance(ir.mem, Temp):
                     elm = self.visit(ir.offset)
                     if isinstance(elm, Type):
                         expr_typ = expr_typ.clone(element=elm)
                     else:
-                        expr_typ = expr_typ.clone(element=Type.expr(elm))
+                        expr_typ = expr_typ.clone(element=Type.expr(elm, self.scope))
                 else:
                     length = self.visit(ir.offset)
                     if isinstance(length, Const):
                         expr_typ = expr_typ.clone(length=length.value)
                     else:
-                        expr_typ = expr_typ.clone(length=Type.expr(length))
+                        expr_typ = expr_typ.clone(length=Type.expr(length, self.scope))
             elif expr_typ.is_tuple():
                 assert isinstance(ir.mem, Temp)
                 elms = self.visit(ir.offset)
@@ -464,7 +465,7 @@ class TypePropagation(IrVisitor):
                 type = visitor(ir)
             return type
         else:
-            return None
+            return None  # type: ignore[return-value]
 
     def visit_UnOp(self, ir):
         return self.visit(ir.exp)
@@ -713,7 +714,7 @@ class TypePropagation(IrVisitor):
 
     def visit_Ret(self, ir):
         typ = self.visit(ir.exp)
-        self.scope.return_type = typ
+        self.scope.return_type = typ  # type: ignore[attr-defined]
         sym = self.scope.parent.find_sym(self.scope.base_name)
         assert isinstance(sym, Symbol)
         sym.typ = sym.typ.clone(return_type=typ)
@@ -751,7 +752,7 @@ class TypePropagation(IrVisitor):
                         assert isinstance(item_sym, Symbol)
                         self._propagate(item_sym, elem_t)
                     elif isinstance(item, MRef):
-                        mem_qsyms = qualified_symbols(item.mem, self.scope)
+                        mem_qsyms = qualified_symbols(cast(IrNameExp, item.mem), self.scope)
                         mem_sym = mem_qsyms[-1]
                         assert isinstance(mem_sym, Symbol)
                         mem_sym.typ = mem_sym.typ.clone(element=elem_t)
@@ -861,12 +862,12 @@ class TypeSpecializationAnalyzer(TypePropagation):
     def __init__(self):
         super().__init__(is_strict=False)
 
-    def process_all(self):
+    def process_all(self):  # type: ignore[override]
         top = Scope.global_scope()
         target_scopes = [top] + [s for s in top.children if s.is_testbench() and len(s.param_names()) == 0]
         return self.process_scopes(target_scopes)
 
-    def process_scopes(self, scopes):
+    def process_scopes(self, scopes):  # type: ignore[override]
         self._new_scopes = []
         self._old_scopes = set()
         self._indirect_old_scopes = set()
@@ -963,7 +964,7 @@ class TypeSpecializationAnalyzer(TypePropagation):
             if func_t.is_undef():
                 assert False
                 raise RejectPropagation(ir)
-            if callee_scope.is_mutable():
+            if callee_scope and callee_scope.is_mutable():
                 pass
         else:
             assert False
@@ -1042,7 +1043,7 @@ class TypeSpecializationAnalyzer(TypePropagation):
             self._add_scope(callee_scope)
         return ret_t
 
-    def visit_New(self, ir):
+    def visit_New(self, ir):  # type: ignore[override]
         callee_scope = _get_callee_scope(ir, self.scope)
         self._add_scope(callee_scope.parent)
         if callee_scope.is_typeclass():
@@ -1070,6 +1071,7 @@ class TypeSpecializationAnalyzer(TypePropagation):
                     new_ctor, Type.object(new_scope), tuple([new_ctor.param_types(with_self=True)[0]] + new_param_types)
                 )
                 new_ctor_sym = new_scope.find_sym(new_ctor.base_name)
+                assert new_ctor_sym is not None
                 new_ctor_sym.typ = ctor_t
                 self._add_scope(new_scope)
                 self._add_scope(new_ctor)
@@ -1132,7 +1134,8 @@ class TypeSpecializationAnalyzer(TypePropagation):
             asname = f"{ir.args[0][1].name}_{postfix}"
             if arg_sym.is_imported():
                 owner = self.scope.find_owner_scope(arg_sym)
-                owner.import_sym(new_scope_sym, asname)
+                if owner is not None:
+                    owner.import_sym(new_scope_sym, asname)
             # Record specialization (NO ir.args mutation)
             # Key is the Call ir containing append_worker
             self.specialization_map[ir] = (new_scope, postfix)
@@ -1411,7 +1414,7 @@ class StaticTypePropagation(TypePropagation):
     def __init__(self, is_strict):
         super().__init__(is_strict=is_strict)
 
-    def process_scopes(self, scopes):
+    def process_scopes(self, scopes):  # type: ignore[override]
         worklist = deque(scopes)
         while worklist:
             s = worklist.popleft()

@@ -195,7 +195,7 @@ class PLURALOP2BINOP:
             e1, p1 = inputs.pop(0)
             if len(inputs):
                 e2, p2 = inputs.pop(0)
-                binop = BINOP(self.detectop(op, p1, p2), e1, e2)
+                binop = BinOp(self.detectop(op, p1, p2), e1, e2)
                 polarity = (p1 and p2) or (p1 and not p2)
                 assert (p1 and p2) or (p1 and not p2) or (not p1 and not p2)
                 outputs.append((binop, polarity))
@@ -270,9 +270,9 @@ class PLURALOP2BINOP:
 
 
 def test():
-    a = Symbol.new('a', None)
-    b = Symbol.new('b', None)
-    c = Symbol.new('c', None)
+    a = Symbol.new('a', None)  # type: ignore[attr-defined]
+    b = Symbol.new('b', None)  # type: ignore[attr-defined]
+    c = Symbol.new('c', None)  # type: ignore[attr-defined]
     # ((a+b)+c) - (b+c)
     ir = BinOp('Sub',
                BinOp('Add',
