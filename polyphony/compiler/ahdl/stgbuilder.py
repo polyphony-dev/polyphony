@@ -644,8 +644,8 @@ class AHDLTranslator(IrVisitor):
     def visit_Array(self, ir):
         # array expansion
         assert isinstance(ir.repeat, Const)
-        expanded_items = [item.clone() for item in ir.items * ir.repeat.value]
-        object.__setattr__(ir, 'items', expanded_items)
+        expanded_items = tuple(item.clone() for item in ir.items * ir.repeat.value)
+        ir = ir.model_copy(update={'items': expanded_items})
 
         assert isinstance(self.current_stm, Move)
         sym = self._qualified_symbols(self.current_stm.dst)[-1]

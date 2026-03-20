@@ -515,7 +515,7 @@ def test_stm_mv():
     assert dst_sym is xs
     assert isinstance(mv.src, Array)
     array = cast(Array, mv.src)
-    assert array.items == [Const(1), Const(2), Const(3)]
+    assert array.items == (Const(1), Const(2), Const(3))
     assert array.is_mutable
 
 

@@ -199,10 +199,13 @@ class IrReplacer(IrTransformer):
         self.current_stm = old_stm
 
     def visit_Array(self, ir):
-        self.visit(ir.repeat)
-        for item in ir.items:
-            self.visit(item)
-        return ir
+        new_repeat = self.visit(ir.repeat) if ir.repeat is not None else ir.repeat
+        new_items = [self.visit(item) for item in ir.items]
+        repeat_changed = new_repeat is not ir.repeat
+        items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
+        if not repeat_changed and not items_changed:
+            return ir
+        return ir.model_copy(update={'repeat': new_repeat, 'items': tuple(new_items)})
 
 
 # ============================================================

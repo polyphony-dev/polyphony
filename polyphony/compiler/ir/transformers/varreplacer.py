@@ -134,7 +134,7 @@ class VarReplacer(object):
         items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
         if not repeat_changed and not items_changed:
             return ir
-        return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
+        return ir.model_copy(update={'repeat': new_repeat, 'items': tuple(new_items)})
 
     def visit_Temp(self, ir):
         if ir.name == self.replace_dst.name:

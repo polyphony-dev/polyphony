@@ -160,7 +160,7 @@ class EarlyQuadrupleMaker(IrTransformer):
         new_items = [self.visit(item) for item in ir.items]
         items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
         if items_changed:
-            return ir.model_copy(update={'items': new_items})
+            return ir.model_copy(update={'items': tuple(new_items)})
         return ir
 
     def visit_Temp(self, ir):

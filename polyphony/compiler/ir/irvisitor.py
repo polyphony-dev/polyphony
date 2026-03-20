@@ -275,7 +275,7 @@ class IrTransformer(IrVisitor):
         items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
         if not repeat_changed and not items_changed:
             return ir
-        return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
+        return ir.model_copy(update={'repeat': new_repeat, 'items': tuple(new_items)})
 
     # --- IrStm (append to new_stms, immutable style via model_copy) ---
 

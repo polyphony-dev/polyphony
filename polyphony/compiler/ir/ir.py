@@ -61,19 +61,19 @@ class Ir(BaseModel):
             v = getattr(self, field_name, None)
             if isinstance(v, Ir):
                 data[field_name] = v.clone()
-            elif isinstance(v, list):
-                new_list = []
+            elif isinstance(v, (list, tuple)) and not hasattr(v, '_fields'):
+                new_seq = []
                 for elm in v:
                     if isinstance(elm, Ir):
-                        new_list.append(elm.clone())
+                        new_seq.append(elm.clone())
                     elif isinstance(elm, tuple):
                         new_tuple = tuple(
                             e.clone() if isinstance(e, Ir) else e for e in elm
                         )
-                        new_list.append(new_tuple)
+                        new_seq.append(new_tuple)
                     else:
-                        new_list.append(elm)
-                data[field_name] = new_list
+                        new_seq.append(elm)
+                data[field_name] = type(v)(new_seq)
             elif isinstance(v, dict):
                 new_dict = {}
                 for k, dv in v.items():
@@ -104,6 +104,18 @@ class Ir(BaseModel):
                     # Use object.__setattr__ to bypass frozen check on IrExp
                     object.__setattr__(ir, field_name, new)
                     ret = True
+                elif isinstance(v, tuple) and not hasattr(v, '_fields'):
+                    new_elms = list(v)
+                    changed = False
+                    for i, elm in enumerate(v):
+                        if elm == old:
+                            new_elms[i] = new
+                            changed = True
+                        elif self._replace_rec(elm, old, new, visited):
+                            changed = True
+                    if changed:
+                        object.__setattr__(ir, field_name, tuple(new_elms))
+                        ret = True
                 elif self._replace_rec(v, old, new, visited):
                     ret = True
             return ret
@@ -114,7 +126,7 @@ class Ir(BaseModel):
                     ir[i] = new
                     ret = True
                 elif isinstance(elm, tuple):
-                    # Handle tuples (e.g. SysCall args: list[tuple[str, IrExp]])
+                    # Handle nested tuples (e.g. SysCall args: list[tuple[str, IrExp]])
                     new_items = list(elm)
                     changed = False
                     for j, t_elm in enumerate(elm):
@@ -710,7 +722,7 @@ class MStore(IrExp):
 # ============================================================
 
 class Array(IrExp):
-    items: list = []
+    items: tuple = ()
     repeat: Any = None  # Const(1) default, set in post_init
     mutable: bool = True
 
@@ -721,6 +733,8 @@ class Array(IrExp):
                 kwargs.setdefault('items', args[0])
             if len(args) >= 2:
                 kwargs.setdefault('mutable', args[1])
+        if 'items' in kwargs and not isinstance(kwargs['items'], tuple):
+            kwargs['items'] = tuple(kwargs['items'])
         super().__init__(**kwargs)
 
     def model_post_init(self, __context):

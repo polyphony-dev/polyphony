@@ -150,7 +150,7 @@ class ConstantOptBase(IrVisitor):
         repeat_changed = new_repeat is not ir.repeat
         items_changed = any(ni is not oi for ni, oi in zip(new_items, ir.items))
         if repeat_changed or items_changed:
-            return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
+            return ir.model_copy(update={'repeat': new_repeat, 'items': tuple(new_items)})
         return ir
 
     def visit_Temp(self, ir):
