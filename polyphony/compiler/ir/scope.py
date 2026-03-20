@@ -11,7 +11,7 @@ from .symbol import Symbol
 from .synth import make_synth_params
 from .types.type import Type
 from .types import typehelper
-from .irvisitor import IrVisitor
+from .irvisitor import IrVisitor, IrTransformer
 from .ir import *
 from .irhelper import qualified_symbols
 from ..common.common import Tagged, fail
@@ -496,14 +496,18 @@ class Scope(Tagged, SymbolTable):
         from .ir import Jump, CJump, MCJump
 
         bid_map = {old.bid: new.bid for old, new in block_map.items()}
-        for stm in stm_map.values():
+        for key, stm in list(stm_map.items()):
             if isinstance(stm, Jump):
-                object.__setattr__(stm, 'target', bid_map[stm.target])
+                new_stm = stm.model_copy(update={'target': bid_map[stm.target]})
             elif isinstance(stm, CJump):
-                object.__setattr__(stm, 'true', bid_map[stm.true])
-                object.__setattr__(stm, 'false', bid_map[stm.false])
+                new_stm = stm.model_copy(update={'true': bid_map[stm.true], 'false': bid_map[stm.false]})
             elif isinstance(stm, MCJump):
-                object.__setattr__(stm, 'targets', [bid_map[t] for t in stm.targets])
+                new_stm = stm.model_copy(update={'targets': [bid_map[t] for t in stm.targets]})
+            else:
+                continue
+            blk = scope.find_block(new_stm.block)
+            blk.replace_stm(stm, new_stm)
+            stm_map[key] = new_stm
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None, recursive=False, rename_children=True):
@@ -998,17 +1002,15 @@ class GlobalScope(NamespaceScope):
         return self
 
 
-class NameReplacer(IrVisitor):
+class NameReplacer(IrTransformer):
     def __init__(self, name_sym_map: dict[str, Symbol]):
         super().__init__()
         self.name_sym_map = name_sym_map
 
     def visit_Temp(self, ir):
         if ir.name in self.name_sym_map:
-            object.__setattr__(ir, "name", self.name_sym_map[ir.name].name)
-
-    def visit_Attr(self, ir):
-        self.visit(ir.exp)
+            return ir.model_copy(update={'name': self.name_sym_map[ir.name].name})
+        return ir
 
 
 def function2method(func_scope, class_scope):
