@@ -142,9 +142,6 @@ class TypeExprEvaluator(IrVisitor):
         assert isinstance(expr, Expr)
         self.scope = expr_t.scope
         result = self.visit(expr)
-        # Propagate in-place mutation back to the Expr
-        if isinstance(result, Expr):
-            object.__setattr__(expr, "exp", result.exp)
         return result
 
     def visit_Const(self, ir):
@@ -252,7 +249,8 @@ class TypeExprEvaluator(IrVisitor):
         if isinstance(result, Type):
             return result
         else:
-            object.__setattr__(ir, "exp", result)
+            if result is not ir.exp:
+                return ir.model_copy(update={'exp': result})
             return ir
 
 
@@ -315,6 +313,15 @@ class TypeEvalVisitor(IrVisitor):
 class TypePropagation(IrVisitor):
     def __init__(self, is_strict=False):
         self.is_strict = is_strict
+        self._modified_exp = None
+
+    def _replace_in_block(self, old_stm, new_stm):
+        blk = self.scope.find_block(old_stm.block)
+        for i, stm in enumerate(blk.stms):
+            if stm is old_stm:
+                blk.stms[i] = new_stm
+                return
+        raise ValueError(f"stm not found in block: {old_stm}")
 
     def process_all(self):
         top = Scope.global_scope()
@@ -448,8 +455,8 @@ class TypePropagation(IrVisitor):
                 fail(self.current_stm, Errors.IS_NOT_CALLABLE, [clazz.name])
             assert func_sym.typ.is_function()
             new_func = Attr(name=fun_name, exp=ir.func, attr=fun_name, ctx=Ctx.LOAD)
-            object.__setattr__(ir, "func", new_func)
-            object.__setattr__(ir, "name", new_func.name)
+            ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
+        return ir
 
     def visit_Call(self, ir):
         self.visit(ir.func)
@@ -475,7 +482,10 @@ class TypePropagation(IrVisitor):
 
     def visit_SysCall(self, ir):
         name = ir.name
-        object.__setattr__(ir, "args", self._normalize_syscall_args(name, ir.args, ir.kwargs))
+        new_args = self._normalize_syscall_args(name, ir.args, ir.kwargs)
+        if new_args is not ir.args:
+            ir = ir.model_copy(update={'args': new_args})
+            self._modified_exp = ir
         for _, arg in ir.args:
             self.visit(arg)
         if name == "polyphony.io.flipped":
@@ -633,7 +643,13 @@ class TypePropagation(IrVisitor):
         return typ
 
     def visit_Expr(self, ir):
+        self._modified_exp = None
         self.visit(ir.exp)
+        if self._modified_exp is not None:
+            new_ir = ir.model_copy(update={'exp': self._modified_exp})
+            self._replace_in_block(ir, new_ir)
+            self.current_stm = new_ir
+            self._modified_exp = None
 
     def visit_CJump(self, ir):
         self.visit(ir.exp)
@@ -653,7 +669,13 @@ class TypePropagation(IrVisitor):
         sym.typ = sym.typ.clone(return_type=typ)
 
     def visit_Move(self, ir):
+        self._modified_exp = None
         src_typ = self.visit(ir.src)
+        if self._modified_exp is not None:
+            ir = ir.model_copy(update={'src': self._modified_exp})
+            self._replace_in_block(self.current_stm, ir)
+            self.current_stm = ir
+            self._modified_exp = None
         if src_typ.is_undef():
             raise RejectPropagation(ir)
         dst_typ = self.visit(ir.dst)
@@ -753,6 +775,7 @@ class TypeSpecializer(TypePropagation):
         super().__init__(is_strict=False)
 
     def visit_Call(self, ir):
+        original_ir = ir
         self.visit(ir.func)
         callee_scope = _get_callee_scope(ir, self.scope)
         qsyms = qualified_symbols(ir.func, self.scope)
@@ -762,7 +785,7 @@ class TypeSpecializer(TypePropagation):
             func_name = func_sym.orig_name()
             func_t = func_sym.typ
             if func_t.is_object() or func_t.is_port():
-                self._convert_call(ir)
+                ir = self._convert_call(ir)
                 callee_scope = _get_callee_scope(ir, self.scope)
             elif func_t.is_function():
                 assert func_t.has_scope()
@@ -772,7 +795,7 @@ class TypeSpecializer(TypePropagation):
             func_name = func_sym.orig_name()
             func_t = func_sym.typ
             if func_t.is_object() or func_t.is_port():
-                self._convert_call(ir)
+                ir = self._convert_call(ir)
             if func_t.is_undef():
                 assert False
                 raise RejectPropagation(ir)
@@ -804,22 +827,32 @@ class TypeSpecializer(TypePropagation):
                 and not callee_scope.return_type.is_undef()
                 and not callee_scope.return_type.is_any()
             ):
+                if ir is not original_ir:
+                    self._modified_exp = ir
                 return callee_scope.return_type
             ret, type_or_error = self.pure_type_inferrer.infer_type(self.current_stm, ir, self.scope)
             if ret:
+                if ir is not original_ir:
+                    self._modified_exp = ir
                 return type_or_error
             else:
                 fail(self.current_stm, type_or_error)
         names = callee_scope.param_names()
         defvals = callee_scope.param_default_values()
-        object.__setattr__(ir, "args", self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs))
+        new_args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
+        if new_args is not ir.args:
+            ir = ir.model_copy(update={'args': new_args})
         if callee_scope.is_lib():
+            if ir is not original_ir:
+                self._modified_exp = ir
             return self.visit_Call_lib(ir)
 
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if any([atype.is_undef() for atype in arg_types]):
             raise RejectPropagation(ir)
         if callee_scope.is_specialized():
+            if ir is not original_ir:
+                self._modified_exp = ir
             return callee_scope.return_type
         ret_t = callee_scope.return_type
         param_types = callee_scope.param_types()
@@ -851,17 +884,17 @@ class TypeSpecializer(TypePropagation):
             # Replace name expression
             if isinstance(ir.func, Temp):
                 new_func = Temp(name=asname, ctx=Ctx.CALL)
-                object.__setattr__(ir, "func", new_func)
-                object.__setattr__(ir, "name", new_func.name)
+                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
             elif isinstance(ir.func, Attr):
                 assert asname == new_scope_sym.name
                 new_func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
-                object.__setattr__(ir, "func", new_func)
-                object.__setattr__(ir, "name", new_func.name)
+                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
             else:
                 assert False
         else:
             self._add_scope(callee_scope)
+        if ir is not original_ir:
+            self._modified_exp = ir
         return ret_t
 
     def visit_Call_lib(self, ir):
@@ -923,6 +956,7 @@ class TypeSpecializer(TypePropagation):
             self._add_scope(worker)
 
     def visit_New(self, ir):
+        original_ir = ir
         callee_scope = _get_callee_scope(ir, self.scope)
         self._add_scope(callee_scope.parent)
         if callee_scope.is_typeclass():
@@ -931,9 +965,13 @@ class TypeSpecializer(TypePropagation):
         ctor = callee_scope.find_ctor()
         names = ctor.param_names()
         defvals = ctor.param_default_values()
-        object.__setattr__(ir, "args", self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs))
+        new_args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
+        if new_args is not ir.args:
+            ir = ir.model_copy(update={'args': new_args})
         arg_types = [self.visit(arg) for _, arg in ir.args]
         if callee_scope.is_specialized():
+            if ir is not original_ir:
+                self._modified_exp = ir
             return callee_scope.find_ctor().return_type
         param_types = ctor.param_types()
         if param_types:
@@ -966,18 +1004,18 @@ class TypeSpecializer(TypePropagation):
             # Replace name expression
             if isinstance(ir.func, Temp):
                 new_func = Temp(name=asname, ctx=Ctx.CALL)
-                object.__setattr__(ir, "func", new_func)
-                object.__setattr__(ir, "name", new_func.name)
+                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
             elif isinstance(ir.func, Attr):
                 assert asname == new_scope_sym.name
                 new_func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
-                object.__setattr__(ir, "func", new_func)
-                object.__setattr__(ir, "name", new_func.name)
+                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
             else:
                 assert False
         else:
             self._add_scope(callee_scope)
             self._add_scope(ctor)
+        if ir is not original_ir:
+            self._modified_exp = ir
         return ret_t
 
     def _check_param_types(self, param_types, arg_types, args, scope_name):
