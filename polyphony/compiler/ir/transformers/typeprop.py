@@ -1,8 +1,9 @@
 ﻿"""Type propagation, specialization, and evaluation using new Ir (ir.py)."""
 
-from collections import deque
+from collections import defaultdict, deque
+from dataclasses import dataclass, field
 from typing import cast
-from ..irvisitor import IrVisitor
+from ..irvisitor import IrVisitor, IrTransformer
 from ..ir import (
     Ir,
     IrStm,
@@ -41,6 +42,55 @@ from ...frontend.python.pure import PureFuncTypeInferrer
 from logging import getLogger
 
 logger = getLogger(__name__)
+
+
+# ============================================================
+# Standalone utility functions
+# ============================================================
+
+
+def normalize_args(func_name, param_names, defvals, args, kwargs):
+    """Normalize call arguments: fill in parameter names, defaults, kwargs.
+
+    Unlike _normalize_args, this function does NOT modify kwargs (no side effect).
+    """
+    nargs = []
+    remaining_kwargs = dict(kwargs)
+    if len(param_names) < len(args):
+        nargs = args[:]
+        for name, arg in remaining_kwargs.items():
+            nargs.append((name, arg))
+        return nargs
+    for i, (name, defval) in enumerate(zip(param_names, defvals)):
+        if i < len(args):
+            nargs.append((name, args[i][1]))
+        elif name in remaining_kwargs:
+            nargs.append((name, remaining_kwargs[name]))
+        elif defval:
+            nargs.append((name, defval))
+        else:
+            type_error(None, Errors.MISSING_REQUIRED_ARG_N, [func_name, name])
+    return nargs
+
+
+def convert_call(ir, scope):
+    """Convert object/port Call to method call (rd/wr/__call__).
+
+    Returns new IrExp via model_copy, or original ir if no conversion needed.
+    """
+    callee = _get_callee_scope(ir, scope)
+    if callee:
+        if callee.is_port():
+            fun_name = "wr" if ir.args else "rd"
+        else:
+            fun_name = env.callop_name
+        func_sym = callee.find_sym(fun_name)
+        if not func_sym:
+            fail(None, Errors.IS_NOT_CALLABLE, [callee.name])
+        assert func_sym.typ.is_function()
+        new_func = Attr(name=fun_name, exp=ir.func, attr=fun_name, ctx=Ctx.LOAD)
+        return ir.model_copy(update={'func': new_func, 'name': new_func.name})
+    return ir
 
 
 # ============================================================
@@ -766,16 +816,131 @@ class TypePropagation(IrVisitor):
 
 
 # ============================================================
-# TypeSpecializer
+# TypeSpecializer (2-pass wrapper)
 # ============================================================
 
 
-class TypeSpecializer(TypePropagation):
+class TypeSpecializer:
+    """Type specialization via 2-pass functional architecture.
+
+    Pass 1 (TypeSpecializationAnalyzer): type propagation + scope creation, no IR modification.
+    Pass 2 (TypeSpecializerTransformer): IR rewriting using IrTransformer pattern.
+    """
+
+    def process_all(self):
+        specializer = TypeSpecializationAnalyzer()
+        result = specializer.process_all()
+        transformer = TypeSpecializerTransformer(result)
+        for scope in result.typed_scopes:
+            transformer.process(scope)
+        return result.typed_scopes, result.old_scopes
+
+
+# ============================================================
+# TypeSpecializationAnalyzer (Pass 1) + TypeSpecializerTransformer (Pass 2)
+# ============================================================
+
+
+@dataclass
+class SpecializationResult:
+    """Output of TypeSpecializationAnalyzer (Pass 1)."""
+    specialization_map: dict = field(default_factory=dict)
+    typed_scopes: list = field(default_factory=list)
+    old_scopes: set = field(default_factory=set)
+    indirect_old_scopes: set = field(default_factory=set)
+
+
+class TypeSpecializationAnalyzer(TypePropagation):
+    """Pass 1: Type propagation + specialization. No IR modification.
+
+    Same type propagation and scope creation logic as TypeSpecializer,
+    but does NOT modify IR nodes. Instead, records specialization decisions
+    in specialization_map for Pass 2 (TypeSpecializerTransformer) to apply.
+    """
+
     def __init__(self):
         super().__init__(is_strict=False)
 
+    def process_all(self):
+        top = Scope.global_scope()
+        target_scopes = [top] + [s for s in top.children if s.is_testbench() and len(s.param_names()) == 0]
+        return self.process_scopes(target_scopes)
+
+    def process_scopes(self, scopes):
+        self._new_scopes = []
+        self._old_scopes = set()
+        self._indirect_old_scopes = set()
+        self.typed = []
+        self.pure_type_inferrer = PureFuncTypeInferrer()
+        self.specialization_map = {}
+        self.worklist = deque(scopes)
+        while self.worklist:
+            scope = self.worklist.popleft()
+            logger.debug(f"{self.__class__.__name__}.process {scope.name}")
+            if scope.is_lib():
+                self.typed.append(scope)
+                continue
+            if scope.is_directory():
+                continue
+            if scope in self._old_scopes or scope in self._indirect_old_scopes or scope.is_superseded():
+                continue
+            if scope.is_function() and scope.return_type is None:
+                scope.return_type = Type.undef()
+            try:
+                self.process(scope)
+            except RejectPropagation as r:
+                logger.debug(r)
+                self.worklist.append(scope)
+                continue
+            logger.debug(f"{scope.name} is typed")
+            assert scope not in self.typed
+            self.typed.append(scope)
+        return SpecializationResult(
+            specialization_map=dict(self.specialization_map),
+            typed_scopes=self.typed,
+            old_scopes=self._old_scopes,
+            indirect_old_scopes=self._indirect_old_scopes,
+        )
+
+    def _resolve_converted_callee(self, ir):
+        """Resolve callee scope for object/port calls without modifying IR."""
+        callee = _get_callee_scope(ir, self.scope)
+        if callee:
+            if callee.is_port():
+                fun_name = "wr" if ir.args else "rd"
+            else:
+                fun_name = env.callop_name
+            func_sym = callee.find_sym(fun_name)
+            if not func_sym:
+                fail(self.current_stm, Errors.IS_NOT_CALLABLE, [callee.name])
+            assert func_sym.typ.is_function()
+            return func_sym.typ.scope
+        return None
+
+    def visit_SysCall(self, ir):
+        """Override to suppress _modified_exp."""
+        name = ir.name
+        for _, arg in ir.args:
+            self.visit(arg)
+        if name == "polyphony.io.flipped":
+            temp = ir.args[0][1]
+            temp_t = irexp_type(temp, self.scope)
+            if temp_t.is_undef():
+                raise RejectPropagation(ir)
+            arg_scope = temp_t.scope
+            return Type.object(arg_scope)
+        elif name == "$new":
+            _, arg0 = ir.args[0]
+            arg0_t = irexp_type(arg0, self.scope)
+            assert arg0_t.is_class()
+            self._add_scope(arg0_t.scope)
+            return Type.object(arg0_t.scope)
+        else:
+            sym_t = irexp_type(ir, self.scope)
+            assert sym_t.is_function()
+            return sym_t.return_type
+
     def visit_Call(self, ir):
-        original_ir = ir
         self.visit(ir.func)
         callee_scope = _get_callee_scope(ir, self.scope)
         qsyms = qualified_symbols(ir.func, self.scope)
@@ -785,8 +950,7 @@ class TypeSpecializer(TypePropagation):
             func_name = func_sym.orig_name()
             func_t = func_sym.typ
             if func_t.is_object() or func_t.is_port():
-                ir = self._convert_call(ir)
-                callee_scope = _get_callee_scope(ir, self.scope)
+                callee_scope = self._resolve_converted_callee(ir)
             elif func_t.is_function():
                 assert func_t.has_scope()
             else:
@@ -795,7 +959,7 @@ class TypeSpecializer(TypePropagation):
             func_name = func_sym.orig_name()
             func_t = func_sym.typ
             if func_t.is_object() or func_t.is_port():
-                ir = self._convert_call(ir)
+                callee_scope = self._resolve_converted_callee(ir)
             if func_t.is_undef():
                 assert False
                 raise RejectPropagation(ir)
@@ -827,37 +991,28 @@ class TypeSpecializer(TypePropagation):
                 and not callee_scope.return_type.is_undef()
                 and not callee_scope.return_type.is_any()
             ):
-                if ir is not original_ir:
-                    self._modified_exp = ir
                 return callee_scope.return_type
             ret, type_or_error = self.pure_type_inferrer.infer_type(self.current_stm, ir, self.scope)
             if ret:
-                if ir is not original_ir:
-                    self._modified_exp = ir
                 return type_or_error
             else:
                 fail(self.current_stm, type_or_error)
+
         names = callee_scope.param_names()
         defvals = callee_scope.param_default_values()
-        new_args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
-        if new_args is not ir.args:
-            ir = ir.model_copy(update={'args': new_args})
+        normalized_args = normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
         if callee_scope.is_lib():
-            if ir is not original_ir:
-                self._modified_exp = ir
             return self.visit_Call_lib(ir)
 
-        arg_types = [self.visit(arg) for _, arg in ir.args]
+        arg_types = [self.visit(arg) for _, arg in normalized_args]
         if any([atype.is_undef() for atype in arg_types]):
             raise RejectPropagation(ir)
         if callee_scope.is_specialized():
-            if ir is not original_ir:
-                self._modified_exp = ir
             return callee_scope.return_type
         ret_t = callee_scope.return_type
         param_types = callee_scope.param_types()
         if param_types:
-            self._check_param_types(param_types, arg_types, ir.args, callee_scope.name)
+            self._check_param_types(param_types, arg_types, normalized_args, callee_scope.name)
             new_param_types = self._get_new_param_types(param_types, arg_types)
             new_scope, is_new, postfix = self._specialize_function_with_types(callee_scope, new_param_types)
             if callee_scope.is_function_module():
@@ -881,20 +1036,58 @@ class TypeSpecializer(TypePropagation):
             asname = f"{ir.func.name}_{postfix}"
             if owner and (func_sym.scope is not owner or owner is not callee_scope.parent):
                 owner.import_sym(new_scope_sym, asname)
-            # Replace name expression
-            if isinstance(ir.func, Temp):
-                new_func = Temp(name=asname, ctx=Ctx.CALL)
-                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
-            elif isinstance(ir.func, Attr):
-                assert asname == new_scope_sym.name
-                new_func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
-                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
-            else:
-                assert False
+            # Record specialization (NO IR modification)
+            self.specialization_map[ir] = (new_scope, postfix)
         else:
             self._add_scope(callee_scope)
-        if ir is not original_ir:
-            self._modified_exp = ir
+        return ret_t
+
+    def visit_New(self, ir):
+        callee_scope = _get_callee_scope(ir, self.scope)
+        self._add_scope(callee_scope.parent)
+        if callee_scope.is_typeclass():
+            return type_from_typeclass(callee_scope)
+        ret_t = Type.object(callee_scope)
+        ctor = callee_scope.find_ctor()
+        names = ctor.param_names()
+        defvals = ctor.param_default_values()
+        normalized_args = normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
+        arg_types = [self.visit(arg) for _, arg in normalized_args]
+        if callee_scope.is_specialized():
+            return callee_scope.find_ctor().return_type
+        param_types = ctor.param_types()
+        if param_types:
+            self._check_param_types(param_types, arg_types, normalized_args, callee_scope.name)
+            new_param_types = self._get_new_param_types(param_types, arg_types)
+            new_scope, is_new, postfix = self._specialize_class_with_types(callee_scope, new_param_types)
+            self._new_scopes.append(new_scope)
+            self._old_scopes.add(callee_scope)
+            if is_new:
+                new_ctor = new_scope.find_ctor()
+                new_scope_sym = callee_scope.parent.gen_sym(new_scope.base_name)
+                new_scope_sym.typ = Type.klass(new_scope)
+                ctor_t = Type.function(
+                    new_ctor, Type.object(new_scope), tuple([new_ctor.param_types(with_self=True)[0]] + new_param_types)
+                )
+                new_ctor_sym = new_scope.find_sym(new_ctor.base_name)
+                new_ctor_sym.typ = ctor_t
+                self._add_scope(new_scope)
+                self._add_scope(new_ctor)
+            else:
+                new_scope_sym = callee_scope.parent.find_sym(new_scope.base_name)
+            ret_t = Type.object(new_scope)
+            qsym = qualified_symbols(ir.func, self.scope)
+            func_sym = qsym[-1]
+            assert isinstance(func_sym, Symbol)
+            asname = f"{ir.func.name}_{postfix}"
+            owner = self.scope.find_owner_scope(func_sym)
+            if owner and func_sym.scope is not owner:
+                owner.import_sym(new_scope_sym, asname)
+            # Record specialization (NO IR modification)
+            self.specialization_map[ir] = (new_scope, postfix)
+        else:
+            self._add_scope(callee_scope)
+            self._add_scope(ctor)
         return ret_t
 
     def visit_Call_lib(self, ir):
@@ -940,83 +1133,13 @@ class TypeSpecializer(TypePropagation):
             if arg_sym.is_imported():
                 owner = self.scope.find_owner_scope(arg_sym)
                 owner.import_sym(new_scope_sym, asname)
-            if isinstance(ir.args[0][1], Temp):
-                ir.args[0] = (ir.args[0][0], Temp(name=asname))
-            elif isinstance(ir.args[0][1], Attr):
-                assert asname == new_scope_sym.name
-                ir.args[0] = (
-                    ir.args[0][0],
-                    Attr(
-                        name=new_scope_sym.name, exp=ir.args[0][1].exp, attr=new_scope_sym.name, ctx=ir.args[0][1].ctx
-                    ),
-                )
-            else:
-                assert False
+            # Record specialization (NO ir.args mutation)
+            # Key is the Call ir containing append_worker
+            self.specialization_map[ir] = (new_scope, postfix)
         else:
             self._add_scope(worker)
 
-    def visit_New(self, ir):
-        original_ir = ir
-        callee_scope = _get_callee_scope(ir, self.scope)
-        self._add_scope(callee_scope.parent)
-        if callee_scope.is_typeclass():
-            return type_from_typeclass(callee_scope)
-        ret_t = Type.object(callee_scope)
-        ctor = callee_scope.find_ctor()
-        names = ctor.param_names()
-        defvals = ctor.param_default_values()
-        new_args = self._normalize_args(callee_scope.base_name, names, defvals, ir.args, ir.kwargs)
-        if new_args is not ir.args:
-            ir = ir.model_copy(update={'args': new_args})
-        arg_types = [self.visit(arg) for _, arg in ir.args]
-        if callee_scope.is_specialized():
-            if ir is not original_ir:
-                self._modified_exp = ir
-            return callee_scope.find_ctor().return_type
-        param_types = ctor.param_types()
-        if param_types:
-            self._check_param_types(param_types, arg_types, ir.args, callee_scope.name)
-            new_param_types = self._get_new_param_types(param_types, arg_types)
-            new_scope, is_new, postfix = self._specialize_class_with_types(callee_scope, new_param_types)
-            self._new_scopes.append(new_scope)
-            self._old_scopes.add(callee_scope)
-            if is_new:
-                new_ctor = new_scope.find_ctor()
-                new_scope_sym = callee_scope.parent.gen_sym(new_scope.base_name)
-                new_scope_sym.typ = Type.klass(new_scope)
-                ctor_t = Type.function(
-                    new_ctor, Type.object(new_scope), tuple([new_ctor.param_types(with_self=True)[0]] + new_param_types)
-                )
-                new_ctor_sym = new_scope.find_sym(new_ctor.base_name)
-                new_ctor_sym.typ = ctor_t
-                self._add_scope(new_scope)
-                self._add_scope(new_ctor)
-            else:
-                new_scope_sym = callee_scope.parent.find_sym(new_scope.base_name)
-            ret_t = Type.object(new_scope)
-            qsym = qualified_symbols(ir.func, self.scope)
-            func_sym = qsym[-1]
-            assert isinstance(func_sym, Symbol)
-            asname = f"{ir.func.name}_{postfix}"
-            owner = self.scope.find_owner_scope(func_sym)
-            if owner and func_sym.scope is not owner:
-                owner.import_sym(new_scope_sym, asname)
-            # Replace name expression
-            if isinstance(ir.func, Temp):
-                new_func = Temp(name=asname, ctx=Ctx.CALL)
-                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
-            elif isinstance(ir.func, Attr):
-                assert asname == new_scope_sym.name
-                new_func = Attr(name=new_scope_sym.name, exp=ir.func.exp, attr=new_scope_sym.name, ctx=ir.func.ctx)
-                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name})
-            else:
-                assert False
-        else:
-            self._add_scope(callee_scope)
-            self._add_scope(ctor)
-        if ir is not original_ir:
-            self._modified_exp = ir
-        return ret_t
+    # --- Copied from TypeSpecializer (scope operations only, no IR) ---
 
     def _check_param_types(self, param_types, arg_types, args, scope_name):
         for param_t, arg_t, arg in zip(param_types, arg_types, args):
@@ -1025,7 +1148,6 @@ class TypeSpecializer(TypePropagation):
             if arg_t.is_expr():
                 continue
             if not param_t.can_assign(arg_t):
-                # Access the symbol for the argument to get orig_name
                 arg_var = arg[1]
                 if isinstance(arg_var, IrVariable):
                     arg_qsyms = qualified_symbols(arg_var, self.scope)
@@ -1053,7 +1175,7 @@ class TypeSpecializer(TypePropagation):
                 new_param_types.append(arg_t)
         return new_param_types
 
-    def _specialize_function_with_types(self, scope, types) -> tuple[Scope, bool, str]:
+    def _specialize_function_with_types(self, scope, types):
         assert not scope.is_specialized()
         postfix = Type.mangled_names(types)
         assert postfix
@@ -1073,7 +1195,7 @@ class TypeSpecializer(TypePropagation):
         sym.typ = sym.typ.clone(param_types=new_types, return_type=new_scope.return_type)
         return new_scope, True, postfix
 
-    def _specialize_class_with_types(self, scope, types) -> tuple[Scope, bool, str]:
+    def _specialize_class_with_types(self, scope, types):
         assert not scope.is_specialized()
         if scope.is_port():
             return self._specialize_port_with_types(scope, types)
@@ -1083,18 +1205,16 @@ class TypeSpecializer(TypePropagation):
         qualified_name = (scope.parent.name + "." + name) if scope.parent else name
         if qualified_name in env.scopes:
             return env.scopes[qualified_name], False, postfix
-
         new_scope = scope.instantiate(postfix)
         assert qualified_name == new_scope.name
         new_ctor = new_scope.find_ctor()
         new_ctor.return_type = Type.object(new_scope)
-
         for sym, new_t in zip(new_ctor.param_symbols(), types):
             sym.typ = new_t.clone(explicit=True)
         new_scope.add_tag("specialized")
         return new_scope, True, postfix
 
-    def _specialize_port_with_types(self, scope, types) -> tuple[Scope, bool, str]:
+    def _specialize_port_with_types(self, scope, types):
         typ = types[0]
         if typ.is_class():
             typscope = typ.scope
@@ -1118,7 +1238,6 @@ class TypeSpecializer(TypePropagation):
         dtype_sym.typ = typ.clone(explicit=True)
         init_sym = param_symbols[2]
         init_sym.typ = dtype.clone(explicit=True)
-
         new_scope.add_tag("specialized")
         for child in new_scope.children:
             for sym in child.param_symbols():
@@ -1129,7 +1248,7 @@ class TypeSpecializer(TypePropagation):
             child.add_tag("specialized")
         return new_scope, True, postfix
 
-    def _specialize_worker_with_types(self, scope, types) -> tuple[Scope, bool, str]:
+    def _specialize_worker_with_types(self, scope, types):
         assert not scope.is_specialized()
         postfix = Type.mangled_names(types)
         assert postfix
@@ -1145,6 +1264,142 @@ class TypeSpecializer(TypePropagation):
             sym.typ = new_t.clone()
         new_scope.add_tag("specialized")
         return new_scope, True, postfix
+
+
+class TypeSpecializerTransformer(IrTransformer):
+    """Pass 2: Rewrite Call/New nodes based on SpecializationResult.
+
+    Uses IrTransformer's functional pattern:
+    - IrExp visitors return new/unchanged nodes
+    - IrStm visitors collect into new_stms via _process_block
+    """
+
+    def __init__(self, result):
+        super().__init__()
+        self.result = result
+
+    def visit_Call(self, ir):
+        # Specialization lookup BEFORE visiting children (ir must match Pass 1 key)
+        spec_entry = self.result.specialization_map.get(ir)
+
+        # Visit children (IrTransformer pattern)
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        updates = {}
+        if new_func is not ir.func:
+            updates['func'] = new_func
+        if args_changed:
+            updates['args'] = new_args
+
+        # Resolve func symbol type
+        func_sym = qualified_symbols(ir.func, self.scope)[-1]
+        assert isinstance(func_sym, Symbol)
+        func_t = func_sym.typ
+
+        # 1. convert_call for object/port types
+        if func_t.is_object() or func_t.is_port():
+            resolved_ir = ir.model_copy(update=updates) if updates else ir
+            resolved_ir = convert_call(resolved_ir, self.scope)
+            updates = {}
+            ir = resolved_ir
+
+        resolved_ir = ir.model_copy(update=updates) if updates else ir
+        callee = _get_callee_scope(resolved_ir, self.scope)
+
+        # 2. normalize_args (before lib check — lib functions also need normalization)
+        names = callee.param_names()
+        defvals = callee.param_default_values()
+        current_args = resolved_ir.args
+        new_args = normalize_args(callee.base_name, names, defvals, current_args, resolved_ir.kwargs)
+        if new_args is not current_args:
+            resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': {}})
+
+        # lib functions
+        if callee.is_lib():
+            if callee.base_name == "append_worker":
+                return self._visit_Call_append_worker(resolved_ir, spec_entry)
+            return resolved_ir
+
+        # 3. specialization: apply if recorded in Pass 1
+        if spec_entry:
+            new_scope, postfix = spec_entry
+            asname = f"{resolved_ir.func.name}_{postfix}"
+            if isinstance(resolved_ir.func, Temp):
+                nf = Temp(name=asname, ctx=Ctx.CALL)
+            elif isinstance(resolved_ir.func, Attr):
+                nf = Attr(
+                    name=asname, exp=resolved_ir.func.exp,
+                    attr=asname, ctx=resolved_ir.func.ctx,
+                )
+            else:
+                assert False
+            resolved_ir = resolved_ir.model_copy(update={'func': nf, 'name': nf.name})
+
+        return resolved_ir
+
+    def visit_New(self, ir):
+        # Specialization lookup BEFORE visiting children
+        spec_entry = self.result.specialization_map.get(ir)
+
+        new_func = self.visit(ir.func)
+        new_args, args_changed = self._visit_args(ir.args)
+        updates = {}
+        if new_func is not ir.func:
+            updates['func'] = new_func
+        if args_changed:
+            updates['args'] = new_args
+        resolved_ir = ir.model_copy(update=updates) if updates else ir
+
+        callee = _get_callee_scope(resolved_ir, self.scope)
+        if callee.is_typeclass():
+            return resolved_ir
+
+        # normalize_args using ctor params
+        ctor = callee.find_ctor()
+        current_args = resolved_ir.args
+        new_args = normalize_args(
+            callee.base_name, ctor.param_names(), ctor.param_default_values(),
+            current_args, resolved_ir.kwargs,
+        )
+        if new_args is not current_args:
+            resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': {}})
+
+        # specialization: apply if recorded in Pass 1
+        if spec_entry:
+            new_scope, postfix = spec_entry
+            asname = f"{resolved_ir.func.name}_{postfix}"
+            if isinstance(resolved_ir.func, Temp):
+                nf = Temp(name=asname, ctx=Ctx.CALL)
+            elif isinstance(resolved_ir.func, Attr):
+                nf = Attr(
+                    name=asname, exp=resolved_ir.func.exp,
+                    attr=asname, ctx=resolved_ir.func.ctx,
+                )
+            else:
+                assert False
+            resolved_ir = resolved_ir.model_copy(update={'func': nf, 'name': nf.name})
+
+        return resolved_ir
+
+    def _visit_Call_append_worker(self, ir, spec_entry):
+        """Rewrite worker reference in append_worker call."""
+        if not spec_entry:
+            return ir
+        new_scope, postfix = spec_entry
+        worker_exp = ir.args[0][1]
+        asname = f"{worker_exp.name}_{postfix}"
+        new_args = list(ir.args)
+        if isinstance(worker_exp, Temp):
+            new_args[0] = (ir.args[0][0], Temp(name=asname))
+        elif isinstance(worker_exp, Attr):
+            new_scope_sym = new_scope.parent.find_sym(new_scope.base_name)
+            new_args[0] = (
+                ir.args[0][0],
+                Attr(name=new_scope_sym.name, exp=worker_exp.exp,
+                     attr=new_scope_sym.name, ctx=worker_exp.ctx),
+            )
+        return ir.model_copy(update={'args': new_args})
+
 
 
 # ============================================================

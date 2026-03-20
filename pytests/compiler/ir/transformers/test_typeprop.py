@@ -6,6 +6,7 @@ from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.transformers.typeprop import (
     TypePropagation, TypeSpecializer, StaticTypePropagation,
+    normalize_args, convert_call,
 )
 from polyphony.compiler.ir.transformers.typeprop import TypePropagation, TypeSpecializer
 from polyphony.compiler.ir.types.type import Type
@@ -4897,17 +4898,18 @@ def test_typeprop_specialize_call_arg_undef_reject():
     # y is undef, so calling func(y) should reject propagation
     # This would loop forever since y never gets resolved.
     # Use process_scopes with a limit approach.
-    from polyphony.compiler.ir.transformers.typeprop import RejectPropagation
-    ts = TypeSpecializer()
+    from polyphony.compiler.ir.transformers.typeprop import RejectPropagation, TypeSpecializationAnalyzer
+    ts = TypeSpecializationAnalyzer()
     ts._new_scopes = []
     ts._old_scopes = set()
     ts._indirect_old_scopes = set()
     ts.typed = []
-    from collections import deque
+    from collections import deque, defaultdict
     from polyphony.compiler.frontend.python.pure import PureFuncTypeInferrer
     ts.pure_type_inferrer = PureFuncTypeInferrer()
+    ts.specialization_map = defaultdict(dict)
     ts.worklist = deque([top])
-    # Process just once - it should raise RejectPropagation from line 822
+    # Process just once - it should raise RejectPropagation
     with pytest.raises(RejectPropagation):
         ts.process(top)
 
@@ -5262,7 +5264,7 @@ def test_typeprop_pure_function_not_global():
     env.config.enable_pure = True
     try:
         with pytest.raises(CompileError):
-            ts = TypeSpecializer()
+            ts = TypeSpecializationAnalyzer()
             ts.process_scopes([ns])
     finally:
         env.config.enable_pure = old_enable_pure
@@ -5992,3 +5994,306 @@ def test_specialize_func_same_name_different_namespace():
     assert other_func_i32.is_specialized()
     assert top_func_i32.param_types() == (Type.int(width=32, explicit=True),)
     assert other_func_i32.param_types() == (Type.int(width=32, explicit=True),)
+
+
+# ============================================================
+# Standalone functions: normalize_args, convert_call
+# ============================================================
+
+
+def test_normalize_args_positional():
+    """normalize_args fills in parameter names for positional args."""
+    args = [('', 'val1'), ('', 'val2')]
+    result = normalize_args('func', ['x', 'y'], [None, None], args, {})
+    assert result == [('x', 'val1'), ('y', 'val2')]
+
+
+def test_normalize_args_kwargs():
+    """normalize_args merges kwargs into positional order."""
+    args = [('', 'val1')]
+    kwargs = {'y': 'val2'}
+    result = normalize_args('func', ['x', 'y'], [None, None], args, kwargs)
+    assert result == [('x', 'val1'), ('y', 'val2')]
+    assert kwargs == {'y': 'val2'}  # no side effect
+
+
+def test_normalize_args_defaults():
+    """normalize_args fills in default values for missing args."""
+    args = [('', 'val1')]
+    result = normalize_args('func', ['x', 'y'], [None, 'default_y'], args, {})
+    assert result == [('x', 'val1'), ('y', 'default_y')]
+
+
+def test_normalize_args_extra_args():
+    """normalize_args handles more args than params."""
+    args = [('', 'v1'), ('', 'v2'), ('', 'v3')]
+    result = normalize_args('func', ['x'], [None], args, {})
+    assert result == [('', 'v1'), ('', 'v2'), ('', 'v3')]
+
+
+def test_convert_call_object():
+    """convert_call converts object call to __call__ method call."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var obj: object(@top.C)
+    blk1:
+        expr (call obj 1)
+
+    scope @top.C
+        tags class
+        var __call__: function(@top.C.__call__)
+
+    scope @top.C.__call__
+        tags method function
+        param self: object(@top.C)
+        param x: undef
+        return undef
+    blk1:
+        mv self @in_self
+        mv x @in_x
+        ret @return
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    stm = top.entry_block.stms[0]
+    call = stm.exp
+    result = convert_call(call, top)
+    assert result is not call
+    assert isinstance(result.func, Attr)
+    assert result.func.attr == '__call__'
+
+
+# ============================================================
+# TypeSpecializationAnalyzer (Pass 1)
+# ============================================================
+
+from polyphony.compiler.ir.transformers.typeprop import (
+    TypeSpecializationAnalyzer, SpecializationResult,
+)
+
+
+def test_functional_type_specializer_basic():
+    """TypeSpecializationAnalyzer produces specialization_map without modifying IR."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var other: namespace(other)
+        var func: function(@top.func)
+        from other import func_x
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+    blk1:
+        mv x @in_x
+        mv @return (call func_x x)
+        ret @return
+
+    scope other
+        tags namespace
+        var func_x: function(other.func_x)
+
+    scope other.func_x
+        tags function
+        param x: undef
+        return int32
+    blk1:
+        mv x @in_x
+        mv @return (+ x 1)
+        ret @return
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    original_stm = top.entry_block.stms[0]
+    original_call = original_stm.exp
+
+    result = TypeSpecializationAnalyzer().process_all()
+
+    assert isinstance(result, SpecializationResult)
+
+    # Specialized scope should be created
+    func_i32 = env.scopes.get('@top.func_i32')
+    assert func_i32 is not None
+    assert func_i32.is_specialized()
+
+    # specialization_map should have entries keyed by Call/New ir
+    assert len(result.specialization_map) > 0
+    # The original Call ir should be a key
+    assert original_call in result.specialization_map
+
+    # IR should NOT be modified (same object)
+    assert top.entry_block.stms[0] is original_stm
+    assert top.entry_block.stms[0].exp is original_call
+
+
+def test_functional_type_specializer_class():
+    """TypeSpecializationAnalyzer records class specialization in map."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var C: class(@top.C)
+    blk1:
+        expr (new C 1)
+
+    scope @top.C
+        tags class
+        var __init__: function(@top.C.__init__)
+
+    scope @top.C.__init__
+        tags method ctor
+        param self: object(@top.C)
+        param x: undef
+        return object(@top.C)
+    blk1:
+        mv self @in_self
+        mv x @in_x
+        ret @return
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    result = TypeSpecializationAnalyzer().process_all()
+
+    c_i32 = env.scopes.get('@top.C_i32')
+    assert c_i32 is not None
+    assert c_i32.is_specialized()
+    assert len(result.specialization_map) > 0
+
+
+# ============================================================
+# Two-pass equivalence tests
+# ============================================================
+
+from polyphony.compiler.ir.transformers.typeprop import TypeSpecializerTransformer
+
+
+def test_two_pass_equivalence_basic():
+    """2-pass produces correct Call rewriting for function specialization."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var other: namespace(other)
+        var func: function(@top.func)
+        from other import func_x
+    blk1:
+        expr (call func 1)
+
+    scope @top.func
+        tags function
+        param x: undef
+        return undef
+    blk1:
+        mv x @in_x
+        mv @return (call func_x x)
+        ret @return
+
+    scope other
+        tags namespace
+        var func_x: function(other.func_x)
+
+    scope other.func_x
+        tags function
+        param x: undef
+        return int32
+    blk1:
+        mv x @in_x
+        mv @return (+ x 1)
+        ret @return
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    result = TypeSpecializationAnalyzer().process_all()
+    transformer = TypeSpecializerTransformer(result)
+    for scope in result.typed_scopes:
+        transformer.process(scope)
+
+    # Check IR was rewritten
+    stm = top.entry_block.stms[0]
+    call = stm.exp
+    assert 'func_i32' in call.func.name or 'func_i32' in call.name
+
+    func_i32 = env.scopes['@top.func_i32']
+    assert func_i32.is_specialized()
+    assert func_i32.param_types() == (Type.int(width=32, explicit=True),)
+
+
+def test_two_pass_equivalence_class():
+    """2-pass produces correct New rewriting for class specialization."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var C: class(@top.C)
+    blk1:
+        expr (new C 1)
+
+    scope @top.C
+        tags class
+        var __init__: function(@top.C.__init__)
+
+    scope @top.C.__init__
+        tags method ctor
+        param self: object(@top.C)
+        param x: undef
+        return object(@top.C)
+    blk1:
+        mv self @in_self
+        mv x @in_x
+        ret @return
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    result = TypeSpecializationAnalyzer().process_all()
+    transformer = TypeSpecializerTransformer(result)
+    for scope in result.typed_scopes:
+        transformer.process(scope)
+
+    stm = top.entry_block.stms[0]
+    assert 'C_i32' in stm.exp.func.name or 'C_i32' in stm.exp.name
+
+
+def test_two_pass_equivalence_no_params():
+    """2-pass: function with no params needs no specialization."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var func: function(@top.func)
+    blk1:
+        expr (call func)
+
+    scope @top.func
+        tags function
+        return undef
+    blk1:
+        mv @return 42
+        ret @return
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    result = TypeSpecializationAnalyzer().process_all()
+    transformer = TypeSpecializerTransformer(result)
+    for scope in result.typed_scopes:
+        transformer.process(scope)
+
+    func = env.scopes['@top.func']
+    assert func.return_type.is_int()
