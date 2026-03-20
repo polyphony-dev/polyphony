@@ -99,7 +99,7 @@ class EarlyQuadrupleMaker(IrTransformer):
             if new_arg is not arg:
                 changed = True
             new_args.append((name, new_arg))
-        return new_args, changed
+        return tuple(new_args), changed
 
     def visit_Call(self, ir):
         suppress = self.suppress_converting

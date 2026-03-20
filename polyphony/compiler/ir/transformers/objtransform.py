@@ -199,8 +199,7 @@ class ObjectTransformer(object):
             self.scope.find_block(mv_stm.block).stms.insert(insert_idx, tmp_mv)
             insert_idx += 1
             uphi.ps.append(Temp(name=c_sym.name))
-            mv_src = mv_stm.src.model_copy(deep=True)
-            mv_src.replace(self.qsym_to_ir(copy_qsym, Ctx.LOAD), Temp(name=src.name))
+            mv_src = mv_stm.src.subst(self.qsym_to_ir(copy_qsym, Ctx.LOAD), Temp(name=src.name))
             uphi.args.append(mv_src)
         self.scope.find_block(mv_stm.block).stms.insert(insert_idx, uphi)
         var_load = Temp(name=tmp.name, ctx=Ctx.LOAD)
@@ -302,6 +301,7 @@ class ObjectTransformer(object):
             self.scope.find_block(defstm.block).stms.insert(idx, mv)
             self.seq_id_map[seq_sym.name] = seq_id.name
 
+            # TODO: convert to subst once usedef tracking supports stm replacement
             usestms = self.usedef.get_stms_using(seq_sym)
             for usestm in usestms:
                 if isinstance(usestm, Move) and not isinstance(usestm.src, (MRef, SysCall)):

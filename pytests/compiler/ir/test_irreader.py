@@ -530,7 +530,7 @@ def test_stm_mv_call():
     assert isinstance(mv.src, Call)
     call = cast(Call, mv.src)
     assert call.func.name == 'func'
-    assert call.args == [('', Const(1)), ('', Const(2)), ('', Const(3))]
+    assert call.args == (('', Const(1)), ('', Const(2)), ('', Const(3)))
 
 def test_stm_mv_tuple():
     setup_test()
@@ -547,7 +547,7 @@ def test_stm_mv_tuple():
     assert isinstance(mv.src, Call)
     call = cast(Call, mv.src)
     assert call.func.name == 'func'
-    assert call.args == []
+    assert call.args == ()
 
 
 def test_stm_expr():

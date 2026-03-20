@@ -214,10 +214,14 @@ class FlippedPortsBuilder(IrVisitor):
     def process(self, scope):
         self.scope = scope
         for blk in scope.traverse_blocks():
-            for stm in blk.stms:
-                self.visit(stm)
+            for stm in blk.stms[:]:
+                if isinstance(stm, Move) and isinstance(stm.src, New):
+                    new_src = self._flip_direction(stm.src)
+                    if new_src is not None:
+                        blk.replace_stm(stm, stm.model_copy(update={'src': new_src}))
 
-    def visit_New(self, ir):
+    def _flip_direction(self, ir):
+        """Flip direction in NEW node. Returns new ir or None if unchanged."""
         func_sym = qualified_symbols(ir.func, self.scope)[-1]
         assert isinstance(func_sym, Symbol)
         sym_t = func_sym.typ
@@ -225,25 +229,15 @@ class FlippedPortsBuilder(IrVisitor):
             for i, (name, arg) in enumerate(ir.args):
                 if name == 'direction':
                     if arg.value == 'in':
-                        ir.args[i] = ('direction', Const(value='out'))
+                        new_args = list(ir.args)
+                        new_args[i] = ('direction', Const(value='out'))
+                        return ir.model_copy(update={'args': tuple(new_args)})
                     elif arg.value == 'out':
-                        ir.args[i] = ('direction', Const(value='in'))
+                        new_args = list(ir.args)
+                        new_args[i] = ('direction', Const(value='in'))
+                        return ir.model_copy(update={'args': tuple(new_args)})
                     break
-
-    def visit_Move(self, ir):
-        self.visit(ir.src)
-
-    def _flip_old_new(self, ir):
-        """Flip direction in NEW node."""
-        sym_t = ir.symbol.typ
-        if sym_t.scope.is_port():
-            for i, (name, arg) in enumerate(ir.args):
-                if name == 'direction':
-                    if arg.value == 'in':
-                        ir.args[i] = ('direction', Const('out'))
-                    elif arg.value == 'out':
-                        ir.args[i] = ('direction', Const('in'))
-                    break
+        return None
 
 
 class PortConnector(IrVisitor):

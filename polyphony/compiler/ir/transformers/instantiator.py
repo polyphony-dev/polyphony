@@ -97,7 +97,9 @@ class ModuleInstantiator(object):
                 s.add_tag('instantiated')
             new_modules.append(new_module)
             assert isinstance(move.src, New)
-            new.replace(module.base_name, new_module.base_name)
+            new_src = new.subst(module.base_name, new_module.base_name)
+            if new_src is not new:
+                object.__setattr__(move, 'src', new_src)
         return new_modules
 
     def _process_workers(self, module):
@@ -108,14 +110,15 @@ class ModuleInstantiator(object):
         for scope, stm, call in calls:
             callee_scope = _get_callee_scope(call, scope)
             if isinstance(call, Call) and callee_scope.base_name == 'append_worker':
-                new_worker = self._instantiate_worker(call, ctor, module, scope, origin_workers)
+                new_worker = self._instantiate_worker(call, stm, ctor, module, scope, origin_workers)
                 module.register_worker(new_worker)
         # Remove origin workers
         for worker in origin_workers:
             Scope.destroy(worker)
 
-    def _instantiate_worker(self, call, ctor, module, scope, origin_workers):
+    def _instantiate_worker(self, call, stm, ctor, module, scope, origin_workers):
         assert len(call.args) >= 1
+        orig_call = call
         _, w = call.args[0]
         assert isinstance(w, IrVariable)
         w_sym = qualified_symbols(w, scope)[-1]
@@ -129,7 +132,7 @@ class ModuleInstantiator(object):
             if name == 'loop':
                 assert isinstance(arg, Const) and isinstance(arg.value, bool)
                 loop = arg.value
-                call.args.pop(i)
+                call = call.model_copy(update={'args': call.args[:i] + call.args[i + 1:]})
                 break
 
         if worker.is_instantiated():
@@ -144,9 +147,13 @@ class ModuleInstantiator(object):
             new_worker.add_tag('loop_worker')
         # Replace old worker references with new worker references
         if worker.is_method():
-            call.replace(worker.base_name, new_worker.base_name)
+            new_call = call.subst(worker.base_name, new_worker.base_name)
         else:
-            call.replace(w, Attr(name=new_worker.base_name, exp=Temp(name='self'), attr=new_worker.base_name, ctx=Ctx.LOAD))
+            new_call = call.subst(w, Attr(name=new_worker.base_name, exp=Temp(name='self'), attr=new_worker.base_name, ctx=Ctx.LOAD))
+        # Use orig_call for stm.subst since stm still references the original call
+        new_stm = stm.subst(orig_call, new_call)
+        if new_stm is not stm:
+            scope.find_block(stm.block).replace_stm(stm, new_stm)
         new_worker.add_tag('instantiated')
         return new_worker
 
@@ -173,7 +180,12 @@ class ArgumentApplier(object):
             if isinstance(call, New) and callee_scope.is_module() and callee_scope.is_instantiated():
                 ctor = callee_scope.find_ctor()
                 assert ctor
-                self._bind_args(scope, call.args, ctor)
+                new_args = self._bind_args(scope, call.args, ctor)
+                if new_args is not call.args:
+                    new_call = call.model_copy(update={'args': new_args})
+                    new_stm = stm.subst(call, new_call)
+                    if new_stm is not stm:
+                        scope.find_block(stm.block).replace_stm(stm, new_stm)
                 next_scopes.append(ctor)
             elif isinstance(call, Call) and callee_scope.base_name == 'append_worker':
                 assert len(call.args) >= 1
@@ -184,9 +196,13 @@ class ArgumentApplier(object):
                 assert w_sym.typ.is_function()
                 assert w_sym.typ.scope.is_worker()
                 worker = w_sym.typ.scope
-                args = call.args[1:]
-                self._bind_args(scope, args, worker)
-                call.args[1:] = args
+                worker_args = call.args[1:]
+                new_worker_args = self._bind_args(scope, worker_args, worker)
+                if new_worker_args is not worker_args:
+                    new_call = call.model_copy(update={'args': (call.args[0],) + new_worker_args})
+                    new_stm = stm.subst(call, new_call)
+                    if new_stm is not stm:
+                        scope.find_block(stm.block).replace_stm(stm, new_stm)
         return next_scopes
 
     def _resolve_seq_arg(self, arg: IrExp, caller_scope: Scope) -> IrExp:
@@ -215,7 +231,8 @@ class ArgumentApplier(object):
                 if sym and not callee.find_sym(name):
                     callee.import_sym(sym)
 
-    def _bind_args(self, caller_scope: Scope, args: list[tuple[str, IrExp]], callee: Scope):
+    def _bind_args(self, caller_scope: Scope, args: tuple[tuple[str, IrExp], ...], callee: Scope):
+        """Bind arguments to callee parameters. Returns new args tuple with bound args removed."""
         binding: list[tuple[int, IrExp]] = []
         module_param_vars: list[tuple[str, IrExp]] = []
         param_names = callee.param_names()
@@ -236,10 +253,11 @@ class ArgumentApplier(object):
                 pname = callee.param_symbols()[i].name
                 VarReplacer.replace_uses(callee, Temp(name=pname), arg)
             callee.remove_param([i for i, _ in binding])
-            for i, _ in reversed(binding):
-                args.pop(i)
+            bound_indices = {i for i, _ in binding}
+            args = tuple(a for j, a in enumerate(args) if j not in bound_indices)
             ConstantOpt().process(callee)
             if callee.is_ctor():
                 callee.parent.set_bound_args(binding)
         if callee.parent.is_module():
             callee.parent.build_module_params(module_param_vars)
+        return args

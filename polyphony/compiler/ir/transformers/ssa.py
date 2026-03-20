@@ -528,8 +528,7 @@ class TupleSSATransformer(SSATransformerBase):
                             block=use_stm.block, loc=use_stm.loc or Loc('', 0))
                 object.__setattr__(uphi, 'ps', phi.ps[:])
                 for arg in phi.args:
-                    src = use_stm.src.model_copy(deep=True)
-                    src.replace(use_var, arg.model_copy(deep=True))
+                    src = use_stm.src.subst(use_var, arg)
                     uphi.args.append(src)
                 use_blk.stms.insert(insert_idx, uphi)
             else:
@@ -541,8 +540,7 @@ class TupleSSATransformer(SSATransformerBase):
             assert use_vars
             use_var = use_vars[0]
             for p, arg in zip(phi.ps, phi.args):
-                exp = use_stm.exp.model_copy(deep=True)
-                exp.replace(use_var, arg.model_copy(deep=True))
+                exp = use_stm.exp.subst(use_var, arg)
                 cexp = CExpr(cond=p.model_copy(deep=True), exp=exp,
                              block=use_stm.block, loc=use_stm.loc or Loc('', 0))
                 use_blk.stms.insert(insert_idx, cexp)

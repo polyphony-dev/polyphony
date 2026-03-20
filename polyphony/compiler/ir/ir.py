@@ -87,9 +87,73 @@ class Ir(BaseModel):
         data.update(overrides)
         return self.__class__(**data)
 
+    def subst(self, old, new):
+        """Return a new IR tree with all occurrences of old replaced by new.
+
+        Non-mutating: self is unchanged. Returns the same object if nothing was replaced.
+        """
+        result, _ = self._subst_rec(self, old, new, set())
+        return result
+
     def replace(self, old, new):
         """Replace all occurrences of old with new in this IR tree (in-place)."""
         return self._replace_rec(self, old, new, set())
+
+    def _subst_rec(self, ir, old, new, visited):
+        """Return (new_ir, changed). Non-mutating replacement."""
+        if isinstance(ir, Ir):
+            obj_id = id(ir)
+            if obj_id in visited:
+                return ir, False
+            visited.add(obj_id)
+            updates = {}
+            for field_name in type(ir).model_fields:
+                v = getattr(ir, field_name, None)
+                if v == old:
+                    updates[field_name] = new
+                elif isinstance(v, (tuple, list)):
+                    new_v, changed = self._subst_seq(v, old, new, visited)
+                    if changed:
+                        updates[field_name] = new_v
+                else:
+                    new_v, changed = self._subst_rec(v, old, new, visited)
+                    if changed:
+                        updates[field_name] = new_v
+            if updates:
+                return ir.model_copy(update=updates), True
+            return ir, False
+        elif isinstance(ir, (tuple, list)):
+            return self._subst_seq(ir, old, new, visited)
+        return ir, False
+
+    def _subst_seq(self, seq, old, new, visited):
+        """Return (new_seq, changed) for a tuple or list."""
+        new_elms = list(seq)
+        changed = False
+        for i, elm in enumerate(seq):
+            if elm == old:
+                new_elms[i] = new
+                changed = True
+            else:
+                new_elm, elm_changed = self._subst_rec(elm, old, new, visited)
+                if elm_changed:
+                    new_elms[i] = new_elm
+                    changed = True
+        if not changed:
+            return seq, False
+        return (tuple(new_elms) if isinstance(seq, tuple) else new_elms), True
+
+    def _replace_in_tuple(self, tpl, old, new, visited):
+        """Replace old with new inside a tuple, returning (new_tuple, changed)."""
+        new_items = list(tpl)
+        changed = False
+        for j, t_elm in enumerate(tpl):
+            if t_elm == old:
+                new_items[j] = new
+                changed = True
+            elif self._replace_rec(t_elm, old, new, visited):
+                changed = True
+        return tuple(new_items) if changed else tpl, changed
 
     def _replace_rec(self, ir, old, new, visited):
         obj_id = id(ir)
@@ -111,6 +175,11 @@ class Ir(BaseModel):
                         if elm == old:
                             new_elms[i] = new
                             changed = True
+                        elif isinstance(elm, tuple):
+                            new_tpl, inner_changed = self._replace_in_tuple(elm, old, new, visited)
+                            if inner_changed:
+                                new_elms[i] = new_tpl
+                                changed = True
                         elif self._replace_rec(elm, old, new, visited):
                             changed = True
                     if changed:
@@ -126,17 +195,10 @@ class Ir(BaseModel):
                     ir[i] = new
                     ret = True
                 elif isinstance(elm, tuple):
-                    # Handle nested tuples (e.g. SysCall args: list[tuple[str, IrExp]])
-                    new_items = list(elm)
-                    changed = False
-                    for j, t_elm in enumerate(elm):
-                        if t_elm == old:
-                            new_items[j] = new
-                            changed = True
-                        elif self._replace_rec(t_elm, old, new, visited):
-                            changed = True
-                    if changed:
-                        ir[i] = tuple(new_items)
+                    # Handle nested tuples (e.g. Phi.args: list[IrVariable])
+                    new_tpl, inner_changed = self._replace_in_tuple(elm, old, new, visited)
+                    if inner_changed:
+                        ir[i] = new_tpl
                         ret = True
                 elif self._replace_rec(elm, old, new, visited):
                     ret = True
@@ -554,7 +616,7 @@ class PolyOp(IrExp):
 class IrCallable(IrNameExp):
     name: str = ''
     func: IrVariable
-    args: list = []
+    args: tuple = ()
     kwargs: dict = {}
 
     def __init__(self, *args_pos, **kwargs):
@@ -566,6 +628,9 @@ class IrCallable(IrNameExp):
                 kwargs.setdefault('args', args_pos[1])
             if len(args_pos) >= 3:
                 kwargs.setdefault('kwargs', args_pos[2])
+        # Ensure args is a tuple
+        if 'args' in kwargs and not isinstance(kwargs['args'], tuple):
+            kwargs['args'] = tuple(kwargs['args'])
         # Set func.ctx = CALL
         func = kwargs.get('func')
         if func is not None and hasattr(func, 'ctx') and func.ctx != Ctx.CALL:

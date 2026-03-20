@@ -216,7 +216,7 @@ class IrTransformer(IrVisitor):
         return ir.model_copy(update={'values': new_values})
 
     def _visit_args(self, args):
-        new_args = [(name, self.visit(arg)) for name, arg in args]
+        new_args = tuple((name, self.visit(arg)) for name, arg in args)
         changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, args))
         return new_args, changed
 

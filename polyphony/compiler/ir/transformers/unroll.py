@@ -416,6 +416,7 @@ class LoopUnroller(object):
         return new_iv_map
 
     def _replace_outer_uses(self, loop, new_ivs, index, sym_map):
+        # TODO: convert to subst once usedef tracking supports stm replacement
         for u in loop.outer_uses:
             usestms = self.usedef.get_stms_using(u)
             for ustm in usestms:

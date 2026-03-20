@@ -789,7 +789,9 @@ class InlineOpt(object):
             if isinstance(call_stm, Move) and callee.is_ctor():
                 assert call_stm.src == call
                 builtin_new = SysCall(Temp("$new"), args=[("typ", call.func.clone(ctx=Ctx.LOAD))], kwargs={})
-                call_stm.replace(call_stm.src, builtin_new)
+                new_call_stm = call_stm.subst(call_stm.src, builtin_new)
+                if new_call_stm is not call_stm:
+                    caller.find_block(call_stm.block).replace_stm(call_stm, new_call_stm)
             elif isinstance(call_stm, Expr):
                 caller.find_block(call_stm.block).stms.remove(call_stm)
 
@@ -931,14 +933,14 @@ class FlattenModule(IrVisitor):
                 new_func = Attr(name="append_worker", exp=Temp(name="self"), attr="append_worker", ctx=Ctx.CALL)
                 new_args = list(ir.args)
                 new_args[0] = ("", new_arg)
-                ir = ir.model_copy(update={"func": new_func, "name": new_func.name, "args": new_args})
+                ir = ir.model_copy(update={"func": new_func, "name": new_func.name, "args": tuple(new_args)})
                 self._update_current_stm(ir)
             else:
                 assert self.scope.parent.is_module()
                 new_func = Attr(name="append_worker", exp=Temp(name="self"), attr="append_worker", ctx=Ctx.CALL)
                 new_args = list(ir.args)
                 new_args[0] = (None, arg)
-                ir = ir.model_copy(update={"func": new_func, "name": new_func.name, "args": new_args})
+                ir = ir.model_copy(update={"func": new_func, "name": new_func.name, "args": tuple(new_args)})
                 self._update_current_stm(ir)
         elif (
             callee_scope.is_method()
@@ -957,7 +959,10 @@ class FlattenModule(IrVisitor):
             if sym_scope.is_method() and sym_scope.parent is not self.scope.parent:
                 new_method, new_arg = self._make_new_assigned_method(arg, sym_scope)
                 self._new_scopes.append(new_method)
-                ir.args[0] = ("", new_arg)
+                new_args = list(ir.args)
+                new_args[0] = ("", new_arg)
+                ir = ir.model_copy(update={'args': tuple(new_args)})
+                self._update_current_stm(ir)
         else:
             # Visit args
             for _, arg in ir.args:

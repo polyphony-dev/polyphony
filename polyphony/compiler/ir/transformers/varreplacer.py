@@ -84,7 +84,7 @@ class VarReplacer(object):
 
     def visit_Call(self, ir):
         new_func = self.visit(ir.func)
-        new_args = [(name, self.visit(arg)) for name, arg in ir.args]
+        new_args = tuple((name, self.visit(arg)) for name, arg in ir.args)
         func_changed = new_func is not ir.func
         args_changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, ir.args))
         if not func_changed and not args_changed:
@@ -93,7 +93,7 @@ class VarReplacer(object):
 
     def visit_SysCall(self, ir):
         new_func = self.visit(ir.func)
-        new_args = [(name, self.visit(arg)) for name, arg in ir.args]
+        new_args = tuple((name, self.visit(arg)) for name, arg in ir.args)
         func_changed = new_func is not ir.func
         args_changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, ir.args))
         if not func_changed and not args_changed:
@@ -102,7 +102,7 @@ class VarReplacer(object):
 
     def visit_New(self, ir):
         new_func = self.visit(ir.func)
-        new_args = [(name, self.visit(arg)) for name, arg in ir.args]
+        new_args = tuple((name, self.visit(arg)) for name, arg in ir.args)
         func_changed = new_func is not ir.func
         args_changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, ir.args))
         if not func_changed and not args_changed:

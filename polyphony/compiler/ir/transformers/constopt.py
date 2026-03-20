@@ -109,7 +109,7 @@ class ConstantOptBase(IrVisitor):
         return ir
 
     def visit_Call(self, ir):
-        new_args = [(name, self.visit(arg)) for name, arg in ir.args]
+        new_args = tuple((name, self.visit(arg)) for name, arg in ir.args)
         args_changed = any(na is not oa for (_, na), (_, oa) in zip(new_args, ir.args))
         if args_changed:
             ir = ir.model_copy(update={'args': new_args})
@@ -780,6 +780,7 @@ class PolyadConstantFolding(object):
             usestms = self.usedef.get_stms_using(dst_sym)
             for usestm in usestms:
                 if self._can_inlining(usestm, ir):
+                    # TODO: convert to subst once usedef tracking supports stm replacement
                     usestm.replace(Temp(name=ir.dst.name), ir.src)
 
     class _Bin2Poly(IrTransformer):

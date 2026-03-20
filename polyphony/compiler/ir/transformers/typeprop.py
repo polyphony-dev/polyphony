@@ -57,10 +57,10 @@ def normalize_args(func_name, param_names, defvals, args, kwargs):
     nargs = []
     remaining_kwargs = dict(kwargs)
     if len(param_names) < len(args):
-        nargs = args[:]
+        nargs = list(args)
         for name, arg in remaining_kwargs.items():
             nargs.append((name, arg))
-        return nargs
+        return tuple(nargs)
     for i, (name, defval) in enumerate(zip(param_names, defvals)):
         if i < len(args):
             nargs.append((name, args[i][1]))
@@ -70,7 +70,7 @@ def normalize_args(func_name, param_names, defvals, args, kwargs):
             nargs.append((name, defval))
         else:
             type_error(None, Errors.MISSING_REQUIRED_ARG_N, [func_name, name])
-    return nargs
+    return tuple(nargs)
 
 
 def convert_call(ir, scope):
@@ -1311,7 +1311,7 @@ class TypeSpecializerTransformer(IrTransformer):
         defvals = callee.param_default_values()
         current_args = resolved_ir.args
         new_args = normalize_args(callee.base_name, names, defvals, current_args, resolved_ir.kwargs)
-        if new_args is not current_args:
+        if new_args is not current_args or resolved_ir.kwargs:
             resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': {}})
 
         # lib functions
@@ -1361,7 +1361,7 @@ class TypeSpecializerTransformer(IrTransformer):
             callee.base_name, ctor.param_names(), ctor.param_default_values(),
             current_args, resolved_ir.kwargs,
         )
-        if new_args is not current_args:
+        if new_args is not current_args or resolved_ir.kwargs:
             resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': {}})
 
         # specialization: apply if recorded in Pass 1
@@ -1398,7 +1398,7 @@ class TypeSpecializerTransformer(IrTransformer):
                 Attr(name=new_scope_sym.name, exp=worker_exp.exp,
                      attr=new_scope_sym.name, ctx=worker_exp.ctx),
             )
-        return ir.model_copy(update={'args': new_args})
+        return ir.model_copy(update={'args': tuple(new_args)})
 
 
 

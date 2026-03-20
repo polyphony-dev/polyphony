@@ -6005,7 +6005,7 @@ def test_normalize_args_positional():
     """normalize_args fills in parameter names for positional args."""
     args = [('', 'val1'), ('', 'val2')]
     result = normalize_args('func', ['x', 'y'], [None, None], args, {})
-    assert result == [('x', 'val1'), ('y', 'val2')]
+    assert result == (('x', 'val1'), ('y', 'val2'))
 
 
 def test_normalize_args_kwargs():
@@ -6013,7 +6013,7 @@ def test_normalize_args_kwargs():
     args = [('', 'val1')]
     kwargs = {'y': 'val2'}
     result = normalize_args('func', ['x', 'y'], [None, None], args, kwargs)
-    assert result == [('x', 'val1'), ('y', 'val2')]
+    assert result == (('x', 'val1'), ('y', 'val2'))
     assert kwargs == {'y': 'val2'}  # no side effect
 
 
@@ -6021,14 +6021,14 @@ def test_normalize_args_defaults():
     """normalize_args fills in default values for missing args."""
     args = [('', 'val1')]
     result = normalize_args('func', ['x', 'y'], [None, 'default_y'], args, {})
-    assert result == [('x', 'val1'), ('y', 'default_y')]
+    assert result == (('x', 'val1'), ('y', 'default_y'))
 
 
 def test_normalize_args_extra_args():
     """normalize_args handles more args than params."""
     args = [('', 'v1'), ('', 'v2'), ('', 'v3')]
     result = normalize_args('func', ['x'], [None], args, {})
-    assert result == [('', 'v1'), ('', 'v2'), ('', 'v3')]
+    assert result == (('', 'v1'), ('', 'v2'), ('', 'v3'))
 
 
 def test_convert_call_object():

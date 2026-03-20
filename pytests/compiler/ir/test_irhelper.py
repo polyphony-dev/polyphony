@@ -324,6 +324,134 @@ def test_replace_no_match():
     assert m.src == Const(value=1)
 
 
+# --- subst (non-mutating replace) ---
+
+
+def test_subst_simple():
+    """subst returns new IR, leaves original unchanged."""
+    m = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Temp(name='x'))
+    m2 = m.subst(Temp(name='x'), Temp(name='z'))
+    # Original unchanged
+    assert m.src.name == 'x'
+    # New has replacement
+    assert m2.src.name == 'z'
+    assert m2 is not m
+
+
+def test_subst_no_match():
+    """subst returns same object when nothing matches."""
+    m = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Const(value=1))
+    m2 = m.subst(Temp(name='z'), Temp(name='w'))
+    assert m2 is m
+
+
+def test_subst_call_args():
+    """subst replaces inside IrCallable.args (tuple of tuples)."""
+    f = Temp(name='func', ctx=Ctx.CALL)
+    c = Call(name='func', func=f, args=[('x', Temp(name='a')), ('y', Const(value=1))])
+    c2 = c.subst(Temp(name='a'), Temp(name='b'))
+    # Original unchanged
+    _, orig_arg = c.args[0]
+    assert orig_arg.name == 'a'
+    # New has replacement
+    _, new_arg = c2.args[0]
+    assert new_arg.name == 'b'
+
+
+def test_subst_nested_expr():
+    """subst replaces inside nested expressions."""
+    f = Temp(name='f', ctx=Ctx.CALL)
+    inner = BinOp(op='Add', left=Temp(name='x'), right=Const(value=1))
+    c = Call(name='f', func=f, args=[('', inner)])
+    c2 = c.subst(Temp(name='x'), Temp(name='y'))
+    # Original unchanged
+    _, orig_arg = c.args[0]
+    assert orig_arg.left.name == 'x'
+    # New has replacement
+    _, new_arg = c2.args[0]
+    assert new_arg.left.name == 'y'
+
+
+def test_subst_in_move():
+    """subst on Move replaces in src (ctx must match for equality)."""
+    m = Move(dst=Temp(name='y', ctx=Ctx.STORE),
+             src=BinOp(op='Add', left=Temp(name='x'), right=Const(value=1)))
+    m2 = m.subst(Temp(name='x'), Temp(name='z'))
+    # Original unchanged
+    assert m.src.left.name == 'x'
+    # New has replacement
+    assert m2.src.left.name == 'z'
+    assert m2.dst.name == 'y'  # dst unchanged (different ctx)
+
+
+def test_subst_deep_nested_call_in_move():
+    """subst through Move > Call > BinOp (3 levels of Ir nesting)."""
+    f = Temp(name='f', ctx=Ctx.CALL)
+    deep_arg = BinOp(op='Add', left=Temp(name='x'), right=Const(value=1))
+    call = Call(func=f, args=[('a', deep_arg)])
+    m = Move(dst=Temp(name='r', ctx=Ctx.STORE), src=call)
+    m2 = m.subst(Temp(name='x'), Temp(name='y'))
+    # Original unchanged at all levels
+    assert m.src.args[0][1].left.name == 'x'
+    # New replaced at depth
+    assert m2.src.args[0][1].left.name == 'y'
+    # Intermediate nodes are new objects
+    assert m2 is not m
+    assert m2.src is not m.src
+    # Unrelated parts are shared
+    assert m2.src.args[0][1].right is m.src.args[0][1].right
+
+
+def test_subst_condop_nested():
+    """subst through CondOp > BinOp (deeply nested expressions)."""
+    cond = RelOp(op='Lt', left=Temp(name='i'), right=Const(value=10))
+    left = BinOp(op='Mult', left=Temp(name='x'), right=Temp(name='x'))
+    right = UnOp(op='USub', exp=Temp(name='x'))
+    co = CondOp(cond=cond, left=left, right=right)
+    m = Move(dst=Temp(name='r', ctx=Ctx.STORE), src=co)
+    m2 = m.subst(Temp(name='x'), Temp(name='z'))
+    # Original unchanged
+    assert m.src.left.left.name == 'x'
+    assert m.src.right.exp.name == 'x'
+    # All 3 occurrences replaced
+    assert m2.src.left.left.name == 'z'
+    assert m2.src.left.right.name == 'z'
+    assert m2.src.right.exp.name == 'z'
+    # Cond untouched (no 'x' with matching ctx)
+    assert m2.src.cond.left.name == 'i'
+
+
+def test_subst_multiple_call_args_with_nested():
+    """subst replaces in multiple args, each with nested expressions."""
+    f = Temp(name='f', ctx=Ctx.CALL)
+    arg0 = BinOp(op='Add', left=Temp(name='a'), right=Temp(name='b'))
+    arg1 = BinOp(op='Mult', left=Temp(name='a'), right=Const(value=2))
+    call = Call(func=f, args=[('x', arg0), ('y', arg1)])
+    call2 = call.subst(Temp(name='a'), Temp(name='c'))
+    # Original unchanged
+    assert call.args[0][1].left.name == 'a'
+    assert call.args[1][1].left.name == 'a'
+    # Both args replaced
+    assert call2.args[0][1].left.name == 'c'
+    assert call2.args[1][1].left.name == 'c'
+    # Non-matching parts shared
+    assert call2.args[0][1].right is call.args[0][1].right
+    assert call2.args[1][1].right is call.args[1][1].right
+
+
+def test_subst_mref_deep():
+    """subst through Move > MRef (memory reference with nested index)."""
+    idx = BinOp(op='Add', left=Temp(name='i'), right=Const(value=1))
+    mref = MRef(mem=Temp(name='arr'), offset=idx, ctx=Ctx.LOAD)
+    m = Move(dst=Temp(name='v', ctx=Ctx.STORE), src=mref)
+    m2 = m.subst(Temp(name='i'), Temp(name='j'))
+    # Original unchanged
+    assert m.src.offset.left.name == 'i'
+    # Replaced
+    assert m2.src.offset.left.name == 'j'
+    assert m2.src.mem.name == 'arr'  # mem untouched
+
+
 # ============================================================
 # irhelper.qsym2var tests
 # ============================================================

@@ -14,6 +14,20 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
+def _replace_in_list(lst, old, new):
+    try:
+        lst[lst.index(old)] = new
+    except ValueError:
+        pass
+
+
+def _replace_in_deque(dq, old, new):
+    for i in range(len(dq)):
+        if dq[i] is old:
+            dq[i] = new
+            return
+
+
 class CopyCollector(IrVisitor):
     def __init__(self, copies):
         self.copies = copies
@@ -89,17 +103,23 @@ class CopyOpt(object):
         for u in uses:
             qname = tuple(s.name for s in target)
             olds = self._find_old_use(scope, u, qname)
-            for old in olds:
-                new = orig.model_copy(deep=True) if orig else copy_stm.src.model_copy(deep=True)
-                udupdater.update(u, None)
-                u.replace(old, new)
-                if (isinstance(u, Move) and
-                        isinstance(u.dst, IrVariable) and
-                        isinstance(u.src, IrVariable) and
-                        u.src.qualified_name == u.dst.qualified_name):
-                    scope.find_block(u.block).stms.remove(u)
+            if not olds:
+                continue
+            new = orig.model_copy(deep=True) if orig else copy_stm.src.model_copy(deep=True)
+            new_u = u.subst(olds[0], new)
+            if new_u is not u:
+                udupdater.update(u, new_u)
+                scope.find_block(u.block).replace_stm(u, new_u)
+                _replace_in_list(copies, u, new_u)
+                _replace_in_deque(worklist, u, new_u)
+                if (isinstance(new_u, Move) and
+                        isinstance(new_u.dst, IrVariable) and
+                        isinstance(new_u.src, IrVariable) and
+                        new_u.src.qualified_name == new_u.dst.qualified_name):
+                    scope.find_block(new_u.block).stms.remove(new_u)
+                    udupdater.update(new_u, None)
                     continue
-                udupdater.update(None, u)
+                u = new_u
             if isinstance(u, (Phi, UPhi, LPhi)):
                 qsyms = [qualified_symbols(arg, self.scope) for arg in u.args
                         if isinstance(arg, IrVariable) and arg.name != u.var.name]
