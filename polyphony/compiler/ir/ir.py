@@ -1108,15 +1108,14 @@ class Phi(IrStm):
         self.args.pop(idx)
 
     def reorder_args(self, indices):
-        """Reorder args and ps by the given index sequence."""
+        """Reorder args and ps by the given index sequence. Returns a new Phi."""
         args = []
         ps = []
         for idx in indices:
             assert 0 <= idx < len(self.args)
             args.append(self.args[idx])
             ps.append(self.ps[idx])
-        object.__setattr__(self, 'args', args)
-        object.__setattr__(self, 'ps', ps)
+        return self.model_copy(update={'args': args, 'ps': ps})
 
 
 class UPhi(Phi):

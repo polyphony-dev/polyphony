@@ -924,7 +924,7 @@ def test_phi_reorder_args():
     blk3 = make_block()
     p.args.extend([a1, a2, a3])
     p.ps.extend([blk1, blk2, blk3])
-    p.reorder_args([2, 0, 1])
+    p = p.reorder_args([2, 0, 1])
     assert p.args[0] is a3
     assert p.args[1] is a1
     assert p.args[2] is a2
