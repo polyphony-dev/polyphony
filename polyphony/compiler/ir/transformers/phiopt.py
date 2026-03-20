@@ -37,9 +37,12 @@ class PHIInlining(object):
                         new_args.append(arg)
                         new_ps.append(p)
                 logger.debug('old ' + str(phi))
-                object.__setattr__(phi, 'args', new_args)
-                object.__setattr__(phi, 'ps', new_ps)
-                logger.debug('new ' + str(phi))
+                new_phi = phi.model_copy(update={'args': new_args, 'ps': new_ps})
+                idx = blk.stms.index(phi)
+                blk.stms[idx] = new_phi
+                phi_var_sym = qualified_symbols(phi.var, scope)[-1]
+                phis[phi_var_sym] = new_phi
+                logger.debug('new ' + str(new_phi))
 
 
 class LPHIRemover(object):

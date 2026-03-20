@@ -98,7 +98,8 @@ class SSATransformerBase(object):
             blk.stms.remove(phi)
         phis = sorted(phis, key=lambda p: qualified_symbols(p.var, self.scope), reverse=True)
         for phi in phis:
-            object.__setattr__(phi, 'block', blk.bid)
+            if phi.block != blk.bid:
+                phi = phi.model_copy(update={'block': blk.bid})
             blk.stms.insert(0, phi)
 
     def _insert_phi(self):
@@ -120,7 +121,8 @@ class SSATransformerBase(object):
                     phi_symbols[df].append(qsym)
                     var = self._qsym_to_var(qsym, Ctx.STORE)
                     phi = self._new_phi(var, df)
-                    object.__setattr__(phi, 'block', df.bid)
+                    if phi.block != df.bid:
+                        phi = phi.model_copy(update={'block': df.bid})
                     df.stms.insert(0, phi)
                     if qsym not in self.usedef.get_qsyms_defined_at(df):
                         def_blocks.add(df)
@@ -136,7 +138,7 @@ class SSATransformerBase(object):
         defs = self.usedef.get_stms_defining(sym)
         for d in defs:
             if d.block == df.preds[0].bid:
-                object.__setattr__(phi, 'loc', d.loc)
+                phi = phi.model_copy(update={'loc': d.loc})
                 break
         return phi
 
@@ -184,6 +186,8 @@ class SSATransformerBase(object):
                 new_name = var.name + '#' + str(version)
                 var_sym = qsyms[-1]
                 new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
+                # Note: mutating var.name in-place is required here because usedef
+                # tracks references to this var object. model_copy would break those references.
                 object.__setattr__(var, 'name', new_name)
 
     def _rename_rec(self, block, count, stack):

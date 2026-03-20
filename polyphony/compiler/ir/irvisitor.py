@@ -23,8 +23,10 @@ class IrVisitor(object):
         pass
 
     def _process_block(self, block):
-        for stm in block.stms:
-            self.visit(stm)
+        for i, stm in enumerate(block.stms):
+            result = self.visit(stm)
+            if isinstance(result, IrStm) and result is not stm:
+                block.stms[i] = result
         if block.path_exp:
             self.visit(block.path_exp)
 
@@ -175,8 +177,7 @@ class IrTransformer(IrVisitor):
             block.stms = block.stms[:-1] + self.new_stms + [block.stms[-1]]
         else:
             block.stms.extend(self.new_stms)
-        for stm in block.stms:
-            object.__setattr__(stm, 'block', block.bid)
+        block.stms = [stm.model_copy(update={'block': block.bid}) if stm.block != block.bid else stm for stm in block.stms]
 
     # --- IrExp (return transformed node, functional style) ---
 
@@ -276,50 +277,72 @@ class IrTransformer(IrVisitor):
             return ir
         return ir.model_copy(update={'repeat': new_repeat, 'items': new_items})
 
-    # --- IrStm (append to new_stms, IrStm is still mutable) ---
+    # --- IrStm (append to new_stms, immutable style via model_copy) ---
 
     def visit_Expr(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         self.new_stms.append(ir)
 
     def visit_CExpr(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
+        new_cond = self.visit(ir.cond)
+        if new_cond is not ir.cond:
+            ir = ir.model_copy(update={'cond': new_cond})
         self.visit_Expr(ir)
 
     def visit_Move(self, ir):
-        object.__setattr__(ir, 'src', self.visit(ir.src))
-        object.__setattr__(ir, 'dst', self.visit(ir.dst))
+        new_src = self.visit(ir.src)
+        new_dst = self.visit(ir.dst)
+        updates = {}
+        if new_src is not ir.src:
+            updates['src'] = new_src
+        if new_dst is not ir.dst:
+            updates['dst'] = new_dst
+        if updates:
+            ir = ir.model_copy(update=updates)
         self.new_stms.append(ir)
 
     def visit_CMove(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
+        new_cond = self.visit(ir.cond)
+        if new_cond is not ir.cond:
+            ir = ir.model_copy(update={'cond': new_cond})
         self.visit_Move(ir)
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         self.new_stms.append(ir)
 
     def visit_MCJump(self, ir):
-        for i, cond in enumerate(ir.conds):
-            ir.conds[i] = self.visit(cond)
+        new_conds = [self.visit(cond) for cond in ir.conds]
+        if any(nc is not oc for nc, oc in zip(new_conds, ir.conds)):
+            ir = ir.model_copy(update={'conds': new_conds})
         self.new_stms.append(ir)
 
     def visit_Jump(self, ir):
         self.new_stms.append(ir)
 
     def visit_Ret(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         self.new_stms.append(ir)
 
     def visit_Phi(self, ir):
-        object.__setattr__(ir, 'var', self.visit(ir.var))
-        for i, arg in enumerate(ir.args):
-            if arg:
-                ir.args[i] = self.visit(arg)
-        if ir.ps:
-            for i, p in enumerate(ir.ps):
-                if p:
-                    ir.ps[i] = self.visit(p)
+        new_var = self.visit(ir.var)
+        new_args = [self.visit(arg) if arg else arg for arg in ir.args]
+        new_ps = [self.visit(p) if p else p for p in ir.ps] if ir.ps else ir.ps
+        updates = {}
+        if new_var is not ir.var:
+            updates['var'] = new_var
+        if any(na is not oa for na, oa in zip(new_args, ir.args)):
+            updates['args'] = new_args
+        if new_ps is not ir.ps and any(np_ is not op for np_, op in zip(new_ps, ir.ps)):
+            updates['ps'] = new_ps
+        if updates:
+            ir = ir.model_copy(update=updates)
         self.new_stms.append(ir)
 
     def visit_UPhi(self, ir):

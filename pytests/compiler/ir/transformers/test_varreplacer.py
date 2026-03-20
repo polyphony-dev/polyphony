@@ -14,7 +14,8 @@ from pytests.compiler.base import setup_test
 
 def test_visit_with_context_new_ir_expr():
     """VarReplacer.visit_with_context handles new IR Expr nodes
-    directly since ExprType.expr now holds new IR Expr."""
+    directly since ExprType.expr now holds new IR Expr.
+    VarReplacer mutates stms in-place via object.__setattr__."""
     setup_test()
     scope = Scope.create(None, 'S', set(), 0)
     scope.add_sym('x', tags=set(), typ=Type.int(8))
@@ -27,13 +28,14 @@ def test_visit_with_context_new_ir_expr():
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit_with_context(scope, new_expr)
 
-    # The new IR Expr should have x replaced with Const(5)
+    # The Expr should have x replaced with Const(5) in-place
     assert isinstance(new_expr.exp, Const)
     assert new_expr.exp.value == 5
 
 
 def test_visit_with_context_new_ir():
-    """VarReplacer.visit_with_context should handle new IR stms normally."""
+    """VarReplacer.visit_with_context should handle new IR stms normally.
+    VarReplacer mutates stms in-place via object.__setattr__."""
     setup_test()
     scope = Scope.create(None, 'S', set(), 0)
     scope.add_sym('x', tags=set(), typ=Type.int(8))
@@ -170,9 +172,11 @@ def test_visit_move_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(mv)
-    assert isinstance(mv.src, Const)
-    assert mv.src.value == 5
-    assert mv in replacer.replaces
+    # model_copy creates a new stm in the block
+    new_mv = blk.stms[0]
+    assert isinstance(new_mv.src, Const)
+    assert new_mv.src.value == 5
+    assert new_mv in replacer.replaces
 
 
 def test_visit_expr_stm():
@@ -183,22 +187,24 @@ def test_visit_expr_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(expr_stm)
-    assert isinstance(expr_stm.exp, Const)
-    assert expr_stm in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.exp, Const)
+    assert new_stm in replacer.replaces
 
 
 def test_visit_cexpr_stm():
     """VarReplacer should replace in CExpr (cond + exp)."""
     scope, blk = _make_scope_and_block()
-    # Put x in exp so it gets tracked in replaces (visit_CExpr resets replaced before visit_Expr)
+    # Put x in exp so it gets tracked in replaces
     cexpr = CExpr(cond=Const(value=1), exp=Temp(name='x'), block=blk.bid)
     blk.stms = [cexpr]
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(cexpr)
-    assert isinstance(cexpr.exp, Const)
-    assert cexpr.exp.value == 5
-    assert cexpr in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.exp, Const)
+    assert new_stm.exp.value == 5
+    assert new_stm in replacer.replaces
 
 
 def test_visit_cexpr_cond_replacement():
@@ -209,8 +215,9 @@ def test_visit_cexpr_cond_replacement():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(cexpr)
-    assert isinstance(cexpr.cond, Const)
-    assert cexpr.cond.value == 5
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.cond, Const)
+    assert new_stm.cond.value == 5
 
 
 def test_visit_cmove_stm():
@@ -223,9 +230,10 @@ def test_visit_cmove_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(cmove)
-    assert isinstance(cmove.src, Const)
-    assert cmove.src.value == 5
-    assert cmove in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.src, Const)
+    assert new_stm.src.value == 5
+    assert new_stm in replacer.replaces
 
 
 def test_visit_cmove_cond_replacement():
@@ -237,8 +245,9 @@ def test_visit_cmove_cond_replacement():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(cmove)
-    assert isinstance(cmove.cond, Const)
-    assert cmove.cond.value == 5
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.cond, Const)
+    assert new_stm.cond.value == 5
 
 
 def test_visit_cjump_stm():
@@ -251,9 +260,10 @@ def test_visit_cjump_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(cjump)
-    assert isinstance(cjump.exp, Const)
-    assert cjump.exp.value == 5
-    assert cjump in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.exp, Const)
+    assert new_stm.exp.value == 5
+    assert new_stm in replacer.replaces
 
 
 def test_visit_mcjump_stm():
@@ -267,9 +277,10 @@ def test_visit_mcjump_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(mcjump)
-    assert isinstance(mcjump.conds[0], Const)
-    assert mcjump.conds[0].value == 5
-    assert mcjump in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.conds[0], Const)
+    assert new_stm.conds[0].value == 5
+    assert new_stm in replacer.replaces
 
 
 def test_visit_phi_stm():
@@ -282,11 +293,12 @@ def test_visit_phi_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(phi)
-    assert isinstance(phi.args[0], Const)
-    assert phi.args[0].value == 5
-    assert isinstance(phi.ps[1], Const)
-    assert phi.ps[1].value == 5
-    assert phi in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.args[0], Const)
+    assert new_stm.args[0].value == 5
+    assert isinstance(new_stm.ps[1], Const)
+    assert new_stm.ps[1].value == 5
+    assert new_stm in replacer.replaces
 
 
 def test_visit_uphi_stm():
@@ -299,8 +311,9 @@ def test_visit_uphi_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(uphi)
-    assert isinstance(uphi.args[0], Const)
-    assert uphi in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.args[0], Const)
+    assert new_stm in replacer.replaces
 
 
 def test_visit_lphi_stm():
@@ -313,8 +326,9 @@ def test_visit_lphi_stm():
 
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
     replacer.visit(lphi)
-    assert isinstance(lphi.args[0], Const)
-    assert lphi in replacer.replaces
+    new_stm = blk.stms[0]
+    assert isinstance(new_stm.args[0], Const)
+    assert new_stm in replacer.replaces
 
 
 def test_visit_jump_and_ret():
@@ -349,8 +363,9 @@ def test_replace_uses_classmethod():
 
     replaces = VarReplacer.replace_uses(scope, Temp(name='x'), Const(value=99))
     assert len(replaces) >= 1
-    assert isinstance(mv.src, Const)
-    assert mv.src.value == 99
+    new_mv = blk.stms[0]
+    assert isinstance(new_mv.src, Const)
+    assert new_mv.src.value == 99
 
 
 def test_move_with_enable_dst():
@@ -361,7 +376,8 @@ def test_move_with_enable_dst():
 
     replacer = VarReplacer(scope, Temp(name='x'), Temp(name='z'), None, enable_dst=True)
     replacer.visit(mv)
-    assert mv.dst.name == 'z'
+    new_mv = blk.stms[0]
+    assert new_mv.dst.name == 'z'
 
 
 def test_phi_with_enable_dst():
@@ -374,7 +390,8 @@ def test_phi_with_enable_dst():
 
     replacer = VarReplacer(scope, Temp(name='x'), Temp(name='z'), None, enable_dst=True)
     replacer.visit(phi)
-    assert phi.var.name == 'z'
+    new_phi = blk.stms[0]
+    assert new_phi.var.name == 'z'
 
 
 def test_no_change_returns_same_object():

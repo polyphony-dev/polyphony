@@ -175,25 +175,38 @@ class EarlyQuadrupleMaker(IrTransformer):
     def visit_Expr(self, ir):
         if isinstance(ir.exp, (Call, SysCall, MStore)):
             self.suppress_converting = True
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         self.new_stms.append(ir)
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         assert (isinstance(ir.exp, Temp) and self.scope.find_sym(ir.exp.name).is_condition()) or isinstance(ir.exp, Const)
         self.new_stms.append(ir)
 
     def visit_MCJump(self, ir):
-        for i in range(len(ir.conds)):
-            ir.conds[i] = self.visit(ir.conds[i])
-            assert isinstance(ir.conds[i], (Temp, Const))
+        new_conds = []
+        changed = False
+        for cond in ir.conds:
+            new_cond = self.visit(cond)
+            assert isinstance(new_cond, (Temp, Const))
+            if new_cond is not cond:
+                changed = True
+            new_conds.append(new_cond)
+        if changed:
+            ir = ir.model_copy(update={'conds': new_conds})
         self.new_stms.append(ir)
 
     def visit_Move(self, ir):
         if isinstance(ir.src, (BinOp, RelOp, Call, SysCall, New, MRef)):
             self.suppress_converting = True
-        object.__setattr__(ir, 'src', self.visit(ir.src))
-        object.__setattr__(ir, 'dst', self.visit(ir.dst))
+        new_src = self.visit(ir.src)
+        new_dst = self.visit(ir.dst)
+        if new_src is not ir.src or new_dst is not ir.dst:
+            ir = ir.model_copy(update={'src': new_src, 'dst': new_dst})
         assert isinstance(ir.src, (Temp, Attr, Const, UnOp,
                                    BinOp, RelOp, MRef, Call,
                                    New, SysCall, Array))

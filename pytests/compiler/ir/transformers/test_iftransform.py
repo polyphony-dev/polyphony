@@ -313,6 +313,8 @@ def test_ifcond_two_conds():
 
     IfCondTransformer().process(scope)
 
+    # The MCJump may have been replaced via model_copy; get the current one from block
+    mj = blk1.stms[-1]
     # The MCJump should now have 2 conditions
     assert len(mj.conds) == 2
     # First cond is original Temp (stays as Temp)
@@ -335,6 +337,7 @@ def test_ifcond_three_conds():
 
     IfCondTransformer().process(scope)
 
+    mj = blk1.stms[-1]
     assert len(mj.conds) == 3
     # First cond stays as Temp
     assert isinstance(mj.conds[0], Temp)
@@ -355,6 +358,7 @@ def test_ifcond_four_conds():
 
     IfCondTransformer().process(scope)
 
+    mj = blk1.stms[-1]
     assert len(mj.conds) == 4
     # All conds should be Temp references
     for c in mj.conds:

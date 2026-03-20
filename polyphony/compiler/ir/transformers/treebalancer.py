@@ -53,10 +53,13 @@ class TreeBalancer:
     def _process_Block(self, block):
         if block not in self.done_Blocks:
             self.block = block
+            new_stms = []
             for stm in block.stms:
                 self.current_stm = stm
-                self.b2p.visit(stm)
-                self.p2b.visit(stm)
+                stm = self.b2p.visit(stm)
+                stm = self.p2b.visit(stm)
+                new_stms.append(stm)
+            block.stms = new_stms
 
             self.done_Blocks.append(block)
             for succ in block.succs:
@@ -123,14 +126,25 @@ class BINOP2PLURALOP:
         return ir
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
+        return ir
 
     def visit_Jump(self, ir):
-        pass
+        return ir
 
     def visit_Move(self, ir):
-        object.__setattr__(ir, 'src', self.visit(ir.src))
-        object.__setattr__(ir, 'dst', self.visit(ir.dst))
+        update = {}
+        new_src = self.visit(ir.src)
+        if new_src is not ir.src:
+            update['src'] = new_src
+        new_dst = self.visit(ir.dst)
+        if new_dst is not ir.dst:
+            update['dst'] = new_dst
+        if update:
+            ir = ir.model_copy(update=update)
+        return ir
 
     slots = {
         BinOp.__name__: visit_BinOp,
@@ -218,14 +232,25 @@ class PLURALOP2BINOP:
         return ir
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
+        return ir
 
     def visit_Jump(self, ir):
-        pass
+        return ir
 
     def visit_Move(self, ir):
-        object.__setattr__(ir, 'src', self.visit(ir.src))
-        object.__setattr__(ir, 'dst', self.visit(ir.dst))
+        update = {}
+        new_src = self.visit(ir.src)
+        if new_src is not ir.src:
+            update['src'] = new_src
+        new_dst = self.visit(ir.dst)
+        if new_dst is not ir.dst:
+            update['dst'] = new_dst
+        if update:
+            ir = ir.model_copy(update=update)
+        return ir
 
     slots = {
         PLURALOP.__name__: visit_PolyOp,

@@ -49,18 +49,25 @@ class TupleTransformer(IrTransformer):
                     mvs = self._unpack(self._make_temps(tempsyms, Ctx.STORE), ir.src.items)
                     mvs.extend(self._unpack(ir.dst.items, self._make_temps(tempsyms, Ctx.LOAD)))
                 for mv in mvs:
-                    object.__setattr__(mv, 'loc', ir.loc)
+                    mv = mv.model_copy(update={'loc': ir.loc})
                     self.new_stms.append(mv)
                 return
             elif isinstance(ir.src, IrVariable) and irexp_type(ir.src, self.scope).is_tuple():
                 mvs = self._unpack(ir.dst.items, self._make_mrefs(ir.src, len(ir.dst.items)))
                 for mv in mvs:
-                    object.__setattr__(mv, 'loc', ir.loc)
+                    mv = mv.model_copy(update={'loc': ir.loc})
                     self.new_stms.append(mv)
                 return
             elif isinstance(ir.src, Call) and self.scope.is_testbench():
                 raise NotImplementedError('Return of sequence type value is not implemented')
         else:
-            object.__setattr__(ir, 'src', self.visit(ir.src))
-            object.__setattr__(ir, 'dst', self.visit(ir.dst))
+            new_src = self.visit(ir.src)
+            new_dst = self.visit(ir.dst)
+            updates = {}
+            if new_src is not ir.src:
+                updates['src'] = new_src
+            if new_dst is not ir.dst:
+                updates['dst'] = new_dst
+            if updates:
+                ir = ir.model_copy(update=updates)
         self.new_stms.append(ir)

@@ -139,7 +139,13 @@ class FlippedTransformer(TypePropagation):
         super().process(scope)
 
     def visit_SysCall(self, ir):
-        object.__setattr__(ir, 'args', self._normalize_syscall_args(ir.name, ir.args, ir.kwargs))
+        new_args = self._normalize_syscall_args(ir.name, ir.args, ir.kwargs)
+        if new_args is not ir.args:
+            ir = ir.model_copy(update={'args': new_args})
+            if isinstance(self.current_stm, Move):
+                object.__setattr__(self.current_stm, 'src', ir)
+            elif isinstance(self.current_stm, Expr):
+                object.__setattr__(self.current_stm, 'exp', ir)
         for _, arg in ir.args:
             self.visit(arg)
         sym_t = irexp_type(ir, self.scope)

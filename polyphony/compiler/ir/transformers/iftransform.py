@@ -114,4 +114,5 @@ class IfCondTransformer(object):
                 block.stms.insert(insert_pos, mv)
                 insert_pos += 1
                 new_conds.append(Temp(name=new_sym.name))
-        object.__setattr__(mj, 'conds', new_conds)
+        new_mj = mj.model_copy(update={'conds': new_conds})
+        block.stms[-1] = new_mj

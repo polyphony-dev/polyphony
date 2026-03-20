@@ -188,7 +188,7 @@ class TestBINOP2PLURALOP:
         blk = make_block()
         j = Jump(target=blk.bid)
         result = self.visitor.visit(j)
-        assert result is None
+        assert result is j
 
     # --- BinOp: frozen model prevents direct assignment ---
     def test_visit_BinOp_Add_raises_frozen(self):
@@ -426,7 +426,7 @@ class TestPLURALOP2BINOP:
         blk = make_block()
         j = Jump(target=blk.bid)
         result = self.visitor.visit(j)
-        assert result is None
+        assert result is j
 
     # --- detectop ---
     def test_detectop_add_both_true(self):
@@ -541,7 +541,7 @@ class TestPLURALOP2BINOP:
         p.values = [(_temp('a'), True)]
         mv = Move(dst=_temp('x'), src=_const(0))
         _inject_src(mv, p)
-        self.visitor.visit(mv)
+        mv = self.visitor.visit(mv)
         assert isinstance(mv.src, Temp)
         assert mv.src.name == 'a'
 
@@ -552,7 +552,7 @@ class TestPLURALOP2BINOP:
         p.values = [(_const(1), True)]
         cj = CJump(exp=_const(0), true=blk_t.bid, false=blk_f.bid)
         _inject_exp(cj, p)
-        self.visitor.visit(cj)
+        cj = self.visitor.visit(cj)
         assert isinstance(cj.exp, Const)
 
     def test_visit_Move_with_pluralop_multi_hits_BINOP(self):

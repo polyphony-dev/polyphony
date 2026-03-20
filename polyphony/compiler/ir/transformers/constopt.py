@@ -10,7 +10,7 @@ from ..ir import (
     Const, Temp, Attr, UnOp, BinOp, RelOp, CondOp, PolyOp,
     Call, SysCall, New, MRef, MStore, Array,
     Move, CMove, Expr, CExpr, CJump, MCJump, Jump,
-    IrExp, IrVariable, IrNameExp, IrCallable, Phi, UPhi, LPhi,
+    IrExp, IrStm, IrVariable, IrNameExp, IrCallable, Phi, UPhi, LPhi,
     Ctx,
 )
 from ..irvisitor import IrVisitor, IrTransformer
@@ -160,35 +160,75 @@ class ConstantOptBase(IrVisitor):
         return ir
 
     def visit_Expr(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
+        return ir
+
+    def _replace_in_block(self, old_ir, new_ir):
+        """Replace old_ir with new_ir in block.stms."""
+        blk = self.scope.find_block(old_ir.block)
+        blk.stms[blk.stms.index(old_ir)] = new_ir
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            new_ir = ir.model_copy(update={'exp': new_exp})
+            self._replace_in_block(ir, new_ir)
+            ir = new_ir
         if isinstance(ir.exp, Const):
             self._process_unconditional_jump(ir, [])
+        return None
 
     def visit_MCJump(self, ir):
-        object.__setattr__(ir, 'conds', [self.visit(cond) for cond in ir.conds])
+        new_conds = [self.visit(cond) for cond in ir.conds]
+        if any(nc is not oc for nc, oc in zip(new_conds, ir.conds)):
+            new_ir = ir.model_copy(update={'conds': new_conds})
+            self._replace_in_block(ir, new_ir)
+            ir = new_ir
         conds = [c.value for c in ir.conds if isinstance(c, Const)]
         if len(conds) == len(ir.conds) and conds.count(1) == 1:
             self._process_unconditional_jump(ir, [], conds)
+        return None
 
     def visit_Jump(self, ir):
         pass
 
     def visit_Ret(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            return ir.model_copy(update={'exp': new_exp})
+        return None
 
     def visit_Move(self, ir):
-        object.__setattr__(ir, 'src', self.visit(ir.src))
+        new_src = self.visit(ir.src)
+        if new_src is not ir.src:
+            return ir.model_copy(update={'src': new_src})
+        return None
 
     def visit_CExpr(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
-        self.visit_Expr(ir)
+        new_cond = self.visit(ir.cond)
+        new_exp = self.visit(ir.exp)
+        updates = {}
+        if new_cond is not ir.cond:
+            updates['cond'] = new_cond
+        if new_exp is not ir.exp:
+            updates['exp'] = new_exp
+        if updates:
+            return ir.model_copy(update=updates)
+        return None
 
     def visit_CMove(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
-        self.visit_Move(ir)
+        new_cond = self.visit(ir.cond)
+        new_src = self.visit(ir.src)
+        updates = {}
+        if new_cond is not ir.cond:
+            updates['cond'] = new_cond
+        if new_src is not ir.src:
+            updates['src'] = new_src
+        if updates:
+            return ir.model_copy(update=updates)
+        return None
 
     def visit_Phi(self, ir):
         pass
@@ -280,10 +320,14 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         super().process(scope)
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            new_ir = ir.model_copy(update={'exp': new_exp})
+            self._replace_in_block(ir, new_ir)
+            ir = new_ir
         if isinstance(ir.exp, Const):
             self._process_unconditional_jump(ir, [])
-            return
+            return None
         assert isinstance(ir.exp, IrVariable)
         exp_sym = qualified_symbols(ir.exp, self.scope)[-1]
         assert isinstance(exp_sym, Symbol)
@@ -291,8 +335,10 @@ class EarlyConstantOptNonSSA(ConstantOptBase):
         assert len(expdefs) == 1
         expdef = list(expdefs)[0]
         if isinstance(expdef, Move) and isinstance(expdef.src, Const):
-            object.__setattr__(ir, 'exp', expdef.src)
-            self._process_unconditional_jump(ir, [])
+            new_ir = ir.model_copy(update={'exp': expdef.src})
+            self._replace_in_block(ir, new_ir)
+            self._process_unconditional_jump(new_ir, [])
+        return None
 
     def visit_Temp(self, ir):
         sym = self.scope.find_sym(ir.name)
@@ -372,7 +418,12 @@ class ConstantOpt(ConstantOptBase):
             while stm in self.worklist:
                 self.worklist.remove(stm)
             self.current_stm = stm
-            self.visit(stm)
+            result = self.visit(stm)
+            if isinstance(result, IrStm) and result is not stm:
+                blk = scope.find_block(stm.block)
+                if stm in blk.stms:
+                    blk.stms[blk.stms.index(stm)] = result
+                stm = result
             if isinstance(stm, (Phi, UPhi, LPhi)):
                 for i, p in enumerate(stm.ps[:]):
                     stm.ps[i] = reduce_relexp(p)
@@ -405,7 +456,12 @@ class ConstantOpt(ConstantOptBase):
                 elif len(stm.args) == 0:
                     dead_stms.append(stm)
             elif isinstance(stm, (CMove, CExpr)):
-                object.__setattr__(stm, 'cond', reduce_relexp(stm.cond))
+                new_cond = reduce_relexp(stm.cond)
+                if new_cond is not stm.cond:
+                    blk = scope.find_block(stm.block)
+                    new_stm_copy = stm.model_copy(update={'cond': new_cond})
+                    blk.stms[blk.stms.index(stm)] = new_stm_copy
+                    stm = new_stm_copy
                 if isinstance(stm.cond, Const):
                     if stm.cond.value:
                         blk = scope.find_block(stm.block)
@@ -580,15 +636,26 @@ class ConstantOpt(ConstantOptBase):
                 ir.ps.pop(idx)
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            new_ir = ir.model_copy(update={'exp': new_exp})
+            self._replace_in_block(ir, new_ir)
+            ir = new_ir
         if isinstance(ir.exp, Const):
             self._process_unconditional_jump(ir, self.worklist)
+        return None
 
     def visit_MCJump(self, ir):
-        object.__setattr__(ir, 'conds', [self.visit(cond) for cond in ir.conds])
+        new_conds = [self.visit(cond) for cond in ir.conds]
+        if any(nc is not oc for nc, oc in zip(new_conds, ir.conds)):
+            new_ir = ir.model_copy(update={'conds': new_conds})
+            self._replace_in_block(ir, new_ir)
+            ir = new_ir
         conds = [c.value for c in ir.conds if isinstance(c, Const)]
         if len(conds) == len(ir.conds) and conds.count(1) == 1:
             self._process_unconditional_jump(ir, self.worklist, conds)
+        return None
+        return ir
 
 
 class StaticConstOpt(ConstantOptBase):
@@ -601,12 +668,14 @@ class StaticConstOpt(ConstantOptBase):
     def process_scopes(self, scopes):
         stms = []
         stm2scope = {}
+        stm2blk = {}
         dtrees = {}
         for s in scopes:
-            scope_stms = self._collect_stms(s)
-            for stm in scope_stms:
-                stm2scope[id(stm)] = s
-            stms.extend(scope_stms)
+            for blk in s.traverse_blocks():
+                for stm in blk.stms:
+                    stm2scope[id(stm)] = s
+                    stm2blk[id(stm)] = blk
+                stms.extend(blk.stms)
             Block.set_order(s.entry_block, 0)
             dtree = DominatorTreeBuilder(s).process()
             dtrees[s] = dtree
@@ -617,7 +686,10 @@ class StaticConstOpt(ConstantOptBase):
             stm_scope = stm2scope[id(stm)]
             self.scope = stm_scope
             self.dtree = dtrees[stm_scope]
-            self.visit(stm)
+            result = self.visit(stm)
+            if isinstance(result, IrStm) and result is not stm:
+                blk = stm2blk[id(stm)]
+                blk.stms[blk.stms.index(stm)] = result
         for sym, c in self.constant_table.items():
             sym.scope.constants[sym] = c
             origin_scope = env.origin_registry.scope_origin_of(sym.scope)
@@ -631,11 +703,7 @@ class StaticConstOpt(ConstantOptBase):
                 if sym.name in origin_scope.symbols:
                     origin_scope.constants[origin_scope.symbols[sym.name]] = c
 
-    def _collect_stms(self, scope):
-        stms = []
-        for blk in scope.traverse_blocks():
-            stms.extend(blk.stms)
-        return stms
+
 
     def visit_Temp(self, ir):
         sym = qualified_symbols(ir, self.scope)[-1]
@@ -669,7 +737,9 @@ class StaticConstOpt(ConstantOptBase):
                 self.constant_table[dst_sym] = src
             elif isinstance(src, Array):
                 self.constant_array_table[dst_sym] = src
-        object.__setattr__(ir, 'src', src)
+        if src is not ir.src:
+            ir = ir.model_copy(update={'src': src})
+        return ir
 
 
 class PolyadConstantFolding(object):

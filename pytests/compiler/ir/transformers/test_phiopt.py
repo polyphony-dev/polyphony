@@ -412,6 +412,10 @@ def test_phi_inlining_inlines_phi_arg():
 
     PHIInlining().process(scope)
 
+    # phi_b may have been replaced via model_copy; get the current version from block
+    blk = scope.find_block(phi_b.block)
+    phi_b = [s for s in blk.stms if isinstance(s, UPhi)][0]
+
     # After inlining: phi_b.args[0] (Temp('a')) is replaced by phi_a's args
     # phi_a has args=[Const(10), Const(20)], so phi_b should now have
     # args=[Const(10), Const(20), Const(30)]
