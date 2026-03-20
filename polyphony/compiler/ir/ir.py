@@ -95,10 +95,6 @@ class Ir(BaseModel):
         result, _ = self._subst_rec(self, old, new, set())
         return result
 
-    def replace(self, old, new):
-        """Replace all occurrences of old with new in this IR tree (in-place)."""
-        return self._replace_rec(self, old, new, set())
-
     def _subst_rec(self, ir, old, new, visited):
         """Return (new_ir, changed). Non-mutating replacement."""
         if isinstance(ir, Ir):
@@ -142,68 +138,6 @@ class Ir(BaseModel):
         if not changed:
             return seq, False
         return (tuple(new_elms) if isinstance(seq, tuple) else new_elms), True
-
-    def _replace_in_tuple(self, tpl, old, new, visited):
-        """Replace old with new inside a tuple, returning (new_tuple, changed)."""
-        new_items = list(tpl)
-        changed = False
-        for j, t_elm in enumerate(tpl):
-            if t_elm == old:
-                new_items[j] = new
-                changed = True
-            elif self._replace_rec(t_elm, old, new, visited):
-                changed = True
-        return tuple(new_items) if changed else tpl, changed
-
-    def _replace_rec(self, ir, old, new, visited):
-        obj_id = id(ir)
-        if obj_id in visited:
-            return False
-        visited.add(obj_id)
-        if isinstance(ir, Ir):
-            ret = False
-            for field_name in type(ir).model_fields:
-                v = getattr(ir, field_name, None)
-                if v == old:
-                    # Use object.__setattr__ to bypass frozen check on IrExp
-                    object.__setattr__(ir, field_name, new)
-                    ret = True
-                elif isinstance(v, tuple) and not hasattr(v, '_fields'):
-                    new_elms = list(v)
-                    changed = False
-                    for i, elm in enumerate(v):
-                        if elm == old:
-                            new_elms[i] = new
-                            changed = True
-                        elif isinstance(elm, tuple):
-                            new_tpl, inner_changed = self._replace_in_tuple(elm, old, new, visited)
-                            if inner_changed:
-                                new_elms[i] = new_tpl
-                                changed = True
-                        elif self._replace_rec(elm, old, new, visited):
-                            changed = True
-                    if changed:
-                        object.__setattr__(ir, field_name, tuple(new_elms))
-                        ret = True
-                elif self._replace_rec(v, old, new, visited):
-                    ret = True
-            return ret
-        elif isinstance(ir, list):
-            ret = False
-            for i, elm in enumerate(ir):
-                if elm == old:
-                    ir[i] = new
-                    ret = True
-                elif isinstance(elm, tuple):
-                    # Handle nested tuples (e.g. Phi.args: list[IrVariable])
-                    new_tpl, inner_changed = self._replace_in_tuple(elm, old, new, visited)
-                    if inner_changed:
-                        ir[i] = new_tpl
-                        ret = True
-                elif self._replace_rec(elm, old, new, visited):
-                    ret = True
-            return ret
-        return False
 
     def find_vars(self, qname):
         """Find all variables matching the given qualified name."""

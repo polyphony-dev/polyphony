@@ -275,55 +275,6 @@ def test_find_vars_in_call():
     assert len(vars) == 1
 
 
-# ============================================================
-# Ir.replace tests (including tuple traversal)
-# ============================================================
-
-def test_replace_simple_temp():
-    m = Move(dst=Temp(name='y', ctx=Ctx.STORE),
-             src=BinOp(op='Add', left=Temp(name='x'), right=Const(value=1)))
-    m.replace(Temp(name='x'), Temp(name='z'))
-    assert m.src.left.name == 'z'
-
-
-def test_replace_in_syscall_args():
-    """SysCall.args is list[tuple[str, IrExp]]. The replace method must
-    traverse tuples inside lists to find and replace variables."""
-    f = Temp(name='len', ctx=Ctx.CALL)
-    sc = SysCall(name='len', func=f, args=[('', Temp(name='d'))])
-    m = Move(dst=Temp(name='r', ctx=Ctx.STORE), src=sc)
-    m.replace(Temp(name='d'), Temp(name='data0'))
-    _, arg = m.src.args[0]
-    assert arg.name == 'data0'
-
-
-def test_replace_in_call_args():
-    """Call.args is list[tuple[str, IrExp]]. Same tuple traversal needed."""
-    f = Temp(name='func', ctx=Ctx.CALL)
-    c = Call(name='func', func=f, args=[('x', Temp(name='a')), ('y', Const(value=1))])
-    c.replace(Temp(name='a'), Temp(name='b'))
-    _, arg = c.args[0]
-    assert arg.name == 'b'
-
-
-def test_replace_in_nested_call_args():
-    """Replace inside nested expression within tuple args."""
-    f = Temp(name='f', ctx=Ctx.CALL)
-    inner = BinOp(op='Add', left=Temp(name='x'), right=Const(value=1))
-    c = Call(name='f', func=f, args=[('', inner)])
-    c.replace(Temp(name='x'), Temp(name='y'))
-    _, arg = c.args[0]
-    assert isinstance(arg, BinOp)
-    assert arg.left.name == 'y'
-
-
-def test_replace_no_match():
-    m = Move(dst=Temp(name='y', ctx=Ctx.STORE), src=Const(value=1))
-    result = m.replace(Temp(name='z'), Temp(name='w'))
-    assert not result
-    assert m.src == Const(value=1)
-
-
 # --- subst (non-mutating replace) ---
 
 

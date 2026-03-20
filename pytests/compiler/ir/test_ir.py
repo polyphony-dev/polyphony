@@ -730,19 +730,6 @@ def test_clone_with_list():
 
 
 # ============================================================
-# Ir.replace()
-# ============================================================
-
-def test_replace_in_move():
-    old_src = Const(1)
-    m = Move(Temp('a'), old_src)
-    new_src = Const(2)
-    result = m.replace(old_src, new_src)
-    assert result is True
-    assert m.src is new_src
-
-
-# ============================================================
 # find_vars / find_irs
 # ============================================================
 
