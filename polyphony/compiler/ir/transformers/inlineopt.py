@@ -192,8 +192,7 @@ class _StmsTransformer(_StmsVisitor):
             self.visit(stm)
         block.stms = self.new_stms
         self.new_stms = []
-        for stm in block.stms:
-            object.__setattr__(stm, 'block', block.bid)
+        block.stms = [stm.model_copy(update={'block': block.bid}) if stm.block != block.bid else stm for stm in block.stms]
 
     # --- IrExp (return transformed node, functional style) ---
 
@@ -290,45 +289,69 @@ class _StmsTransformer(_StmsVisitor):
     # --- IrStm (append to new_stms) ---
 
     def visit_Expr(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         self.new_stms.append(ir)
 
     def visit_CExpr(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
+        new_cond = self.visit(ir.cond)
+        if new_cond is not ir.cond:
+            ir = ir.model_copy(update={'cond': new_cond})
         self.visit_Expr(ir)
 
     def visit_Move(self, ir):
-        object.__setattr__(ir, 'src', self.visit(ir.src))
-        object.__setattr__(ir, 'dst', self.visit(ir.dst))
+        new_src = self.visit(ir.src)
+        new_dst = self.visit(ir.dst)
+        updates = {}
+        if new_src is not ir.src:
+            updates['src'] = new_src
+        if new_dst is not ir.dst:
+            updates['dst'] = new_dst
+        if updates:
+            ir = ir.model_copy(update=updates)
         self.new_stms.append(ir)
 
     def visit_CMove(self, ir):
-        object.__setattr__(ir, 'cond', self.visit(ir.cond))
+        new_cond = self.visit(ir.cond)
+        if new_cond is not ir.cond:
+            ir = ir.model_copy(update={'cond': new_cond})
         self.visit_Move(ir)
 
     def visit_CJump(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         self.new_stms.append(ir)
 
     def visit_MCJump(self, ir):
-        for i, cond in enumerate(ir.conds):
-            ir.conds[i] = self.visit(cond)
+        new_conds = [self.visit(cond) for cond in ir.conds]
+        if any(nc is not oc for nc, oc in zip(new_conds, ir.conds)):
+            ir = ir.model_copy(update={'conds': new_conds})
         self.new_stms.append(ir)
 
     def visit_Jump(self, ir):
         self.new_stms.append(ir)
 
     def visit_Ret(self, ir):
-        object.__setattr__(ir, 'exp', self.visit(ir.exp))
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
         self.new_stms.append(ir)
 
     def visit_Phi(self, ir):
-        object.__setattr__(ir, 'var', self.visit(ir.var))
-        for i, arg in enumerate(ir.args):
-            ir.args[i] = self.visit(arg)
-        if ir.ps:
-            for i, p in enumerate(ir.ps):
-                ir.ps[i] = self.visit(p)
+        new_var = self.visit(ir.var)
+        new_args = [self.visit(arg) if arg else arg for arg in ir.args]
+        new_ps = [self.visit(p) if p else p for p in ir.ps] if ir.ps else ir.ps
+        updates = {}
+        if new_var is not ir.var:
+            updates['var'] = new_var
+        if any(na is not oa for na, oa in zip(new_args, ir.args)):
+            updates['args'] = new_args
+        if new_ps is not ir.ps and any(np_ is not op for np_, op in zip(new_ps, ir.ps)):
+            updates['ps'] = new_ps
+        if updates:
+            ir = ir.model_copy(update=updates)
         self.new_stms.append(ir)
 
     def visit_UPhi(self, ir):
@@ -1040,7 +1063,9 @@ class InlineOpt(object):
                 IrReplacer(replace_map).process(c, c.entry_block)
 
             if callee.is_returnable():
-                self._replace_result_exp(call_stm, call, callee_clone)
+                new_call_stm = self._replace_result_exp(call_stm, call, callee_clone, caller)
+                if new_call_stm is not None:
+                    call_stm = new_call_stm
             if callee_clone.children:
                 self._merge_closure(callee_clone, caller)
                 can_continue = False
@@ -1071,7 +1096,7 @@ class InlineOpt(object):
                 return False
         return True
 
-    def _replace_result_exp(self, call_stm: IrStm, call: IrCallable, callee: CalleeScope):
+    def _replace_result_exp(self, call_stm: IrStm, call: IrCallable, callee: CalleeScope, caller: CallerScope):
         syms = callee.find_syms_by_tags({'return'})
         assert len(syms) == 1
         result_sym = syms.pop()
@@ -1080,10 +1105,14 @@ class InlineOpt(object):
         match call_stm:
             case Move() as move:
                 assert move.src == call
-                object.__setattr__(move, 'src', result)
+                new_stm = move.model_copy(update={'src': result})
             case Expr() as expr:
                 assert expr.exp == call
-                object.__setattr__(expr, 'exp', result)
+                new_stm = expr.model_copy(update={'exp': result})
+            case _:
+                return
+        blk = caller.find_block(call_stm.block)
+        return blk.replace_stm(call_stm, new_stm)
 
     def _merge_blocks(self, call_stm: IrStm, is_ctor: bool, callee_entry_blk: Block, callee_exit_blk: Block, caller: 'Scope' = None):
         caller_scope = caller if caller else self.scope
@@ -1100,6 +1129,7 @@ class InlineOpt(object):
         if is_ctor:
             idx += 1
         late_call_blk.stms = early_call_blk.stms[idx:]
+        # In-place block update required: calls list holds stm references
         for s in late_call_blk.stms:
             object.__setattr__(s, 'block', late_call_blk.bid)
         early_call_blk.stms = early_call_blk.stms[:idx]
@@ -1168,6 +1198,20 @@ class FlattenModule(IrVisitor):
             super().process(scope)
         return self._new_scopes
 
+    def _update_current_stm(self, new_call):
+        """Update current_stm's Call/SysCall field with the new model_copy'd call."""
+        from ..ir import Move, Expr
+        stm = self.current_stm
+        if isinstance(stm, Move):
+            new_stm = stm.model_copy(update={'src': new_call})
+        elif isinstance(stm, Expr):
+            new_stm = stm.model_copy(update={'exp': new_call})
+        else:
+            return
+        blk = self.scope.find_block(stm.block)
+        blk.replace_stm(stm, new_stm)
+        self.current_stm = new_stm
+
     def visit_Call(self, ir):
         callee_scope = self._get_callee_scope(ir)
         if (callee_scope.is_method() and
@@ -1184,15 +1228,17 @@ class FlattenModule(IrVisitor):
                 new_worker.parent.register_worker(new_worker)
                 assert self.scope.parent.is_module()
                 new_func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.CALL)
-                object.__setattr__(ir, 'func', new_func)
-                object.__setattr__(ir, 'name', new_func.name)
-                ir.args[0] = ('', new_arg)
+                new_args = list(ir.args)
+                new_args[0] = ('', new_arg)
+                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name, 'args': new_args})
+                self._update_current_stm(ir)
             else:
                 assert self.scope.parent.is_module()
                 new_func = Attr(name='append_worker', exp=Temp(name='self'), attr='append_worker', ctx=Ctx.CALL)
-                object.__setattr__(ir, 'func', new_func)
-                object.__setattr__(ir, 'name', new_func.name)
-                ir.args[0] = (None, arg)
+                new_args = list(ir.args)
+                new_args[0] = (None, arg)
+                ir = ir.model_copy(update={'func': new_func, 'name': new_func.name, 'args': new_args})
+                self._update_current_stm(ir)
         elif (callee_scope.is_method() and
                 callee_scope.parent.is_port() and
                 callee_scope.base_name == 'assign' and
