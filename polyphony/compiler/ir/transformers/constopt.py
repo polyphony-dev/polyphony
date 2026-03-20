@@ -752,8 +752,9 @@ class PolyadConstantFolding(object):
 
     class _BinInlining(IrTransformer):
         def process(self, scope):
-            from ..analysis.usedef import UseDefDetector
+            from ..analysis.usedef import UseDefDetector, UseDefUpdater
             self.usedef = UseDefDetector().process(scope)
+            self.udupdater = UseDefUpdater(scope, self.usedef)
             super().process(scope)
 
         @staticmethod
@@ -780,8 +781,10 @@ class PolyadConstantFolding(object):
             usestms = self.usedef.get_stms_using(dst_sym)
             for usestm in usestms:
                 if self._can_inlining(usestm, ir):
-                    # TODO: convert to subst once usedef tracking supports stm replacement
-                    usestm.replace(Temp(name=ir.dst.name), ir.src)
+                    new_usestm = usestm.subst(Temp(name=ir.dst.name), ir.src)
+                    if new_usestm is not usestm:
+                        self.udupdater.update(usestm, new_usestm)
+                        self.scope.find_block(usestm.block).replace_stm(usestm, new_usestm)
 
     class _Bin2Poly(IrTransformer):
         def visit_BinOp(self, ir):

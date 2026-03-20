@@ -301,21 +301,24 @@ class ObjectTransformer(object):
             self.scope.find_block(defstm.block).stms.insert(idx, mv)
             self.seq_id_map[seq_sym.name] = seq_id.name
 
-            # TODO: convert to subst once usedef tracking supports stm replacement
+            udupdater = UseDefUpdater(self.scope, self.usedef)
             usestms = self.usedef.get_stms_using(seq_sym)
+            old_var = Temp(name=seq_sym.name)
+            new_var = Temp(name=seq_id.name)
             for usestm in usestms:
-                if isinstance(usestm, Move) and not isinstance(usestm.src, (MRef, SysCall)):
-                    usestm.replace(Temp(name=seq_sym.name), Temp(name=seq_id.name))
-                elif isinstance(usestm, CMove):
-                    cond_vars = usestm.cond.find_vars((seq_sym.name,))
-                    for v in cond_vars:
-                        usestm.cond.replace(v, Temp(name=seq_id.name))
-                elif isinstance(usestm, CExpr):
-                    cond_vars = usestm.cond.find_vars((seq_sym.name,))
-                    for v in cond_vars:
-                        usestm.cond.replace(v, Temp(name=seq_id.name))
-                elif isinstance(usestm, (LPhi, Phi)):
-                    usestm.replace(Temp(name=seq_sym.name), Temp(name=seq_id.name))
+                if isinstance(usestm, Move) and isinstance(usestm.src, (MRef, SysCall)):
+                    continue
+                if isinstance(usestm, (CMove, CExpr)):
+                    new_cond = usestm.cond.subst(old_var, new_var)
+                    if new_cond is not usestm.cond:
+                        new_usestm = usestm.model_copy(update={'cond': new_cond})
+                        udupdater.update(usestm, new_usestm)
+                        self.scope.find_block(usestm.block).replace_stm(usestm, new_usestm)
+                elif isinstance(usestm, (Move, LPhi, Phi)):
+                    new_usestm = usestm.subst(old_var, new_var)
+                    if new_usestm is not usestm:
+                        udupdater.update(usestm, new_usestm)
+                        self.scope.find_block(usestm.block).replace_stm(usestm, new_usestm)
 
     def _finalize_seq_ctor(self):
         """Change copy variable types to int16."""

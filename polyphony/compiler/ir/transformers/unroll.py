@@ -17,7 +17,7 @@ from ..loop import Loop
 from ..scope import Scope, NameReplacer
 from ..symbol import Symbol
 from ..types.type import Type
-from ..analysis.usedef import UseDefDetector
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger
@@ -55,6 +55,7 @@ class LoopUnroller(object):
     def process(self, scope):
         self.scope = scope
         self.usedef = UseDefDetector().process(scope)
+        self.udupdater = UseDefUpdater(scope, self.usedef)
         self.unrolled = False
         if self._unroll_loop_tree_leaf(scope.top_region()):
             # Re-order blocks
@@ -416,14 +417,19 @@ class LoopUnroller(object):
         return new_iv_map
 
     def _replace_outer_uses(self, loop, new_ivs, index, sym_map):
-        # TODO: convert to subst once usedef tracking supports stm replacement
         for u in loop.outer_uses:
-            usestms = self.usedef.get_stms_using(u)
+            usestms = list(self.usedef.get_stms_using(u))
             for ustm in usestms:
+                new_ustm = ustm
                 if u in new_ivs:
-                    ustm.replace(u.name, new_ivs[u][index].name)
+                    new_ustm = new_ustm.subst(
+                        Temp(name=u.name), Temp(name=new_ivs[u][index].name))
                 if u.name in sym_map:
-                    ustm.replace(u.name, sym_map[u.name].name)
+                    new_ustm = new_ustm.subst(
+                        Temp(name=u.name), Temp(name=sym_map[u.name].name))
+                if new_ustm is not ustm:
+                    self.udupdater.update(ustm, new_ustm)
+                    self.scope.find_block(ustm.block).replace_stm(ustm, new_ustm)
 
     def _remove_loop_condition(self, cond):
         PHICondRemover(cond).process(self.scope)
