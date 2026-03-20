@@ -86,7 +86,7 @@ class SchedulerImpl(object):
         self.node_latency_map = {}
         self.node_seq_latency_map = {}
         self.all_paths = []
-        self.res_extractor = None
+        self.res_extractor: 'ResourceExtractor | None' = None
 
     def schedule(self, scope, dfg):
         self.scope = scope
@@ -111,7 +111,7 @@ class SchedulerImpl(object):
                 if succs:
                     succs = unique(succs)
                     worklist.append((succs, nextprio))
-        longest_latency = self._schedule(dfg)
+        longest_latency = self._schedule(dfg)  # type: ignore[attr-defined]
         if longest_latency > CALL_MINIMUM_STEP:
             scope.asap_latency = longest_latency
         else:
@@ -179,6 +179,7 @@ class SchedulerImpl(object):
             return res.name
 
     def _get_earliest_res_free_time(self, node, time, latency):
+        assert self.res_extractor is not None
         resources = self.res_extractor.ops[node].keys()
         assert len(resources) <= 1
         if resources:
@@ -236,7 +237,7 @@ class SchedulerImpl(object):
                             sym = var
                         else:
                             sym = _qualified_symbols(var, self.scope)[-1]
-                        if sym.is_condition():
+                        if isinstance(sym, Symbol) and sym.is_condition():
                             self.node_latency_map[node] = (0, 0, 0)
                         else:
                             self.node_latency_map[node] = (1, 0, 1)
@@ -466,6 +467,7 @@ class PipelineScheduler(SchedulerImpl):
         return longest_latency
 
     def _make_conflict_res_table(self, nodes):
+        assert self.res_extractor is not None
         conflict_res_table = defaultdict(list)
         self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.mems)
         self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.ports)
@@ -523,6 +525,7 @@ class PipelineScheduler(SchedulerImpl):
         return induction_paths
 
     def _get_using_resources(self, node):
+        assert self.res_extractor is not None
         res = []
         if node in self.res_extractor.mems:
             res.extend(self.res_extractor.mems[node])
@@ -832,6 +835,7 @@ class ConflictGraphBuilder(object):
         for res, graph in cgraphs.items():
             assert not graph.edges
             accs = []
+            cnode = None
             for cnode in graph.get_nodes():
                 cnode.res = res
                 master_cgraph.add_node(cnode)
@@ -839,6 +843,7 @@ class ConflictGraphBuilder(object):
             if accs.count(accs[0]) == len(accs) and (accs[0] == ConflictNode.READ or accs[0] == ConflictNode.WRITE):
                 pass
             else:
+                assert cnode is not None
                 warn(cnode.items[0].tag, Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM, [res.orig_name()])
         logger.debug(master_cgraph.nodes)
         return master_cgraph
@@ -918,7 +923,7 @@ class ConflictGraphBuilder(object):
                     isinstance(stm1, CMove) or isinstance(stm1, CExpr)
                 ):
                     if stm0.cond == stm1.cond:
-                        vs = stm0.cond.find_irs(TEMP)
+                        vs = stm0.cond.find_irs(Temp)
                         syms = tuple(sorted([v.symbol for v in vs]))
                         merge_cnodes[syms].add(cn0)
                         merge_cnodes[syms].add(cn1)

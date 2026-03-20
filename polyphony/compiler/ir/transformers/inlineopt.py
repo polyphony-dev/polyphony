@@ -93,7 +93,7 @@ class AllVariableCollector(IrVisitor):
     def __init__(self):
         self.all_vars = []
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         super().process(scope)
         return self.all_vars
 
@@ -112,7 +112,7 @@ class NonlocalVariableCollector(IrVisitor):
     def __init__(self):
         self.nonlocal_vars = []
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         super().process(scope)
         return self.nonlocal_vars
 
@@ -131,7 +131,7 @@ class LocalVariableCollector(IrVisitor):
     def __init__(self):
         self.local_vars = []
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         super().process(scope)
         return self.local_vars
 
@@ -235,7 +235,7 @@ class ObjectHierarchyCopier(object):
             copies.extend([stm for stm in moves if self._is_object_copy(stm)])
         return copies
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         self.scope = scope
         copies = self._collect_object_copy()
         worklist = deque(copies)
@@ -892,7 +892,7 @@ class FlattenModule(IrVisitor):
         self.sub.append_worker(self.sub.worker, ...) => self.append_worker(self.worker, ...)
     """
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         self._new_scopes = []
         if scope.parent and scope.parent.is_module():
             super().process(scope)

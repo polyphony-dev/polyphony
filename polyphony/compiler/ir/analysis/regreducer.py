@@ -4,8 +4,9 @@ Tags variables that can be aliased (wires instead of registers).
 This is an analysis pass - reads IR and tags symbols.
 """
 from collections import deque
+from typing import cast
 from ..ir import (
-    IrVariable, Temp, Attr, Const,
+    IrNameExp, IrVariable, Temp, Attr, Const,
     Move, CMove, Expr, Call, SysCall, New,
     MRef, MStore, Array, Phi, UPhi,
 )
@@ -159,7 +160,7 @@ class AliasVarDetector(IrVisitor):
             if sched == 'timed':
                 pass
             else:
-                mem_sym = qualified_symbols(ir.src.mem, self.scope)[-1]
+                mem_sym = qualified_symbols(cast(IrNameExp, ir.src.mem), self.scope)[-1]
                 assert isinstance(mem_sym, Symbol)
                 stms = self.usedef.get_stms_using(mem_sym)
                 for stm in stms:

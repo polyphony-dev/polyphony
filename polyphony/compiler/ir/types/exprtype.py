@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class ExprType(ScopeType):
     name: str = field(init=False, default='expr')
-    expr: Expr
+    expr: Expr  # type: ignore[assignment]
 
     def can_assign(self, rhs_t):
         return self.name == rhs_t.name

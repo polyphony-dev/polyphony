@@ -1,5 +1,5 @@
 ﻿from __future__ import annotations
-from typing import ClassVar, TYPE_CHECKING
+from typing import Any, ClassVar, TYPE_CHECKING, TypeGuard
 from dataclasses import dataclass, fields
 from ...common.env import env
 
@@ -26,7 +26,7 @@ class Type:
     name: str
     explicit: bool
 
-    def __getattr__(self, name):
+    def __getattr__(self, name) -> Any:
         if name.startswith("is_"):
             typename = name[3:]
             return lambda: self.name == typename
@@ -73,7 +73,7 @@ class Type:
 
     @classmethod
     def any(cls):
-        return Type("any")
+        return Type("any", explicit=False)
 
     @classmethod
     def list(cls, elm_t, length=ANY_LENGTH, explicit=False) -> ListType:
@@ -170,7 +170,7 @@ class Type:
     def is_containable(self):
         return self.name in ("namespace", "class")
 
-    def has_scope(self):
+    def has_scope(self) -> bool:
         from .scopetype import ScopeType
 
         return isinstance(self, ScopeType)
@@ -178,13 +178,13 @@ class Type:
     def is_same(self, other):
         return self.name == other.name
 
-    def can_assign(self, from_t):
+    def can_assign(self, rhs_t):
         raise NotImplementedError()
 
     def is_compatible(self, other):
         return self.can_assign(other) and other.can_assign(self)
 
-    def propagate(self, src):
+    def propagate(self, rhs_t):
         raise NotImplementedError()
 
     @classmethod

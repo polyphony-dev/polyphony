@@ -1,4 +1,5 @@
 """Latency calculation for IR statements."""
+from typing import cast
 from ..ir import (
     Move, Expr, Const, Temp, Attr, Call, SysCall, New, Array,
     MRef, MStore, IrStm, Phi, UPhi, IrVariable,
@@ -89,30 +90,33 @@ def _get_latency(tag, scope=None):
                 if scope:
                     break
 
+    assert scope is not None
     if _is_move(tag):
-        dst_sym = _qualified_symbols(tag.dst, scope)[-1]
+        move_tag = cast(Move, tag)
+        dst_sym = _qualified_symbols(move_tag.dst, scope)[-1]
         assert isinstance(dst_sym, Symbol)
-        if _is_temp(tag.dst) and dst_sym.is_alias():
+        if _is_temp(move_tag.dst) and dst_sym.is_alias():
             return 0
-        elif _is_call(tag.src):
-            return _get_call_latency(tag.src, tag, scope)
-        elif _is_new(tag.src):
+        elif _is_call(move_tag.src):
+            return _get_call_latency(move_tag.src, move_tag, scope)
+        elif _is_new(move_tag.src):
             return 0
-        elif _is_temp(tag.src) and scope.find_sym(tag.src.name).typ.is_port():
+        elif _is_temp(move_tag.src) and (src_sym := scope.find_sym(cast(Temp, move_tag.src).name)) and src_sym.typ.is_port():
             return 0
-        elif _is_attr(tag.dst):
+        elif _is_attr(move_tag.dst):
             if dst_sym.is_alias():
                 return 0
             return UNIT_STEP * 1
-        elif _is_mref(tag.src):
+        elif _is_mref(move_tag.src):
             return UNIT_STEP
-        elif _is_temp(tag.dst) and dst_sym.typ.is_seq():
-            if _is_array(tag.src):
+        elif _is_temp(move_tag.dst) and dst_sym.typ.is_seq():
+            if _is_array(move_tag.src):
                 return UNIT_STEP
         if dst_sym.is_alias():
             return 0
     elif _is_expr(tag):
-        exp = tag.exp
+        expr_tag = cast(Expr, tag)
+        exp = expr_tag.exp
         if _is_call(exp):
             return _get_call_latency(exp, tag, scope)
         elif _is_syscall(exp):

@@ -41,10 +41,12 @@ class PortType(ScopeType):
         return val
 
     def port_owner(self):
-        if self.root_symbol.scope.is_ctor():
-            return self.root_symbol.scope.parent
+        root_sym = self.root_symbol
+        assert root_sym is not None
+        if root_sym.scope.is_ctor():
+            return root_sym.scope.parent
         else:
-            return self.root_symbol.scope
+            return root_sym.scope
 
     def __str__(self):
         if env.dev_debug_mode:

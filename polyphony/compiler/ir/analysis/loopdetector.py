@@ -1,4 +1,5 @@
-﻿from ..ir import CJump, Temp, Const, RelOp, LPhi, Move
+﻿from ..ir import CJump, IrNameExp, Phi, Temp, Const, RelOp, LPhi, Move
+from typing import cast
 from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from ..loop import Region, Loop
@@ -173,7 +174,8 @@ class LoopInfoSetter(object):
         if not isinstance(cjump, CJump):
             return
         cond_var = cjump.exp
-        cond_sym = qualified_symbols(cond_var, self.scope)[-1]
+        cond_sym = qualified_symbols(cast(IrNameExp, cond_var), self.scope)[-1]
+        assert isinstance(cond_sym, Symbol)
         loop.cond = cond_sym
         assert isinstance(cond_var, Temp)
         defs = self.usedef.get_stms_defining(cond_sym)
@@ -187,11 +189,11 @@ class LoopInfoSetter(object):
         if isinstance(loop_relexp.left, Temp) and (left_sym := self.scope.find_sym(loop_relexp.left.name)) and left_sym.is_induction():
             assert isinstance(loop_relexp.right, (Const, Temp))
             loop.counter = left_sym
-            loop.counter.add_tag('loop_counter')
+            left_sym.add_tag('loop_counter')
         elif isinstance(loop_relexp.right, Temp) and (right_sym := self.scope.find_sym(loop_relexp.right.name)) and right_sym.is_induction():
             assert isinstance(loop_relexp.left, (Const, Temp))
             loop.counter = right_sym
-            loop.counter.add_tag('loop_counter')
+            right_sym.add_tag('loop_counter')
         else:
             lphis = loop.head.collect_stms([LPhi])
             for lphi in lphis:
@@ -202,9 +204,11 @@ class LoopInfoSetter(object):
                     break
             else:
                 return
+        assert loop.counter is not None
         defs = self.usedef.get_stms_defining(loop.counter)
         assert len(defs) == 1
         counter_def = list(defs)[0]
+        assert isinstance(counter_def, Phi)
         assert len(counter_def.args) == 2
         loop.init = counter_def.args[0]
         loop.update = counter_def.args[1]

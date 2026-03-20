@@ -300,7 +300,7 @@ class HyperBlockBuilder(object):
             if blk in self._visited_heads:
                 continue
             branches, tails = self._find_branch_paths(blk)
-            if not branches:
+            if not branches or tails is None:
                 continue
             if all([tails[0] is b for b in tails[1:]]):
                 if len(blk.succs) == len(tails):

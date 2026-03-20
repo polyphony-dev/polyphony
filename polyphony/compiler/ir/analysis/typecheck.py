@@ -64,7 +64,7 @@ class TypeChecker(IrVisitor):
         l_t = self.visit(ir.left)
         r_t = self.visit(ir.right)
         if not l_t.is_compatible(r_t):
-            type_error(self.current_stm, Errors.INCOMPTIBLE_TYPES,
+            type_error(self.current_stm, Errors.INCOMPATIBLE_TYPES,
                        [l_t, r_t])
         return l_t
 
@@ -107,12 +107,12 @@ class TypeChecker(IrVisitor):
         elif name in env.all_scopes:
             syscall_scope = env.all_scopes[ir.name]
             arg_len = len(ir.args)
-            param_typs = tuple(syscall_scope.param_types())
+            param_typs = tuple(syscall_scope.param_types())  # type: ignore
             param_len = len(param_typs)
             # TODO:
             with_vararg = False
             self._check_param_number(arg_len, param_len, ir, name, with_vararg)
-            self._check_param_type(syscall_scope, param_typs, ir, name, with_vararg)
+            self._check_param_type(syscall_scope, param_typs, ir, name, with_vararg)  # type: ignore
         else:
             for _, arg in ir.args:
                 self.visit(arg)
@@ -308,7 +308,7 @@ class EarlyTypeChecker(IrVisitor):
         if ir.name in env.all_scopes:
             syscall_scope = env.all_scopes[ir.name]
             arg_len = len(ir.args)
-            param_typs = tuple(syscall_scope.param_types())
+            param_typs = tuple(syscall_scope.param_types())  # type: ignore
             param_len = len(param_typs)
             # TODO:
             with_vararg = False
@@ -552,4 +552,5 @@ class SynthesisParamChecker(object):
         if not sym_t.is_object():
             return False
         scp = sym_t.scope
-        return env.origin_registry.scope_origin_of(scp).name == 'polyphony.Channel'
+        origin = env.origin_registry.scope_origin_of(scp)
+        return origin is not None and origin.name == 'polyphony.Channel'

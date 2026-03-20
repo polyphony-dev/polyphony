@@ -239,6 +239,10 @@ class IrStm(Ir):
         if self.loc is None:
             object.__setattr__(self, 'loc', Loc('', 0))
 
+    @property
+    def lineno(self) -> int:
+        return self.loc.lineno
+
     def is_mem_read(self):
         return isinstance(self, Move) and isinstance(self.src, MRef)
 

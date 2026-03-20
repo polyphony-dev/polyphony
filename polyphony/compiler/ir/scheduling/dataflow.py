@@ -312,7 +312,7 @@ class DataFlowGraph(object):
         return filter(lambda n: n.priority == 0, self.nodes)
 
     def get_lowest_timing(self):
-        return max(lambda n: n.end, self.nodes)
+        return max(self.nodes, key=lambda n: n.end)
 
     def get_scheduled_nodes(self):
         node_dict = defaultdict(list)
@@ -342,7 +342,7 @@ class DataFlowGraph(object):
 
     def write_dot(self, name):
         try:
-            import pydot
+            import pydot  # type: ignore
         except ImportError:
             return
         # force disable debug mode to simplify the caption
@@ -398,7 +398,7 @@ class DataFlowGraph(object):
 
     def write_dot_pygraphviz(self, name):
         try:
-            import pygraphviz as pgv
+            import pygraphviz as pgv  # type: ignore
         except ImportError:
             return
         G = pgv.AGraph(directed=True, strict=False, landscape='false')
@@ -494,6 +494,7 @@ class RegArrayParallelizer(object):
             return False
         v1_rhs_const = self._get_const(v1_stm.src)
         v2_rhs_const = self._get_const(v2_stm.src)
+        assert v1_rhs_const is not None and v2_rhs_const is not None
         return v1_stm.src.op == v2_stm.src.op and v1_rhs_const.value != v2_rhs_const.value
 
     def is_inequality_value(self, offs1, offs2):
@@ -1016,6 +1017,7 @@ class DFGBuilder(object):
         backs = []
         for (n1, n2), (_, back) in dfg.edges.items():
             if back and (_is_move(n1.tag) or _is_phi(n1.tag)):
+                var_sym = None
                 if _is_move(n1.tag):
                     var_sym = _qualified_symbols(n1.tag.dst, self.scope)[-1]
                 elif _is_phi(n1.tag):

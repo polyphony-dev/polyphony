@@ -75,7 +75,7 @@ class FieldUseDefDetector(IrVisitor):
         super().__init__()
         self.table = FieldUseDefTable()
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         super().process(scope)
         return self.table
 
@@ -83,7 +83,7 @@ class FieldUseDefDetector(IrVisitor):
         for stm in block.stms:
             self.visit(stm)
 
-    def _visit_args(self, ir_args, ir_kwargs=None):
+    def _visit_args(self, ir_args, ir_kwargs=None):  # type: ignore[override]
         for _, arg in ir_args:
             self.visit(arg)
 

@@ -13,39 +13,41 @@ from pytests.compiler.base import setup_test
 
 
 def test_visit_with_context_new_ir_expr():
-    """VarReplacer.visit_with_context handles new IR Expr nodes
-    directly since ExprType.expr now holds new IR Expr.
-    VarReplacer mutates stms in-place via object.__setattr__."""
+    """VarReplacer.visit_with_context returns a new Expr with the replacement applied.
+    Orphan Exprs (no block) are not mutated in-place; a new stm is returned."""
     setup_test()
     scope = Scope.create(None, 'S', set(), 0)
     scope.add_sym('x', tags=set(), typ=Type.int(8))
     scope.add_sym('y', tags=set(), typ=Type.int(8))
 
-    # Create new IR Expr containing Temp('x')
+    # Create new IR Expr containing Temp('x') (orphan: no block)
     new_expr = Expr(exp=Temp(name='x'))
 
     # Create VarReplacer to replace x -> Const(5)
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
-    replacer.visit_with_context(scope, new_expr)
+    result = replacer.visit_with_context(scope, new_expr)
 
-    # The Expr should have x replaced with Const(5) in-place
-    assert isinstance(new_expr.exp, Const)
-    assert new_expr.exp.value == 5
+    # The returned Expr should have x replaced with Const(5)
+    assert result is not new_expr
+    assert isinstance(result.exp, Const)
+    assert result.exp.value == 5
+    # Original is unchanged (immutable)
+    assert isinstance(new_expr.exp, Temp)
 
 
 def test_visit_with_context_new_ir():
-    """VarReplacer.visit_with_context should handle new IR stms normally.
-    VarReplacer mutates stms in-place via object.__setattr__."""
+    """VarReplacer.visit_with_context returns a new stm with the replacement applied."""
     setup_test()
     scope = Scope.create(None, 'S', set(), 0)
     scope.add_sym('x', tags=set(), typ=Type.int(8))
 
     new_expr = Expr(exp=Temp(name='x'))
     replacer = VarReplacer(scope, Temp(name='x'), Const(value=5), None)
-    replacer.visit_with_context(scope, new_expr)
+    result = replacer.visit_with_context(scope, new_expr)
 
-    assert isinstance(new_expr.exp, Const)
-    assert new_expr.exp.value == 5
+    assert result is not new_expr
+    assert isinstance(result.exp, Const)
+    assert result.exp.value == 5
 
 
 # ============================================================

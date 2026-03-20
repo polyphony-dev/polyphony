@@ -44,7 +44,7 @@ class Block(object):
             scope.block_count += 1
             self.num = scope.block_count
             self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
-        self.path_exp = None
+        self.path_exp: IrExp | None = None
         self.synth_params = make_synth_params()
         self.is_hyperblock = False
         if hasattr(scope, 'block_map'):

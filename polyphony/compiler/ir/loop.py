@@ -68,15 +68,15 @@ class Region(object):
 class Loop(Region):
     def __init__(self, head, bodies, region):
         super().__init__(head, bodies, region)
-        self.counter: Symbol = None
-        self.init: IrExp = None
-        self.update: IrExp = None
-        self.cond: Symbol = None
-        self.exits: list[Block] = None
-        self.outer_defs: set[Symbol] = None
-        self.outer_uses: set[Symbol] = None
-        self.inner_defs: set[Symbol] = None
-        self.inner_uses: set[Symbol] = None
+        self.counter: Symbol | None = None
+        self.init: IrExp | None = None
+        self.update: IrExp | None = None
+        self.cond: Symbol | None = None
+        self.exits: list[Block] | None = None
+        self.outer_defs: set[Symbol] | None = None
+        self.outer_uses: set[Symbol] | None = None
+        self.inner_defs: set[Symbol] | None = None
+        self.inner_uses: set[Symbol] | None = None
 
     def __str__(self):
         s = 'Loop: {}\n'.format(self.name)
