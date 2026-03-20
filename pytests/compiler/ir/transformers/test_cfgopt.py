@@ -1216,7 +1216,7 @@ mv x 3
     mj = blk1.stms[-1]
     if isinstance(mj, MCJump):
         blk2_bid = mj.targets[0]
-        blk1.stms[-1] = mj.model_copy(update={'targets': [blk2_bid, blk2_bid]})
+        blk1.stms[-1] = mj.model_copy(update={'targets': (blk2_bid, blk2_bid)})
         blk2 = scope.find_block(blk2_bid)
         result = _merge_path_exp_new(blk1, blk2)
         assert result is not None

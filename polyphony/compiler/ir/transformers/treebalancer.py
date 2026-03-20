@@ -210,8 +210,8 @@ class PLURALOP2BINOP:
             return op
 
     def visit_PolyOp(self, ir):
-        ir.values = [(self.visit(e), p) for e, p in ir.values]
-        return self.rebuild_tree(ir.op, ir.values)
+        values = [(self.visit(e), p) for e, p in ir.values]
+        return self.rebuild_tree(ir.op, values)
 
     def visit_RelOp(self, ir):
         return ir

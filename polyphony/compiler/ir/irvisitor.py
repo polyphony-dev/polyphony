@@ -210,7 +210,7 @@ class IrTransformer(IrVisitor):
         return ir.model_copy(update={'cond': new_cond, 'left': new_left, 'right': new_right})
 
     def visit_PolyOp(self, ir):
-        new_values = [self.visit(v) for v in ir.values]
+        new_values = tuple(self.visit(v) for v in ir.values)
         if all(nv is ov for nv, ov in zip(new_values, ir.values)):
             return ir
         return ir.model_copy(update={'values': new_values})
@@ -316,7 +316,7 @@ class IrTransformer(IrVisitor):
         self.new_stms.append(ir)
 
     def visit_MCJump(self, ir):
-        new_conds = [self.visit(cond) for cond in ir.conds]
+        new_conds = tuple(self.visit(cond) for cond in ir.conds)
         if any(nc is not oc for nc, oc in zip(new_conds, ir.conds)):
             ir = ir.model_copy(update={'conds': new_conds})
         self.new_stms.append(ir)

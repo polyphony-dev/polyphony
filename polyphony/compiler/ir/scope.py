@@ -502,7 +502,7 @@ class Scope(Tagged, SymbolTable):
             elif isinstance(stm, CJump):
                 new_stm = stm.model_copy(update={'true': bid_map[stm.true], 'false': bid_map[stm.false]})
             elif isinstance(stm, MCJump):
-                new_stm = stm.model_copy(update={'targets': [bid_map[t] for t in stm.targets]})
+                new_stm = stm.model_copy(update={'targets': tuple(bid_map[t] for t in stm.targets)})
             else:
                 continue
             blk = scope.find_block(new_stm.block)

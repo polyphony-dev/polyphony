@@ -710,7 +710,7 @@ class IrReader(object):
         list_body = ops[0][1:-1].strip()
         value_tokens = self.parse_operands(list_body)
         values = [self.parse_exp(v) for v in value_tokens]
-        return PolyOp(BINOP_MAP[op], values)
+        return PolyOp(BINOP_MAP[op], tuple(values))
 
     def parse_list(self, s: str):
         m = re.match(r'\[(.*)\]', s)

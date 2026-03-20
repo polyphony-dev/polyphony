@@ -155,8 +155,8 @@ class Block(object):
                     self.stms[-1] = jmp.model_copy(update=updates)
                 self._convert_if_unidirectional(self.stms[-1])
             elif isinstance(jmp, MCJump):
-                new_targets = [new.bid if t == old.bid else t for t in jmp.targets]
-                if new_targets != list(jmp.targets):
+                new_targets = tuple(new.bid if t == old.bid else t for t in jmp.targets)
+                if new_targets != jmp.targets:
                     self.stms[-1] = jmp.model_copy(update={'targets': new_targets})
                 self._convert_if_unidirectional(self.stms[-1])
 

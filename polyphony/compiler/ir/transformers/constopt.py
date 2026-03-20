@@ -181,7 +181,7 @@ class ConstantOptBase(IrVisitor):
         return None
 
     def visit_MCJump(self, ir):
-        new_conds = [self.visit(cond) for cond in ir.conds]
+        new_conds = tuple(self.visit(cond) for cond in ir.conds)
         if any(nc is not oc for nc, oc in zip(new_conds, ir.conds)):
             new_ir = ir.model_copy(update={'conds': new_conds})
             self._replace_in_block(ir, new_ir)
@@ -647,7 +647,7 @@ class ConstantOpt(ConstantOptBase):
         return None
 
     def visit_MCJump(self, ir):
-        new_conds = [self.visit(cond) for cond in ir.conds]
+        new_conds = tuple(self.visit(cond) for cond in ir.conds)
         if any(nc is not oc for nc, oc in zip(new_conds, ir.conds)):
             new_ir = ir.model_copy(update={'conds': new_conds})
             self._replace_in_block(ir, new_ir)
@@ -809,7 +809,7 @@ class PolyadConstantFolding(object):
                 else:
                     values.append(r)
                 if len(values) > 2:
-                    return PolyOp(op=ir.op, values=values)
+                    return PolyOp(op=ir.op, values=tuple(values))
             return ir
 
         def visit_PolyOp(self, ir):
@@ -833,7 +833,7 @@ class PolyadConstantFolding(object):
                 const_result = 1
                 for c in consts:
                     const_result *= c.value
-            return PolyOp(op=poly.op, values=vars + [Const(value=const_result)])
+            return PolyOp(op=poly.op, values=tuple(vars + [Const(value=const_result)]))
 
         def visit_PolyOp(self, ir):
             ir = self._fold(ir)

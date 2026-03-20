@@ -197,7 +197,7 @@ class EarlyQuadrupleMaker(IrTransformer):
                 changed = True
             new_conds.append(new_cond)
         if changed:
-            ir = ir.model_copy(update={'conds': new_conds})
+            ir = ir.model_copy(update={'conds': tuple(new_conds)})
         self.new_stms.append(ir)
 
     def visit_Move(self, ir):

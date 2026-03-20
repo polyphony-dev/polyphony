@@ -55,13 +55,15 @@ class Ir(BaseModel):
         return ''
 
     def clone(self, **overrides):
-        """Deep-copy this IR node. Recursively clones child Ir nodes and lists."""
+        """Deep-copy this IR node, returning a new instance via __init__."""
         data = {}
         for field_name in type(self).model_fields:
             v = getattr(self, field_name, None)
             if isinstance(v, Ir):
                 data[field_name] = v.clone()
-            elif isinstance(v, (list, tuple)) and not hasattr(v, '_fields'):
+            elif isinstance(v, list):
+                assert False, f'{type(self).__name__}.{field_name} must not be a list'
+            elif isinstance(v, tuple) and not hasattr(v, '_fields'):
                 new_seq = []
                 for elm in v:
                     if isinstance(elm, Ir):
@@ -107,7 +109,9 @@ class Ir(BaseModel):
                 v = getattr(ir, field_name, None)
                 if v == old:
                     updates[field_name] = new
-                elif isinstance(v, (tuple, list)):
+                elif isinstance(v, list):
+                    assert False, f'{type(ir).__name__}.{field_name} must not be a list'
+                elif isinstance(v, tuple):
                     new_v, changed = self._subst_seq(v, old, new, visited)
                     if changed:
                         updates[field_name] = new_v
@@ -118,12 +122,14 @@ class Ir(BaseModel):
             if updates:
                 return ir.model_copy(update=updates), True
             return ir, False
-        elif isinstance(ir, (tuple, list)):
+        elif isinstance(ir, list):
+            assert False, 'IR sequence must not be a list'
+        elif isinstance(ir, tuple):
             return self._subst_seq(ir, old, new, visited)
         return ir, False
 
     def _subst_seq(self, seq, old, new, visited):
-        """Return (new_seq, changed) for a tuple or list."""
+        """Return (new_seq, changed) for a tuple."""
         new_elms = list(seq)
         changed = False
         for i, elm in enumerate(seq):
@@ -137,7 +143,7 @@ class Ir(BaseModel):
                     changed = True
         if not changed:
             return seq, False
-        return (tuple(new_elms) if isinstance(seq, tuple) else new_elms), True
+        return tuple(new_elms), True
 
     def find_vars(self, qname):
         """Find all variables matching the given qualified name."""
@@ -166,7 +172,9 @@ class Ir(BaseModel):
                 for field_name in type(ir).model_fields:
                     v = getattr(ir, field_name, None)
                     self._find_vars_rec(v, qname, vars, visited)
-        elif isinstance(ir, (list, tuple)):
+        elif isinstance(ir, list):
+            assert False, 'IR sequence must not be a list'
+        elif isinstance(ir, tuple):
             for elm in ir:
                 self._find_vars_rec(elm, qname, vars, visited)
 
@@ -189,7 +197,9 @@ class Ir(BaseModel):
             for field_name in type(ir).model_fields:
                 v = getattr(ir, field_name, None)
                 self._find_irs_rec(v, typ, irs, visited)
-        elif isinstance(ir, (list, tuple)):
+        elif isinstance(ir, list):
+            assert False, 'IR sequence must not be a list'
+        elif isinstance(ir, tuple):
             for elm in ir:
                 self._find_irs_rec(elm, typ, irs, visited)
 
@@ -521,7 +531,7 @@ class CondOp(IrExp):
 
 class PolyOp(IrExp):
     op: str
-    values: list[IrExp]
+    values: tuple[IrExp, ...]
 
     def __init__(self, *args, **kwargs):
         """Accept positional args: PolyOp(op, values)"""
@@ -529,7 +539,8 @@ class PolyOp(IrExp):
             if len(args) >= 1:
                 kwargs.setdefault('op', args[0])
             if len(args) >= 2:
-                kwargs.setdefault('values', args[1])
+                v = args[1]
+                kwargs.setdefault('values', tuple(v) if isinstance(v, list) else v)
         super().__init__(**kwargs)
 
     def __str__(self):
