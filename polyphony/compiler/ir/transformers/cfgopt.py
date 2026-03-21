@@ -409,7 +409,9 @@ class HyperBlockBuilder(object):
         for idx, br in zip(indices, removes):
             assert tail.preds[idx] is br
         for stm in tail.stms:
-            if isinstance(stm, (Phi, UPhi, LPhi)) and len(stm.args) == len(tail.preds):
+            if (isinstance(stm, (Phi, UPhi, LPhi))
+                    and len(stm.args) == len(tail.preds)
+                    and len(stm.ps) == len(stm.args)):
                 new_args = []
                 new_ps = []
                 old_args = []
