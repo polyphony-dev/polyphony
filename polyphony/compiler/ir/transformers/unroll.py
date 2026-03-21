@@ -12,7 +12,7 @@ from ..ir import (
     Ctx, Const, Temp, BinOp, RelOp, Move, Expr, Jump, CJump, MCJump,
     LPhi, IrStm, IrExp, IrNameExp,
 )
-from ..irvisitor import IrVisitor, IrTransformer
+from ..irvisitor import IrTransformer
 from ..irhelper import qualified_symbols
 from ..loop import Loop
 from ..scope import Scope, NameReplacer
@@ -36,8 +36,7 @@ def _clone_ir_block(blk, scope, nametag=None):
         b = Block(scope, blk.nametag)
     stm_map = {}
     for stm in blk.stms:
-        new_stm = stm.model_copy(deep=True)
-        object.__setattr__(new_stm, 'block', b.bid)
+        new_stm = stm.model_copy(deep=True, update={'block': b.bid})
         b.stms.append(new_stm)
         stm_map[stm] = new_stm
     b.order = blk.order
@@ -185,14 +184,13 @@ class LoopUnroller(object):
                     new_sym = new_syms[0]
                     lphi = origin_lphis[sym.name]
                     arg = Temp(name=new_sym.name)
-                    object.__setattr__(lphi, 'args', (arg,) + lphi.args[1:])
+                    new_lphi = lphi.model_copy(update={'args': (arg,) + lphi.args[1:]})
+                    loop.head.replace_stm(lphi, new_lphi)
                 assert remain_start_blk
                 guard = Expr(exp=Const(value=0))
-                object.__setattr__(guard, 'block', remain_start_blk.bid)
-                remain_start_blk.stms.append(guard)
+                remain_start_blk.append_stm(guard)
                 jmp = Jump(target=loop.head.bid)
-                object.__setattr__(jmp, 'block', remain_start_blk.bid)
-                remain_start_blk.stms.append(jmp)
+                remain_start_blk.append_stm(jmp)
                 remain_start_blk.succs = [loop.head]
                 loop.head.preds[0] = remain_start_blk
                 del loop.head.synth_params['unroll']
@@ -208,17 +206,16 @@ class LoopUnroller(object):
     def _replace_jump_target(self, block, old, new):
         jmp = block.stms[-1]
         if isinstance(jmp, Jump):
-            object.__setattr__(jmp, 'target', new.bid)
+            block.stms[-1] = jmp.model_copy(update={'target': new.bid})
         elif isinstance(jmp, CJump):
             if jmp.true == old.bid:
-                object.__setattr__(jmp, 'true', new.bid)
+                block.stms[-1] = jmp.model_copy(update={'true': new.bid})
             else:
                 assert jmp.false == old.bid
-                object.__setattr__(jmp, 'false', new.bid)
+                block.stms[-1] = jmp.model_copy(update={'false': new.bid})
         elif isinstance(jmp, MCJump):
             new_targets = tuple(new.bid if t == old.bid else t for t in jmp.targets)
-            new_jmp = jmp.model_copy(update={'targets': new_targets})
-            block.replace_stm(jmp, new_jmp)
+            block.stms[-1] = jmp.model_copy(update={'targets': new_targets})
         else:
             assert False
 
@@ -245,8 +242,7 @@ class LoopUnroller(object):
 
         jmp = last_blk.stms[-1]
         assert isinstance(jmp, Jump)
-        object.__setattr__(jmp, 'typ', '')
-        object.__setattr__(jmp, 'target', loop_exit.bid)
+        last_blk.stms[-1] = jmp.model_copy(update={'typ': '', 'target': loop_exit.bid})
 
     def _reconnect_unroll_blocks(self, loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk):
         loop_pred = loop.head.preds[0]
@@ -270,7 +266,7 @@ class LoopUnroller(object):
         cjmp = unroll_head.stms[-1]
         assert isinstance(cjmp, CJump)
         assert cjmp.false == ''
-        object.__setattr__(cjmp, 'false', loop_exit.bid)
+        unroll_head.stms[-1] = cjmp.model_copy(update={'false': loop_exit.bid})
 
         unroll_head.preds = [loop_pred, last_blk]
         unroll_head.preds_loop = [last_blk]
@@ -281,7 +277,7 @@ class LoopUnroller(object):
         jmp = last_blk.stms[-1]
         assert isinstance(jmp, Jump)
         assert jmp.typ == 'L'
-        object.__setattr__(jmp, 'target', unroll_head.bid)
+        last_blk.stms[-1] = jmp.model_copy(update={'target': unroll_head.bid})
 
     def _make_full_unroll_head(self, loop, new_ivs):
         unroll_head, stm_map = _clone_ir_block(loop.head, self.scope, 'unroll_head')
@@ -308,14 +304,12 @@ class LoopUnroller(object):
         head_stms.append(mv)
         orig_cjump = unroll_head.stms[-1]
         assert isinstance(orig_cjump, CJump)
-        jump = Jump(target='')
-        object.__setattr__(jump, 'loc', orig_cjump.loc)
+        jump = Jump(target='', loc=orig_cjump.loc)
         head_stms.append(jump)
 
         unroll_head.stms = []
         for stm in head_stms:
-            object.__setattr__(stm, 'block', unroll_head.bid)
-            unroll_head.stms.append(stm)
+            unroll_head.append_stm(stm)
         dst_sym = qualified_symbols(cast(IrNameExp, orig_cjump_cond.dst), self.scope)[-1]
         assert isinstance(dst_sym, Symbol)
         return unroll_head, iv_updates, dst_sym
@@ -333,11 +327,12 @@ class LoopUnroller(object):
                 assert isinstance(orig_sym, Symbol)
                 new_sym_0 = new_ivs[orig_sym][0]
                 new_sym_n = new_ivs[orig_sym][factor]
-                object.__setattr__(stm.var, 'name', new_sym_0.name)
                 arg1_sym = qualified_symbols(stm.args[1], self.scope)[-1]
                 assert isinstance(arg1_sym, Symbol)
                 iv_updates[arg1_sym] = new_ivs[orig_sym]
-                object.__setattr__(stm.args[1], 'name', new_sym_n.name)
+                new_var = stm.var.model_copy(update={'name': new_sym_0.name})
+                new_arg1 = stm.args[1].model_copy(update={'name': new_sym_n.name})
+                stm = stm.model_copy(update={'var': new_var, 'args': stm.args[:1] + (new_arg1,) + stm.args[2:]})
                 head_stms.append(stm)
                 lphis.append(stm)
 
@@ -365,8 +360,7 @@ class LoopUnroller(object):
 
         unroll_head.stms = []
         for stm in head_stms:
-            object.__setattr__(stm, 'block', unroll_head.bid)
-            unroll_head.stms.append(stm)
+            unroll_head.append_stm(stm)
         return unroll_head, iv_updates, lphis, sym_map
 
     def _find_unique_indexes(self, defsyms, factor):
@@ -392,16 +386,14 @@ class LoopUnroller(object):
             new_blk.succs_loop = []
             ivreplacer = IVReplacer(self.scope, defsym_indexes, new_ivs, iv_updates, i)
             symreplacer = _NewNameReplacer(self.scope, sym_map)
-            for stm in new_blk.stms:
-                ivreplacer.visit(stm)
-                symreplacer.visit(stm)
+            ivreplacer._process_block(new_blk)
+            symreplacer._process_block(new_blk)
             pred_blk.succs = [new_blk]
             jmp = pred_blk.stms[-1]
             if isinstance(jmp, Jump):
-                object.__setattr__(jmp, 'typ', '')
-                object.__setattr__(jmp, 'target', new_blk.bid)
+                pred_blk.stms[-1] = jmp.model_copy(update={'typ': '', 'target': new_blk.bid})
             elif isinstance(jmp, CJump):
-                object.__setattr__(jmp, 'true', new_blk.bid)
+                pred_blk.stms[-1] = jmp.model_copy(update={'true': new_blk.bid})
             else:
                 assert False
             new_blk.preds = [pred_blk]
@@ -499,7 +491,7 @@ class LoopUnroller(object):
         fail(update_stm, Errors.RULE_UNROLL_UNKNOWN_STEP)
 
 
-class IVReplacer(IrVisitor):
+class IVReplacer(IrTransformer):
     """Replace induction variables in unrolled loop bodies."""
     def __init__(self, scope, defsym_indexes, new_ivs, iv_updates, idx):
         self.scope = scope
@@ -509,16 +501,16 @@ class IVReplacer(IrVisitor):
         self.idx = idx
 
     def process(self, scope):
-        # Override: don't iterate blocks, visitor is called per-stm
+        # Override: don't iterate blocks, process is called per-block externally
         pass
 
     def visit_Temp(self, ir):
         sym = qualified_symbols(ir, self.scope)[-1]
         assert isinstance(sym, Symbol)
         if sym not in self.defsym_indexes.keys() and sym not in self.new_ivs.keys():
-            return
+            return ir
         if not sym.typ.is_scalar():
-            return
+            return ir
         if sym.is_induction():
             assert sym in self.new_ivs.keys()
             new_sym = self.new_ivs[sym][self.idx]
@@ -527,10 +519,10 @@ class IVReplacer(IrVisitor):
         else:
             new_name = '{}_{}'.format(sym.name, self.defsym_indexes[sym] + self.idx)
             new_sym = self.scope.inherit_sym(sym, new_name)
-        object.__setattr__(ir, 'name', new_sym.name)
+        return ir.model_copy(update={'name': new_sym.name})
 
 
-class _NewNameReplacer(IrVisitor):
+class _NewNameReplacer(IrTransformer):
     """Replace variable names from a sym_map (new IR version)."""
     def __init__(self, scope, sym_map):
         self.scope = scope
@@ -541,7 +533,8 @@ class _NewNameReplacer(IrVisitor):
 
     def visit_Temp(self, ir):
         if ir.name in self.sym_map:
-            object.__setattr__(ir, 'name', self.sym_map[ir.name].name)
+            return ir.model_copy(update={'name': self.sym_map[ir.name].name})
+        return ir
 
 
 class PHICondRemover(IrTransformer):

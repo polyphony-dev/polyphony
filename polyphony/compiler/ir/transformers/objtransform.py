@@ -228,7 +228,7 @@ class ObjectTransformer(object):
         stm_idx = blk.stms.index(mv_stm)
         for src, csym in zip(sources, csyms):
             mv_copy = mv_stm.model_copy(deep=True)
-            object.__setattr__(mv_copy, 'dst', mv_copy.dst.model_copy(update={'exp': Temp(name=src.name, ctx=Ctx.STORE)}))
+            mv_copy = mv_copy.model_copy(update={'dst': mv_copy.dst.model_copy(update={'exp': Temp(name=src.name, ctx=Ctx.STORE)})})
             new_tail = self._make_branch(Temp(name=csym.name), mv_copy, blk, stm_idx)
             stm_idx = 0
             blk = new_tail
@@ -278,7 +278,7 @@ class ObjectTransformer(object):
         for src in sources:
             expr_copy = expr.model_copy(deep=True)
             if isinstance(expr_copy.exp, MStore):
-                object.__setattr__(expr_copy, 'exp', expr_copy.exp.model_copy(update={'mem': Temp(name=src.name)}))
+                expr_copy = expr_copy.model_copy(update={'exp': expr_copy.exp.model_copy(update={'mem': Temp(name=src.name)})})
             else:
                 raise NotImplementedError
             cmp_name = self._src_cmp_name(src)

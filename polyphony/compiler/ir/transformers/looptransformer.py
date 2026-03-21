@@ -56,7 +56,7 @@ class LoopFlatten(object):
         sub_continue.succs_loop = []
         jmp = subloop_body.stms[-1]
         if isinstance(jmp, Jump):
-            object.__setattr__(jmp, 'typ', '')
+            subloop_body.stms[-1] = jmp.model_copy(update={'typ': ''})
         subloop_body_else.preds = [subloop.head]
         subloop_body_else.connect(subloop_exit)
         subloop_exit.preds = [sub_continue, subloop_body_else]
@@ -68,15 +68,13 @@ class LoopFlatten(object):
         init_lphi = LPhi(var=Temp(name=init_sym.name, ctx=Ctx.STORE),
                          args=(Const(value=True), Temp(name=init_update_sym.name)),
                          ps=(Const(value=1), Const(value=1)))
-        object.__setattr__(init_lphi, 'block', loop.head.bid)
-        loop.head.stms.insert(-1, init_lphi)
+        init_lphi = loop.head.insert_stm(-1, init_lphi)
 
         loop_continue = loop.head.preds_loop[0]
         update_phi = Phi(var=Temp(name=init_update_sym.name, ctx=Ctx.STORE),
                          args=(Const(value=False), Const(value=True)),
                          ps=(body_cond.model_copy(deep=True), else_cond.model_copy(deep=True)))
-        object.__setattr__(update_phi, 'block', loop_continue.bid)
-        loop_continue.stms.insert(0, update_phi)
+        loop_continue.insert_stm(0, update_phi)
         return init_sym, init_lphi
 
     def _lphi_to_psi(self, lphi, cond):
@@ -86,8 +84,7 @@ class LoopFlatten(object):
         lphi_blk = self.scope.find_block(lphi.block)
         idx = lphi_blk.stms.index(lphi)
         lphi_blk.stms.remove(lphi)
-        object.__setattr__(psi, 'block', lphi.block)
-        lphi_blk.stms.insert(idx, psi)
+        lphi_blk.insert_stm(idx, psi)
 
     def _flatten(self, loop):
         master_continue = loop.head.preds_loop[0]
@@ -107,8 +104,7 @@ class LoopFlatten(object):
         subloop_body, subloop_body_else, subloop_exit = self._build_diamond_block(loop, subloop)
 
         # Set up else block
-        jmp = Jump(target=subloop_exit.bid)
-        object.__setattr__(jmp, 'block', subloop_body_else.bid)
+        jmp = Jump(target=subloop_exit.bid, block=subloop_body_else.bid)
         subloop_body_else.stms = [jmp]
         self._move_stms(subloop_exit, subloop_body_else)
         subloop_exit.stms = [subloop_exit.stms[-1]]
@@ -136,10 +132,10 @@ class LoopFlatten(object):
             psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE),
                       args=(lphi.args[1].model_copy(deep=True), Temp(name=lphi.var.name)),
                       ps=(body_cond, else_cond))
-            object.__setattr__(lphi, 'args', lphi.args[:1] + (Temp(name=psi_sym.name),) + lphi.args[2:])
-            object.__setattr__(psi, 'block', subloop_exit.bid)
-            subloop_exit.stms.insert(-1, psi)
-            self._lphi_to_psi(lphi, init_flag)
+            new_lphi = lphi.model_copy(update={'args': lphi.args[:1] + (Temp(name=psi_sym.name),) + lphi.args[2:]})
+            subloop.head.replace_stm(lphi, new_lphi)
+            subloop_exit.insert_stm(-1, psi)
+            self._lphi_to_psi(new_lphi, init_flag)
 
         subloop.head.synth_params['scheduling'] = 'pipeline'
         for blk in subloop.bodies:
@@ -157,10 +153,10 @@ class LoopFlatten(object):
             psi = Phi(var=Temp(name=psi_sym.name, ctx=Ctx.STORE),
                       args=(Temp(name=lphi.var.name), lphi.args[1].model_copy(deep=True)),
                       ps=(body_cond, else_cond))
-            object.__setattr__(lphi, 'args', lphi.args[:1] + (Temp(name=psi_sym.name),) + lphi.args[2:])
+            new_lphi = lphi.model_copy(update={'args': lphi.args[:1] + (Temp(name=psi_sym.name),) + lphi.args[2:]})
+            loop.head.replace_stm(lphi, new_lphi)
             pred_blk = loop.head.preds[1]
-            object.__setattr__(psi, 'block', pred_blk.bid)
-            pred_blk.stms.insert(-1, psi)
+            pred_blk.insert_stm(-1, psi)
         logger.debug(str(self.scope))
 
     def _def_stm(self, sym):
@@ -173,6 +169,5 @@ class LoopFlatten(object):
 
     def _move_stms(self, blk_src, blk_dst):
         for stm in blk_src.stms[:-1]:
-            object.__setattr__(stm, 'block', blk_dst.bid)
-            blk_dst.stms.insert(-1, stm)
+            blk_dst.insert_stm(-1, stm)
         blk_src.stms = [blk_src.stms[-1]]

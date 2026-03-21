@@ -247,10 +247,10 @@ def test_move_stms():
     assert len(src_blk.stms) == 1
     assert src_blk.stms[0] is jmp
 
-    # dst should have the moved stms before its last stm
+    # dst should have the moved stms before its last stm (block may be model_copy'd)
     assert len(dst_blk.stms) == 3
-    assert dst_blk.stms[0] is mv1
-    assert dst_blk.stms[1] is mv2
+    assert dst_blk.stms[0] == mv1
+    assert dst_blk.stms[1] == mv2
     assert dst_blk.stms[2] is dst_jmp
 
 

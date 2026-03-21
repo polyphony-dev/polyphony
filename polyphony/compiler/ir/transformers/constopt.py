@@ -256,13 +256,19 @@ class ConstantOptBase(IrVisitor):
                                 assert isinstance(v_sym, Symbol)
                                 blks = self.usedef.get_blks_defining(v_sym)
                                 if blk.bid in blks:
-                                    object.__setattr__(phi, 'args', phi.args[:pi] + phi.args[pi + 1:])
-                                    object.__setattr__(phi, 'ps', phi.ps[:pi] + phi.ps[pi + 1:])
+                                    new_phi = phi.model_copy(update={
+                                        'args': phi.args[:pi] + phi.args[pi + 1:],
+                                        'ps': phi.ps[:pi] + phi.ps[pi + 1:],
+                                    })
+                                    succ.replace_stm(phi, new_phi)
                                     break
                     lphis = succ.collect_stms([LPhi])
                     for lphi in lphis:
-                        object.__setattr__(lphi, 'args', lphi.args[:idx] + lphi.args[idx + 1:])
-                        object.__setattr__(lphi, 'ps', lphi.ps[:idx] + lphi.ps[idx + 1:])
+                        new_lphi = lphi.model_copy(update={
+                            'args': lphi.args[:idx] + lphi.args[idx + 1:],
+                            'ps': lphi.ps[:idx] + lphi.ps[idx + 1:],
+                        })
+                        succ.replace_stm(lphi, new_lphi)
                 elif succ is not self.scope.entry_block:
                     self._remove_dominated_branch(succ, worklist)
 
@@ -297,8 +303,11 @@ class ConstantOptBase(IrVisitor):
                 false_blk.preds.pop(idx)
                 phis = false_blk.collect_stms([Phi, LPhi])
                 for phi in phis:
-                    object.__setattr__(phi, 'args', phi.args[:idx] + phi.args[idx + 1:])
-                    object.__setattr__(phi, 'ps', phi.ps[:idx] + phi.ps[idx + 1:])
+                    new_phi = phi.model_copy(update={
+                        'args': phi.args[:idx] + phi.args[idx + 1:],
+                        'ps': phi.ps[:idx] + phi.ps[idx + 1:],
+                    })
+                    false_blk.replace_stm(phi, new_phi)
 
             idx = find_nth_item_index(blk.succs, false_blk, blk_i)
             assert idx >= 0
@@ -440,7 +449,10 @@ class ConstantOpt(ConstantOptBase):
                     continue
                 new_ps = tuple(reduce_relexp(p) for p in stm.ps)
                 if new_ps != stm.ps:
-                    object.__setattr__(stm, 'ps', new_ps)
+                    new_stm = stm.model_copy(update={'ps': new_ps})
+                    blk.replace_stm(stm, new_stm)
+                    self.udupdater.update(stm, new_stm)
+                    stm = new_stm
                 is_move = False
                 for p in stm.ps:
                     if not isinstance(stm, LPhi) and isinstance(p, Const) and p.value and stm.ps.index(p) != (len(stm.ps) - 1):
@@ -453,12 +465,17 @@ class ConstantOpt(ConstantOptBase):
                         self.worklist.append(mv)
                         dead_stms.append(stm)
                         break
-                for p in stm.ps:
-                    if (isinstance(p, Const) and not p.value or
-                            isinstance(p, UnOp) and p.op == 'Not' and isinstance(p.exp, Const) and p.exp.value):
-                        idx = stm.ps.index(p)
-                        object.__setattr__(stm, 'args', stm.args[:idx] + stm.args[idx + 1:])
-                        object.__setattr__(stm, 'ps', stm.ps[:idx] + stm.ps[idx + 1:])
+                false_indices = [i for i, p in enumerate(stm.ps)
+                                 if (isinstance(p, Const) and not p.value or
+                                     isinstance(p, UnOp) and p.op == 'Not' and isinstance(p.exp, Const) and p.exp.value)]
+                if not is_move and false_indices:
+                    new_args = tuple(arg for i, arg in enumerate(stm.args) if i not in false_indices)
+                    new_ps_clean = tuple(p for i, p in enumerate(stm.ps) if i not in false_indices)
+                    blk = scope.find_block(stm.block)
+                    new_stm = stm.model_copy(update={'args': new_args, 'ps': new_ps_clean})
+                    blk.replace_stm(stm, new_stm)
+                    self.udupdater.update(stm, new_stm)
+                    stm = new_stm
                 if not is_move and len(stm.args) == 1:
                     arg = stm.args[0]
                     blk = scope.find_block(stm.block)
@@ -655,17 +672,18 @@ class ConstantOpt(ConstantOptBase):
         return ir
 
     def visit_Phi(self, ir):
-        super().visit_Phi(ir)
         ir_blk = self.scope.find_block(ir.block)
         if not ir_blk.is_hyperblock and len(ir_blk.preds) != len(ir.args):
-            remove_args = []
+            new_args = ir.args
+            new_ps = ir.ps
             for arg, blk in zip(ir.args, ir_blk.preds):
                 if blk and blk is not self.scope.entry_block and not blk.preds:
-                    remove_args.append(arg)
-            for arg in remove_args:
-                idx = ir.args.index(arg)
-                object.__setattr__(ir, 'args', ir.args[:idx] + ir.args[idx + 1:])
-                object.__setattr__(ir, 'ps', ir.ps[:idx] + ir.ps[idx + 1:])
+                    idx = new_args.index(arg)
+                    new_args = new_args[:idx] + new_args[idx + 1:]
+                    new_ps = new_ps[:idx] + new_ps[idx + 1:]
+            if new_args != ir.args:
+                return ir.model_copy(update={'args': new_args, 'ps': new_ps})
+        return ir
 
     def visit_CJump(self, ir):
         new_exp = self.visit(ir.exp)

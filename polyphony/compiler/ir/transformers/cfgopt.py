@@ -79,8 +79,7 @@ class BlockReducer(object):
 
         pred.stms.pop()  # remove useless jump
         for stm in block.stms:
-            object.__setattr__(stm, 'block', pred.bid)
-            pred.stms.append(stm)
+            pred.append_stm(stm)
         for succ in block.succs:
             succ.replace_pred(block, pred)
             succ.replace_pred_loop(block, pred)
@@ -355,7 +354,7 @@ class HyperBlockBuilder(object):
                 new_sym.typ = Type.bool()
                 mv = Move(dst=Temp(name=new_sym.name, ctx=Ctx.STORE), src=cj.exp, loc=old_mj.loc, block=head.bid)
                 head.stms.insert(-1, mv)
-                object.__setattr__(cj, 'exp', Temp(name=new_sym.name))
+                cj = cj.model_copy(update={'exp': Temp(name=new_sym.name)})
             head.replace_stm(head.stms[-1], cj)
         if len(mj.targets) == 2:
             cj = CJump(exp=mj.conds[0], true=mj.targets[0], false=mj.targets[1], loc=mj.loc, block=new_head.bid)
@@ -430,34 +429,23 @@ class HyperBlockBuilder(object):
                     new_tail.stms.append(mv)
                     self.uddetector.visit(mv)
                 else:
-                    new_phi = stm.model_copy(deep=True)
-                    object.__setattr__(new_phi, 'args', tuple(new_args))
-                    object.__setattr__(new_phi, 'ps', tuple(new_ps))
                     newsym = self.scope.add_temp()
                     newsym.typ = irexp_type(stm.var, self.scope)
-                    object.__setattr__(new_phi, 'var', Temp(name=newsym.name, ctx=Ctx.STORE))
-                    object.__setattr__(new_phi, 'block', new_tail.bid)
+                    new_phi = stm.model_copy(deep=True, update={
+                        'args': tuple(new_args),
+                        'ps': tuple(new_ps),
+                        'var': Temp(name=newsym.name, ctx=Ctx.STORE),
+                        'block': new_tail.bid,
+                    })
                     new_tail.stms.append(new_phi)
                     self.uddetector.visit(new_phi)
                 arg = Temp(name=newsym.name)
                 old_args.insert(first_idx, arg)
                 old_ps.insert(first_idx, new_tail.path_exp)
-                object.__setattr__(stm, 'args', tuple(old_args))
-                object.__setattr__(stm, 'ps', tuple(old_ps))
-                self.uddetector.visit(stm)
+                new_stm = stm.model_copy(update={'args': tuple(old_args), 'ps': tuple(old_ps)})
+                tail.replace_stm(stm, new_stm)
+                self.uddetector.visit(new_stm)
         for br in removes:
-            old_jmp = br.stms[-1]
-            if isinstance(old_jmp, Jump):
-                object.__setattr__(old_jmp, 'target', new_tail.bid)
-            elif isinstance(old_jmp, CJump):
-                if old_jmp.true == tail.bid:
-                    object.__setattr__(old_jmp, 'true', new_tail.bid)
-                if old_jmp.false == tail.bid:
-                    object.__setattr__(old_jmp, 'false', new_tail.bid)
-            elif isinstance(old_jmp, MCJump):
-                new_targets = tuple(new_tail.bid if t == tail.bid else t for t in old_jmp.targets)
-                new_jmp = old_jmp.model_copy(update={'targets': new_targets})
-                br.replace_stm(old_jmp, new_jmp)
             assert br in tail.preds
             tail.preds.remove(br)
             new_tail.preds.append(br)
@@ -543,7 +531,6 @@ class HyperBlockBuilder(object):
                 if stm in stm_blk.stms:
                     stm_blk.stms.remove(stm)
             self.usedef.remove_stm(self.scope, stm)
-            object.__setattr__(cstm, 'loc', stm.loc)
             cstms.append(cstm)
             all_cstms.append((idx, cstm))
             self.uddetector.visit(cstm)
@@ -572,14 +559,12 @@ class HyperBlockBuilder(object):
             assert len(branch_blk.succs) == 1
             stms_, remains_ = self._select_stms_for_speculation(head, branch_blk)
             for _, stm in sorted(stms_, key=lambda _: _[0]):
-                object.__setattr__(stm, 'block', head.bid)
-                head.stms.insert(-1, stm)
+                head.insert_stm(-1, stm)
             for _, stm in stms_:
                 branch_blk.stms.remove(stm)
             if (remains_ and (head.synth_params['scheduling'] == 'pipeline' or head.synth_params['scheduling'] == 'timed' or self.scope.is_comb())):
                 path_exp = branch_blk.path_exp
                 cstms_ = self._transform_special_stms_for_speculation(head, path_exp, remains_)
                 for _, stm in sorted(cstms_, key=lambda _: _[0]):
-                    object.__setattr__(stm, 'block', head.bid)
-                    head.stms.insert(-1, stm)
+                    head.insert_stm(-1, stm)
         head.is_hyperblock = True
