@@ -1006,7 +1006,7 @@ def output_verilog(driver):
             if scope.is_testbench():
                 env.append_testbench(scope)
             else:
-                f.write('`include "./{}"\n'.format(file_name))
+                f.write('`include "{}"\n'.format(file_name))
 
 
 def genhdl(hdlmodule):

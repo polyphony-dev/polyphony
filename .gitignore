@@ -25,6 +25,9 @@ __pycache__/
 # Polyphony compiler output
 polyphony_out/
 
+# Stray Verilog output files in project root (should be in .tmp/ or a dedicated output dir)
+*.v
+
 # Python packaging
 *.egg-info/
 dist/
