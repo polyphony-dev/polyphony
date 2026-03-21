@@ -3284,3 +3284,98 @@ ret @return
         for stm in blk.stms:
             if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == 'x':
                 assert False, 'Dead assignment to x should have been removed'
+
+
+def test_remove_dominated_branch_cleans_phi_predicate():
+    """Regression: _remove_dominated_branch must remove Phi predicate entries
+    that reference condition variables defined only in the dead branch.
+
+    CFG:
+      blk1: cond = (1 == 0) -> False; cjump cond ? ifthen : ifelse
+      ifthen (dead): cvar = RelOp(And, c, cond); jump join
+      ifelse (live):  jump join
+      join: phi result (10, 20) ps=(cvar, c); ret result
+
+    After ConstantOpt, cond folds to False, ifthen is eliminated.
+    _remove_dominated_branch must clean up the Phi entry 'cvar ? 10'
+    from the join block (cvar is defined only in the dead ifthen block).
+
+    Bug: get_blks_defining() returns set[str] (block bid strings), but
+    the old code compared 'blk in blks' (Block object vs set[str]) which
+    is always False, leaving the dead predicate in the Phi.
+    Fix: use blk.bid in blks.
+    """
+    setup_test()
+    top = Scope.global_scope()
+    F = Scope.create(top, 'dead_phi_pred', {'function', 'returnable'}, 0)
+    F.return_type = Type.int(32)
+    F.add_sym('cond', tags={'temp', 'condition'}, typ=Type.bool())
+    F.add_sym('cvar', tags={'temp', 'condition'}, typ=Type.bool())
+    F.add_sym('c', tags={'temp', 'condition'}, typ=Type.bool())
+    F.add_sym('result', tags={'temp'}, typ=Type.int(32))
+    F.add_return_sym(Type.int(32))
+
+    blk1 = Block(F, nametag='blk1')
+    ifthen = Block(F, nametag='ifthen')
+    ifelse = Block(F, nametag='ifelse')
+    join_blk = Block(F, nametag='join')
+    F.set_entry_block(blk1)
+    F.set_exit_block(join_blk)
+    blk1.connect(ifthen)
+    blk1.connect(ifelse)
+    ifthen.connect(join_blk)
+    ifelse.connect(join_blk)
+
+    # blk1: cond = (1 == 0); cjump cond ? ifthen : ifelse
+    blk1.append_stm(Move(
+        dst=Temp(name='cond', ctx=Ctx.STORE),
+        src=RelOp(op='Eq', left=Const(value=1), right=Const(value=0)),
+    ))
+    blk1.append_stm(CJump(
+        exp=Temp(name='cond', ctx=Ctx.LOAD),
+        true=ifthen.bid,
+        false=ifelse.bid,
+    ))
+
+    # ifthen (dead branch): cvar = RelOp(And, c, cond); jump join
+    # RelOp(And, c, False) reduces via reduce_relexp to Const(False),
+    # so cvar = False would be produced — but _remove_dominated_branch
+    # strips it from the worklist before const-prop fires.
+    ifthen.append_stm(Move(
+        dst=Temp(name='cvar', ctx=Ctx.STORE),
+        src=RelOp(op='And',
+                  left=Temp(name='c', ctx=Ctx.LOAD),
+                  right=Temp(name='cond', ctx=Ctx.LOAD)),
+    ))
+    ifthen.append_stm(Jump(target=join_blk.bid))
+
+    # ifelse (live branch): jump join
+    ifelse.append_stm(Jump(target=join_blk.bid))
+
+    # join: phi result (10, 20) ps=(cvar, c); ret
+    phi = Phi(
+        var=Temp(name='result', ctx=Ctx.STORE),
+        args=(Const(value=10), Const(value=20)),
+        ps=(Temp(name='cvar', ctx=Ctx.LOAD), Temp(name='c', ctx=Ctx.LOAD)),
+    )
+    join_blk.append_stm(phi)
+    join_blk.append_stm(Move(
+        dst=Temp(name='@return', ctx=Ctx.STORE),
+        src=Temp(name='result', ctx=Ctx.LOAD),
+    ))
+    join_blk.append_stm(Ret(exp=Temp(name='@return', ctx=Ctx.LOAD)))
+    Block.set_order(blk1, 0)
+
+    ConstantOpt().process(F)
+
+    # After folding cond=False, ifthen is removed as a dead branch.
+    # The Phi predicate 'cvar' (defined only in ifthen) must be cleaned up.
+    for blk in F.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Phi):
+                for p in stm.ps:
+                    if isinstance(p, Temp) and p.name == 'cvar':
+                        assert False, (
+                            'Dead-branch condition variable cvar must be removed '
+                            'from Phi predicates after dead branch elimination'
+                        )
