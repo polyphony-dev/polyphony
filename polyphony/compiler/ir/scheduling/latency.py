@@ -80,15 +80,6 @@ def _get_latency(tag, scope=None):
                     if tag in blk.stms:
                         scope = s
                         break
-        if scope is None:
-            # Fallback: search all scopes for the stm
-            for s in env.scopes.values():
-                for blk in s.traverse_blocks():
-                    if tag in blk.stms:
-                        scope = s
-                        break
-                if scope:
-                    break
 
     assert scope is not None
     if _is_move(tag):

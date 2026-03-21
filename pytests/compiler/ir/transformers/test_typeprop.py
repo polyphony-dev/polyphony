@@ -6126,10 +6126,10 @@ def test_functional_type_specializer_basic():
     assert func_i32 is not None
     assert func_i32.is_specialized()
 
-    # specialization_map should have entries keyed by Call/New ir
+    # specialization_map should have entries keyed by id(Call/New ir)
     assert len(result.specialization_map) > 0
-    # The original Call ir should be a key
-    assert original_call in result.specialization_map
+    # The original Call ir's id should be a key
+    assert id(original_call) in result.specialization_map
 
     # IR should NOT be modified (same object)
     assert top.entry_block.stms[0] is original_stm

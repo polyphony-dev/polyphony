@@ -830,8 +830,7 @@ def test_latency_port_rd_move():
     # mv x (call p.rd)
     port_rd = Attr(name='rd', exp=Temp('p'), attr='rd')
     call = Call(func=port_rd, args=[], kwargs={})
-    mv = Move(dst=Temp('x', Ctx.STORE), src=call)
-    blk.append_stm(mv)
+    mv = blk.append_stm(Move(dst=Temp('x', Ctx.STORE), src=call))
     blk.append_stm(Ret(Temp('@return')))
     lat = _get_latency(mv)
     assert lat == UNIT_STEP
@@ -843,8 +842,7 @@ def test_latency_port_rd_expr():
     # expr (call p.rd)
     port_rd = Attr(name='rd', exp=Temp('p'), attr='rd')
     call = Call(func=port_rd, args=[], kwargs={})
-    expr_stm = Expr(exp=call)
-    blk.append_stm(expr_stm)
+    expr_stm = blk.append_stm(Expr(exp=call))
     blk.append_stm(Ret(Temp('@return')))
     lat = _get_latency(expr_stm)
     assert lat == 0
@@ -856,8 +854,7 @@ def test_latency_port_wr():
     # expr (call p.wr 42)
     port_wr = Attr(name='wr', exp=Temp('p'), attr='wr')
     call = Call(func=port_wr, args=[('', Const(42))], kwargs={})
-    expr_stm = Expr(exp=call)
-    blk.append_stm(expr_stm)
+    expr_stm = blk.append_stm(Expr(exp=call))
     blk.append_stm(Ret(Temp('@return')))
     lat = _get_latency(expr_stm)
     assert lat == UNIT_STEP
@@ -891,8 +888,7 @@ def test_latency_move_port_src():
     Block.set_order(blk, 0)
 
     # mv x p (port-typed temp src)
-    mv = Move(dst=Temp('x', Ctx.STORE), src=Temp('p'))
-    blk.append_stm(mv)
+    mv = blk.append_stm(Move(dst=Temp('x', Ctx.STORE), src=Temp('p')))
     blk.append_stm(Ret(Temp('@return')))
     lat = _get_latency(mv)
     assert lat == 0
@@ -945,8 +941,7 @@ def test_latency_net_rd_move_alias():
     F, blk = _make_net_scope()
     net_rd = Attr(name='rd', exp=Temp('n'), attr='rd')
     call = Call(func=net_rd, args=[], kwargs={})
-    mv = Move(dst=Temp('a', Ctx.STORE), src=call)
-    blk.append_stm(mv)
+    mv = blk.append_stm(Move(dst=Temp('a', Ctx.STORE), src=call))
     blk.append_stm(Ret(Temp('@return')))
     lat = _get_latency(mv)
     assert lat == 0
@@ -957,8 +952,7 @@ def test_latency_net_rd_move_non_alias():
     F, blk = _make_net_scope()
     net_rd = Attr(name='rd', exp=Temp('n'), attr='rd')
     call = Call(func=net_rd, args=[], kwargs={})
-    mv = Move(dst=Temp('x', Ctx.STORE), src=call)
-    blk.append_stm(mv)
+    mv = blk.append_stm(Move(dst=Temp('x', Ctx.STORE), src=call))
     blk.append_stm(Ret(Temp('@return')))
     lat = _get_latency(mv)
     assert lat == UNIT_STEP
@@ -969,8 +963,7 @@ def test_latency_net_rd_expr():
     F, blk = _make_net_scope()
     net_rd = Attr(name='rd', exp=Temp('n'), attr='rd')
     call = Call(func=net_rd, args=[], kwargs={})
-    expr_stm = Expr(exp=call)
-    blk.append_stm(expr_stm)
+    expr_stm = blk.append_stm(Expr(exp=call))
     blk.append_stm(Ret(Temp('@return')))
     lat = _get_latency(expr_stm)
     assert lat == 0

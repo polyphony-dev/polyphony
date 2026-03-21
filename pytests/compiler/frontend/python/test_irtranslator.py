@@ -688,7 +688,7 @@ def f():
     moves = [s for s in stms if isinstance(s, Move)]
     calls = [m.src for m in moves if isinstance(m.src, Call)]
     assert len(calls) >= 1
-    assert calls[0].kwargs.get('y') is not None
+    assert any(k == 'y' for k, _ in calls[0].kwargs)
 
 
 

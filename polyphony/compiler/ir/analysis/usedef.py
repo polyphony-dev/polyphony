@@ -15,13 +15,25 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class UseDefItem:
     sym: Symbol
     qsym: tuple[Symbol | str, ...]
     var: IrVariable
     stm: IrStm
     blk: str  # block bid
+
+    def __eq__(self, other):
+        if not isinstance(other, UseDefItem):
+            return NotImplemented
+        return (self.sym is other.sym and
+                self.qsym == other.qsym and
+                self.var is other.var and
+                self.stm is other.stm and
+                self.blk == other.blk)
+
+    def __hash__(self):
+        return hash((id(self.sym), self.qsym, id(self.var), id(self.stm), self.blk))
 
 
 class UseDefTable(object):
@@ -188,23 +200,19 @@ class UseDefTable(object):
         blks = set([item.blk for item in self._use_sym2[sym]])
         return blks
 
-    def get_vars_defined_at(self, key: IrStm | Block) -> set[IrVariable]:
+    def get_vars_defined_at(self, key: IrStm | Block) -> list[IrVariable]:
         if isinstance(key, IrStm):
-            vars = set([item.var for item in self._def_stm2[key]])
-            return vars
+            return [item.var for item in self._def_stm2[key]]
         elif isinstance(key, Block):
-            vars = set([item.var for item in self._def_blk2[key.bid]])
-            return vars
+            return [item.var for item in self._def_blk2[key.bid]]
         else:
             assert False
 
-    def get_vars_used_at(self, key: IrStm | Block) -> set[IrVariable]:
+    def get_vars_used_at(self, key: IrStm | Block) -> list[IrVariable]:
         if isinstance(key, IrStm):
-            vars = set([item.var for item in self._use_stm2[key]])
-            return vars
+            return [item.var for item in self._use_stm2[key]]
         elif isinstance(key, Block):
-            vars = set([item.var for item in self._use_blk2[key.bid]])
-            return vars
+            return [item.var for item in self._use_blk2[key.bid]]
         else:
             assert False
 

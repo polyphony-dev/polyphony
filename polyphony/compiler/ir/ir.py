@@ -2,8 +2,10 @@
 
 Unified IR using pydantic BaseModel. Old and new IR are now the same.
 """
+
 from __future__ import annotations
 from typing import Any, TYPE_CHECKING, cast
+
 if TYPE_CHECKING:
     from .scope import Scope
 from collections import namedtuple
@@ -12,19 +14,34 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 
 op2sym_map = {
-    'And': 'and', 'Or': 'or',
-    'Add': '+', 'Sub': '-', 'Mult': '*', 'FloorDiv': '//', 'Mod': '%',
-    'LShift': '<<', 'RShift': '>>',
-    'BitOr': '|', 'BitXor': '^', 'BitAnd': '&',
-    'Eq': '==', 'NotEq': '!=', 'Lt': '<', 'LtE': '<=', 'Gt': '>', 'GtE': '>=',
-    'IsNot': '!=',
-    'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~',
+    "And": "and",
+    "Or": "or",
+    "Add": "+",
+    "Sub": "-",
+    "Mult": "*",
+    "FloorDiv": "//",
+    "Mod": "%",
+    "LShift": "<<",
+    "RShift": ">>",
+    "BitOr": "|",
+    "BitXor": "^",
+    "BitAnd": "&",
+    "Eq": "==",
+    "NotEq": "!=",
+    "Lt": "<",
+    "LtE": "<=",
+    "Gt": ">",
+    "GtE": ">=",
+    "IsNot": "!=",
+    "USub": "-",
+    "UAdd": "+",
+    "Not": "!",
+    "Invert": "~",
 }
 
-BINOP_OPS = {'Add', 'Sub', 'Mult', 'FloorDiv', 'Mod',
-             'LShift', 'RShift', 'BitOr', 'BitXor', 'BitAnd'}
-RELOP_OPS = {'And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE', 'IsNot'}
-UNOP_OPS = {'USub', 'UAdd', 'Not', 'Invert'}
+BINOP_OPS = {"Add", "Sub", "Mult", "FloorDiv", "Mod", "LShift", "RShift", "BitOr", "BitXor", "BitAnd"}
+RELOP_OPS = {"And", "Or", "Eq", "NotEq", "Lt", "LtE", "Gt", "GtE", "IsNot"}
+UNOP_OPS = {"USub", "UAdd", "Not", "Invert"}
 
 
 class Ctx(IntEnum):
@@ -33,28 +50,26 @@ class Ctx(IntEnum):
     CALL = 3
 
 
-Loc = namedtuple('Loc', ('filename', 'lineno'))
+Loc = namedtuple("Loc", ("filename", "lineno"))
 
 
 # ============================================================
 # Base classes
 # ============================================================
 
+
 class Ir(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, eq=False)
 
     def __repr__(self):
         return self.__str__()
-
-    def __hash__(self):
-        return id(self)
 
     def __lt__(self, other):
         return id(self) < id(other)
 
     def type_str(self, scope):
         """Return a type-annotated string representation (for debug logging)."""
-        return ''
+        return ""
 
     def clone(self, **overrides):
         """Deep-copy this IR node, returning a new instance via __init__."""
@@ -64,16 +79,14 @@ class Ir(BaseModel):
             if isinstance(v, Ir):
                 data[field_name] = v.clone()
             elif isinstance(v, list):
-                assert False, f'{type(self).__name__}.{field_name} must not be a list'
-            elif isinstance(v, tuple) and not hasattr(v, '_fields'):
+                assert False, f"{type(self).__name__}.{field_name} must not be a list"
+            elif isinstance(v, tuple) and not hasattr(v, "_fields"):
                 new_seq = []
                 for elm in v:
                     if isinstance(elm, Ir):
                         new_seq.append(elm.clone())
                     elif isinstance(elm, tuple):
-                        new_tuple = tuple(
-                            e.clone() if isinstance(e, Ir) else e for e in elm
-                        )
+                        new_tuple = tuple(e.clone() if isinstance(e, Ir) else e for e in elm)
                         new_seq.append(new_tuple)
                     else:
                         new_seq.append(elm)
@@ -112,7 +125,7 @@ class Ir(BaseModel):
                 if v == old:
                     updates[field_name] = new
                 elif isinstance(v, list):
-                    assert False, f'{type(ir).__name__}.{field_name} must not be a list'
+                    assert False, f"{type(ir).__name__}.{field_name} must not be a list"
                 elif isinstance(v, tuple):
                     new_v, changed = self._subst_seq(v, old, new, visited)
                     if changed:
@@ -125,7 +138,7 @@ class Ir(BaseModel):
                 return ir.model_copy(update=updates), True
             return ir, False
         elif isinstance(ir, list):
-            assert False, 'IR sequence must not be a list'
+            assert False, "IR sequence must not be a list"
         elif isinstance(ir, tuple):
             return self._subst_seq(ir, old, new, visited)
         return ir, False
@@ -175,7 +188,7 @@ class Ir(BaseModel):
                     v = getattr(ir, field_name, None)
                     self._find_vars_rec(v, qname, vars, visited)
         elif isinstance(ir, list):
-            assert False, 'IR sequence must not be a list'
+            assert False, "IR sequence must not be a list"
         elif isinstance(ir, tuple):
             for elm in ir:
                 self._find_vars_rec(elm, qname, vars, visited)
@@ -200,14 +213,14 @@ class Ir(BaseModel):
                 v = getattr(ir, field_name, None)
                 self._find_irs_rec(v, typ, irs, visited)
         elif isinstance(ir, list):
-            assert False, 'IR sequence must not be a list'
+            assert False, "IR sequence must not be a list"
         elif isinstance(ir, tuple):
             for elm in ir:
                 self._find_irs_rec(elm, typ, irs, visited)
 
 
 class IrExp(Ir):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, eq=False)
 
     def kids(self) -> tuple:
         """Return the leaf variable nodes reachable from this expression.
@@ -219,25 +232,35 @@ class IrExp(Ir):
 
 
 class IrStm(Ir):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, eq=False)
 
     loc: Any = None
-    block: str = ''  # block bid (e.g., 'b1', 'loop3')
+    block: str = ""  # block bid (e.g., 'b1', 'loop3')
 
-    @field_validator('block', mode='before')
+    def __eq__(self, other):
+        if type(self) is not type(other):
+            return False
+        skip = frozenset(('block', 'loc', '__pydantic_fields_set__'))
+        return {k: v for k, v in self.__dict__.items() if k not in skip} == \
+               {k: v for k, v in other.__dict__.items() if k not in skip}
+
+    def __hash__(self):
+        return id(self)
+
+    @field_validator("block", mode="before")
     @classmethod
     def _coerce_block(cls, v):
         if isinstance(v, str):
             return v
         # Accept Block objects for backward compat - extract bid
-        if hasattr(v, 'bid'):
+        if hasattr(v, "bid"):
             return v.bid
         return str(v)
 
     def model_post_init(self, __context):
         """Ensure loc is never None."""
         if self.loc is None:
-            object.__setattr__(self, 'loc', Loc('', 0))
+            object.__setattr__(self, "loc", Loc("", 0))
 
     @property
     def lineno(self) -> int:
@@ -253,6 +276,7 @@ class IrStm(Ir):
 # ============================================================
 # IrExp — Name / Variable
 # ============================================================
+
 
 class IrNameExp(IrExp):
     name: str
@@ -276,21 +300,13 @@ class Temp(IrVariable):
         """Accept positional args: Temp(name, ctx=Ctx.LOAD)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('name', args[0])
+                kwargs.setdefault("name", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('ctx', args[1])
+                kwargs.setdefault("ctx", args[1])
         super().__init__(**kwargs)
 
     def __str__(self):
         return self.name
-
-    def __eq__(self, other):
-        if not isinstance(other, Temp):
-            return False
-        return self.name == other.name and self.ctx == other.ctx
-
-    def __hash__(self):
-        return id(self)
 
 
 class Attr(IrVariable):
@@ -302,44 +318,33 @@ class Attr(IrVariable):
         """Accept positional args: Attr(exp, attr, ctx=Ctx.LOAD)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('exp', args[0])
+                kwargs.setdefault("exp", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('attr', args[1])
+                kwargs.setdefault("attr", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('ctx', args[2])
-        # Derive name from attr if not provided (matches old ATTR behavior)
-        attr = kwargs.get('attr')
-        if 'name' not in kwargs and attr is not None:
+                kwargs.setdefault("ctx", args[2])
+        # Normalize attr to str (Symbol → str) and derive name
+        attr = kwargs.get("attr")
+        if attr is not None:
             from .symbol import Symbol
+
             if isinstance(attr, Symbol):
-                kwargs['name'] = attr.name
-            elif isinstance(attr, str):
-                kwargs['name'] = attr
-            else:
-                kwargs['name'] = ''
+                attr = attr.name
+                kwargs["attr"] = attr
+            if "name" not in kwargs:
+                kwargs["name"] = attr if isinstance(attr, str) else ""
         # Set exp.ctx = LOAD to match old ATTR behavior
-        exp = kwargs.get('exp')
-        if exp is not None and hasattr(exp, 'ctx') and exp.ctx != Ctx.LOAD:
-            kwargs['exp'] = exp.model_copy(update={'ctx': Ctx.LOAD})
+        exp = kwargs.get("exp")
+        if exp is not None and hasattr(exp, "ctx") and exp.ctx != Ctx.LOAD:
+            kwargs["exp"] = exp.model_copy(update={"ctx": Ctx.LOAD})
         super().__init__(**kwargs)
 
     def model_post_init(self, __context):
         if not self.name:
-            if isinstance(self.attr, str):
-                object.__setattr__(self, 'name', self.attr)
-            else:
-                object.__setattr__(self, 'name', self.attr.name)
+            object.__setattr__(self, "name", self.attr)
 
     def __str__(self):
-        return f'{self.exp}.{self.attr}'
-
-    def __eq__(self, other):
-        if not isinstance(other, Attr):
-            return False
-        return self.exp == other.exp and self.name == other.name and self.ctx == other.ctx
-
-    def __hash__(self):
-        return id(self)
+        return f"{self.exp}.{self.attr}"
 
     @property
     def qualified_name(self) -> tuple[str, ...]:
@@ -350,7 +355,7 @@ class Attr(IrVariable):
             return self.exp.head_name()
         elif isinstance(self.exp, Temp):
             return self.exp.name
-        return ''
+        return ""
 
     def tail_name(self) -> str:
         return self.exp.name  # type: ignore
@@ -360,6 +365,7 @@ class Attr(IrVariable):
 # IrExp — Constants
 # ============================================================
 
+
 class Const(IrExp):
     value: Any = None
     format: str | None = None
@@ -368,18 +374,18 @@ class Const(IrExp):
         """Accept positional args: Const(value, format=None)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('value', args[0])
+                kwargs.setdefault("value", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('format', args[1])
+                kwargs.setdefault("format", args[1])
         super().__init__(**kwargs)
 
     def __str__(self):
         if isinstance(self.value, bool):
             return str(self.value)
         elif isinstance(self.value, int):
-            if self.format == 'hex':
+            if self.format == "hex":
                 return hex(self.value)
-            elif self.format == 'bin':
+            elif self.format == "bin":
                 return bin(self.value)
             return str(self.value)
         else:
@@ -388,18 +394,24 @@ class Const(IrExp):
     def __eq__(self, other):
         if not isinstance(other, Const):
             return False
-        return self.value == other.value
-
-    def __hash__(self):
-        return id(self)
+        # Distinguish bool from int: True != 1 even though True == 1 in Python.
+        if type(self.value) is not type(other.value):
+            return False
+        return self.value == other.value and self.format == other.format
 
     def kids(self):
         return (self,)
 
 
+# Pydantic generates __hash__ from fields using Python's hash() which treats True == 1.
+# Override after class creation to distinguish bool from int via type(value).
+Const.__hash__ = lambda self: hash((type(self.value), self.value, self.format))  # type: ignore[method-assign]
+
+
 # ============================================================
 # IrExp — Operators
 # ============================================================
+
 
 class UnOp(IrExp):
     op: str
@@ -409,28 +421,20 @@ class UnOp(IrExp):
         """Accept positional args: UnOp(op, exp)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('op', args[0])
+                kwargs.setdefault("op", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('exp', args[1])
+                kwargs.setdefault("exp", args[1])
         super().__init__(**kwargs)
 
-    @field_validator('op')
+    @field_validator("op")
     @classmethod
     def validate_op(cls, v):
         if v not in UNOP_OPS:
-            raise ValueError(f'Invalid UnOp op: {v}')
+            raise ValueError(f"Invalid UnOp op: {v}")
         return v
 
     def __str__(self):
-        return f'{op2sym_map[self.op]}{self.exp}'
-
-    def __eq__(self, other):
-        if not isinstance(other, UnOp):
-            return False
-        return self.op == other.op and self.exp == other.exp
-
-    def __hash__(self):
-        return id(self)
+        return f"{op2sym_map[self.op]}{self.exp}"
 
     def kids(self):
         return self.exp.kids()
@@ -445,30 +449,22 @@ class BinOp(IrExp):
         """Accept positional args: BinOp(op, left, right)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('op', args[0])
+                kwargs.setdefault("op", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('left', args[1])
+                kwargs.setdefault("left", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('right', args[2])
+                kwargs.setdefault("right", args[2])
         super().__init__(**kwargs)
 
-    @field_validator('op')
+    @field_validator("op")
     @classmethod
     def validate_op(cls, v):
         if v not in BINOP_OPS:
-            raise ValueError(f'Invalid BinOp op: {v}')
+            raise ValueError(f"Invalid BinOp op: {v}")
         return v
 
     def __str__(self):
-        return f'({self.left} {op2sym_map[self.op]} {self.right})'
-
-    def __eq__(self, other):
-        if not isinstance(other, BinOp):
-            return False
-        return self.op == other.op and self.left == other.left and self.right == other.right
-
-    def __hash__(self):
-        return id(self)
+        return f"({self.left} {op2sym_map[self.op]} {self.right})"
 
     def kids(self):
         return self.left.kids() + self.right.kids()
@@ -483,30 +479,22 @@ class RelOp(IrExp):
         """Accept positional args: RelOp(op, left, right)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('op', args[0])
+                kwargs.setdefault("op", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('left', args[1])
+                kwargs.setdefault("left", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('right', args[2])
+                kwargs.setdefault("right", args[2])
         super().__init__(**kwargs)
 
-    @field_validator('op')
+    @field_validator("op")
     @classmethod
     def validate_op(cls, v):
         if v not in RELOP_OPS:
-            raise ValueError(f'Invalid RelOp op: {v}')
+            raise ValueError(f"Invalid RelOp op: {v}")
         return v
 
     def __str__(self):
-        return f'({self.left} {op2sym_map[self.op]} {self.right})'
-
-    def __eq__(self, other):
-        if not isinstance(other, RelOp):
-            return False
-        return self.op == other.op and self.left == other.left and self.right == other.right
-
-    def __hash__(self):
-        return id(self)
+        return f"({self.left} {op2sym_map[self.op]} {self.right})"
 
     def kids(self):
         return self.left.kids() + self.right.kids()
@@ -521,23 +509,15 @@ class CondOp(IrExp):
         """Accept positional args: CondOp(cond, left, right)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('cond', args[0])
+                kwargs.setdefault("cond", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('left', args[1])
+                kwargs.setdefault("left", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('right', args[2])
+                kwargs.setdefault("right", args[2])
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'({self.cond} ? {self.left} : {self.right})'
-
-    def __eq__(self, other):
-        if not isinstance(other, CondOp):
-            return False
-        return self.cond == other.cond and self.left == other.left and self.right == other.right
-
-    def __hash__(self):
-        return id(self)
+        return f"({self.cond} ? {self.left} : {self.right})"
 
     def kids(self):
         return self.cond.kids() + self.left.kids() + self.right.kids()
@@ -551,18 +531,15 @@ class PolyOp(IrExp):
         """Accept positional args: PolyOp(op, values)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('op', args[0])
+                kwargs.setdefault("op", args[0])
             if len(args) >= 2:
                 v = args[1]
-                kwargs.setdefault('values', tuple(v) if isinstance(v, list) else v)
+                kwargs.setdefault("values", tuple(v) if isinstance(v, list) else v)
         super().__init__(**kwargs)
 
     def __str__(self):
-        values = ', '.join([str(e) for e in self.values])
-        return f'({op2sym_map[self.op]} [{values}])'
-
-    def __hash__(self):
-        return id(self)
+        values = ", ".join([str(e) for e in self.values])
+        return f"({op2sym_map[self.op]} [{values}])"
 
     def kids(self):
         return self.values
@@ -572,28 +549,36 @@ class PolyOp(IrExp):
 # IrExp — Callable (Call, SysCall, New)
 # ============================================================
 
+
 class IrCallable(IrNameExp):
-    name: str = ''
+    name: str = ""
     func: IrVariable
     args: tuple = ()
-    kwargs: dict = {}
+    kwargs: tuple[tuple[str, Any], ...] = ()
+
+    @field_validator("kwargs", mode="before")
+    @classmethod
+    def _coerce_kwargs(cls, v):
+        if isinstance(v, dict):
+            return tuple(v.items())
+        return v
 
     def __init__(self, *args_pos, **kwargs):
         """Accept positional args: IrCallable(func, args, kwargs)"""
         if args_pos:
             if len(args_pos) >= 1:
-                kwargs.setdefault('func', args_pos[0])
+                kwargs.setdefault("func", args_pos[0])
             if len(args_pos) >= 2:
-                kwargs.setdefault('args', args_pos[1])
+                kwargs.setdefault("args", args_pos[1])
             if len(args_pos) >= 3:
-                kwargs.setdefault('kwargs', args_pos[2])
+                kwargs.setdefault("kwargs", args_pos[2])
         # Ensure args is a tuple
-        if 'args' in kwargs and not isinstance(kwargs['args'], tuple):
-            kwargs['args'] = tuple(kwargs['args'])
+        if "args" in kwargs and not isinstance(kwargs["args"], tuple):
+            kwargs["args"] = tuple(kwargs["args"])
         # Set func.ctx = CALL
-        func = kwargs.get('func')
-        if func is not None and hasattr(func, 'ctx') and func.ctx != Ctx.CALL:
-            kwargs['func'] = func.model_copy(update={'ctx': Ctx.CALL})
+        func = kwargs.get("func")
+        if func is not None and hasattr(func, "ctx") and func.ctx != Ctx.CALL:
+            kwargs["func"] = func.model_copy(update={"ctx": Ctx.CALL})
         super().__init__(**kwargs)
 
     def model_post_init(self, __context):
@@ -602,7 +587,7 @@ class IrCallable(IrNameExp):
         In Pydantic, the inherited 'name' field from IrNameExp is a model field,
         so we sync its value from func.name after construction.
         """
-        object.__setattr__(self, 'name', self.func.name)
+        object.__setattr__(self, "name", self.func.name)
 
     # NOTE: No __setattr__ override needed. IrExp is frozen, so direct field
     # assignment raises ValidationError. func.ctx=CALL is ensured in __init__,
@@ -612,16 +597,6 @@ class IrCallable(IrNameExp):
     @property
     def qualified_name(self) -> tuple[str, ...]:
         return self.func.qualified_name
-
-    def __eq__(self, other):
-        if not isinstance(other, IrCallable):
-            return False
-        return (self.func == other.func and
-                len(self.args) == len(other.args) and
-                all(n == on and a == oa for (n, a), (on, oa) in zip(self.args, other.args)))
-
-    def __hash__(self):
-        return id(self)
 
     def kids(self):
         kids = list(self.func.kids())
@@ -635,6 +610,7 @@ class IrCallable(IrNameExp):
         from .symbol import Symbol
         from .types.scopetype import ScopeType
         from .scope import Scope
+
         qsyms = qualified_symbols(self.func, current_scope)
         symbol = qsyms[-1]
         assert isinstance(symbol, Symbol)
@@ -647,40 +623,41 @@ class IrCallable(IrNameExp):
 
 class Call(IrCallable):
     def __str__(self):
-        s = f'{self.func}('
-        s += ', '.join([str(arg) for _, arg in self.args])
+        s = f"{self.func}("
+        s += ", ".join([str(arg) for _, arg in self.args])
         if self.kwargs:
-            s += ', '
-            s += ', '.join([f'{name}={value}' for name, value in self.kwargs.items()])
-        s += ')'
+            s += ", "
+            s += ", ".join([f"{name}={value}" for name, value in self.kwargs])
+        s += ")"
         return s
 
 
 class SysCall(IrCallable):
     def __str__(self):
-        s = f'!{self.func}('
-        s += ', '.join([str(arg) for _, arg in self.args])
+        s = f"!{self.func}("
+        s += ", ".join([str(arg) for _, arg in self.args])
         if self.kwargs:
-            s += ', '
-            s += ', '.join([f'{name}={value}' for name, value in self.kwargs.items()])
-        s += ')'
+            s += ", "
+            s += ", ".join([f"{name}={value}" for name, value in self.kwargs])
+        s += ")"
         return s
 
 
 class New(IrCallable):
     def __str__(self):
-        s = f'${self.func}('
-        s += ', '.join([str(arg) for _, arg in self.args])
+        s = f"${self.func}("
+        s += ", ".join([str(arg) for _, arg in self.args])
         if self.kwargs:
-            s += ', '
-            s += ', '.join([f'{name}={value}' for name, value in self.kwargs.items()])
-        s += ')'
+            s += ", "
+            s += ", ".join([f"{name}={value}" for name, value in self.kwargs])
+        s += ")"
         return s
 
 
 # ============================================================
 # IrExp — Memory operations
 # ============================================================
+
 
 class MRef(IrExp):
     mem: IrExp
@@ -691,23 +668,15 @@ class MRef(IrExp):
         """Accept positional args: MRef(mem, offset, ctx=Ctx.LOAD)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('mem', args[0])
+                kwargs.setdefault("mem", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('offset', args[1])
+                kwargs.setdefault("offset", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('ctx', args[2])
+                kwargs.setdefault("ctx", args[2])
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'{self.mem}[{self.offset}]'
-
-    def __eq__(self, other):
-        if not isinstance(other, MRef):
-            return False
-        return self.mem == other.mem and self.offset == other.offset and self.ctx == other.ctx
-
-    def __hash__(self):
-        return id(self)
+        return f"{self.mem}[{self.offset}]"
 
     def kids(self):
         return self.mem.kids() + self.offset.kids()
@@ -722,23 +691,15 @@ class MStore(IrExp):
         """Accept positional args: MStore(mem, offset, exp)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('mem', args[0])
+                kwargs.setdefault("mem", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('offset', args[1])
+                kwargs.setdefault("offset", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('exp', args[2])
+                kwargs.setdefault("exp", args[2])
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'mstore({self.mem}[{self.offset}], {self.exp})'
-
-    def __eq__(self, other):
-        if not isinstance(other, MStore):
-            return False
-        return self.mem == other.mem and self.offset == other.offset and self.exp == other.exp
-
-    def __hash__(self):
-        return id(self)
+        return f"mstore({self.mem}[{self.offset}], {self.exp})"
 
     def kids(self):
         return self.mem.kids() + self.offset.kids() + self.exp.kids()
@@ -747,6 +708,7 @@ class MStore(IrExp):
 # ============================================================
 # IrExp — Array
 # ============================================================
+
 
 class Array(IrExp):
     items: tuple = ()
@@ -757,43 +719,32 @@ class Array(IrExp):
         """Accept positional args: Array(items, mutable)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('items', args[0])
+                kwargs.setdefault("items", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('mutable', args[1])
-        if 'items' in kwargs and not isinstance(kwargs['items'], tuple):
-            kwargs['items'] = tuple(kwargs['items'])
+                kwargs.setdefault("mutable", args[1])
+        if "items" in kwargs and not isinstance(kwargs["items"], tuple):
+            kwargs["items"] = tuple(kwargs["items"])
         super().__init__(**kwargs)
 
     def model_post_init(self, __context):
         if self.repeat is None:
-            object.__setattr__(self, 'repeat', Const(value=1))
+            object.__setattr__(self, "repeat", Const(value=1))
 
     @property
     def is_mutable(self):
         return self.mutable
 
     def __str__(self):
-        s = '[' if self.mutable else '('
+        s = "[" if self.mutable else "("
         if len(self.items) > 8:
-            s += ', '.join(map(str, self.items[:10]))
-            s += '...'
+            s += ", ".join(map(str, self.items[:10]))
+            s += "..."
         else:
-            s += ', '.join(map(str, self.items))
-        s += ']' if self.mutable else ')'
+            s += ", ".join(map(str, self.items))
+        s += "]" if self.mutable else ")"
         if not (isinstance(self.repeat, Const) and self.repeat.value == 1):
-            s += ' * ' + str(self.repeat)
+            s += " * " + str(self.repeat)
         return s
-
-    def __eq__(self, other):
-        if not isinstance(other, Array):
-            return False
-        return (len(self.items) == len(other.items) and
-                all(a == b for a, b in zip(self.items, other.items)) and
-                self.mutable == other.mutable and
-                self.repeat == other.repeat)
-
-    def __hash__(self):
-        return id(self)
 
     def getlen(self):
         if isinstance(self.repeat, Const):
@@ -811,6 +762,7 @@ class Array(IrExp):
 # IrStm — Statements
 # ============================================================
 
+
 class Expr(IrStm):
     exp: IrExp
 
@@ -818,21 +770,13 @@ class Expr(IrStm):
         """Accept positional args: Expr(exp, loc=None)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('exp', args[0])
+                kwargs.setdefault("exp", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('loc', args[1])
+                kwargs.setdefault("loc", args[1])
         super().__init__(**kwargs)
 
     def __str__(self):
         return str(self.exp)
-
-    def __eq__(self, other):
-        if not isinstance(other, Expr):
-            return False
-        return self.exp == other.exp
-
-    def __hash__(self):
-        return id(self)
 
     def kids(self):
         return self.exp.kids()
@@ -845,23 +789,15 @@ class CExpr(Expr):
         """Accept positional args: CExpr(cond, exp, loc=None)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('cond', args[0])
+                kwargs.setdefault("cond", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('exp', args[1])
+                kwargs.setdefault("exp", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('loc', args[2])
+                kwargs.setdefault("loc", args[2])
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'{self.cond} ? {self.exp}'
-
-    def __eq__(self, other):
-        if not isinstance(other, CExpr):
-            return False
-        return self.cond == other.cond and self.exp == other.exp
-
-    def __hash__(self):
-        return id(self)
+        return f"{self.cond} ? {self.exp}"
 
     def kids(self):
         return self.cond.kids() + self.exp.kids()
@@ -875,39 +811,31 @@ class Move(IrStm):
         """Accept positional args: Move(dst, src, loc=None) with str/int coercion."""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('dst', args[0])
+                kwargs.setdefault("dst", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('src', args[1])
+                kwargs.setdefault("src", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('loc', args[2])
+                kwargs.setdefault("loc", args[2])
         # Coerce dst: str -> Temp chain, IrVariable -> set ctx to STORE
-        dst = kwargs.get('dst')
+        dst = kwargs.get("dst")
         if isinstance(dst, str):
-            kwargs['dst'] = name2var(dst, ctx=Ctx.STORE)
+            kwargs["dst"] = name2var(dst, ctx=Ctx.STORE)
         elif isinstance(dst, IrVariable) and not isinstance(dst, (MRef,)):
             if dst.ctx != Ctx.STORE:
-                kwargs['dst'] = dst.model_copy(update={'ctx': Ctx.STORE})
+                kwargs["dst"] = dst.model_copy(update={"ctx": Ctx.STORE})
         # Coerce src: str -> Temp chain, int -> Const, IrVariable -> set ctx to LOAD
-        src = kwargs.get('src')
+        src = kwargs.get("src")
         if isinstance(src, str):
-            kwargs['src'] = name2var(src, ctx=Ctx.LOAD)
+            kwargs["src"] = name2var(src, ctx=Ctx.LOAD)
         elif isinstance(src, int) and not isinstance(src, bool):
-            kwargs['src'] = Const(value=src)
+            kwargs["src"] = Const(value=src)
         elif isinstance(src, IrVariable):
             if src.ctx != Ctx.LOAD:
-                kwargs['src'] = src.model_copy(update={'ctx': Ctx.LOAD})
+                kwargs["src"] = src.model_copy(update={"ctx": Ctx.LOAD})
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'{self.dst} = {self.src}'
-
-    def __eq__(self, other):
-        if not isinstance(other, Move):
-            return False
-        return self.dst == other.dst and self.src == other.src
-
-    def __hash__(self):
-        return id(self)
+        return f"{self.dst} = {self.src}"
 
     def kids(self):
         return self.dst.kids() + self.src.kids()
@@ -920,25 +848,17 @@ class CMove(Move):
         """Accept positional args: CMove(cond, dst, src, loc=None)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('cond', args[0])
+                kwargs.setdefault("cond", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('dst', args[1])
+                kwargs.setdefault("dst", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('src', args[2])
+                kwargs.setdefault("src", args[2])
             if len(args) >= 4:
-                kwargs.setdefault('loc', args[3])
+                kwargs.setdefault("loc", args[3])
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'{self.cond} ? {self.dst} = {self.src}'
-
-    def __eq__(self, other):
-        if not isinstance(other, CMove):
-            return False
-        return self.cond == other.cond and self.dst == other.dst and self.src == other.src
-
-    def __hash__(self):
-        return id(self)
+        return f"{self.cond} ? {self.dst} = {self.src}"
 
     def kids(self):
         return self.cond.kids() + self.dst.kids() + self.src.kids()
@@ -946,55 +866,48 @@ class CMove(Move):
 
 class Jump(IrStm):
     target: str  # block bid
-    typ: str = ''
+    typ: str = ""
 
-    @field_validator('target', mode='before')
+    @field_validator("target", mode="before")
     @classmethod
     def _coerce_target(cls, v):
         if isinstance(v, str):
             return v
-        if hasattr(v, 'bid'):
+        if hasattr(v, "bid"):
             return v.bid
-        return str(v) if v is not None else ''
+        return str(v) if v is not None else ""
 
     def __init__(self, *args, **kwargs):
         """Accept positional args: Jump(target, typ='', loc=None)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('target', args[0])
+                kwargs.setdefault("target", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('typ', args[1])
+                kwargs.setdefault("typ", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('loc', args[2])
+                kwargs.setdefault("loc", args[2])
         super().__init__(**kwargs)
 
     def __str__(self):
         return f"jump {self.target} '{self.typ}'"
 
-    def __eq__(self, other):
-        if not isinstance(other, Jump):
-            return False
-        return self.target == other.target
-
-    def __hash__(self):
-        return id(self)
 
 
 def _coerce_bid(v):
     if isinstance(v, str):
         return v
-    if hasattr(v, 'bid'):
+    if hasattr(v, "bid"):
         return v.bid
-    return str(v) if v is not None else ''
+    return str(v) if v is not None else ""
 
 
 class CJump(IrStm):
     exp: IrExp
-    true: str   # block bid
+    true: str  # block bid
     false: str  # block bid
     loop_branch: bool = False
 
-    @field_validator('true', 'false', mode='before')
+    @field_validator("true", "false", mode="before")
     @classmethod
     def _coerce_targets(cls, v):
         return _coerce_bid(v)
@@ -1003,25 +916,18 @@ class CJump(IrStm):
         """Accept positional args: CJump(exp, true, false, loc=None)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('exp', args[0])
+                kwargs.setdefault("exp", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('true', args[1])
+                kwargs.setdefault("true", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('false', args[2])
+                kwargs.setdefault("false", args[2])
             if len(args) >= 4:
-                kwargs.setdefault('loc', args[3])
+                kwargs.setdefault("loc", args[3])
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'cjump {self.exp} ? {self.true}, {self.false}'
+        return f"cjump {self.exp} ? {self.true}, {self.false}"
 
-    def __eq__(self, other):
-        if not isinstance(other, CJump):
-            return False
-        return self.exp == other.exp and self.true == other.true and self.false == other.false
-
-    def __hash__(self):
-        return id(self)
 
 
 class MCJump(IrStm):
@@ -1029,14 +935,14 @@ class MCJump(IrStm):
     targets: tuple[str, ...] = ()  # block bids
     loop_branch: bool = False
 
-    @field_validator('conds', mode='before')
+    @field_validator("conds", mode="before")
     @classmethod
     def _coerce_conds(cls, v):
         if isinstance(v, (list, tuple)):
             return tuple(v)
         return v
 
-    @field_validator('targets', mode='before')
+    @field_validator("targets", mode="before")
     @classmethod
     def _coerce_targets(cls, v):
         if isinstance(v, (list, tuple)):
@@ -1047,28 +953,19 @@ class MCJump(IrStm):
         """Accept positional args: MCJump(conds, targets, loc=None)"""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('conds', args[0])
+                kwargs.setdefault("conds", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('targets', args[1])
+                kwargs.setdefault("targets", args[1])
             if len(args) >= 3:
-                kwargs.setdefault('loc', args[2])
+                kwargs.setdefault("loc", args[2])
         super().__init__(**kwargs)
 
     def __str__(self):
         items = []
         for cond, target in zip(self.conds, self.targets):
-            items.append(f'{cond} ? {target}')
-        return 'mcjump(\n        {})'.format(', \n        '.join(items))
+            items.append(f"{cond} ? {target}")
+        return "mcjump(\n        {})".format(", \n        ".join(items))
 
-    def __eq__(self, other):
-        if not isinstance(other, MCJump):
-            return False
-        return (len(self.conds) == len(other.conds) and
-                all(c == oc for c, oc in zip(self.conds, other.conds)) and
-                all(t is ot for t, ot in zip(self.targets, other.targets)))
-
-    def __hash__(self):
-        return id(self)
 
 
 class Ret(IrStm):
@@ -1078,27 +975,19 @@ class Ret(IrStm):
         """Accept positional args: Ret(exp, loc=None) with str/int coercion."""
         if args:
             if len(args) >= 1:
-                kwargs.setdefault('exp', args[0])
+                kwargs.setdefault("exp", args[0])
             if len(args) >= 2:
-                kwargs.setdefault('loc', args[1])
+                kwargs.setdefault("loc", args[1])
         # Coerce exp: str -> name2var, int -> Const
-        exp = kwargs.get('exp')
+        exp = kwargs.get("exp")
         if isinstance(exp, str):
-            kwargs['exp'] = name2var(exp, ctx=Ctx.LOAD)
+            kwargs["exp"] = name2var(exp, ctx=Ctx.LOAD)
         elif isinstance(exp, int) and not isinstance(exp, bool):
-            kwargs['exp'] = Const(value=exp)
+            kwargs["exp"] = Const(value=exp)
         super().__init__(**kwargs)
 
     def __str__(self):
-        return f'return {self.exp}'
-
-    def __eq__(self, other):
-        if not isinstance(other, Ret):
-            return False
-        return self.exp == other.exp
-
-    def __hash__(self):
-        return id(self)
+        return f"return {self.exp}"
 
     def kids(self):
         return self.exp.kids()
@@ -1113,36 +1002,28 @@ class Phi(IrStm):
         """Accept positional args: Phi(var)"""
         if args_pos:
             if len(args_pos) >= 1:
-                kwargs.setdefault('var', args_pos[0])
+                kwargs.setdefault("var", args_pos[0])
         # Set var.ctx = STORE to match old PHI behavior
-        var = kwargs.get('var')
-        if var is not None and hasattr(var, 'ctx') and var.ctx != Ctx.STORE:
-            kwargs['var'] = var.model_copy(update={'ctx': Ctx.STORE})
+        var = kwargs.get("var")
+        if var is not None and hasattr(var, "ctx") and var.ctx != Ctx.STORE:
+            kwargs["var"] = var.model_copy(update={"ctx": Ctx.STORE})
         # Coerce list to tuple for args and ps
-        if 'args' in kwargs and isinstance(kwargs['args'], list):
-            kwargs['args'] = tuple(kwargs['args'])
-        if 'ps' in kwargs and isinstance(kwargs['ps'], list):
-            kwargs['ps'] = tuple(kwargs['ps'])
+        if "args" in kwargs and isinstance(kwargs["args"], list):
+            kwargs["args"] = tuple(kwargs["args"])
+        if "ps" in kwargs and isinstance(kwargs["ps"], list):
+            kwargs["ps"] = tuple(kwargs["ps"])
         super().__init__(**kwargs)
 
     def __str__(self):
-        delim = ',\n        ' if len(self.args) >= 2 else ', '
+        delim = ",\n        " if len(self.args) >= 2 else ", "
         str_args = []
         if self.ps:
             for arg, p in zip(self.args, self.ps):
-                str_args.append(f'{p} ? {arg}' if arg else '_')
+                str_args.append(f"{p} ? {arg}" if arg else "_")
         else:
             for arg in self.args:
-                str_args.append(str(arg) if arg else '_')
-        return f'{self.var} = phi({delim.join(str_args)})'
-
-    def __eq__(self, other):
-        if not isinstance(other, Phi):
-            return False
-        return self.var == other.var
-
-    def __hash__(self):
-        return id(self)
+                str_args.append(str(arg) if arg else "_")
+        return f"{self.var} = phi({delim.join(str_args)})"
 
     def kids(self):
         kids = list(self.var.kids())
@@ -1154,51 +1035,43 @@ class Phi(IrStm):
     def remove_arg(self, arg):
         """Remove an arg (and its corresponding ps entry) by identity. Returns a new Phi."""
         from ..common.utils import find_id_index
+
         idx = find_id_index(self.args, arg)
-        new_args = self.args[:idx] + self.args[idx + 1:]
+        new_args = self.args[:idx] + self.args[idx + 1 :]
         if self.ps:
             assert len(self.args) == len(self.ps)
-            new_ps = self.ps[:idx] + self.ps[idx + 1:]
-            return self.model_copy(update={'args': new_args, 'ps': new_ps})
-        return self.model_copy(update={'args': new_args})
+            new_ps = self.ps[:idx] + self.ps[idx + 1 :]
+            return self.model_copy(update={"args": new_args, "ps": new_ps})
+        return self.model_copy(update={"args": new_args})
 
     def reorder_args(self, indices):
         """Reorder args and ps by the given index sequence. Returns a new Phi."""
         args = tuple(self.args[idx] for idx in indices)
         ps = tuple(self.ps[idx] for idx in indices)
-        return self.model_copy(update={'args': args, 'ps': ps})
+        return self.model_copy(update={"args": args, "ps": ps})
 
 
 class UPhi(Phi):
     def __str__(self):
         str_args = []
         for arg in self.args:
-            str_args.append(str(arg) if arg else '_')
-        return f'{self.var} = uphi({", ".join(str_args)})'
+            str_args.append(str(arg) if arg else "_")
+        return f"{self.var} = uphi({', '.join(str_args)})"
 
 
 class LPhi(Phi):
     def __str__(self):
         str_args = []
         for arg in self.args:
-            str_args.append(str(arg) if arg else '_')
-        return f'{self.var} = lphi({", ".join(str_args)})'
+            str_args.append(str(arg) if arg else "_")
+        return f"{self.var} = lphi({', '.join(str_args)})"
 
 
 class MStm(IrStm):
     stms: tuple = ()
 
     def __str__(self):
-        return 'mstm{{{}}}'.format(', '.join([str(stm) for stm in self.stms]))
-
-    def __eq__(self, other):
-        if not isinstance(other, MStm):
-            return False
-        return all(a == b for a, b in zip(self.stms, other.stms))
-
-    def __hash__(self):
-        return id(self)
-
+        return "mstm{{{}}}".format(", ".join([str(stm) for stm in self.stms]))
 
 
 # ============================================================
@@ -1206,7 +1079,7 @@ class MStm(IrStm):
 # ============================================================
 def name2var(name: str, ctx: Ctx = Ctx.LOAD) -> IrVariable:
     """Convert a dot-separated name string to a Temp/Attr chain."""
-    ss = name.split('.')
+    ss = name.split(".")
     if len(ss) == 1:
         return Temp(name=ss[0], ctx=ctx)
     exp = Temp(name=ss[0])
@@ -1232,7 +1105,7 @@ def conds2str(conds):
     if conds:
         cs = []
         for exp, boolean in conds:
-            cs.append(str(exp) + ' == ' + str(boolean))
-        return ' and '.join(cs)
+            cs.append(str(exp) + " == " + str(boolean))
+        return " and ".join(cs)
     else:
-        return 'None'
+        return "None"

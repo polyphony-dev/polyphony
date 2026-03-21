@@ -164,7 +164,7 @@ class AliasVarDetector(IrVisitor):
                 assert isinstance(mem_sym, Symbol)
                 stms = self.usedef.get_stms_using(mem_sym)
                 for stm in stms:
-                    if isinstance(stm, Expr) and isinstance(stm.exp, MStore) and stm.exp.mem == ir.src.mem:
+                    if isinstance(stm, Expr) and isinstance(stm.exp, MStore) and isinstance(stm.exp.mem, IrNameExp) and isinstance(ir.src.mem, IrNameExp) and stm.exp.mem.name == ir.src.mem.name:
                         return
         elif isinstance(ir.src, Array):
             return

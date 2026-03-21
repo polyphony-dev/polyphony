@@ -954,14 +954,15 @@ class CodeVisitor(ast.NodeVisitor):
                     fail((env.current_filename, node.lineno),
                          Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.name, it.name])
                 if len(it.args) == 1:
-                    if len(it.kwargs) == 0:
+                    kw = dict(it.kwargs)
+                    if len(kw) == 0:
                         assert sym_t.is_function()
                         scp = sym_t.scope
                         factor = scp.param_default_values()[1]
-                    elif len(it.kwargs) == 1 and 'factor' in it.kwargs:
-                        factor = it.kwargs['factor']
+                    elif len(kw) == 1 and 'factor' in kw:
+                        factor = kw['factor']
                     else:
-                        kwarg = list(it.kwargs.keys())[0]
+                        kwarg = next(iter(kw))
                         fail((env.current_filename, node.lineno),
                              Errors.GOT_UNEXPECTED_KWARGS, [it.name, kwarg])
                 elif len(it.args) == 2:
@@ -979,14 +980,15 @@ class CodeVisitor(ast.NodeVisitor):
                         fail((env.current_filename, node.lineno),
                              Errors.INCOMPATIBLE_PARAMETER_TYPE, [seq.name, it.name])
                 if len(it.args) == 1:
-                    if len(it.kwargs) == 0:
+                    kw = dict(it.kwargs)
+                    if len(kw) == 0:
                         assert sym_t.is_function()
                         scp = sym_t.scope
                         ii = scp.param_default_values()[1]
-                    elif len(it.kwargs) == 1 and 'ii' in it.kwargs:
-                        ii = it.kwargs['ii']
+                    elif len(kw) == 1 and 'ii' in kw:
+                        ii = kw['ii']
                     else:
-                        kwarg = list(it.kwargs.keys())[0]
+                        kwarg = next(iter(kw))
                         fail((env.current_filename, node.lineno),
                              Errors.GOT_UNEXPECTED_KWARGS, [it.name, kwarg])
                 elif len(it.args) == 2:
@@ -1194,7 +1196,7 @@ class CodeVisitor(ast.NodeVisitor):
                     # merge nested params
                     old_with_blk_synth_params = self.current_with_blk_synth_params
                     self.current_with_blk_synth_params = self.current_with_blk_synth_params.copy()
-                    self.current_with_blk_synth_params.update({k:v.value for k, v in expr.kwargs.items()})
+                    self.current_with_blk_synth_params.update({k:v.value for k, v in expr.kwargs})
                     if len(node.items) != 1:
                         assert False  # TODO: use fail()
                     if expr.args:

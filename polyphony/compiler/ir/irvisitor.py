@@ -69,7 +69,7 @@ class IrVisitor(object):
     def _visit_args(self, args, kwargs) -> Any:
         for _, arg in args:
             self.visit(arg)
-        for kwarg in kwargs.values():
+        for _, kwarg in kwargs:
             self.visit(kwarg)
 
     def visit_Call(self, ir) -> Any:

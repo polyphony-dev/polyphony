@@ -191,6 +191,10 @@ class SSATransformerBase(object):
                 # Note: mutating var.name in-place is required here because usedef
                 # tracks references to this var object. model_copy would break those references.
                 object.__setattr__(var, 'name', new_name)
+                if isinstance(var, Attr):
+                    # Keep attr in sync with name so that field-level equality (pydantic __eq__)
+                    # works correctly: attr is always a str equal to name after SSA renaming.
+                    object.__setattr__(var, 'attr', new_name)
 
     def _rename_rec(self, block, count, stack):
         for stm in block.stms:

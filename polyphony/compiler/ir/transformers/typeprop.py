@@ -1038,7 +1038,9 @@ class TypeSpecializationAnalyzer(TypePropagation):
             if owner and (func_sym.scope is not owner or owner is not callee_scope.parent):
                 owner.import_sym(new_scope_sym, asname)
             # Record specialization (NO IR modification)
-            self.specialization_map[ir] = (new_scope, postfix)
+            # Use id(ir) as key to avoid value-based collisions between
+            # structurally identical Call nodes in different contexts.
+            self.specialization_map[id(ir)] = (new_scope, postfix)
         else:
             self._add_scope(callee_scope)
         return ret_t
@@ -1086,7 +1088,7 @@ class TypeSpecializationAnalyzer(TypePropagation):
             if owner and func_sym.scope is not owner:
                 owner.import_sym(new_scope_sym, asname)
             # Record specialization (NO IR modification)
-            self.specialization_map[ir] = (new_scope, postfix)
+            self.specialization_map[id(ir)] = (new_scope, postfix)
         else:
             self._add_scope(callee_scope)
             self._add_scope(ctor)
@@ -1137,8 +1139,8 @@ class TypeSpecializationAnalyzer(TypePropagation):
                 if owner is not None:
                     owner.import_sym(new_scope_sym, asname)
             # Record specialization (NO ir.args mutation)
-            # Key is the Call ir containing append_worker
-            self.specialization_map[ir] = (new_scope, postfix)
+            # Use id(ir) as key to avoid value-based collisions.
+            self.specialization_map[id(ir)] = (new_scope, postfix)
         else:
             self._add_scope(worker)
 
@@ -1283,7 +1285,7 @@ class TypeSpecializerTransformer(IrTransformer):
 
     def visit_Call(self, ir):
         # Specialization lookup BEFORE visiting children (ir must match Pass 1 key)
-        spec_entry = self.result.specialization_map.get(ir)
+        spec_entry = self.result.specialization_map.get(id(ir))
 
         # Visit children (IrTransformer pattern)
         new_func = self.visit(ir.func)
@@ -1315,7 +1317,7 @@ class TypeSpecializerTransformer(IrTransformer):
         current_args = resolved_ir.args
         new_args = normalize_args(callee.base_name, names, defvals, current_args, resolved_ir.kwargs)
         if new_args is not current_args or resolved_ir.kwargs:
-            resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': {}})
+            resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': ()})
 
         # lib functions
         if callee.is_lib():
@@ -1342,7 +1344,7 @@ class TypeSpecializerTransformer(IrTransformer):
 
     def visit_New(self, ir):
         # Specialization lookup BEFORE visiting children
-        spec_entry = self.result.specialization_map.get(ir)
+        spec_entry = self.result.specialization_map.get(id(ir))
 
         new_func = self.visit(ir.func)
         new_args, args_changed = self._visit_args(ir.args)
@@ -1365,7 +1367,7 @@ class TypeSpecializerTransformer(IrTransformer):
             current_args, resolved_ir.kwargs,
         )
         if new_args is not current_args or resolved_ir.kwargs:
-            resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': {}})
+            resolved_ir = resolved_ir.model_copy(update={'args': new_args, 'kwargs': ()})
 
         # specialization: apply if recorded in Pass 1
         if spec_entry:
