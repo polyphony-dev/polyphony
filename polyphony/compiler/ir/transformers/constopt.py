@@ -255,7 +255,7 @@ class ConstantOptBase(IrVisitor):
                                 v_sym = qualified_symbols(p, self.scope)[-1]
                                 assert isinstance(v_sym, Symbol)
                                 blks = self.usedef.get_blks_defining(v_sym)
-                                if blk in blks:
+                                if blk.bid in blks:
                                     object.__setattr__(phi, 'args', phi.args[:pi] + phi.args[pi + 1:])
                                     object.__setattr__(phi, 'ps', phi.ps[:pi] + phi.ps[pi + 1:])
                                     break
