@@ -430,6 +430,7 @@ class ConstantOpt(ConstantOptBase):
                 blk = scope.find_block(stm.block)
                 if stm in blk.stms:
                     blk.stms[blk.stms.index(stm)] = result
+                    self.udupdater.update(stm, result)
                 stm = result
             if isinstance(stm, (Phi, UPhi, LPhi)):
                 # Skip stale phi: VarReplacer may have replaced this phi with a new
