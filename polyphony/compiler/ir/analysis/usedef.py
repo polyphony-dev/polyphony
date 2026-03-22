@@ -172,6 +172,10 @@ class UseDefTable(object):
             stms = set([item.stm for item in self._def_sym2[key]])
             return stms
         elif isinstance(key, IrVariable):
+            # When scope is available, resolve via qsym so that renamed vars (SSA versioned)
+            # are found regardless of var identity. Falls back to identity (_def_var2) when
+            # scope is None. get_stms_using intentionally keeps identity lookup — use-side
+            # vars are always the current objects in the rebuilt usedef.
             if self.scope is not None:
                 qsym = qualified_symbols(key, self.scope)
                 return {item.stm for item in self._def_qsym2[qsym]}
