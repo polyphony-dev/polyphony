@@ -211,8 +211,13 @@ class SSATransformerBase(object):
     def _rename_rec(self, block, count, stack):
         for stm in block.stms:
             if type(stm) is not Phi:
-                for use in self.usedef.get_vars_used_at(stm):
-                    assert isinstance(use, IrVariable)
+                # Walk the IR tree directly to find ALL IrVariable instances by object
+                # identity. Using get_vars_used_at() would miss duplicates because
+                # UseDefItem uses value-based equality, deduplicating same-value vars
+                # (e.g., two Temp('c') instances in "c.x + c.y" become one entry).
+                for use in stm.find_irs(IrVariable):
+                    if use.ctx not in (Ctx.LOAD, Ctx.CALL):
+                        continue
                     qsym = qualified_symbols(use, self.scope)
                     key = qsym
                     if key not in stack or not stack[key]:
