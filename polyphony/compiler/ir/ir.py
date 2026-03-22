@@ -197,7 +197,7 @@ class Ir(BaseModel):
         return ir, False
 
     def _subst_seq_by_id(self, seq, rename_map, visited):
-        """Return (new_tuple, changed). Visits flat Ir elements only; nested tuples are not descended."""
+        """Return (new_tuple, changed). Recurses into nested tuples (e.g. Call.args pairs)."""
         new_items = list(seq)
         changed = False
         for i, item in enumerate(seq):
@@ -211,6 +211,12 @@ class Ir(BaseModel):
                     if item_changed:
                         new_items[i] = new_item
                         changed = True
+            elif isinstance(item, tuple):
+                # Recurse into nested tuples (e.g. Call.args is tuple of (name, var) pairs)
+                new_item, item_changed = self._subst_seq_by_id(item, rename_map, visited)
+                if item_changed:
+                    new_items[i] = new_item
+                    changed = True
         if not changed:
             return seq, False
         return tuple(new_items), True
