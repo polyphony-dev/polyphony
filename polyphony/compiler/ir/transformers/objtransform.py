@@ -169,24 +169,30 @@ class ObjectTransformer(object):
     def _transform_use(self, copies, copy_sources):
         if not copy_sources:
             return
+        stm_remap: dict = {}
         for copy_qsym, copy_stm in copies.items():
             sources = copy_sources[self.qsym_ancestor(copy_qsym)]
             usestms = self.usedef.get_stms_using(copy_qsym).copy()
             for stm in usestms:
+                stm = stm_remap.get(stm, stm)
                 if not isinstance(stm, (Move, Expr)):
                     continue
                 if isinstance(copy_stm, (Phi, UPhi, LPhi)) and isinstance(stm, Move):
                     use_var = self._find_use_var(stm, copy_qsym)
                     if use_var or isinstance(stm.src, MRef) or (isinstance(stm.src, SysCall) and stm.src.name == 'len'):
-                        self._add_uphi(stm, sources, copy_qsym)
+                        new_stm = self._add_uphi(stm, sources, copy_qsym)
+                        stm_remap[stm] = new_stm
+                        stm = new_stm
                     def_var = self._find_def_var(stm, copy_qsym)
                     if def_var:
-                        self._add_branch_move(stm, sources, copy_qsym)
+                        sub = self._add_branch_move(stm, sources, copy_qsym)
+                        stm_remap.update(sub)
                 elif isinstance(stm, Expr):
                     self._add_cexpr(stm, sources, copy_qsym)
 
     def _add_uphi(self, mv_stm, sources, copy_qsym):
-        insert_idx = self.scope.find_block(mv_stm.block).stms.index(mv_stm)
+        blk = self.scope.find_block(mv_stm.block)
+        insert_idx = blk.stms.index(mv_stm)
         tmp = self.scope.add_temp()
         var = Temp(name=tmp.name, ctx=Ctx.STORE)
         new_ps = []
@@ -199,18 +205,18 @@ class ObjectTransformer(object):
             c_sym = self.scope.add_condition_sym()
             tmp_mv = Move(dst=Temp(name=c_sym.name, ctx=Ctx.STORE), src=c,
                          loc=mv_stm.loc, block=mv_stm.block)
-            self.scope.find_block(mv_stm.block).stms.insert(insert_idx, tmp_mv)
+            blk.stms.insert(insert_idx, tmp_mv)
             insert_idx += 1
             new_ps.append(Temp(name=c_sym.name))
             mv_src = mv_stm.src.subst(self.qsym_to_ir(copy_qsym, Ctx.LOAD), Temp(name=src.name))
             new_args.append(mv_src)
         uphi = UPhi(var=var, args=tuple(new_args), ps=tuple(new_ps),
                     block=mv_stm.block, loc=mv_stm.loc or Loc('', 0))
-        self.scope.find_block(mv_stm.block).stms.insert(insert_idx, uphi)
+        blk.stms.insert(insert_idx, uphi)
         var_load = Temp(name=tmp.name, ctx=Ctx.LOAD)
-        # Intentional exception: mv_stm.src is mutated in-place so that _add_branch_move,
-        # called immediately after by _transform_use, sees the updated src via model_copy.
-        object.__setattr__(mv_stm, 'src', var_load)
+        new_mv_stm = blk.replace_stm(mv_stm, mv_stm.model_copy(update={'src': var_load}))
+        UseDefUpdater(self.scope, self.usedef).update(mv_stm, new_mv_stm)
+        return new_mv_stm
 
     def _add_branch_move(self, mv_stm, sources, copy_qsym):
         blk = self.scope.find_block(mv_stm.block)
@@ -228,15 +234,20 @@ class ObjectTransformer(object):
             blk.stms.insert(stm_idx, mv)
             csyms.append(csym)
         stm_idx = blk.stms.index(mv_stm)
+        stm_subst: dict = {}
         for src, csym in zip(sources, csyms):
             mv_copy = mv_stm.model_copy(deep=True)
             mv_copy = mv_copy.model_copy(update={'dst': mv_copy.dst.model_copy(update={'exp': Temp(name=src.name, ctx=Ctx.STORE)})})
-            new_tail = self._make_branch(Temp(name=csym.name), mv_copy, blk, stm_idx)
+            new_tail, sub = self._make_branch(Temp(name=csym.name), mv_copy, blk, stm_idx)
+            stm_subst.update(sub)
+            if mv_stm in sub:
+                mv_stm = sub[mv_stm]
             stm_idx = 0
             blk = new_tail
         self.scope.find_block(mv_stm.block).stms.remove(mv_stm)
         if is_exit:
             self.scope.exit_block = blk
+        return stm_subst
 
     def _make_branch(self, cond, branch_stm, cur_blk, stm_idx):
         branch_blk = Block(self.scope)
@@ -259,23 +270,22 @@ class ObjectTransformer(object):
                                         right=path.model_copy(deep=True))
         else:
             branch_blk.path_exp = cond.model_copy(deep=True)
-        # Split stms: update block field in-place because usedef tracks stm objects by identity.
+        udupdater = UseDefUpdater(self.scope, self.usedef)
+        stm_subst = {}
         for stm in cur_blk.stms[stm_idx:]:
-            object.__setattr__(stm, 'block', tail_blk.bid)
-            tail_blk.stms.append(stm)
+            new_stm = tail_blk.append_stm(stm)
+            stm_subst[stm] = new_stm
+            udupdater.update(stm, new_stm)
         cur_blk.stms = cur_blk.stms[:stm_idx]
 
         cj = CJump(exp=cond, true=branch_blk.bid, false=tail_blk.bid,
                    loc=branch_stm.loc, block=cur_blk.bid)
         cur_blk.stms.append(cj)
 
-        # Intentional exception: block field updated in-place to preserve stm identity
-        # for usedef tracking.
-        object.__setattr__(branch_stm, 'block', branch_blk.bid)
-        branch_blk.stms.append(branch_stm)
-        jmp = Jump(target=tail_blk.bid, loc=branch_stm.loc, block=branch_blk.bid)
+        new_branch_stm = branch_blk.append_stm(branch_stm)
+        jmp = Jump(target=tail_blk.bid, loc=new_branch_stm.loc, block=branch_blk.bid)
         branch_blk.stms.append(jmp)
-        return tail_blk
+        return tail_blk, stm_subst
 
     def _add_cexpr(self, expr, sources, copy_qsym):
         insert_idx = self.scope.find_block(expr.block).stms.index(expr)
