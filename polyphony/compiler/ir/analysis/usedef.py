@@ -28,12 +28,12 @@ class UseDefItem:
             return NotImplemented
         return (self.sym is other.sym and
                 self.qsym == other.qsym and
-                self.var is other.var and
+                self.var == other.var and
                 self.stm is other.stm and
                 self.blk == other.blk)
 
     def __hash__(self):
-        return hash((id(self.sym), self.qsym, id(self.var), id(self.stm), self.blk))
+        return hash((id(self.sym), self.qsym, self.var, id(self.stm), self.blk))
 
 
 class UseDefTable(object):
