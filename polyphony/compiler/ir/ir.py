@@ -331,17 +331,13 @@ class Attr(IrVariable):
             if isinstance(attr, Symbol):
                 attr = attr.name
                 kwargs["attr"] = attr
-            if "name" not in kwargs:
+            if not kwargs.get("name"):
                 kwargs["name"] = attr if isinstance(attr, str) else ""
         # Set exp.ctx = LOAD to match old ATTR behavior
         exp = kwargs.get("exp")
         if exp is not None and hasattr(exp, "ctx") and exp.ctx != Ctx.LOAD:
             kwargs["exp"] = exp.model_copy(update={"ctx": Ctx.LOAD})
         super().__init__(**kwargs)
-
-    def model_post_init(self, __context):
-        if not self.name:
-            object.__setattr__(self, "name", self.attr)
 
     def __str__(self):
         return f"{self.exp}.{self.attr}"
@@ -575,24 +571,15 @@ class IrCallable(IrNameExp):
         # Ensure args is a tuple
         if "args" in kwargs and not isinstance(kwargs["args"], tuple):
             kwargs["args"] = tuple(kwargs["args"])
-        # Set func.ctx = CALL
+        # Set func.ctx = CALL and sync name from func.name
         func = kwargs.get("func")
-        if func is not None and hasattr(func, "ctx") and func.ctx != Ctx.CALL:
-            kwargs["func"] = func.model_copy(update={"ctx": Ctx.CALL})
+        if func is not None:
+            if hasattr(func, "ctx") and func.ctx != Ctx.CALL:
+                func = func.model_copy(update={"ctx": Ctx.CALL})
+                kwargs["func"] = func
+            if not kwargs.get("name"):
+                kwargs["name"] = func.name
         super().__init__(**kwargs)
-
-    def model_post_init(self, __context):
-        """Sync the name field from func.name.
-
-        In Pydantic, the inherited 'name' field from IrNameExp is a model field,
-        so we sync its value from func.name after construction.
-        """
-        object.__setattr__(self, "name", self.func.name)
-
-    # NOTE: No __setattr__ override needed. IrExp is frozen, so direct field
-    # assignment raises ValidationError. func.ctx=CALL is ensured in __init__,
-    # and name is synced in model_post_init. Mutations use object.__setattr__
-    # or model_copy.
 
     @property
     def qualified_name(self) -> tuple[str, ...]:
@@ -712,7 +699,7 @@ class MStore(IrExp):
 
 class Array(IrExp):
     items: tuple = ()
-    repeat: Any = None  # Const(1) default, set in post_init
+    repeat: Any = None  # Const(1) default, set in __init__
     mutable: bool = True
 
     def __init__(self, *args, **kwargs):
@@ -724,11 +711,9 @@ class Array(IrExp):
                 kwargs.setdefault("mutable", args[1])
         if "items" in kwargs and not isinstance(kwargs["items"], tuple):
             kwargs["items"] = tuple(kwargs["items"])
+        if kwargs.get("repeat") is None:
+            kwargs["repeat"] = Const(value=1)
         super().__init__(**kwargs)
-
-    def model_post_init(self, __context):
-        if self.repeat is None:
-            object.__setattr__(self, "repeat", Const(value=1))
 
     @property
     def is_mutable(self):

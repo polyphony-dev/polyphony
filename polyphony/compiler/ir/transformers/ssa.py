@@ -188,8 +188,9 @@ class SSATransformerBase(object):
                 var_sym = qsyms[-1]
                 assert isinstance(var_sym, Symbol)
                 new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
-                # Note: mutating var.name in-place is required here because usedef
-                # tracks references to this var object. model_copy would break those references.
+                # Intentional exception to functional IR guidelines: var.name is mutated
+                # in-place because usedef tracks this var object by identity. Using
+                # model_copy would create a new object, leaving usedef references stale.
                 object.__setattr__(var, 'name', new_name)
                 if isinstance(var, Attr):
                     # Keep attr in sync with name so that field-level equality (pydantic __eq__)
@@ -256,6 +257,14 @@ class SSATransformerBase(object):
                 if key in stack and stack[key]:
                     stack[key].pop()
 
+    def _update_phi(self, phi, new_phi):
+        """Replace phi with new_phi in its block, update self.phis and usedef."""
+        phi_blk = self.scope.find_block(phi.block)
+        phi_blk.replace_stm(phi, new_phi)
+        self.usedef.replace_stm(phi, new_phi)
+        idx = next(i for i, p in enumerate(self.phis) if p is phi)
+        self.phis[idx] = new_phi
+
     def _add_new_phi_arg(self, phi, var, stack, block, is_tail_attr=True):
         key = qualified_symbols(var, self.scope)
         i, v = stack[key][-1]
@@ -265,13 +274,17 @@ class SSATransformerBase(object):
                 phi_blk = self.scope.find_block(phi.block)
                 if 1 == phi_blk.preds.count(block):
                     idx = phi_blk.preds.index(block)
-                    object.__setattr__(phi, 'args', phi.args[:idx] + (var,) + phi.args[idx + 1:])
+                    new_phi = phi.model_copy(update={'args': phi.args[:idx] + (var,) + phi.args[idx + 1:]})
+                    self._update_phi(phi, new_phi)
                     self._add_new_sym(var, i)
                 else:
+                    current_phi = phi
                     for idx, pred in enumerate(phi_blk.preds):
                         if pred is not block:
                             continue
-                        object.__setattr__(phi, 'args', phi.args[:idx] + (var,) + phi.args[idx + 1:])
+                        new_phi = current_phi.model_copy(update={'args': current_phi.args[:idx] + (var,) + current_phi.args[idx + 1:]})
+                        self._update_phi(current_phi, new_phi)
+                        current_phi = new_phi
                         self._add_new_sym(var, i)
         else:
             self._add_new_sym(var, i)
@@ -432,8 +445,11 @@ class SSATransformerBase(object):
                 phi_predicates.append(p)
 
             for phi in phis:
-                object.__setattr__(phi, 'ps', tuple(phi_predicates))
-                assert len(phi.ps) == len(phi.args)
+                new_phi = phi.model_copy(update={'ps': tuple(phi_predicates)})
+                blk.replace_stm(phi, new_phi)
+                phis_idx = next(i for i, p in enumerate(self.phis) if p is phi)
+                self.phis[phis_idx] = new_phi
+                assert len(new_phi.ps) == len(new_phi.args)
 
     def _find_loop_phi(self):
         for phi in self.phis[:]:

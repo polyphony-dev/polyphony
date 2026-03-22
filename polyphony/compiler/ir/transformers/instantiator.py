@@ -99,7 +99,7 @@ class ModuleInstantiator(object):
             assert isinstance(move.src, New)
             new_src = new.subst(module.base_name, new_module.base_name)
             if new_src is not new:
-                object.__setattr__(move, 'src', new_src)
+                caller.find_block(move.block).replace_stm(move, move.model_copy(update={'src': new_src}))
         return new_modules
 
     def _process_workers(self, module):

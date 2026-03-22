@@ -208,6 +208,8 @@ class ObjectTransformer(object):
                     block=mv_stm.block, loc=mv_stm.loc or Loc('', 0))
         self.scope.find_block(mv_stm.block).stms.insert(insert_idx, uphi)
         var_load = Temp(name=tmp.name, ctx=Ctx.LOAD)
+        # Intentional exception: mv_stm.src is mutated in-place so that _add_branch_move,
+        # called immediately after by _transform_use, sees the updated src via model_copy.
         object.__setattr__(mv_stm, 'src', var_load)
 
     def _add_branch_move(self, mv_stm, sources, copy_qsym):
@@ -257,7 +259,7 @@ class ObjectTransformer(object):
                                         right=path.model_copy(deep=True))
         else:
             branch_blk.path_exp = cond.model_copy(deep=True)
-        # Split stms
+        # Split stms: update block field in-place because usedef tracks stm objects by identity.
         for stm in cur_blk.stms[stm_idx:]:
             object.__setattr__(stm, 'block', tail_blk.bid)
             tail_blk.stms.append(stm)
@@ -267,6 +269,8 @@ class ObjectTransformer(object):
                    loc=branch_stm.loc, block=cur_blk.bid)
         cur_blk.stms.append(cj)
 
+        # Intentional exception: block field updated in-place to preserve stm identity
+        # for usedef tracking.
         object.__setattr__(branch_stm, 'block', branch_blk.bid)
         branch_blk.stms.append(branch_stm)
         jmp = Jump(target=tail_blk.bid, loc=branch_stm.loc, block=branch_blk.bid)

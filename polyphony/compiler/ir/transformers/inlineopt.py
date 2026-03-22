@@ -660,6 +660,9 @@ class InlineOpt(object):
             else:
                 callee.rename_sym_asname(callee_sym.name, new_name)
             for exp in name_exps:
+                # Intentional exception: exp.name is renamed in-place because the IR
+                # tree holds identity references to these exp objects; replacing via
+                # model_copy would leave stale references throughout the callee's IR.
                 object.__setattr__(exp, "name", new_name)
             if callee_sym.is_typevar():
                 self._rename_type_expr_var(callee, old_name, new_name)
@@ -714,6 +717,8 @@ class InlineOpt(object):
                 assert isinstance(expr, Expr)
                 for v in expr.find_irs(IrNameExp):
                     if v.name == old_name:
+                        # Intentional exception: name renamed in-place to keep ExprType
+                        # expression references consistent across the type system.
                         object.__setattr__(v, "name", new_name)
 
     def _merge_closure(self, callee: CalleeScope, caller: CallerScope):
