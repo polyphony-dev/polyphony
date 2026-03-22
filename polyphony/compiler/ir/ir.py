@@ -170,6 +170,7 @@ class Ir(BaseModel):
         return result
 
     def _subst_by_id_rec(self, ir, rename_map, visited):
+        """Return (new_ir, changed). Non-mutating id-based replacement; visited guards DAG sharing."""
         if not isinstance(ir, Ir):
             return ir, False
         obj_id = id(ir)
@@ -196,6 +197,7 @@ class Ir(BaseModel):
         return ir, False
 
     def _subst_seq_by_id(self, seq, rename_map, visited):
+        """Return (new_tuple, changed). Visits flat Ir elements only; nested tuples are not descended."""
         new_items = list(seq)
         changed = False
         for i, item in enumerate(seq):
