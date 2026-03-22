@@ -37,7 +37,8 @@ class UseDefItem:
 
 
 class UseDefTable(object):
-    def __init__(self):
+    def __init__(self, scope=None):
+        self.scope = scope
         self._def_sym2: dict[Symbol, set[UseDefItem]] = defaultdict(set)
         self._use_sym2: dict[Symbol, set[UseDefItem]] = defaultdict(set)
         self._def_qsym2: dict[tuple[Symbol | str, ...], set[UseDefItem]] = defaultdict(set)
@@ -171,8 +172,10 @@ class UseDefTable(object):
             stms = set([item.stm for item in self._def_sym2[key]])
             return stms
         elif isinstance(key, IrVariable):
-            stms = set([item.stm for item in self._def_var2[key]])
-            return stms
+            if self.scope is not None:
+                qsym = qualified_symbols(key, self.scope)
+                return {item.stm for item in self._def_qsym2[qsym]}
+            return {item.stm for item in self._def_var2[key]}
         elif isinstance(key, tuple):
             stms = set([item.stm for item in self._def_qsym2[key]])
             return stms
@@ -348,6 +351,7 @@ class UseDefDetector(IrVisitor):
             self._add_or_remove_Const = self._remove_Const
 
     def process(self, scope):  # type: ignore[override]
+        self.table = UseDefTable(scope=scope)
         super().process(scope)
         return self.table
 
