@@ -17,7 +17,6 @@ from ..types.type import Type
 from ..types import typehelper
 from ..analysis.dominator import DominatorTreeBuilder, DominanceFrontierBuilder
 from ..analysis.usedef import UseDefDetector, UseDefUpdater
-from ..analysis.usedef import UseDefItem
 from .varreplacer import VarReplacer
 from ..symbol import Symbol
 from ...common.env import env
@@ -144,24 +143,12 @@ class SSATransformerBase(object):
         return phi
 
     def _add_phi_var_to_usedef(self, var, phi, is_tail_attr=True):
-        qsyms = qualified_symbols(var, self.scope)
-        sym = qsyms[-1]
-        assert isinstance(sym, Symbol)
-        item = UseDefItem(sym, qsyms, var, phi, phi.block)
         if is_tail_attr:
-            self.usedef._def_sym2[sym].add(item)
-            self.usedef._def_qsym2[qsyms].add(item)
-            self.usedef._def_var2[var].add(item)
-            self.usedef._def_stm2[phi].add(item)
-            self.usedef._def_blk2[phi.block].add(item)
+            self.usedef.add_var_def(self.scope, var, phi)
             if isinstance(var, Attr):
                 self._add_phi_var_to_usedef(var.exp, phi, is_tail_attr=False)
         else:
-            self.usedef._use_sym2[sym].add(item)
-            self.usedef._use_qsym2[qsyms].add(item)
-            self.usedef._use_var2[var].add(item)
-            self.usedef._use_stm2[phi].add(item)
-            self.usedef._use_blk2[phi.block].add(item)
+            self.usedef.add_var_use(self.scope, var, phi)
 
     def _rename(self):
         qcount = {}
@@ -386,50 +373,18 @@ class SSATransformerBase(object):
 
     def _update_usedef_replace(self, usedef, old_var, new_var, stm):
         """Remove old_var use and add new_var use for stm in usedef."""
-        old_qsyms = qualified_symbols(old_var, self.scope)
-        old_sym = old_qsyms[-1]
+        old_sym = qualified_symbols(old_var, self.scope)[-1]
         if isinstance(old_sym, Symbol):
-            item = UseDefItem(old_sym, old_qsyms, old_var, stm, stm.block)
-            usedef._use_sym2[old_sym].discard(item)
-            usedef._use_qsym2[old_qsyms].discard(item)
-            usedef._use_var2[old_var].discard(item)
-            usedef._use_stm2[stm].discard(item)
-            usedef._use_blk2[stm.block].discard(item)
-        new_qsyms = qualified_symbols(new_var, self.scope)
-        new_sym = new_qsyms[-1]
+            usedef.remove_var_use(self.scope, old_var, stm)
+        new_sym = qualified_symbols(new_var, self.scope)[-1]
         if isinstance(new_sym, Symbol):
-            item = UseDefItem(new_sym, new_qsyms, new_var, stm, stm.block)
-            usedef._use_sym2[new_sym].add(item)
-            usedef._use_qsym2[new_qsyms].add(item)
-            usedef._use_var2[new_var].add(item)
-            usedef._use_stm2[stm].add(item)
-            usedef._use_blk2[stm.block].add(item)
+            usedef.add_var_use(self.scope, new_var, stm)
 
     def _remove_phi(self, phi, usedef):
         phi_blk = self.scope.find_block(phi.block)
         if phi in phi_blk.stms:
             phi_blk.stms.remove(phi)
-            # Remove all uses/defs of this phi from usedef
-            for var in list(usedef.get_vars_used_at(phi)):
-                qsyms = qualified_symbols(var, self.scope)
-                sym = qsyms[-1]
-                if isinstance(sym, Symbol):
-                    item = UseDefItem(sym, qsyms, var, phi, phi.block)
-                    usedef._use_sym2[sym].discard(item)
-                    usedef._use_qsym2[qsyms].discard(item)
-                    usedef._use_var2[var].discard(item)
-                    usedef._use_stm2[phi].discard(item)
-                    usedef._use_blk2[phi.block].discard(item)
-            for var in list(usedef.get_vars_defined_at(phi)):
-                qsyms = qualified_symbols(var, self.scope)
-                sym = qsyms[-1]
-                if isinstance(sym, Symbol):
-                    item = UseDefItem(sym, qsyms, var, phi, phi.block)
-                    usedef._def_sym2[sym].discard(item)
-                    usedef._def_qsym2[qsyms].discard(item)
-                    usedef._def_var2[var].discard(item)
-                    usedef._def_stm2[phi].discard(item)
-                    usedef._def_blk2[phi.block].discard(item)
+            usedef.remove_stm(self.scope, phi)
 
     def _insert_predicate(self):
         for blk in self.scope.traverse_blocks():
