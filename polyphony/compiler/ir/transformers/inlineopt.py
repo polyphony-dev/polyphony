@@ -36,6 +36,8 @@ from ..ir import (
     Jump,
     Ret,
 )
+from ..types.exprtype import ExprType
+from .varreplacer import replace_exprtype_in_typ
 from ..irvisitor import IrVisitor, IrTransformer
 from ..irhelper import qualified_symbols, irexp_type, qsym2var
 from ..symbol import Symbol
@@ -492,6 +494,35 @@ class _FlattenFieldAccessForExprType(IrTransformer):
 
 
 # ============================================================
+# _SymbolRenamer - Functional symbol renamer for inline
+# ============================================================
+
+
+class _SymbolRenamer(IrTransformer):
+    """Rename IrNameExp.name values in an IR tree based on name_map."""
+
+    def __init__(self, name_map: dict[str, str]):
+        super().__init__()
+        self.name_map = name_map
+
+    def visit_Temp(self, ir):
+        new_name = self.name_map.get(ir.name)
+        if new_name is None:
+            return ir
+        return ir.model_copy(update={'name': new_name})
+
+    def _process_recursive(self, scope):
+        self.process(scope)
+        for child in scope.children:
+            # Exclude names locally defined in the child scope to avoid
+            # renaming variables that shadow the callee-level symbols.
+            child_map = {old: new for old, new in self.name_map.items()
+                         if not child.has_sym(old)}
+            if child_map:
+                _SymbolRenamer(child_map)._process_recursive(child)
+
+
+# ============================================================
 # InlineOpt - Main inline optimization
 # ============================================================
 
@@ -620,12 +651,6 @@ class InlineOpt(object):
             assert sym is not None
             callee.import_sym(sym, sym.name)
 
-    def _collect_names_recursively(self, scope: Scope, all_vars: list[tuple[Scope, list[IrNameExp]]]):
-        vs = AllVariableCollector().process(scope)
-        all_vars.append((scope, vs))
-        for child in scope.children:
-            self._collect_names_recursively(child, all_vars)
-
     def _rename(self, callee: CalleeScope, caller: CallerScope):
         def make_unique_name(scopes: list[Scope], name: str) -> str:
             new_name = name
@@ -636,16 +661,9 @@ class InlineOpt(object):
                     count += 1
             return new_name
 
-        scope_name_exps: list[tuple[Scope, list[IrNameExp]]] = []
-        self._collect_names_recursively(callee, scope_name_exps)
-        sym_ir_map: dict[Symbol, list[IrNameExp]] = defaultdict(list)
-        for scope, name_exps in scope_name_exps:
-            for name_exp in name_exps:
-                sym = scope.find_sym(name_exp.name)
-                assert sym
-                if sym in callee.symbols.values():
-                    sym_ir_map[sym].append(name_exp)
-        for callee_sym, name_exps in sym_ir_map.items():
+        # Phase 1: build name_map and rename callee symbols
+        name_map: dict[str, str] = {}
+        for callee_sym in list(callee.symbols.values()):
             if callee_sym.is_self():
                 continue
             if callee_sym.is_builtin():
@@ -659,13 +677,12 @@ class InlineOpt(object):
                 callee.rename_sym(callee_sym.name, new_name)
             else:
                 callee.rename_sym_asname(callee_sym.name, new_name)
-            for exp in name_exps:
-                # Intentional exception: exp.name is renamed in-place because the IR
-                # tree holds identity references to these exp objects; replacing via
-                # model_copy would leave stale references throughout the callee's IR.
-                object.__setattr__(exp, "name", new_name)
+            name_map[old_name] = new_name
             if callee_sym.is_typevar():
                 self._rename_type_expr_var(callee, old_name, new_name)
+        # Phase 2: apply renames to callee IR tree (including child scopes)
+        if name_map:
+            _SymbolRenamer(name_map)._process_recursive(callee)
 
     def _merge_symbols(self, callee: CalleeScope, caller: CallerScope):
         callee_name_exps = AllVariableCollector().process(callee)
@@ -711,15 +728,17 @@ class InlineOpt(object):
         assert isinstance(orig_callee, Scope)
         parent = orig_callee.parent
         assert isinstance(parent, Scope)
+        renamer = _SymbolRenamer({old_name: new_name})
         for field in parent.symbols.values():
             for expr_t in typehelper.find_expr(field.typ):
-                expr = expr_t.expr
-                assert isinstance(expr, Expr)
-                for v in expr.find_irs(IrNameExp):
-                    if v.name == old_name:
-                        # Intentional exception: name renamed in-place to keep ExprType
-                        # expression references consistent across the type system.
-                        object.__setattr__(v, "name", new_name)
+                assert isinstance(expr_t, ExprType)
+                expr_stm = expr_t.expr
+                assert isinstance(expr_stm, Expr)
+                new_exp = renamer.visit(expr_stm.exp)
+                if new_exp is not expr_stm.exp:
+                    new_expr_stm = expr_stm.model_copy(update={'exp': new_exp})
+                    new_expr_t = dataclasses.replace(expr_t, expr=new_expr_stm)
+                    field.typ = replace_exprtype_in_typ(field.typ, expr_t, new_expr_t)
 
     def _merge_closure(self, callee: CalleeScope, caller: CallerScope):
         closures = callee.closures()

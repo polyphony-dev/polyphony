@@ -24,20 +24,20 @@ if TYPE_CHECKING:
     from ..analysis.usedef import UseDefTable
 
 
-def _replace_exprtype_in_typ(typ, old_expr_t: ExprType, new_expr_t: ExprType):
+def replace_exprtype_in_typ(typ, old_expr_t: ExprType, new_expr_t: ExprType):
     """Replace old_expr_t with new_expr_t in the type tree, returning updated type."""
     if typ is old_expr_t:
         return new_expr_t
     if typ.is_list():
-        new_element = _replace_exprtype_in_typ(typ.element, old_expr_t, new_expr_t)
+        new_element = replace_exprtype_in_typ(typ.element, old_expr_t, new_expr_t)
         new_length = typ.length
         if isinstance(typ.length, ExprType):
-            new_length = _replace_exprtype_in_typ(typ.length, old_expr_t, new_expr_t)
+            new_length = replace_exprtype_in_typ(typ.length, old_expr_t, new_expr_t)
         if new_element is typ.element and new_length is typ.length:
             return typ
         return typ.clone(element=new_element, length=new_length)
     if typ.is_tuple():
-        new_element = _replace_exprtype_in_typ(typ.element, old_expr_t, new_expr_t)
+        new_element = replace_exprtype_in_typ(typ.element, old_expr_t, new_expr_t)
         if new_element is typ.element:
             return typ
         return typ.clone(element=new_element)
@@ -225,7 +225,7 @@ class VarReplacer(object):
                         continue
                     new_expr = expr.model_copy(update={'exp': new_exp})
                     new_expr_t = dataclasses_replace(expr_t, expr=new_expr)
-                    sym.typ = _replace_exprtype_in_typ(sym.typ, expr_t, new_expr_t)
+                    sym.typ = replace_exprtype_in_typ(sym.typ, expr_t, new_expr_t)
                     if expr.block:
                         blk = scope.find_block(expr.block)
                         blk.replace_stm(expr, new_expr)
