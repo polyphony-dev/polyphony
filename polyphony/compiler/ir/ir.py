@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .scope import Scope
 from collections import namedtuple
 from enum import IntEnum
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 op2sym_map = {
@@ -160,6 +160,59 @@ class Ir(BaseModel):
             return seq, False
         return tuple(new_elms), True
 
+    def subst_by_id(self, rename_map: dict) -> 'Ir':
+        """Return new IR with nodes replaced by identity (id) lookup in rename_map.
+
+        Non-mutating. Returns same object if nothing matched.
+        rename_map: dict[int, Ir]  — maps id(old_node) -> new_node
+        """
+        result, _ = self._subst_by_id_rec(self, rename_map, set())
+        return result
+
+    def _subst_by_id_rec(self, ir, rename_map, visited):
+        if not isinstance(ir, Ir):
+            return ir, False
+        obj_id = id(ir)
+        if obj_id in rename_map:
+            return rename_map[obj_id], True
+        if obj_id in visited:
+            return ir, False
+        visited.add(obj_id)
+        updates = {}
+        for field_name in type(ir).model_fields:
+            v = getattr(ir, field_name, None)
+            if isinstance(v, list):
+                assert False, f"{type(ir).__name__}.{field_name} must not be a list"
+            elif isinstance(v, tuple):
+                new_v, changed = self._subst_seq_by_id(v, rename_map, visited)
+                if changed:
+                    updates[field_name] = new_v
+            elif isinstance(v, Ir):
+                new_v, changed = self._subst_by_id_rec(v, rename_map, visited)
+                if changed:
+                    updates[field_name] = new_v
+        if updates:
+            return ir.model_copy(update=updates), True
+        return ir, False
+
+    def _subst_seq_by_id(self, seq, rename_map, visited):
+        new_items = list(seq)
+        changed = False
+        for i, item in enumerate(seq):
+            if isinstance(item, Ir):
+                obj_id = id(item)
+                if obj_id in rename_map:
+                    new_items[i] = rename_map[obj_id]
+                    changed = True
+                else:
+                    new_item, item_changed = self._subst_by_id_rec(item, rename_map, visited)
+                    if item_changed:
+                        new_items[i] = new_item
+                        changed = True
+        if not changed:
+            return seq, False
+        return tuple(new_items), True
+
     def find_vars(self, qname):
         """Find all variables matching the given qualified name."""
         assert len(qname) > 0 and isinstance(qname[0], str)
@@ -234,7 +287,7 @@ class IrExp(Ir):
 class IrStm(Ir):
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, eq=False)
 
-    loc: Any = None
+    loc: Any = Field(default_factory=lambda: Loc("", 0))
     block: str = ""  # block bid (e.g., 'b1', 'loop3')
 
     def __eq__(self, other):
@@ -256,11 +309,6 @@ class IrStm(Ir):
         if hasattr(v, "bid"):
             return v.bid
         return str(v)
-
-    def model_post_init(self, __context):
-        """Ensure loc is never None."""
-        if self.loc is None:
-            object.__setattr__(self, "loc", Loc("", 0))
 
     @property
     def lineno(self) -> int:
