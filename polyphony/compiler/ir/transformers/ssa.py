@@ -180,6 +180,8 @@ class SSATransformerBase(object):
         self.new_syms = []
         self._rename_rec(self.scope.entry_block, qcount, qstack)
 
+        # Build rename_map: id(old_var) -> new_var with versioned name
+        rename_map: dict[int, 'IrVariable'] = {}
         for var, version in self.new_syms:
             assert isinstance(var, IrVariable)
             qsyms = qualified_symbols(var, self.scope)
@@ -187,15 +189,24 @@ class SSATransformerBase(object):
                 new_name = var.name + '#' + str(version)
                 var_sym = qsyms[-1]
                 assert isinstance(var_sym, Symbol)
-                new_sym = var_sym.scope.inherit_sym(var_sym, new_name)
-                # Intentional exception to functional IR guidelines: var.name is mutated
-                # in-place because usedef tracks this var object by identity. Using
-                # model_copy would create a new object, leaving usedef references stale.
-                object.__setattr__(var, 'name', new_name)
+                var_sym.scope.inherit_sym(var_sym, new_name)
+                updates: dict = {'name': new_name}
                 if isinstance(var, Attr):
-                    # Keep attr in sync with name so that field-level equality (pydantic __eq__)
-                    # works correctly: attr is always a str equal to name after SSA renaming.
-                    object.__setattr__(var, 'attr', new_name)
+                    updates['attr'] = new_name
+                rename_map[id(var)] = var.model_copy(update=updates)
+
+        # Apply batch substitution across all stmts; update self.phis for changed phi stmts
+        old_phi_ids = {id(p): i for i, p in enumerate(self.phis)}
+        for blk in self.scope.traverse_blocks():
+            for stm in list(blk.stms):
+                new_stm = stm.subst_by_id(rename_map)
+                if new_stm is not stm:
+                    blk.replace_stm(stm, new_stm)
+                    if id(stm) in old_phi_ids:
+                        self.phis[old_phi_ids[id(stm)]] = new_stm
+
+        # Rebuild usedef from scratch — new var objects are now in the IR
+        self.usedef = UseDefDetector().process(self.scope)
 
     def _rename_rec(self, block, count, stack):
         for stm in block.stms:
