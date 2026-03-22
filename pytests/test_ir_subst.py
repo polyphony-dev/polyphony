@@ -1,4 +1,4 @@
-from polyphony.compiler.ir.ir import Temp, Move, Phi, Ctx
+from polyphony.compiler.ir.ir import Temp, Move, Phi, SysCall, Ctx
 
 
 def test_subst_by_id_basic():
@@ -36,3 +36,16 @@ def test_subst_by_id_no_match():
     rename_map = {id(other): Temp(name='z#1', ctx=Ctx.LOAD)}
     result = stm.subst_by_id(rename_map)
     assert result is stm  # unchanged
+
+
+def test_subst_by_id_call_args_nested_tuple():
+    """subst_by_id replaces vars nested inside Call.args 2-tuples."""
+    arg_var = Temp(name='l', ctx=Ctx.LOAD)
+    func_var = Temp(name='len', ctx=Ctx.CALL)
+    # SysCall.args is a tuple of (name, var) pairs
+    call = SysCall(func=func_var, args=((None, arg_var),), kwargs=())
+    new_arg = Temp(name='l#1', ctx=Ctx.LOAD)
+    rename_map = {id(arg_var): new_arg}
+    new_call = call.subst_by_id(rename_map)
+    assert new_call is not call
+    assert new_call.args[0][1].name == 'l#1'
