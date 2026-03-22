@@ -1,4 +1,4 @@
-from polyphony.compiler.ir.ir import Temp, Move, Phi, Const, Ctx
+from polyphony.compiler.ir.ir import Temp, Move, Phi, Ctx
 
 
 def test_subst_by_id_basic():
