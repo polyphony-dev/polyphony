@@ -186,10 +186,10 @@ class SymbolTable(object):
     def rename_sym(self, old: str, new: str):
         assert old in self.symbols
         sym = self.symbols[old]
+        new_sym = sym.clone(self, new)
         del self.symbols[old]
-        sym.name = new
-        self.symbols[new] = sym
-        return sym
+        self.symbols[new] = new_sym
+        return new_sym
 
     def rename_sym_asname(self, old: str, new: str):
         assert old in self.symbols
@@ -852,6 +852,16 @@ class FunctionScope(Instantiable, Scope):
 
     def param_types(self, with_self=False):
         return self.function_params.types(with_self)
+
+    def rename_sym(self, old: str, new: str):
+        old_sym = self.symbols.get(old)
+        new_sym = super().rename_sym(old, new)
+        if old_sym is not None:
+            for i, (sym, defval) in enumerate(self.function_params._params):
+                if sym is old_sym:
+                    self.function_params._params[i] = FunctionParam(new_sym, defval)
+                    break
+        return new_sym
 
     def clear_params(self):
         return self.function_params.clear()

@@ -56,11 +56,6 @@ class Symbol(Tagged):
     def name(self) -> str:
         return self._name
 
-    @name.setter
-    def name(self, name: str):
-        # assert False
-        self._name = name
-
     @property
     def scope_name(self) -> str:
         return self._scope_name
