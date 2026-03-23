@@ -740,13 +740,13 @@ class StaticConstOpt(ConstantOptBase):
             if isinstance(result, IrStm) and result is not stm:
                 blk = stm2blk[id(stm)]
                 blk.stms[blk.stms.index(stm)] = result
-        for sym, c in self.constant_table.items():
+        for sym, c in sorted(self.constant_table.items(), key=lambda x: x[0].name):
             sym.scope.constants[sym] = c
             origin_scope = env.origin_registry.scope_origin_of(sym.scope)
             if origin_scope:
                 if sym.name in origin_scope.symbols:
                     origin_scope.constants[origin_scope.symbols[sym.name]] = c
-        for sym, c in self.constant_array_table.items():
+        for sym, c in sorted(self.constant_array_table.items(), key=lambda x: x[0].name):
             sym.scope.constants[sym] = c
             origin_scope = env.origin_registry.scope_origin_of(sym.scope)
             if origin_scope:

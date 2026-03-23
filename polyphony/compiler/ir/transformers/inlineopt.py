@@ -686,7 +686,7 @@ class InlineOpt(object):
 
     def _merge_symbols(self, callee: CalleeScope, caller: CallerScope):
         callee_name_exps = AllVariableCollector().process(callee)
-        callee_names = set([name_exp.name for name_exp in callee_name_exps])
+        callee_names = sorted(set([name_exp.name for name_exp in callee_name_exps]))
         typevars = set()
         for name in callee_names:
             sym = callee.find_sym(name)

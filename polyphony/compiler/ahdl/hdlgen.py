@@ -70,9 +70,8 @@ class HDLModuleBuilder(object):
             assert len(defstms) == 1
             return list(defstms)[0]
 
-        roms = [memvars for memvars in memvars_set if memvars[-1].is_rom()]
-        while roms:
-            memvars = roms.pop()
+        roms = sorted([memvars for memvars in memvars_set if memvars[-1].is_rom()], key=lambda mv: mv[-1].name)
+        for memvars in roms:
             fname = AHDL_VAR(memvars, Ctx.STORE)
             addr_width = 8  # TODO
             input_sig = self.hdlmodule.gen_sig(f'{fname.hdl_name}_in', addr_width)

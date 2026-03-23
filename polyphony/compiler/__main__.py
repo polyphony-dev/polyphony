@@ -122,7 +122,7 @@ class ScopeSorter(object):
         graph = graph_builder.depend_graph
         self._sorted_scopes = []
         order_map = graph.node_depth_map()
-        self._sorted_scopes = sorted(self._cached_scopes, key=lambda s: (order_map[s], s.scope_id))
+        self._sorted_scopes = sorted(self._cached_scopes, key=lambda s: (order_map[s], s.name))
 
     def top_down(self, scopes):
         if self.update_cached_scopes(scopes):
@@ -215,7 +215,7 @@ def select_using_scopes():
     target_scopes = collect_scope_symbol(top)
     all_scopes = [top] + target_scopes
     using_scopes = UsingScopeDetector().process_scopes(all_scopes)
-    return list(using_scopes)
+    return sorted(using_scopes, key=lambda s: s.name)
 
 
 def if_trans(driver, scope):
