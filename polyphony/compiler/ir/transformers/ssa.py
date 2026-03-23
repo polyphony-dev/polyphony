@@ -136,7 +136,7 @@ class SSATransformerBase(object):
         sym = qualified_symbols(var, self.scope)[-1]
         assert isinstance(sym, Symbol)
         defs = self.usedef.get_stms_defining(sym)
-        for d in defs:
+        for d in sorted(defs, key=lambda d: d.loc.lineno if d.loc else 0):
             if d.block == df.preds[0].bid:
                 phi = phi.model_copy(update={'loc': d.loc})
                 break
