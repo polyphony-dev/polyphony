@@ -132,17 +132,17 @@ class SchedulerImpl(object):
             seq_preds = dfg.preds_typ_without_back(node, "Seq")
             sched_times = []
             if seq_preds:
-                latest_node = max(seq_preds, key=lambda p: p.end)
+                latest_node = max(seq_preds, key=lambda p: (p.end, p._nid))
                 sched_times.append(latest_node.end)
             if defuse_preds:
-                latest_node = max(defuse_preds, key=lambda p: p.end)
+                latest_node = max(defuse_preds, key=lambda p: (p.end, p._nid))
                 sched_times.append(latest_node.end)
             if usedef_preds:
                 preds = usedef_preds
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             if not sched_times:
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             scheduled_time = max(sched_times)
             if scheduled_time < 0:
@@ -166,7 +166,7 @@ class SchedulerImpl(object):
         if not succs:
             return node
         nodes = [self._find_latest_alias(dfg, s) for s in succs]
-        latest_node = max(nodes, key=lambda p: p.end)
+        latest_node = max(nodes, key=lambda p: (p.end, p._nid))
         return latest_node
 
     def _is_resource_full(self, res, scheduled_resources):
@@ -380,7 +380,7 @@ class BlockBoundedListScheduler(SchedulerImpl):
     def _list_schedule_with_block_bound(self, dfg, nodes, block, longest_latency):
         while True:
             next_candidates = set()
-            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
+            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index, n._nid)):
                 if n.tag.block != block:
                     continue
                 scheduled_time = self._node_sched_with_block_bound(dfg, n, block)
@@ -413,10 +413,10 @@ class BlockBoundedListScheduler(SchedulerImpl):
             sched_times = []
             if seq_preds:
                 if _is_ctrl_stm(node.tag):
-                    latest_node = max(seq_preds, key=lambda p: (p.end, p.priority))
+                    latest_node = max(seq_preds, key=lambda p: (p.end, p.priority, p._nid))
                     sched_time = latest_node.end
                 else:
-                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p.priority))
+                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p.priority, p._nid))
                     seq_latency = self.node_seq_latency_map[latest_node]
                     if is_timed_node and _has_clkfence(node.tag) and not _has_clkfence(latest_node.tag):
                         seq_latency = 0
@@ -425,16 +425,16 @@ class BlockBoundedListScheduler(SchedulerImpl):
                 logger.debug("latest_node of seq_preds " + str(latest_node))
                 logger.debug("schedtime " + str(sched_time))
             if defuse_preds:
-                latest_node = max(defuse_preds, key=lambda p: p.end)
+                latest_node = max(defuse_preds, key=lambda p: (p.end, p._nid))
                 logger.debug("latest_node of defuse_preds " + str(latest_node))
                 sched_times.append(latest_node.end)
             if usedef_preds:
                 preds = [self._find_latest_alias(dfg, pred) for pred in usedef_preds]
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 logger.debug("latest_node(begin) of usedef_preds " + str(latest_node))
                 sched_times.append(latest_node.begin)
             if not sched_times:
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             scheduled_time = max(sched_times)
             if scheduled_time < 0:
@@ -538,7 +538,7 @@ class PipelineScheduler(SchedulerImpl):
     def _list_schedule_for_pipeline(self, dfg, nodes, longest_latency):
         while True:
             next_candidates = set()
-            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
+            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index, n._nid)):
                 scheduled_time = self._node_sched_pipeline(dfg, n)
                 _, _, latency = self.node_latency_map[n]
                 if scheduled_time > n.begin:
@@ -634,26 +634,26 @@ class PipelineScheduler(SchedulerImpl):
             sched_times = []
             if seq_preds:
                 if _is_ctrl_stm(node.tag) or _has_exclusive_function(node.tag, self.scope):
-                    latest_node = max(seq_preds, key=lambda p: p.end)
+                    latest_node = max(seq_preds, key=lambda p: (p.end, p._nid))
                     sched_times.append(latest_node.end)
                     logger.debug("latest_node of seq_preds " + str(latest_node))
                 else:
-                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end))
+                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p._nid))
                     seq_latency = self.node_seq_latency_map[latest_node]
                     sched_times.append(latest_node.begin + seq_latency)
                     logger.debug("latest_node of seq_preds " + str(latest_node))
             if defuse_preds:
-                latest_node = max(defuse_preds, key=lambda p: p.end)
+                latest_node = max(defuse_preds, key=lambda p: (p.end, p._nid))
                 sched_times.append(latest_node.end)
             if usedef_preds:
                 if any([d.is_induction() for d in node.defs]):
                     pass
                 else:
                     preds = usedef_preds
-                    latest_node = max(preds, key=lambda p: p.end)
+                    latest_node = max(preds, key=lambda p: (p.end, p._nid))
                     sched_times.append(latest_node.begin)
             if not sched_times:
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             scheduled_time = max(sched_times)
             if scheduled_time < 0:
@@ -663,7 +663,7 @@ class PipelineScheduler(SchedulerImpl):
         return scheduled_time
 
     def _fill_defuse_gap(self, dfg, nodes):
-        for node in reversed(sorted(nodes, key=lambda n: (n.priority, n.stm_index))):
+        for node in reversed(sorted(nodes, key=lambda n: (n.priority, n.stm_index, n._nid))):
             succs = dfg.succs_without_back(node)
             succs = [s for s in succs if s.begin >= 0]
             if not succs:

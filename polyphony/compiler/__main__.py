@@ -418,7 +418,7 @@ def instantiate(driver):
                     continue
                 driver.insert_scope(s)
                 orig_scopes.add(env.origin_registry.scope_origin_of(s))
-        for s in orig_scopes:
+        for s in sorted(orig_scopes, key=lambda s: s.name):
             driver.remove_scope(s)
         scopes = [module.find_ctor() for module in new_modules]
         modules = new_find_called_module(scopes)

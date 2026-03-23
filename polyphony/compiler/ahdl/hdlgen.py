@@ -107,7 +107,7 @@ class HDLModuleBuilder(object):
 
     def _add_reset_stms(self, fsm, defs:set[tuple[Signal]], uses:set[tuple[Signal]], outputs:set[tuple[Signal]]):
         fsm_name = fsm.name
-        for vars in defs | outputs:
+        for vars in sorted(defs | outputs, key=lambda v: v[-1].name):
             if vars[0].is_dut():
                 continue
             if vars[-1].is_reg():

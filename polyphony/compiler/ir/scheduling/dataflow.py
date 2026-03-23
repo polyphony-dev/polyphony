@@ -82,6 +82,8 @@ class DFNode(object):
 
     def __lt__(self, other):
         if self.begin == other.begin:
+            if self.priority == other.priority:
+                return self._nid < other._nid
             return self.priority < other.priority
         return self.begin < other.begin
 
