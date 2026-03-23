@@ -174,7 +174,8 @@ class ObjectTransformer(object):
             sources = copy_sources[self.qsym_ancestor(copy_qsym)]
             usestms = self.usedef.get_stms_using(copy_qsym).copy()
             for stm in usestms:
-                stm = stm_remap.get(stm, stm)
+                while stm in stm_remap:
+                    stm = stm_remap[stm]
                 if not isinstance(stm, (Move, Expr)):
                     continue
                 if isinstance(copy_stm, (Phi, UPhi, LPhi)) and isinstance(stm, Move):
