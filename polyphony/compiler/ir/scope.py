@@ -104,7 +104,7 @@ class SymbolTable(object):
     def __str__(self):
         s = ""
         for name, sym in self.symbols.items():
-            s += f"{name} - {sym}:{sym.typ} {sym.tags} {sym.scope.name}\n"
+            s += f"{name} - {sym}:{sym.typ} {sorted(sym.tags)} {sym.scope.name}\n"
         # for sym in self.symbols.values():
         #    s += f'{sym}:{sym.typ} {sym.tags}\n'
         return s
@@ -387,7 +387,7 @@ class Scope(Tagged, SymbolTable):
 
     def __str__(self):
         s = "================================\n"
-        tags = ", ".join([f"'{att}'" for att in self.tags])
+        tags = ", ".join([f"'{att}'" for att in sorted(self.tags)])
         s += "Scope:\n"
         s += f"    name: {self.name}\n"
         s += f"    tags: {tags}\n"
