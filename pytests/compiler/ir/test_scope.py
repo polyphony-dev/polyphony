@@ -153,7 +153,7 @@ def test_clone_function():
     assert _stm_text(blk2.stms[1]) == 'ret @return'
 
     # Mutating the clone should not affect the original
-    blk1.stms[1] = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Call(func=Temp(name='g'), args=[('', Const(value=1))]), block=blk1.bid)
+    blk1.stms[1] = Move(dst=Temp(name='x', ctx=Ctx.STORE), src=Call(func=Temp(name='g'), args=(('', Const(value=1)),)), block=blk1.bid)
 
     gen = f.traverse_blocks()
     blk1_orig = next(gen)
@@ -435,6 +435,20 @@ class TestSymbolTable:
         sym = scope.add_sym("x", set(), Type.int(32))
         assert sym.scope_name == scope.name
         assert sym.scope is scope
+
+    def test_symbol_scope_missing_raises_descriptive_error(self):
+        """Symbol.scope raises a descriptive KeyError when scope is unregistered."""
+        setup_test()
+        from polyphony.compiler.ir.symbol import Symbol
+        from polyphony.compiler.ir.types.type import Type
+        # Create a symbol pointing to a nonexistent scope
+        sym = Symbol.__new__(Symbol)
+        sym._id = 9999
+        sym._name = 'orphan'
+        sym._scope_name = '__nonexistent_scope__'
+        sym._typ = Type.int()
+        with pytest.raises(KeyError, match='__nonexistent_scope__'):
+            _ = sym.scope
 
 
 # ============================================================
@@ -851,7 +865,7 @@ class TestScopeSubclass:
         top = env.scopes["@top"]
         base = Scope.create(top, "base_cls", {"class"})
         derived = Scope.create(top, "derived_cls", {"class"})
-        derived.bases = [base]
+        derived.bases = [base]  # type: ignore[assignment]
         assert derived.is_subclassof(base) is True
         assert derived.is_subclassof(derived) is True
         other = Scope.create(top, "other_cls", {"class"})
@@ -887,7 +901,7 @@ class TestScopeSubclass:
         base = Scope.create(top, "cf_base", {"class"})
         base.add_sym("base_field", set(), Type.int())
         derived = Scope.create(top, "cf_derived", {"class"})
-        derived.bases = [base]
+        derived.bases = [base]  # type: ignore[assignment]
         derived.add_sym("derived_field", set(), Type.int())
         fields = derived.class_fields()
         assert "base_field" in fields

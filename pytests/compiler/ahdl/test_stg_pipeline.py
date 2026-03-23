@@ -11,7 +11,8 @@ from polyphony.compiler.ahdl.stg import STG
 from polyphony.compiler.ahdl.stgbuilder import ScheduledItemQueue
 from polyphony.compiler.ahdl.stg_pipeline import (
     PipelineState, PipelineStage, PipelineStateHelper,
-    PipelineBuilder, AHDLRegisterSliceTransformer,
+    PipelineBuilder, WorkerPipelineBuilder, LoopPipelineBuilder,
+    AHDLRegisterSliceTransformer,
 )
 from polyphony.compiler.ahdl.hdlmodule import HDLModule
 from polyphony.compiler.ir.ir import Ctx
@@ -552,3 +553,230 @@ def test_register_slice_transformer_no_match():
     transformer.current_stm = mv
     result = transformer.visit_AHDL_VAR(src_var)
     assert result is src_var  # unchanged
+
+
+# ============================================================
+# PipelineBuilder.__init__ (lines 108-109)
+# ============================================================
+
+def test_pipeline_builder_init():
+    """PipelineBuilder.__init__ calls super and sets is_finite_loop=True."""
+    scope, hdl, stg = make_test_env()
+    builder = PipelineBuilder(scope, stg, {})
+    assert builder.scope is scope
+    assert builder.hdlmodule is hdl
+    assert builder.stg is stg
+    assert builder.is_finite_loop is True
+
+
+# ============================================================
+# WorkerPipelineBuilder.__init__ (lines 625-627)
+# ============================================================
+
+def test_worker_pipeline_builder_init():
+    """WorkerPipelineBuilder sets is_finite_loop=False."""
+    scope, hdl, stg = make_test_env()
+    builder = WorkerPipelineBuilder(scope, stg, {})
+    assert builder.is_finite_loop is False
+    assert builder.scope is scope
+
+
+# ============================================================
+# PipelineBuilder._make_stm2stage_num (lines 369-381)
+# ============================================================
+
+def test_make_stm2stage_num_basic():
+    """_make_stm2stage_num maps each code to its stage index."""
+    scope, hdl, stg = make_test_env()
+    helper = PipelineStateHelper('pipe', 2, None, stg)
+    nop0 = AHDL_NOP('s0')
+    nop1 = AHDL_NOP('s1')
+    stage0 = helper.new_stage(0, [nop0], False, False)
+    stage1 = helper.new_stage(1, [nop1], False, False)
+
+    builder = PipelineBuilder(scope, stg, {})
+    builder.stages = [stage0, stage1]
+    result = builder._make_stm2stage_num(helper)
+    assert result[nop0] == 0
+    assert result[nop1] == 1
+
+
+def test_make_stm2stage_num_with_if():
+    """_make_stm2stage_num recurses into AHDL_IF blocks."""
+    scope, hdl, stg = make_test_env()
+    helper = PipelineStateHelper('pipe', 2, None, stg)
+    inner_nop = AHDL_NOP('inner')
+    cond = AHDL_CONST(1)
+    blk = AHDL_BLOCK('', (inner_nop,))
+    if_stm = AHDL_IF((cond,), (blk,))
+    stage0 = helper.new_stage(0, [if_stm], False, False)
+
+    builder = PipelineBuilder(scope, stg, {})
+    builder.stages = [stage0]
+    result = builder._make_stm2stage_num(helper)
+    # Both the IF itself and inner_nop should be mapped to stage 0
+    assert result[if_stm] == 0
+    assert result[inner_nop] == 0
+
+
+# ============================================================
+# LoopPipelineBuilder._add_last_signal_chain (lines 573-587)
+# ============================================================
+
+def _make_loop_builder():
+    """Create a LoopPipelineBuilder without calling __init__ (avoids UseDefDetector)."""
+    scope, hdl, stg = make_test_env()
+    builder = LoopPipelineBuilder.__new__(LoopPipelineBuilder)
+    builder.is_finite_loop = True
+    builder.hdlmodule = hdl
+    builder.stg = stg
+    builder.scope = scope
+    helper = PipelineStateHelper('pipe', 3, None, stg)
+    return builder, helper, hdl, stg
+
+
+def test_add_last_signal_chain_step0():
+    """Step 0: l_rhs = Invert(cond), stage gains last-signal move."""
+    builder, helper, hdl, stg = _make_loop_builder()
+    stage0 = helper.new_stage(0, [AHDL_NOP('s0')], True, False)
+    stage1 = helper.new_stage(1, [AHDL_NOP('s1')], False, False)
+    builder.stages = [stage0, stage1]
+
+    cond = AHDL_CONST(1)
+    result = builder._add_last_signal_chain(helper, stage0, cond)
+    assert result is not None
+    # Last code should be a MOVE assigning last_signal <= Invert(cond)
+    last_code = result.block.codes[-1]
+    assert isinstance(last_code, AHDL_MOVE)
+    assert isinstance(last_code.src, AHDL_OP)
+    assert last_code.src.op == 'Invert'
+
+
+def test_add_last_signal_chain_middle_stage():
+    """Middle stage (step > 0, not last): l_rhs = BitAnd(prev_last, ready)."""
+    builder, helper, hdl, stg = _make_loop_builder()
+    stage0 = helper.new_stage(0, [AHDL_NOP('s0')], True, False)
+    stage1 = helper.new_stage(1, [AHDL_NOP('s1')], False, False)
+    stage2 = helper.new_stage(2, [AHDL_NOP('s2')], False, False)
+    builder.stages = [stage0, stage1, stage2]
+
+    cond = AHDL_CONST(1)
+    result = builder._add_last_signal_chain(helper, stage1, cond)
+    assert result is not None
+    last_code = result.block.codes[-1]
+    assert isinstance(last_code, AHDL_MOVE)
+    assert isinstance(last_code.src, AHDL_OP)
+    assert last_code.src.op == 'BitAnd'
+
+
+def test_add_last_signal_chain_last_stage_returns_none():
+    """Last stage: returns None (no last-signal propagation)."""
+    builder, helper, hdl, stg = _make_loop_builder()
+    stage0 = helper.new_stage(0, [AHDL_NOP('s0')], True, False)
+    stage1 = helper.new_stage(1, [AHDL_NOP('s1')], False, False)
+    builder.stages = [stage0, stage1]
+
+    cond = AHDL_CONST(1)
+    result = builder._add_last_signal_chain(helper, stage1, cond)
+    assert result is None
+
+
+# ============================================================
+# LoopPipelineBuilder._add_control_chain_no_stall (lines 589-621)
+# ============================================================
+
+def test_add_control_chain_no_stall_step0_no_enable():
+    """Step 0 without enable in a single-stage pipeline: only ready_stm added, no set_valid."""
+    builder, helper, hdl, stg = _make_loop_builder()
+    stage0 = helper.new_stage(0, [AHDL_NOP('s0')], has_enable=False, has_hold=False)
+    builder.stages = [stage0]  # single-stage pipeline: step0 is last
+
+    result = builder._add_control_chain_no_stall(helper, stage0)
+    added = result.block.codes[len(stage0.block.codes):]
+    # Only ready_stm (is_last=True, no set_valid)
+    assert len(added) == 1
+    assert isinstance(added[0], AHDL_MOVE)
+
+
+def test_add_control_chain_no_stall_step0_with_enable():
+    """Step 0 with enable: ready_rhs = BitAnd(r_next, enable)."""
+    builder, helper, hdl, stg = _make_loop_builder()
+    stage0 = helper.new_stage(0, [AHDL_NOP('s0')], has_enable=True, has_hold=False)
+    stage1 = helper.new_stage(1, [AHDL_NOP('s1')], has_enable=False, has_hold=False)
+    builder.stages = [stage0, stage1]
+
+    result = builder._add_control_chain_no_stall(helper, stage0)
+    added = result.block.codes[len(stage0.block.codes):]
+    ready_stm = added[0]
+    assert isinstance(ready_stm, AHDL_MOVE)
+    # ready_rhs should be BitAnd(r_next, enable)
+    assert isinstance(ready_stm.src, AHDL_OP)
+    assert ready_stm.src.op == 'BitAnd'
+
+
+def test_add_control_chain_no_stall_last_stage():
+    """Last stage: r_next = CONST(1), no set_valid added."""
+    builder, helper, hdl, stg = _make_loop_builder()
+    stage0 = helper.new_stage(0, [AHDL_NOP('s0')], has_enable=True, has_hold=False)
+    stage1 = helper.new_stage(1, [AHDL_NOP('s1')], has_enable=False, has_hold=False)
+    builder.stages = [stage0, stage1]
+
+    result = builder._add_control_chain_no_stall(helper, stage1)
+    added = result.block.codes[len(stage1.block.codes):]
+    # Only ready_stm (no set_valid since is_last)
+    assert len(added) == 1
+    ready_stm = added[0]
+    assert isinstance(ready_stm.src, AHDL_CONST)
+    assert ready_stm.src.value == 1
+
+
+def test_add_control_chain_no_stall_middle_stage():
+    """Middle stage (step > 0, not last): v_prev from valid_signal(step-1)."""
+    builder, helper, hdl, stg = _make_loop_builder()
+    stage0 = helper.new_stage(0, [AHDL_NOP('s0')], has_enable=True, has_hold=False)
+    stage1 = helper.new_stage(1, [AHDL_NOP('s1')], has_enable=False, has_hold=False)
+    stage2 = helper.new_stage(2, [AHDL_NOP('s2')], has_enable=False, has_hold=False)
+    builder.stages = [stage0, stage1, stage2]
+
+    result = builder._add_control_chain_no_stall(helper, stage1)
+    added = result.block.codes[len(stage1.block.codes):]
+    # ready_stm + set_valid
+    assert len(added) == 2
+
+
+# ============================================================
+# AHDLRegisterSliceTransformer.visit_AHDL_PIPELINE_GUARD
+# (lines 459-464)
+# ============================================================
+
+def test_register_slice_transformer_guard_with_slice_moves():
+    """visit_AHDL_PIPELINE_GUARD appends slice moves when guard id is in slice_moves."""
+    _, hdl, stg = make_test_env()
+    inner_nop = AHDL_NOP('inner')
+    guard = AHDL_PIPELINE_GUARD(AHDL_CONST(1), (inner_nop,))
+
+    slice_sig = hdl.gen_sig('s_sliced', 32, {'reg'})
+    slice_move = AHDL_MOVE(AHDL_VAR(slice_sig, Ctx.STORE), AHDL_CONST(0))
+    slice_moves = {id(guard): [slice_move]}
+
+    transformer = AHDLRegisterSliceTransformer({}, slice_moves, hdl)
+    result = transformer.visit(guard)
+
+    assert isinstance(result, AHDL_PIPELINE_GUARD)
+    assert len(result.blocks[0].codes) == 2  # inner_nop + slice_move
+    assert isinstance(result.blocks[0].codes[-1], AHDL_MOVE)
+
+
+def test_register_slice_transformer_guard_without_slice_moves():
+    """visit_AHDL_PIPELINE_GUARD falls through to super when not in slice_moves."""
+    _, hdl, stg = make_test_env()
+    inner_nop = AHDL_NOP('inner')
+    guard = AHDL_PIPELINE_GUARD(AHDL_CONST(1), (inner_nop,))
+
+    transformer = AHDLRegisterSliceTransformer({}, {}, hdl)
+    result = transformer.visit(guard)
+
+    assert isinstance(result, AHDL_PIPELINE_GUARD)
+    # codes unchanged
+    assert len(result.blocks[0].codes) == 1
+    assert isinstance(result.blocks[0].codes[0], AHDL_NOP)

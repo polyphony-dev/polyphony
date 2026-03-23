@@ -2024,9 +2024,9 @@ ret @return
     scheduler = BlockBoundedListScheduler()
     scheduler.scope = scope
     scheduler._calc_latency(dfg)
+    assert len(scheduler.node_latency_map) >= 1  # latency computed for all DFG nodes
     # Should not assert with large expected
     scheduler._try_adjust_latency(dfg, 100)
-    assert len(scheduler.all_paths) >= 0
 
 
 def test_scheduler_with_many_deps():

@@ -55,7 +55,7 @@ class HDLScope(object):
             sig_maps.update(sub_sig_maps)
         return new, sig_maps
 
-    def gen_sig(self, name:str, width:int|tuple[int], tag:set[str]|None=None, sym=None) -> Signal:
+    def gen_sig(self, name:str, width:int|tuple[int, int], tag:set[str]|None=None, sym=None) -> Signal:
         if name in self.signals:
             sig = self.signals[name]
             sig.width = width

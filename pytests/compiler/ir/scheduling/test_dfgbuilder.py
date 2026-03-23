@@ -1149,7 +1149,7 @@ ret @return
         if _is_cjump(node.tag):
             preds = dfg.preds(node)
             # Should have predecessors since other stms come before CJump
-            assert len(preds) >= 0  # just verify it doesn't crash
+            assert len(preds) >= 1
 
 
 def test_dfg_timed_scheduling():
@@ -2023,7 +2023,7 @@ ret @return
         if _is_cjump(node.tag):
             preds = dfg.preds(node)
             seq_preds = dfg.preds_typ(node, 'Seq')
-            assert len(preds) >= 1 or len(seq_preds) >= 0
+            assert len(preds) >= 1
             break
 
 

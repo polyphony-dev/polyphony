@@ -200,8 +200,6 @@ class SymbolTable(object):
 
     def inherit_sym(self, orig_sym, new_name):
         assert orig_sym.scope is self
-        if orig_sym.is_imported():
-            print(orig_sym)
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:

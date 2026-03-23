@@ -2932,8 +2932,8 @@ def test_can_attribute_propagate_in_ctor():
         if isinstance(stm, Move) and isinstance(stm.dst, Temp) and stm.dst.name == 'y':
             if isinstance(stm.src, Const) and stm.src.value == 42:
                 found = True
-    # Attr propagation is limited - just verify no crash
-    assert True
+    # Attr propagation is limited — constant does not propagate through Attr load
+    assert not found
 
 
 # ===========================================================

@@ -62,7 +62,10 @@ class Symbol(Tagged):
 
     @property
     def scope(self) -> Scope:
-        return env.all_scopes[self._scope_name]
+        try:
+            return env.all_scopes[self._scope_name]
+        except KeyError:
+            raise KeyError(f'Scope {self._scope_name!r} not found in env for symbol {self._name!r}') from None
 
     @property
     def typ(self) -> Type:

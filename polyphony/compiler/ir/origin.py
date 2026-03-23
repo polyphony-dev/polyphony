@@ -18,16 +18,22 @@ class OriginRegistry:
     def sym_origin_of(self, sym: Symbol) -> Symbol | None:
         return self._sym_origins.get(sym)
 
-    def root_sym(self, sym: Symbol) -> Symbol:
+    def root_sym(self, sym: Symbol, _visited: frozenset | None = None) -> Symbol:
+        visited = _visited or frozenset()
+        if sym in visited:
+            raise ValueError(f'Circular origin chain detected for symbol {sym!r}')
         origin = self._sym_origins.get(sym)
         if origin:
-            return self.root_sym(origin)
+            return self.root_sym(origin, visited | {sym})
         return sym
 
-    def orig_name(self, sym: Symbol) -> str:
+    def orig_name(self, sym: Symbol, _visited: frozenset | None = None) -> str:
+        visited = _visited or frozenset()
+        if sym in visited:
+            raise ValueError(f'Circular origin chain detected for symbol {sym!r}')
         origin = self._sym_origins.get(sym)
         if origin:
-            return self.orig_name(origin)
+            return self.orig_name(origin, visited | {sym})
         return sym.name
 
     def set_scope_origin(self, scope: Scope, origin: Scope):

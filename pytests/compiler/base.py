@@ -1,10 +1,7 @@
 """Test utilities for compiler unit tests."""
-import os
 from polyphony.compiler.common.env import env
-from polyphony.compiler.ir.symbol import Symbol
-from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.block import Block
-from polyphony.compiler.ir.builtin import builtin_symbols, clear_builtins
+from polyphony.compiler.ir.builtin import builtin_symbols
 
 
 # ============================================================
@@ -55,12 +52,10 @@ def setup_libs(*modules):
                   If empty, loads 'io' and 'timing' by default.
     """
     from polyphony.compiler.frontend.python.irtranslator import ImportVisitor
-    from polyphony.compiler.ir.types.type import Type
 
     if not modules:
         modules = ('io', 'timing')
 
-    internal_dir = os.path.join(env.root_dir, '_internal')
     iv = ImportVisitor(env.scopes[env.global_scope_name])
 
     for mod in modules:

@@ -29,6 +29,8 @@ class Bits(object, metaclass=GenericMeta):
             value = (self.value >> i.start) & mask
             cls = self.__class__[w]
             return cls(value)
+        else:
+            raise TypeError(f'Bits indices must be int or slice, not {type(i).__name__}')
 
     def __int__(self):
         return self.value
@@ -55,7 +57,9 @@ class Bits(object, metaclass=GenericMeta):
             value = self.value & rhs.value
             cls = self.__class__[self.width]
             return cls(value)
-    
+        else:
+            raise TypeError(f'unsupported operand type for &: {type(rhs).__name__}')
+
     def __or__(self, rhs):
         if isinstance(rhs, int):
             assert rhs >= 0
@@ -66,7 +70,9 @@ class Bits(object, metaclass=GenericMeta):
             value = self.value | rhs.value
             cls = self.__class__[self.width]
             return cls(value)
-    
+        else:
+            raise TypeError(f'unsupported operand type for |: {type(rhs).__name__}')
+
     def __xor__(self, rhs):
         if isinstance(rhs, int):
             assert rhs >= 0
@@ -77,32 +83,35 @@ class Bits(object, metaclass=GenericMeta):
             value = self.value ^ rhs.value
             cls = self.__class__[self.width]
             return cls(value)
+        else:
+            raise TypeError(f'unsupported operand type for ^: {type(rhs).__name__}')
 
-bit4 = Bits[4]
-v = bit4(0b01100110)
-print(v)
-print(v[0], v[1], v[2], v[3])
-print(v[0] + v[1] + v[2] + v[3])
-print(int(v))
-print(len(v))
 
-v_ = v & 0b0101
-print(v_)
-v_ = v & bit4(0b0101)
-print(v_)
+if __name__ == '__main__':
+    bit4 = Bits[4]
+    v = bit4(0b01100110)
+    print(v)
+    print(v[0], v[1], v[2], v[3])
+    print(v[0] + v[1] + v[2] + v[3])
+    print(int(v))
+    print(len(v))
 
-v_ = v | 0b0101
-print(v_)
-v_ = v | bit4(0b0101)
-print(v_)
+    v_ = v & 0b0101
+    print(v_)
+    v_ = v & bit4(0b0101)
+    print(v_)
 
-v_ = v ^ 0b0101
-print(v_)
-v_ = v ^ bit4(0b0101)
-print(v_)
+    v_ = v | 0b0101
+    print(v_)
+    v_ = v | bit4(0b0101)
+    print(v_)
 
-b2 = v[2:4] + v[0:2]
+    v_ = v ^ 0b0101
+    print(v_)
+    v_ = v ^ bit4(0b0101)
+    print(v_)
 
-print(b2)
-print(v[1:3])
-print(v[2:4])
+    b2 = v[2:4] + v[0:2]
+    print(b2)
+    print(v[1:3])
+    print(v[2:4])

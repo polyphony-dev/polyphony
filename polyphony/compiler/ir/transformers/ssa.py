@@ -164,12 +164,12 @@ class SSATransformerBase(object):
             qcount[key] = 0
             qstack[key] = [(0, None)]
 
-        self.new_syms = []
+        self.new_syms: dict[int, tuple[IrVariable, int]] = {}  # id(var) -> (var, version)
         self._rename_rec(self.scope.entry_block, qcount, qstack)
 
         # Build rename_map: id(old_var) -> new_var with versioned name
         rename_map: dict[int, 'IrVariable'] = {}
-        for var, version in self.new_syms:
+        for var, version in self.new_syms.values():
             assert isinstance(var, IrVariable)
             qsyms = qualified_symbols(var, self.scope)
             if self._need_rename(qsyms[-1], qsyms):
@@ -302,17 +302,17 @@ class SSATransformerBase(object):
         assert isinstance(var, IrVariable)
         qsym = qualified_symbols(var, self.scope)
         if self._need_rename(qsym[-1], qsym):
-            # Use id-based dedup to match old SSA's set behavior.
-            # Same (var object, version) should only appear once.
-            if not any(v is var and ver == version for v, ver in self.new_syms):
-                self.new_syms.append((var, version))
+            key = id(var)
+            if key not in self.new_syms:
+                self.new_syms[key] = (var, version)
 
     def _add_new_sym_rest(self, var, stack):
         assert isinstance(var, IrVariable)
-        key = qualified_symbols(var, self.scope)
-        i, _ = stack[key][-1]
-        if not any(v is var and ver == i for v, ver in self.new_syms):
-            self.new_syms.append((var, i))
+        qsym = qualified_symbols(var, self.scope)
+        i, _ = stack[qsym][-1]
+        key = id(var)
+        if key not in self.new_syms:
+            self.new_syms[key] = (var, i)
         if isinstance(var, Attr):
             self._add_new_sym_rest(var.exp, stack)
 
