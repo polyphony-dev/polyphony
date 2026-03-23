@@ -39,18 +39,7 @@ from ..ir import (
     Attr,
 )
 
-from .dataflow import (
-    _is_move,
-    _is_expr,
-    _is_phi,
-    _is_ctrl_stm,
-    _is_cjump,
-    _is_mcjump,
-    _qualified_symbols,
-    _has_exclusive_function,
-    _has_clkfence,
-)
-from ..irhelper import qualified_symbols
+from ..irhelper import qualified_symbols, has_exclusive_function, has_clkfence
 from ..symbol import Symbol
 from ..scope import Scope
 from ...common.common import fail, warn
@@ -86,7 +75,7 @@ class SchedulerImpl(object):
         self.node_latency_map = {}
         self.node_seq_latency_map = {}
         self.all_paths = []
-        self.res_extractor: 'ResourceExtractor | None' = None
+        self.res_extractor: "ResourceExtractor | None" = None
 
     def schedule(self, scope, dfg):
         self.scope = scope
@@ -153,12 +142,12 @@ class SchedulerImpl(object):
 
     def _find_latest_alias(self, dfg, node):
         stm = node.tag
-        if not (_is_move(stm) or _is_phi(stm)):
+        if not (isinstance(stm, Move) or isinstance(stm, (Phi, UPhi))):
             return node
-        if _is_move(stm):
-            var_sym = _qualified_symbols(node.tag.dst, self.scope)[-1]
+        if isinstance(stm, Move):
+            var_sym = qualified_symbols(node.tag.dst, self.scope)[-1]
         else:
-            var_sym = _qualified_symbols(node.tag.var, self.scope)[-1]
+            var_sym = qualified_symbols(node.tag.var, self.scope)[-1]
         assert isinstance(var_sym, Symbol)
         if not var_sym.is_alias():
             return node
@@ -217,7 +206,7 @@ class SchedulerImpl(object):
                     if self.scope.find_block(succ_node.tag.block).synth_params["scheduling"] != "timed":
                         used_by_untimed = True
                         break
-                if _has_clkfence(node.tag) or used_by_untimed:
+                if has_clkfence(node.tag) or used_by_untimed:
                     self.node_latency_map[node] = (def_l, def_l, def_l)
                 else:
                     self.node_latency_map[node] = (0, 0, 0)
@@ -227,8 +216,8 @@ class SchedulerImpl(object):
                 if is_minimum:
                     self.node_latency_map[node] = (0, 0, 0)
                 else:
-                    if _is_move(node.tag) or _is_phi(node.tag):
-                        if _is_move(node.tag):
+                    if isinstance(node.tag, Move) or isinstance(node.tag, (Phi, UPhi)):
+                        if isinstance(node.tag, Move):
                             var = node.tag.dst
                         else:
                             var = node.tag.var
@@ -236,7 +225,7 @@ class SchedulerImpl(object):
                         if isinstance(var, Symbol):
                             sym = var
                         else:
-                            sym = _qualified_symbols(var, self.scope)[-1]
+                            sym = qualified_symbols(var, self.scope)[-1]
                         if isinstance(sym, Symbol) and sym.is_condition():
                             self.node_latency_map[node] = (0, 0, 0)
                         else:
@@ -412,13 +401,13 @@ class BlockBoundedListScheduler(SchedulerImpl):
             seq_preds = [p for p in seq_preds if p.tag.block == block]
             sched_times = []
             if seq_preds:
-                if _is_ctrl_stm(node.tag):
+                if isinstance(node.tag, (Jump, CJump, MCJump)):
                     latest_node = max(seq_preds, key=lambda p: (p.end, p.priority, p._nid))
                     sched_time = latest_node.end
                 else:
                     latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p.priority, p._nid))
                     seq_latency = self.node_seq_latency_map[latest_node]
-                    if is_timed_node and _has_clkfence(node.tag) and not _has_clkfence(latest_node.tag):
+                    if is_timed_node and has_clkfence(node.tag) and not has_clkfence(latest_node.tag):
                         seq_latency = 0
                     sched_time = latest_node.begin + seq_latency
                 sched_times.append(sched_time)
@@ -633,7 +622,7 @@ class PipelineScheduler(SchedulerImpl):
             seq_preds = dfg.preds_typ_without_back(node, "Seq")
             sched_times = []
             if seq_preds:
-                if _is_ctrl_stm(node.tag) or _has_exclusive_function(node.tag, self.scope):
+                if isinstance(node.tag, (Jump, CJump, MCJump)) or has_exclusive_function(node.tag, self.scope):
                     latest_node = max(seq_preds, key=lambda p: (p.end, p._nid))
                     sched_times.append(latest_node.end)
                     logger.debug("latest_node of seq_preds " + str(latest_node))
@@ -646,7 +635,7 @@ class PipelineScheduler(SchedulerImpl):
                 latest_node = max(defuse_preds, key=lambda p: (p.end, p._nid))
                 sched_times.append(latest_node.end)
             if usedef_preds:
-                if any([d.is_induction() for d in node.defs]):
+                if any(d.is_induction() for d in node.defs):
                     pass
                 else:
                     preds = usedef_preds
@@ -670,7 +659,7 @@ class PipelineScheduler(SchedulerImpl):
                 continue
             if self._get_using_resources(node):
                 continue
-            nearest_node = min(succs, key=lambda p: p.begin)
+            nearest_node = min(succs, key=lambda p: (p.begin, p._nid))
             sched_time = nearest_node.begin
             if sched_time > node.end:
                 gap = sched_time - node.end
@@ -710,7 +699,7 @@ class ResourceExtractor(object):
             self.ops[self.current_node][callee_scope] += 1
             func_name = callee_scope.name
             if func_name.startswith("polyphony.io.Port"):
-                qsym = _qualified_symbols(ir.func, self.scope)
+                qsym = qualified_symbols(ir.func, self.scope)
                 inst_ = qsym[-2]
                 assert isinstance(inst_, Symbol)
                 self.ports[self.current_node].append(inst_)
@@ -720,32 +709,32 @@ class ResourceExtractor(object):
             return
         # Handle MRef
         if isinstance(ir, MRef):
-            sym = _qualified_symbols(ir.mem, self.scope)[-1]
+            sym = qualified_symbols(ir.mem, self.scope)[-1]
             self.regarrays[self.current_node].append(sym)
             self._visit_rec(ir.mem)
             self._visit_rec(ir.offset)
             return
         # Handle MStore
         if isinstance(ir, MStore):
-            sym = _qualified_symbols(ir.mem, self.scope)[-1]
+            sym = qualified_symbols(ir.mem, self.scope)[-1]
             self.regarrays[self.current_node].append(sym)
             self._visit_rec(ir.mem)
             self._visit_rec(ir.offset)
             self._visit_rec(ir.exp)
             return
         # Handle statements - descend into their expressions
-        if _is_move(ir):
+        if isinstance(ir, Move):
             self._visit_rec(ir.src)
             self._visit_rec(ir.dst)
-        elif _is_expr(ir):
+        elif isinstance(ir, Expr):
             self._visit_rec(ir.exp)
-        elif _is_phi(ir):
+        elif isinstance(ir, (Phi, UPhi)):
             for arg in ir.args:
                 if arg:
                     self._visit_rec(arg)
-        elif _is_cjump(ir):
+        elif isinstance(ir, CJump):
             self._visit_rec(ir.exp)
-        elif _is_mcjump(ir):
+        elif isinstance(ir, MCJump):
             for c in ir.conds:
                 self._visit_rec(c)
         # Handle other expressions - descend

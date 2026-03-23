@@ -1,14 +1,9 @@
 """Tests for DFGBuilder."""
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irreader import IrReader
-from polyphony.compiler.ir.scheduling.dataflow import (
-    DFGBuilder,
-    _is_move, _is_expr, _is_const, _is_temp,
-    _is_call, _is_syscall, _is_mref, _is_mstore,
-    _is_jump, _is_cjump, _is_mcjump, _is_ctrl_stm,
-    _is_phi, _is_variable,
-    _is_mem_read, _is_mem_write,
-)
+from polyphony.compiler.ir.scheduling.dataflow import DFGBuilder
+from polyphony.compiler.ir.irhelper import is_mem_read, is_mem_write
+from polyphony.compiler.ir.ir import IrVariable
 from polyphony.compiler.ir.scheduling.dataflow import DataFlowGraph
 from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
 from polyphony.compiler.common.env import env
@@ -35,68 +30,27 @@ def build_scope_with_loop(src, scheduling='sequential'):
     return scope
 
 
-# --- Type dispatcher tests ---
-
-def test_is_move_old_ir():
-    """_is_move recognizes old IR MOVE."""
-    m = Move(Temp('x', Ctx.STORE), Const(1))
-    assert _is_move(m)
-
-
-def test_is_move_not_expr():
-    """_is_move rejects EXPR."""
-    e = Expr(Const(1))
-    assert not _is_move(e)
-
-
-def test_is_expr_old_ir():
-    """_is_expr recognizes old IR EXPR."""
-    e = Expr(Const(1))
-    assert _is_expr(e)
-
-
-def test_is_const_old_ir():
-    """_is_const recognizes old IR CONST."""
-    assert _is_const(Const(42))
-
-
-def test_is_temp_old_ir():
-    """_is_temp recognizes old IR TEMP."""
-    assert _is_temp(Temp('x', Ctx.LOAD))
-
-
-def test_is_ctrl_stm_jump():
-    """_is_ctrl_stm recognizes JUMP."""
-    setup_test()
-    from polyphony.compiler.ir.scope import Scope
-    scope = Scope.create(None, 'test_scope', {'function'})
-    from polyphony.compiler.ir.block import Block
-    blk = Block(scope)
-    j = Jump(blk.bid)
-    assert _is_ctrl_stm(j)
-
-
 def test_is_variable():
-    """_is_variable recognizes both old and new IR variables."""
-    assert _is_variable(Temp('x', Ctx.LOAD))
+    """IrVariable covers Temp and Attr."""
+    assert isinstance(Temp('x', Ctx.LOAD), IrVariable)
 
 
 def test_is_mem_read():
-    """_is_mem_read detects MOVE with MREF src."""
+    """is_mem_read detects MOVE with MREF src."""
     m = Move(Temp('x', Ctx.STORE), MRef(Temp('arr', Ctx.LOAD), Const(0), Ctx.LOAD))
-    assert _is_mem_read(m)
+    assert is_mem_read(m)
 
 
 def test_is_mem_write():
-    """_is_mem_write detects EXPR with MSTORE exp."""
+    """is_mem_write detects EXPR with MSTORE exp."""
     e = Expr(MStore(Temp('arr', Ctx.LOAD), Const(0), Const(1)))
-    assert _is_mem_write(e)
+    assert is_mem_write(e)
 
 
 def test_is_mem_read_not_move():
-    """_is_mem_read returns False for non-MOVE."""
+    """is_mem_read returns False for non-MOVE."""
     e = Expr(Const(1))
-    assert not _is_mem_read(e)
+    assert not is_mem_read(e)
 
 
 # --- DFG building tests ---
@@ -742,72 +696,6 @@ ret @return
     assert isinstance(dfg.children, list)
 
 
-# --- Type dispatcher tests (additional) ---
-
-def test_is_attr():
-    """_is_attr recognizes Attr."""
-    from polyphony.compiler.ir.scheduling.dataflow import _is_attr
-    a = Attr(Temp('self', Ctx.LOAD), Temp('x', Ctx.LOAD), Ctx.LOAD)
-    assert _is_attr(a)
-    assert not _is_attr(Const(1))
-
-
-def test_is_call():
-    """_is_call recognizes Call."""
-    from polyphony.compiler.ir.scheduling.dataflow import _is_call, _is_syscall
-    c = Call(Temp('f', Ctx.LOAD), [])
-    assert _is_call(c)
-    assert not _is_syscall(c)
-
-
-def test_is_jump():
-    """_is_jump recognizes Jump."""
-    from polyphony.compiler.ir.scheduling.dataflow import _is_jump
-    setup_test()
-    from polyphony.compiler.ir.scope import Scope
-    scope = Scope.create(None, 'test_j', {'function'})
-    from polyphony.compiler.ir.block import Block
-    blk = Block(scope)
-    j = Jump(blk.bid)
-    assert _is_jump(j)
-
-
-def test_is_cjump_and_mcjump():
-    """_is_cjump/_is_mcjump recognize their types."""
-    setup_test()
-    from polyphony.compiler.ir.scope import Scope
-    scope = Scope.create(None, 'test_cj', {'function'})
-    from polyphony.compiler.ir.block import Block
-    blk1 = Block(scope)
-    blk2 = Block(scope)
-    cj = CJump(Const(1), blk1.bid, blk2.bid)
-    assert _is_cjump(cj)
-    assert _is_ctrl_stm(cj)
-    assert not _is_mcjump(cj)
-
-    mj = MCJump([Const(1), Const(0)], [blk1.bid, blk2.bid])
-    assert _is_mcjump(mj)
-    assert _is_ctrl_stm(mj)
-
-
-def test_is_phi():
-    """_is_phi recognizes Phi and UPhi."""
-    phi = Phi(Temp('x', Ctx.STORE), [Const(1), Const(2)])
-    assert _is_phi(phi)
-    uphi = UPhi(Temp('x', Ctx.STORE))
-    assert _is_phi(uphi)
-
-
-def test_is_mstm():
-    """_is_mstm recognizes MStm."""
-    from polyphony.compiler.ir.scheduling.dataflow import _is_mstm
-    m1 = Move(Temp('x', Ctx.STORE), Const(1))
-    m2 = Move(Temp('y', Ctx.STORE), Const(2))
-    mstm = MStm(stms=[m1, m2])
-    assert _is_mstm(mstm)
-    assert not _is_mstm(m1)
-
-
 def test_expand_stms():
     """_expand_stms expands MStm into child Moves."""
     from polyphony.compiler.ir.scheduling.dataflow import _expand_stms
@@ -829,30 +717,6 @@ def test_expand_stms_no_mstm():
     m2 = Move(Temp('y', Ctx.STORE), Const(2))
     result = _expand_stms([m1, m2])
     assert len(result) == 2
-
-
-def test_is_new():
-    """_is_new recognizes New."""
-    from polyphony.compiler.ir.scheduling.dataflow import _is_new, _is_array
-    n = New(Temp('C', Ctx.LOAD), [])
-    assert _is_new(n)
-    assert not _is_array(n)
-
-    a = Array([Const(1), Const(2)], True)
-    assert _is_array(a)
-    assert not _is_new(a)
-
-
-def test_is_mref_mstore():
-    """_is_mref/_is_mstore recognize their types."""
-    from polyphony.compiler.ir.scheduling.dataflow import _is_mref, _is_mstore
-    mr = MRef(Temp('arr', Ctx.LOAD), Const(0), Ctx.LOAD)
-    assert _is_mref(mr)
-    assert not _is_mstore(mr)
-
-    ms = MStore(Temp('arr', Ctx.LOAD), Const(0), Const(1))
-    assert _is_mstore(ms)
-    assert not _is_mref(ms)
 
 
 def test_head_name():
@@ -1146,7 +1010,7 @@ ret @return
     dfg = scope.top_dfg
     # CJump node should have seq predecessors from other stms in same block
     for node in dfg.nodes:
-        if _is_cjump(node.tag):
+        if isinstance(node.tag, CJump):
             preds = dfg.preds(node)
             # Should have predecessors since other stms come before CJump
             assert len(preds) >= 1
@@ -1732,8 +1596,8 @@ ret @return
 
 
 def test_qualified_symbols_dispatch():
-    """_qualified_symbols dispatches to qualified_symbols."""
-    from polyphony.compiler.ir.scheduling.dataflow import _qualified_symbols
+    """qualified_symbols resolves a Temp to its symbol chain."""
+    from polyphony.compiler.ir.irhelper import qualified_symbols
     src = '''
 scope F
 tags function returnable
@@ -1747,13 +1611,13 @@ ret @return
 '''
     scope = build_scope_with_loop(src)
     t = Temp('x', Ctx.LOAD)
-    syms = _qualified_symbols(t, scope)
+    syms = qualified_symbols(t, scope)
     assert len(syms) >= 1
 
 
 def test_has_exclusive_function_dispatch():
-    """_has_exclusive_function dispatches correctly."""
-    from polyphony.compiler.ir.scheduling.dataflow import _has_exclusive_function
+    """has_exclusive_function dispatches correctly."""
+    from polyphony.compiler.ir.irhelper import has_exclusive_function
     src = '''
 scope F
 tags function returnable
@@ -1767,13 +1631,13 @@ ret @return
 '''
     scope = build_scope_with_loop(src)
     stm = scope.entry_block.stms[0]
-    result = _has_exclusive_function(stm, scope)
+    result = has_exclusive_function(stm, scope)
     assert isinstance(result, bool)
 
 
 def test_has_clkfence_dispatch():
-    """_has_clkfence dispatches correctly."""
-    from polyphony.compiler.ir.scheduling.dataflow import _has_clkfence
+    """has_clkfence dispatches correctly."""
+    from polyphony.compiler.ir.irhelper import has_clkfence
     src = '''
 scope F
 tags function returnable
@@ -1787,7 +1651,7 @@ ret @return
 '''
     scope = build_scope_with_loop(src)
     stm = scope.entry_block.stms[0]
-    result = _has_clkfence(stm)
+    result = has_clkfence(stm)
     assert isinstance(result, bool)
 
 
@@ -1864,9 +1728,8 @@ ret @return
     DFGBuilder().process(scope)
     dfg = scope.top_dfg
     # Find the 'mv @return c' node which should have transitive preds
-    from polyphony.compiler.ir.scheduling.dataflow import _is_move
     for node in dfg.nodes:
-        if _is_move(node.tag) and hasattr(node.tag.dst, 'name') and '@return' in str(node.tag.dst):
+        if isinstance(node.tag, Move) and hasattr(node.tag.dst, 'name') and '@return' in str(node.tag.dst):
             preds = dfg.collect_all_preds(node)
             assert len(preds) >= 2  # At least c and b are preds
             break
@@ -2018,9 +1881,8 @@ ret @return
     DFGBuilder().process(scope)
     dfg = scope.top_dfg
     # CJump should have seq predecessors from same block
-    from polyphony.compiler.ir.scheduling.dataflow import _is_cjump
     for node in dfg.nodes:
-        if _is_cjump(node.tag):
+        if isinstance(node.tag, CJump):
             preds = dfg.preds(node)
             seq_preds = dfg.preds_typ(node, 'Seq')
             assert len(preds) >= 1

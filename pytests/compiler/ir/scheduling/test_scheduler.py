@@ -1464,9 +1464,9 @@ ret @return
     scheduler = BlockBoundedListScheduler()
     scheduler.scope = scope
     # Find the ret node (not a move)
+    from polyphony.compiler.ir.ir import Jump, CJump, MCJump
     for node in dfg.nodes:
-        from polyphony.compiler.ir.scheduling.dataflow import _is_ctrl_stm
-        if _is_ctrl_stm(node.tag):
+        if isinstance(node.tag, (Jump, CJump, MCJump)):
             result = scheduler._find_latest_alias(dfg, node)
             assert result is node
             break
@@ -1862,9 +1862,9 @@ ret @return
     Scheduler().schedule(scope)
     dfg = scope.top_dfg
     # Verify that CJump node was scheduled with seq preds
-    from polyphony.compiler.ir.scheduling.dataflow import _is_cjump
+    from polyphony.compiler.ir.ir import CJump
     for node in dfg.nodes:
-        if _is_cjump(node.tag):
+        if isinstance(node.tag, CJump):
             # CJump should be scheduled after its seq predecessors
             assert node.begin >= 0
             break
@@ -2113,9 +2113,9 @@ ret @return
     scheduler = BlockBoundedListScheduler()
     scheduler.scope = scope
     # Find a move node - x is not aliased
-    from polyphony.compiler.ir.scheduling.dataflow import _is_move
+    from polyphony.compiler.ir.ir import Move
     for node in dfg.nodes:
-        if _is_move(node.tag):
+        if isinstance(node.tag, Move):
             result = scheduler._find_latest_alias(dfg, node)
             assert result is node
             break
