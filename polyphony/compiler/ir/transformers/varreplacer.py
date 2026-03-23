@@ -54,7 +54,13 @@ class VarReplacer(object):
         logger.debug('replace ' + str(dst) + ' => ' + str(src))
         replacer = VarReplacer(scope, dst, src, usedef)
         dst_qsym = qualified_symbols(dst, scope)
-        uses = list(usedef.get_stms_using(dst_qsym))
+        def _stm_key(stm):
+            blk = scope.find_block(stm.block)
+            if blk is None:
+                return (0, 0)
+            idx = next((i for i, s in enumerate(blk.stms) if s is stm), -1)
+            return (blk.order, idx)
+        uses = sorted(usedef.get_stms_using(dst_qsym), key=_stm_key)
         for use in uses:
             replacer.visit(use)
 
