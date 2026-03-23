@@ -103,7 +103,7 @@ class SymbolTable(object):
 
     def __str__(self):
         s = ""
-        for name, sym in self.symbols.items():
+        for name, sym in sorted(self.symbols.items()):
             s += f"{name} - {sym}:{sym.typ} {sorted(sym.tags)} {sym.scope.name}\n"
         # for sym in self.symbols.values():
         #    s += f'{sym}:{sym.typ} {sym.tags}\n'

@@ -35,6 +35,7 @@ class DFNode(object):
     def __init__(self, typ, tag):
         self.typ = typ  # 'Stm', 'Loop', 'Block'
         self.tag = tag
+        self._nid = -1  # assigned by DataFlowGraph.add_stm_node
         self.priority = -1  # 0 is highest priority
         self.begin = -1
         self.end = -1
@@ -49,7 +50,7 @@ class DFNode(object):
     def __str__(self):
         if self.typ == 'Stm':
             s = '<{}> ({}) {} {}:{} {}'.format(
-                hex(self.__hash__())[-4:],
+                self._nid,
                 self.tag.loc.lineno if self.tag.loc else 0,
                 self.priority,
                 self.begin,
@@ -59,7 +60,7 @@ class DFNode(object):
             #s += ' ' + self.tag.block.name
         elif self.typ == 'Loop':
             s = 'Node {} {} {}:{} Loop {}'.format(
-                hex(self.__hash__())[-4:],
+                self._nid,
                 self.priority,
                 self.begin,
                 self.end,
@@ -67,7 +68,7 @@ class DFNode(object):
             )
         elif self.typ == 'Block':
             s = 'Node {} {} {}:{} Block'.format(
-                hex(self.__hash__())[-4:],
+                self._nid,
                 self.priority,
                 self.begin,
                 self.end
@@ -107,12 +108,11 @@ class DataFlowGraph(object):
 
     def __str__(self):
         s = 'DFG all nodes ==============\n'
-        sources = self.find_src()
-        for n in sorted(self.traverse_nodes(self.succs, sources, [])):
+        for n in sorted(self.nodes, key=lambda n: n._nid):
             s += '  ' + str(n)
             s += '\n'
         s += 'DFG all edges ==============\n'
-        for (n1, n2), (typ, back) in self.edges.items():
+        for (n1, n2), (typ, back) in sorted(self.edges.items(), key=lambda e: (e[0][0]._nid, e[0][1]._nid)):
             back_edge = "(back) " if back else ''
             if typ == 'DefUse':
                 prefix1 = 'def '
@@ -138,6 +138,7 @@ class DataFlowGraph(object):
         n = self.find_node(stm)
         if not n:
             n = DFNode('Stm', stm)
+            n._nid = len(self.nodes)
             self.nodes.append(n)
         return n
 
@@ -263,7 +264,7 @@ class DataFlowGraph(object):
         return None
 
     def find_src(self):
-        return self.src_nodes
+        return sorted(self.src_nodes, key=lambda n: n._nid)
 
     def find_sink(self):
         sink_nodes = []
@@ -674,10 +675,15 @@ class DFGBuilder(object):
         usedef = self.usedef
 
         blocks = region.blocks()
+        # Pass 1: create all nodes in block/stm order so _nid reflects program order
+        for b in blocks:
+            for stm in _expand_stms(b.stms):
+                dfg.add_stm_node(stm)
+        # Pass 2: classify source nodes and add edges
         for b in blocks:
             for stm in _expand_stms(b.stms):
                 logger.log(0, 'loop head ' + region.name + ' :: ' + str(stm))
-                usenode = dfg.add_stm_node(stm)
+                usenode = dfg.find_node(stm)
                 self._add_source_node(usenode, dfg, usedef, blocks)
                 self._add_defuse_edges(stm, usenode, dfg, usedef, blocks)
                 self._add_usedef_edges(stm, usenode, dfg, usedef, blocks)

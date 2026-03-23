@@ -98,19 +98,19 @@ class Loop(Region):
             s += ' # cond: {}\n'.format(self.cond)
         if self.outer_defs:
             s += ' # outer_defs: {'
-            s += ', '.join([str(d) for d in self.outer_defs])
+            s += ', '.join([str(d) for d in sorted(self.outer_defs, key=str)])
             s += '}\n'
         if self.outer_uses:
             s += ' # outer_uses: {'
-            s += ', '.join([str(u) for u in self.outer_uses])
+            s += ', '.join([str(u) for u in sorted(self.outer_uses, key=str)])
             s += '}\n'
         if self.inner_defs:
             s += ' # inner_defs: {'
-            s += ', '.join([str(d) for d in self.inner_defs])
+            s += ', '.join([str(d) for d in sorted(self.inner_defs, key=str)])
             s += '}\n'
         if self.inner_uses:
             s += ' # inner_uses: {'
-            s += ', '.join([str(u) for u in self.inner_uses])
+            s += ', '.join([str(u) for u in sorted(self.inner_uses, key=str)])
             s += '}\n'
         return s
 
