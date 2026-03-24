@@ -59,7 +59,7 @@ Loc = namedtuple("Loc", ("filename", "lineno"))
 
 
 class Ir(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, eq=False)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     def __repr__(self):
         return self.__str__()
@@ -67,11 +67,7 @@ class Ir(BaseModel):
     def __lt__(self, other):
         return id(self) < id(other)
 
-    def type_str(self, scope):
-        """Return a type-annotated string representation (for debug logging)."""
-        return ""
-
-    def clone(self, **overrides):
+    def clone(self, **overrides) -> "Ir":
         """Deep-copy this IR node, returning a new instance via __init__."""
         data = {}
         for field_name in type(self).model_fields:
@@ -140,7 +136,7 @@ class Ir(BaseModel):
         elif isinstance(ir, list):
             assert False, "IR sequence must not be a list"
         elif isinstance(ir, tuple):
-            return self._subst_seq(ir, old, new, visited)
+            return self._subst_seq(ir, old, new, visited)  # type: ignore
         return ir, False
 
     def _subst_seq(self, seq, old, new, visited):
@@ -160,7 +156,7 @@ class Ir(BaseModel):
             return seq, False
         return tuple(new_elms), True
 
-    def subst_by_id(self, rename_map: dict) -> 'Ir':
+    def subst_by_id(self, rename_map: dict) -> "Ir":
         """Return new IR with nodes replaced by identity (id) lookup in rename_map.
 
         Non-mutating. Returns same object if nothing matched.
@@ -221,14 +217,14 @@ class Ir(BaseModel):
             return seq, False
         return tuple(new_items), True
 
-    def find_vars(self, qname):
+    def find_vars(self, qname: tuple[str, ...]) -> list[IrVariable]:
         """Find all variables matching the given qualified name."""
         assert len(qname) > 0 and isinstance(qname[0], str)
         vars = []
         self._find_vars_rec(self, qname, vars)
         return vars
 
-    def _find_vars_rec(self, ir, qname, vars, visited=None):
+    def _find_vars_rec(self, ir, qname: tuple[str, ...], vars: list[IrVariable], visited=None):
         if visited is None:
             visited = set()
         obj_id = id(ir)
@@ -254,13 +250,13 @@ class Ir(BaseModel):
             for elm in ir:
                 self._find_vars_rec(elm, qname, vars, visited)
 
-    def find_irs(self, typ):
+    def find_irs(self, typ: type) -> list[Ir]:
         """Find all descendant nodes matching the given type."""
         irs = []
         self._find_irs_rec(self, typ, irs)
         return irs
 
-    def _find_irs_rec(self, ir, typ, irs, visited=None):
+    def _find_irs_rec(self, ir, typ: type, irs: list[Ir], visited=None):
         if visited is None:
             visited = set()
         obj_id = id(ir)
@@ -281,7 +277,7 @@ class Ir(BaseModel):
 
 
 class IrExp(Ir):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, eq=False)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     def kids(self) -> tuple:
         """Return the leaf variable nodes reachable from this expression.
@@ -293,7 +289,7 @@ class IrExp(Ir):
 
 
 class IrStm(Ir):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, eq=False)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     loc: Any = Field(default_factory=lambda: Loc("", 0))
     block: str = ""  # block bid (e.g., 'b1', 'loop3')
@@ -301,9 +297,10 @@ class IrStm(Ir):
     def __eq__(self, other):
         if type(self) is not type(other):
             return False
-        skip = frozenset(('block', 'loc', '__pydantic_fields_set__'))
-        return {k: v for k, v in self.__dict__.items() if k not in skip} == \
-               {k: v for k, v in other.__dict__.items() if k not in skip}
+        skip = frozenset(("block", "loc", "__pydantic_fields_set__"))
+        return {k: v for k, v in self.__dict__.items() if k not in skip} == {
+            k: v for k, v in other.__dict__.items() if k not in skip
+        }
 
     def __hash__(self):
         return id(self)
@@ -647,7 +644,7 @@ class IrCallable(IrNameExp):
             kids += list(arg.kids())
         return tuple(kids)
 
-    def get_callee_scope(self, current_scope) -> "Scope":
+    def get_callee_scope(self, current_scope: Scope) -> Scope:
         """Resolve the scope of the function being called."""
         from .irhelper import qualified_symbols
         from .symbol import Symbol
@@ -787,7 +784,7 @@ class Array(IrExp):
             s += " * " + str(self.repeat)
         return s
 
-    def getlen(self):
+    def getlen(self) -> int:
         if isinstance(self.repeat, Const):
             return len(self.items) * self.repeat.value
         return -1
@@ -933,7 +930,6 @@ class Jump(IrStm):
         return f"jump {self.target} '{self.typ}'"
 
 
-
 def _coerce_bid(v):
     if isinstance(v, str):
         return v
@@ -968,7 +964,6 @@ class CJump(IrStm):
 
     def __str__(self):
         return f"cjump {self.exp} ? {self.true}, {self.false}"
-
 
 
 class MCJump(IrStm):
@@ -1006,7 +1001,6 @@ class MCJump(IrStm):
         for cond, target in zip(self.conds, self.targets):
             items.append(f"{cond} ? {target}")
         return "mcjump(\n        {})".format(", \n        ".join(items))
-
 
 
 class Ret(IrStm):
@@ -1073,7 +1067,7 @@ class Phi(IrStm):
                 kids += list(arg.kids())
         return tuple(kids)
 
-    def remove_arg(self, arg):
+    def remove_arg(self, arg) -> "Phi":
         """Remove an arg (and its corresponding ps entry) by identity. Returns a new Phi."""
         from ..common.utils import find_id_index
 
@@ -1085,7 +1079,7 @@ class Phi(IrStm):
             return self.model_copy(update={"args": new_args, "ps": new_ps})
         return self.model_copy(update={"args": new_args})
 
-    def reorder_args(self, indices):
+    def reorder_args(self, indices) -> "Phi":
         """Reorder args and ps by the given index sequence. Returns a new Phi."""
         args = tuple(self.args[idx] for idx in indices)
         ps = tuple(self.ps[idx] for idx in indices)
@@ -1116,7 +1110,7 @@ class MStm(IrStm):
 
 
 # ============================================================
-# Utility functions (previously in ir.py)
+# Utility functions
 # ============================================================
 def name2var(name: str, ctx: Ctx = Ctx.LOAD) -> IrVariable:
     """Convert a dot-separated name string to a Temp/Attr chain."""
@@ -1128,25 +1122,3 @@ def name2var(name: str, ctx: Ctx = Ctx.LOAD) -> IrVariable:
         exp = Attr(exp=exp, attr=s, name=s)
     exp = Attr(exp=exp, attr=ss[-1], name=ss[-1], ctx=ctx)
     return exp
-
-
-def move_ir(src, dst):
-    """Create a Move from src to dst, accepting strings/ints as convenience."""
-    if isinstance(src, str):
-        src = name2var(src, ctx=Ctx.LOAD)
-    elif isinstance(src, int):
-        src = Const(value=src)
-    if isinstance(dst, str):
-        dst = name2var(dst, ctx=Ctx.STORE)
-    return Move(dst=dst, src=src)
-
-
-def conds2str(conds):
-    """Format a list of (exp, boolean) conditions as a string."""
-    if conds:
-        cs = []
-        for exp, boolean in conds:
-            cs.append(str(exp) + " == " + str(boolean))
-        return " and ".join(cs)
-    else:
-        return "None"

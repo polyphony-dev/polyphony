@@ -3,15 +3,32 @@
 Provides utility functions for working with IR nodes: type resolution,
 expression evaluation, symbol qualification, and statement analysis.
 """
+
 from __future__ import annotations
-from typing import cast, TYPE_CHECKING
+from typing import cast, Any, TYPE_CHECKING
 from .ir import (
-    IrExp, IrNameExp, IrVariable, Temp, Attr, Ctx, Const, UnOp, BinOp, RelOp,
-    Array, MRef, Call, SysCall, Move, Expr,
+    IrExp,
+    IrNameExp,
+    IrVariable,
+    IrStm,
+    Temp,
+    Attr,
+    Ctx,
+    Const,
+    UnOp,
+    BinOp,
+    RelOp,
+    Array,
+    MRef,
+    Call,
+    SysCall,
+    Move,
+    Expr,
 )
 from .symbol import Symbol
 from .types.scopetype import ScopeType
 from .types.type import Type
+
 if TYPE_CHECKING:
     from .scope import Scope
 
@@ -28,7 +45,7 @@ def qualified_symbols(ir: IrNameExp, scope: Scope) -> tuple[Symbol | str, ...]:
             if symbol.typ.has_scope():
                 scope = cast(ScopeType, symbol.typ).scope
             else:
-                symbol_or_names.extend(qname[i + 1:])
+                symbol_or_names.extend(qname[i + 1 :])
                 break
         else:
             symbol_or_names.extend(qname[i:])
@@ -37,45 +54,45 @@ def qualified_symbols(ir: IrNameExp, scope: Scope) -> tuple[Symbol | str, ...]:
     return tuple(symbol_or_names)
 
 
-def reduce_relexp(exp):
+def reduce_relexp(exp: IrExp) -> IrExp:
     """Simplify relational expressions by folding constant operands."""
     if isinstance(exp, RelOp):
-        if exp.op == 'And':
+        if exp.op == "And":
             new_left = reduce_relexp(exp.left)
             new_right = reduce_relexp(exp.right)
             if isinstance(new_left, Const):
                 return new_right if new_left.value else Const(value=0)
-            elif isinstance(new_left, UnOp) and new_left.op == 'Not' and isinstance(new_left.exp, Const):
+            elif isinstance(new_left, UnOp) and new_left.op == "Not" and isinstance(new_left.exp, Const):
                 return Const(value=0) if new_left.exp.value else new_right
             elif isinstance(new_right, Const):
                 return new_left if new_right.value else Const(value=0)
-            elif isinstance(new_right, UnOp) and new_right.op == 'Not' and isinstance(new_right.exp, Const):
+            elif isinstance(new_right, UnOp) and new_right.op == "Not" and isinstance(new_right.exp, Const):
                 return Const(value=0) if new_right.exp.value else new_left
             if new_left is not exp.left or new_right is not exp.right:
-                return exp.model_copy(update={'left': new_left, 'right': new_right})
-        elif exp.op == 'Or':
+                return exp.model_copy(update={"left": new_left, "right": new_right})
+        elif exp.op == "Or":
             new_left = reduce_relexp(exp.left)
             new_right = reduce_relexp(exp.right)
             if isinstance(new_left, Const):
                 return Const(value=1) if new_left.value else new_right
-            elif isinstance(new_left, UnOp) and new_left.op == 'Not' and isinstance(new_left.exp, Const):
+            elif isinstance(new_left, UnOp) and new_left.op == "Not" and isinstance(new_left.exp, Const):
                 return new_right if new_left.exp.value else Const(value=1)
             elif isinstance(new_right, Const):
                 return Const(value=1) if new_right.value else new_left
-            elif isinstance(new_right, UnOp) and new_right.op == 'Not' and isinstance(new_right.exp, Const):
+            elif isinstance(new_right, UnOp) and new_right.op == "Not" and isinstance(new_right.exp, Const):
                 return new_left if new_right.exp.value else Const(value=1)
             if new_left is not exp.left or new_right is not exp.right:
-                return exp.model_copy(update={'left': new_left, 'right': new_right})
-    elif isinstance(exp, UnOp) and exp.op == 'Not':
+                return exp.model_copy(update={"left": new_left, "right": new_right})
+    elif isinstance(exp, UnOp) and exp.op == "Not":
         nexp = reduce_relexp(exp.exp)
         if isinstance(nexp, Const):
             return Const(value=0) if nexp.value else Const(value=1)
         else:
-            return UnOp(op='Not', exp=nexp)
+            return UnOp(op="Not", exp=nexp)
     return exp
 
 
-def reduce_binop(ir):
+def reduce_binop(ir: BinOp) -> IrExp:
     """Simplify binary operations with constant operands (new IR version)."""
     if isinstance(ir.left, Const):
         const = ir.left.value
@@ -85,16 +102,16 @@ def reduce_binop(ir):
         var = ir.left
     else:
         return ir
-    if ir.op == 'Add' and const == 0:
+    if ir.op == "Add" and const == 0:
         return var
-    elif ir.op == 'Mult' and const == 1:
+    elif ir.op == "Mult" and const == 1:
         return var
-    elif ir.op == 'Mult' and const == 0:
+    elif ir.op == "Mult" and const == 0:
         return Const(value=0)
     return ir
 
 
-def qsym2var(qsym, ctx):
+def qsym2var(qsym: tuple, ctx: Ctx) -> IrVariable:
     """Convert a qualified symbol tuple to an IrVariable (Temp or Attr chain)."""
     assert len(qsym) > 0
     if len(qsym) == 1:
@@ -106,15 +123,11 @@ def qsym2var(qsym, ctx):
     return exp
 
 
-def op2str(op):
-    """Return the class name of an operator node."""
-    return op.__class__.__name__
-
-
 def expr2ir(expr, name=None, scope=None):
     """Convert a Python value to an IR expression."""
     import inspect
     from ..common.env import env
+
     if expr is None:
         return Const(value=None)
     elif isinstance(expr, int):
@@ -132,17 +145,17 @@ def expr2ir(expr, name=None, scope=None):
     else:
         assert scope is not None, "scope is required for class/function expressions"
         if inspect.isclass(expr):
-            if expr.__module__ == 'polyphony.typing':
-                klass_name = expr.__module__ + '.' + expr.__name__
+            if expr.__module__ == "polyphony.typing":
+                klass_name = expr.__module__ + "." + expr.__name__
                 klass_scope = env.scopes[klass_name]
                 t = Type.klass(klass_scope)
-                sym = scope.add_temp('@dtype', {'predefined'})
+                sym = scope.add_temp("@dtype", {"predefined"})
                 sym.typ = t
-            elif expr.__module__ == 'builtins':
-                klass_name = '__builtin__.' + expr.__name__
+            elif expr.__module__ == "builtins":
+                klass_name = "__builtin__." + expr.__name__
                 klass_scope = env.scopes[klass_name]
                 t = Type.klass(klass_scope)
-                sym = scope.add_temp('@dtype', {'predefined'})
+                sym = scope.add_temp("@dtype", {"predefined"})
                 sym.typ = t
             else:
                 assert False
@@ -158,74 +171,74 @@ def expr2ir(expr, name=None, scope=None):
         assert False
 
 
-def eval_unop(op, v):
+def eval_unop(op: str, v: int):
     """Evaluate a unary operation on a constant value."""
-    if op == 'Invert':
+    if op == "Invert":
         return ~v
-    elif op == 'Not':
+    elif op == "Not":
         return 1 if (not v) is True else 0
-    elif op == 'UAdd':
+    elif op == "UAdd":
         return v
-    elif op == 'USub':
+    elif op == "USub":
         return -v
     else:
         return None
 
 
-def eval_binop(op, lv, rv):
+def eval_binop(op: str, lv: Any, rv: Any) -> int | None:
     """Evaluate a binary operation on two constant values."""
-    if op == 'Add':
+    if op == "Add":
         return lv + rv
-    elif op == 'Sub':
+    elif op == "Sub":
         return lv - rv
-    elif op == 'Mult':
+    elif op == "Mult":
         return lv * rv
-    elif op == 'FloorDiv':
+    elif op == "FloorDiv":
         return lv // rv
-    elif op == 'Mod':
+    elif op == "Mod":
         return lv % rv
-    elif op == 'LShift':
+    elif op == "LShift":
         return lv << rv
-    elif op == 'RShift':
+    elif op == "RShift":
         return lv >> rv
-    elif op == 'BitOr':
+    elif op == "BitOr":
         return lv | rv
-    elif op == 'BitXor':
+    elif op == "BitXor":
         return lv ^ rv
-    elif op == 'BitAnd':
+    elif op == "BitAnd":
         return lv & rv
     else:
         return None
 
 
-def eval_relop(op, lv, rv):
+def eval_relop(op: str, lv: Any, rv: Any) -> int | None:
     """Evaluate a relational operation on two constant values."""
-    if op == 'Eq':
+    if op == "Eq":
         b = lv == rv
-    elif op == 'NotEq':
+    elif op == "NotEq":
         b = lv != rv
-    elif op == 'Lt':
+    elif op == "Lt":
         b = lv < rv
-    elif op == 'LtE':
+    elif op == "LtE":
         b = lv <= rv
-    elif op == 'Gt':
+    elif op == "Gt":
         b = lv > rv
-    elif op == 'GtE':
+    elif op == "GtE":
         b = lv >= rv
-    elif op == 'Is':
+    elif op == "Is":
         b = lv is rv
-    elif op == 'IsNot':
+    elif op == "IsNot":
         b = lv is not rv
-    elif op == 'And':
+    elif op == "And":
         b = lv and rv
-    elif op == 'Or':
+    elif op == "Or":
         b = lv or rv
     else:
         return None
     return 1 if b else 0
 
 
-def irexp_type(ir: IrExp, scope) -> Type:
+def irexp_type(ir: IrExp, scope: Scope) -> Type:
     """Determine the type of an IrExp node by resolving symbols."""
     match ir:
         case Array() as array:
@@ -259,7 +272,7 @@ def irexp_type(ir: IrExp, scope) -> Type:
             return Type.undef()
 
 
-def is_port_method_call(call, scope, callee_scope=None):
+def is_port_method_call(call: Call, scope: Scope, callee_scope: Scope | None = None) -> bool:
     """Check if an IR node is a port method call (rd/wr/etc.)."""
     if not isinstance(call, Call):
         return False
@@ -268,7 +281,7 @@ def is_port_method_call(call, scope, callee_scope=None):
     return callee_scope.is_method() and callee_scope.parent.is_port()
 
 
-def _get_callee_scope(call, scope):
+def _get_callee_scope(call: Call, scope: Scope) -> Scope:
     """Resolve the callee scope for a Call node."""
     qsyms = qualified_symbols(call.func, scope)
     symbol = qsyms[-1]
@@ -278,7 +291,7 @@ def _get_callee_scope(call, scope):
     return cast(ScopeType, func_t).scope
 
 
-def has_clkfence(stm):
+def has_clkfence(stm: IrStm) -> bool:
     """Check if a statement is a clkfence call (clksleep or wait_*)."""
     if not isinstance(stm, Expr):
         return False
@@ -287,14 +300,14 @@ def has_clkfence(stm):
     # Use func.name directly since IrCallable.name property doesn't work
     # correctly with pydantic field inheritance.
     name = stm.exp.func.name
-    if name == 'polyphony.timing.clksleep':
+    if name == "polyphony.timing.clksleep":
         return True
-    if name.startswith('polyphony.timing.wait_'):
+    if name.startswith("polyphony.timing.wait_"):
         return True
     return False
 
 
-def has_exclusive_function(stm, scope, callee_scope=None):
+def has_exclusive_function(stm: IrStm, scope: Scope, callee_scope: Scope | None = None) -> bool:
     """Check if a statement contains an exclusive (scheduling-boundary) function."""
     if isinstance(stm, Move):
         call = stm.src
@@ -303,7 +316,7 @@ def has_exclusive_function(stm, scope, callee_scope=None):
     else:
         return False
     if isinstance(call, Call) and is_port_method_call(call, scope, callee_scope):
-        if scope.find_block(stm.block).synth_params['scheduling'] == 'timed':
+        if scope.find_block(stm.block).synth_params["scheduling"] == "timed":
             return False
         return True
     if has_clkfence(stm):
@@ -311,7 +324,7 @@ def has_exclusive_function(stm, scope, callee_scope=None):
     return False
 
 
-def find_move_src(sym, typ):
+def find_move_src(sym: Symbol, typ: type) -> IrExp | None:
     """Find the source expression of a Move statement that assigns to sym with src of given type."""
     scope = sym.scope
     if scope.is_class():
@@ -324,20 +337,22 @@ def find_move_src(sym, typ):
     return None
 
 
-def is_mem_read(stm):
+def is_mem_read(stm: IrStm) -> bool:
     """Check if a statement is a memory read (Move with MRef src)."""
     return isinstance(stm, Move) and isinstance(stm.src, MRef)
 
 
-def is_mem_write(stm):
+def is_mem_write(stm: IrStm) -> bool:
     """Check if a statement is a memory write (Expr with MStore exp)."""
     from .ir import MStore
+
     return isinstance(stm, Expr) and isinstance(stm.exp, MStore)
 
 
-def program_order(stm, scope):
+def program_order(stm: IrStm, scope: Scope) -> tuple[int, int]:
     """Get program order of a statement (block order, stm index in block.stms)."""
     from ..common.utils import find_id_index
+
     blk = scope.find_block(stm.block)
     return (blk.order, find_id_index(blk.stms, stm))
 
@@ -346,7 +361,8 @@ def program_order(stm, scope):
 # Constant lookup utilities
 # ============================================================
 
-def _try_get_constant(qsym, scope):
+
+def _try_get_constant(qsym: tuple[Symbol, ...], scope: Scope) -> IrExp | None:
     """Get constant value from scope.constants table."""
     sym = qsym[-1]
     if sym in sym.scope.constants:
@@ -354,9 +370,10 @@ def _try_get_constant(qsym, scope):
     return None
 
 
-def _try_get_constant_pure(qsym, scope):
+def _try_get_constant_pure(qsym: tuple[Symbol, ...], scope: Scope) -> IrExp | None:
     """Get constant value from runtime_info.global_vars (pure mode)."""
     from ..common.env import env
+
     def find_value(vars, names):
         if len(names) > 1:
             head = names[0]
@@ -369,11 +386,12 @@ def _try_get_constant_pure(qsym, scope):
             if name in vars:
                 return vars[name]
         return None
+
     assert env.runtime_info is not None
     vars = env.runtime_info.global_vars
     names = [sym if isinstance(sym, str) else sym.name for sym in qsym]
     if qsym[0].scope.is_global():
-        names = ['__main__'] + names
+        names = ["__main__"] + names
     elif qsym[0].scope.is_namespace() and not qsym[0].scope.is_global():
         names = [qsym[0].scope.name] + names
     v = find_value(vars, names)
@@ -384,7 +402,7 @@ def _try_get_constant_pure(qsym, scope):
     return None
 
 
-def try_get_constant(qsym, scope):
+def try_get_constant(qsym: tuple[Symbol, ...], scope: Scope) -> IrExp | None:
     """Get constant value for a qualified symbol.
 
     In pure mode, looks up runtime global vars.
@@ -392,13 +410,14 @@ def try_get_constant(qsym, scope):
     Returns IR expression or None.
     """
     from ..common.env import env
+
     if env.config.enable_pure:
         return _try_get_constant_pure(qsym, scope)
     else:
         return _try_get_constant(qsym, scope)
 
 
-def bits2int(bits, nbit):
+def bits2int(bits: int, nbit: int) -> int:
     """Convert a bit pattern to a signed integer."""
     signbit = bits & (1 << (nbit - 1))
     if signbit:
