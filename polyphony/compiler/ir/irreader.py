@@ -3,7 +3,7 @@ from typing import cast
 from collections import deque, defaultdict
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irhelper import qualified_symbols
-from polyphony.compiler.ir.block import Block
+from polyphony.compiler.ir.block import Block, detect_loop_edges
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
@@ -72,6 +72,7 @@ class IrReader(object):
                 Block.set_order(self.current_scope.entry_block, 0)
                 continue
             self.parse_all_blocks()
+            detect_loop_edges(self.current_scope)
             Block.set_order(self.current_scope.entry_block, 0)
         for from_scope, name, target_scope in self.import_table:
             sym = from_scope.find_sym(name)

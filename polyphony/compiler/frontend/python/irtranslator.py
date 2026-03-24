@@ -915,7 +915,7 @@ class CodeVisitor(ast.NodeVisitor):
             self.current_scope.replace_block(loop_bridge_tmp_block, loop_bridge_block)
             self.current_block = loop_bridge_block
             self.emit(Jump(target=while_block.bid, typ="L"), node)
-            loop_bridge_block.connect_loop(while_block)
+            loop_bridge_block.connect(while_block)
 
         # else part
         else_block = self._new_block(self.current_scope, "whileelse")
@@ -1154,7 +1154,7 @@ class CodeVisitor(ast.NodeVisitor):
         for code in continue_parts:
             self.emit(code, node)
         self.emit(Jump(target=loop_check_block.bid, typ="L"), node)
-        continue_block.connect_loop(loop_check_block)
+        continue_block.connect(loop_check_block)
 
         # else part
         else_block = self._new_block(self.current_scope, "forelse")

@@ -251,3 +251,41 @@ class Block(object):
     def is_loop_head(self):
         r = self.scope.find_region(self)
         return r and r is not self.scope.top_region() and r.head is self
+
+
+def detect_loop_edges(scope):
+    """Detect back edges in the CFG using DFS and set succs_loop/preds_loop.
+
+    This replaces any existing loop edge information.  It works on the raw
+    CFG (succs/preds) without requiring prior loop annotations or block
+    ordering, so it can be called both after IR construction (irtranslator)
+    and after deserialization (IrReader).
+    """
+    entry = scope.entry_block
+    if entry is None:
+        return
+
+    UNVISITED, IN_STACK, DONE = 0, 1, 2
+    state: dict[Block, int] = {}
+    for blk in entry.traverse():
+        state[blk] = UNVISITED
+        blk.succs_loop = []
+        blk.preds_loop = []
+
+    stack = [(entry, 0)]
+    state[entry] = IN_STACK
+
+    while stack:
+        blk, idx = stack[-1]
+        if idx < len(blk.succs):
+            stack[-1] = (blk, idx + 1)
+            succ = blk.succs[idx]
+            if state.get(succ) == UNVISITED:
+                state[succ] = IN_STACK
+                stack.append((succ, 0))
+            elif state.get(succ) == IN_STACK:
+                blk.succs_loop.append(succ)
+                succ.preds_loop.append(blk)
+        else:
+            state[blk] = DONE
+            stack.pop()

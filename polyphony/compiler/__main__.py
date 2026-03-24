@@ -28,6 +28,7 @@ from .ir.scope import Scope
 from .ir.symbol import Symbol
 from .ir.setlineno import SourceDump
 from .ir.synth import DefaultSynthParamSetter
+from .ir.block import detect_loop_edges
 
 from .ir.analysis.diagnostic import CFGChecker
 from .ir.analysis.loopdetector import LoopDetector
@@ -220,6 +221,10 @@ def select_using_scopes():
 
 def if_trans(driver, scope):
     IfTransformer().process(scope)
+
+
+def detect_loops(driver, scope):
+    detect_loop_edges(scope)
 
 
 def ifcondtrans(driver, scope):
@@ -704,6 +709,7 @@ def compile_plan():
 
     plan = [
         if_trans,
+        detect_loops,
         reduce_blk,
         early_quadruple,
         early_type_prop,

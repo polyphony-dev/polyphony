@@ -1050,7 +1050,8 @@ def f():
 
 
 def test_for_range_1arg_continue_loop_connection():
-    """continue block should have loop connection back to fortest."""
+    """continue block should have loop connection back to fortest after detect_loop_edges."""
+    from polyphony.compiler.ir.block import detect_loop_edges
     setup_test()
     src = '''
 def f():
@@ -1059,6 +1060,7 @@ def f():
 '''
     top = _translate(src)
     scope = env.scopes['@top.f']
+    detect_loop_edges(scope)
     cont = _get_blocks_by_nametag(scope, 'continue')[0]
     assert len(cont.succs_loop) >= 1
     assert cont.succs_loop[0].nametag == 'fortest'
@@ -1995,7 +1997,8 @@ def f():
 # --- for loop: fortest has loop predecessor from continue ---
 
 def test_for_fortest_loop_pred_from_continue():
-    """fortest should have continue as a loop predecessor."""
+    """fortest should have continue as a loop predecessor after detect_loop_edges."""
+    from polyphony.compiler.ir.block import detect_loop_edges
     setup_test()
     src = '''
 def f():
@@ -2004,6 +2007,7 @@ def f():
 '''
     top = _translate(src)
     scope = env.scopes['@top.f']
+    detect_loop_edges(scope)
     fortest = _get_blocks_by_nametag(scope, 'fortest')[0]
     loop_pred_tags = [b.nametag for b in fortest.preds_loop]
     assert 'continue' in loop_pred_tags

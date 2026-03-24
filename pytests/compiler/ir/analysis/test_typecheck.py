@@ -3047,7 +3047,7 @@ class TestSynthesisParamCheckerPipelineLoop:
         from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypePropagation
         from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
-        from polyphony.compiler.ir.block import Block
+        from polyphony.compiler.ir.block import Block, detect_loop_edges, detect_loop_edges
         setup_test()
         src_texts['dummy'] = [''] * 20
         src = '''
@@ -3063,7 +3063,8 @@ f()
         install_builtins(top)
         TypePropagation(is_strict=False).process_all()
         func = env.scopes['@top.f']
-        # Set block ordering required by LoopDetector
+        # Detect loop edges and set block ordering required by LoopDetector
+        detect_loop_edges(func)
         Block.set_order(func.entry_block, 0)
         # Detect loops
         LoopDetector().process(func)
@@ -4357,7 +4358,7 @@ class TestSynthesisParamCheckerChannelConflict:
         from polyphony.compiler.frontend.python.irtranslator import IrTranslator
         from polyphony.compiler.ir.transformers.typeprop import TypeSpecializer
         from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
-        from polyphony.compiler.ir.block import Block
+        from polyphony.compiler.ir.block import Block, detect_loop_edges
         setup_test()
         setup_libs('io', 'timing')
         src_texts['dummy'] = [''] * 50
@@ -4381,7 +4382,7 @@ class TestSynthesisParamCheckerChannelConflict:
     def test_channel_single_read_in_pipeline_passes(self):
         """SynthesisParamChecker: single channel.get() in pipeline loop passes."""
         from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
-        from polyphony.compiler.ir.block import Block
+        from polyphony.compiler.ir.block import Block, detect_loop_edges
         top = self._setup_pipeline_with_channel('''
 from polyphony import module, Channel
 from polyphony.io import Port
@@ -4402,6 +4403,7 @@ m = M()
 ''')
         for name, scope in env.scopes.items():
             if 'run' in name and 'M' in name and not name.startswith('polyphony'):
+                detect_loop_edges(scope)
                 Block.set_order(scope.entry_block, 0)
                 LoopDetector().process(scope)
                 scope.add_tag('worker')
@@ -4417,7 +4419,7 @@ m = M()
     def test_channel_single_write_in_pipeline_passes(self):
         """SynthesisParamChecker: single channel.put() in pipeline loop passes."""
         from polyphony.compiler.ir.analysis.loopdetector import LoopDetector
-        from polyphony.compiler.ir.block import Block
+        from polyphony.compiler.ir.block import Block, detect_loop_edges
         top = self._setup_pipeline_with_channel('''
 from polyphony import module, Channel
 from polyphony.io import Port
@@ -4437,6 +4439,7 @@ m = M()
 ''')
         for name, scope in env.scopes.items():
             if 'run' in name and 'M' in name and not name.startswith('polyphony'):
+                detect_loop_edges(scope)
                 Block.set_order(scope.entry_block, 0)
                 LoopDetector().process(scope)
                 scope.add_tag('worker')
