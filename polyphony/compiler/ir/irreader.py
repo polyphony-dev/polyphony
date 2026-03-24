@@ -251,6 +251,10 @@ class IrReader(object):
         op = tokens[0]
         if op[-1] == ':':  # block?
             return False
+        if op.startswith('.'):
+            self.deq_line()
+            self._parse_block_metadata(op, tokens[1] if len(tokens) > 1 else '')
+            return True
         if op == 'mstm':
             self.deq_line()
             stm = self.parse_mstm()
@@ -261,6 +265,17 @@ class IrReader(object):
             print(stm)
         self.current_block.append_stm(stm)
         return True
+
+    def _parse_block_metadata(self, directive: str, operands: str):
+        if directive == '.synth':
+            for kv in operands.split():
+                key, val = kv.split('=', 1)
+                if key == 'ii':
+                    self.current_block.synth_params[key] = int(val)
+                else:
+                    self.current_block.synth_params[key] = val
+        elif directive == '.hyperblock':
+            self.current_block.is_hyperblock = True
 
     def parse_stm(self, stmstr: str) -> IrStm:
         tokens = self.split(stmstr, count=1)

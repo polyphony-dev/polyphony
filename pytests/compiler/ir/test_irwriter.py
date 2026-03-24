@@ -812,3 +812,185 @@ def test_write_scope_multiple_blocks_unique_labels():
     assert 'b1' in block_labels
     assert 'b2' in block_labels
     assert 'b3' in block_labels
+
+
+# ============================================================
+# Block metadata: synth_params and is_hyperblock
+# ============================================================
+
+def test_write_block_synth_params_default():
+    """Default synth_params should NOT produce .synth line."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    blk = Block(scope, 'b')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+    blk.stms = [Ret(Temp(Symbol.return_name))]
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+    assert '.synth' not in result
+
+
+def test_write_block_synth_params_nondefault():
+    """Non-default synth_params should produce .synth line."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    blk = Block(scope, 'b')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+    blk.synth_params['scheduling'] = 'pipeline'
+    blk.synth_params['cycle'] = 'minimum'
+    blk.synth_params['ii'] = 2
+    blk.stms = [Ret(Temp(Symbol.return_name))]
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+    assert '.synth scheduling=pipeline cycle=minimum ii=2' in result
+
+
+def test_write_block_synth_params_partial():
+    """Partially set synth_params should only emit non-default keys."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    blk = Block(scope, 'b')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+    blk.synth_params['scheduling'] = 'pipeline'
+    # cycle and ii remain default
+    blk.stms = [Ret(Temp(Symbol.return_name))]
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+    assert '.synth scheduling=pipeline' in result
+    assert 'cycle=' not in result
+    assert 'ii=' not in result
+
+
+def test_write_block_hyperblock_false():
+    """is_hyperblock=False should NOT produce .hyperblock line."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    blk = Block(scope, 'b')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+    blk.stms = [Ret(Temp(Symbol.return_name))]
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+    assert '.hyperblock' not in result
+
+
+def test_write_block_hyperblock_true():
+    """is_hyperblock=True should produce .hyperblock line."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    blk = Block(scope, 'b')
+    scope.set_entry_block(blk)
+    scope.set_exit_block(blk)
+    blk.is_hyperblock = True
+    blk.stms = [Ret(Temp(Symbol.return_name))]
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+    assert '.hyperblock' in result
+
+
+def test_roundtrip_synth_params():
+    """synth_params survive IrWriter -> IrReader roundtrip."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    scope.add_return_sym(Type.int(32))
+
+    b1 = Block(scope, 'b')
+    b2 = Block(scope, 'b')
+    scope.set_entry_block(b1)
+    scope.set_exit_block(b2)
+    b1.connect(b2)
+
+    b1.synth_params['scheduling'] = 'pipeline'
+    b1.synth_params['cycle'] = 'minimum'
+    b1.synth_params['ii'] = 3
+    b1.stms = [Move(Temp('x', Ctx.STORE), Const(1)), Jump(b2.bid)]
+    b2.stms = [Ret(Temp(Symbol.return_name))]
+
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+
+    from polyphony.compiler.ir.irreader import IrReader
+    setup_test()
+    reader = IrReader(result)
+    reader.parse_scope()
+    scope2 = env.scopes['@top.F']
+
+    blk1 = scope2.entry_block
+    assert blk1.synth_params['scheduling'] == 'pipeline'
+    assert blk1.synth_params['cycle'] == 'minimum'
+    assert blk1.synth_params['ii'] == 3
+
+
+def test_roundtrip_hyperblock():
+    """is_hyperblock survives IrWriter -> IrReader roundtrip."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    scope.add_return_sym(Type.int(32))
+
+    b1 = Block(scope, 'b')
+    b2 = Block(scope, 'b')
+    scope.set_entry_block(b1)
+    scope.set_exit_block(b2)
+    b1.connect(b2)
+
+    b1.is_hyperblock = True
+    b1.stms = [Move(Temp('x', Ctx.STORE), Const(1)), Jump(b2.bid)]
+    b2.stms = [Ret(Temp(Symbol.return_name))]
+
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+
+    from polyphony.compiler.ir.irreader import IrReader
+    setup_test()
+    reader = IrReader(result)
+    reader.parse_scope()
+    scope2 = env.scopes['@top.F']
+
+    assert scope2.entry_block.is_hyperblock is True
+    # b2 should remain False
+    blks = list(scope2.traverse_blocks())
+    assert blks[1].is_hyperblock is False
+
+
+def test_roundtrip_both_metadata():
+    """Both synth_params and is_hyperblock survive roundtrip together."""
+    setup_test()
+    top = env.scopes['@top']
+    scope = Scope.create(top, 'F', {'function'}, 0)
+    scope.add_return_sym(Type.int(32))
+
+    b1 = Block(scope, 'b')
+    b2 = Block(scope, 'b')
+    scope.set_entry_block(b1)
+    scope.set_exit_block(b2)
+    b1.connect(b2)
+
+    b1.is_hyperblock = True
+    b1.synth_params['scheduling'] = 'sequential'
+    b1.synth_params['ii'] = 1
+    b1.stms = [Move(Temp('x', Ctx.STORE), Const(1)), Jump(b2.bid)]
+    b2.stms = [Ret(Temp(Symbol.return_name))]
+
+    writer = IrWriter()
+    result = writer.write_scope(scope)
+
+    from polyphony.compiler.ir.irreader import IrReader
+    setup_test()
+    reader = IrReader(result)
+    reader.parse_scope()
+    scope2 = env.scopes['@top.F']
+
+    blk1 = scope2.entry_block
+    assert blk1.is_hyperblock is True
+    assert blk1.synth_params['scheduling'] == 'sequential'
+    assert blk1.synth_params['ii'] == 1

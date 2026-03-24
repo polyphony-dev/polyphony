@@ -111,6 +111,18 @@ class IrWriter(object):
 
     def _write_block(self, blk: Block):
         self.lines.append(f'{blk.bid}:')
+        # Block metadata
+        synth_parts = []
+        if blk.synth_params['scheduling']:
+            synth_parts.append(f'scheduling={blk.synth_params["scheduling"]}')
+        if blk.synth_params['cycle']:
+            synth_parts.append(f'cycle={blk.synth_params["cycle"]}')
+        if blk.synth_params['ii']:
+            synth_parts.append(f'ii={blk.synth_params["ii"]}')
+        if synth_parts:
+            self.lines.append(f'.synth {" ".join(synth_parts)}')
+        if blk.is_hyperblock:
+            self.lines.append('.hyperblock')
         for stm in blk.stms:
             self.lines.append(self._format_stm(stm))
 
