@@ -41,6 +41,10 @@ def parse_options():
     parser.add_argument('-t', '--targets', nargs='+', dest='targets', default=list())
     parser.add_argument('--watch', dest='watch_signals', default='',
                         help='comma-separated signal names to watch (e.g. "m.i,m.o")')
+    parser.add_argument('--csim', dest='use_csim', action='store_true',
+                        default=None, help='use C simulator (csim) for Python simulation')
+    parser.add_argument('--no-csim', dest='use_csim', action='store_false',
+                        help='disable C simulator')
     parser.add_argument('source', help='Python source file')
     return parser.parse_args()
 
@@ -364,7 +368,8 @@ def simulate_on_python(casefile_path, source_text, scopes, simu_options):
         try:
             simulate_models = [model for model, _ in models.values()]
             test._orig_func._execute_on_simu = True
-            simulator = Simulator(simulate_models)
+            use_csim = getattr(simu_options, 'use_csim', None)
+            simulator = Simulator(simulate_models, use_csim=use_csim)
             simulator.case_name = casename
             watch_signals = getattr(simu_options, 'watch_signals', '')
             if simu_options.verilog_dump or watch_signals:
