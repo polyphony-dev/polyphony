@@ -1420,7 +1420,10 @@ class CModelEvaluator:
 
 
 class CSimulatorModelBuilder:
-    """Builds CModelEvaluator from HDLScope via AHDLToCTranspiler + gcc."""
+    """Builds CModelEvaluator from HDLScope via AHDLToCTranspiler + C compiler.
+
+    The C compiler is selected via the CC environment variable (default: 'cc').
+    """
 
     def _load_initial_values(self, ev, hdlscope, transpiler):
         """Write Reg initial values into the shared buffer."""
@@ -1506,15 +1509,16 @@ class CSimulatorModelBuilder:
         # Copy runtime header next to source for #include
         shutil.copy2(h_path, os.path.join(output_dir, 'runtime_template.h'))
 
-        # Compile
+        # Compile (CC env var overrides default compiler)
+        cc = os.environ.get('CC', 'cc')
         result = subprocess.run(
-            ['gcc', '-O2', '-shared', '-fPIC',
+            [cc, '-O2', '-shared', '-fPIC',
              '-I', output_dir,
              '-o', so_path, c_path],
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            raise RuntimeError(f'gcc compilation failed:\n{result.stderr}')
+            raise RuntimeError(f'{cc} compilation failed:\n{result.stderr}')
 
         # Write hash
         with open(hash_path, 'w') as f:
