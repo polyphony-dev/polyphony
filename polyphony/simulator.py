@@ -1318,6 +1318,37 @@ class CModelEvaluator:
 class CSimulatorModelBuilder:
     """Builds CModelEvaluator from HDLScope via AHDLToCTranspiler + gcc."""
 
+    def _load_initial_values(self, ev, hdlscope, transpiler):
+        """Write Reg initial values into the shared buffer."""
+        self._load_scope_init(ev, hdlscope, transpiler, '')
+        for sub_sig, sub_scope in hdlscope.subscopes.items():
+            from polyphony.compiler.target.csim.csimgen import _c_safe_name
+            prefix = _c_safe_name(sub_sig.name) + '_'
+            self._load_subscope_init(ev, sub_scope, transpiler, prefix)
+
+    def _load_scope_init(self, ev, hdlscope, transpiler, prefix):
+        from polyphony.compiler.target.csim.csimgen import _c_safe_name
+        sig_map = transpiler._sig_map
+        for sig in hdlscope.get_signals(include_tags={'reg', 'regarray'}):
+            if not sig.is_initializable():
+                continue
+            val = int(sig.init_value)
+            cname = _c_safe_name(prefix + sig.name) if prefix else _c_safe_name(sig.name)
+            if sig.is_reg() and cname in sig_map:
+                ev._buf[sig_map[cname]] = val
+            elif sig.is_regarray() and cname in sig_map:
+                base = sig_map[cname]
+                length = sig.width[1]
+                for i in range(length):
+                    ev._buf[base + i] = val
+
+    def _load_subscope_init(self, ev, sub_scope, transpiler, prefix):
+        self._load_scope_init(ev, sub_scope, transpiler, prefix)
+        for sub_sig, nested_scope in sub_scope.subscopes.items():
+            from polyphony.compiler.target.csim.csimgen import _c_safe_name
+            nested_prefix = prefix + _c_safe_name(sub_sig.name) + '_'
+            self._load_subscope_init(ev, nested_scope, transpiler, nested_prefix)
+
     def build(self, hdlscope, output_dir=None):
         import hashlib
         import subprocess
@@ -1350,7 +1381,9 @@ class CSimulatorModelBuilder:
         if os.path.isfile(hash_path) and os.path.isfile(so_path):
             with open(hash_path) as f:
                 if f.read().strip() == src_hash:
-                    return CModelEvaluator(so_path, sig_count, port_map, sig_map)
+                    ev = CModelEvaluator(so_path, sig_count, port_map, sig_map)
+                    self._load_initial_values(ev, hdlscope, transpiler)
+                    return ev
 
         # Write C source
         with open(c_path, 'w') as f:
@@ -1373,4 +1406,6 @@ class CSimulatorModelBuilder:
         with open(hash_path, 'w') as f:
             f.write(src_hash)
 
-        return CModelEvaluator(so_path, sig_count, port_map, sig_map)
+        ev = CModelEvaluator(so_path, sig_count, port_map, sig_map)
+        self._load_initial_values(ev, hdlscope, transpiler)
+        return ev

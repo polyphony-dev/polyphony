@@ -614,3 +614,56 @@ def test_bind_ports_replaces_io_ports():
     # rd() should read from C buffer
     buf[3] = 99
     assert model.result.rd() == 99
+
+
+def test_load_initial_values():
+    """CSimulatorModelBuilder._load_initial_values writes Reg init values to C buffer."""
+    import ctypes
+    import os
+    import subprocess
+    import tempfile
+    from polyphony.simulator import CModelEvaluator, CSimulatorModelBuilder
+
+    c_source = '''
+#include <stdint.h>
+void module_eval_tasks(int64_t* s) {}
+void module_update_regs(int64_t* s) {}
+int module_eval_decls(int64_t* s) { return 0; }
+'''
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c_path = os.path.join(tmpdir, 'test.c')
+        so_path = os.path.join(tmpdir, 'test.so')
+        with open(c_path, 'w') as f:
+            f.write(c_source)
+        result = subprocess.run(
+            ['gcc', '-O2', '-shared', '-fPIC', '-o', so_path, c_path],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            pytest.skip('gcc not available')
+
+        sig_map = {'counter': 0, 'counter_next': 1}
+        ev = CModelEvaluator(so_path, 2, {}, sig_map)
+
+        # Mock HDLScope with one Reg signal that has init_value
+        import types
+        mock_sig = types.SimpleNamespace(
+            name='counter', width=32, init_value=42,
+        )
+        mock_sig.is_reg = lambda: True
+        mock_sig.is_regarray = lambda: False
+        mock_sig.is_initializable = lambda: True
+        mock_sig.is_int = lambda: False
+
+        mock_scope = types.SimpleNamespace(subscopes={})
+        mock_scope.get_signals = lambda include_tags=None: (
+            [mock_sig] if 'reg' in include_tags else []
+        )
+
+        # Mock transpiler with sig_map
+        mock_transpiler = types.SimpleNamespace(_sig_map=sig_map)
+
+        builder = CSimulatorModelBuilder()
+        builder._load_initial_values(ev, mock_scope, mock_transpiler)
+
+        assert ev._buf[0] == 42  # counter initial value loaded
