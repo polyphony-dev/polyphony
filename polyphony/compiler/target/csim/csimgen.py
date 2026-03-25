@@ -71,3 +71,21 @@ class AHDLToCTranspiler(AHDLVisitor):
             self._sig_widths.append((sig.width, is_signed))
             idx += 1
         return idx
+
+    def emit_signal_defines(self):
+        lines = []
+        defines = []
+        for name, idx in sorted(self._sig_map.items(), key=lambda x: x[1]):
+            defines.append((f'S_{name}', idx))
+        for name, idx in self._sig_map.items():
+            if name.endswith('_next'):
+                base_name = name[:-5]
+                if base_name in self._sig_map:
+                    length = idx - self._sig_map[base_name]
+                    if length > 1:
+                        defines.append((f'S_{base_name}_LEN', length))
+        defines.append(('S_NUM_SIGNALS', self._sig_count))
+        max_name_len = max(len(d[0]) for d in defines) if defines else 0
+        for macro, val in defines:
+            lines.append(f'#define {macro:<{max_name_len}} {val}')
+        return '\n'.join(lines)

@@ -116,3 +116,33 @@ def test_assign_signal_ids_skip_constant_and_rom():
     assert 'rom0' not in sig_map
     assert sig_map['x'] == 0
     assert sig_count == 2
+
+
+def test_emit_signal_defines():
+    reg_sig = _make_signal('fsm_state', 8, {'reg'})
+    net_sig = _make_signal('sum', 16, {'net'})
+    in_sig = _make_signal('a', 32, {'net', 'input'})
+    hdlscope = _make_hdlscope([reg_sig, net_sig, in_sig])
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(hdlscope)
+    header = tp.emit_signal_defines()
+    assert '#define S_fsm_state ' in header
+    assert '#define S_fsm_state_next ' in header
+    assert '#define S_sum ' in header
+    assert '#define S_a ' in header
+    assert '#define S_NUM_SIGNALS ' in header
+
+
+def test_emit_signal_defines_array():
+    arr_sig = _make_signal('mem', (32, 4), {'regarray'})
+    hdlscope = _make_hdlscope([arr_sig])
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(hdlscope)
+    header = tp.emit_signal_defines()
+    assert '#define S_mem ' in header
+    assert '#define S_mem_next ' in header
+    assert 'S_mem_LEN' in header
+    # Check the value after padding
+    for line in header.splitlines():
+        if 'S_mem_LEN' in line:
+            assert line.split()[-1] == '4'
