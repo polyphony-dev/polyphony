@@ -772,3 +772,68 @@ int module_eval_decls(int64_t* s) { return 0; }
 
         # Read output
         assert model.result.rd() == 30
+
+
+def test_bind_ports_binds_submodel_ports():
+    """bind_ports_to_buffer replaces sub-model (Handshake/Channel) Port values
+    with CBufferSignal using sig_map with prefixed names."""
+    import ctypes
+    import types
+    from polyphony.simulator import (
+        CBufferSignal, CModelEvaluator, Model, Port, Reg, Net,
+    )
+
+    # Top-level model with clk/rst + a sub-model 'c' (like Handshake)
+    model = types.SimpleNamespace()
+    clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
+    clk_sig.is_int = lambda: False
+    rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
+    rst_sig.is_int = lambda: False
+    model.clk = Reg(0, 1, clk_sig)
+    model.rst = Reg(0, 1, rst_sig)
+
+    # Sub-model 'c' with data, valid, ready ports
+    sub_core = types.SimpleNamespace()
+    data_sig = types.SimpleNamespace(name='data', width=1, tags=set())
+    data_sig.is_int = lambda: False
+    data_sig.is_input = lambda: False
+    data_sig.is_output = lambda: True
+    data_port = Port(None, None, None)
+    data_port._set_value(Net(0, 1, data_sig))
+    sub_core.data = data_port
+
+    valid_sig = types.SimpleNamespace(name='valid', width=1, tags=set())
+    valid_sig.is_int = lambda: False
+    valid_sig.is_input = lambda: False
+    valid_sig.is_output = lambda: True
+    valid_port = Port(None, None, None)
+    valid_port._set_value(Net(0, 1, valid_sig))
+    sub_core.valid = valid_port
+
+    sub_core.hdlmodule = types.SimpleNamespace()
+    sub_core._tasks = []
+    sub_core._decls = []
+
+    # Wrap as Model
+    sub_model = Model()
+    super(Model, sub_model).__setattr__("__model", sub_core)
+    model.c = sub_model
+
+    # Buffer: clk=0, rst=1, c_data=2, c_valid=3
+    buf = (ctypes.c_int64 * 4)()
+    port_map = {'clk': 0, 'rst': 1}
+    sig_map = {'clk': 0, 'rst': 1, 'c_data': 2, 'c_data_next': 3, 'c_valid': 2, 'c_valid_next': 3}
+    # Use separate indices for valid
+    sig_map = {'clk': 0, 'rst': 1, 'c_data': 2, 'c_valid': 3}
+
+    CModelEvaluator.bind_ports_to_buffer(model, buf, port_map, sig_map)
+
+    # Sub-model Port values should now be CBufferSignal
+    assert isinstance(sub_core.data.value, CBufferSignal)
+    assert isinstance(sub_core.valid.value, CBufferSignal)
+
+    # Writing to C buffer should be visible via Port.rd()
+    buf[2] = 1
+    assert sub_core.data.value.val == 1
+    buf[3] = 1
+    assert sub_core.valid.value.val == 1

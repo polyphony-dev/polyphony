@@ -719,3 +719,36 @@ def test_assign_signal_ids_subscope_with_hash_in_name():
     # '#' should be replaced with '_'
     assert 'ch_0_din' in sig_map
     assert 'ch_0_din_next' in sig_map
+
+
+def test_visit_invert_var_emits_mask():
+    """Invert of AHDL_VAR emits mask(~(x), w) to match Python Integer semantics.
+
+    In C, ~1 on int64_t = -2 (truthy), but for a 1-bit signal it should be 0.
+    The mask ensures the result is truncated to the signal's width.
+    """
+    sig = _make_signal('ready', 1, {'net'})
+    hdlscope = _make_hdlscope([sig])
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(hdlscope)
+
+    var = AHDL_VAR((sig,), Ctx.LOAD)
+    op = AHDL_OP('Invert', var)
+    result = tp.visit(op)
+    assert result == 'mask(~(s[S_ready]), 1)'
+
+
+def test_visit_invert_relop_emits_mask_width_1():
+    """Invert of a relational op (result is always 1-bit) emits mask with width 1."""
+    sig_a = _make_signal('i', 32, {'net', 'int'})
+    hdlscope = _make_hdlscope([sig_a])
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(hdlscope)
+
+    # Invert(Lt(i, 4))  →  mask(~((s[S_i] < 4)), 1)
+    var_a = AHDL_VAR((sig_a,), Ctx.LOAD)
+    lt_op = AHDL_OP('Lt', var_a, AHDL_CONST(4))
+    inv_op = AHDL_OP('Invert', lt_op)
+    result = tp.visit(inv_op)
+    assert 'mask(~(' in result
+    assert ', 1)' in result
