@@ -1,3 +1,4 @@
+import ctypes
 import inspect
 import types
 import operator
@@ -1163,3 +1164,44 @@ class SimulationModelBuilder(object):
                 setattr(model, i.sig.name, Net(0, i.sig.width, i.sig))
             assert not hasattr(model, fn.output.hdl_name)
             setattr(model, fn.output.hdl_name, Net(0, fn.output.sig.width[0], fn.output.sig))
+
+
+class CModelEvaluator:
+    """Drop-in replacement for ModelEvaluator using compiled C via ctypes.
+    Signal state lives in a flat int64_t[] buffer allocated on the Python side.
+    C functions receive a pointer to this buffer -- zero-copy shared memory.
+    """
+
+    def __init__(self, so_path: str, sig_count: int, port_map: dict[str, int],
+                 sig_map: dict[str, int] | None = None):
+        self._buf = (ctypes.c_int64 * sig_count)()
+        self._lib = ctypes.CDLL(so_path)
+        self._port_map = port_map
+        self._sig_map = sig_map or port_map
+        self._sig_count = sig_count
+
+        ptr_type = ctypes.POINTER(ctypes.c_int64)
+        self._lib.module_eval_tasks.argtypes = [ptr_type]
+        self._lib.module_eval_tasks.restype = None
+        self._lib.module_update_regs.argtypes = [ptr_type]
+        self._lib.module_update_regs.restype = None
+        self._lib.module_eval_decls.argtypes = [ptr_type]
+        self._lib.module_eval_decls.restype = ctypes.c_int
+
+    def eval(self):
+        self._lib.module_eval_tasks(self._buf)
+        self._lib.module_update_regs(self._buf)
+        rc = self._lib.module_eval_decls(self._buf)
+        if rc != 0:
+            import warnings
+            warnings.warn('eval_decls: iteration limit reached')
+
+    def read_port(self, name: str) -> int:
+        return self._buf[self._port_map[name]]
+
+    def write_port(self, name: str, value: int) -> None:
+        self._buf[self._port_map[name]] = value
+
+    def get_signal(self, name: str) -> int:
+        """Read any signal (including internal) for watch/debug."""
+        return self._buf[self._sig_map[name]]
