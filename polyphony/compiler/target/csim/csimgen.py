@@ -234,3 +234,63 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._lines.append(f'    case {val}: {{')
         self.visit(ahdl.block)
         self._lines.append('        break; }')
+
+    # --- Remaining visitors ---
+
+    def visit_AHDL_EVENT_TASK(self, ahdl):
+        conditions = []
+        for sig, edge in ahdl.events:
+            sig_name = sig.name
+            if edge == 'rising':
+                conditions.append(f's[S_{sig_name}] == 1')
+            else:
+                conditions.append(f's[S_{sig_name}] == 0')
+        cond_str = ' && '.join(conditions)
+        self._lines.append(f'    if ({cond_str}) {{')
+        self.visit(ahdl.stm)
+        self._lines.append('    }')
+
+    def visit_AHDL_FUNCTION(self, ahdl):
+        for stm in ahdl.stms:
+            self.visit(stm)
+
+    def visit_AHDL_PROCCALL(self, ahdl):
+        if ahdl.name == '!hdl_print':
+            args = ', '.join(self.visit(a) for a in ahdl.args)
+            fmt = ' '.join(['%lld'] * len(ahdl.args))
+            self._lines.append(f'    printf("{fmt}\\n", {args});')
+        elif ahdl.name == '!hdl_assert':
+            cond = self.visit(ahdl.args[0]) if ahdl.args else '0'
+            self._lines.append(f'    if (!({cond})) {{ fprintf(stderr, "Assertion failed\\n"); abort(); }}')
+        else:
+            raise NotImplementedError(f'Unsupported proccall: {ahdl.name}')
+
+    def visit_AHDL_NOP(self, ahdl):
+        self._lines.append(f'    // nop: {ahdl.info}')
+
+    def visit_AHDL_INLINE(self, ahdl):
+        self._lines.append(f'    // inline')
+
+    def visit_AHDL_CALLEE_PROLOG(self, ahdl):
+        self._lines.append(f'    // callee_prolog')
+
+    def visit_AHDL_CALLEE_EPILOG(self, ahdl):
+        self._lines.append(f'    // callee_epilog')
+
+    def visit_AHDL_IO_READ(self, ahdl):
+        pass
+
+    def visit_AHDL_IO_WRITE(self, ahdl):
+        pass
+
+    def visit_AHDL_META_WAIT(self, ahdl):
+        self._lines.append(f'    // meta_wait')
+
+    def visit_AHDL_META_OP(self, ahdl):
+        self._lines.append(f'    // meta_op')
+
+    def visit_AHDL_MODULECALL(self, ahdl):
+        raise NotImplementedError('AHDL_MODULECALL not supported in csim')
+
+    def visit_AHDL_TRANSITION(self, ahdl):
+        raise NotImplementedError('AHDL_TRANSITION not supported in csim')

@@ -423,3 +423,73 @@ def test_visit_seq_dispatches_to_inner():
     tp.visit(node)
     code = '\n'.join(tp._lines)
     assert 's[S_x_next]' in code
+
+
+# --- Task 8: Remaining visitors (EVENT_TASK, FUNCTION, PROCCALL, no-ops, fallbacks) ---
+
+
+def test_visit_event_task_rising():
+    clk = _make_signal('clk', 1, {'net', 'input'})
+    x = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(clk, x)
+    tp._lines = []
+    stm = AHDL_MOVE(_make_var(x, Ctx.STORE), AHDL_CONST(1))
+    node = AHDL_EVENT_TASK(((clk, 'rising'),), stm)
+    tp.visit(node)
+    code = '\n'.join(tp._lines)
+    assert 's[S_clk]' in code
+    assert '== 1' in code
+
+
+def test_visit_proccall_print():
+    x = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(x)
+    tp._lines = []
+    node = AHDL_PROCCALL('!hdl_print', (_make_var(x),))
+    tp.visit(node)
+    code = '\n'.join(tp._lines)
+    assert 'printf' in code
+
+
+def test_visit_proccall_assert():
+    x = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(x)
+    tp._lines = []
+    node = AHDL_PROCCALL('!hdl_assert', (_make_var(x),))
+    tp.visit(node)
+    code = '\n'.join(tp._lines)
+    assert 'assert' in code.lower() or 'abort' in code.lower()
+
+
+def test_visit_proccall_unknown_raises():
+    tp = AHDLToCTranspiler()
+    try:
+        tp.visit(AHDL_PROCCALL('!unknown', ()))
+        assert False, 'Expected NotImplementedError'
+    except NotImplementedError:
+        pass
+
+
+def test_visit_nop():
+    tp = AHDLToCTranspiler()
+    tp._lines = []
+    tp.visit(AHDL_NOP('test'))
+    assert all('nop' in l or l.strip().startswith('//') or l.strip() == '' for l in tp._lines)
+
+
+def test_visit_modulecall_raises():
+    tp = AHDLToCTranspiler()
+    try:
+        tp.visit(AHDL_MODULECALL(None, (), 'inst', 'pfx', ()))
+        assert False, 'Expected NotImplementedError'
+    except NotImplementedError:
+        pass
+
+
+def test_visit_transition_raises():
+    tp = AHDLToCTranspiler()
+    try:
+        tp.visit(AHDL_TRANSITION('some_state'))
+        assert False, 'Expected NotImplementedError'
+    except NotImplementedError:
+        pass
