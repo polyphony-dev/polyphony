@@ -143,3 +143,24 @@ class AHDLToCTranspiler(AHDLVisitor):
         l = self.visit(ahdl.lexp)
         r = self.visit(ahdl.rexp)
         return f'({c} ? {l} : {r})'
+
+    def visit_AHDL_MEMVAR(self, ahdl):
+        return self.visit_AHDL_VAR(ahdl)
+
+    def visit_AHDL_SUBSCRIPT(self, ahdl):
+        sig = ahdl.memvar.vars[-1]
+        name = sig.name
+        offset = self.visit(ahdl.offset)
+        if ahdl.ctx == Ctx.STORE and (sig.is_reg() or sig.is_regarray()):
+            return f's[S_{name}_next + {offset}]'
+        return f's[S_{name} + {offset}]'
+
+    def visit_AHDL_FUNCALL(self, ahdl):
+        func_name = ahdl.name.vars[-1].name
+        args = ', '.join(['s'] + [self.visit(a) for a in ahdl.args])
+        return f'func_{func_name}({args})'
+
+    def visit_AHDL_SYMBOL(self, ahdl):
+        if ahdl.name == "'bz":
+            return '0'
+        raise NotImplementedError(f'Unsupported symbol: {ahdl.name}')

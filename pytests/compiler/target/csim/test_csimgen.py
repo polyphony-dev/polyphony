@@ -254,3 +254,59 @@ def test_visit_if_exp():
     )
     result = tp.visit(node)
     assert result == '(s[S_cond] ? s[S_x] : 0)'
+
+
+# --- Task 5: Expression visitors (SUBSCRIPT, MEMVAR, FUNCALL, SYMBOL) ---
+
+
+def test_visit_subscript_load():
+    arr = _make_signal('mem', (32, 8), {'regarray'})
+    tp = _setup_transpiler_with_signals(arr)
+    memvar = AHDL_MEMVAR((arr,), Ctx.LOAD)
+    node = AHDL_SUBSCRIPT(memvar, AHDL_CONST(3))
+    result = tp.visit(node)
+    assert result == 's[S_mem + 3]'
+
+
+def test_visit_subscript_store():
+    arr = _make_signal('mem', (32, 8), {'regarray'})
+    tp = _setup_transpiler_with_signals(arr)
+    memvar = AHDL_MEMVAR((arr,), Ctx.STORE)
+    node = AHDL_SUBSCRIPT(memvar, AHDL_CONST(3))
+    result = tp.visit(node)
+    assert result == 's[S_mem_next + 3]'
+
+
+def test_visit_subscript_dynamic_index():
+    arr = _make_signal('mem', (32, 8), {'regarray'})
+    idx = _make_signal('i', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(arr, idx)
+    memvar = AHDL_MEMVAR((arr,), Ctx.LOAD)
+    node = AHDL_SUBSCRIPT(memvar, _make_var(idx))
+    result = tp.visit(node)
+    assert result == 's[S_mem + s[S_i]]'
+
+
+def test_visit_funcall():
+    func_sig = _make_signal('rom0', 32, {'rom'})
+    arg_sig = _make_signal('addr', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(arg_sig)
+    func_var = AHDL_VAR((func_sig,), Ctx.LOAD)
+    node = AHDL_FUNCALL(func_var, (_make_var(arg_sig),))
+    result = tp.visit(node)
+    assert result == 'func_rom0(s, s[S_addr])'
+
+
+def test_visit_symbol_bz():
+    tp = AHDLToCTranspiler()
+    result = tp.visit(AHDL_SYMBOL("'bz"))
+    assert result == '0'
+
+
+def test_visit_symbol_unknown_raises():
+    tp = AHDLToCTranspiler()
+    try:
+        tp.visit(AHDL_SYMBOL('unknown'))
+        assert False, 'Expected NotImplementedError'
+    except NotImplementedError:
+        pass
