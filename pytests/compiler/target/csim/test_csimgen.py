@@ -112,7 +112,7 @@ def test_assign_signal_ids_netarray():
     assert sig_count == 3
 
 
-def test_assign_signal_ids_skip_constant_and_rom():
+def test_assign_signal_ids_skip_constant_include_rom():
     const_sig = _make_signal('PARAM', 32, {'constant'})
     rom_sig = _make_signal('rom0', 32, {'rom'})
     reg_sig = _make_signal('x', 8, {'reg'})
@@ -121,9 +121,10 @@ def test_assign_signal_ids_skip_constant_and_rom():
     tp = AHDLToCTranspiler()
     sig_map, port_map, sig_count = tp.assign_signal_ids(hdlscope)
     assert 'PARAM' not in sig_map
-    assert 'rom0' not in sig_map
-    assert sig_map['x'] == 0
-    assert sig_count == 2
+    # ROM signals ARE included in buffer (used as lookup tables)
+    assert 'rom0' in sig_map
+    assert 'x' in sig_map
+    assert sig_count == 3  # rom0(1 slot, net) + x(2 slots, reg)
 
 
 def test_emit_signal_defines():

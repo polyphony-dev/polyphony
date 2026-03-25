@@ -1,5 +1,14 @@
+import re
+
 from polyphony.compiler.ahdl.ahdl import AHDL, Ctx
 from polyphony.compiler.ahdl.ahdlvisitor import AHDLVisitor
+
+_CSAFE_RE = re.compile(r'[^A-Za-z0-9_]')
+
+
+def _c_safe_name(name: str) -> str:
+    """Sanitize a signal name for use as a C identifier."""
+    return _CSAFE_RE.sub('_', name)
 
 
 class AHDLToCTranspiler(AHDLVisitor):
@@ -30,6 +39,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._sig_widths: list[tuple[int, bool]] = []
         self._lines: list[str] = []
         self._func_param_map: dict[str, str] = {}
+        self._name_to_cname: dict[str, str] = {}  # raw signal name -> C-safe name
 
     def assign_signal_ids(self, hdlscope):
         self._sig_map = {}
@@ -47,9 +57,12 @@ class AHDLToCTranspiler(AHDLVisitor):
             include_tags={'reg', 'net', 'regarray', 'netarray'},
             exclude_tags={'input', 'output'},
         )
-        for sig in signals:
-            if sig.is_constant() or sig.is_rom():
-                if sig.is_constant() and sig in hdlscope.constants:
+        # Also include ROM signals (may only have 'rom' tag, not regarray/netarray)
+        rom_signals = hdlscope.get_signals(include_tags={'rom'})
+        all_signals = list(signals) + [s for s in rom_signals if s.name not in {sig.name for sig in signals}]
+        for sig in all_signals:
+            if sig.is_constant():
+                if sig in hdlscope.constants:
                     self._const_map[sig.name] = hdlscope.constants[sig]
                 continue
             idx = self._assign_one(sig, idx)
@@ -58,38 +71,42 @@ class AHDLToCTranspiler(AHDLVisitor):
         for sig in port_signals:
             if sig.is_constant() or sig.is_rom():
                 continue
-            if sig.name not in self._sig_map:
+            cname = self._name_to_cname.get(sig.name)
+            if cname is None:
                 idx = self._assign_one(sig, idx)
-            self._port_map[sig.name] = self._sig_map[sig.name]
+                cname = self._name_to_cname[sig.name]
+            self._port_map[sig.name] = self._sig_map[cname]
 
         self._sig_count = idx
         return dict(self._sig_map), dict(self._port_map), self._sig_count
 
     def _assign_one(self, sig, idx):
         is_signed = sig.is_int()
+        cname = _c_safe_name(sig.name)
+        self._name_to_cname[sig.name] = cname
         if sig.is_regarray():
             elem_w, length = sig.width
-            self._sig_map[sig.name] = idx
+            self._sig_map[cname] = idx
             for _ in range(length):
                 self._sig_widths.append((elem_w, is_signed))
-            self._sig_map[sig.name + '_next'] = idx + length
+            self._sig_map[cname + '_next'] = idx + length
             for _ in range(length):
                 self._sig_widths.append((elem_w, is_signed))
             idx += 2 * length
         elif sig.is_netarray():
             _, length = sig.width
-            self._sig_map[sig.name] = idx
+            self._sig_map[cname] = idx
             for _ in range(length):
                 self._sig_widths.append((sig.width[0], is_signed))
             idx += length
         elif sig.is_reg():
-            self._sig_map[sig.name] = idx
+            self._sig_map[cname] = idx
             self._sig_widths.append((sig.width, is_signed))
-            self._sig_map[sig.name + '_next'] = idx + 1
+            self._sig_map[cname + '_next'] = idx + 1
             self._sig_widths.append((sig.width, is_signed))
             idx += 2
         else:
-            self._sig_map[sig.name] = idx
+            self._sig_map[cname] = idx
             self._sig_widths.append((sig.width, is_signed))
             idx += 1
         return idx
@@ -124,9 +141,10 @@ class AHDLToCTranspiler(AHDLVisitor):
             return self._func_param_map[name]
         if name in self._const_map:
             return str(self._const_map[name])
+        cname = self._name_to_cname.get(name, _c_safe_name(name))
         if ahdl.ctx == Ctx.STORE and sig.is_reg():
-            return f's[S_{name}_next]'
-        return f's[S_{name}]'
+            return f's[S_{cname}_next]'
+        return f's[S_{cname}]'
 
     def visit_AHDL_OP(self, ahdl):
         if ahdl.op == self._FLOORDIV:
@@ -157,14 +175,14 @@ class AHDLToCTranspiler(AHDLVisitor):
 
     def visit_AHDL_SUBSCRIPT(self, ahdl):
         sig = ahdl.memvar.vars[-1]
-        name = sig.name
+        cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
         offset = self.visit(ahdl.offset)
         if ahdl.ctx == Ctx.STORE and (sig.is_reg() or sig.is_regarray()):
-            return f's[S_{name}_next + {offset}]'
-        return f's[S_{name} + {offset}]'
+            return f's[S_{cname}_next + {offset}]'
+        return f's[S_{cname} + {offset}]'
 
     def visit_AHDL_FUNCALL(self, ahdl):
-        func_name = ahdl.name.vars[-1].name
+        func_name = _c_safe_name(ahdl.name.vars[-1].name)
         args = ', '.join(['s'] + [self.visit(a) for a in ahdl.args])
         return f'func_{func_name}({args})'
 
@@ -182,10 +200,13 @@ class AHDLToCTranspiler(AHDLVisitor):
         return 64
 
     def _sig_name_from_dst(self, dst):
+        """Return the C-safe signal name from a dst node."""
         from polyphony.compiler.ahdl.ahdl import AHDL_SUBSCRIPT
         if isinstance(dst, AHDL_SUBSCRIPT):
-            return dst.memvar.vars[-1].name
-        return dst.vars[-1].name
+            raw = dst.memvar.vars[-1].name
+        else:
+            raw = dst.vars[-1].name
+        return self._name_to_cname.get(raw, _c_safe_name(raw))
 
     def visit_AHDL_MOVE(self, ahdl):
         dst_expr = self.visit(ahdl.dst)
@@ -247,11 +268,11 @@ class AHDLToCTranspiler(AHDLVisitor):
     def visit_AHDL_EVENT_TASK(self, ahdl):
         conditions = []
         for sig, edge in ahdl.events:
-            sig_name = sig.name
+            cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
             if edge == 'rising':
-                conditions.append(f's[S_{sig_name}] == 1')
+                conditions.append(f's[S_{cname}] == 1')
             else:
-                conditions.append(f's[S_{sig_name}] == 0')
+                conditions.append(f's[S_{cname}] == 0')
         cond_str = ' && '.join(conditions)
         self._lines.append(f'    if ({cond_str}) {{')
         self.visit(ahdl.stm)
@@ -362,19 +383,20 @@ class AHDLToCTranspiler(AHDLVisitor):
             if sig.name in seen:
                 continue
             seen.add(sig.name)
+            cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
             if sig.is_reg():
-                lines.append(f'    s[S_{sig.name}] = s[S_{sig.name}_next];')
+                lines.append(f'    s[S_{cname}] = s[S_{cname}_next];')
             elif sig.is_regarray():
                 length = sig.width[1]
                 lines.append(f'    for (int i = 0; i < {length}; i++)')
-                lines.append(f'        s[S_{sig.name} + i] = s[S_{sig.name}_next + i];')
+                lines.append(f'        s[S_{cname} + i] = s[S_{cname}_next + i];')
         return lines
 
     def _emit_function_def(self, func):
-        out_name = func.output.vars[-1].name
+        out_name = _c_safe_name(func.output.vars[-1].name)
         param_names = [f'p{i}' for i in range(len(func.inputs))]
         params = ', '.join([f'int64_t {p}' for p in param_names])
-        func_name = func.name
+        func_name = _c_safe_name(func.name)
         lines = [f'static inline int64_t func_{func_name}(int64_t* s, {params}) {{']
         self._func_param_map = {}
         for inp, pname in zip(func.inputs, param_names):
