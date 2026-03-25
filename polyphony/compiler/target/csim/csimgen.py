@@ -305,6 +305,19 @@ class AHDLToCTranspiler(AHDLVisitor):
             return self._sig_widths[idx][0]
         return 64
 
+    def _is_signed(self, sig_name):
+        idx = self._sig_map.get(sig_name)
+        if idx is not None and idx < len(self._sig_widths):
+            return self._sig_widths[idx][1]
+        return False
+
+    def _mask_expr(self, src_expr, sig_name):
+        """Return mask (+ sext for signed) expression matching Python Integer semantics."""
+        w = self._get_width(sig_name)
+        if self._is_signed(sig_name):
+            return f'sext(mask({src_expr}, {w}), {w})'
+        return f'mask({src_expr}, {w})'
+
     def _sig_name_from_dst(self, dst):
         """Return the C-safe signal name from a dst node."""
         from polyphony.compiler.ahdl.ahdl import AHDL_SUBSCRIPT
@@ -324,16 +337,16 @@ class AHDLToCTranspiler(AHDLVisitor):
         dst_expr = self.visit(ahdl.dst)
         src_expr = self.visit(ahdl.src)
         sig_name = self._sig_name_from_dst(ahdl.dst)
-        w = self._get_width(sig_name)
-        self._lines.append(f'    {dst_expr} = mask({src_expr}, {w});')
+        rhs = self._mask_expr(src_expr, sig_name)
+        self._lines.append(f'    {dst_expr} = {rhs};')
 
     def visit_AHDL_ASSIGN(self, ahdl):
         dst_expr = self.visit(ahdl.dst)
         src_expr = self.visit(ahdl.src)
         sig_name = self._sig_name_from_dst(ahdl.dst)
-        w = self._get_width(sig_name)
+        rhs = self._mask_expr(src_expr, sig_name)
         self._lines.append(f'    {{ int64_t prev = {dst_expr};')
-        self._lines.append(f'      {dst_expr} = mask({src_expr}, {w});')
+        self._lines.append(f'      {dst_expr} = {rhs};')
         self._lines.append(f'      if ({dst_expr} != prev) updated = 1; }}')
 
     def visit_AHDL_CONNECT(self, ahdl):

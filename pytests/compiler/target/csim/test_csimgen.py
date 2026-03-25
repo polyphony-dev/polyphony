@@ -738,6 +738,44 @@ def test_visit_invert_var_emits_mask():
     assert result == 'mask(~(s[S_ready]), 1)'
 
 
+def test_visit_move_signed_signal_emits_sext():
+    """AHDL_MOVE to a signed signal emits sext(mask(...)) so that negative
+    values are correctly sign-extended in the int64_t buffer.
+
+    Without sext, mask(-25, 32) = 4294967271, which != -25 as int64_t.
+    With sext, sext(mask(-25, 32), 32) = -25 as int64_t.
+    """
+    sig = _make_signal('result', 32, {'reg', 'int'})
+    hdlscope = _make_hdlscope([sig])
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(hdlscope)
+
+    var = AHDL_VAR((sig,), Ctx.STORE)
+    move = AHDL_MOVE(var, AHDL_CONST(-25))
+    tp._lines = []
+    tp.visit(move)
+    line = tp._lines[0].strip()
+    # Should contain sext(mask(...), 32) for signed signals
+    assert 'sext' in line, f'Expected sext for signed signal, got: {line}'
+    assert 'mask' in line
+
+
+def test_visit_move_unsigned_signal_no_sext():
+    """AHDL_MOVE to an unsigned signal emits only mask(), no sext."""
+    sig = _make_signal('count', 32, {'reg'})  # no 'int' tag = unsigned
+    hdlscope = _make_hdlscope([sig])
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(hdlscope)
+
+    var = AHDL_VAR((sig,), Ctx.STORE)
+    move = AHDL_MOVE(var, AHDL_CONST(42))
+    tp._lines = []
+    tp.visit(move)
+    line = tp._lines[0].strip()
+    assert 'mask' in line
+    assert 'sext' not in line, f'Unexpected sext for unsigned signal: {line}'
+
+
 def test_visit_invert_relop_emits_mask_width_1():
     """Invert of a relational op (result is always 1-bit) emits mask with width 1."""
     sig_a = _make_signal('i', 32, {'net', 'int'})
