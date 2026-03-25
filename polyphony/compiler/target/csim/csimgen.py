@@ -29,6 +29,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._const_map: dict[str, int] = {}
         self._sig_widths: list[tuple[int, bool]] = []
         self._lines: list[str] = []
+        self._func_param_map: dict[str, str] = {}
 
     def assign_signal_ids(self, hdlscope):
         self._sig_map = {}
@@ -114,7 +115,7 @@ class AHDLToCTranspiler(AHDLVisitor):
     def visit_AHDL_VAR(self, ahdl):
         sig = ahdl.vars[-1]
         name = sig.name
-        if hasattr(self, '_func_param_map') and name in self._func_param_map:
+        if name in self._func_param_map:
             return self._func_param_map[name]
         if ahdl.ctx == Ctx.STORE and sig.is_reg():
             return f's[S_{name}_next]'
@@ -164,3 +165,38 @@ class AHDLToCTranspiler(AHDLVisitor):
         if ahdl.name == "'bz":
             return '0'
         raise NotImplementedError(f'Unsupported symbol: {ahdl.name}')
+
+    # --- Statement visitors ---
+
+    def _get_width(self, sig_name):
+        idx = self._sig_map.get(sig_name)
+        if idx is not None and idx < len(self._sig_widths):
+            return self._sig_widths[idx][0]
+        return 64
+
+    def _sig_name_from_dst(self, dst):
+        from polyphony.compiler.ahdl.ahdl import AHDL_SUBSCRIPT
+        if isinstance(dst, AHDL_SUBSCRIPT):
+            return dst.memvar.vars[-1].name
+        return dst.vars[-1].name
+
+    def visit_AHDL_MOVE(self, ahdl):
+        dst_expr = self.visit(ahdl.dst)
+        src_expr = self.visit(ahdl.src)
+        sig_name = self._sig_name_from_dst(ahdl.dst)
+        w = self._get_width(sig_name)
+        self._lines.append(f'    {dst_expr} = mask({src_expr}, {w});')
+
+    def visit_AHDL_ASSIGN(self, ahdl):
+        dst_expr = self.visit(ahdl.dst)
+        src_expr = self.visit(ahdl.src)
+        sig_name = self._sig_name_from_dst(ahdl.dst)
+        w = self._get_width(sig_name)
+        self._lines.append(f'    {{ int64_t prev = {dst_expr};')
+        self._lines.append(f'      {dst_expr} = mask({src_expr}, {w});')
+        self._lines.append(f'      if ({dst_expr} != prev) updated = 1; }}')
+
+    def visit_AHDL_CONNECT(self, ahdl):
+        dst_expr = self.visit(ahdl.dst)
+        src_expr = self.visit(ahdl.src)
+        self._lines.append(f'    {dst_expr} = {src_expr};')

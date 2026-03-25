@@ -22,6 +22,9 @@ from polyphony.compiler.target.csim.csimgen import AHDLToCTranspiler
 from polyphony.compiler.ahdl.ahdl import (
     AHDL_CONST, AHDL_VAR, AHDL_OP, AHDL_IF_EXP,
     AHDL_MEMVAR, AHDL_SUBSCRIPT, AHDL_FUNCALL, AHDL_SYMBOL,
+    AHDL_MOVE, AHDL_ASSIGN, AHDL_CONNECT,
+    AHDL_BLOCK, AHDL_IF, AHDL_CASE, AHDL_CASE_ITEM, AHDL_SEQ,
+    AHDL_EVENT_TASK, AHDL_PROCCALL, AHDL_NOP, AHDL_MODULECALL, AHDL_TRANSITION,
     Ctx,
 )
 
@@ -310,3 +313,53 @@ def test_visit_symbol_unknown_raises():
         assert False, 'Expected NotImplementedError'
     except NotImplementedError:
         pass
+
+
+# --- Task 6: Statement visitors (MOVE, ASSIGN, CONNECT) ---
+
+
+def test_visit_move_reg():
+    reg = _make_signal('x', 8, {'reg'})
+    src_reg = _make_signal('y', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(reg, src_reg)
+    tp._lines = []
+    dst = _make_var(reg, Ctx.STORE)
+    src = _make_var(src_reg, Ctx.LOAD)
+    tp.visit(AHDL_MOVE(dst, src))
+    code = '\n'.join(tp._lines)
+    assert 's[S_x_next] = mask(' in code
+    assert ', 8)' in code
+
+
+def test_visit_move_net():
+    net = _make_signal('z', 16, {'net'})
+    tp = _setup_transpiler_with_signals(net)
+    tp._lines = []
+    dst = _make_var(net, Ctx.STORE)
+    tp.visit(AHDL_MOVE(dst, AHDL_CONST(42)))
+    code = '\n'.join(tp._lines)
+    assert 's[S_z] = mask(' in code
+    assert ', 16)' in code
+
+
+def test_visit_assign_net_with_convergence():
+    net = _make_signal('out', 32, {'net'})
+    in_sig = _make_signal('inp', 32, {'net', 'input'})
+    tp = _setup_transpiler_with_signals(net, in_sig)
+    tp._lines = []
+    dst = _make_var(net, Ctx.STORE)
+    src = _make_var(in_sig, Ctx.LOAD)
+    tp.visit(AHDL_ASSIGN(dst, src))
+    code = '\n'.join(tp._lines)
+    assert 'prev' in code.lower() or 'updated' in code
+
+
+def test_visit_connect():
+    a = _make_signal('a', 8, {'net'})
+    b = _make_signal('b', 8, {'net'})
+    tp = _setup_transpiler_with_signals(a, b)
+    tp._lines = []
+    tp.visit(AHDL_CONNECT(_make_var(a, Ctx.STORE), _make_var(b, Ctx.LOAD)))
+    code = '\n'.join(tp._lines)
+    assert 's[S_a]' in code
+    assert 's[S_b]' in code
