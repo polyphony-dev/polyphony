@@ -667,3 +667,108 @@ int module_eval_decls(int64_t* s) { return 0; }
         builder._load_initial_values(ev, mock_scope, mock_transpiler)
 
         assert ev._buf[0] == 42  # counter initial value loaded
+
+
+def test_e2e_port_sync_via_cbuffersignal():
+    """Full cycle: model.clk.val=1 → eval → port.rd() returns C-computed result.
+    Simulates what _period() + testbench port access does."""
+    import ctypes
+    import os
+    import subprocess
+    import tempfile
+    import types
+    from polyphony.simulator import (
+        CBufferSignal, CModelEvaluator, Port, Reg, Net,
+    )
+
+    # C module: result = a + b (on rising clk edge)
+    c_source = '''
+#include <stdint.h>
+static inline int64_t mask(int64_t v, int w) {
+    if (w >= 64) return v;
+    return v & ((1LL << w) - 1);
+}
+#define S_clk         0
+#define S_rst         1
+#define S_a           2
+#define S_b           3
+#define S_result      4
+#define S_result_next 5
+#define S_fsm         6
+#define S_fsm_next    7
+
+void module_eval_tasks(int64_t* s) {
+    if (s[S_clk] == 1 && s[S_rst] == 0) {
+        s[S_result_next] = mask(s[S_a] + s[S_b], 32);
+    }
+}
+void module_update_regs(int64_t* s) {
+    s[S_result] = s[S_result_next];
+    s[S_fsm] = s[S_fsm_next];
+}
+int module_eval_decls(int64_t* s) { return 0; }
+'''
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c_path = os.path.join(tmpdir, 'test.c')
+        so_path = os.path.join(tmpdir, 'test.so')
+        with open(c_path, 'w') as f:
+            f.write(c_source)
+        result = subprocess.run(
+            ['gcc', '-O2', '-shared', '-fPIC', '-o', so_path, c_path],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            pytest.skip('gcc not available')
+
+        port_map = {'clk': 0, 'rst': 1, 'a': 2, 'b': 3, 'result': 4}
+        sig_map = {**port_map, 'result_next': 5, 'fsm': 6, 'fsm_next': 7}
+        ev = CModelEvaluator(so_path, 8, port_map, sig_map)
+
+        # Build mock model with Reg/Port attributes
+        model = types.SimpleNamespace()
+        clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
+        clk_sig.is_int = lambda: False
+        rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
+        rst_sig.is_int = lambda: False
+        model.clk = Reg(0, 1, clk_sig)
+        model.rst = Reg(0, 1, rst_sig)
+
+        a_sig = types.SimpleNamespace(name='a', width=32, tags=set())
+        a_sig.is_int = lambda: False
+        a_sig.is_input = lambda: True
+        a_sig.is_output = lambda: False
+        a_port = Port(None, None, None)
+        a_port._set_value(Reg(0, 32, a_sig))
+        model.a = a_port
+
+        b_sig = types.SimpleNamespace(name='b', width=32, tags=set())
+        b_sig.is_int = lambda: False
+        b_sig.is_input = lambda: True
+        b_sig.is_output = lambda: False
+        b_port = Port(None, None, None)
+        b_port._set_value(Reg(0, 32, b_sig))
+        model.b = b_port
+
+        r_sig = types.SimpleNamespace(name='result', width=32, tags=set())
+        r_sig.is_int = lambda: False
+        r_sig.is_input = lambda: False
+        r_sig.is_output = lambda: True
+        r_port = Port(None, None, None)
+        r_port._set_value(Reg(0, 32, r_sig))
+        model.result = r_port
+
+        # Bind ports to buffer
+        CModelEvaluator.bind_ports_to_buffer(model, ev._buf, port_map)
+
+        # Simulate testbench: write inputs
+        model.a.wr(10)
+        model.b.wr(20)
+
+        # Simulate _period: clk=1, eval, clk=0
+        model.rst.val = 0
+        model.clk.val = 1
+        ev.eval()
+        model.clk.val = 0
+
+        # Read output
+        assert model.result.rd() == 30
