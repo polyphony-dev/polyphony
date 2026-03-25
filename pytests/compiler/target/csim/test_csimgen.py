@@ -19,6 +19,11 @@ def test_runtime_template_has_mask():
 
 from unittest.mock import MagicMock
 from polyphony.compiler.target.csim.csimgen import AHDLToCTranspiler
+from polyphony.compiler.ahdl.ahdl import (
+    AHDL_CONST, AHDL_VAR, AHDL_OP, AHDL_IF_EXP,
+    AHDL_MEMVAR, AHDL_SUBSCRIPT, AHDL_FUNCALL, AHDL_SYMBOL,
+    Ctx,
+)
 
 
 def _make_signal(name, width, tags):
@@ -146,3 +151,106 @@ def test_emit_signal_defines_array():
     for line in header.splitlines():
         if 'S_mem_LEN' in line:
             assert line.split()[-1] == '4'
+
+
+def _setup_transpiler_with_signals(*signals):
+    hdlscope = _make_hdlscope(list(signals))
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(hdlscope)
+    return tp
+
+
+def _make_var(sig, ctx=None):
+    if ctx is None:
+        ctx = Ctx.LOAD
+    return AHDL_VAR((sig,), ctx)
+
+
+# --- Task 4: Expression visitors (CONST, VAR, OP, IF_EXP) ---
+
+
+def test_visit_const_int():
+    tp = AHDLToCTranspiler()
+    result = tp.visit(AHDL_CONST(42))
+    assert result == '42'
+
+
+def test_visit_const_bz():
+    tp = AHDLToCTranspiler()
+    result = tp.visit(AHDL_CONST("'bz"))
+    assert result == '0'
+
+
+def test_visit_var_load_reg():
+    reg = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(reg)
+    result = tp.visit(_make_var(reg, Ctx.LOAD))
+    assert result == 's[S_x]'
+
+
+def test_visit_var_store_reg():
+    reg = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(reg)
+    result = tp.visit(_make_var(reg, Ctx.STORE))
+    assert result == 's[S_x_next]'
+
+
+def test_visit_var_load_net():
+    net = _make_signal('y', 8, {'net'})
+    tp = _setup_transpiler_with_signals(net)
+    result = tp.visit(_make_var(net, Ctx.LOAD))
+    assert result == 's[S_y]'
+
+
+def test_visit_var_store_net():
+    net = _make_signal('y', 8, {'net'})
+    tp = _setup_transpiler_with_signals(net)
+    result = tp.visit(_make_var(net, Ctx.STORE))
+    assert result == 's[S_y]'
+
+
+def test_visit_op_add():
+    reg_a = _make_signal('a', 32, {'reg'})
+    reg_b = _make_signal('b', 32, {'reg'})
+    tp = _setup_transpiler_with_signals(reg_a, reg_b)
+    node = AHDL_OP('Add', _make_var(reg_a), _make_var(reg_b))
+    result = tp.visit(node)
+    assert result == '(s[S_a] + s[S_b])'
+
+
+def test_visit_op_unary_usub():
+    reg_a = _make_signal('a', 32, {'reg'})
+    tp = _setup_transpiler_with_signals(reg_a)
+    node = AHDL_OP('USub', _make_var(reg_a))
+    result = tp.visit(node)
+    assert result == '(-s[S_a])'
+
+
+def test_visit_op_relop_lt():
+    reg_a = _make_signal('a', 32, {'reg'})
+    tp = _setup_transpiler_with_signals(reg_a)
+    node = AHDL_OP('Lt', _make_var(reg_a), AHDL_CONST(10))
+    result = tp.visit(node)
+    assert result == '(s[S_a] < 10)'
+
+
+def test_visit_op_floordiv():
+    reg_a = _make_signal('a', 32, {'reg'})
+    reg_b = _make_signal('b', 32, {'reg'})
+    tp = _setup_transpiler_with_signals(reg_a, reg_b)
+    node = AHDL_OP('FloorDiv', _make_var(reg_a), _make_var(reg_b))
+    result = tp.visit(node)
+    assert result == 'floordiv(s[S_a], s[S_b])'
+
+
+def test_visit_if_exp():
+    cond_sig = _make_signal('cond', 1, {'reg'})
+    x_sig = _make_signal('x', 32, {'reg'})
+    tp = _setup_transpiler_with_signals(cond_sig, x_sig)
+    node = AHDL_IF_EXP(
+        _make_var(cond_sig),
+        _make_var(x_sig),
+        AHDL_CONST(0),
+    )
+    result = tp.visit(node)
+    assert result == '(s[S_cond] ? s[S_x] : 0)'

@@ -5,6 +5,22 @@ from polyphony.compiler.ahdl.ahdlvisitor import AHDLVisitor
 class AHDLToCTranspiler(AHDLVisitor):
     """Transpiles AHDL to C code with zero-copy shared buffer."""
 
+    _BINOP_MAP = {
+        'Add': '+', 'Sub': '-', 'Mult': '*',
+        'Mod': '%', 'LShift': '<<', 'RShift': '>>',
+        'BitOr': '|', 'BitXor': '^', 'BitAnd': '&',
+    }
+    _FLOORDIV = 'FloorDiv'
+    _RELOP_MAP = {
+        'And': '&&', 'Or': '||',
+        'Eq': '==', 'NotEq': '!=',
+        'Lt': '<', 'LtE': '<=', 'Gt': '>', 'GtE': '>=',
+        'Is': '==', 'IsNot': '!=',
+    }
+    _UNOP_MAP = {
+        'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~',
+    }
+
     def __init__(self):
         super().__init__()
         self._sig_map: dict[str, int] = {}
@@ -89,3 +105,41 @@ class AHDLToCTranspiler(AHDLVisitor):
         for macro, val in defines:
             lines.append(f'#define {macro:<{max_name_len}} {val}')
         return '\n'.join(lines)
+
+    def visit_AHDL_CONST(self, ahdl):
+        if isinstance(ahdl.value, str):
+            return '0'
+        return str(ahdl.value)
+
+    def visit_AHDL_VAR(self, ahdl):
+        sig = ahdl.vars[-1]
+        name = sig.name
+        if hasattr(self, '_func_param_map') and name in self._func_param_map:
+            return self._func_param_map[name]
+        if ahdl.ctx == Ctx.STORE and sig.is_reg():
+            return f's[S_{name}_next]'
+        return f's[S_{name}]'
+
+    def visit_AHDL_OP(self, ahdl):
+        if ahdl.op == self._FLOORDIV:
+            l = self.visit(ahdl.args[0])
+            r = self.visit(ahdl.args[1])
+            return f'floordiv({l}, {r})'
+        elif ahdl.op in self._BINOP_MAP:
+            l = self.visit(ahdl.args[0])
+            r = self.visit(ahdl.args[1])
+            return f'({l} {self._BINOP_MAP[ahdl.op]} {r})'
+        elif ahdl.op in self._RELOP_MAP:
+            l = self.visit(ahdl.args[0])
+            r = self.visit(ahdl.args[1])
+            return f'({l} {self._RELOP_MAP[ahdl.op]} {r})'
+        elif ahdl.op in self._UNOP_MAP:
+            a = self.visit(ahdl.args[0])
+            return f'({self._UNOP_MAP[ahdl.op]}{a})'
+        raise NotImplementedError(f'Unsupported op: {ahdl.op}')
+
+    def visit_AHDL_IF_EXP(self, ahdl):
+        c = self.visit(ahdl.cond)
+        l = self.visit(ahdl.lexp)
+        r = self.visit(ahdl.rexp)
+        return f'({c} ? {l} : {r})'
