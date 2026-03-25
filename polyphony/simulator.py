@@ -492,6 +492,7 @@ class Simulator(object):
             try:
                 hdlmodule = model.hdlmodule
                 ev = builder.build(hdlmodule)
+                ev._model = model  # enable port sync with Python model
                 evaluators.append(ev)
             except Exception as e:
                 warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
@@ -527,10 +528,15 @@ class Simulator(object):
             for model in self.models:
                 model.clk.val = 1
             for evaluator in self.evaluators:
+                if isinstance(evaluator, CModelEvaluator):
+                    evaluator.write_port('clk', 1)
                 evaluator.eval()
             self.clock_time += 1
             for model in self.models:
                 model.clk.val = 0
+            for evaluator in self.evaluators:
+                if isinstance(evaluator, CModelEvaluator):
+                    evaluator.write_port('clk', 0)
             if self.observer:
                 self.observer.on_cycle(self.clock_time)
 
@@ -539,9 +545,15 @@ class Simulator(object):
             self.observer.on_reset_start()
         for model in self.models:
             model.rst.val = 1
+        for evaluator in self.evaluators:
+            if isinstance(evaluator, CModelEvaluator):
+                evaluator.write_port('rst', 1)
         self._period(count)
         for model in self.models:
             model.rst.val = 0
+        for evaluator in self.evaluators:
+            if isinstance(evaluator, CModelEvaluator):
+                evaluator.write_port('rst', 0)
         self.clock_time = 0
         if self.observer:
             self.observer.on_reset_done(self.clock_time)
@@ -1198,6 +1210,7 @@ class CModelEvaluator:
         self._port_map = port_map
         self._sig_map = sig_map or port_map
         self._sig_count = sig_count
+        self._model = None  # set by Simulator to enable port sync
 
         ptr_type = ctypes.POINTER(ctypes.c_int64)
         self._lib.module_eval_tasks.argtypes = [ptr_type]
@@ -1208,12 +1221,45 @@ class CModelEvaluator:
         self._lib.module_eval_decls.restype = ctypes.c_int
 
     def eval(self):
+        self._sync_ports_from_model()
         self._lib.module_eval_tasks(self._buf)
         self._lib.module_update_regs(self._buf)
         rc = self._lib.module_eval_decls(self._buf)
         if rc != 0:
             import warnings
             warnings.warn('eval_decls: iteration limit reached')
+        self._sync_ports_to_model()
+
+    def _sync_ports_from_model(self):
+        """Copy port values from Python model to C buffer before eval."""
+        if self._model is None:
+            return
+        for name, idx in self._port_map.items():
+            attr = getattr(self._model, name, None)
+            if attr is None:
+                continue
+            if isinstance(attr, Port):
+                attr = attr.value  # unwrap Port to inner Net/Reg
+            if isinstance(attr, (Net, Reg)):
+                v = attr.val
+                if isinstance(v, str):  # "X"
+                    self._buf[idx] = 0
+                else:
+                    self._buf[idx] = int(v)
+
+    def _sync_ports_to_model(self):
+        """Copy output port values from C buffer back to Python model after eval."""
+        if self._model is None:
+            return
+        for name, idx in self._port_map.items():
+            attr = getattr(self._model, name, None)
+            if attr is None:
+                continue
+            if isinstance(attr, Port):
+                attr = attr.value
+            if isinstance(attr, (Net, Reg)):
+                if attr.signal.is_output():
+                    attr.val = self._buf[idx]
 
     def read_port(self, name: str) -> int:
         return self._buf[self._port_map[name]]
@@ -1261,7 +1307,9 @@ class CSimulatorModelBuilder:
         if os.path.isfile(hash_path) and os.path.isfile(so_path):
             with open(hash_path) as f:
                 if f.read().strip() == src_hash:
-                    return CModelEvaluator(so_path, sig_count, port_map, sig_map)
+                    ev = CModelEvaluator(so_path, sig_count, port_map, sig_map)
+                    self._load_initial_values(ev, hdlscope, transpiler)
+                    return ev
 
         # Write C source
         with open(c_path, 'w') as f:
@@ -1284,4 +1332,39 @@ class CSimulatorModelBuilder:
         with open(hash_path, 'w') as f:
             f.write(src_hash)
 
-        return CModelEvaluator(so_path, sig_count, port_map, sig_map)
+        ev = CModelEvaluator(so_path, sig_count, port_map, sig_map)
+        self._load_initial_values(ev, hdlscope, transpiler)
+        return ev
+
+    def _load_initial_values(self, ev, hdlscope, transpiler):
+        """Write Reg initial values into the shared buffer."""
+        self._load_scope_init(ev, hdlscope, transpiler, '')
+        for sub_sig, sub_scope in hdlscope.subscopes.items():
+            from polyphony.compiler.target.csim.csimgen import _c_safe_name
+            prefix = _c_safe_name(sub_sig.name) + '_'
+            self._load_subscope_init(ev, sub_scope, transpiler, prefix)
+
+    def _load_scope_init(self, ev, hdlscope, transpiler, prefix):
+        from polyphony.compiler.target.csim.csimgen import _c_safe_name
+        sig_map = transpiler._sig_map
+        for sig in hdlscope.get_signals(
+            include_tags={'reg', 'regarray'},
+        ):
+            if not sig.is_initializable():
+                continue
+            val = int(sig.init_value)
+            cname = _c_safe_name(prefix + sig.name) if prefix else _c_safe_name(sig.name)
+            if sig.is_reg() and cname in sig_map:
+                ev._buf[sig_map[cname]] = val
+            elif sig.is_regarray() and cname in sig_map:
+                base = sig_map[cname]
+                length = sig.width[1]
+                for i in range(length):
+                    ev._buf[base + i] = val
+
+    def _load_subscope_init(self, ev, sub_scope, transpiler, prefix):
+        self._load_scope_init(ev, sub_scope, transpiler, prefix)
+        for sub_sig, nested_scope in sub_scope.subscopes.items():
+            from polyphony.compiler.target.csim.csimgen import _c_safe_name
+            nested_prefix = prefix + _c_safe_name(sub_sig.name) + '_'
+            self._load_subscope_init(ev, nested_scope, transpiler, nested_prefix)
