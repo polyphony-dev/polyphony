@@ -1,6 +1,6 @@
 import re
 
-from polyphony.compiler.ahdl.ahdl import AHDL, Ctx
+from polyphony.compiler.ahdl.ahdl import AHDL, AHDL_OP, AHDL_VAR, Ctx
 from polyphony.compiler.ahdl.ahdlvisitor import AHDLVisitor
 
 _CSAFE_RE = re.compile(r'[^A-Za-z0-9_]')
@@ -27,7 +27,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         'Is': '==', 'IsNot': '!=',
     }
     _UNOP_MAP = {
-        'USub': '-', 'UAdd': '+', 'Not': '!', 'Invert': '~',
+        'USub': '-', 'UAdd': '+', 'Not': '!',
     }
 
     def __init__(self):
@@ -245,10 +245,25 @@ class AHDLToCTranspiler(AHDLVisitor):
             l = self.visit(ahdl.args[0])
             r = self.visit(ahdl.args[1])
             return f'({l} {self._RELOP_MAP[ahdl.op]} {r})'
+        elif ahdl.op == 'Invert':
+            operand = ahdl.args[0]
+            a = self.visit(operand)
+            w = self._infer_width(operand)
+            return f'mask(~({a}), {w})'
         elif ahdl.op in self._UNOP_MAP:
             a = self.visit(ahdl.args[0])
             return f'({self._UNOP_MAP[ahdl.op]}{a})'
         raise NotImplementedError(f'Unsupported op: {ahdl.op}')
+
+    def _infer_width(self, ahdl_exp) -> int:
+        """Infer the bit width of an AHDL expression."""
+        if isinstance(ahdl_exp, AHDL_VAR):
+            return ahdl_exp.sig.width
+        if isinstance(ahdl_exp, AHDL_OP) and ahdl_exp.is_relop():
+            return 1
+        raise NotImplementedError(
+            f'Cannot infer width for Invert operand: {type(ahdl_exp).__name__}'
+        )
 
     def visit_AHDL_IF_EXP(self, ahdl):
         c = self.visit(ahdl.cond)
