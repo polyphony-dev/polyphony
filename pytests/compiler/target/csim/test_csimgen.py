@@ -363,3 +363,63 @@ def test_visit_connect():
     code = '\n'.join(tp._lines)
     assert 's[S_a]' in code
     assert 's[S_b]' in code
+
+
+# --- Task 7: Control flow visitors (IF, CASE, BLOCK, SEQ) ---
+
+
+def test_visit_block():
+    reg = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(reg)
+    tp._lines = []
+    stm = AHDL_MOVE(_make_var(reg, Ctx.STORE), AHDL_CONST(1))
+    block = AHDL_BLOCK('b', (stm,))
+    tp.visit(block)
+    code = '\n'.join(tp._lines)
+    assert 's[S_x_next]' in code
+
+
+def test_visit_if():
+    cond = _make_signal('cond', 1, {'net'})
+    x = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(cond, x)
+    tp._lines = []
+    then_stm = AHDL_MOVE(_make_var(x, Ctx.STORE), AHDL_CONST(1))
+    else_stm = AHDL_MOVE(_make_var(x, Ctx.STORE), AHDL_CONST(0))
+    then_block = AHDL_BLOCK('then', (then_stm,))
+    else_block = AHDL_BLOCK('else', (else_stm,))
+    node = AHDL_IF(
+        (_make_var(cond), None),
+        (then_block, else_block),
+    )
+    tp.visit(node)
+    code = '\n'.join(tp._lines)
+    assert 'if (s[S_cond])' in code
+    assert 'else' in code
+
+
+def test_visit_case():
+    sel = _make_signal('sel', 8, {'reg'})
+    x = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(sel, x)
+    tp._lines = []
+    item0 = AHDL_CASE_ITEM(AHDL_CONST(0), AHDL_BLOCK('c0', (AHDL_MOVE(_make_var(x, Ctx.STORE), AHDL_CONST(10)),)))
+    item1 = AHDL_CASE_ITEM(AHDL_CONST(1), AHDL_BLOCK('c1', (AHDL_MOVE(_make_var(x, Ctx.STORE), AHDL_CONST(20)),)))
+    node = AHDL_CASE(_make_var(sel), (item0, item1))
+    tp.visit(node)
+    code = '\n'.join(tp._lines)
+    assert 'switch' in code
+    assert 'case 0:' in code
+    assert 'case 1:' in code
+    assert 'break;' in code
+
+
+def test_visit_seq_dispatches_to_inner():
+    reg = _make_signal('x', 8, {'reg'})
+    tp = _setup_transpiler_with_signals(reg)
+    tp._lines = []
+    inner = AHDL_MOVE(_make_var(reg, Ctx.STORE), AHDL_CONST(5))
+    node = AHDL_SEQ(inner, 0, 1)
+    tp.visit(node)
+    code = '\n'.join(tp._lines)
+    assert 's[S_x_next]' in code

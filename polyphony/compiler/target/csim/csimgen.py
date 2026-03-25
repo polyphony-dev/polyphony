@@ -200,3 +200,37 @@ class AHDLToCTranspiler(AHDLVisitor):
         dst_expr = self.visit(ahdl.dst)
         src_expr = self.visit(ahdl.src)
         self._lines.append(f'    {dst_expr} = {src_expr};')
+
+    # --- Control flow visitors ---
+
+    def visit_AHDL_IF(self, ahdl):
+        for i, (cond, block) in enumerate(zip(ahdl.conds, ahdl.blocks)):
+            if cond is None:
+                self._lines.append('    } else {')
+            elif i == 0:
+                c = self.visit(cond)
+                self._lines.append(f'    if ({c}) {{')
+            else:
+                c = self.visit(cond)
+                self._lines.append(f'    }} else if ({c}) {{')
+            self.visit(block)
+        self._lines.append('    }')
+
+    def visit_AHDL_TRANSITION_IF(self, ahdl):
+        self.visit_AHDL_IF(ahdl)
+
+    def visit_AHDL_PIPELINE_GUARD(self, ahdl):
+        self.visit_AHDL_IF(ahdl)
+
+    def visit_AHDL_CASE(self, ahdl):
+        sel = self.visit(ahdl.sel)
+        self._lines.append(f'    switch ({sel}) {{')
+        for item in ahdl.items:
+            self.visit(item)
+        self._lines.append('    }')
+
+    def visit_AHDL_CASE_ITEM(self, ahdl):
+        val = self.visit(ahdl.val)
+        self._lines.append(f'    case {val}: {{')
+        self.visit(ahdl.block)
+        self._lines.append('        break; }')
