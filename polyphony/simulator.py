@@ -469,7 +469,7 @@ class Port(object):
 class Simulator(object):
     def __init__(self, model, use_csim=None):
         if use_csim is None:
-            use_csim = os.environ.get('USE_CSIM', '0') == '1'
+            use_csim = os.environ.get('USE_CSIM', '1') == '1'
         if isinstance(model, list):
             self.models = [getattr(m, "__model") for m in model]
         elif isinstance(model, Model):
