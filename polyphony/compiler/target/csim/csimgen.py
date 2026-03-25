@@ -294,3 +294,90 @@ class AHDLToCTranspiler(AHDLVisitor):
 
     def visit_AHDL_TRANSITION(self, ahdl):
         raise NotImplementedError('AHDL_TRANSITION not supported in csim')
+
+    def generate(self, hdlscope):
+        """Generate complete C source from an HDLScope.
+        Returns (c_source, sig_map, port_map, sig_count).
+        """
+        sig_map, port_map, sig_count = self.assign_signal_ids(hdlscope)
+
+        parts = []
+        parts.append('#include "runtime_template.h"\n')
+        parts.append(self.emit_signal_defines())
+        parts.append('')
+
+        # ROM functions
+        for func in getattr(hdlscope, 'functions', []):
+            parts.append(self._emit_function_def(func))
+            parts.append('')
+
+        # module_eval_tasks
+        parts.append('void module_eval_tasks(int64_t* s) {')
+        self._lines = []
+        for task in hdlscope.tasks:
+            self.visit(task)
+        parts.extend(self._lines)
+        parts.append('}')
+        parts.append('')
+
+        # module_update_regs
+        parts.append('void module_update_regs(int64_t* s) {')
+        parts.extend(self._emit_update_regs(hdlscope))
+        parts.append('}')
+        parts.append('')
+
+        # module_eval_decls
+        parts.append('int module_eval_decls(int64_t* s) {')
+        parts.append('    int updated = 1, iter = 0;')
+        parts.append('    while (updated && iter < 1000) {')
+        parts.append('        updated = 0;')
+        self._lines = []
+        for decl in hdlscope.decls:
+            self.visit(decl)
+        parts.extend(self._lines)
+        parts.append('        iter++;')
+        parts.append('    }')
+        parts.append('    return (iter >= 1000) ? 1 : 0;')
+        parts.append('}')
+
+        c_source = '\n'.join(parts) + '\n'
+        return c_source, sig_map, port_map, sig_count
+
+    def _emit_update_regs(self, hdlscope):
+        lines = []
+        seen = set()
+        signals = hdlscope.get_signals(
+            include_tags={'reg', 'net', 'regarray', 'netarray'},
+            exclude_tags={'input', 'output'},
+        )
+        port_signals = hdlscope.get_signals(include_tags={'input', 'output'})
+        for sig in list(signals) + list(port_signals):
+            if sig.name in seen:
+                continue
+            seen.add(sig.name)
+            if sig.is_reg():
+                lines.append(f'    s[S_{sig.name}] = s[S_{sig.name}_next];')
+            elif sig.is_regarray():
+                length = sig.width[1]
+                lines.append(f'    for (int i = 0; i < {length}; i++)')
+                lines.append(f'        s[S_{sig.name} + i] = s[S_{sig.name}_next + i];')
+        return lines
+
+    def _emit_function_def(self, func):
+        out_name = func.output.vars[-1].name
+        param_names = [f'p{i}' for i in range(len(func.inputs))]
+        params = ', '.join([f'int64_t {p}' for p in param_names])
+        func_name = func.name
+        lines = [f'static inline int64_t func_{func_name}(int64_t* s, {params}) {{']
+        self._func_param_map = {}
+        for inp, pname in zip(func.inputs, param_names):
+            if hasattr(inp, 'vars') and inp.vars:
+                self._func_param_map[inp.vars[-1].name] = pname
+        self._lines = []
+        for stm in func.stms:
+            self.visit(stm)
+        lines.extend(self._lines)
+        lines.append(f'    return s[S_{out_name}];')
+        lines.append('}')
+        self._func_param_map = {}
+        return '\n'.join(lines)

@@ -493,3 +493,54 @@ def test_visit_transition_raises():
         assert False, 'Expected NotImplementedError'
     except NotImplementedError:
         pass
+
+
+# --- Task 9: Module-level code generation (generate) ---
+
+
+def _make_simple_hdlscope():
+    """Minimal HDLScope: one Reg FSM state, one Reg output, clk/rst ports."""
+    clk = _make_signal('clk', 1, {'net', 'input'})
+    rst = _make_signal('rst', 1, {'net', 'input'})
+    fsm = _make_signal('fsm_state', 32, {'reg'})
+    result = _make_signal('result', 32, {'reg', 'output'})
+    a_in = _make_signal('a', 32, {'net', 'input'})
+
+    move_stm = AHDL_MOVE(
+        _make_var(result, Ctx.STORE),
+        AHDL_OP('Add', _make_var(a_in), AHDL_CONST(1)),
+    )
+    case_item = AHDL_CASE_ITEM(AHDL_CONST(0), AHDL_BLOCK('s0', (move_stm,)))
+    case_stm = AHDL_CASE(_make_var(fsm), (case_item,))
+    event_task = AHDL_EVENT_TASK(((clk, 'rising'),), case_stm)
+
+    scope = _make_hdlscope([clk, rst, fsm, result, a_in])
+    scope.tasks = [event_task]
+    scope.decls = []
+    scope.fsms = {}
+    scope.functions = []
+    return scope
+
+
+def test_generate_produces_compilable_structure():
+    scope = _make_simple_hdlscope()
+    tp = AHDLToCTranspiler()
+    c_source, sig_map, port_map, sig_count = tp.generate(scope)
+
+    assert '#include' in c_source
+    assert '#define S_' in c_source
+    assert 'void module_eval_tasks(int64_t* s)' in c_source
+    assert 'void module_update_regs(int64_t* s)' in c_source
+    assert 'int module_eval_decls(int64_t* s)' in c_source
+    assert 'a' in port_map
+    assert 'result' in port_map
+    assert sig_count > 0
+
+
+def test_generate_update_regs_has_all_regs():
+    scope = _make_simple_hdlscope()
+    tp = AHDLToCTranspiler()
+    c_source, _, _, _ = tp.generate(scope)
+
+    assert 's[S_fsm_state] = s[S_fsm_state_next]' in c_source
+    assert 's[S_result] = s[S_result_next]' in c_source
