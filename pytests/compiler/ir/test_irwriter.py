@@ -896,6 +896,322 @@ def test_write_block_hyperblock_true():
     assert '.hyperblock' in result
 
 
+# ============================================================
+# Scope-level roundtrip tests
+# ============================================================
+
+def _assert_scope_roundtrip(src: str, scope_name: str):
+    """Helper: parse src -> write -> re-parse -> compare block/stm structure."""
+    setup_test()
+    parser1 = IrReader(src)
+    parser1.parse_scope()
+    scope1 = env.scopes[scope_name]
+
+    writer = IrWriter()
+    written = writer.write_scope(scope1)
+
+    setup_test()
+    parser2 = IrReader(written)
+    parser2.parse_scope()
+    scope2 = env.scopes[scope_name]
+
+    blks1 = list(scope1.traverse_blocks())
+    blks2 = list(scope2.traverse_blocks())
+    assert len(blks1) == len(blks2), f'block count mismatch: {len(blks1)} vs {len(blks2)}'
+    for b1, b2 in zip(blks1, blks2):
+        assert len(b1.stms) == len(b2.stms), f'stm count mismatch in block'
+        for s1, s2 in zip(b1.stms, b2.stms):
+            if isinstance(s1, (Jump, CJump, MCJump)):
+                assert type(s1) is type(s2)
+            else:
+                w1 = writer.write_stm(s1)
+                w2 = writer.write_stm(s2)
+                assert w1 == w2, f'{w1} != {w2}'
+    return scope1, scope2
+
+
+def test_roundtrip_scope_attr():
+    """Scope with Attr (field access) survives roundtrip."""
+    setup_test()
+    top = env.scopes['@top']
+    Scope.create(top, 'Obj', {'class'}, 0)
+    Scope.create(top, 'Inner', {'class'}, 0)
+    src = '''scope F
+tags function
+var obj: object(@top.Obj)
+var inner: object(@top.Inner)
+var x: int32
+
+blk1:
+mv x obj.field1
+mv x inner.nested.deep
+ret @return
+'''
+    parser1 = IrReader(src)
+    parser1.parse_scope()
+    scope1 = env.scopes['F']
+
+    writer = IrWriter()
+    written = writer.write_scope(scope1)
+
+    # Re-parse needs the class scopes to exist
+    setup_test()
+    top = env.scopes['@top']
+    Scope.create(top, 'Obj', {'class'}, 0)
+    Scope.create(top, 'Inner', {'class'}, 0)
+    parser2 = IrReader(written)
+    parser2.parse_scope()
+    scope2 = env.scopes['F']
+
+    blks1 = list(scope1.traverse_blocks())
+    blks2 = list(scope2.traverse_blocks())
+    assert len(blks1) == len(blks2)
+    for b1, b2 in zip(blks1, blks2):
+        assert len(b1.stms) == len(b2.stms)
+        for s1, s2 in zip(b1.stms, b2.stms):
+            if isinstance(s1, (Jump, CJump, MCJump)):
+                assert type(s1) is type(s2)
+            else:
+                w1 = writer.write_stm(s1)
+                w2 = writer.write_stm(s2)
+                assert w1 == w2, f'{w1} != {w2}'
+
+
+def test_roundtrip_scope_lphi():
+    """Scope with LPhi (loop phi) survives roundtrip."""
+    src = '''scope F
+tags function
+return int32
+var i: int32
+var sum: int32
+
+blk1:
+mv i 0
+mv sum 0
+j loop
+
+loop:
+lphi i (0 i)
+lphi sum (0 sum)
+mv sum (+ sum i)
+mv i (+ i 1)
+cj (< i 10) loop blk_exit
+
+blk_exit:
+mv @return sum
+ret @return
+'''
+    _assert_scope_roundtrip(src, 'F')
+
+
+def test_roundtrip_scope_uphi():
+    """Scope with UPhi survives roundtrip."""
+    src = '''scope F
+tags function
+return int32
+var x: int32
+
+blk1:
+uphi x (0)
+mv @return x
+ret @return
+'''
+    _assert_scope_roundtrip(src, 'F')
+
+
+def test_roundtrip_scope_mcjump():
+    """Scope with MCJump (multi-way conditional jump) survives roundtrip."""
+    src = '''scope F
+tags function
+return int32
+var sel: int32
+
+blk1:
+mj (== sel 0) case0 (== sel 1) case1 True case2
+
+case0:
+mv @return 100
+j blk_exit
+
+case1:
+mv @return 200
+j blk_exit
+
+case2:
+mv @return 300
+j blk_exit
+
+blk_exit:
+ret @return
+'''
+    _assert_scope_roundtrip(src, 'F')
+
+
+def test_roundtrip_scope_cmove_cexpr():
+    """Scope with CMove and CExpr survives roundtrip."""
+    src = '''scope F
+tags function
+return int32
+var x: int32
+var cond: bool
+
+blk1:
+mv? cond x 42
+expr? cond (syscall print x)
+mv @return x
+ret @return
+'''
+    _, scope2 = _assert_scope_roundtrip(src, 'F')
+    stms = scope2.entry_block.stms
+    assert isinstance(stms[0], CMove)
+    assert isinstance(stms[1], CExpr)
+
+
+def test_roundtrip_scope_mref_mstore():
+    """Scope with MRef (memory load) and MStore survives roundtrip."""
+    src = '''scope F
+tags function
+return int32
+var arr: list<int32>[10]
+var v: int32
+
+blk1:
+expr (mst arr 0 42)
+mv v (mld arr 0)
+mv @return v
+ret @return
+'''
+    _assert_scope_roundtrip(src, 'F')
+
+
+def test_roundtrip_scope_call_new():
+    """Scope with Call and New survives roundtrip."""
+    src = '''scope F
+tags function
+return int32
+var x: int32
+var y: int32
+
+blk1:
+mv x (new C 1 2)
+mv y (call f x 3)
+mv @return y
+ret @return
+'''
+    _assert_scope_roundtrip(src, 'F')
+
+
+def test_roundtrip_scope_complex():
+    """Scope with mixed Phi, LPhi, CJump, and nested expressions."""
+    src = '''scope F
+tags function returnable
+return int32
+var x: int32
+var y: int32
+var cond: bool
+var base: int32
+
+entry:
+mv x 0
+mv y 1
+j loop
+
+loop:
+lphi x (0 x)
+mv y (+ x base)
+mv cond (< x 100)
+cj cond body blk_exit
+
+body:
+mv x (+ x 1)
+j loop
+
+blk_exit:
+phi y (x y) (cond True)
+mv @return y
+ret @return
+'''
+    _assert_scope_roundtrip(src, 'F')
+
+
+def test_roundtrip_scopes_multiple():
+    """Multiple scopes survive write_scopes -> parse roundtrip."""
+    setup_test()
+    src = '''scope F1
+tags function
+return int32
+var a: int32
+
+blk1:
+mv a 1
+mv @return a
+ret @return
+
+scope F2
+tags function
+return int32
+var b: int32
+
+blk1:
+mv b 2
+mv @return b
+ret @return
+'''
+    parser1 = IrReader(src)
+    parser1.parse_scope()
+    scope1_f1 = env.scopes['F1']
+    scope1_f2 = env.scopes['F2']
+
+    writer = IrWriter()
+    written = writer.write_scopes([scope1_f1, scope1_f2])
+
+    setup_test()
+    parser2 = IrReader(written)
+    parser2.parse_scope()
+    scope2_f1 = env.scopes['F1']
+    scope2_f2 = env.scopes['F2']
+
+    assert scope2_f1.has_sym('a')
+    assert scope2_f2.has_sym('b')
+    assert len(list(scope2_f1.traverse_blocks())) == 1
+    assert len(list(scope2_f2.traverse_blocks())) == 1
+
+
+def test_roundtrip_scope_param_tags():
+    """Scope with param tags and var tags survive roundtrip."""
+    src = '''scope F
+tags function
+param a:int32 { free }
+param b:int32
+return int32
+var counter: int16 { field }
+
+blk1:
+mv @return a
+ret @return
+'''
+    _, scope2 = _assert_scope_roundtrip(src, 'F')
+    a_sym = scope2.find_sym(Symbol.param_prefix + '_a')
+    assert 'free' in a_sym.tags
+    counter_sym = scope2.find_sym('counter')
+    assert 'field' in counter_sym.tags
+
+
+def test_roundtrip_scope_array_items():
+    """Scope with Array expression (mutable and immutable) survives roundtrip."""
+    src = '''scope F
+tags function
+var xs: list<int32>[3]
+var ys: list<int32>[2]
+
+blk1:
+mv xs [1 2 3]
+mv ys (10 20)
+ret @return
+'''
+    _assert_scope_roundtrip(src, 'F')
+
+
 def test_roundtrip_synth_params():
     """synth_params survive IrWriter -> IrReader roundtrip."""
     setup_test()
