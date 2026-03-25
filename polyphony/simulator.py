@@ -467,7 +467,7 @@ class Port(object):
 
 
 class Simulator(object):
-    def __init__(self, model):
+    def __init__(self, model, use_csim=False):
         if isinstance(model, list):
             self.models = [getattr(m, "__model") for m in model]
         elif isinstance(model, Model):
@@ -475,10 +475,29 @@ class Simulator(object):
         else:
             assert False
 
-        self.evaluators = [ModelEvaluator(model) for model in self.models]
+        if use_csim:
+            self.evaluators = self._build_csim_evaluators()
+        else:
+            self.evaluators = [ModelEvaluator(model) for model in self.models]
         self.clock_time = 0
         self.observer = None
         self.case_name = ''
+
+    def _build_csim_evaluators(self):
+        """Try to build CModelEvaluator for each model; fall back to ModelEvaluator on failure."""
+        import warnings
+        evaluators = []
+        builder = CSimulatorModelBuilder()
+        for model in self.models:
+            try:
+                hdlmodule = model.hdlmodule
+                ev = builder.build(hdlmodule)
+                evaluators.append(ev)
+            except Exception as e:
+                warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
+                              f'falling back to ModelEvaluator: {e}')
+                evaluators.append(ModelEvaluator(model))
+        return evaluators
 
     def __enter__(self):
         self.begin()
