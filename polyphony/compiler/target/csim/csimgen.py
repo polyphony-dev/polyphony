@@ -480,9 +480,12 @@ class AHDLToCTranspiler(AHDLVisitor):
         parts.append('')
 
         # module_eval_decls
+        from polyphony.simulator import MIN_EVAL_DECLS_ITERATIONS
+        num_decls = len(hdlscope.decls)
+        max_iter = max(num_decls + 1, MIN_EVAL_DECLS_ITERATIONS)
         parts.append('int module_eval_decls(int64_t* s) {')
         parts.append('    int updated = 1, iter = 0;')
-        parts.append('    while (updated && iter < 1000) {')
+        parts.append(f'    while (updated && iter < {max_iter}) {{')
         parts.append('        updated = 0;')
         self._lines = []
         for decl in hdlscope.decls:
@@ -490,7 +493,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         parts.extend(self._lines)
         parts.append('        iter++;')
         parts.append('    }')
-        parts.append('    return (iter >= 1000) ? 1 : 0;')
+        parts.append('    return updated;')
         parts.append('}')
 
         c_source = '\n'.join(parts) + '\n'

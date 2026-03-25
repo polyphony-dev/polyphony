@@ -553,6 +553,14 @@ class Simulator(object):
             self.observer.on_reset_done(self.clock_time)
 
 
+# Minimum upper bound for combinational logic (decl) convergence iterations.
+# For a correctly generated combinational DAG, the worst case is one
+# iteration per dependency chain depth, plus one final pass to confirm
+# convergence.  Since max depth <= num_decls, the limit is num_decls + 1.
+# If the limit is reached, it indicates a compiler bug (combinational cycle).
+MIN_EVAL_DECLS_ITERATIONS = 16
+
+
 class ModelEvaluator(AHDLVisitor):
     def __init__(self, model):
         assert isinstance(model, types.SimpleNamespace)
@@ -572,7 +580,7 @@ class ModelEvaluator(AHDLVisitor):
 
     def _eval_decls(self):
         self.updated_sigs.add(None)
-        _max_iter = 1000
+        _max_iter = max(len(self.model._decls) + 1, MIN_EVAL_DECLS_ITERATIONS)
         while self.updated_sigs:
             self.updated_sigs.clear()
             for decl in self.model._decls:

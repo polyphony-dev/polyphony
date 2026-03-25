@@ -1087,3 +1087,103 @@ def test_prev_val_updated_in_eval():
     assert csig.prev_val == 0
     assert csig.val == 1
     assert csig.prev_val == 0 and csig.val == 1  # rising edge
+
+
+@pytest.mark.parametrize('chain_len', [50, 500, 2000])
+def test_eval_decls_converges_for_long_chain(chain_len):
+    """eval_decls must converge even for large circuits where len(decls) >> 16.
+
+    Generates a C module with a long combinational dependency chain
+    evaluated in REVERSE order, forcing one propagation per iteration.
+    This is the worst case for the convergence loop.
+    """
+    from polyphony.simulator import CModelEvaluator
+
+    # Build C source with a chain: d_0 = input, d_1 = d_0+1, ..., d_N = d_{N-1}+1
+    # eval_decls evaluates in reverse order: d_N first, d_0 last
+    sig_input = 0
+    sig_output = 1
+    sig_output_next = 2
+    sig_clk = 3
+    sig_rst = 4
+    sig_chain_base = 5  # d_0 .. d_{chain_len-1}
+    sig_count = sig_chain_base + chain_len
+
+    defines = []
+    defines.append(f'#define S_input  {sig_input}')
+    defines.append(f'#define S_output {sig_output}')
+    defines.append(f'#define S_output_next {sig_output_next}')
+    defines.append(f'#define S_clk    {sig_clk}')
+    defines.append(f'#define S_rst    {sig_rst}')
+    for i in range(chain_len):
+        defines.append(f'#define S_d{i}    {sig_chain_base + i}')
+
+    # eval_decls: reverse order to force worst-case iterations
+    decl_lines = []
+    for i in reversed(range(chain_len)):
+        if i == 0:
+            decl_lines.append(f'    {{ int64_t prev = s[S_d0]; s[S_d0] = s[S_input]; if (s[S_d0] != prev) updated = 1; }}')
+        else:
+            decl_lines.append(f'    {{ int64_t prev = s[S_d{i}]; s[S_d{i}] = s[S_d{i-1}] + 1; if (s[S_d{i}] != prev) updated = 1; }}')
+
+    c_source = f'''
+#include <stdint.h>
+{chr(10).join(defines)}
+#define S_NUM_SIGNALS {sig_count}
+
+void module_eval_tasks(int64_t* s) {{
+    if (s[S_clk] == 1 && s[S_rst] == 0) {{
+        s[S_output_next] = s[S_d{chain_len - 1}];
+    }}
+}}
+
+void module_update_regs(int64_t* s) {{
+    s[S_output] = s[S_output_next];
+}}
+
+int module_eval_decls(int64_t* s) {{
+    int updated = 1, iter = 0;
+    int max_iter = {chain_len + 1};
+    while (updated && iter < max_iter) {{
+        updated = 0;
+{chr(10).join(decl_lines)}
+        iter++;
+    }}
+    return updated;
+}}
+'''
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        c_path = os.path.join(tmpdir, 'test_chain.c')
+        so_path = os.path.join(tmpdir, 'test_chain.so')
+        with open(c_path, 'w') as f:
+            f.write(c_source)
+        result = subprocess.run(
+            ['gcc', '-O2', '-shared', '-fPIC', '-o', so_path, c_path],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            pytest.skip(f'gcc failed: {result.stderr[:200]}')
+
+        port_map = {
+            'clk': sig_clk, 'rst': sig_rst,
+            'input': sig_input, 'output': sig_output,
+        }
+        ev = CModelEvaluator(so_path, sig_count, port_map)
+
+        # Set input = 10, run two eval cycles:
+        #   Cycle 1: eval_decls propagates chain (d_{N-1} converges)
+        #   Cycle 2: eval_tasks reads converged d_{N-1} into output_next,
+        #            update_regs copies to output
+        ev._buf[sig_input] = 10
+        ev._buf[sig_clk] = 1
+        ev._buf[sig_rst] = 0
+        ev.eval()  # cycle 1: decls converge
+        ev.eval()  # cycle 2: eval_tasks picks up converged value
+
+        expected = 10 + chain_len - 1
+        actual = ev._buf[sig_output]
+        assert actual == expected, (
+            f'chain_len={chain_len}: expected output={expected}, got {actual}. '
+            f'eval_decls may not have converged.'
+        )
