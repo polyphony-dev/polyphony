@@ -537,3 +537,80 @@ def test_cbuffersignal_toInteger():
     assert result.val == 42
     assert result.width == 16
     assert result.sign is True
+
+
+def test_bind_ports_replaces_clk_rst():
+    """After bind_ports_to_buffer, model.clk/rst are CBufferSignal instances
+    that write directly to the C buffer."""
+    import ctypes
+    import types
+    from polyphony.simulator import CBufferSignal, Reg, CModelEvaluator
+
+    # Minimal mock model with clk/rst as Reg
+    model = types.SimpleNamespace()
+    clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
+    clk_sig.is_int = lambda: False
+    rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
+    rst_sig.is_int = lambda: False
+    model.clk = Reg(0, 1, clk_sig)
+    model.rst = Reg(0, 1, rst_sig)
+
+    # Minimal CModelEvaluator with buffer
+    buf = (ctypes.c_int64 * 4)()
+    port_map = {'clk': 0, 'rst': 1, 'a': 2, 'result': 3}
+
+    CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
+
+    assert isinstance(model.clk, CBufferSignal)
+    assert isinstance(model.rst, CBufferSignal)
+
+    model.clk.val = 1
+    assert buf[0] == 1
+    model.rst.val = 1
+    assert buf[1] == 1
+
+
+def test_bind_ports_replaces_io_ports():
+    """After bind_ports_to_buffer, Port.value is CBufferSignal."""
+    import ctypes
+    import types
+    from polyphony.simulator import CBufferSignal, Port, Reg, Net, CModelEvaluator
+
+    model = types.SimpleNamespace()
+    clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
+    clk_sig.is_int = lambda: False
+    rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
+    rst_sig.is_int = lambda: False
+    model.clk = Reg(0, 1, clk_sig)
+    model.rst = Reg(0, 1, rst_sig)
+
+    # Input port 'a'
+    a_sig = types.SimpleNamespace(name='a', width=32, tags=set())
+    a_sig.is_int = lambda: False
+    a_sig.is_input = lambda: True
+    a_sig.is_output = lambda: False
+    a_port = Port(None, None, None)
+    a_port._set_value(Reg(0, 32, a_sig))
+    model.a = a_port
+
+    # Output port 'result'
+    r_sig = types.SimpleNamespace(name='result', width=32, tags=set())
+    r_sig.is_int = lambda: False
+    r_sig.is_input = lambda: False
+    r_sig.is_output = lambda: True
+    r_port = Port(None, None, None)
+    r_port._set_value(Reg(0, 32, r_sig))
+    model.result = r_port
+
+    buf = (ctypes.c_int64 * 4)()
+    port_map = {'clk': 0, 'rst': 1, 'a': 2, 'result': 3}
+
+    CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
+
+    # wr() should write to C buffer
+    model.a.wr(42)
+    assert buf[2] == 42
+
+    # rd() should read from C buffer
+    buf[3] = 99
+    assert model.result.rd() == 99

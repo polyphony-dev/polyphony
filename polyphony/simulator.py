@@ -492,6 +492,7 @@ class Simulator(object):
             try:
                 hdlmodule = model.hdlmodule
                 ev = builder.build(hdlmodule)
+                CModelEvaluator.bind_ports_to_buffer(model, ev._buf, ev._port_map)
                 evaluators.append(ev)
             except Exception as e:
                 warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
@@ -1289,6 +1290,29 @@ class CModelEvaluator:
     def get_signal(self, name: str) -> int:
         """Read any signal (including internal) for watch/debug."""
         return self._buf[self._sig_map[name]]
+
+    @staticmethod
+    def bind_ports_to_buffer(model, buf, port_map):
+        """Replace model port attributes with CBufferSignal instances.
+
+        After this call, model.clk.val = 1, port.wr(v), port.rd() all
+        read/write the C buffer directly.
+        """
+        for name, idx in port_map.items():
+            attr = getattr(model, name, None)
+            if attr is None:
+                continue
+            if isinstance(attr, Port):
+                # Replace the Port's inner value (Reg/Net) with CBufferSignal
+                old = attr.value
+                csig = CBufferSignal(buf, idx, old.width, old.sign,
+                                     signal=old.signal)
+                attr.value = csig  # bypass _set_value assert
+            elif isinstance(attr, (Reg, Net)):
+                # clk/rst are bare Reg on the model, not wrapped in Port
+                csig = CBufferSignal(buf, idx, attr.width, attr.sign,
+                                     signal=attr.signal)
+                setattr(model, name, csig)
 
 
 class CSimulatorModelBuilder:
