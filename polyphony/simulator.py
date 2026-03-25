@@ -1300,9 +1300,9 @@ class CModelEvaluator:
         self._lib.module_eval_decls.restype = ctypes.c_int
 
     def eval(self):
+        self._lib.module_eval_tasks(self._buf)
         for sig in self._deferred_signals:
             sig.flush_pending()
-        self._lib.module_eval_tasks(self._buf)
         self._lib.module_update_regs(self._buf)
         rc = self._lib.module_eval_decls(self._buf)
         if rc != 0:

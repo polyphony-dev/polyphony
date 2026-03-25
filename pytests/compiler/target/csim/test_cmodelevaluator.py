@@ -768,10 +768,16 @@ int module_eval_decls(int64_t* s) { return 0; }
         model.a.wr(10)
         model.b.wr(20)
 
-        # Simulate _period: clk=1, eval, clk=0
+        # Deferred input ports flush AFTER eval_tasks (matching Python Reg
+        # double-buffering).  The C code reads s[S_a] in eval_tasks, but
+        # the pending value isn't in the buffer yet during that first eval.
+        # It takes two cycles: cycle 1 flushes inputs, cycle 2 reads them.
         model.rst.val = 0
         model.clk.val = 1
-        ev.eval()
+        ev.eval()  # cycle 1: flush a=10, b=20 after eval_tasks
+        model.clk.val = 0
+        model.clk.val = 1
+        ev.eval()  # cycle 2: eval_tasks reads a=10, b=20
         model.clk.val = 0
 
         # Read output
