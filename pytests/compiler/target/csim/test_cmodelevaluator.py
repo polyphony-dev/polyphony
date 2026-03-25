@@ -550,8 +550,10 @@ def test_bind_ports_replaces_clk_rst():
     model = types.SimpleNamespace()
     clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
     clk_sig.is_int = lambda: False
+    clk_sig.is_input = lambda: True
     rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
     rst_sig.is_int = lambda: False
+    rst_sig.is_input = lambda: True
     model.clk = Reg(0, 1, clk_sig)
     model.rst = Reg(0, 1, rst_sig)
 
@@ -559,7 +561,7 @@ def test_bind_ports_replaces_clk_rst():
     buf = (ctypes.c_int64 * 4)()
     port_map = {'clk': 0, 'rst': 1, 'a': 2, 'result': 3}
 
-    CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
+    _deferred, _all = CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
 
     assert isinstance(model.clk, CBufferSignal)
     assert isinstance(model.rst, CBufferSignal)
@@ -579,8 +581,10 @@ def test_bind_ports_replaces_io_ports():
     model = types.SimpleNamespace()
     clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
     clk_sig.is_int = lambda: False
+    clk_sig.is_input = lambda: True
     rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
     rst_sig.is_int = lambda: False
+    rst_sig.is_input = lambda: True
     model.clk = Reg(0, 1, clk_sig)
     model.rst = Reg(0, 1, rst_sig)
 
@@ -605,7 +609,7 @@ def test_bind_ports_replaces_io_ports():
     buf = (ctypes.c_int64 * 4)()
     port_map = {'clk': 0, 'rst': 1, 'a': 2, 'result': 3}
 
-    CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
+    _deferred, _all = CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
 
     # wr() on input port is deferred — not yet in buffer
     model.a.wr(42)
@@ -731,8 +735,10 @@ int module_eval_decls(int64_t* s) { return 0; }
         model = types.SimpleNamespace()
         clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
         clk_sig.is_int = lambda: False
+        clk_sig.is_input = lambda: True
         rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
         rst_sig.is_int = lambda: False
+        rst_sig.is_input = lambda: True
         model.clk = Reg(0, 1, clk_sig)
         model.rst = Reg(0, 1, rst_sig)
 
@@ -761,8 +767,9 @@ int module_eval_decls(int64_t* s) { return 0; }
         model.result = r_port
 
         # Bind ports to buffer
-        deferred = CModelEvaluator.bind_ports_to_buffer(model, ev._buf, port_map)
+        deferred, all_ports = CModelEvaluator.bind_ports_to_buffer(model, ev._buf, port_map)
         ev._deferred_signals = deferred or []
+        ev._all_port_signals = all_ports or []
 
         # Simulate testbench: write inputs
         model.a.wr(10)
@@ -797,8 +804,10 @@ def test_bind_ports_binds_submodel_ports():
     model = types.SimpleNamespace()
     clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
     clk_sig.is_int = lambda: False
+    clk_sig.is_input = lambda: True
     rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
     rst_sig.is_int = lambda: False
+    rst_sig.is_input = lambda: True
     model.clk = Reg(0, 1, clk_sig)
     model.rst = Reg(0, 1, rst_sig)
 
@@ -836,7 +845,7 @@ def test_bind_ports_binds_submodel_ports():
     # Use separate indices for valid
     sig_map = {'clk': 0, 'rst': 1, 'c_data': 2, 'c_valid': 3}
 
-    CModelEvaluator.bind_ports_to_buffer(model, buf, port_map, sig_map)
+    _deferred, _all = CModelEvaluator.bind_ports_to_buffer(model, buf, port_map, sig_map)
 
     # Sub-model Port values should now be CBufferSignal
     assert isinstance(sub_core.data.value, CBufferSignal)
@@ -876,3 +885,205 @@ def test_cbuffersignal_input_port_deferred_write():
     # flush_pending() should write the pending value
     sig.flush_pending()
     assert buf[0] == 42
+
+
+# ============================================================
+# Regression tests for csim-specific bugs
+# ============================================================
+
+
+def test_edge_detection_with_cbuffersignal():
+    """Port.edge() must work with CBufferSignal, not only Reg.
+
+    Regression: port_edge02, wait01, wait_until01, ad7091r failed with
+    'assert isinstance(self.value, Reg)' when Port.value was CBufferSignal.
+    """
+    import ctypes
+    from polyphony.simulator import CBufferSignal, Port
+
+    buf = (ctypes.c_int64 * 2)()
+    sig_mock = None  # signal field unused by edge()
+    csig = CBufferSignal(buf, idx=0, width=1, is_signed=False, signal=sig_mock)
+
+    # Simulate a rising edge: prev_val=0, val=1
+    buf[0] = 0
+    csig.prev_val = 0
+    buf[0] = 1
+
+    port = Port(None, None, None)
+    port.value = csig
+
+    assert port.edge(0, 1) is True
+    assert port.edge(1, 0) is False
+
+    # Simulate a falling edge: prev_val=1, val=0
+    csig.prev_val = 1
+    buf[0] = 0
+    assert port.edge(1, 0) is True
+    assert port.edge(0, 1) is False
+
+
+def test_initial_value_loads_next_slot():
+    """_load_scope_init must set both current and _next buffer slots.
+
+    Regression: init01 failed because _load_scope_init only set the current
+    slot. During reset, module_update_regs copied _next(=0) to current,
+    overwriting the initial value.
+    """
+    import ctypes
+    import types
+    from polyphony.simulator import CSimulatorModelBuilder, CModelEvaluator
+
+    # Create a mock transpiler with sig_map that has both cur and _next
+    transpiler = types.SimpleNamespace()
+    transpiler._sig_map = {'p0': 0, 'p0_next': 1, 'p1': 2, 'p1_next': 3}
+
+    # Create a mock hdlscope with initializable reg signals
+    sig0 = types.SimpleNamespace(
+        name='p0', tags={'reg', 'output', 'initializable'},
+        init_value=123, width=32,
+    )
+    sig0.is_initializable = lambda: True
+    sig0.is_reg = lambda: True
+    sig0.is_regarray = lambda: False
+
+    sig1 = types.SimpleNamespace(
+        name='p1', tags={'reg', 'output', 'initializable'},
+        init_value=456, width=32,
+    )
+    sig1.is_initializable = lambda: True
+    sig1.is_reg = lambda: True
+    sig1.is_regarray = lambda: False
+
+    hdlscope = types.SimpleNamespace()
+    hdlscope.get_signals = lambda include_tags=None, exclude_tags=None: [sig0, sig1]
+
+    # Create a buffer and a mock evaluator
+    buf = (ctypes.c_int64 * 4)()
+    ev = types.SimpleNamespace(_buf=buf)
+
+    builder = CSimulatorModelBuilder()
+    builder._load_scope_init(ev, hdlscope, transpiler, '')
+
+    # Both current and _next slots must have the initial value
+    assert buf[0] == 123, "current slot should have init value"
+    assert buf[1] == 123, "_next slot should have init value"
+    assert buf[2] == 456, "current slot should have init value"
+    assert buf[3] == 456, "_next slot should have init value"
+
+
+def test_cbuffersignal_get_unsigned_64bit():
+    """CBufferSignal.get() must return unsigned value for unsigned signals.
+
+    Regression: bitwidth02 failed because get() returned raw int64_t.
+    Values with bit 63 set became negative in Python, mismatching the
+    expected unsigned result.
+    """
+    import ctypes
+    from polyphony.simulator import CBufferSignal
+
+    buf = (ctypes.c_int64 * 2)()
+
+    # Unsigned 64-bit signal
+    usig = CBufferSignal(buf, idx=0, width=64, is_signed=False)
+    buf[0] = ctypes.c_int64(0x8765432112345678).value  # negative as int64_t
+    assert usig.get() == 0x8765432112345678, "unsigned get() should return positive value"
+
+    # Signed 64-bit signal
+    ssig = CBufferSignal(buf, idx=0, width=64, is_signed=True)
+    buf[0] = ctypes.c_int64(0x8765432112345678).value
+    assert ssig.get() < 0, "signed get() should return negative for MSB-set value"
+
+    # Unsigned 32-bit signal — upper bits in buffer should be masked off
+    u32sig = CBufferSignal(buf, idx=1, width=32, is_signed=False)
+    buf[1] = ctypes.c_int64(-1).value  # all bits set
+    assert u32sig.get() == 0xFFFFFFFF, "32-bit unsigned mask should trim to 32 bits"
+
+
+def test_deferred_input_reg_not_visible_before_flush():
+    """Non-Port input Reg/Net must also use deferred write (except clk/rst).
+
+    Regression: unroll02 clktime() was off by 1 because raw Reg input signals
+    (e.g. 'ready' in function modules) were bound with deferred=False. This
+    made set() write directly to the buffer, allowing the FSM to see the new
+    value one cycle too early.
+    """
+    import ctypes
+    import types
+    from polyphony.simulator import CBufferSignal, Reg, CModelEvaluator
+
+    model = types.SimpleNamespace()
+
+    # clk — input but NOT deferred (must be immediately visible)
+    clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
+    clk_sig.is_int = lambda: False
+    clk_sig.is_input = lambda: True
+    model.clk = Reg(0, 1, clk_sig)
+
+    # rst — input but NOT deferred
+    rst_sig = types.SimpleNamespace(name='rst', width=1, tags=set())
+    rst_sig.is_int = lambda: False
+    rst_sig.is_input = lambda: True
+    model.rst = Reg(0, 1, rst_sig)
+
+    # ready — input Reg, MUST be deferred
+    rdy_sig = types.SimpleNamespace(name='ready', width=1, tags=set())
+    rdy_sig.is_int = lambda: False
+    rdy_sig.is_input = lambda: True
+    model.ready = Reg(0, 1, rdy_sig)
+
+    # valid — output Reg, NOT deferred
+    val_sig = types.SimpleNamespace(name='valid', width=1, tags=set())
+    val_sig.is_int = lambda: False
+    val_sig.is_input = lambda: False
+    model.valid = Reg(0, 1, val_sig)
+
+    buf = (ctypes.c_int64 * 4)()
+    port_map = {'clk': 0, 'rst': 1, 'ready': 2, 'valid': 3}
+
+    deferred, all_ports = CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
+
+    # clk/rst must NOT be deferred
+    assert not model.clk._deferred, "clk must not be deferred"
+    assert not model.rst._deferred, "rst must not be deferred"
+
+    # ready (input) must be deferred
+    assert model.ready._deferred, "input 'ready' must be deferred"
+    assert model.ready in deferred, "input 'ready' must be in deferred list"
+
+    # valid (output) must NOT be deferred
+    assert not model.valid._deferred, "output 'valid' must not be deferred"
+
+    # Verify deferred behavior: set() should NOT write to buffer
+    model.ready.set(1)
+    assert buf[2] == 0, "deferred ready.set(1) must not write to buffer immediately"
+    model.ready.flush_pending()
+    assert buf[2] == 1, "flush_pending must write pending value to buffer"
+
+    # clk should write directly via val setter
+    model.clk.val = 1
+    assert buf[0] == 1, "clk.val=1 must write to buffer immediately"
+
+
+def test_prev_val_updated_in_eval():
+    """CModelEvaluator.eval() must update prev_val for all port signals
+    before module_update_regs, so edge() detection works correctly.
+
+    Regression: port_edge02 hung in infinite loop because prev_val was
+    never updated when the C code modified buffer values directly.
+    """
+    import ctypes
+    from polyphony.simulator import CBufferSignal
+
+    buf = (ctypes.c_int64 * 2)()
+    csig = CBufferSignal(buf, idx=0, width=1, is_signed=False)
+
+    # Simulate the eval() flow: save prev_val before update_regs
+    buf[0] = 0
+    csig.prev_val = buf[0]  # this is what eval() does
+    buf[0] = 1  # this is what module_update_regs does
+
+    # Now edge detection should see the transition 0→1
+    assert csig.prev_val == 0
+    assert csig.val == 1
+    assert csig.prev_val == 0 and csig.val == 1  # rising edge

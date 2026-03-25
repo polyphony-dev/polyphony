@@ -455,7 +455,7 @@ class Port(object):
         return f"Port('{repr(self.value)}')"
 
     def edge(self, old_v, new_v):
-        assert isinstance(self.value, Reg)
+        assert isinstance(self.value, (Reg, CBufferSignal))
         return self.value.prev_val == old_v and self.value.val == new_v
 
     def assign(self, func: callable):
@@ -494,9 +494,10 @@ class Simulator(object):
             try:
                 hdlmodule = model.hdlmodule
                 ev = builder.build(hdlmodule)
-                deferred = CModelEvaluator.bind_ports_to_buffer(
+                deferred, all_ports = CModelEvaluator.bind_ports_to_buffer(
                     model, ev._buf, ev._port_map, ev._sig_map)
                 ev._deferred_signals = deferred or []
+                ev._all_port_signals = all_ports or []
                 evaluators.append(ev)
             except Exception as e:
                 warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
@@ -1266,10 +1267,15 @@ class CBufferSignal:
             self._has_pending = False
 
     def get(self):
-        return self._buf[self._idx]
+        v = self._buf[self._idx]
+        m = (1 << self.width) - 1
+        v = v & m
+        if self.is_signed:
+            v = twos_comp(v, self.width)
+        return v
 
     def toInteger(self):
-        return Integer(self._buf[self._idx], self.width, self.is_signed)
+        return Integer(self.get(), self.width, self.is_signed)
 
     def update(self):
         """No-op — C evaluator handles double-buffering."""
@@ -1290,6 +1296,7 @@ class CModelEvaluator:
         self._sig_map = sig_map or port_map
         self._sig_count = sig_count
         self._deferred_signals: list[CBufferSignal] = []
+        self._all_port_signals: list[CBufferSignal] = []
 
         ptr_type = ctypes.POINTER(ctypes.c_int64)
         self._lib.module_eval_tasks.argtypes = [ptr_type]
@@ -1303,6 +1310,9 @@ class CModelEvaluator:
         self._lib.module_eval_tasks(self._buf)
         for sig in self._deferred_signals:
             sig.flush_pending()
+        # Save prev_val before reg update for edge detection
+        for sig in self._all_port_signals:
+            sig.prev_val = self._buf[sig._idx]
         self._lib.module_update_regs(self._buf)
         rc = self._lib.module_eval_decls(self._buf)
         if rc != 0:
@@ -1330,6 +1340,7 @@ class CModelEvaluator:
         Port attributes using sig_map with prefixed names (e.g. 'c_data').
         """
         deferred_list = []
+        all_port_list = []
         for name, idx in port_map.items():
             attr = getattr(model, name, None)
             if attr is None:
@@ -1340,27 +1351,35 @@ class CModelEvaluator:
                 csig = CBufferSignal(buf, idx, old.width, old.sign,
                                      signal=old.signal, deferred=is_input)
                 attr.value = csig  # bypass _set_value assert
+                all_port_list.append(csig)
                 if is_input:
                     deferred_list.append(csig)
             elif isinstance(attr, (Reg, Net)):
+                is_input = attr.signal.is_input() if attr.signal else False
+                # clk/rst must not be deferred — they are set directly
+                # by _period()/_reset() and must be visible in eval_tasks
+                defer = is_input and name not in ('clk', 'rst')
                 csig = CBufferSignal(buf, idx, attr.width, attr.sign,
-                                     signal=attr.signal)
+                                     signal=attr.signal, deferred=defer)
                 setattr(model, name, csig)
+                all_port_list.append(csig)
+                if defer:
+                    deferred_list.append(csig)
 
         # Bind sub-model ports (Handshake, Channel, etc.) via sig_map
         if sig_map is None:
-            return deferred_list
+            return deferred_list, all_port_list
         for attr_name in list(vars(model).keys()):
             attr = getattr(model, attr_name)
             if not isinstance(attr, Model):
                 continue
             sub_core = super(Model, attr).__getattribute__("__model")
             CModelEvaluator._bind_submodel(sub_core, buf, sig_map, attr_name,
-                                           deferred_list)
-        return deferred_list
+                                           deferred_list, all_port_list)
+        return deferred_list, all_port_list
 
     @staticmethod
-    def _bind_submodel(sub_core, buf, sig_map, prefix, deferred_list):
+    def _bind_submodel(sub_core, buf, sig_map, prefix, deferred_list, all_port_list):
         """Recursively bind sub-model Port/Reg/Net to C buffer via sig_map."""
         from polyphony.compiler.target.csim.csimgen import _c_safe_name
         for attr_name in list(vars(sub_core).keys()):
@@ -1376,6 +1395,7 @@ class CModelEvaluator:
                     csig = CBufferSignal(buf, idx, old.width, old.sign,
                                          signal=old.signal, deferred=is_input)
                     attr.value = csig
+                    all_port_list.append(csig)
                     if is_input:
                         deferred_list.append(csig)
             elif isinstance(attr, (Reg, Net)):
@@ -1384,10 +1404,11 @@ class CModelEvaluator:
                     csig = CBufferSignal(buf, idx, attr.width, attr.sign,
                                          signal=attr.signal)
                     setattr(sub_core, attr_name, csig)
+                    all_port_list.append(csig)
             elif isinstance(attr, Model):
                 nested_core = super(Model, attr).__getattribute__("__model")
                 CModelEvaluator._bind_submodel(nested_core, buf, sig_map, sig_key,
-                                               deferred_list)
+                                               deferred_list, all_port_list)
 
 
 class CSimulatorModelBuilder:
@@ -1411,11 +1432,21 @@ class CSimulatorModelBuilder:
             cname = _c_safe_name(prefix + sig.name) if prefix else _c_safe_name(sig.name)
             if sig.is_reg() and cname in sig_map:
                 ev._buf[sig_map[cname]] = val
+                # Also set _next slot so reset doesn't overwrite with 0
+                next_key = cname + '_next'
+                if next_key in sig_map:
+                    ev._buf[sig_map[next_key]] = val
             elif sig.is_regarray() and cname in sig_map:
                 base = sig_map[cname]
                 length = sig.width[1]
                 for i in range(length):
                     ev._buf[base + i] = val
+                # Also set _next slots for regarray
+                next_key = cname + '_next'
+                if next_key in sig_map:
+                    next_base = sig_map[next_key]
+                    for i in range(length):
+                        ev._buf[next_base + i] = val
 
     def _load_subscope_init(self, ev, sub_scope, transpiler, prefix):
         self._load_scope_init(ev, sub_scope, transpiler, prefix)
