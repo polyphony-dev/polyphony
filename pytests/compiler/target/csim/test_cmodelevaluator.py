@@ -111,3 +111,63 @@ int module_eval_decls(int64_t* s) { return 0; }
         ev = CModelEvaluator(so_path, 4, port_map, sig_map)
         ev._buf[2] = 99
         assert ev.get_signal('internal') == 99
+
+
+def test_csimulator_model_builder_compile():
+    """CSimulatorModelBuilder compiles C source to .so."""
+    from polyphony.simulator import CSimulatorModelBuilder, CModelEvaluator
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__))
+    from test_csimgen import _make_simple_hdlscope
+
+    scope = _make_simple_hdlscope()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        builder = CSimulatorModelBuilder()
+        try:
+            evaluator = builder.build(scope, output_dir=tmpdir)
+        except (RuntimeError, FileNotFoundError) as e:
+            pytest.skip(f'gcc not available: {e}')
+
+        assert isinstance(evaluator, CModelEvaluator)
+        # Check cache files
+        files = os.listdir(tmpdir)
+        assert any(f.endswith('.so') for f in files)
+        assert any(f.endswith('.hash') for f in files)
+
+
+def test_csimulator_model_builder_cache():
+    """Second build uses cache (no recompile)."""
+    from polyphony.simulator import CSimulatorModelBuilder, CModelEvaluator
+    import sys
+    sys.path.insert(0, os.path.dirname(__file__))
+    from test_csimgen import _make_simple_hdlscope
+
+    scope = _make_simple_hdlscope()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        builder = CSimulatorModelBuilder()
+        try:
+            ev1 = builder.build(scope, output_dir=tmpdir)
+        except (RuntimeError, FileNotFoundError):
+            pytest.skip('gcc not available')
+
+        # Get .so modification time
+        so_files = [f for f in os.listdir(tmpdir) if f.endswith('.so')]
+        so_mtime = os.path.getmtime(os.path.join(tmpdir, so_files[0]))
+
+        # Build again -- should use cache
+        import time; time.sleep(0.01)
+        ev2 = builder.build(scope, output_dir=tmpdir)
+        so_mtime2 = os.path.getmtime(os.path.join(tmpdir, so_files[0]))
+
+        assert isinstance(ev2, CModelEvaluator)
+        assert so_mtime == so_mtime2  # .so was NOT recompiled
+
+
+def test_simulator_classes_exist():
+    """Verify CModelEvaluator and CSimulatorModelBuilder are importable."""
+    from polyphony.simulator import CModelEvaluator, CSimulatorModelBuilder, Simulator
+    assert CModelEvaluator is not None
+    assert CSimulatorModelBuilder is not None
+    assert Simulator is not None

@@ -1205,3 +1205,64 @@ class CModelEvaluator:
     def get_signal(self, name: str) -> int:
         """Read any signal (including internal) for watch/debug."""
         return self._buf[self._sig_map[name]]
+
+
+class CSimulatorModelBuilder:
+    """Builds CModelEvaluator from HDLScope via AHDLToCTranspiler + gcc."""
+
+    def build(self, hdlscope, output_dir=None):
+        import hashlib
+        import subprocess
+        import shutil
+        from polyphony.compiler.target.csim.csimgen import AHDLToCTranspiler
+
+        if output_dir is None:
+            output_dir = os.path.join('.tmp', 'csim')
+        os.makedirs(output_dir, exist_ok=True)
+
+        transpiler = AHDLToCTranspiler()
+        c_source, sig_map, port_map, sig_count = transpiler.generate(hdlscope)
+
+        # Read runtime header for hash
+        h_path = os.path.join(
+            os.path.dirname(__file__),
+            'compiler', 'target', 'csim', 'runtime_template.h',
+        )
+        with open(h_path) as f:
+            h_content = f.read()
+
+        module_name = getattr(hdlscope, 'name', 'module')
+        c_path = os.path.join(output_dir, f'csim_{module_name}.c')
+        so_path = os.path.join(output_dir, f'csim_{module_name}.so')
+        hash_path = os.path.join(output_dir, f'csim_{module_name}.hash')
+
+        src_hash = hashlib.md5((c_source + h_content).encode()).hexdigest()
+
+        # Check cache
+        if os.path.isfile(hash_path) and os.path.isfile(so_path):
+            with open(hash_path) as f:
+                if f.read().strip() == src_hash:
+                    return CModelEvaluator(so_path, sig_count, port_map, sig_map)
+
+        # Write C source
+        with open(c_path, 'w') as f:
+            f.write(c_source)
+
+        # Copy runtime header next to source for #include
+        shutil.copy2(h_path, os.path.join(output_dir, 'runtime_template.h'))
+
+        # Compile
+        result = subprocess.run(
+            ['gcc', '-O2', '-shared', '-fPIC',
+             '-I', output_dir,
+             '-o', so_path, c_path],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f'gcc compilation failed:\n{result.stderr}')
+
+        # Write hash
+        with open(hash_path, 'w') as f:
+            f.write(src_hash)
+
+        return CModelEvaluator(so_path, sig_count, port_map, sig_map)
