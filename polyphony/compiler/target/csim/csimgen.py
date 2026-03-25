@@ -38,6 +38,11 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._sig_widths = []
         idx = 0
 
+        # Collect constants (state labels, etc.) into _const_map
+        for sig in hdlscope.get_signals(include_tags={'constant'}):
+            if sig in hdlscope.constants:
+                self._const_map[sig.name] = hdlscope.constants[sig]
+
         signals = hdlscope.get_signals(
             include_tags={'reg', 'net', 'regarray', 'netarray'},
             exclude_tags={'input', 'output'},
@@ -117,6 +122,8 @@ class AHDLToCTranspiler(AHDLVisitor):
         name = sig.name
         if name in self._func_param_map:
             return self._func_param_map[name]
+        if name in self._const_map:
+            return str(self._const_map[name])
         if ahdl.ctx == Ctx.STORE and sig.is_reg():
             return f's[S_{name}_next]'
         return f's[S_{name}]'
