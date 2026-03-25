@@ -494,7 +494,7 @@ class Simulator(object):
             try:
                 hdlmodule = model.hdlmodule
                 ev = builder.build(hdlmodule)
-                CModelEvaluator.bind_ports_to_buffer(model, ev._buf, ev._port_map)
+                CModelEvaluator.bind_ports_to_buffer(model, ev._buf, ev._port_map, ev._sig_map)
                 evaluators.append(ev)
             except Exception as e:
                 warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
@@ -1294,27 +1294,64 @@ class CModelEvaluator:
         return self._buf[self._sig_map[name]]
 
     @staticmethod
-    def bind_ports_to_buffer(model, buf, port_map):
+    def bind_ports_to_buffer(model, buf, port_map, sig_map=None):
         """Replace model port attributes with CBufferSignal instances.
 
         After this call, model.clk.val = 1, port.wr(v), port.rd() all
         read/write the C buffer directly.
+
+        Also walks sub-models (Handshake, Channel, etc.) and binds their
+        Port attributes using sig_map with prefixed names (e.g. 'c_data').
         """
         for name, idx in port_map.items():
             attr = getattr(model, name, None)
             if attr is None:
                 continue
             if isinstance(attr, Port):
-                # Replace the Port's inner value (Reg/Net) with CBufferSignal
                 old = attr.value
                 csig = CBufferSignal(buf, idx, old.width, old.sign,
                                      signal=old.signal)
                 attr.value = csig  # bypass _set_value assert
             elif isinstance(attr, (Reg, Net)):
-                # clk/rst are bare Reg on the model, not wrapped in Port
                 csig = CBufferSignal(buf, idx, attr.width, attr.sign,
                                      signal=attr.signal)
                 setattr(model, name, csig)
+
+        # Bind sub-model ports (Handshake, Channel, etc.) via sig_map
+        if sig_map is None:
+            return
+        for attr_name in list(vars(model).keys()):
+            attr = getattr(model, attr_name)
+            if not isinstance(attr, Model):
+                continue
+            sub_core = super(Model, attr).__getattribute__("__model")
+            CModelEvaluator._bind_submodel(sub_core, buf, sig_map, attr_name)
+
+    @staticmethod
+    def _bind_submodel(sub_core, buf, sig_map, prefix):
+        """Recursively bind sub-model Port/Reg/Net to C buffer via sig_map."""
+        from polyphony.compiler.target.csim.csimgen import _c_safe_name
+        for attr_name in list(vars(sub_core).keys()):
+            if attr_name.startswith('_'):
+                continue
+            attr = getattr(sub_core, attr_name)
+            sig_key = _c_safe_name(f'{prefix}_{attr_name}')
+            if isinstance(attr, Port) and attr.value is not None:
+                if sig_key in sig_map:
+                    old = attr.value
+                    idx = sig_map[sig_key]
+                    csig = CBufferSignal(buf, idx, old.width, old.sign,
+                                         signal=old.signal)
+                    attr.value = csig
+            elif isinstance(attr, (Reg, Net)):
+                if sig_key in sig_map:
+                    idx = sig_map[sig_key]
+                    csig = CBufferSignal(buf, idx, attr.width, attr.sign,
+                                         signal=attr.signal)
+                    setattr(sub_core, attr_name, csig)
+            elif isinstance(attr, Model):
+                nested_core = super(Model, attr).__getattribute__("__model")
+                CModelEvaluator._bind_submodel(nested_core, buf, sig_map, sig_key)
 
 
 class CSimulatorModelBuilder:
