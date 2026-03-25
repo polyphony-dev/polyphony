@@ -77,6 +77,10 @@ class AHDLToCTranspiler(AHDLVisitor):
                 cname = self._name_to_cname[sig.name]
             self._port_map[sig.name] = self._sig_map[cname]
 
+        # Recurse into subscopes
+        for sub_sig, sub_scope in hdlscope.subscopes.items():
+            idx = self._assign_subscope_ids(_c_safe_name(sub_sig.name), sub_scope, idx)
+
         self._sig_count = idx
         return dict(self._sig_map), dict(self._port_map), self._sig_count
 
@@ -84,6 +88,75 @@ class AHDLToCTranspiler(AHDLVisitor):
         is_signed = sig.is_int()
         cname = _c_safe_name(sig.name)
         self._name_to_cname[sig.name] = cname
+        if sig.is_regarray():
+            elem_w, length = sig.width
+            self._sig_map[cname] = idx
+            for _ in range(length):
+                self._sig_widths.append((elem_w, is_signed))
+            self._sig_map[cname + '_next'] = idx + length
+            for _ in range(length):
+                self._sig_widths.append((elem_w, is_signed))
+            idx += 2 * length
+        elif sig.is_netarray():
+            _, length = sig.width
+            self._sig_map[cname] = idx
+            for _ in range(length):
+                self._sig_widths.append((sig.width[0], is_signed))
+            idx += length
+        elif sig.is_reg():
+            self._sig_map[cname] = idx
+            self._sig_widths.append((sig.width, is_signed))
+            self._sig_map[cname + '_next'] = idx + 1
+            self._sig_widths.append((sig.width, is_signed))
+            idx += 2
+        else:
+            self._sig_map[cname] = idx
+            self._sig_widths.append((sig.width, is_signed))
+            idx += 1
+        return idx
+
+    def _assign_subscope_ids(self, prefix, sub_scope, idx):
+        """Recursively assign signal IDs for a subscope with a name prefix."""
+        # Collect constants with prefixed names
+        for sig in sub_scope.get_signals(include_tags={'constant'}):
+            if sig in sub_scope.constants:
+                self._const_map[f'{prefix}_{sig.name}'] = sub_scope.constants[sig]
+
+        signals = sub_scope.get_signals(
+            include_tags={'reg', 'net', 'regarray', 'netarray'},
+            exclude_tags={'input', 'output'},
+        )
+        rom_signals = sub_scope.get_signals(include_tags={'rom'})
+        all_signals = list(signals) + [s for s in rom_signals if s.name not in {sig.name for sig in signals}]
+        for sig in all_signals:
+            if sig.is_constant():
+                if sig in sub_scope.constants:
+                    self._const_map[f'{prefix}_{sig.name}'] = sub_scope.constants[sig]
+                continue
+            idx = self._assign_one_prefixed(prefix, sig, idx)
+
+        port_signals = sub_scope.get_signals(include_tags={'input', 'output'})
+        for sig in port_signals:
+            if sig.is_constant() or sig.is_rom():
+                continue
+            prefixed = f'{prefix}_{_c_safe_name(sig.name)}'
+            if prefixed not in self._sig_map:
+                idx = self._assign_one_prefixed(prefix, sig, idx)
+
+        # Recurse into nested subscopes
+        for nested_sig, nested_scope in sub_scope.subscopes.items():
+            nested_prefix = f'{prefix}_{_c_safe_name(nested_sig.name)}'
+            idx = self._assign_subscope_ids(nested_prefix, nested_scope, idx)
+
+        return idx
+
+    def _assign_one_prefixed(self, prefix, sig, idx):
+        """Assign buffer slots for a signal with a name prefix."""
+        is_signed = sig.is_int()
+        cname = f'{prefix}_{_c_safe_name(sig.name)}'
+        # Map both the prefixed raw name and the c-safe name
+        raw_prefixed = f'{prefix}_{sig.name}'
+        self._name_to_cname[raw_prefixed] = cname
         if sig.is_regarray():
             elem_w, length = sig.width
             self._sig_map[cname] = idx
@@ -136,12 +209,25 @@ class AHDLToCTranspiler(AHDLVisitor):
 
     def visit_AHDL_VAR(self, ahdl):
         sig = ahdl.vars[-1]
-        name = sig.name
-        if name in self._func_param_map:
-            return self._func_param_map[name]
-        if name in self._const_map:
-            return str(self._const_map[name])
-        cname = self._name_to_cname.get(name, _c_safe_name(name))
+        raw_name = sig.name
+
+        # Check func_param_map first (leaf name only)
+        if raw_name in self._func_param_map:
+            return self._func_param_map[raw_name]
+
+        # Build hierarchical name for multi-level vars
+        if len(ahdl.vars) > 1:
+            hdl_name = '_'.join(s.name for s in ahdl.vars)
+        else:
+            hdl_name = raw_name
+
+        # Check constant map with hierarchical name
+        if hdl_name in self._const_map:
+            return str(self._const_map[hdl_name])
+        if raw_name in self._const_map:
+            return str(self._const_map[raw_name])
+
+        cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
         if ahdl.ctx == Ctx.STORE and sig.is_reg():
             return f's[S_{cname}_next]'
         return f's[S_{cname}]'
@@ -174,9 +260,14 @@ class AHDLToCTranspiler(AHDLVisitor):
         return self.visit_AHDL_VAR(ahdl)
 
     def visit_AHDL_SUBSCRIPT(self, ahdl):
-        sig = ahdl.memvar.vars[-1]
-        cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
+        # Build hierarchical name from memvar.vars
+        if len(ahdl.memvar.vars) > 1:
+            hdl_name = '_'.join(s.name for s in ahdl.memvar.vars)
+        else:
+            hdl_name = ahdl.memvar.vars[-1].name
+        cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
         offset = self.visit(ahdl.offset)
+        sig = ahdl.memvar.vars[-1]
         if ahdl.ctx == Ctx.STORE and (sig.is_reg() or sig.is_regarray()):
             return f's[S_{cname}_next + {offset}]'
         return f's[S_{cname} + {offset}]'
@@ -203,9 +294,15 @@ class AHDLToCTranspiler(AHDLVisitor):
         """Return the C-safe signal name from a dst node."""
         from polyphony.compiler.ahdl.ahdl import AHDL_SUBSCRIPT
         if isinstance(dst, AHDL_SUBSCRIPT):
-            raw = dst.memvar.vars[-1].name
+            if len(dst.memvar.vars) > 1:
+                raw = '_'.join(s.name for s in dst.memvar.vars)
+            else:
+                raw = dst.memvar.vars[-1].name
         else:
-            raw = dst.vars[-1].name
+            if len(dst.vars) > 1:
+                raw = '_'.join(s.name for s in dst.vars)
+            else:
+                raw = dst.vars[-1].name
         return self._name_to_cname.get(raw, _c_safe_name(raw))
 
     def visit_AHDL_MOVE(self, ahdl):
@@ -374,23 +471,31 @@ class AHDLToCTranspiler(AHDLVisitor):
     def _emit_update_regs(self, hdlscope):
         lines = []
         seen = set()
+        self._emit_update_regs_for_scope(hdlscope, '', lines, seen)
+        return lines
+
+    def _emit_update_regs_for_scope(self, hdlscope, prefix, lines, seen):
         signals = hdlscope.get_signals(
             include_tags={'reg', 'net', 'regarray', 'netarray'},
             exclude_tags={'input', 'output'},
         )
         port_signals = hdlscope.get_signals(include_tags={'input', 'output'})
         for sig in list(signals) + list(port_signals):
-            if sig.name in seen:
+            raw = f'{prefix}{sig.name}' if prefix else sig.name
+            if raw in seen:
                 continue
-            seen.add(sig.name)
-            cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
+            seen.add(raw)
+            cname = self._name_to_cname.get(raw, _c_safe_name(raw))
             if sig.is_reg():
                 lines.append(f'    s[S_{cname}] = s[S_{cname}_next];')
             elif sig.is_regarray():
                 length = sig.width[1]
                 lines.append(f'    for (int i = 0; i < {length}; i++)')
                 lines.append(f'        s[S_{cname} + i] = s[S_{cname}_next + i];')
-        return lines
+        # Recurse into subscopes
+        for sub_sig, sub_scope in hdlscope.subscopes.items():
+            sub_prefix = f'{prefix}{_c_safe_name(sub_sig.name)}_'
+            self._emit_update_regs_for_scope(sub_scope, sub_prefix, lines, seen)
 
     def _emit_function_def(self, func):
         out_name = _c_safe_name(func.output.vars[-1].name)

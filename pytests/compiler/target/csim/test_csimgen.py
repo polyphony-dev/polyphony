@@ -545,3 +545,177 @@ def test_generate_update_regs_has_all_regs():
 
     assert 's[S_fsm_state] = s[S_fsm_state_next]' in c_source
     assert 's[S_result] = s[S_result_next]' in c_source
+
+
+# --- Sub-scope flattening tests ---
+
+
+def test_assign_signal_ids_with_subscope():
+    """Subscope signals should be allocated with prefixed names."""
+    clk = _make_signal('clk', 1, {'net', 'input'})
+    fsm = _make_signal('fsm_state', 32, {'reg'})
+    # subscope marker signal
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    # subscope's own signals
+    din = _make_signal('din', 32, {'reg'})
+    count = _make_signal('count', 8, {'reg'})
+
+    sub_scope = _make_hdlscope([din, count])
+    top_scope = _make_hdlscope([clk, fsm, sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    sig_map, port_map, sig_count = tp.assign_signal_ids(top_scope)
+
+    # Top-level signals should exist
+    assert 'fsm_state' in sig_map
+    assert 'fsm_state_next' in sig_map
+
+    # Sub-scope signals should be prefixed with subscope name
+    assert 'ch_din' in sig_map
+    assert 'ch_din_next' in sig_map
+    assert 'ch_count' in sig_map
+    assert 'ch_count_next' in sig_map
+
+    # The subscope marker itself should NOT be in the buffer
+    assert 'ch' not in sig_map
+
+    # Port signals from top scope
+    assert 'clk' in port_map
+
+
+def test_assign_signal_ids_subscope_constants():
+    """Constants in subscopes should be added to _const_map with prefixed names."""
+    fsm = _make_signal('fsm_state', 32, {'reg'})
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    state_const = _make_signal('STATE_IDLE', 32, {'constant'})
+
+    sub_scope = _make_hdlscope([state_const])
+    sub_scope.constants = {state_const: 0}
+    top_scope = _make_hdlscope([fsm, sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(top_scope)
+
+    assert 'ch_STATE_IDLE' in tp._const_map
+    assert tp._const_map['ch_STATE_IDLE'] == 0
+
+
+def test_visit_var_subscope_load():
+    """AHDL_VAR with multi-level vars should use prefixed name."""
+    fsm = _make_signal('fsm_state', 32, {'reg'})
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    din = _make_signal('din', 32, {'reg'})
+
+    sub_scope = _make_hdlscope([din])
+    top_scope = _make_hdlscope([fsm, sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(top_scope)
+
+    # Multi-level var: (ch, din) -> ch_din
+    var = AHDL_VAR((sub_sig, din), Ctx.LOAD)
+    result = tp.visit(var)
+    assert result == 's[S_ch_din]'
+
+
+def test_visit_var_subscope_store():
+    """AHDL_VAR with multi-level vars in STORE context should use _next suffix."""
+    fsm = _make_signal('fsm_state', 32, {'reg'})
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    din = _make_signal('din', 32, {'reg'})
+
+    sub_scope = _make_hdlscope([din])
+    top_scope = _make_hdlscope([fsm, sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(top_scope)
+
+    var = AHDL_VAR((sub_sig, din), Ctx.STORE)
+    result = tp.visit(var)
+    assert result == 's[S_ch_din_next]'
+
+
+def test_visit_subscript_subscope():
+    """AHDL_SUBSCRIPT with multi-level memvar should use prefixed name."""
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    mem = _make_signal('buf', (32, 8), {'regarray'})
+
+    sub_scope = _make_hdlscope([mem])
+    top_scope = _make_hdlscope([sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(top_scope)
+
+    memvar = AHDL_MEMVAR((sub_sig, mem), Ctx.LOAD)
+    node = AHDL_SUBSCRIPT(memvar, AHDL_CONST(3))
+    result = tp.visit(node)
+    assert result == 's[S_ch_buf + 3]'
+
+
+def test_visit_subscript_subscope_store():
+    """AHDL_SUBSCRIPT with multi-level memvar in STORE ctx."""
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    mem = _make_signal('buf', (32, 8), {'regarray'})
+
+    sub_scope = _make_hdlscope([mem])
+    top_scope = _make_hdlscope([sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(top_scope)
+
+    memvar = AHDL_MEMVAR((sub_sig, mem), Ctx.STORE)
+    node = AHDL_SUBSCRIPT(memvar, AHDL_CONST(3))
+    result = tp.visit(node)
+    assert result == 's[S_ch_buf_next + 3]'
+
+
+def test_sig_name_from_dst_subscope():
+    """_sig_name_from_dst should handle multi-level vars."""
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    din = _make_signal('din', 32, {'reg'})
+
+    sub_scope = _make_hdlscope([din])
+    top_scope = _make_hdlscope([sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(top_scope)
+
+    var = AHDL_VAR((sub_sig, din), Ctx.STORE)
+    name = tp._sig_name_from_dst(var)
+    assert name == 'ch_din'
+
+
+def test_emit_update_regs_includes_subscope():
+    """_emit_update_regs should include reg signals from subscopes."""
+    fsm = _make_signal('fsm_state', 32, {'reg'})
+    sub_sig = _make_signal('ch', 32, {'subscope'})
+    din = _make_signal('din', 32, {'reg'})
+    count = _make_signal('count', 8, {'reg'})
+
+    sub_scope = _make_hdlscope([din, count])
+    top_scope = _make_hdlscope([fsm, sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    tp.assign_signal_ids(top_scope)
+    lines = tp._emit_update_regs(top_scope)
+    code = '\n'.join(lines)
+
+    assert 's[S_fsm_state] = s[S_fsm_state_next]' in code
+    assert 's[S_ch_din] = s[S_ch_din_next]' in code
+    assert 's[S_ch_count] = s[S_ch_count_next]' in code
+
+
+def test_assign_signal_ids_subscope_with_hash_in_name():
+    """Signal names with '#' should be sanitized in subscope context."""
+    sub_sig = _make_signal('ch#0', 32, {'subscope'})
+    din = _make_signal('din', 32, {'reg'})
+
+    sub_scope = _make_hdlscope([din])
+    top_scope = _make_hdlscope([sub_sig], subscopes={sub_sig: sub_scope})
+
+    tp = AHDLToCTranspiler()
+    sig_map, _, _ = tp.assign_signal_ids(top_scope)
+
+    # '#' should be replaced with '_'
+    assert 'ch_0_din' in sig_map
+    assert 'ch_0_din_next' in sig_map
