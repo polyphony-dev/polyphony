@@ -1,7 +1,133 @@
 import re
+from collections import defaultdict, deque
 
-from polyphony.compiler.ahdl.ahdl import AHDL, AHDL_OP, AHDL_VAR, Ctx
+from polyphony.compiler.ahdl.ahdl import AHDL, AHDL_ASSIGN, AHDL_OP, AHDL_VAR, Ctx
 from polyphony.compiler.ahdl.ahdlvisitor import AHDLVisitor
+
+
+def toposort_decls(decls: list) -> list:
+    """Topologically sort AHDL declarations by signal dependencies.
+
+    For each AHDL_ASSIGN, the dst signal is the 'definition' and signals
+    appearing in src are 'uses'. A decl B depends on decl A if B uses a
+    signal that A defines.  Returns a list in dependency order so that
+    producers come before consumers. Cycles are broken by preserving the
+    original relative order of the cycle members.
+    """
+    if len(decls) <= 1:
+        return list(decls)
+
+    # 1. Collect def/use info per decl
+    defs: list[set[str]] = []   # defs[i] = signal names defined by decls[i]
+    uses: list[set[str]] = []   # uses[i] = signal names used by decls[i]
+    for decl in decls:
+        d, u = _collect_def_use(decl)
+        defs.append(d)
+        uses.append(u)
+
+    # 2. Build sig->decl_index map (which decl defines which signal)
+    sig_to_def: dict[str, int] = {}
+    for i, d in enumerate(defs):
+        for sig_name in d:
+            sig_to_def[sig_name] = i
+
+    # 3. Build adjacency and in-degree for Kahn's algorithm
+    n = len(decls)
+    adj: dict[int, set[int]] = defaultdict(set)
+    in_degree = [0] * n
+    for i, u in enumerate(uses):
+        for sig_name in u:
+            j = sig_to_def.get(sig_name)
+            if j is not None and j != i:
+                if i not in adj[j]:
+                    adj[j].add(i)
+                    in_degree[i] += 1
+
+    # 4. Kahn's algorithm
+    queue = deque(i for i in range(n) if in_degree[i] == 0)
+    result = []
+    while queue:
+        node = queue.popleft()
+        result.append(node)
+        for succ in sorted(adj[node]):  # sorted for determinism
+            in_degree[succ] -= 1
+            if in_degree[succ] == 0:
+                queue.append(succ)
+
+    # 5. If there are cycles, append remaining nodes in original order
+    if len(result) < n:
+        remaining = sorted(set(range(n)) - set(result))
+        result.extend(remaining)
+
+    return [decls[i] for i in result]
+
+
+def _collect_def_use(decl) -> tuple[set[str], set[str]]:
+    """Return (defined_signals, used_signals) for a single decl."""
+    from polyphony.compiler.ahdl.ahdl import (
+        AHDL_BLOCK, AHDL_CASE, AHDL_CASE_ITEM, AHDL_COMB, AHDL_IF, AHDL_MOVE,
+    )
+    defined: set[str] = set()
+    used: set[str] = set()
+    if isinstance(decl, (AHDL_ASSIGN, AHDL_MOVE)):
+        _collect_sig_names(decl.dst, defined)
+        _collect_sig_names(decl.src, used)
+    elif isinstance(decl, AHDL_COMB):
+        for stm in decl.stms:
+            d, u = _collect_def_use(stm)
+            defined |= d
+            used |= u
+    elif isinstance(decl, AHDL_IF):
+        for cond in decl.conds:
+            if cond is not None:
+                _collect_sig_names(cond, used)
+        for block in decl.blocks:
+            d, u = _collect_def_use(block)
+            defined |= d
+            used |= u
+    elif isinstance(decl, AHDL_BLOCK):
+        for stm in decl.codes:
+            d, u = _collect_def_use(stm)
+            defined |= d
+            used |= u
+    elif isinstance(decl, AHDL_CASE):
+        _collect_sig_names(decl.sel, used)
+        for item in decl.items:
+            d, u = _collect_def_use(item)
+            defined |= d
+            used |= u
+    elif isinstance(decl, AHDL_CASE_ITEM):
+        d, u = _collect_def_use(decl.block)
+        defined |= d
+        used |= u
+    return defined, used
+
+
+def _collect_sig_names(node, names: set[str]):
+    """Recursively collect signal names from an AHDL expression tree."""
+    from polyphony.compiler.ahdl.ahdl import (
+        AHDL_CONST, AHDL_FUNCALL, AHDL_IF_EXP, AHDL_MEMVAR,
+        AHDL_SUBSCRIPT, AHDL_SYMBOL,
+    )
+    if isinstance(node, AHDL_VAR):
+        names.add(node.vars[-1].name)
+    elif isinstance(node, AHDL_SUBSCRIPT):
+        names.add(node.memvar.vars[-1].name)
+        _collect_sig_names(node.offset, names)
+    elif isinstance(node, AHDL_MEMVAR):
+        names.add(node.vars[-1].name)
+    elif isinstance(node, AHDL_OP):
+        for arg in node.args:
+            _collect_sig_names(arg, names)
+    elif isinstance(node, AHDL_IF_EXP):
+        _collect_sig_names(node.cond, names)
+        _collect_sig_names(node.lexp, names)
+        _collect_sig_names(node.rexp, names)
+    elif isinstance(node, AHDL_FUNCALL):
+        for arg in node.args:
+            _collect_sig_names(arg, names)
+    elif isinstance(node, (AHDL_CONST, AHDL_SYMBOL)):
+        pass
 
 _CSAFE_RE = re.compile(r'[^A-Za-z0-9_]')
 
@@ -488,7 +614,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         parts.append(f'    while (updated && iter < {max_iter}) {{')
         parts.append('        updated = 0;')
         self._lines = []
-        for decl in hdlscope.decls:
+        for decl in toposort_decls(hdlscope.decls):
             self.visit(decl)
         parts.extend(self._lines)
         parts.append('        iter++;')
