@@ -607,8 +607,11 @@ def test_bind_ports_replaces_io_ports():
 
     CModelEvaluator.bind_ports_to_buffer(model, buf, port_map)
 
-    # wr() should write to C buffer
+    # wr() on input port is deferred — not yet in buffer
     model.a.wr(42)
+    assert buf[2] == 0, "deferred input port should not write to buffer on wr()"
+    # flush makes it visible
+    model.a.value.flush_pending()
     assert buf[2] == 42
 
     # rd() should read from C buffer
@@ -758,7 +761,8 @@ int module_eval_decls(int64_t* s) { return 0; }
         model.result = r_port
 
         # Bind ports to buffer
-        CModelEvaluator.bind_ports_to_buffer(model, ev._buf, port_map)
+        deferred = CModelEvaluator.bind_ports_to_buffer(model, ev._buf, port_map)
+        ev._deferred_signals = deferred or []
 
         # Simulate testbench: write inputs
         model.a.wr(10)
@@ -837,3 +841,32 @@ def test_bind_ports_binds_submodel_ports():
     assert sub_core.data.value.val == 1
     buf[3] = 1
     assert sub_core.valid.value.val == 1
+
+
+def test_cbuffersignal_input_port_deferred_write():
+    """Input port CBufferSignal with deferred=True does NOT write to buffer
+    immediately. The write is held in _pending and flushed by flush_pending().
+
+    This matches Python Reg's double-buffering: set() writes to next,
+    update_regs copies next→val. Without this, the testbench's wr() would
+    overwrite the current value before the C evaluator reads it.
+    """
+    import ctypes
+    from polyphony.simulator import CBufferSignal
+
+    buf = (ctypes.c_int64 * 4)()
+    sig = CBufferSignal(buf, idx=0, width=32, is_signed=True, deferred=True)
+
+    # Initial buffer value
+    buf[0] = 100
+
+    # set() should NOT change the buffer immediately
+    sig.set(42)
+    assert buf[0] == 100, "deferred CBufferSignal should not write to buffer on set()"
+
+    # val should still read the buffer (current value)
+    assert sig.val == 100
+
+    # flush_pending() should write the pending value
+    sig.flush_pending()
+    assert buf[0] == 42

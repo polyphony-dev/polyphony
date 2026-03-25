@@ -494,7 +494,9 @@ class Simulator(object):
             try:
                 hdlmodule = model.hdlmodule
                 ev = builder.build(hdlmodule)
-                CModelEvaluator.bind_ports_to_buffer(model, ev._buf, ev._port_map, ev._sig_map)
+                deferred = CModelEvaluator.bind_ports_to_buffer(
+                    model, ev._buf, ev._port_map, ev._sig_map)
+                ev._deferred_signals = deferred or []
                 evaluators.append(ev)
             except Exception as e:
                 warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
@@ -1195,18 +1197,28 @@ class CBufferSignal:
     sync required.  Instances replace model port attributes when using
     CModelEvaluator so that testbench port.wr()/rd() and _period()'s
     model.clk.val writes hit the C buffer automatically.
+
+    When deferred=True, set() writes to a pending value instead of the
+    buffer.  flush_pending() copies the pending value to the buffer.
+    This matches Python Reg's double-buffering (set→next, update→val)
+    for input ports where the HDL signal is a Net but the Python model
+    uses a Reg.
     """
 
-    __slots__ = ('_buf', '_idx', 'width', 'is_signed', 'signal', 'prev_val')
+    __slots__ = ('_buf', '_idx', 'width', 'is_signed', 'signal', 'prev_val',
+                 '_deferred', '_pending', '_has_pending')
 
     def __init__(self, buf, idx: int, width: int, is_signed: bool = False,
-                 signal=None):
+                 signal=None, deferred: bool = False):
         self._buf = buf
         self._idx = idx
         self.width = width
         self.is_signed = is_signed
         self.signal = signal
         self.prev_val = 0
+        self._deferred = deferred
+        self._pending = 0
+        self._has_pending = False
 
     @property
     def val(self):
@@ -1239,8 +1251,19 @@ class CBufferSignal:
                 val = twos_comp(val, self.width)
         else:
             val = 0
-        self.prev_val = self._buf[self._idx]
-        self._buf[self._idx] = val
+        if self._deferred:
+            self._pending = val
+            self._has_pending = True
+        else:
+            self.prev_val = self._buf[self._idx]
+            self._buf[self._idx] = val
+
+    def flush_pending(self):
+        """Copy pending value to buffer. Called by CModelEvaluator.eval()."""
+        if self._has_pending:
+            self.prev_val = self._buf[self._idx]
+            self._buf[self._idx] = self._pending
+            self._has_pending = False
 
     def get(self):
         return self._buf[self._idx]
@@ -1266,6 +1289,7 @@ class CModelEvaluator:
         self._port_map = port_map
         self._sig_map = sig_map or port_map
         self._sig_count = sig_count
+        self._deferred_signals: list[CBufferSignal] = []
 
         ptr_type = ctypes.POINTER(ctypes.c_int64)
         self._lib.module_eval_tasks.argtypes = [ptr_type]
@@ -1276,6 +1300,8 @@ class CModelEvaluator:
         self._lib.module_eval_decls.restype = ctypes.c_int
 
     def eval(self):
+        for sig in self._deferred_signals:
+            sig.flush_pending()
         self._lib.module_eval_tasks(self._buf)
         self._lib.module_update_regs(self._buf)
         rc = self._lib.module_eval_decls(self._buf)
@@ -1303,15 +1329,19 @@ class CModelEvaluator:
         Also walks sub-models (Handshake, Channel, etc.) and binds their
         Port attributes using sig_map with prefixed names (e.g. 'c_data').
         """
+        deferred_list = []
         for name, idx in port_map.items():
             attr = getattr(model, name, None)
             if attr is None:
                 continue
             if isinstance(attr, Port):
                 old = attr.value
+                is_input = old.signal.is_input() if old.signal else False
                 csig = CBufferSignal(buf, idx, old.width, old.sign,
-                                     signal=old.signal)
+                                     signal=old.signal, deferred=is_input)
                 attr.value = csig  # bypass _set_value assert
+                if is_input:
+                    deferred_list.append(csig)
             elif isinstance(attr, (Reg, Net)):
                 csig = CBufferSignal(buf, idx, attr.width, attr.sign,
                                      signal=attr.signal)
@@ -1319,16 +1349,18 @@ class CModelEvaluator:
 
         # Bind sub-model ports (Handshake, Channel, etc.) via sig_map
         if sig_map is None:
-            return
+            return deferred_list
         for attr_name in list(vars(model).keys()):
             attr = getattr(model, attr_name)
             if not isinstance(attr, Model):
                 continue
             sub_core = super(Model, attr).__getattribute__("__model")
-            CModelEvaluator._bind_submodel(sub_core, buf, sig_map, attr_name)
+            CModelEvaluator._bind_submodel(sub_core, buf, sig_map, attr_name,
+                                           deferred_list)
+        return deferred_list
 
     @staticmethod
-    def _bind_submodel(sub_core, buf, sig_map, prefix):
+    def _bind_submodel(sub_core, buf, sig_map, prefix, deferred_list):
         """Recursively bind sub-model Port/Reg/Net to C buffer via sig_map."""
         from polyphony.compiler.target.csim.csimgen import _c_safe_name
         for attr_name in list(vars(sub_core).keys()):
@@ -1340,9 +1372,12 @@ class CModelEvaluator:
                 if sig_key in sig_map:
                     old = attr.value
                     idx = sig_map[sig_key]
+                    is_input = old.signal.is_input() if old.signal else False
                     csig = CBufferSignal(buf, idx, old.width, old.sign,
-                                         signal=old.signal)
+                                         signal=old.signal, deferred=is_input)
                     attr.value = csig
+                    if is_input:
+                        deferred_list.append(csig)
             elif isinstance(attr, (Reg, Net)):
                 if sig_key in sig_map:
                     idx = sig_map[sig_key]
@@ -1351,7 +1386,8 @@ class CModelEvaluator:
                     setattr(sub_core, attr_name, csig)
             elif isinstance(attr, Model):
                 nested_core = super(Model, attr).__getattribute__("__model")
-                CModelEvaluator._bind_submodel(nested_core, buf, sig_map, sig_key)
+                CModelEvaluator._bind_submodel(nested_core, buf, sig_map, sig_key,
+                                               deferred_list)
 
 
 class CSimulatorModelBuilder:
