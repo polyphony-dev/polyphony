@@ -172,143 +172,118 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._port_map = {}
         self._const_map = {}
         self._sig_widths = []
+        self._reg_cur_slots = 0  # number of cur slots (for memcpy in update_regs)
+
+        # Phase 0: collect constants
+        self._collect_constants(hdlscope, '')
+
+        # Phase 1: collect all signals into reg_list and net_list
+        reg_list: list[tuple[str, object]] = []  # (cname, sig)
+        net_list: list[tuple[str, object]] = []
+        port_names: list[tuple[str, str]] = []   # (raw_name, cname)
+        self._collect_signals(hdlscope, '', reg_list, net_list, port_names)
+
+        # Phase 2: assign cur slots for regs (contiguous)
         idx = 0
+        for cname, sig in reg_list:
+            slots = self._reg_cur_slot_count(sig)
+            self._sig_map[cname] = idx
+            is_signed = sig.is_int()
+            w = sig.width[0] if sig.is_regarray() else sig.width
+            for _ in range(slots):
+                self._sig_widths.append((w, is_signed))
+            idx += slots
+        reg_cur_total = idx
 
-        # Collect constants (state labels, etc.) into _const_map
-        for sig in hdlscope.get_signals(include_tags={'constant'}):
-            if sig in hdlscope.constants:
-                self._const_map[sig.name] = hdlscope.constants[sig]
+        # Phase 3: assign next slots for regs (contiguous, right after cur)
+        for cname, sig in reg_list:
+            slots = self._reg_cur_slot_count(sig)
+            self._sig_map[cname + '_next'] = idx
+            is_signed = sig.is_int()
+            w = sig.width[0] if sig.is_regarray() else sig.width
+            for _ in range(slots):
+                self._sig_widths.append((w, is_signed))
+            idx += slots
 
-        signals = hdlscope.get_signals(
-            include_tags={'reg', 'net', 'regarray', 'netarray'},
-            exclude_tags={'input', 'output'},
-        )
-        # Also include ROM signals (may only have 'rom' tag, not regarray/netarray)
-        rom_signals = hdlscope.get_signals(include_tags={'rom'})
-        all_signals = list(signals) + [s for s in rom_signals if s.name not in {sig.name for sig in signals}]
-        for sig in all_signals:
-            if sig.is_constant():
-                if sig in hdlscope.constants:
-                    self._const_map[sig.name] = hdlscope.constants[sig]
-                continue
-            idx = self._assign_one(sig, idx)
+        # Phase 4: assign slots for nets
+        for cname, sig in net_list:
+            self._sig_map[cname] = idx
+            is_signed = sig.is_int()
+            if sig.is_netarray():
+                _, length = sig.width
+                for _ in range(length):
+                    self._sig_widths.append((sig.width[0], is_signed))
+                idx += length
+            else:
+                self._sig_widths.append((sig.width, is_signed))
+                idx += 1
 
-        port_signals = hdlscope.get_signals(include_tags={'input', 'output'})
-        for sig in port_signals:
-            if sig.is_constant() or sig.is_rom():
-                continue
-            cname = self._name_to_cname.get(sig.name)
-            if cname is None:
-                idx = self._assign_one(sig, idx)
-                cname = self._name_to_cname[sig.name]
-            self._port_map[sig.name] = self._sig_map[cname]
-
-        # Recurse into subscopes
-        for sub_sig, sub_scope in hdlscope.subscopes.items():
-            idx = self._assign_subscope_ids(_c_safe_name(sub_sig.name), sub_scope, idx)
+        # Set port_map
+        for raw_name, cname in port_names:
+            self._port_map[raw_name] = self._sig_map[cname]
 
         self._sig_count = idx
+        self._reg_cur_slots = reg_cur_total
         return dict(self._sig_map), dict(self._port_map), self._sig_count
 
-    def _assign_one(self, sig, idx):
-        is_signed = sig.is_int()
-        cname = _c_safe_name(sig.name)
-        self._name_to_cname[sig.name] = cname
-        if sig.is_regarray():
-            elem_w, length = sig.width
-            self._sig_map[cname] = idx
-            for _ in range(length):
-                self._sig_widths.append((elem_w, is_signed))
-            self._sig_map[cname + '_next'] = idx + length
-            for _ in range(length):
-                self._sig_widths.append((elem_w, is_signed))
-            idx += 2 * length
-        elif sig.is_netarray():
-            _, length = sig.width
-            self._sig_map[cname] = idx
-            for _ in range(length):
-                self._sig_widths.append((sig.width[0], is_signed))
-            idx += length
-        elif sig.is_reg():
-            self._sig_map[cname] = idx
-            self._sig_widths.append((sig.width, is_signed))
-            self._sig_map[cname + '_next'] = idx + 1
-            self._sig_widths.append((sig.width, is_signed))
-            idx += 2
-        else:
-            self._sig_map[cname] = idx
-            self._sig_widths.append((sig.width, is_signed))
-            idx += 1
-        return idx
+    def _collect_constants(self, scope, prefix):
+        for sig in scope.get_signals(include_tags={'constant'}):
+            if sig in scope.constants:
+                key = f'{prefix}{sig.name}' if prefix else sig.name
+                self._const_map[key] = scope.constants[sig]
+        for sub_sig, sub_scope in scope.subscopes.items():
+            sub_prefix = f'{prefix}{_c_safe_name(sub_sig.name)}_'
+            self._collect_constants(sub_scope, sub_prefix)
 
-    def _assign_subscope_ids(self, prefix, sub_scope, idx):
-        """Recursively assign signal IDs for a subscope with a name prefix."""
-        # Collect constants with prefixed names
-        for sig in sub_scope.get_signals(include_tags={'constant'}):
-            if sig in sub_scope.constants:
-                self._const_map[f'{prefix}_{sig.name}'] = sub_scope.constants[sig]
-
-        signals = sub_scope.get_signals(
+    def _collect_signals(self, scope, prefix, reg_list, net_list, port_names):
+        """Collect all signals from scope (and subscopes) into reg/net lists."""
+        signals = scope.get_signals(
             include_tags={'reg', 'net', 'regarray', 'netarray'},
             exclude_tags={'input', 'output'},
         )
-        rom_signals = sub_scope.get_signals(include_tags={'rom'})
-        all_signals = list(signals) + [s for s in rom_signals if s.name not in {sig.name for sig in signals}]
+        rom_signals = scope.get_signals(include_tags={'rom'})
+        all_signals = list(signals) + [
+            s for s in rom_signals if s.name not in {sig.name for sig in signals}
+        ]
         for sig in all_signals:
             if sig.is_constant():
-                if sig in sub_scope.constants:
-                    self._const_map[f'{prefix}_{sig.name}'] = sub_scope.constants[sig]
+                if sig in scope.constants:
+                    key = f'{prefix}{sig.name}' if prefix else sig.name
+                    self._const_map[key] = scope.constants[sig]
                 continue
-            idx = self._assign_one_prefixed(prefix, sig, idx)
+            cname = f'{prefix}{_c_safe_name(sig.name)}' if prefix else _c_safe_name(sig.name)
+            raw = f'{prefix}{sig.name}' if prefix else sig.name
+            self._name_to_cname[raw] = cname
+            if sig.is_reg() or sig.is_regarray():
+                reg_list.append((cname, sig))
+            else:
+                net_list.append((cname, sig))
 
-        port_signals = sub_scope.get_signals(include_tags={'input', 'output'})
+        # Ports
+        port_signals = scope.get_signals(include_tags={'input', 'output'})
         for sig in port_signals:
             if sig.is_constant() or sig.is_rom():
                 continue
-            prefixed = f'{prefix}_{_c_safe_name(sig.name)}'
-            if prefixed not in self._sig_map:
-                idx = self._assign_one_prefixed(prefix, sig, idx)
+            cname = f'{prefix}{_c_safe_name(sig.name)}' if prefix else _c_safe_name(sig.name)
+            raw = f'{prefix}{sig.name}' if prefix else sig.name
+            if cname not in self._name_to_cname.values():
+                self._name_to_cname[raw] = cname
+                if sig.is_reg() or sig.is_regarray():
+                    reg_list.append((cname, sig))
+                else:
+                    net_list.append((cname, sig))
+            port_names.append((sig.name, cname))
 
-        # Recurse into nested subscopes
-        for nested_sig, nested_scope in sub_scope.subscopes.items():
-            nested_prefix = f'{prefix}_{_c_safe_name(nested_sig.name)}'
-            idx = self._assign_subscope_ids(nested_prefix, nested_scope, idx)
+        # Recurse into subscopes
+        for sub_sig, sub_scope in scope.subscopes.items():
+            sub_prefix = f'{prefix}{_c_safe_name(sub_sig.name)}_'
+            self._collect_signals(sub_scope, sub_prefix, reg_list, net_list, port_names)
 
-        return idx
-
-    def _assign_one_prefixed(self, prefix, sig, idx):
-        """Assign buffer slots for a signal with a name prefix."""
-        is_signed = sig.is_int()
-        cname = f'{prefix}_{_c_safe_name(sig.name)}'
-        # Map both the prefixed raw name and the c-safe name
-        raw_prefixed = f'{prefix}_{sig.name}'
-        self._name_to_cname[raw_prefixed] = cname
+    @staticmethod
+    def _reg_cur_slot_count(sig) -> int:
         if sig.is_regarray():
-            elem_w, length = sig.width
-            self._sig_map[cname] = idx
-            for _ in range(length):
-                self._sig_widths.append((elem_w, is_signed))
-            self._sig_map[cname + '_next'] = idx + length
-            for _ in range(length):
-                self._sig_widths.append((elem_w, is_signed))
-            idx += 2 * length
-        elif sig.is_netarray():
-            _, length = sig.width
-            self._sig_map[cname] = idx
-            for _ in range(length):
-                self._sig_widths.append((sig.width[0], is_signed))
-            idx += length
-        elif sig.is_reg():
-            self._sig_map[cname] = idx
-            self._sig_widths.append((sig.width, is_signed))
-            self._sig_map[cname + '_next'] = idx + 1
-            self._sig_widths.append((sig.width, is_signed))
-            idx += 2
-        else:
-            self._sig_map[cname] = idx
-            self._sig_widths.append((sig.width, is_signed))
-            idx += 1
-        return idx
+            return sig.width[1]
+        return 1
 
     def emit_signal_defines(self):
         lines = []
@@ -581,7 +556,8 @@ class AHDLToCTranspiler(AHDLVisitor):
         sig_map, port_map, sig_count = self.assign_signal_ids(hdlscope)
 
         parts = []
-        parts.append('#include "runtime_template.h"\n')
+        parts.append('#include "runtime_template.h"')
+        parts.append('#include <string.h>\n')
         parts.append(self.emit_signal_defines())
         parts.append('')
 
@@ -627,32 +603,10 @@ class AHDLToCTranspiler(AHDLVisitor):
 
     def _emit_update_regs(self, hdlscope):
         lines = []
-        seen = set()
-        self._emit_update_regs_for_scope(hdlscope, '', lines, seen)
+        n = self._reg_cur_slots
+        if n > 0:
+            lines.append(f'    memcpy(s, s + {n}, {n} * sizeof(int64_t));')
         return lines
-
-    def _emit_update_regs_for_scope(self, hdlscope, prefix, lines, seen):
-        signals = hdlscope.get_signals(
-            include_tags={'reg', 'net', 'regarray', 'netarray'},
-            exclude_tags={'input', 'output'},
-        )
-        port_signals = hdlscope.get_signals(include_tags={'input', 'output'})
-        for sig in list(signals) + list(port_signals):
-            raw = f'{prefix}{sig.name}' if prefix else sig.name
-            if raw in seen:
-                continue
-            seen.add(raw)
-            cname = self._name_to_cname.get(raw, _c_safe_name(raw))
-            if sig.is_reg():
-                lines.append(f'    s[S_{cname}] = s[S_{cname}_next];')
-            elif sig.is_regarray():
-                length = sig.width[1]
-                lines.append(f'    for (int i = 0; i < {length}; i++)')
-                lines.append(f'        s[S_{cname} + i] = s[S_{cname}_next + i];')
-        # Recurse into subscopes
-        for sub_sig, sub_scope in hdlscope.subscopes.items():
-            sub_prefix = f'{prefix}{_c_safe_name(sub_sig.name)}_'
-            self._emit_update_regs_for_scope(sub_scope, sub_prefix, lines, seen)
 
     def _emit_function_def(self, func):
         out_name = _c_safe_name(func.output.vars[-1].name)

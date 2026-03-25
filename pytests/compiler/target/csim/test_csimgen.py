@@ -83,6 +83,60 @@ def test_assign_signal_ids_scalar_reg_and_net():
     assert port_map == {}
 
 
+def test_separated_layout_two_regs():
+    """Two regs: cur slots contiguous, then next slots contiguous."""
+    r0 = _make_signal('a', 8, {'reg'})
+    r1 = _make_signal('b', 8, {'reg'})
+    net = _make_signal('w', 8, {'net'})
+    hdlscope = _make_hdlscope([r0, r1, net])
+    tp = AHDLToCTranspiler()
+    sig_map, _, sig_count = tp.assign_signal_ids(hdlscope)
+    # cur region: a=0, b=1
+    assert sig_map['a'] == 0
+    assert sig_map['b'] == 1
+    # next region: a_next=2, b_next=3
+    assert sig_map['a_next'] == 2
+    assert sig_map['b_next'] == 3
+    # net after next region
+    assert sig_map['w'] == 4
+    assert sig_count == 5
+
+
+def test_separated_layout_regarray():
+    """Regarray(4): cur[0..3] contiguous, then next[0..3] contiguous."""
+    arr = _make_signal('mem', (32, 4), {'regarray'})
+    net = _make_signal('x', 8, {'net'})
+    hdlscope = _make_hdlscope([arr, net])
+    tp = AHDLToCTranspiler()
+    sig_map, _, sig_count = tp.assign_signal_ids(hdlscope)
+    # cur region: mem=0..3
+    assert sig_map['mem'] == 0
+    # next region: mem_next=4..7
+    assert sig_map['mem_next'] == 4
+    # net after
+    assert sig_map['x'] == 8
+    assert sig_count == 9
+
+
+def test_separated_layout_mixed_reg_regarray():
+    """Mix of reg and regarray: all cur first, then all next."""
+    r = _make_signal('s', 8, {'reg'})
+    arr = _make_signal('m', (16, 3), {'regarray'})
+    net = _make_signal('w', 8, {'net'})
+    hdlscope = _make_hdlscope([r, arr, net])
+    tp = AHDLToCTranspiler()
+    sig_map, _, sig_count = tp.assign_signal_ids(hdlscope)
+    # cur region: s=0, m=1..3 (total 4 cur slots)
+    assert sig_map['s'] == 0
+    assert sig_map['m'] == 1
+    # next region starts at 4: s_next=4, m_next=5..7
+    assert sig_map['s_next'] == 4
+    assert sig_map['m_next'] == 5
+    # net after next
+    assert sig_map['w'] == 8
+    assert sig_count == 9
+
+
 def test_assign_signal_ids_with_ports():
     in_sig = _make_signal('a', 32, {'net', 'input'})
     out_sig = _make_signal('result', 32, {'reg', 'output'})
@@ -538,13 +592,16 @@ def test_generate_produces_compilable_structure():
     assert sig_count > 0
 
 
-def test_generate_update_regs_has_all_regs():
+def test_generate_update_regs_uses_memcpy():
+    """update_regs should use a single memcpy instead of per-signal copy."""
     scope = _make_simple_hdlscope()
     tp = AHDLToCTranspiler()
     c_source, _, _, _ = tp.generate(scope)
 
-    assert 's[S_fsm_state] = s[S_fsm_state_next]' in c_source
-    assert 's[S_result] = s[S_result_next]' in c_source
+    # Should contain memcpy, not per-signal copies
+    assert 'memcpy' in c_source
+    # Should NOT contain per-signal copies
+    assert 's[S_fsm_state] = s[S_fsm_state_next]' not in c_source
 
 
 # --- Sub-scope flattening tests ---
@@ -686,7 +743,7 @@ def test_sig_name_from_dst_subscope():
 
 
 def test_emit_update_regs_includes_subscope():
-    """_emit_update_regs should include reg signals from subscopes."""
+    """_emit_update_regs should use memcpy covering all regs including subscopes."""
     fsm = _make_signal('fsm_state', 32, {'reg'})
     sub_sig = _make_signal('ch', 32, {'subscope'})
     din = _make_signal('din', 32, {'reg'})
@@ -700,9 +757,8 @@ def test_emit_update_regs_includes_subscope():
     lines = tp._emit_update_regs(top_scope)
     code = '\n'.join(lines)
 
-    assert 's[S_fsm_state] = s[S_fsm_state_next]' in code
-    assert 's[S_ch_din] = s[S_ch_din_next]' in code
-    assert 's[S_ch_count] = s[S_ch_count_next]' in code
+    # 3 regs total → memcpy of 3 slots
+    assert 'memcpy(s, s + 3, 3 * sizeof(int64_t))' in code
 
 
 def test_assign_signal_ids_subscope_with_hash_in_name():
