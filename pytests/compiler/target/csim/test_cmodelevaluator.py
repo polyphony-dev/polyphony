@@ -494,3 +494,46 @@ def test_e2e_transpile_expr01():
         env.destroy()
         if output_dir and os.path.isdir(output_dir):
             shutil.rmtree(output_dir, ignore_errors=True)
+
+
+def test_cbuffersignal_val_property():
+    """CBufferSignal.val reads/writes ctypes buffer directly."""
+    import ctypes
+    from polyphony.simulator import CBufferSignal
+
+    buf = (ctypes.c_int64 * 4)()
+    sig = CBufferSignal(buf, idx=1, width=32, is_signed=False)
+    assert sig.val == 0
+    sig.val = 42
+    assert sig.val == 42
+    assert buf[1] == 42
+    # Direct buffer write is visible through .val
+    buf[1] = 99
+    assert sig.val == 99
+
+
+def test_cbuffersignal_set_get():
+    """CBufferSignal.set() applies mask, .get() returns raw value."""
+    import ctypes
+    from polyphony.simulator import CBufferSignal
+
+    buf = (ctypes.c_int64 * 4)()
+    sig = CBufferSignal(buf, idx=0, width=8, is_signed=False)
+    sig.set(0x1FF)  # 9 bits -> masked to 8 bits
+    assert sig.get() == 0xFF
+    assert buf[0] == 0xFF
+
+
+def test_cbuffersignal_toInteger():
+    """CBufferSignal.toInteger() returns Integer with correct width/sign."""
+    import ctypes
+    from polyphony.simulator import CBufferSignal, Integer
+
+    buf = (ctypes.c_int64 * 4)()
+    sig = CBufferSignal(buf, idx=0, width=16, is_signed=True)
+    buf[0] = 42
+    result = sig.toInteger()
+    assert isinstance(result, Integer)
+    assert result.val == 42
+    assert result.width == 16
+    assert result.sign is True

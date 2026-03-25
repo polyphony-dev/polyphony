@@ -1185,6 +1185,71 @@ class SimulationModelBuilder(object):
             setattr(model, fn.output.hdl_name, Net(0, fn.output.sig.width[0], fn.output.sig))
 
 
+class CBufferSignal:
+    """Reg/Net compatible signal backed by a ctypes int64_t buffer slot.
+
+    Reads and writes go directly to the shared C buffer — no per-cycle
+    sync required.  Instances replace model port attributes when using
+    CModelEvaluator so that testbench port.wr()/rd() and _period()'s
+    model.clk.val writes hit the C buffer automatically.
+    """
+
+    __slots__ = ('_buf', '_idx', 'width', 'is_signed', 'signal', 'prev_val')
+
+    def __init__(self, buf, idx: int, width: int, is_signed: bool = False,
+                 signal=None):
+        self._buf = buf
+        self._idx = idx
+        self.width = width
+        self.is_signed = is_signed
+        self.signal = signal
+        self.prev_val = 0
+
+    @property
+    def val(self):
+        return self._buf[self._idx]
+
+    @val.setter
+    def val(self, v):
+        self.prev_val = self._buf[self._idx]
+        self._buf[self._idx] = int(v) if isinstance(v, int) else 0
+
+    @property
+    def sign(self):
+        return self.is_signed
+
+    @property
+    def next(self):
+        return self._buf[self._idx]
+
+    @next.setter
+    def next(self, v):
+        """Compatibility with Reg.next — C handles double-buffering,
+        so just write to cur slot."""
+        self._buf[self._idx] = int(v) if isinstance(v, int) else 0
+
+    def set(self, v):
+        if isinstance(v, int):
+            mask = (1 << self.width) - 1
+            val = v & mask
+            if self.is_signed:
+                val = twos_comp(val, self.width)
+        else:
+            val = 0
+        self.prev_val = self._buf[self._idx]
+        self._buf[self._idx] = val
+
+    def get(self):
+        return self._buf[self._idx]
+
+    def toInteger(self):
+        return Integer(self._buf[self._idx], self.width, self.is_signed)
+
+    def update(self):
+        """No-op — C evaluator handles double-buffering."""
+        pass
+
+
 class CModelEvaluator:
     """Drop-in replacement for ModelEvaluator using compiled C via ctypes.
     Signal state lives in a flat int64_t[] buffer allocated on the Python side.
