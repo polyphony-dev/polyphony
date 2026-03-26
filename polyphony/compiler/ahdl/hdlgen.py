@@ -215,6 +215,7 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
         self._collector.process(self.hdlmodule)
         fsms = list(self.hdlmodule.fsms.values())
+        ctor_array_inits = []
         for fsm in fsms:
             if fsm.scope.is_ctor():
                 self._add_roms(self._collector.mem_vars(fsm.name))
@@ -223,7 +224,16 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                     if isinstance(stm.dst, AHDL_VAR) and stm.dst.sig.is_net():
                         assign = AHDL_ASSIGN(stm.dst, stm.src)
                         self.hdlmodule.add_static_assignment(assign, '')
+                    elif isinstance(stm.dst, AHDL_SUBSCRIPT):
+                        # Preserve array element initialization (e.g. ROM table init)
+                        ctor_array_inits.append(stm)
                 self.hdlmodule.remove_sig(fsm.state_var)
                 del self.hdlmodule.fsms[fsm.name]
             else:
                 self._process_fsm(fsm)
+        # Add ctor array initialization to the first worker FSM's reset block
+        if ctor_array_inits:
+            for fsm in self.hdlmodule.fsms.values():
+                for stm in ctor_array_inits:
+                    self.hdlmodule.add_fsm_reset_stm(fsm.name, stm)
+                break

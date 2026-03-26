@@ -3379,3 +3379,50 @@ def test_remove_dominated_branch_cleans_phi_predicate():
                             'Dead-branch condition variable cvar must be removed '
                             'from Phi predicates after dead branch elimination'
                         )
+
+
+def test_mref_containable_seq_non_constant_no_error():
+    """MRef on a containable scope's mutable list with const offset should not error.
+
+    When a class field list cannot be constant-folded (e.g. it is modified
+    at runtime), visit_MRef should leave the MRef as-is instead of raising
+    GLOBAL_VAR_MUST_BE_CONST.
+    """
+    from polyphony.compiler.common.errors import CompileError
+    src = '''
+scope top
+tags namespace
+
+scope top.C
+tags class module
+var data: list<int32>[8]
+
+scope top.C.worker
+tags function method worker
+param $self: object(top.C) { self }
+var r: int32
+
+blk1:
+mv r (mld $self.data 0)
+'''
+    setup_test()
+    parser = IrReader(src)
+    parser.parse_scope()
+    scope = env.scopes.get('top.C.worker')
+    assert scope is not None
+    # Should NOT raise CompileError: GLOBAL_VAR_MUST_BE_CONST
+    try:
+        ConstantOpt().process(scope)
+    except CompileError as e:
+        if 'constant' in str(e).lower():
+            raise AssertionError(
+                f"visit_MRef should not error on non-constant class list: {e}"
+            )
+        raise
+    # The MRef should remain as-is (not constant-folded)
+    found_mref = False
+    for blk in scope.traverse_blocks():
+        for stm in blk.stms:
+            if isinstance(stm, Move) and isinstance(stm.src, MRef):
+                found_mref = True
+    assert found_mref, "MRef on non-constant class list should survive constopt"

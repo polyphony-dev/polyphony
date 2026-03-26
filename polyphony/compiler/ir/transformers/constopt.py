@@ -631,8 +631,6 @@ class ConstantOpt(ConstantOptBase):
             array = _try_get_constant_new(qsym, self.scope)
             if array:
                 return array.items[ir.offset.value]
-            else:
-                fail(self.current_stm, Errors.GLOBAL_VAR_MUST_BE_CONST)
         return ir
 
     def visit_Temp(self, ir):
