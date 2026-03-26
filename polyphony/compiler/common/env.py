@@ -13,7 +13,6 @@ class Config(object):
     main_clock_frequency = 100000000
     reset_activation_signal = 1
     enable_pure = False
-    perfect_inlining = False
 
     def __str__(self):
         d = {}

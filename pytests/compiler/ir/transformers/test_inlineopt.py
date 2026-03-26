@@ -2051,7 +2051,7 @@ def test_inline_skips_testbench_callee():
 
 
 def test_inline_skips_testbench_to_function_module():
-    """InlineOpt skips function_module when caller is testbench (no perfect_inlining)."""
+    """InlineOpt skips function_module when caller is testbench."""
     setup_test()
     top = Scope.global_scope()
 
@@ -2077,8 +2077,6 @@ def test_inline_skips_testbench_to_function_module():
     tb.set_exit_block(tb_blk)
     tb_blk.append_stm(Move(Temp("result", Ctx.STORE), Call(Temp("fm"), args=[], kwargs={})))
     Block.set_order(tb_blk, 0)
-
-    assert not env.config.perfect_inlining
 
     InlineOpt().process_scopes([tb])
 
@@ -2134,55 +2132,6 @@ def test_inline_skips_namespace_to_method():
             if isinstance(stm, Expr) and isinstance(stm.exp, Call):
                 has_call = True
     assert has_call, "Method should not be inlined in namespace"
-
-
-def test_inline_with_perfect_inlining():
-    """InlineOpt inlines function_module into testbench when perfect_inlining is True."""
-    setup_test()
-    top = Scope.global_scope()
-
-    # function_module callee
-    callee = Scope.create(top, "fm", {"function", "function_module", "returnable"}, 0)
-    callee_x = callee.add_param_sym("x", set(), typ=Type.int())
-    callee.add_param(callee_x, None)
-    callee.add_sym("x", tags=set(), typ=Type.int())
-    callee_ret = callee.add_return_sym()
-    callee.return_type = Type.int()
-    callee_blk = Block(callee, nametag="blk1")
-    callee.set_entry_block(callee_blk)
-    callee.set_exit_block(callee_blk)
-    callee_blk.append_stm(Move(Temp("x", Ctx.STORE), Temp(callee_x.name)))
-    callee_blk.append_stm(Move(Temp(callee_ret.name, Ctx.STORE), Const(42)))
-    callee_blk.append_stm(Ret(Temp(callee_ret.name)))
-    Block.set_order(callee_blk, 0)
-    top.add_sym("fm", tags=set(), typ=Type.function(callee, Type.int(), (Type.int(),)))
-
-    # Testbench caller
-    tb = Scope.create(top, "test", {"function", "testbench"}, 0)
-    tb.add_sym("result", tags=set(), typ=Type.int())
-    tb.import_sym(top.find_sym("fm"))
-    tb.return_type = Type.none()
-    tb_blk = Block(tb, nametag="blk1")
-    tb.set_entry_block(tb_blk)
-    tb.set_exit_block(tb_blk)
-    tb_blk.append_stm(Move(Temp("result", Ctx.STORE), Call(Temp("fm"), args=[("x", Const(5))], kwargs={})))
-    Block.set_order(tb_blk, 0)
-
-    # Enable perfect inlining
-    old_val = env.config.perfect_inlining
-    env.config.perfect_inlining = True
-    try:
-        InlineOpt().process_scopes([tb])
-    finally:
-        env.config.perfect_inlining = old_val
-
-    # With perfect_inlining, function_module SHOULD be inlined into testbench
-    has_call = False
-    for blk in tb.traverse_blocks():
-        for stm in blk.stms:
-            if isinstance(stm, Move) and isinstance(stm.src, Call):
-                has_call = True
-    assert not has_call, "function_module should be inlined with perfect_inlining"
 
 
 def test_flatten_module_port_assign_non_function_arg():

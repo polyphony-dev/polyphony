@@ -553,9 +553,8 @@ class InlineOpt(object):
                 caller, callee, call_irs = leaf
                 if callee.is_testbench():
                     continue
-                if not env.config.perfect_inlining:
-                    if caller.is_testbench() and callee.is_function_module():
-                        continue
+                if caller.is_testbench() and callee.is_function_module():
+                    continue
                 if caller.is_testbench() and callee.is_ctor() and callee.parent.is_module():
                     continue
                 if caller.is_namespace() and callee.is_method():
