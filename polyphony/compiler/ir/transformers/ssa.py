@@ -150,9 +150,19 @@ class SSATransformerBase(object):
         else:
             self.usedef.add_var_use(self.scope, var, phi)
 
+    def _cached_qsyms(self, var, cache):
+        """Look up qualified_symbols with a local cache keyed by qualified_name."""
+        qname = var.qualified_name
+        result = cache.get(qname)
+        if result is None:
+            result = qualified_symbols(var, self.scope)
+            cache[qname] = result
+        return result
+
     def _rename(self):
         qcount = {}
         qstack = {}
+        qsym_cache: dict[tuple[str, ...], tuple] = {}
         using_vars = set()
         for blk in self.scope.traverse_blocks():
             for var in self.usedef.get_vars_defined_at(blk):
@@ -160,18 +170,18 @@ class SSATransformerBase(object):
             for var in self.usedef.get_vars_used_at(blk):
                 using_vars.add(var)
         for var in using_vars:
-            key = qualified_symbols(var, self.scope)
+            key = self._cached_qsyms(var, qsym_cache)
             qcount[key] = 0
             qstack[key] = [(0, None)]
 
         self.new_syms: dict[int, tuple[IrVariable, int]] = {}  # id(var) -> (var, version)
-        self._rename_rec(self.scope.entry_block, qcount, qstack)
+        self._rename_rec(self.scope.entry_block, qcount, qstack, qsym_cache)
 
         # Build rename_map: id(old_var) -> new_var with versioned name
         rename_map: dict[int, 'IrVariable'] = {}
         for var, version in self.new_syms.values():
             assert isinstance(var, IrVariable)
-            qsyms = qualified_symbols(var, self.scope)
+            qsyms = self._cached_qsyms(var, qsym_cache)
             if self._need_rename(qsyms[-1], qsyms):
                 new_name = var.name + '#' + str(version)
                 var_sym = qsyms[-1]
@@ -195,7 +205,7 @@ class SSATransformerBase(object):
         # Rebuild usedef from scratch — new var objects are now in the IR
         self.usedef = UseDefDetector().process(self.scope)
 
-    def _rename_rec(self, block, count, stack):
+    def _rename_rec(self, block, count, stack, qsym_cache):
         for stm in block.stms:
             if type(stm) is not Phi:
                 # Walk the IR tree directly to find ALL IrVariable instances by object
@@ -205,7 +215,7 @@ class SSATransformerBase(object):
                 for use in stm.find_irs(IrVariable):
                     if use.ctx not in (Ctx.LOAD, Ctx.CALL):
                         continue
-                    qsym = qualified_symbols(use, self.scope)
+                    qsym = self._cached_qsyms(use, qsym_cache)
                     key = qsym
                     if key not in stack or not stack[key]:
                         continue
@@ -219,14 +229,14 @@ class SSATransformerBase(object):
                         expr = expr_t.expr
                         vs = expr.find_irs(IrVariable)
                         for v in vs:
-                            key = qualified_symbols(v, self.scope)
+                            key = self._cached_qsyms(v, qsym_cache)
                             if all(isinstance(k, Symbol) for k in key):
                                 if self._need_rename(key[-1], key):
                                     i, _ = stack[key][-1]
                                     self._add_new_sym(v, i)
             for d in self.usedef.get_vars_defined_at(stm):
                 assert isinstance(d, IrVariable)
-                key = qualified_symbols(d, self.scope)
+                key = self._cached_qsyms(d, qsym_cache)
                 if self._need_rename(key[-1], key):
                     count[key] += 1
                 i = count[key]
@@ -242,7 +252,7 @@ class SSATransformerBase(object):
                     expr = expr_t.expr
                     vs = expr.find_irs(IrVariable)
                     for v in vs:
-                        key = qualified_symbols(v, self.scope)
+                        key = self._cached_qsyms(v, qsym_cache)
                         if all(isinstance(k, Symbol) for k in key):
                             if self._need_rename(key[-1], key):
                                 i, _ = stack[key][-1]
@@ -250,13 +260,13 @@ class SSATransformerBase(object):
         for succ in block.succs:
             phis = [phi for phi in self.phis if phi.block == succ.bid]
             for phi in phis:
-                self._add_new_phi_arg(phi, phi.var, stack, block)
+                self._add_new_phi_arg(phi, phi.var, stack, block, qsym_cache=qsym_cache)
 
         for c in self.tree.get_children_of(block):
-            self._rename_rec(c, count, stack)
+            self._rename_rec(c, count, stack, qsym_cache)
         for stm in block.stms:
             for d in self.usedef.get_vars_defined_at(stm):
-                key = qualified_symbols(d, self.scope)
+                key = self._cached_qsyms(d, qsym_cache)
                 if key in stack and stack[key]:
                     stack[key].pop()
 
@@ -268,8 +278,8 @@ class SSATransformerBase(object):
         idx = next(i for i, p in enumerate(self.phis) if p is phi)
         self.phis[idx] = new_phi
 
-    def _add_new_phi_arg(self, phi, var, stack, block, is_tail_attr=True):
-        key = qualified_symbols(var, self.scope)
+    def _add_new_phi_arg(self, phi, var, stack, block, is_tail_attr=True, qsym_cache=None):
+        key = self._cached_qsyms(var, qsym_cache) if qsym_cache is not None else qualified_symbols(var, self.scope)
         i, v = stack[key][-1]
         if is_tail_attr:
             if i > 0:
@@ -293,7 +303,7 @@ class SSATransformerBase(object):
             self._add_new_sym(var, i)
 
         if isinstance(var, Attr):
-            self._add_new_phi_arg(phi, var.exp, stack, block, is_tail_attr=False)
+            self._add_new_phi_arg(phi, var.exp, stack, block, is_tail_attr=False, qsym_cache=qsym_cache)
 
     def _need_rename(self, sym, qsym) -> bool:
         return False
