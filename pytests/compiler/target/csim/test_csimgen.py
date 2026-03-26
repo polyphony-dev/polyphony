@@ -604,6 +604,54 @@ def test_generate_update_regs_uses_memcpy():
     assert 's[S_fsm_state] = s[S_fsm_state_next]' not in c_source
 
 
+def test_generate_case_uses_symbolic_state_names():
+    """switch/case should use #define'd symbolic names instead of numeric literals."""
+    clk = _make_signal('clk', 1, {'net', 'input'})
+    rst = _make_signal('rst', 1, {'net', 'input'})
+    fsm = _make_signal('fsm_state', 3, {'reg'})
+    result = _make_signal('result', 32, {'reg', 'output'})
+    state_init = _make_signal('STATE_INIT', 3, {'constant'})
+    state_run = _make_signal('STATE_RUN', 3, {'constant'})
+
+    move_stm = AHDL_MOVE(
+        _make_var(result, Ctx.STORE),
+        AHDL_CONST(42),
+    )
+    # case STATE_INIT: ...
+    case_init = AHDL_CASE_ITEM(
+        _make_var(state_init, Ctx.LOAD),
+        AHDL_BLOCK('s0', (move_stm,)),
+    )
+    # case STATE_RUN: ...
+    case_run = AHDL_CASE_ITEM(
+        _make_var(state_run, Ctx.LOAD),
+        AHDL_BLOCK('s1', (AHDL_NOP(None),)),
+    )
+    case_stm = AHDL_CASE(_make_var(fsm), (case_init, case_run))
+    event_task = AHDL_EVENT_TASK(((clk, 'rising'),), case_stm)
+
+    scope = _make_hdlscope([clk, rst, fsm, result, state_init, state_run])
+    scope.constants = {state_init: 0, state_run: 1}
+    scope.tasks = [event_task]
+    scope.decls = []
+    scope.fsms = {}
+    scope.functions = []
+
+    tp = AHDLToCTranspiler()
+    c_source, _, _, _ = tp.generate(scope)
+
+    # Symbolic #defines should be present
+    assert '#define C_STATE_INIT' in c_source
+    assert '#define C_STATE_RUN' in c_source
+    # case labels should use symbolic names, not numbers
+    assert 'case C_STATE_INIT:' in c_source
+    assert 'case C_STATE_RUN:' in c_source
+    # case 0: / case 1: should NOT appear in the switch
+    lines = [l.strip() for l in c_source.split('\n')]
+    assert 'case 0: {' not in lines
+    assert 'case 1: {' not in lines
+
+
 # --- Sub-scope flattening tests ---
 
 

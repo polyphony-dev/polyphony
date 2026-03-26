@@ -298,6 +298,10 @@ class AHDLToCTranspiler(AHDLVisitor):
                     if length > 1:
                         defines.append((f'S_{base_name}_LEN', length))
         defines.append(('S_NUM_SIGNALS', self._sig_count))
+        # Constant defines (state labels, etc.)
+        for name, val in sorted(self._const_map.items()):
+            cname = _c_safe_name(name)
+            defines.append((f'C_{cname}', val))
         max_name_len = max(len(d[0]) for d in defines) if defines else 0
         for macro, val in defines:
             lines.append(f'#define {macro:<{max_name_len}} {val}')
@@ -322,11 +326,11 @@ class AHDLToCTranspiler(AHDLVisitor):
         else:
             hdl_name = raw_name
 
-        # Check constant map with hierarchical name
+        # Check constant map with hierarchical name — return #define'd macro name
         if hdl_name in self._const_map:
-            return str(self._const_map[hdl_name])
+            return f'C_{_c_safe_name(hdl_name)}'
         if raw_name in self._const_map:
-            return str(self._const_map[raw_name])
+            return f'C_{_c_safe_name(raw_name)}'
 
         cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
         if ahdl.ctx == Ctx.STORE and sig.is_reg():
