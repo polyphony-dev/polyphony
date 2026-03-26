@@ -10,7 +10,7 @@ import pytest
 
 def test_cmodelevaluator_eval_simple():
     """Compile a trivial C module, load it, verify eval cycle."""
-    from polyphony.simulator import CModelEvaluator
+    from polyphony.csim import CModelEvaluator
 
     c_source = '''
 #include <stdint.h>
@@ -61,7 +61,7 @@ int module_eval_decls(int64_t* s) {
 
 def test_cmodelevaluator_zero_copy():
     """Verify direct buffer access."""
-    from polyphony.simulator import CModelEvaluator
+    from polyphony.csim import CModelEvaluator
 
     c_source = '''
 #include <stdint.h>
@@ -89,7 +89,7 @@ int module_eval_decls(int64_t* s) { return 0; }
 
 def test_cmodelevaluator_get_signal():
     """Verify get_signal for internal signals."""
-    from polyphony.simulator import CModelEvaluator
+    from polyphony.csim import CModelEvaluator
 
     c_source = '''
 #include <stdint.h>
@@ -118,7 +118,7 @@ int module_eval_decls(int64_t* s) { return 0; }
 
 def test_csimulator_model_builder_compile():
     """CSimulatorModelBuilder compiles C source to .so."""
-    from polyphony.simulator import CSimulatorModelBuilder, CModelEvaluator
+    from polyphony.csim import CSimulatorModelBuilder, CModelEvaluator
     import sys
     sys.path.insert(0, os.path.dirname(__file__))
     from test_csimgen import _make_simple_hdlscope
@@ -141,7 +141,7 @@ def test_csimulator_model_builder_compile():
 
 def test_csimulator_model_builder_cache():
     """Second build uses cache (no recompile)."""
-    from polyphony.simulator import CSimulatorModelBuilder, CModelEvaluator
+    from polyphony.csim import CSimulatorModelBuilder, CModelEvaluator
     import sys
     sys.path.insert(0, os.path.dirname(__file__))
     from test_csimgen import _make_simple_hdlscope
@@ -170,7 +170,8 @@ def test_csimulator_model_builder_cache():
 
 def test_simulator_classes_exist():
     """Verify CModelEvaluator and CSimulatorModelBuilder are importable."""
-    from polyphony.simulator import CModelEvaluator, CSimulatorModelBuilder, Simulator
+    from polyphony.csim import CModelEvaluator, CSimulatorModelBuilder
+    from polyphony.simulator import Simulator
     assert CModelEvaluator is not None
     assert CSimulatorModelBuilder is not None
     assert Simulator is not None
@@ -249,9 +250,9 @@ def test_e2e_transpile_expr01():
     from polyphony.compiler.common.env import env
     from polyphony.simulator import (
         SimulationModelBuilder, ModelEvaluator,
-        CSimulatorModelBuilder, CModelEvaluator,
         Simulator, Reg, Net, Port,
     )
+    from polyphony.csim import CSimulatorModelBuilder, CModelEvaluator
 
     scopes = None
     output_dir = None
@@ -499,7 +500,7 @@ def test_e2e_transpile_expr01():
 def test_cbuffersignal_val_property():
     """CBufferSignal.val reads/writes ctypes buffer directly."""
     import ctypes
-    from polyphony.simulator import CBufferSignal
+    from polyphony.csim import CBufferSignal
 
     buf = (ctypes.c_int64 * 4)()
     sig = CBufferSignal(buf, idx=1, width=32, is_signed=False)
@@ -515,7 +516,7 @@ def test_cbuffersignal_val_property():
 def test_cbuffersignal_set_get():
     """CBufferSignal.set() applies mask, .get() returns raw value."""
     import ctypes
-    from polyphony.simulator import CBufferSignal
+    from polyphony.csim import CBufferSignal
 
     buf = (ctypes.c_int64 * 4)()
     sig = CBufferSignal(buf, idx=0, width=8, is_signed=False)
@@ -527,7 +528,8 @@ def test_cbuffersignal_set_get():
 def test_cbuffersignal_toInteger():
     """CBufferSignal.toInteger() returns Integer with correct width/sign."""
     import ctypes
-    from polyphony.simulator import CBufferSignal, Integer
+    from polyphony.csim import CBufferSignal
+    from polyphony.simulator import Integer
 
     buf = (ctypes.c_int64 * 4)()
     sig = CBufferSignal(buf, idx=0, width=16, is_signed=True)
@@ -544,7 +546,8 @@ def test_bind_ports_replaces_clk_rst():
     that write directly to the C buffer."""
     import ctypes
     import types
-    from polyphony.simulator import CBufferSignal, Reg, CModelEvaluator
+    from polyphony.csim import CBufferSignal, CModelEvaluator
+    from polyphony.simulator import Reg
 
     # Minimal mock model with clk/rst as Reg
     model = types.SimpleNamespace()
@@ -576,7 +579,8 @@ def test_bind_ports_replaces_io_ports():
     """After bind_ports_to_buffer, Port.value is CBufferSignal."""
     import ctypes
     import types
-    from polyphony.simulator import CBufferSignal, Port, Reg, Net, CModelEvaluator
+    from polyphony.csim import CBufferSignal, CModelEvaluator
+    from polyphony.simulator import Port, Reg, Net
 
     model = types.SimpleNamespace()
     clk_sig = types.SimpleNamespace(name='clk', width=1, tags=set())
@@ -629,7 +633,7 @@ def test_load_initial_values():
     import os
     import subprocess
     import tempfile
-    from polyphony.simulator import CModelEvaluator, CSimulatorModelBuilder
+    from polyphony.csim import CModelEvaluator, CSimulatorModelBuilder
 
     c_source = '''
 #include <stdint.h>
@@ -684,9 +688,8 @@ def test_e2e_port_sync_via_cbuffersignal():
     import subprocess
     import tempfile
     import types
-    from polyphony.simulator import (
-        CBufferSignal, CModelEvaluator, Port, Reg, Net,
-    )
+    from polyphony.csim import CBufferSignal, CModelEvaluator
+    from polyphony.simulator import Port, Reg, Net
 
     # C module: result = a + b (on rising clk edge)
     c_source = '''
@@ -796,9 +799,8 @@ def test_bind_ports_binds_submodel_ports():
     with CBufferSignal using sig_map with prefixed names."""
     import ctypes
     import types
-    from polyphony.simulator import (
-        CBufferSignal, CModelEvaluator, Model, Port, Reg, Net,
-    )
+    from polyphony.csim import CBufferSignal, CModelEvaluator
+    from polyphony.simulator import Model, Port, Reg, Net
 
     # Top-level model with clk/rst + a sub-model 'c' (like Handshake)
     model = types.SimpleNamespace()
@@ -867,7 +869,7 @@ def test_cbuffersignal_input_port_deferred_write():
     overwrite the current value before the C evaluator reads it.
     """
     import ctypes
-    from polyphony.simulator import CBufferSignal
+    from polyphony.csim import CBufferSignal
 
     buf = (ctypes.c_int64 * 4)()
     sig = CBufferSignal(buf, idx=0, width=32, is_signed=True, deferred=True)
@@ -899,7 +901,8 @@ def test_edge_detection_with_cbuffersignal():
     'assert isinstance(self.value, Reg)' when Port.value was CBufferSignal.
     """
     import ctypes
-    from polyphony.simulator import CBufferSignal, Port
+    from polyphony.csim import CBufferSignal
+    from polyphony.simulator import Port
 
     buf = (ctypes.c_int64 * 2)()
     sig_mock = None  # signal field unused by edge()
@@ -932,7 +935,7 @@ def test_initial_value_loads_next_slot():
     """
     import ctypes
     import types
-    from polyphony.simulator import CSimulatorModelBuilder, CModelEvaluator
+    from polyphony.csim import CSimulatorModelBuilder, CModelEvaluator
 
     # Create a mock transpiler with sig_map that has both cur and _next
     transpiler = types.SimpleNamespace()
@@ -980,7 +983,7 @@ def test_cbuffersignal_get_unsigned_64bit():
     expected unsigned result.
     """
     import ctypes
-    from polyphony.simulator import CBufferSignal
+    from polyphony.csim import CBufferSignal
 
     buf = (ctypes.c_int64 * 2)()
 
@@ -1010,7 +1013,8 @@ def test_deferred_input_reg_not_visible_before_flush():
     """
     import ctypes
     import types
-    from polyphony.simulator import CBufferSignal, Reg, CModelEvaluator
+    from polyphony.csim import CBufferSignal, CModelEvaluator
+    from polyphony.simulator import Reg
 
     model = types.SimpleNamespace()
 
@@ -1073,7 +1077,7 @@ def test_prev_val_updated_in_eval():
     never updated when the C code modified buffer values directly.
     """
     import ctypes
-    from polyphony.simulator import CBufferSignal
+    from polyphony.csim import CBufferSignal
 
     buf = (ctypes.c_int64 * 2)()
     csig = CBufferSignal(buf, idx=0, width=1, is_signed=False)
@@ -1097,7 +1101,7 @@ def test_eval_decls_converges_for_long_chain(chain_len):
     evaluated in REVERSE order, forcing one propagation per iteration.
     This is the worst case for the convergence loop.
     """
-    from polyphony.simulator import CModelEvaluator
+    from polyphony.csim import CModelEvaluator
 
     # Build C source with a chain: d_0 = input, d_1 = d_0+1, ..., d_N = d_{N-1}+1
     # eval_decls evaluates in reverse order: d_N first, d_0 last
