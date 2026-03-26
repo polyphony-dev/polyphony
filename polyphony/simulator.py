@@ -454,7 +454,8 @@ class Port(object):
         return f"Port('{repr(self.value)}')"
 
     def edge(self, old_v, new_v):
-        assert isinstance(self.value, Reg)
+        from .csim import CBufferSignal
+        assert isinstance(self.value, (Reg, CBufferSignal))
         return self.value.prev_val == old_v and self.value.val == new_v
 
     def assign(self, func: callable):
@@ -466,7 +467,9 @@ class Port(object):
 
 
 class Simulator(object):
-    def __init__(self, model):
+    def __init__(self, model, use_csim=None):
+        if use_csim is None:
+            use_csim = os.environ.get('USE_CSIM', '1') == '1'
         if isinstance(model, list):
             self.models = [getattr(m, "__model") for m in model]
         elif isinstance(model, Model):
@@ -474,10 +477,34 @@ class Simulator(object):
         else:
             assert False
 
-        self.evaluators = [ModelEvaluator(model) for model in self.models]
+        if use_csim:
+            self.evaluators = self._build_csim_evaluators()
+        else:
+            self.evaluators = [ModelEvaluator(model) for model in self.models]
         self.clock_time = 0
         self.observer = None
         self.case_name = ''
+
+    def _build_csim_evaluators(self):
+        """Try to build CModelEvaluator for each model; fall back to ModelEvaluator on failure."""
+        import warnings
+        from .csim import CModelEvaluator, CSimulatorModelBuilder
+        evaluators = []
+        builder = CSimulatorModelBuilder()
+        for model in self.models:
+            try:
+                hdlmodule = model.hdlmodule
+                ev = builder.build(hdlmodule)
+                deferred, all_ports = CModelEvaluator.bind_ports_to_buffer(
+                    model, ev._buf, ev._port_map, ev._sig_map)
+                ev._deferred_signals = deferred or []
+                ev._all_port_signals = all_ports or []
+                evaluators.append(ev)
+            except Exception as e:
+                warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
+                              f'falling back to ModelEvaluator: {e}')
+                evaluators.append(ModelEvaluator(model))
+        return evaluators
 
     def __enter__(self):
         self.begin()
@@ -527,6 +554,14 @@ class Simulator(object):
             self.observer.on_reset_done(self.clock_time)
 
 
+# Minimum upper bound for combinational logic (decl) convergence iterations.
+# For a correctly generated combinational DAG, the worst case is one
+# iteration per dependency chain depth, plus one final pass to confirm
+# convergence.  Since max depth <= num_decls, the limit is num_decls + 1.
+# If the limit is reached, it indicates a compiler bug (combinational cycle).
+MIN_EVAL_DECLS_ITERATIONS = 16
+
+
 class ModelEvaluator(AHDLVisitor):
     def __init__(self, model):
         assert isinstance(model, types.SimpleNamespace)
@@ -546,7 +581,7 @@ class ModelEvaluator(AHDLVisitor):
 
     def _eval_decls(self):
         self.updated_sigs.add(None)
-        _max_iter = 1000
+        _max_iter = max(len(self.model._decls) + 1, MIN_EVAL_DECLS_ITERATIONS)
         while self.updated_sigs:
             self.updated_sigs.clear()
             for decl in self.model._decls:
@@ -1163,3 +1198,5 @@ class SimulationModelBuilder(object):
                 setattr(model, i.sig.name, Net(0, i.sig.width, i.sig))
             assert not hasattr(model, fn.output.hdl_name)
             setattr(model, fn.output.hdl_name, Net(0, fn.output.sig.width[0], fn.output.sig))
+
+
