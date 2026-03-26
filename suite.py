@@ -102,6 +102,14 @@ def parse_options():
     return parser.parse_args()
 
 
+def _is_pass(res):
+    """Return True if a test result string indicates success."""
+    if res == 'PASS':
+        return True
+    # -P mode: "HDL Result: 170:finish Python Result: OK"
+    return 'FAIL' not in res and 'Error' not in res and 'Timeout' not in res
+
+
 def add_files(lst, patterns):
     for p in patterns:
         for f in glob.glob('{0}/{1}'.format(TEST_DIR, p)):
@@ -161,7 +169,7 @@ def suite(options, ignores):
     suite_results = dict(suite_results)
     for t in timed_out:
         suite_results[t] = 'Timeout'
-    fails = sum(['FAIL' in res for res in suite_results.values()])
+    fails = sum([not _is_pass(res) for res in suite_results.values()])
     if options.config:
         suite_results['-config'] = json.loads(options.config)
     global_suite_results.append(suite_results)
