@@ -229,6 +229,14 @@ class AHDLToCTranspiler(AHDLVisitor):
 
         self._sig_count = idx
         self._reg_cur_slots = reg_cur_total
+
+        # Reject signals wider than 64 bits (int64_t storage limit)
+        for w, _ in self._sig_widths:
+            if w > 64:
+                raise NotImplementedError(
+                    f'csim does not support signals wider than 64 bits (found {w}-bit signal)'
+                )
+
         return dict(self._sig_map), dict(self._port_map), self._sig_count
 
     def _collect_constants(self, scope, prefix):

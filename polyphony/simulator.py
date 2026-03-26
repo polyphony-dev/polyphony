@@ -487,7 +487,7 @@ class Simulator(object):
 
     def _build_csim_evaluators(self):
         """Try to build CModelEvaluator for each model; fall back to ModelEvaluator on failure."""
-        import warnings
+        import sys
         from .csim import CModelEvaluator, CSimulatorModelBuilder
         evaluators = []
         builder = CSimulatorModelBuilder()
@@ -501,8 +501,9 @@ class Simulator(object):
                 ev._all_port_signals = all_ports or []
                 evaluators.append(ev)
             except Exception as e:
-                warnings.warn(f'csim build failed for {getattr(model, "hdlmodule", "?")}, '
-                              f'falling back to ModelEvaluator: {e}')
+                hdlmod = getattr(model, 'hdlmodule', None)
+                mod_name = hdlmod.name if hdlmod else '?'
+                print(f'csim fallback for {mod_name}: {e}', file=sys.stderr)
                 evaluators.append(ModelEvaluator(model))
         return evaluators
 
