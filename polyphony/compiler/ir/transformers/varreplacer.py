@@ -46,7 +46,7 @@ def replace_exprtype_in_typ(typ, old_expr_t: ExprType, new_expr_t: ExprType):
 
 class VarReplacer(object):
     @classmethod
-    def replace_uses(cls, scope, dst, src, usedef=None):
+    def replace_uses(cls, scope, dst, src, usedef=None, expr_type_index=None):
         assert isinstance(dst, IrVariable)
         assert isinstance(src, IrExp)
         if usedef is None:
@@ -70,8 +70,22 @@ class VarReplacer(object):
                     blk.path_exp = src
 
         # Replace in ExprType.expr across all scopes (mirrors old VarReplacer)
-        replacer._replace_in_expr_types(scope)
+        replacer._replace_in_expr_types(scope, expr_type_index)
         return replacer.replaces
+
+    @staticmethod
+    def build_expr_type_index():
+        """Build an index of (sym, expr_t) pairs grouped by scope for ExprType replacement."""
+        from ...common.env import env
+        index = {}
+        for s in env.scopes.values():
+            for sym in s.symbols.values():
+                for expr_t in typehelper.find_expr(sym.typ):
+                    scope = expr_t.scope
+                    if scope not in index:
+                        index[scope] = []
+                    index[scope].append((sym, expr_t))
+        return index
 
     def __init__(self, scope, dst, src, usedef, enable_dst=False):
         self.scope = scope
@@ -214,27 +228,32 @@ class VarReplacer(object):
                 self.visit_with_context(expr_t.scope, expr)
         return ir
 
-    def _replace_in_expr_types(self, scope):
+    def _replace_in_expr_types(self, scope, expr_type_index=None):
         """Replace dst variable in ExprType.expr across all scopes."""
-        from ...common.env import env
-        for s in env.scopes.values():
-            for sym in s.symbols.values():
-                for expr_t in typehelper.find_expr(sym.typ):
-                    if expr_t.scope is not scope:
-                        continue
-                    expr = expr_t.expr
-                    old_scope = self.scope
-                    self.scope = expr_t.scope
-                    new_exp = self.visit(expr.exp)
-                    self.scope = old_scope
-                    if new_exp is expr.exp:
-                        continue
-                    new_expr = expr.model_copy(update={'exp': new_exp})
-                    new_expr_t = dataclasses_replace(expr_t, expr=new_expr)
-                    sym.typ = replace_exprtype_in_typ(sym.typ, expr_t, new_expr_t)
-                    if expr.block:
-                        blk = scope.find_block(expr.block)
-                        blk.replace_stm(expr, new_expr)
+        if expr_type_index is not None:
+            entries = expr_type_index.get(scope, [])
+        else:
+            from ...common.env import env
+            entries = []
+            for s in env.scopes.values():
+                for sym in s.symbols.values():
+                    for expr_t in typehelper.find_expr(sym.typ):
+                        if expr_t.scope is scope:
+                            entries.append((sym, expr_t))
+        for sym, expr_t in entries:
+            expr = expr_t.expr
+            old_scope = self.scope
+            self.scope = expr_t.scope
+            new_exp = self.visit(expr.exp)
+            self.scope = old_scope
+            if new_exp is expr.exp:
+                continue
+            new_expr = expr.model_copy(update={'exp': new_exp})
+            new_expr_t = dataclasses_replace(expr_t, expr=new_expr)
+            sym.typ = replace_exprtype_in_typ(sym.typ, expr_t, new_expr_t)
+            if expr.block:
+                blk = scope.find_block(expr.block)
+                blk.replace_stm(expr, new_expr)
 
     def visit_with_context(self, scope, irstm):
         # ExprType.expr is now new IR Expr — visit directly

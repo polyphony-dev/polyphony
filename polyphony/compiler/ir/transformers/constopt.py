@@ -423,16 +423,19 @@ class ConstantOpt(ConstantOptBase):
         self.dtree = DominatorTreeBuilder(scope).process()
         self.usedef = UseDefDetector().process(scope)
         self.udupdater = UseDefUpdater(scope, self.usedef)
+        self.expr_type_index = VarReplacer.build_expr_type_index()
 
         dead_stms = []
         self.worklist = deque()
         for blk in scope.traverse_blocks():
             self.worklist.extend(blk.stms)
+        processed = set()
         while self.worklist:
             stm = self.worklist.popleft()
-            # Use identity comparison: Phi.__eq__ is var-only, so value-based removal
-            # would incorrectly remove newer phi versions that share the same var.
-            self.worklist = deque(s for s in self.worklist if s is not stm)
+            stm_id = id(stm)
+            if stm_id in processed:
+                continue
+            processed.add(stm_id)
             self.current_stm = stm
             result = self.visit(stm)
             if isinstance(result, IrStm) and result is not stm:
@@ -519,7 +522,7 @@ class ConstantOpt(ConstantOptBase):
                         src = _to_unsigned(dst_t, stm.src)
                 else:
                     src = stm.src
-                replaces = VarReplacer.replace_uses(scope, stm.dst, src, self.usedef)
+                replaces = VarReplacer.replace_uses(scope, stm.dst, src, self.usedef, self.expr_type_index)
                 for rep in replaces:
                     logger.debug(rep)
                     if rep not in dead_stms:
