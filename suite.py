@@ -55,6 +55,7 @@ FILES = (
     '/chstone/mips/mips.py',
     '/chstone/mips/pipelined_mips.py',
     '/chstone/jpeg/chenidct.py',
+    '/chstone/aes/aes_module.py',
 )
 
 
