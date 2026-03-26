@@ -15,13 +15,16 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-@dataclass(frozen=True, eq=False)
 class UseDefItem:
-    sym: Symbol
-    qsym: tuple[Symbol | str, ...]
-    var: IrVariable
-    stm: IrStm
-    blk: str  # block bid
+    __slots__ = ('sym', 'qsym', 'var', 'stm', 'blk', '_hash')
+
+    def __init__(self, sym, qsym, var, stm, blk):
+        self.sym = sym
+        self.qsym = qsym
+        self.var = var
+        self.stm = stm
+        self.blk = blk
+        self._hash = hash((id(sym), qsym, var, id(stm), blk))
 
     def __eq__(self, other):
         if not isinstance(other, UseDefItem):
@@ -33,7 +36,7 @@ class UseDefItem:
                 self.blk == other.blk)
 
     def __hash__(self):
-        return hash((id(self.sym), self.qsym, self.var, id(self.stm), self.blk))
+        return self._hash
 
 
 class UseDefTable(object):

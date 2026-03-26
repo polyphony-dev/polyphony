@@ -4,29 +4,28 @@ logger = getLogger(__name__)
 
 class DominatorTree(object):
     def __init__(self):
-        self.nodes = []
-        self.edges = []
+        self.nodes = set()
+        self._children = {}   # node -> list of children
+        self._parent = {}     # node -> parent
 
     def add_node(self, n):
-        if n not in self.nodes:
-            self.nodes.append(n)
+        self.nodes.add(n)
 
     def add_edge(self, n1, n2):
-        edge = (n1, n2)
-        if edge not in self.edges:
-            self.edges.append(edge)
+        self._parent[n2] = n1
+        if n1 not in self._children:
+            self._children[n1] = []
+        children = self._children[n1]
+        if n2 not in children:
+            children.append(n2)
 
     def get_parent_of(self, n):
-        '''parent is immidiate dominator'''
-        for n1, n2 in self.edges:
-            if n2 is n:
-                return n1
-        return None
+        '''parent is immediate dominator'''
+        return self._parent.get(n)
 
     def get_children_of(self, n):
-        return [n2 for n1, n2 in self.edges if n1 is n]
+        return self._children.get(n, [])
 
-    #is v dominator of n?
     def is_dominator(self, n, v):
         if n is v:
             return True
@@ -36,10 +35,7 @@ class DominatorTree(object):
         return False
 
     def is_child(self, n1, n2):
-        for _n1, _n2 in self.edges:
-            if _n1 is n1 and _n2 is n2:
-                return True
-        return False
+        return n2 in self.get_children_of(n1)
 
     def dump(self):
         logger.debug('dominator tree')
@@ -47,7 +43,8 @@ class DominatorTree(object):
 
     def __str__(self):
         s = ''
-        for n1, n2 in sorted(self.edges, key=lambda n: n[0].name):
+        edges = [(n1, n2) for n1, children in self._children.items() for n2 in children]
+        for n1, n2 in sorted(edges, key=lambda n: n[0].name):
             s += '{} --> {}\n'.format(n1.name, n2.name)
         return s
 
