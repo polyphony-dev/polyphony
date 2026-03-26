@@ -89,6 +89,14 @@ class SSATransformerBase(object):
         self._find_loop_phi()
         self._deal_with_return_phi()
 
+        # Post-condition: every Phi in blocks must have ps populated
+        assert all(
+            len(stm.ps) == len(stm.args) and len(stm.ps) > 0
+            for blk in scope.traverse_blocks()
+            for stm in blk.stms
+            if type(stm) is Phi
+        ), "Phi with missing or mismatched ps detected after SSA"
+
     def _sort_phi(self, blk):
         phis = [stm for stm in blk.stms if type(stm) is Phi]
         if len(phis) <= 1:
@@ -397,8 +405,18 @@ class SSATransformerBase(object):
             usedef.remove_stm(self.scope, phi)
 
     def _insert_predicate(self):
+        # Rebuild self.phis from block stms to avoid stale references
+        # (_remove_useless_phi may replace Phi objects in blocks via VarReplacer
+        # without updating self.phis)
+        fresh_phis = []
         for blk in self.scope.traverse_blocks():
-            phis = [phi for phi in self.phis if phi.block == blk.bid]
+            for stm in blk.stms:
+                if type(stm) is Phi:
+                    fresh_phis.append(stm)
+        self.phis = fresh_phis
+
+        for blk in self.scope.traverse_blocks():
+            phis = [stm for stm in blk.stms if type(stm) is Phi]
             if not phis:
                 continue
             phi_predicates = []
