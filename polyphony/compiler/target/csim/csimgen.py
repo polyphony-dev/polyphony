@@ -166,6 +166,11 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._lines: list[str] = []
         self._func_param_map: dict[str, str] = {}
         self._name_to_cname: dict[str, str] = {}  # raw signal name -> C-safe name
+        self._indent: int = 1  # current indentation level (1 = inside function body)
+
+    def _emit(self, line: str):
+        """Append a line with current indentation."""
+        self._lines.append('    ' * self._indent + line)
 
     def assign_signal_ids(self, hdlscope):
         self._sig_map = {}
@@ -443,36 +448,38 @@ class AHDLToCTranspiler(AHDLVisitor):
         src_expr = self.visit(ahdl.src)
         sig_name = self._sig_name_from_dst(ahdl.dst)
         rhs = self._mask_expr(src_expr, sig_name)
-        self._lines.append(f'    {dst_expr} = {rhs};')
+        self._emit(f'{dst_expr} = {rhs};')
 
     def visit_AHDL_ASSIGN(self, ahdl):
         dst_expr = self.visit(ahdl.dst)
         src_expr = self.visit(ahdl.src)
         sig_name = self._sig_name_from_dst(ahdl.dst)
         rhs = self._mask_expr(src_expr, sig_name)
-        self._lines.append(f'    {{ int64_t prev = {dst_expr};')
-        self._lines.append(f'      {dst_expr} = {rhs};')
-        self._lines.append(f'      if ({dst_expr} != prev) updated = 1; }}')
+        self._emit(f'{{ int64_t prev = {dst_expr};')
+        self._emit(f'  {dst_expr} = {rhs};')
+        self._emit(f'  if ({dst_expr} != prev) updated = 1; }}')
 
     def visit_AHDL_CONNECT(self, ahdl):
         dst_expr = self.visit(ahdl.dst)
         src_expr = self.visit(ahdl.src)
-        self._lines.append(f'    {dst_expr} = {src_expr};')
+        self._emit(f'{dst_expr} = {src_expr};')
 
     # --- Control flow visitors ---
 
     def visit_AHDL_IF(self, ahdl):
         for i, (cond, block) in enumerate(zip(ahdl.conds, ahdl.blocks)):
             if cond is None:
-                self._lines.append('    } else {')
+                self._emit('} else {')
             elif i == 0:
                 c = self.visit(cond)
-                self._lines.append(f'    if ({c}) {{')
+                self._emit(f'if ({c}) {{')
             else:
                 c = self.visit(cond)
-                self._lines.append(f'    }} else if ({c}) {{')
+                self._emit(f'}} else if ({c}) {{')
+            self._indent += 1
             self.visit(block)
-        self._lines.append('    }')
+            self._indent -= 1
+        self._emit('}')
 
     def visit_AHDL_TRANSITION_IF(self, ahdl):
         self.visit_AHDL_IF(ahdl)
@@ -482,16 +489,18 @@ class AHDLToCTranspiler(AHDLVisitor):
 
     def visit_AHDL_CASE(self, ahdl):
         sel = self.visit(ahdl.sel)
-        self._lines.append(f'    switch ({sel}) {{')
+        self._emit(f'switch ({sel}) {{')
         for item in ahdl.items:
             self.visit(item)
-        self._lines.append('    }')
+        self._emit('}')
 
     def visit_AHDL_CASE_ITEM(self, ahdl):
         val = self.visit(ahdl.val)
-        self._lines.append(f'    case {val}: {{')
+        self._emit(f'case {val}:')
+        self._indent += 1
         self.visit(ahdl.block)
-        self._lines.append('        break; }')
+        self._emit('break;')
+        self._indent -= 1
 
     # --- Remaining visitors ---
 
@@ -504,9 +513,11 @@ class AHDLToCTranspiler(AHDLVisitor):
             else:
                 conditions.append(f's[S_{cname}] == 0')
         cond_str = ' && '.join(conditions)
-        self._lines.append(f'    if ({cond_str}) {{')
+        self._emit(f'if ({cond_str}) {{')
+        self._indent += 1
         self.visit(ahdl.stm)
-        self._lines.append('    }')
+        self._indent -= 1
+        self._emit('}')
 
     def visit_AHDL_FUNCTION(self, ahdl):
         for stm in ahdl.stms:
@@ -516,24 +527,24 @@ class AHDLToCTranspiler(AHDLVisitor):
         if ahdl.name == '!hdl_print':
             args = ', '.join(self.visit(a) for a in ahdl.args)
             fmt = ' '.join(['%lld'] * len(ahdl.args))
-            self._lines.append(f'    printf("{fmt}\\n", {args});')
+            self._emit(f'printf("{fmt}\\n", {args});')
         elif ahdl.name == '!hdl_assert':
             cond = self.visit(ahdl.args[0]) if ahdl.args else '0'
-            self._lines.append(f'    if (!({cond})) {{ fprintf(stderr, "Assertion failed\\n"); abort(); }}')
+            self._emit(f'if (!({cond})) {{ fprintf(stderr, "Assertion failed\\n"); abort(); }}')
         else:
             raise NotImplementedError(f'Unsupported proccall: {ahdl.name}')
 
     def visit_AHDL_NOP(self, ahdl):
-        self._lines.append(f'    // nop: {ahdl.info}')
+        self._emit(f'// nop: {ahdl.info}')
 
     def visit_AHDL_INLINE(self, ahdl):
-        self._lines.append(f'    // inline')
+        self._emit('// inline')
 
     def visit_AHDL_CALLEE_PROLOG(self, ahdl):
-        self._lines.append(f'    // callee_prolog')
+        self._emit('// callee_prolog')
 
     def visit_AHDL_CALLEE_EPILOG(self, ahdl):
-        self._lines.append(f'    // callee_epilog')
+        self._emit('// callee_epilog')
 
     def visit_AHDL_IO_READ(self, ahdl):
         pass
@@ -542,10 +553,10 @@ class AHDLToCTranspiler(AHDLVisitor):
         pass
 
     def visit_AHDL_META_WAIT(self, ahdl):
-        self._lines.append(f'    // meta_wait')
+        self._emit('// meta_wait')
 
     def visit_AHDL_META_OP(self, ahdl):
-        self._lines.append(f'    // meta_op')
+        self._emit('// meta_op')
 
     def visit_AHDL_MODULECALL(self, ahdl):
         raise NotImplementedError('AHDL_MODULECALL not supported in csim')
@@ -573,6 +584,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         # module_eval_tasks
         parts.append('void module_eval_tasks(int64_t* s) {')
         self._lines = []
+        self._indent = 1
         for task in hdlscope.tasks:
             self.visit(task)
         parts.extend(self._lines)
@@ -594,6 +606,7 @@ class AHDLToCTranspiler(AHDLVisitor):
         parts.append(f'    while (updated && iter < {max_iter}) {{')
         parts.append('        updated = 0;')
         self._lines = []
+        self._indent = 2
         for decl in toposort_decls(hdlscope.decls):
             self.visit(decl)
         parts.extend(self._lines)
@@ -623,6 +636,7 @@ class AHDLToCTranspiler(AHDLVisitor):
             if hasattr(inp, 'vars') and inp.vars:
                 self._func_param_map[inp.vars[-1].name] = pname
         self._lines = []
+        self._indent = 1
         for stm in func.stms:
             self.visit(stm)
         lines.extend(self._lines)
