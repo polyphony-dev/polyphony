@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class Type:
     ANY_LENGTH: ClassVar[int] = -1
+    _has_scope: ClassVar[bool] = False
     name: str
     explicit: bool
 
@@ -171,9 +172,7 @@ class Type:
         return self.name in ("namespace", "class")
 
     def has_scope(self) -> bool:
-        from .scopetype import ScopeType
-
-        return isinstance(self, ScopeType)
+        return self._has_scope
 
     def is_same(self, other):
         return self.name == other.name

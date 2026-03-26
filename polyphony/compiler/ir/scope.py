@@ -148,9 +148,8 @@ class SymbolTable(object):
         sym.add_tag("imported")
 
     def find_sym(self, name):
-        names = name.split(".")
-        if len(names) > 1:
-            return self.find_sym_r(names)
+        if "." in name:
+            return self.find_sym_r(name.split("."))
         if name in self.symbols:
             return self.symbols[name]
         return None

@@ -36,6 +36,13 @@ if TYPE_CHECKING:
 def qualified_symbols(ir: IrNameExp, scope: Scope) -> tuple[Symbol | str, ...]:
     """Resolve qualified name to symbol chain, using new IR types."""
     qname = ir.qualified_name
+    # Fast path for single-element names (Temp variables — the common case)
+    if len(qname) == 1:
+        sym = scope.find_sym(qname[0])
+        if sym:
+            return (sym,)
+        return (qname[0],)
+    # Multi-element path (Attr chains)
     symbol_or_names: list[Symbol | str] = []
     for i, name in enumerate(qname):
         symbol = scope.find_sym(name)
