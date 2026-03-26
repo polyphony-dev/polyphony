@@ -165,10 +165,11 @@ class CModelEvaluator:
                 continue
             if isinstance(attr, Port):
                 old = attr.value
+                assert old is not None
                 is_input = old.signal.is_input() if old.signal else False
                 csig = CBufferSignal(buf, idx, old.width, old.sign,
                                      signal=old.signal, deferred=is_input)
-                attr.value = csig  # bypass _set_value assert
+                attr.value = csig  # type: ignore[assignment]  # CBufferSignal replaces Reg/Net
                 all_port_list.append(csig)
                 if is_input:
                     deferred_list.append(csig)
@@ -208,11 +209,12 @@ class CModelEvaluator:
             if isinstance(attr, Port) and attr.value is not None:
                 if sig_key in sig_map:
                     old = attr.value
+                    assert old is not None
                     idx = sig_map[sig_key]
                     is_input = old.signal.is_input() if old.signal else False
                     csig = CBufferSignal(buf, idx, old.width, old.sign,
                                          signal=old.signal, deferred=is_input)
-                    attr.value = csig
+                    attr.value = csig  # type: ignore[assignment]
                     all_port_list.append(csig)
                     if is_input:
                         deferred_list.append(csig)

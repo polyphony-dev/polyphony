@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import re
 from collections import defaultdict, deque
 
-from polyphony.compiler.ahdl.ahdl import AHDL, AHDL_ASSIGN, AHDL_OP, AHDL_VAR, Ctx
+from polyphony.compiler.ahdl.ahdl import AHDL_ASSIGN, AHDL_OP, AHDL_SUBSCRIPT, AHDL_VAR, Ctx
 from polyphony.compiler.ahdl.ahdlvisitor import AHDLVisitor
+from polyphony.compiler.ahdl.signal import Signal
+
 
 
 def toposort_decls(decls: list) -> list:
@@ -183,8 +187,8 @@ class AHDLToCTranspiler(AHDLVisitor):
         self._collect_constants(hdlscope, '')
 
         # Phase 1: collect all signals into reg_list and net_list
-        reg_list: list[tuple[str, object]] = []  # (cname, sig)
-        net_list: list[tuple[str, object]] = []
+        reg_list: list[tuple[str, Signal]] = []  # (cname, sig)
+        net_list: list[tuple[str, Signal]] = []
         port_names: list[tuple[str, str]] = []   # (raw_name, cname)
         self._collect_signals(hdlscope, '', reg_list, net_list, port_names)
 
@@ -232,6 +236,8 @@ class AHDLToCTranspiler(AHDLVisitor):
 
         # Reject signals wider than 64 bits (int64_t storage limit)
         for w, _ in self._sig_widths:
+            if isinstance(w, tuple):
+                w = w[0]  # array signal: (element_width, length)
             if w > 64:
                 raise NotImplementedError(
                     f'csim does not support signals wider than 64 bits (found {w}-bit signal)'
@@ -436,19 +442,18 @@ class AHDLToCTranspiler(AHDLVisitor):
             return f'sext(mask({src_expr}, {w}), {w})'
         return f'mask({src_expr}, {w})'
 
-    def _sig_name_from_dst(self, dst):
+    def _sig_name_from_dst(self, dst: AHDL_VAR | AHDL_SUBSCRIPT) -> str:
         """Return the C-safe signal name from a dst node."""
-        from polyphony.compiler.ahdl.ahdl import AHDL_SUBSCRIPT
         if isinstance(dst, AHDL_SUBSCRIPT):
-            if len(dst.memvar.vars) > 1:
-                raw = '_'.join(s.name for s in dst.memvar.vars)
-            else:
-                raw = dst.memvar.vars[-1].name
+            vars_: tuple[Signal, ...] = dst.memvar.vars  # type: ignore[assignment]
+        elif isinstance(dst, AHDL_VAR):
+            vars_ = dst.vars  # type: ignore[assignment]
         else:
-            if len(dst.vars) > 1:
-                raw = '_'.join(s.name for s in dst.vars)
-            else:
-                raw = dst.vars[-1].name
+            return _c_safe_name(str(dst))
+        if len(vars_) > 1:
+            raw = '_'.join(s.name for s in vars_)
+        else:
+            raw = vars_[-1].name
         return self._name_to_cname.get(raw, _c_safe_name(raw))
 
     def visit_AHDL_MOVE(self, ahdl):
