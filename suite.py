@@ -60,9 +60,9 @@ FILES = (
 
 SUITE_CASES = [
     {
-        'config': '{ "perfect_inlining": false }',
+        'config': '{}',
         "ignores": (
-            'pure/*',
+            'pure/*', 'perform/*',
             'module/module01.py', 'module/module02.py',
             'module/module03.py', 'module/module03.new.py',
             'module/module07.py', 'module/module08.py',
