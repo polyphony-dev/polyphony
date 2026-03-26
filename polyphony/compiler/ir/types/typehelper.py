@@ -174,19 +174,19 @@ def type_to_scope(t: Type) -> Scope:
     return scope
 
 
-def find_expr(typ) -> list[ExprType]:
-    from .functiontype import FunctionType
+_FIND_EXPR_EMPTY: list[ExprType] = []
 
+
+def find_expr(typ) -> list[ExprType]:
     if not isinstance(typ, Type):
-        return []
-    if typ.is_expr():
-        expr_type = cast(ExprType, typ)
-        return [expr_type]
-    elif typ.is_list():
+        return _FIND_EXPR_EMPTY
+    name = typ.name
+    if name == 'expr':
+        return [cast(ExprType, typ)]
+    elif name == 'list' or name == 'tuple':
         return find_expr(typ.element) + find_expr(typ.length)
-    elif typ.is_tuple():
-        return find_expr(typ.element) + find_expr(typ.length)
-    elif typ.is_function():
+    elif name == 'function':
+        from .functiontype import FunctionType
         func_type = cast(FunctionType, typ)
         exprs: list[ExprType] = []
         for pt in func_type.param_types:
@@ -194,7 +194,7 @@ def find_expr(typ) -> list[ExprType]:
         exprs.extend(find_expr(typ.return_type))
         return exprs
     else:
-        return []
+        return _FIND_EXPR_EMPTY
 
 
 def replace_type_dict(dic, new_dic, key, value_map):
