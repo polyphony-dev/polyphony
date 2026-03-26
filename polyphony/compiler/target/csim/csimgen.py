@@ -455,9 +455,13 @@ class AHDLToCTranspiler(AHDLVisitor):
         src_expr = self.visit(ahdl.src)
         sig_name = self._sig_name_from_dst(ahdl.dst)
         rhs = self._mask_expr(src_expr, sig_name)
-        self._emit(f'{{ int64_t prev = {dst_expr};')
-        self._emit(f'  {dst_expr} = {rhs};')
-        self._emit(f'  if ({dst_expr} != prev) updated = 1; }}')
+        self._emit('{')
+        self._indent += 1
+        self._emit(f'int64_t prev = {dst_expr};')
+        self._emit(f'{dst_expr} = {rhs};')
+        self._emit(f'if ({dst_expr} != prev) updated = 1;')
+        self._indent -= 1
+        self._emit('}')
 
     def visit_AHDL_CONNECT(self, ahdl):
         dst_expr = self.visit(ahdl.dst)
