@@ -46,6 +46,7 @@ from .ir.analysis.typecheck import (
 from .ir.transformers.bitwidth import TempVarWidthSetter
 from .ir.transformers.cfgopt import BlockReducer, PathExpTracer, HyperBlockBuilder
 from .ir.transformers.constopt import EarlyConstantOptNonSSA, ConstantOpt, StaticConstOpt, PolyadConstantFolding
+from .ir.transformers.varreplacer import VarReplacer
 from .ir.transformers.copyopt import CopyOpt, ObjCopyOpt
 from .ir.transformers.deadcode import DeadCodeEliminator
 from .ir.transformers.iftransform import IfTransformer, IfCondTransformer
@@ -484,8 +485,17 @@ def earlyconstopt_nonssa(driver, scope):
     checkcfg(driver, scope)
 
 
+_constopt_expr_type_index = None
+
+
 def constopt(driver, scope):
-    ConstantOpt().process(scope)
+    global _constopt_expr_type_index
+    if _constopt_expr_type_index is None:
+        _constopt_expr_type_index = VarReplacer.build_expr_type_index()
+    ConstantOpt().process(scope, expr_type_index=_constopt_expr_type_index)
+    # Reset after the last scope so next pass invocation rebuilds
+    if scope is driver.current_scopes[-1]:
+        _constopt_expr_type_index = None
 
 
 def copyopt(driver, scope):

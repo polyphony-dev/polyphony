@@ -416,14 +416,14 @@ class ConstantOpt(ConstantOptBase):
     def __init__(self):
         super().__init__()
 
-    def process(self, scope):
+    def process(self, scope, expr_type_index=None):
         if scope.is_class():
             return
         self.scope = scope
         self.dtree = DominatorTreeBuilder(scope).process()
         self.usedef = UseDefDetector().process(scope)
         self.udupdater = UseDefUpdater(scope, self.usedef)
-        self.expr_type_index = VarReplacer.build_expr_type_index()
+        self.expr_type_index = expr_type_index if expr_type_index is not None else VarReplacer.build_expr_type_index()
 
         dead_stms = []
         self.worklist = deque()
