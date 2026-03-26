@@ -542,38 +542,46 @@ class InlineOpt(object):
 
         self._new_scopes = []
         while True:
-            ret = self._process_scopes(scopes)
-            if ret:
-                break
-            scopes = [s for s in scopes if s.name in env.scopes]
-            TypePropagation(is_strict=False).process_scopes(scopes)
-        return self._new_scopes
-
-    def _process_scopes(self, scopes) -> bool:
-        call_graph: Callgraph = self._build_call_graph(scopes)
-        callers = set()
-        while call_graph:
-            leaf = self._pop_leaf(call_graph)
-            if not leaf:
-                continue
-            caller, callee, call_irs = leaf
-            if callee.is_testbench():
-                continue
-            if not env.config.perfect_inlining:
-                if caller.is_testbench() and callee.is_function_module():
+            call_graph: Callgraph = self._build_call_graph(scopes)
+            callers = set()
+            closure_callers: set[Scope] = set()
+            restart = False
+            while call_graph:
+                leaf = self._pop_leaf(call_graph)
+                if not leaf:
                     continue
-            if caller.is_testbench() and callee.is_ctor() and callee.parent.is_module():
+                caller, callee, call_irs = leaf
+                if callee.is_testbench():
+                    continue
+                if not env.config.perfect_inlining:
+                    if caller.is_testbench() and callee.is_function_module():
+                        continue
+                if caller.is_testbench() and callee.is_ctor() and callee.parent.is_module():
+                    continue
+                if caller.is_namespace() and callee.is_method():
+                    continue
+                ret = self._inlining(caller, callee, call_irs)
+                logger.debug(f"inlined {callee.name} on {caller.name}")
+                callers.add(caller)
+                if not ret:
+                    # Closure was merged — need typeprop on this caller only,
+                    # then rebuild call graph and continue.
+                    closure_callers.add(caller)
+                    restart = True
+                    break
+            for c in callers:
+                self._reduce_useless_move(c)
+            if restart:
+                # Run TypePropagation only on the affected callers and their new closures
+                affected: list[Scope] = list(closure_callers)
+                for s in self._new_scopes:
+                    if s not in affected:
+                        affected.append(s)
+                TypePropagation(is_strict=False).process_scopes(affected)
+                scopes = [s for s in scopes if s.name in env.scopes]
                 continue
-            if caller.is_namespace() and callee.is_method():
-                continue
-            ret = self._inlining(caller, callee, call_irs)
-            if not ret:
-                return False
-            logger.debug(f"inlined {callee.name} on {caller.name}")
-            callers.add(caller)
-        for c in callers:
-            self._reduce_useless_move(c)
-        return True
+            break
+        return self._new_scopes
 
     def _build_call_graph(self, scopes: list[Scope]) -> Callgraph:
         call_graph: Callgraph = {}
