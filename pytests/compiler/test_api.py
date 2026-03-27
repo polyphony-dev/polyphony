@@ -1,6 +1,6 @@
 import os
 import pytest
-from polyphony.compiler import compile, _
+from polyphony.compiler import compile
 
 
 _TESTS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'tests')
@@ -47,24 +47,32 @@ class TestCompileAPI:
             assert model.p1.rd() == 456
 
 
-class TestCompilePartialArgs:
+class TestCompileParams:
     def _test_path(self, *parts):
         return os.path.join(_TESTS_DIR, *parts)
 
-    def test_compile_all_args_applied(self):
-        """compile() with all args specified produces a model (no input ports for those args)."""
+    def test_compile_with_params_dict(self):
+        """compile() with params dict applies named parameters."""
         model = compile(
             self._test_path('expr', 'expr01.py'),
             'expr01',
-            args=(1,),
+            params={'x': 1},
         )
         assert model is not None
 
-    def test_compile_placeholder_skips_binding(self):
-        """compile() with _ placeholder leaves that argument as an input port."""
+    def test_compile_without_params(self):
+        """compile() without params leaves all args as input ports."""
         model = compile(
             self._test_path('expr', 'expr01.py'),
             'expr01',
-            args=(_,),
+        )
+        assert model is not None
+
+    def test_compile_params_none(self):
+        """compile() with params=None is same as no params."""
+        model = compile(
+            self._test_path('expr', 'expr01.py'),
+            'expr01',
+            params=None,
         )
         assert model is not None

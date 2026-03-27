@@ -900,30 +900,42 @@ def setup_global(src_file):
         g.import_sym(sym, asname)
 
 
+def _parse_arg_value(a):
+    """Parse a single argument value from string or pass through typed values."""
+    if not isinstance(a, str):
+        return a
+    if a.isdigit() or a[0] == '-' and a[1:].isdigit():
+        return int(a)
+    elif a[0] == ':':
+        a_scope = Scope.global_scope().find_scope(a)
+        if not a_scope:
+            raise RuntimeError(f'{a} not found')
+        return a_scope
+    else:
+        return a
+
+
 # replace a target scope name to a scope object
 def parse_targets(scopes):
     if not env.targets:
         raise RuntimeError('compile targets not found')
     scope_dict = {s.name: s for s in scopes}
-    for i, (name, args_str) in enumerate(env.targets):
+    for i, (name, params) in enumerate(env.targets):
         scope_name = f'{env.global_scope_name}.{name}'
         if scope_name in scope_dict:
             target_scope = scope_dict[scope_name]
-            args = []
-            for a in args_str:
-                if a == '_':
-                    args.append(a)
-                elif a.isdigit() or a[0] == '-' and a[1:].isdigit():
-                    args.append(int(a))
-                elif a[0] == ':':
-                    # a as a type name
-                    a_scope = Scope.global_scope().find_scope(a)
-                    if not a_scope:
-                        raise RuntimeError(f'{a} not found')
-                    args.append(a_scope)
-                else:
-                    args.append(a)
-            env.targets[i] = (target_scope, args)
+            if isinstance(params, dict):
+                # dict form from compile() API
+                args = {}
+                for k, v in params.items():
+                    args[k] = _parse_arg_value(v)
+                env.targets[i] = (target_scope, args)
+            else:
+                # tuple/list form from CLI -t option (legacy)
+                args = []
+                for a in params:
+                    args.append(_parse_arg_value(a))
+                env.targets[i] = (target_scope, args)
         else:
             raise RuntimeError(f'{name} not found')
 

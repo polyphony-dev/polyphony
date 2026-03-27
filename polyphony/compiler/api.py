@@ -8,18 +8,10 @@ from .__main__ import setup, compile_plan, output_plan, output_hdl
 from .__main__ import compile as _compile_ir
 
 
-class _Placeholder:
-    """Sentinel for unapplied arguments in compile()."""
-    def __repr__(self):
-        return '_'
-
-_ = _Placeholder()
-
-
 def compile(
     source: str,
     target: str,
-    args: tuple = (),
+    params: dict | None = None,
     module_name: str = '',
     output_file: str = '',
 ):
@@ -28,7 +20,10 @@ def compile(
     Args:
         source: Path to the Python source file.
         target: Name of the function or class to compile.
-        args: Constructor/function arguments (constants).
+        params: Named parameters to apply. Keys are parameter names,
+                values are constants for binding. Parameters not included
+                remain as HDL input ports (for functions).
+                For module classes, all constructor args must be specified.
         module_name: Output module name (auto-generated if empty).
         output_file: Verilog output file path (no output if empty).
 
@@ -37,7 +32,8 @@ def compile(
     """
     from ..simulator import SimulationModelBuilder
 
-    args_str = tuple('_' if isinstance(a, _Placeholder) else str(a) for a in args)
+    if params is None:
+        params = {}
 
     options = types.SimpleNamespace()
     options.output_name = module_name if module_name else os.path.splitext(os.path.basename(source))[0]
@@ -50,7 +46,7 @@ def compile(
     options.hdl_debug_mode = False
     options.verilog_dump = False
     options.verilog_monitor = False
-    options.targets = [(target, args_str)]
+    options.targets = [(target, params)]
 
     setup(source, options)
     source_text = read_source(source)

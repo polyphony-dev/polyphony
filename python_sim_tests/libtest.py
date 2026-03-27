@@ -3,8 +3,8 @@ from polyphony.simulator import Simulator
 from polyphony.timing import clkfence, clksleep, clktime
 
 
-def test(source, target, args, test_case):
-    model = compile(source, target, args=tuple(args.split(',')) if args else ())
+def test(source, target, test_case):
+    model = compile(source, target)
     with Simulator(model):
         test_case(model)
 
@@ -31,7 +31,7 @@ def test_interface(p01):
     print(p01.o.read())
     assert 2 == p01.o.read()
 
-test('tests/io/interface01.py', 'interface01', '', test_interface)
+test('tests/io/interface01.py', 'interface01', test_interface)
 
 
 def test_handshake(p01):
@@ -43,4 +43,4 @@ def test_handshake(p01):
 
     print('OK~!')
 
-#test('tests/io/handshake.py', 'handshake_demo', '', test_handshake)
+#test('tests/io/handshake.py', 'handshake_demo', test_handshake)
