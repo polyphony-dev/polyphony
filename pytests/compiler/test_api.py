@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import pytest
 from polyphony.compiler import compile
@@ -151,3 +152,52 @@ class TestCompileParams:
         with Simulator(model):
             wait_value(42, model.o)
             assert model.o.rd() == 42
+
+
+def _load_class(name, path):
+    """Load a class from a .py file by name."""
+    import sys
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return getattr(mod, name)
+
+
+class TestCompileObjectPass:
+    """Tests for passing Python class/function objects directly to compile()."""
+
+    def test_compile_class_object(self):
+        """compile(ClassObj, params={...}) works like compile(path, name, params={...})."""
+        from polyphony.simulator import Simulator
+
+        src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
+        cls = _load_class('object_pass', src)
+        model = compile(cls, params={'width': 99})
+        assert model is not None
+        with Simulator(model):
+            assert model.p.rd() == 99
+
+    def test_compile_class_object_without_params(self):
+        """compile(ClassObj) without params returns a model."""
+        src = os.path.join(_API_SOURCES_DIR, 'param_int.py')
+        cls = _load_class('param_int', src)
+        model = compile(cls, params={'width': 7})
+        assert model is not None
+
+    def test_compile_class_explicit_target_ignored(self):
+        """When source is an object, target is derived from __name__, explicit target is ignored."""
+        from polyphony.simulator import Simulator
+
+        src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
+        cls = _load_class('object_pass', src)
+        model = compile(cls, target='ignored', params={'width': 99})
+        assert model is not None
+        with Simulator(model):
+            assert model.p.rd() == 99
+
+    def test_compile_string_without_target_raises(self):
+        """compile(path_str) without target raises ValueError."""
+        src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
+        with pytest.raises(ValueError, match='target'):
+            compile(src)

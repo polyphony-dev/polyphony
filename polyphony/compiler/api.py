@@ -1,6 +1,8 @@
 import builtins
+import inspect
 import os
 import types
+from collections.abc import Callable
 
 from .common.common import read_source
 from .common.env import env
@@ -9,17 +11,22 @@ from .__main__ import compile as _compile_ir
 
 
 def compile(
-    source: str,
-    target: str,
+    source: str | type | Callable,
+    target: str = '',
     params: dict | None = None,
     module_name: str = '',
     output_file: str = '',
 ):
-    """Compile a Python source file to a simulation model.
+    """Compile a Python source file or object to a simulation model.
 
     Args:
-        source: Path to the Python source file.
+        source: Path to the Python source file, or a class/function object.
+                When a class or function is passed, the source file is
+                resolved via inspect.getfile() and the target name is
+                derived from the object's __name__.
         target: Name of the function or class to compile.
+                Required when source is a file path string.
+                Ignored when source is a class or function object.
         params: Named parameters to apply. Keys are parameter names,
                 values are constants for binding. Parameters not included
                 remain as HDL input ports (for functions).
@@ -32,11 +39,19 @@ def compile(
     """
     from ..simulator import SimulationModelBuilder
 
+    if isinstance(source, str):
+        src_file = source
+        if not target:
+            raise ValueError("'target' is required when 'source' is a file path string")
+    else:
+        src_file = inspect.getfile(source)
+        target = source.__name__
+
     if params is None:
         params = {}
 
     options = types.SimpleNamespace()
-    options.output_name = module_name if module_name else os.path.splitext(os.path.basename(source))[0]
+    options.output_name = module_name if module_name else os.path.splitext(os.path.basename(src_file))[0]
     options.output_dir = os.path.dirname(output_file) if output_file else ''
     options.output_prefix = ''
     options.verbose_level = 0
@@ -48,11 +63,11 @@ def compile(
     options.verilog_monitor = False
     options.targets = [(target, params)]
 
-    setup(source, options)
-    source_text = read_source(source)
+    setup(src_file, options)
+    source_text = read_source(src_file)
 
     plan = compile_plan()
-    scopes = _compile_ir(plan, source_text, source)
+    scopes = _compile_ir(plan, source_text, src_file)
 
     if output_file:
         if not options.output_dir:
@@ -61,7 +76,7 @@ def compile(
         output_hdl(output_plan(), scopes, options, stage_offset=len(plan))
 
     main_py_module = types.ModuleType('__main__')
-    code_obj = builtins.compile(source_text, source, 'exec')
+    code_obj = builtins.compile(source_text, src_file, 'exec')
     exec(code_obj, main_py_module.__dict__)
 
     model = None
