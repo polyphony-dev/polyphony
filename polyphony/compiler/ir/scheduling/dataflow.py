@@ -753,21 +753,25 @@ class DFGBuilder(object):
                         n2 = sorted_nodes[k]
                         if parallelizer.can_be_parallel(mem_sym, n1, n2):
                             continue
+                        # Register arrays use non-blocking assignment:
+                        # - RAW (write→read): seq edge (must read new value)
+                        # - WAR (read→write): usedef edge (read must capture
+                        #   old value before write takes effect)
+                        # - WAW (write→write): no edge (non-blocking safe)
+                        # - RAR (read→read): no edge
                         if is_mem_read(n1.tag):
                             if is_mem_write(n2.tag):
+                                # WAR: read must complete before write
                                 dfg.add_usedef_edge(n1, n2)
                             continue
+                        # n1=write
+                        if is_mem_read(n2.tag):
+                            # RAW: write must complete before read
+                            dfg.add_seq_edge(n1, n2)
+                            continue
+                        # WAW (write→write): safe with non-blocking
                         if self.scope.has_branch_edge(n1.tag, n2.tag):
                             continue
-                        dfg.add_seq_edge(n1, n2)
-                else:
-                    for i in range(len(sorted_nodes) - 1):
-                        n1 = sorted_nodes[i]
-                        for j in range(i + 1, len(sorted_nodes)):
-                            n2 = sorted_nodes[j]
-                            if self.scope.has_branch_edge(n1.tag, n2.tag):
-                                continue
-                            dfg.add_seq_edge(n1, n2)
 
     def _add_seq_edges(self, blocks, dfg):
         for blk in blocks:
