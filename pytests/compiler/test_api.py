@@ -4,6 +4,7 @@ from polyphony.compiler import compile
 
 
 _TESTS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'tests')
+_API_SOURCES_DIR = os.path.join(os.path.dirname(__file__), 'api_test_sources')
 
 
 class TestCompileAPI:
@@ -101,20 +102,23 @@ class TestCompileParams:
             core.expr01_i32_accept.set(1)
             clkfence()
 
-    def test_compile_params_bind_type(self):
-        """params で型を渡せる。"""
-        model = compile(
-            self._test_path('typing', 'module_param01.py'),
-            'module_param01',
-        )
-        assert model is not None
+    def test_compile_params_bind_int(self):
+        """params で int 値を渡してシミュレーションで検証。"""
+        from polyphony.simulator import Simulator
 
-    @pytest.mark.xfail(reason="AGeneric requires parent module context to compile standalone")
-    def test_compile_params_bind_type_direct(self):
-        """params で型パラメータを直接渡せる。"""
-        model = compile(
-            self._test_path('typing', 'module_param01.py'),
-            'AGeneric',
-            params={'dtype': bool},
-        )
+        src = os.path.join(_API_SOURCES_DIR, 'param_int.py')
+        model = compile(src, 'param_int', params={'width': 42})
         assert model is not None
+        with Simulator(model):
+            assert model.p.rd() == 42
+
+    def test_compile_params_bind_type(self):
+        """params で型を渡してシミュレーションで検証。"""
+        from polyphony.simulator import Simulator
+        from polyphony.typing import int8
+
+        src = os.path.join(_API_SOURCES_DIR, 'param_type.py')
+        model = compile(src, 'param_type', params={'dtype': int8})
+        assert model is not None
+        with Simulator(model):
+            assert model.p.rd() == 10
