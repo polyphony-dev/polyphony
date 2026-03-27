@@ -1,7 +1,7 @@
 import builtins
 import inspect
 import os
-import types
+import types as _types
 from collections.abc import Callable
 
 from .common.common import read_source
@@ -32,7 +32,7 @@ def _validate_module_class_params(cls, params):
 def _validate_module_class_params_from_source(src_file, target, params):
     """Validate module class params when source is a file path string."""
     source_text = read_source(src_file)
-    tmp_module = types.ModuleType('_polyphony_validation_tmp')
+    tmp_module = _types.ModuleType('_polyphony_validation_tmp')
     code_obj = builtins.compile(source_text, src_file, 'exec')
     exec(code_obj, tmp_module.__dict__)
     cls = getattr(tmp_module, target, None)
@@ -46,6 +46,7 @@ def compile(
     params: dict | None = None,
     module_name: str = '',
     output_file: str = '',
+    types: dict | None = None,
 ):
     """Compile a Python source file or object to a simulation model.
 
@@ -63,6 +64,10 @@ def compile(
                 For module classes, all constructor args must be specified.
         module_name: Output module name (auto-generated if empty).
         output_file: Verilog output file path (no output if empty).
+        types: Type specifications for unannotated arguments. Keys are
+               parameter names, values are polyphony.typing type classes
+               (e.g. int8, bit16, uint32). Raises ValueError if the
+               parameter already has a different type annotation.
 
     Returns:
         A simulation Model object.
@@ -86,7 +91,7 @@ def compile(
     else:
         _validate_module_class_params_from_source(src_file, target, params)
 
-    options = types.SimpleNamespace()
+    options = _types.SimpleNamespace()
     options.output_name = module_name if module_name else os.path.splitext(os.path.basename(src_file))[0]
     options.output_dir = os.path.dirname(output_file) if output_file else ''
     options.output_prefix = ''
@@ -100,6 +105,8 @@ def compile(
     options.targets = [(target, params)]
 
     setup(src_file, options)
+    if types:
+        env.api_types = {target: types}
     source_text = read_source(src_file)
 
     plan = compile_plan()
@@ -111,7 +118,7 @@ def compile(
         options.output_name = os.path.splitext(os.path.basename(output_file))[0]
         output_hdl(output_plan(), scopes, options, stage_offset=len(plan))
 
-    main_py_module = types.ModuleType('__main__')
+    main_py_module = _types.ModuleType('__main__')
     code_obj = builtins.compile(source_text, src_file, 'exec')
     exec(code_obj, main_py_module.__dict__)
 

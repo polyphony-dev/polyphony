@@ -430,6 +430,67 @@ def instantiate(driver):
         modules = new_find_called_module(scopes)
 
 
+def apply_api_types(driver):
+    """Apply type specifications from compile(types={...}) to parameter symbols."""
+    if not env.api_types:
+        return
+    from .ir.types.type import Type
+    from polyphony.typing import int_base
+    all_scopes = Scope.get_scopes(with_global=False, with_class=True)
+    for target_name, type_specs in env.api_types.items():
+        callee = None
+        for s in all_scopes:
+            if s.orig_base_name == target_name:
+                if s.is_module():
+                    callee = s.find_ctor()
+                elif s.is_function() or s.is_worker():
+                    callee = s
+                break
+        if callee is None:
+            continue
+        param_names = callee.param_names()
+        param_syms = callee.param_symbols()
+        for pname, ptype in type_specs.items():
+            if pname not in param_names:
+                raise ValueError(
+                    f"parameter '{pname}' not found in '{target_name}'"
+                )
+            idx = param_names.index(pname)
+            ir_type = _python_type_to_ir_type(ptype)
+            sym = param_syms[idx]
+            if not sym.typ.is_undef() and sym.typ != ir_type:
+                raise ValueError(
+                    f"parameter '{pname}' already has type annotation "
+                    f"'{sym.typ}', cannot override with '{ir_type}'"
+                )
+            sym.typ = ir_type
+            # Also set type on the local copy symbol
+            copy_sym = callee.find_sym(pname)
+            if copy_sym and copy_sym is not sym:
+                copy_sym.typ = ir_type
+
+
+def _python_type_to_ir_type(ptype):
+    """Convert a polyphony.typing type class to an IR Type object."""
+    from .ir.types.type import Type
+    from polyphony.typing import int_base
+    name = ptype.__name__
+    if issubclass(ptype, int_base):
+        if name.startswith('uint'):
+            return Type.int(int(name[4:]), signed=False, explicit=True)
+        elif name.startswith('int'):
+            return Type.int(int(name[3:]), signed=True, explicit=True)
+        elif name == 'bit':
+            return Type.int(1, signed=False, explicit=True)
+        elif name.startswith('bit'):
+            return Type.int(int(name[3:]), signed=False, explicit=True)
+    if ptype is int:
+        return Type.int(explicit=True)
+    if ptype is bool:
+        return Type.bool(explicit=True)
+    raise ValueError(f"unsupported type: {ptype}")
+
+
 def apply_argument(driver):
     ArgumentApplier().process_all()
 
@@ -718,6 +779,7 @@ def compile_plan():
         return proc if env.config.enable_pure else None
 
     plan = [
+        apply_api_types,
         if_trans,
         detect_loops,
         reduce_blk,

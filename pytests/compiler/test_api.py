@@ -239,3 +239,55 @@ class TestModuleClassParamsValidation:
             'expr01',
         )
         assert model is not None
+
+
+class TestCompileTypes:
+    """Tests for types parameter to specify argument types."""
+
+    def test_types_sets_argument_type(self):
+        """compile() with types sets the bit width of unannotated arguments."""
+        from polyphony.simulator import Simulator
+        from polyphony.typing import int8
+        from polyphony.timing import clkfence
+
+        src = os.path.join(_API_SOURCES_DIR, 'typed_func.py')
+        model = compile(src, 'typed_func', types={'a': int8, 'b': int8})
+        assert model is not None
+        core = getattr(model, '__model')
+        with Simulator(model):
+            core.typed_func_i8i8_in_a.set(3)
+            core.typed_func_i8i8_in_b.set(4)
+            core.typed_func_i8i8_ready.set(1)
+            clkfence()
+            core.typed_func_i8i8_ready.set(0)
+            for _ in range(20):
+                if core.typed_func_i8i8_valid.val == 1:
+                    break
+                clkfence()
+            assert core.typed_func_i8i8_out_0.val == 7
+            core.typed_func_i8i8_accept.set(1)
+            clkfence()
+
+    def test_types_conflict_with_annotation_raises(self):
+        """compile() with types that conflict with existing annotations raises ValueError."""
+        from polyphony.typing import int8, int32
+
+        src = os.path.join(_API_SOURCES_DIR, 'annotated_func.py')
+        with pytest.raises(ValueError, match='already has type annotation'):
+            compile(src, 'annotated_func', types={'a': int32})
+
+    def test_types_same_as_annotation_ok(self):
+        """compile() with types matching existing annotations is fine."""
+        from polyphony.typing import int16
+
+        src = os.path.join(_API_SOURCES_DIR, 'annotated_func.py')
+        model = compile(src, 'annotated_func', types={'a': int16, 'b': int16})
+        assert model is not None
+
+    def test_types_unknown_param_raises(self):
+        """compile() with types for non-existent parameter raises ValueError."""
+        from polyphony.typing import int8
+
+        src = os.path.join(_API_SOURCES_DIR, 'typed_func.py')
+        with pytest.raises(ValueError, match='no_such_param'):
+            compile(src, 'typed_func', types={'no_such_param': int8})
