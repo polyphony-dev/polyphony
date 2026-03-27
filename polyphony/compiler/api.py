@@ -10,6 +10,36 @@ from .__main__ import setup, compile_plan, output_plan, output_hdl
 from .__main__ import compile as _compile_ir
 
 
+def _validate_module_class_params(cls, params):
+    """Validate that all required __init__ params are provided for a @module class."""
+    if not getattr(cls, '_is_module', False):
+        return
+    sig = inspect.signature(cls.__init__)
+    required = [
+        name for name, p in sig.parameters.items()
+        if name != 'self' and p.default is inspect.Parameter.empty
+    ]
+    if not required:
+        return
+    missing = [name for name in required if name not in params]
+    if missing:
+        raise ValueError(
+            f"module class '{cls.__name__}' requires params for constructor arguments: "
+            f"{', '.join(missing)}"
+        )
+
+
+def _validate_module_class_params_from_source(src_file, target, params):
+    """Validate module class params when source is a file path string."""
+    source_text = read_source(src_file)
+    tmp_module = types.ModuleType('_polyphony_validation_tmp')
+    code_obj = builtins.compile(source_text, src_file, 'exec')
+    exec(code_obj, tmp_module.__dict__)
+    cls = getattr(tmp_module, target, None)
+    if cls is not None and inspect.isclass(cls):
+        _validate_module_class_params(cls, params)
+
+
 def compile(
     source: str | type | Callable,
     target: str = '',
@@ -49,6 +79,12 @@ def compile(
 
     if params is None:
         params = {}
+
+    # Validate module class params
+    if not isinstance(source, str):
+        _validate_module_class_params(source, params)
+    else:
+        _validate_module_class_params_from_source(src_file, target, params)
 
     options = types.SimpleNamespace()
     options.output_name = module_name if module_name else os.path.splitext(os.path.basename(src_file))[0]

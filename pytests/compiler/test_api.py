@@ -201,3 +201,41 @@ class TestCompileObjectPass:
         src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
         with pytest.raises(ValueError, match='target'):
             compile(src)
+
+
+class TestModuleClassParamsValidation:
+    """Tests for module class params validation."""
+
+    def test_module_class_without_params_raises(self):
+        """compile(ModuleClass) without params raises ValueError."""
+        src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
+        cls = _load_class('object_pass', src)
+        with pytest.raises(ValueError, match='params'):
+            compile(cls)
+
+    def test_module_class_with_missing_params_raises(self):
+        """compile(ModuleClass, params={}) with missing required params raises ValueError."""
+        src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
+        cls = _load_class('object_pass', src)
+        with pytest.raises(ValueError, match='width'):
+            compile(cls, params={})
+
+    def test_module_class_string_without_params_raises(self):
+        """compile(path, name) for module class without params raises ValueError."""
+        src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
+        with pytest.raises(ValueError, match='params'):
+            compile(src, 'object_pass')
+
+    def test_module_class_string_with_missing_params_raises(self):
+        """compile(path, name, params={}) for module class with missing params raises ValueError."""
+        src = os.path.join(_API_SOURCES_DIR, 'object_pass.py')
+        with pytest.raises(ValueError, match='width'):
+            compile(src, 'object_pass', params={})
+
+    def test_function_without_params_ok(self):
+        """compile() for a function without params is fine (args become input ports)."""
+        model = compile(
+            os.path.join(_TESTS_DIR, 'expr', 'expr01.py'),
+            'expr01',
+        )
+        assert model is not None
