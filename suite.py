@@ -53,6 +53,7 @@ FILES = (
     "/apps/shellsort.py",
     "/apps/stack.py",
     "/chstone/mips/mips.py",
+    "/chstone/mips/mips_module.py",
     "/chstone/jpeg/chenidct.py",
     "/chstone/aes/aes_module.py",
     "/chstone/adpcm/adpcm_module.py",
