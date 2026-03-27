@@ -460,7 +460,8 @@ class PipelineScheduler(SchedulerImpl):
         conflict_res_table = defaultdict(list)
         self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.mems)
         self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.ports)
-        self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.regarrays)
+        # Register arrays allow parallel access via non-blocking assignment,
+        # so they are not treated as single-port resource conflicts.
         return conflict_res_table
 
     def _extend_conflict_res_table(self, table, target_nodes, node_res_map):

@@ -2076,3 +2076,148 @@ ret @return
     # Seq edges should exist in sequential mode
     seq_edges = [(n1, n2) for (n1, n2), (typ, _) in dfg.edges.items() if typ == 'Seq']
     assert len(seq_edges) >= 1
+
+
+# --- Register array memory edge tests ---
+
+def _mem_edge_scope_raw():
+    """Build a scope with write→read to the same index (RAW hazard).
+
+    Uses 'pipeline' scheduling to avoid blanket sequential edges.
+    """
+    src = '''
+scope F
+tags function returnable
+return int32
+var arr: list<int32>[4]
+var x: int32
+var y: int32
+
+blk1:
+mv x 42
+expr (mst arr 0 x)
+mv y (mld arr 0)
+mv @return y
+ret @return
+'''
+    scope = build_scope_with_loop(src, scheduling='pipeline')
+    DFGBuilder().process(scope)
+    return scope
+
+
+def _mem_edge_scope_war():
+    """Build a scope with read→write to the same index (WAR).
+
+    Uses separate variables for read and write so that the variable
+    DefUse edge does not mask the memory WAR edge.
+    Uses 'pipeline' scheduling to avoid blanket sequential edges.
+    """
+    src = '''
+scope F
+tags function returnable
+return int32
+var arr: list<int32>[4]
+var x: int32
+var y: int32
+
+blk1:
+mv x (mld arr 0)
+mv y 99
+expr (mst arr 0 y)
+mv @return x
+ret @return
+'''
+    scope = build_scope_with_loop(src, scheduling='pipeline')
+    DFGBuilder().process(scope)
+    return scope
+
+
+def _mem_edge_scope_waw():
+    """Build a scope with write→write to the same index (WAW).
+
+    Uses 'pipeline' scheduling to avoid blanket sequential edges.
+    """
+    src = '''
+scope F
+tags function returnable
+return int32
+var arr: list<int32>[4]
+var x: int32
+
+blk1:
+mv x 10
+expr (mst arr 0 x)
+mv x 20
+expr (mst arr 0 x)
+mv @return x
+ret @return
+'''
+    scope = build_scope_with_loop(src, scheduling='pipeline')
+    DFGBuilder().process(scope)
+    return scope
+
+
+def _find_mem_edges(dfg):
+    """Classify memory edges by read/write pattern."""
+    edges_by_type = {'RAW': [], 'WAR': [], 'WAW': [], 'RAR': []}
+    for (n1, n2), (typ, _) in dfg.edges.items():
+        if typ not in ('Seq', 'UseDef'):
+            continue
+        n1_read = is_mem_read(n1.tag)
+        n1_write = is_mem_write(n1.tag)
+        n2_read = is_mem_read(n2.tag)
+        n2_write = is_mem_write(n2.tag)
+        if n1_write and n2_read:
+            edges_by_type['RAW'].append((n1, n2, typ))
+        elif n1_read and n2_write:
+            edges_by_type['WAR'].append((n1, n2, typ))
+        elif n1_write and n2_write:
+            edges_by_type['WAW'].append((n1, n2, typ))
+        elif n1_read and n2_read:
+            edges_by_type['RAR'].append((n1, n2, typ))
+    return edges_by_type
+
+
+def test_mem_edges_raw_exists():
+    """RAW (write→read) to the same index creates a Seq edge."""
+    scope = _mem_edge_scope_raw()
+    edges = _find_mem_edges(scope.top_dfg)
+    assert len(edges['RAW']) > 0, "Expected RAW (write→read) Seq edge"
+
+
+def test_mem_edges_war_exists():
+    """WAR (read→write) to the same index creates a UseDef edge."""
+    scope = _mem_edge_scope_war()
+    edges = _find_mem_edges(scope.top_dfg)
+    assert len(edges['WAR']) > 0, "Expected WAR (read→write) UseDef edge"
+    # WAR edge type should be UseDef
+    assert all(typ == 'UseDef' for _, _, typ in edges['WAR'])
+
+
+def test_mem_edges_waw_removed():
+    """WAW (write→write) to the same index has no edge (non-blocking safe)."""
+    scope = _mem_edge_scope_waw()
+    edges = _find_mem_edges(scope.top_dfg)
+    assert len(edges['WAW']) == 0, f"WAW edges should not exist: {edges['WAW']}"
+
+
+def test_mem_edges_rar_no_edge():
+    """RAR (read→read) has no memory edge."""
+    src = '''
+scope F
+tags function returnable
+return int32
+var arr: list<int32>[4]
+var x: int32
+var y: int32
+
+blk1:
+mv x (mld arr 0)
+mv y (mld arr 1)
+mv @return (+ x y)
+ret @return
+'''
+    scope = build_scope_with_loop(src, scheduling='pipeline')
+    DFGBuilder().process(scope)
+    edges = _find_mem_edges(scope.top_dfg)
+    assert len(edges['RAR']) == 0, f"RAR edges should not exist: {edges['RAR']}"
