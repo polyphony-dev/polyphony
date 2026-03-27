@@ -206,6 +206,20 @@ class ArgumentApplier(object):
                         scope.find_block(stm.block).replace_stm(stm, new_stm)
         return next_scopes
 
+    def _value_to_ir(self, value) -> IrExp:
+        """Convert a Python value to an IR expression node."""
+        if isinstance(value, int):
+            return Const(value=value)
+        elif isinstance(value, type):
+            return Temp(name=value.__name__)
+        elif callable(value):
+            return Temp(name=value.__name__)
+        elif isinstance(value, (tuple, list)):
+            items = tuple(('', self._value_to_ir(v)) for v in value)
+            return Array(items=items)
+        else:
+            return Const(value=value)
+
     def _apply_api_params(self):
         """Bind params from compile() API (env.targets with dict params)."""
         if not env.targets:
@@ -233,7 +247,7 @@ class ArgumentApplier(object):
             binding: list[tuple[int, IrExp]] = []
             for i, pname in enumerate(param_names):
                 if pname in params:
-                    binding.append((i, Const(value=params[pname])))
+                    binding.append((i, self._value_to_ir(params[pname])))
             if not binding:
                 continue
             bound_indices = {i for i, _ in binding}

@@ -100,3 +100,21 @@ class TestCompileParams:
             assert core.expr01_i32_out_0.val == 7
             core.expr01_i32_accept.set(1)
             clkfence()
+
+    def test_compile_params_bind_type(self):
+        """params で型を渡せる。"""
+        model = compile(
+            self._test_path('typing', 'module_param01.py'),
+            'module_param01',
+        )
+        assert model is not None
+
+    @pytest.mark.xfail(reason="AGeneric requires parent module context to compile standalone")
+    def test_compile_params_bind_type_direct(self):
+        """params で型パラメータを直接渡せる。"""
+        model = compile(
+            self._test_path('typing', 'module_param01.py'),
+            'AGeneric',
+            params={'dtype': bool},
+        )
+        assert model is not None
