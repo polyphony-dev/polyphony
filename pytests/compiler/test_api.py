@@ -76,3 +76,27 @@ class TestCompileParams:
             params=None,
         )
         assert model is not None
+
+    def test_compile_params_bind_constant(self):
+        """params dict values are constant-propagated into the compiled result."""
+        from polyphony.simulator import Simulator
+        from polyphony.timing import clkfence
+
+        model = compile(
+            self._test_path('expr', 'expr01.py'),
+            'expr01',
+            params={'a': 5},
+        )
+        core = getattr(model, '__model')
+        with Simulator(model):
+            core.expr01_i32_ready.set(1)
+            clkfence()
+            core.expr01_i32_ready.set(0)
+            for _ in range(20):
+                if core.expr01_i32_valid.val == 1:
+                    break
+                clkfence()
+            # expr01(a) = a + 1 + 1, with a=5 → 7
+            assert core.expr01_i32_out_0.val == 7
+            core.expr01_i32_accept.set(1)
+            clkfence()
