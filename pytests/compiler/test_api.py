@@ -291,3 +291,18 @@ class TestCompileTypes:
         src = os.path.join(_API_SOURCES_DIR, 'typed_func.py')
         with pytest.raises(ValueError, match='no_such_param'):
             compile(src, 'typed_func', types={'no_such_param': int8})
+
+    def test_types_python_builtin_int(self):
+        """compile() with types={...: int} uses default int width."""
+        src = os.path.join(_API_SOURCES_DIR, 'typed_func.py')
+        model = compile(src, 'typed_func', types={'a': int, 'b': int})
+        assert model is not None
+
+    @pytest.mark.xfail(reason="compiler does not support list type as function argument")
+    def test_types_list(self):
+        """compile() with types={...: List[int8]} specifies list element type."""
+        from polyphony.typing import List, int8
+
+        src = os.path.join(_API_SOURCES_DIR, 'typed_list_func.py')
+        model = compile(src, 'typed_list_func', types={'data': List[int8][4]})
+        assert model is not None

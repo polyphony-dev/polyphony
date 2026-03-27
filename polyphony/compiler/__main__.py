@@ -471,24 +471,61 @@ def apply_api_types(driver):
 
 
 def _python_type_to_ir_type(ptype):
-    """Convert a polyphony.typing type class to an IR Type object."""
+    """Convert a Python type to an IR Type using the compiler's scope registry.
+
+    Supports:
+      - polyphony.typing types (int8, bit16, uint32, etc.)
+      - Python builtins (int, bool)
+      - Container types (List[int8], List[int8][16], Tuple[int8, int16])
+    """
+    import types as pytypes
     from .ir.types.type import Type
-    from polyphony.typing import int_base
-    name = ptype.__name__
-    if issubclass(ptype, int_base):
-        if name.startswith('uint'):
-            return Type.int(int(name[4:]), signed=False, explicit=True)
-        elif name.startswith('int'):
-            return Type.int(int(name[3:]), signed=True, explicit=True)
-        elif name == 'bit':
-            return Type.int(1, signed=False, explicit=True)
-        elif name.startswith('bit'):
-            return Type.int(int(name[3:]), signed=False, explicit=True)
-    if ptype is int:
-        return Type.int(explicit=True)
-    if ptype is bool:
-        return Type.bool(explicit=True)
+    from .ir.types.typehelper import type_from_typeclass
+    from polyphony.typing import List, Tuple
+
+    # Handle GenericAlias (e.g. Tuple[int8, int16])
+    if isinstance(ptype, pytypes.GenericAlias):
+        origin = ptype.__origin__
+        args = ptype.__args__
+        if origin is Tuple or (isinstance(origin, type) and issubclass(origin, Tuple)):
+            if len(args) == 1:
+                return Type.tuple(_python_type_to_ir_type(args[0]), 1, explicit=True)
+            # Polyphony Tuple is homogeneous with length
+            elm_t = _python_type_to_ir_type(args[0])
+            return Type.tuple(elm_t, len(args), explicit=True)
+        raise ValueError(f"unsupported generic type: {ptype}")
+
+    # Handle List[T] and List[T][N] (dynamic subclasses of List)
+    if isinstance(ptype, type) and issubclass(ptype, List) and ptype is not List:
+        list_type = getattr(ptype, 'list_type', None)
+        list_capacity = getattr(ptype, 'list_capacity', Type.ANY_LENGTH)
+        if list_type is not None:
+            elm_t = _python_type_to_ir_type(list_type)
+            return Type.list(elm_t, length=list_capacity, explicit=True)
+
+    # Look up type scope in the compiler's registry
+    if isinstance(ptype, type):
+        scope_name = _resolve_type_scope_name(ptype)
+        if scope_name and scope_name in env.scopes:
+            scope = env.scopes[scope_name]
+            if scope.is_typeclass():
+                return type_from_typeclass(scope, explicit=True)
+
     raise ValueError(f"unsupported type: {ptype}")
+
+
+def _resolve_type_scope_name(ptype):
+    """Resolve a Python type class to its compiler scope name."""
+    from polyphony.typing import int_base
+    # Python builtins
+    if ptype is int:
+        return '__builtin__.int'
+    if ptype is bool:
+        return '__builtin__.bool'
+    # polyphony.typing types
+    if isinstance(ptype, type) and issubclass(ptype, int_base):
+        return f'polyphony.typing.{ptype.__name__}'
+    return None
 
 
 def apply_argument(driver):
