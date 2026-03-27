@@ -911,7 +911,9 @@ def parse_targets(scopes):
             target_scope = scope_dict[scope_name]
             args = []
             for a in args_str:
-                if a.isdigit() or a[0] == '-' and a[1:].isdigit():
+                if a == '_':
+                    args.append(a)
+                elif a.isdigit() or a[0] == '-' and a[1:].isdigit():
                     args.append(int(a))
                 elif a[0] == ':':
                     # a as a type name

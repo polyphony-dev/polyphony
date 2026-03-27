@@ -8,6 +8,14 @@ from .__main__ import setup, compile_plan, output_plan, output_hdl
 from .__main__ import compile as _compile_ir
 
 
+class _Placeholder:
+    """Sentinel for unapplied arguments in compile()."""
+    def __repr__(self):
+        return '_'
+
+_ = _Placeholder()
+
+
 def compile(
     source: str,
     target: str,
@@ -29,7 +37,7 @@ def compile(
     """
     from ..simulator import SimulationModelBuilder
 
-    args_str = tuple(str(a) for a in args)
+    args_str = tuple('_' if isinstance(a, _Placeholder) else str(a) for a in args)
 
     options = types.SimpleNamespace()
     options.output_name = module_name if module_name else os.path.splitext(os.path.basename(source))[0]

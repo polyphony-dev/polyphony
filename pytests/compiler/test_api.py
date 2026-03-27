@@ -1,6 +1,6 @@
 import os
 import pytest
-from polyphony.compiler import compile
+from polyphony.compiler import compile, _
 
 
 _TESTS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'tests')
@@ -45,3 +45,26 @@ class TestCompileAPI:
         with Simulator(model):
             assert model.p0.rd() == 123
             assert model.p1.rd() == 456
+
+
+class TestCompilePartialArgs:
+    def _test_path(self, *parts):
+        return os.path.join(_TESTS_DIR, *parts)
+
+    def test_compile_all_args_applied(self):
+        """compile() with all args specified produces a model (no input ports for those args)."""
+        model = compile(
+            self._test_path('expr', 'expr01.py'),
+            'expr01',
+            args=(1,),
+        )
+        assert model is not None
+
+    def test_compile_placeholder_skips_binding(self):
+        """compile() with _ placeholder leaves that argument as an input port."""
+        model = compile(
+            self._test_path('expr', 'expr01.py'),
+            'expr01',
+            args=(_,),
+        )
+        assert model is not None
