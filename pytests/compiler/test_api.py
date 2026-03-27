@@ -298,6 +298,16 @@ class TestCompileTypes:
         model = compile(src, 'typed_func', types={'a': int, 'b': int})
         assert model is not None
 
+    def test_types_with_model_call(self):
+        """compile() with types + model(args) direct call works."""
+        from polyphony.simulator import Simulator
+
+        src = os.path.join(_API_SOURCES_DIR, 'typed_func.py')
+        model = compile(src, 'typed_func', types={'a': int, 'b': int})
+        with Simulator(model):
+            assert model(3, 4) == 7
+            assert model(10, 20) == 30
+
     @pytest.mark.xfail(reason="compiler does not support list type as function argument")
     def test_types_list(self):
         """compile() with types={...: List[int8]} specifies list element type."""
@@ -306,3 +316,39 @@ class TestCompileTypes:
         src = os.path.join(_API_SOURCES_DIR, 'typed_list_func.py')
         model = compile(src, 'typed_list_func', types={'data': List[int8][4]})
         assert model is not None
+
+
+class TestModelCall:
+    """Tests for model(args) direct function call."""
+
+    def test_model_call_positional(self):
+        """model(a, b) calls the function with positional args."""
+        from polyphony.simulator import Simulator
+
+        src = os.path.join(_API_SOURCES_DIR, 'typed_func.py')
+        model = compile(src, 'typed_func', types={'a': int, 'b': int})
+        with Simulator(model):
+            assert model(1, 2) == 3
+            assert model(100, 200) == 300
+
+    def test_model_call_kwargs(self):
+        """model(a=1, b=2) calls the function with keyword args."""
+        from polyphony.simulator import Simulator
+
+        src = os.path.join(_API_SOURCES_DIR, 'typed_func.py')
+        model = compile(src, 'typed_func', types={'a': int, 'b': int})
+        with Simulator(model):
+            assert model(a=5, b=10) == 15
+
+    def test_model_call_with_params(self):
+        """model(a) works with partially applied params."""
+        from polyphony.simulator import Simulator
+
+        model = compile(
+            os.path.join(_TESTS_DIR, 'expr', 'expr01.py'),
+            'expr01',
+            params={'a': 5},
+        )
+        with Simulator(model):
+            # expr01(a) = a + 1 + 1, with a=5 bound → no input args
+            assert model() == 7
