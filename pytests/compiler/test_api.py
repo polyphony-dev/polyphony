@@ -123,6 +123,19 @@ class TestCompileParams:
         with Simulator(model):
             assert model.p.rd() == 10
 
+    @pytest.mark.xfail(reason="Array node from _value_to_ir lacks type info for TypePropagation")
+    def test_compile_params_bind_tuple(self):
+        """params で tuple を渡してシミュレーションで検証。"""
+        from polyphony.simulator import Simulator
+        from polyphony.timing import wait_value
+
+        src = os.path.join(_API_SOURCES_DIR, 'param_tuple.py')
+        model = compile(src, 'param_tuple', params={'base': 10, 'offsets': (1, 2)})
+        assert model is not None
+        with Simulator(model):
+            wait_value(13, model.o)
+            assert model.o.rd() == 13
+
     def test_compile_params_bind_func(self):
         """params で関数を渡してシミュレーションで検証。"""
         from polyphony.simulator import Simulator
