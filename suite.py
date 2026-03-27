@@ -60,6 +60,7 @@ FILES = (
     "/chstone/motion/motion_module.py",
     "/chstone/blowfish/blowfish_module.py",
     "/chstone/sha/sha_module.py",
+    "/chstone/dfadd/dfadd_module.py",
 )
 
 
