@@ -122,3 +122,20 @@ class TestCompileParams:
         assert model is not None
         with Simulator(model):
             assert model.p.rd() == 10
+
+    def test_compile_params_bind_func(self):
+        """params で関数を渡してシミュレーションで検証。"""
+        from polyphony.simulator import Simulator
+        from polyphony.timing import wait_value
+        import importlib.util
+
+        src = os.path.join(_API_SOURCES_DIR, 'param_func.py')
+        spec = importlib.util.spec_from_file_location('param_func', src)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        model = compile(src, 'param_func', params={'fn': mod.compute})
+        assert model is not None
+        with Simulator(model):
+            wait_value(42, model.o)
+            assert model.o.rd() == 42
