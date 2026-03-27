@@ -123,7 +123,6 @@ class TestCompileParams:
         with Simulator(model):
             assert model.p.rd() == 10
 
-    @pytest.mark.xfail(reason="Array node from _value_to_ir lacks type info for TypePropagation")
     def test_compile_params_bind_tuple(self):
         """params で tuple を渡してシミュレーションで検証。"""
         from polyphony.simulator import Simulator

@@ -215,8 +215,8 @@ class ArgumentApplier(object):
         elif callable(value):
             return Temp(name=value.__name__)
         elif isinstance(value, (tuple, list)):
-            items = tuple(('', self._value_to_ir(v)) for v in value)
-            return Array(items=items)
+            items = tuple(self._value_to_ir(v) for v in value)
+            return Array(items=items, mutable=isinstance(value, list))
         else:
             return Const(value=value)
 
