@@ -105,6 +105,11 @@ class BlockReducer(object):
         if block.stms and isinstance(block.stms[0], Jump):
             assert len(block.succs) == 1
             succ = block.succs[0]
+            # Skip removal when it would increase the pred count of a block
+            # containing Phi/LPhi/UPhi nodes, as their args must match preds.
+            if len(block.preds) > 1:
+                if any(isinstance(stm, (Phi, UPhi, LPhi)) for stm in succ.stms):
+                    return False
             idx = succ.preds.index(block)
             succ.remove_pred(block)
             for pred in block.preds:

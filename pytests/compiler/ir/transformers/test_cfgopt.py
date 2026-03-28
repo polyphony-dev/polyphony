@@ -1359,6 +1359,154 @@ mv x 3
     assert result is False
 
 
+def test_block_reducer_remove_empty_block_multi_pred_with_phi_preserved():
+    """BlockReducer._remove_empty_block skips when multi-pred empty block
+    feeds a successor containing Phi nodes, to preserve phi args invariant.
+
+    CFG: blk1 -CJump-> blk2/blk3, both -> bridge -> blk4 (has Phi)
+    bridge has 2 preds. Removing it would break Phi args/preds alignment.
+    """
+    src = '''
+scope F
+tags function
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+j bridge
+
+blk3:
+mv x 2
+j bridge
+
+bridge:
+j blk4
+
+blk4:
+mv x 3
+'''
+    scope = build_scope(src)
+    # Find blocks by structure: bridge is the empty Jump-only block with 2 preds
+    bridge = None
+    blk4 = None
+    for blk in scope.traverse_blocks():
+        if (len(blk.stms) == 1 and isinstance(blk.stms[0], Jump)
+                and len(blk.preds) == 2):
+            bridge = blk
+            blk4 = blk.succs[0]
+            break
+    assert bridge is not None
+    # Insert a Phi in blk4 to simulate a loop header
+    phi = Phi(
+        var=Temp(name='x', ctx=Ctx.STORE),
+        args=(Const(value=0),),
+        ps=(Const(value=1),),
+        block=blk4.bid,
+    )
+    blk4.stms.insert(0, phi)
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    result = reducer._remove_empty_block(bridge)
+    assert result is False  # Should NOT remove bridge
+
+
+def test_block_reducer_remove_empty_block_single_pred_with_phi_allowed():
+    """BlockReducer._remove_empty_block allows removal of single-pred empty
+    block even if successor has Phi nodes (1-to-1 pred replacement is safe).
+    """
+    src = '''
+scope F
+tags function
+var x: int32
+
+blk1:
+mv x 1
+j bridge
+
+bridge:
+j blk2
+
+blk2:
+mv x 2
+'''
+    scope = build_scope(src)
+    # Find bridge: empty Jump-only block with 1 pred
+    bridge = None
+    blk2 = None
+    for blk in scope.traverse_blocks():
+        if (len(blk.stms) == 1 and isinstance(blk.stms[0], Jump)
+                and len(blk.preds) == 1 and blk is not scope.entry_block):
+            bridge = blk
+            blk2 = blk.succs[0]
+            break
+    assert bridge is not None
+    phi = Phi(
+        var=Temp(name='x', ctx=Ctx.STORE),
+        args=(Const(value=0),),
+        ps=(Const(value=1),),
+        block=blk2.bid,
+    )
+    blk2.stms.insert(0, phi)
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    result = reducer._remove_empty_block(bridge)
+    assert result is True  # Single pred: safe to remove
+
+
+def test_block_reducer_remove_empty_block_multi_pred_no_phi_allowed():
+    """BlockReducer._remove_empty_block allows removal of multi-pred empty
+    block when successor has no Phi nodes.
+    """
+    src = '''
+scope F
+tags function
+var c: bool
+var x: int32
+
+blk1:
+mv c True
+cj c blk2 blk3
+
+blk2:
+mv x 1
+j bridge
+
+blk3:
+mv x 2
+j bridge
+
+bridge:
+j blk4
+
+blk4:
+mv x 3
+'''
+    scope = build_scope(src)
+    bridge = None
+    blk4 = None
+    for blk in scope.traverse_blocks():
+        if (len(blk.stms) == 1 and isinstance(blk.stms[0], Jump)
+                and len(blk.preds) == 2):
+            bridge = blk
+            blk4 = blk.succs[0]
+            break
+    assert bridge is not None
+    assert not any(isinstance(stm, (Phi, UPhi, LPhi)) for stm in blk4.stms)
+    reducer = BlockReducer()
+    reducer.scope = scope
+    reducer.removed_blks = []
+    result = reducer._remove_empty_block(bridge)
+    assert result is True  # No phi: safe to remove
+    assert len(blk4.preds) == 2  # blk2 and blk3 now direct preds
+
+
 def test_hyperblock_walk_to_convergence_no_succ():
     """HyperBlockBuilder._walk_to_convergence returns False when no succs."""
     src = '''
