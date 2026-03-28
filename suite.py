@@ -62,6 +62,8 @@ FILES = (
     "/chstone/sha/sha_module.py",
     "/chstone/dfadd/dfadd_module.py",
     "/chstone/dfmul/dfmul_module.py",
+    "/chstone/dfdiv/dfdiv_module.py",
+    "/chstone/gsm/gsm_module.py",
 )
 
 
