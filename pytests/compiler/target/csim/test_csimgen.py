@@ -288,6 +288,16 @@ def test_visit_op_relop_lt():
     reg_a = _make_signal('a', 32, {'reg'})
     tp = _setup_transpiler_with_signals(reg_a)
     node = AHDL_OP('Lt', _make_var(reg_a), AHDL_CONST(10))
+    # reg_a is unsigned (no 'int' tag) → unsigned comparison
+    result = tp.visit(node)
+    assert result == '((uint64_t)s[S_a] < (uint64_t)10)'
+
+
+def test_visit_op_relop_lt_signed():
+    reg_a = _make_signal('a', 32, {'reg', 'int'})
+    tp = _setup_transpiler_with_signals(reg_a)
+    node = AHDL_OP('Lt', _make_var(reg_a), AHDL_CONST(10))
+    # reg_a is signed ('int' tag) → signed comparison
     result = tp.visit(node)
     assert result == '(s[S_a] < 10)'
 
@@ -297,6 +307,17 @@ def test_visit_op_floordiv():
     reg_b = _make_signal('b', 32, {'reg'})
     tp = _setup_transpiler_with_signals(reg_a, reg_b)
     node = AHDL_OP('FloorDiv', _make_var(reg_a), _make_var(reg_b))
+    # Both unsigned → unsigned floor division
+    result = tp.visit(node)
+    assert result == 'ufloordiv(s[S_a], s[S_b])'
+
+
+def test_visit_op_floordiv_signed():
+    reg_a = _make_signal('a', 32, {'reg', 'int'})
+    reg_b = _make_signal('b', 32, {'reg', 'int'})
+    tp = _setup_transpiler_with_signals(reg_a, reg_b)
+    node = AHDL_OP('FloorDiv', _make_var(reg_a), _make_var(reg_b))
+    # Both signed → signed floor division
     result = tp.visit(node)
     assert result == 'floordiv(s[S_a], s[S_b])'
 

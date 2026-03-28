@@ -18,10 +18,29 @@ static inline int64_t sext(int64_t v, int w) {
 
 /* Python-compatible floor division (rounds toward -inf) */
 static inline int64_t floordiv(int64_t a, int64_t b) {
+    if (b == 0) return 0;
     int64_t q = a / b;
     int64_t r = a % b;
     if ((r != 0) && ((r ^ b) < 0)) q--;
     return q;
+}
+
+/* Unsigned floor division (truncating division on non-negative values) */
+static inline int64_t ufloordiv(int64_t a, int64_t b) {
+    if (b == 0) return 0;
+    return (int64_t)((uint64_t)a / (uint64_t)b);
+}
+
+/* Signed modulo */
+static inline int64_t smod(int64_t a, int64_t b) {
+    if (b == 0) return 0;
+    return a % b;
+}
+
+/* Unsigned modulo */
+static inline int64_t umod(int64_t a, int64_t b) {
+    if (b == 0) return 0;
+    return (int64_t)((uint64_t)a % (uint64_t)b);
 }
 
 #endif

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from polyphony.compiler.ahdl.ahdl import (
     AHDL_ASSIGN, AHDL_VAR, Ctx,
 )
-from polyphony.compiler.target.csim.csimgen import toposort_decls
+from polyphony.compiler.ahdl.ahdlutils import toposort_decls
 
 
 def _make_signal(name, width=8, tags=None):
@@ -171,7 +171,7 @@ def test_generate_uses_toposort_for_decls():
 
 def test_comb_def_use_collection():
     """AHDL_COMB with inner AHDL_ASSIGN stms should be analyzed for dependencies."""
-    from polyphony.compiler.target.csim.csimgen import _collect_def_use
+    from polyphony.compiler.ahdl.ahdlutils import collect_def_use
     from polyphony.compiler.ahdl.ahdl import AHDL_COMB
 
     inner_assign = AHDL_ASSIGN(
@@ -179,7 +179,7 @@ def test_comb_def_use_collection():
         AHDL_VAR((_make_signal('in1'),), Ctx.LOAD),
     )
     comb = AHDL_COMB('test_comb', (inner_assign,))
-    defined, used = _collect_def_use(comb)
+    defined, used = collect_def_use(comb)
     assert 'out' in defined
     assert 'in1' in used
 
@@ -203,7 +203,7 @@ def test_comb_reordered_by_toposort():
 
 def test_comb_with_if_block():
     """AHDL_COMB containing AHDL_IF with nested assigns should be analyzed."""
-    from polyphony.compiler.target.csim.csimgen import _collect_def_use
+    from polyphony.compiler.ahdl.ahdlutils import collect_def_use
     from polyphony.compiler.ahdl.ahdl import AHDL_COMB, AHDL_IF, AHDL_BLOCK
 
     assign_then = AHDL_ASSIGN(
@@ -220,7 +220,7 @@ def test_comb_with_if_block():
         (AHDL_BLOCK('then', (assign_then,)), AHDL_BLOCK('else', (assign_else,))),
     )
     comb = AHDL_COMB('mux', (if_stm,))
-    defined, used = _collect_def_use(comb)
+    defined, used = collect_def_use(comb)
     assert 'out' in defined
     assert 'in1' in used
     assert 'in2' in used

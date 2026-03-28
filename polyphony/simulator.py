@@ -70,11 +70,24 @@ class Integer(Value):
     def __repr__(self):
         return f"Integer[{self.width}]={self.val}"
 
+    def _as_unsigned(self):
+        """Return unsigned int representation of this value."""
+        if self.val < 0:
+            return self.val & ((1 << self.width) - 1)
+        return self.val
+
+    @staticmethod
+    def _op_is_unsigned(a, b):
+        """Verilog rule: unsigned if any operand is unsigned."""
+        return not a.sign or not b.sign
+
     def __bin_op__(self, op, rhs):
         if self.val == "X" or rhs.val == "X":
             return Integer("X", 0, False)
         width = self.width + rhs.width
         sign = max(self.sign, rhs.sign)
+        if rhs.val == 0 and op in (operator.floordiv, operator.mod):
+            return Integer(0, width, sign)
         value = op(self.val, rhs.val)
         return Integer(value, width, sign)
 
@@ -88,9 +101,23 @@ class Integer(Value):
         return self.__bin_op__(operator.mul, rhs)
 
     def __floordiv__(self, rhs):
+        if self._op_is_unsigned(self, rhs):
+            if self.val == "X" or rhs.val == "X":
+                return Integer("X", 0, False)
+            l, r = self._as_unsigned(), rhs._as_unsigned()
+            if r == 0:
+                return Integer(0, self.width + rhs.width, False)
+            return Integer(l // r, self.width + rhs.width, False)
         return self.__bin_op__(operator.floordiv, rhs)
 
     def __mod__(self, rhs):
+        if self._op_is_unsigned(self, rhs):
+            if self.val == "X" or rhs.val == "X":
+                return Integer("X", 0, False)
+            l, r = self._as_unsigned(), rhs._as_unsigned()
+            if r == 0:
+                return Integer(0, self.width + rhs.width, False)
+            return Integer(l % r, self.width + rhs.width, False)
         return self.__bin_op__(operator.mod, rhs)
 
     def __bit_op__(self, op, rhs):
@@ -117,29 +144,26 @@ class Integer(Value):
         b = self.val != rhs.val
         return Integer(int(b), 1, False)
 
-    def __lt__(self, rhs):
+    def _compare(self, rhs, op):
         if self.val == "X" or rhs.val == "X":
             return Integer("X", 0, False)
-        b = self.val < rhs.val
+        if self._op_is_unsigned(self, rhs):
+            b = op(self._as_unsigned(), rhs._as_unsigned())
+        else:
+            b = op(self.val, rhs.val)
         return Integer(int(b), 1, False)
+
+    def __lt__(self, rhs):
+        return self._compare(rhs, operator.lt)
 
     def __le__(self, rhs):
-        if self.val == "X" or rhs.val == "X":
-            return Integer("X", 0, False)
-        b = self.val <= rhs.val
-        return Integer(int(b), 1, False)
+        return self._compare(rhs, operator.le)
 
     def __gt__(self, rhs):
-        if self.val == "X" or rhs.val == "X":
-            return Integer("X", 0, False)
-        b = self.val > rhs.val
-        return Integer(int(b), 1, False)
+        return self._compare(rhs, operator.gt)
 
     def __ge__(self, rhs):
-        if self.val == "X" or rhs.val == "X":
-            return Integer("X", 0, False)
-        b = self.val >= rhs.val
-        return Integer(int(b), 1, False)
+        return self._compare(rhs, operator.ge)
 
     def __lshift__(self, rhs):
         if self.val == "X" or rhs.val == "X":
@@ -154,7 +178,10 @@ class Integer(Value):
             return Integer("X", 0, False)
         if rhs.val > self.width or rhs.val < 0:
             return Integer(0, self.width, self.sign)
-        v = self.val >> rhs.val
+        if self._op_is_unsigned(self, rhs):
+            v = self._as_unsigned() >> rhs.val
+        else:
+            v = self.val >> rhs.val
         return Integer(v, self.width, self.sign)
 
     def __bool__(self):
@@ -627,7 +654,8 @@ class ModelEvaluator(AHDLVisitor):
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):
-            return Integer(ahdl.value, width=32, sign=True)
+            width = max(ahdl.value.bit_length() + 1, 32)
+            return Integer(ahdl.value, width=width, sign=True)
         elif isinstance(ahdl.value, str):
             return Value(ahdl.value, width=0, sign=False, signal=None)
         else:
@@ -1005,8 +1033,9 @@ class SimulationModelBuilder(object):
 
         model.hdlmodule = hdlmodule
         if is_top:  # isinstance(hdlmodule, HDLModule):
+            from .compiler.ahdl.ahdlutils import toposort_decls
             model._tasks = hdlmodule.tasks
-            model._decls = hdlmodule.decls
+            model._decls = toposort_decls(hdlmodule.decls)
         else:
             model._tasks = []
             model._decls = []
