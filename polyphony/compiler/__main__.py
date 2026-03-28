@@ -430,6 +430,104 @@ def instantiate(driver):
         modules = new_find_called_module(scopes)
 
 
+def apply_api_types(driver):
+    """Apply type specifications from compile(types={...}) to parameter symbols."""
+    if not env.api_types:
+        return
+    from .ir.types.type import Type
+    from polyphony.typing import int_base
+    all_scopes = Scope.get_scopes(with_global=False, with_class=True)
+    for target_name, type_specs in env.api_types.items():
+        callee = None
+        for s in all_scopes:
+            if s.orig_base_name == target_name:
+                if s.is_module():
+                    callee = s.find_ctor()
+                elif s.is_function() or s.is_worker():
+                    callee = s
+                break
+        if callee is None:
+            continue
+        param_names = callee.param_names()
+        param_syms = callee.param_symbols()
+        for pname, ptype in type_specs.items():
+            if pname not in param_names:
+                raise ValueError(
+                    f"parameter '{pname}' not found in '{target_name}'"
+                )
+            idx = param_names.index(pname)
+            ir_type = _python_type_to_ir_type(ptype)
+            sym = param_syms[idx]
+            if not sym.typ.is_undef() and sym.typ != ir_type:
+                raise ValueError(
+                    f"parameter '{pname}' already has type annotation "
+                    f"'{sym.typ}', cannot override with '{ir_type}'"
+                )
+            sym.typ = ir_type
+            # Also set type on the local copy symbol
+            copy_sym = callee.find_sym(pname)
+            if copy_sym and copy_sym is not sym:
+                copy_sym.typ = ir_type
+
+
+def _python_type_to_ir_type(ptype):
+    """Convert a Python type to an IR Type using the compiler's scope registry.
+
+    Supports:
+      - polyphony.typing types (int8, bit16, uint32, etc.)
+      - Python builtins (int, bool)
+      - Container types (List[int8], List[int8][16], Tuple[int8, int16])
+    """
+    import types as pytypes
+    from .ir.types.type import Type
+    from .ir.types.typehelper import type_from_typeclass
+    from polyphony.typing import List, Tuple
+
+    # Handle GenericAlias (e.g. Tuple[int8, int16])
+    if isinstance(ptype, pytypes.GenericAlias):
+        origin = ptype.__origin__
+        args = ptype.__args__
+        if origin is Tuple or (isinstance(origin, type) and issubclass(origin, Tuple)):
+            if len(args) == 1:
+                return Type.tuple(_python_type_to_ir_type(args[0]), 1, explicit=True)
+            # Polyphony Tuple is homogeneous with length
+            elm_t = _python_type_to_ir_type(args[0])
+            return Type.tuple(elm_t, len(args), explicit=True)
+        raise ValueError(f"unsupported generic type: {ptype}")
+
+    # Handle List[T] and List[T][N] (dynamic subclasses of List)
+    if isinstance(ptype, type) and issubclass(ptype, List) and ptype is not List:
+        list_type = getattr(ptype, 'list_type', None)
+        list_capacity = getattr(ptype, 'list_capacity', Type.ANY_LENGTH)
+        if list_type is not None:
+            elm_t = _python_type_to_ir_type(list_type)
+            return Type.list(elm_t, length=list_capacity, explicit=True)
+
+    # Look up type scope in the compiler's registry
+    if isinstance(ptype, type):
+        scope_name = _resolve_type_scope_name(ptype)
+        if scope_name and scope_name in env.scopes:
+            scope = env.scopes[scope_name]
+            if scope.is_typeclass():
+                return type_from_typeclass(scope, explicit=True)
+
+    raise ValueError(f"unsupported type: {ptype}")
+
+
+def _resolve_type_scope_name(ptype):
+    """Resolve a Python type class to its compiler scope name."""
+    from polyphony.typing import int_base
+    # Python builtins
+    if ptype is int:
+        return '__builtin__.int'
+    if ptype is bool:
+        return '__builtin__.bool'
+    # polyphony.typing types
+    if isinstance(ptype, type) and issubclass(ptype, int_base):
+        return f'polyphony.typing.{ptype.__name__}'
+    return None
+
+
 def apply_argument(driver):
     ArgumentApplier().process_all()
 
@@ -718,6 +816,7 @@ def compile_plan():
         return proc if env.config.enable_pure else None
 
     plan = [
+        apply_api_types,
         if_trans,
         detect_loops,
         reduce_blk,
@@ -900,28 +999,42 @@ def setup_global(src_file):
         g.import_sym(sym, asname)
 
 
+def _parse_arg_value(a):
+    """Parse a single argument value from string or pass through typed values."""
+    if not isinstance(a, str):
+        return a
+    if a.isdigit() or a[0] == '-' and a[1:].isdigit():
+        return int(a)
+    elif a[0] == ':':
+        a_scope = Scope.global_scope().find_scope(a)
+        if not a_scope:
+            raise RuntimeError(f'{a} not found')
+        return a_scope
+    else:
+        return a
+
+
 # replace a target scope name to a scope object
 def parse_targets(scopes):
     if not env.targets:
         raise RuntimeError('compile targets not found')
     scope_dict = {s.name: s for s in scopes}
-    for i, (name, args_str) in enumerate(env.targets):
+    for i, (name, params) in enumerate(env.targets):
         scope_name = f'{env.global_scope_name}.{name}'
         if scope_name in scope_dict:
             target_scope = scope_dict[scope_name]
-            args = []
-            for a in args_str:
-                if a.isdigit() or a[0] == '-' and a[1:].isdigit():
-                    args.append(int(a))
-                elif a[0] == ':':
-                    # a as a type name
-                    a_scope = Scope.global_scope().find_scope(a)
-                    if not a_scope:
-                        raise RuntimeError(f'{a} not found')
-                    args.append(a_scope)
-                else:
-                    args.append(a)
-            env.targets[i] = (target_scope, args)
+            if isinstance(params, dict):
+                # dict form from compile() API
+                args = {}
+                for k, v in params.items():
+                    args[k] = _parse_arg_value(v)
+                env.targets[i] = (target_scope, args)
+            else:
+                # tuple/list form from CLI -t option (legacy)
+                args = []
+                for a in params:
+                    args.append(_parse_arg_value(a))
+                env.targets[i] = (target_scope, args)
         else:
             raise RuntimeError(f'{name} not found')
 

@@ -67,6 +67,7 @@ class Env(object):
         self.scope2hdlscope: dict[Scope, HDLScope] = {}
         self.scope2output_hdlscope: dict[Scope, HDLScope] = {}
         self.targets = []
+        self.api_types: dict = {}
         self.root_dir = ''
         self.seq_id_to_array: dict = {}
         from ..ir.origin import OriginRegistry

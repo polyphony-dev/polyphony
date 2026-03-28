@@ -164,6 +164,7 @@ class ArgumentApplier(object):
     """Bind arguments to module/worker parameters using new IR."""
 
     def process_all(self):
+        self._apply_api_params()
         scopes: list[Scope] = []
         top = Scope.global_scope()
         scopes = [top] + [s for s in top.children if s.is_testbench() and len(s.param_names()) == 0]
@@ -204,6 +205,80 @@ class ArgumentApplier(object):
                     if new_stm is not stm:
                         scope.find_block(stm.block).replace_stm(stm, new_stm)
         return next_scopes
+
+    def _value_to_ir(self, value) -> IrExp:
+        """Convert a Python value to an IR expression node."""
+        if isinstance(value, int):
+            return Const(value=value)
+        elif isinstance(value, type):
+            return Temp(name=value.__name__)
+        elif callable(value):
+            return Temp(name=value.__name__)
+        elif isinstance(value, (tuple, list)):
+            items = tuple(self._value_to_ir(v) for v in value)
+            return Array(items=items, mutable=isinstance(value, list))
+        else:
+            return Const(value=value)
+
+    def _apply_api_params(self):
+        """Bind params from compile() API (env.targets with dict params)."""
+        if not env.targets:
+            return
+        all_scopes = Scope.get_scopes(with_global=False, with_class=True)
+        for target_entry in env.targets:
+            if not isinstance(target_entry, tuple) or len(target_entry) != 2:
+                continue
+            target_name, params = target_entry
+            if not isinstance(params, dict) or not params:
+                continue
+            # Find the target scope by name
+            callee = None
+            for s in all_scopes:
+                if s.orig_base_name == target_name:
+                    if s.is_module():
+                        callee = s.find_ctor()
+                    elif s.is_function() or s.is_worker():
+                        callee = s
+                    break
+            if callee is None:
+                continue
+            # Build binding list from params dict
+            param_names = callee.param_names()
+            binding: list[tuple[int, IrExp]] = []
+            for i, pname in enumerate(param_names):
+                if pname in params:
+                    binding.append((i, self._value_to_ir(params[pname])))
+            if not binding:
+                continue
+            bound_indices = {i for i, _ in binding}
+            # Apply bindings (same logic as _bind_args core)
+            for i, arg in binding:
+                pname = callee.param_symbols()[i].name
+                VarReplacer.replace_uses(callee, Temp(name=pname), arg)
+            callee.remove_param([i for i, _ in binding])
+            ConstantOpt().process(callee)
+            if callee.is_ctor():
+                callee.parent.set_bound_args(binding)
+            # Update call sites in testbenches to remove the bound arguments
+            top = Scope.global_scope()
+            tb_scopes = [top] + [s for s in top.children if s.is_testbench()]
+            for tb in tb_scopes:
+                for scope, stm, call in CallCollector().process(tb):
+                    if not isinstance(call, (Call, New)):
+                        continue
+                    try:
+                        callee_scope = _get_callee_scope(call, scope)
+                    except (AssertionError, IndexError):
+                        continue
+                    target_scope = callee_scope.find_ctor() if callee_scope.is_module() else callee_scope
+                    if target_scope is not callee:
+                        continue
+                    new_args = tuple(a for j, a in enumerate(call.args) if j not in bound_indices)
+                    if new_args != call.args:
+                        new_call = call.model_copy(update={'args': new_args})
+                        new_stm = stm.subst(call, new_call)
+                        if new_stm is not stm:
+                            scope.find_block(stm.block).replace_stm(stm, new_stm)
 
     def _resolve_seq_arg(self, arg: IrExp, caller_scope: Scope) -> IrExp:
         """Resolve a seq-typed arg to its Array when it was converted to an integer ID."""
