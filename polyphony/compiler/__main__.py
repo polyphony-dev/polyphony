@@ -536,6 +536,41 @@ def apply_argument(driver):
     ArgumentApplier().process_all()
 
 
+def propagate_free_var_constants(driver, scope):
+    """Propagate constants to imported free variables from their owner scope.
+
+    After apply_argument binds ctor parameters (e.g. scale=2), worker scopes
+    that imported those symbols as free variables still reference the unresolved
+    variable. This pass checks the owner scope for constant definitions and
+    replaces uses accordingly.
+    """
+    from .ir.analysis.usedef import UseDefDetector
+    from .ir.transformers.varreplacer import VarReplacer
+    from .ir.ir import Temp, Move, Const
+    changed = False
+    for sym in list(scope.symbols.values()):
+        if not (sym.is_free() and sym.is_imported()):
+            continue
+        owner = sym.scope
+        if owner is scope:
+            continue
+        owner_usedef = UseDefDetector().process(owner)
+        # The symbol may have been imported (same object) or cloned.
+        # Try direct lookup first, then search by name.
+        defs = owner_usedef._def_sym2.get(sym, set())
+        if not defs:
+            owner_sym = owner.find_sym(sym.name)
+            if owner_sym:
+                defs = owner_usedef._def_sym2.get(owner_sym, set())
+        if len(defs) == 1:
+            def_item = next(iter(defs))
+            if isinstance(def_item.stm, Move) and isinstance(def_item.stm.src, Const):
+                VarReplacer.replace_uses(scope, Temp(name=sym.name), def_item.stm.src)
+                changed = True
+    if changed:
+        ConstantOpt().process(scope)
+
+
 def inline_opt(driver):
     scopes = InlineOpt().process_scopes(driver.current_scopes)
     for s in scopes:
@@ -891,6 +926,7 @@ def compile_plan():
 
         phase(env.PHASE_3),
         apply_argument,
+        propagate_free_var_constants,
         eval_type,
         strict_type_prop,
         type_check,
