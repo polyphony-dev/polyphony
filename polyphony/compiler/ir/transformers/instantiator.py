@@ -332,7 +332,11 @@ class ArgumentApplier(object):
             args = tuple(a for j, a in enumerate(args) if j not in bound_indices)
             ConstantOpt().process(callee)
             if callee.is_ctor():
-                callee.parent.set_bound_args(binding)
+                # Exclude function-typed bindings from _bound_args — lambda/function
+                # arguments are inlined at compile time and not needed for model selection.
+                non_func_binding = [(i, exp) for i, exp in binding
+                                    if not (i < len(param_syms) and param_syms[i].typ.is_function())]
+                callee.parent.set_bound_args(non_func_binding)
         if callee.parent.is_module():
             callee.parent.build_module_params(module_param_vars)
         return args

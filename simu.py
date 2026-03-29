@@ -178,7 +178,11 @@ def model_selector_with_argv(models):
     def model_selector(*args, **kwargs):
         args_str = []
         for a in args:
-            if type(a).__name__ == 'type' or inspect.isfunction(a):
+            # Skip lambda/function arguments — they are inlined at compile time
+            # and not part of the model selection criteria.
+            if inspect.isfunction(a):
+                continue
+            elif type(a).__name__ == 'type':
                 args_str.append(a.__name__)
             else:
                 args_str.append(str(a))
