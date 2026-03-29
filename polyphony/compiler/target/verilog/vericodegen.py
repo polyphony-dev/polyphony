@@ -263,7 +263,11 @@ class VerilogCodeGen(AHDLVisitor):
 
     def visit_AHDL_OP(self, ahdl):
         if len(ahdl.args) > 1:
-            op = ' ' + pyop2verilogop(ahdl.op) + ' '
+            if ahdl.op == 'RShift':
+                signed = self._is_left_operand_signed(ahdl.args[0])
+                op = ' ' + pyop2verilogop(ahdl.op, signed=signed) + ' '
+            else:
+                op = ' ' + pyop2verilogop(ahdl.op) + ' '
             return f'({op.join([self.visit(a) for a in ahdl.args])})'
         elif ahdl.is_unop():
             exp = self.visit(ahdl.args[0])
@@ -271,6 +275,12 @@ class VerilogCodeGen(AHDLVisitor):
         else:
             exp = self.visit(ahdl.args[0])
             return f'{exp}'
+
+    def _is_left_operand_signed(self, ahdl_exp):
+        """Check if the left operand of a shift is signed."""
+        if isinstance(ahdl_exp, AHDL_VAR):
+            return ahdl_exp.vars[-1].is_int()
+        return True  # Default to signed (arithmetic shift) for safety
 
     def visit_AHDL_META_OP(self, ahdl):
         assert False

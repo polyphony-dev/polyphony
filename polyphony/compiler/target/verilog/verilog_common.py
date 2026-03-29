@@ -1,7 +1,7 @@
 PYTHON_OP_2_VERILOG_OP_MAP = {
     'And': '&&', 'Or': '||',
     'Add': '+', 'Sub': '-', 'Mult': '*', 'FloorDiv': '/', 'Mod': '%',
-    'LShift': '<<', 'RShift': '>>>',
+    'LShift': '<<',
     'BitOr': '|', 'BitXor': '^', 'BitAnd': '&',
     'Eq': '==', 'NotEq': '!=', 'Lt': '<', 'LtE': '<=', 'Gt': '>', 'GtE':'>=',
     'IsNot': '!=',
@@ -9,7 +9,9 @@ PYTHON_OP_2_VERILOG_OP_MAP = {
 }
 
 
-def pyop2verilogop(op):
+def pyop2verilogop(op, signed=True):
+    if op == 'RShift':
+        return '>>>' if signed else '>>'
     return PYTHON_OP_2_VERILOG_OP_MAP[op]
 
 
