@@ -6954,3 +6954,66 @@ def test_typeprop_const_over_32bit():
     assert x_sym.typ.is_int()
     assert not x_sym.typ.signed, "0x100000000 should be unsigned"
     assert x_sym.typ.width == 33
+
+
+def test_typeprop_binop_unsigned_wins():
+    """BinOp with signed + unsigned should give unsigned (C/Verilog rule)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: int32
+        var y: bit32
+        var z: undef
+    blk1:
+        mv z (& x y)
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    z_sym = top.find_sym('z')
+    assert z_sym.typ.is_int()
+    assert not z_sym.typ.signed, "signed & unsigned should give unsigned"
+
+
+def test_typeprop_binop_rshift_left_operand_signed():
+    """RShift result signedness follows left operand (signed >> unsigned = signed)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: int32
+        var y: bit32
+        var z: undef
+    blk1:
+        mv z (>> x y)
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    z_sym = top.find_sym('z')
+    assert z_sym.typ.is_int()
+    assert z_sym.typ.signed, "signed >> unsigned should give signed (left operand rule)"
+
+
+def test_typeprop_binop_rshift_left_operand_unsigned():
+    """RShift result signedness follows left operand (unsigned >> signed = unsigned)."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: bit32
+        var y: int32
+        var z: undef
+    blk1:
+        mv z (>> x y)
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    z_sym = top.find_sym('z')
+    assert z_sym.typ.is_int()
+    assert not z_sym.typ.signed, "unsigned >> signed should give unsigned (left operand rule)"

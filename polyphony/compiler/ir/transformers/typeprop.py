@@ -477,10 +477,13 @@ class TypePropagation(IrVisitor):
             return Type.undef()
         if l_t.is_int() and r_t.is_int():
             w = max(l_t.width, r_t.width)
-            if l_t.signed or r_t.signed:
-                return Type.int(w, signed=True)
+            if ir.op in self._SHIFT_OPS:
+                # Shift: result signedness follows left operand (C rule)
+                return Type.int(w, signed=l_t.signed)
             else:
-                return Type.int(w, signed=False)
+                # General: unsigned wins (C/Verilog rule)
+                signed = l_t.signed and r_t.signed
+                return Type.int(w, signed=signed)
         return l_t
 
     def visit_RelOp(self, ir):
@@ -558,6 +561,7 @@ class TypePropagation(IrVisitor):
             return sym_t.return_type
 
     _INT32_MAX = 0x7FFFFFFF
+    _SHIFT_OPS = {'LShift', 'RShift'}
 
     def _int_type_for_literal(self, value):
         """Infer int type for a literal value.
