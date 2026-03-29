@@ -7017,3 +7017,24 @@ def test_typeprop_binop_rshift_left_operand_unsigned():
     z_sym = top.find_sym('z')
     assert z_sym.typ.is_int()
     assert not z_sym.typ.signed, "unsigned >> signed should give unsigned (left operand rule)"
+
+
+def test_typeprop_unop_usub_unsigned_to_signed():
+    """USub on unsigned should produce signed with width+1."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: bit32
+        var y: undef
+    blk1:
+        mv y -x
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    y_sym = top.find_sym('y')
+    assert y_sym.typ.is_int()
+    assert y_sym.typ.signed, "USub result should be signed"
+    assert y_sym.typ.width == 33, "USub on uint32 should produce int33"

@@ -468,7 +468,11 @@ class TypePropagation(IrVisitor):
             return None  # type: ignore[return-value]
 
     def visit_UnOp(self, ir):
-        return self.visit(ir.exp)
+        t = self.visit(ir.exp)
+        if ir.op == 'USub' and t.is_int() and not t.signed:
+            # Unary minus on unsigned -> signed, widen by 1 to hold negative value
+            return Type.int(t.width + 1, signed=True)
+        return t
 
     def visit_BinOp(self, ir):
         l_t = self.visit(ir.left)
