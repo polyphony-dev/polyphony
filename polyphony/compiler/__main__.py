@@ -180,6 +180,10 @@ def is_uninlined_scope(scope):
         return False
     if is_inlined_module(scope):
         return False
+    # Lambda scopes with parameters are always inlined at call sites;
+    # they should not survive as standalone scopes after inline_opt.
+    if scope.is_comb() and len(scope.param_symbols()) > 0:
+        return False
     return (scope.is_function_module()
             or scope.is_ctor() and scope.parent.is_module()
             or scope.is_worker()

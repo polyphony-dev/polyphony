@@ -1240,7 +1240,23 @@ class TypeSpecializationAnalyzer(TypePropagation):
         Lambda scopes are single-block, single-expression functions.
         After specialization sets parameter types, we can resolve the body type
         immediately without waiting for the worklist.
+
+        Symbols referenced in the lambda body may reside in the parent scope
+        (e.g. self for self.field access). We temporarily import missing parent
+        symbols so that qualified_symbols resolution works within the lambda scope.
         """
+        # Temporarily import parent scope symbols that the lambda body references
+        # but that don't exist in the lambda scope (free variable references).
+        imported = []
+        if scope.parent:
+            for blk in scope.traverse_blocks():
+                for stm in blk.stms:
+                    for name in self._collect_temp_names(stm):
+                        if not scope.has_sym(name) and scope.parent.has_sym(name):
+                            sym = scope.parent.find_sym(name)
+                            scope.import_sym(sym)
+                            imported.append(name)
+
         saved_scope = self.scope
         saved_stm = self.current_stm
         self.scope = scope
@@ -1253,6 +1269,30 @@ class TypeSpecializationAnalyzer(TypePropagation):
         finally:
             self.scope = saved_scope
             self.current_stm = saved_stm
+
+    def _collect_temp_names(self, ir):
+        """Collect all Temp/Attr variable names referenced in an IR node."""
+        names = set()
+        if hasattr(ir, 'src'):
+            names |= self._collect_temp_names(ir.src)
+        if hasattr(ir, 'dst'):
+            names |= self._collect_temp_names(ir.dst)
+        if hasattr(ir, 'exp'):
+            names |= self._collect_temp_names(ir.exp)
+        if hasattr(ir, 'left'):
+            names |= self._collect_temp_names(ir.left)
+        if hasattr(ir, 'right'):
+            names |= self._collect_temp_names(ir.right)
+        if hasattr(ir, 'func'):
+            names |= self._collect_temp_names(ir.func)
+        if hasattr(ir, 'args'):
+            for _, arg in ir.args:
+                names |= self._collect_temp_names(arg)
+        if isinstance(ir, Temp):
+            names.add(ir.name)
+        elif isinstance(ir, Attr):
+            names.add(ir.exp.name)
+        return names
 
     def _specialize_class_with_types(self, scope, types):
         assert not scope.is_specialized()
