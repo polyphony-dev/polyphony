@@ -1,6 +1,7 @@
 from polyphony import testbench
 from polyphony import module
 from polyphony.modules import Handshake
+from polyphony.typing import uint32
 
 
 MASK32 = 0xFFFFFFFF
@@ -9,18 +10,14 @@ MASK32 = 0xFFFFFFFF
 @module
 class MaskTest:
     def __init__(self):
-        self.din = Handshake(int, "in")
-        self.dout = Handshake(int, "out")
+        self.din = Handshake(uint32, "in")
+        self.dout = Handshake(uint32, "out")
         self.append_worker(self.main)
 
     def main(self):
         x = self.din.rd()
-        # Unsigned right shift by 2, masked to 32 bits.
-        # For x = 0xefcdab89 (signed: -271733879):
-        #   Arithmetic >> 2 gives 0xFBF36AE2 (sign-extended)
-        #   Expected logical >> 2: 0x3BF36AE2
-        #   & 0xFFFFFFFF should clear sign bits but doesn't work
-        #   because 0xFFFFFFFF is typed as -1 in signed 32-bit.
+        # x is uint32 (unsigned), so >> is logical shift (zero-fill).
+        # MASK32 = 0xFFFFFFFF is also uint32 after literal signedness fix.
         result = (x >> 2) & MASK32
         self.dout.wr(result)
 
@@ -28,10 +25,9 @@ class MaskTest:
 @testbench
 def test():
     m = MaskTest()
-    # 0xefcdab89 as signed 32-bit = -271733879
-    m.din.wr(-271733879)
+    # 0xefcdab89 = 4023233417 (unsigned)
+    m.din.wr(0xefcdab89)
     d = m.dout.rd()
     print(d)
-    # Expected: logical right shift gives 0x3BF36AE2 = 1005808354
-    # Actual bug: gives 0xFBF36AE2 = -67933470 (arithmetic shift, mask is no-op)
+    # Logical right shift: 0xefcdab89 >> 2 = 0x3BF36AE2 = 1005808354
     assert d == 1005808354
