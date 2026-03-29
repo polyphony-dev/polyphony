@@ -1,17 +1,53 @@
-﻿import itertools
+"""Scheduler using both old and new IR types.
+
+Handles IR types for
+scheduling DFG nodes. Works during migration and after storage switchover.
+
+This pass reads block.stms directly (not through adapted_pass) because
+it operates on DFG nodes that hold references to stm objects.
+"""
+
+import itertools
 from collections import defaultdict, deque
 from .dataflow import DFNode
 from .latency import get_latency
 from .latency import CALL_MINIMUM_STEP
-from ..irvisitor import IRVisitor
-from ..ir import *
-from ..irhelper import has_exclusive_function, has_clkfence, qualified_symbols
+from ..ir import (
+    Move,
+    Expr,
+    Const,
+    Jump,
+    CJump,
+    MCJump,
+    BinOp,
+    MRef,
+    MStore,
+    UnOp,
+    RelOp,
+    CondOp,
+    IrStm,
+    Phi,
+    UPhi,
+    Call,
+    SysCall,
+    New,
+    Array,
+    MStm,
+    CMove,
+    CExpr,
+    Temp,
+    Attr,
+)
+
+from ..irhelper import qualified_symbols, has_exclusive_function, has_clkfence
+from ..symbol import Symbol
 from ..scope import Scope
 from ...common.common import fail, warn
 from ...common.errors import Errors, Warnings
 from ...common.graph import Graph
 from ...common.utils import unique
 from logging import getLogger
+
 logger = getLogger(__name__)
 
 MAX_FUNC_UNIT = 100
@@ -26,10 +62,8 @@ class Scheduler(object):
             return
         self.scope = scope
         for dfg in self.scope.dfgs(bottom_up=True):
-            if dfg.parent and dfg.synth_params['scheduling'] == 'pipeline':
+            if dfg.parent and dfg.synth_params["scheduling"] == "pipeline":
                 scheduler_impl = PipelineScheduler()
-            #elif dfg.synth_params['scheduling'] == 'timed':
-            #    scheduler_impl = TimedScheduler()
             else:
                 scheduler_impl = BlockBoundedListScheduler()
             scheduler_impl.schedule(scope, dfg)
@@ -38,14 +72,14 @@ class Scheduler(object):
 class SchedulerImpl(object):
     def __init__(self):
         self.res_tables = {}
-        self.node_latency_map = {}  # {node:(max, min, actual)}
+        self.node_latency_map = {}
         self.node_seq_latency_map = {}
         self.all_paths = []
-        self.res_extractor = None
+        self.res_extractor: "ResourceExtractor | None" = None
 
     def schedule(self, scope, dfg):
         self.scope = scope
-        logger.log(0, '_schedule dfg')
+        logger.log(0, "_schedule dfg")
         sources = dfg.find_src()
         for src in sources:
             src.priority = -1
@@ -66,7 +100,7 @@ class SchedulerImpl(object):
                 if succs:
                     succs = unique(succs)
                     worklist.append((succs, nextprio))
-        longest_latency = self._schedule(dfg)
+        longest_latency = self._schedule(dfg)  # type: ignore[attr-defined]
         if longest_latency > CALL_MINIMUM_STEP:
             scope.asap_latency = longest_latency
         else:
@@ -75,63 +109,56 @@ class SchedulerImpl(object):
     def _set_priority(self, node, prio, dfg):
         if prio > node.priority:
             node.priority = prio
-            logger.debug('update priority ... ' + str(node))
+            logger.debug("update priority ... " + str(node))
             return (dfg.succs_without_back(node), prio + 1)
         return (None, None)
 
     def _node_sched_default(self, dfg, node):
         preds = dfg.preds_without_back(node)
         if preds:
-            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
-            usedef_preds = dfg.preds_typ_without_back(node, 'UseDef')
-            seq_preds = dfg.preds_typ_without_back(node, 'Seq')
+            defuse_preds = dfg.preds_typ_without_back(node, "DefUse")
+            usedef_preds = dfg.preds_typ_without_back(node, "UseDef")
+            seq_preds = dfg.preds_typ_without_back(node, "Seq")
             sched_times = []
             if seq_preds:
-                latest_node = max(seq_preds, key=lambda p: p.end)
+                latest_node = max(seq_preds, key=lambda p: (p.end, p._nid))
                 sched_times.append(latest_node.end)
             if defuse_preds:
-                latest_node = max(defuse_preds, key=lambda p: p.end)
+                latest_node = max(defuse_preds, key=lambda p: (p.end, p._nid))
                 sched_times.append(latest_node.end)
             if usedef_preds:
                 preds = usedef_preds
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             if not sched_times:
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             scheduled_time = max(sched_times)
             if scheduled_time < 0:
                 scheduled_time = 0
         else:
-            # source node
             scheduled_time = 0
         return scheduled_time
 
     def _find_latest_alias(self, dfg, node):
         stm = node.tag
-        if not isinstance(stm, (MOVE, PHIBase)):
+        if not (isinstance(stm, Move) or isinstance(stm, (Phi, UPhi))):
             return node
-        match node.tag:
-            case MOVE():
-                var_sym = qualified_symbols(node.tag.dst, self.scope)[-1]
-            case PHIBase():
-                var_sym = qualified_symbols(node.tag.var, self.scope)[-1]
+        if isinstance(stm, Move):
+            var_sym = qualified_symbols(node.tag.dst, self.scope)[-1]
+        else:
+            var_sym = qualified_symbols(node.tag.var, self.scope)[-1]
         assert isinstance(var_sym, Symbol)
         if not var_sym.is_alias():
             return node
-        succs = dfg.succs_typ_without_back(node, 'DefUse')
+        succs = dfg.succs_typ_without_back(node, "DefUse")
         if not succs:
             return node
         nodes = [self._find_latest_alias(dfg, s) for s in succs]
-        latest_node = max(nodes, key=lambda p: p.end)
+        latest_node = max(nodes, key=lambda p: (p.end, p._nid))
         return latest_node
 
     def _is_resource_full(self, res, scheduled_resources):
-        # TODO: Limiting resources by scheduler is a future task
-        #if isinstance(res, str):
-        #    return len(scheduled_resources) >= MAX_FUNC_UNIT
-        #elif isinstance(res, Scope):
-        #    return len(scheduled_resources) >= MAX_FUNC_UNIT
         return 0
 
     def _str_res(self, res):
@@ -141,10 +168,8 @@ class SchedulerImpl(object):
             return res.name
 
     def _get_earliest_res_free_time(self, node, time, latency):
+        assert self.res_extractor is not None
         resources = self.res_extractor.ops[node].keys()
-        #TODO operator chaining?
-        #logger.debug(node)
-        #logger.debug(resources)
         assert len(resources) <= 1
         if resources:
             res = list(resources)[0]
@@ -156,21 +181,15 @@ class SchedulerImpl(object):
 
             scheduled_resources = table[time]
             if node in scheduled_resources:
-                #already scheduled
                 return time
 
             while self._is_resource_full(res, scheduled_resources):
-                logger.debug("!!! resource {}'s slot '{}' is full !!!".
-                             format(self._str_res(res), time))
-                assert False, 'Rescheduling due to lack of resources is not supported yet'
+                logger.debug("!!! resource {}'s slot '{}' is full !!!".format(self._str_res(res), time))
+                assert False, "Rescheduling due to lack of resources is not supported yet"
                 time += 1
                 scheduled_resources = table[time]
 
             node.instance_num = len(scheduled_resources)
-            #logger.debug("{} is scheduled to {}, instance_num {}".
-            #             format(node, time, node.instance_num))
-
-            # fill scheduled_resources table
             n = latency if latency != 0 else 1
             for i in range(n):
                 scheduled_resources = table[time + i]
@@ -178,13 +197,13 @@ class SchedulerImpl(object):
         return time
 
     def _calc_latency(self, dfg):
-        is_minimum = dfg.synth_params['cycle'] == 'minimum'
+        is_minimum = dfg.synth_params["cycle"] == "minimum"
         for node in dfg.get_priority_ordered_nodes():
-            def_l, seq_l = get_latency(node.tag)
-            if node.tag.block.synth_params['scheduling'] == 'timed':
+            def_l, seq_l = get_latency(node.tag, self.scope)
+            if self.scope.find_block(node.tag.block).synth_params["scheduling"] == "timed":
                 used_by_untimed = False
                 for succ_node in dfg.succs(node):
-                    if succ_node.tag.block.synth_params['scheduling'] != 'timed':
+                    if self.scope.find_block(succ_node.tag.block).synth_params["scheduling"] != "timed":
                         used_by_untimed = True
                         break
                 if has_clkfence(node.tag) or used_by_untimed:
@@ -197,9 +216,17 @@ class SchedulerImpl(object):
                 if is_minimum:
                     self.node_latency_map[node] = (0, 0, 0)
                 else:
-                    if node.tag.is_a([MOVE, PHIBase]):
-                        var = node.tag.dst.symbol if node.tag.is_a(MOVE) else node.tag.var.symbol
-                        if var.is_condition():
+                    if isinstance(node.tag, Move) or isinstance(node.tag, (Phi, UPhi)):
+                        if isinstance(node.tag, Move):
+                            var = node.tag.dst
+                        else:
+                            var = node.tag.var
+                        # Get the symbol
+                        if isinstance(var, Symbol):
+                            sym = var
+                        else:
+                            sym = qualified_symbols(var, self.scope)[-1]
+                        if isinstance(sym, Symbol) and sym.is_condition():
                             self.node_latency_map[node] = (0, 0, 0)
                         else:
                             self.node_latency_map[node] = (1, 0, 1)
@@ -217,12 +244,10 @@ class SchedulerImpl(object):
                 path_latencies.append(m)
             path_latency = sum(path_latencies)
             if expected > path_latency:
-                # we don't have to adjust latency
                 continue
             diff = path_latency - expected
             fixed = set()
             succeeded = True
-            # try to reduce latency
             while diff:
                 for i, n in enumerate(path):
                     if n in fixed:
@@ -235,7 +260,6 @@ class SchedulerImpl(object):
                     else:
                         fixed.add(n)
                 if len(fixed) == len(path):
-                    # scheduling has failed
                     succeeded = False
                     break
             if not succeeded:
@@ -243,11 +267,11 @@ class SchedulerImpl(object):
         return True, expected
 
     def _try_adjust_latency(self, dfg, expected):
-        for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, 'DefUse')):
+        for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, "DefUse")):
             self.all_paths.append(path)
         ret, actual = self._adjust_latency(self.all_paths, expected)
         if not ret:
-            assert False, 'scheduling has failed. the cycle must be greater equal {}'.format(actual)
+            assert False, "scheduling has failed. the cycle must be greater equal {}".format(actual)
 
     def _max_latency(self, paths):
         max_latency = 0
@@ -269,7 +293,7 @@ class SchedulerImpl(object):
             if min_l == 0 and actual > 0:
                 for d in n.defs:
                     if d.is_alias():
-                        d.del_tag('alias')
+                        d.del_tag("alias")
 
     def _group_nodes_by_block(self, dfg):
         block_nodes = defaultdict(list)
@@ -279,14 +303,14 @@ class SchedulerImpl(object):
 
     def _schedule_cycles(self, dfg):
         self._calc_latency(dfg)
-        synth_cycle = dfg.synth_params['cycle']
-        if synth_cycle == 'any' or synth_cycle == 'minimum':
+        synth_cycle = dfg.synth_params["cycle"]
+        if synth_cycle == "any" or synth_cycle == "minimum":
             pass
-        elif synth_cycle.startswith('less:'):
-            extected_latency = int(synth_cycle[len('less:'):])
+        elif synth_cycle.startswith("less:"):
+            extected_latency = int(synth_cycle[len("less:") :])
             self._try_adjust_latency(dfg, extected_latency)
-        elif synth_cycle.startswith('greater:'):
-            assert False, 'Not Implement Yet'
+        elif synth_cycle.startswith("greater:"):
+            assert False, "Not Implement Yet"
         else:
             assert False
 
@@ -299,46 +323,60 @@ class BlockBoundedListScheduler(SchedulerImpl):
         block_nodes = self._group_nodes_by_block(dfg)
         longest_latency = 0
         for block, nodes in block_nodes.items():
-            #latency = self._list_schedule(dfg, nodes)
             latency = self._list_schedule_with_block_bound(dfg, nodes, block, 0)
+            latency = self._sync_mstm_siblings(dfg, nodes, latency)
             if longest_latency < latency:
                 longest_latency = latency
         return longest_latency
 
-    def _list_schedule(self, dfg, nodes):
-        while True:
-            next_candidates = set()
-            latency = 0
-            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
-                scheduled_time = self._node_sched(dfg, n)
-                latency = get_latency(n.tag)
-                #detect resource conflict
-                scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
-                n.begin = scheduled_time
-                n.end = n.begin + latency
-                #logger.debug('## SCHEDULED ## ' + str(n))
-                succs = dfg.succs_without_back(n)
-                next_candidates = next_candidates.union(succs)
-                latency = n.end
-            if next_candidates:
-                nodes = next_candidates
-            else:
-                break
-        return latency
+    def _sync_mstm_siblings(self, dfg, nodes, longest_latency):
+        """Ensure MStm siblings are scheduled in the same step.
+
+        MStm represents simultaneous assignments (e.g., swap patterns).
+        All child moves must execute in the same clock cycle so that
+        non-blocking assignments in Verilog preserve simultaneous semantics.
+        """
+        # Build mapping from MStm id to its child DFG nodes
+        mstm_groups = defaultdict(list)
+        seen_blocks = set()
+        for node in nodes:
+            stm = node.tag
+            blk_bid = stm.block
+            if blk_bid in seen_blocks:
+                continue
+            seen_blocks.add(blk_bid)
+            blk = self.scope.find_block(blk_bid)
+            for s in blk.stms:
+                if isinstance(s, MStm):
+                    for child in s.stms:
+                        child_node = dfg.find_node(child)
+                        if child_node:
+                            mstm_groups[id(s)].append(child_node)
+        # Sync begin/end times to the latest sibling
+        for mstm_id, sibling_nodes in mstm_groups.items():
+            if len(sibling_nodes) <= 1:
+                continue
+            max_begin = max(n.begin for n in sibling_nodes)
+            for node in sibling_nodes:
+                if node.begin < max_begin:
+                    _, _, latency = self.node_latency_map[node]
+                    node.begin = max_begin
+                    node.end = max_begin + latency
+                    if longest_latency < node.end:
+                        longest_latency = node.end
+        return longest_latency
 
     def _list_schedule_with_block_bound(self, dfg, nodes, block, longest_latency):
         while True:
             next_candidates = set()
-            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
-                if n.tag.block is not block:
+            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index, n._nid)):
+                if n.tag.block != block:
                     continue
                 scheduled_time = self._node_sched_with_block_bound(dfg, n, block)
                 _, _, latency = self.node_latency_map[n]
-                #detect resource conflict
                 scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
                 n.begin = scheduled_time
                 n.end = n.begin + latency
-                #logger.debug(f'## SCHEDULED ## {n} latency={latency}')
                 succs = dfg.succs_without_back(n)
                 next_candidates = next_candidates.union(succs)
                 if longest_latency < n.end:
@@ -351,50 +389,46 @@ class BlockBoundedListScheduler(SchedulerImpl):
 
     def _node_sched_with_block_bound(self, dfg, node, block):
         preds = dfg.preds_without_back(node)
-        preds = [p for p in preds if p.tag.block is block]
-        is_timed_node = block.synth_params['scheduling'] == 'timed'
-        logger.debug('scheduling for ' + str(node))
+        preds = [p for p in preds if p.tag.block == block]
+        is_timed_node = self.scope.find_block(block).synth_params["scheduling"] == "timed"
+        logger.debug("scheduling for " + str(node))
         if preds:
-            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
-            defuse_preds = [p for p in defuse_preds if p.tag.block is block]
-            usedef_preds = dfg.preds_typ_without_back(node, 'UseDef')
-            usedef_preds = [p for p in usedef_preds if p.tag.block is block]
-            seq_preds = dfg.preds_typ_without_back(node, 'Seq')
-            seq_preds = [p for p in seq_preds if p.tag.block is block]
+            defuse_preds = dfg.preds_typ_without_back(node, "DefUse")
+            defuse_preds = [p for p in defuse_preds if p.tag.block == block]
+            usedef_preds = dfg.preds_typ_without_back(node, "UseDef")
+            usedef_preds = [p for p in usedef_preds if p.tag.block == block]
+            seq_preds = dfg.preds_typ_without_back(node, "Seq")
+            seq_preds = [p for p in seq_preds if p.tag.block == block]
             sched_times = []
             if seq_preds:
-                #if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or (has_exclusive_function(node.tag) and not is_timed_node):
-                if node.tag.is_a([JUMP, CJUMP, MCJUMP]):
-                    latest_node = max(seq_preds, key=lambda p: (p.end, p.priority))
+                if isinstance(node.tag, (Jump, CJump, MCJump)):
+                    latest_node = max(seq_preds, key=lambda p: (p.end, p.priority, p._nid))
                     sched_time = latest_node.end
                 else:
-                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p.priority))
+                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p.priority, p._nid))
                     seq_latency = self.node_seq_latency_map[latest_node]
                     if is_timed_node and has_clkfence(node.tag) and not has_clkfence(latest_node.tag):
                         seq_latency = 0
                     sched_time = latest_node.begin + seq_latency
                 sched_times.append(sched_time)
-                logger.debug('latest_node of seq_preds ' + str(latest_node))
-                logger.debug('schedtime ' + str(sched_time))
+                logger.debug("latest_node of seq_preds " + str(latest_node))
+                logger.debug("schedtime " + str(sched_time))
             if defuse_preds:
-                latest_node = max(defuse_preds, key=lambda p: p.end)
-                logger.debug('latest_node of defuse_preds ' + str(latest_node))
+                latest_node = max(defuse_preds, key=lambda p: (p.end, p._nid))
+                logger.debug("latest_node of defuse_preds " + str(latest_node))
                 sched_times.append(latest_node.end)
-                logger.debug('schedtime ' + str(latest_node.end))
             if usedef_preds:
                 preds = [self._find_latest_alias(dfg, pred) for pred in usedef_preds]
-                latest_node = max(preds, key=lambda p: p.begin)
-                logger.debug('latest_node(begin) of usedef_preds ' + str(latest_node))
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
+                logger.debug("latest_node(begin) of usedef_preds " + str(latest_node))
                 sched_times.append(latest_node.begin)
-                logger.debug('schedtime ' + str(latest_node.begin))
             if not sched_times:
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             scheduled_time = max(sched_times)
             if scheduled_time < 0:
                 scheduled_time = 0
         else:
-            # source node
             scheduled_time = 0
         return scheduled_time
 
@@ -411,21 +445,23 @@ class PipelineScheduler(SchedulerImpl):
             latency = self._list_schedule_for_pipeline(dfg, nodes, 0)
             conflict_res_table = self._make_conflict_res_table(nodes)
             if conflict_res_table:
-                logger.debug('before rescheduling')
+                logger.debug("before rescheduling")
                 for n in dfg.get_scheduled_nodes():
                     logger.debug(n)
                 latency = self._reschedule_for_conflict(dfg, conflict_res_table, latency)
             if longest_latency < latency:
                 longest_latency = latency
             self._fill_defuse_gap(dfg, nodes)
-        logger.debug('II = ' + str(dfg.ii))
+        logger.debug("II = " + str(dfg.ii))
         return longest_latency
 
     def _make_conflict_res_table(self, nodes):
+        assert self.res_extractor is not None
         conflict_res_table = defaultdict(list)
         self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.mems)
         self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.ports)
-        self._extend_conflict_res_table(conflict_res_table, nodes, self.res_extractor.regarrays)
+        # Register arrays allow parallel access via non-blocking assignment,
+        # so they are not treated as single-port resource conflicts.
         return conflict_res_table
 
     def _extend_conflict_res_table(self, table, target_nodes, node_res_map):
@@ -445,9 +481,9 @@ class PipelineScheduler(SchedulerImpl):
             return 0
 
     def _schedule_ii(self, dfg):
-        initiation_interval = int(dfg.synth_params['ii'])
+        initiation_interval = int(dfg.synth_params["ii"])
         if not self.all_paths:
-            for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, 'DefUse')):
+            for path in dfg.trace_all_paths(lambda n: dfg.succs_typ_without_back(n, "DefUse")):
                 self.all_paths.append(path)
         induction_paths = self._find_induction_paths(self.all_paths)
         if initiation_interval < 0:
@@ -456,7 +492,7 @@ class PipelineScheduler(SchedulerImpl):
         else:
             ret, actual = self._adjust_latency(induction_paths, initiation_interval)
             if not ret:
-                assert False, 'scheduling of II has failed'
+                assert False, "scheduling of II has failed"
             dfg.ii = actual
 
     def _find_induction_paths(self, paths):
@@ -479,6 +515,7 @@ class PipelineScheduler(SchedulerImpl):
         return induction_paths
 
     def _get_using_resources(self, node):
+        assert self.res_extractor is not None
         res = []
         if node in self.res_extractor.mems:
             res.extend(self.res_extractor.mems[node])
@@ -488,27 +525,12 @@ class PipelineScheduler(SchedulerImpl):
             res.extend(self.res_extractor.regarrays[node])
         return res
 
-    def find_cnode(self, cgraph, stm):
-        if cgraph is None:
-            return None
-        for cnode in cgraph.get_nodes():
-            if isinstance(cnode, ConflictNode):
-                if stm in cnode.items:
-                    return cnode
-            else:
-                if stm is cnode:
-                    return cnode
-        return None
-
     def _list_schedule_for_pipeline(self, dfg, nodes, longest_latency):
         while True:
             next_candidates = set()
-            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index)):
+            for n in sorted(nodes, key=lambda n: (n.priority, n.stm_index, n._nid)):
                 scheduled_time = self._node_sched_pipeline(dfg, n)
                 _, _, latency = self.node_latency_map[n]
-                #detect resource conflict
-                # TODO:
-                #scheduled_time = self._get_earliest_res_free_time(n, scheduled_time, latency)
                 if scheduled_time > n.begin:
                     n.begin = scheduled_time
                     if n in self.d2c:
@@ -519,7 +541,6 @@ class PipelineScheduler(SchedulerImpl):
                             dnode.begin = n.begin
                             next_candidates.add(dnode)
                 n.end = n.begin + latency
-                #logger.debug('## SCHEDULED ## ' + str(n))
                 succs = dfg.succs_without_back(n)
                 next_candidates = next_candidates.union(succs)
                 if longest_latency < n.end:
@@ -535,21 +556,18 @@ class PipelineScheduler(SchedulerImpl):
         conflict_n = self.max_cnode_num(self.cgraph)
         if conflict_n == 0:
             return longest_latency
-        request_ii = int(dfg.synth_params['ii'])
+        request_ii = int(dfg.synth_params["ii"])
         if request_ii == -1:
             if dfg.ii < conflict_n:
-                # TODO: show warnings
                 dfg.ii = conflict_n
         elif request_ii < conflict_n:
-            fail(dfg.region.head.stms[0],
-                 Errors.RULE_INVALID_II, [request_ii, conflict_n])
+            fail(dfg.region.head.stms[0], Errors.RULE_INVALID_II, [request_ii, conflict_n])
 
         for cnode in self.cgraph.get_nodes():
             for dnode in cnode.items:
                 self.d2c[dnode] = cnode
 
         next_candidates = set()
-        # sync stms in a cnode
         for cnode in self.cgraph.get_nodes():
             if len(cnode.items) == 1:
                 continue
@@ -560,9 +578,9 @@ class PipelineScheduler(SchedulerImpl):
                 dnode.end += delta
                 if delta:
                     next_candidates.add(dnode)
-        logger.debug('sync dnodes in cnode')
+        logger.debug("sync dnodes in cnode")
         logger.debug(self.cgraph.nodes)
-        cnodes = sorted(self.cgraph.get_nodes(), key=lambda cn:(cn.items[0].begin, cn.items[0].priority))
+        cnodes = sorted(self.cgraph.get_nodes(), key=lambda cn: (cn.items[0].begin, cn.items[0].priority))
         cnode_map = defaultdict(list)
         for cnode in cnodes:
             cnode_map[cnode.res].append(cnode)
@@ -590,9 +608,7 @@ class PipelineScheduler(SchedulerImpl):
                             dnode.begin = new_begin
                             next_candidates.add(dnode)
             if next_candidates:
-                longest_latency = self._list_schedule_for_pipeline(dfg,
-                                                                   next_candidates,
-                                                                   longest_latency)
+                longest_latency = self._list_schedule_for_pipeline(dfg, next_candidates, longest_latency)
                 logger.debug(self.cgraph.nodes)
                 next_candidates.clear()
             else:
@@ -602,51 +618,49 @@ class PipelineScheduler(SchedulerImpl):
     def _node_sched_pipeline(self, dfg, node):
         preds = dfg.preds_without_back(node)
         if preds:
-            defuse_preds = dfg.preds_typ_without_back(node, 'DefUse')
-            usedef_preds = dfg.preds_typ_without_back(node, 'UseDef')
-            seq_preds = dfg.preds_typ_without_back(node, 'Seq')
+            defuse_preds = dfg.preds_typ_without_back(node, "DefUse")
+            usedef_preds = dfg.preds_typ_without_back(node, "UseDef")
+            seq_preds = dfg.preds_typ_without_back(node, "Seq")
             sched_times = []
             if seq_preds:
-                if node.tag.is_a([JUMP, CJUMP, MCJUMP]) or has_exclusive_function(node.tag, self.scope):
-                    latest_node = max(seq_preds, key=lambda p: p.end)
+                if isinstance(node.tag, (Jump, CJump, MCJump)) or has_exclusive_function(node.tag, self.scope):
+                    latest_node = max(seq_preds, key=lambda p: (p.end, p._nid))
                     sched_times.append(latest_node.end)
-                    logger.debug('latest_node of seq_preds ' + str(latest_node))
+                    logger.debug("latest_node of seq_preds " + str(latest_node))
                 else:
-                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end))
+                    latest_node = max(seq_preds, key=lambda p: (p.begin, p.end, p._nid))
                     seq_latency = self.node_seq_latency_map[latest_node]
                     sched_times.append(latest_node.begin + seq_latency)
-                    logger.debug('latest_node of seq_preds ' + str(latest_node))
-                    logger.debug('schedtime ' + str(latest_node.begin + seq_latency))
+                    logger.debug("latest_node of seq_preds " + str(latest_node))
             if defuse_preds:
-                latest_node = max(defuse_preds, key=lambda p: p.end)
+                latest_node = max(defuse_preds, key=lambda p: (p.end, p._nid))
                 sched_times.append(latest_node.end)
             if usedef_preds:
-                if any([d.is_induction() for d in node.defs]):
+                if any(d.is_induction() for d in node.defs):
                     pass
                 else:
                     preds = usedef_preds
-                    latest_node = max(preds, key=lambda p: p.end)
+                    latest_node = max(preds, key=lambda p: (p.end, p._nid))
                     sched_times.append(latest_node.begin)
             if not sched_times:
-                latest_node = max(preds, key=lambda p: p.begin)
+                latest_node = max(preds, key=lambda p: (p.begin, p._nid))
                 sched_times.append(latest_node.begin)
             scheduled_time = max(sched_times)
             if scheduled_time < 0:
                 scheduled_time = 0
         else:
-            # source node
             scheduled_time = 0
         return scheduled_time
 
     def _fill_defuse_gap(self, dfg, nodes):
-        for node in reversed(sorted(nodes, key=lambda n: (n.priority, n.stm_index))):
+        for node in reversed(sorted(nodes, key=lambda n: (n.priority, n.stm_index, n._nid))):
             succs = dfg.succs_without_back(node)
             succs = [s for s in succs if s.begin >= 0]
             if not succs:
                 continue
             if self._get_using_resources(node):
                 continue
-            nearest_node = min(succs, key=lambda p: p.begin)
+            nearest_node = min(succs, key=lambda p: (p.begin, p._nid))
             sched_time = nearest_node.begin
             if sched_time > node.end:
                 gap = sched_time - node.end
@@ -654,40 +668,95 @@ class PipelineScheduler(SchedulerImpl):
                 node.end += gap
 
 
-class ResourceExtractor(IRVisitor):
+class ResourceExtractor(object):
+    """Extract resource usage from DFG nodes. Handles both old and new IR."""
+
     def __init__(self):
-        super().__init__()
         self.results = []
         self.ops = defaultdict(lambda: defaultdict(int))
         self.mems = defaultdict(list)
         self.ports = defaultdict(list)
         self.regarrays = defaultdict(list)
+        self.scope = None
+        self.current_node = None
 
-    def visit_BINOP(self, ir):
-        self.ops[self.current_node][ir.op] += 1
-        super().visit_BINOP(ir)
+    def visit(self, ir):
+        """Visit an IR node (old or new) to extract resources."""
+        self._visit_rec(ir)
 
-    def visit_CALL(self, ir):
-        callee_scope = ir.get_callee_scope(self.scope)
-        # callee_scope = ir.callee_scope
-        self.ops[self.current_node][callee_scope] += 1
-        func_name = callee_scope.name
-        if func_name.startswith('polyphony.io.Port'):
-            qsym = qualified_symbols(ir.func, self.scope)
-            inst_ = qsym[-2]
-            assert isinstance(inst_, Symbol)
-            self.ports[self.current_node].append(inst_)
-        super().visit_CALL(ir)
-
-    def visit_MREF(self, ir):
-        sym = qualified_symbols(ir.mem, self.scope)[-1]
-        self.regarrays[self.current_node].append(sym)
-        super().visit_MREF(ir)
-
-    def visit_MSTORE(self, ir):
-        sym = qualified_symbols(ir.mem, self.scope)[-1]
-        self.regarrays[self.current_node].append(sym)
-        super().visit_MSTORE(ir)
+    def _visit_rec(self, ir):
+        """Recursively visit IR to extract resources."""
+        if ir is None:
+            return
+        # Handle BinOp
+        if isinstance(ir, BinOp):
+            self.ops[self.current_node][ir.op] += 1
+            self._visit_rec(ir.left)
+            self._visit_rec(ir.right)
+            return
+        # Handle Call
+        if isinstance(ir, Call):
+            callee_scope = ir.get_callee_scope(self.scope)
+            self.ops[self.current_node][callee_scope] += 1
+            func_name = callee_scope.name
+            if func_name.startswith("polyphony.io.Port"):
+                qsym = qualified_symbols(ir.func, self.scope)
+                inst_ = qsym[-2]
+                assert isinstance(inst_, Symbol)
+                self.ports[self.current_node].append(inst_)
+            # Visit args
+            for _, arg in ir.args:
+                self._visit_rec(arg)
+            return
+        # Handle MRef
+        if isinstance(ir, MRef):
+            sym = qualified_symbols(ir.mem, self.scope)[-1]
+            self.regarrays[self.current_node].append(sym)
+            self._visit_rec(ir.mem)
+            self._visit_rec(ir.offset)
+            return
+        # Handle MStore
+        if isinstance(ir, MStore):
+            sym = qualified_symbols(ir.mem, self.scope)[-1]
+            self.regarrays[self.current_node].append(sym)
+            self._visit_rec(ir.mem)
+            self._visit_rec(ir.offset)
+            self._visit_rec(ir.exp)
+            return
+        # Handle statements - descend into their expressions
+        if isinstance(ir, Move):
+            self._visit_rec(ir.src)
+            self._visit_rec(ir.dst)
+        elif isinstance(ir, Expr):
+            self._visit_rec(ir.exp)
+        elif isinstance(ir, (Phi, UPhi)):
+            for arg in ir.args:
+                if arg:
+                    self._visit_rec(arg)
+        elif isinstance(ir, CJump):
+            self._visit_rec(ir.exp)
+        elif isinstance(ir, MCJump):
+            for c in ir.conds:
+                self._visit_rec(c)
+        # Handle other expressions - descend
+        elif isinstance(ir, UnOp):
+            self._visit_rec(ir.exp)
+        elif isinstance(ir, RelOp):
+            self._visit_rec(ir.left)
+            self._visit_rec(ir.right)
+        elif isinstance(ir, CondOp):
+            self._visit_rec(ir.cond)
+            self._visit_rec(ir.left)
+            self._visit_rec(ir.right)
+        elif isinstance(ir, SysCall):
+            for _, arg in ir.args:
+                self._visit_rec(arg)
+        elif isinstance(ir, New):
+            for _, arg in ir.args:
+                self._visit_rec(arg)
+        elif isinstance(ir, Array):
+            for item in ir.items:
+                self._visit_rec(item)
 
 
 class ConflictNode(object):
@@ -695,7 +764,7 @@ class ConflictNode(object):
     WRITE = 2
 
     def __init__(self, access, items):
-        self.res = ''
+        self.res = ""
         self.access = access
         self.items = items
 
@@ -727,14 +796,14 @@ class ConflictNode(object):
         return ConflictNode(access, list(items))
 
     def __str__(self):
-        access_str = ''
+        access_str = ""
         if self.access & ConflictNode.READ:
-            access_str += 'R'
+            access_str += "R"
         if self.access & ConflictNode.WRITE:
-            access_str += 'W'
-        s = '---- {}, {}, {}\n'.format(len(self.items), access_str, self.res)
-        s += '\n'.join(['  ' + str(i) for i in self.items])
-        s += '\n'
+            access_str += "W"
+        s = "---- {}, {}, {}\n".format(len(self.items), access_str, self.res)
+        s += "\n".join(["  " + str(i) for i in self.items])
+        s += "\n"
         return s
 
     def __repr__(self):
@@ -756,6 +825,7 @@ class ConflictGraphBuilder(object):
         for res, graph in cgraphs.items():
             assert not graph.edges
             accs = []
+            cnode = None
             for cnode in graph.get_nodes():
                 cnode.res = res
                 master_cgraph.add_node(cnode)
@@ -763,18 +833,8 @@ class ConflictGraphBuilder(object):
             if accs.count(accs[0]) == len(accs) and (accs[0] == ConflictNode.READ or accs[0] == ConflictNode.WRITE):
                 pass
             else:
-                warn(cnode.items[0].tag,
-                     Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM, [res.orig_name()])
-        # for cnode in master_cgraph.get_nodes():
-        #     for dnode in cnode.items:
-        #         preds = self.dfg.collect_all_preds(dnode)
-        #         if not preds:
-        #             continue
-        #         for cnode2 in master_cgraph.get_nodes():
-        #             if cnode is cnode2:
-        #                 continue
-        #             if set(preds).intersection(set(cnode2.items)):
-        #                 master_cgraph.add_edge(cnode2, cnode)
+                assert cnode is not None
+                warn(cnode.items[0].tag, Warnings.RULE_PIPELINE_HAS_RW_ACCESS_IN_THE_SAME_RAM, [res.orig_name()])
         logger.debug(master_cgraph.nodes)
         return master_cgraph
 
@@ -811,17 +871,12 @@ class ConflictGraphBuilder(object):
             lineno0 = min([item.tag.lineno for item in e.src.items])
             lineno1 = min([item.tag.lineno for item in e.dst.items])
             lineno = (lineno0, lineno1) if lineno0 <= lineno1 else (lineno1, lineno0)
-            # In order to avoid crossover edge, 'begin' must be given priority
             return (distance, begin, lineno)
 
-        logger.debug('merging nodes that connected with a branch edge...')
+        logger.debug("merging nodes that connected with a branch edge...")
         while graph.edges:
             edges = sorted(graph.edges.orders(), key=edge_order)
             n0, n1, _ = edges[0]
-            #logger.debug('merge node')
-            #logger.debug(str(n0.items))
-            #logger.debug(str(n1.items))
-            #logger.debug(str(edges))
             if n0.items[0].begin != n1.items[0].begin and n0.access != n1.access:
                 graph.del_edge(n0, n1, auto_del_node=False)
                 continue
@@ -836,13 +891,13 @@ class ConflictGraphBuilder(object):
             graph.del_node(n1)
             for n in living_nodes:
                 graph.add_edge(cnode, n)
-        logger.debug('after merging')
+        logger.debug("after merging")
         logger.debug(graph.nodes)
         return graph
 
     def _merge_same_conditional_branch_nodes(self, graph, conflict_nodes, stm2cnode):
-        conflict_nodes = sorted(conflict_nodes, key=lambda dn:dn.begin)
-        for begin, dnodes in itertools.groupby(conflict_nodes, key=lambda dn:dn.begin):
+        conflict_nodes = sorted(conflict_nodes, key=lambda dn: dn.begin)
+        for begin, dnodes in itertools.groupby(conflict_nodes, key=lambda dn: dn.begin):
             merge_cnodes = defaultdict(set)
             for dn0, dn1 in itertools.permutations(dnodes, 2):
                 stm0 = dn0.tag
@@ -854,10 +909,11 @@ class ConflictGraphBuilder(object):
                 e = graph.find_edge(cn0, cn1)
                 if e is not None:
                     continue
-                if ((stm0.is_a(CMOVE) or stm0.is_a(CEXPR)) and
-                        (stm1.is_a(CMOVE) or stm1.is_a(CEXPR))):
+                if (isinstance(stm0, CMove) or isinstance(stm0, CExpr)) and (
+                    isinstance(stm1, CMove) or isinstance(stm1, CExpr)
+                ):
                     if stm0.cond == stm1.cond:
-                        vs = stm0.cond.find_irs(TEMP)
+                        vs = stm0.cond.find_irs(Temp)
                         syms = tuple(sorted([v.symbol for v in vs]))
                         merge_cnodes[syms].add(cn0)
                         merge_cnodes[syms].add(cn1)
@@ -881,38 +937,3 @@ class ConflictGraphBuilder(object):
                     for adj in adjs:
                         graph.add_edge(mn, adj)
                     cn0 = mn
-
-
-class TimedScheduler:
-    def schedule(self, scope, dfg):
-        self.scope = scope
-        blkstms = defaultdict(list)
-        for n in dfg.nodes:
-            blkstms[n.tag.block].append(n)
-        for blk, dnodes in blkstms.items():
-            dnodes = sorted(dnodes, key=lambda dnode:self.stm_idx(dnode.tag))
-            cycle = 0
-            for i, dnode in enumerate(dnodes):
-                dnode.priority = i
-                dnode.begin = cycle
-                def_l, seq_l = get_latency(dnode.tag)
-                dnode.end = dnode.begin + def_l
-                logger.debug(f'{cycle}, {i}, {dnode}')
-                n = self.get_clk_increment(dnode.tag)
-                cycle += n
-
-    def stm_idx(self, stm):
-        for idx, s in enumerate(stm.block.stms):
-            if s is stm:
-                return idx
-        return None
-
-    def get_clk_increment(self, stm):
-        if (stm.is_a(EXPR) and stm.exp.is_a(SYSCALL)):
-            if stm.exp.name == 'polyphony.timing.clksleep':
-                assert len(stm.exp.args) == 1
-                assert stm.exp.args[0][1].is_a(CONST)
-                return stm.exp.args[0][1].value
-            elif stm.exp.name.startswith('polyphony.timing.wait_'):
-                return 1
-        return 0

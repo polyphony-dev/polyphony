@@ -13,7 +13,6 @@ class Config(object):
     main_clock_frequency = 100000000
     reset_activation_signal = 1
     enable_pure = False
-    perfect_inlining = False
 
     def __str__(self):
         d = {}
@@ -68,8 +67,11 @@ class Env(object):
         self.scope2hdlscope: dict[Scope, HDLScope] = {}
         self.scope2output_hdlscope: dict[Scope, HDLScope] = {}
         self.targets = []
+        self.api_types: dict = {}
         self.root_dir = ''
         self.seq_id_to_array: dict = {}
+        from ..ir.origin import OriginRegistry
+        self.origin_registry = OriginRegistry()
 
     def load_config(self, config):
         for key, v in config.items():

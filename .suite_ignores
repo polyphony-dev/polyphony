@@ -41,6 +41,11 @@ error/seq_capacity01.py
 error/seq_capacity02.py
 error/toomany_args01.py
 error/toomany_args02.py
+# issues: known bugs (pending fix)
+issues/mask32_signed_shift.py
+issues/list_accum_alias.py
+issues/narrow_type_shift_overflow.py
+issues/testbench_large_constant.py
 # warning tests: wrong or missing warnings
 warning/pipeline_hazard01.py
 warning/port_is_not_used01.py

@@ -1,5 +1,5 @@
 from polyphony import testbench, module
-from polyphony.io import connect, Port
+from polyphony.io import Port
 from polyphony.timing import timed, wait_value, clkfence
 from polyphony.typing import int8
 
@@ -61,10 +61,16 @@ class Fifo:
             self._inc_wp()
             self.mem[self.wp] = self.din.rd()
 
+    def _next_wp(self):
+        return 0 if self.wp == (self.length - 1) else self.wp + 1
+
+    def _next_rp(self):
+        return 0 if self.rp == (self.length - 1) else self.rp + 1
+
     def update_flag(self):
         if (self.write.rd()
                 and not self._full
-                and self.wp + 1 == self.rp):
+                and self._next_wp() == self.rp):
             self._full = 1
         elif self._full and self.wp == self.rp:
             self._full = 1
@@ -72,7 +78,7 @@ class Fifo:
             self._full = 0
         if (self.read.rd()
                 and not self._empty
-                and self.rp + 1 == self.wp):
+                and self._next_rp() == self.wp):
             self._empty = 1
         elif self._empty and self.wp == self.rp:
             self._empty = 1

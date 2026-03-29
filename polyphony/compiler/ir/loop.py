@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .symbol import Symbol
     from .block import Block
-    from .ir import IRExp
+    from .ir import IrExp
 
 
 class Region(object):
@@ -68,15 +68,15 @@ class Region(object):
 class Loop(Region):
     def __init__(self, head, bodies, region):
         super().__init__(head, bodies, region)
-        self.counter: Symbol = None
-        self.init: IRExp = None
-        self.update: IRExp = None
-        self.cond: Symbol = None
-        self.exits: list[Block] = None
-        self.outer_defs: set[Symbol] = None
-        self.outer_uses: set[Symbol] = None
-        self.inner_defs: set[Symbol] = None
-        self.inner_uses: set[Symbol] = None
+        self.counter: Symbol | None = None
+        self.init: IrExp | None = None
+        self.update: IrExp | None = None
+        self.cond: Symbol | None = None
+        self.exits: list[Block] | None = None
+        self.outer_defs: set[Symbol] | None = None
+        self.outer_uses: set[Symbol] | None = None
+        self.inner_defs: set[Symbol] | None = None
+        self.inner_uses: set[Symbol] | None = None
 
     def __str__(self):
         s = 'Loop: {}\n'.format(self.name)
@@ -98,19 +98,19 @@ class Loop(Region):
             s += ' # cond: {}\n'.format(self.cond)
         if self.outer_defs:
             s += ' # outer_defs: {'
-            s += ', '.join([str(d) for d in self.outer_defs])
+            s += ', '.join([str(d) for d in sorted(self.outer_defs, key=str)])
             s += '}\n'
         if self.outer_uses:
             s += ' # outer_uses: {'
-            s += ', '.join([str(u) for u in self.outer_uses])
+            s += ', '.join([str(u) for u in sorted(self.outer_uses, key=str)])
             s += '}\n'
         if self.inner_defs:
             s += ' # inner_defs: {'
-            s += ', '.join([str(d) for d in self.inner_defs])
+            s += ', '.join([str(d) for d in sorted(self.inner_defs, key=str)])
             s += '}\n'
         if self.inner_uses:
             s += ' # inner_uses: {'
-            s += ', '.join([str(u) for u in self.inner_uses])
+            s += ', '.join([str(u) for u in sorted(self.inner_uses, key=str)])
             s += '}\n'
         return s
 

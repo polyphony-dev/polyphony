@@ -7,6 +7,7 @@ from ..common.env import env
 from ..ir.ir import *
 from ..ir.irhelper import qualified_symbols
 from ..ir.analysis.usedef import UseDefDetector
+from ..ir.analysis.fieldusedef import FieldUseDef
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -34,11 +35,12 @@ class HDLModuleBuilder(object):
     def _process_submodules(self):
         for instance_sig, subscope in self.hdlmodule.subscopes.items():
             param_map = {}
-            if subscope.scope.module_param_vars:
-                for name, v in subscope.scope.module_param_vars:
+            cls = subscope.scope.as_class()
+            if cls and cls.module_param_vars:
+                for name, v in cls.module_param_vars:
                     param_map[name] = v
             connections = []
-            for (var, connector_name, attrs) in subscope.connectors(instance_sig.name):
+            for (var, connector_name, attrs) in cast(HDLModule, subscope).connectors(instance_sig.name):
                 connector = self.hdlmodule.gen_sig(connector_name, var.sig.width, attrs)
                 connections.append((var, connector))
             self.hdlmodule.add_sub_module(instance_sig.name,
@@ -55,19 +57,21 @@ class HDLModuleBuilder(object):
 
     def _add_roms(self, memvars_set:set[tuple[Signal]]):
         def find_defstm(symbol):
-            if not symbol.scope.usedef:
-                UseDefDetector().process(symbol.scope)
-            defstms = symbol.scope.usedef.get_stms_defining(symbol)
+            usedef = UseDefDetector().process(symbol.scope)
+            defstms = usedef.get_stms_defining(symbol)
             if defstms:
                 assert len(defstms) == 1
                 return list(defstms)[0]
-            defstms = symbol.scope.field_usedef.get_def_stms((symbol,))
+            module_scope = symbol.scope
+            while module_scope is not None and not module_scope.is_module():
+                module_scope = module_scope.parent
+            field_usedef = FieldUseDef().process(module_scope)
+            defstms = field_usedef.get_def_stms((symbol,))
             assert len(defstms) == 1
             return list(defstms)[0]
 
-        roms = [memvars for memvars in memvars_set if memvars[-1].is_rom()]
-        while roms:
-            memvars = roms.pop()
+        roms = sorted([memvars for memvars in memvars_set if memvars[-1].is_rom()], key=lambda mv: mv[-1].name)
+        for memvars in roms:
             fname = AHDL_VAR(memvars, Ctx.STORE)
             addr_width = 8  # TODO
             input_sig = self.hdlmodule.gen_sig(f'{fname.hdl_name}_in', addr_width)
@@ -77,18 +81,17 @@ class HDLModuleBuilder(object):
             while True:
                 defstm = find_defstm(array_sym)
                 array = defstm.src
-                if array.is_a(ARRAY):
+                if isinstance(array, Array):
                     break
-                elif array.is_a(IRVariable):
+                elif isinstance(array, IrVariable):
                     array_sym = qualified_symbols(array, array_sym.scope)[-1]
-                    # array_sym = array.symbol
                 else:
                     assert False
             case_items = []
-            assert array.repeat.is_a(CONST)
+            assert isinstance(array.repeat, Const)
             items = array.items * array.repeat.value
             for i, item in enumerate(items):
-                assert item.is_a(CONST)
+                assert isinstance(item, Const)
                 connect = AHDL_BLOCK(str(i), (AHDL_CONNECT(fname, AHDL_CONST(item.value)), ))
                 case_items.append(AHDL_CASE_ITEM(AHDL_CONST(i), connect))
             case = AHDL_CASE(input, tuple(case_items))
@@ -99,12 +102,12 @@ class HDLModuleBuilder(object):
         moves = []
         for stg in fsm.stgs:
             for state in stg.states:
-                moves.extend([code for code in state.traverse() if code.is_a(AHDL_MOVE)])
+                moves.extend([code for code in state.traverse() if isinstance(code, AHDL_MOVE)])
         return moves
 
     def _add_reset_stms(self, fsm, defs:set[tuple[Signal]], uses:set[tuple[Signal]], outputs:set[tuple[Signal]]):
         fsm_name = fsm.name
-        for vars in defs | outputs:
+        for vars in sorted(defs | outputs, key=lambda v: v[-1].name):
             if vars[0].is_dut():
                 continue
             if vars[-1].is_reg():
@@ -212,15 +215,25 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
 
         self._collector.process(self.hdlmodule)
         fsms = list(self.hdlmodule.fsms.values())
+        ctor_array_inits = []
         for fsm in fsms:
             if fsm.scope.is_ctor():
                 self._add_roms(self._collector.mem_vars(fsm.name))
                 # remove ctor fsm and add constant parameter assigns
                 for stm in self._collect_moves(fsm):
-                    if stm.dst.is_a(AHDL_VAR) and stm.dst.sig.is_net():
+                    if isinstance(stm.dst, AHDL_VAR) and stm.dst.sig.is_net():
                         assign = AHDL_ASSIGN(stm.dst, stm.src)
                         self.hdlmodule.add_static_assignment(assign, '')
+                    elif isinstance(stm.dst, AHDL_SUBSCRIPT):
+                        # Preserve array element initialization (e.g. ROM table init)
+                        ctor_array_inits.append(stm)
                 self.hdlmodule.remove_sig(fsm.state_var)
                 del self.hdlmodule.fsms[fsm.name]
             else:
                 self._process_fsm(fsm)
+        # Add ctor array initialization to the first worker FSM's reset block
+        if ctor_array_inits:
+            for fsm in self.hdlmodule.fsms.values():
+                for stm in ctor_array_inits:
+                    self.hdlmodule.add_fsm_reset_stm(fsm.name, stm)
+                break

@@ -45,12 +45,14 @@ class Canonicalizer(AHDLTransformer):
     def _build_reset_block(self, fsm):
         resets = []
         for stm in sorted(fsm.reset_stms, key=lambda s: str(s)):
-            if stm.dst.is_a(AHDL_VAR) and stm.dst.sig.is_net():
+            if isinstance(stm.dst, AHDL_VAR) and stm.dst.sig.is_net():
                 continue
             resets.append(stm)
+        main_stg = None
         for stg in fsm.stgs:
             if stg.is_main():
                 main_stg = stg
+        assert main_stg is not None
         init_state_sig = self.hdlmodule.signal(main_stg.states[0].name)
         mv = AHDL_MOVE(AHDL_VAR(self.current_state_sig, Ctx.STORE),
                        AHDL_VAR(init_state_sig, Ctx.LOAD))
@@ -131,6 +133,7 @@ class Canonicalizer(AHDLTransformer):
     def visit_AHDL_META_OP(self, ahdl):
         method = 'visit_AHDL_META_OP_' + ahdl.op
         visitor = getattr(self, method, None)
+        assert visitor is not None
         return visitor(ahdl)
 
     def visit_AHDL_META_OP_edge(self, ahdl):
@@ -157,10 +160,10 @@ class Canonicalizer(AHDLTransformer):
         return self.visit(cond)
 
     def visit_AHDL_MOVE(self, ahdl):
-        if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_net():
+        if isinstance(ahdl.dst, AHDL_VAR) and ahdl.dst.sig.is_net():
             self.hdlmodule.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
             return AHDL_NOP('')
-        elif ahdl.dst.is_a(AHDL_SUBSCRIPT) and ahdl.dst.memvar.sig.is_netarray():
+        elif isinstance(ahdl.dst, AHDL_SUBSCRIPT) and ahdl.dst.memvar.sig.is_netarray():
             self.hdlmodule.add_static_assignment(AHDL_ASSIGN(ahdl.dst, ahdl.src))
             return AHDL_NOP('')
         src = self.visit(ahdl.src)

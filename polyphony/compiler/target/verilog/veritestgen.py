@@ -82,8 +82,8 @@ class VerilogTestGen(VerilogCodeGen):
         verilog_names = []
         valid_names = []
         all_sigs = {sig.name: sig for sig in self.hdlmodule.get_signals(
-            {'reg', 'net', 'regarray', 'netarray'}, {'input', 'output'})}
-        # Also include input/output signals
+            {'reg', 'net'}, {'input', 'output'})}
+        # Also include input/output signals (scalar only)
         for sig in self.hdlmodule.get_signals({'input', 'output'}):
             all_sigs[sig.name] = sig
         for py_name in signal_names:

@@ -28,62 +28,47 @@ from .ir.scope import Scope
 from .ir.symbol import Symbol
 from .ir.setlineno import SourceDump
 from .ir.synth import DefaultSynthParamSetter
+from .ir.block import detect_loop_edges
 
-from .ir.analysis.usedef import UseDefDetector
-from .ir.analysis.fieldusedef import FieldUseDef
 from .ir.analysis.diagnostic import CFGChecker
 from .ir.analysis.loopdetector import LoopDetector
-from .ir.analysis.loopdetector import LoopInfoSetter
 from .ir.analysis.loopdetector import LoopRegionSetter
-from .ir.analysis.loopdetector import LoopDependencyDetector
+from polyphony.compiler.ir.analysis.loopdetector import LoopInfoSetter, LoopDependencyDetector
 from .ir.analysis.regreducer import AliasVarDetector
 from .ir.analysis.scopegraph import ScopeDependencyGraphBuilder
 from .ir.analysis.scopegraph import UsingScopeDetector
-from .ir.analysis.typecheck import TypeChecker
-from .ir.analysis.typecheck import EarlyTypeChecker
-from .ir.analysis.typecheck import PortAssignChecker
-from .ir.analysis.typecheck import EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker
-from .ir.analysis.typecheck import AssertionChecker
-from .ir.analysis.typecheck import SynthesisParamChecker
+from .ir.analysis.typecheck import (
+    TypeChecker, EarlyTypeChecker, PortAssignChecker,
+    EarlyRestrictionChecker, RestrictionChecker, LateRestrictionChecker,
+    AssertionChecker, SynthesisParamChecker,
+)
 
 from .ir.transformers.bitwidth import TempVarWidthSetter
-from .ir.transformers.cfgopt import BlockReducer, PathExpTracer
-from .ir.transformers.cfgopt import HyperBlockBuilder
-from .ir.transformers.constopt import ConstantOpt
-from .ir.transformers.constopt import EarlyConstantOptNonSSA
-from .ir.transformers.constopt import PolyadConstantFolding
-from .ir.transformers.constopt import StaticConstOpt
+from .ir.transformers.cfgopt import BlockReducer, PathExpTracer, HyperBlockBuilder
+from .ir.transformers.constopt import EarlyConstantOptNonSSA, ConstantOpt, StaticConstOpt, PolyadConstantFolding
+from .ir.transformers.varreplacer import VarReplacer
 from .ir.transformers.copyopt import CopyOpt, ObjCopyOpt
 from .ir.transformers.deadcode import DeadCodeEliminator
 from .ir.transformers.iftransform import IfTransformer, IfCondTransformer
-from .ir.transformers.inlineopt import InlineOpt
-from .ir.transformers.inlineopt import FlattenFieldAccess, FlattenObjectArgs, FlattenModule
-from .ir.transformers.inlineopt import ObjectHierarchyCopier
-from .ir.transformers.instantiator import ModuleInstantiator
-from .ir.transformers.instantiator import find_called_module
-from .ir.transformers.instantiator import ArgumentApplier
+from .ir.transformers.inlineopt import ObjectHierarchyCopier, InlineOpt, FlattenModule
+from .ir.transformers.inlineopt import FlattenFieldAccess
+from .ir.transformers.instantiator import ModuleInstantiator, new_find_called_module, ArgumentApplier
 from .ir.transformers.looptransformer import LoopFlatten
 from .ir.transformers.objtransform import ObjectTransformer
 from .ir.transformers.phiopt import PHIInlining, LPHIRemover
-from .ir.transformers.portconverter import PortTypeProp
-from .ir.transformers.portconverter import FlippedTransformer
-from .ir.transformers.portconverter import PortConnector
-from .ir.transformers.quadruplet import EarlyQuadrupleMaker
-from .ir.transformers.quadruplet import LateQuadrupleMaker
-from .ir.transformers.ssa import ScalarSSATransformer
-from .ir.transformers.ssa import TupleSSATransformer
-from .ir.transformers.ssa import ListSSATransformer
-from .ir.transformers.ssa import ObjectSSATransformer
-from .ir.transformers.typeprop import TypePropagation
-from .ir.transformers.typeprop import TypeSpecializer
-from .ir.transformers.typeprop import StaticTypePropagation
-from .ir.transformers.typeprop import TypeEvalVisitor
+from .ir.transformers.portconverter import PortTypeProp, FlippedTransformer, PortConnector
+from .ir.transformers.quadruplet import EarlyQuadrupleMaker, LateQuadrupleMaker
+from .ir.transformers.ssa import ScalarSSATransformer, TupleSSATransformer, ListSSATransformer, ObjectSSATransformer
+from .ir.transformers.typeprop import (
+    TypeEvalVisitor, TypePropagation, TypeSpecializer,
+    StaticTypePropagation,
+)
 from .ir.transformers.unroll import LoopUnroller
 
 from .ir.scheduling.dataflow import DFGBuilder
 from .ir.scheduling.scheduler import Scheduler
 
-from .frontend.python.irtranslator import IRTranslator
+from .frontend.python.irtranslator import IrTranslator
 from .frontend.python.pure import interpret, PureCtorBuilder, PureFuncExecutor
 
 from .target.verilog.vericodegen import VerilogCodeGen
@@ -139,7 +124,7 @@ class ScopeSorter(object):
         graph = graph_builder.depend_graph
         self._sorted_scopes = []
         order_map = graph.node_depth_map()
-        self._sorted_scopes = sorted(self._cached_scopes, key=lambda s: (order_map[s], s.scope_id))
+        self._sorted_scopes = sorted(self._cached_scopes, key=lambda s: (order_map[s], s.name))
 
     def top_down(self, scopes):
         if self.update_cached_scopes(scopes):
@@ -230,12 +215,17 @@ def select_using_scopes():
 
     top = Scope.global_scope()
     target_scopes = collect_scope_symbol(top)
-    using_scopes = UsingScopeDetector().process_scopes([top] + target_scopes)
-    return list(using_scopes)
+    all_scopes = [top] + target_scopes
+    using_scopes = UsingScopeDetector().process_scopes(all_scopes)
+    return sorted(using_scopes, key=lambda s: s.name)
 
 
 def if_trans(driver, scope):
     IfTransformer().process(scope)
+
+
+def detect_loops(driver, scope):
+    detect_loop_edges(scope)
 
 
 def ifcondtrans(driver, scope):
@@ -260,7 +250,6 @@ def pathexp(driver, scope):
 
 
 def hyperblock(driver, scope):
-    use_def(driver, scope)
     if not env.enable_hyperblock:
         return
     if scope.synth_params['scheduling'] == 'sequential':
@@ -307,23 +296,9 @@ def late_quadruple(driver, scope):
     LateQuadrupleMaker().process(scope)
 
 
-def use_def(driver, scope):
-    UseDefDetector().process(scope)
-
-def field_use_def(driver):
-    modules = set()
-    for s in driver.current_scopes:
-        if s.is_module():
-            modules.add(s)
-        elif s.parent and s.parent.is_module():
-            modules.add(s.parent)
-    for module in modules:
-        field_use_def = FieldUseDef()
-        field_use_def.process(module)
 
 
 def scalarssa(driver, scope):
-    use_def(driver, scope)
     ScalarSSATransformer().process(scope)
 
 
@@ -337,7 +312,7 @@ def eval_type(driver, scope):
 
 def early_static_type_prop(driver):
     StaticTypePropagation(is_strict=False).process_scopes(driver.current_scopes)
-    typed_scopes, _ = TypeSpecializer().process_scopes(driver.current_scopes)
+    typed_scopes, _ = TypeSpecializer().process_all()
     scopes = driver.all_scopes()
     for s in typed_scopes:
         if s not in scopes:
@@ -429,11 +404,11 @@ def detectrom(driver):
 def instantiate(driver):
     top = Scope.global_scope()
     scopes = [top] + [s for s in top.children if s.is_testbench() and len(s.param_names()) == 0]
-    modules = find_called_module(scopes)
+    modules = new_find_called_module(scopes)
     for module, _, _ in modules:
         module.add_tag('top_module')
     while True:
-        names = [''] * len(modules)  # work around
+        names = [''] * len(modules)
         new_modules = ModuleInstantiator().process_modules(modules, names)
         if not new_modules:
             break
@@ -442,17 +417,115 @@ def instantiate(driver):
             assert module.name in env.scopes
             assert module.is_module()
             driver.insert_scope(module)
-            orig_scopes.add(module.origin)
+            orig_scopes.add(env.origin_registry.scope_origin_of(module))
 
             for s in module.collect_scope():
                 if not s.is_instantiated():
                     continue
                 driver.insert_scope(s)
-                orig_scopes.add(s.origin)
-        for s in orig_scopes:
+                orig_scopes.add(env.origin_registry.scope_origin_of(s))
+        for s in sorted(orig_scopes, key=lambda s: s.name):
             driver.remove_scope(s)
         scopes = [module.find_ctor() for module in new_modules]
-        modules = find_called_module(scopes)
+        modules = new_find_called_module(scopes)
+
+
+def apply_api_types(driver):
+    """Apply type specifications from compile(types={...}) to parameter symbols."""
+    if not env.api_types:
+        return
+    from .ir.types.type import Type
+    from polyphony.typing import int_base
+    all_scopes = Scope.get_scopes(with_global=False, with_class=True)
+    for target_name, type_specs in env.api_types.items():
+        callee = None
+        for s in all_scopes:
+            if s.orig_base_name == target_name:
+                if s.is_module():
+                    callee = s.find_ctor()
+                elif s.is_function() or s.is_worker():
+                    callee = s
+                break
+        if callee is None:
+            continue
+        param_names = callee.param_names()
+        param_syms = callee.param_symbols()
+        for pname, ptype in type_specs.items():
+            if pname not in param_names:
+                raise ValueError(
+                    f"parameter '{pname}' not found in '{target_name}'"
+                )
+            idx = param_names.index(pname)
+            ir_type = _python_type_to_ir_type(ptype)
+            sym = param_syms[idx]
+            if not sym.typ.is_undef() and sym.typ != ir_type:
+                raise ValueError(
+                    f"parameter '{pname}' already has type annotation "
+                    f"'{sym.typ}', cannot override with '{ir_type}'"
+                )
+            sym.typ = ir_type
+            # Also set type on the local copy symbol
+            copy_sym = callee.find_sym(pname)
+            if copy_sym and copy_sym is not sym:
+                copy_sym.typ = ir_type
+
+
+def _python_type_to_ir_type(ptype):
+    """Convert a Python type to an IR Type using the compiler's scope registry.
+
+    Supports:
+      - polyphony.typing types (int8, bit16, uint32, etc.)
+      - Python builtins (int, bool)
+      - Container types (List[int8], List[int8][16], Tuple[int8, int16])
+    """
+    import types as pytypes
+    from .ir.types.type import Type
+    from .ir.types.typehelper import type_from_typeclass
+    from polyphony.typing import List, Tuple
+
+    # Handle GenericAlias (e.g. Tuple[int8, int16])
+    if isinstance(ptype, pytypes.GenericAlias):
+        origin = ptype.__origin__
+        args = ptype.__args__
+        if origin is Tuple or (isinstance(origin, type) and issubclass(origin, Tuple)):
+            if len(args) == 1:
+                return Type.tuple(_python_type_to_ir_type(args[0]), 1, explicit=True)
+            # Polyphony Tuple is homogeneous with length
+            elm_t = _python_type_to_ir_type(args[0])
+            return Type.tuple(elm_t, len(args), explicit=True)
+        raise ValueError(f"unsupported generic type: {ptype}")
+
+    # Handle List[T] and List[T][N] (dynamic subclasses of List)
+    if isinstance(ptype, type) and issubclass(ptype, List) and ptype is not List:
+        list_type = getattr(ptype, 'list_type', None)
+        list_capacity = getattr(ptype, 'list_capacity', Type.ANY_LENGTH)
+        if list_type is not None:
+            elm_t = _python_type_to_ir_type(list_type)
+            return Type.list(elm_t, length=list_capacity, explicit=True)
+
+    # Look up type scope in the compiler's registry
+    if isinstance(ptype, type):
+        scope_name = _resolve_type_scope_name(ptype)
+        if scope_name and scope_name in env.scopes:
+            scope = env.scopes[scope_name]
+            if scope.is_typeclass():
+                return type_from_typeclass(scope, explicit=True)
+
+    raise ValueError(f"unsupported type: {ptype}")
+
+
+def _resolve_type_scope_name(ptype):
+    """Resolve a Python type class to its compiler scope name."""
+    from polyphony.typing import int_base
+    # Python builtins
+    if ptype is int:
+        return '__builtin__.int'
+    if ptype is bool:
+        return '__builtin__.bool'
+    # polyphony.typing types
+    if isinstance(ptype, type) and issubclass(ptype, int_base):
+        return f'polyphony.typing.{ptype.__name__}'
+    return None
 
 
 def apply_argument(driver):
@@ -467,6 +540,8 @@ def inline_opt(driver):
 
 
 def setsynthparams(driver, scope):
+    # DefaultSynthParamSetter only accesses scope/block synth_params metadata.
+    # Does NOT access block.stms or IR statements. No migration needed.
     DefaultSynthParamSetter().process(scope)
 
 
@@ -477,23 +552,18 @@ def flattenmodule(driver, scope):
 
 
 def objssa(driver, scope):
-    use_def(driver, scope)
     TupleSSATransformer().process(scope)
     early_quadruple(driver, scope)
-    use_def(driver, scope)
     ListSSATransformer().process(scope)
     ObjectHierarchyCopier().process(scope)
-    use_def(driver, scope)
     ObjectSSATransformer().process(scope)
 
 
 def objcopyopt(driver, scope):
-    use_def(driver, scope)
     ObjCopyOpt().process(scope)
 
 
 def objtrans(driver, scope):
-    use_def(driver, scope)
     ObjectTransformer().process(scope)
 
 
@@ -505,24 +575,28 @@ def scalarize(driver, scope):
 
 
 def static_const_opt(driver):
-    for s in driver.current_scopes:
-        UseDefDetector().process(s)
     StaticConstOpt().process_scopes(driver.current_scopes)
 
 
 def earlyconstopt_nonssa(driver, scope):
-    use_def(driver, scope)
     EarlyConstantOptNonSSA().process(scope)
     checkcfg(driver, scope)
 
 
+_constopt_expr_type_index = None
+
+
 def constopt(driver, scope):
-    use_def(driver, scope)
-    ConstantOpt().process(scope)
+    global _constopt_expr_type_index
+    if _constopt_expr_type_index is None:
+        _constopt_expr_type_index = VarReplacer.build_expr_type_index()
+    ConstantOpt().process(scope, expr_type_index=_constopt_expr_type_index)
+    # Reset after the last scope so next pass invocation rebuilds
+    if scope is driver.current_scopes[-1]:
+        _constopt_expr_type_index = None
 
 
 def copyopt(driver, scope):
-    use_def(driver, scope)
     CopyOpt().process(scope)
 
 
@@ -536,9 +610,7 @@ def checkcfg(driver, scope):
 
 
 def loop(driver, scope):
-    use_def(driver, scope)
     LoopDetector().process(scope)
-    #LoopRegionSetter().process(scope)
     LoopInfoSetter().process(scope)
     LoopDependencyDetector().process(scope)
     checkcfg(driver, scope)
@@ -552,9 +624,13 @@ def looptrans(driver, scope):
 
 
 def unroll(driver, scope):
+    _unroll_count = 0
     while LoopUnroller().process(scope):
+        _unroll_count += 1
+        logger.debug(f'unroll iteration {_unroll_count} for {scope}')
+        if _unroll_count > 20:
+            raise RuntimeError(f'unroll infinite loop detected for {scope}')
         dumpscope(driver, scope)
-        use_def(driver, scope)
         checkcfg(driver, scope)
         reduce_blk(driver, scope)
         PolyadConstantFolding().process(scope)
@@ -569,12 +645,10 @@ def unroll(driver, scope):
 
 
 def deadcode(driver, scope):
-    use_def(driver, scope)
     DeadCodeEliminator().process(scope)
 
 
 def aliasvar(driver, scope):
-    use_def(driver, scope)
     AliasVarDetector().process(scope)
 
 
@@ -583,7 +657,6 @@ def tempbit(driver, scope):
 
 
 def dfg(driver, scope):
-    use_def(driver, scope)
     DFGBuilder().process(scope)
 
 
@@ -743,7 +816,9 @@ def compile_plan():
         return proc if env.config.enable_pure else None
 
     plan = [
+        apply_api_types,
         if_trans,
+        detect_loops,
         reduce_blk,
         early_quadruple,
         early_type_prop,
@@ -754,7 +829,6 @@ def compile_plan():
         late_quadruple,
 
         earlyrestrictioncheck,
-        use_def,
         static_const_opt,
         eval_type,
 
@@ -762,7 +836,6 @@ def compile_plan():
 
         type_check,
         restriction_check,
-        use_def,
 
         filter_scope(is_not_static_scope),
 
@@ -835,7 +908,6 @@ def compile_plan():
         convport,
 
         phase(env.PHASE_5),
-        field_use_def,
         aliasvar,
         tempbit,
         dfg,
@@ -907,7 +979,7 @@ def setup_options(options):
 
 
 def setup_builtins():
-    translator = IRTranslator()
+    translator = IrTranslator()
     root_dir = '{0}{1}{2}{1}'.format(
         os.path.dirname(__file__),
         os.path.sep, os.path.pardir
@@ -927,34 +999,48 @@ def setup_global(src_file):
         g.import_sym(sym, asname)
 
 
+def _parse_arg_value(a):
+    """Parse a single argument value from string or pass through typed values."""
+    if not isinstance(a, str):
+        return a
+    if a.isdigit() or a[0] == '-' and a[1:].isdigit():
+        return int(a)
+    elif a[0] == ':':
+        a_scope = Scope.global_scope().find_scope(a)
+        if not a_scope:
+            raise RuntimeError(f'{a} not found')
+        return a_scope
+    else:
+        return a
+
+
 # replace a target scope name to a scope object
 def parse_targets(scopes):
     if not env.targets:
         raise RuntimeError('compile targets not found')
     scope_dict = {s.name: s for s in scopes}
-    for i, (name, args_str) in enumerate(env.targets):
+    for i, (name, params) in enumerate(env.targets):
         scope_name = f'{env.global_scope_name}.{name}'
         if scope_name in scope_dict:
             target_scope = scope_dict[scope_name]
-            args = []
-            for a in args_str:
-                if a.isdigit() or a[0] == '-' and a[1:].isdigit():
-                    args.append(int(a))
-                elif a[0] == ':':
-                    # a as a type name
-                    a_scope = Scope.global_scope().find_scope(a)
-                    if not a_scope:
-                        raise RuntimeError(f'{a} not found')
-                    args.append(a_scope)
-                else:
-                    args.append(a)
-            env.targets[i] = (target_scope, args)
+            if isinstance(params, dict):
+                # dict form from compile() API
+                args = {}
+                for k, v in params.items():
+                    args[k] = _parse_arg_value(v)
+                env.targets[i] = (target_scope, args)
+            else:
+                # tuple/list form from CLI -t option (legacy)
+                args = []
+                for a in params:
+                    args.append(_parse_arg_value(a))
+                env.targets[i] = (target_scope, args)
         else:
             raise RuntimeError(f'{name} not found')
 
 
 def compile(plan, source, src_file=''):
-    translator = IRTranslator()
+    translator = IrTranslator()
     translator.translate(source, '')
     if env.config.enable_pure:
         interpret(source, src_file)
@@ -1049,7 +1135,7 @@ def output_verilog(driver):
             if scope.is_testbench():
                 env.append_testbench(scope)
             else:
-                f.write('`include "./{}"\n'.format(file_name))
+                f.write('`include "{}"\n'.format(file_name))
 
 
 def genhdl(hdlmodule):

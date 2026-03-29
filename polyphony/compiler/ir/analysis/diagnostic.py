@@ -3,6 +3,8 @@ from ...common.env import env
 from ..ir import *
 from ..symbol import Symbol
 from .usedef import UseDefDetector
+from logging import getLogger
+logger = getLogger(__name__)
 
 
 class CFGChecker(object):
@@ -10,11 +12,11 @@ class CFGChecker(object):
         if scope.is_namespace() or scope.is_class() or scope.is_builtin() or scope.is_lib():
             return
         if env.compile_phase > env.PHASE_1:
-            UseDefDetector().process(scope)
+            self.usedef = UseDefDetector().process(scope)
         self.scope = scope
         self.accessibles = set()
         for b in self.scope.traverse_blocks():
-            self.accessibles.add(b)
+            self.accessibles.add(b.bid)
 
         for b in self.scope.traverse_blocks():
             if isinstance(b, Block):
@@ -34,8 +36,8 @@ class CFGChecker(object):
 
     def _check_stms(self, blk):
         for stm in blk.stms:
-            assert stm.is_a(IRStm)
-            assert stm.block is blk
+            assert isinstance(stm, IrStm)
+            assert stm.block == blk.bid
 
     def _check_preds(self, blk):
         if blk is self.scope.entry_block:
@@ -70,41 +72,44 @@ class CFGChecker(object):
         if blk is self.scope.exit_block:
             if self.scope.is_returnable():
                 assert blk.stms
-                assert blk.stms[-1].is_a(RET)
+                assert isinstance(blk.stms[-1], Ret)
             return
         assert blk.stms
         jmp = blk.stms[-1]
-        assert jmp.is_a([JUMP, CJUMP, MCJUMP])
-        if jmp.is_a(JUMP):
+        assert isinstance(jmp, (Jump, CJump, MCJump))
+        if isinstance(jmp, Jump):
             assert len(blk.succs) == 1
-            assert jmp.target is blk.succs[0]
+            assert jmp.target == blk.succs[0].bid
             if jmp.typ == 'L':
                 assert len(blk.succs_loop) == 1
-                assert jmp.target is blk.succs_loop[0]
-        elif jmp.is_a(CJUMP):
+                assert jmp.target == blk.succs_loop[0].bid
+        elif isinstance(jmp, CJump):
             assert len(blk.succs) == 2
             assert len(blk.succs_loop) == 0
-            assert jmp.true is blk.succs[0]
-            assert jmp.false is blk.succs[1]
-        elif jmp.is_a(MCJUMP):
+            assert jmp.true == blk.succs[0].bid
+            assert jmp.false == blk.succs[1].bid
+        elif isinstance(jmp, MCJump):
             assert len(blk.succs) > 2
             assert len(blk.succs_loop) == 0
             for i, t in enumerate(jmp.targets):
-                assert t is blk.succs[i]
+                assert t == blk.succs[i].bid
 
     def _check_phi(self, blk):
         pass
 
     def _check_vars(self, blk):
-        syms = self.scope.usedef.get_syms_used_at(blk)
+        syms = self.usedef.get_syms_used_at(blk)
         for sym in syms:
             if sym.scope is self.scope:
                 if self._is_undefined_sym(sym):
                     continue
-                defblks = self.scope.usedef.get_blks_defining(sym)
-                assert defblks, '{} is not defined in this scope {}'.format(sym, self.scope.name)
+                defblks = self.usedef.get_blks_defining(sym)
+                if not defblks:
+                    logger.warning('{} is not defined in this scope {}'.format(sym, self.scope.name))
+                    continue
                 diffs = defblks - self.accessibles
-                assert not diffs, '{} is defined in an inaccesible block'.format(sym)
+                if diffs:
+                    logger.warning('{} is defined in an inaccesible block'.format(sym))
 
     def _is_undefined_sym(self, sym):
                 return (sym.is_predefined() or

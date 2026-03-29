@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Optional, cast
 from .signal import Signal
 from ..ir.ir import Ctx
-from ..common.utils import is_a
 
 PYTHON_OP_2_HDL_OP_MAP = {
     'And': '&&', 'Or': '||',
@@ -18,15 +17,12 @@ PYTHON_OP_2_HDL_OP_MAP = {
 
 class AHDL(object):
     '''Abstract HDL'''
-    def is_a(self, cls):
-        return is_a(self, cls)
-
     def find_ahdls(self, typ: type['AHDL']) -> list['AHDL']:
         ahdls = []
 
         def find_ahdls_rec(ahdl, typ, ahdls):
             #print(ahdl)
-            if ahdl.is_a(typ):
+            if isinstance(ahdl, typ):
                 ahdls.append(ahdl)
             for k, v in ahdl.__dict__.items():
                 if isinstance(v, AHDL):
@@ -57,7 +53,7 @@ class AHDL_OP(AHDL_EXP):
     op: str
     args: tuple[AHDL_EXP, ...]
 
-    def __init__(self, op, *args):
+    def __init__(self, op: str, *args: AHDL_EXP):
         object.__setattr__(self, 'op', op)
         object.__setattr__(self, 'args', args)
 
@@ -67,7 +63,7 @@ class AHDL_OP(AHDL_EXP):
             str_args = [str(a) for a in self.args]
             return f'({op.join(str_args)})'
         else:
-            return f'({PYTHON_OP_2_HDL_OP_MAP[self.op]}{self.args[0]})'
+            return f'({PYTHON_OP_2_HDL_OP_MAP[self.op]}{self.args[0]})'  # type: ignore[index]
 
     def is_relop(self):
         return self.op in ('And', 'Or', 'Eq', 'NotEq', 'Lt', 'LtE', 'Gt', 'GtE', 'Is', 'IsNot')
@@ -104,7 +100,7 @@ class AHDL_VAR(AHDL_EXP):
             object.__setattr__(self, 'vars', var)
         object.__setattr__(self, 'ctx', ctx)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return '.'.join([s.name for s in self.vars])
 
     @property
@@ -128,7 +124,7 @@ class AHDL_MEMVAR(AHDL_VAR):
     def __init__(self, var: Signal | tuple, ctx: Ctx):
         super().__init__(var, ctx)
 
-    def __str__(self):
+    def __str__(self) -> str:  # type: ignore[override]
         return super().__str__() + f'[{self.vars[-1].width}]'
 
 
@@ -220,7 +216,7 @@ class AHDL_BLOCK(AHDL_STM):
     def traverse(self):
         codes = []
         for c in self.codes:
-            if c.is_a(AHDL_BLOCK):
+            if isinstance(c, AHDL_BLOCK):
                 codes.extend(cast(AHDL_BLOCK, c).traverse())
             else:
                 codes.append(c)
@@ -249,17 +245,17 @@ class AHDL_MOVE(AHDL_STM):
     src: AHDL_EXP
 
     def __post_init__(self):
-        if self.src.is_a(AHDL_VAR):
+        if isinstance(self.src, AHDL_VAR):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
-        if self.dst.is_a(AHDL_VAR):
+        if isinstance(self.dst, AHDL_VAR):
             assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
-        elif self.dst.is_a(AHDL_SUBSCRIPT):
+        elif isinstance(self.dst, AHDL_SUBSCRIPT):
             assert cast(AHDL_SUBSCRIPT, self.dst).memvar.ctx == Ctx.STORE
         else:
             assert False
 
     def __str__(self):
-        if self.dst.is_a(AHDL_VAR) and cast(AHDL_VAR, self.dst).sig.is_net():
+        if isinstance(self.dst, AHDL_VAR) and cast(AHDL_VAR, self.dst).sig.is_net():
             return f'{self.dst} := {self.src}'
         return f'{self.dst} <= {self.src}'
 
@@ -279,11 +275,11 @@ class AHDL_ASSIGN(AHDL_VAR_DECL):
     name: str = field(init=False)
 
     def __post_init__(self):
-        if self.src.is_a(AHDL_VAR):
+        if isinstance(self.src, AHDL_VAR):
             assert cast(AHDL_VAR, self.src).ctx == Ctx.LOAD
-        if self.dst.is_a(AHDL_VAR):
+        if isinstance(self.dst, AHDL_VAR):
             assert cast(AHDL_VAR, self.dst).ctx == Ctx.STORE
-        elif self.dst.is_a(AHDL_SUBSCRIPT):
+        elif isinstance(self.dst, AHDL_SUBSCRIPT):
             assert cast(AHDL_SUBSCRIPT, self.dst).memvar.ctx == Ctx.STORE
         else:
             assert False

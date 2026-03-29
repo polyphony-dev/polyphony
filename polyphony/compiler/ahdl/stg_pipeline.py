@@ -1,12 +1,14 @@
 from collections import defaultdict
 import dataclasses
 from dataclasses import dataclass
+from typing import cast
 from .ahdl import *
 from .stgbuilder import State, STGItemBuilder, ScheduledItemQueue
 from .analysis.ahdlusedef import AHDLUseDefDetector
 from .ahdltransformer import AHDLTransformer
-from ..ir.ir import MOVE, CJUMP
+from ..ir.ir import Move, CJump, IrNameExp
 from ..ir.irhelper import qualified_symbols
+from ..ir.analysis.usedef import UseDefDetector
 from logging import getLogger
 logger = getLogger(__name__)
 
@@ -121,7 +123,7 @@ class PipelineBuilder(STGItemBuilder):
         exit_stm = self.post_build(dfg, pstate_helper)
 
         end_codes = [exit_stm]
-        if not exit_stm.is_a([AHDL_TRANSITION, AHDL_TRANSITION_IF]):
+        if not isinstance(exit_stm, (AHDL_TRANSITION, AHDL_TRANSITION_IF)):
             pipe_end_stm = AHDL_TRANSITION(state_name)
             end_codes.append(pipe_end_stm)
         case_items = []
@@ -141,20 +143,21 @@ class PipelineBuilder(STGItemBuilder):
             case_item = AHDL_CASE_ITEM(AHDL_CONST(i), AHDL_BLOCK('', tuple(substate_codes)))
             case_items.append(case_item)
         whole_moves_blk = AHDL_BLOCK('', tuple(pstate_helper.whole_moves))
-        pipeline_state_codes:tuple[AHDL_STM] = (
+        pipeline_state_codes:tuple[AHDL_STM, ...] = (
             whole_moves_blk,
             AHDL_CASE(AHDL_VAR(pstate_helper.substate_var, Ctx.LOAD), tuple(case_items)),
          ) + tuple(end_codes)
         pipeline_state = PipelineState(state_name, AHDL_BLOCK('', pipeline_state_codes), 0, self.stg)
 
         for blk in dfg.region.blocks():
-            self.blk2states[blk.name] = [pipeline_state]
+            self.blk2states[blk.bid] = [pipeline_state]
         self.stg.add_states([pipeline_state])
 
     def post_build(self, dfg, pstate_helper) -> AHDL_STM:
-        pass
+        assert False, 'abstract'
 
     def _is_stall_free(self):
+        assert self.scheduled_items is not None
         for items in self.scheduled_items.queue.values():
             for item, _ in items:
                 assert isinstance(item, AHDL)
@@ -163,6 +166,7 @@ class PipelineBuilder(STGItemBuilder):
         return True
 
     def _build_pipeline_stages(self, pstate_helper):
+        assert self.scheduled_items is not None
         maxstep = max([step for (step, _) in self.scheduled_items.queue.items()])
         is_stall_free = self._is_stall_free()
         for step in range(maxstep + 1):
@@ -185,7 +189,7 @@ class PipelineBuilder(STGItemBuilder):
         for stage in self.stages:
             new_stage = self._add_pipeline_guard(pstate_helper, stage)
             if is_stall_free:
-                new_stage = self._add_control_chain_no_stall(pstate_helper, new_stage)
+                new_stage = self._add_control_chain_no_stall(pstate_helper, new_stage)  # type: ignore[attr-defined]
             else:
                 self._add_control_chain(pstate_helper, stage)
             new_stages.append(new_stage)
@@ -256,16 +260,16 @@ class PipelineBuilder(STGItemBuilder):
         removes = []
         for step, stage in enumerate(self.stages):
             for code in stage.block.codes[:]:
-                if code.is_a(AHDL_META_WAIT):
+                if isinstance(code, AHDL_META_WAIT):
                     assert stage.has_enable
                     enable_sig = pstate_helper.enable_signal(step)
                     enable_cond = AHDL_OP(*code.args)
                     assert False, 'TODO'
                     stage.enable = AHDL_MOVE(AHDL_VAR(enable_sig, Ctx.STORE), enable_cond)
                     removes.append((stage, code))
-                elif code.is_a([AHDL_NOP, AHDL_TRANSITION]):
+                elif isinstance(code, (AHDL_NOP, AHDL_TRANSITION)):
                     removes.append((stage, code))
-                elif code.is_a(AHDL_MOVE) and code.dst.is_a(AHDL_VAR) and not code.dst.sig.is_net():
+                elif isinstance(code, AHDL_MOVE) and isinstance(code.dst, AHDL_VAR) and not code.dst.sig.is_net():
                     multi_assign_vars[code.dst.sig].append((step, stage, code))
         for sig, srcs in multi_assign_vars.items():
             rhs = None
@@ -281,6 +285,7 @@ class PipelineBuilder(STGItemBuilder):
                     rhs = src
                 else:
                     rhs = AHDL_IF_EXP(AHDL_VAR(valid, Ctx.LOAD), src, rhs)
+            assert rhs is not None
             pstate_helper.add_global_move(sig.name, AHDL_MOVE(AHDL_VAR(sig, Ctx.STORE), rhs))
         # FIXME:
         for stage, code in removes:
@@ -344,6 +349,7 @@ class PipelineBuilder(STGItemBuilder):
             #hold = hold ? (!ready) : (valid & !ready);
             hold = pstate_helper.hold_signal(stage.step)
             if_lhs = AHDL_OP('Invert', AHDL_VAR(r_now, Ctx.LOAD))
+            assert v_prev is not None
             if_rhs = AHDL_OP('BitAnd',
                              AHDL_OP('Invert', AHDL_VAR(r_now, Ctx.LOAD)),
                              AHDL_VAR(v_prev, Ctx.LOAD))
@@ -363,9 +369,9 @@ class PipelineBuilder(STGItemBuilder):
         def _make_stm2stage_num_rec(codes):
             for c in codes:
                 stm2stage_num[c] = i
-                if c.is_a(AHDL_IF):
+                if isinstance(c, AHDL_IF):
                     for ahdlblk in c.blocks:
-                        if ahdlblk.is_a(AHDL_BLOCK):
+                        if isinstance(ahdlblk, AHDL_BLOCK):
                             _make_stm2stage_num_rec(ahdlblk.codes)
                         else:
                             _make_stm2stage_num_rec([ahdlblk])
@@ -375,11 +381,11 @@ class PipelineBuilder(STGItemBuilder):
         return stm2stage_num
 
     def _check_guard_need(self, ahdl):
-        if (ahdl.is_a(AHDL_PROCCALL) or
-                ahdl.is_a(AHDL_IF) or
-                (ahdl.is_a(AHDL_MOVE) and ((ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_reg()) or
-                                           ahdl.dst.is_a(AHDL_SUBSCRIPT))) or
-                ahdl.is_a(AHDL_SEQ)):
+        if (isinstance(ahdl, AHDL_PROCCALL) or
+                isinstance(ahdl, AHDL_IF) or
+                (isinstance(ahdl, AHDL_MOVE) and ((isinstance(ahdl.dst, AHDL_VAR) and ahdl.dst.sig.is_reg()) or
+                                           isinstance(ahdl.dst, AHDL_SUBSCRIPT))) or
+                isinstance(ahdl, AHDL_SEQ)):
             return True
         return False
 
@@ -426,10 +432,12 @@ class PipelineBuilder(STGItemBuilder):
                 prev_sig = self.hdlmodule.signal(prev_name)
             cur_name = f'{sig.name}_{num + 1}'
             cur_sig = self.hdlmodule.signal(cur_name)
+            assert cur_sig is not None
+            assert prev_sig is not None
             slice_move = AHDL_MOVE(AHDL_VAR(cur_sig, Ctx.STORE),
                                    AHDL_VAR(prev_sig, Ctx.LOAD))
             guard = self.stages[num].block.codes[0]
-            assert guard.is_a(AHDL_PIPELINE_GUARD)
+            assert isinstance(guard, AHDL_PIPELINE_GUARD)
             reg_slice_moves[id(guard)].append(slice_move)
         return reg_replace_table, reg_slice_moves
 
@@ -460,11 +468,13 @@ class LoopPipelineBuilder(PipelineBuilder):
     def __init__(self, scope, stg, blk2states):
         super().__init__(scope, stg, blk2states)
         self.is_finite_loop = True
+        self.usedef = UseDefDetector().process(scope)
 
     def post_build(self, dfg, pstate_helper) -> AHDL_STM:
-        cond_defs = self.scope.usedef.get_stms_defining(dfg.region.cond)
+        cond_defs = self.usedef.get_stms_defining(dfg.region.cond)
         assert len(cond_defs) == 1
         cond_def = list(cond_defs)[0]
+        assert isinstance(cond_def, Move)
 
         loop_cond = self.translator.visit(cond_def.src)
 
@@ -488,7 +498,7 @@ class LoopPipelineBuilder(PipelineBuilder):
         exit_stm = self.build_exit_block(dfg, pstate_helper, exit_signal)
         return exit_stm
 
-    def build_exit_detection_block(self, dfg, pstate_helper, exit_signal, cond_def:MOVE, last_stage:PipelineStage) -> PipelineStage:
+    def build_exit_detection_block(self, dfg, pstate_helper, exit_signal, cond_def:Move, last_stage:PipelineStage) -> PipelineStage:
         # make a condition for unexecutable loop
         loop_init = self.translator.visit(dfg.region.init)
         loop_cond = self.translator.visit(cond_def.src)
@@ -496,11 +506,11 @@ class LoopPipelineBuilder(PipelineBuilder):
         args = []
         loop_cnt = self.translator._make_signal(self.hdlmodule, dfg.region.counter)
         for i, a in enumerate(loop_cond.args):
-            if a.is_a(AHDL_VAR) and a.sig == loop_cnt:
+            if isinstance(a, AHDL_VAR) and a.sig == loop_cnt:
                 args.append(loop_init)
             else:
                 args.append(a)
-        assert loop_cond.is_a(AHDL_OP)
+        assert isinstance(loop_cond, AHDL_OP)
         loop_cond = AHDL_OP(loop_cond.op, *args)
 
         # make the exit condition of pipeline
@@ -539,20 +549,20 @@ class LoopPipelineBuilder(PipelineBuilder):
         assert len(dfg.region.exits) == 1
         codes.extend([
             AHDL_MOVE(AHDL_VAR(exit_signal, Ctx.STORE), AHDL_CONST(0)),
-            AHDL_TRANSITION(dfg.region.exits[0].name)
+            AHDL_TRANSITION(dfg.region.exits[0].bid)
         ])
         blocks = [AHDL_BLOCK('', tuple(codes))]
         pipe_end_stm = AHDL_TRANSITION_IF(tuple(conds), tuple(blocks))
         return pipe_end_stm
 
-    def _build_scheduled_items(self, dfg):
+    def _build_scheduled_items(self, dfg):  # type: ignore[override]
         nodes = []
         for n in dfg.get_scheduled_nodes():
             if n.begin < 0:
                 continue
-            if n.tag.is_a(CJUMP):
+            if isinstance(n.tag, CJump):
                 # remove cjump for the loop
-                sym = qualified_symbols(n.tag.exp, self.scope)[-1]
+                sym = qualified_symbols(cast(IrNameExp, n.tag.exp), self.scope)[-1]
                 if sym is dfg.region.cond:
                     continue
                 else:
@@ -604,6 +614,7 @@ class LoopPipelineBuilder(PipelineBuilder):
         result_codes.append(ready_stm)
 
         if not is_last:
+            assert v_prev is not None
             rhs = AHDL_VAR(v_prev, Ctx.LOAD)
             set_valid = AHDL_MOVE(AHDL_VAR(v_now, Ctx.STORE), rhs)
             result_codes.append(set_valid)
@@ -615,7 +626,7 @@ class WorkerPipelineBuilder(PipelineBuilder):
         super().__init__(scope, stg, blk2states)
         self.is_finite_loop = False
 
-    def _build_scheduled_items(self, dfg):
+    def _build_scheduled_items(self, dfg):  # type: ignore[override]
         nodes = []
         for n in dfg.get_scheduled_nodes():
             if n.begin < 0:

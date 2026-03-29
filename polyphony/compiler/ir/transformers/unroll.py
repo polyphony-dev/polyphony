@@ -1,33 +1,76 @@
+"""Loop unrolling using new IR (ir.py).
+
+Contains:
+- LoopUnroller: main unroller
+- IVReplacer: induction variable replacement
+- PHICondRemover: removes PHI conditions after unrolling
+"""
 from collections import defaultdict
+from typing import cast
 from ..block import Block
-from ..ir import *
+from ..ir import (
+    Ctx, Const, Temp, BinOp, RelOp, Move, Expr, Jump, CJump, MCJump,
+    LPhi, IrStm, IrExp, IrNameExp,
+)
+from ..irvisitor import IrTransformer
 from ..irhelper import qualified_symbols
-from ..irvisitor import IRVisitor, IRTransformer
 from ..loop import Loop
 from ..scope import Scope, NameReplacer
+from ..symbol import Symbol
 from ..types.type import Type
+from ..analysis.usedef import UseDefDetector, UseDefUpdater
 from ...common.common import fail
 from ...common.errors import Errors
 from logging import getLogger
 logger = getLogger(__name__)
 
 
+def _clone_ir_block(blk, scope, nametag=None):
+    """Clone a block and its stms.
+
+    Returns (new_block, stm_map) where stm_map maps old stms to new stms.
+    """
+    if nametag:
+        b = Block(scope, nametag)
+    else:
+        b = Block(scope, blk.nametag)
+    stm_map = {}
+    for stm in blk.stms:
+        new_stm = stm.model_copy(deep=True, update={'block': b.bid})
+        b.stms.append(new_stm)
+        stm_map[stm] = new_stm
+    b.order = blk.order
+    b.succs = list(blk.succs)
+    b.succs_loop = list(blk.succs_loop)
+    b.preds = list(blk.preds)
+    b.preds_loop = list(blk.preds_loop)
+    b.synth_params = blk.synth_params.copy()
+    b.is_hyperblock = blk.is_hyperblock
+    if blk.path_exp:
+        b.path_exp = blk.path_exp.model_copy(deep=True)
+    return b, stm_map
+
+
 class LoopUnroller(object):
     def process(self, scope):
         self.scope = scope
+        self.usedef = UseDefDetector().process(scope)
+        self.udupdater = UseDefUpdater(scope, self.usedef)
         self.unrolled = False
         if self._unroll_loop_tree_leaf(scope.top_region()):
-            # re-order blocks
+            # Re-order blocks
             for blk in scope.traverse_blocks():
                 blk.order = -1
                 for stm in blk.stms:
-                    assert stm.block is blk
+                    assert stm.block == blk.bid
+            logger.debug(f'Block.set_order start for {scope}')
             Block.set_order(scope.entry_block, 0)
+            logger.debug(f'Block.set_order done for {scope}')
             return True
         return False
 
-    def _unroll_loop_tree_leaf(self, loop: Loop) -> bool:
-        children: list[Loop] = sorted(self.scope.child_regions(loop), key=lambda c: c.head.order)
+    def _unroll_loop_tree_leaf(self, loop):
+        children = sorted(self.scope.child_regions(loop), key=lambda c: c.head.order)
         for c in children.copy():
             assert isinstance(c, Loop)
             if self.scope.is_leaf_region(c):
@@ -37,7 +80,6 @@ class LoopUnroller(object):
                 if self._unroll(c, factor):
                     return True
                 else:
-                    #del c.head.synth_params['unroll']
                     for b in c.blocks():
                         del b.synth_params['unroll']
             else:
@@ -47,7 +89,7 @@ class LoopUnroller(object):
                     fail(c.head.stms[-1], Errors.RULE_UNROLL_NESTED_LOOP)
         return False
 
-    def _parse_factor(self, synth_params) -> int:
+    def _parse_factor(self, synth_params):
         if isinstance(synth_params['unroll'], str):
             if synth_params['unroll'] == 'full':
                 factor = -1
@@ -62,7 +104,7 @@ class LoopUnroller(object):
             assert False, 'Invalid unroll parameter'
         return factor
 
-    def _unroll(self, loop: Loop, factor: int) -> bool:
+    def _unroll(self, loop, factor):
         if factor == 1:
             return False
         assert self.scope.is_leaf_region(loop)
@@ -82,7 +124,7 @@ class LoopUnroller(object):
                  Errors.RULE_UNROLL_UNFIXED_LOOP)
         assert isinstance(ret, tuple)
         loop_min, loop_max, loop_step = ret
-        if isinstance(loop_max, CONST) and isinstance(loop_min, CONST):
+        if isinstance(loop_max, Const) and isinstance(loop_min, Const):
             initial_trip = (((loop_max.value - 1) + loop_step) - loop_min.value) // loop_step
             if initial_trip < 1:
                 return False
@@ -97,37 +139,31 @@ class LoopUnroller(object):
                      Errors.RULE_UNROLL_UNFIXED_LOOP)
             has_unroll_remain = True
             is_full_unroll = False
-        #unroll_trip = initial_trip // factor
+
         origin_body = loop.bodies[0]
-        defsyms: set[Symbol] = self.scope.usedef.get_syms_defined_at(loop.head)
-        origin_ivs: list[Symbol] = [sym for sym in defsyms if sym.is_induction()]
+        defsyms = self.usedef.get_syms_defined_at(loop.head)
+        origin_ivs = [sym for sym in defsyms if sym.is_induction()]
         new_ivs = self._new_ivs(factor, origin_ivs, is_full_unroll)
+        loop_cond = None
+        lphis = None
         if is_full_unroll:
-            unroll_head, iv_updates, loop_cond = self._make_full_unroll_head(loop,
-                                                                             new_ivs)
-            sym_map: dict[str, Symbol] = {}
+            unroll_head, iv_updates, loop_cond = self._make_full_unroll_head(
+                loop, new_ivs)
+            sym_map = {}
         else:
-            unroll_head, iv_updates, lphis, sym_map = self._make_unroll_head(loop,
-                                                                             loop_max,
-                                                                             loop_step,
-                                                                             factor,
-                                                                             new_ivs)
-        defsyms = self.scope.usedef.get_syms_defined_at(origin_body)
-        unroll_blks = self._make_unrolling_blocks(origin_body,
-                                                  defsyms,
-                                                  new_ivs,
-                                                  iv_updates,
-                                                  sym_map,
-                                                  factor,
-                                                  unroll_head)
+            unroll_head, iv_updates, lphis, sym_map = self._make_unroll_head(
+                loop, loop_max, loop_step, factor, new_ivs)
+        defsyms = self.usedef.get_syms_defined_at(origin_body)
+        unroll_blks = self._make_unrolling_blocks(
+            origin_body, defsyms, new_ivs, iv_updates, sym_map, factor, unroll_head)
         if is_full_unroll:
             self._reconnect_full_unroll_blocks(loop, unroll_head, unroll_blks)
             self._replace_outer_uses(loop, new_ivs, factor, {})
-            # emigrate unrolled blocks
             parent = self.scope.parent_region(loop)
             for b in [unroll_head] + unroll_blks:
                 parent.append_body(b)
             self.scope.remove_region(loop)
+            assert loop_cond is not None
             self._remove_loop_condition(loop_cond)
             for blk in [unroll_head] + unroll_blks:
                 blk.synth_params = unroll_head.preds[0].synth_params.copy()
@@ -137,19 +173,24 @@ class LoopUnroller(object):
             else:
                 remain_start_blk = None
             new_loop = Loop(unroll_head, unroll_blks, [unroll_head] + unroll_blks)
-            self._reconnect_unroll_blocks(loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk)
+            assert lphis is not None
+            self._reconnect_unroll_blocks(
+                loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk)
             self.scope.append_sibling_region(loop, new_loop)
             if has_unroll_remain:
                 assert loop.counter in new_ivs
-                origin_lphis = {s.var.name:s for s in loop.head.stms if s.is_a(LPHI)}
+                origin_lphis = {s.var.name: s for s in loop.head.stms if isinstance(s, LPhi)}
                 for sym, new_syms in new_ivs.items():
                     new_sym = new_syms[0]
                     lphi = origin_lphis[sym.name]
-                    arg = TEMP(new_sym.name)
-                    lphi.args[0] = arg
+                    arg = Temp(name=new_sym.name)
+                    new_lphi = lphi.model_copy(update={'args': (arg,) + lphi.args[1:]})
+                    loop.head.replace_stm(lphi, new_lphi)
                 assert remain_start_blk
-                remain_start_blk.append_stm(EXPR(CONST(0)))  # guard from reduceblk
-                remain_start_blk.append_stm(JUMP(loop.head))
+                guard = Expr(exp=Const(value=0))
+                remain_start_blk.append_stm(guard)
+                jmp = Jump(target=loop.head.bid)
+                remain_start_blk.append_stm(jmp)
                 remain_start_blk.succs = [loop.head]
                 loop.head.preds[0] = remain_start_blk
                 del loop.head.synth_params['unroll']
@@ -164,18 +205,17 @@ class LoopUnroller(object):
 
     def _replace_jump_target(self, block, old, new):
         jmp = block.stms[-1]
-        if jmp.is_a(JUMP):
-            jmp.target = new
-        elif jmp.is_a(CJUMP):
-            if jmp.true is old:
-                jmp.true = new
+        if isinstance(jmp, Jump):
+            block.stms[-1] = jmp.model_copy(update={'target': new.bid})
+        elif isinstance(jmp, CJump):
+            if jmp.true == old.bid:
+                block.stms[-1] = jmp.model_copy(update={'true': new.bid})
             else:
-                assert jmp.false is old
-                jmp.false = new
-        elif jmp.is_a(MCJUMP):
-            for i, t in enumerate(jmp.targets):
-                if t is old:
-                    jmp.targets[i] = new
+                assert jmp.false == old.bid
+                block.stms[-1] = jmp.model_copy(update={'false': new.bid})
+        elif isinstance(jmp, MCJump):
+            new_targets = tuple(new.bid if t == old.bid else t for t in jmp.targets)
+            block.stms[-1] = jmp.model_copy(update={'targets': new_targets})
         else:
             assert False
 
@@ -185,38 +225,26 @@ class LoopUnroller(object):
         first_blk = unroll_blks[0]
         last_blk = unroll_blks[-1]
 
-        # loop_pred -> unroll_head
         loop_pred.replace_succ(loop.head, unroll_head)
         assert unroll_head.preds[0] is loop_pred
         assert not loop_pred.succs_loop
 
-        # unroll_head
         assert len(unroll_head.succs) == 1 and unroll_head.succs[0] is first_blk
         assert len(first_blk.preds) == 1 and first_blk.preds[0] is unroll_head
         assert not unroll_head.succs_loop
-        # no loop-back path
         unroll_head.preds = [loop_pred]
         unroll_head.preds_loop = []
 
-        # last_blk -> loop_exit
         last_blk.succs = [loop_exit]
         last_blk.succs_loop = []
 
-        # loop exit
         loop_exit.replace_pred(loop.head, last_blk)
 
         jmp = last_blk.stms[-1]
-        assert jmp.is_a(JUMP)
-        jmp.typ = ''
-        jmp.target = loop_exit
+        assert isinstance(jmp, Jump)
+        last_blk.stms[-1] = jmp.model_copy(update={'typ': '', 'target': loop_exit.bid})
 
-    def _reconnect_unroll_blocks(self,
-                                 loop: Loop,
-                                 new_loop: Loop,
-                                 unroll_head: Block,
-                                 unroll_blks: list[Block],
-                                 lphis: list[LPHI],
-                                 remain_start_blk: Block|None):
+    def _reconnect_unroll_blocks(self, loop, new_loop, unroll_head, unroll_blks, lphis, remain_start_blk):
         loop_pred = loop.head.preds[0]
         if remain_start_blk:
             loop_exit = remain_start_blk
@@ -227,118 +255,106 @@ class LoopUnroller(object):
         first_blk = unroll_blks[0]
         last_blk = unroll_blks[-1]
 
-        # loop_pred -> unroll_head
         loop_pred.replace_succ(loop.head, unroll_head)
         assert not loop_pred.succs_loop
 
-        # unroll_head -> first_blk | loop_exit
         assert len(unroll_head.succs) == 1 and unroll_head.succs[0] is first_blk
         assert len(first_blk.preds) == 1 and first_blk.preds[0] is unroll_head
         assert not unroll_head.succs_loop
 
         unroll_head.succs.append(loop_exit)
         cjmp = unroll_head.stms[-1]
-        assert cjmp.is_a(CJUMP)
-        assert cjmp.false is None
-        cjmp.false = loop_exit
+        assert isinstance(cjmp, CJump)
+        assert cjmp.false == ''
+        unroll_head.stms[-1] = cjmp.model_copy(update={'false': loop_exit.bid})
 
-        # add loop-back path from last_blk
         unroll_head.preds = [loop_pred, last_blk]
         unroll_head.preds_loop = [last_blk]
 
-        # last_blk -> unroll_head
         last_blk.succs = [unroll_head]
         last_blk.succs_loop = [unroll_head]
 
         jmp = last_blk.stms[-1]
-        assert jmp.is_a(JUMP)
+        assert isinstance(jmp, Jump)
         assert jmp.typ == 'L'
-        jmp.target = unroll_head
+        last_blk.stms[-1] = jmp.model_copy(update={'target': unroll_head.bid})
 
-    def _make_full_unroll_head(self,
-                               loop: Loop,
-                               new_ivs: dict[Symbol, list[Symbol]]) -> tuple[Block, dict[Symbol, list[Symbol]], Symbol]:
-        unroll_head, stm_map = self._clone_block(loop.head, 'unroll_head')
-        head_stms: list[IRStm] = []
-        iv_updates: dict[Symbol, list[Symbol]] = {}
-        # append initial move for each lphi
-        #  i#2 = phi(init, i#3)  -> i#2_0 = 0
-        #  x#2 = phi(x_init, x#3)  -> x#2_0 = x_init
+    def _make_full_unroll_head(self, loop, new_ivs):
+        unroll_head, stm_map = _clone_ir_block(loop.head, self.scope, 'unroll_head')
+        head_stms = []
+        iv_updates = {}
+        # Append initial move for each lphi
         for _, stm in stm_map.items():
-            if isinstance(stm, LPHI):
+            if isinstance(stm, LPhi):
                 assert len(stm.args) == 2
                 orig_sym = qualified_symbols(stm.var, self.scope)[-1]
                 assert isinstance(orig_sym, Symbol)
                 new_sym_0 = new_ivs[orig_sym][0]
-                dst = TEMP(new_sym_0.name, Ctx.STORE)
+                dst = Temp(name=new_sym_0.name, ctx=Ctx.STORE)
                 src = stm.args[0]
                 arg1_sym = qualified_symbols(stm.args[1], self.scope)[-1]
                 assert isinstance(arg1_sym, Symbol)
                 iv_updates[arg1_sym] = new_ivs[orig_sym]
-                mv = MOVE(dst, src)
+                mv = Move(dst=dst, src=src)
                 head_stms.append(mv)
         orig_cjump_cond = unroll_head.stms[-2]
-        assert orig_cjump_cond.is_a(MOVE) and orig_cjump_cond.src.is_a(RELOP)
-        src = CONST(1)
-        mv = MOVE(orig_cjump_cond.dst.clone(), src)
+        assert isinstance(orig_cjump_cond, Move) and isinstance(orig_cjump_cond.src, RelOp)
+        src = Const(value=1)
+        mv = Move(dst=orig_cjump_cond.dst.model_copy(deep=True), src=src)
         head_stms.append(mv)
         orig_cjump = unroll_head.stms[-1]
-        assert orig_cjump.is_a(CJUMP)
-        jump = JUMP(None)
-        jump.loc = orig_cjump.loc
+        assert isinstance(orig_cjump, CJump)
+        jump = Jump(target='', loc=orig_cjump.loc)
         head_stms.append(jump)
 
         unroll_head.stms = []
         for stm in head_stms:
             unroll_head.append_stm(stm)
-        dst_sym = qualified_symbols(orig_cjump_cond.dst, self.scope)[-1]
+        dst_sym = qualified_symbols(cast(IrNameExp, orig_cjump_cond.dst), self.scope)[-1]
         assert isinstance(dst_sym, Symbol)
         return unroll_head, iv_updates, dst_sym
 
-    def _make_unroll_head(self,
-                          loop: Loop,
-                          loop_max: IRExp,
-                          loop_step: int,
-                          factor: int,
-                          new_ivs: dict[Symbol, list[Symbol]]) -> tuple[Block, dict[Symbol, list[Symbol]], list[LPHI], dict[str, Symbol]]:
-        unroll_head, stm_map = self._clone_block(loop.head, 'unroll_head')
-        head_stms: list[IRStm] = []
-        iv_updates: dict[Symbol, list[Symbol]] = {}
-        lphis: list[LPHI] = []
-        sym_map: dict[str, Symbol] = {}
-        # append modified lphi
-        #  i#2 = phi(init, i#3)  -> i#2_0 = phi(0, i#2_n)
-        #  x#2 = phi(x_init, x#3)  -> x#2_0 = phi(x_init, x#2_n)
+    def _make_unroll_head(self, loop, loop_max, loop_step, factor, new_ivs):
+        unroll_head, stm_map = _clone_ir_block(loop.head, self.scope, 'unroll_head')
+        head_stms = []
+        iv_updates = {}
+        lphis = []
+        sym_map = {}
         for _, stm in stm_map.items():
-            if isinstance(stm, LPHI):
+            if isinstance(stm, LPhi):
                 assert len(stm.args) == 2
                 orig_sym = qualified_symbols(stm.var, self.scope)[-1]
                 assert isinstance(orig_sym, Symbol)
                 new_sym_0 = new_ivs[orig_sym][0]
                 new_sym_n = new_ivs[orig_sym][factor]
-                stm.var.name = new_sym_0.name
                 arg1_sym = qualified_symbols(stm.args[1], self.scope)[-1]
                 assert isinstance(arg1_sym, Symbol)
                 iv_updates[arg1_sym] = new_ivs[orig_sym]
-                stm.args[1].name = new_sym_n.name
+                new_var = stm.var.model_copy(update={'name': new_sym_0.name})
+                new_arg1 = stm.args[1].model_copy(update={'name': new_sym_n.name})
+                stm = stm.model_copy(update={'var': new_var, 'args': stm.args[:1] + (new_arg1,) + stm.args[2:]})
                 head_stms.append(stm)
                 lphis.append(stm)
 
         orig_cjump_cond = unroll_head.stms[-2]
-        assert orig_cjump_cond.is_a(MOVE) and orig_cjump_cond.src.is_a(RELOP)
+        assert isinstance(orig_cjump_cond, Move) and isinstance(orig_cjump_cond.src, RelOp)
         orig_cjump = unroll_head.stms[-1]
-        assert orig_cjump.is_a(CJUMP)
+        assert isinstance(orig_cjump, CJump)
         new_loop_iv = new_ivs[loop.counter][0]
         tmp = self.scope.add_temp(typ=new_loop_iv.typ)
-        mv = MOVE(TEMP(tmp.name),
-                  BINOP('Add',
-                        TEMP(new_loop_iv.name),
-                        CONST((factor - 1) * loop_step)))
+        mv = Move(
+            dst=Temp(name=tmp.name, ctx=Ctx.STORE),
+            src=BinOp(
+                op='Add',
+                left=Temp(name=new_loop_iv.name),
+                right=Const(value=(factor - 1) * loop_step)))
         head_stms.append(mv)
         cond_sym = self.scope.add_condition_sym()
-        sym_map[orig_cjump_cond.dst.name] = cond_sym
-        cond_stm = MOVE(TEMP(cond_sym.name), RELOP('Lt', TEMP(tmp.name), loop_max))
-        cjump = CJUMP(TEMP(cond_sym.name), None, None, orig_cjump.loc)
+        sym_map[cast(IrNameExp, orig_cjump_cond.dst).name] = cond_sym
+        cond_stm = Move(
+            dst=Temp(name=cond_sym.name, ctx=Ctx.STORE),
+            src=RelOp(op='Lt', left=Temp(name=tmp.name), right=loop_max.model_copy(deep=True)))
+        cjump = CJump(exp=Temp(name=cond_sym.name), true='', false='', loc=orig_cjump.loc)
         head_stms.append(cond_stm)
         head_stms.append(cjump)
 
@@ -347,12 +363,7 @@ class LoopUnroller(object):
             unroll_head.append_stm(stm)
         return unroll_head, iv_updates, lphis, sym_map
 
-    def _clone_block(self, blk: Block, nametag: str) -> tuple[Block, dict[IRStm, IRStm]]:
-        stm_map: dict[IRStm, IRStm] = {}
-        clone_blk = blk.clone(self.scope, stm_map, nametag)
-        return clone_blk, stm_map
-
-    def _find_unique_indexes(self, defsyms: set[Symbol], factor: int) -> dict[Symbol, int]:
+    def _find_unique_indexes(self, defsyms, factor):
         results = {}
         for sym in defsyms:
             index = 0
@@ -364,45 +375,33 @@ class LoopUnroller(object):
             results[sym] = index
         return results
 
-    def _make_unrolling_blocks(self,
-                               origin_block: Block,
-                               defsyms: set[Symbol],
-                               new_ivs: dict[Symbol, list[Symbol]],
-                               iv_updates: dict[Symbol, list[Symbol]],
-                               sym_map: dict[str, Symbol],
-                               factor: int,
-                               head: Block) -> list[Block]:
+    def _make_unrolling_blocks(self, origin_block, defsyms, new_ivs, iv_updates, sym_map, factor, head):
         pred_blk = head
         assert factor > 0
-        new_blks: list[Block] = []
-        defsym_indexes: dict[Symbol, int] = self._find_unique_indexes(defsyms, factor)
+        new_blks = []
+        defsym_indexes = self._find_unique_indexes(defsyms, factor)
         for i in range(factor):
-            new_blk, _ = self._clone_block(origin_block, 'unroll_body')
+            new_blk, _ = _clone_ir_block(origin_block, self.scope, 'unroll_body')
             new_blk.preds_loop = []
             new_blk.succs_loop = []
             ivreplacer = IVReplacer(self.scope, defsym_indexes, new_ivs, iv_updates, i)
-            symreplacer = NameReplacer(sym_map)
-            symreplacer.scope = self.scope
-            for stm in new_blk.stms:
-                ivreplacer.visit(stm)
-                symreplacer.visit(stm)
+            symreplacer = _NewNameReplacer(self.scope, sym_map)
+            ivreplacer._process_block(new_blk)
+            symreplacer._process_block(new_blk)
             pred_blk.succs = [new_blk]
             jmp = pred_blk.stms[-1]
-            jmp.typ = ''
-            if jmp.is_a(CJUMP):
-                jmp.true = new_blk
+            if isinstance(jmp, Jump):
+                pred_blk.stms[-1] = jmp.model_copy(update={'typ': '', 'target': new_blk.bid})
+            elif isinstance(jmp, CJump):
+                pred_blk.stms[-1] = jmp.model_copy(update={'true': new_blk.bid})
             else:
-                assert jmp.is_a(JUMP)
-                jmp.target = new_blk
+                assert False
             new_blk.preds = [pred_blk]
             pred_blk = new_blk
             new_blks.append(new_blk)
         return new_blks
 
-    def _new_ivs(self,
-                 factor: int,
-                 ivs: list[Symbol],
-                 is_full_unroll: bool) -> dict[Symbol, list[Symbol]]:
+    def _new_ivs(self, factor, ivs, is_full_unroll):
         new_iv_map = defaultdict(list)
         for i in range(factor + 1):
             for iv in ivs:
@@ -414,23 +413,25 @@ class LoopUnroller(object):
                     new_iv.del_tag('induction')
         return new_iv_map
 
-    def _replace_outer_uses(self,
-                            loop: Loop,
-                            new_ivs: dict[Symbol, list[Symbol]],
-                            index: int,
-                            sym_map: dict[str, Symbol]):
+    def _replace_outer_uses(self, loop, new_ivs, index, sym_map):
         for u in loop.outer_uses:
-            usestms = self.scope.usedef.get_stms_using(u)
+            usestms = list(self.usedef.get_stms_using(u))
             for ustm in usestms:
+                new_ustm = ustm
                 if u in new_ivs:
-                    ustm.replace(u.name, new_ivs[u][index].name)
+                    new_ustm = new_ustm.subst(
+                        Temp(name=u.name), Temp(name=new_ivs[u][index].name))
                 if u.name in sym_map:
-                    ustm.replace(u.name, sym_map[u.name].name)
+                    new_ustm = new_ustm.subst(
+                        Temp(name=u.name), Temp(name=sym_map[u.name].name))
+                if new_ustm is not ustm:
+                    self.udupdater.update(ustm, new_ustm)
+                    self.scope.find_block(ustm.block).replace_stm(ustm, new_ustm)
 
     def _remove_loop_condition(self, cond):
         PHICondRemover(cond).process(self.scope)
 
-    def _find_loop_range(self, loop) -> tuple[IRExp, IRExp, int] | None:
+    def _find_loop_range(self, loop):
         loop_min = self._find_loop_min(loop)
         if loop_min is None:
             return None
@@ -442,73 +443,74 @@ class LoopUnroller(object):
             return None
         return (loop_min, loop_max, loop_step)
 
-    def _find_loop_min(self, loop) -> IRExp:
-        if loop.init.is_a(CONST):
-            return loop.init
-        elif loop.init.is_a(TEMP):
-            return loop.init
+    def _find_loop_min(self, loop):
+        init = loop.init
+        if isinstance(init, Const):
+            return init
+        elif isinstance(init, Temp):
+            return init
         raise NotImplementedError('unsupported loop')
 
-    def _find_loop_max(self, loop) -> IRExp:
+    def _find_loop_max(self, loop):
         loop_cond_sym = loop.cond
-        loop_cond_defs = self.scope.usedef.get_stms_defining(loop_cond_sym)
+        loop_cond_defs = self.usedef.get_stms_defining(loop_cond_sym)
         assert len(loop_cond_defs) == 1
         loop_cond_stm = list(loop_cond_defs)[0]
-        assert loop_cond_stm.is_a(MOVE)
+        assert isinstance(loop_cond_stm, Move)
         loop_cond_rhs = loop_cond_stm.src
-        if loop_cond_rhs.is_a(RELOP):
-            # We focus on simple increasing loops
-            if loop_cond_rhs.op in ('Lt'):
-                sym = qualified_symbols(loop_cond_rhs.left, self.scope)[-1]
+        if isinstance(loop_cond_rhs, RelOp):
+            if loop_cond_rhs.op in ('Lt',):
+                sym = qualified_symbols(cast(IrNameExp, loop_cond_rhs.left), self.scope)[-1]
                 if sym is loop.counter:
                     may_max = loop_cond_rhs.right
-                    if may_max.is_a(CONST):
+                    if isinstance(may_max, Const):
                         return may_max
-                    elif may_max.is_a(TEMP):
+                    elif isinstance(may_max, Temp):
                         return may_max
         raise NotImplementedError('unsupported loop')
 
-    def _find_loop_step(self, loop) -> int:
+    def _find_loop_step(self, loop):
         loop_update = loop.update
-        assert loop_update.is_a(TEMP)
+        assert isinstance(loop_update, Temp)
         update_sym = qualified_symbols(loop_update, self.scope)[-1]
-        update_defs = self.scope.usedef.get_stms_defining(update_sym)
+        assert isinstance(update_sym, Symbol)
+        update_defs = self.usedef.get_stms_defining(update_sym)
         assert len(update_defs) == 1
         update_stm = list(update_defs)[0]
-        assert update_stm.is_a(MOVE)
+        assert isinstance(update_stm, Move)
         update_rhs = update_stm.src
-        if update_rhs.is_a(BINOP):
+        if isinstance(update_rhs, BinOp):
             if update_rhs.op == 'Add':
-                sym = qualified_symbols(update_rhs.left, self.scope)[-1]
+                sym = qualified_symbols(cast(IrNameExp, update_rhs.left), self.scope)[-1]
                 if sym is loop.counter:
                     may_step = update_rhs.right
-                    if may_step.is_a(CONST):
+                    if isinstance(may_step, Const):
                         return may_step.value
                     else:
                         fail(update_stm, Errors.RULE_UNROLL_VARIABLE_STEP)
         fail(update_stm, Errors.RULE_UNROLL_UNKNOWN_STEP)
 
 
-class IVReplacer(IRVisitor):
-    def __init__(self, scope: Scope,
-                 defsym_indexes: dict[Symbol, int],
-                 new_ivs: dict[Symbol, list[Symbol]],
-                 iv_updates: dict[Symbol, list[Symbol]],
-                 idx: int):
+class IVReplacer(IrTransformer):
+    """Replace induction variables in unrolled loop bodies."""
+    def __init__(self, scope, defsym_indexes, new_ivs, iv_updates, idx):
         self.scope = scope
         self.defsym_indexes = defsym_indexes
         self.new_ivs = new_ivs
         self.iv_updates = iv_updates
         self.idx = idx
 
-    def visit_TEMP(self, ir):
+    def process(self, scope):
+        # Override: don't iterate blocks, process is called per-block externally
+        pass
+
+    def visit_Temp(self, ir):
         sym = qualified_symbols(ir, self.scope)[-1]
         assert isinstance(sym, Symbol)
         if sym not in self.defsym_indexes.keys() and sym not in self.new_ivs.keys():
-            # this is loop invariant
-            return
+            return ir
         if not sym.typ.is_scalar():
-            return
+            return ir
         if sym.is_induction():
             assert sym in self.new_ivs.keys()
             new_sym = self.new_ivs[sym][self.idx]
@@ -517,21 +519,37 @@ class IVReplacer(IRVisitor):
         else:
             new_name = '{}_{}'.format(sym.name, self.defsym_indexes[sym] + self.idx)
             new_sym = self.scope.inherit_sym(sym, new_name)
-        ir.name = new_sym.name
+        return ir.model_copy(update={'name': new_sym.name})
 
 
-class PHICondRemover(IRTransformer):
+class _NewNameReplacer(IrTransformer):
+    """Replace variable names from a sym_map (new IR version)."""
+    def __init__(self, scope, sym_map):
+        self.scope = scope
+        self.sym_map = sym_map
+
+    def process(self, scope):
+        pass
+
+    def visit_Temp(self, ir):
+        if ir.name in self.sym_map:
+            return ir.model_copy(update={'name': self.sym_map[ir.name].name})
+        return ir
+
+
+class PHICondRemover(IrTransformer):
+    """Remove PHI conditions after full unroll by replacing cond with Const(1)."""
     def __init__(self, sym):
         self.sym = sym
 
-    def visit_UNOP(self, ir):
+    def visit_UnOp(self, ir):
         sym = qualified_symbols(ir.exp, self.sym.scope)[-1]
-        if ir.exp.is_a(TEMP) and sym is self.sym:
-            return CONST(1)
+        if isinstance(ir.exp, Temp) and sym is self.sym:
+            return Const(value=1)
         return ir
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         sym = qualified_symbols(ir, self.sym.scope)[-1]
-        if ir.ctx & Ctx.STORE == 0 and sym is self.sym:
-            return CONST(1)
+        if ir.ctx != Ctx.STORE and sym is self.sym:
+            return Const(value=1)
         return ir

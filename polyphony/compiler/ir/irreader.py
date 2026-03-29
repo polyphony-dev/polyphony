@@ -1,8 +1,9 @@
 import re
+from typing import cast
 from collections import deque, defaultdict
 from polyphony.compiler.ir.ir import *
 from polyphony.compiler.ir.irhelper import qualified_symbols
-from polyphony.compiler.ir.block import Block
+from polyphony.compiler.ir.block import Block, detect_loop_edges
 from polyphony.compiler.ir.scope import Scope
 from polyphony.compiler.ir.symbol import Symbol
 from polyphony.compiler.ir.types.type import Type
@@ -21,13 +22,7 @@ RELOP_MAP = {
     '==':'Eq', '!=':'NotEq', '<':'Lt', '<=':'LtE', '>':'Gt', '>=':'GtE',
 }
 
-def check_int(s):
-    if s[0] in ('-', '+'):
-        return s[1:].isdigit()
-    return s.isdigit()
-
-
-class IRParser(object):
+class IrReader(object):
     def __init__(self, code: str):
         assert isinstance(code, str)
         self.current_scope: Scope = None  # type: ignore
@@ -77,11 +72,11 @@ class IRParser(object):
                 Block.set_order(self.current_scope.entry_block, 0)
                 continue
             self.parse_all_blocks()
+            detect_loop_edges(self.current_scope)
             Block.set_order(self.current_scope.entry_block, 0)
         for from_scope, name, target_scope in self.import_table:
             sym = from_scope.find_sym(name)
             target_scope.import_sym(sym)
-
     def prepare_parse_scopes(self):
         self.sources = defaultdict(list)
         current_lines = None
@@ -169,11 +164,11 @@ class IRParser(object):
             typstr = tokens[1]
             if not self.current_scope.is_ctor():
                 self.current_scope.tags.add('returnable')
-            self.current_scope.return_type = self.parse_type(typstr)
+            self.current_scope.return_type = self.parse_type(typstr)  # type: ignore[attr-defined]
             self.current_scope.add_return_sym(self.current_scope.return_type)
             line = self.deq_line()
         else:
-            self.current_scope.return_type = Type.none()
+            self.current_scope.return_type = Type.none()  # type: ignore[attr-defined]
 
         # symbols
         while True:
@@ -256,16 +251,37 @@ class IRParser(object):
         op = tokens[0]
         if op[-1] == ':':  # block?
             return False
-        stm = self.parse_stm(line)
+        if op.startswith('.'):
+            self.deq_line()
+            self._parse_block_metadata(op, tokens[1] if len(tokens) > 1 else '')
+            return True
+        if op == 'mstm':
+            self.deq_line()
+            stm = self.parse_mstm()
+        else:
+            stm = self.parse_stm(line)
+            self.deq_line()
         if not stm:
             print(stm)
         self.current_block.append_stm(stm)
-        self.deq_line()
         return True
 
-    def parse_stm(self, stmstr: str) -> IRStm:
+    def _parse_block_metadata(self, directive: str, operands: str):
+        if directive == '.synth':
+            for kv in operands.split():
+                key, val = kv.split('=', 1)
+                if key == 'ii':
+                    self.current_block.synth_params[key] = int(val)
+                else:
+                    self.current_block.synth_params[key] = val
+        elif directive == '.hyperblock':
+            self.current_block.is_hyperblock = True
+
+    def parse_stm(self, stmstr: str) -> IrStm:
         tokens = self.split(stmstr, count=1)
         op = tokens[0]
+        if op == 'mstm':
+            return self.parse_mstm()
         operands = tokens[1]
 
         if op[-1] == '?':
@@ -284,7 +300,11 @@ class IRParser(object):
             else:
                 return self.parse_expr(operands)
         elif op == 'phi':
-            return self.parse_phi(operands)
+            return self.parse_phi(operands, Phi)
+        elif op == 'uphi':
+            return self.parse_phi(operands, UPhi)
+        elif op == 'lphi':
+            return self.parse_phi(operands, LPhi)
         elif op == 'j':
             return self.parse_jp(operands)
         elif op == 'cj':
@@ -357,7 +377,7 @@ class IRParser(object):
         dst_, src_ = ops
         dst = self.parse_dst(dst_)
         src = self.parse_exp(src_)
-        return MOVE(dst, src)
+        return Move(dst, src)
 
     def parse_cmv(self, operands: str):
         ops = self.parse_operands(operands)
@@ -367,14 +387,14 @@ class IRParser(object):
         cond = self.parse_exp(cond_)
         dst  = self.parse_dst(dst_)
         src  = self.parse_exp(src_)
-        return CMOVE(cond, dst, src)
+        return CMove(cond, dst, src)
 
     def parse_expr(self, operands: str):
         ops = self.parse_operands(operands)
         if len(ops) != 1:
             raise
         exp = self.parse_exp(ops[0])
-        return EXPR(exp)
+        return Expr(exp)
 
     def parse_cexpr(self, operands: str):
         ops = self.parse_operands(operands)
@@ -383,17 +403,51 @@ class IRParser(object):
         cond_, exp_ = ops
         cond = self.parse_exp(cond_)
         exp  = self.parse_exp(exp_)
-        return CEXPR(cond, exp)
+        return CExpr(cond, exp)
 
-    def parse_phi(self, operands: str):
-        raise
+    def parse_phi(self, operands: str, cls=None):
+        """Parse phi/uphi/lphi statement.
+
+        Format: phi var (arg1 arg2 ...) (p1 p2 ...)
+                phi var (arg1 arg2 ...)          # ps omitted
+        """
+        if cls is None:
+            cls = Phi
+        # Split: first token is var, then parenthesized groups
+        tokens = self.parse_operands(operands)
+        var_str = tokens[0]
+        var = self.parse_var(var_str, Ctx.STORE)
+
+        # Find parenthesized groups using walk_to_closing_paren
+        rest = operands[len(var_str):].strip()
+        groups = []
+        while rest:
+            rest = rest.strip()
+            if not rest or rest[0] != '(':
+                break
+            inner, rest = self.walk_to_closing_paren(rest[1:], '(', ')')
+            groups.append(inner)
+
+        args = []
+        ps = []
+        if len(groups) >= 1:
+            arg_tokens = self.split(groups[0])
+            for t in arg_tokens:
+                args.append(self.parse_exp(t))
+        if len(groups) >= 2:
+            ps_tokens = self.split(groups[1])
+            for t in ps_tokens:
+                ps.append(self.parse_exp(t))
+
+        phi = cls(var=var, args=tuple(args), ps=tuple(ps))
+        return phi
 
     def parse_jp(self, operands: str):
         if operands not in self.blocks:
             raise
         next_block = self.blocks[operands]
         self.current_block.connect(next_block)
-        return JUMP(next_block)
+        return Jump(target=next_block.bid)
 
     def parse_cj(self, operands: str):
         ops = self.parse_operands(operands)
@@ -409,7 +463,7 @@ class IRParser(object):
         else_blk = self.blocks[else_blk_]
         self.current_block.connect(then_blk)
         self.current_block.connect(else_blk)
-        return CJUMP(cond, then_blk, else_blk)
+        return CJump(exp=cond, true=then_blk.bid, false=else_blk.bid)
 
     def parse_mj(self, operands: str):
         ops = self.parse_operands(operands)
@@ -423,9 +477,9 @@ class IRParser(object):
             if target_ not in self.blocks:
                 raise
             blk = self.blocks[target_]
-            targets.append(blk)
+            targets.append(blk.bid)
             self.current_block.connect(blk)
-        return MCJUMP(conds, targets)
+        return MCJump(conds=conds, targets=targets)
 
     def parse_ret(self, operands: str):
         ops = self.parse_operands(operands)
@@ -433,9 +487,9 @@ class IRParser(object):
             raise
         self.current_scope.exit_block = self.current_block
         exp = self.parse_exp(ops[0])
-        assert exp.is_a(TEMP)
-        assert cast(TEMP, exp).name == Symbol.return_name
-        return RET(exp)
+        assert isinstance(exp, Temp)
+        assert cast(Temp, exp).name == Symbol.return_name
+        return Ret(exp)
 
     def parse_type(self, typstr: str) -> Type:
         if typstr.startswith('int'):
@@ -488,9 +542,43 @@ class IRParser(object):
             m = re.match(r'\((.*)\)', element)
             assert m
             return Type.function(m.group(1), Type.undef(), tuple())
-        elif typstr.startswith('port'):
+        elif typstr.startswith('port('):
+            element = typstr[4:].strip()
+            m = re.match(r'\((.*)\)', element)
+            assert m
+            inner = m.group(1)
+            parts = [p.strip() for p in inner.split(',')]
+            assert len(parts) == 6
+            scope_name = parts[0]
+            dtype = self.parse_type(parts[1])
+            direction = parts[2]
+            init = int(parts[3])
+            assigned = parts[4] == 'True'
+            # root_symbol: lazy resolution via "scope_name:sym_name" string
+            root_symbol_ref = parts[5]
+            attrs = {
+                'dtype': dtype,
+                'direction': direction,
+                'init': init,
+                'assigned': assigned,
+                'root_symbol': root_symbol_ref,
+            }
+            return Type.port(scope_name, attrs)
+        elif typstr == 'port':
             raise NotImplementedError()
-        elif typstr.startswith('expr'):
+        elif typstr.startswith('expr('):
+            element = typstr[4:].strip()
+            m = re.match(r'\((.*)\)', element)
+            assert m
+            inner = m.group(1)
+            # Split on first comma: scope_name, exp_text
+            comma_idx = inner.index(',')
+            scope_name = inner[:comma_idx].strip()
+            exp_text = inner[comma_idx + 1:].strip()
+            exp = self.parse_exp(exp_text)
+            scope = env.scopes[scope_name]
+            return Type.expr(Expr(exp=exp), scope)
+        elif typstr == 'expr':
             raise NotImplementedError()
         elif typstr.startswith('none'):
             return Type.none()
@@ -510,7 +598,7 @@ class IRParser(object):
         prefix = token[0]
         return prefix == '('
 
-    def parse_exp(self, expstr: str) -> IRExp:
+    def parse_exp(self, expstr: str) -> IrExp:
         if expstr[0] == '(':
             assert expstr[-1] == ')'
             exphead = expstr[1:-1].split()
@@ -518,6 +606,8 @@ class IRParser(object):
             opcode = exphead[0]
             operands = expstr[1+len(opcode):-1]
             if opcode in BINOP_MAP:
+                if operands.strip().startswith('['):
+                    return self.parse_polyop(opcode, operands)
                 return self.parse_bin(opcode, operands)
             elif opcode in RELOP_MAP:
                 return self.parse_rel(opcode, operands)
@@ -531,6 +621,8 @@ class IRParser(object):
                 return self.parse_mload(operands)
             elif opcode == 'mst':
                 return self.parse_mstore(operands)
+            elif opcode == '?':
+                return self.parse_condop(operands)
             else:
                 # may be a tuple
                 return self.parse_tuple(expstr)
@@ -546,7 +638,7 @@ class IRParser(object):
         left_, right_ = ops
         left  = self.parse_exp(left_)
         right = self.parse_exp(right_)
-        return BINOP(BINOP_MAP[op], left, right)
+        return BinOp(BINOP_MAP[op], left, right)
 
     def parse_rel(self, op: str, operands: str):
         ops = self.parse_operands(operands)
@@ -555,7 +647,7 @@ class IRParser(object):
         left_, right_ = ops
         left  = self.parse_exp(left_)
         right = self.parse_exp(right_)
-        return RELOP(RELOP_MAP[op], left, right)
+        return RelOp(RELOP_MAP[op], left, right)
 
     def parse_call(self, operands: str):
         ops = self.parse_operands(operands)
@@ -565,7 +657,7 @@ class IRParser(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return CALL(func, args, {})
+        return Call(func=func, args=tuple(args), kwargs={})
 
     def parse_new(self, operands: str):
         ops = self.parse_operands(operands)
@@ -575,7 +667,7 @@ class IRParser(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return NEW(func, args, {})
+        return New(func=func, args=tuple(args), kwargs={})
 
     def parse_syscall(self, operands: str):
         # FIXME:
@@ -586,7 +678,7 @@ class IRParser(object):
         for arg_ in ops[1:]:
             arg = self.parse_exp(arg_)
             args.append(('', arg))
-        return SYSCALL(func, args, {})
+        return SysCall(func=func, args=tuple(args), kwargs={})
 
     def parse_mload(self, operands: str):
         ops = self.parse_operands(operands)
@@ -595,7 +687,7 @@ class IRParser(object):
         mem_, offs_ = ops
         mem  = self.parse_var(mem_)
         offs = self.parse_exp(offs_)
-        return MREF(mem, offs, Ctx.LOAD)
+        return MRef(mem, offs, Ctx.LOAD)
 
     def parse_mstore(self, operands: str):
         ops = self.parse_operands(operands)
@@ -605,7 +697,36 @@ class IRParser(object):
         mem  = self.parse_var(mem_)
         offs = self.parse_exp(offs_)
         src  = self.parse_exp(src_)
-        return MSTORE(mem, offs, src)
+        return MStore(mem, offs, src)
+
+    def parse_mstm(self):
+        stms = []
+        while not self.is_end():
+            line = self.peek_line()
+            if not line.startswith('|'):
+                break
+            self.deq_line()
+            stm_text = line[1:].strip()
+            stms.append(self.parse_stm(stm_text))
+        return MStm(stms=tuple(stms))
+
+    def parse_condop(self, operands: str):
+        ops = self.parse_operands(operands)
+        if len(ops) != 3:
+            raise
+        cond = self.parse_exp(ops[0])
+        left = self.parse_exp(ops[1])
+        right = self.parse_exp(ops[2])
+        return CondOp(cond, left, right)
+
+    def parse_polyop(self, op: str, operands: str):
+        ops = self.parse_operands(operands)
+        if len(ops) != 1 or not ops[0].startswith('['):
+            raise
+        list_body = ops[0][1:-1].strip()
+        value_tokens = self.parse_operands(list_body)
+        values = [self.parse_exp(v) for v in value_tokens]
+        return PolyOp(BINOP_MAP[op], tuple(values))
 
     def parse_list(self, s: str):
         m = re.match(r'\[(.*)\]', s)
@@ -615,7 +736,7 @@ class IRParser(object):
         for item_ in self.split(items_):
             item = self.parse_exp(item_)
             items.append(item)
-        return ARRAY(items, mutable=True)
+        return Array(items, mutable=True)
 
     def parse_tuple(self, s: str):
         m = re.match(r'\((.*)\)', s)
@@ -625,9 +746,9 @@ class IRParser(object):
         for item_ in self.parse_operands(items_):
             item = self.parse_exp(item_)
             items.append(item)
-        return ARRAY(items, mutable=False)
+        return Array(items, mutable=False)
 
-    def parse_dst(self, dststr: str) -> IRVariable|ARRAY:
+    def parse_dst(self, dststr: str) -> IrVariable|Array:
         if self.is_var(dststr):
             return self.parse_var(dststr, Ctx.STORE)
         elif self.is_tuple(dststr):
@@ -635,11 +756,11 @@ class IRParser(object):
         else:
             raise
 
-    def parse_var(self, varstr: str, ctx: Ctx = Ctx.LOAD) -> IRVariable:
+    def parse_var(self, varstr: str, ctx: Ctx = Ctx.LOAD) -> IrVariable:
         assert self.is_var(varstr)
         names = varstr.split('.')
-        var = TEMP(names[0])
-        # If IRParser methods are used partially, current_scope may be None
+        var = Temp(names[0])
+        # If IrReader methods are used partially, current_scope may be None
         if self.current_scope and self.current_scope.is_closure():
             # check if the variable is free variable
             sym = qualified_symbols(var, self.current_scope)[-1]
@@ -648,41 +769,35 @@ class IRParser(object):
                     sym.add_tag('free')
                     assert sym.scope.is_enclosure()
         for name in names[1:]:
-            var = ATTR(var, name)
-        var.ctx = ctx
+            var = Attr(var, name)
+        if var.ctx != ctx:
+            var = var.model_copy(update={'ctx': ctx})
         return var
 
-    def parse_scalar(self, s: str) -> IRExp:
+    def parse_scalar(self, s: str) -> IrExp:
         if s == 'True' or s == 'False':
-            return CONST(s == 'True')
+            return Const(s == 'True')
         if self.is_var(s):
             return self.parse_var(s, Ctx.LOAD)
         prefix = s[0]
         if self.is_unop(prefix):
             irop = UNOP_MAP[prefix]
             exp = self.parse_scalar(s[1:])
-            return UNOP(irop, exp)
+            return UnOp(irop, exp)
         elif s.isdigit():
-            return CONST(int(s))
+            return Const(int(s))
         elif s.startswith('"') and s.endswith('"') or s.startswith("'") and s.endswith("'"):
-            return CONST(s[1:-1])
+            return Const(s[1:-1])
         else:
-            return CONST(s)
+            return Const(s)
 
     def is_unop(self, op):
         return op in ('+', '-', '!', '~')
 
-    def is_binop(self, op):
-        return op in ('+', '-', '*', '/', 'mod',
-                         '^', '|', '&',
-                         '<<', '>>')
 
-    def is_relop(self, op):
-        return op in ('==', '!=', '<=', '>=', '<', '>',
-                         'and', 'or')
 
 
 def ir_stm(scope: Scope, code: str):
-    parser = IRParser('')
-    parser.current_scope = scope
-    return parser.parse_stm(code)
+    reader = IrReader('')
+    reader.current_scope = scope
+    return reader.parse_stm(code)

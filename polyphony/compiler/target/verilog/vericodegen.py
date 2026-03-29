@@ -292,9 +292,9 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit(ahdl.code)
 
     def visit_AHDL_MOVE(self, ahdl):
-        if ahdl.dst.is_a(AHDL_VAR) and ahdl.dst.sig.is_net():
+        if isinstance(ahdl.dst, AHDL_VAR) and ahdl.dst.sig.is_net():
             assert False
-        elif ahdl.dst.is_a(AHDL_SUBSCRIPT) and ahdl.dst.memvar.sig.is_netarray():
+        elif isinstance(ahdl.dst, AHDL_SUBSCRIPT) and ahdl.dst.memvar.sig.is_netarray():
             assert False
         src = self.visit(ahdl.src)
         dst = self.visit(ahdl.dst)
@@ -307,7 +307,7 @@ class VerilogCodeGen(AHDLVisitor):
         blocks = 0
         for i, (cond, ahdlblk) in enumerate(zip(ahdl.conds, ahdl.blocks)):
             blocks += 1
-            if cond and not (cond.is_a(AHDL_CONST) and cond.value == 1) or i == 0:
+            if cond and not (isinstance(cond, AHDL_CONST) and cond.value == 1) or i == 0:
                 cond = self.visit(cond)
                 if cond[0] != '(':
                     cond = '(' + cond + ')'
@@ -355,9 +355,9 @@ class VerilogCodeGen(AHDLVisitor):
             #expand condtion expression for the assert message
             exp = ahdl.args[0]
             exp_str = args[0]
-            if exp.is_a(AHDL_VAR) and exp.sig.is_condition():
+            if isinstance(exp, AHDL_VAR) and exp.sig.is_condition():
                 for assign in self.hdlmodule.get_static_assignment():
-                    if assign.dst.is_a(AHDL_VAR) and assign.dst.sig == exp.sig:
+                    if isinstance(assign.dst, AHDL_VAR) and assign.dst.sig == exp.sig:
                         exp_str = self.visit(assign.src)
                         break
             exp_str = exp_str.replace('==', '===').replace('!=', '!==')
@@ -458,7 +458,7 @@ class VerilogCodeGen(AHDLVisitor):
             self.visit(c)
 
     def visit(self, ahdl):
-        if ahdl.is_a(AHDL_STM):
+        if isinstance(ahdl, AHDL_STM):
             self.current_stm = ahdl
         visitor = self.find_visitor(ahdl.__class__)
         ret = visitor(ahdl)

@@ -5,13 +5,13 @@ from dataclasses import replace as dataclasses_replace
 from .scopetype import ScopeType
 from ...common.env import env
 if TYPE_CHECKING:
-    from ..ir import EXPR
+    from ..ir import Expr
 
 
 @dataclass(frozen=True)
 class ExprType(ScopeType):
     name: str = field(init=False, default='expr')
-    expr: EXPR
+    expr: Expr  # type: ignore[assignment]
 
     def can_assign(self, rhs_t):
         return self.name == rhs_t.name

@@ -1,5 +1,5 @@
-﻿from collections import defaultdict
-from ..irvisitor import IRVisitor
+from collections import defaultdict
+from ..irvisitor import IrVisitor
 from ..ir import *
 from ..irhelper import qualified_symbols
 from ..scope import Scope
@@ -18,25 +18,25 @@ class FieldUseDefTable(object):
         return qsym
 
     def add_var_def(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, Attr) and isinstance(stm, IrStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._def_qsym2stm[key].add(stm)
 
     def remove_var_def(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, Attr) and isinstance(stm, IrStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._def_qsym2stm[key].discard(stm)
 
     def add_var_use(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, Attr) and isinstance(stm, IrStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._use_qsym2stm[key].add(stm)
 
     def remove_var_use(self, scope: Scope, var, stm):
-        assert var.is_a(ATTR) and stm.is_a(IRStm)
+        assert isinstance(var, Attr) and isinstance(stm, IrStm)
         qsym = qualified_symbols(var, scope)
         key = self.qsym2key(qsym)
         self._use_qsym2stm[key].discard(stm)
@@ -70,12 +70,12 @@ class FieldUseDefTable(object):
         logger.debug(self)
 
 
-class FieldUseDefDetector(IRVisitor):
+class FieldUseDefDetector(IrVisitor):
     def __init__(self):
         super().__init__()
         self.table = FieldUseDefTable()
 
-    def process(self, scope):
+    def process(self, scope):  # type: ignore[override]
         super().process(scope)
         return self.table
 
@@ -83,23 +83,23 @@ class FieldUseDefDetector(IRVisitor):
         for stm in block.stms:
             self.visit(stm)
 
-    def _visit_args(self, ir):
-        for _, arg in ir.args:
+    def _visit_args(self, ir_args, ir_kwargs=None):  # type: ignore[override]
+        for _, arg in ir_args:
             self.visit(arg)
 
-    def visit_CALL(self, ir):
+    def visit_Call(self, ir):
         self.visit(ir.func)
-        self._visit_args(ir)
+        self._visit_args(ir.args)
 
-    def visit_SYSCALL(self, ir):
+    def visit_SysCall(self, ir):
         self.visit(ir.func)
-        self._visit_args(ir)
+        self._visit_args(ir.args)
 
-    def visit_NEW(self, ir):
+    def visit_New(self, ir):
         self.visit(ir.func)
-        self._visit_args(ir)
+        self._visit_args(ir.args)
 
-    def visit_ATTR(self, ir):
+    def visit_Attr(self, ir):
         if ir.ctx == Ctx.LOAD or ir.ctx == Ctx.CALL:
             self.table.add_var_use(self.scope, ir, self.current_stm)
         elif ir.ctx == Ctx.STORE:
@@ -117,11 +117,12 @@ class FieldUseDef(object):
         for scope in self.scopes:
             table = FieldUseDefDetector().process(scope)
             self.usedef_tables[scope] = table
-        self.module.field_usedef = self
+        return self
 
     def _collect_scopes(self, scope):
         scopes = set()
-        workers = set([w for w in scope.workers])
+        cls = scope.as_class()
+        workers = set(cls.workers) if cls else set()
         scopes |= workers
         for w in workers:
             scopes |= self._collect_scopes(w)

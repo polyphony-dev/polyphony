@@ -40,7 +40,7 @@ def make_synth_params():
     di = defaultdict(str)
     di['scheduling'] = ''
     di['cycle'] = ''
-    di['ii'] = 0
+    di['ii'] = 0  # type: ignore[assignment]
     return di
 
 

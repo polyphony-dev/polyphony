@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import ClassVar, TYPE_CHECKING
 from dataclasses import dataclass
 from dataclasses import replace as dataclasses_replace
 from .type import Type
@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ScopeType(Type):
+    _has_scope: ClassVar[bool] = True
     scope_name: str
 
     @property

@@ -2,7 +2,7 @@
 from collections import defaultdict, namedtuple
 from copy import copy
 import dataclasses
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 from xml.dom.expatbuilder import Namespaces
 from .builtin import builtin_symbols
 from .block import Block
@@ -11,7 +11,7 @@ from .symbol import Symbol
 from .synth import make_synth_params
 from .types.type import Type
 from .types import typehelper
-from .irvisitor import IRVisitor
+from .irvisitor import IrVisitor, IrTransformer
 from .ir import *
 from .irhelper import qualified_symbols
 from ..common.common import Tagged, fail
@@ -19,21 +19,21 @@ from ..common.errors import Errors
 from ..common.env import env
 from ..common.graph import Graph
 from logging import getLogger
+
 logger = getLogger(__name__)
-
-
 
 
 class FunctionParam(NamedTuple):
     sym: Symbol
-    defval: IRExp|None
+    defval: IrExp | None
+
 
 class FunctionParams(object):
     def __init__(self, is_method=False):
-        self._params:list[FunctionParam] = []
-        self._is_method:bool = is_method
+        self._params: list[FunctionParam] = []
+        self._is_method: bool = is_method
 
-    def add_param(self, sym:Symbol, defval:IRExp|None):
+    def add_param(self, sym: Symbol, defval: IrExp | None):
         self._params.append(FunctionParam(sym, defval))
 
     def _explicit_params(self, with_self) -> list[FunctionParam]:
@@ -46,7 +46,7 @@ class FunctionParams(object):
         params = self._explicit_params(with_self)
         return tuple([sym for sym, _ in params])
 
-    def default_values(self, with_self=False) -> tuple[IRExp|None, ...]:
+    def default_values(self, with_self=False) -> tuple[IrExp | None, ...]:
         params = self._explicit_params(with_self)
         return tuple([defval for _, defval in params])
 
@@ -55,7 +55,7 @@ class FunctionParams(object):
         return tuple([p.sym.typ for p in params])
 
     def _param_name(self, sym):
-        l = len(Symbol.param_prefix + '_')
+        l = len(Symbol.param_prefix + "_")
         return sym.name[l:]
 
     def param_names(self, with_self=False):
@@ -85,12 +85,12 @@ class FunctionParams(object):
                 self._params.pop(i)
 
     def __str__(self):
-        s = ''
+        s = ""
         for p, val in self._params:
             if val:
-                s += '{}:{} = {}\n'.format(p, repr(p.typ), val)
+                s += "{}:{} = {}\n".format(p, repr(p.typ), val)
             else:
-                s += '{}:{}\n'.format(p, repr(p.typ))
+                s += "{}:{}\n".format(p, repr(p.typ))
         return s
 
     def __len__(self):
@@ -99,39 +99,39 @@ class FunctionParams(object):
 
 class SymbolTable(object):
     def __init__(self):
-        self.symbols = {}
+        self.symbols: dict[str, Symbol] = {}
 
     def __str__(self):
-        s = ''
-        for name, sym in self.symbols.items():
-            s += f'{name} - {sym}:{sym.typ} {sym.tags} {sym.scope.name}\n'
-        #for sym in self.symbols.values():
+        s = ""
+        for name, sym in sorted(self.symbols.items()):
+            s += f"{name} - {sym}:{sym.typ} {sorted(sym.tags)} {sym.scope.name}\n"
+        # for sym in self.symbols.values():
         #    s += f'{sym}:{sym.typ} {sym.tags}\n'
         return s
 
-    def add_sym(self, name: str, tags: set[str], typ: Type|None):
+    def add_sym(self, name: str, tags: set[str], typ: Type | None):
         if typ is None:
             typ = Type.undef()
         if name in self.symbols:
             raise RuntimeError("symbol '{}' is already registered ".format(name))
-        sym = Symbol(name, self, tags, typ)
+        sym = Symbol(name, self.name, tags, typ)  # type: ignore[attr-defined]
         self.symbols[name] = sym
         return sym
 
-    def add_temp(self, temp_name: str='', tags: set[str]=set(), typ: Type|None=None):
+    def add_temp(self, temp_name: str = "", tags: set[str] = set(), typ: Type | None = None):
         name = Symbol.unique_name(temp_name)
         if tags:
-            tags.add('temp')
+            tags.add("temp")
         else:
-            tags = {'temp'}
+            tags = {"temp"}
         return self.add_sym(name, tags, typ)
 
     def add_condition_sym(self):
-        return self.add_temp(Symbol.condition_prefix, {'condition'}, typ=Type.bool())
+        return self.add_temp(Symbol.condition_prefix, {"condition"}, typ=Type.bool())
 
-    def add_param_sym(self, param_name: str, tags: set[str], typ: Type|None=None):
-        name = '{}_{}'.format(Symbol.param_prefix, param_name)
-        return self.add_sym(name, tags|{'param'}, typ)
+    def add_param_sym(self, param_name: str, tags: set[str], typ: Type | None = None):
+        name = "{}_{}".format(Symbol.param_prefix, param_name)
+        return self.add_sym(name, tags | {"param"}, typ)
 
     def del_sym(self, name):
         if name in self.symbols:
@@ -145,12 +145,11 @@ class SymbolTable(object):
         if name in self.symbols and sym is not self.symbols[name]:
             raise RuntimeError(f"symbol '{sym}' is already registered as {name}")
         self.symbols[name] = sym
-        sym.add_tag('imported')
+        sym.add_tag("imported")
 
     def find_sym(self, name):
-        names = name.split('.')
-        if len(names) > 1:
-            return self.find_sym_r(names)
+        if "." in name:
+            return self.find_sym_r(name.split("."))
         if name in self.symbols:
             return self.symbols[name]
         return None
@@ -161,7 +160,7 @@ class SymbolTable(object):
         if sym and len(names) > 1:
             sym_t = sym.typ
             if sym_t.is_containable():
-                return sym_t.scope.find_sym_r(names[1:])
+                return sym_t.scope.find_sym_r(names[1:])  # type: ignore[union-attr]
             else:
                 return None
         return sym
@@ -186,10 +185,10 @@ class SymbolTable(object):
     def rename_sym(self, old: str, new: str):
         assert old in self.symbols
         sym = self.symbols[old]
+        new_sym = sym.clone(self, new)
         del self.symbols[old]
-        sym.name = new
-        self.symbols[new] = sym
-        return sym
+        self.symbols[new] = new_sym
+        return new_sym
 
     def rename_sym_asname(self, old: str, new: str):
         assert old in self.symbols
@@ -200,17 +199,13 @@ class SymbolTable(object):
 
     def inherit_sym(self, orig_sym, new_name):
         assert orig_sym.scope is self
-        if orig_sym.is_imported():
-            print(orig_sym)
         if self.has_sym(new_name):
             new_sym = self.symbols[new_name]
         else:
             orig_sym_t = orig_sym.typ
-            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {'inherited'}, typ=orig_sym_t)
-            if orig_sym.ancestor:
-                new_sym.ancestor = orig_sym.ancestor
-            else:
-                new_sym.ancestor = orig_sym
+            new_sym = self.add_sym(new_name, set(orig_sym.tags) | {"inherited"}, typ=orig_sym_t)
+            origin = env.origin_registry.sym_origin_of(orig_sym)
+            env.origin_registry.set_sym_origin(new_sym, origin if origin else orig_sym)
         return new_sym
 
     def find_scope_sym(self, obj):
@@ -227,16 +222,42 @@ class SymbolTable(object):
 
 class Scope(Tagged, SymbolTable):
     TAGS = {
-        'global', 'function', 'class', 'method', 'ctor', 'enclosure', 'closure',
-        'callable', 'returnable', 'mutable', 'inherited', 'predicate',
-        'testbench', 'pure', 'timed', 'comb', 'assigned',
-        'module', 'top_module', 'worker', 'loop_worker', 'instantiated', 'specialized',
-        'lib', 'namespace', 'builtin', 'decorator',
-        'port', 'typeclass', 'object',
-        'function_module',
-        'inlinelib', 'unflatten',
-        'package', 'directory',
-        'superseded',
+        "global",
+        "function",
+        "class",
+        "method",
+        "ctor",
+        "enclosure",
+        "closure",
+        "callable",
+        "returnable",
+        "mutable",
+        "inherited",
+        "predicate",
+        "testbench",
+        "pure",
+        "timed",
+        "comb",
+        "assigned",
+        "module",
+        "top_module",
+        "worker",
+        "loop_worker",
+        "instantiated",
+        "specialized",
+        "lib",
+        "namespace",
+        "builtin",
+        "decorator",
+        "port",
+        "typeclass",
+        "object",
+        "function_module",
+        "inlinelib",
+        "unflatten",
+        "package",
+        "directory",
+        "superseded",
     }
     scope_id = 0
     unnamed_ids = defaultdict(int)
@@ -247,13 +268,22 @@ class Scope(Tagged, SymbolTable):
         if name is None:
             name = str(cls.unnamed_ids[parent])
             cls.unnamed_ids[parent] += 1
-        s = Scope(parent, name, tags, lineno, cls.scope_id)
+        FUNCTION_TAGS = {'function', 'method', 'ctor', 'worker', 'testbench',
+                         'closure', 'predicate', 'callable'}
+        if 'class' in tags:
+            s = ClassScope(parent, name, tags, lineno, cls.scope_id)
+        elif tags & FUNCTION_TAGS:
+            s = FunctionScope(parent, name, tags, lineno, cls.scope_id)
+        elif 'global' in tags:
+            s = GlobalScope(parent, name, tags, lineno, cls.scope_id)
+        else:
+            s = NamespaceScope(parent, name, tags, lineno, cls.scope_id)
         if s.name in env.scopes:
             env.append_scope(s)
             fail((env.scope_file_map[s], lineno), Errors.REDEFINED_NAME, {name})
         env.append_scope(s)
         if origin:
-            s.origin = origin
+            env.origin_registry.set_scope_origin(s, origin)
             s.orig_name = origin.orig_name
             s.orig_base_name = origin.orig_base_name
             env.scope_file_map[s] = env.scope_file_map[origin]
@@ -262,17 +292,17 @@ class Scope(Tagged, SymbolTable):
 
     @classmethod
     def create_namespace(cls, parent, name, tags, path=None):
-        tags |= {'namespace'}
+        tags |= {"namespace"}
         namespace = Scope.create(parent, name, tags, lineno=1)
         if not namespace.is_builtin():
-            namesym = namespace.add_sym('__name__', tags=set(), typ=Type.str())
+            namesym = namespace.add_sym("__name__", tags=set(), typ=Type.str())
             if namespace.is_global():
-                namespace.constants[namesym] = CONST('__main__')
+                namespace.constants[namesym] = Const("__main__")
             else:
-                namespace.constants[namesym] = CONST(namespace.name)
+                namespace.constants[namesym] = Const(namespace.name)
             if path:
-                filesym = namespace.add_sym('__file__', tags=set(), typ=Type.str())
-                namespace.constants[filesym] = CONST(path)
+                filesym = namespace.add_sym("__file__", tags=set(), typ=Type.str())
+                namespace.constants[filesym] = Const(path)
         return namespace
 
     @classmethod
@@ -285,16 +315,18 @@ class Scope(Tagged, SymbolTable):
 
     @classmethod
     def is_normal_scope(cls, s):
-        return (not (s.is_lib() and s.is_function())
+        return (
+            not (s.is_lib() and s.is_function())
             and not (s.is_lib() and s.is_method())
             and not s.is_builtin()
             and not s.is_decorator()
             and not s.is_typeclass()
-            and not s.is_directory())
+            and not s.is_directory()
+        )
 
     @classmethod
-    def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False) -> list['Scope']:
-        scopes:list[Scope] = sorted(env.scopes.values())
+    def get_scopes(cls, bottom_up=True, with_global=False, with_class=False, with_lib=False) -> list["Scope"]:
+        scopes: list[Scope] = sorted(env.scopes.values())
         scopes = [s for s in scopes if not s.is_pure()]
         # Exclude an no code scope
         scopes = [s for s in scopes if cls.is_normal_scope(s)]
@@ -330,71 +362,64 @@ class Scope(Tagged, SymbolTable):
         Tagged.__init__(self, tags)
         SymbolTable.__init__(self)
         self.base_name: str = name
-        self.parent: 'Scope' = parent
+        self.parent: "Scope" = parent
         if parent:
             parent.append_child(self)
         self.orig_name: str = self.name
         self.orig_base_name: str = name
         self.lineno: int = lineno
         self.scope_id: int = scope_id
-        self.function_params = FunctionParams(self.is_method())
-        self.return_type: Type = None
-        self.entry_block: Block = None
-        self.exit_block: Block = None
-        self.children: list['Scope'] = []
-        self.bases: list['Scope'] = []
-        self.origin: 'Scope' = None
-        self.usedef = None
-        self.field_usedef = None
-        self.loop_tree = LoopNestTree()
+        self.entry_block: Block | None = None
+        self.exit_block: Block | None = None
+        self.children: list["Scope"] = []
+        self.bases: list["Scope"] = []
         self.block_count = 0
-        self.workers: list['Scope'] = []
-        self.worker_owner: 'Scope' = None
+        self.block_map: dict[str, Block] = {}
+        self.worker_owner: "Scope | None" = None
         self.asap_latency = -1
         self.synth_params = make_synth_params()
         self.constants = {}
         self.branch_graph = Graph()
-        self.module_params = []
-        self.module_param_vars = []
         self._bound_args = []
 
     def __str__(self):
-        s = '================================\n'
-        tags = ", ".join([f"'{att}'" for att in self.tags])
-        s += 'Scope:\n'
-        s += f'    name: {self.name}\n'
-        s += f'    tags: {tags}\n'
+        s = "================================\n"
+        tags = ", ".join([f"'{att}'" for att in sorted(self.tags)])
+        s += "Scope:\n"
+        s += f"    name: {self.name}\n"
+        s += f"    tags: {tags}\n"
 
-        s += 'Symbols:\n'
-        for line in SymbolTable.__str__(self).split('\n'):
-            s += f'    {line}\n'
+        s += "Symbols:\n"
+        for line in SymbolTable.__str__(self).split("\n"):
+            s += f"    {line}\n"
 
         if self.constants:
-            s += 'Constants:\n'
-            for sym, const in self.constants.items():
-                s += f'    {sym}:{sym.typ} = {const}\n'
+            s += "Constants:\n"
+            for sym, const_val in self.constants.items():
+                s += f"    {sym}:{sym.typ} = {const_val}\n"
 
-        if self.function_params:
-            s += 'Parameters:\n'
-            ss = ['    ' + line for line in str(self.function_params).split('\n') if line]
-            s += '\n'.join(ss)
-            s += '\n'
-        s += 'Return:\n'
-        if self.return_type:
-            s += '    {}\n'.format(repr(self.return_type))
+        func = self.as_function()
+        if func and func.function_params:
+            s += "Parameters:\n"
+            ss = ["    " + line for line in str(func.function_params).split("\n") if line]
+            s += "\n".join(ss)
+            s += "\n"
+        s += "Return:\n"
+        if func and func.return_type:
+            s += "    {}\n".format(repr(func.return_type))
         else:
-            s += '    None\n'
+            s += "    None\n"
 
-        s += 'Synthesis:\n'
-        s += f'    {self.synth_params}\n'
+        s += "Synthesis:\n"
+        s += f"    {self.synth_params}\n"
 
-        s += 'Blocks:\n'
+        s += "Blocks:\n"
         for blk in self.traverse_blocks():
             s += str(blk)
-        if self.loop_tree:
-            s += 'Loop Tree:\n'
-            for r in self.loop_tree.traverse():
-                s += f'    {r}'
+        if func and func.loop_tree:
+            s += "Loop Tree:\n"
+            for r in func.loop_tree.traverse():
+                s += f"    {r}"
         return s
 
     def dump(self):
@@ -414,41 +439,42 @@ class Scope(Tagged, SymbolTable):
         for t in types:
             if t.is_list():
                 elm = self._mangled_names([t.element])
-                s = f'l_{elm}'
+                s = f"l_{elm}"
             elif t.is_tuple():
                 elm = self._mangled_names([t.element])
-                elms = ''.join([elm] * t.length)
-                s = f't_{elms}'
+                elms = "".join([elm] * t.length)
+                s = f"t_{elms}"
             elif t.is_class():
                 # TODO: we should avoid naming collision
-                s = f'c_{t.scope.base_name}'
+                s = f"c_{t.scope.base_name}"
             elif t.is_int():
-                s = f'i{t.width}'
+                s = f"i{t.width}"
             elif t.is_bool():
-                s = f'b'
+                s = f"b"
             elif t.is_str():
-                s = f's'
+                s = f"s"
             elif t.is_object():
                 # TODO: we should avoid naming collision
-                s = f'o_{t.scope.base_name}'
+                s = f"o_{t.scope.base_name}"
             else:
                 s = str(t)
             ts.append(s)
-        return '_'.join(ts)
+        return "_".join(ts)
 
     def signature(self):
-        param_signature = self._mangled_names(self.param_types())
+        func = self.as_function()
+        param_signature = self._mangled_names(func.param_types()) if func else ''
         return (self.name, param_signature)
 
     def unique_name(self):
-        return self.name.replace('@top.', '').replace('.', '_')
+        return self.name.replace("@top.", "").replace(".", "_")
 
     def clone_symbols_by_name(self, scope):
         for asname, orig_sym in self.symbols.items():
             if orig_sym.scope is not self:
-               scope.import_sym(orig_sym, asname)
-               continue
-            orig_name = f'{orig_sym.name}'
+                scope.import_sym(orig_sym, asname)
+                continue
+            orig_name = f"{orig_sym.name}"
             if orig_name not in scope.symbols:
                 new_sym = orig_sym.clone(scope, orig_name)
                 scope.symbols[new_sym.name] = new_sym
@@ -463,53 +489,75 @@ class Scope(Tagged, SymbolTable):
             b_clone = block_map[b]
             b_clone.reconnect(block_map)
 
-        # jump target
-        for stm in stm_map.values():
-            if stm.is_a(JUMP):
-                stm.target = block_map[stm.target]
-            elif stm.is_a(CJUMP):
-                stm.true = block_map[stm.true]
-                stm.false = block_map[stm.false]
-            elif stm.is_a(MCJUMP):
-                stm.targets = [block_map[t] for t in stm.targets]
+        # jump target - targets are bid strings, remap to cloned block bids
+        from .ir import Jump, CJump, MCJump
+
+        bid_map = {old.bid: new.bid for old, new in block_map.items()}
+        for key, stm in list(stm_map.items()):
+            if isinstance(stm, Jump):
+                new_stm = stm.model_copy(update={'target': bid_map[stm.target]})
+            elif isinstance(stm, CJump):
+                new_stm = stm.model_copy(update={'true': bid_map[stm.true], 'false': bid_map[stm.false]})
+            elif isinstance(stm, MCJump):
+                new_stm = stm.model_copy(update={'targets': tuple(bid_map[t] for t in stm.targets)})
+            else:
+                continue
+            blk = scope.find_block(new_stm.block)
+            blk.replace_stm(stm, new_stm)
+            stm_map[key] = new_stm
         return block_map, stm_map
 
     def clone(self, prefix, postfix, parent=None, recursive=False, rename_children=True):
         def clone_name(prefix: str, postfix: str, base_name: str) -> str:
-            name = prefix + '_' if prefix else ''
+            name = prefix + "_" if prefix else ""
             name += base_name
-            name = name + '_' + postfix if postfix else name
+            name = name + "_" + postfix if postfix else name
             return name
 
         name = clone_name(prefix, postfix, self.base_name)
         parent = self.parent if parent is None else parent
-        cloned_tags = set(self.tags) - {'superseded'}
+        cloned_tags = set(self.tags) - {"superseded"}
         s = Scope.create(parent, name, cloned_tags, self.lineno, origin=self)
 
         self_sym = self.parent.find_sym(self.base_name)
+        assert self_sym is not None
         new_sym_typ = self_sym.typ.clone(scope=s)
         parent.add_sym(s.base_name, set(self_sym.tags), typ=new_sym_typ)
-        logger.debug('CLONE {} {}'.format(self.name, s.name))
+        logger.debug("CLONE {} {}".format(self.name, s.name))
 
         if recursive:
             if rename_children:
                 s.children = [child.clone(prefix, postfix, s, recursive, rename_children) for child in self.children]
             else:
-                s.children = [child.clone('', '', s, recursive, rename_children) for child in self.children]
+                s.children = [child.clone("", "", s, recursive, rename_children) for child in self.children]
         else:
             s.children = list(self.children)
 
-        s.bases = list(self.bases)
+        s.bases = list(self.bases)  # type: ignore[assignment]
 
         self.clone_symbols_by_name(s)
-        for p, defval in zip(self.param_symbols(with_self=True), self.param_default_values(with_self=True)):
-            s.add_param(s.symbols[p.name], defval.clone() if defval else None)
+        from .ir import Ir
 
-        s.return_type = self.return_type
+        func = self.as_function()
+        if func:
+            for p, defval in zip(func.param_symbols(with_self=True), func.param_default_values(with_self=True)):
+                if defval is None:
+                    cloned_defval = None
+                elif isinstance(defval, Ir):
+                    cloned_defval = defval.model_copy(deep=True)
+                else:
+                    cloned_defval = defval.clone()
+                s_func = s.as_function()
+                if s_func:
+                    s_func.add_param(s.symbols[p.name], cloned_defval)
+            s_func = s.as_function()
+            if s_func:
+                s_func.return_type = func.return_type
         block_map, stm_map = self.clone_blocks(s)
+        assert self.entry_block is not None
+        assert self.exit_block is not None
         s.entry_block = block_map[self.entry_block]
         s.exit_block = block_map[self.exit_block]
-        s.usedef = None
 
         if recursive and rename_children:
             symbol_map = {}
@@ -541,45 +589,6 @@ class Scope(Tagged, SymbolTable):
 
         s.synth_params = self.synth_params.copy()
         return s
-
-    def instantiate(self, inst_name, parent=None):
-        if parent is None:
-            parent = self.parent
-        new_class = self.clone('', inst_name, parent, recursive=True, rename_children=False)
-        assert new_class.origin is self
-
-        old_class_sym = self.parent.find_sym(self.base_name)
-        new_sym = new_class.parent.find_sym(new_class.base_name)
-        assert isinstance(new_sym, Symbol)
-        if old_class_sym.ancestor:
-            new_sym.ancestor = old_class_sym.ancestor
-        else:
-            new_sym.ancestor = old_class_sym
-        new_scopes: dict['Scope', 'Scope'] = {self:new_class}
-        for old_child, new_child in zip(self.children, new_class.children):
-            new_scopes[old_child] = new_child
-        for old, new in new_scopes.items():
-            syms = new_class.find_scope_sym(old)
-            for sym in syms:
-                if sym.scope in new_scopes.values():
-                    sym.typ = sym.typ.clone(scope=new)
-            if new.parent.is_namespace():
-                continue
-            # sanity check
-            new_t = new.parent.find_sym(new.base_name).typ
-            assert new_t.scope is new
-        # deal with type scope
-        self._replace_type_scope(new_scopes)
-        return new_class
-
-    def _replace_type_scope(self, new_scopes: dict['Scope', 'Scope']):
-        value_map = {old.name:new.name for old, new in new_scopes.items()}
-        for new in new_scopes.values():
-            for sym in new.symbols.values():
-                d = dataclasses.asdict(sym.typ)
-                dd = {}
-                if typehelper.replace_type_dict(d, dd, 'scope_name', value_map):
-                    sym.typ = sym.typ.__class__.from_dict(dd)
 
     def find_child(self, name, rec=False):
         for child in self.children:
@@ -635,35 +644,19 @@ class Scope(Tagged, SymbolTable):
         assert len(set(scopes)) == len(scopes)
         return scopes
 
-    def param_names(self, with_self=False):
-        return self.function_params.param_names(with_self)
+    def as_function(self) -> "FunctionScope | None":
+        return None
 
-    def param_symbols(self, with_self=False):
-        return self.function_params.symbols(with_self)
+    def as_class(self) -> "ClassScope | None":
+        return None
 
-    def param_default_values(self, with_self=False):
-        return self.function_params.default_values(with_self)
+    def as_namespace(self) -> "NamespaceScope | None":
+        return None
 
-    def param_types(self, with_self=False):
-        return self.function_params.types(with_self)
+    def as_global(self) -> "GlobalScope | None":
+        return None
 
-    def clear_params(self):
-        return self.function_params.clear()
-
-    def remove_param(self, key:Symbol|list[int]):
-        if isinstance(key, Symbol):
-            return self.function_params.remove(key)
-        elif isinstance(key, list):
-            return self.function_params.remove_by_indices(key)
-
-    def find_param_sym(self, param_name):
-        name = '{}_{}'.format(Symbol.param_prefix, param_name)
-        return self.find_sym(name)
-
-    def add_return_sym(self, typ: Type=Type.undef()):
-        return self.add_sym(Symbol.return_name, {'return'}, typ)
-
-    def find_sym(self, name:str) -> Symbol | None:
+    def find_sym(self, name: str) -> Symbol | None:
         sym = SymbolTable.find_sym(self, name)
         if sym:
             return sym
@@ -692,10 +685,10 @@ class Scope(Tagged, SymbolTable):
 
     def qualified_name(self):
         if self.name.startswith(env.global_scope_name):
-            name = self.name[len(env.global_scope_name) + 1:]
+            name = self.name[len(env.global_scope_name) + 1 :]
         else:
             name = self.name
-        return name.replace('.', '_')
+        return name.replace(".", "_")
 
     def set_entry_block(self, blk):
         assert self.entry_block is None
@@ -703,6 +696,9 @@ class Scope(Tagged, SymbolTable):
 
     def set_exit_block(self, blk):
         self.exit_block = blk
+
+    def find_block(self, bid: str) -> Block:
+        return self.block_map[bid]
 
     def traverse_blocks(self):
         if self.entry_block:
@@ -727,49 +723,12 @@ class Scope(Tagged, SymbolTable):
         if child_scope not in self.children:
             self.children.append(child_scope)
 
-    def add_param(self, sym:Symbol, defval:IRExp|None):
-        self.function_params.add_param(sym, defval)
-
-    def dfgs(self, bottom_up=False):
-        def collect_dfg(dfg, ds):
-            ds.append(dfg)
-            for c in dfg.children:
-                collect_dfg(c, ds)
-        ds = []
-        collect_dfg(self.top_dfg, ds)
-        return ds
-
-    def find_ctor(self):
-        assert self.is_class()
-        for child in self.children:
-            if child.is_ctor():
-                return child
-        return None
 
     def is_global(self):
         return self.name == env.global_scope_name
 
     def is_containable(self):
         return self.is_namespace() or self.is_class()
-
-    def is_subclassof(self, clazz):
-        if self is clazz:
-            return True
-        for base in self.bases:
-            if base is clazz:
-                return True
-            if base.is_subclassof(clazz):
-                return True
-        return False
-
-    def is_assignable(self, other):
-        if self is other:
-            return True
-        if self.origin and self.origin.is_assignable(other):
-            return True
-        if other.origin and self.is_assignable(other.origin):
-            return True
-        return False
 
     def is_descendants_of(self, other):
         if self.parent is None:
@@ -787,23 +746,140 @@ class Scope(Tagged, SymbolTable):
             else:
                 return self.parent.outer_module()
 
-    def class_fields(self):
-        assert self.is_class()
-        class_fields = {}
-        if self.bases:
-            for base in self.bases:
-                fields = base.class_fields()
-                class_fields.update(fields)
-        class_fields.update(self.symbols)
-        return class_fields
+    def is_assignable(self, other):
+        if self is other:
+            return True
+        self_origin = env.origin_registry.scope_origin_of(self)
+        if self_origin and self_origin.is_assignable(other):
+            return True
+        other_origin = env.origin_registry.scope_origin_of(other)
+        if other_origin and self.is_assignable(other_origin):
+            return True
+        return False
 
-    def register_worker(self, worker_scope):
-        for i, w in enumerate(self.workers[:]):
-            if w is worker_scope:
-                self.workers.pop(i)
-        self.workers.append(worker_scope)
-        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
-        worker_scope.worker_owner = self
+    def closures(self):
+        clos = []
+        for child in self.children:
+            if child.is_closure():
+                clos.append(child)
+            clos.extend(child.closures())
+        return clos
+
+    def add_branch_graph_edge(self, k, vs):
+        assert isinstance(vs, list)
+        self.branch_graph.add_node(k)
+        for v in itertools.chain(*vs):
+            if k < v:
+                self.branch_graph.add_edge(k, v)
+            else:
+                self.branch_graph.add_edge(v, k)
+
+    def has_branch_edge(self, stm0, stm1):
+        if stm0 < stm1:
+            return self.branch_graph.find_edge(stm0, stm1) is not None
+        else:
+            return self.branch_graph.find_edge(stm1, stm0) is not None
+
+
+
+class Instantiable:
+    """Mixin for scopes that support instantiation and worker registration."""
+
+    def instantiate(self, inst_name, parent=None):
+        if parent is None:
+            parent = self.parent  # type: ignore[attr-defined]
+        new_class = self.clone("", inst_name, parent, recursive=True, rename_children=False)  # type: ignore[attr-defined]
+        assert env.origin_registry.scope_origin_of(new_class) is self
+
+        old_class_sym = self.parent.find_sym(self.base_name)  # type: ignore[attr-defined]
+        assert old_class_sym is not None
+        new_sym = new_class.parent.find_sym(new_class.base_name)
+        assert isinstance(new_sym, Symbol)
+        origin = env.origin_registry.sym_origin_of(old_class_sym)
+        env.origin_registry.set_sym_origin(new_sym, origin if origin else old_class_sym)
+        new_scopes: dict["Scope", "Scope"] = {self: new_class}  # type: ignore[dict-item]
+        for old_child, new_child in zip(self.children, new_class.children):  # type: ignore[attr-defined]
+            new_scopes[old_child] = new_child
+        for old, new in new_scopes.items():
+            syms = new_class.find_scope_sym(old)
+            for sym in syms:
+                if sym.scope in new_scopes.values():
+                    sym.typ = sym.typ.clone(scope=new)
+            if new.parent.is_namespace():
+                continue
+            new_sym2 = new.parent.find_sym(new.base_name)
+            assert new_sym2 is not None
+            assert new_sym2.typ.scope is new
+        self._replace_type_scope(new_scopes)
+        return new_class
+
+    def _replace_type_scope(self, new_scopes: dict["Scope", "Scope"]):
+        value_map = {old.name: new.name for old, new in new_scopes.items()}
+        for new in new_scopes.values():
+            for sym in new.symbols.values():
+                d = dataclasses.asdict(sym.typ)
+                dd = {}
+                if typehelper.replace_type_dict(d, dd, "scope_name", value_map):
+                    sym.typ = sym.typ.__class__.from_dict(dd)
+
+    def instance_number(self):
+        n = Scope.instance_ids[self]
+        Scope.instance_ids[self] += 1
+        return n
+
+
+class FunctionScope(Instantiable, Scope):
+    def __init__(self, parent, name, tags, lineno, scope_id):
+        super().__init__(parent, name, tags, lineno, scope_id)
+        self.function_params = FunctionParams(self.is_method())
+        self.return_type: Type | None = None
+        self.loop_tree = LoopNestTree()
+
+    def as_function(self) -> "FunctionScope":
+        return self
+
+    def param_names(self, with_self=False):
+        return self.function_params.param_names(with_self)
+
+    def param_symbols(self, with_self=False):
+        return self.function_params.symbols(with_self)
+
+    def param_default_values(self, with_self=False):
+        return self.function_params.default_values(with_self)
+
+    def param_types(self, with_self=False):
+        return self.function_params.types(with_self)
+
+    def rename_sym(self, old: str, new: str):
+        old_sym = self.symbols.get(old)
+        new_sym = super().rename_sym(old, new)
+        if old_sym is not None:
+            for i, (sym, defval) in enumerate(self.function_params._params):
+                if sym is old_sym:
+                    self.function_params._params[i] = FunctionParam(new_sym, defval)
+                    break
+        return new_sym
+
+    def clear_params(self):
+        return self.function_params.clear()
+
+    def remove_param(self, key: Symbol | list[int]):
+        if isinstance(key, Symbol):
+            return self.function_params.remove(key)
+        elif isinstance(key, list):
+            return self.function_params.remove_by_indices(key)
+
+    def find_param_sym(self, param_name):
+        name = "{}_{}".format(Symbol.param_prefix, param_name)
+        return self.find_sym(name)
+
+    def add_return_sym(self, typ: Type = Type.undef()):
+        return self.add_sym(Symbol.return_name, {"return"}, typ)
+
+    def add_param(self, sym: Symbol, defval: IrExp | None):
+        self.function_params.add_param(sym, defval)
+
+    # --- Region / Loop ---
 
     def reset_loop_tree(self):
         self.loop_tree = LoopNestTree()
@@ -844,6 +920,8 @@ class Scope(Tagged, SymbolTable):
         if not self.loop_tree.root:
             return
         r = self.find_region(blk)
+        if r is None:
+            return
         r.remove_body(blk)
 
     def is_leaf_region(self, r):
@@ -852,35 +930,64 @@ class Scope(Tagged, SymbolTable):
     def traverse_regions(self, reverse=False):
         return self.loop_tree.traverse(reverse)
 
-    def add_branch_graph_edge(self, k, vs):
-        assert isinstance(vs, list)
-        self.branch_graph.add_node(k)
-        for v in itertools.chain(*vs):
-            if k < v:
-                self.branch_graph.add_edge(k, v)
-            else:
-                self.branch_graph.add_edge(v, k)
+    # --- DFG / Scheduling ---
 
-    def has_branch_edge(self, stm0, stm1):
-        if stm0 < stm1:
-            return self.branch_graph.find_edge(stm0, stm1) is not None
-        else:
-            return self.branch_graph.find_edge(stm1, stm0) is not None
+    def dfgs(self, bottom_up=False):
+        def collect_dfg(dfg, ds):
+            ds.append(dfg)
+            for c in dfg.children:
+                collect_dfg(c, ds)
 
-    def closures(self):
-        clos = []
+        ds = []
+        collect_dfg(self.top_dfg, ds)
+        return ds
+
+
+class ClassScope(Instantiable, Scope):
+    def __init__(self, parent, name, tags, lineno, scope_id):
+        super().__init__(parent, name, tags, lineno, scope_id)
+        self.bases: list["ClassScope"] = []  # type: ignore[assignment]  # override: bases are always ClassScope
+        self.workers: list["Scope"] = []
+        self.module_params = []
+        self.module_param_vars = []
+
+    def as_class(self) -> "ClassScope":
+        return self
+
+    def register_worker(self, worker_scope):
+        for i, w in enumerate(self.workers[:]):
+            if w is worker_scope:
+                self.workers.pop(i)
+        self.workers.append(worker_scope)
+        assert worker_scope.worker_owner is None or worker_scope.worker_owner is self
+        worker_scope.worker_owner = self
+
+    def find_ctor(self) -> "FunctionScope | None":
         for child in self.children:
-            if child.is_closure():
-                clos.append(child)
-            clos.extend(child.closures())
-        return clos
+            if child.is_ctor():
+                return child.as_function()
+        return None
 
-    def instance_number(self):
-        n = Scope.instance_ids[self]
-        Scope.instance_ids[self] += 1
-        return n
+    def is_subclassof(self, clazz):
+        if self is clazz:
+            return True
+        for base in self.bases:
+            if base is clazz:
+                return True
+            if base.is_subclassof(clazz):
+                return True
+        return False
 
-    def build_module_params(self, module_param_vars: list[tuple[str, IRExp]]):
+    def class_fields(self):
+        class_fields = {}
+        if self.bases:
+            for base in self.bases:
+                fields = base.class_fields()
+                class_fields.update(fields)
+        class_fields.update(self.symbols)
+        return class_fields
+
+    def build_module_params(self, module_param_vars: list[tuple[str, IrExp]]):
         module_params = []
         ctor = self.find_ctor()
         assert ctor
@@ -893,30 +1000,41 @@ class Scope(Tagged, SymbolTable):
         self.module_param_vars = module_param_vars
         self.module_params = module_params
 
-    def set_bound_args(self, binding: list[tuple[int, IRExp]]):
+    def set_bound_args(self, binding: list[tuple[int, IrExp]]):
         self._bound_args = [str(exp) for i, exp in binding]
 
 
-class NameReplacer(IRVisitor):
+class NamespaceScope(Scope):
+    def as_namespace(self) -> "NamespaceScope":
+        return self
+
+
+class GlobalScope(NamespaceScope):
+    def is_global(self):
+        return True
+
+    def as_global(self) -> "GlobalScope":
+        return self
+
+
+class NameReplacer(IrTransformer):
     def __init__(self, name_sym_map: dict[str, Symbol]):
         super().__init__()
         self.name_sym_map = name_sym_map
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         if ir.name in self.name_sym_map:
-            ir.name = self.name_sym_map[ir.name].name
-
-    def visit_ATTR(self, ir):
-        self.visit(ir.exp)
+            return ir.model_copy(update={'name': self.name_sym_map[ir.name].name})
+        return ir
 
 
 def function2method(func_scope, class_scope):
     assert func_scope.is_function()
     assert class_scope.is_class()
     assert func_scope.parent is class_scope
-    func_scope.add_tag('method')
-    func_scope.del_tag('function')
-    self_sym = func_scope.add_sym('self', {'self'}, typ=Type.object(class_scope.name))
+    func_scope.add_tag("method")
+    func_scope.del_tag("function")
+    self_sym = func_scope.add_sym("self", {"self"}, typ=Type.object(class_scope.name))
     params = FunctionParams(True)
     params.add_param(self_sym, None)
     for psym, defval in zip(func_scope.param_symbols(), func_scope.param_default_values()):
@@ -926,24 +1044,24 @@ def function2method(func_scope, class_scope):
 
 def write_dot(scope, tag):
     try:
-        import pydot
+        import pydot  # type: ignore[import]
     except ImportError:
         raise
     # force disable debug mode to simplify the caption
     debug_mode = env.dev_debug_mode
     env.dev_debug_mode = False
 
-    name = scope.base_name + '_' + str(tag)
-    g = pydot.Dot(name, graph_type='digraph')
+    name = scope.base_name + "_" + str(tag)
+    g = pydot.Dot(name, graph_type="digraph")
 
     def get_text(blk):
-        s = blk.name + '\n'
+        s = blk.name + "\n"
         for stm in blk.stms:
-            s += str(stm).replace('\n', r'\l') + r'\l'
-        s = s.replace(':', '_')
+            s += str(stm).replace("\n", r"\l") + r"\l"
+        s = s.replace(":", "_")
         return s
 
-    blk_map = {blk: pydot.Node(get_text(blk), shape='box') for blk in scope.traverse_blocks()}
+    blk_map = {blk: pydot.Node(get_text(blk), shape="box") for blk in scope.traverse_blocks()}
     for n in blk_map.values():
         g.add_node(n)
 
@@ -952,14 +1070,14 @@ def write_dot(scope, tag):
         for succ in blk.succs:
             to_node = blk_map[succ]
             if succ in blk.succs_loop:
-                g.add_edge(pydot.Edge(from_node, to_node, color='red'))
+                g.add_edge(pydot.Edge(from_node, to_node, color="red"))
             else:
                 g.add_edge(pydot.Edge(from_node, to_node))
-        #for pred in blk.preds:
+        # for pred in blk.preds:
         #    to_node = blk_map[pred]
         #    if pred in blk.preds_loop:
         #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed', color='red'))
         #    else:
         #        g.add_edge(pydot.Edge(from_node, to_node, style='dashed'))
-    g.write_png('{}/{}.png'.format(env.debug_output_dir, name))
+    g.write_png("{}/{}.png".format(env.debug_output_dir, name))
     env.dev_debug_mode = debug_mode

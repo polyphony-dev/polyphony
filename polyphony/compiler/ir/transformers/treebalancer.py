@@ -1,4 +1,4 @@
-from ..ir import BINOP, RELOP, CALL, CONST, MREF, ARRAY, TEMP, CJUMP, JUMP, MOVE
+from ..ir import BinOp, RelOp, Call, Const, MRef, Array, Temp, CJump, Jump, Move, PolyOp
 from ..symbol import Symbol
 from logging import getLogger
 logger = getLogger(__name__)
@@ -53,10 +53,13 @@ class TreeBalancer:
     def _process_Block(self, block):
         if block not in self.done_Blocks:
             self.block = block
+            new_stms = []
             for stm in block.stms:
                 self.current_stm = stm
-                self.b2p.visit(stm)
-                self.p2b.visit(stm)
+                stm = self.b2p.visit(stm)
+                stm = self.p2b.visit(stm)
+                new_stms.append(stm)
+            block.stms = new_stms
 
             self.done_Blocks.append(block)
             for succ in block.succs:
@@ -64,7 +67,7 @@ class TreeBalancer:
 
 
 class BINOP2PLURALOP:
-    def visit_BINOP(self, ir):
+    def visit_BinOp(self, ir):
         ir.left = self.visit(ir.left)
         ir.right = self.visit(ir.right)
         if ir.op == 'Add' or ir.op == 'Sub':
@@ -104,45 +107,56 @@ class BINOP2PLURALOP:
             newop.values.append([(e, True) for e in ir.kids()])
             return newop
 
-    def visit_RELOP(self, ir):
+    def visit_RelOp(self, ir):
         return ir
 
-    def visit_CALL(self, ir):
+    def visit_Call(self, ir):
         return ir
 
-    def visit_CONST(self, ir):
+    def visit_Const(self, ir):
         return ir
 
-    def visit_MREF(self, ir):
+    def visit_MRef(self, ir):
         return ir
 
-    def visit_ARRAY(self, ir):
+    def visit_Array(self, ir):
         return ir
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         return ir
 
-    def visit_CJUMP(self, ir):
-        ir.exp = self.visit(ir.exp)
+    def visit_CJump(self, ir):
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
+        return ir
 
-    def visit_JUMP(self, ir):
-        pass
+    def visit_Jump(self, ir):
+        return ir
 
-    def visit_MOVE(self, ir):
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
+    def visit_Move(self, ir):
+        update = {}
+        new_src = self.visit(ir.src)
+        if new_src is not ir.src:
+            update['src'] = new_src
+        new_dst = self.visit(ir.dst)
+        if new_dst is not ir.dst:
+            update['dst'] = new_dst
+        if update:
+            ir = ir.model_copy(update=update)
+        return ir
 
     slots = {
-        BINOP.__name__:visit_BINOP,
-        RELOP.__name__:visit_RELOP,
-        CALL.__name__:visit_CALL,
-        CONST.__name__:visit_CONST,
-        MREF.__name__:visit_MREF,
-        ARRAY.__name__:visit_ARRAY,
-        TEMP.__name__:visit_TEMP,
-        CJUMP.__name__:visit_CJUMP,
-        JUMP.__name__:visit_JUMP,
-        MOVE.__name__:visit_MOVE
+        BinOp.__name__: visit_BinOp,
+        RelOp.__name__: visit_RelOp,
+        Call.__name__: visit_Call,
+        Const.__name__: visit_Const,
+        MRef.__name__: visit_MRef,
+        Array.__name__: visit_Array,
+        Temp.__name__: visit_Temp,
+        CJump.__name__: visit_CJump,
+        Jump.__name__: visit_Jump,
+        Move.__name__: visit_Move,
     }
 
     def visit(self, ir):
@@ -181,7 +195,7 @@ class PLURALOP2BINOP:
             e1, p1 = inputs.pop(0)
             if len(inputs):
                 e2, p2 = inputs.pop(0)
-                binop = BINOP(self.detectop(op, p1, p2), e1, e2)
+                binop = BinOp(self.detectop(op, p1, p2), e1, e2)
                 polarity = (p1 and p2) or (p1 and not p2)
                 assert (p1 and p2) or (p1 and not p2) or (not p1 and not p2)
                 outputs.append((binop, polarity))
@@ -195,49 +209,60 @@ class PLURALOP2BINOP:
         else:
             return op
 
-    def visit_PLURALOP(self, ir):
-        ir.values = [(self.visit(e), p) for e, p in ir.values]
-        return self.rebuild_tree(ir.op, ir.values)
+    def visit_PolyOp(self, ir):
+        values = [(self.visit(e), p) for e, p in ir.values]
+        return self.rebuild_tree(ir.op, values)
 
-    def visit_RELOP(self, ir):
+    def visit_RelOp(self, ir):
         return ir
 
-    def visit_CALL(self, ir):
+    def visit_Call(self, ir):
         return ir
 
-    def visit_CONST(self, ir):
+    def visit_Const(self, ir):
         return ir
 
-    def visit_MREF(self, ir):
+    def visit_MRef(self, ir):
         return ir
 
-    def visit_ARRAY(self, ir):
+    def visit_Array(self, ir):
         return ir
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         return ir
 
-    def visit_CJUMP(self, ir):
-        ir.exp = self.visit(ir.exp)
+    def visit_CJump(self, ir):
+        new_exp = self.visit(ir.exp)
+        if new_exp is not ir.exp:
+            ir = ir.model_copy(update={'exp': new_exp})
+        return ir
 
-    def visit_JUMP(self, ir):
-        pass
+    def visit_Jump(self, ir):
+        return ir
 
-    def visit_MOVE(self, ir):
-        ir.src = self.visit(ir.src)
-        ir.dst = self.visit(ir.dst)
+    def visit_Move(self, ir):
+        update = {}
+        new_src = self.visit(ir.src)
+        if new_src is not ir.src:
+            update['src'] = new_src
+        new_dst = self.visit(ir.dst)
+        if new_dst is not ir.dst:
+            update['dst'] = new_dst
+        if update:
+            ir = ir.model_copy(update=update)
+        return ir
 
     slots = {
-        PLURALOP.__name__:visit_PLURALOP,
-        RELOP.__name__:visit_RELOP,
-        CALL.__name__:visit_CALL,
-        CONST.__name__:visit_CONST,
-        MREF.__name__:visit_MREF,
-        ARRAY.__name__:visit_ARRAY,
-        TEMP.__name__:visit_TEMP,
-        CJUMP.__name__:visit_CJUMP,
-        JUMP.__name__:visit_JUMP,
-        MOVE.__name__:visit_MOVE
+        PLURALOP.__name__: visit_PolyOp,
+        RelOp.__name__: visit_RelOp,
+        Call.__name__: visit_Call,
+        Const.__name__: visit_Const,
+        MRef.__name__: visit_MRef,
+        Array.__name__: visit_Array,
+        Temp.__name__: visit_Temp,
+        CJump.__name__: visit_CJump,
+        Jump.__name__: visit_Jump,
+        Move.__name__: visit_Move,
     }
 
     def visit(self, ir):
@@ -245,46 +270,46 @@ class PLURALOP2BINOP:
 
 
 def test():
-    a = Symbol.new('a', None)
-    b = Symbol.new('b', None)
-    c = Symbol.new('c', None)
+    a = Symbol.new('a', None)  # type: ignore[attr-defined]
+    b = Symbol.new('b', None)  # type: ignore[attr-defined]
+    c = Symbol.new('c', None)  # type: ignore[attr-defined]
     # ((a+b)+c) - (b+c)
-    ir = BINOP('Sub',
-               BINOP('Add',
-                     BINOP('Add', TEMP(a, ''), TEMP(b, '')),
-                     TEMP(c, '')),
-               BINOP('Add', TEMP(b, ''), TEMP(c, ''))
+    ir = BinOp('Sub',
+               BinOp('Add',
+                     BinOp('Add', Temp(a, ''), Temp(b, '')),
+                     Temp(c, '')),
+               BinOp('Add', Temp(b, ''), Temp(c, ''))
                )
-    #ir = BINOP('Add',
-    #           BINOP('Add',
-    #                 BINOP('Sub', TEMP(a, ''), TEMP(b, '')),
-    #                 TEMP(c, '')),
-    #           BINOP('Sub', TEMP(c, ''), TEMP(b, '')))
-    #ir = BINOP('Add',
-    #           BINOP('Add',
-    #                 BINOP('Add',
-    #                       BINOP('Add',
-    #                             BINOP('Add', TEMP(a, ''), TEMP(b, '')),
-    #                             TEMP(c, '')),
-    #                       TEMP(a, '')),
-    #                 TEMP(b, '')),
-    #           TEMP(c, ''))
-    #ir = BINOP('Mult',
-    #           BINOP('Mult',
-    #                 BINOP('Mult',
-    #                       BINOP('Mult',
-    #                             BINOP('Mult', TEMP(a, ''), TEMP(b, '')),
-    #                             TEMP(c, '')),
-    #                       TEMP(a, '')),
-    #                 TEMP(b, '')),
-    #           TEMP(c, ''))
-    #ir = BINOP('Mult',
-    #           BINOP('Add',
-    #                 BINOP('Sub',
-    #                       BINOP('Mult', TEMP(c, ''), TEMP(c, '')),
-    #                       TEMP(a, '')),
-    #                 TEMP(b, '')),
-    #           TEMP(c, ''))
+    #ir = BinOp('Add',
+    #           BinOp('Add',
+    #                 BinOp('Sub', Temp(a, ''), Temp(b, '')),
+    #                 Temp(c, '')),
+    #           BinOp('Sub', Temp(c, ''), Temp(b, '')))
+    #ir = BinOp('Add',
+    #           BinOp('Add',
+    #                 BinOp('Add',
+    #                       BinOp('Add',
+    #                             BinOp('Add', Temp(a, ''), Temp(b, '')),
+    #                             Temp(c, '')),
+    #                       Temp(a, '')),
+    #                 Temp(b, '')),
+    #           Temp(c, ''))
+    #ir = BinOp('Mult',
+    #           BinOp('Mult',
+    #                 BinOp('Mult',
+    #                       BinOp('Mult',
+    #                             BinOp('Mult', Temp(a, ''), Temp(b, '')),
+    #                             Temp(c, '')),
+    #                       Temp(a, '')),
+    #                 Temp(b, '')),
+    #           Temp(c, ''))
+    #ir = BinOp('Mult',
+    #           BinOp('Add',
+    #                 BinOp('Sub',
+    #                       BinOp('Mult', Temp(c, ''), Temp(c, '')),
+    #                       Temp(a, '')),
+    #                 Temp(b, '')),
+    #           Temp(c, ''))
 
     logger.debug(str(ir))
 

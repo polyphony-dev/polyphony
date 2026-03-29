@@ -9,9 +9,10 @@ from ...common.common import fail, warn
 from ...common.errors import Errors, Warnings, InterpretError
 from ...common.env import env
 from ...common.graph import Graph
-from ...ir.ir import Ctx, Loc, CONST, TEMP, ATTR, ARRAY, CALL, NEW, MOVE, EXPR
+from ...ir.ir import Ctx, Loc, Const, Temp, Attr, Array, Call, New, Move, Expr
 from ...ir.irhelper import expr2ir
 from ...ir.scope import Scope
+from ...ir.analysis.usedef import UseDefDetector
 from ...ir.setlineno import LineNumberSetter
 from ...ir.types.type import Type
 from ...ir.transformers.constopt import ConstantOptBase
@@ -458,10 +459,10 @@ class PureCtorBuilder(object):
                         for arg_name, arg, in cargs:
                             ir = expr2ir(arg, arg_name, ctor)
                             args.append((arg_name, ir))
-                        new = NEW(klass_scope_sym, args, {})
-                        dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
+                        new = New(klass_scope_sym, args, {})
+                        dst = Attr(Temp(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
                         loc = Loc(env.scope_file_map[ctor], ctor.lineno)
-                        stm = MOVE(dst, new, loc=loc)
+                        stm = Move(dst, new, loc=loc)
                         ctor.entry_block.append_stm(stm)
                         break
             else:
@@ -478,17 +479,17 @@ class PureCtorBuilder(object):
                         if elem_t is None:
                             elem_t = typ
                         portsym = module.add_sym(name + '_' + str(i), typ=typ)
-                        dst = ATTR(TEMP(self_sym, Ctx.STORE), portsym, Ctx.STORE, attr_scope=module)
+                        dst = Attr(Temp(self_sym, Ctx.STORE), portsym, Ctx.STORE, attr_scope=module)
                         stm = self._build_move_stm(dst, item, module)
                         assert stm
-                        stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
+                        object.__setattr__(stm, 'loc', Loc(env.scope_file_map[ctor], ctor.lineno))
                         ctor.entry_block.append_stm(stm)
                     sym.typ = sym.typ.clone(element=elem_t)
                 else:
-                    dst = ATTR(TEMP(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
+                    dst = Attr(Temp(self_sym, Ctx.STORE), sym, Ctx.STORE, attr_scope=module)
                     stm = self._build_move_stm(dst, v, module)
                     assert stm
-                    stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
+                    object.__setattr__(stm, 'loc', Loc(env.scope_file_map[ctor], ctor.lineno))
                     ctor.entry_block.append_stm(stm)
 
     def _build_append_worker_call(self, instance, module, ctor, self_type_hints):
@@ -500,11 +501,11 @@ class PureCtorBuilder(object):
             if inspect.ismethod(worker.func):
                 worker_scope, _ = env.runtime_info.inst2worker[worker]
                 worker_sym = module.find_sym(worker_scope.base_name)
-                worker_var = ATTR(TEMP(self_sym, Ctx.LOAD), worker_sym, Ctx.LOAD)
+                worker_var = Attr(Temp(self_sym, Ctx.LOAD), worker_sym, Ctx.LOAD)
             else:
                 worker_scope, _ = env.runtime_info.inst2worker[worker]
                 worker_sym = Scope.global_scope().find_sym(worker_scope.base_name)
-                worker_var = TEMP(worker_sym, Ctx.LOAD)
+                worker_var = Temp(worker_sym, Ctx.LOAD)
             args = [(None, worker_var)]
             for arg in worker.args:
                 ir = None
@@ -517,37 +518,37 @@ class PureCtorBuilder(object):
                     idx = list(instance.__dict__.values()).index(arg)
                     name = list(instance.__dict__.keys())[idx]
                     attr = module.find_sym(name)
-                    ir = ATTR(TEMP(self_sym, Ctx.LOAD), attr, Ctx.LOAD)
+                    ir = Attr(Temp(self_sym, Ctx.LOAD), attr, Ctx.LOAD)
                 else:
                     ir = expr2ir(arg)
                 if ir:
                     args.append((None, ir))
-            func = ATTR(TEMP(self_sym, Ctx.LOAD), append_worker_sym, Ctx.LOAD)
-            call = CALL(func, args, kwargs={})
-            expr = EXPR(call)
-            expr.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
+            func = Attr(Temp(self_sym, Ctx.LOAD), append_worker_sym, Ctx.LOAD)
+            call = Call(func, args, kwargs={})
+            expr = Expr(call)
+            object.__setattr__(expr, 'loc', Loc(env.scope_file_map[ctor], ctor.lineno))
             ctor.entry_block.append_stm(expr)
 
     def _build_move_stm(self, dst, v, module):
         if dst.symbol().typ.is_scalar():
             assert isinstance(v, (bool, int, str))
-            return MOVE(dst, CONST(v))
+            return Move(dst, Const(v))
         elif dst.symbol().typ.is_list():
             assert all([isinstance(item, (bool, int, str)) for item in v])
-            items = [CONST(item) for item in v]
-            array = ARRAY(items)
-            return MOVE(dst, array)
+            items = [Const(item) for item in v]
+            array = Array(items)
+            return Move(dst, array)
         elif dst.symbol().typ.is_tuple():
             for item in v:
                 assert isinstance(item, (bool, int, str))
-            items = [CONST(item) for item in v]
-            array = ARRAY(items)
-            return MOVE(dst, array)
+            items = [Const(item) for item in v]
+            array = Array(items)
+            return Move(dst, array)
         elif dst.symbol().typ.is_object():
             scope = dst.symbol().typ.get_scope()
             if scope.is_port():
                 new = self._build_new_port(v, module)
-                return MOVE(dst, new)
+                return Move(dst, new)
             assert False
         else:
             assert False
@@ -561,7 +562,7 @@ class PureCtorBuilder(object):
         port_scope = env.scopes[port_qualname]
         port_scope_sym = port_scope.parent.gen_sym(port_scope.base_name)
         port_scope_sym.typ = Type.klass(port_scope)
-        return NEW(port_scope_sym, args, kwargs={})
+        return New(port_scope_sym, args, kwargs={})
 
     def _port2ir(self, port_obj, instance, module, ctor):
         def port_qsym(scope, di, obj):
@@ -598,10 +599,10 @@ class PureCtorBuilder(object):
 
         def qsym_to_var(qsym, ctx):
             if len(qsym) == 1:
-                return TEMP(qsym[0], ctx)
+                return Temp(qsym[0], ctx)
             else:
                 exp = qsym_to_var(qsym[:-1], Ctx.LOAD)
-                return ATTR(exp, qsym[-1], ctx)
+                return Attr(exp, qsym[-1], ctx)
 
         qsym = port_qsym(module, instance.__dict__, port_obj)
         if qsym:
@@ -611,7 +612,7 @@ class PureCtorBuilder(object):
             return port_var
         else:
             # this port have been created as a local variable in the other scope
-            # so we must append an aditional NEW(port) stmt here
+            # so we must append an aditional New(port) stmt here
             if port_obj in self.outer_objs:
                 sym = self.outer_objs[port_obj]
             else:
@@ -619,13 +620,13 @@ class PureCtorBuilder(object):
                 typ = Type.from_expr(port_obj, ctor)
                 sym.typ = typ
 
-                dst = TEMP(sym, Ctx.STORE)
+                dst = Temp(sym, Ctx.STORE)
                 stm = self._build_move_stm(dst, port_obj, module)
                 assert stm
-                stm.loc = Loc(env.scope_file_map[ctor], ctor.lineno)
+                object.__setattr__(stm, 'loc', Loc(env.scope_file_map[ctor], ctor.lineno))
                 ctor.entry_block.append_stm(stm)
                 self.outer_objs[port_obj] = sym
-            return TEMP(sym, Ctx.LOAD)
+            return Temp(sym, Ctx.LOAD)
         assert False
 
 
@@ -634,7 +635,7 @@ class PureFuncTypeInferrer(object):
         self.used_pure_node = set()
 
     def infer_type(self, stm, call, scope):
-        assert call.is_a(CALL)
+        assert isinstance(call, Call)
         assert call.func_scope().is_pure()
         if not call.func_scope().return_type:
             call.func_scope().return_type = Type.any()
@@ -655,21 +656,22 @@ class PureFuncExecutor(ConstantOptBase):
     def process_all(self, driver):
         scopes = Scope.get_scopes(bottom_up=True, with_global=True, with_class=True)
         for scope in scopes:
+            self.usedef = UseDefDetector().process(scope)
             self.process(scope)
 
     def _args2tuple(self, args):
         def arg2expr(arg):
-            if arg.is_a(CONST):
+            if isinstance(arg, Const):
                 return arg.value
-            elif arg.is_a(ARRAY):
+            elif isinstance(arg, Array):
                 items = self._args2tuple(arg.items)
                 if not items:
                     return None
                 if arg.repeat.value > 1:
                     items = items * arg.repeat.value
                 return items
-            elif arg.is_a(TEMP):
-                stms = self.scope.usedef.get_stms_defining(arg.symbol())
+            elif isinstance(arg, Temp):
+                stms = self.usedef.get_stms_defining(arg.symbol())
                 if not stms:
                     return None
                 assert len(stms) == 1
@@ -682,7 +684,7 @@ class PureFuncExecutor(ConstantOptBase):
             return None
         return tuple(values)
 
-    def visit_CALL(self, ir):
+    def visit_Call(self, ir):
         if not ir.func_scope().is_pure():
             return ir
         assert env.config.enable_pure
@@ -696,8 +698,8 @@ class PureFuncExecutor(ConstantOptBase):
         expr = pyfunc(*args)
         return expr2ir(expr, scope=self.scope)
 
-    def visit_SYSCALL(self, ir):
-        return super().visit_CALL(ir)
+    def visit_SysCall(self, ir):
+        return super().visit_Call(ir)
 
-    def visit_NEW(self, ir):
-        return super().visit_CALL(ir)
+    def visit_New(self, ir):
+        return super().visit_Call(ir)

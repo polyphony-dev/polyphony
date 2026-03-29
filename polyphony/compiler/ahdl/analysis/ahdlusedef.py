@@ -100,6 +100,7 @@ class AHDLUseDefDetector(AHDLVisitor):
     def visit_AHDL_SEQ(self, ahdl):
         method = 'visit_{}'.format(ahdl.factor.__class__.__name__)
         visitor = getattr(self, method, None)
+        assert visitor is not None
         visitor(ahdl.factor)
         self.enable_use = True
         self.enable_def = True

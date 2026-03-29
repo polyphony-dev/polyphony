@@ -1,43 +1,23 @@
-﻿from ..ir import *
+"""TupleTransformer using new IR (ir.py)."""
+from ..ir import (
+    IrVariable, Array, Move, Expr, CJump, MCJump, Jump, Ret,
+    Temp, MRef, Const, Call, Ctx,
+)
+from ..irvisitor import IrTransformer
 from ..irhelper import irexp_type
-from ..irvisitor import IRTransformer
 from ..symbol import Symbol
 
 
-class TupleTransformer(IRTransformer):
-    def __init__(self):
-        super().__init__()
-
-    def process(self, scope):
-        super().process(scope)
-
-    def visit_EXPR(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
-
-    def visit_CJUMP(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
-
-    def visit_MCJUMP(self, ir):
-        for i in range(len(ir.conds)):
-            ir.conds[i] = self.visit(ir.conds[i])
-        self.new_stms.append(ir)
-
-    def visit_JUMP(self, ir):
-        self.new_stms.append(ir)
-
-    def visit_RET(self, ir):
-        ir.exp = self.visit(ir.exp)
-        self.new_stms.append(ir)
+class TupleTransformer(IrTransformer):
+    pass
 
     def _can_direct_unpack(self, lhs, rhs):
         assert len(lhs) == len(rhs)
 
         def is_contain(ir, irs):
-            if not ir.is_a(IRVariable):
+            if not isinstance(ir, IrVariable):
                 return False
-            return ir.name in [ir.name for ir in irs if ir.is_a(IRVariable)]
+            return ir.name in [x.name for x in irs if isinstance(x, IrVariable)]
 
         for i, l in enumerate(lhs):
             if is_contain(l, rhs[i + 1:]):
@@ -46,22 +26,22 @@ class TupleTransformer(IRTransformer):
 
     def _unpack(self, lhs, rhs):
         assert len(lhs) == len(rhs)
-        return [MOVE(dst, src) for dst, src in zip(lhs, rhs)]
+        return [Move(dst=dst, src=src) for dst, src in zip(lhs, rhs)]
 
     def _make_temp_syms(self, items):
-        assert all([item.is_a(IRVariable) for item in items])
+        assert all(isinstance(item, IrVariable) for item in items)
         return [self.scope.add_temp('{}_{}'.format(Symbol.temp_prefix, item.name)) for item in items]
 
     def _make_temps(self, syms, ctx):
-        return [TEMP(sym.name, ctx) for sym in syms]
+        return [Temp(name=sym.name, ctx=ctx) for sym in syms]
 
     def _make_mrefs(self, var, length):
-        return [MREF(var.clone(), CONST(i), Ctx.LOAD) for i in range(length)]
+        return [MRef(mem=var.model_copy(deep=True), offset=Const(value=i), ctx=Ctx.LOAD) for i in range(length)]
 
-    def visit_MOVE(self, ir):
-        if ir.dst.is_a(ARRAY):
+    def visit_Move(self, ir):
+        if isinstance(ir.dst, Array):
             assert not ir.dst.is_mutable
-            if ir.src.is_a(ARRAY) and not ir.src.is_mutable:
+            if isinstance(ir.src, Array) and not ir.src.is_mutable:
                 if self._can_direct_unpack(ir.dst.items, ir.src.items):
                     mvs = self._unpack(ir.dst.items, ir.src.items)
                 else:
@@ -69,18 +49,25 @@ class TupleTransformer(IRTransformer):
                     mvs = self._unpack(self._make_temps(tempsyms, Ctx.STORE), ir.src.items)
                     mvs.extend(self._unpack(ir.dst.items, self._make_temps(tempsyms, Ctx.LOAD)))
                 for mv in mvs:
-                    mv.loc = ir.loc
+                    mv = mv.model_copy(update={'loc': ir.loc})
                     self.new_stms.append(mv)
                 return
-            elif ir.src.is_a(IRVariable) and irexp_type(ir.src, self.scope).is_tuple():
+            elif isinstance(ir.src, IrVariable) and irexp_type(ir.src, self.scope).is_tuple():
                 mvs = self._unpack(ir.dst.items, self._make_mrefs(ir.src, len(ir.dst.items)))
                 for mv in mvs:
-                    mv.loc = ir.loc
+                    mv = mv.model_copy(update={'loc': ir.loc})
                     self.new_stms.append(mv)
                 return
-            elif ir.src.is_a(CALL) and self.scope.is_testbench():
-                raise NotImplementedError('Return of suquence type value is not implemented')
+            elif isinstance(ir.src, Call) and self.scope.is_testbench():
+                raise NotImplementedError('Return of sequence type value is not implemented')
         else:
-            ir.src = self.visit(ir.src)
-            ir.dst = self.visit(ir.dst)
+            new_src = self.visit(ir.src)
+            new_dst = self.visit(ir.dst)
+            updates = {}
+            if new_src is not ir.src:
+                updates['src'] = new_src
+            if new_dst is not ir.dst:
+                updates['dst'] = new_dst
+            if updates:
+                ir = ir.model_copy(update=updates)
         self.new_stms.append(ir)

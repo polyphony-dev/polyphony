@@ -23,20 +23,20 @@ class AHDLCopyOpt(AHDLTransformer):
             return True
         if target.sig.is_net():
             return True
-        return (target.sig.sym and
+        return bool(target.sig.sym and
             target.sig.sym.typ.is_object() and
             target.sig.sym.typ.scope.name.startswith('polyphony.Net'))
 
     def _get_new_src(self, src_def:AHDL_STM) -> AHDL_EXP:
-        if src_def.is_a(AHDL_MOVE):
-            new_src = cast(AHDL_MOVE, src_def).src
-        elif src_def.is_a(AHDL_ASSIGN):
-            new_src = cast(AHDL_ASSIGN, src_def).src
-        elif src_def.is_a(AHDL_IO_READ):
-            new_src = cast(AHDL_IO_READ, src_def).io
-        else:
-            assert False
-        return new_src
+        match src_def:
+            case AHDL_MOVE() as m:
+                return m.src
+            case AHDL_ASSIGN() as a:
+                return a.src
+            case AHDL_IO_READ() as r:
+                return r.io
+            case _:
+                assert False
 
     def visit_AHDL_VAR(self, ahdl:AHDL_VAR) -> AHDL_EXP:
         if self._is_ignore_case(ahdl):
@@ -64,7 +64,7 @@ class AHDLVarReducer(AHDLTransformer):
         super().process(hdlmodule)
 
     def _can_reduce(self, lvalue):
-        if lvalue.is_a(AHDL_VAR):
+        if isinstance(lvalue, AHDL_VAR):
             dst_uses = self.usedef.get_use_stms(cast(AHDL_VAR, lvalue).sig)
             var = cast(AHDL_VAR, lvalue)
         else:

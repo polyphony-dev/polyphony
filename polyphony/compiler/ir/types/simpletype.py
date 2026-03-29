@@ -12,10 +12,6 @@ if TYPE_CHECKING:
 class SimpleType(Type):
     scope_name: str
 
-    def __init__(self, name: str, scope_name: str, explicit=True):
-        super().__init__(name, explicit)
-        object.__setattr__(self, "scope_name", scope_name)
-
     @property
     def scope(self) -> Scope:
         assert self.scope_name in env.scopes

@@ -1,5 +1,11 @@
-from dataclasses import dataclass
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from ..common.common import Tagged
+
+if TYPE_CHECKING:
+    from typing import Callable
 
 
 class Signal(Tagged):
@@ -21,6 +27,15 @@ class Signal(Tagged):
         'subscope', 'dut',
         'self'
     }
+
+    # Type stubs for dynamic is_<tag>() methods from Tagged.__getattr__
+    is_reg: Callable[[], bool]
+    is_net: Callable[[], bool]
+    is_int: Callable[[], bool]
+    is_regarray: Callable[[], bool]
+    is_netarray: Callable[[], bool]
+    is_input: Callable[[], bool]
+    is_output: Callable[[], bool]
 
     def __init__(self, hdlscope, name, width, tags, sym=None):
         super().__init__(tags)
@@ -46,4 +61,5 @@ class Signal(Tagged):
         return "Signal(\'{}\', {}, {})".format(self.name, self.width, self.tags)
 
     def prefix(self):
+        assert self.sym is not None
         return self.name[:-len(self.sym.hdl_name())]

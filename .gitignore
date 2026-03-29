@@ -3,6 +3,7 @@
 .*/
 .*
 !.github/
+!.python-version
 
 # Debugging
 debug*
@@ -24,6 +25,9 @@ __pycache__/
 # Polyphony compiler output
 polyphony_out/
 
+# Stray Verilog output files in project root (should be in .tmp/ or a dedicated output dir)
+*.v
+
 # Python packaging
 *.egg-info/
 dist/
@@ -31,3 +35,13 @@ build/
 
 # Testing
 .pytest_cache/
+htmlcov/
+
+# Obsidian docs (symlink)
+docs/
+
+# Suite output
+suite.json
+
+# Claude Code
+CLAUDE.md

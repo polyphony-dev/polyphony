@@ -44,9 +44,18 @@ class Block(object):
             scope.block_count += 1
             self.num = scope.block_count
             self.name = '{}_{}{}'.format(scope.name, self.nametag, self.num)
-        self.path_exp = None
+        self.path_exp: IrExp | None = None
         self.synth_params = make_synth_params()
         self.is_hyperblock = False
+        if hasattr(scope, 'block_map'):
+            scope.block_map[self.bid] = self
+
+    @property
+    def bid(self) -> str:
+        """Block identifier, unique within a scope (e.g., 'b1', 'loop3', 'tmp')."""
+        if self.num < 0:
+            return self.nametag
+        return f'{self.nametag}{self.num}'
 
     def _str_connection(self):
         s = ''
@@ -81,8 +90,9 @@ class Block(object):
         s += ' # code\n'
         str_stms = []
         for stm in self.stms:
-            if stm.type_str(self.scope):
-                str_stms.append(f'  {stm}  # {stm.type_str(self.scope)}')
+            type_str_fn = getattr(stm, 'type_str', None)
+            if type_str_fn and type_str_fn(self.scope):
+                str_stms.append(f'  {stm}  # {type_str_fn(self.scope)}')
             else:
                 str_stms.append(f'  {stm}')
         s += '\n'.join(str_stms)
@@ -105,16 +115,22 @@ class Block(object):
         next_block.preds_loop.append(self)
 
     def append_stm(self, stm):
-        stm.block = self
+        if stm.block != self.bid:
+            stm = stm.model_copy(update={'block': self.bid})
         self.stms.append(stm)
+        return stm
 
     def insert_stm(self, idx, stm):
-        stm.block = self
+        if stm.block != self.bid:
+            stm = stm.model_copy(update={'block': self.bid})
         self.stms.insert(idx, stm)
+        return stm
 
     def replace_stm(self, old_stm, new_stm):
+        if new_stm.block != self.bid:
+            new_stm = new_stm.model_copy(update={'block': self.bid})
         replace_item(self.stms, old_stm, new_stm)
-        new_stm.block = self
+        return new_stm
 
     def stm(self, idx):
         if len(self.stms):
@@ -126,19 +142,23 @@ class Block(object):
         replace_item(self.succs, old, new, all=True)
         if self.stms:
             jmp = self.stms[-1]
-            if jmp.is_a(JUMP):
-                jmp.target = new
-            elif jmp.is_a(CJUMP):
-                if jmp.true is old:
-                    jmp.true = new
-                elif jmp.false is old:
-                    jmp.false = new
-                self._convert_if_unidirectional(jmp)
-            elif jmp.is_a(MCJUMP):
-                for i, t in enumerate(jmp.targets):
-                    if t is old:
-                        jmp.targets[i] = new
-                self._convert_if_unidirectional(jmp)
+            if isinstance(jmp, Jump):
+                if jmp.target == old.bid:
+                    self.stms[-1] = jmp.model_copy(update={'target': new.bid})
+            elif isinstance(jmp, CJump):
+                updates = {}
+                if jmp.true == old.bid:
+                    updates['true'] = new.bid
+                if jmp.false == old.bid:
+                    updates['false'] = new.bid
+                if updates:
+                    self.stms[-1] = jmp.model_copy(update=updates)
+                self._convert_if_unidirectional(self.stms[-1])
+            elif isinstance(jmp, MCJump):
+                new_targets = tuple(new.bid if t == old.bid else t for t in jmp.targets)
+                if new_targets != jmp.targets:
+                    self.stms[-1] = jmp.model_copy(update={'targets': new_targets})
+                self._convert_if_unidirectional(self.stms[-1])
 
     def replace_succ_loop(self, old, new):
         replace_item(self.succs_loop, old, new, all=True)
@@ -175,14 +195,14 @@ class Block(object):
                     continue
                 stack.append(succ)
 
-    def clone(self, scope: Scope, stm_map: dict[IRStm, IRStm], nametag=None):
+    def clone(self, scope: Scope, stm_map: dict[IrStm, IrStm], nametag=None):
         if nametag:
             b = Block(scope, nametag)
         else:
             b = Block(scope, self.nametag)
         for stm in self.stms:
             new_stm = stm.clone()
-            new_stm.block = b
+            new_stm = new_stm.model_copy(update={'block': b.bid})
             b.stms.append(new_stm)
             stm_map[stm] = new_stm
         b.order = self.order
@@ -207,46 +227,65 @@ class Block(object):
             self.preds_loop[i] = blk_map[pred]
 
     def collect_stms(self, typs):
-        return [stm for stm in self.stms if stm.is_a(typs)]
+        if isinstance(typs, list):
+            typs = tuple(typs)
+        return [stm for stm in self.stms if isinstance(stm, typs)]
+
 
     def _convert_if_unidirectional(self, jmp):
-        if not self.scope.usedef:
-            return
-        if jmp.is_a(CJUMP):
-            conds = [jmp.exp]
+        if isinstance(jmp, CJump):
             targets = [jmp.true, jmp.false]
-        elif jmp.is_a(MCJUMP):
-            conds = jmp.conds[:]
+        elif isinstance(jmp, MCJump):
             targets = jmp.targets[:]
         else:
             return
 
-        if all([targets[0] is target for target in targets[1:]]):
-            newjmp = JUMP(targets[0])
-            newjmp.block = self
+        if all(targets[0] == t for t in targets[1:]):
+            newjmp = Jump(target=targets[0], block=self.bid)
             self.stms[-1] = newjmp
-            self.succs = [targets[0]]
-            targets[0].preds = remove_except_one(targets[0].preds, self)
-            targets[0].path_exp = self.path_exp
-        else:
-            return
-
-        if self.is_hyperblock:
-            return
-        usedef = self.scope.usedef
-        for cond in conds:
-            if cond.is_a(CONST):
-                continue
-            assert cond.is_a(TEMP)
-            cond_symbol = self.scope.find_sym(cond.name)
-            defstms = usedef.get_stms_defining(cond_symbol)
-            assert len(defstms) == 1
-            stm = defstms.pop()
-            usestms = usedef.get_stms_using(cond_symbol)
-            if len(usestms) > 1:
-                continue
-            stm.block.stms.remove(stm)
+            target_block = self.scope.find_block(targets[0])
+            self.succs = [target_block]
+            target_block.preds = remove_except_one(target_block.preds, self)
+            target_block.path_exp = self.path_exp
 
     def is_loop_head(self):
         r = self.scope.find_region(self)
         return r and r is not self.scope.top_region() and r.head is self
+
+
+def detect_loop_edges(scope):
+    """Detect back edges in the CFG using DFS and set succs_loop/preds_loop.
+
+    This replaces any existing loop edge information.  It works on the raw
+    CFG (succs/preds) without requiring prior loop annotations or block
+    ordering, so it can be called both after IR construction (irtranslator)
+    and after deserialization (IrReader).
+    """
+    entry = scope.entry_block
+    if entry is None:
+        return
+
+    UNVISITED, IN_STACK, DONE = 0, 1, 2
+    state: dict[Block, int] = {}
+    for blk in entry.traverse():
+        state[blk] = UNVISITED
+        blk.succs_loop = []
+        blk.preds_loop = []
+
+    stack = [(entry, 0)]
+    state[entry] = IN_STACK
+
+    while stack:
+        blk, idx = stack[-1]
+        if idx < len(blk.succs):
+            stack[-1] = (blk, idx + 1)
+            succ = blk.succs[idx]
+            if state.get(succ) == UNVISITED:
+                state[succ] = IN_STACK
+                stack.append((succ, 0))
+            elif state.get(succ) == IN_STACK:
+                blk.succs_loop.append(succ)
+                succ.preds_loop.append(blk)
+        else:
+            state[blk] = DONE
+            stack.pop()

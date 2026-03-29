@@ -1,4 +1,23 @@
-﻿from ..ir import *
+"""Latency calculation for IR statements."""
+
+from typing import cast
+from ..ir import (
+    Move,
+    Expr,
+    Const,
+    Temp,
+    Attr,
+    Call,
+    SysCall,
+    New,
+    Array,
+    MRef,
+    MStore,
+    IrStm,
+    Phi,
+    UPhi,
+    IrVariable,
+)
 from ..irhelper import qualified_symbols
 from ..symbol import Symbol
 from ...common.env import env
@@ -7,27 +26,31 @@ UNIT_STEP = 1
 CALL_MINIMUM_STEP = 3
 
 
-def get_call_latency(call, stm, scope):
-    # FIXME: It is better to ask HDLInterface the I/O latency
-    is_pipelined = stm.block.synth_params['scheduling'] == 'pipeline'
+def _get_call_latency(call, stm, scope):
+    """Calculate latency for a call statement."""
+    if stm.block:
+        stm_blk = scope.find_block(stm.block)
+    else:
+        stm_blk = next((b for b in scope.traverse_blocks() if stm in b.stms), None)
+    is_pipelined = stm_blk and stm_blk.synth_params["scheduling"] == "pipeline"
     callee_scope = call.get_callee_scope(scope)
-    # callee_scope = call.callee_scope
     if callee_scope.is_method() and callee_scope.parent.is_port():
         qsym = qualified_symbols(call.func, scope)
         receiver = qsym[-2]
         assert isinstance(receiver, Symbol)
         assert receiver.typ.is_port()
-        if callee_scope.base_name == 'rd':
-            dummy_read = stm.is_a(EXPR)
+        if callee_scope.base_name == "rd":
+            dummy_read = isinstance(stm, Expr)
             if dummy_read:
                 return 0
             else:
                 return UNIT_STEP * 1
         return UNIT_STEP
-    elif callee_scope.parent.name.startswith('polyphony.Net'):
-        if callee_scope.base_name == 'rd':
-            if stm.is_a(MOVE):
-                if stm.dst.symbol.is_alias():
+    elif callee_scope.parent.name.startswith("polyphony.Net"):
+        if callee_scope.base_name == "rd":
+            if isinstance(stm, Move):
+                dst_sym = qualified_symbols(stm.dst, scope)[-1]
+                if isinstance(dst_sym, Symbol) and dst_sym.is_alias():
                     return 0
                 else:
                     return UNIT_STEP * 1
@@ -38,71 +61,89 @@ def get_call_latency(call, stm, scope):
     return UNIT_STEP * CALL_MINIMUM_STEP
 
 
-def get_syscall_latency(call):
-    if call.name == 'polyphony.timing.clksleep':
+def _get_syscall_latency(call):
+    """Calculate latency for a syscall."""
+    name = call.name
+    if name == "polyphony.timing.clksleep":
         _, cycle = call.args[0]
-        if cycle.is_a(CONST) and cycle.value <= env.sleep_sentinel_thredhold:
+        if isinstance(cycle, Const) and cycle.value <= env.sleep_sentinel_thredhold:
             return cycle.value
         else:
             return 1
-    elif call.name.startswith('polyphony.timing.wait_'):
+    elif name.startswith("polyphony.timing.wait_"):
         return 0
-    if call.name in ('assert', 'print'):
+    if name in ("assert", "print"):
         return 0
     return UNIT_STEP
 
 
-def _get_latency(tag):
-    assert isinstance(tag, IRStm)
-    scope = cast(IRStm, tag).block.scope
-    if tag.is_a(MOVE):
-        move = cast(MOVE, tag)
-        dst_sym = qualified_symbols(move.dst, scope)[-1]
+def _get_latency(tag, scope=None):
+    """Calculate latency for a statement (handles both old and new IR)."""
+    assert isinstance(tag, IrStm)
+    if scope is None:
+        from ...common.env import env
+
+        if tag.block:
+            for s in env.scopes.values():
+                if tag.block in s.block_map:
+                    blk = s.block_map[tag.block]
+                    if tag in blk.stms:
+                        scope = s
+                        break
+
+    assert scope is not None
+    if isinstance(tag, Move):
+        move_tag = cast(Move, tag)
+        dst_sym = qualified_symbols(move_tag.dst, scope)[-1]
         assert isinstance(dst_sym, Symbol)
-        if move.dst.is_a(TEMP) and dst_sym.is_alias():
+        if isinstance(move_tag.dst, Temp) and dst_sym.is_alias():
             return 0
-        elif move.src.is_a(CALL):
-            return get_call_latency(move.src, move, scope)
-        elif move.src.is_a(NEW):
+        elif isinstance(move_tag.src, Call):
+            return _get_call_latency(move_tag.src, move_tag, scope)
+        elif isinstance(move_tag.src, New):
             return 0
-        elif move.src.is_a(TEMP) and scope.find_sym(move.src.name).typ.is_port():
+        elif (
+            isinstance(move_tag.src, Temp)
+            and (src_sym := scope.find_sym(cast(Temp, move_tag.src).name))
+            and src_sym.typ.is_port()
+        ):
             return 0
-        elif move.dst.is_a(ATTR):
+        elif isinstance(move_tag.dst, Attr):
             if dst_sym.is_alias():
                 return 0
             return UNIT_STEP * 1
-        elif move.src.is_a(MREF):
+        elif isinstance(move_tag.src, MRef):
             return UNIT_STEP
-        elif move.dst.is_a(TEMP) and dst_sym.typ.is_seq():
-            if move.src.is_a(ARRAY):
+        elif isinstance(move_tag.dst, Temp) and dst_sym.typ.is_seq():
+            if isinstance(move_tag.src, Array):
                 return UNIT_STEP
         if dst_sym.is_alias():
             return 0
-    elif tag.is_a(EXPR):
-        expr = cast(EXPR, tag)
-        if expr.exp.is_a(CALL):
-            return get_call_latency(expr.exp, tag, scope)
-        elif expr.exp.is_a(SYSCALL):
-            return get_syscall_latency(expr.exp)
-        elif expr.exp.is_a(MSTORE):
+    elif isinstance(tag, Expr):
+        expr_tag = cast(Expr, tag)
+        exp = expr_tag.exp
+        if isinstance(exp, Call):
+            return _get_call_latency(exp, tag, scope)
+        elif isinstance(exp, SysCall):
+            return _get_syscall_latency(exp)
+        elif isinstance(exp, MStore):
             return UNIT_STEP
-    elif tag.is_a(PHI):
-        phi = cast(PHI, tag)
-        var_sym = qualified_symbols(phi.var, scope)[-1]
+    elif isinstance(tag, Phi):
+        var_sym = qualified_symbols(tag.var, scope)[-1]
         assert isinstance(var_sym, Symbol)
         if var_sym.is_alias():
             return 0
-    elif tag.is_a(UPHI):
-        uphi = cast(UPHI, tag)
-        var_sym = qualified_symbols(uphi.var, scope)[-1]
+    elif isinstance(tag, UPhi):
+        var_sym = qualified_symbols(tag.var, scope)[-1]
         assert isinstance(var_sym, Symbol)
         if var_sym.is_alias():
             return 0
     return UNIT_STEP
 
 
-def get_latency(tag):
-    l = _get_latency(tag)
+def get_latency(tag, scope=None):
+    """Get (def_latency, seq_latency) for a statement."""
+    l = _get_latency(tag, scope)
     if isinstance(l, tuple):
         return l[0], l[1]
     else:

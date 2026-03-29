@@ -1,4 +1,5 @@
 ﻿import logging
+from typing import Any
 from .env import env, Env
 from .errors import CompileError
 
@@ -29,12 +30,14 @@ def error_info(filename, lineno):
 
 
 def print_error_info(info):
-    from ..ir.ir import IR
-    if isinstance(info, IR):
+    from ..ir.ir import Ir
+    if isinstance(info, Ir):
         ir = info
-        print(error_info(ir.loc.filename, ir.loc.lineno))
+        if ir.loc and ir.loc.lineno > 0:
+            print(error_info(ir.loc.filename, ir.loc.lineno))
     elif isinstance(info, tuple):
-        print(error_info(info[0], info[1]))
+        if info[1] > 0:
+            print(error_info(info[0], info[1]))
 
 
 def fail(info, err_id, args=None):
@@ -61,6 +64,7 @@ def warn(info, err_id, args=None):
 
 class Tagged(object):
     __slots__ = ['tags']
+    tags: set[str]
 
     def __init__(self, tags: list[str]|set[str]):
         if isinstance(tags, list):
@@ -71,7 +75,7 @@ class Tagged(object):
         self.tags = tags
         assert self.tags.issubset(self.TAGS)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name) -> Any:
         if name.startswith('is_'):
             tag = name[3:]
             if tag not in self.TAGS:

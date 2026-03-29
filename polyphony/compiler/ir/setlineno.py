@@ -1,106 +1,107 @@
-﻿from collections import defaultdict
-from .irvisitor import IRVisitor
+from collections import defaultdict
+from .irvisitor import IrVisitor
 from ..common.common import get_src_text
 import logging
 logger = logging.getLogger()
 
 
-class LineNumberSetter(IRVisitor):
+class LineNumberSetter(IrVisitor):
     def __init__(self):
         super().__init__()
 
-    def visit_UNOP(self, ir):
+    def visit_UnOp(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.exp)
 
-    def visit_BINOP(self, ir):
+    def visit_BinOp(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_RELOP(self, ir):
+    def visit_RelOp(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_CONDOP(self, ir):
+    def visit_CondOp(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.cond)
         self.visit(ir.left)
         self.visit(ir.right)
 
-    def visit_CALL(self, ir):
+    def visit_Call(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.func)
-        self.visit_args(ir.args, ir.kwargs)
+        self._visit_args(ir.args, ir.kwargs)
 
-    def visit_SYSCALL(self, ir):
+    def visit_SysCall(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.func)
-        self.visit_args(ir.args, ir.kwargs)
+        self._visit_args(ir.args, ir.kwargs)
 
-    def visit_NEW(self, ir):
+    def visit_New(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.func)
-        self.visit_args(ir.args, ir.kwargs)
+        self._visit_args(ir.args, ir.kwargs)
 
-    def visit_CONST(self, ir):
+    def visit_Const(self, ir):
         ir.lineno = self.current_stm.lineno
 
-    def visit_TEMP(self, ir):
+    def visit_Temp(self, ir):
         ir.lineno = self.current_stm.lineno
 
-    def visit_ATTR(self, ir):
+    def visit_Attr(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.exp)
 
-    def visit_MREF(self, ir):
+    def visit_MRef(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.mem)
         self.visit(ir.offset)
 
-    def visit_MSTORE(self, ir):
+    def visit_MStore(self, ir):
         ir.lineno = self.current_stm.lineno
         self.visit(ir.mem)
         self.visit(ir.offset)
         self.visit(ir.exp)
 
-    def visit_ARRAY(self, ir):
+    def visit_Array(self, ir):
         ir.lineno = self.current_stm.lineno
-        self.visit(ir.repeat)
+        if ir.repeat is not None:
+            self.visit(ir.repeat)
         for item in ir.items:
             self.visit(item)
 
-    def visit_EXPR(self, ir):
+    def visit_Expr(self, ir):
         assert ir.lineno >= 0
         self.visit(ir.exp)
 
-    def visit_CJUMP(self, ir):
+    def visit_CJump(self, ir):
         assert ir.lineno >= 0
         self.visit(ir.exp)
 
-    def visit_MCJUMP(self, ir):
+    def visit_MCJump(self, ir):
         assert ir.lineno >= 0
         for cond in ir.conds:
             self.visit(cond)
 
-    def visit_JUMP(self, ir):
+    def visit_Jump(self, ir):
         assert ir.lineno >= 0
 
-    def visit_RET(self, ir):
+    def visit_Ret(self, ir):
         assert ir.lineno >= 0
         self.visit(ir.exp)
 
-    def visit_MOVE(self, ir):
+    def visit_Move(self, ir):
         assert ir.lineno >= 0
         self.visit(ir.src)
         self.visit(ir.dst)
 
-    def visit_PHI(self, ir):
+    def visit_Phi(self, ir):
         pass
 
 
-class SourceDump(IRVisitor):
+class SourceDump(IrVisitor):
     def __init__(self):
         super().__init__()
 

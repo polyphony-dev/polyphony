@@ -11,6 +11,7 @@ from .compiler.ahdl.hdlscope import HDLScope
 from .compiler.ahdl.hdlmodule import HDLModule
 from .compiler.ir.ir import Ctx
 from .compiler.ir.symbol import Symbol
+from .compiler.common.env import env
 
 
 class HDLAssertionError(AssertionError):
@@ -69,11 +70,24 @@ class Integer(Value):
     def __repr__(self):
         return f"Integer[{self.width}]={self.val}"
 
+    def _as_unsigned(self):
+        """Return unsigned int representation of this value."""
+        if self.val < 0:
+            return self.val & ((1 << self.width) - 1)
+        return self.val
+
+    @staticmethod
+    def _op_is_unsigned(a, b):
+        """Verilog rule: unsigned if any operand is unsigned."""
+        return not a.sign or not b.sign
+
     def __bin_op__(self, op, rhs):
         if self.val == "X" or rhs.val == "X":
             return Integer("X", 0, False)
         width = self.width + rhs.width
         sign = max(self.sign, rhs.sign)
+        if rhs.val == 0 and op in (operator.floordiv, operator.mod):
+            return Integer(0, width, sign)
         value = op(self.val, rhs.val)
         return Integer(value, width, sign)
 
@@ -87,9 +101,23 @@ class Integer(Value):
         return self.__bin_op__(operator.mul, rhs)
 
     def __floordiv__(self, rhs):
+        if self._op_is_unsigned(self, rhs):
+            if self.val == "X" or rhs.val == "X":
+                return Integer("X", 0, False)
+            l, r = self._as_unsigned(), rhs._as_unsigned()
+            if r == 0:
+                return Integer(0, self.width + rhs.width, False)
+            return Integer(l // r, self.width + rhs.width, False)
         return self.__bin_op__(operator.floordiv, rhs)
 
     def __mod__(self, rhs):
+        if self._op_is_unsigned(self, rhs):
+            if self.val == "X" or rhs.val == "X":
+                return Integer("X", 0, False)
+            l, r = self._as_unsigned(), rhs._as_unsigned()
+            if r == 0:
+                return Integer(0, self.width + rhs.width, False)
+            return Integer(l % r, self.width + rhs.width, False)
         return self.__bin_op__(operator.mod, rhs)
 
     def __bit_op__(self, op, rhs):
@@ -116,29 +144,26 @@ class Integer(Value):
         b = self.val != rhs.val
         return Integer(int(b), 1, False)
 
-    def __lt__(self, rhs):
+    def _compare(self, rhs, op):
         if self.val == "X" or rhs.val == "X":
             return Integer("X", 0, False)
-        b = self.val < rhs.val
+        if self._op_is_unsigned(self, rhs):
+            b = op(self._as_unsigned(), rhs._as_unsigned())
+        else:
+            b = op(self.val, rhs.val)
         return Integer(int(b), 1, False)
+
+    def __lt__(self, rhs):
+        return self._compare(rhs, operator.lt)
 
     def __le__(self, rhs):
-        if self.val == "X" or rhs.val == "X":
-            return Integer("X", 0, False)
-        b = self.val <= rhs.val
-        return Integer(int(b), 1, False)
+        return self._compare(rhs, operator.le)
 
     def __gt__(self, rhs):
-        if self.val == "X" or rhs.val == "X":
-            return Integer("X", 0, False)
-        b = self.val > rhs.val
-        return Integer(int(b), 1, False)
+        return self._compare(rhs, operator.gt)
 
     def __ge__(self, rhs):
-        if self.val == "X" or rhs.val == "X":
-            return Integer("X", 0, False)
-        b = self.val >= rhs.val
-        return Integer(int(b), 1, False)
+        return self._compare(rhs, operator.ge)
 
     def __lshift__(self, rhs):
         if self.val == "X" or rhs.val == "X":
@@ -153,7 +178,10 @@ class Integer(Value):
             return Integer("X", 0, False)
         if rhs.val > self.width or rhs.val < 0:
             return Integer(0, self.width, self.sign)
-        v = self.val >> rhs.val
+        if self._op_is_unsigned(self, rhs):
+            v = self._as_unsigned() >> rhs.val
+        else:
+            v = self.val >> rhs.val
         return Integer(v, self.width, self.sign)
 
     def __bool__(self):
@@ -453,7 +481,8 @@ class Port(object):
         return f"Port('{repr(self.value)}')"
 
     def edge(self, old_v, new_v):
-        assert isinstance(self.value, Reg)
+        from .csim import CBufferSignal
+        assert isinstance(self.value, (Reg, CBufferSignal))
         return self.value.prev_val == old_v and self.value.val == new_v
 
     def assign(self, func: callable):
@@ -465,7 +494,9 @@ class Port(object):
 
 
 class Simulator(object):
-    def __init__(self, model):
+    def __init__(self, model, use_csim=None):
+        if use_csim is None:
+            use_csim = os.environ.get('USE_CSIM', '1') == '1'
         if isinstance(model, list):
             self.models = [getattr(m, "__model") for m in model]
         elif isinstance(model, Model):
@@ -473,10 +504,35 @@ class Simulator(object):
         else:
             assert False
 
-        self.evaluators = [ModelEvaluator(model) for model in self.models]
+        if use_csim:
+            self.evaluators = self._build_csim_evaluators()
+        else:
+            self.evaluators = [ModelEvaluator(model) for model in self.models]
         self.clock_time = 0
         self.observer = None
         self.case_name = ''
+
+    def _build_csim_evaluators(self):
+        """Try to build CModelEvaluator for each model; fall back to ModelEvaluator on failure."""
+        import sys
+        from .csim import CModelEvaluator, CSimulatorModelBuilder
+        evaluators = []
+        builder = CSimulatorModelBuilder()
+        for model in self.models:
+            try:
+                hdlmodule = model.hdlmodule
+                ev = builder.build(hdlmodule)
+                deferred, all_ports = CModelEvaluator.bind_ports_to_buffer(
+                    model, ev._buf, ev._port_map, ev._sig_map)
+                ev._deferred_signals = deferred or []
+                ev._all_port_signals = all_ports or []
+                evaluators.append(ev)
+            except Exception as e:
+                hdlmod = getattr(model, 'hdlmodule', None)
+                mod_name = hdlmod.name if hdlmod else '?'
+                print(f'csim fallback for {mod_name}: {e}', file=sys.stderr)
+                evaluators.append(ModelEvaluator(model))
+        return evaluators
 
     def __enter__(self):
         self.begin()
@@ -526,6 +582,14 @@ class Simulator(object):
             self.observer.on_reset_done(self.clock_time)
 
 
+# Minimum upper bound for combinational logic (decl) convergence iterations.
+# For a correctly generated combinational DAG, the worst case is one
+# iteration per dependency chain depth, plus one final pass to confirm
+# convergence.  Since max depth <= num_decls, the limit is num_decls + 1.
+# If the limit is reached, it indicates a compiler bug (combinational cycle).
+MIN_EVAL_DECLS_ITERATIONS = 16
+
+
 class ModelEvaluator(AHDLVisitor):
     def __init__(self, model):
         assert isinstance(model, types.SimpleNamespace)
@@ -545,7 +609,7 @@ class ModelEvaluator(AHDLVisitor):
 
     def _eval_decls(self):
         self.updated_sigs.add(None)
-        _max_iter = 1000
+        _max_iter = max(len(self.model._decls) + 1, MIN_EVAL_DECLS_ITERATIONS)
         while self.updated_sigs:
             self.updated_sigs.clear()
             for decl in self.model._decls:
@@ -590,7 +654,8 @@ class ModelEvaluator(AHDLVisitor):
 
     def visit_AHDL_CONST(self, ahdl):
         if isinstance(ahdl.value, int):
-            return Integer(ahdl.value, width=32, sign=True)
+            width = max(ahdl.value.bit_length() + 1, 32)
+            return Integer(ahdl.value, width=width, sign=True)
         elif isinstance(ahdl.value, str):
             return Value(ahdl.value, width=0, sign=False, signal=None)
         else:
@@ -968,8 +1033,9 @@ class SimulationModelBuilder(object):
 
         model.hdlmodule = hdlmodule
         if is_top:  # isinstance(hdlmodule, HDLModule):
+            from .compiler.ahdl.ahdlutils import toposort_decls
             model._tasks = hdlmodule.tasks
-            model._decls = hdlmodule.decls
+            model._decls = toposort_decls(hdlmodule.decls)
         else:
             model._tasks = []
             model._decls = []
@@ -1076,8 +1142,9 @@ class SimulationModelBuilder(object):
 
     def _add_io_method(self, model, main_py_module):
         def find_origin_scope(scope):
-            if scope.origin:
-                return find_origin_scope(scope.origin)
+            origin = env.origin_registry.scope_origin_of(scope)
+            if origin:
+                return find_origin_scope(origin)
             return scope
 
         origin_scope = find_origin_scope(model.hdlmodule.scope)
@@ -1140,8 +1207,10 @@ class SimulationModelBuilder(object):
 
         def call_body(*args, **kwargs):
             arg_and_names = []
-            param_names = hdlscope.scope.param_names()
-            default_values = hdlscope.scope.param_default_values()
+            func = hdlscope.scope.as_function()
+            assert func, f'{hdlscope.scope.name} is not a FunctionScope'
+            param_names = func.param_names()
+            default_values = func.param_default_values()
             for i, v in enumerate(args):
                 arg_and_names.append((param_names[i], v))
             for k, v in kwargs.items():
@@ -1159,3 +1228,5 @@ class SimulationModelBuilder(object):
                 setattr(model, i.sig.name, Net(0, i.sig.width, i.sig))
             assert not hasattr(model, fn.output.hdl_name)
             setattr(model, fn.output.hdl_name, Net(0, fn.output.sig.width[0], fn.output.sig))
+
+

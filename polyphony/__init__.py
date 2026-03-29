@@ -1,3 +1,4 @@
+import functools
 import inspect
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -67,6 +68,7 @@ def module(cls):
     cls.append_worker = append_worker
     orig_init = cls.__init__
 
+    @functools.wraps(orig_init)
     def init_wrapper(self, *args, **kwargs):
        self._args = args
        self._kwargs = kwargs

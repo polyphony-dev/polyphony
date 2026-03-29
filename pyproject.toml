@@ -1,13 +1,16 @@
 [project]
 name = "polyphony"
-version = "0.4.1"
+version = "0.4.2"
 description = "Python based High Level Synthesis compiler"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Hiroaki Kataoka", email = "ktok07b6@gmail.com" }]
 keywords = ["HLS", "High Level Synthesis", "FPGA", "HDL", "Verilog"]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "mutmut>=3.5.0",
+    "pydantic>=2.0",
+]
 
 [project.scripts]
 polyphony = "polyphony.compiler.__main__:main"
@@ -23,7 +26,16 @@ build-backend = "hatchling.build"
 dev = [
     "ruff",
     "pytest",
+    "pytest-cov>=7.0.0",
+    "pyright>=1.1.408",
 ]
+
+[tool.coverage.run]
+source = ["polyphony"]
+omit = ["polyphony/_internal/*"]
+
+[tool.coverage.report]
+omit = ["polyphony/_internal/*"]
 
 [tool.ruff]
 line-length = 120
