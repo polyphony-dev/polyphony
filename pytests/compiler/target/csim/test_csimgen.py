@@ -901,6 +901,36 @@ def test_visit_move_unsigned_signal_no_sext():
     assert 'sext' not in line, f'Unexpected sext for unsigned signal: {line}'
 
 
+def test_rshift_signed_left_operand():
+    """RShift on signed left operand should use signed shift (no uint64_t cast)."""
+    reg_a = _make_signal('a', 32, {'reg', 'int'})  # signed
+    reg_b = _make_signal('b', 32, {'reg'})          # unsigned shift amount
+    tp = _setup_transpiler_with_signals(reg_a, reg_b)
+    node = AHDL_OP('RShift', _make_var(reg_a), _make_var(reg_b))
+    result = tp.visit(node)
+    assert 'uint64_t' not in result  # signed shift, no unsigned cast
+
+
+def test_rshift_unsigned_left_operand():
+    """RShift on unsigned left operand should use unsigned shift (uint64_t cast)."""
+    reg_a = _make_signal('a', 32, {'reg'})           # unsigned
+    reg_b = _make_signal('b', 32, {'reg', 'int'})    # signed shift amount
+    tp = _setup_transpiler_with_signals(reg_a, reg_b)
+    node = AHDL_OP('RShift', _make_var(reg_a), _make_var(reg_b))
+    result = tp.visit(node)
+    assert 'uint64_t' in result  # unsigned shift, should have uint64_t cast
+
+
+def test_rshift_both_signed():
+    """RShift with both operands signed should use signed shift."""
+    reg_a = _make_signal('a', 32, {'reg', 'int'})  # signed
+    reg_b = _make_signal('b', 32, {'reg', 'int'})  # signed
+    tp = _setup_transpiler_with_signals(reg_a, reg_b)
+    node = AHDL_OP('RShift', _make_var(reg_a), _make_var(reg_b))
+    result = tp.visit(node)
+    assert 'uint64_t' not in result  # both signed, no unsigned cast
+
+
 def test_visit_invert_relop_emits_mask_width_1():
     """Invert of a relational op (result is always 1-bit) emits mask with width 1."""
     sig_a = _make_signal('i', 32, {'net', 'int'})
