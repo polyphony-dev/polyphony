@@ -32,7 +32,15 @@ def test_pyop2verilogop_lshift():
     assert pyop2verilogop('LShift') == '<<'
 
 
-def test_pyop2verilogop_rshift():
+def test_pyop2verilogop_rshift_signed():
+    assert pyop2verilogop('RShift', signed=True) == '>>>'
+
+
+def test_pyop2verilogop_rshift_unsigned():
+    assert pyop2verilogop('RShift', signed=False) == '>>'
+
+
+def test_pyop2verilogop_rshift_default_signed():
     assert pyop2verilogop('RShift') == '>>>'
 
 

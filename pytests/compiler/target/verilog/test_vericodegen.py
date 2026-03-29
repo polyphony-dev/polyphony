@@ -337,6 +337,25 @@ class TestVisitOp:
         result = gen.visit(op)
         assert result == '(0 == 1)'
 
+    def test_rshift_signed(self, hdl, gen):
+        """RShift on signed signal should use >>> (arithmetic shift)."""
+        sig = hdl.gen_sig('x_signed', 32, {'reg', 'int'})
+        var = AHDL_VAR(sig, Ctx.LOAD)
+        shift = AHDL_CONST(2)
+        op = AHDL_OP('RShift', var, shift)
+        result = gen.visit(op)
+        assert '>>>' in result
+
+    def test_rshift_unsigned(self, hdl, gen):
+        """RShift on unsigned signal should use >> (logical shift)."""
+        sig = hdl.gen_sig('y_unsigned', 32, {'reg'})
+        var = AHDL_VAR(sig, Ctx.LOAD)
+        shift = AHDL_CONST(2)
+        op = AHDL_OP('RShift', var, shift)
+        result = gen.visit(op)
+        assert '>>>' not in result
+        assert '>>' in result
+
 
 # ============================================================
 # visit_AHDL_SLICE
