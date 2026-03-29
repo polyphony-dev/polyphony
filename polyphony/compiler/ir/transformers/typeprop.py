@@ -557,12 +557,29 @@ class TypePropagation(IrVisitor):
             assert sym_t.is_function()
             return sym_t.return_type
 
+    _INT32_MAX = 0x7FFFFFFF
+
+    def _int_type_for_literal(self, value):
+        """Infer int type for a literal value.
+
+        Values > INT32_MAX are unsigned (matching Python semantics
+        where these are positive numbers). Width is determined by
+        bit_length(), with a minimum of default_int_width.
+        """
+        if value < 0:
+            width = max(value.bit_length() + 1, env.config.default_int_width)
+            return Type.int(width, signed=True)
+        if value > self._INT32_MAX:
+            width = max(value.bit_length(), env.config.default_int_width)
+            return Type.int(width, signed=False)
+        return Type.int()
+
     def visit_Const(self, ir):
         match ir.value:
             case bool():
                 return Type.bool()
             case int():
-                return Type.int()
+                return self._int_type_for_literal(ir.value)
             case str():
                 return Type.str()
             case None:

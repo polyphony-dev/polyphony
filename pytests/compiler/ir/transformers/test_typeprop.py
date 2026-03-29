@@ -6874,3 +6874,83 @@ def test_typeprop_normalize_args_kwargs_with_extra_args():
     )
     assert len(kwargs) == 0
     assert len(result) == 3
+
+
+def test_typeprop_const_large_unsigned():
+    """Const > 0x7FFFFFFF should be inferred as unsigned."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: undef
+    blk1:
+        mv x 2147483648
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    x_sym = top.find_sym('x')
+    assert x_sym.typ.is_int()
+    assert not x_sym.typ.signed, "0x80000000 should be unsigned"
+    assert x_sym.typ.width == 32
+
+
+def test_typeprop_const_0xFFFFFFFF_unsigned():
+    """Const 0xFFFFFFFF should be unsigned 32-bit."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: undef
+    blk1:
+        mv x 4294967295
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    x_sym = top.find_sym('x')
+    assert x_sym.typ.is_int()
+    assert not x_sym.typ.signed, "0xFFFFFFFF should be unsigned"
+    assert x_sym.typ.width == 32
+
+
+def test_typeprop_const_small_stays_signed():
+    """Const <= 0x7FFFFFFF should remain signed int32."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: undef
+    blk1:
+        mv x 100
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    x_sym = top.find_sym('x')
+    assert x_sym.typ.is_int()
+    assert x_sym.typ.signed, "small literal should be signed"
+    assert x_sym.typ.width == 32
+
+
+def test_typeprop_const_over_32bit():
+    """Const > 0xFFFFFFFF should be unsigned with wider bit width."""
+    setup_test(with_global=False)
+    block_src = """
+    scope @top
+        tags namespace
+        var x: undef
+    blk1:
+        mv x 4294967296
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+    StaticTypePropagation(is_strict=False).process_scopes([top])
+    x_sym = top.find_sym('x')
+    assert x_sym.typ.is_int()
+    assert not x_sym.typ.signed, "0x100000000 should be unsigned"
+    assert x_sym.typ.width == 33
