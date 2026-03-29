@@ -223,11 +223,20 @@ class TestUnsignedRShift:
         assert r.val == -1
 
     def test_mixed_unsigned_rshift(self):
-        # unsigned operand → logical shift even if shift amount is signed
+        # Shift signedness follows left operand only (C semantics)
+        # Left operand is signed -> arithmetic shift, regardless of rhs signedness
         a = Integer(0x8000000000000000, 64, True)  # val = -2^63
-        b = Integer(63, 32, False)  # unsigned
+        b = Integer(63, 32, False)  # unsigned shift amount
         r = a >> b
-        # unsigned: 0x8000... >> 63 → 1
+        # Signed left operand: arithmetic shift -> -2^63 >> 63 = -1
+        assert r.val == -1
+
+    def test_unsigned_lhs_signed_rhs_rshift(self):
+        # Left operand is unsigned -> logical shift, regardless of rhs signedness
+        a = Integer(0x8000000000000000, 64, False)  # unsigned
+        b = Integer(63, 32, True)  # signed shift amount
+        r = a >> b
+        # Unsigned left operand: logical shift -> 0x8000... >> 63 = 1
         assert r.val == 1
 
 

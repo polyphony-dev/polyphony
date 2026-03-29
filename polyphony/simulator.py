@@ -178,9 +178,11 @@ class Integer(Value):
             return Integer("X", 0, False)
         if rhs.val > self.width or rhs.val < 0:
             return Integer(0, self.width, self.sign)
-        if self._op_is_unsigned(self, rhs):
+        if not self.sign:
+            # Left operand is unsigned -> logical shift (zero-fill)
             v = self._as_unsigned() >> rhs.val
         else:
+            # Left operand is signed -> arithmetic shift (sign-extend)
             v = self.val >> rhs.val
         return Integer(v, self.width, self.sign)
 
