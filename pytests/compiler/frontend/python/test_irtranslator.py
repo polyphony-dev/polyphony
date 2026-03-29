@@ -104,6 +104,38 @@ class D:
     assert syms[0].is_self()
 
 
+def test_parse_lambda_with_args():
+    setup_test()
+    src = '''
+def f():
+    g = lambda x, y: x + y
+'''
+    IrTranslator().translate(src, '')
+    # Lambda scope is named with numeric suffix under parent: @top.f.0
+    lam = env.scopes['@top.f.0']
+
+    syms = lam.param_symbols()
+    assert len(syms) == 2
+    assert syms[0].name == '@in_x'
+    assert syms[1].name == '@in_y'
+
+    stms = list(lam.entry_block.stms)
+    assert any(isinstance(s, Ret) for s in stms)
+
+
+def test_parse_lambda_no_args():
+    """Existing behavior: lambda with no args should still work."""
+    setup_test()
+    src = '''
+def f():
+    g = lambda: 42
+'''
+    IrTranslator().translate(src, '')
+    lam = env.scopes['@top.f.0']
+    syms = lam.param_symbols()
+    assert len(syms) == 0
+
+
 # ---- helpers ----
 def _translate(src):
     """Translate source and return the top scope."""

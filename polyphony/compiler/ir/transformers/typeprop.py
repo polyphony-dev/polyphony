@@ -397,6 +397,11 @@ class TypePropagation(IrVisitor):
             # Skip scopes that have been replaced by specialized versions
             if scope in self._old_scopes or scope in self._indirect_old_scopes or scope.is_superseded():
                 continue
+            # Skip lambda scopes with parameters — their types are resolved
+            # during specialization (TypeSpecializationAnalyzer), not here.
+            if scope.is_comb() and len(scope.param_symbols()) > 0:
+                self.typed.append(scope)
+                continue
             if scope.is_function() and scope.return_type is None:
                 scope.return_type = Type.undef()
             try:
@@ -1221,9 +1226,33 @@ class TypeSpecializationAnalyzer(TypePropagation):
             sym.typ = new_t.clone(explicit=True)
             new_types.append(new_t)
         new_scope.add_tag("specialized")
+        # For lambda (comb) scopes, infer return_type immediately since the body
+        # is a single expression and all parameter types are now known.
+        if new_scope.is_comb() and new_scope.return_type.is_undef() and len(new_scope.param_symbols()) > 0:
+            self._infer_lambda_return_type(new_scope)
         sym = new_scope.parent.find_sym(new_scope.base_name)
         sym.typ = sym.typ.clone(param_types=new_types, return_type=new_scope.return_type)
         return new_scope, True, postfix
+
+    def _infer_lambda_return_type(self, scope):
+        """Infer return type for a lambda scope by processing its body.
+
+        Lambda scopes are single-block, single-expression functions.
+        After specialization sets parameter types, we can resolve the body type
+        immediately without waiting for the worklist.
+        """
+        saved_scope = self.scope
+        saved_stm = self.current_stm
+        self.scope = scope
+        try:
+            for blk in scope.traverse_blocks():
+                for stm in blk.stms:
+                    self.visit(stm)
+        except RejectPropagation:
+            pass  # return_type remains undef; will be handled later
+        finally:
+            self.scope = saved_scope
+            self.current_stm = saved_stm
 
     def _specialize_class_with_types(self, scope, types):
         assert not scope.is_specialized()

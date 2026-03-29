@@ -1307,13 +1307,12 @@ class CodeVisitor(ast.NodeVisitor):
         return UnOp(op=op2str(node.op), exp=exp)
 
     def visit_Lambda(self, node):
-        if node.args.args:
-            fail((self.current_scope, node.lineno), Errors.UNSUPPORTED_SYNTAX, ["lambda argument"])
         outer_scope = self.current_scope
         tags = {"function", "returnable", "comb"}
         tags |= outer_scope.tags & {"inlinelib"}
         lambda_scope = Scope.create(outer_scope, None, tags, node.lineno)
         lambda_scope.synth_params.update(outer_scope.synth_params)
+        lambda_scope.return_type = Type.undef()
         self.current_scope = lambda_scope
 
         new_block = self._new_block(self.current_scope)
@@ -1321,6 +1320,17 @@ class CodeVisitor(ast.NodeVisitor):
         self.current_scope.set_exit_block(new_block)
         last_block = self.current_block
         self.current_block = new_block
+
+        # Create parameter symbols for lambda arguments
+        params = []
+        for arg in node.args.args:
+            param_in, param_copy = self._make_param_symbol(arg)
+            params.append((param_in, param_copy))
+        for param, copy in params:
+            self.current_scope.add_param(param, None)
+        for param, copy in params:
+            mv = Move(dst=Temp(name=copy.name, ctx=Ctx.STORE), src=Temp(name=param.name))
+            self.emit(mv, node)
 
         ret_sym = self.current_scope.add_return_sym()
         self.emit(Move(dst=Temp(name=ret_sym.name, ctx=Ctx.STORE), src=self.visit(node.body)), node)

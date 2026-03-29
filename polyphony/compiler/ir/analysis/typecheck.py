@@ -435,7 +435,7 @@ class RestrictionChecker(IrVisitor):
                 continue
             if isinstance(arg, IrVariable):
                 arg_t = irexp_type(arg, self.scope)
-                if arg_t.is_scalar() or arg_t.is_object():
+                if arg_t.is_scalar() or arg_t.is_object() or arg_t.is_function():
                     continue
                 type_error(self.current_stm, Errors.WORKER_ARG_MUST_BE_X_TYPE,
                            [arg_t])
