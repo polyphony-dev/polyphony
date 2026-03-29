@@ -1,4 +1,9 @@
-"""Lambda passed via ctor arg with a constant ctor parameter."""
+"""Lambda passed via ctor arg with a constant ctor parameter.
+
+Known limitation: HDL simulation fails because apply_argument binds the
+ctor parameter on a different scope object than the one referenced by
+the worker's imported free variable symbols.
+"""
 from polyphony import module, testbench
 from polyphony.io import Port
 from polyphony.timing import wait_value
