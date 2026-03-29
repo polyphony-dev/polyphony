@@ -255,6 +255,17 @@ class AHDLToCTranspiler(AHDLVisitor):
                     return True
         return False
 
+    def _left_operand_is_unsigned(self, arg):
+        """Check if the left operand of a shift is unsigned."""
+        if isinstance(arg, AHDL_VAR):
+            sig = arg.vars[-1]
+            cname = self._name_to_cname.get(sig.name, _c_safe_name(sig.name))
+            if len(arg.vars) > 1:
+                hdl_name = '_'.join(s.name for s in arg.vars)
+                cname = self._name_to_cname.get(hdl_name, _c_safe_name(hdl_name))
+            return not self._is_signed(cname)
+        return False  # Default to signed for safety
+
     def visit_AHDL_OP(self, ahdl):
         if ahdl.op == self._FLOORDIV:
             l = self.visit(ahdl.args[0])
@@ -272,7 +283,7 @@ class AHDLToCTranspiler(AHDLVisitor):
             l = self.visit(ahdl.args[0])
             r = self.visit(ahdl.args[1])
             op = self._SIGN_SENSITIVE_BINOP_MAP[ahdl.op]
-            if self._op_is_unsigned(ahdl.args):
+            if self._left_operand_is_unsigned(ahdl.args[0]):
                 return f'((int64_t)((uint64_t){l} {op} (uint64_t){r}))'
             return f'({l} {op} {r})'
         elif ahdl.op in self._BINOP_MAP:
