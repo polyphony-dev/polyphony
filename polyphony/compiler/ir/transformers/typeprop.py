@@ -1283,6 +1283,10 @@ class TypeSpecializationAnalyzer(TypePropagation):
             names |= self._collect_temp_names(ir.left)
         if hasattr(ir, 'right'):
             names |= self._collect_temp_names(ir.right)
+        if hasattr(ir, 'mem'):
+            names |= self._collect_temp_names(ir.mem)
+        if hasattr(ir, 'offset'):
+            names |= self._collect_temp_names(ir.offset)
         if hasattr(ir, 'func'):
             names |= self._collect_temp_names(ir.func)
         if hasattr(ir, 'args'):
