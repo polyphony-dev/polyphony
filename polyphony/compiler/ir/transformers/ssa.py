@@ -577,5 +577,7 @@ class TupleSSATransformer(SSATransformerBase):
     def _need_rename(self, sym, qsym):
         if sym.scope.is_namespace() or sym.scope.is_class():
             return False
+        if sym.is_free():
+            return False
         sym_t = sym.typ
         return sym_t.is_tuple() and not sym.is_param()

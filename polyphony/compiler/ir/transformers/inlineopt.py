@@ -32,6 +32,7 @@ from ..ir import (
     Expr,
     SysCall,
     Const,
+    Array,
     UnOp,
     Jump,
     Ret,
@@ -40,6 +41,7 @@ from ..types.exprtype import ExprType
 from .varreplacer import replace_exprtype_in_typ
 from ..irvisitor import IrVisitor, IrTransformer
 from ..irhelper import qualified_symbols, irexp_type, qsym2var
+from ..analysis.usedef import UseDefDetector
 from ..symbol import Symbol
 from ..scope import Scope
 from ..types import typehelper
@@ -658,6 +660,30 @@ class InlineOpt(object):
             assert sym is not None
             callee.import_sym(sym, sym.name)
 
+    def _resolve_free_var_constants(self, callee: CalleeScope) -> ReplaceMap:
+        """Resolve free variables that are constants in the enclosing scope.
+
+        When inlining a lambda/closure, free variables that have constant
+        definitions in the enclosing scope should be replaced with their
+        constant values.
+        """
+        replace_map: ReplaceMap = {}
+        if not callee.parent:
+            return replace_map
+        parent = callee.parent
+        parent_usedef = UseDefDetector().process(parent)
+        for sym in list(callee.symbols.values()):
+            if not sym.is_free():
+                continue
+            # Check if the symbol has a single constant definition in parent
+            defs = parent_usedef._def_sym2.get(sym, set())
+            if len(defs) == 1:
+                def_item = next(iter(defs))
+                stm = def_item.stm
+                if isinstance(stm, Move) and isinstance(stm.src, (Const, Array)):
+                    replace_map[sym] = stm.src
+        return replace_map
+
     def _rename(self, callee: CalleeScope, caller: CallerScope):
         def make_unique_name(scopes: list[Scope], name: str) -> str:
             new_name = name
@@ -799,6 +825,10 @@ class InlineOpt(object):
             if callee.is_method():
                 replace_self_map = self._make_replace_self_obj_map(callee_clone, call, call_stm, caller)
                 replace_map |= replace_self_map
+            # Resolve free variable constants from the enclosing scope
+            if callee.is_closure():
+                replace_freevar_map = self._resolve_free_var_constants(callee_clone)
+                replace_map |= replace_freevar_map
             IrReplacer(replace_map).process(callee_clone, callee_clone.entry_block)
             for c in callee_clone.collect_scope():
                 IrReplacer(replace_map).process(c, c.entry_block)
@@ -812,6 +842,13 @@ class InlineOpt(object):
                 can_continue = False
             self._replace_type_expr_scope(callee_clone, caller)
             self._merge_symbols(callee_clone, caller)
+            # When inlining a closure/lambda into a worker, mark the caller as
+            # a closure so that ConstantOpt's _propagate_to_closure can find it
+            # via closures(). Skip if the caller is the enclosure (direct parent
+            # of the closure) since that's a normal inline, not a cross-scope
+            # propagation case.
+            if callee.is_closure() and not caller.is_closure() and not caller.is_enclosure():
+                caller.add_tag("closure")
             block_map, _ = callee_clone.clone_blocks(caller)
             callee_entry_blk = block_map[callee_clone.entry_block]
             callee_exit_blk = block_map[callee_clone.exit_block]

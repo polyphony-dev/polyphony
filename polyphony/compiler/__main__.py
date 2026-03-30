@@ -180,6 +180,10 @@ def is_uninlined_scope(scope):
         return False
     if is_inlined_module(scope):
         return False
+    # Lambda scopes with parameters are always inlined at call sites;
+    # they should not survive as standalone scopes after inline_opt.
+    if scope.is_comb() and len(scope.param_symbols()) > 0:
+        return False
     return (scope.is_function_module()
             or scope.is_ctor() and scope.parent.is_module()
             or scope.is_worker()
@@ -530,6 +534,52 @@ def _resolve_type_scope_name(ptype):
 
 def apply_argument(driver):
     ArgumentApplier().process_all()
+
+
+def propagate_free_var_constants(driver, scope):
+    """Propagate constants to imported free variables from their owner scope.
+
+    After apply_argument binds ctor parameters, worker scopes that imported
+    those symbols as free variables may still reference the unresolved variable.
+    apply_argument now directly propagates constants to sibling scopes, but
+    this pass serves as a safety net for cases where the owner scope has a
+    constant definition that was not handled at bind time (e.g. non-ctor owners).
+
+    When a worker is instantiated (cloned), its free variable symbols still
+    reference the template ctor as their owner. In that case, we resolve
+    the corresponding instantiated ctor via the scope's parent module.
+    """
+    from .ir.analysis.usedef import UseDefDetector
+    from .ir.transformers.varreplacer import VarReplacer
+    from .ir.ir import Temp, Move, Const
+    changed = False
+    for sym in list(scope.symbols.values()):
+        if not (sym.is_free() and sym.is_imported()):
+            continue
+        owner = sym.scope
+        if owner is scope:
+            continue
+        # If the owner is a template ctor (not a child of this scope's parent
+        # module), find the corresponding instantiated ctor instead.
+        if owner.is_ctor() and scope.parent and scope.parent.is_module():
+            inst_ctor = scope.parent.find_ctor()
+            if inst_ctor and inst_ctor is not owner:
+                owner = inst_ctor
+        owner_usedef = UseDefDetector().process(owner)
+        # The symbol may have been imported (same object) or cloned.
+        # Try direct lookup first, then search by name.
+        defs = owner_usedef._def_sym2.get(sym, set())
+        if not defs:
+            owner_sym = owner.find_sym(sym.name)
+            if owner_sym:
+                defs = owner_usedef._def_sym2.get(owner_sym, set())
+        if len(defs) == 1:
+            def_item = next(iter(defs))
+            if isinstance(def_item.stm, Move) and isinstance(def_item.stm.src, Const):
+                VarReplacer.replace_uses(scope, Temp(name=sym.name), def_item.stm.src)
+                changed = True
+    if changed:
+        ConstantOpt().process(scope)
 
 
 def inline_opt(driver):
@@ -887,6 +937,7 @@ def compile_plan():
 
         phase(env.PHASE_3),
         apply_argument,
+        propagate_free_var_constants,
         eval_type,
         strict_type_prop,
         type_check,

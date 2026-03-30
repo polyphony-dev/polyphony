@@ -121,15 +121,15 @@ class DFADD:
 
     def addFloat64Sigs(self, a, b, zSign):
         aSig:bit64 = a & 0x000FFFFFFFFFFFFF
-        aExp = (a >> 52) & 0x7FF
+        aExp:int = (a >> 52) & 0x7FF
         bSig:bit64 = b & 0x000FFFFFFFFFFFFF
-        bExp = (b >> 52) & 0x7FF
+        bExp:int = (b >> 52) & 0x7FF
         expDiff = aExp - bExp
         aSig = (aSig << 9) & MASK64
         bSig = (bSig << 9) & MASK64
 
         zSig:bit64 = 0
-        zExp:bit64 = 0
+        zExp = 0
         skip = 0
 
         if expDiff > 0:
@@ -177,15 +177,15 @@ class DFADD:
 
     def subFloat64Sigs(self, a, b, zSign):
         aSig:bit64 = a & 0x000FFFFFFFFFFFFF
-        aExp:bit64 = (a >> 52) & 0x7FF
+        aExp:int = (a >> 52) & 0x7FF
         bSig:bit64 = b & 0x000FFFFFFFFFFFFF
-        bExp:bit64 = (b >> 52) & 0x7FF
+        bExp:int = (b >> 52) & 0x7FF
         expDiff = aExp - bExp
         aSig = (aSig << 10) & MASK64
         bSig = (bSig << 10) & MASK64
 
         zSig:bit64 = 0
-        zExp:bit64 = 0
+        zExp = 0
 
         if expDiff > 0:
             if aExp == 0x7FF:

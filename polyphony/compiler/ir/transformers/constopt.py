@@ -530,8 +530,15 @@ class ConstantOpt(ConstantOptBase):
                 self.udupdater.update(stm, None)
                 dead_stms.append(stm)
                 if dst_sym.is_free():
-                    for clos in dst_sym.scope.closures():
-                        self._propagate_to_closure(clos, dst_sym, stm.src)
+                    for s in self._find_scopes_sharing_sym(dst_sym):
+                        self._propagate_to_closure(s, dst_sym, stm.src)
+            elif (isinstance(stm, Move)
+                    and isinstance(stm.src, Array)
+                    and isinstance(stm.dst, Temp)
+                    and isinstance((dst_sym := qualified_symbols(stm.dst, self.scope)[-1]), Symbol)
+                    and dst_sym.is_free()):
+                for s in self._find_scopes_sharing_sym(dst_sym):
+                    self._propagate_to_closure(s, dst_sym, stm.src)
             elif self._can_attribute_propagate(stm):
                 assert isinstance(stm, Move)
                 dst_load = stm.dst.model_copy(update={'ctx': Ctx.LOAD})
@@ -593,6 +600,24 @@ class ConstantOpt(ConstantOptBase):
         if not self.scope.is_ctor():
             return False
         return True
+
+    def _find_scopes_sharing_sym(self, sym):
+        """Find all scopes that reference the same free variable.
+
+        Always includes closures() results. For ctor scopes, additionally
+        searches the class scope's descendants for worker scopes that
+        imported the same free variable by name (e.g. workers that captured
+        a lambda's free variable via inlining).
+        """
+        results = list(sym.scope.closures())
+        if self.scope.is_ctor() and self.scope.parent and self.scope.parent.is_class():
+            for s in self.scope.parent.collect_scope():
+                if s is self.scope or s in results:
+                    continue
+                s_sym = s.symbols.get(sym.name)
+                if s_sym and s_sym.is_free() and s_sym.is_imported():
+                    results.append(s)
+        return results
 
     def _propagate_to_closure(self, closure, target, src):
         clos_usedef = UseDefDetector().process(closure)

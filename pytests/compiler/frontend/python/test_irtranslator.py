@@ -104,6 +104,40 @@ class D:
     assert syms[0].is_self()
 
 
+def test_parse_lambda_with_args():
+    setup_test()
+    src = '''
+def f():
+    g = lambda x, y: x + y
+'''
+    IrTranslator().translate(src, '')
+    # Lambda scope is named with _lambda_ prefix under parent
+    lam = [s for name, s in env.scopes.items()
+           if name.startswith('@top.f._lambda_')][0]
+
+    syms = lam.param_symbols()
+    assert len(syms) == 2
+    assert syms[0].name == '@in_x'
+    assert syms[1].name == '@in_y'
+
+    stms = list(lam.entry_block.stms)
+    assert any(isinstance(s, Ret) for s in stms)
+
+
+def test_parse_lambda_no_args():
+    """Existing behavior: lambda with no args should still work."""
+    setup_test()
+    src = '''
+def f():
+    g = lambda: 42
+'''
+    IrTranslator().translate(src, '')
+    lam = [s for name, s in env.scopes.items()
+           if name.startswith('@top.f._lambda_')][0]
+    syms = lam.param_symbols()
+    assert len(syms) == 0
+
+
 # ---- helpers ----
 def _translate(src):
     """Translate source and return the top scope."""
@@ -346,9 +380,9 @@ def f():
 '''
     top = _translate(src)
     scope = env.scopes['@top.f']
-    # lambda scope should exist (named @top.f.0, etc.)
+    # lambda scope should exist (named @top.f._lambda_N)
     lambda_scopes = [s for name, s in env.scopes.items()
-                     if name.startswith('@top.f.') and name != '@top.f']
+                     if name.startswith('@top.f._lambda_')]
     assert len(lambda_scopes) >= 1
     lscope = lambda_scopes[0]
     assert lscope.is_returnable()

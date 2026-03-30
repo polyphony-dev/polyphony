@@ -1,0 +1,25 @@
+"""Lambda capturing a lambda ctor parameter as a free variable.
+
+Tests that a lambda passed as a ctor parameter is propagated to
+a worker scope when captured as a free variable in another lambda closure.
+"""
+from polyphony import module, testbench
+from polyphony.io import Port
+from polyphony.timing import wait_value
+
+
+@module
+class WorkerLambda13:
+    def __init__(self, fn):
+        self.o = Port(int, 'out')
+        self.append_worker(self.work, lambda x: fn(x) + 1)
+
+    def work(self, g):
+        self.o.wr(g(20))
+
+
+@testbench
+def test():
+    m = WorkerLambda13(lambda x: x * 2)
+    wait_value(41, m.o)
+    assert m.o.rd() == 41

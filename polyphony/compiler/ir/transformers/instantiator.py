@@ -327,12 +327,28 @@ class ArgumentApplier(object):
                 self._import_arg_symbols(arg, caller_scope, callee)
                 pname = callee.param_symbols()[i].name
                 VarReplacer.replace_uses(callee, Temp(name=pname), arg)
+                # Propagate bound arguments to sibling scopes that imported
+                # this parameter as a free variable (e.g. lambda closures).
+                if callee.is_ctor() and callee.parent:
+                    orig_name = param_names[i]
+                    for sibling in callee.parent.children:
+                        if sibling is callee:
+                            continue
+                        sib_sym = sibling.find_sym(orig_name)
+                        if sib_sym and sib_sym.is_free() and sib_sym.is_imported():
+                            self._import_arg_symbols(arg, caller_scope, sibling)
+                            VarReplacer.replace_uses(sibling, Temp(name=orig_name), arg)
             callee.remove_param([i for i, _ in binding])
             bound_indices = {i for i, _ in binding}
             args = tuple(a for j, a in enumerate(args) if j not in bound_indices)
             ConstantOpt().process(callee)
             if callee.is_ctor():
-                callee.parent.set_bound_args(binding)
+                # Exclude function-typed bindings from _bound_args — lambda/function
+                # arguments are inlined at compile time and not needed for model selection.
+                non_func_binding = [(i, exp) for i, exp in binding
+                                    if not (i < len(param_syms) and param_syms[i].typ.is_function())]
+                callee.parent.set_bound_args(non_func_binding)
         if callee.parent.is_module():
             callee.parent.build_module_params(module_param_vars)
         return args
+
