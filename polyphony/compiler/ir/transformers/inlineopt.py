@@ -325,6 +325,8 @@ class FlattenFieldAccess(IrTransformer):
                 qsym = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
                 for sym in qsym:
                     tags |= sym.tags
+                # 'self' tag belongs to the receiver symbol, not the flattened field
+                tags.discard('self')
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
                 env.origin_registry.set_sym_origin(flatsym, ancestor)
                 flatsym.add_tag("flattened")
@@ -435,6 +437,8 @@ class _FlattenFieldAccessForExprType(IrTransformer):
                 qsym = cast(tuple[Symbol, ...], qualified_symbols(ir, self.scope))
                 for sym in qsym:
                     tags |= sym.tags
+                # 'self' tag belongs to the receiver symbol, not the flattened field
+                tags.discard('self')
                 flatsym = scope.add_sym(flatname, tags, typ=ancestor.typ)
                 env.origin_registry.set_sym_origin(flatsym, ancestor)
                 flatsym.add_tag("flattened")
@@ -857,6 +861,9 @@ class InlineOpt(object):
 
             if isinstance(call_stm, Move) and callee.is_ctor():
                 assert call_stm.src == call
+                # Save original ctor args on the class scope for later use
+                # (e.g., propagating object field values to module flattened fields)
+                callee.parent.as_class()._ctor_call_args = call.args
                 builtin_new = SysCall(func=Temp("$new"), args=(("typ", call.func.clone(ctx=Ctx.LOAD)),), kwargs={})
                 new_call_stm = call_stm.subst(call_stm.src, builtin_new)
                 if new_call_stm is not call_stm:

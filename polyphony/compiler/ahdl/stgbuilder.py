@@ -379,8 +379,9 @@ def _tags_from_sym(sym) -> set[str]:
         else:
             if sym.scope.is_testbench():
                 tags.add('dut')
-            else:
+            elif sym_scope.is_module():
                 tags.add('subscope')
+            # Plain-class objects are inlined; skip subscope tag
 
     if sym.is_param() and sym.scope.is_function_module():
         tags.add('input')

@@ -34,6 +34,9 @@ class HDLModuleBuilder(object):
 
     def _process_submodules(self):
         for instance_sig, subscope in self.hdlmodule.subscopes.items():
+            if not isinstance(subscope, HDLModule):
+                # Skip non-module subscopes (e.g., plain-class objects)
+                continue
             param_map = {}
             cls = subscope.scope.as_class()
             if cls and cls.module_param_vars:
