@@ -925,8 +925,13 @@ def test_inlinelib_1():
 
     _run_inline([caller_func])
 
-    inlined_lambda1 = env.scopes["@top.caller_func.0_#1"]
-    inlined_lambda2 = env.scopes["@top.caller_func.0_#2"]
+    inlined_lambdas = sorted(
+        [s for name, s in env.scopes.items()
+         if name.startswith("@top.caller_func._lambda_") and "_#" in name],
+        key=lambda s: s.name
+    )
+    assert len(inlined_lambdas) == 2
+    inlined_lambda1, inlined_lambda2 = inlined_lambdas
 
     gen = caller_func.traverse_blocks()
     blk1 = next(gen)

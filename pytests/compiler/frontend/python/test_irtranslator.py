@@ -111,8 +111,9 @@ def f():
     g = lambda x, y: x + y
 '''
     IrTranslator().translate(src, '')
-    # Lambda scope is named with numeric suffix under parent: @top.f.0
-    lam = env.scopes['@top.f.0']
+    # Lambda scope is named with _lambda_ prefix under parent
+    lam = [s for name, s in env.scopes.items()
+           if name.startswith('@top.f._lambda_')][0]
 
     syms = lam.param_symbols()
     assert len(syms) == 2
@@ -131,7 +132,8 @@ def f():
     g = lambda: 42
 '''
     IrTranslator().translate(src, '')
-    lam = env.scopes['@top.f.0']
+    lam = [s for name, s in env.scopes.items()
+           if name.startswith('@top.f._lambda_')][0]
     syms = lam.param_symbols()
     assert len(syms) == 0
 
@@ -378,9 +380,9 @@ def f():
 '''
     top = _translate(src)
     scope = env.scopes['@top.f']
-    # lambda scope should exist (named @top.f.0, etc.)
+    # lambda scope should exist (named @top.f._lambda_N)
     lambda_scopes = [s for name, s in env.scopes.items()
-                     if name.startswith('@top.f.') and name != '@top.f']
+                     if name.startswith('@top.f._lambda_')]
     assert len(lambda_scopes) >= 1
     lscope = lambda_scopes[0]
     assert lscope.is_returnable()

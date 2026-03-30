@@ -1,8 +1,7 @@
 """Lambda passed via ctor arg with a constant ctor parameter.
 
-Known limitation: HDL simulation fails because apply_argument binds the
-ctor parameter on a different scope object than the one referenced by
-the worker's imported free variable symbols.
+Tests that ctor parameter constants (e.g. scale=2) are propagated to
+worker scopes that capture them as free variables via lambda closures.
 """
 from polyphony import module, testbench
 from polyphony.io import Port

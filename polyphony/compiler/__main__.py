@@ -539,10 +539,15 @@ def apply_argument(driver):
 def propagate_free_var_constants(driver, scope):
     """Propagate constants to imported free variables from their owner scope.
 
-    After apply_argument binds ctor parameters (e.g. scale=2), worker scopes
-    that imported those symbols as free variables still reference the unresolved
-    variable. This pass checks the owner scope for constant definitions and
-    replaces uses accordingly.
+    After apply_argument binds ctor parameters, worker scopes that imported
+    those symbols as free variables may still reference the unresolved variable.
+    apply_argument now directly propagates constants to sibling scopes, but
+    this pass serves as a safety net for cases where the owner scope has a
+    constant definition that was not handled at bind time (e.g. non-ctor owners).
+
+    When a worker is instantiated (cloned), its free variable symbols still
+    reference the template ctor as their owner. In that case, we resolve
+    the corresponding instantiated ctor via the scope's parent module.
     """
     from .ir.analysis.usedef import UseDefDetector
     from .ir.transformers.varreplacer import VarReplacer
@@ -554,6 +559,12 @@ def propagate_free_var_constants(driver, scope):
         owner = sym.scope
         if owner is scope:
             continue
+        # If the owner is a template ctor (not a child of this scope's parent
+        # module), find the corresponding instantiated ctor instead.
+        if owner.is_ctor() and scope.parent and scope.parent.is_module():
+            inst_ctor = scope.parent.find_ctor()
+            if inst_ctor and inst_ctor is not owner:
+                owner = inst_ctor
         owner_usedef = UseDefDetector().process(owner)
         # The symbol may have been imported (same object) or cloned.
         # Try direct lookup first, then search by name.

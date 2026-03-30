@@ -1306,11 +1306,15 @@ class CodeVisitor(ast.NodeVisitor):
             return Const(value=v)
         return UnOp(op=op2str(node.op), exp=exp)
 
+    _lambda_id = 0
+
     def visit_Lambda(self, node):
         outer_scope = self.current_scope
         tags = {"function", "returnable", "comb"}
         tags |= outer_scope.tags & {"inlinelib"}
-        lambda_scope = Scope.create(outer_scope, None, tags, node.lineno)
+        lambda_name = f"_lambda_{CodeVisitor._lambda_id}"
+        CodeVisitor._lambda_id += 1
+        lambda_scope = Scope.create(outer_scope, lambda_name, tags, node.lineno)
         lambda_scope.synth_params.update(outer_scope.synth_params)
         lambda_scope.return_type = Type.undef()
         self.current_scope = lambda_scope
