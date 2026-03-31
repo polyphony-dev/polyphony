@@ -16,17 +16,20 @@ class Block(object):
         block.order = order + 1
         logger.debug(block.name + ' order ' + str(block.order))
         queue = deque([block])
+        in_queue = {block}
         while queue:
             blk = queue.popleft()
+            in_queue.discard(blk)
             for succ in blk.succs:
                 if succ in blk.succs_loop:
                     continue
                 if succ.order < blk.order + 1:
                     succ.order = blk.order + 1
                     logger.debug(succ.name + ' order ' + str(succ.order))
-                if succ in queue:
+                if succ in in_queue:
                     continue
                 queue.append(succ)
+                in_queue.add(succ)
 
     def __init__(self, scope, nametag='b'):
         self.nametag = nametag
@@ -184,16 +187,19 @@ class Block(object):
     def traverse(self):
         visited = set()
         stack = [self]
+        in_stack = {self}
         while stack:
             blk = stack.pop()
+            in_stack.discard(blk)
             yield blk
             visited.add(blk)
             for succ in reversed(blk.succs):
                 if (succ in blk.succs_loop or
                         succ in visited or
-                        succ in stack):
+                        succ in in_stack):
                     continue
                 stack.append(succ)
+                in_stack.add(succ)
 
     def clone(self, scope: Scope, stm_map: dict[IrStm, IrStm], nametag=None):
         if nametag:
