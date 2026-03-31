@@ -109,7 +109,8 @@ class SchedulerImpl(object):
     def _set_priority(self, node, prio, dfg):
         if prio > node.priority:
             node.priority = prio
-            logger.debug("update priority ... " + str(node))
+            if logger.isEnabledFor(10):  # DEBUG
+                logger.debug("update priority ... " + str(node))
             return (dfg.succs_without_back(node), prio + 1)
         return (None, None)
 
