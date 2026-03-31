@@ -387,31 +387,7 @@ class ArgumentApplier(object):
         ctor_call_args = getattr(obj_class_scope, '_ctor_call_args', None)
         if ctor_call_args is None:
             return
-        # Map ctor param name -> actual argument value
-        ctor_param_names = obj_ctor.param_names()
-        param_value_map: dict[str, IrExp] = {}
-        for i, (_, ctor_arg) in enumerate(ctor_call_args):
-            if i < len(ctor_param_names):
-                param_value_map[ctor_param_names[i]] = ctor_arg
-        # Scan ctor IR for field assignments: self.field = <expr>
-        # Resolve parameter references to actual argument values
-        field_value_map: dict[str, IrExp] = {}
-        for blk in obj_ctor.traverse_blocks():
-            for stm in blk.stms:
-                if not isinstance(stm, Move):
-                    continue
-                if not isinstance(stm.dst, Attr):
-                    continue
-                dst_qname = stm.dst.qualified_name
-                if len(dst_qname) < 2 or dst_qname[0] != env.self_name:
-                    continue
-                field_name = dst_qname[-1]
-                src = stm.src
-                # Resolve parameter references to actual values
-                if isinstance(src, Temp) and src.name in param_value_map:
-                    src = param_value_map[src.name]
-                if isinstance(src, Const):
-                    field_value_map[field_name] = src
+        field_value_map = self._extract_field_values(obj_class_scope, ctor_call_args)
         # Strip @in_ prefix from parameter name
         base_param_name = param_name
         if base_param_name.startswith('@in_'):
@@ -433,3 +409,73 @@ class ArgumentApplier(object):
                     # The flattened field is referenced as self.cfg_width (Attr form)
                     self_attr = Attr(exp=Temp(name=env.self_name, ctx=Ctx.LOAD), attr=sym_name, ctx=Ctx.LOAD)
                     VarReplacer.replace_uses(child, self_attr, value.clone())
+
+    def _extract_field_values(self, class_scope: Scope,
+                              call_args: tuple[tuple[str, IrExp], ...],
+                              prefix: str = '') -> dict[str, IrExp]:
+        """Recursively extract field values from a class ctor's IR.
+
+        For nested objects (e.g., self.a = Inner(x)), recursively descends into
+        the inner class's ctor to extract leaf field values.
+        Returns a flat map like {'a_val': Const(10), 'b_val': Const(20)}.
+        """
+        ctor = class_scope.find_ctor()
+        if ctor is None:
+            return {}
+        # Map ctor param name -> actual argument value
+        ctor_param_names = ctor.param_names()
+        param_value_map: dict[str, IrExp] = {}
+        for i, (_, arg) in enumerate(call_args):
+            if i < len(ctor_param_names):
+                param_value_map[ctor_param_names[i]] = arg
+        # Scan ctor IR for field assignments: self.field = <expr>
+        field_value_map: dict[str, IrExp] = {}
+        for blk in ctor.traverse_blocks():
+            for stm in blk.stms:
+                if not isinstance(stm, Move):
+                    continue
+                if not isinstance(stm.dst, Attr):
+                    continue
+                dst_qname = stm.dst.qualified_name
+                if len(dst_qname) < 2 or dst_qname[0] != env.self_name:
+                    continue
+                field_name = dst_qname[-1]
+                src = stm.src
+                # Resolve parameter references to actual values
+                if isinstance(src, Temp) and src.name in param_value_map:
+                    src = param_value_map[src.name]
+                key = f'{prefix}{field_name}' if prefix else field_name
+                if isinstance(src, Const):
+                    field_value_map[key] = src
+                elif isinstance(src, (New, SysCall)):
+                    # Nested object: recursively extract its fields
+                    if isinstance(src, New):
+                        inner_qsyms = qualified_symbols(src.func, ctor)
+                        inner_sym = inner_qsyms[-1]
+                    elif isinstance(src, SysCall) and src.func.name == '$new':
+                        # $new(ClassName) — class name is in the first arg
+                        cls_arg = src.args[0][1] if src.args else None
+                        if cls_arg is None:
+                            continue
+                        inner_qsyms = qualified_symbols(cls_arg, ctor)
+                        inner_sym = inner_qsyms[-1]
+                    else:
+                        continue
+                    inner_scope = inner_sym.typ.scope if isinstance(inner_sym, Symbol) and inner_sym.typ.has_scope() else None
+                    if inner_scope and inner_scope.is_class() and not inner_scope.is_module():
+                        # Get inner ctor call args for this specific field
+                        nested_field_args = getattr(ctor, '_nested_ctor_field_args', {})
+                        inner_call_args = nested_field_args.get(field_name)
+                        if inner_call_args is None and isinstance(src, New):
+                            inner_call_args = src.args
+                        if inner_call_args is None:
+                            continue
+                        # Resolve args using param_value_map from outer ctor
+                        resolved_args = tuple(
+                            (n, param_value_map.get(a.name, a) if isinstance(a, Temp) else a)
+                            for n, a in inner_call_args
+                        )
+                        nested = self._extract_field_values(
+                            inner_scope, resolved_args, prefix=f'{key}_')
+                        field_value_map.update(nested)
+        return field_value_map

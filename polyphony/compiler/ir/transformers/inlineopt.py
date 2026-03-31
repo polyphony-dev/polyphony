@@ -864,6 +864,12 @@ class InlineOpt(object):
                 # Save original ctor args on the class scope for later use
                 # (e.g., propagating object field values to module flattened fields)
                 callee.parent.as_class()._ctor_call_args = call.args
+                # Also save per-field args for nested object support
+                if isinstance(call_stm.dst, Attr):
+                    dst_field = call_stm.dst.qualified_name[-1]
+                    if not hasattr(caller, '_nested_ctor_field_args'):
+                        caller._nested_ctor_field_args = {}
+                    caller._nested_ctor_field_args[dst_field] = call.args
                 builtin_new = SysCall(func=Temp("$new"), args=(("typ", call.func.clone(ctx=Ctx.LOAD)),), kwargs={})
                 new_call_stm = call_stm.subst(call_stm.src, builtin_new)
                 if new_call_stm is not call_stm:
