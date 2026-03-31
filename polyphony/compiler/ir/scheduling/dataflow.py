@@ -84,6 +84,7 @@ class DataFlowGraph(object):
         self.region = region
         # self.blocks = blocks
         self.nodes = []
+        self._stm_to_node = {}
         self.edges = {}
         self.succ_edges = defaultdict(set)
         self.pred_edges = defaultdict(set)
@@ -123,15 +124,17 @@ class DataFlowGraph(object):
         assert child.parent is self
 
     def add_stm_node(self, stm):
-        n = self.find_node(stm)
+        n = self._stm_to_node.get(id(stm))
         if not n:
             n = DFNode("Stm", stm)
             n._nid = len(self.nodes)
             self.nodes.append(n)
+            self._stm_to_node[id(stm)] = n
         return n
 
     def remove_node(self, n):
         self.nodes.remove(n)
+        self._stm_to_node.pop(id(n.tag), None)
 
     def add_defuse_edge(self, n1, n2):
         self.add_edge("DefUse", n1, n2)
@@ -246,10 +249,7 @@ class DataFlowGraph(object):
         return preds
 
     def find_node(self, stm):
-        for node in self.nodes:
-            if node.tag is stm:
-                return node
-        return None
+        return self._stm_to_node.get(id(stm))
 
     def find_src(self):
         return sorted(self.src_nodes, key=lambda n: n._nid)

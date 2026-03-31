@@ -62,6 +62,7 @@ class DominatorTreeBuilder(object):
         self._back_loop_blks = self._preds_loop
 
         self.all_blocks = [blk for blk in self.scope.traverse_blocks()]
+        self._all_blocks_set = set(self.all_blocks)
         #collect dominators for each block
         self._walk_block(first_block, self._visit_Block_find_dominator)
 
@@ -101,17 +102,20 @@ class DominatorTreeBuilder(object):
     def _walk_block(self, block, visit_func):
         visited = set()
         stack = [block]
+        in_stack = {block}
         while stack:
             blk = stack.pop()
+            in_stack.discard(blk)
             visit_func(blk)
             visited.add(blk)
             succs = self._fwd_blks(blk)
             for succ in reversed(succs):
                 if (succ in self._fwd_loop_blks(blk) or
                         succ in visited or
-                        succ in stack):
+                        succ in in_stack):
                     continue
                 stack.append(succ)
+                in_stack.add(succ)
 
     def _visit_Block_find_dominator(self, block):
         if block in self.dominators:
@@ -119,7 +123,7 @@ class DominatorTreeBuilder(object):
 
         preds = self._back_blks(block)
         if preds:
-            doms = set(self.all_blocks)
+            doms = set(self._all_blocks_set)
             for p in preds:
                 if p in self._back_loop_blks(block):
                     continue

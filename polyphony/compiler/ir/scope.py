@@ -834,6 +834,7 @@ class FunctionScope(Instantiable, Scope):
         self.function_params = FunctionParams(self.is_method())
         self.return_type: Type | None = None
         self.loop_tree = LoopNestTree()
+        self._block_region_cache: dict | None = None
 
     def as_function(self) -> "FunctionScope":
         return self
@@ -883,6 +884,7 @@ class FunctionScope(Instantiable, Scope):
 
     def reset_loop_tree(self):
         self.loop_tree = LoopNestTree()
+        self._block_region_cache: dict | None = None
 
     def top_region(self):
         return self.loop_tree.root
@@ -893,28 +895,42 @@ class FunctionScope(Instantiable, Scope):
     def child_regions(self, r):
         return self.loop_tree.get_children_of(r)
 
+    def _invalidate_block_region_cache(self):
+        self._block_region_cache = None
+
     def set_top_region(self, r):
         self.loop_tree.root = r
         self.loop_tree.add_node(r)
+        self._invalidate_block_region_cache()
 
     def append_child_regions(self, parent, children):
         for child in children:
             self.loop_tree.add_edge(parent, child)
+        self._invalidate_block_region_cache()
 
     def append_sibling_region(self, r, new_r):
         parent = self.loop_tree.get_parent_of(r)
         self.loop_tree.add_edge(parent, new_r)
+        self._invalidate_block_region_cache()
 
     def remove_region(self, r):
         parent = self.loop_tree.get_parent_of(r)
         self.loop_tree.del_edge(parent, r, auto_del_node=False)
         self.loop_tree.del_node(r)
+        self._invalidate_block_region_cache()
+
+    def _build_block_region_cache(self):
+        cache = {}
+        for r in self.loop_tree.traverse():
+            cache[r.head] = r
+            for b in r.bodies:
+                cache[b] = r
+        self._block_region_cache = cache
 
     def find_region(self, blk):
-        for r in self.loop_tree.traverse():
-            if blk in r.blocks():
-                return r
-        return None
+        if self._block_region_cache is None:
+            self._build_block_region_cache()
+        return self._block_region_cache.get(blk)
 
     def remove_block_from_region(self, blk):
         if not self.loop_tree.root:
@@ -923,6 +939,8 @@ class FunctionScope(Instantiable, Scope):
         if r is None:
             return
         r.remove_body(blk)
+        if self._block_region_cache is not None:
+            self._block_region_cache.pop(blk, None)
 
     def is_leaf_region(self, r):
         return self.loop_tree.is_leaf(r)

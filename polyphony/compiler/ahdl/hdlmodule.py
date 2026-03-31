@@ -43,6 +43,7 @@ class HDLModule(HDLScope):
         self.sub_modules = {}
         self.functions = []
         self.decls: list[AHDL_DECL] = []
+        self._decls_set: set[AHDL_DECL] = set()
         self.fsms = {}
         self.edge_detectors:set[tuple[AHDL_VAR, AHDL_EXP, AHDL_EXP]] = set()
         self.ahdl2dfgnode = {}
@@ -200,6 +201,7 @@ class HDLModule(HDLScope):
             new.sub_modules[name] = (name, new_sub_hdlscope, connections, param_map)
         new.functions = self.functions[:]
         new.decls = self.decls[:]
+        new._decls_set = self._decls_set.copy()
         for fsm in self.fsms.values():
             new.fsms[fsm.name] = FSM(fsm.name, new.scope, sig_maps[new.name][fsm.state_var])
         new.edge_detectors = self.edge_detectors.copy()
@@ -258,13 +260,15 @@ class HDLModule(HDLScope):
 
     def add_decl(self, decl):
         assert isinstance(decl, AHDL_DECL)
-        if decl in set(self.decls):
+        if decl in self._decls_set:
             return
         self.decls.append(decl)
+        self._decls_set.add(decl)
 
     def remove_decl(self, decl):
         assert isinstance(decl, AHDL_DECL)
         self.decls.remove(decl)
+        self._decls_set.discard(decl)
 
     def add_sub_module(self, name:str, hdlmodule, connections:list[tuple[AHDL_VAR, Signal]], param_map=None):
         assert isinstance(name, str)
