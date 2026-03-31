@@ -98,6 +98,7 @@ class NetReducer(AHDLTransformer):
             new_decl = self.visit(decl)
             new_decls.append(new_decl)
         self.hdlmodule.decls = new_decls
+        self.hdlmodule._decls_set = set(new_decls)
         # replace vars in tasks
         new_tasks = []
         for task in self.hdlmodule.tasks:
