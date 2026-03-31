@@ -407,6 +407,60 @@ class RestrictionChecker(IrVisitor):
         if self.scope.is_global() and not callee_scope.is_module():
             fail(self.current_stm, Errors.GLOBAL_INSTANCE_IS_NOT_SUPPORTED)
 
+    def visit_Move(self, ir):
+        # Check for writes to object argument fields in module scope
+        if isinstance(ir.dst, Attr) and self._is_in_module_scope():
+            self._check_object_field_immutability(ir)
+        super().visit_Move(ir)
+
+    def _is_in_module_scope(self) -> bool:
+        scope = self.scope
+        if scope.is_module():
+            return True
+        parent = scope.parent
+        return parent is not None and parent.is_module()
+
+    def _check_object_field_immutability(self, ir):
+        """Check that object arguments passed to module ctors are not mutated."""
+        dst_attr = ir.dst
+        # Walk up the Attr chain to find the root variable
+        root = dst_attr
+        while isinstance(root, Attr):
+            root = root.exp
+        if not isinstance(root, Temp):
+            return
+        root_name = root.name
+        if root_name == env.self_name:
+            # self.field = ... — check if field is an object param
+            # After flattening, writes look like self.cfg_width = ...
+            # But before flattening, writes look like self.cfg.width = ...
+            # Check the intermediate attribute
+            if not isinstance(dst_attr.exp, Attr):
+                return
+            inner_attr = dst_attr.exp
+            if not isinstance(inner_attr.exp, Temp) or inner_attr.exp.name != env.self_name:
+                return
+            field_name = inner_attr.attr
+            module_scope = self.scope.parent if not self.scope.is_module() else self.scope
+            if module_scope is None:
+                return
+            field_sym = module_scope.find_sym(field_name)
+            if field_sym is None:
+                return
+            if field_sym.typ.is_object() and not field_sym.typ.scope.is_module():
+                fail(self.current_stm, Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE, [dst_attr.attr])
+        else:
+            # Direct write to object param: cfg.width = ... (in ctor before self assignment)
+            scope = self.scope
+            module_scope = scope.parent if not scope.is_module() else scope
+            if module_scope is None:
+                return
+            root_sym = scope.find_sym(root_name)
+            if root_sym is None:
+                return
+            if root_sym.typ.is_object() and not root_sym.typ.scope.is_module() and root_sym.is_param():
+                fail(self.current_stm, Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE, [dst_attr.attr])
+
     def visit_Call(self, ir):
         self.visit(ir.func)
         callee_scope = _get_callee_scope(ir, self.scope)

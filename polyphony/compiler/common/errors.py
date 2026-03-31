@@ -78,6 +78,7 @@ class Errors(Enum):
     MODULE_CANNOT_ACCESS_OBJECT = 913
     PORT_ASSIGN_CANNOT_ACCEPT = 914
     WORKER_TEMP_OBJ_ARG = 915
+    MODULE_OBJECT_FIELD_IS_IMMUTABLE = 916
 
     READING_IS_CONFLICTED = 920
     WRITING_IS_CONFLICTED = 921
@@ -176,6 +177,7 @@ ERROR_MESSAGES = {
     Errors.CALL_MODULE_METHOD: "Calling a method of the module class can only in the module itself",
     Errors.UNSUPPORTED_TYPES_IN_FUNC: "It is not supported to pass the {} type argument to {}()",
     Errors.MODULE_ARG_MUST_BE_X_TYPE: "The type of @module class argument must be constant, not {}",
+    Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE: "Cannot write to field '{}' of object argument in @module class",
     Errors.WORKER_ARG_MUST_BE_X_TYPE: "The type of Worker argument must be an object of Port or constant, not {}",
     Errors.PORT_MUST_BE_IN_MODULE: "Port object must created in the constructor of the module class",
     Errors.PORT_PARAM_MUST_BE_CONST: "The port class constructor accepts only constants",

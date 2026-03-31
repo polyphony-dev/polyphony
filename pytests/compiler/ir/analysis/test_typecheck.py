@@ -4182,6 +4182,116 @@ def test():
 
 
 # =========================================================
+# RestrictionChecker: module object field immutability
+# =========================================================
+
+
+class TestRestrictionCheckerModuleObjectImmutability:
+    def test_restriction_module_object_field_write_in_worker_fails(self):
+        """RestrictionChecker: writing to object arg field in worker fails."""
+        typed, _ = _translate_and_specialize('''
+from polyphony import module, testbench
+from polyphony.io import Port
+from polyphony.typing import Int
+
+class Config:
+    def __init__(self, width):
+        self.width = width
+
+@module
+class M:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.p = Port(Int[8], 'out', 0)
+        self.append_worker(self.run)
+    def run(self):
+        self.cfg.width = 99
+        self.p.wr(1)
+
+@testbench
+def test():
+    cfg = Config(8)
+    m = M(cfg)
+''')
+        top = env.scopes[env.global_scope_name]
+        with pytest.raises(CompileError):
+            for s in top.children:
+                for ss in s.children:
+                    try:
+                        RestrictionChecker().process(ss)
+                    except (AssertionError, AttributeError):
+                        pass
+
+    def test_restriction_module_object_field_write_in_ctor_fails(self):
+        """RestrictionChecker: writing to object arg field in constructor fails."""
+        typed, _ = _translate_and_specialize('''
+from polyphony import module, testbench
+from polyphony.io import Port
+from polyphony.typing import Int
+
+class Config:
+    def __init__(self, width):
+        self.width = width
+
+@module
+class M:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.cfg.width = 99
+        self.p = Port(Int[8], 'out', 0)
+        self.append_worker(self.run)
+    def run(self):
+        self.p.wr(1)
+
+@testbench
+def test():
+    cfg = Config(8)
+    m = M(cfg)
+''')
+        top = env.scopes[env.global_scope_name]
+        with pytest.raises(CompileError):
+            for s in top.children:
+                for ss in s.children:
+                    try:
+                        RestrictionChecker().process(ss)
+                    except (AssertionError, AttributeError):
+                        pass
+
+    def test_restriction_module_object_field_read_passes(self):
+        """RestrictionChecker: reading object arg field in worker passes."""
+        typed, _ = _translate_and_specialize('''
+from polyphony import module, testbench
+from polyphony.io import Port
+from polyphony.typing import Int
+
+class Config:
+    def __init__(self, width):
+        self.width = width
+
+@module
+class M:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.p = Port(Int[8], 'out', 0)
+        self.append_worker(self.run)
+    def run(self):
+        self.p.wr(self.cfg.width)
+
+@testbench
+def test():
+    cfg = Config(8)
+    m = M(cfg)
+''')
+        top = env.scopes[env.global_scope_name]
+        for s in top.children:
+            for ss in s.children:
+                try:
+                    RestrictionChecker().process(ss)
+                except (AssertionError, AttributeError):
+                    pass
+
+
+# =========================================================
 # RestrictionChecker: visit_Call edge cases
 # =========================================================
 
