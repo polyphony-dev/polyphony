@@ -353,6 +353,7 @@ class SSATransformerBase(object):
     def _remove_useless_phi(self):
         self.usedef = UseDefDetector().process(self.scope)
         usedef = self.usedef
+        expr_type_index = VarReplacer.build_expr_type_index()
 
         def get_arg_name_if_same(phi):
             names = [arg.name for arg in phi.args
@@ -381,7 +382,7 @@ class SSATransformerBase(object):
             name = get_arg_name_if_same(phi)
             if name:
                 replace_var = phi.var.model_copy(update={'ctx': Ctx.LOAD, 'name': name})
-                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef)
+                replaces = VarReplacer.replace_uses(self.scope, phi.var, replace_var, self.usedef, expr_type_index)
                 for rep in replaces:
                     if isinstance(rep, Phi):
                         worklist.append(rep)
