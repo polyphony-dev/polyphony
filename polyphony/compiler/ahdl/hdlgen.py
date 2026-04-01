@@ -202,15 +202,18 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                 for sub_var, connector in connections:
                     # Match submodule port width and signedness
                     connector.width = sub_var.sig.width
+                    # Copy int tag for signed output
+                    if sub_var.sig.is_int():
+                        connector.add_tag('int')
                     if sub_var.sig.is_input():
-                        # Submodule input → parent input (wire, not reg)
+                        # Submodule input → parent input (wire)
                         connector.tags.discard('reg')
                         connector.tags.discard('initializable')
-                        connector.add_tag({'input', 'single_port', 'net'})
+                        connector.add_tag({'net', 'input'})
                         self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
                     elif sub_var.sig.is_output():
-                        # Submodule output → parent output
-                        connector.add_tag({'output', 'single_port'})
+                        # Submodule output → parent output (wire)
+                        connector.add_tag('output')
                         self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.LOAD))
 
     def _process_fsm(self, fsm):
