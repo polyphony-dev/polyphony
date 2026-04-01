@@ -187,11 +187,31 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
                     topmodule.add_input(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
                 elif sig.is_output():
                     topmodule.add_output(AHDL_VAR(prefix_qsig + (sig,), Ctx.LOAD))
+            if not env.config.flatten_modules:
+                # In individual compilation mode, submodule ports are exposed
+                # as parent I/O via connector signals from _process_submodules.
+                return
             for sig in hdlmodule.get_signals({'subscope'}, exclude_tags=None):
                 subscope = hdlmodule.subscopes[sig]
                 collect_io(topmodule, subscope, prefix_qsig + (sig,))
 
         collect_io(self.hdlmodule, self.hdlmodule, tuple())
+        if not env.config.flatten_modules:
+            # Register connector signals as I/O ports based on submodule port direction
+            for _, _, connections, _ in self.hdlmodule.sub_modules.values():
+                for sub_var, connector in connections:
+                    # Match submodule port width and signedness
+                    connector.width = sub_var.sig.width
+                    if sub_var.sig.is_input():
+                        # Submodule input → parent input (wire, not reg)
+                        connector.tags.discard('reg')
+                        connector.tags.discard('initializable')
+                        connector.add_tag({'input', 'single_port', 'net'})
+                        self.hdlmodule.add_input(AHDL_VAR((connector,), Ctx.LOAD))
+                    elif sub_var.sig.is_output():
+                        # Submodule output → parent output
+                        connector.add_tag({'output', 'single_port'})
+                        self.hdlmodule.add_output(AHDL_VAR((connector,), Ctx.LOAD))
 
     def _process_fsm(self, fsm):
         scope = fsm.scope
@@ -211,6 +231,15 @@ class HDLTopModuleBuilder(HDLModuleBuilder):
             assert sig
             val = 0 if not p.defval else p.defval.value
             self.hdlmodule.parameters[sig] = val
+        if not env.config.flatten_modules:
+            # Ensure submodule HDLModules have their I/O built first
+            for _, subscope in self.hdlmodule.subscopes.items():
+                if isinstance(subscope, HDLModule) and not getattr(subscope, '_built', False):
+                    sub_builder = HDLModuleBuilder.create(subscope)
+                    if sub_builder:
+                        sub_builder.process(subscope)
+                        subscope._built = True
+            self._process_submodules()
         self._process_io(self.hdlmodule)
 
         self._collector.process(self.hdlmodule)

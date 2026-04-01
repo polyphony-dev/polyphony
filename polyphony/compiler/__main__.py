@@ -776,9 +776,26 @@ def reducebits(driver, scope):
 
 def buildmodule(driver, scope):
     hdlmodule = env.hdlscope(scope)
+    if getattr(hdlmodule, '_built', False):
+        return
     modulebuilder = HDLModuleBuilder.create(hdlmodule)
     assert modulebuilder
     modulebuilder.process(hdlmodule)
+    hdlmodule._built = True
+
+
+def wire_submodules(driver, scope):
+    """Wire submodule port connections (individual compilation only).
+
+    Must run after buildmodule so that submodule HDLModules have their
+    I/O ports populated.
+    """
+    hdlmodule = env.hdlscope(scope)
+    if not hdlmodule.scope.is_module():
+        return
+    builder = HDLModuleBuilder()
+    builder.hdlmodule = hdlmodule
+    builder._process_submodules()
 
 
 def ahdluse_def(driver, scope):
