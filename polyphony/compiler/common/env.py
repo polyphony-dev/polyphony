@@ -13,6 +13,7 @@ class Config(object):
     main_clock_frequency = 100000000
     reset_activation_signal = 1
     enable_pure = False
+    flatten_modules = True  # False for individual module compilation
 
     def __str__(self):
         d = {}

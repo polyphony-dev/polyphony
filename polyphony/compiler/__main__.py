@@ -164,6 +164,8 @@ def is_not_static_scope(scope):
 
 
 def is_inlined_module(scope):
+    if not env.config.flatten_modules:
+        return False
     if scope.is_namespace():
         return False
     elif (scope.is_module()
@@ -865,6 +867,9 @@ def compile_plan():
     def pure(proc):
         return proc if env.config.enable_pure else None
 
+    def flatten(proc):
+        return proc if env.config.flatten_modules else None
+
     plan = [
         apply_api_types,
         if_trans,
@@ -912,7 +917,7 @@ def compile_plan():
         inline_opt,
 
         filter_scope(is_uninlined_scope),
-        flattenmodule,
+        flatten(flattenmodule),
 
         setsynthparams,
         reduce_blk,
