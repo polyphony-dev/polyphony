@@ -4,6 +4,7 @@ from polyphony import is_worker_running
 from polyphony.io import Port
 from polyphony.typing import int8
 from polyphony.timing import clksleep, wait_value
+from polyphony.modules import Handshake
 
 
 @module
@@ -27,7 +28,7 @@ class Nesting03:
         self.sub2 = Submodule(3)
         self.append_worker(self.worker)
         self.start = Port(bool, 'in', init=False)
-        self.result = Port(bool, 'out', init=False, protocol='valid')
+        self.result = Handshake(bool, 'out')
 
     def worker(self):
         wait_value(True, self.start)
@@ -40,10 +41,8 @@ class Nesting03:
 
 
 @testbench
-def test(m):
+def test():
+    m = Nesting03()
     m.start.wr(True)
     assert True == m.result.rd()
 
-
-m = Nesting03()
-test(m)
