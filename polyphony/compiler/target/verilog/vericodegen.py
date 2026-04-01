@@ -161,9 +161,17 @@ class VerilogCodeGen(AHDLVisitor):
         self.emit('')
 
     def _generate_decls(self):
+        # Signals driven by assign (AHDL_ASSIGN) must be wire, not reg
+        assign_driven = set()
+        for decl in self.hdlmodule.decls:
+            if isinstance(decl, AHDL_ASSIGN) and isinstance(decl.dst, AHDL_VAR):
+                assign_driven.add(decl.dst.sig.name)
         self.emit(f'//signals')
         for reg in self.hdlmodule.get_signals({'reg', 'regarray'}, {'input', 'output'}):
-            self.emit(f'reg {self._generate_signal(reg)};')
+            if reg.name in assign_driven:
+                self.emit(f'wire {self._generate_signal(reg)};')
+            else:
+                self.emit(f'reg {self._generate_signal(reg)};')
         for net in self.hdlmodule.get_signals({'net', 'netarray'}, {'input', 'output'}):
             self.emit(f'wire {self._generate_signal(net)};')
 
