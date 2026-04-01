@@ -716,6 +716,30 @@ def schedule(driver, scope):
     Scheduler().schedule(scope)
 
 
+def remove_flattened_object_fields(driver):
+    """Remove object-typed field symbols that have been fully flattened.
+
+    After FlattenFieldAccess, object fields like 'cfg' (type object<Config>)
+    remain in the module scope's symbol table even though all their field
+    accesses have been flattened to scalar symbols like 'cfg_width'.
+    These leftover object symbols cause issues in HDL generation (e.g.,
+    being treated as subscopes). This pass removes them.
+    """
+    for scope in driver.all_scopes():
+        to_remove = []
+        for sym in scope.symbols.values():
+            if sym.typ.is_object():
+                obj_scope = sym.typ.scope
+                if (sym.is_field()
+                        and not obj_scope.is_module()
+                        and not obj_scope.is_port()):
+                    to_remove.append(sym.name)
+        if to_remove:
+            logger.debug(f'remove_flattened_object_fields: {scope.name} removing {to_remove}')
+        for name in to_remove:
+            scope.del_sym(name)
+
+
 def createhdlscope(driver):
     scopes = deque(driver.all_scopes())
     visited = set()
@@ -989,6 +1013,7 @@ def compile_plan():
         dbg(dumpsched),
         assertioncheck,
 
+        remove_flattened_object_fields,
         createhdlscope,
         filter_scope(is_hdlmodule_scope),
         stg,

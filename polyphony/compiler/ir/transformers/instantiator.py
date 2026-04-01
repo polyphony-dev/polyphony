@@ -369,7 +369,24 @@ class ArgumentApplier(object):
                 # Import symbols referenced by arg from caller into callee
                 self._import_arg_symbols(arg, caller_scope, callee)
                 pname = callee.param_symbols()[i].name
+                param_sym = callee.param_symbols()[i]
                 VarReplacer.replace_uses(callee, Temp(name=pname), arg)
+                # Propagate bound arguments to sibling scopes that imported
+                # this parameter as a free variable (e.g. lambda closures).
+                if callee.is_ctor() and callee.parent:
+                    orig_name = param_names[i]
+                    for sibling in callee.parent.children:
+                        if sibling is callee:
+                            continue
+                        sib_sym = sibling.find_sym(orig_name)
+                        if sib_sym and sib_sym.is_free() and sib_sym.is_imported():
+                            self._import_arg_symbols(arg, caller_scope, sibling)
+                            VarReplacer.replace_uses(sibling, Temp(name=orig_name), arg)
+                # For object-typed params, bind flattened field values
+                if (param_sym.typ.is_object()
+                        and not param_sym.typ.scope.is_module()
+                        and callee.is_ctor()):
+                    self._bind_object_fields(caller_scope, arg, pname, callee)
             callee.remove_param([i for i, _ in binding])
             bound_indices = {i for i, _ in binding}
             args = tuple(a for j, a in enumerate(args) if j not in bound_indices)
@@ -384,3 +401,124 @@ class ArgumentApplier(object):
             callee.parent.build_module_params(module_param_vars)
         return args
 
+    def _bind_object_fields(self, caller_scope: Scope, arg: IrExp, param_name: str,
+                            callee: Scope):
+        """Bind flattened object field values from caller to callee module scope.
+
+        When a plain-class object is passed to a module constructor, the object's
+        fields are flattened into the module scope (e.g., cfg.width -> cfg_width).
+        This method extracts field values from the object class's constructor and
+        propagates them to the module's flattened field symbols.
+        """
+        module_scope = callee.parent
+        # Get the object class scope from the parameter type
+        param_sym = None
+        for ps in callee.param_symbols():
+            if ps.name == param_name:
+                param_sym = ps
+                break
+        if param_sym is None or not param_sym.typ.is_object():
+            return
+        obj_class_scope = param_sym.typ.scope
+        obj_ctor = obj_class_scope.find_ctor()
+        if obj_ctor is None:
+            return
+        if not isinstance(arg, (Temp, Attr)):
+            return
+        # Build field value map from the object class ctor's IR and the
+        # original ctor call arguments (saved by inline_opt on the class scope).
+        ctor_call_args = getattr(obj_class_scope, '_ctor_call_args', None)
+        if ctor_call_args is None:
+            return
+        field_value_map = self._extract_field_values(obj_class_scope, ctor_call_args)
+        # Strip @in_ prefix from parameter name
+        base_param_name = param_name
+        if base_param_name.startswith('@in_'):
+            base_param_name = base_param_name[4:]
+        # Bind field values to flattened symbols in module scope
+        prefix = base_param_name + '_'
+        for sym_name, sym in list(module_scope.symbols.items()):
+            if not sym_name.startswith(prefix):
+                continue
+            if not sym.is_flattened():
+                continue
+            field_suffix = sym_name[len(prefix):]
+            if field_suffix not in field_value_map:
+                continue
+            value = field_value_map[field_suffix]
+            # Replace uses of the flattened field in all workers/methods
+            for child in module_scope.children:
+                if child.is_worker() or child.is_method():
+                    # The flattened field is referenced as self.cfg_width (Attr form)
+                    self_attr = Attr(exp=Temp(name=env.self_name, ctx=Ctx.LOAD), attr=sym_name, ctx=Ctx.LOAD)
+                    VarReplacer.replace_uses(child, self_attr, value.clone())
+
+    def _extract_field_values(self, class_scope: Scope,
+                              call_args: tuple[tuple[str, IrExp], ...],
+                              prefix: str = '') -> dict[str, IrExp]:
+        """Recursively extract field values from a class ctor's IR.
+
+        For nested objects (e.g., self.a = Inner(x)), recursively descends into
+        the inner class's ctor to extract leaf field values.
+        Returns a flat map like {'a_val': Const(10), 'b_val': Const(20)}.
+        """
+        ctor = class_scope.find_ctor()
+        if ctor is None:
+            return {}
+        # Map ctor param name -> actual argument value
+        ctor_param_names = ctor.param_names()
+        param_value_map: dict[str, IrExp] = {}
+        for i, (_, arg) in enumerate(call_args):
+            if i < len(ctor_param_names):
+                param_value_map[ctor_param_names[i]] = arg
+        # Scan ctor IR for field assignments: self.field = <expr>
+        field_value_map: dict[str, IrExp] = {}
+        for blk in ctor.traverse_blocks():
+            for stm in blk.stms:
+                if not isinstance(stm, Move):
+                    continue
+                if not isinstance(stm.dst, Attr):
+                    continue
+                dst_qname = stm.dst.qualified_name
+                if len(dst_qname) < 2 or dst_qname[0] != env.self_name:
+                    continue
+                field_name = dst_qname[-1]
+                src = stm.src
+                # Resolve parameter references to actual values
+                if isinstance(src, Temp) and src.name in param_value_map:
+                    src = param_value_map[src.name]
+                key = f'{prefix}{field_name}' if prefix else field_name
+                if isinstance(src, Const):
+                    field_value_map[key] = src
+                elif isinstance(src, (New, SysCall)):
+                    # Nested object: recursively extract its fields
+                    if isinstance(src, New):
+                        inner_qsyms = qualified_symbols(src.func, ctor)
+                        inner_sym = inner_qsyms[-1]
+                    elif isinstance(src, SysCall) and src.func.name == '$new':
+                        # $new(ClassName) — class name is in the first arg
+                        cls_arg = src.args[0][1] if src.args else None
+                        if cls_arg is None:
+                            continue
+                        inner_qsyms = qualified_symbols(cls_arg, ctor)
+                        inner_sym = inner_qsyms[-1]
+                    else:
+                        continue
+                    inner_scope = inner_sym.typ.scope if isinstance(inner_sym, Symbol) and inner_sym.typ.has_scope() else None
+                    if inner_scope and inner_scope.is_class() and not inner_scope.is_module():
+                        # Get inner ctor call args for this specific field
+                        nested_field_args = getattr(ctor, '_nested_ctor_field_args', {})
+                        inner_call_args = nested_field_args.get(field_name)
+                        if inner_call_args is None and isinstance(src, New):
+                            inner_call_args = src.args
+                        if inner_call_args is None:
+                            continue
+                        # Resolve args using param_value_map from outer ctor
+                        resolved_args = tuple(
+                            (n, param_value_map.get(a.name, a) if isinstance(a, Temp) else a)
+                            for n, a in inner_call_args
+                        )
+                        nested = self._extract_field_values(
+                            inner_scope, resolved_args, prefix=f'{key}_')
+                        field_value_map.update(nested)
+        return field_value_map
