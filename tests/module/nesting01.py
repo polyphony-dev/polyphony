@@ -18,26 +18,19 @@ class Submodule:
 class Nesting01:
     def __init__(self):
         self.sub1 = Submodule(2)
-        #self.sub2 = Submodule(3)
-        self.append_worker(self.worker, loop=False)
-        #self.append_worker(self.worker, self.sub2)
+        self.append_worker(self.worker, loop=True)
 
     def worker(self):
-        while is_worker_running():
-            v = self.sub1.i.rd() * self.sub1.param
-            print('v', v)
-            self.sub1.o.wr(v)
+        v = self.sub1.i.rd() * self.sub1.param
+        print('v', v)
+        self.sub1.o.wr(v)
 
 
 @testbench
-def test(m):
+def test():
+    m = Nesting01()
     m.sub1.i.wr(10)
-    # m.sub2.i.wr(20)
     clksleep(10)
     print(m.sub1.o.rd())
     assert m.sub1.o.rd() == 20
-    # assert m.sub2.o.rd() == 60
 
-
-m = Nesting01()
-test(m)

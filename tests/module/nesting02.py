@@ -42,13 +42,11 @@ class Nesting02:
 
 
 @testbench
-def test(m):
+def test():
+    m = Nesting02()
     m.sub1.i.wr(10)
     m.sub2.i.wr(20)
     clksleep(10)
     assert m.sub1.o.rd() == 20
     assert m.sub2.o.rd() == 60
 
-
-m = Nesting02()
-test(m)

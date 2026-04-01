@@ -36,6 +36,8 @@ class ScopeDependencyGraphBuilder(IrVisitor):
 
     def _add_scope(self, scope):
         assert scope
+        if scope.is_superseded():
+            return
         if not self.scope.is_descendants_of(scope):
             self._add_dependency(self.scope, scope)
         if scope.is_containable():
@@ -51,7 +53,7 @@ class ScopeDependencyGraphBuilder(IrVisitor):
 
     def visit_Temp(self, ir):
         sym = self.scope.find_sym(ir.name)
-        assert sym
+        assert sym, f"Symbol '{ir.name}' not found in scope '{self.scope.name}'"
         sym_t = sym.typ
         if sym_t.has_scope():
             if sym.is_self():

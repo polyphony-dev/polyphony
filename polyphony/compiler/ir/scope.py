@@ -380,7 +380,6 @@ class Scope(Tagged, SymbolTable):
         self.synth_params = make_synth_params()
         self.constants = {}
         self.branch_graph = Graph()
-        self._bound_args = []
 
     def __str__(self):
         s = "================================\n"
@@ -526,10 +525,13 @@ class Scope(Tagged, SymbolTable):
         logger.debug("CLONE {} {}".format(self.name, s.name))
 
         if recursive:
+            # Skip superseded scopes — they have been replaced by specialized
+            # versions and may reference destroyed scopes in their IR.
+            active_children = [c for c in self.children if not c.is_superseded()]
             if rename_children:
-                s.children = [child.clone(prefix, postfix, s, recursive, rename_children) for child in self.children]
+                s.children = [child.clone(prefix, postfix, s, recursive, rename_children) for child in active_children]
             else:
-                s.children = [child.clone("", "", s, recursive, rename_children) for child in self.children]
+                s.children = [child.clone("", "", s, recursive, rename_children) for child in active_children]
         else:
             s.children = list(self.children)
 
@@ -798,7 +800,8 @@ class Instantiable:
         origin = env.origin_registry.sym_origin_of(old_class_sym)
         env.origin_registry.set_sym_origin(new_sym, origin if origin else old_class_sym)
         new_scopes: dict["Scope", "Scope"] = {self: new_class}  # type: ignore[dict-item]
-        for old_child, new_child in zip(self.children, new_class.children):  # type: ignore[attr-defined]
+        active_children = [c for c in self.children if not c.is_superseded()]  # type: ignore[attr-defined]
+        for old_child, new_child in zip(active_children, new_class.children):
             new_scopes[old_child] = new_child
         for old, new in new_scopes.items():
             syms = new_class.find_scope_sym(old)
@@ -811,6 +814,7 @@ class Instantiable:
             assert new_sym2 is not None
             assert new_sym2.typ.scope is new
         self._replace_type_scope(new_scopes)
+        self._replace_imported_sym_scopes(new_scopes)
         return new_class
 
     def _replace_type_scope(self, new_scopes: dict["Scope", "Scope"]):
@@ -821,6 +825,26 @@ class Instantiable:
                 dd = {}
                 if typehelper.replace_type_dict(d, dd, "scope_name", value_map):
                     sym.typ = sym.typ.__class__.from_dict(dd)
+
+    def _replace_imported_sym_scopes(self, new_scopes: dict["Scope", "Scope"]):
+        """Re-import symbols so their scope references point to instantiated scopes.
+
+        After cloning, imported symbols in child scopes still have _scope_name
+        pointing to template scopes. ScopeDependencyGraphBuilder follows sym.scope,
+        so stale references would lead to processing destroyed template scopes.
+        This replaces the Symbol objects with the corresponding ones from the
+        instantiated scope.
+        """
+        for new_scope in new_scopes.values():
+            for child in new_scope.children:
+                for sym_name, sym in list(child.symbols.items()):
+                    if not sym.is_imported():
+                        continue
+                    if sym.scope in new_scopes:
+                        new_owner = new_scopes[sym.scope]
+                        new_sym = new_owner.symbols.get(sym_name)
+                        if new_sym is not None and new_sym is not sym:
+                            child.symbols[sym_name] = new_sym
 
     def instance_number(self):
         n = Scope.instance_ids[self]
@@ -968,6 +992,8 @@ class ClassScope(Instantiable, Scope):
         self.workers: list["Scope"] = []
         self.module_params = []
         self.module_param_vars = []
+        self._bound_args: list[str] = []
+        self._bound_arg_map: dict[str, tuple[Symbol, IrExp]] = {}
 
     def as_class(self) -> "ClassScope":
         return self
@@ -1018,8 +1044,14 @@ class ClassScope(Instantiable, Scope):
         self.module_param_vars = module_param_vars
         self.module_params = module_params
 
-    def set_bound_args(self, binding: list[tuple[int, IrExp]]):
+    def set_bound_args(self, binding: list[tuple[int, IrExp]],
+                       param_names: list[str] | None = None,
+                       param_syms: list[Symbol] | None = None):
         self._bound_args = [str(exp) for i, exp in binding]
+        if param_names is not None and param_syms is not None:
+            for i, exp in binding:
+                if i < len(param_names) and i < len(param_syms):
+                    self._bound_arg_map[param_names[i]] = (param_syms[i], exp)
 
 
 class NamespaceScope(Scope):

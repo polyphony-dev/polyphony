@@ -390,7 +390,7 @@ class UseDefDetector(IrVisitor):
 
     def _add_use(self, qsyms, var, stm):
         sym = qsyms[-1]
-        assert isinstance(sym, Symbol)
+        assert isinstance(sym, Symbol), f"qsyms[-1]={sym!r} (type={type(sym).__name__}) for var={var} in scope={self.scope.name}, stm={stm}"
         item = UseDefItem(sym, qsyms, var, stm, stm.block)
         self.table._use_sym2[sym].add(item)
         self.table._use_qsym2[qsyms].add(item)

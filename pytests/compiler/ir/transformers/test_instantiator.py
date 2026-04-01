@@ -357,6 +357,233 @@ def test_bind_arguments():
     assert C0_main2.entry_block.stms[0] == Move(_v('self.a'), Const(12))
 
 
+def test_bind_args_propagates_to_sibling_worker_with_free_var():
+    """When a ctor parameter is bound, the binding should propagate to
+    sibling worker scopes that reference it as a free variable.
+
+    This simulates the worker_lambda09 pattern after inline_opt:
+      class C:
+          def __init__(self, scale):
+              self.append_worker(self.work, lambda x: x * scale)
+          def work(self, fn):
+              self.o.wr(fn(21))
+
+    After inline_opt, the lambda body is inlined into `work`, so `work`
+    directly references `scale` as a free variable imported from `__init__`.
+    When apply_argument binds scale=2, ConstantOpt inside ArgumentApplier
+    propagates the constant to the worker via shared Symbol instances
+    (_find_scopes_sharing_sym), so no separate propagation pass is needed.
+    """
+    setup_test(with_global=False)
+
+    block_src = """
+    scope @top
+    tags namespace
+    var C: class(@top.C)
+    var c: object(@top.C)
+
+    blk1:
+    mv c (new C 2)
+
+    scope @top.C
+    tags module class
+    var append_worker: function(@top.C.append_worker)
+    var __init__: function(@top.C.__init__)
+    var work: function(@top.C.work)
+
+    scope @top.C.append_worker
+    tags method lib builtin
+    param self: object(@top.C)
+    param func: function()
+    param loop: bool
+
+    scope @top.C.__init__
+    tags ctor method enclosure
+    param self: object(@top.C)
+    param scale: int32
+    return object(@top.C)
+    var _lambda_6: function(@top.C.__init__._lambda_6)
+
+    blk1:
+    mv scale @in_scale
+    expr (call self.append_worker self.work)
+
+    scope @top.C.__init__._lambda_6
+    tags function closure comb returnable
+    param x: int32
+    return int32
+    from @top.C.__init__ import scale
+
+    blk1:
+    mv x @in_x
+    mv @return (* x scale)
+    ret @return
+
+    scope @top.C.work
+    tags method worker
+    param self: object(@top.C)
+    var result: int32
+    from @top.C.__init__ import scale
+
+    blk1:
+    mv result (* 21 scale)
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    C = env.scopes['@top.C']
+    modules = new_find_called_module([top])
+    names = [''] * len(modules)
+    new_modules = ModuleInstantiator().process_modules(modules, names)
+    assert len(new_modules) == 1
+
+    C0 = new_modules[0]
+    C0_ctor = C0.find_ctor()
+    assert C0_ctor is not None
+
+    # Run type propagation + constant opt to prepare for argument binding
+    TypePropagation().process_all()
+    UseDefDetector().process(top)
+    ConstantOpt().process(top)
+    for child in C0.children:
+        UseDefDetector().process(child)
+        ConstantOpt().process(child)
+
+    # Apply arguments: binds scale=2 in ctor.
+    # ConstantOpt inside ArgumentApplier propagates Const(2) to the worker
+    # via _find_scopes_sharing_sym (shared Symbol instance).
+    next_scopes = ArgumentApplier().process_scopes([Scope.global_scope()])
+
+    # Verify: ctor's scale parameter is removed
+    assert 'scale' not in C0_ctor.param_names()
+
+    # Verify: worker's scale is already replaced with Const(2)
+    C0_work = None
+    for child in C0.children:
+        if child.is_worker():
+            C0_work = child
+            break
+    assert C0_work is not None, \
+        f"no worker found in children: {[c.name + ' ' + str(c.tags) for c in C0.children]}"
+    blk = C0_work.entry_block
+    assert blk is not None
+    for stm in blk.stms:
+        assert 'scale' not in str(stm), f"scale still referenced after apply_argument: {stm}"
+
+
+def test_bind_args_propagates_to_global_worker_with_free_var():
+    """When a ctor parameter is bound, the binding should propagate to
+    a global function worker that references it as a free variable.
+
+    This is the worker_lambda14 pattern: a global function is used as a
+    worker via append_worker, and after inline_opt the lambda's free
+    variable ends up in the global worker scope. After instantiation the
+    global worker becomes a child of the class, but the free variable's
+    symbol still points to the original ctor. The binding must reach it.
+    """
+    setup_test(with_global=False)
+
+    block_src = """
+    scope @top
+    tags namespace
+    var C: class(@top.C)
+    var c: object(@top.C)
+    var work: function(@top.work)
+
+    blk1:
+    mv c (new C 2)
+
+    scope @top.C
+    tags module class
+    var append_worker: function(@top.C.append_worker)
+    var __init__: function(@top.C.__init__)
+
+    scope @top.C.append_worker
+    tags method lib builtin
+    param self: object(@top.C)
+    param func: function()
+    param loop: bool
+
+    scope @top.C.__init__
+    tags ctor method enclosure
+    param self: object(@top.C)
+    param scale: int32
+    return object(@top.C)
+    from @top import work
+
+    blk1:
+    mv scale @in_scale
+    expr (call self.append_worker work)
+
+    scope @top.work
+    tags function worker closure
+    var result: int32
+    from @top.C.__init__ import scale
+
+    blk1:
+    mv result (* 21 scale)
+    """
+    IrReader(block_src).parse_scope()
+    top = env.scopes['@top']
+    install_builtins(top)
+
+    # In the real compilation flow, the frontend sets the 'free' tag on
+    # 'scale' when the lambda closure captures it. Since we represent
+    # the post-inline state (lambda already merged into worker), set it
+    # manually here.
+    ctor = env.scopes['@top.C.__init__']
+    scale_sym = ctor.find_sym('scale')
+    scale_sym.add_tag('free')
+
+    C = env.scopes['@top.C']
+    modules = new_find_called_module([top])
+    names = [''] * len(modules)
+    new_modules = ModuleInstantiator().process_modules(modules, names)
+    assert len(new_modules) == 1
+
+    C0 = new_modules[0]
+    C0_ctor = C0.find_ctor()
+    assert C0_ctor is not None
+
+    # The global worker should now be a child of C0 (instantiated as method)
+    C0_work = None
+    for child in C0.children:
+        if child.is_worker():
+            C0_work = child
+            break
+    assert C0_work is not None, "global worker should be instantiated as child of class"
+
+    # Run type propagation + constant opt
+    TypePropagation().process_all()
+    UseDefDetector().process(top)
+    ConstantOpt().process(top)
+    for child in C0.children:
+        UseDefDetector().process(child)
+        ConstantOpt().process(child)
+
+    # Apply arguments: binds scale=2 in ctor.
+    # ConstantOpt inside ArgumentApplier propagates Const(2) to the worker.
+    next_scopes = ArgumentApplier().process_scopes([Scope.global_scope()])
+
+    # Verify: ctor's scale parameter is removed
+    assert 'scale' not in C0_ctor.param_names()
+
+    # Re-find worker after apply_argument (scope may have changed)
+    C0_work = None
+    for child in C0.children:
+        if child.is_worker():
+            C0_work = child
+            break
+    assert C0_work is not None
+
+    # Verify: worker's scale is already replaced with Const(2)
+    blk = C0_work.entry_block
+    assert blk is not None
+    for stm in blk.stms:
+        assert 'scale' not in str(stm), f"scale still referenced after apply_argument: {stm}"
+
+
 def test_new_call_collector_imports():
     """Verify CallCollector can be imported."""
     collector = CallCollector()
