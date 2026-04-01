@@ -155,7 +155,42 @@ class ModuleInstantiator(object):
         if new_stm is not stm:
             scope.find_block(stm.block).replace_stm(stm, new_stm)
         new_worker.add_tag('instantiated')
+        self._replace_worker_type_scopes(new_worker, module)
         return new_worker
+
+    def _replace_worker_type_scopes(self, new_worker, module):
+        """Rewrite a cloned worker's symbol types and imported references.
+
+        When a global worker is cloned into a module:
+        1. Imported symbols still reference template scope Symbol objects
+           — re-import them from the instantiated scope.
+        2. Local symbols' types may contain scope_name references to
+           template scopes — rewrite them to the instantiated names.
+           This includes superseded scopes that were not cloned.
+        """
+        import dataclasses
+        from ..types import typehelper
+        value_map: dict[str, str] = {}
+        for scope in module.collect_scope():
+            if scope is new_worker:
+                continue
+            origin = env.origin_registry.scope_origin_of(scope)
+            if origin is None:
+                continue
+            value_map[origin.name] = scope.name
+            # Re-import symbols from instantiated scope
+            for asname, sym in list(new_worker.symbols.items()):
+                if sym.is_imported() and sym.scope is origin:
+                    new_sym = scope.symbols.get(sym.name)
+                    if new_sym is not None and new_sym is not sym:
+                        new_worker.symbols[asname] = new_sym
+        # Rewrite type scope_name references
+        if value_map:
+            for sym in new_worker.symbols.values():
+                d = dataclasses.asdict(sym.typ)
+                dd = {}
+                if typehelper.replace_type_dict(d, dd, "scope_name", value_map):
+                    sym.typ = sym.typ.__class__.from_dict(dd)
 
 
 
@@ -197,6 +232,14 @@ class ArgumentApplier(object):
                 assert w_sym.typ.is_function()
                 assert w_sym.typ.scope.is_worker()
                 worker = w_sym.typ.scope
+                # When not flattening, skip binding args for submodule workers
+                # (they will be bound when processing the submodule's own ctor)
+                if not env.config.flatten_modules:
+                    worker_module = worker.outer_module()
+                    caller_module = scope.outer_module()
+                    if worker_module and caller_module and worker_module is not caller_module:
+                        next_scopes.append(worker_module.find_ctor())
+                        continue
                 worker_args = call.args[1:]
                 new_worker_args = self._bind_args(scope, worker_args, worker)
                 if new_worker_args is not worker_args:
@@ -327,17 +370,6 @@ class ArgumentApplier(object):
                 self._import_arg_symbols(arg, caller_scope, callee)
                 pname = callee.param_symbols()[i].name
                 VarReplacer.replace_uses(callee, Temp(name=pname), arg)
-                # Propagate bound arguments to sibling scopes that imported
-                # this parameter as a free variable (e.g. lambda closures).
-                if callee.is_ctor() and callee.parent:
-                    orig_name = param_names[i]
-                    for sibling in callee.parent.children:
-                        if sibling is callee:
-                            continue
-                        sib_sym = sibling.find_sym(orig_name)
-                        if sib_sym and sib_sym.is_free() and sib_sym.is_imported():
-                            self._import_arg_symbols(arg, caller_scope, sibling)
-                            VarReplacer.replace_uses(sibling, Temp(name=orig_name), arg)
             callee.remove_param([i for i, _ in binding])
             bound_indices = {i for i, _ in binding}
             args = tuple(a for j, a in enumerate(args) if j not in bound_indices)
@@ -347,7 +379,7 @@ class ArgumentApplier(object):
                 # arguments are inlined at compile time and not needed for model selection.
                 non_func_binding = [(i, exp) for i, exp in binding
                                     if not (i < len(param_syms) and param_syms[i].typ.is_function())]
-                callee.parent.set_bound_args(non_func_binding)
+                callee.parent.set_bound_args(non_func_binding, param_names, param_syms)
         if callee.parent.is_module():
             callee.parent.build_module_params(module_param_vars)
         return args

@@ -561,6 +561,10 @@ class InlineOpt(object):
                     continue
                 if caller.is_namespace() and callee.is_method():
                     continue
+                # When not flattening, don't inline submodule ctors into parent module ctors
+                if not env.config.flatten_modules:
+                    if callee.is_ctor() and callee.parent.is_module() and not callee.parent.is_top_module():
+                        continue
                 ret = self._inlining(caller, callee, call_irs)
                 logger.debug(f"inlined {callee.name} on {caller.name}")
                 callers.add(caller)
