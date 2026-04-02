@@ -229,6 +229,8 @@ class TypeChecker(IrVisitor):
         dst_t = self.visit(ir.dst)
         dst_sym = qualified_symbols(ir.dst, self.scope)[-1]
         assert isinstance(dst_sym, Symbol)
+        if isinstance(ir.dst, Attr) and self._is_in_module_scope():
+            self._check_module_object_field_immutability(ir)
         if isinstance(ir.dst, Temp) and dst_sym.is_return():
             assert not dst_t.is_undef()
             if not dst_t.is_same(src_t) and not dst_t.can_assign(src_t):
@@ -245,6 +247,40 @@ class TypeChecker(IrVisitor):
                 if len(ir.src.items * ir.src.repeat.value) > dst_t.length:
                     type_error(self.current_stm, Errors.SEQ_CAPACITY_OVERFLOWED,
                                [])
+
+    def _is_in_module_scope(self) -> bool:
+        """Check whether the current scope is inside a module."""
+        scope = self.scope
+        if scope.is_module():
+            return True
+        parent = scope.parent
+        return parent is not None and parent.is_module()
+
+    def _check_module_object_field_immutability(self, ir):
+        """Check that fields of module-typed objects are not written in a module scope.
+
+        After flattening, a worker parameter like 'tgt' (module instance)
+        becomes a subobject accessed via 'self.tgt'. The write pattern is:
+            tgt = self.tgt
+            tgt.value = 99
+        The root 'tgt' has tag 'subobject' and its type is a module object.
+        """
+        dst_attr = ir.dst
+        # Walk up the Attr chain to find the root variable
+        root = dst_attr
+        while isinstance(root, Attr):
+            root = root.exp
+        if not isinstance(root, Temp):
+            return
+        root_name = root.name
+        # Skip writes to self fields (those are handled separately)
+        if root_name == env.self_name:
+            return
+        root_sym = self.scope.find_sym(root_name)
+        if root_sym is None:
+            return
+        if root_sym.typ.is_object() and root_sym.typ.scope.is_module():
+            fail(self.current_stm, Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE, [dst_attr.attr])
 
     def visit_Phi(self, ir):
         var_sym = qualified_symbols(ir.var, self.scope)[-1]
@@ -449,7 +485,7 @@ class RestrictionChecker(IrVisitor):
             field_sym = module_scope.find_sym(field_name)
             if field_sym is None:
                 return
-            if field_sym.typ.is_object() and not field_sym.typ.scope.is_module():
+            if field_sym.typ.is_object():
                 fail(self.current_stm, Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE, [dst_attr.attr])
         else:
             # Direct write to object param: cfg.width = ... (in ctor before self assignment)
@@ -460,7 +496,7 @@ class RestrictionChecker(IrVisitor):
             root_sym = scope.find_sym(root_name)
             if root_sym is None:
                 return
-            if root_sym.typ.is_object() and not root_sym.typ.scope.is_module() and root_sym.is_param():
+            if root_sym.typ.is_object() and root_sym.is_param():
                 fail(self.current_stm, Errors.MODULE_OBJECT_FIELD_IS_IMMUTABLE, [dst_attr.attr])
 
     def visit_Call(self, ir):
